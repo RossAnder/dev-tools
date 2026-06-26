@@ -59,6 +59,7 @@ mod risks;
 mod runs_sprints;
 mod scheduler;
 mod scheduler_predicates;
+mod scheduler_state;
 mod sessions;
 mod shared;
 mod task_dependencies;
@@ -181,6 +182,14 @@ pub use scheduler::*;
 // shape at their `crate::repo::*` paths — the sibling scheduler-loop task
 // consumes them by path.
 pub use scheduler_predicates::*;
+// Scheduler OBSERVABILITY read (`scheduler_state.rs`, migration 0028, focus 1C.3,
+// story AC #6) — the single read-only composer behind `get_scheduler_state` (MCP)
+// + `GET /api/scheduler/state` (HTTP). The glob `pub use` exposes `scheduler_state`
+// + the `SchedulerState`/`SchedulerUnitBuckets`/`StubTriageEntry` shapes at their
+// `crate::repo::*` paths (bucketed `scheduled_units` rows + the ungrilled
+// stub-triage queue — the complement of `build_story_candidates`). Read-only: no
+// tx, no event.
+pub use scheduler_state::*;
 // Worktree + task-commit provenance mutators/reads (`worktrees.rs`, migration
 // 0016 sprint-lifecycle & worktree substrate, T4). The glob `pub use` exposes
 // the worktree lifecycle/merge-audit fns (`create_worktree`, `get_worktree`,

@@ -365,6 +365,85 @@ pub async fn release_scheduled_unit(
     Ok(true)
 }
 
+/// Advance a `scheduled_units` row OFF the ready set into a TERMINAL `status`
+/// (the redispatch loop's STOP / STALE-EPOCH disposition — `server::scheduler::
+/// redispatch`). A unit is driveable ONLY while `status='pending'`
+/// ([`claim_next_scheduled_unit`]'s candidate select and
+/// [`count_pending_scheduled_units`] both key on `'pending'`), so writing any
+/// other value REMOVES the unit from the ready set permanently — that is exactly
+/// the "this unit must never re-dispatch" outcome the redispatch loop needs for a
+/// unit whose driver went terminal or whose plan changed underneath it.
+///
+/// Terminal `status` VOCAB (free-text, repo-validated like the rest of
+/// `scheduled_units.status`): the redispatch loop uses
+///   * `'cancelled'` — STOP: the driving work_item is done/cancelled, its
+///     relevance is `rejected`, the owning sprint is terminal, OR the correlated
+///     open_question was retired / a resolution cancelled this unit's own branch;
+///   * `'stale'`     — STALE-EPOCH: the unit's captured `plan_epoch` no longer
+///     matches the work_item's current epoch (the plan was re-planned since
+///     dispatch), so a re-plan re-creates a FRESH unit via the trigger scan rather
+///     than this one re-running an outdated plan.
+///
+/// (`'done'` is reserved for the future `drive`-completion path.) The guard
+/// rejects an unknown value as [`AppError::Validation`] so a typo can never strand
+/// a unit in a non-pending status the candidate select silently drops.
+///
+/// Owner-agnostic and lease-clearing: the UPDATE also NULLs `assignee` /
+/// `lease_expires_at`, since a terminal unit is no longer driveable and its lease
+/// (if any) is moot — this is correct even against a live lease, because STOP and
+/// STALE are precisely the cases where the in-flight drive has become invalid
+/// (the work moot, or the plan changed). Guarded `WHERE status='pending'`, so a
+/// re-run over an already-terminal unit is an idempotent no-op (`Ok(false)`, no
+/// event). One `BEGIN IMMEDIATE` txn + ONE export-INERT `scheduled_unit.terminated`
+/// event on a real transition; none on the no-op. Returns `Ok(true)` iff a pending
+/// row was advanced.
+pub async fn advance_scheduled_unit_terminal(
+    db: &impl DbClient,
+    unit_id: &str,
+    terminal_status: &str,
+) -> Result<bool, AppError> {
+    if !matches!(terminal_status, "cancelled" | "stale" | "done") {
+        return Err(AppError::Validation(format!(
+            "scheduled-unit terminal status must be one of cancelled|stale|done, not '{terminal_status}'"
+        )));
+    }
+
+    let mut tx = db.begin().await?;
+
+    let affected = tx
+        .execute(
+            r#"
+        UPDATE scheduled_units
+        SET status = $2,
+            assignee = NULL,
+            lease_expires_at = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 AND status = 'pending'
+        "#,
+            args![unit_id.to_owned(), terminal_status.to_owned()],
+        )
+        .await?;
+
+    if affected == 0 {
+        // Already terminal (or absent) — idempotent no-op, no event. Roll back via
+        // drop.
+        return Ok(false);
+    }
+
+    let payload = serde_json::json!({ "status": terminal_status });
+    record_inert_event(
+        tx.as_mut(),
+        SCHEDULED_UNIT_AGGREGATE,
+        unit_id,
+        "scheduled_unit.terminated",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(true)
+}
+
 /// Ensure a `scheduled_units` row exists for `(kind, work_item_id)` — the
 /// idempotent CREATE half of the scheduler loop's wake/scan/ensure cycle (the
 /// scan-side counterpart of [`claim_next_scheduled_unit`], which only CLAIMS rows

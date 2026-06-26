@@ -31,6 +31,7 @@ pub mod runs;
 pub mod sprints;
 pub mod sprint_run;
 pub mod scheduler;
+pub mod scheduler_state;
 pub mod activity;
 pub mod context_blocks;
 pub mod readiness;
@@ -69,6 +70,7 @@ pub fn router() -> Router<AppState> {
         .merge(sprints::router())
         .merge(sprint_run::router())
         .merge(scheduler::router())
+        .merge(scheduler_state::router())
         .merge(activity::router())
         .merge(context_blocks::router())
         .merge(readiness::router())

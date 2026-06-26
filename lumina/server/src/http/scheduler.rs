@@ -27,6 +27,7 @@
 //! a higher-priority unit was claimed instead). On success: **201 + `{ session,
 //! leased_unit }`** (the spawned `PtySession` row + the leased `ScheduledUnit`).
 
+use std::collections::HashSet;
 use std::net::SocketAddr;
 
 use axum::Json;
@@ -37,15 +38,24 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use serde::Deserialize;
 use serde_json::json;
+use uuid::Uuid;
 
 use crate::app::AppState;
 use crate::mcp::{DispatchError, dispatch_scheduled_unit_flow};
+use crate::scheduler::control::{
+    disable_and_drain, SessionCanceller, DEFAULT_QUIESCENCE_TIMEOUT,
+};
 use lumina_core::domain::ScheduledUnitKind;
+use lumina_core::error::AppError;
+use lumina_core::protocol::{InputFrame, InputKind, SessionId, SessionStatus};
+use lumina_core::repo;
 
-/// Build the scheduler-dispatch sub-router. Returned as `Router<AppState>` so
+/// Build the scheduler sub-router. Returned as `Router<AppState>` so
 /// `http::router` can `.merge` it with the other per-family sub-routers.
 pub fn router() -> Router<AppState> {
-    Router::new().route("/scheduler/dispatch", post(dispatch_handler))
+    Router::new()
+        .route("/scheduler/dispatch", post(dispatch_handler))
+        .route("/scheduler/control", post(control_handler))
 }
 
 /// Body for `POST /scheduler/dispatch`. `kind` defaults to `build_story`.
@@ -124,5 +134,152 @@ async fn dispatch_handler(
         // Lease contention has no AppError home → 409, mirroring sprint_run's
         // one-orchestrator interlock conflict.
         Err(DispatchError::Conflict(msg)) => error_response(StatusCode::CONFLICT, "conflict", msg),
+    }
+}
+
+// =====================================================================
+// Operator control — authoritative enable/disable + scope + kill-switch
+// =====================================================================
+
+/// Body for `POST /scheduler/control`.
+#[derive(Debug, Deserialize)]
+struct ControlBody {
+    /// The desired master-switch state. `false` runs the KILL-SWITCH (flag false
+    /// first, then cancel the live correlated autonomous sessions, then verify
+    /// quiescence); `true` (re-)enables the loop.
+    enabled: bool,
+    /// Optional dispatch scope (set of ancestor `work_item_id`s):
+    ///   * ABSENT  → leave the current scope unchanged;
+    ///   * `[]`    → CLEAR the restriction (dispatch under any active ancestor);
+    ///   * non-empty → restrict dispatch to candidates in (or under) the set.
+    #[serde(default)]
+    scope: Option<Vec<String>>,
+}
+
+/// The production [`SessionCanceller`]: reuses the EXISTING PTY cancel mechanism
+/// (mirroring `http::pty_sessions::cancel_session`) — a best-effort registry
+/// Cancel frame + an IMMEDIATE transport-token hard-kill (the kill-switch is an
+/// emergency stop, so no grace window), then the terminal DB stamp via
+/// `repo::pty::delete_pty_session`. NOT a new kill path — the same primitives the
+/// HTTP `DELETE /pty/sessions/{id}` composes.
+struct RegistryCanceller<'a> {
+    state: &'a AppState,
+}
+
+impl SessionCanceller for RegistryCanceller<'_> {
+    async fn cancel(&self, session_id: &str) -> Result<(), AppError> {
+        // Best-effort in-memory cancel: if the session is still registered, push a
+        // Cancel frame, flip its status, and hard-kill its transport token.
+        if let Ok(uuid) = Uuid::parse_str(session_id) {
+            let sid = SessionId(uuid);
+            if let Some(session) = self.state.pty_registry.get(&sid).await {
+                let _ = session
+                    .input_tx
+                    .send(InputFrame { kind: InputKind::Cancel, payload: String::new() })
+                    .await;
+                session.set_status(SessionStatus::Cancelled).await;
+                // Immediate hard-kill (no grace) — the kill-switch is authoritative.
+                session.shutdown.cancel();
+            }
+        }
+        // Terminal DB stamp (status='cancelled') so quiescence is observable even
+        // if the supervisor reap lags. NotFound (a vanished row) is benign here.
+        match repo::pty::delete_pty_session(self.state.pool.sqlite(), session_id).await {
+            Ok(()) => Ok(()),
+            Err(AppError::NotFound(_)) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+/// `POST /scheduler/control` — the AUTHORITATIVE operator master switch + scope +
+/// kill-switch for the scheduler engine (focus 1C.3, story AC #6).
+///
+/// Loopback-ENFORCED in code (like `/scheduler/dispatch`): the kill-switch
+/// hard-kills `claude` PTY children, so an off-loopback caller is refused **403
+/// before any work**. The handle it mutates is the SAME `Arc<SchedulerControl>`
+/// the loop reads (off `AppState`), so a toggle/scope/kill takes effect with no
+/// respawn — and is harmless when no scheduler is spawned (the flag has no loop).
+///
+/// HTTP-only by deliberate choice — the PTY-control precedent (the PTY surface is
+/// HTTP-only). Adding no MCP tool keeps the `mcp/mod.rs` count-invariant
+/// untouched.
+async fn control_handler(
+    State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<ControlBody>,
+) -> Response {
+    // ---- Pre-flight: LOOPBACK GUARD (first, before any work) ----
+    if !addr.ip().is_loopback() {
+        tracing::warn!(peer = %addr, "scheduler control: non-loopback peer refused");
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "scheduler control is loopback-only",
+        );
+    }
+
+    let control = &state.scheduler_control;
+
+    // ---- Scope: apply when the field is present. ----
+    if let Some(scope) = body.scope {
+        if scope.is_empty() {
+            control.set_scope(None);
+        } else {
+            control.set_scope(Some(scope.into_iter().collect::<HashSet<String>>()));
+        }
+    }
+    let scope_value = match control.scope_snapshot() {
+        Some(set) => {
+            let mut v: Vec<String> = set.into_iter().collect();
+            v.sort();
+            json!(v)
+        }
+        None => serde_json::Value::Null,
+    };
+
+    if body.enabled {
+        // ---- ENABLE: flip the master switch on (no respawn). ----
+        control.set_enabled(true);
+        tracing::info!("scheduler control: enabled (scope set: {})", scope_value != serde_json::Value::Null);
+        return (
+            StatusCode::OK,
+            Json(json!({ "enabled": true, "scope": scope_value })),
+        )
+            .into_response();
+    }
+
+    // ---- DISABLE: run the KILL-SWITCH (flag-false → cancel → verify). ----
+    let canceller = RegistryCanceller { state: &state };
+    match disable_and_drain(
+        control,
+        state.pool.as_ref(),
+        &canceller,
+        DEFAULT_QUIESCENCE_TIMEOUT,
+    )
+    .await
+    {
+        Ok(outcome) => {
+            tracing::info!(
+                cancelled = outcome.cancelled,
+                quiesced = outcome.quiesced,
+                remaining_live = outcome.remaining_live,
+                "scheduler control: disabled (kill-switch)"
+            );
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "enabled": false,
+                    "scope": scope_value,
+                    "cancelled": outcome.cancelled,
+                    "quiesced": outcome.quiesced,
+                    "remaining_live": outcome.remaining_live,
+                })),
+            )
+                .into_response()
+        }
+        // A DB failure during the drain → typed envelope (500), the flag is
+        // already false (the loop is inert) so the disable's safety intent held.
+        Err(e) => e.into_response(),
     }
 }

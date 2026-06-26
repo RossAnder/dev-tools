@@ -49,8 +49,8 @@
 //! runtime-readable [`AtomicBool`] enable flag threaded through [`spawn`] is the
 //! seam `control.rs` will own to flip the loop on/off without a respawn.
 
+use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tokio::sync::broadcast::error::{RecvError, TryRecvError};
@@ -61,7 +61,12 @@ use lumina_core::db::AnyPool;
 use lumina_core::notify::NotifyBus;
 use lumina_core::repo;
 
+pub mod control;
+mod drive;
 mod reclaim;
+mod redispatch;
+
+pub use control::SchedulerControl;
 
 /// Safety-floor scan cadence. The notify-bus arm catches in-process writes
 /// promptly; this periodic tick is the backstop that still catches OUT-of-process
@@ -102,13 +107,16 @@ impl SchedulerHandle {
     }
 }
 
-/// Spawn the scheduler background task. `enabled` is the runtime master switch the
-/// loop reads each scan (a later `control.rs` sibling owns/flips it); when it
-/// reads `false` the loop still wakes and ticks but its scan is INERT (no DB
-/// touch). The returned handle owns the cancellation token + join handle.
-pub fn spawn(pool: Arc<AnyPool>, notify: NotifyBus, enabled: Arc<AtomicBool>) -> SchedulerHandle {
+/// Spawn the scheduler background task. `control` is the shared
+/// [`SchedulerControl`] handle (owned by `AppState`): its master-switch
+/// `AtomicBool` is the runtime gate the loop reads each scan — when it reads
+/// `false` the loop still wakes and ticks but every pass is INERT (no DB touch) —
+/// and its dispatch SCOPE is consulted by the scan. The operator HTTP control
+/// route flips the SAME handle, so a toggle takes effect with no respawn. The
+/// returned handle owns the cancellation token + join handle.
+pub fn spawn(pool: Arc<AnyPool>, notify: NotifyBus, control: Arc<SchedulerControl>) -> SchedulerHandle {
     let token = CancellationToken::new();
-    let join = tokio::spawn(scheduler_loop(pool, notify, enabled, token.clone()));
+    let join = tokio::spawn(scheduler_loop(pool, notify, control, token.clone()));
     SchedulerHandle { token, join }
 }
 
@@ -118,7 +126,7 @@ pub fn spawn(pool: Arc<AnyPool>, notify: NotifyBus, enabled: Arc<AtomicBool>) ->
 async fn scheduler_loop(
     pool: Arc<AnyPool>,
     notify: NotifyBus,
-    enabled: Arc<AtomicBool>,
+    control: Arc<SchedulerControl>,
     token: CancellationToken,
 ) {
     tracing::info!("scheduler: loop starting");
@@ -145,8 +153,10 @@ async fn scheduler_loop(
             }
 
             _ = ticker.tick() => {
-                maybe_reclaim(&pool, &enabled).await;
-                maybe_scan(&pool, &enabled).await;
+                maybe_reclaim(&pool, &control).await;
+                maybe_redispatch(&pool, &control).await;
+                maybe_drive(&pool, &control).await;
+                maybe_scan(&pool, &control).await;
             }
 
             recv = bus_rx.recv(), if bus_open => {
@@ -165,8 +175,10 @@ async fn scheduler_loop(
                             _ = tokio::time::sleep(BUS_DEBOUNCE) => {}
                         }
                         drain_pending(&mut bus_rx);
-                        maybe_reclaim(&pool, &enabled).await;
-                        maybe_scan(&pool, &enabled).await;
+                        maybe_reclaim(&pool, &control).await;
+                        maybe_redispatch(&pool, &control).await;
+                        maybe_drive(&pool, &control).await;
+                        maybe_scan(&pool, &control).await;
                     }
                     Err(RecvError::Closed) => {
                         // The bus sender is gone — unreachable for the process-wide
@@ -192,11 +204,14 @@ fn drain_pending(rx: &mut tokio::sync::broadcast::Receiver<lumina_core::notify::
 
 /// Run one scan iff the master switch is on; otherwise the wake is inert (no DB
 /// touch), so a disabled scheduler leaves default-server behaviour untouched.
-async fn maybe_scan(pool: &Arc<AnyPool>, enabled: &Arc<AtomicBool>) {
-    if !enabled.load(Ordering::Relaxed) {
+/// When the operator has set a dispatch SCOPE on the control handle, the scan is
+/// restricted to candidates in (or under) that scope — see [`run_scan`].
+async fn maybe_scan(pool: &Arc<AnyPool>, control: &SchedulerControl) {
+    if !control.is_enabled() {
         return;
     }
-    run_scan(pool).await;
+    let scope = control.scope_snapshot();
+    run_scan(pool, scope.as_ref()).await;
 }
 
 /// Run one LIVENESS-AWARE reclaim pass iff the master switch is on (a disabled
@@ -207,13 +222,71 @@ async fn maybe_scan(pool: &Arc<AnyPool>, enabled: &Arc<AtomicBool>) {
 /// slow-but-live fork keeps its lease. Errors are swallowed inside
 /// [`reclaim::reclaim_dead_units`]; it is a fast, sleep-free sequence of queries,
 /// so it never delays the loop's cancellation-driven shutdown.
-async fn maybe_reclaim(pool: &Arc<AnyPool>, enabled: &Arc<AtomicBool>) {
-    if !enabled.load(Ordering::Relaxed) {
+async fn maybe_reclaim(pool: &Arc<AnyPool>, control: &SchedulerControl) {
+    if !control.is_enabled() {
         return;
     }
     let reclaimed = reclaim::reclaim_dead_units(pool).await;
     if reclaimed > 0 {
         tracing::info!(reclaimed, "scheduler: reclaimed dead-fork scheduled-unit leases");
+    }
+}
+
+/// Run one RE-DISPATCH classification pass iff the master switch is on (a disabled
+/// scheduler touches no DB, matching [`maybe_scan`]/[`maybe_reclaim`]). This is the
+/// UNIFYING resume step ([`redispatch`]): it sees open-question resolutions / plan
+/// re-plans / terminal drivers and, per `scheduled_units` row, either RE-DISPATCHES
+/// a resumed unit (leaving it dispatchable), keeps a still-parked unit WAITING, or
+/// STOPs a dead/stale unit (advancing it off `'pending'` to a terminal status).
+/// It runs AFTER [`maybe_reclaim`] so the liveness-aware lease reclaim has already
+/// cleared a parked-then-gone fork's stranded lease — so the resume path never
+/// blindly clears a lease itself (never clobbering a slow-but-live fork). Errors
+/// are swallowed inside [`redispatch::redispatch_resumable_units`]; it is a fast,
+/// sleep-free sequence of queries, so it never delays the loop's cancellation-driven
+/// shutdown.
+async fn maybe_redispatch(pool: &Arc<AnyPool>, control: &SchedulerControl) {
+    if !control.is_enabled() {
+        return;
+    }
+    let outcome = redispatch::redispatch_resumable_units(pool).await;
+    if outcome.stopped > 0 || outcome.staled > 0 {
+        tracing::info!(
+            stopped = outcome.stopped,
+            staled = outcome.staled,
+            parked = outcome.parked,
+            resumable = outcome.resumable,
+            "scheduler: redispatch advanced terminal scheduled units off the ready set"
+        );
+    }
+}
+
+/// Run one DRIVE classification pass iff the master switch is on (a disabled
+/// scheduler touches no DB, matching [`maybe_scan`]/[`maybe_reclaim`]/
+/// [`maybe_redispatch`]). This is the per-STORY `drive_depth` DEPTH GATE +
+/// OFF-MAIN integration-target selection + the protected-branch merge-floor
+/// compliance ([`drive`]): for each pending `drive` scheduled unit it decides
+/// whether to drive the composed sprint to the OFF-MAIN integration merge or to
+/// stop short, and NEVER targets a protected branch (the irreversible-merge floor
+/// is single-sourced from `crate::mcp::is_protected_target`). It runs AFTER
+/// [`maybe_redispatch`] so a unit whose driver went terminal is already off the
+/// ready set before this gate looks at it. Actually DISPATCHING the off-main
+/// merge through the companion is a documented seam — the loop holds no
+/// `AppState`/companion handle — so this pass classifies + logs (and counts).
+/// Errors are swallowed inside [`drive::drive_pending_units`]; it is a fast,
+/// sleep-free read, so it never delays the loop's cancellation-driven shutdown.
+async fn maybe_drive(pool: &Arc<AnyPool>, control: &SchedulerControl) {
+    if !control.is_enabled() {
+        return;
+    }
+    let outcome = drive::drive_pending_units(pool).await;
+    if outcome.drive_to_merge > 0 || outcome.stopped_protected > 0 {
+        tracing::info!(
+            drive_to_merge = outcome.drive_to_merge,
+            stopped_protected = outcome.stopped_protected,
+            stopped_depth = outcome.stopped_depth,
+            stopped_no_target = outcome.stopped_no_target,
+            "scheduler: drive pass classified pending drive units"
+        );
     }
 }
 
@@ -223,7 +296,14 @@ async fn maybe_reclaim(pool: &Arc<AnyPool>, enabled: &Arc<AtomicBool>) {
 /// logged and SWALLOWED — a failed scan must not kill the loop. Ensuring is a
 /// no-op for a candidate whose row already exists, so this is safe to run on
 /// every wake.
-async fn run_scan(db: &AnyPool) {
+///
+/// `scope` is the operator dispatch SCOPE: when `Some(set)`, a candidate is only
+/// ensured if it (or one of its ancestors) is in the set (via
+/// [`control::candidate_in_scope`]) — the scope filter COMPOSES with the
+/// active-ancestor gate the predicates already applied; when `None`, no
+/// restriction (current behaviour). A scope-check error is conservative — the
+/// candidate is skipped (never dispatch under uncertainty).
+async fn run_scan(db: &AnyPool, scope: Option<&HashSet<String>>) {
     let candidates = match repo::scan_trigger_candidates(db).await {
         Ok(c) => c,
         Err(err) => {
@@ -256,6 +336,30 @@ async fn run_scan(db: &AnyPool) {
             tracing::debug!("scheduler: in-flight cap reached mid-scan; stopping ensure");
             break;
         }
+        // SCOPE gate: when a dispatch scope is set, only ensure a candidate that
+        // is itself in scope or sits under a scoped ancestor. An out-of-scope
+        // candidate is skipped WITHOUT consuming budget; a scope-check error is
+        // conservative (skip — never dispatch under uncertainty).
+        if let Some(scope) = scope {
+            match control::candidate_in_scope(db, &candidate.work_item_id, scope).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    tracing::debug!(
+                        work_item_id = %candidate.work_item_id,
+                        "scheduler: candidate out of dispatch scope; skipping"
+                    );
+                    continue;
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        error = %err,
+                        work_item_id = %candidate.work_item_id,
+                        "scheduler: scope check failed; skipping candidate (conservative)"
+                    );
+                    continue;
+                }
+            }
+        }
         match repo::ensure_scheduled_unit(db, candidate.trigger_kind, &candidate.work_item_id).await {
             Ok(true) => {
                 budget -= 1;
@@ -282,8 +386,14 @@ async fn run_scan(db: &AnyPool) {
 mod tests {
     use super::*;
 
-    use lumina_core::db::connect_in_memory;
+    use lumina_core::args;
+    use lumina_core::db::{connect_in_memory, DbClient};
+    use lumina_core::domain::Relevance;
     use lumina_core::notify::ChangeNotification;
+    use lumina_core::repo::{
+        add_acceptance_criterion, count_pending_scheduled_units, create_work_item,
+        create_work_item_full, set_relevance, CreateOpts,
+    };
 
     /// **Story AC #1 — no task leak.** Spawn the scheduler loop with a
     /// `CancellationToken`, fire the token, and assert the `JoinHandle` completes
@@ -295,10 +405,10 @@ mod tests {
     async fn scheduler_task_torn_down_by_token_no_leak() {
         let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("in-memory pool")));
         let notify = NotifyBus::new();
-        let enabled = Arc::new(AtomicBool::new(false));
+        let control = SchedulerControl::new(false);
         let token = CancellationToken::new();
 
-        let join = tokio::spawn(scheduler_loop(pool, notify, enabled, token.clone()));
+        let join = tokio::spawn(scheduler_loop(pool, notify, control, token.clone()));
         // Let the loop reach its `select!`.
         tokio::time::sleep(Duration::from_millis(20)).await;
 
@@ -321,13 +431,13 @@ mod tests {
     async fn bus_notification_wakes_scan_then_shuts_down_clean() {
         let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("in-memory pool")));
         let notify = NotifyBus::new();
-        let enabled = Arc::new(AtomicBool::new(true));
+        let control = SchedulerControl::new(true);
         let token = CancellationToken::new();
 
         let join = tokio::spawn(scheduler_loop(
             pool,
             notify.clone(),
-            enabled,
+            control,
             token.clone(),
         ));
         // Let the loop subscribe before we publish.
@@ -340,5 +450,117 @@ mod tests {
         let joined = tokio::time::timeout(Duration::from_secs(5), join).await;
         assert!(joined.is_ok(), "scheduler joins cleanly after a bus wake + cancel");
         joined.unwrap().expect("scheduler task completed cleanly");
+    }
+
+    /// Seed ONE `build_story` trigger candidate (a backlog stub story under
+    /// active ancestors) and return its id. Mirrors the predicate test seeds in
+    /// `repo/scheduler_predicates.rs`.
+    async fn seed_build_story_candidate(db: &AnyPool) -> String {
+        let project = create_work_item(db, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+        let epic = create_work_item_full(
+            db,
+            "epic",
+            Some(&project),
+            "E",
+            None,
+            CreateOpts { origin: None, outcome: Some("o"), shape: None, lane: None },
+        )
+        .await
+        .expect("epic")
+        .to_string();
+        add_acceptance_criterion(db, &epic, "epic close criterion")
+            .await
+            .expect("epic close criterion");
+        let focus = create_work_item_full(
+            db,
+            "focus",
+            Some(&epic),
+            "FO",
+            None,
+            CreateOpts { origin: None, outcome: None, shape: Some("vertical-slice"), lane: None },
+        )
+        .await
+        .expect("focus")
+        .to_string();
+        set_relevance(db, &epic, Relevance::Active).await.expect("epic active");
+        set_relevance(db, &focus, Relevance::Active).await.expect("focus active");
+        let story = create_work_item(db, "story", Some(&focus), "S", None)
+            .await
+            .expect("story")
+            .to_string();
+        // Frame as a backlog stub: relevance backlog + non-empty problem_statement
+        // + no children (a build_story candidate).
+        db.execute(
+            "UPDATE work_items SET relevance = 'backlog', \
+             attributes = json_object('problem_statement', 'need X') WHERE id = $1",
+            args![story.clone()],
+        )
+        .await
+        .expect("frame the stub story");
+        story
+    }
+
+    /// **The master-switch gate (story AC #6).** With the control DISABLED, a scan
+    /// wake does NOTHING — no `scheduled_units` row is ensured even though a
+    /// trigger candidate is present; ENABLING it then ensures the row. The switch
+    /// is authoritative over dispatch.
+    #[tokio::test]
+    async fn master_switch_gates_scan() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let _story = seed_build_story_candidate(&db).await;
+        let scan_pool = Arc::new(AnyPool::from(pool.clone()));
+
+        // Disabled → the wake is inert.
+        let control = SchedulerControl::new(false);
+        maybe_scan(&scan_pool, &control).await;
+        assert_eq!(
+            count_pending_scheduled_units(&db).await.expect("count"),
+            0,
+            "a disabled scan ensures no scheduled units"
+        );
+
+        // Enabled → the candidate is ensured.
+        control.set_enabled(true);
+        maybe_scan(&scan_pool, &control).await;
+        assert_eq!(
+            count_pending_scheduled_units(&db).await.expect("count"),
+            1,
+            "an enabled scan ensures the trigger candidate"
+        );
+    }
+
+    /// **The scope gate (story AC #6).** With a scope set that does NOT cover the
+    /// candidate, the scan ensures nothing; widening the scope to include the
+    /// candidate's story then ensures it. Scope composes with the master switch.
+    #[tokio::test]
+    async fn scope_restricts_scan() {
+        let pool = connect_in_memory().await.expect("pool");
+        let db: AnyPool = pool.clone().into();
+        let story = seed_build_story_candidate(&db).await;
+        let scan_pool = Arc::new(AnyPool::from(pool.clone()));
+
+        let control = SchedulerControl::new(true);
+
+        // Scope EXCLUDING the candidate → nothing ensured.
+        control.set_scope(Some(["unrelated-id".to_owned()].into_iter().collect()));
+        maybe_scan(&scan_pool, &control).await;
+        assert_eq!(
+            count_pending_scheduled_units(&db).await.expect("count"),
+            0,
+            "a candidate outside the dispatch scope is not ensured"
+        );
+
+        // Scope INCLUDING the candidate's story → ensured.
+        control.set_scope(Some([story.clone()].into_iter().collect()));
+        maybe_scan(&scan_pool, &control).await;
+        assert_eq!(
+            count_pending_scheduled_units(&db).await.expect("count"),
+            1,
+            "a candidate inside the dispatch scope is ensured"
+        );
     }
 }
