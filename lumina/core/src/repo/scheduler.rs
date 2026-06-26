@@ -31,7 +31,7 @@
 use super::events::record_inert_event;
 use crate::args;
 use crate::db::DbClient;
-use crate::domain::ScheduledUnit;
+use crate::domain::{ScheduledUnit, ScheduledUnitKind};
 use crate::error::AppError;
 
 // READY-STATUS NOTE: the free-text `status` a scheduled unit must hold to be
@@ -365,10 +365,91 @@ pub async fn release_scheduled_unit(
     Ok(true)
 }
 
+/// Ensure a `scheduled_units` row exists for `(kind, work_item_id)` — the
+/// idempotent CREATE half of the scheduler loop's wake/scan/ensure cycle (the
+/// scan-side counterpart of [`claim_next_scheduled_unit`], which only CLAIMS rows
+/// that already exist). The `UNIQUE(kind, work_item_id)` index (migration 0028)
+/// makes a re-ensure a no-op via `ON CONFLICT DO NOTHING`, so the scheduler can
+/// call this every scan without double-creating a driver job. The work-item's
+/// current `plan_epoch` is captured at create time via the `INSERT ... SELECT`
+/// (the migration's "plan_epoch captured at dispatch time"); the `SELECT` over
+/// `work_items` also doubles as an FK existence guard — an absent
+/// `work_item_id` selects no row and inserts nothing.
+///
+/// Returns `Ok(true)` iff a NEW row was inserted (the work item existed and no
+/// `(kind, work_item)` row was present), `Ok(false)` for the idempotent no-op
+/// (already-present OR absent work item). One coarse export-INERT
+/// `scheduled_unit.ensured` event is recorded ONLY on a real insert — a no-op
+/// records nothing, so repeated scans over a steady backlog never accumulate
+/// never-drained inert outbox rows (and never re-fire the notify bus, bounding
+/// the scheduler's self-wake to a fixpoint). Runtime `sqlx::query*` only.
+pub async fn ensure_scheduled_unit(
+    db: &impl DbClient,
+    kind: ScheduledUnitKind,
+    work_item_id: &str,
+) -> Result<bool, AppError> {
+    let mut tx = db.begin().await?;
+
+    let id = uuid::Uuid::now_v7().to_string();
+    let inserted = tx
+        .execute(
+            r#"
+        INSERT INTO scheduled_units (id, kind, work_item_id, plan_epoch)
+        SELECT $1, $2, w.id, w.plan_epoch
+        FROM work_items w
+        WHERE w.id = $3
+        ON CONFLICT(kind, work_item_id) DO NOTHING
+        "#,
+            args![id.clone(), kind.as_wire().to_owned(), work_item_id.to_owned()],
+        )
+        .await?;
+
+    if inserted == 0 {
+        // Idempotent no-op: the (kind, work_item) row already exists, OR the work
+        // item is absent (the SELECT matched nothing). Nothing to record — roll
+        // back via drop.
+        return Ok(false);
+    }
+
+    let payload = serde_json::json!({
+        "kind": kind.as_wire(),
+        "work_item_id": work_item_id,
+    });
+    record_inert_event(
+        tx.as_mut(),
+        SCHEDULED_UNIT_AGGREGATE,
+        &id,
+        "scheduled_unit.ensured",
+        payload,
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// Count the OUTSTANDING scheduled units (`status = 'pending'`) — the
+/// scheduler's concurrency-cap gauge. The loop reads this before a scan and
+/// stops ensuring new rows once the count reaches its in-flight cap, so a scan
+/// can never create unbounded work. Counts pending rows whether or not they are
+/// currently leased (a leased unit keeps `status='pending'` — the lease, not the
+/// status, marks it in-progress), so this bounds the whole pending backlog, not
+/// just the leased subset. Read-only (no tx, no event).
+pub async fn count_pending_scheduled_units(db: &impl DbClient) -> Result<i64, AppError> {
+    let n: Option<i64> = crate::db::scalar_opt::<i64>(
+        db,
+        "SELECT COUNT(*) FROM scheduled_units WHERE status = 'pending'",
+        args![],
+    )
+    .await?;
+    Ok(n.unwrap_or(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::db;
+    use crate::db::{connect_in_memory, AnyPool};
     use crate::repo::create_work_item;
     use sqlx::SqlitePool;
     use std::sync::Arc;
@@ -472,5 +553,56 @@ mod tests {
         .await
         .expect("count leased units");
         assert_eq!(leased, 1, "exactly one unit is leased after the race");
+    }
+
+    /// `ensure_scheduled_unit` is idempotent on the `UNIQUE(kind, work_item_id)`
+    /// index: the FIRST ensure inserts (→ `true`), a SECOND identical ensure is a
+    /// no-op (→ `false`), a DIFFERENT kind over the same work item inserts again,
+    /// and an absent work item never inserts. `count_pending_scheduled_units`
+    /// tracks the net inserts. This is the scan-side property the scheduler loop
+    /// relies on to call ensure every wake without double-creating driver jobs.
+    #[tokio::test]
+    async fn ensure_scheduled_unit_is_idempotent_and_fk_guarded() {
+        let pool = connect_in_memory().await.expect("in-memory pool");
+        let db: AnyPool = pool.clone().into();
+        let project = create_work_item(&pool, "project", None, "P", None)
+            .await
+            .expect("project")
+            .to_string();
+
+        // First ensure inserts.
+        assert!(
+            ensure_scheduled_unit(&db, ScheduledUnitKind::BuildStory, &project)
+                .await
+                .expect("first ensure"),
+            "first ensure inserts a new row"
+        );
+        // Re-ensure is a no-op (ON CONFLICT DO NOTHING).
+        assert!(
+            !ensure_scheduled_unit(&db, ScheduledUnitKind::BuildStory, &project)
+                .await
+                .expect("re-ensure"),
+            "re-ensuring the same (kind, work_item) is an idempotent no-op"
+        );
+        // A different kind over the same work item is a distinct unit.
+        assert!(
+            ensure_scheduled_unit(&db, ScheduledUnitKind::BuildTasks, &project)
+                .await
+                .expect("distinct-kind ensure"),
+            "a different kind over the same work item inserts a new row"
+        );
+        // An absent work item inserts nothing (the SELECT FK guard).
+        assert!(
+            !ensure_scheduled_unit(&db, ScheduledUnitKind::BuildStory, "does-not-exist")
+                .await
+                .expect("absent-item ensure"),
+            "ensuring against an absent work item is a no-op"
+        );
+
+        assert_eq!(
+            count_pending_scheduled_units(&db).await.expect("count pending"),
+            2,
+            "exactly two pending units were created (build_story + build_tasks)"
+        );
     }
 }

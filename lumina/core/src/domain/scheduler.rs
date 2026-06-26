@@ -34,6 +34,22 @@ pub enum ScheduledUnitKind {
     Drive,
 }
 
+impl ScheduledUnitKind {
+    /// The wire / SQL form (snake_case) — byte-for-byte the `scheduled_units.kind`
+    /// CHECK vocab. The `#[serde(rename_all = "snake_case")]` derive produces the
+    /// same strings; this method gives a borrow-free `&'static str` for binding
+    /// into runtime `sqlx::query*` calls (the scheduler ensure-row insert) without
+    /// routing through `serde_json`.
+    pub fn as_wire(self) -> &'static str {
+        match self {
+            ScheduledUnitKind::BuildStory => "build_story",
+            ScheduledUnitKind::BuildTasks => "build_tasks",
+            ScheduledUnitKind::ComposeSprint => "compose_sprint",
+            ScheduledUnitKind::Drive => "drive",
+        }
+    }
+}
+
 /// A row of `scheduled_units` (migration 0028): one durable scheduler claim/lease
 /// over a (kind, work_item) driver job, at STORY/SPRINT scale. DELIBERATELY a
 /// dedicated table — NOT an overload of the team-execution `work_items.assignee`
@@ -86,6 +102,9 @@ mod tests {
         ] {
             let json = serde_json::to_value(value).expect("serialise");
             assert_eq!(json, serde_json::Value::String(expected.to_owned()), "wire form");
+            // `as_wire` MUST agree with the serde wire form byte-for-byte (the
+            // scheduler ensure-row insert binds `as_wire`, the MCP layer serde).
+            assert_eq!(value.as_wire(), expected, "as_wire matches serde wire form");
             let back: ScheduledUnitKind =
                 serde_json::from_value(json).expect("deserialise");
             assert_eq!(back, value, "round-trip");

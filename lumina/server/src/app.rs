@@ -157,6 +157,18 @@ where
     }
 }
 
+/// Whether to spawn the in-process scheduler engine loop (focus 1C.3). OPT-IN via
+/// `LUMINA_SCHEDULER`: truthy values (`1`/`true`/`yes`, case-insensitive) enable
+/// it; unset / anything else leaves it OFF, so the default server (and the e2e
+/// tests, which never set it) is byte-for-byte unchanged. Gating the SPAWN — not
+/// just the scan — means a disabled server carries no scheduler task at all.
+fn scheduler_enabled() -> bool {
+    match std::env::var("LUMINA_SCHEDULER") {
+        Ok(raw) => matches!(raw.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"),
+        Err(_) => false,
+    }
+}
+
 /// Build the pool, assemble the router, spawn the export task, and serve.
 ///
 /// `db::init` opens the pool (creating the file if absent) and runs the
@@ -198,6 +210,27 @@ pub async fn serve() -> anyhow::Result<()> {
     // any still-running PTY children before the runtime drops (the build below
     // consumes `state`).
     let pty_registry = state.pty_registry.clone();
+
+    // Spawn the in-process scheduler engine loop (focus 1C.3), but ONLY when
+    // opted in via `LUMINA_SCHEDULER` — so default-server behaviour (and the
+    // existing e2e tests, which never set it) is unchanged. The notify-bus clone
+    // is taken from `state` BEFORE `build_router` consumes it, mirroring the
+    // `pty_registry` clone above. The scheduler shares the SAME pool; its task is
+    // torn down on the shutdown path below alongside the supervisor (no leak).
+    // The runtime enable flag defaults ON when spawned (a later operator-control
+    // task owns flipping it); gating the SPAWN keeps disabled servers free of the
+    // task entirely.
+    let scheduler = if scheduler_enabled() {
+        let enabled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        Some(crate::scheduler::spawn(
+            pool.clone(),
+            state.notify.clone(),
+            enabled,
+        ))
+    } else {
+        None
+    };
+
     let app = build_router(state);
 
     let port: u16 = parse_env_or_default("PORT", DEFAULT_PORT);
@@ -253,6 +286,13 @@ pub async fn serve() -> anyhow::Result<()> {
             }
             tokio::time::sleep(SHUTDOWN_DRAIN_POLL).await;
         }
+    }
+
+    // Stop the scheduler engine loop (cancel token + await join) on the SAME
+    // shutdown path as the supervisor, so its tokio task never leaks past
+    // process shutdown. A `None` (scheduler not spawned) is a no-op.
+    if let Some(scheduler) = scheduler {
+        scheduler.shutdown().await;
     }
 
     // Stop the PTY supervisor (cancels the loop, awaits join). There is no
