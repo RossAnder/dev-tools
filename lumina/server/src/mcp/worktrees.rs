@@ -355,6 +355,117 @@ impl Drop for WorktreeLeaseGuard<'_> {
     }
 }
 
+// =========================================================================
+// IRREVERSIBILITY MERGE FLOOR (focus 1C.3 hardening) — the security gate
+// that an AUTONOMOUS (scheduler-driven) session must never breach.
+//
+// A real git merge is IRREVERSIBLE. The hard invariant: a non-human session
+// must NEVER merge into `main` (or another protected branch) on its own.
+// Merging an OFF-MAIN integration branch is fine autonomously; merging a
+// PROTECTED branch requires an explicit, durable, OPERATOR-RESOLVED open
+// question authorising THAT specific merge.
+//
+// WHY THE FLOOR IS ENFORCED UNCONDITIONALLY ON A PROTECTED TARGET: the
+// execute-merge MCP tool / HTTP route carries NO trustworthy caller-mode
+// identity. The autonomous-mode secret token of `crate::pty::mode` is
+// presented BY a caller to `get_execution_mode` for corroboration; it does
+// NOT thread to this record-only merge seam, so the server cannot tell an
+// autonomous driver from a human at this call site. Rather than gate on a
+// signal we cannot observe (and that a caller could spoof by simply omitting
+// it), the floor is enforced on the TARGET unconditionally: ANY merge into a
+// protected branch needs the authorising question. A human merging to main
+// also answering a durable question is acceptable and strictly safer than a
+// spoofable mode check. This REPLACES the prior prompt-level-only steering
+// with a server-side gate that runs BEFORE any lease / companion dispatch.
+// =========================================================================
+
+/// The `open_questions.run_dedup_key` prefix an operator-resolved question must
+/// carry to authorise a protected-branch merge.
+const MERGE_AUTH_KEY_PREFIX: &str = "merge-authorisation";
+
+/// Strip a leading `refs/heads/` qualifier (and surrounding whitespace) from a
+/// merge target, yielding the bare branch name. Both the protected-branch check
+/// and the authorisation-key derivation compare on this bare form so
+/// `refs/heads/main` and `main` are treated identically.
+fn strip_ref_prefix(target: &str) -> &str {
+    let trimmed = target.trim();
+    trimmed.strip_prefix("refs/heads/").unwrap_or(trimmed)
+}
+
+/// The PROTECTED-BRANCH source of truth: `main` and `master` are ALWAYS
+/// protected; the comma-separated `LUMINA_PROTECTED_BRANCHES` env extends the
+/// set (each entry `refs/heads/`-stripped + trimmed). Pure inner form — takes the
+/// env value as a param so the predicate is unit-testable without env mutation.
+fn protected_branch_set(extra_env: Option<&str>) -> Vec<String> {
+    let mut set = vec!["main".to_owned(), "master".to_owned()];
+    if let Some(extra) = extra_env {
+        for raw in extra.split(',') {
+            let name = strip_ref_prefix(raw);
+            if !name.is_empty() {
+                set.push(name.to_owned());
+            }
+        }
+    }
+    set
+}
+
+/// `true` iff `target` names a PROTECTED branch, comparing against
+/// [`protected_branch_set`] with the given env extension. The comparison is
+/// `refs/heads/`-insensitive and ASCII-case-insensitive — the FAIL-SAFE
+/// direction is to OVER-protect (treat `Main`/`MAIN` as protected), never to let
+/// a near-miss spelling slip a protected merge through.
+fn is_protected_target_with(target: &str, extra_env: Option<&str>) -> bool {
+    let name = strip_ref_prefix(target);
+    protected_branch_set(extra_env)
+        .iter()
+        .any(|p| p.eq_ignore_ascii_case(name))
+}
+
+/// `true` iff `target` names a PROTECTED branch, reading the live
+/// `LUMINA_PROTECTED_BRANCHES` env. The merge floor (and the scheduler drive
+/// step in `crate::scheduler::drive`, which re-uses this single source) gate on
+/// it so an autonomous session can never target a protected branch.
+pub(crate) fn is_protected_target(target: &str) -> bool {
+    is_protected_target_with(
+        target,
+        std::env::var("LUMINA_PROTECTED_BRANCHES").ok().as_deref(),
+    )
+}
+
+/// The deterministic `run_dedup_key` an operator-resolved open question must
+/// carry to authorise a merge into `target` for this worktree. SPECIFIC to this
+/// `(worktree_id, bare-target)` pair, so the floor can find the authorisation by
+/// key alone regardless of which story it was raised on.
+fn merge_authorisation_key(worktree_id: &str, target: &str) -> String {
+    format!(
+        "{MERGE_AUTH_KEY_PREFIX}:{worktree_id}:{}",
+        strip_ref_prefix(target)
+    )
+}
+
+/// The merge floor's authorisation READ: is there an operator-RESOLVED,
+/// non-retired open question authorising a merge into `target` for this
+/// worktree? Identified SOLELY by the deterministic [`merge_authorisation_key`].
+/// Operator-resolved ⇔ `status='answered'` — set only by `resolve_open_question`
+/// (the human→agent return half of the durable decision channel) — AND
+/// `retired_at IS NULL` (a retired question never authorises). Read-only: one
+/// auto-commit scalar SELECT, no tx, no event.
+async fn merge_authorised(
+    db: &AnyPool,
+    worktree_id: &str,
+    target: &str,
+) -> Result<bool, AppError> {
+    let key = merge_authorisation_key(worktree_id, target);
+    let found = scalar_opt::<i64>(
+        db,
+        "SELECT 1 FROM open_questions \
+         WHERE run_dedup_key = $1 AND status = 'answered' AND retired_at IS NULL LIMIT 1",
+        args![key],
+    )
+    .await?;
+    Ok(found.is_some())
+}
+
 /// The shared `execute_worktree_merge` pipeline (ADR-0006 Step 1b) — called by
 /// BOTH the MCP tool and the HTTP mirror (`POST /worktrees/{id}/execute-merge`).
 ///
@@ -463,6 +574,30 @@ pub async fn execute_worktree_merge_flow(
             }
         },
     };
+
+    // ---- Pre-flight (4.5): IRREVERSIBILITY MERGE FLOOR (security). ----------
+    // A merge into a PROTECTED branch (main/master + LUMINA_PROTECTED_BRANCHES)
+    // is IRREVERSIBLE and is REFUSED unless an operator-RESOLVED open question
+    // authorises THIS specific merge. Enforced UNCONDITIONALLY on a protected
+    // target (this seam carries no trustworthy caller-mode identity — see the
+    // floor section above), and BEFORE any lease / companion dispatch, so an
+    // autonomous session can never rewrite a protected branch on its own. An
+    // OFF-MAIN target passes unchanged. The refusal POINTS at the exact
+    // authorising key rather than auto-raising the question by side effect:
+    // raising it would require a side-effect WRITE in this otherwise read-only
+    // pre-flight AND a heuristic choice of which of the sprint's stories to
+    // attach it to — the operator/driver raises it explicitly on the relevant
+    // story, then the floor finds it by key.
+    if is_protected_target(&target) && !merge_authorised(db, worktree_id, &target).await? {
+        return Err(AppError::Validation(format!(
+            "merge floor: '{target}' is a PROTECTED branch — a merge into it is REFUSED without \
+             an operator-resolved authorising open question. Raise a story open question carrying \
+             run_dedup_key '{}' and resolve it (the operator picks an option), then re-run. \
+             Nothing has been merged or recorded.",
+            merge_authorisation_key(worktree_id, &target)
+        ))
+        .into());
+    }
 
     // ---- Derive must_remain_reachable (still auto-commit reads). ----
     let must_remain_reachable: Vec<Sha> = repo::list_worktree_reachable_shas(db, worktree_id)
@@ -1055,17 +1190,18 @@ impl LuminaTools {
     /// `Merged`/`AlreadyUpToDate` outcome it composes the ONE existing record
     /// mutation (`repo::record_worktree_merge`) — no new SQL writes.
     ///
-    /// IRREVERSIBILITY FLOOR (focus 1C.1, research note seq20): a real git merge
-    /// is one of the enumerated DESTRUCTIVE operations that ALWAYS require a
-    /// durable human decision FIRST, REGARDLESS of [`crate::pty::mode::Mode`].
-    /// An autonomous (lumina-spawned, `bypassPermissions`) session that would
-    /// otherwise self-decide is steered — via
-    /// [`crate::pty::pty_transport`]'s `autonomous_escalation_system_prompt` — to
-    /// raise an `add_open_question` and block on the answer BEFORE driving this
-    /// tool, because the merge cannot be undone. This guard is currently
-    /// PROMPT-LEVEL only: the server does NOT yet refuse an autonomous-mode merge
-    /// that skipped the question (no `pty_sessions.source`/mode plumb reaches
-    /// this record-only flow). A server-side gate is the hardening follow-up.
+    /// IRREVERSIBILITY MERGE FLOOR (focus 1C.3 hardening): a real git merge is
+    /// IRREVERSIBLE, so a merge into a PROTECTED branch (`main`/`master` +
+    /// `LUMINA_PROTECTED_BRANCHES`) is REFUSED by the shared flow's pre-flight
+    /// unless an operator-RESOLVED open question (carrying the deterministic
+    /// `merge-authorisation:<worktree_id>:<target>` `run_dedup_key`) authorises
+    /// THIS merge. This is now a SERVER-SIDE gate, not the prior prompt-level-only
+    /// steering: it runs BEFORE any lease / companion dispatch and is enforced
+    /// UNCONDITIONALLY on a protected target, because this seam carries no
+    /// trustworthy caller-mode identity ([`crate::pty::mode::Mode`] does not
+    /// thread here), so an autonomous (lumina-spawned, `bypassPermissions`)
+    /// session can never rewrite a protected branch on its own. An OFF-MAIN
+    /// integration target merges autonomously without a question.
     #[tool(
         description = "EXECUTE a worktree merge via the connected git companion (ADR-0006 Step 1b) — the one tool that goes beyond record-only. Pre-flight (violations are invalid_params): the worktree must exist; its OWNING sprint must be in 'review'; a companion must be connected, with its repo_root matching the project's primary repo-link local_path WHEN that is set (check skipped when unset); and the worktree must carry a `branch` plus a resolvable target (`base_ref`, or the `target_branch` override). Every commit recorded against the worktree's sprints must remain reachable after the merge (the companion refuses otherwise). On Merged / AlreadyUpToDate the ground-truth sha is recorded via record_worktree_merge (the owner flips 'review' -> 'done'); AlreadyUpToDate makes a RE-RUN after a mid-merge disconnect idempotent — git is the ground truth. When the target branch was checked out in another worktree (typically the operator's primary checkout) the Merged payload carries a structured `target_checkout` { path, dirty } field plus a human `hint` string — that checkout is now STALE and `git reset --keep <merge_sha>` run there refreshes it; both fields are omitted when no such checkout exists. On Conflicted NOTHING is recorded: the structured { outcome: 'conflicted', paths } returns as a SUCCESS payload for the CALLER to surface as an open question / finding (the companion has already aborted and restored the worktree). `no_ff` defaults to true — a true merge commit is the auditable default. IRREVERSIBILITY FLOOR: a merge is destructive and cannot be undone, so it ALWAYS requires a durable human decision FIRST (raise add_open_question and block on the answer) REGARDLESS of mode — the autonomous 'take more decisions' license does NOT extend to it.",
         annotations(open_world_hint = false)
@@ -1205,9 +1341,11 @@ mod tests {
     use lumina_protocol::ServerToCompanion;
     use tokio::sync::mpsc;
 
-    /// Seed a sprint + worktree (`base_ref="main"`, the given `branch`) and flip
-    /// the owner to `'review'` (the merge-eligible status) via a raw UPDATE —
-    /// self-contained, mirroring the core repo tests' `set_sprint_status_raw`.
+    /// Seed a sprint + worktree (`base_ref="integration"` — an OFF-MAIN target
+    /// that passes the merge floor unchanged, the realistic drive-to-merge
+    /// default — and the given `branch`) and flip the owner to `'review'` (the
+    /// merge-eligible status) via a raw UPDATE — self-contained, mirroring the
+    /// core repo tests' `set_sprint_status_raw`.
     async fn seed_review_worktree(pool: &Arc<AnyPool>, branch: Option<&str>) -> (String, String) {
         let sprint = repo::create_sprint(
             pool.as_ref(),
@@ -1225,7 +1363,7 @@ mod tests {
             &NewWorktree {
                 owning_sprint_id: sprint.clone(),
                 path: "/tmp/wt".to_owned(),
-                base_ref: Some("main".to_owned()),
+                base_ref: Some("integration".to_owned()),
                 branch: branch.map(str::to_owned),
             },
         )
@@ -1371,7 +1509,7 @@ mod tests {
         match &intent {
             Intent::MergeWorktree { source_branch, target_branch, no_ff, .. } => {
                 assert_eq!(source_branch, "sprint/1");
-                assert_eq!(target_branch, "main", "target defaults to base_ref");
+                assert_eq!(target_branch, "integration", "target defaults to base_ref");
                 assert!(*no_ff, "no_ff carried through");
             }
             other => panic!("expected MergeWorktree, got {other:?}"),
@@ -1398,7 +1536,7 @@ mod tests {
 
         // BOTH merge leases released on the conflicted exit path (R8).
         assert!(
-            reg.acquire_lease("main"),
+            reg.acquire_lease("integration"),
             "the target lease must be released after a conflicted run"
         );
         assert!(
@@ -1452,7 +1590,7 @@ mod tests {
         assert_eq!(row.effective_status, SprintStatus::Done, "owner flipped to 'done'");
 
         assert!(
-            reg.acquire_lease("main"),
+            reg.acquire_lease("integration"),
             "the target lease must be released after a merged run"
         );
         assert!(
@@ -1872,5 +2010,206 @@ mod tests {
             }
             other => panic!("expected the original Validation, got {other:?}"),
         }
+    }
+
+    // =====================================================================
+    // IRREVERSIBILITY MERGE FLOOR (focus 1C.3 hardening)
+    // =====================================================================
+
+    /// The protected-branch predicate (pure): `main`/`master` are ALWAYS
+    /// protected — `refs/heads/`-insensitively and ASCII-case-insensitively (the
+    /// fail-safe over-protect direction); off-main branches are not; and
+    /// `LUMINA_PROTECTED_BRANCHES` extends the set.
+    #[test]
+    fn merge_floor_protected_target_predicate() {
+        for t in ["main", "master", "refs/heads/main", "MAIN", "Master", "  main  "] {
+            assert!(is_protected_target_with(t, None), "{t} must be protected");
+        }
+        for t in ["integration", "develop", "feature/x", "sprint/1", "release/2"] {
+            assert!(!is_protected_target_with(t, None), "{t} must NOT be protected by default");
+        }
+        // The env extension adds branches (refs/heads/-insensitively).
+        assert!(is_protected_target_with("develop", Some("develop, release")));
+        assert!(is_protected_target_with("refs/heads/release", Some("develop,release")));
+        assert!(!is_protected_target_with("feature/x", Some("develop,release")));
+    }
+
+    /// The floor's AUTHORISATION read: only an operator-RESOLVED
+    /// (`status='answered'`), non-retired open question carrying the deterministic
+    /// `(worktree, target)` key satisfies it — an absent question, an OPEN
+    /// (unresolved) one, a retired one, or one keyed to a DIFFERENT target all
+    /// leave the merge unauthorised (the floor would refuse).
+    #[tokio::test]
+    async fn merge_floor_authorisation_requires_operator_resolved_question() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let wt = "wt-floor";
+        let target = "main";
+        let key = merge_authorisation_key(wt, target);
+
+        // No question → not authorised (the floor would refuse).
+        assert!(!merge_authorised(pool.as_ref(), wt, target).await.expect("read"));
+
+        // A real work_item to satisfy the open_questions.story_id FK (the DB does
+        // NOT check kind — the story-kind gate is repo-layer only).
+        let host = repo::create_work_item(pool.as_ref(), "project", None, "AUTH-HOST", None)
+            .await
+            .expect("auth host")
+            .to_string();
+        let q = uuid::Uuid::now_v7().to_string();
+
+        // An OPEN (unresolved) authorising question is NOT enough.
+        sqlx::query(
+            "INSERT INTO open_questions (id, story_id, seq, question, status, run_dedup_key) \
+             VALUES ($1, $2, 1, 'authorise the merge', 'open', $3)",
+        )
+        .bind(&q)
+        .bind(&host)
+        .bind(&key)
+        .execute(pool.sqlite())
+        .await
+        .expect("seed open question");
+        assert!(
+            !merge_authorised(pool.as_ref(), wt, target).await.expect("read"),
+            "an OPEN (unresolved) authorising question does not satisfy the floor"
+        );
+
+        // The operator resolves it (status='answered') → authorised.
+        sqlx::query("UPDATE open_questions SET status = 'answered' WHERE id = $1")
+            .bind(&q)
+            .execute(pool.sqlite())
+            .await
+            .expect("answer");
+        assert!(
+            merge_authorised(pool.as_ref(), wt, target).await.expect("read"),
+            "an operator-resolved (answered) authorising question satisfies the floor"
+        );
+
+        // The key is SPECIFIC to (worktree, target): a different target is NOT
+        // authorised by this question.
+        assert!(
+            !merge_authorised(pool.as_ref(), wt, "master").await.expect("read"),
+            "the authorisation is bound to the specific target branch"
+        );
+
+        // Retiring the question revokes the authorisation.
+        sqlx::query("UPDATE open_questions SET retired_at = CURRENT_TIMESTAMP WHERE id = $1")
+            .bind(&q)
+            .execute(pool.sqlite())
+            .await
+            .expect("retire");
+        assert!(
+            !merge_authorised(pool.as_ref(), wt, target).await.expect("read"),
+            "a retired authorising question no longer satisfies the floor"
+        );
+    }
+
+    /// Seed an OPERATOR-RESOLVED authorising question for `(worktree_id, target)`
+    /// (status='answered', the resolved state). A real work_item backs the
+    /// `open_questions.story_id` FK (kind unchecked at the DB).
+    async fn seed_answered_merge_authorisation(
+        pool: &Arc<AnyPool>,
+        worktree_id: &str,
+        target: &str,
+    ) {
+        let host = repo::create_work_item(pool.as_ref(), "project", None, "AUTH-HOST", None)
+            .await
+            .expect("auth host")
+            .to_string();
+        let key = merge_authorisation_key(worktree_id, target);
+        let id = uuid::Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO open_questions (id, story_id, seq, question, status, run_dedup_key) \
+             VALUES ($1, $2, 1, 'authorise the protected merge', 'answered', $3)",
+        )
+        .bind(&id)
+        .bind(&host)
+        .bind(&key)
+        .execute(pool.sqlite())
+        .await
+        .expect("seed answered authorisation");
+    }
+
+    /// **The merge floor — REFUSE.** A merge whose target is a PROTECTED branch
+    /// (`main`, via the override) WITHOUT an operator-resolved authorising
+    /// question is REFUSED with a typed Validation BEFORE any companion dispatch —
+    /// NO intent reaches the wire and NOTHING is recorded. The companion is
+    /// connected, so the refusal is genuinely the floor (pre-flight 1–4 pass).
+    #[tokio::test]
+    async fn execute_merge_floor_refuses_protected_target_without_authorisation() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let (_sprint, wt) = seed_review_worktree(&pool, Some("sprint/1")).await;
+
+        let reg = Arc::new(crate::companion::CompanionRegistry::new());
+        let (tx, mut rx) = mpsc::channel(8);
+        let _token = reg.register(tx, "/work/repo".to_owned()).expect("slot free");
+        let state = state_with_registry(pool.clone(), reg);
+
+        // Force a PROTECTED target via the override (base_ref is off-main).
+        let res = execute_worktree_merge_flow(&state, &wt, Some("main"), true).await;
+        match res {
+            Err(CompanionFlowError::App(AppError::Validation(msg))) => {
+                assert!(msg.contains("merge floor"), "names the floor: {msg}");
+                assert!(msg.contains("PROTECTED"), "names the protection: {msg}");
+                assert!(msg.contains("run_dedup_key"), "points at the authorising key: {msg}");
+            }
+            other => panic!("a protected target without authorisation must refuse, got {other:?}"),
+        }
+
+        // NOTHING dispatched: the floor refused BEFORE any companion round-trip.
+        assert!(
+            rx.try_recv().is_err(),
+            "the floor must refuse BEFORE any companion dispatch (no intent on the wire)"
+        );
+        // NOTHING recorded: audit unstamped, owner still 'review'.
+        let row = repo::get_worktree(pool.as_ref(), &wt).await.expect("get_worktree");
+        assert!(row.outcome.is_none(), "no merge outcome recorded");
+        assert!(row.merged_at.is_none(), "no merged_at stamped");
+        assert_eq!(row.effective_status, SprintStatus::Review, "owner stays 'review'");
+    }
+
+    /// **The merge floor — ALLOW.** The SAME protected-target merge, WITH an
+    /// operator-resolved authorising question, PASSES the floor: the MergeWorktree
+    /// intent reaches the wire targeting `main`, and the merge records normally.
+    #[tokio::test]
+    async fn execute_merge_floor_allows_protected_target_with_resolved_authorisation() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("pool")));
+        let (_sprint, wt) = seed_review_worktree(&pool, Some("sprint/1")).await;
+
+        // The operator authorised THIS protected merge (wt → main).
+        seed_answered_merge_authorisation(&pool, &wt, "main").await;
+
+        let reg = Arc::new(crate::companion::CompanionRegistry::new());
+        let (tx, mut rx) = mpsc::channel(8);
+        let _token = reg.register(tx, "/work/repo".to_owned()).expect("slot free");
+        let state = state_with_registry(pool.clone(), reg.clone());
+
+        let handle = tokio::spawn({
+            let state = state.clone();
+            let wt = wt.clone();
+            async move { execute_worktree_merge_flow(&state, &wt, Some("main"), true).await }
+        });
+
+        // The floor PASSED: the merge intent reaches the wire, targeting main.
+        let ServerToCompanion::IntentRequest { id, intent } =
+            rx.recv().await.expect("intent on the wire (floor passed)");
+        match &intent {
+            Intent::MergeWorktree { target_branch, .. } => {
+                assert_eq!(target_branch, "main", "the authorised protected target is dispatched")
+            }
+            other => panic!("expected MergeWorktree, got {other:?}"),
+        }
+        reg.complete(
+            id,
+            Outcome::Merged {
+                merge_sha: Sha("authsha".to_owned()),
+                fast_forward: false,
+                target_checkout: None,
+            },
+        );
+
+        let value = handle.await.expect("join").expect("authorised merge succeeds");
+        assert_eq!(value["outcome"], "merged");
+        assert_eq!(value["merge_sha"], "authsha");
+        assert_eq!(value["recorded"], true);
     }
 }

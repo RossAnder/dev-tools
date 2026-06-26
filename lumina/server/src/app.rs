@@ -76,6 +76,14 @@ pub struct AppState {
     /// [`crate::stream::TopicRegistry::with_default_topics`] (every
     /// production topic family).
     pub stream_topics: std::sync::Arc<crate::stream::TopicRegistry>,
+    /// Shared operator-control handle for the scheduler engine (focus 1C.3): the
+    /// AUTHORITATIVE enable/disable master switch + dispatch scope. Defaults to a
+    /// DISABLED handle (no scheduler running); `serve` flips it on and hands a
+    /// clone of the SAME `Arc` to `scheduler::spawn`, so the loop and the
+    /// `POST /api/scheduler/control` route mutate one source of truth (no respawn
+    /// to toggle). Harmless when no scheduler is spawned — the flag has no loop to
+    /// gate.
+    pub scheduler_control: std::sync::Arc<crate::scheduler::SchedulerControl>,
 }
 
 /// Default number of concurrent session-transcript ingests — the
@@ -119,6 +127,9 @@ impl AppState {
             companion: Arc::new(crate::companion::CompanionRegistry::new()),
             notify: lumina_core::notify::bus().clone(),
             stream_topics: Arc::new(crate::stream::TopicRegistry::with_default_topics()),
+            // Default DISABLED: a server with no scheduler spawned carries an
+            // inert control handle. `serve` enables it before spawning the loop.
+            scheduler_control: crate::scheduler::SchedulerControl::new(false),
         }
     }
 }
@@ -157,12 +168,31 @@ where
     }
 }
 
+/// Whether the `LUMINA_SCHEDULER` env gate requests the in-process scheduler
+/// engine loop (focus 1C.3). Truthy values (`1`/`true`/`yes`, case-insensitive)
+/// enable it; unset / anything else leaves it OFF. This is ONE of the two boot
+/// triggers — the other is the `--with-scheduler` CLI flag (threaded into
+/// [`serve`]); the scheduler spawns when EITHER is set. With NEITHER, no
+/// scheduler task spawns, so the default server (and the e2e tests, which never
+/// set either) is byte-for-byte unchanged. Gating the SPAWN — not just the scan —
+/// means a disabled server carries no scheduler task at all.
+fn scheduler_env_enabled() -> bool {
+    match std::env::var("LUMINA_SCHEDULER") {
+        Ok(raw) => matches!(raw.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"),
+        Err(_) => false,
+    }
+}
+
 /// Build the pool, assemble the router, spawn the export task, and serve.
 ///
 /// `db::init` opens the pool (creating the file if absent) and runs the
 /// embedded migrations, so the runtime server always starts on a migrated
 /// schema.
-pub async fn serve() -> anyhow::Result<()> {
+///
+/// `with_scheduler` is the `--with-scheduler` CLI boot flag (focus 1C.3): the
+/// in-process scheduler loop spawns when it is `true` OR `LUMINA_SCHEDULER` is
+/// set (see [`scheduler_env_enabled`]); with neither, no scheduler task spawns.
+pub async fn serve(with_scheduler: bool) -> anyhow::Result<()> {
     // `.env` is read by the operator's shell / dotenv tooling in dev; we read
     // straight from the process environment with a sensible local default so
     // `cargo run` works out of the box without external dotenv loading.
@@ -198,6 +228,30 @@ pub async fn serve() -> anyhow::Result<()> {
     // any still-running PTY children before the runtime drops (the build below
     // consumes `state`).
     let pty_registry = state.pty_registry.clone();
+
+    // Spawn the in-process scheduler engine loop (focus 1C.3), but ONLY when
+    // opted in via the `--with-scheduler` CLI flag OR `LUMINA_SCHEDULER` — so
+    // default-server behaviour (and the existing e2e tests, which set neither) is
+    // unchanged. The notify-bus clone and the shared scheduler-control clone are
+    // taken from `state` BEFORE `build_router` consumes it, mirroring the
+    // `pty_registry` clone above. The scheduler shares the SAME pool AND the same
+    // `AppState.scheduler_control` handle the `POST /api/scheduler/control` route
+    // mutates — so the operator can toggle/scope/kill it at runtime without a
+    // respawn (no second source of truth). The control is flipped ON before spawn
+    // (the loop starts enabled); gating the SPAWN keeps disabled servers free of
+    // the task entirely. Its task is torn down on the shutdown path below
+    // alongside the supervisor (no leak).
+    let scheduler = if with_scheduler || scheduler_env_enabled() {
+        state.scheduler_control.set_enabled(true);
+        Some(crate::scheduler::spawn(
+            pool.clone(),
+            state.notify.clone(),
+            state.scheduler_control.clone(),
+        ))
+    } else {
+        None
+    };
+
     let app = build_router(state);
 
     let port: u16 = parse_env_or_default("PORT", DEFAULT_PORT);
@@ -253,6 +307,13 @@ pub async fn serve() -> anyhow::Result<()> {
             }
             tokio::time::sleep(SHUTDOWN_DRAIN_POLL).await;
         }
+    }
+
+    // Stop the scheduler engine loop (cancel token + await join) on the SAME
+    // shutdown path as the supervisor, so its tokio task never leaks past
+    // process shutdown. A `None` (scheduler not spawned) is a no-op.
+    if let Some(scheduler) = scheduler {
+        scheduler.shutdown().await;
     }
 
     // Stop the PTY supervisor (cancels the loop, awaits join). There is no

@@ -349,6 +349,12 @@ async fn seed_sprint(pool: &sqlx::SqlitePool) -> String {
 /// Create a sprint plus the worktree it owns (`branch="feature"`,
 /// `base_ref="main"`, `path` = the linked feature worktree); returns
 /// `(sprint_id, worktree_id)`. The sprint is left at its `'draft'` default.
+///
+/// These scenarios all merge `feature → main`, and `main` is a PROTECTED branch:
+/// the irreversibility merge floor (focus 1C.3 — `mcp::worktrees`) REFUSES an
+/// unauthorised protected-branch merge. So this helper also seeds the operator
+/// authorisation [`seed_main_merge_authorisation`] for `(worktree, "main")`,
+/// exercising the floor's ALLOW arm end-to-end.
 async fn seed_sprint_with_worktree(
     pool: &sqlx::SqlitePool,
     feature_wt: &Path,
@@ -366,7 +372,33 @@ async fn seed_sprint_with_worktree(
     .await
     .expect("worktree")
     .to_string();
+    seed_main_merge_authorisation(pool, &wt).await;
     (sprint, wt)
+}
+
+/// Seed an operator-RESOLVED open question authorising a merge into the PROTECTED
+/// `main` target for `worktree_id` — the merge floor's ALLOW key. The floor finds
+/// it by the deterministic `run_dedup_key`
+/// (`merge-authorisation:<worktree_id>:main`); `status='answered'` is the
+/// operator-resolved state (set by `resolve_open_question`). A throwaway host
+/// work_item backs the `open_questions.story_id` FK (kind is unchecked at the DB
+/// layer — the story-kind gate is repo-only).
+async fn seed_main_merge_authorisation(pool: &sqlx::SqlitePool, worktree_id: &str) {
+    let host = repo::create_work_item(pool, "project", None, "MERGE-AUTH-HOST", None)
+        .await
+        .expect("auth host")
+        .to_string();
+    let key = format!("merge-authorisation:{worktree_id}:main");
+    sqlx::query(
+        "INSERT INTO open_questions (id, story_id, seq, question, status, run_dedup_key) \
+         VALUES ($1, $2, 1, 'authorise the e2e merge into main', 'answered', $3)",
+    )
+    .bind(uuid::Uuid::now_v7().to_string())
+    .bind(&host)
+    .bind(&key)
+    .execute(pool)
+    .await
+    .expect("seed main-merge authorisation");
 }
 
 /// Walk a freshly-created (`'draft'`) sprint to `'review'` through the TYPED

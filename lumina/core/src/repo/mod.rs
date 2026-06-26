@@ -57,6 +57,9 @@ mod repo_links;
 mod research_notes;
 mod risks;
 mod runs_sprints;
+mod scheduler;
+mod scheduler_predicates;
+mod scheduler_state;
 mod sessions;
 mod shared;
 mod task_dependencies;
@@ -161,6 +164,32 @@ pub use task_dependencies::*;
 pub use task_files::*;
 pub use task_graph::*;
 pub use team_execution::*;
+// Scheduler dispatch-lease primitive over `scheduled_units` (`scheduler.rs`,
+// migration 0028, focus 1C.3). The glob `pub use` exposes the three lease
+// fns (`claim_next_scheduled_unit`, `renew_scheduled_lease`,
+// `release_scheduled_unit`) at their `crate::repo::*` paths — the STORY/SPRINT-
+// scale analogue of the `team_execution` task queue. Each is a self-contained
+// single-mutation-path tx recording one coarse export-INERT `scheduled_unit`
+// event (never `work_item` — the export drain renders only `work_item`
+// aggregates, so a scheduled-unit lease never reaches a TOML snapshot).
+pub use scheduler::*;
+// Scheduler TRIGGER PREDICATES (`scheduler_predicates.rs`, migration 0028, focus
+// 1C.3) — the read-only SELECTs that DECIDE which `scheduled_units` rows to
+// CREATE (build_story / build_tasks / compose_sprint), each active-ancestor
+// gated and returned in a deterministic kind-priority. The glob `pub use`
+// exposes the scan entry point (`scan_trigger_candidates`), the per-trigger
+// candidate reads, the `all_ancestors_active` gate, and the `TriggerCandidate`
+// shape at their `crate::repo::*` paths — the sibling scheduler-loop task
+// consumes them by path.
+pub use scheduler_predicates::*;
+// Scheduler OBSERVABILITY read (`scheduler_state.rs`, migration 0028, focus 1C.3,
+// story AC #6) — the single read-only composer behind `get_scheduler_state` (MCP)
+// + `GET /api/scheduler/state` (HTTP). The glob `pub use` exposes `scheduler_state`
+// + the `SchedulerState`/`SchedulerUnitBuckets`/`StubTriageEntry` shapes at their
+// `crate::repo::*` paths (bucketed `scheduled_units` rows + the ungrilled
+// stub-triage queue — the complement of `build_story_candidates`). Read-only: no
+// tx, no event.
+pub use scheduler_state::*;
 // Worktree + task-commit provenance mutators/reads (`worktrees.rs`, migration
 // 0016 sprint-lifecycle & worktree substrate, T4). The glob `pub use` exposes
 // the worktree lifecycle/merge-audit fns (`create_worktree`, `get_worktree`,

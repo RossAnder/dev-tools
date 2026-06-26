@@ -98,6 +98,8 @@ pub(crate) mod reads;
 mod repo_links;
 mod risks_alts;
 mod runs_sprints;
+mod scheduler;
+mod scheduler_state;
 mod sessions;
 mod task_graph;
 mod team_execution;
@@ -121,6 +123,8 @@ pub use reads::*;
 pub use repo_links::*;
 pub use risks_alts::*;
 pub use runs_sprints::*;
+pub use scheduler::*;
+pub use scheduler_state::*;
 pub use sessions::*;
 pub use task_graph::*;
 pub use team_execution::*;
@@ -256,7 +260,9 @@ impl LuminaTools {
                 + Self::tool_router_sessions()
                 + Self::tool_router_mode()
                 + Self::tool_router_files()
-                + Self::tool_router_worktrees(),
+                + Self::tool_router_worktrees()
+                + Self::tool_router_scheduler()
+                + Self::tool_router_scheduler_state(),
         }
     }
 }
@@ -521,6 +527,17 @@ mod tests {
             "retire_open_question",
             "get_story_dossier",
             "get_gating_tier",
+            // manual scheduler-dispatch tool (focus 1C.3, the P1 proving slice;
+            // defined in mcp/scheduler.rs — lease a scheduled unit then spawn one
+            // forked-autonomous claude via pty::spawn::spawn_pty_session_internal)
+            "dispatch_scheduled_unit",
+            // scheduler observability read (focus 1C.3, story AC #6 — the
+            // observability half; defined in mcp/scheduler_state.rs — composes
+            // repo::scheduler_state (bucketed scheduled_units + the ungrilled
+            // stub-triage queue) with the live control master-switch/scope off
+            // AppState; read-only, no DB write, no event). Takes the surface
+            // 100 → 101.
+            "get_scheduler_state",
         ] {
             assert!(
                 names.iter().any(|n| n == expected),
@@ -602,16 +619,33 @@ mod tests {
         //      dossier) + get_gating_tier (REUSES repo::get_story_readiness's
         //      already-populated gating_tier, plus contributing signals; no new
         //      repo fn). Takes the surface 94 → 99.
+        //    + 1 dispatch_scheduled_unit (focus 1C.3 manual scheduler dispatch,
+        //      the P1 proving slice; defined in mcp/scheduler.rs — maps the unit
+        //      kind to a build-out skill prompt, resolves+confines the project
+        //      clone-dir cwd, ensures+claims a scheduled-unit lease
+        //      (repo::ensure_scheduled_unit + repo::claim_next_scheduled_unit,
+        //      with a targeted-claim guard that releases a mis-claimed
+        //      higher-priority unit via repo::release_scheduled_unit), then spawns
+        //      ONE forked-autonomous claude via
+        //      pty::spawn::spawn_pty_session_internal. Takes the surface 99 → 100.
+        //    + 1 get_scheduler_state (focus 1C.3 scheduler observability read,
+        //      story AC #6 — the observability half; defined in
+        //      mcp/scheduler_state.rs — composes repo::scheduler_state (the
+        //      bucketed scheduled_units rows — dispatched/ready/stuck/cancelled/
+        //      parked — plus the ungrilled stub-triage queue, the complement of
+        //      build_story_candidates) with the live control master-switch/scope
+        //      read off AppState.scheduler_control. Read-only: no DB write, no
+        //      event. Takes the surface 100 → 101.
         // The six lumina-pty-service T10 PTY tools were removed in the
         // lumina-interactive-prompts plan (2026-05-28).
         assert_eq!(
             names.len(),
-            99,
-            "advertised tool count must be exactly 99, got {}: {names:?}",
+            101,
+            "advertised tool count must be exactly 101, got {}: {names:?}",
             names.len()
         );
 
-        // Name-uniqueness guard (router-split risk mitigation): the thirteen
+        // Name-uniqueness guard (router-split risk mitigation): the fifteen
         // per-family `tool_router_*` sub-routers are summed with
         // `ToolRouter::merge`, which is NAME-KEYED — a duplicate tool name
         // across two families would be silently absorbed while KEEPING the
@@ -622,8 +656,8 @@ mod tests {
         let unique: std::collections::HashSet<&String> = names.iter().collect();
         assert_eq!(
             unique.len(),
-            99,
-            "advertised tool names must be UNIQUE (99 distinct), got {} distinct of {}: {names:?}",
+            101,
+            "advertised tool names must be UNIQUE (101 distinct), got {} distinct of {}: {names:?}",
             unique.len(),
             names.len()
         );
@@ -751,6 +785,9 @@ mod tests {
             // planning-orchestrator round-5 composed reads (migration 0026).
             "get_story_dossier",
             "get_gating_tier",
+            // scheduler observability read (focus 1C.3, story AC #6;
+            // mcp/scheduler_state.rs).
+            "get_scheduler_state",
         ] {
             assert_eq!(
                 annotations_of(&tools, read).read_only_hint,

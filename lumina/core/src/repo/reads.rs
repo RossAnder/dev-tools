@@ -57,7 +57,8 @@ const LIST_WORK_ITEMS_SQL: &str = r#"
             relevance, effort, complexity, origin, closure_gate,
             blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
             spawned_from_finding_id, assignee, lease_expires_at, lane,
-            reviews_work_item_id, checkpoint, plan_epoch, created_at, updated_at,
+            reviews_work_item_id, checkpoint, plan_epoch, drive_depth,
+            created_at, updated_at,
             deleted_at
         FROM work_items
         WHERE deleted_at IS NULL
@@ -187,7 +188,8 @@ const GET_WORK_ITEM_DETAIL_SQL: &str = r#"
             relevance, effort, complexity, origin, closure_gate,
             blocked_by_question_id, enabling_option_id, task_kind, tier, shape,
             spawned_from_finding_id, assignee, lease_expires_at, lane,
-            reviews_work_item_id, checkpoint, plan_epoch, created_at, updated_at,
+            reviews_work_item_id, checkpoint, plan_epoch, drive_depth,
+            created_at, updated_at,
             deleted_at
         FROM work_items
         WHERE id = $1

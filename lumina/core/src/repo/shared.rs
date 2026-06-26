@@ -71,6 +71,11 @@ pub(crate) struct WorkItemRow {
     /// column, decoded as a non-null `i64` (every row carries at least epoch 0)
     /// and mapped straight onto [`WorkItem::plan_epoch`].
     pub(crate) plan_epoch: i64,
+    /// Autonomous-drive depth (migration 0028): the nullable
+    /// `plan-only|compose-sprint|drive-to-merge` CHECK column, decoded as
+    /// `Option<String>` per the row-struct idiom (see `lane`/`tier`/`shape`) and
+    /// mapped straight onto [`WorkItem::drive_depth`].
+    pub(crate) drive_depth: Option<String>,
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
     /// Soft-delete tombstone instant (NULL = live). Selected by both
@@ -117,6 +122,7 @@ where
             reviews_work_item_id: row.try_get("reviews_work_item_id")?,
             checkpoint: row.try_get("checkpoint")?,
             plan_epoch: row.try_get("plan_epoch")?,
+            drive_depth: row.try_get("drive_depth")?,
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
             deleted_at: row.try_get("deleted_at")?,
@@ -153,6 +159,7 @@ pub(crate) fn work_item_from_row(r: WorkItemRow) -> Result<WorkItem, AppError> {
         reviews_work_item_id: r.reviews_work_item_id,
         checkpoint: r.checkpoint.map(|v| v != 0),
         plan_epoch: r.plan_epoch,
+        drive_depth: r.drive_depth,
         created_at: r.created_at,
         updated_at: r.updated_at,
         deleted_at: r.deleted_at,

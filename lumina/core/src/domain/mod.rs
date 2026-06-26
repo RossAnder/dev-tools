@@ -21,15 +21,19 @@
 //!     and their update bodies.
 //!   * [`planning`] — the read-model / input aggregates for the planning,
 //!     dispatch, sprint, and finding-query pipelines.
+//!   * [`scheduler`] — the scheduled-unit dispatch kind + row aggregate
+//!     (migration 0028, focus 1C.3 in-process tokio scheduler foundation).
 
 mod enums;
 mod findings;
 mod planning;
+mod scheduler;
 mod work_items;
 
 pub use enums::*;
 pub use findings::*;
 pub use planning::*;
+pub use scheduler::*;
 pub use work_items::*;
 
 #[cfg(test)]

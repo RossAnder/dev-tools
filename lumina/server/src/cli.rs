@@ -44,6 +44,16 @@ struct Cli {
     #[arg(long, value_name = "PATH", requires = "with_companion")]
     companion_bin: Option<PathBuf>,
 
+    /// Spawn the in-process tokio SCHEDULER engine loop (focus 1C.3) alongside
+    /// the bare server invocation. Equivalent to setting `LUMINA_SCHEDULER` — the
+    /// scheduler spawns when EITHER is set; with neither, no scheduler task spawns
+    /// (default-server + e2e behaviour). Only meaningful with NO subcommand;
+    /// combining it with a subcommand is a hard error (mirroring
+    /// `--with-companion`). The spawned loop starts ENABLED; the operator can
+    /// toggle / scope / kill it at runtime via `POST /api/scheduler/control`.
+    #[arg(long)]
+    with_scheduler: bool,
+
     /// Optional subcommand. With none, lumina starts the axum server (the
     /// original default behaviour).
     #[command(subcommand)]
@@ -83,6 +93,9 @@ pub async fn run() -> anyhow::Result<()> {
     if let Some(msg) = companion_flag_conflict(&cli) {
         anyhow::bail!(msg);
     }
+    if let Some(msg) = scheduler_flag_conflict(&cli) {
+        anyhow::bail!(msg);
+    }
     match cli.command {
         None => {
             // Spawn the companion BEFORE serve and hold the `Child` binding
@@ -96,7 +109,7 @@ pub async fn run() -> anyhow::Result<()> {
             } else {
                 None
             };
-            crate::app::serve().await
+            crate::app::serve(cli.with_scheduler).await
         }
         Some(Command::ImportFlow { slug }) => import_flow_cmd(&slug).await,
         Some(Command::InitHooks { url, project_dir }) => {
@@ -115,6 +128,23 @@ fn companion_flag_conflict(cli: &Cli) -> Option<String> {
         Some(
             "--with-companion/--companion-bin apply only to the bare `lumina` server \
              invocation; they cannot be combined with a subcommand"
+                .to_string(),
+        )
+    } else {
+        None
+    }
+}
+
+/// The `--with-scheduler` analogue of [`companion_flag_conflict`]: the scheduler
+/// boot flag is a convenience for the bare server invocation only (it threads
+/// into `app::serve`), so combining it with a subcommand — which never reaches
+/// `serve` — is a hard error rather than a silently-ignored flag. Returns the
+/// error message on conflict, `None` otherwise.
+fn scheduler_flag_conflict(cli: &Cli) -> Option<String> {
+    if cli.command.is_some() && cli.with_scheduler {
+        Some(
+            "--with-scheduler applies only to the bare `lumina` server invocation; it \
+             cannot be combined with a subcommand"
                 .to_string(),
         )
     } else {
@@ -837,6 +867,43 @@ mod tests {
     #[test]
     fn bare_invocation_without_flags_passes_the_gate() {
         let cli = Cli::try_parse_from(["lumina"]).unwrap();
+        assert!(companion_flag_conflict(&cli).is_none());
+    }
+
+    // --- focus 1C.3: --with-scheduler boot flag ---
+
+    #[test]
+    fn with_scheduler_parses_on_bare_invocation() {
+        let cli = Cli::try_parse_from(["lumina", "--with-scheduler"])
+            .expect("bare invocation with --with-scheduler must parse");
+        assert!(cli.with_scheduler);
+        assert!(scheduler_flag_conflict(&cli).is_none());
+    }
+
+    #[test]
+    fn bare_invocation_defaults_with_scheduler_off() {
+        let cli = Cli::try_parse_from(["lumina"]).unwrap();
+        assert!(!cli.with_scheduler, "default is off — no scheduler spawn");
+        assert!(scheduler_flag_conflict(&cli).is_none());
+    }
+
+    #[test]
+    fn with_scheduler_parses_alongside_subcommand_but_gate_rejects() {
+        // Like the companion flag (clap#5353): the flag parses alongside an
+        // optional subcommand, and the in-code gate is what rejects it.
+        let cli = Cli::try_parse_from(["lumina", "--with-scheduler", "import-flow", "some-slug"])
+            .expect("flag must parse alongside a subcommand");
+        let msg = scheduler_flag_conflict(&cli).expect("gate must reject subcommand + flag");
+        assert!(msg.contains("--with-scheduler"), "message names the flag: {msg}");
+        assert!(msg.contains("subcommand"), "message names the conflict: {msg}");
+    }
+
+    #[test]
+    fn with_scheduler_and_companion_coexist_on_bare_invocation() {
+        let cli = Cli::try_parse_from(["lumina", "--with-scheduler", "--with-companion"])
+            .expect("both boot flags parse on the bare invocation");
+        assert!(cli.with_scheduler && cli.with_companion);
+        assert!(scheduler_flag_conflict(&cli).is_none());
         assert!(companion_flag_conflict(&cli).is_none());
     }
 
