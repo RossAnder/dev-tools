@@ -48,7 +48,7 @@ lumina-protocol = { path = "../protocol" }
 axum = { workspace = true, features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.7", features = ["fs"] }
 tokio-util = "0.7"                                  # CancellationToken for the export-loop shutdown seam (Task 6)
 futures = "0.3"                                     # FuturesUnordered for the PTY supervisor's exit-reap branch (T8)
 
@@ -86,7 +86,7 @@ notify = "8.2.0"
 sqlx = { workspace = true, features = ["runtime-tokio", "sqlite", "migrate"] }
 
 # --- MCP server (rmcp, Streamable-HTTP transport) ---
-rmcp = { version = "1.7", features = [
+rmcp = { version = "1.8", features = [
     "server",
     "transport-streamable-http-server",
     "macros",
