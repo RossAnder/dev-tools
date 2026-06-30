@@ -142,6 +142,29 @@ pub async fn spawn_pty_session_internal(
     project_id: Option<String>,
     cwd_display: String,
 ) -> Result<PtySession, AppError> {
+    // ---- 0. Pre-seed workspace trust for the cwd ----
+    //
+    // claude shows a TUI-only "Do you trust the files in this folder?" dialog on
+    // first launch in an unfamiliar directory — and lumina spawns each sprint
+    // into a FRESH worktree, so every autonomous launch would otherwise block on
+    // it. There is no per-run flag/env/settings key to skip the trust dialog
+    // (unlike the bypassPermissions warning), so we pre-seed the cwd's
+    // `hasTrustDialogAccepted` entry in ~/.claude.json before claude reads it.
+    // BEST-EFFORT: a failure is logged and the spawn proceeds (the dialog then
+    // appears, exactly as before this step) — trust seeding never aborts a launch.
+    match crate::pty::trust::ensure_dir_trusted(&config.cwd) {
+        Ok(true) => tracing::info!(
+            cwd = %config.cwd.display(),
+            "pty spawn: pre-seeded workspace trust in ~/.claude.json"
+        ),
+        Ok(false) => {} // already trusted — no write
+        Err(e) => tracing::warn!(
+            cwd = %config.cwd.display(),
+            error = %e,
+            "pty spawn: workspace-trust pre-seed failed; the trust dialog may block this session"
+        ),
+    }
+
     // ---- 1. Spawn the transport ----
     tracing::info!(
         cwd = %config.cwd.display(),

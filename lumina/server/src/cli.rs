@@ -84,6 +84,21 @@ enum Command {
         #[arg(long, default_value = ".")]
         project_dir: PathBuf,
     },
+
+    /// Prune orphaned Claude Code workspace-trust entries from `~/.claude.json`.
+    ///
+    /// lumina pre-seeds a `hasTrustDialogAccepted` entry for each sprint
+    /// worktree it spawns into (so the interactive trust dialog never blocks an
+    /// autonomous launch). This sweep is the inverse — run it after removing
+    /// worktrees to drop the trust entries whose directory no longer exists.
+    /// SCOPED to `<repo-root>/.lumina/worktrees/` and only entries whose dir is
+    /// absent, so a live worktree's (or any non-lumina) trust is never touched.
+    PruneTrust {
+        /// The repo root whose `.lumina/worktrees/` subtree is swept. Defaults
+        /// to `LUMINA_WORKTREE_ROOT` if set, else the current directory.
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
 }
 
 /// Parse args and dispatch. No subcommand → serve (optionally co-launching
@@ -116,6 +131,7 @@ pub async fn run() -> anyhow::Result<()> {
             let url = url.unwrap_or_else(default_ingest_url);
             init_hooks_cmd(&project_dir, &url)
         }
+        Some(Command::PruneTrust { root }) => prune_trust_cmd(root),
     }
 }
 
@@ -249,6 +265,31 @@ fn spawn_companion(override_bin: Option<PathBuf>) -> anyhow::Result<tokio::proce
 /// The compile-time default ingest URL, built from [`DEFAULT_BIND_PORT`].
 fn default_ingest_url() -> String {
     format!("http://127.0.0.1:{DEFAULT_BIND_PORT}/api/sessions/ingest")
+}
+
+/// Resolve the worktrees dir (`<root>/.lumina/worktrees`, where `root` is
+/// `--root` → `LUMINA_WORKTREE_ROOT` → CWD) and sweep orphaned Claude Code
+/// workspace-trust entries from `~/.claude.json`, printing the count removed.
+/// Pure FS + JSON; never introspects a running server.
+fn prune_trust_cmd(root: Option<PathBuf>) -> anyhow::Result<()> {
+    let repo_root = match root {
+        Some(r) => r,
+        None => match std::env::var_os("LUMINA_WORKTREE_ROOT") {
+            Some(v) => PathBuf::from(v),
+            None => std::env::current_dir().context("resolving the current directory")?,
+        },
+    };
+    let worktrees_dir = repo_root.join(".lumina").join("worktrees");
+
+    let removed = crate::pty::trust::prune_orphaned_worktree_trusts(&worktrees_dir)
+        .context("pruning ~/.claude.json workspace-trust entries")?;
+
+    println!(
+        "pruned {removed} orphaned workspace-trust {} under {}",
+        if removed == 1 { "entry" } else { "entries" },
+        worktrees_dir.display()
+    );
+    Ok(())
 }
 
 /// Resolve the flow dir, open a pool, import, and print the summary.
