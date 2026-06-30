@@ -152,14 +152,27 @@ pub async fn spawn_pty_session_internal(
     // `hasTrustDialogAccepted` entry in ~/.claude.json before claude reads it.
     // BEST-EFFORT: a failure is logged and the spawn proceeds (the dialog then
     // appears, exactly as before this step) — trust seeding never aborts a launch.
+    // Log the COMPUTED project key on every arm so a key-derivation mismatch
+    // with claude (drive-letter case / 8.3 short name / junction) is diagnosable
+    // from one transcript — lumina seeds under `project_key(cwd)`, claude reads
+    // under its own `process.cwd()`-derived key; a divergence would seed under a
+    // key claude never reads and the dialog would still block (R5).
     match crate::pty::trust::ensure_dir_trusted(&config.cwd) {
         Ok(true) => tracing::info!(
             cwd = %config.cwd.display(),
+            project_key = %crate::pty::trust::project_key(&config.cwd),
             "pty spawn: pre-seeded workspace trust in ~/.claude.json"
         ),
-        Ok(false) => {} // already trusted — no write
+        // Already trusted — no write. Logged at debug (not silent) so the key is
+        // still recoverable from the transcript on a hung session (R5).
+        Ok(false) => tracing::debug!(
+            cwd = %config.cwd.display(),
+            project_key = %crate::pty::trust::project_key(&config.cwd),
+            "pty spawn: workspace trust already present in ~/.claude.json — no write"
+        ),
         Err(e) => tracing::warn!(
             cwd = %config.cwd.display(),
+            project_key = %crate::pty::trust::project_key(&config.cwd),
             error = %e,
             "pty spawn: workspace-trust pre-seed failed; the trust dialog may block this session"
         ),

@@ -1,0 +1,206 @@
+last_updated = 2026-06-30
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R1"
+file = "lumina/server/src/pty/trust.rs"
+line = 134
+symbol = "ensure_dir_trusted_at"
+severity = "warning"
+effort = "medium"
+category = "security"
+summary = "Lock-free read-modify-write of ~/.claude.json can lose concurrent writers' updates"
+description = "ensure_dir_trusted_at reads the whole store (L104), mutates in memory, and renames a stale snapshot back over the file (L134) with no lock across the window. Two concurrent spawn_pty_session_internal calls into different fresh worktrees each read the same snapshot and the second rename drops the first's hasTrustDialogAccepted (re-surfacing the dialog the seed exists to suppress); against an external claude process refreshing OAuth/history/costs wholesale, lumina's rename silently reverts that write. The atomic rename prevents torn files, not lost updates. Fix: serialise read->write behind a process-global Mutex and re-read immediately before rename to narrow the external-claude window; document the residual cross-process race (claude itself does not lock)."
+evidence = ["trust.rs:104,134 no lock across read->write; independently found by security + architecture lenses"]
+dedup_id = "94e84b6e69e061f4"
+resolved = 2026-06-30
+resolution = "Added a process-global static Mutex held across the whole ensure_dir_trusted_at read-modify-write so concurrent spawns cannot lost-update the trust store; documented the residual cross-process race"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R2"
+file = "lumina/server/src/cli.rs"
+line = 282
+symbol = "prune_trust_cmd"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "prune-trust builds its match prefix from a non-canonicalised root, so a relative/case-mismatched --root prunes nothing"
+description = "Stored keys are project_key(canonical_cwd) (absolute, verbatim-stripped). prune_trust_cmd takes --root / LUMINA_WORKTREE_ROOT / current_dir verbatim and project_key (trust.rs:84) does not canonicalise, so `lumina prune-trust --root .` yields the relative prefix '.lumina/worktrees/' that can never starts_with-match an absolute stored key -> prune reports 0 and the store accumulates forever; a Windows drive-letter case difference (c: vs C:) byte-breaks the prefix even with an absolute root. The default no-arg invocation works because current_dir() is absolute. Fix: best-effort canonicalise worktrees_dir before project_key, or factor one shared key-derivation that both spawn and prune call."
+evidence = ["cli.rs:275-284 + trust.rs:188 verified"]
+dedup_id = "49682d15b16a3711"
+resolved = 2026-06-30
+resolution = "Best-effort canonicalize repo_root before joining .lumina/worktrees so the prune prefix matches the absolute project_key(canonical_cwd) keys; fixes relative-root and Windows drive-case prune-zero"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R3"
+file = "lumina/server/src/pty/trust.rs"
+line = 23
+symbol = "remove_dir_trust"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "remove_dir_trust has no production caller and nothing reclaims trust on worktree removal; docs overclaim 'never accumulates'"
+description = "remove_dir_trust/_at have no production call site (only doc refs L23-24 + tests); only prune_orphaned_worktree_trusts is wired (cli.rs:284, a manual CLI sweep). No worktree-teardown path (operator git worktree remove, or the companion's RemoveWorktree) reclaims the entry, yet trust.rs:24-27 and lumina/CLAUDE.md state pruning a worktree 'reclaims its entry ... never accumulates dead worktree paths' -- true only of the manual `lumina prune-trust` sweep. The seeder also trusts any spawn cwd while the pruner only sweeps under .lumina/worktrees/, so a non-worktree cwd's entry is never auto-reclaimable. (remove_dir_trust is pub-in-lib, so no dead_code lint fires.) Fix: either wire remove_dir_trust into worktree teardown, or soften the doc to 'bounded by operator-run prune-trust' and note the scope asymmetry."
+evidence = ["grep: remove_dir_trust only in doc+tests; prune wired at cli.rs:284; lumina-server has [lib] target exposing pub mod pty"]
+dedup_id = "93f043dc9c7ea28b"
+resolved = 2026-06-30
+resolution = "Softened trust.rs module-doc and lumina/CLAUDE.md to describe cleanup as the manual operator-run lumina prune-trust sweep (not automatic on teardown) and noted the seeder-vs-pruner scope asymmetry"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R4"
+file = "lumina/server/src/pty/trust.rs"
+line = 271
+symbol = "write_root_atomic"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "Atomic rewrite recreates ~/.claude.json at umask default (0644 on Unix), downgrading a credential file's permissions"
+description = "std::fs::write creates the sibling temp at the process umask default (~0644), then rename makes it the new ~/.claude.json (which holds OAuth tokens + MCP config, plausibly 0600). After the first per-worktree rewrite the file -- and the briefly-resident temp holding the same secrets -- is world-readable to other local users on a shared Unix host / Linux CI executor. Windows (USERPROFILE ACL) is unaffected, so this is Unix-with-other-local-users only. Fix: under cfg(unix), set the temp's mode to 0600 (or stat+copy the original's mode) before rename."
+evidence = ["trust.rs:271-278 std::fs::write default perms, no set_permissions; Unix-only"]
+dedup_id = "37f4916164970d55"
+resolved = 2026-06-30
+resolution = "write_temp_private creates the temp at mode 0600 under cfg(unix) before writing secret bytes (never world-readable); non-unix path unchanged"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R5"
+file = "lumina/server/src/pty/trust.rs"
+line = 84
+symbol = "project_key"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "claude key-derivation parity is unverified for fresh worktrees and a mismatch fails silently with no diagnostic"
+description = "lumina derives the projects.<cwd> key via std::fs::canonicalize -> project_key; claude derives it from Node process.cwd() -- separate code, empirically checked only against the repo root claude wrote, not a fresh worktree (the only case this feature targets). A drive-letter case / 8.3-shortname / junction divergence writes the seed under a key claude never reads, so the dialog still blocks while the call site logs Ok(true) 'pre-seeded' as success (spawn.rs:155-166); the Ok(false) arm is also fully silent. Fix: add a fresh-worktree parity cross-check fixture (diff claude's persisted key vs project_key(canonical_cwd) byte-for-byte), and log the computed project_key at debug on the Ok(true)/Ok(false) arms so a hung session is diagnosable from one transcript."
+related = ["R2"]
+evidence = ["trust.rs:84-89 + spawn.rs:155-166; parity inferred, diagnostics verified; quality + testability lenses"]
+dedup_id = "3019552d0bda968f"
+resolved = 2026-06-30
+resolution = "partial: project_key debug-logging on all spawn.rs trust arms plus a project_key derivation regression test / pending: live-claude byte-for-byte parity fixture (needs nested claude e2e) — tracked as R9"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R6"
+file = "lumina/server/src/pty/trust.rs"
+line = 109
+symbol = "ensure_dir_trusted_at"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Idempotency gate keys only on hasTrustDialogAccepted, but the write also sets hasCompletedProjectOnboarding -- written-but-unstated and never self-healed"
+description = "The early-return (L109-116) treats hasTrustDialogAccepted==true as fully trusted, yet the write (L122) also sets hasCompletedProjectOnboarding with no documented rationale. A store trusted-but-onboarding-absent returns Ok(false) and never backfills onboarding, so the self-heal property the doc advertises does not hold for that flag. The existing idempotency test only round-trips an entry this code wrote (both flags present), so it cannot reveal the divergence. Fix: document 'trust-flag only; onboarding not reconciled once trust is set' + add a test seeding {hasTrustDialogAccepted:true} asserting Ok(false)/no-backfill; OR include both flags in the `already` predicate if onboarding is load-bearing for suppression."
+evidence = ["trust.rs:109-122 verified asymmetry; quality + testability lenses"]
+dedup_id = "89926b138fe3ed0d"
+resolved = 2026-06-30
+resolution = "Documented the trust-flag-only idempotency gate and added a test asserting no hasCompletedProjectOnboarding backfill on an already-trusted entry"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R7"
+file = "lumina/server/src/pty/trust.rs"
+line = 126
+symbol = "ensure_dir_trusted_at"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "A pre-existing non-object value at the cwd's project key is silently overwritten (narrow never-clobber deviation) and the branch is untested"
+description = "When projects.<key> exists but is not an object, L126-130 replace it wholesale with a minimal trusted object -- the one path inside ensure that destroys existing data without surfacing it, unlike the malformed-whole-store path which errors (malformed_store_is_not_clobbered). Real-world impact is near-nil (the key is lumina's own fresh-worktree path; claude only writes objects there). No test drives this branch. Fix: log a warning on replace (or return InvalidData for consistency with the projects_obj_mut non-object guards at L244-252) + add a test seeding a non-object entry asserting replace + sibling survival."
+evidence = ["trust.rs:118-131 verified; security + testability lenses"]
+dedup_id = "cc48a22ee7977a85"
+resolved = 2026-06-30
+resolution = "Added a tracing::warn (key only) on the non-object replace branch and a test for replace plus sibling survival"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R8"
+file = "lumina/server/src/pty/trust.rs"
+line = 419
+symbol = "prune_orphaned_worktree_trusts_at"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The prune directory-boundary (trailing-slash) guarantee is claimed in a comment but never exercised by a test"
+description = "L188 builds prefix with a trailing '/' so starts_with is a clean directory-boundary test (comment L185-187 claims a sibling .../worktrees-backup is NOT pruned). The test's only out-of-scope entry (/some/other/trusted/project) shares no prefix, so it passes identically with or without the boundary slash -- a regression dropping the '/' would silently prune a stale sibling like <root>-backup/x and stay green. Fix: seed an absent-on-disk entry under <worktrees_root>-backup/orphan and assert it survives the prune."
+evidence = ["trust.rs:419 test vs 185-188 prod verified"]
+dedup_id = "01247ac12d8fc65f"
+resolved = 2026-06-30
+resolution = "Strengthened the prune test with an absent root-backup sibling asserted to survive, proving the trailing-slash directory boundary"
+
+[[items]]
+id = "R9"
+file = "lumina/server/src/pty/trust.rs"
+line = 84
+symbol = "project_key"
+severity = "suggestion"
+effort = "medium"
+category = "testability"
+summary = "pending parts of R5: live-claude byte-for-byte project_key parity fixture (diff claudes persisted key vs project_key(canonical_cwd) for a fresh worktree) — requires a nested claude e2e (pty_e2e pattern)"
+first_flagged = 2026-06-30
+rounds = 1
+related = ["R5"]
+status = "wontfix"
+dedup_id = "763aa5431d0c4afe"
+wontfix_rationale = "Live-claude byte-for-byte parity fixture is not safely or reliably testable in this harness: hasTrustDialogAccepted is written only on human TUI trust-dialog acceptance (undrivable via JSONL), and eliciting any real projects-key write risks mutating the operators real ~/.claude.json and is unreliable under portable-pty registry-derived env on Windows. Diagnosability is already covered by R5 (project_key logged on every spawn arm plus derivation regression test). User-confirmed wontfix 2026-06-30."
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 3 verified at file:line. Q-1 (prune prefix not canonicalised) confirmed -> R2. Q-2 (key parity) folded into the diagnostics suggestion R5. Q-3 (onboarding asymmetry) merged with testability into R6."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 4 verified. S-1 lost-update race -> R1 (corroborated by architecture). S-2 Unix perms downgrade -> R4 (platform-scoped, kept warning with caveat). S-3 non-object clobber merged into R7. S-4 global-trust persistence is doc-only, within documented posture -> not tracked as a ledger item, surfaced as an observation."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 3 verified. A-1 lost-update race is the same defect as S-1 -> merged into R1. A-2 unwired inverse + doc overclaim confirmed via grep (remove_dir_trust only in doc+tests) -> R3, framing corrected (pub-in-lib, no dead_code lint). A-3 latent DRY (/?/ strip duplicated 4 sites, no repeated-slash/UNC collapse) -- agent concluded keep separation, no action now -> recorded as an untracked observation, not a ledger item."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 4 verified. T-1 prune boundary test gap -> R8. T-2 non-object branch untested merged into R7. T-3 onboarding-backfill untested merged into R6. T-4 key-mismatch diagnostics merged into R5."
+dedup_id = "45ca31c3315a5978"

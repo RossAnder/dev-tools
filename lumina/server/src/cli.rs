@@ -279,6 +279,12 @@ fn prune_trust_cmd(root: Option<PathBuf>) -> anyhow::Result<()> {
             None => std::env::current_dir().context("resolving the current directory")?,
         },
     };
+    // Canonicalise the resolved root so the derived worktree-trust prefix matches the
+    // absolute, canonical-case keys the spawn path stores via `project_key(canonical_cwd)`:
+    // a relative `--root .` (or a drive-letter-case mismatch on Windows) would otherwise
+    // never `starts_with`-match an absolute stored key and prune nothing. Best-effort —
+    // a non-existent `--root` won't canonicalise and simply has no worktrees to prune.
+    let repo_root = repo_root.canonicalize().unwrap_or(repo_root);
     let worktrees_dir = repo_root.join(".lumina").join("worktrees");
 
     let removed = crate::pty::trust::prune_orphaned_worktree_trusts(&worktrees_dir)
