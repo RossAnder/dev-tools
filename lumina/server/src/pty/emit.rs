@@ -34,7 +34,6 @@ use lumina_core::repo;
 pub async fn persist_and_broadcast(pool: &SqlitePool, session: &Session, mut tm: TypedMessage) -> i64 {
     let kind_wire = tm.kind.as_wire();
     let content_json = serde_json::to_string(&tm.content).unwrap_or_else(|_| "{}".to_string());
-    let raw_text = tm.raw_text.clone();
     let seq = session.next_sequence();
     let msg_id = Uuid::now_v7().to_string();
     tm.sequence = seq;
@@ -47,7 +46,7 @@ pub async fn persist_and_broadcast(pool: &SqlitePool, session: &Session, mut tm:
         seq,
         kind_wire,
         &content_json,
-        raw_text.as_deref(),
+        tm.raw_text.as_deref(),
     )
     .await
     {
