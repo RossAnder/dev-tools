@@ -304,7 +304,7 @@ fn spawn_probe_session(cwd: &Path, projects_root: &Path) -> ProbeSession {
 
     // ---- Build the command — 1:1 with pty_transport/mod.rs:233-361 ----------
     let mut cmd = CommandBuilder::new(&claude_bin);
-    cmd.cwd(cwd.to_path_buf());
+    cmd.cwd(cwd);
     cmd.env("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1");
     // Autonomous mode-signal token (server-minted; process-local secret reused
     // directly from the pub `mode` module — see file-level note).
