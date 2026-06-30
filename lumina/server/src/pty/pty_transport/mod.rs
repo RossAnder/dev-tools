@@ -1,4 +1,4 @@
-//! `PtyTransport` — the `portable-pty` 0.9 implementation of the [`Transport`]
+//! `PtyTransport` — the `portable-pty` 0.8.1 implementation of the [`Transport`]
 //! seam (T4 of the lumina-pty-service plan).
 //!
 //! This module owns the *bytes-level* wiring between a `claude` REPL child
@@ -50,7 +50,7 @@
 //! the child via a `ChildKiller` clone obtained before child ownership moved
 //! into worker #5, and drops `master` to unblock pending blocking reads.
 //!
-//! ## portable-pty 0.9 API surfaces used (verified via Context7)
+//! ## portable-pty 0.8.1 API surfaces used (verified via Context7)
 //!
 //! * `native_pty_system() -> Box<dyn PtySystem + Send>`.
 //! * `PtySystem::openpty(PtySize) -> anyhow::Result<PtyPair>`.
@@ -64,7 +64,7 @@
 //!   (NOTE: not `Option<i32>` — we widen the u32 into `Some(i32)` ourselves).
 //!
 //! **Deviation from the task prompt**: the prompt suggested `pair.master.kill_child()`.
-//! That method does NOT exist on `MasterPty` in portable-pty 0.9. The supported
+//! That method does NOT exist on `MasterPty` in portable-pty 0.8.1. The supported
 //! kill path is `Child::kill()` (provided by the `ChildKiller` supertrait); we
 //! obtain a cloneable killer via `child.clone_killer()` before moving the child
 //! into the wait-blocking worker, then call `kill()` on the killer from the
@@ -136,7 +136,7 @@ const CLAUDE_BIN_ENV: &str = "LUMINA_CLAUDE_BIN";
 /// Resolve the `claude` executable to an ABSOLUTE path before handing it to
 /// `CommandBuilder`, instead of letting portable-pty resolve the bare name.
 ///
-/// Rationale (2026-06-10 spawn-failure post-mortem): portable-pty 0.9 on
+/// Rationale (2026-06-10 spawn-failure post-mortem): portable-pty 0.8.1 on
 /// Windows rebuilds the child PATH from the HKLM+HKCU registry hives and
 /// searches it with `dir.join(exe).exists()`. An EMPTY `Path` entry (a stray
 /// `;;` in the registry value) makes that candidate the bare relative name
@@ -610,7 +610,7 @@ impl Transport for PtyTransport {
 
         // ---- 10. Child-wait blocking worker --------------------------------
         // Owns the child. Calls `child.wait()` (blocking) and forwards the
-        // exit status as a `SessionExit`. portable-pty 0.9's `ExitStatus`
+        // exit status as a `SessionExit`. portable-pty 0.8.1's `ExitStatus`
         // exposes `exit_code() -> u32` and `success() -> bool`; signal info is
         // only available as `Option<&str>`, which doesn't fit `SessionExit`'s
         // `Option<i32>` signal field, so we leave that None for now (a future
