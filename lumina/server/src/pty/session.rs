@@ -55,6 +55,15 @@ pub struct Session {
     /// initial prompt until claude's TUI/readline is live. ONE-WAY: set once on
     /// the first chunk and never reset, so it gates only the first dispatch and
     /// never regresses an interactive `POST /input` prompt.
+    ///
+    /// WHY `Arc`-SHARED (not owned like `last_record_at`): the drain bridge must
+    /// be able to stamp this BEFORE the `Session` exists. The bridge is spawned
+    /// inside `Transport::spawn`, but the `Session` is constructed LATER from
+    /// the returned `TransportHandle` (`pty/spawn.rs`), so a shared atomic is
+    /// the seam that carries the stamp across that transport-precedes-Session
+    /// construction order. Do NOT "simplify" it to an owned field or a status
+    /// transition — a `Notify`/oneshot would not suffice either, as the
+    /// `READY_DELAY_MS` grace needs the timestamp, not just a readiness bool.
     pub first_output_at: Arc<AtomicI64>,
     /// Wall-clock millisecond stamp of this session's birth, stamped inside
     /// `Session::new`. Backs the startup-failsafe cap: a session whose

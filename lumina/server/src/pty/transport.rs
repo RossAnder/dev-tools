@@ -77,5 +77,16 @@ pub struct TransportHandle {
 /// unimplemented.
 #[async_trait]
 pub trait Transport: Send + Sync {
+    /// Spawn a session and return its [`TransportHandle`].
+    ///
+    /// CONTRACT — readiness stamping: an impl MUST stamp the handle's
+    /// `first_output_at` monotonically `0 → positive` (wall-clock ms) on the
+    /// session's FIRST liveness output, exactly ONCE. The supervisor's 45 s
+    /// startup failsafe treats a session whose `first_output_at` stays `0` past
+    /// `MAX_STARTUP_MS` as a wedged startup and marks it `Failed`; a
+    /// non-stamping impl would therefore have ALL its sessions falsely failed
+    /// at 45 s. `PtyTransport` satisfies this from its drain-and-discard bridge
+    /// (the first non-empty PTY chunk); a future ACP/remote impl must provide
+    /// its own equivalent first-liveness stamp.
     async fn spawn(&self, config: SpawnConfig) -> Result<TransportHandle, AppError>;
 }

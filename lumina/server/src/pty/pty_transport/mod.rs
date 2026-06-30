@@ -509,6 +509,11 @@ impl Transport for PtyTransport {
                 // relaxed atomic store on the first byte only — it adds no
                 // latency or buffering, so the drain's backpressure semantics
                 // are otherwise unchanged.
+                // SOLE WRITER: this drain bridge is the ONLY task that ever
+                // STOREs `first_output_at` (the supervisor and `Session` only
+                // LOAD it), so the non-atomic load-then-store "set once" check
+                // below cannot tear or double-store — Relaxed suffices here, the
+                // same single-writer justification as `Session::next_sequence`.
                 if !chunk.is_empty() && first_output_at_bridge.load(Ordering::Relaxed) == 0 {
                     first_output_at_bridge
                         .store(jiff::Timestamp::now().as_millisecond(), Ordering::Relaxed);

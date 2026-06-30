@@ -195,12 +195,17 @@ enum Gate {
 /// while no output has EVER been seen.
 fn dispatch_gate(first_output_at: i64, spawned_at_ms: i64, now_ms: i64) -> Gate {
     if first_output_at > 0 {
+        // `>=` is deliberate (asymmetric with the failsafe's `>` below, not a
+        // typo): the readiness grace fires AT the boundary, so a prompt is
+        // eligible the instant exactly READY_DELAY_MS has elapsed.
         if now_ms.saturating_sub(first_output_at) >= READY_DELAY_MS {
             Gate::Ready
         } else {
             Gate::Wait
         }
     } else if now_ms.saturating_sub(spawned_at_ms) > MAX_STARTUP_MS {
+        // `>` is deliberate (asymmetric with the grace's `>=` above): the wedged
+        // startup failsafe fires only strictly PAST the cap, never AT it.
         Gate::StartupTimedOut
     } else {
         Gate::Wait
@@ -219,11 +224,21 @@ async fn tick_once(pool: &SqlitePool, registry: &SessionRegistry) {
             SessionStatus::Idle => {
                 let first_output_at = session.first_output_at.load(Ordering::Relaxed);
                 let spawned_at_ms = session.spawned_at_ms.load(Ordering::Relaxed);
+                // NOTE: `now_ms` — and the readiness/startup windows the gate
+                // measures off it — is WALL-CLOCK (`jiff::Timestamp::now()`), so
+                // it is clock-jump-exposed: a backward system-clock step can
+                // briefly stall a first dispatch and a forward jump can trip the
+                // startup failsafe early. Deliberately consistent with the
+                // wall-clock quiescence check in `maybe_finalise_turn`; not worth
+                // a monotonic-Instant rework.
                 let now_ms = jiff::Timestamp::now().as_millisecond();
                 match dispatch_gate(first_output_at, spawned_at_ms, now_ms) {
                     Gate::Ready => dispatch_one(pool, &session).await,
                     Gate::Wait => { /* hold the queued prompt; retry next tick */ }
-                    Gate::StartupTimedOut => mark_startup_timed_out(pool, &session).await,
+                    Gate::StartupTimedOut => {
+                        let elapsed = now_ms.saturating_sub(spawned_at_ms);
+                        mark_startup_timed_out(pool, &session, spawned_at_ms, elapsed).await
+                    }
                 }
             }
             SessionStatus::Awaiting => {
@@ -362,6 +377,15 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
     );
 
     // Transition to Awaiting (model is now expected to respond).
+    //
+    // R15 (pre-existing, narrow TOCTOU): `tick_once` snapshots the status as
+    // `Idle` ONCE before reaching here, so a concurrent DELETE flipping
+    // Idle→Cancelled AFTER that snapshot but BEFORE this UNCONDITIONAL flip is
+    // clobbered Cancelled→Awaiting. Left as a documented race rather than a
+    // re-check guard: the input frame has ALREADY been sent to the PTY by this
+    // point, so bailing here would itself leave the session inconsistent
+    // (input-sent-but-not-Awaiting). The readiness-gate hold only slightly
+    // widens a window that predates it.
     session.set_status(SessionStatus::Awaiting).await;
     if let Err(err) =
         repo::pty::update_pty_session_status(pool, &session_id_str, "awaiting", None).await
@@ -381,27 +405,87 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
     // gone quiet AND no outstanding `tool_use` is waiting for a result.
 }
 
-/// Mark a session Failed after a wedged startup (no PTY output by MAX_STARTUP_MS).
-/// Mirrors `dispatch_one`'s input-channel-closed mark-Failed path: surface the
-/// failure on `pty_sessions.last_error` (so the UI sees it) and flip the
-/// in-memory status. Every error is logged and swallowed — the supervisor must
-/// survive a per-session fault.
-async fn mark_startup_timed_out(pool: &SqlitePool, session: &Arc<crate::pty::session::Session>) {
+/// Mark a session Failed after a wedged startup (no PTY output by MAX_STARTUP_MS)
+/// and drive the full terminal teardown. Mirrors `dispatch_one`'s mark-Failed
+/// path, but a wedged child needs more than a status flip — it never exits on
+/// its own (zero PTY output ⇒ its `completed` oneshot never fires), so left
+/// alone it would linger forever as an orphaned `--permission-mode
+/// bypassPermissions` child (R1). This does four things, in order:
+///
+/// 1. Persist a DIAGNOSTIC TERMINAL row via `update_pty_session_ended` — status
+///    `failed`, `ended_at` STAMPED (R2: the wedged child never exits, so a
+///    status-only update would leave `ended_at` NULL forever for exactly these
+///    sessions), and `last_error` carrying the wedged-startup diagnostic with the
+///    observed `elapsed` (R13/R7).
+/// 2. Flip the in-memory status to Failed.
+/// 3. Fail the session's still-`pending` queue entries (R4) — the held first
+///    prompt (and any later inputs) would otherwise sit in `pending` forever,
+///    since `tick_once` never revisits a Failed session.
+/// 4. Cancel the session's `shutdown` token (R1) to hard-kill the wedged child.
+///    Its `child.wait()` then returns, fires `completed_tx`, and `reap_exit`
+///    runs — which evicts the registry and, seeing the row is already terminal
+///    (non-NULL `ended_at`), PRESERVES the diagnostic written in step 1 rather
+///    than clobbering it with the generic non-success message.
+///
+/// Every error is logged and swallowed — the supervisor must survive a
+/// per-session fault.
+async fn mark_startup_timed_out(
+    pool: &SqlitePool,
+    session: &Arc<crate::pty::session::Session>,
+    spawned_at_ms: i64,
+    elapsed: i64,
+) {
     let session_id_str = session.id.to_string();
-    let msg = "claude produced no PTY output within startup cap";
+    let msg = format!(
+        "claude produced no PTY output within startup cap ({elapsed}ms elapsed, cap {MAX_STARTUP_MS}ms)"
+    );
     tracing::warn!(
         session_id = %session_id_str,
+        elapsed,
+        spawned_at_ms,
+        max_startup_ms = MAX_STARTUP_MS,
         "supervisor: startup timed out; marking session Failed"
     );
+
+    // (1) + (2) — diagnostic terminal row (ended_at stamped) + in-memory Failed.
     if let Err(err) =
-        repo::pty::update_pty_session_status(pool, &session_id_str, "failed", Some(msg)).await
+        repo::pty::update_pty_session_ended(pool, &session_id_str, "failed", None, Some(msg.as_str()))
+            .await
     {
         tracing::warn!(
             error = %err,
-            "supervisor: update_pty_session_status(failed) cascade error"
+            "supervisor: update_pty_session_ended(failed) cascade error"
         );
     }
     session.set_status(SessionStatus::Failed).await;
+
+    // (3) — fail the still-pending queue entries (the gate held them, so none
+    // were ever dispatched). `complete_pty_queue_entry` keys on the row id
+    // regardless of status, so marking a `pending` row failed is correct.
+    match Queue::list(pool, &session_id_str).await {
+        Ok(entries) => {
+            for entry in entries.into_iter().filter(|e| e.status == "pending") {
+                if let Err(err) = Queue::mark_failed(pool, &entry.id, msg.as_str()).await {
+                    tracing::warn!(
+                        entry_id = %entry.id,
+                        error = %err,
+                        "supervisor: mark_failed (startup timeout) cascade error"
+                    );
+                }
+            }
+        }
+        Err(err) => {
+            tracing::warn!(
+                session_id = %session_id_str,
+                error = %err,
+                "supervisor: Queue::list (startup timeout) failed"
+            );
+        }
+    }
+
+    // (4) — hard-kill the wedged child so it cannot linger as an orphaned
+    // auto-approve process; the cancel-driven exit lands in `reap_exit`.
+    session.shutdown.cancel();
 }
 
 /// If the JSONL-tail bridge has gone quiet and no `tool_use` is outstanding,
@@ -478,9 +562,12 @@ async fn maybe_finalise_turn(pool: &SqlitePool, session: &Arc<crate::pty::sessio
     );
 }
 
-/// Handle a terminal exit from a session's transport. Updates
-/// `pty_sessions` with the terminal status + exit code, then evicts the
-/// session from the registry.
+/// Handle a terminal exit from a session's transport. Records the terminal
+/// status + exit code on `pty_sessions` — UNLESS the row is ALREADY terminally
+/// stamped (non-NULL `ended_at`), in which case it PRESERVES that row (see the
+/// `already_terminal` guard: the startup-timeout failsafe stamps a diagnostic
+/// terminal row before cancelling the child, and the cancel-driven exit must not
+/// clobber it). Either way it then evicts the session from the registry.
 async fn reap_exit(
     pool: &SqlitePool,
     registry: &SessionRegistry,
@@ -488,51 +575,71 @@ async fn reap_exit(
     exit_result: Result<SessionExit, oneshot::error::RecvError>,
 ) {
     let session_id_str = session_id.to_string();
-    let (terminal_status, exit_code, last_error): (&str, Option<i64>, Option<String>) =
-        match exit_result {
-            Ok(SessionExit { code, success, .. }) => {
-                if success {
-                    ("completed", code.map(i64::from), None)
-                } else {
-                    (
-                        "failed",
-                        code.map(i64::from),
-                        Some(format!(
-                            "transport exited non-success (code={:?})",
-                            code
-                        )),
-                    )
-                }
-            }
-            Err(recv_err) => (
-                "failed",
-                None,
-                Some(format!("completed receiver dropped: {recv_err}")),
-            ),
-        };
 
-    if let Err(err) = repo::pty::update_pty_session_ended(
-        pool,
-        &session_id_str,
-        terminal_status,
-        exit_code,
-        last_error.as_deref(),
-    )
-    .await
-    {
-        tracing::warn!(
+    // R1/R13 reconciliation: if the row is already terminally stamped, the
+    // startup-timeout failsafe (`mark_startup_timed_out`) wrote it WITH
+    // `ended_at` set and a wedged-startup `last_error`, THEN cancelled the child
+    // — so this cancel-driven reap lands on an already-terminal row. Skip the
+    // overwrite so the generic "transport exited non-success" message can't
+    // clobber the diagnostic; the registry is still evicted below. A read error
+    // falls through to the normal write (a generic terminal row beats none).
+    let already_terminal = matches!(
+        repo::pty::get_pty_session(pool, &session_id_str).await,
+        Ok(row) if row.ended_at.is_some()
+    );
+
+    if already_terminal {
+        tracing::info!(
             session_id = %session_id_str,
-            error = %err,
-            "supervisor: update_pty_session_ended failed"
+            "supervisor: session reaped (row already terminal; preserving diagnostic)"
+        );
+    } else {
+        let (terminal_status, exit_code, last_error): (&str, Option<i64>, Option<String>) =
+            match exit_result {
+                Ok(SessionExit { code, success, .. }) => {
+                    if success {
+                        ("completed", code.map(i64::from), None)
+                    } else {
+                        (
+                            "failed",
+                            code.map(i64::from),
+                            Some(format!(
+                                "transport exited non-success (code={:?})",
+                                code
+                            )),
+                        )
+                    }
+                }
+                Err(recv_err) => (
+                    "failed",
+                    None,
+                    Some(format!("completed receiver dropped: {recv_err}")),
+                ),
+            };
+
+        if let Err(err) = repo::pty::update_pty_session_ended(
+            pool,
+            &session_id_str,
+            terminal_status,
+            exit_code,
+            last_error.as_deref(),
+        )
+        .await
+        {
+            tracing::warn!(
+                session_id = %session_id_str,
+                error = %err,
+                "supervisor: update_pty_session_ended failed"
+            );
+        }
+
+        tracing::info!(
+            session_id = %session_id_str,
+            terminal_status = %terminal_status,
+            exit_code = ?exit_code,
+            "supervisor: session reaped"
         );
     }
-
-    tracing::info!(
-        session_id = %session_id_str,
-        terminal_status = %terminal_status,
-        exit_code = ?exit_code,
-        "supervisor: session reaped"
-    );
 
     let _ = registry.remove(&session_id).await;
 }
@@ -593,7 +700,11 @@ mod tests {
     async fn idle_session_with_empty_queue_is_no_op() {
         // Smoke-test the tick path: an Idle session with no queued
         // entries should not crash, should not change status, should
-        // just no-op.
+        // just no-op via the empty-queue `pop_next_pending → Ok(None)`
+        // early return. Post-readiness-gate this requires a backdated
+        // `first_output_at` (below) so the gate returns `Ready` and
+        // `dispatch_one` is actually reached — otherwise the gate `Wait`s
+        // and the pop path the test name asserts never runs.
         let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("in-memory pool")));
         let registry = SessionRegistry::new();
 
@@ -616,6 +727,13 @@ mod tests {
             std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)),
         );
         session.set_status(SessionStatus::Idle).await;
+        // Backdate first_output_at so the readiness gate returns `Ready` (mirror
+        // the dispatch-tick test's backdating) — without this the gate `Wait`s on
+        // first_output_at == 0 and the empty-queue pop path is never exercised.
+        session.first_output_at.store(
+            jiff::Timestamp::now().as_millisecond() - READY_DELAY_MS - 1000,
+            Ordering::Relaxed,
+        );
         registry.insert(session.clone()).await;
 
         let handle = spawn(pool, registry.clone());
@@ -676,6 +794,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn gate_output_seen_never_times_out_even_past_startup_cap() {
+        // PRECEDENCE: once first_output_at > 0 the gate is one-way Ready-bound
+        // (Ready/Wait), NEVER StartupTimedOut — even with an ancient spawned_at_ms
+        // well past MAX_STARTUP_MS. Pins the prose one-way guarantee.
+        let ancient_spawn = NOW - MAX_STARTUP_MS - 10_000;
+        // grace already elapsed → Ready
+        assert_eq!(
+            dispatch_gate(NOW - READY_DELAY_MS, ancient_spawn, NOW),
+            Gate::Ready
+        );
+        // grace NOT yet elapsed → Wait (still never StartupTimedOut)
+        assert_eq!(
+            dispatch_gate(NOW - (READY_DELAY_MS - 1), ancient_spawn, NOW),
+            Gate::Wait
+        );
+    }
+
+    #[test]
+    fn gate_wait_on_backward_clock() {
+        // BACKWARD-CLOCK: now_ms < stamp underflows both arms' saturating_sub to
+        // 0, which is < READY_DELAY_MS and not > MAX_STARTUP_MS → Wait. Pins the
+        // underflow guards against a backward wall-clock step.
+        // (a) output-seen arm: now < first_output_at.
+        assert_eq!(dispatch_gate(NOW + 5_000, NOW - 100_000, NOW), Gate::Wait);
+        // (b) startup arm: no output yet AND now < spawned_at_ms.
+        assert_eq!(dispatch_gate(0, NOW + 5_000, NOW), Gate::Wait);
+    }
+
     // ----- tick_once: deterministic integration (direct call, no loop) -----
 
     #[tokio::test]
@@ -730,9 +877,11 @@ mod tests {
         );
 
         // Backdate first_output_at so the readiness grace is satisfied. With
-        // first_output_at > 0 the spawned_at_ms cap is irrelevant.
+        // first_output_at > 0 the spawned_at_ms cap is irrelevant. The 1000 ms
+        // margin (parity with the failed-startup test) keeps the flake window
+        // comfortably wide against tick/clock jitter.
         session.first_output_at.store(
-            jiff::Timestamp::now().as_millisecond() - READY_DELAY_MS - 100,
+            jiff::Timestamp::now().as_millisecond() - READY_DELAY_MS - 1000,
             Ordering::Relaxed,
         );
         tick_once(pool.sqlite(), &registry).await;
@@ -799,5 +948,75 @@ mod tests {
             .await
             .expect("read pty_session");
         assert_eq!(row.status, "failed");
+        // R2: the failsafe writes a TERMINAL row — ended_at must be stamped,
+        // because the wedged child never exits on its own to drive reap_exit.
+        assert!(
+            row.ended_at.is_some(),
+            "the startup failsafe must stamp ended_at (a status-only update would leave it NULL forever)"
+        );
+        // R13: last_error is the only operator-facing signal of a wedged startup
+        // — pin its diagnostic prefix (the trailing elapsed/cap detail is
+        // wall-clock-derived and not asserted exactly).
+        let last_error = row
+            .last_error
+            .expect("last_error must carry the wedged-startup diagnostic");
+        assert!(
+            last_error.starts_with("claude produced no PTY output within startup cap"),
+            "last_error should pin the wedged-startup diagnostic, got: {last_error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn tick_leaves_non_idle_session_untouched() {
+        // NON-IDLE BYPASS: the startup failsafe is keyed on the Idle arm ONLY. A
+        // non-Idle session (here Active) with zero PTY output AND an ancient
+        // spawned_at_ms — values that WOULD trip StartupTimedOut on the Idle arm
+        // — must be left untouched by a tick_once pass.
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("in-memory pool")));
+        let registry = SessionRegistry::new();
+
+        let session_id = SessionId::new();
+        let session_id_str = session_id.to_string();
+        repo::pty::create_pty_session(
+            pool.sqlite(),
+            &session_id_str,
+            None,
+            None,
+            "/tmp",
+            "{}",
+            None,
+        )
+        .await
+        .expect("seed pty_session");
+
+        let (bcast_tx, _bcast_rx) = broadcast::channel(16);
+        let (input_tx, _input_rx) = tokio_mpsc::channel(4);
+        let session = Session::new(
+            session_id,
+            bcast_tx,
+            input_tx,
+            tokio_util::sync::CancellationToken::new(),
+            std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)),
+        );
+        session.set_status(SessionStatus::Active).await;
+        session.spawned_at_ms.store(
+            jiff::Timestamp::now().as_millisecond() - MAX_STARTUP_MS - 1000,
+            Ordering::Relaxed,
+        );
+        registry.insert(session.clone()).await;
+
+        tick_once(pool.sqlite(), &registry).await;
+
+        assert_eq!(
+            session.status().await,
+            SessionStatus::Active,
+            "a non-Idle session is not driven by the tick failsafe (Idle-arm only)"
+        );
+        // And no terminal row was written.
+        let row = repo::pty::get_pty_session(pool.sqlite(), &session_id_str)
+            .await
+            .expect("read pty_session");
+        assert_ne!(row.status, "failed", "non-Idle session must not be marked failed");
+        assert!(row.ended_at.is_none(), "non-Idle session must not be terminally stamped");
     }
 }
