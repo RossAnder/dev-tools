@@ -24,4 +24,4 @@ path = "junit.xml"
 #   cargo nextest run --manifest-path lumina/Cargo.toml --profile quick
 [profile.quick]
 retries = 0
-default-filter = "not (binary(pty_e2e) | binary(conpty_minimal_repro))"
+default-filter = "not (binary(pty_e2e) | binary(conpty_minimal_repro) | binary(pty_readiness_probe))"
