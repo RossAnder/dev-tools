@@ -466,7 +466,17 @@ pub async fn spawn_pty_session_internal(
                 }
             }
 
-            tokio::spawn(jsonl_tail::tail(jsonl_path.clone(), jsonl_tx));
+            // O1: derive the tail's cancel signal from the session's shutdown
+            // token (constructed server-side, where tokio-util is available) so
+            // a clean child exit unparks the watcher instead of leaking it +
+            // the PTY handles. Once `tail` returns it drops `jsonl_tx`, closing
+            // the broadcast so the corpus drainer/writer + render bridge unwind.
+            let tail_shutdown = bridge_session.shutdown.clone();
+            tokio::spawn(jsonl_tail::tail(
+                jsonl_path.clone(),
+                jsonl_tx,
+                async move { tail_shutdown.cancelled().await },
+            ));
 
             // tool_use_ids of raw `lumina-ask` MCP calls to suppress from the
             // transcript. The `ask_user_question` tool already broadcasts a
@@ -575,7 +585,16 @@ pub async fn spawn_pty_session_internal(
                             .await;
                         }
                     }
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(
+                            session_id = %session_id_str,
+                            dropped = n,
+                            "pty render bridge: broadcast lagged — {n} pty_messages row(s) dropped \
+                             (sole JSONL writer; the session_records corpus retains them, but \
+                             pty_messages and the live WS are holed)"
+                        );
+                        continue;
+                    }
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
@@ -935,7 +954,7 @@ mod tests {
         let line = r#"{"type":"assistant","uuid":"a7","message":{"content":[{"type":"text","text":"hi"}]}}"#;
         let rec = BroadcastRecord {
             line_ordinal: 5,
-            parsed: jsonl_tail::parse_line(line),
+            parsed: Arc::new(jsonl_tail::parse_line(line)),
         };
 
         persist_corpus_records(&db, "sess-spawn", std::slice::from_ref(&rec))
@@ -959,7 +978,7 @@ mod tests {
         let raw_line = "not-json-at-all";
         let rec2 = BroadcastRecord {
             line_ordinal: 6,
-            parsed: jsonl_tail::parse_line(raw_line),
+            parsed: Arc::new(jsonl_tail::parse_line(raw_line)),
         };
         persist_corpus_records(&db, "sess-spawn", std::slice::from_ref(&rec2))
             .await
@@ -986,7 +1005,7 @@ mod tests {
         );
         BroadcastRecord {
             line_ordinal: ordinal,
-            parsed: jsonl_tail::parse_line(&line),
+            parsed: Arc::new(jsonl_tail::parse_line(&line)),
         }
     }
 
@@ -1088,7 +1107,7 @@ mod tests {
         );
         BroadcastRecord {
             line_ordinal: ordinal,
-            parsed: jsonl_tail::parse_line(&line),
+            parsed: Arc::new(jsonl_tail::parse_line(&line)),
         }
     }
 
@@ -1102,7 +1121,7 @@ mod tests {
         );
         BroadcastRecord {
             line_ordinal: ordinal,
-            parsed: jsonl_tail::parse_line(&line),
+            parsed: Arc::new(jsonl_tail::parse_line(&line)),
         }
     }
 

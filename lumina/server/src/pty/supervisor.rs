@@ -331,50 +331,28 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
         return;
     }
 
-    // Persist a `pty_messages` row for the user_input. The per-session
-    // message-row sequence is allocated by `Session::next_sequence()` so
-    // that user_input rows and bridge-emitted assistant rows share one
-    // monotone namespace (required by UNIQUE(session_id, sequence) on
-    // pty_messages from migration 0008); `entry.sequence` is the
-    // queue-row ordering, a separate namespace.
-    let message_id = uuid::Uuid::now_v7().to_string();
-    let content_json = serde_json::json!({ "text": entry.payload }).to_string();
-    let seq = session.next_sequence();
-    if let Err(err) = repo::pty::insert_pty_message(
-        pool,
-        &message_id,
-        &session_id_str,
-        seq,
-        "user_input",
-        &content_json,
-        Some(&entry.payload),
-    )
-    .await
-    {
-        tracing::warn!(error = %err, "supervisor: insert_pty_message failed");
-        // Continue — the input was already sent to the PTY; status update
-        // still matters more than the audit row.
-    }
-
-    // Broadcast the user_input row to WS subscribers so the SPA sees the
-    // user's own typed message live (without this, the message only shows
+    // Persist + broadcast the user_input row through the shared `emit` helper:
+    // it allocates the per-session `next_sequence()` (the monotone namespace
+    // user_input + bridge-emitted assistant rows share, required by
+    // UNIQUE(session_id, sequence) on pty_messages from migration 0008),
+    // inserts the `pty_messages` row, then broadcasts it to WS subscribers so
+    // the SPA sees the user's own typed message live (without this it only shows
     // up after re-entering the session and re-fetching the message list).
-    // `send` returns Err only when there are zero subscribers, which is
-    // benign during a no-WS test/spawn — discard.
+    // `entry.sequence` is the queue-row ordering, a separate namespace. The
+    // text-payload Value is built ONCE here, moving `entry.payload` (its last
+    // use — the InputFrame clone at the send above already happened); emit owns
+    // the persist-then-broadcast ordering and swallows a failed insert /
+    // zero-subscriber broadcast (O5).
+    let raw = entry.payload;
     let typed = lumina_core::protocol::TypedMessage {
-        sequence: seq,
+        sequence: 0, // emit::persist_and_broadcast allocates the real sequence
         kind: lumina_core::protocol::MessageKind::UserInput,
-        content: serde_json::json!({ "text": entry.payload }),
-        raw_text: Some(entry.payload.clone()),
+        content: serde_json::json!({ "text": raw.as_str() }), // built once; borrows raw
+        raw_text: Some(raw),                                  // move
         created_at: jiff::Timestamp::now().to_string(),
         tool_use_id: None,
     };
-    let _ = session.broadcast_tx.send(typed);
-    tracing::debug!(
-        session_id = %session_id_str,
-        sequence = seq,
-        "supervisor: broadcasting user_input row"
-    );
+    crate::pty::emit::persist_and_broadcast(pool, session, typed).await;
 
     // Transition to Awaiting (model is now expected to respond).
     //
@@ -564,10 +542,12 @@ async fn maybe_finalise_turn(pool: &SqlitePool, session: &Arc<crate::pty::sessio
 
 /// Handle a terminal exit from a session's transport. Records the terminal
 /// status + exit code on `pty_sessions` — UNLESS the row is ALREADY terminally
-/// stamped (non-NULL `ended_at`), in which case it PRESERVES that row (see the
-/// `already_terminal` guard: the startup-timeout failsafe stamps a diagnostic
-/// terminal row before cancelling the child, and the cancel-driven exit must not
-/// clobber it). Either way it then evicts the session from the registry.
+/// stamped (non-NULL `ended_at`), in which case it PRESERVES that row (the write
+/// goes through `update_pty_session_ended_if_live`, a single conditional UPDATE
+/// that stamps only a NULL-`ended_at` row: the startup-timeout failsafe stamps a
+/// diagnostic terminal row before cancelling the child, and the cancel-driven
+/// exit must not clobber it). Either way it then evicts the session from the
+/// registry.
 async fn reap_exit(
     pool: &SqlitePool,
     registry: &SessionRegistry,
@@ -579,69 +559,71 @@ async fn reap_exit(
     // R1/R13 reconciliation: if the row is already terminally stamped, the
     // startup-timeout failsafe (`mark_startup_timed_out`) wrote it WITH
     // `ended_at` set and a wedged-startup `last_error`, THEN cancelled the child
-    // — so this cancel-driven reap lands on an already-terminal row. Skip the
-    // overwrite so the generic "transport exited non-success" message can't
-    // clobber the diagnostic; the registry is still evicted below. A read error
-    // falls through to the normal write (a generic terminal row beats none).
-    let already_terminal = matches!(
-        repo::pty::get_pty_session(pool, &session_id_str).await,
-        Ok(row) if row.ended_at.is_some()
-    );
-
-    if already_terminal {
-        tracing::info!(
-            session_id = %session_id_str,
-            "supervisor: session reaped (row already terminal; preserving diagnostic)"
-        );
-    } else {
-        let (terminal_status, exit_code, last_error): (&str, Option<i64>, Option<String>) =
-            match exit_result {
-                Ok(SessionExit { code, success, .. }) => {
-                    if success {
-                        ("completed", code.map(i64::from), None)
-                    } else {
-                        (
-                            "failed",
-                            code.map(i64::from),
-                            Some(format!(
-                                "transport exited non-success (code={:?})",
-                                code
-                            )),
-                        )
-                    }
+    // — so this cancel-driven reap lands on an already-terminal row. The
+    // conditional `update_pty_session_ended_if_live` (one statement, no prior
+    // read) stamps ONLY a NULL-`ended_at` row, so the generic "transport exited
+    // non-success" message can't clobber the diagnostic and the read→write
+    // TOCTOU vs a concurrent `delete_pty_session` is closed. `Ok(0)` = already
+    // terminal (preserve); `Ok(1)` = this reap stamped it; an `Err` is swallowed.
+    // The registry is evicted below regardless (O3).
+    let (terminal_status, exit_code, last_error): (&str, Option<i64>, Option<String>) =
+        match exit_result {
+            Ok(SessionExit { code, success, .. }) => {
+                if success {
+                    ("completed", code.map(i64::from), None)
+                } else {
+                    (
+                        "failed",
+                        code.map(i64::from),
+                        Some(format!(
+                            "transport exited non-success (code={:?})",
+                            code
+                        )),
+                    )
                 }
-                Err(recv_err) => (
-                    "failed",
-                    None,
-                    Some(format!("completed receiver dropped: {recv_err}")),
-                ),
-            };
+            }
+            Err(recv_err) => (
+                "failed",
+                None,
+                Some(format!("completed receiver dropped: {recv_err}")),
+            ),
+        };
 
-        if let Err(err) = repo::pty::update_pty_session_ended(
-            pool,
-            &session_id_str,
-            terminal_status,
-            exit_code,
-            last_error.as_deref(),
-        )
-        .await
-        {
-            tracing::warn!(
-                session_id = %session_id_str,
-                error = %err,
-                "supervisor: update_pty_session_ended failed"
-            );
-        }
-
-        tracing::info!(
+    match repo::pty::update_pty_session_ended_if_live(
+        pool,
+        &session_id_str,
+        terminal_status,
+        exit_code,
+        last_error.as_deref(),
+    )
+    .await
+    {
+        Ok(1) => tracing::info!(
             session_id = %session_id_str,
             terminal_status = %terminal_status,
             exit_code = ?exit_code,
             "supervisor: session reaped"
-        );
+        ),
+        Ok(_) => tracing::info!(
+            session_id = %session_id_str,
+            "supervisor: session reaped (row already terminal; preserving diagnostic)"
+        ),
+        Err(err) => tracing::warn!(
+            session_id = %session_id_str,
+            error = %err,
+            "supervisor: update_pty_session_ended_if_live failed"
+        ),
     }
 
-    let _ = registry.remove(&session_id).await;
+    if let Some(removed) = registry.remove(&session_id).await {
+        // Clean-exit teardown: cancel the session's shutdown token so the
+        // transport cancel task releases the PTY master/slave handles and the
+        // JSONL tail/bridge/corpus tasks unwind. Without this a clean child exit
+        // leaks one OS handle + several parked tasks + the Arc<Session> per ended
+        // session (O1). On a clean exit the child is already gone, so the cancel
+        // task's kill is a benign no-op (logged at warn).
+        removed.shutdown.cancel();
+    }
 }
 
 #[cfg(test)]

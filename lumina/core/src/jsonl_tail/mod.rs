@@ -44,6 +44,7 @@
 //! module standalone; `mod.rs` adds `pub mod jsonl_tail;` but no `pub use`.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use notify::{
@@ -99,8 +100,12 @@ pub fn is_corpus_blank(line: &str) -> bool {
 pub struct BroadcastRecord {
     /// 1-based ordinal among NON-EMPTY lines (see type-level docs).
     pub line_ordinal: u64,
-    /// The parsed record (or raw-captured fallback).
-    pub parsed: JsonlRecordParsed,
+    /// The parsed record (or raw-captured fallback), behind an `Arc` so the
+    /// broadcast fan-out to each receiver (the render bridge + the corpus
+    /// drainer) and the channel's ring buffer hold cheap refcounts rather than
+    /// deep-cloning the raw line — a `tool_result` / large file-read record can
+    /// carry a multi-KB `raw` string. All consumers only BORROW it.
+    pub parsed: Arc<JsonlRecordParsed>,
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +228,15 @@ pub async fn bind_jsonl_path(
 pub async fn tail(
     jsonl_path: PathBuf,
     tx: broadcast::Sender<BroadcastRecord>,
+    shutdown: impl std::future::Future<Output = ()> + Send,
 ) {
+    // O1 teardown: `shutdown` is the caller's per-session cancel signal. Both
+    // blocking `evt_rx.recv()` awaits below `select!` on it (biased, so shutdown
+    // wins a tie) so a clean child exit unparks this watcher instead of leaking
+    // it (interactive claude writes no JSONL after exit, so without this the
+    // task parks on `evt_rx.recv()` forever). The core crate does NOT depend on
+    // tokio-util, so we accept a generic future rather than a CancellationToken.
+    tokio::pin!(shutdown);
     tracing::info!(
         path = %jsonl_path.display(),
         "jsonl_tail: tail task started"
@@ -280,11 +293,20 @@ pub async fn tail(
     // Otherwise loop until the matching Create(File) event arrives.
     if !jsonl_path.exists() {
         loop {
-            let event = match evt_rx.recv().await {
-                Some(e) => e,
-                None => {
-                    tracing::warn!("jsonl_tail: watcher channel closed before file appeared");
+            let event = tokio::select! {
+                biased;
+                // O1 teardown: cancelled while still waiting for the file to
+                // appear — return cleanly so the watcher unparks.
+                _ = &mut shutdown => {
+                    tracing::debug!("jsonl_tail: cancelled before file appeared (O1 teardown)");
                     return;
+                }
+                ev = evt_rx.recv() => match ev {
+                    Some(e) => e,
+                    None => {
+                        tracing::warn!("jsonl_tail: watcher channel closed before file appeared");
+                        return;
+                    }
                 }
             };
             if matches!(event.kind, EventKind::Create(CreateKind::File) | EventKind::Create(CreateKind::Any))
@@ -322,7 +344,22 @@ pub async fn tail(
         return;
     }
 
-    while let Some(event) = evt_rx.recv().await {
+    loop {
+        let event = tokio::select! {
+            biased;
+            // O1 teardown: cancelled mid-watch — drop `tx` (closing the
+            // broadcast) and return so the corpus drainer/writer + render
+            // bridge unwind. This is the cancellable return that releases the
+            // otherwise-forever-parked watcher on a clean child exit.
+            _ = &mut shutdown => {
+                tracing::debug!("jsonl_tail: cancelled, tail task returning (O1 teardown)");
+                return;
+            }
+            ev = evt_rx.recv() => match ev {
+                Some(e) => e,
+                None => break,
+            }
+        };
         if event.need_rescan() {
             tracing::warn!(
                 path = %jsonl_path.display(),
@@ -399,7 +436,7 @@ async fn drain_and_broadcast(
                 // 1-based among non-empty lines (file-global): advance the
                 // shared counter, then tag this record with it.
                 *line_ordinal += 1;
-                let parsed = parse_line(&line);
+                let parsed = Arc::new(parse_line(&line));
                 if tx
                     .send(BroadcastRecord {
                         line_ordinal: *line_ordinal,

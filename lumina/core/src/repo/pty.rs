@@ -400,6 +400,46 @@ pub async fn update_pty_session_ended(
     Ok(())
 }
 
+/// Like `update_pty_session_ended` but only stamps a row whose `ended_at` is
+/// still NULL, returning the affected count. `1` = this caller stamped it; `0`
+/// = already terminal (or absent) → caller preserves whatever diagnostic is
+/// there. Collapses reap_exit's read+conditional-write into one statement and
+/// closes the TOCTOU vs a concurrent `delete_pty_session` (O3).
+pub async fn update_pty_session_ended_if_live(
+    db: &impl DbClient,
+    id: &str,
+    status: &str,
+    exit_code: Option<i64>,
+    last_error: Option<&str>,
+) -> Result<u64, AppError> {
+    let now = now_string();
+    let mut tx = db.begin().await?;
+
+    let affected = tx
+        .execute(
+            r#"
+        UPDATE pty_sessions
+        SET status = $2,
+            ended_at = $3,
+            exit_code = $4,
+            last_error = $5,
+            updated_at = $3
+        WHERE id = $1 AND ended_at IS NULL
+        "#,
+            args![
+                id.to_owned(),
+                status.to_owned(),
+                now,
+                exit_code,
+                last_error.map(|s| s.to_owned())
+            ],
+        )
+        .await?;
+
+    tx.commit().await?;
+    Ok(affected)
+}
+
 /// List sessions, optionally filtered by `status`, `project_id`, and/or
 /// `sprint_id` (the migration-0015 best-effort correlation hint — a session
 /// whose harvest missed the sprint carries NULL and won't match), newest-first
@@ -698,12 +738,15 @@ pub async fn pop_next_pending_pty(
     db: &impl DbClient,
     session_id: &str,
 ) -> Result<Option<PtyQueueEntry>, AppError> {
-    let now = now_string();
-    let mut tx = db.begin().await?;
-
-    let Some(picked) = crate::db::tx_query_opt::<PtyQueueEntry>(
-        tx.as_mut(),
-        r#"
+    // Peek with a NON-transactional WAL read — concurrent, takes no RESERVED
+    // writer lock. The supervisor is the SOLE popper (the `pending→dispatched`
+    // transition happens only here), so a peeked row is still ours to claim
+    // below; the common idle path (empty queue) returns here WITHOUT ever
+    // opening a write txn, so a lingering Idle session no longer serialises an
+    // empty write against every other writer on the shared db (O2).
+    let Some(picked) = db
+        .query_opt::<PtyQueueEntry>(
+            r#"
         SELECT
             id,
             session_id,
@@ -720,27 +763,33 @@ pub async fn pop_next_pending_pty(
         ORDER BY sequence ASC
         LIMIT 1
         "#,
-        args![session_id.to_owned()],
-    )
-    .await?
+            args![session_id.to_owned()],
+        )
+        .await?
     else {
-        // No pending row; close the (empty-write) tx and return None.
-        tx.commit().await?;
         return Ok(None);
     };
 
-    tx.execute(
-        r#"
+    let now = now_string();
+    let mut tx = db.begin().await?;
+    let affected = tx
+        .execute(
+            r#"
         UPDATE pty_queue
         SET status = 'dispatched',
             dispatched_at = $2
-        WHERE id = $1
+        WHERE id = $1 AND status = 'pending'
         "#,
-        args![picked.id.clone(), now.clone()],
-    )
-    .await?;
-
+            args![picked.id.clone(), now.clone()],
+        )
+        .await?;
     tx.commit().await?;
+
+    if affected == 0 {
+        // Raced away (not expected under the sole-popper invariant) — the row
+        // left `pending` between the peek and the claim, so we claimed nothing.
+        return Ok(None);
+    }
 
     // Reflect the just-applied transition in the returned struct (avoids a
     // second SELECT-back: the only column shape change is the two stamped

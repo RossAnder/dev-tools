@@ -18,30 +18,27 @@
 //! * `completed` — a `oneshot::Receiver<SessionExit>` signalling when the
 //!   child process has exited and `wait()` has yielded its status.
 //!
-//! ## Worker layout (five tasks)
+//! ## Worker layout (four tasks)
 //!
 //! 1. **reader-blocking** — `spawn_blocking` task owning the `Box<dyn Read>`
 //!    obtained from `master.try_clone_reader()`. Reads up to 4 KiB at a time
-//!    and pushes `Bytes` chunks down `reader_tx: mpsc::Sender<Bytes>`. Exits on
-//!    EOF (`Ok(0)`) or any I/O error. The child MUST NOT block on PTY
-//!    backpressure, so this task continues to drain regardless of downstream
-//!    interest.
+//!    into a reused buffer and DISCARDS the bytes: there is no live PTY-output
+//!    consumer today — the canonical transcript is read from the session JSONL
+//!    by `jsonl_tail::tail`, not from PTY bytes (T5). It still drains so the
+//!    PTY's small kernel-side buffer never fills and back-pressures the child,
+//!    and on the first non-empty read it stamps the `first_output_at` readiness
+//!    signal. Exits on EOF (`Ok(0)`) or any I/O error. A future
+//!    live-terminal-mirroring consumer would re-introduce a channel here.
 //! 2. **writer-blocking** — `spawn_blocking` task owning the `Box<dyn Write>`
 //!    obtained from `master.take_writer()`. Receives `Bytes` from
 //!    `writer_rx: mpsc::Receiver<Bytes>` via `blocking_recv()` and
 //!    `write_all` + `flush`. Exits on channel close.
-//! 3. **drain-and-discard reader bridge** — `tokio::spawn` async task that
-//!    consumes byte chunks from `reader_rx` and drops them. Replaced the
-//!    former vt100 `Parser`-bridge as part of T5: the transcript is read
-//!    from the session JSONL by `jsonl_tail::tail`, not from PTY bytes. The
-//!    bridge still must exist so the reader-blocking worker's `mpsc` never
-//!    fills (which would back-pressure the PTY read and block the child).
-//! 4. **input-bridge** — `tokio::spawn` async task converting `InputFrame`
+//! 3. **input-bridge** — `tokio::spawn` async task converting `InputFrame`
 //!    values received on `inbound_rx` into raw `Bytes` and forwarding them to
 //!    `writer_tx`. `Prompt` payloads pass through verbatim (the supervisor is
 //!    responsible for newline framing per T8 contract); `Cancel` emits ETX
 //!    (`\x03`); `Control` interprets `payload == "CTRL_C"` as ETX (v1 only).
-//! 5. **child-wait-blocking** — `spawn_blocking` task that owns the
+//! 4. **child-wait-blocking** — `spawn_blocking` task that owns the
 //!    `Box<dyn Child>` and calls `child.wait()` (blocking) to obtain the exit
 //!    status; sends the resulting [`SessionExit`] down the `completed_tx`
 //!    `oneshot::Sender`.
@@ -90,12 +87,17 @@ use config::{
     translate_keystroke_dsl,
 };
 
-/// Channel capacity for the outbound `broadcast::Sender<TypedMessage>`.
-const OUTBOUND_CAP: usize = 1024;
+/// Capacity of the outbound `broadcast::Sender<TypedMessage>`. This is a DEAD
+/// trait-compat stub kept at the minimum legal broadcast capacity: nothing ever
+/// produces into the channel (the JSONL-tail bridge in `spawn.rs` owns
+/// transcript production), so 1 vs a larger cap is ZERO behavioural change — but
+/// `broadcast::channel` requires capacity ≥ 1 and preallocates one
+/// `RwLock<Option<…>>` slot per unit of capacity, so the minimum avoids leaking
+/// ~1024 dead slots per spawned session. A future ACP/remote `Transport` that
+/// REVIVES the `outbound` production path should restore a real cap.
+const OUTBOUND_CAP: usize = 1;
 /// Channel capacity for `inbound: mpsc::Sender<InputFrame>`.
 const INBOUND_CAP: usize = 64;
-/// Channel capacity for the reader-bridge `mpsc<Bytes>`.
-const READER_BRIDGE_CAP: usize = 64;
 /// Channel capacity for the writer-bridge `mpsc<Bytes>`.
 const WRITER_BRIDGE_CAP: usize = 64;
 /// Per-read buffer size used by the reader-blocking worker.
@@ -419,18 +421,40 @@ impl Transport for PtyTransport {
         // ---- 5. Wire channels ----------------------------------------------
         let (outbound_tx, outbound_rx) = broadcast::channel::<TypedMessage>(OUTBOUND_CAP);
         let (inbound_tx, mut inbound_rx) = mpsc::channel::<InputFrame>(INBOUND_CAP);
-        let (reader_tx, mut reader_rx) = mpsc::channel::<Bytes>(READER_BRIDGE_CAP);
         let (writer_tx, mut writer_rx) = mpsc::channel::<Bytes>(WRITER_BRIDGE_CAP);
         let (completed_tx, completed_rx) = oneshot::channel::<SessionExit>();
 
+        // The outbound broadcast is a DEAD trait-compat stub (see OUTBOUND_CAP):
+        // nothing ever produces into it — the JSONL-tail bridge in `spawn.rs`
+        // owns transcript production. This keepalive clone is a liveness pin for
+        // the otherwise-unused sender; a future ACP/remote `Transport` reviving
+        // the outbound path would produce here.
+        let _outbound_tx_keepalive = outbound_tx.clone();
+
         let shutdown = CancellationToken::new();
 
+        // PTY-OUTPUT READINESS SIGNAL: the reader-blocking worker below is the
+        // single tap point for "claude's first PTY-output byte" — the readiness
+        // signal the supervisor's startup gate uses to hold the initial prompt
+        // until claude's TUI/readline is live (claude writes no JSONL until it
+        // processes a prompt, so a JSONL-based gate would deadlock). We create
+        // the shared stamp here, clone it into the worker to stamp ONCE on the
+        // first non-empty read, and return it on the handle so `spawn.rs`
+        // threads it onto the `Session`.
+        let first_output_at = Arc::new(AtomicI64::new(0));
+
         // ---- 6. Reader-blocking worker -------------------------------------
-        // Owns `reader` (`Box<dyn Read + Send>`). Reads 4 KiB chunks and
-        // forwards them down `reader_tx`. Uses `blocking_send` because we are
-        // inside `spawn_blocking`.
+        // Owns `reader` (`Box<dyn Read + Send>`). Reads 4 KiB chunks into a
+        // reused buffer and DISCARDS them: there is no live PTY-output consumer
+        // today (the canonical transcript flows out of `jsonl_tail::tail`, not
+        // PTY bytes — T5), so the bytes are dropped in place. The worker still
+        // must drain the PTY so its small kernel-side buffer never fills and
+        // back-pressures the child on output; with no downstream channel there
+        // is nothing to fill, so it reads, discards into `buf`, and reads again.
+        // A future live-terminal-mirroring consumer would re-introduce a channel
+        // here. On the first non-empty read it stamps `first_output_at`.
         {
-            let reader_tx = reader_tx.clone();
+            let first_output_at = first_output_at.clone();
             tokio::task::spawn_blocking(move || {
                 use std::io::Read;
                 let mut reader = reader;
@@ -442,11 +466,22 @@ impl Transport for PtyTransport {
                             break;
                         }
                         Ok(n) => {
-                            let chunk = Bytes::copy_from_slice(&buf[..n]);
                             tracing::trace!(bytes = n, "pty reader: chunk drained");
-                            if reader_tx.blocking_send(chunk).is_err() {
-                                // Drain-and-discard bridge has gone — nothing left to read for.
-                                break;
+                            // Stamp the wall-clock ms of the FIRST non-empty
+                            // read, ONCE. The `Ok(0)` arm above means `n > 0`
+                            // here, but guard `n > 0` anyway for clarity.
+                            // SOLE WRITER: this worker is the ONLY task that ever
+                            // STOREs `first_output_at` (the supervisor and
+                            // `Session` only LOAD it), so the non-atomic
+                            // load-then-store "set once" check cannot tear or
+                            // double-store — Relaxed suffices, the same
+                            // single-writer justification as
+                            // `Session::next_sequence`.
+                            if n > 0 && first_output_at.load(Ordering::Relaxed) == 0 {
+                                first_output_at.store(
+                                    jiff::Timestamp::now().as_millisecond(),
+                                    Ordering::Relaxed,
+                                );
                             }
                         }
                         Err(e) => {
@@ -457,9 +492,6 @@ impl Transport for PtyTransport {
                 }
             });
         }
-        // Drop our local clone of reader_tx so the drain-and-discard bridge
-        // sees `None` when the reader worker exits.
-        drop(reader_tx);
 
         // ---- 7. Writer-blocking worker -------------------------------------
         // Owns `writer` (`Box<dyn Write + Send>`). Pulls `Bytes` off
@@ -479,50 +511,7 @@ impl Transport for PtyTransport {
             }
         });
 
-        // ---- 8. Drain-and-discard reader bridge async task -----------------
-        // Replaces the former vt100 parser-bridge (T5 / lumina-pty-jsonl-tail):
-        // the canonical transcript now flows out of `jsonl_tail::tail`, so we
-        // do NOT parse PTY bytes. We still must drain `reader_rx` so the
-        // reader-blocking worker's mpsc never fills — backpressure on the
-        // mpsc would propagate to the blocking `read()` and stall the child
-        // on PTY output (the PTY itself has a small kernel-side buffer).
-        // `outbound_tx` is kept alive by the handle field below but never
-        // produced into (the JSONL bridge in spawn.rs owns the production
-        // path now).
-        //
-        // PTY-OUTPUT READINESS SIGNAL: this drain bridge is the single tap
-        // point for "claude's first PTY-output byte" — the readiness signal the
-        // supervisor's startup gate uses to hold the initial prompt until
-        // claude's TUI/readline is live (claude writes no JSONL until it
-        // processes a prompt, so a JSONL-based gate would deadlock). We create
-        // the shared stamp here, clone it into the bridge to stamp ONCE on the
-        // first non-empty chunk, and return it on the handle so `spawn.rs`
-        // threads it onto the `Session`.
-        let first_output_at = Arc::new(AtomicI64::new(0));
-        let _outbound_tx_keepalive = outbound_tx.clone();
-        let first_output_at_bridge = first_output_at.clone();
-        tokio::spawn(async move {
-            while let Some(chunk) = reader_rx.recv().await {
-                // Stamp the wall-clock ms of the FIRST non-empty chunk, ONCE.
-                // The reader worker only forwards non-empty chunks, but guard
-                // `!chunk.is_empty()` anyway for clarity. This is a single
-                // relaxed atomic store on the first byte only — it adds no
-                // latency or buffering, so the drain's backpressure semantics
-                // are otherwise unchanged.
-                // SOLE WRITER: this drain bridge is the ONLY task that ever
-                // STOREs `first_output_at` (the supervisor and `Session` only
-                // LOAD it), so the non-atomic load-then-store "set once" check
-                // below cannot tear or double-store — Relaxed suffices here, the
-                // same single-writer justification as `Session::next_sequence`.
-                if !chunk.is_empty() && first_output_at_bridge.load(Ordering::Relaxed) == 0 {
-                    first_output_at_bridge
-                        .store(jiff::Timestamp::now().as_millisecond(), Ordering::Relaxed);
-                }
-                // Drop. The chunk's bytes are released as the binding ends.
-            }
-        });
-
-        // ---- 9. Input-bridge async task ------------------------------------
+        // ---- 8. Input-bridge async task ------------------------------------
         // Translates `InputFrame` values from the supervisor into raw `Bytes`
         // for the writer-blocking worker. Claude's TUI (Ink/React on raw-mode
         // stdin) recognises `\r` (0x0D, carriage return) as the Enter key —
@@ -613,7 +602,7 @@ impl Transport for PtyTransport {
         // once both the input-bridge and the cancel task are done with it.
         drop(writer_tx);
 
-        // ---- 10. Child-wait blocking worker --------------------------------
+        // ---- 9. Child-wait blocking worker ---------------------------------
         // Owns the child. Calls `child.wait()` (blocking) and forwards the
         // exit status as a `SessionExit`. portable-pty 0.8.1's `ExitStatus`
         // exposes `exit_code() -> u32` and `success() -> bool`; signal info is
@@ -652,7 +641,7 @@ impl Transport for PtyTransport {
             let _ = completed_tx.send(exit);
         });
 
-        // ---- 11. Cancel async task -----------------------------------------
+        // ---- 10. Cancel async task -----------------------------------------
         // On shutdown, kill the child via the cloned `ChildKiller`, then drop
         // `master` to unblock any in-flight blocking read on Unix (closing the
         // master fd / handle causes pending `read()` syscalls in the
@@ -677,7 +666,7 @@ impl Transport for PtyTransport {
             });
         }
 
-        // ---- 12. Hand back the handle --------------------------------------
+        // ---- 11. Hand back the handle --------------------------------------
         // The session id MUST be the same uuid we passed to claude via
         // `--session-id` above so the supervisor's bookkeeping aligns with
         // the API/telemetry id the child reports (the JSONL filename is a
