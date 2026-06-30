@@ -627,6 +627,7 @@ mod tests {
             bcast_tx,
             input_tx,
             tokio_util::sync::CancellationToken::new(),
+            std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)),
         );
         let sid = session.id;
         state.pty_registry.insert(session.clone()).await;

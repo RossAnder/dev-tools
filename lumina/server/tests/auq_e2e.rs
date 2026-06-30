@@ -366,6 +366,7 @@ impl Transport for StubTransport {
             inbound: inbound_tx,
             shutdown,
             completed: completed_rx,
+            first_output_at: std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)),
         })
     }
 }

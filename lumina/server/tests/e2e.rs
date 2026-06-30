@@ -5842,6 +5842,7 @@ impl lumina_server::pty::transport::Transport for LaunchMockTransport {
             inbound,
             shutdown: CancellationToken::new(),
             completed,
+            first_output_at: std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)),
         })
     }
 }

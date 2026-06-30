@@ -535,6 +535,7 @@ mod tests {
             bcast_tx,
             input_tx,
             tokio_util::sync::CancellationToken::new(),
+            std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)),
         );
         session.set_status(SessionStatus::Idle).await;
         registry.insert(session.clone()).await;

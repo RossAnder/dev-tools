@@ -223,6 +223,10 @@ pub async fn spawn_pty_session_internal(
         broadcast_tx.clone(),
         handle.inbound,
         handle.shutdown.clone(),
+        // The transport's drain bridge stamps this on claude's first PTY-output
+        // byte; threading it onto the Session lets the supervisor's startup gate
+        // hold the initial prompt until claude's readline is live.
+        handle.first_output_at,
     );
 
     // Clone the Arc<Session> BEFORE insert so the bridge task can retain its
@@ -797,6 +801,7 @@ mod tests {
                 inbound,
                 shutdown: CancellationToken::new(),
                 completed,
+                first_output_at: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             })
         }
     }

@@ -76,6 +76,7 @@ mod tests {
             bcast,
             input_tx,
             tokio_util::sync::CancellationToken::new(),
+            std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)),
         )
     }
 

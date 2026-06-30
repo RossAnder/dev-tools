@@ -71,6 +71,9 @@
 //! cancel task. Master is dropped in the same cancel task to unblock any
 //! pending blocking reads on Unix.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
+
 use async_trait::async_trait;
 use bytes::Bytes;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -486,9 +489,30 @@ impl Transport for PtyTransport {
         // `outbound_tx` is kept alive by the handle field below but never
         // produced into (the JSONL bridge in spawn.rs owns the production
         // path now).
+        //
+        // PTY-OUTPUT READINESS SIGNAL: this drain bridge is the single tap
+        // point for "claude's first PTY-output byte" — the readiness signal the
+        // supervisor's startup gate uses to hold the initial prompt until
+        // claude's TUI/readline is live (claude writes no JSONL until it
+        // processes a prompt, so a JSONL-based gate would deadlock). We create
+        // the shared stamp here, clone it into the bridge to stamp ONCE on the
+        // first non-empty chunk, and return it on the handle so `spawn.rs`
+        // threads it onto the `Session`.
+        let first_output_at = Arc::new(AtomicI64::new(0));
         let _outbound_tx_keepalive = outbound_tx.clone();
+        let first_output_at_bridge = first_output_at.clone();
         tokio::spawn(async move {
-            while let Some(_chunk) = reader_rx.recv().await {
+            while let Some(chunk) = reader_rx.recv().await {
+                // Stamp the wall-clock ms of the FIRST non-empty chunk, ONCE.
+                // The reader worker only forwards non-empty chunks, but guard
+                // `!chunk.is_empty()` anyway for clarity. This is a single
+                // relaxed atomic store on the first byte only — it adds no
+                // latency or buffering, so the drain's backpressure semantics
+                // are otherwise unchanged.
+                if !chunk.is_empty() && first_output_at_bridge.load(Ordering::Relaxed) == 0 {
+                    first_output_at_bridge
+                        .store(jiff::Timestamp::now().as_millisecond(), Ordering::Relaxed);
+                }
                 // Drop. The chunk's bytes are released as the binding ends.
             }
         });
@@ -661,6 +685,7 @@ impl Transport for PtyTransport {
             inbound: inbound_tx,
             shutdown,
             completed: completed_rx,
+            first_output_at,
         })
     }
 }

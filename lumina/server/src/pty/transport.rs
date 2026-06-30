@@ -6,6 +6,8 @@
 //! hands the resulting `TransportHandle` to per-session bookkeeping.
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicI64;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -60,6 +62,14 @@ pub struct TransportHandle {
     pub inbound: mpsc::Sender<InputFrame>,
     pub shutdown: CancellationToken,
     pub completed: oneshot::Receiver<SessionExit>,
+    /// PTY-output readiness stamp: the wall-clock ms of claude's FIRST
+    /// non-empty PTY chunk (`0` until then). Created in `Transport::spawn` and
+    /// shared with its drain-and-discard bridge, which stamps it once; the
+    /// spawn pipeline threads this onto the `Session` so the supervisor's
+    /// startup-readiness gate can hold the initial prompt until claude's
+    /// readline is live (claude writes no JSONL until it processes a prompt, so
+    /// a JSONL-based gate would deadlock).
+    pub first_output_at: Arc<AtomicI64>,
 }
 
 /// Pluggable transport for interactive sessions. The only implementation in

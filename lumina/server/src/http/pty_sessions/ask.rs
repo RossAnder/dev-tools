@@ -319,7 +319,7 @@ mod tests {
     ) -> (SessionId, mpsc::Receiver<InputFrame>) {
         let (bcast_tx, _bcast_rx) = broadcast::channel(16);
         let (input_tx, input_rx) = mpsc::channel(32);
-        let session = Session::new(SessionId::new(), bcast_tx, input_tx, tokio_util::sync::CancellationToken::new());
+        let session = Session::new(SessionId::new(), bcast_tx, input_tx, tokio_util::sync::CancellationToken::new(), std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)));
         let id = session.id;
         state.pty_registry.insert(session).await;
         (id, input_rx)
@@ -412,7 +412,7 @@ mod tests {
         let state = empty_state(pool);
         let (bcast_tx, _bcast_rx) = broadcast::channel(16);
         let (input_tx, _input_rx) = mpsc::channel(8);
-        let session = Session::new(SessionId::new(), bcast_tx, input_tx, tokio_util::sync::CancellationToken::new());
+        let session = Session::new(SessionId::new(), bcast_tx, input_tx, tokio_util::sync::CancellationToken::new(), std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)));
         let sid = session.id;
         session.set_status(SessionStatus::Cancelled).await;
         state.pty_registry.insert(session).await;
@@ -514,7 +514,7 @@ mod tests {
 
         let (bcast_tx, mut bcast_rx) = broadcast::channel(16);
         let (input_tx, _input_rx) = mpsc::channel(8);
-        let session = Session::new(SessionId::new(), bcast_tx, input_tx, tokio_util::sync::CancellationToken::new());
+        let session = Session::new(SessionId::new(), bcast_tx, input_tx, tokio_util::sync::CancellationToken::new(), std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)));
         let sid = session.id;
         state.pty_registry.insert(session.clone()).await;
 
@@ -571,7 +571,7 @@ mod tests {
 
         let (bcast_tx, _bcast_rx) = broadcast::channel(16);
         let (input_tx, _input_rx) = mpsc::channel(8);
-        let session = Session::new(SessionId::new(), bcast_tx, input_tx, tokio_util::sync::CancellationToken::new());
+        let session = Session::new(SessionId::new(), bcast_tx, input_tx, tokio_util::sync::CancellationToken::new(), std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)));
         let sid = session.id;
         state.pty_registry.insert(session.clone()).await;
 
@@ -611,7 +611,7 @@ mod tests {
 
         let (bcast_tx, _bcast_rx) = broadcast::channel(16);
         let (input_tx, _input_rx) = mpsc::channel(8);
-        let session = Session::new(SessionId::new(), bcast_tx, input_tx, tokio_util::sync::CancellationToken::new());
+        let session = Session::new(SessionId::new(), bcast_tx, input_tx, tokio_util::sync::CancellationToken::new(), std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)));
         let sid = session.id;
         state.pty_registry.insert(session).await;
 

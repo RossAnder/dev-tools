@@ -46,6 +46,22 @@ pub struct Session {
     /// bridge has observed (or `0` if none yet). Compared against
     /// `IDLE_THRESHOLD` for the JSONL-tail quiescence check.
     pub last_record_at: AtomicI64,
+    /// Wall-clock millisecond stamp of the FIRST non-empty PTY-output chunk
+    /// the drain-and-discard bridge observed from claude (or `0` if none yet).
+    /// Unlike `last_record_at` (a plain `AtomicI64` owned wholly here), this is
+    /// an `Arc<AtomicI64>` created in `Transport::spawn` and SHARED with the
+    /// transport's drain bridge — the bridge stamps it once on claude's first
+    /// byte, and the supervisor's startup-readiness gate reads it to hold the
+    /// initial prompt until claude's TUI/readline is live. ONE-WAY: set once on
+    /// the first chunk and never reset, so it gates only the first dispatch and
+    /// never regresses an interactive `POST /input` prompt.
+    pub first_output_at: Arc<AtomicI64>,
+    /// Wall-clock millisecond stamp of this session's birth, stamped inside
+    /// `Session::new`. Backs the startup-failsafe cap: a session whose
+    /// `first_output_at` stays `0` past `MAX_STARTUP_MS` beyond this instant is
+    /// marked `Failed`. An `AtomicI64` (not a plain `i64`) so tests can backdate
+    /// it via `.store(...)` to exercise the timeout arm deterministically.
+    pub spawned_at_ms: AtomicI64,
     pub sequence_counter: AtomicI64,
     /// In-flight `ask_user_question` MCP-tool calls (`crate::pty::ask`), keyed
     /// by the synthetic question id (== the AUQ `tool_use_id` the SPA pairs on).
@@ -60,12 +76,17 @@ pub struct Session {
 impl Session {
     /// Construct a fresh session in [`SessionStatus::Spawning`]. Callers
     /// supply the broadcast + input channels they constructed for this
-    /// session's read/write tasks.
+    /// session's read/write tasks, plus the `first_output_at` PTY-output
+    /// readiness stamp the transport's drain bridge writes (a fresh
+    /// `Arc::new(AtomicI64::new(0))` is correct for a session with no real
+    /// transport — tests, the ask-only stub). `spawned_at_ms` is stamped here
+    /// to this session's birth instant for the startup-failsafe cap.
     pub fn new(
         id: SessionId,
         broadcast_tx: broadcast::Sender<TypedMessage>,
         input_tx: mpsc::Sender<InputFrame>,
         shutdown: CancellationToken,
+        first_output_at: Arc<AtomicI64>,
     ) -> Arc<Self> {
         Arc::new(Self {
             id,
@@ -75,6 +96,8 @@ impl Session {
             shutdown,
             outstanding_tool_uses: Mutex::new(HashSet::new()),
             last_record_at: AtomicI64::new(0),
+            first_output_at,
+            spawned_at_ms: AtomicI64::new(jiff::Timestamp::now().as_millisecond()),
             sequence_counter: AtomicI64::new(1),
             pending_questions: Mutex::new(HashMap::new()),
         })
