@@ -43,6 +43,21 @@ const TICK_PERIOD: Duration = Duration::from_millis(250);
 /// session as "model has finished its turn". The check additionally requires
 /// every outstanding `tool_use` to have been answered by a `tool_result`.
 const IDLE_THRESHOLD: Duration = Duration::from_millis(750);
+/// Fixed grace after claude's first PTY output before the supervisor dispatches
+/// the first queued prompt. claude's first PTY byte arrives ~60ms post-spawn but
+/// its full TUI/readline repaint only completes ~1614ms in; a prompt submitted
+/// before readline is live is swallowed. 2500ms dispatches comfortably past
+/// readline-ready and under the ~3000ms proven-good point (calibrated against
+/// claude 2.1.196; re-tune via tests/pty_readiness_probe.rs after a Claude Code
+/// bump).
+const READY_DELAY_MS: i64 = 2500;
+/// Startup cap: if a session emits ZERO PTY output within this long, it is a
+/// wedged claude and the session is marked Failed. Keyed on ZERO PTY output —
+/// a real claude emits its first byte at ~60ms, so this never trips a healthy
+/// startup; only a truly-wedged one (no output at all) hits it. Deliberately
+/// generous (calibrated against claude 2.1.196; re-tune via
+/// tests/pty_readiness_probe.rs after a Claude Code bump).
+const MAX_STARTUP_MS: i64 = 45_000;
 /// Capacity of the registration mpsc. 64 is comfortably above any plausible
 /// burst of session spawns (HTTP `POST /pty/sessions` is single-shot per
 /// request).
@@ -159,6 +174,39 @@ fn make_exit_future(
     })
 }
 
+/// Outcome of the first-prompt dispatch gate. `Ready` = dispatch now; `Wait` =
+/// hold the queued prompt and retry next tick; `StartupTimedOut` = no PTY
+/// output by the startup cap, mark the session Failed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Gate {
+    Ready,
+    Wait,
+    StartupTimedOut,
+}
+
+/// Decide whether the first queued prompt may be dispatched yet. The readiness
+/// signal is PTY OUTPUT, never JSONL (interactive claude writes no JSONL until
+/// it processes a prompt — a JSONL gate would deadlock; see spawn.rs:254-264).
+///
+/// Pure / deterministic (no I/O, no clock read) so the unit tests can pin
+/// `now_ms` to a fixed synthetic instant. Once `first_output_at > 0` the gate is
+/// one-way Ready-bound (grace then Ready), so a post-turn Idle session with an
+/// old first-output stamp is always Ready — the startup-timeout arm only fires
+/// while no output has EVER been seen.
+fn dispatch_gate(first_output_at: i64, spawned_at_ms: i64, now_ms: i64) -> Gate {
+    if first_output_at > 0 {
+        if now_ms.saturating_sub(first_output_at) >= READY_DELAY_MS {
+            Gate::Ready
+        } else {
+            Gate::Wait
+        }
+    } else if now_ms.saturating_sub(spawned_at_ms) > MAX_STARTUP_MS {
+        Gate::StartupTimedOut
+    } else {
+        Gate::Wait
+    }
+}
+
 /// One periodic-tick pass over the registry. For each session: if `Idle`,
 /// pop a queued input and dispatch it; if `Awaiting`, check JSONL quiescence
 /// and transition back to `Idle` on end-of-turn.
@@ -169,7 +217,14 @@ async fn tick_once(pool: &SqlitePool, registry: &SessionRegistry) {
         let status = session.status().await;
         match status {
             SessionStatus::Idle => {
-                dispatch_one(pool, &session).await;
+                let first_output_at = session.first_output_at.load(Ordering::Relaxed);
+                let spawned_at_ms = session.spawned_at_ms.load(Ordering::Relaxed);
+                let now_ms = jiff::Timestamp::now().as_millisecond();
+                match dispatch_gate(first_output_at, spawned_at_ms, now_ms) {
+                    Gate::Ready => dispatch_one(pool, &session).await,
+                    Gate::Wait => { /* hold the queued prompt; retry next tick */ }
+                    Gate::StartupTimedOut => mark_startup_timed_out(pool, &session).await,
+                }
             }
             SessionStatus::Awaiting => {
                 maybe_finalise_turn(pool, &session).await;
@@ -324,6 +379,29 @@ async fn dispatch_one(pool: &SqlitePool, session: &Arc<crate::pty::session::Sess
     // NOTE: the queue entry stays in `dispatched` state. It is marked
     // completed in `maybe_finalise_turn` when the JSONL-tail bridge has
     // gone quiet AND no outstanding `tool_use` is waiting for a result.
+}
+
+/// Mark a session Failed after a wedged startup (no PTY output by MAX_STARTUP_MS).
+/// Mirrors `dispatch_one`'s input-channel-closed mark-Failed path: surface the
+/// failure on `pty_sessions.last_error` (so the UI sees it) and flip the
+/// in-memory status. Every error is logged and swallowed — the supervisor must
+/// survive a per-session fault.
+async fn mark_startup_timed_out(pool: &SqlitePool, session: &Arc<crate::pty::session::Session>) {
+    let session_id_str = session.id.to_string();
+    let msg = "claude produced no PTY output within startup cap";
+    tracing::warn!(
+        session_id = %session_id_str,
+        "supervisor: startup timed out; marking session Failed"
+    );
+    if let Err(err) =
+        repo::pty::update_pty_session_status(pool, &session_id_str, "failed", Some(msg)).await
+    {
+        tracing::warn!(
+            error = %err,
+            "supervisor: update_pty_session_status(failed) cascade error"
+        );
+    }
+    session.set_status(SessionStatus::Failed).await;
 }
 
 /// If the JSONL-tail bridge has gone quiet and no `tool_use` is outstanding,
@@ -551,5 +629,175 @@ mod tests {
         );
 
         handle.shutdown().await;
+    }
+
+    // ----- dispatch_gate: pure predicate (deterministic, no PTY, no DB) -----
+
+    /// Fixed synthetic "now" for the pure-predicate tests — the others are
+    /// derived from it + the consts so no real clock is read.
+    const NOW: i64 = 1_000_000_000_000;
+
+    #[test]
+    fn gate_ready_when_output_seen_and_grace_elapsed() {
+        // first_output_at > 0 AND now - first_output_at >= READY_DELAY_MS.
+        let first_output_at = NOW - READY_DELAY_MS; // exactly the grace boundary
+        let spawned_at_ms = NOW - 100_000;
+        assert_eq!(
+            dispatch_gate(first_output_at, spawned_at_ms, NOW),
+            Gate::Ready
+        );
+    }
+
+    #[test]
+    fn gate_wait_when_output_seen_but_grace_not_elapsed() {
+        // first_output_at > 0 AND grace NOT yet elapsed (one ms short).
+        let first_output_at = NOW - (READY_DELAY_MS - 1);
+        let spawned_at_ms = NOW - 100_000;
+        assert_eq!(
+            dispatch_gate(first_output_at, spawned_at_ms, NOW),
+            Gate::Wait
+        );
+    }
+
+    #[test]
+    fn gate_wait_when_no_output_within_startup_cap() {
+        // first_output_at == 0 AND now - spawned <= MAX_STARTUP_MS (at the cap).
+        let spawned_at_ms = NOW - MAX_STARTUP_MS;
+        assert_eq!(dispatch_gate(0, spawned_at_ms, NOW), Gate::Wait);
+    }
+
+    #[test]
+    fn gate_timed_out_when_no_output_past_startup_cap() {
+        // first_output_at == 0 AND now - spawned > MAX_STARTUP_MS.
+        let spawned_at_ms = NOW - MAX_STARTUP_MS - 1;
+        assert_eq!(
+            dispatch_gate(0, spawned_at_ms, NOW),
+            Gate::StartupTimedOut
+        );
+    }
+
+    // ----- tick_once: deterministic integration (direct call, no loop) -----
+
+    #[tokio::test]
+    async fn tick_holds_first_prompt_until_output_then_dispatches() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("in-memory pool")));
+        let registry = SessionRegistry::new();
+
+        let session_id = SessionId::new();
+        let session_id_str = session_id.to_string();
+        repo::pty::create_pty_session(
+            pool.sqlite(),
+            &session_id_str,
+            None,
+            None,
+            "/tmp",
+            "{}",
+            None,
+        )
+        .await
+        .expect("seed pty_session");
+
+        let (bcast_tx, _bcast_rx) = broadcast::channel(16);
+        // HOLD the receiver so a dispatched frame can be observed via try_recv.
+        let (input_tx, mut input_rx) = tokio_mpsc::channel(4);
+        let session = Session::new(
+            session_id,
+            bcast_tx,
+            input_tx,
+            tokio_util::sync::CancellationToken::new(),
+            std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)),
+        );
+        session.set_status(SessionStatus::Idle).await;
+        registry.insert(session.clone()).await;
+
+        // Enqueue a prompt so there IS something to dispatch once the gate opens.
+        Queue::enqueue(pool.sqlite(), &session_id_str, 1, "prompt", "hi\n")
+            .await
+            .expect("enqueue prompt");
+
+        // first_output_at starts 0 — claude has emitted nothing; the gate must
+        // WAIT (spawned_at_ms is recent, so it is not a startup timeout either).
+        assert_eq!(session.first_output_at.load(Ordering::Relaxed), 0);
+        tick_once(pool.sqlite(), &registry).await;
+        assert!(
+            matches!(input_rx.try_recv(), Err(tokio_mpsc::error::TryRecvError::Empty)),
+            "no frame should dispatch while first_output_at == 0 (gate = Wait)"
+        );
+        assert_eq!(
+            session.status().await,
+            SessionStatus::Idle,
+            "session stays Idle while the prompt is held"
+        );
+
+        // Backdate first_output_at so the readiness grace is satisfied. With
+        // first_output_at > 0 the spawned_at_ms cap is irrelevant.
+        session.first_output_at.store(
+            jiff::Timestamp::now().as_millisecond() - READY_DELAY_MS - 100,
+            Ordering::Relaxed,
+        );
+        tick_once(pool.sqlite(), &registry).await;
+        match input_rx.try_recv() {
+            Ok(frame) => assert_eq!(
+                frame.kind,
+                InputKind::Prompt,
+                "the dispatched frame should be the queued prompt"
+            ),
+            other => panic!("expected a dispatched Prompt frame, got {other:?}"),
+        }
+        assert_eq!(
+            session.status().await,
+            SessionStatus::Awaiting,
+            "dispatching the first prompt transitions the session to Awaiting"
+        );
+    }
+
+    #[tokio::test]
+    async fn tick_marks_session_failed_on_startup_timeout() {
+        let pool = Arc::new(AnyPool::from(connect_in_memory().await.expect("in-memory pool")));
+        let registry = SessionRegistry::new();
+
+        let session_id = SessionId::new();
+        let session_id_str = session_id.to_string();
+        repo::pty::create_pty_session(
+            pool.sqlite(),
+            &session_id_str,
+            None,
+            None,
+            "/tmp",
+            "{}",
+            None,
+        )
+        .await
+        .expect("seed pty_session");
+
+        let (bcast_tx, _bcast_rx) = broadcast::channel(16);
+        let (input_tx, _input_rx) = tokio_mpsc::channel(4);
+        let session = Session::new(
+            session_id,
+            bcast_tx,
+            input_tx,
+            tokio_util::sync::CancellationToken::new(),
+            std::sync::Arc::new(std::sync::atomic::AtomicI64::new(0)),
+        );
+        session.set_status(SessionStatus::Idle).await;
+        // No PTY output ever AND birth backdated past the startup cap => wedged.
+        session.spawned_at_ms.store(
+            jiff::Timestamp::now().as_millisecond() - MAX_STARTUP_MS - 1000,
+            Ordering::Relaxed,
+        );
+        registry.insert(session.clone()).await;
+
+        tick_once(pool.sqlite(), &registry).await;
+        assert_eq!(
+            session.status().await,
+            SessionStatus::Failed,
+            "a session with zero PTY output past MAX_STARTUP_MS is marked Failed"
+        );
+
+        // The DB row should mirror the in-memory Failed status (nice-to-have).
+        let row = repo::pty::get_pty_session(pool.sqlite(), &session_id_str)
+            .await
+            .expect("read pty_session");
+        assert_eq!(row.status, "failed");
     }
 }
