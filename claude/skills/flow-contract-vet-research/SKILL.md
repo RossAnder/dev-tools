@@ -1,6 +1,6 @@
 ---
 name: flow-contract-vet-research
-description: Universal vet-pass procedure for research-agent output — the orchestrator-side gate that distinguishes "research returned" from "research findings are trustworthy". Triages by evidence-grade, honours ESCALATE-TO-DEEP flags, drops unverified low-confidence findings, spot-checks sampled findings against cited file:line / URLs / library versions, downgrades or drops fabrications, appends a durable [[vet_events]] ledger entry, emits a mandatory per-agent console summary line, and escalates `research-lite`→`research-deep` on >30% systemic failure. Consult immediately after a research-lite or research-deep agent returns, before persisting findings to any ledger or notes section.
+description: Orchestrator-side vet pass run after a research agent returns — triage by evidence-grade, spot-check cited file:line/URLs/versions, drop or downgrade fabrications, append a vet_event, escalate on >30% systemic failure. Dispatched by name from flow carriers (review, optimise, plan-new, plan-update, review-plan, test-bootstrap); consult before persisting research findings to any ledger.
 ---
 
 **Vet research-agent output (orchestrator).** This block defines the universal vet-pass procedure the orchestrator runs after research-agent dispatch returns. The build/test verification agent catches code-shape failures, but it does NOT catch fabricated `file:line` references, made-up library version pins, or low-confidence claims dressed up as fact in research output. The vet pass is the gate that distinguishes "research returned" from "research findings are trustworthy."
@@ -21,6 +21,6 @@ description: Universal vet-pass procedure for research-agent output — the orch
 
    `array-append` is a `mutate_doc*`-routed verb, so this idiom works against a fresh (missing) ledger too — the first `vet_events` append auto-creates the file with the `schema_version = 1` skeleton, no pre-initialisation needed.
 
-   See the `flow-contract-ledger-schema` skill → Vet event log section for the full field set.
+   Every `vet_events` field is inline in the heredoc above — do **not** load the `flow-contract-ledger-schema` skill to write one. Consult it only if you need the full ledger schema for some other reason.
 7. **Emit the mandatory console line per agent**: `vet: Agent-{n} (<lens>) — N findings sampled, M dropped, K downgraded`. The format is fixed; lens names are carrier-specific (see carrier prose).
 8. **>30% systemic failure rule.** If more than 30% of an agent's findings fail vetting, re-dispatch that lens with the failure pattern in the prompt. For `research-lite` agents, the re-dispatch SHOULD escalate to `research-deep` (the systemic failure indicates the lens is too judgement-heavy or fabrication-prone for a fetch-and-summarise pass on this profile).

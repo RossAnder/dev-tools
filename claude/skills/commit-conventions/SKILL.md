@@ -45,9 +45,9 @@ This makes the carve-out an explicit contract, not a heuristic — the model mus
 
 ## Step 2: Resolve project conventions
 
-Walk top to bottom; first match wins. See `references/detection.md` for per-source parse routines and the polyglot regex set.
+Walk top to bottom; first match wins. **Check layer 1 first: if `.claude/commit-conventions.toml` exists, it settles everything — skip straight to it and do not read `references/detection.md`.** Only when layer 1 is absent do you consult `references/detection.md` (per-source parse routines + the polyglot regex set) for layers 2-6.
 
-1. **`.claude/commit-conventions.toml`** — authoritative. Read via `tomlctl get .claude/commit-conventions.toml dialect` and per-dialect sub-tables (`[conventional]`, `[gitmoji]`, `[plain]`, `[custom]`). Honour any `ban_subjects = [...]` list verbatim.
+1. **`.claude/commit-conventions.toml`** — authoritative. If present, read it and **STOP: do not open `references/detection.md`, and do not run `git log` inference** — layers 2-5 exist only to reconstruct what this file states outright, so consulting them once layer 1 hits is wasted work (and wasted tokens). Read via `tomlctl get .claude/commit-conventions.toml dialect` and the matching per-dialect sub-table (`[conventional-commits]`, `[gitmoji]`, `[plain]`, or `[custom]` — the sub-table name equals the `dialect` value). Honour any `ban_subjects = [...]` list verbatim.
 2. **Release / changelog / versioning tool config (polyglot)** — first-found wins; ecosystem order TS/Vue/React → Rust → .NET/C# → universal. Two flavours: *vocab sources* (commitlint, commitizen, release-please, git-cliff `[git.commit_parsers]`) export concrete type/scope vocabularies; *CC-presence signals* (semantic-release, changesets, cargo-release, GitVersion, Nerdbank.GitVersioning) pin the dialect to Conventional Commits without vocab, falling through for scope while keeping the dialect pinned. `git config commit.template` is also consulted.
 3. **Repo-root or `.claude/`-rooted `scopes.txt`** — newline-delimited scopes.
 4. **`CONTRIBUTING.md` / `CLAUDE.md`** — heuristic prose scan for "Conventional Commits", "gitmoji", or pinned-regex blocks.
