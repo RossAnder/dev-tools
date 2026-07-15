@@ -1,0 +1,25 @@
+[package]
+name = "statusline"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+authors = ["Ross Anderson"]
+description = "Native Claude Code statusline renderer — replaces statusline.ps1 to cut per-refresh cost from ~1s of pwsh cold-start to milliseconds"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "statusline"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "^1", features = ["derive"] }
+serde_json = "^1"
+# `clock` only: Local-timezone rendering of the rate-limit reset epochs.
+chrono = { version = "^0.4", default-features = false, features = ["clock"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
