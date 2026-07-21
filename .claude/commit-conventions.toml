@@ -1,0 +1,43 @@
+# Per-project commit-conventions config — layer 1 of the `commit-conventions` skill's
+# detection precedence. Its PRIMARY job is the token short-circuit: with `dialect` pinned,
+# Step 2 stops here and never opens references/detection.md (~4.4k tok) or runs the
+# 50-commit `git log` inference on every commit. The vocab below just records the
+# convention this repo's history already follows.
+#
+# Generated 2026-07-06 per claude/skills/commit-conventions/references/generation-runbook.md.
+# Evidence: no commitlint/commitizen/git-cliff/commit.template found; 84/100 recent
+# subjects match `type(scope)!: subject`; types and scopes extracted from the last 400
+# subjects (noise `plan`/`sqlx`/`harness`/`change` discarded as scope-as-type mistakes).
+# No .sha256 sidecar — hand-authored config, not a tomlctl flow file.
+
+dialect = "conventional-commits"  # one of: conventional-commits, gitmoji, plain, custom
+
+[conventional-commits]
+# Standard set. Observed frequency (last 400): feat 163, refactor 48, docs 47, fix 32,
+# test 25, chore 13, build 5, perf 4, style 2; `ci`/`revert` kept from the standard set.
+allowed_types = ["feat", "fix", "perf", "refactor", "docs", "test", "build", "ci", "chore", "revert", "style"]
+
+# Scopes are ADVISORY (require_scope = false): the distribution is long-tailed — `lumina`
+# dominates (248/400), stable areas follow, and per-story scopes (e.g.
+# `lumina-pty-jsonl-tail`, `lumina-epic-focus-semantics`) come and go. A hard gate would
+# false-flag every legitimately-new story scope. The list documents the DURABLE areas.
+#
+# Directory → scope map for the three main work areas:
+#   lumina/ (all four crates: core, server, protocol, companion)  → lumina
+#   lumina/web/ (the Vue SPA)                                     → web (or lumina-web — both in history)
+#   tomlctl/                                                      → tomlctl
+#   claude/agents/                                                → agents
+#   claude/commands/ + flow-contract skills + .claude/flows/      → flow
+#   claude/skills/ (non-flow skills, e.g. commit-conventions)     → skills
+#   claude/plugins/ (plugin infra generally)                      → plugins
+#   claude/plugins/lumina-story-blocks/ (the story-blocks plugin) → lumina-story-blocks
+#
+# Per-story scopes remain fine for feature work; prefer an area scope once the story lands.
+allowed_scopes = ["lumina", "web", "lumina-web", "tomlctl", "agents", "flow", "skills", "plugins", "lumina-story-blocks"]
+require_scope = false
+
+require_body_for = ["feat", "perf"]   # types that always require a body
+subject_max_length = 72
+subject_preferred_length = 50
+body_wrap_at = 72
+ban_subjects = ["wip", "fix", "update", "changes", "stuff", "misc", "address review comments", "harness fixes", "review updates", "review cleanups"]
