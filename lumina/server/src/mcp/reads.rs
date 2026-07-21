@@ -189,8 +189,8 @@ pub struct GetGatingTierParams {
 // `GatingTierResponse` (the `get_gating_tier` read tool's response shape) is now
 // defined ONCE in `lumina_core::domain` and imported above, so the MCP and HTTP
 // layers project against a single shared shape (no silent field drift). It is
-// returned via `Content::json` (the module-wide idiom — hand-built `Content::json`
-// results, not `Json<T>`).
+// returned via `ContentBlock::json` (the module-wide idiom — hand-built
+// `ContentBlock::json` results, not `Json<T>`).
 
 #[tool_router(router = tool_router_reads, vis = "pub(crate)")]
 impl LuminaTools {
@@ -335,7 +335,7 @@ impl LuminaTools {
     /// `get_story_dossier`): the story detail, per-task research grounding, files
     /// footprint, dispatch plan, and readiness. Story-kind-gated by the repo
     /// (non-story ⇒ `invalid_params`, absent ⇒ not-found). Returned via
-    /// `Content::json` (`StoryDossier` is `Serialize`-only, no `JsonSchema`).
+    /// `ContentBlock::json` (`StoryDossier` is `Serialize`-only, no `JsonSchema`).
     #[tool(
         description = "Compose a story's full planning dossier (migration 0026): the story detail, per-task research grounding, files footprint, dispatch plan, and readiness. Story-scoped.",
         annotations(read_only_hint = true, open_world_hint = false)
@@ -355,7 +355,7 @@ impl LuminaTools {
     /// which already populates `gating_tier`): returns the [`GatingTier`] plus
     /// contributing readiness signals so the orchestrator can render a gating
     /// rationale. Story-kind-gated by the repo (non-story ⇒ `invalid_params`,
-    /// absent ⇒ not-found). Returned via `Content::json`.
+    /// absent ⇒ not-found). Returned via `ContentBlock::json`.
     #[tool(
         description = "Resolve a story's orchestrator-decided gating tier (full/light/autonomous, migration 0026), with the contributing readiness signals (plan_epoch, unresolved_questions, verification_commands_set). Story-scoped.",
         annotations(read_only_hint = true, open_world_hint = false)
@@ -384,7 +384,7 @@ mod tests {
     use lumina_core::db::connect_in_memory;
 
     /// Decode the JSON text payload of a read tool's `CallToolResult` (the read
-    /// tools return their value as a single `Content::json` text item).
+    /// tools return their value as a single `ContentBlock::json` text item).
     fn read_tool_json(result: &CallToolResult) -> serde_json::Value {
         let text = &result.content[0]
             .as_text()

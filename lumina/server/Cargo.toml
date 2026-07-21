@@ -84,7 +84,7 @@ notify = "8.2.0"
 sqlx = { workspace = true, features = ["runtime-tokio", "sqlite", "migrate"] }
 
 # --- MCP server (rmcp, Streamable-HTTP transport) ---
-rmcp = { version = "1.8", features = [
+rmcp = { version = "^2", features = [
     "server",
     "transport-streamable-http-server",
     "macros",
@@ -174,7 +174,7 @@ insta = "1.48"
 # endpoint as a client. Both are dev-only — neither is reachable from the
 # library or binary crate.
 assert_cmd = "2"
-tokio-tungstenite = "0.29"
+tokio-tungstenite = "0.30"
 
 # Cross-plane e2e (Task 9, ADR-0006 Step 1b): tests/companion_e2e.rs runs the
 # companion library IN-PROCESS (ShellGit + Executor + the WS dial loop against

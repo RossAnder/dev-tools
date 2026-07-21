@@ -52,7 +52,7 @@ use std::time::Duration;
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content, ErrorData, ServerCapabilities, ServerInfo};
+use rmcp::model::{CallToolResult, ContentBlock, ErrorData, ServerCapabilities, ServerInfo};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::tower::{
     StreamableHttpServerConfig, StreamableHttpService,
@@ -423,14 +423,14 @@ fn answer_result(
         .unwrap_or("")
         .to_string();
     Ok(CallToolResult::success(vec![
-        Content::text(format!("The user answered: {summary}")),
-        Content::json(value)?,
+        ContentBlock::text(format!("The user answered: {summary}")),
+        ContentBlock::json(value)?,
     ]))
 }
 
 /// The tool result returned when the user dismissed the picker.
 fn cancelled_result() -> CallToolResult {
-    CallToolResult::success(vec![Content::text(
+    CallToolResult::success(vec![ContentBlock::text(
         "The user dismissed the question without selecting an option. Proceed without their \
          input, or ask again if you still need a decision.",
     )])
@@ -438,7 +438,7 @@ fn cancelled_result() -> CallToolResult {
 
 /// The tool result returned when no answer arrived before the timeout.
 fn timeout_result() -> CallToolResult {
-    CallToolResult::success(vec![Content::text(
+    CallToolResult::success(vec![ContentBlock::text(
         "The user did not answer within the time limit. Proceed without their input, or ask \
          again if you still need a decision.",
     )])

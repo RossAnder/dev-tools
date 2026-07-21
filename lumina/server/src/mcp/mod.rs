@@ -55,7 +55,7 @@
 //! so the rmcp `Json<T>` output wrapper — which requires `T: Serialize +
 //! JsonSchema` — cannot wrap them. Every tool therefore returns
 //! `Result<CallToolResult, rmcp::ErrorData>` and builds the success result by
-//! hand with `CallToolResult::success(vec![Content::json(value)?])` (structured
+//! hand with `CallToolResult::success(vec![ContentBlock::json(value)?])` (structured
 //! JSON content). `AppError` maps to `rmcp::ErrorData` (re-exported as
 //! `rmcp::model::ErrorData`): `NotFound → resource_not_found`,
 //! `Validation → invalid_params`, `Db`/`Other → internal_error` (DB internals
@@ -63,7 +63,7 @@
 //!
 //! ## Security
 //!
-//! `allowed_hosts` is left at the rmcp 1.7 loopback default
+//! `allowed_hosts` is left at the rmcp loopback default (unchanged 1.7 → 2.2)
 //! (`["localhost", "127.0.0.1", "::1"]`), which is safe per
 //! GHSA-89vp-x53w-74fx (DNS-rebinding, fixed ≥ 1.4.0). It is NOT widened here.
 
@@ -72,7 +72,7 @@ use std::sync::Arc;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
-    CallToolResult, Content, ErrorData, ServerCapabilities, ServerInfo,
+    CallToolResult, ContentBlock, ErrorData, ServerCapabilities, ServerInfo,
 };
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::tower::{
@@ -164,11 +164,11 @@ fn app_error_to_mcp(err: AppError) -> ErrorData {
 /// Serialise any `Serialize` repo result into a tool result carrying the value
 /// as JSON text content. Used by the read tools, whose outputs (a `Vec` of
 /// items / a detail aggregate) are returned as unstructured JSON content.
-/// `Content::json` only fails if serialisation fails, which for these
+/// `ContentBlock::json` only fails if serialisation fails, which for these
 /// owned-`String`/`Option` domain structs is effectively unreachable; it is
 /// still mapped to `internal_error` rather than unwrapped.
 fn json_result<T: serde::Serialize>(value: &T) -> Result<CallToolResult, ErrorData> {
-    let content = Content::json(value)?;
+    let content = ContentBlock::json(value)?;
     Ok(CallToolResult::success(vec![content]))
 }
 

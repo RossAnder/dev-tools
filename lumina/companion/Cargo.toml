@@ -42,7 +42,7 @@ tokio = { version = "1", features = [
 ] }
 
 # --- WS transport (Task 6: companion-dials-server connection loop) ---
-tokio-tungstenite = "0.29" # pinned to the version the server drives in its e2e dev-dep
+tokio-tungstenite = "0.30" # pinned to the version the server drives in its e2e dev-dep
 futures-util = "0.3"
 
 # --- serialization (protocol frames over the WS transport, Task 6) ---
