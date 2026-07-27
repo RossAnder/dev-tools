@@ -29,13 +29,12 @@ and picks the topology for you. Everything ELSE — pre-flight, the review-as-st
 lifecycle, commit cadence, checkpoint freeze, quiescence, and the merge — is
 IDENTICAL across both topologies; only the worker fan-out differs.
 
-Cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md):
-§a (four keys, NOT forked — the runner stays inline so topology-selection,
-checkpoint, and quiescence decisions are user-visible), §c (one §c rollup at
-the end; the per-task `record_task_activity` progress entries are operational,
-not planning writes — they carry `origin: "implement"`), §e (Sentry — runner
-decides loop control + fan-out + drift monitoring; MCP owns
-leasing / the review-as-state lifecycle / sprint-lifecycle state).
+Runs INLINE so topology-selection, checkpoint, and quiescence decisions stay
+user-visible. Follows [CONVENTIONS.md](../../CONVENTIONS.md) §a/§c/§e, with §n as
+the on-point contract for the lifecycle category (§n.1 TXN-idempotency, not
+supersession; §n.2 sprint-scoped provenance). §c specifics: ONE rollup at the
+end, and the per-task `record_task_activity` progress entries are operational
+rather than planning writes — they carry `origin: "implement"`.
 
 ## MCP tools used directly by this runner
 
@@ -516,30 +515,22 @@ fallback — the single agent cannot drift away from itself. Everything else
 (commit cadence, checkpoint quiesce, quiescence, finalize, un-wedge, rollup) is
 exactly as the shared steps describe.
 
-## Sentry-pattern compliance (per §e)
+## Server-owned state the runner must NOT replicate
 
-Runner decides: pre-flight order, topology selection (team default vs
-single-agent auto-degrade) + the degrade gates, fan-out sizing (3–5), the lane
-sweep order (implement-first, review after drain), the Kahn phase-batch commit
-cadence + dirty-snapshot tolerance, the checkpoint quiesce→commit→record→complete
-sequence, the quiescence poll cadence + teammate-drift nudge/reclaim, and the
-un-wedge two-step. Runner MUST NOT replicate server-owned state: leasing + reclaim
-(`claim_next_task` / `renew_lease`), the tier-routed completion + same-row review
-state + the review→done close (`complete_task` / `transition_status`) and the
-findings→implement-rework spawn (`record_finding_decision`), the sprint-lifecycle transition
-legality and the terminal-flip guard (`set_sprint_status` /
-`execute_worktree_merge` / the fallback `record_worktree_merge` /
-`record_worktree_rejection`), and commit-provenance idempotency
-(`record_task_commits`) all live in lumina. Workers run their own git commits in
-the shared worktree; the MERGE is executed by the `lumina-companion` process via
-`execute_worktree_merge` (the SERVER stays record-only and never shells to git —
-ADR-0006), with manual `git merge` + the fallback `record_worktree_merge`
-reserved for the no-companion case. Team fan-out + peer `SendMessage` are the
-HARNESS's agent-team channel, not lumina tools.
+Leasing + reclaim (`claim_next_task` / `renew_lease`); the tier-routed completion,
+same-row review state, and review→done close (`complete_task` /
+`transition_status`); the findings→implement-rework spawn
+(`record_finding_decision`); sprint-lifecycle transition legality and the
+terminal-flip guard (`set_sprint_status` / `execute_worktree_merge` / the fallback
+`record_worktree_merge` / `record_worktree_rejection`); and commit-provenance
+idempotency (`record_task_commits`) all live in lumina. Workers run their own git
+commits in the shared worktree, but the MERGE is executed by the
+`lumina-companion` process — the SERVER stays record-only and never shells to git
+(ADR-0006). Team fan-out and peer `SendMessage` are the HARNESS's agent-team
+channel, not lumina tools.
 
 ## Pointers
 
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §c, §e.
 - MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — team-execution work-queue
   (migration 0013) + sprint-lifecycle / worktree / commit-provenance (migration 0016) sections.
 - Checkpoint suggestion (compose-sprint): [`../compose-sprint/SKILL.md`](../compose-sprint/SKILL.md) stamps `checkpoint=1` from cross-task `files_touched` overlap.

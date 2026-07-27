@@ -33,41 +33,13 @@ Reach for the lumina MCP tools when you are:
 
 ## Story-block skill family
 
-The plugin at `claude/plugins/lumina-story-blocks/` adds 29 composable skills (round-1's 9 + round-2's 10 + round-3's 2 + migration-0010's 4 + migration-0016's 4 lifecycle/orchestration), each independently triggerable via a `/lumina:<block> <id>` slash invocation, each driving the lumina MCP tools catalogued below. The first 25 are per-story-block writers (one per story block); the migration-0016 four (create-project, compose-sprint, run-sprint, lifecycle) form a distinct lifecycle/orchestration category that bootstraps the hierarchy, composes a sprint, drives the run loop, and advises on lifecycle state (see [`CONVENTIONS.md §n`](../../CONVENTIONS.md) and the [dogfood-lifecycle runbook](../../../../../lumina/docs/runbooks/dogfood-lifecycle.md)). The plugin's [`README.md`](../../README.md#skill-list) carries the authoritative skill enumeration; the table below mirrors it.
+The plugin at `claude/plugins/lumina-story-blocks/` adds composable skills, each independently triggerable via `/lumina:<block> <id>` and each driving the MCP tools catalogued below. They split into three categories:
 
-| Skill | Slash invocation | One-line summary |
-|---|---|---|
-| problem-statement | `/lumina:problem-statement <id>` | Sets `attributes.problem_statement` (3-axis prompt). |
-| research-notes | `/lumina:research-notes <id>` | Adds 3-7 `research_notes` rows (forks in autonomous mode, inline in interactive — §d). |
-| research-explore | `/lumina:research-explore <id>` | Dispatch parallel lens-agents to explore the story; each agent returns proposed research notes for vet-research to triage (forks in autonomous mode, inline in interactive — §d). *(new in round-3)* |
-| research-directed | `/lumina:research-directed <id>` | Verify decision-grade claims (libraries, APIs, file:line) after user decisions land; emit drift findings and supersede stale notes (forks in autonomous mode, inline in interactive — §d). *(new in round-3)* |
-| user-interrogation | `/lumina:user-interrogation <id>` | HumanLayer 4-axis open-questions enumeration. |
-| acceptance-criteria | `/lumina:acceptance-criteria <id>` | Adds free-text AC rows to task children. |
-| approach | `/lumina:approach <id>` | Sets `attributes.execution_strategy` (drafts from prerequisites). |
-| not-doing | `/lumina:not-doing <id>` | Sets `attributes.not_doing` (lens convention §g). |
-| edge-cases | `/lumina:edge-cases <id>` | Adds `research_notes` with `lens="edge-case"`. |
-| relevance | `/lumina:relevance <id>` | Thin wrapper over `set_relevance` (active/backlog/deferred/rejected). |
-| closure-gate | `/lumina:closure-gate <id>` | Thin wrapper over `set_closure_gate` (hard/soft). |
-| risks | `/lumina:risks <id>` | Capture or update a story's risks with severity + mitigation; per-element supersession on label collision. |
-| alternatives | `/lumina:alternatives <id>` | Capture or update a story's rejected alternatives with confidence + rationale; per-element supersession on label collision. |
-| verification-commands | `/lumina:verification-commands <id>` | Capture or update a story's verification commands (build/test/lint/smoke). |
-| vet-research | `/lumina:vet-research <id>` | Sample, spot-check, and promote/reject a story's proposed research notes; the only plugin skill that records `entry_type=vet` activity. *(amended in round-3 — parallelised verification dispatch)* |
-| story-review | `/lumina:story-review <id>` | Critique a story across all planning blocks; emits structured findings via `add_finding{kind="story-review"}`. |
-| next-block | `/lumina:next-block <id>` | Read a story's readiness and recommend the next `/lumina:<block>` slash command to run. |
-| plan-story | `/lumina:plan-story <id>` | Planning orchestrator: drive a story through the `triage → frame → plan → brief → align → rework` stage machine (wrapping the six canonical phases frame / explore / decide / verify-design / decompose / closure) — gating-tier-aware grills (framing + direction), an orchestrator-decided gating tier, and an epoch-scoped rework loop. *(reshaped in round-5 — §l.1 gate audit now a tombstone; see CONVENTIONS §o)* |
-| decompose-tasks | `/lumina:decompose-tasks <id>` | Decompose a ready story into task children — proposing vertical-slice and pattern-replacement GROUPINGS over subsets of those tasks (units-of-implementation; not modelled in schema in round-3.5), with each task individually tagged with a task-level `task_kind` (foundation/main/polish) for intra-phase sort ordering. |
-| set-task-spec | `/lumina:set-task-spec <id>` | Walk a story's task children and capture per-task spec (execution_detail, files_touched, dual-track outcome, effort, complexity, derived tier). *(amended in round-3 — captures effort+complexity, derives typed tier)* |
-| wire-task-deps | `/lumina:wire-task-deps <id>` | Propose a maximally-parallel task→task dependency graph (candidate edges derived from file-overlap + foundation-consumption) and ask the user to PRUNE or CONFIRM — never add edges from zero — then surface the Kahn-ordered phase schedule with per-task tier annotations and an agent budget. *(flipped build-up → prune-down in round-5 — R53)* |
-| epic-outcome | `/lumina:epic-outcome <id>` | Interrogate + set an epic's `outcome`. *(new in migration 0010 — epic-only)* |
-| focus-shape | `/lumina:focus-shape <id>` | Set a focus's `shape` (vertical-slice / cross-cutting / foundational). *(new in migration 0010 — focus-only)* |
-| focus-framing | `/lumina:focus-framing <id>` | Set a focus's `framing`. *(new in migration 0010 — focus-only)* |
-| epic-close-criteria | `/lumina:epic-close-criteria <id>` | Manage an epic's close-criteria. *(new in migration 0010 — epic-only)* |
-| create-project | `/lumina:create-project` | Lifecycle/orchestration: bootstrap a `project → epic → focus → story` hierarchy in one guided pass. *(new in migration 0016 — not a per-story-block writer)* |
-| compose-sprint | `/lumina:compose-sprint <id>` | Lifecycle/orchestration: compose a worktree-owning sprint from a story's ready tasks. *(new in migration 0016 — not a per-story-block writer)* |
-| run-sprint | `/lumina:run-sprint <id>` | Lifecycle/orchestration: drive the team-execution claim→complete→review run loop over a sprint. *(new in migration 0016 — not a per-story-block writer)* |
-| lifecycle | `/lumina:lifecycle <id>` | Lifecycle/orchestration (read-only advisor): report sprint/worktree state and recommend the next lifecycle action. *(new in migration 0016 — read-only, model-discoverable)* |
+- **Per-story-block writers** — one per story block (problem-statement, research-*, approach, risks, …), walked in §l.0 phase order by the `plan-story` orchestrator.
+- **Epic/focus writers** (migration 0010) — `epic-outcome`, `epic-close-criteria`, `focus-shape`, `focus-framing`; kind-preconditioned per §m.2.
+- **Lifecycle/orchestration** (migration 0016) — `create-project`, `compose-sprint`, `run-sprint`, and the read-only `lifecycle` advisor. These orchestrate the project→sprint→run lifecycle rather than filling a story block; see [`CONVENTIONS.md §n`](../../CONVENTIONS.md) and the [dogfood-lifecycle runbook](../../../../../lumina/docs/runbooks/dogfood-lifecycle.md) for the end-to-end walkthrough.
 
-The final four rows (create-project, compose-sprint, run-sprint, lifecycle) are the migration-0016 lifecycle/orchestration category — they orchestrate the project→sprint→run lifecycle rather than filling a per-story block. The end-to-end dogfood walkthrough threading create-project → compose-sprint → run-sprint → lifecycle is the [dogfood-lifecycle runbook](../../../../../lumina/docs/runbooks/dogfood-lifecycle.md).
+The authoritative per-skill enumeration is [`README.md`](../../README.md#skill-list), and each skill's own frontmatter `description:` is its authoritative one-line summary — every skill is model-discoverable, so those descriptions are already in the routing context. Do NOT mirror them here; a second copy drifts. CONVENTIONS §l.0 maps each story-phase block to its phase.
 
 Load via `claude --plugin-dir claude/plugins/lumina-story-blocks` — see
 [`../../README.md`](../../README.md)

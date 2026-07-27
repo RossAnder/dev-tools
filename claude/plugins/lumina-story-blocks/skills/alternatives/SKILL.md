@@ -7,15 +7,9 @@ argument-hint: "[work_item_id]"
 
 # `lumina:alternatives`
 
-Capture or update the rejected planning alternatives attached to a story, one row at a time, via the first-class `rejected_alternatives` sub-table introduced by migration 0005. Each alternative carries a one-line `summary` (the label of what was considered), an optional long-form `body` (what we considered doing), an optional `rationale` (why we rejected it), and an optional `confidence` (`low|medium|high`) reflecting how settled the rejection is. The skill is per-element: every user turn either adds one alternative, supersedes one existing alternative, or ends the session.
+Capture or update the rejected planning alternatives attached to a story, one row at a time, via the first-class `rejected_alternatives` sub-table (migration 0005). Each alternative carries a one-line `summary` (the label of what was considered), an optional `body` (what we considered doing), an optional `rationale` (why we rejected it), and an optional `confidence` (`low|medium|high`) reflecting how settled the rejection is. Every user turn either adds one alternative, supersedes one, or ends the session.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied per element per §b-per-element), §b-supersession (verbatim `AskUserQuestion` phrasing for the supersede prompt), §c (provenance recording via `record_task_activity`; this skill writes `entry_type: "execution"` — the §c vet exception does NOT apply), §e (Sentry pattern — skill = instructions, MCP = execution), and §i (story-review pattern — informational only; this skill does NOT write critique findings, but borrows the per-element supersession idiom).
-
-## Target
-
-The skill is INVOKED on a `kind = story` work-item. Step 2 below verifies `detail.kind == "story"` and aborts loud on any other kind (per §e's exception that blesses local kind-precondition checks for friendlier UX, and §h's signpost — `rejected_alternatives` writes to a story-only sub-table, so it is a story-only skill that fail-fasts on non-story).
-
-## MCP tools
+Follows [CONVENTIONS.md](../../CONVENTIONS.md) §a/§b/§c/§e, with §b applied per element (§b-per-element). `entry_type` stays `"execution"` — the §c vet exception is reserved for `vet-research`.
 
 ```
 mcp__lumina__add_rejected_alternative {
@@ -25,9 +19,7 @@ mcp__lumina__add_rejected_alternative {
   rationale: "<optional: why we rejected it>" | null,
   confidence: "low" | "medium" | "high" | null
 }
-```
 
-```
 mcp__lumina__supersede_rejected_alternative {
   work_item_id: "$work_item_id",
   old_id: "<existing alternative id>",
@@ -38,22 +30,21 @@ mcp__lumina__supersede_rejected_alternative {
 }
 ```
 
-**On `confidence`**: the MCP schema accepts `confidence` as a free TEXT column (migration 0005 added it WITHOUT a SQL CHECK constraint, so any string passes at the DB layer). This skill MUST surface ONLY the three values `low` / `medium` / `high` to keep the plugin-wide convention consistent — bogus values would land in the DB without complaint, so the discipline lives in this skill body. Pass `null` when the user declines to commit a confidence level. (`AddRejectedAlternativeParams.confidence` is `Option<String>` server-side, so null is the canonical absent value.)
+**On `confidence`**: migration 0005 added it as free TEXT with NO SQL CHECK, so any string passes at the DB layer and bogus values land silently. The discipline therefore lives here: surface ONLY lowercase `low` / `medium` / `high`, never variants like `unsure` or `tentative`, and pass `null` (the canonical absent value for the server-side `Option<String>`) when the user declines. The read-side UI and any future CHECK-constrained migration rely on those three values.
 
-**Confidence wire form**: lowercase strings `low` / `medium` / `high`, matching the plugin convention. Although the DB does not enforce the enum, the read-side UI and any future migration to a CHECK-constrained column rely on these three values; the skill MUST NOT introduce variants like `unsure` or `tentative`.
+Supersession sets the old row's `superseded_by` to the new row's id in ONE server-side transaction — never also call `update_rejected_alternative` or `remove_rejected_alternative` on the old row, and never set `superseded_by` manually.
 
-**On `update_rejected_alternative`**: an `update_rejected_alternative` tool exists in the MCP surface but the documented contract for this skill is supersede-on-change (preserves history via the `superseded_by` chain). In-place updates are out of scope — see "Out of scope" at the bottom.
+## Body — §b applied per element
 
-## Body — 5-step check-before-act (per §b, applied per element per §b-per-element)
+> §b-mapping: the `Supersede existing` branch is §b step 5 (present-differs → confirm-supersede); the `Add an alternative` branch is §b step 3 (absent → create); §b step 4 (present-matches → no-op) is the implicit fall-through when the user picks `Done` without writing.
 
-> Note on §b-mapping: this skill iterates the §b sequence per alternative rather than once per skill invocation (per §b-per-element). Step 3 gathers the loop inputs; the `Supersede existing` branch corresponds to §b step 5 (present-differs → confirm-supersede); the `Add an alternative` branch corresponds to §b step 3 (absent → create); §b step 4 (present-matches → no-op) is the implicit fall-through when the user picks `Done` without writing.
-
-1. **Read**: call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind `detail.kind` and `detail.rejected_alternatives` (folded into `WorkItemDetail` by migration 0005's `get_work_item_detail` extension).
-2. **Precondition**: if `detail.kind != "story"`, abort with `"alternatives requires a story work item; got kind=<kind>."`. Do NOT call any write tool.
-3. **Surface existing alternatives**: filter `detail.rejected_alternatives` to rows where `superseded_by` is null (only live alternatives). Surface the count to the user as a one-line summary:
+1. **Read**: `mcp__lumina__get_work_item({id: "$work_item_id"})`; bind `detail.kind` and `detail.rejected_alternatives` (folded into `WorkItemDetail` by migration 0005).
+2. **Kind-precondition**: `rejected_alternatives` is a story-only sub-table. If `detail.kind != "story"`, abort before any write: `alternatives requires a story work item; got kind=<kind>.`
+3. **Surface existing**: filter to rows where `superseded_by` is null, then summarise:
    > `Story has <N> rejected alternative(s): <comma-separated first-60-chars of summary, joined with '; '>.`
-   If `N == 0`, say `Story has no rejected alternatives recorded.` Either way, proceed to step 4.
-4. **Per-element loop** — `AskUserQuestion` with exactly 3 options:
+
+   If `N == 0`, say `Story has no rejected alternatives recorded.` Either way, proceed.
+4. **Per-element loop** — `AskUserQuestion`:
 
    > **Question header**: `Alternative <K>`
    >
@@ -64,12 +55,12 @@ mcp__lumina__supersede_rejected_alternative {
    > - `Supersede existing` — `Replace one of the existing alternatives (preserves history via superseded_by chain)`
    > - `Done` — `No more changes — finish the skill`
 
-5. **`Add an alternative` branch**: collect the four fields. Use one `AskUserQuestion` per field if the harness forces sequential, or batch where the harness allows. Field order:
+5. **`Add an alternative`**: collect the four fields (one `AskUserQuestion` per field if the harness forces sequential; batch where allowed), in order:
 
-   - `summary` — short one-line label of the alternative considered. REQUIRED. Free-text via `Other`.
-   - `body` — longer description of what the alternative would have entailed. OPTIONAL. Free-text via `Other`; an empty answer → pass `body: null`.
-   - `rationale` — why this alternative was rejected. OPTIONAL. Free-text via `Other`; an empty answer → pass `rationale: null`.
-   - `confidence` — closed-enum 4-option question (the fourth option declines the field):
+   - `summary` — short one-line label. REQUIRED. Free-text via `Other`.
+   - `body` — what the alternative would have entailed. OPTIONAL; empty → `body: null`.
+   - `rationale` — why it was rejected. OPTIONAL; empty → `rationale: null`.
+   - `confidence` — closed-enum question:
      > **Question header**: `Confidence for "<summary>"`
      > **Question body**: `How settled is the rejection of this alternative?`
      > **Options** (exactly 4):
@@ -78,45 +69,31 @@ mcp__lumina__supersede_rejected_alternative {
      > - `high` — `Firm rejection; reopening requires a story-level re-plan`
      > - `Skip` — `Decline to record a confidence level (passes null)`
 
-     On `Skip`, pass `confidence: null`.
+   Then call `add_rejected_alternative`, record §c provenance, and loop back to step 4.
 
-   Then call `add_rejected_alternative { work_item_id: "$work_item_id", summary, body, rationale, confidence }`. Record provenance per §c with the `added` summary form (see "Provenance recording" below). Loop back to step 4 for the next element.
+6. **`Supersede existing`** (§b-supersession):
 
-6. **`Supersede existing` branch (per §b-supersession)**: this is the per-element supersession path.
+   1. Show the live alternatives as a numbered `AskUserQuestion` list labelled `Supersede alternative <i>`, each displayed as `<i>: [<confidence or '-'>] <first 60 chars of summary>`.
+   2. Bind the picked row's `id` as `<old_id>`.
+   3. Invoke the §b-supersession template **verbatim**, substituting `<field-name>` → `rejected alternative "<picked summary first 40 chars>"` and `<current-value-summary>` → the picked summary + `' (confidence=' + (confidence or 'none') + ')'`, single-line, truncated to ~80 chars. On `Keep current`, abort the sub-flow and loop back to step 4 without writing.
+   4. On `Replace`: collect the four new-value fields exactly as in step 5, then call `supersede_rejected_alternative`, record §c provenance, and loop back to step 4.
 
-   1. Show the existing live alternatives as a numbered list, one per option in an `AskUserQuestion` labelled `Supersede alternative <i>`. Display each as `<i>: [<confidence or '-'>] <first 60 chars of summary>`.
-   2. The user picks one row. Bind the picked alternative's `id` as `<old_id>` and its existing summary as `<current-value-summary>` (truncated to ~80 chars with embedded newlines collapsed to spaces; ends with `…` if truncated).
-   3. Invoke the §b-supersession `AskUserQuestion` template **verbatim** per [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §b-supersession, substituting:
-      - `<field-name>` → `rejected alternative "<picked summary first 40 chars>"`
-      - `<current-value-summary>` → the picked alternative's existing summary + `' (confidence=' + (confidence or 'none') + ')'`, single-line, truncated.
-      On `Keep current`: abort the supersession sub-flow; loop back to step 4 without writing.
-   4. On `Replace`: collect the four new-value fields exactly as in step 5 (`summary` REQUIRED, `body` OPTIONAL, `rationale` OPTIONAL, `confidence` 4-option enum with `Skip` → null). Then call `supersede_rejected_alternative { work_item_id: "$work_item_id", old_id, summary, body, rationale, confidence }`. The old row's `superseded_by` is set to the new row's id in ONE transaction — the skill body MUST NOT also call `update_rejected_alternative` or `remove_rejected_alternative` on the old row; supersession is the documented contract and lumina handles the link server-side (per §e — skill = instructions, MCP = execution). Record provenance per §c with the `superseded` summary form. Loop back to step 4.
+7. **`Done`**: exit the loop.
 
-7. **`Done` branch**: exit the loop. Fall through to provenance + summary line.
+## §c summary lines
 
-## Provenance recording (per §c)
+One entry per write — an invocation that adds 2 and supersedes 1 records 3 entries. Zero writes (`Done` on the first turn) means zero entries.
 
-After EACH successful write (each `add_rejected_alternative` or `supersede_rejected_alternative`), append exactly one activity entry per [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §c. One activity entry per write — a single invocation that adds 2 alternatives and supersedes 1 records 3 entries total (per §c "one activity entry per write — not per skill invocation"). The `entry_type` is `"execution"` (NOT `"vet"` — the §c vet exception is reserved for `vet-research` only — and NOT `"comment"`). The `origin` is `"plan"`. The `${CLAUDE_SESSION_ID}` substitution guard from §c applies: if it did not resolve, record `body: "session=unknown"` and emit the one-line warning.
+- Add: `alternatives: added '<summary first 40 chars>' (confidence=<confidence or 'none'>) to <work_item_id>`
+- Supersede: `alternatives: superseded '<old summary first 40 chars>' with '<new summary first 40 chars>' on <work_item_id>`
 
-Summary line per write:
-- For an `add_rejected_alternative`: `"alternatives: added '<summary first 40 chars>' (confidence=<confidence or 'none'>) to <work_item_id>"`.
-- For a `supersede_rejected_alternative`: `"alternatives: superseded '<old summary first 40 chars>' with '<new summary first 40 chars>' on <work_item_id>"`.
-
-**No-write path**: if the user picks `Done` on the first turn (no add or supersede happened in this invocation), do NOT record any activity entry — per §c "one activity entry per write", zero writes means zero entries.
-
-## Final summary line
-
-When the user picks `Done`, the skill returns a one-line confirmation:
+Final line on `Done`:
 
 > `alternatives: <N> added, <M> superseded, <M> superseded' previous record(s) preserved with superseded_by pointers on <work_item_id>.`
 
-The `superseded_by` preservation is implicit per the supersede contract — the skill does NOT try to enumerate the old ids. If `N == 0` and `M == 0`, say `alternatives: no changes made on <work_item_id>.`
-
-## Sentry-pattern compliance (per §e)
-
-The skill body decides which tool to call per element (`add_rejected_alternative` for adds, `supersede_rejected_alternative` for replaces), in what order, and with what arguments. Lumina's `repo::add_rejected_alternative` / `repo::supersede_rejected_alternative` validate the work-item exists, the old alternative owner matches the new, and run each write in one transaction emitting exactly one event drained to the git-export trail. The skill body MUST NOT shadow any of that logic — it MUST NOT read the existing alternatives and pass them back as a "merged" list, nor attempt to manually set `superseded_by` via `update_rejected_alternative`. Supersession is the documented append-only pattern with server-side link management.
+Do not enumerate the old ids — `superseded_by` preservation is implicit in the supersede contract. If `N == 0` and `M == 0`, say `alternatives: no changes made on <work_item_id>.`
 
 ## Out of scope
 
-- **In-place updates via `update_rejected_alternative`**: the MCP surface exposes `update_rejected_alternative` for free-text correction of summary/body/rationale/confidence without breaking history, but this skill's documented contract is supersede-on-change (preserves the full audit trail via the `superseded_by` chain). If a user wants to correct a typo without creating a supersede link, they can invoke `update_rejected_alternative` directly via the raw MCP tool — this skill will not expose it.
-- **Hard-delete via `remove_rejected_alternative`**: destructive deletes are out of scope. Supersession + the live-filter on `superseded_by IS NULL` is the documented soft-removal path for alternatives whose framing no longer applies; a `low`-confidence supersede with a rationale of "no longer relevant because X" preserves the audit trail.
+- **In-place updates via `update_rejected_alternative`** — the tool exists for free-text correction without breaking history, but this skill's contract is supersede-on-change. A user wanting a typo fix without a supersede link can call the raw MCP tool directly.
+- **Hard-delete via `remove_rejected_alternative`** — supersession plus the `superseded_by IS NULL` live-filter is the documented soft-removal path; a `low`-confidence supersede with rationale "no longer relevant because X" preserves the trail.

@@ -13,21 +13,10 @@ command to run. The pattern follows the precedent set by Anthropic's Superpowers
 exemplar `using-superpowers/SKILL.md` — a read-only meta-skill whose body's value
 is in telling the agent WHAT TO DO NEXT, not in mutating state itself.
 
-## Read-only skill
-
-This skill is exclusively READ (two read-only calls:
-`mcp__lumina__get_session_context` for session-start correlation +
-`mcp__lumina__get_story_readiness`) — it writes nothing. Like every skill in
-this plugin now, it is model-discoverable, so agents can auto-find it; the
-former `disable-model-invocation` distinction was retired plugin-wide
-(CONVENTIONS.md §a). It mirrors the four-§a-key frontmatter shape of the `mcp`
-catalogue.
-
-This is also why the §e Sentry split applies cleanly: skill body = WHAT TO ASK
-LUMINA + WHAT TO TELL THE USER; the lumina server computes the recommendation
-itself (`NextAction` is derived server-side from the story's population state).
-This skill's body merely TRANSLATES the enum variant into a user-facing
-recommendation + slash command.
+Strictly READ-ONLY: lumina derives `NextAction` server-side from the story's
+population state, and this skill only TRANSLATES the enum variant into a
+user-facing recommendation + slash command. Follows
+[CONVENTIONS.md](../../CONVENTIONS.md) §a/§e/§h.
 
 ## Body
 
@@ -160,29 +149,13 @@ If the user follows the recommendation by typing the recommended slash command,
 THAT skill records its own activity entry per §c. This advisor's job ends at
 "recommend"; it never persists its own invocation.
 
-## Sibling `/lumina:<block>` slash commands (catalogue context)
+## Sibling `/lumina:<block>` slash commands
 
-Each sibling's frontmatter `description:` verbatim, so agent auto-load surfaces
-the full menu when this advisor is loaded:
+Beyond the Step-2 table, the story-phase blocks this advisor may name are
+`/lumina:acceptance-criteria`, `/lumina:relevance`, and `/lumina:closure-gate`.
+Each sibling's authoritative one-line summary is its own frontmatter
+`description:` — every skill in this plugin is model-discoverable, so those
+descriptions are already in the routing context; do NOT copy them here (a second
+copy drifts). CONVENTIONS §l.0 maps every block to its phase.
 
-- `/lumina:problem-statement <id>` — Capture or update a story's problem_statement (what's broken, who's affected, success criteria).
-- `/lumina:research-notes <id>` — Identify research gaps and add proposed research notes to a story (forks in autonomous mode, inline in interactive — see CONVENTIONS §d).
-- `/lumina:vet-research <id>` — Sample, spot-check, and promote/reject a story's proposed research notes; the only plugin skill that records entry_type=vet activity.
-- `/lumina:user-interrogation <id>` — Enumerate open questions for a story across HumanLayer's 4 axes (scope, error-handling, data-ownership, compatibility).
-- `/lumina:alternatives <id>` — Capture or update a story's rejected alternatives with confidence + rationale; per-element supersession on label collision.
-- `/lumina:approach <id>` — Capture or update a story's execution_strategy, drafting from accepted research and resolved questions.
-- `/lumina:not-doing <id>` — Capture or supersede a story's "Not Included" scope boundary as a free-text attributes.not_doing entry.
-- `/lumina:verification-commands <id>` — Capture or update a story's verification commands (build/test/lint/smoke) used by /implement and /tdd.
-- `/lumina:edge-cases <id>` — Enumerate edge cases for a work item as research notes with lens="edge-case" and a per-case confidence grade.
-- `/lumina:risks <id>` — Capture or update a story's risks with severity + mitigation; per-element supersession on label collision.
-- `/lumina:acceptance-criteria <id>` — Add free-text acceptance criteria to a story's task children, prompting with concrete-I/O / trigger / verification structural hints.
-- `/lumina:relevance <id>` — Set or supersede an epic/focus/story's relevance (active / backlog / deferred / rejected).
-- `/lumina:closure-gate <id>` — Set or supersede a story's closure_gate (hard / soft), controlling how unchecked acceptance criteria block child-task →done transitions.
-- `/lumina:story-review <id>` — Critique a story across all planning blocks; emits structured findings via add_finding{kind="story-review"}.
-- `/lumina:decompose-tasks <id>` — (round-2) Decompose a story into task children.
-- `/lumina:set-task-spec <id>` — (round-2) Populate per-task execution_detail / files_touched / outcome / dispatch.
-- `/lumina:wire-task-deps <id>` — (round-2 — see §j) Write first-class task dependency edges; downstream `compute_task_batches` derives phase batches.
-
-Pointer back: see `../../CONVENTIONS.md` §a (read-only exception), §e (Sentry
-split), §h (kind-precondition signpost), and `../mcp/SKILL.md` for the full MCP
-tool catalogue.
+Pointer back: `../mcp/SKILL.md` for the full MCP tool catalogue.

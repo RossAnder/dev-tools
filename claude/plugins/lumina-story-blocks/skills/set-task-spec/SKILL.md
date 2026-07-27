@@ -9,9 +9,9 @@ argument-hint: "[work_item_id]"
 
 Per-task spec writer. Invoked on a STORY id; walks each TASK child of the story and collects per-task spec — `execution_detail` (free-text step-by-step plan), `files_touched` (concrete file paths, with R25 pattern-replacement drift check when applicable), `outcome` (dual-track per R23: `automated` + `manual`), `effort` (`s|m|l`), `complexity` (`low|medium|high`), and a derived `tier` (`lite|deep`, per CONVENTIONS §k.0) — writing them via `mcp__lumina__set_effort`, `mcp__lumina__set_complexity`, and `mcp__lumina__set_task_spec` (one `set_task_spec` per task carrying the remaining keys, including `tier`). The skill assumes the story's tasks have already been created by `/lumina:decompose-tasks`; it does NOT create tasks. The downstream consumer is `/lumina:wire-task-deps` (which writes the task→task edges and fires the R27 complexity-high gate, not this skill).
 
-**Round-5 (R52 + R53) — effort/complexity are now IDEMPOTENT inbound.** As of round-5 (`docs/plans/lumina-story-planning-round-5.md` §A.4), `/lumina:decompose-tasks` sets `effort` and `complexity` INLINE during decomposition (R53 — sizing is a first-class decomposition output, no longer deferred here). This skill therefore treats inbound `effort`/`complexity` as IDEMPOTENT: when a task already carries both grades, it does NOT re-prompt for them (the 4c.1 / 4c.2 prompts are SKIPPED, surfacing the pre-set values for confirmation only) — it just reuses them to derive the §k.0 tier. It still PROMPTS for a grade only when one is genuinely absent (e.g. a hand-created task that bypassed decompose-tasks, or a legacy pre-round-5 task). The §k tier derivation is unchanged and still lives here. (The companion R52 change — persisted `task_research_links` grounding — happens entirely in `/lumina:decompose-tasks`'s create path; this skill does NOT write grounding edges.)
+**Round-5 (R53) — effort/complexity are IDEMPOTENT inbound.** `/lumina:decompose-tasks` now sets `effort` and `complexity` INLINE during decomposition (sizing is a first-class decomposition output). So when a task already carries both grades this skill does NOT re-prompt — it surfaces them for confirmation only and reuses them for the §k.0 tier derivation, which still lives here. It prompts for a grade only when one is genuinely absent (a hand-created task that bypassed decompose-tasks, or a legacy pre-round-5 task). Grounding edges (`task_research_links`, R52) are written entirely by decompose-tasks; this skill never touches them.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied **per-task-child** per §b-per-element), §c (provenance recording — one entry per TASK touched, not per skill invocation), §e (Sentry pattern — skill = instructions, MCP = execution), §i (story-review pattern, informational), §j (batch-scheduled task execution — informational: this skill writes the spec rows `/lumina:wire-task-deps` consumes).
+Follows [CONVENTIONS.md](../../CONVENTIONS.md) §a/§b/§c/§e, with §b applied per TASK CHILD (§b-per-element) and §c recording one entry per TASK touched. §k.0 is the load-bearing tier rule; §j is the downstream contract for the spec rows `/lumina:wire-task-deps` consumes.
 
 ## MCP tools used
 
@@ -201,19 +201,16 @@ Where `<K>` counts only the drift checks that resulted in `Accept new files` (th
 | 4. Present matches → no-op | `Skip` in triage = no write, no activity entry. |
 | 5. Present differs → confirm | `Edit` collects replacement; `set_task_spec`'s per-key set-or-leave semantics overwrite in place. No separate §b-supersession prompt — the tool is partial-overwrite, not append+supersede like `research_notes`. |
 
-## Sentry-pattern compliance (per §e)
+## Client-side boundary
 
-The skill body decides WHICH keys to surface, WHEN to fire the drift-check (only on `task_kind == "pattern-replacement"`), and HOW to encode dual-track outcome (JSON-in-string until backend supports a structured shape). Lumina's `repo.rs` validates the work-item, validates `FileRef` qualified-form `repo` slugs against `repo_links`, runs the patch transaction, and emits exactly one event. The skill body MUST NOT compose the merged attributes blob client-side, MUST NOT validate the `repo` slug, and MUST NOT pre-compute activity body — lumina's job.
+Never compose the merged attributes blob client-side, and never validate the `FileRef` qualified-form `repo` slug — lumina validates it against `repo_links`, runs the patch transaction, and emits exactly one event.
 
 ## Plan-deviation note
 
-Dual-track `outcome` is JSON-in-string within `SetTaskSpecParams.outcome: Option<String>` today. If a later migration widens to structured `{automated, manual}`, step 4c MUST switch in lockstep; the literal key names align so the migration is a wire-shape rename only.
-
-**Round-3 amendment**: the round-2 free-form `dispatch: Option<serde_json::Value>` field on `SetTaskSpecParams` is replaced with `tier: Option<Tier>` (typed enum, wire form `lite|deep`). Legacy callers that passed `dispatch: { tier: "lite" }` are silently dropped at deserialise (the field is gone). Tier derivation lives server-side in `repo::compute_tier` and is documented in CONVENTIONS §k.0 — this skill transcribes the rule client-side until a `compute_tier_preview` read tool ships.
+Dual-track `outcome` is JSON-in-string within `SetTaskSpecParams.outcome: Option<String>` today. If a later migration widens to structured `{automated, manual}`, step 4c MUST switch in lockstep; the literal key names align so the migration is a wire-shape rename only. (Round-3 replaced the round-2 free-form `dispatch: Option<serde_json::Value>` with the typed `tier: Option<Tier>`; a legacy `dispatch: { tier: "lite" }` payload is silently dropped at deserialise.)
 
 ## Pointers
 
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, §i, §j, §k.
 - MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — Planning & decision tools (`set_effort`, `set_complexity`, `set_task_spec`, `record_task_activity`).
 - Upstream: [`../decompose-tasks/SKILL.md`](../decompose-tasks/SKILL.md) — creates the tasks; records `task_kind` (step 4b branch), optional `files_touched_pattern` (step 5), and — as of round-5 (R53) — sets `effort`/`complexity` INLINE so this skill treats them as idempotent inbound. It also persists research grounding via `task_research_links` (R52); this skill does NOT touch grounding edges.
 - Downstream: `/lumina:wire-task-deps` — consumes tier + complexity for the R27 high-complexity gate; composes Kahn-batches per §j; round-5 prunes a maximally-parallel graph from `get_story_files_footprint` overlap (R53).

@@ -19,21 +19,16 @@ runner stays INLINE (six §a keys minus the fork pair — it is NOT forked; see 
 because each step is a user-mediated creation gate.
 
 This skill MUTATES the store (it calls `create_work_item` directly and
-dispatches DB-writing block skills via `Skill()` per §l.4).
+dispatches DB-writing block skills).
 
-Cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md):
-§a (frontmatter shape — four keys, NOT forked), §b (the §b check-before-act each
-block enforces — run by the dispatched block itself), §c (the runner emits
-ONE bootstrap rollup; each dispatched block's own §c fires as part of its run),
-§e (Sentry — runner = orchestration, MCP = state, each block's workflow = its
-dispatched body), **§l.4 (`Skill()`-dispatch — the canonical execution path;
-this runner "runs" each block by calling `Skill("lumina:<block>", …)`; the
-plan-story chain follows §l.4(a) bounded nested-runner recursion)**, **§m
-(epic/focus semantics — §m.0 epic close-criteria gate, §m.1 focus shape, §m.2
-the kind-precondition block writers this runner composes)**, §o (the planning
-orchestrator — the shape of the `plan-story` runner this one chains into; the
-dispatch path is unchanged, the dispatched runner's BODY is now the §o stage
-machine).
+Follows [CONVENTIONS.md](../../CONVENTIONS.md) §a/§b/§c/§e, with **§l.4 as the
+canonical execution path** (`Skill()`-dispatch; the plan-story chain follows
+§l.4(a) bounded nested-runner recursion) and **§m** for the epic/focus semantics
+this runner composes (§m.0 close-criteria gate, §m.1 focus shape, §m.2 the
+kind-precondition writers). Each dispatched block runs its OWN §b
+check-before-act and §c write; the runner adds only ONE bootstrap rollup and
+never re-asks a block's prompts or duplicates its provenance. `plan-story`'s body
+is the §o stage machine — the dispatch path into it is unchanged.
 
 ## Prerequisites
 
@@ -52,12 +47,8 @@ lumina MCP registered as 'lumina' and the server running — see ../mcp/SKILL.md
   cross-cutting | foundational`) — both validated server-side per §m.0/§m.1.
 - `mcp__lumina__record_task_activity` — the single §c provenance rollup at the end.
 
-Per-block field handling — `Skill()`-DISPATCH per §l.4 (the runner does NOT
-re-ask these prompts itself): for each block named below the runner calls
-`Skill("lumina:<block>", "<work_item_id>")`, and the real block runs its §b
-check-before-act + §c provenance steps against the raw `mcp__lumina__*` tools.
-The "id" the block's `arguments` frontmatter names is the bound work-item id
-passed as the `Skill()` argument.
+Every per-block field below is filled by `Skill("lumina:<block>", "<work_item_id>")`
+per §l.4, passing the bound work-item id as the argument.
 
 ## Body — the create-sequence ordering
 
@@ -163,13 +154,9 @@ nested-runner chain. After the problem-statement dispatch returns, present an
 
 ## Provenance recording (per §c)
 
-After the hierarchy is stood up, append exactly ONE §c rollup activity entry
-against the new `<project>` id. Each dispatched block's §c provenance
-write (epic-outcome, epic-close-criteria, focus-framing, problem-statement)
-fires per §l.4 against its own work-item id as part of running that block via
-`Skill()` — those §c writes happen inside the dispatched block, and the runner
-adds only this single bootstrap rollup on top (it does NOT duplicate them). Use the §c template
-verbatim (including the `${CLAUDE_SESSION_ID}` substitution guard — on
+After the hierarchy is stood up, append exactly ONE rollup entry against the new
+`<project>` id — each dispatched block already wrote its own §c entry against its
+own work-item id. Apply the `${CLAUDE_SESSION_ID}` substitution guard (on
 non-substitution, write `session=unknown` and emit a one-line warning):
 
 ```
@@ -191,23 +178,16 @@ create-project: bootstrapped project <project> → epic <epic> (close-criteria=<
   problem_statement set; <"dispatched plan-story (§l.4(a))" | "stopped after bootstrap">.
 ```
 
-## Sentry-pattern compliance (per §e)
+## What the runner owns
 
-The runner decides the create ORDER (the five steps above — the canonical
-top-down sequence) and the close-criteria HARD GATE between Step 3 and Step 5.
-Per the `Skill()`-dispatch path (§l.4), each block's §b check-before-act and §c
-provenance write are performed by the dispatched block itself — the runner does
-NOT add a parallel prompt of its own on top of the block's, nor a redundant §c
-entry beyond the one the dispatched block defines. Its own direct (non-dispatched)
-writes are just the four `create_work_item` calls and the single bootstrap §c
-rollup. Lumina's `repo.rs`
-owns the hierarchy-edge validation, the `outcome`/`shape` mandatory-field
-checks, the epic close-criteria gate, and the single-event-per-write invariant
-— the runner MUST NOT model any of that itself.
+The create ORDER (the five steps above) and the close-criteria HARD GATE between
+Step 3 and Step 5. Its only direct writes are the four `create_work_item` calls
+and the bootstrap rollup. Lumina owns hierarchy-edge validation, the
+`outcome`/`shape` mandatory-field checks, the epic close-criteria gate, and the
+single-event-per-write invariant — do NOT model any of that here.
 
 ## Pointers
 
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §e, **§l.4** (`Skill()`-dispatch execution path), **§m**.
 - Block skills dispatched via `Skill("lumina:<block>", …)` per §l.4:
   [`../epic-outcome/SKILL.md`](../epic-outcome/SKILL.md),
   [`../epic-close-criteria/SKILL.md`](../epic-close-criteria/SKILL.md),

@@ -7,34 +7,41 @@ argument-hint: "[work_item_id]"
 
 # `lumina:decompose-tasks`
 
-Decompose a planned story into its task children. This skill reads the full story (problem_statement, accepted research notes, answered open questions, approach narrative, rejected alternatives, risks, edge-case notes, verification commands), proposes a task list with foundation-first ordering, named vertical-slice and pattern-replacement GROUPINGS that span subsets of those tasks (units-of-implementation — implement+test+commit together; the groupings are NOT modelled in schema in round-3.5, only surfaced in proposal prose), explicit task-level `task_kind` discriminators (`foundation` / `main` / `polish` — the migration-0007 narrowed vocab; per-task, independent of group membership), and exhaustive Grep-derived file enumeration on pattern-replacement bundles. **Round-5 re-fusion (R52 + R53)**: SIZING and PARALLELISM are decided HERE, not deferred — the skill sets `effort`/`complexity` INLINE during decomposition (no longer punting them to `/lumina:set-task-spec`), targets ≤~3 files / one-agent-session per task so the §k.0-derived tier stays Lite unless the work is genuinely deep, and FORBIDS file overlap between would-be-parallel tasks (R53 — two tasks that should run in the same Kahn batch must not share a file). And research grounding now PERSISTS: on each task's creation the skill calls `mcp__lumina__link_task_research` for every accepted note that grounds the task, writing a durable `task_research_links` edge instead of an ephemeral proposal-only `Grounded by:` line (R52 — the persisted answer to "can't tell how research applied to tasks"). Gates each proposed task by a per-task user decision (live `AskUserQuestion` in interactive mode; the autonomous-mode default documented at step 5 when live AUQ is dead), and writes accepted tasks via `mcp__lumina__create_work_item` + `mcp__lumina__set_task_kind` + `mcp__lumina__set_effort` + `mcp__lumina__set_complexity` + `mcp__lumina__link_task_research`. Whether the skill runs forked or inline is a RUNTIME decision keyed on the execution mode (see "Run mode: fork-vs-inline" below): in autonomous mode it forks into an isolated `agent: general-purpose` subagent so the multi-step reading, pattern-replacement Grep enumeration, multi-agent fan-out, and proposal synthesis stay out of the parent's durable-comms transcript (the parent sees only the final structured summary); in interactive mode it runs inline so the user gets live per-task gating.
+Decompose a planned story into its task children. Read the full story (problem_statement, accepted research notes, answered open questions, approach narrative, rejected alternatives, risks, edge-case notes, verification commands), propose a foundation-first task list with per-task `task_kind` (`foundation` / `main` / `polish` — the migration-0007 narrowed vocab) and exhaustive Grep-derived file enumeration on pattern-replacement bundles, gate each proposal, and write the accepted ones.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied per-PROPOSED-TASK here rather than per-invocation), §c (provenance recording via `record_task_activity` with `entry_type: "execution"` — decompose-tasks is plan-time execution, NOT a vet skill), §d (run-mode / fork-vs-inline rationale — see "Run mode: fork-vs-inline" below), §e (Sentry pattern — skill = instructions, MCP = execution), §i (story-review pattern — relevant because story-review surfaces `task_kind` + `complexity` + `files_touched` issues this skill produces), §j (batch-scheduled task execution — load-bearing: this skill writes the tasks the downstream `/lumina:wire-task-deps` will edge, and the complexity-high split gate fires there, not here).
+**Round-5 re-fusion (R52 + R53)** — three things are decided HERE rather than deferred:
+
+- **Sizing**: `effort` / `complexity` are set INLINE (no longer punted to `/lumina:set-task-spec`), targeting ≤~3 files / one-agent-session per task so the §k.0-derived tier stays Lite unless the work is genuinely deep.
+- **Parallelism**: file overlap between would-be-parallel tasks is FORBIDDEN — two tasks that should share a Kahn batch must not share a file.
+- **Grounding**: each task's grounding notes are PERSISTED as `task_research_links` edges via `link_task_research` on create, replacing the ephemeral proposal-only `Grounded by:` line.
+
+Vertical-slice and pattern-replacement GROUPINGS are labels spanning SUBSETS of these tasks (units-of-implementation: implement+test+commit together). They are NOT `task_kind` values and NOT modelled in schema — proposal prose only, per §j.1.
+
+Follows [CONVENTIONS.md](../../CONVENTIONS.md) §a/§b/§c/§d/§e, with §b applied per PROPOSED TASK. `entry_type` is `"execution"` — plan-time execution, not vet. §j is load-bearing: this skill writes the tasks `/lumina:wire-task-deps` will edge, and the complexity-high split gate fires THERE, not here.
 
 ## Run mode: fork-vs-inline (per §d)
 
-Whether to fork is selected at runtime from the execution mode (the `LUMINA_AUTONOMOUS` signal, corroborated server-side against the session's spawned-provenance through lumina's single-source mode resolver, which fails SAFE to interactive whenever the signal is absent, unverified, or conflicts):
-
-- **Autonomous mode** (lumina-spawned / scheduler-driven) → run FORKED in an isolated `agent: general-purpose` subagent. A decomposition pass reads every planning block, runs multi-agent fan-out when the story spans foundation-disjoint modules (R26), runs `Grep --files_with_matches` for every pattern-replacement task (R25), and synthesises a proposed task list — exactly the kind of multi-step workflow whose intermediate tool output would saturate the parent's durable-comms transcript. Live `AskUserQuestion` is structurally dead here, so the per-task gate (step 5) and the R28 in-progress confirm-prompt (step 2) fall back to their autonomous-mode defaults documented at those steps.
-- **Interactive mode** (human terminal — the fail-safe default) → run INLINE so the user walks the per-task `AskUserQuestion` gate live and can `Edit` / `Drop` / `Skip rest` each proposal.
-
-Fork is no longer a static per-skill property recorded in frontmatter — §d (post-1C.1) treats it as a runtime/mode decision, so this skill carries no `context:`/`agent:` keys; the `agent: general-purpose` target applies only on the autonomous fork path described above.
+- **Autonomous** → run FORKED in an isolated `agent: general-purpose` subagent: a decomposition pass reads every planning block, may fan out across foundation-disjoint modules (R26), Greps for every pattern-replacement task (R25), and synthesises a proposal — output the parent's durable-comms transcript does not need. Live `AskUserQuestion` is dead, so the per-task gate (step 5) and the R28 in-progress confirm (step 2) take their autonomous defaults documented there.
+- **Interactive** (the fail-safe default) → run INLINE so the user walks the per-task gate live and can `Edit` / `Drop` / `Skip rest` each proposal.
 
 ## MCP tools used
 
-- `mcp__lumina__get_session_context` — session-start correlation stamp (step 1, read-only — no event). Resolves `{project_id?, sprint_id?, story_id?, epic_id?}` for `$work_item_id` so the ids land in this run's transcript (the fork's transcript in autonomous mode) for the migration-0015 corpus harvest. See [`../mcp/SKILL.md`](../mcp/SKILL.md#session-start-correlation-migration-0015).
-- `mcp__lumina__get_work_item` — story read (folds in `attributes.problem_statement`, `attributes.execution_strategy`, `attributes.rejected_alternatives`, `attributes.verification_commands`, `research_notes`, `acceptance_criteria`, `open_questions`, `risks`, existing task children, existing `findings`).
-- `mcp__lumina__create_work_item` — creates one task work-item per accepted proposal (`{kind: "task", parent_id: $work_item_id, title, body, origin: "plan"}`); returns the new task id.
-- `mcp__lumina__set_task_kind` — stamps the new task's `task_kind` column to one of `foundation` / `main` / `polish` (matches migration 0007's narrowed CHECK constraint — see CONVENTIONS §j for why the round-2 four-value vocab was culled).
-- `mcp__lumina__set_effort` — stamps the new task's `effort` column (`s` / `m` / `l`). **Round-5 (R53)**: called INLINE per accepted task during decomposition (no longer deferred to `/lumina:set-task-spec`) so sizing is decided at the moment the slice is shaped.
-- `mcp__lumina__set_complexity` — stamps the new task's `complexity` column (`low` / `medium` / `high`). **Round-5 (R53)**: called INLINE per accepted task; the §k.0 tier derivation reads `effort` + `complexity` + the deduped expected-`files_touched` count, so keeping both grades low and the file set ≤3 is what holds the derived tier at Lite.
-- `mcp__lumina__link_task_research` — **Round-5 (R52)**: writes one durable `task_research_links` edge `{task_id, research_note_id}` per accepted note that grounds the task. Called once per grounding note immediately after `create_work_item`. Lumina validates the edge (task-is-task, note-is-live, note-and-task-share-a-story) and rejects a bad edge as `invalid_params`; the skill body does NOT pre-validate. This REPLACES the old ephemeral `Grounded by:` proposal-prose-only association.
-- `mcp__lumina__update_work_item` — supersede branch only (see R28 implementation note below): flips not-started prior tasks' `status` to `cancelled` (the closest available value — Status enum has no `superseded` variant; see "Plan-deviation note" below).
-- `mcp__lumina__record_task_activity` — provenance per §c (one summary entry per skill invocation; on R28's re-run supersede branch, additionally one `decomposition_regenerated` entry pointing to the new batch).
+Reads:
 
-Subagent ALSO uses read tools available in its toolbelt for pattern-replacement enumeration: `Grep` (R25 — `--files_with_matches` exhaustive file list), `Glob`, `Read`. These are not lumina write tools.
+- `mcp__lumina__get_session_context { work_item_id }` — step-1 correlation stamp (no event, no write); puts the resolved sprint/story/epic ids into this run's transcript for the migration-0015 corpus harvest.
+- `mcp__lumina__get_work_item { id }` — story read (folds in `attributes.problem_statement`, `attributes.execution_strategy`, `attributes.rejected_alternatives`, `attributes.verification_commands`, `research_notes`, `acceptance_criteria`, `open_questions`, `risks`, existing task children, existing `findings`).
 
-See [`../mcp/SKILL.md`](../mcp/SKILL.md) §Planning & decision tools for canonical argument shapes. Per-call argument values this skill chooses are documented inline at each call site below. The skill writes ONLY task work-items, their `task_kind`/`effort`/`complexity` columns, their `task_research_links` grounding edges, and one (or two) activity entries; it does NOT write `risks`, `rejected_alternatives`, `acceptance_criteria`, `research_notes`, or `open_questions` — those rows are read-only inputs to the decomposition (the `link_task_research` calls reference existing accepted research notes; they do not create them).
+Writes — these SEVEN and no other lumina write tool:
+
+- `mcp__lumina__create_work_item { kind: "task", parent_id: "<story_id>", title, body, origin: "plan" }` — one per accepted proposal; returns the new id. `parent_id` is required (tasks always have a story parent); `body` is optional but every proposal SHOULD carry one (the proposal description); `origin: "plan"` is mandatory per §c.
+- `mcp__lumina__set_task_kind { id, task_kind: "<foundation|main|polish>" }` — the three legal values match migration 0007's narrowed CHECK (round-2's four-value vocab was culled, §j.1). Omitting the value CLEARS to NULL; this skill always passes one.
+- `mcp__lumina__set_effort { id, effort: "<s|m|l>" }` — a dedicated write, NOT routed through any spec tool. Called INLINE here per R53.
+- `mcp__lumina__set_complexity { id, complexity: "<low|medium|high>" }` — likewise inline. The §k.0 tier derivation reads `effort` + `complexity` + the deduped expected-`files_touched` count, so keeping both grades low and the file set ≤3 is what holds the derived tier at Lite.
+- `mcp__lumina__link_task_research { task_id, research_note_id }` — R52: one durable `task_research_links` edge per grounding note, immediately after `create_work_item`. The note MUST be a LIVE accepted note on the SAME story; lumina validates (task-is-task, note-live, same-story) and rejects a bad edge as `invalid_params` — do NOT pre-validate, and do NOT create notes here.
+- `mcp__lumina__update_work_item { id, status: "cancelled" }` — R28 supersede branch ONLY (partial set-or-leave; see the Plan-deviation note).
+- `mcp__lumina__record_task_activity` — §c, one summary entry per invocation, plus one `decomposition_regenerated` entry on the R28 supersede branch.
+
+Read tools for pattern-replacement enumeration: `Grep` (R25 — `--files_with_matches`), `Glob`, `Read`. This skill writes ONLY task work-items, their `task_kind`/`effort`/`complexity` columns, their grounding edges, and its activity entries — `risks`, `rejected_alternatives`, `acceptance_criteria`, `research_notes`, and `open_questions` are read-only inputs. It writes NO task→task dependency edges (that is `/lumina:wire-task-deps`'s job; a `task_research_links` edge is a task↔research relationship, not a dependency) and MUST NOT pre-batch tasks into phases (§j).
 
 ## Plan-deviation note (R28 implementation surface)
 
@@ -244,57 +251,22 @@ Two affected areas (`lumina/`, `lumina/web/`) → below the ≥3 fan-out thresho
 
 Tasks 2, 3, 4 are FILE-DISJOINT (R53) — `repo/research_notes.rs` + `planning.rs` (domain) / `mcp/planning.rs` / `ResearchNotePanel.vue` share no file — so after task 1's migration is wired ahead of them they are a maximally-parallel batch (three parallel Lite tasks). The grouping label "anchors-end-to-end" spans tasks 1–4 (R53 demotion — a label, NOT one big task; §j.1 prose-only).
 
-User accepts all four. The step-5 Accept path writes each task and its grounding edges. The three parallel Lite tasks (2, 3, 4) and their `link_task_research` calls:
+User accepts all four; each runs the step-5 Accept sequence. Task 2 shows the multi-note case — a task may be grounded by more than one note:
 
 ```
-# Task 2 — repo + domain writers
 t2 = mcp__lumina__create_work_item { kind: "task", parent_id: "$work_item_id", title: "Thread anchors through domain + repo writers", body: "...", origin: "plan" }
 mcp__lumina__set_task_kind  { id: t2.id, task_kind: "main" }
 mcp__lumina__set_effort     { id: t2.id, effort: "m" }
 mcp__lumina__set_complexity { id: t2.id, complexity: "low" }
-mcp__lumina__link_task_research { task_id: t2.id, research_note_id: "rn-501" }   # R52
-mcp__lumina__link_task_research { task_id: t2.id, research_note_id: "rn-502" }   # R52 — a task may be grounded by ≥1 note
-
-# Task 3 — MCP surface (file-disjoint from T2 and T4)
-t3 = mcp__lumina__create_work_item { kind: "task", parent_id: "$work_item_id", title: "MCP add/update_research_note accept + validate anchors", body: "...", origin: "plan" }
-mcp__lumina__set_task_kind  { id: t3.id, task_kind: "main" }
-mcp__lumina__set_effort     { id: t3.id, effort: "m" }
-mcp__lumina__set_complexity { id: t3.id, complexity: "low" }
-mcp__lumina__link_task_research { task_id: t3.id, research_note_id: "rn-502" }   # R52
-
-# Task 4 — SPA panel (file-disjoint from T2 and T3)
-t4 = mcp__lumina__create_work_item { kind: "task", parent_id: "$work_item_id", title: "SPA renders anchor citation list", body: "...", origin: "plan" }
-mcp__lumina__set_task_kind  { id: t4.id, task_kind: "main" }
-mcp__lumina__set_effort     { id: t4.id, effort: "m" }
-mcp__lumina__set_complexity { id: t4.id, complexity: "low" }
-mcp__lumina__link_task_research { task_id: t4.id, research_note_id: "rn-503" }   # R52
+mcp__lumina__link_task_research { task_id: t2.id, research_note_id: "rn-501" }
+mcp__lumina__link_task_research { task_id: t2.id, research_note_id: "rn-502" }
 ```
 
 Final: created=4, all 4 lite (none breach the §k.0 Deep thresholds — ≤3 files, no `effort=l`, no `complexity=high`, no cross-repo); 5 `task_research_links` written (`rn-501`→T1, `rn-501`+`rn-502`→T2, `rn-502`→T3, `rn-503`→T4); parallel-task file overlap: none (T2/T3/T4 disjoint, enforced at synthesis per R53). The grounding now PERSISTS — `/lumina:plan-story`'s decision brief reads it back via the dossier ("T3 implements R-note 'anchor validation'"), which is the R52 fix the old ephemeral `Grounded by:` proposal line could not deliver.
 
-## Sentry-pattern compliance (per §e)
-
-The skill body decides which slices to propose, which `task_kind` to assign, what `effort`/`complexity` each task carries (R53), which accepted notes ground each task (R52), when to fan out per R26, and which prior tasks to supersede per R28. The MCP tools handle every byte of business logic: `create_work_item` validates `kind` + `parent_id` + provenance origin and emits the event; `set_task_kind` validates the discriminator against the migration-0005 CHECK constraint; `set_effort`/`set_complexity` validate their grade enums and emit events; `link_task_research` validates the grounding edge (task-is-task, note-live, same-story) and emits the event; `update_work_item` runs the status-transition rules and emits the event; `record_task_activity` validates `entry_type` against the rejection of `verification`. The skill body MUST NOT compose mutations client-side, MUST NOT pre-validate the grounding edge, and MUST NOT pre-batch the tasks into phases — phase batching is a downstream concern of `compute_task_batches` per §j. The skill writes EDGE-FREE tasks (no task→task dependency edges; those are `/lumina:wire-task-deps`'s job) but DOES write each task's `task_research_links` grounding edges (R52) — a `task_research_links` edge is a task↔research relationship, not a task→task dependency.
-
-## MCP argument shapes (canonical reference)
-
-The skill body cites tools by short name above; the canonical argument shapes are reproduced here for the agent's reference (mirrors the `[`../mcp/SKILL.md`](../mcp/SKILL.md)` catalogue):
-
-- `mcp__lumina__create_work_item { kind: "task", parent_id: "<story_id>", title: "<...>", body: "<...>", origin: "plan" }` — `kind` is the work-item kind enum (`project|epic|focus|story|task`); `parent_id` is required because tasks always have a story parent; `body` is optional but every decompose-tasks proposal SHOULD include one (the proposal description is the body); `origin: "plan"` is mandatory per §c.
-- `mcp__lumina__set_task_kind { id: "<new_task_id>", task_kind: "<foundation|main|polish>" }` — `task_kind` is optional in the schema (omit to CLEAR back to NULL); decompose-tasks always passes a value because the discriminator is the whole point. The three legal values match migration 0007's narrowed CHECK constraint (round-2's four-value vocab was culled — see CONVENTIONS §j).
-- `mcp__lumina__set_effort { id: "<new_task_id>", effort: "<s|m|l>" }` — task-scoped effort setter (round-5 R53: called inline here, not deferred). A dedicated MCP write.
-- `mcp__lumina__set_complexity { id: "<new_task_id>", complexity: "<low|medium|high>" }` — task-scoped complexity setter (round-5 R53: called inline here). A dedicated MCP write; feeds the §k.0 derived tier.
-- `mcp__lumina__link_task_research { task_id: "<new_task_id>", research_note_id: "<accepted_note_id>" }` — round-5 R52: persists one task↔research grounding edge in `task_research_links`. The `research_note_id` MUST reference a LIVE accepted note on the SAME story (lumina validates: task-is-task, note-live, same-story; rejects otherwise as `invalid_params`). One call per grounding note; the skill does NOT pre-validate or create the note.
-- `mcp__lumina__update_work_item { id: "<prior_task_id>", status: "cancelled" }` — partial set-or-leave update; only `status` is set; other columns untouched. Used ONLY in R28's supersede branch per the Plan-deviation note.
-- `mcp__lumina__record_task_activity { work_item_id: "<story_id>", entry_type: "execution", origin: "plan", summary: "<...>", body: "session=${CLAUDE_SESSION_ID}" }` — per §c.
-
-The skill body MUST NOT call any lumina write tool beyond the six listed above (`create_work_item`, `set_task_kind`, `set_effort`, `set_complexity`, `link_task_research`, `update_work_item`) plus `record_task_activity`. Read-only calls are allowed: `mcp__lumina__get_session_context` (the step-1 session-start correlation stamp) and `mcp__lumina__get_work_item` (step 1, and as needed during proposal synthesis). Forks may use `Grep`/`Glob`/`Read` for pattern-replacement enumeration.
-
 ## Pointers
 
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §d, §e, §i, §j.
-- MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — see Planning & decision tools, Task graph family.
-- Companion research/critique skills: [`../research-notes/SKILL.md`](../research-notes/SKILL.md), [`../story-review/SKILL.md`](../story-review/SKILL.md) — mirror their frontmatter shape (and their run-mode fork-vs-inline framing) and inline citation conventions.
-- Downstream skills in the task-decomposition family: `/lumina:set-task-spec` (per-task files_touched + dual-track outcomes; treats this skill's inline-set effort/complexity as idempotent per R53), `/lumina:wire-task-deps` (prunes a maximally-parallel graph from `get_story_files_footprint` overlap + Kahn batch compute + complexity-high split gate per R53).
-- Round-5 plan: [`../../../../../docs/plans/lumina-story-planning-round-5.md`](../../../../../docs/plans/lumina-story-planning-round-5.md) — §A.4 (re-fuse decomposition: sizing + parallelism + persisted grounding). **R52** (persist research→task grounding via `task_research_links` instead of an ephemeral `Grounded by:` proposal line — the new `link_task_research` MCP tool) and **R53** (oversized/sequential tasks → make sizing + parallelism first-class outputs of decomposition: set effort/complexity inline, target ≤~3 files / one session per task, forbid file overlap between would-be-parallel tasks, demote the vertical slice from one-big-task to a grouping label over small parallel tasks).
-- Round-2 plan: [`../../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../../docs/plans/lumina-story-planning-round-2.md) — see R24 (vertical-slice + foundation-first), R25 (pattern-replacement exhaustive `files_touched`), R26 (multi-agent fan-out heuristic), R27 (complexity-high reliability degradation; gate fires in wire-task-deps), R28 (re-run tri-state). Note that R24/R25 originally exposed "vertical-slice" and "pattern-replacement" as `task_kind` values, which migration 0007 (round-3.5 review follow-up) culled — those concepts are correctly modelled as **intra-story task-subset groupings** (a story may have 0+ vertical slices and 0+ pattern-replacement bundles, each spanning some subset of the story's tasks), NOT as values of the per-task `task_kind` enum. Round-3.5 does not add a schema-level groupings table; the groupings live in this skill's proposal prose until a future round adds `task_groups` / `task_group_members` driven by a concrete consumer like `/lumina:run-batch`.
+- MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — Planning & decision tools, Task graph family.
+- Downstream: `/lumina:set-task-spec` (per-task files_touched + dual-track outcomes; treats this skill's inline-set effort/complexity as idempotent per R53), `/lumina:wire-task-deps` (prunes a maximally-parallel graph from `get_story_files_footprint` overlap + Kahn batch compute + complexity-high split gate).
+- Round-5 plan: [`../../../../../docs/plans/lumina-story-planning-round-5.md`](../../../../../docs/plans/lumina-story-planning-round-5.md) — §A.4, **R52** (persisted grounding via `task_research_links`), **R53** (sizing + parallelism as first-class decomposition outputs).
+- Round-2 plan: [`../../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../../docs/plans/lumina-story-planning-round-2.md) — R24 (vertical-slice + foundation-first), R25 (pattern-replacement exhaustive `files_touched`), R26 (fan-out heuristic), R27 (complexity-high degradation; gate fires in wire-task-deps), R28 (re-run tri-state). R24/R25 originally exposed "vertical-slice" and "pattern-replacement" as `task_kind` values; migration 0007 culled them — they are intra-story task-subset GROUPINGS, not `task_kind` values (§j.1), and stay prose-only until a concrete consumer justifies a `task_groups` table.

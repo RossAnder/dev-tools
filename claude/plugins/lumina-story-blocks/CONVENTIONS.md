@@ -23,9 +23,9 @@ argument-hint: "[work_item_id]"
 - `description` is a single sentence. It is what model-auto-invocation matches against — and in this plugin it DOES enter the routing context: with no `disable-model-invocation` flag, every skill is model-discoverable, so the description must be a faithful, specific summary the model can route on.
 - `arguments: [work_item_id]` declares one named positional argument, substituted as `$work_item_id` in the body. Per R8, named arguments give the body a stable substitution rather than relying on `$ARGUMENTS` blob parsing.
 - `argument-hint: "[work_item_id]"` is the slash-autocomplete hint surfaced to the user when they type `/lumina:<name>` — without it the autocomplete shows nothing and the user has to guess that a work-item id is expected. It is RECOMMENDED whenever `arguments` is non-empty (and omitted alongside `arguments` for read-only catalogues that take none). The hint mirrors the `arguments` shape verbatim.
-- **These skills are model-invocable by design.** Per R1, Claude Code exposes three invocation paths — the human `/name` slash, model-auto-trigger via `description`, and model-issued `Skill` tool dispatch. All three are allowed for every skill in this plugin: NONE carries `disable-model-invocation`. This is deliberate — the planning/lifecycle skills are built to run AUTONOMOUSLY (lumina-spawned / scheduler-resumed sessions drive the planning + execution flow), and the chained runners (`plan-story`, `create-project`) must be able to `Skill()`-dispatch their per-block siblings. Removing the flag from the routing context would block both. Safety no longer comes from restricting who may invoke; it comes from three places: (1) the §b check-before-act idempotency contract — read before write, never blind-overwrite; (2) the §n.1 TXN-idempotency of the lifecycle mutators; and (3) crucial or ambiguous decisions surfaced as durable lumina `open_questions` an operator answers asynchronously, so the flow blocks on a RECORDED decision rather than a live prompt (in autonomous mode there is no live `AskUserQuestion` channel — those gates DEGRADE to durable open-questions; see §d). **Chained runners** (`plan-story`, `create-project`) accordingly `Skill()`-dispatch their per-block siblings — see §l.4 (the single canonical home for that execution-path doctrine).
+- **These skills are model-invocable by design.** All three Claude Code invocation paths (the human `/name` slash, model-auto-trigger via `description`, model-issued `Skill` dispatch) are allowed for every skill here: NONE carries `disable-model-invocation`. This is deliberate — the planning/lifecycle skills are built to run AUTONOMOUSLY, and the chained runners must be able to `Skill()`-dispatch their per-block siblings; the flag would block both. Safety comes not from restricting who may invoke but from (1) the §b check-before-act contract, (2) the §n.1 TXN-idempotency of the lifecycle mutators, and (3) crucial or ambiguous decisions surfaced as durable `open_questions` an operator answers asynchronously, so the flow blocks on a RECORDED decision rather than a live prompt (§d). §l.4 is the single canonical home for the chained-runner dispatch doctrine.
 
-**Read-only / documentation skills.** The `mcp`, `lifecycle`, and `next-block` skills are read-only surfaces (they call only read tools and write nothing). Like everything else in the plugin now, they are model-discoverable — agents can auto-find the catalogue / advisor when they need it.
+**Read-only / documentation skills.** `mcp`, `lifecycle`, and `next-block` call only read tools and write nothing. Like everything else here they are model-discoverable, so agents can auto-find the catalogue / advisor.
 
 Example (the `problem-statement` skill):
 
@@ -48,32 +48,7 @@ No first-party idempotency primitive exists for skills (R7). The pattern is Chec
 4. If present and the value matches user intent → no-op; return early with a one-line confirmation to the user (e.g. "problem_statement already set to: <truncated> — no change.").
 5. If present and the value should change → ask the user to confirm via `AskUserQuestion` using the verbatim supersession phrasing in **§b-supersession** below. On `Replace`, call the `update_*` / `supersede_*` MCP tool; on `Keep current`, abort the skill invocation without writing.
 
-Pseudocode showing the dispatch fork (for the `problem-statement` skill, deciding between first-write and supersession-confirm):
-
-```
-detail = mcp__lumina__get_work_item({id: $work_item_id})
-existing = detail.attributes.problem_statement   # may be null/absent
-
-if existing is absent:
-    new_value = <ask the user for the 3-axis prompt>
-    mcp__lumina__set_story_plan({id: $work_item_id, problem_statement: new_value})
-    mcp__lumina__record_task_activity({...})     # per §c
-    return "problem_statement created."
-
-new_value = <ask the user for the 3-axis prompt>
-
-if new_value == existing:
-    return "problem_statement already matches the value you provided — no change."
-
-# Existing value, but the user-supplied new value differs.
-answer = AskUserQuestion(<verbatim phrasing from §b-supersession>)
-if answer == "Keep current":
-    return "Aborted; existing problem_statement left in place."
-
-mcp__lumina__set_story_plan({id: $work_item_id, problem_statement: new_value})
-mcp__lumina__record_task_activity({...})         # per §c
-return "problem_statement superseded."
-```
+The dispatch fork in short: read → if absent, prompt + write + record; if the new value equals the existing one, return the §b-noop line; otherwise run the §b-supersession confirm and, on `Replace`, write + record.
 
 ### §b-supersession — verbatim `AskUserQuestion` phrasing
 
@@ -164,9 +139,7 @@ The mode is selected from a CORROBORATED mode signal — the `LUMINA_AUTONOMOUS`
 
 **Autonomous-mode AUQ degradation.** A skill whose body gates on an `AskUserQuestion` — the §b-supersession confirm, a §l.1 skip-override, any decision prompt — has NO interactive channel in autonomous mode. Every such gate MUST DEGRADE to a durable lumina `open_question`: the skill records the decision as an open question, blocks on the operator's asynchronous answer, and resumes once it is recorded. It MUST NEVER hang waiting for input that cannot arrive. In interactive mode the AUQ reaches the user live and runs unchanged. Mode is the corroborated signal above (`mcp__lumina__get_execution_mode`), fail-safe to interactive when unverifiable.
 
-**Why isolate the noise (when forking applies)**: each of these skills leaves heavy tool-output noise in the conversation context that the main planning session does not need. `research-notes` runs Context7 lookups, WebSearch queries, targeted code reads, and draft synthesis; `research-explore` dispatches parallel lens-agents; `research-directed` verifies decision-grade claims and emits drift findings; `story-review` runs a 7-category rubric over the full story detail, performing cross-block semantic comparisons and per-rubric finding writes; `decompose-tasks` reads every accepted-state planning block, optionally fans out parallel sub-decompose-agents per foundation-disjoint module (R26), runs pattern-replacement file enumeration via Grep (R25), and synthesises a proposed task list. Forking in autonomous mode isolates that noise; running inline in interactive mode keeps the user in the loop.
-
-**Why every other skill always stays inline**: all other skills in this plugin are short interactive Q&A loops — the user types a few sentences, the skill writes one or two MCP calls, done. They have no exploration noise to isolate and depend on the live user channel, so they are never candidates for the autonomous-mode fork regardless of mode.
+**Why isolate the noise (when forking applies)**: each of the five skills above runs a multi-step exploration whose intermediate tool output — doc snippets, search-result lists, raw file dumps, sub-agent traces — the main planning session does not need. Forking in autonomous mode isolates that noise; running inline in interactive mode keeps the user in the loop. Every OTHER skill in this plugin is a short interactive Q&A loop (the user types a few sentences, the skill makes one or two MCP calls) with no noise to isolate and a dependence on the live user channel, so it is never a fork candidate regardless of mode.
 
 A skill that runs forked MAY append reporting/summary steps after the 5-step §b sequence (e.g. research-notes' final summary step). The 5-step §b sequence itself MUST appear in order; additions go after step 5, not interleaved.
 
@@ -191,20 +164,11 @@ Exception: a skill MAY locally verify `detail.kind` matches its declared target 
 
 ## §f No per-verb fragmentation
 
-Per R18, skill fragmentation has bidirectional failure modes: over-splitting (verb-per-skill) silently re-merges intent into a "new giant prompt" the user has to assemble; under-splitting (one skill does everything) loses the per-block check-then-act discipline. This plugin's rule:
+Per R18, skill fragmentation fails in both directions: over-splitting (verb-per-skill) silently re-merges intent into a "new giant prompt" the user has to assemble; under-splitting (one skill does everything) loses the per-block check-then-act discipline. This plugin's rule:
 
 **Each skill handles ONE BLOCK end-to-end — check + create + update + supersede.**
 
-We DO NOT split skills by verb. There is no `set-problem-statement` / `supersede-problem-statement` pair; there is one `problem-statement` skill that handles both verbs via the §b 5-step sequence. Concretely:
-
-| Verb | Where it lives |
-|---|---|
-| Create (absent → write) | Inside the skill body at §b step 3 |
-| No-op (present and matches) | Inside the skill body at §b step 4 |
-| Supersede (present and differs, user confirms) | Inside the skill body at §b step 5 |
-| Abort (present and differs, user declines) | Inside the skill body at §b step 5 |
-
-This keeps the user's mental model 1:1 with the story schema: one block, one slash command, one decision-point. The verb-fork is an implementation detail of the skill body.
+We DO NOT split skills by verb. There is no `set-problem-statement` / `supersede-problem-statement` pair; there is one `problem-statement` skill handling both via the §b sequence (create at step 3, no-op at step 4, supersede-or-abort at step 5). The user's mental model stays 1:1 with the story schema — one block, one slash command, one decision-point — and the verb-fork is an implementation detail of the skill body.
 
 ## §g Storage-convention registry
 
@@ -228,10 +192,10 @@ Do not conflate the two: an attribute-key convention is data hiding inside a JSO
 
 Notes:
 
-- Round-2 reactivated `attributes.not_doing`. The earlier disabled-status referenced a column-level COALESCE bug in `update_work_item.attributes` — round-2 widened `SetStoryPlanParams` to accept `not_doing` and routes through the merge-safe `set_story_plan` path. The not-doing skill writes via this entry point only; `update_work_item` with raw `attributes` payloads remains forbidden.
-- **Lens-key drift warning**: consumers of `attributes.not_doing` and `attributes.verification_commands` (skill bodies, future UI code, exporter, smoke tests) MUST reference the literal snake_case key strings. Lumina has no schema-level protection against typos — writing `attributes.notDoing` or `attributes.not-doing` succeeds silently and produces drift. The same applies for `verification_commands` (NOT `verificationCommands`, NOT `verification-commands`). Consider adding a lumina-side test that scans `work_items.attributes` for unknown top-level keys as a drift smoke check.
-- **`verification_commands` shape**: the object's keys (`build`, `test`, `lint`, `smoke`) and value type (`Option<String>`) are validated server-side via the round-2 `VerificationCommands` struct. Unknown keys inside the object are rejected at the MCP layer.
-- **Solution-shape convention — `execution_strategy` holds the solution shape; `problem_statement` stays problem-only.** The two story-plan attribute keys divide responsibility cleanly: `attributes.problem_statement` describes ONLY the problem (what's broken, who's affected, success criteria) and MUST NOT carry the chosen solution / approach; `attributes.execution_strategy` is where the solution shape (the approach, the how) lives. Skills MUST NOT overload `problem_statement` with solution wording — when the user states a fix, route it to `execution_strategy` (via `/lumina:approach` → `set_story_plan`), not into the problem statement. This is a documented-convention resolution (no new attribute / column): the `problem-statement` skill keeps its field problem-only, and the `approach` skill owns `execution_strategy`. Rationale: a problem statement contaminated with a baked-in solution pre-empts the explore/decide phases (`get_story_readiness` gates exploration on `problem_statement_set`, then decision on accepted research) — keeping the two separate preserves the six-phase sequence (§l).
+- `attributes.not_doing` writes go through `set_story_plan`'s widened-params form ONLY; `update_work_item` with raw `attributes` payloads remains forbidden (its column-level COALESCE clobbers sibling keys — the bug round-2 routed around).
+- **Key drift warning**: every consumer (skill bodies, UI code, exporter, smoke tests) MUST use the literal snake_case key strings. Lumina has no schema-level typo protection — `attributes.notDoing` or `verificationCommands` succeeds silently and produces drift.
+- **`verification_commands` shape**: keys `build` / `test` / `lint` / `smoke`, each `Option<String>`, validated server-side by the `VerificationCommands` struct; unknown sub-keys are rejected at the MCP layer.
+- **Solution-shape convention — `execution_strategy` holds the solution shape; `problem_statement` stays problem-only.** `problem_statement` describes ONLY the problem (what's broken, who's affected, success criteria) and MUST NOT carry the chosen solution; `execution_strategy` (owned by `/lumina:approach`) is where the how lives. When the user states a fix, route it there. Rationale: a problem statement contaminated with a baked-in solution pre-empts the explore/decide phases, and keeping the two separate preserves the six-phase sequence (§l).
 
 **Promotion policy for §g.1**: when lumina later adds a first-class column for one of these (e.g. a `not_doing` column on `work_items`), the corresponding skill body in this plugin is updated in lockstep with the schema migration via `ALTER TABLE ADD COLUMN` plus the per-key code paths. The slash command name and user-facing prompt stay the same; the key-binding row moves out of this registry; and the row in the table above is deleted with a one-line note in the migration PR. New attribute-key conventions are added by appending a row here AND updating the consuming skill body in the same change.
 
@@ -290,12 +254,12 @@ The skill body cites this section by reference; do NOT inline Kahn's-algorithm s
 Migration 0005 introduced `work_items.task_kind` with a four-value taxonomy: `foundation | vertical-slice | pattern-replacement | polish`. The 0007 review (round-3.5) found the taxonomy conflated **three** granularities:
 
 - **Per-task disposition** (legitimate task-level discriminator — what `task_kind` is FOR): `foundation` (prerequisite — floats earliest in intra-phase sort), `main` (core body of work — default), `polish` (after-work — sinks latest). One value per task.
-- **Intra-story task-subset groupings** (NOT a `task_kind` value): `vertical-slice` and `pattern-replacement` describe a relationship between an **arbitrary subset** of a story's tasks — not all of them, not a single one. Within one story there may be multiple vertical slices (each spanning a different subset of tasks), several pattern-replacement bundles, plus tasks that belong to no group. A task can belong to zero or more groupings. Groupings exist to mark units-of-implementation: the tasks in one vertical slice are implemented + tested + committed as a unit; same for pattern-replacement bundles.
-- **Whole-story structural shape**: a separate concept ("this story IS principally a refactor / a greenfield / etc.") that lumina does not model and round-3.5 does not introduce.
+- **Intra-story task-subset groupings** (NOT a `task_kind` value): `vertical-slice` and `pattern-replacement` describe a relationship between an **arbitrary subset** of a story's tasks. One story may hold several vertical slices and several pattern-replacement bundles, plus tasks in no group; a task may belong to zero or more. Groupings mark units-of-implementation — the tasks in one grouping are implemented + tested + committed together.
+- **Whole-story structural shape**: a separate concept ("this story IS principally a refactor / a greenfield") that lumina does not model.
 
-Migration 0007 culled the `task_kind` vocab to `foundation | main | polish` and rebuilt the `work_items` CHECK accordingly. Existing rows carrying the two deprecated values were migrated to `main`. The intra-phase sort key in `repo::task_kind_sort_key` was updated; `foundation` still floats earliest, `polish` still sinks latest, and `main` (or NULL) occupies the middle slot.
+Migration 0007 culled the vocab to `foundation | main | polish` and rebuilt the `work_items` CHECK; rows carrying the deprecated values were migrated to `main`. In `repo::task_kind_sort_key`, `foundation` floats earliest, `polish` sinks latest, `main` (or NULL) occupies the middle.
 
-**Intra-story task-subset groupings are NOT modelled in schema by round-3.5** — no `task_groups` table, no MCP tools, no validation. `/lumina:decompose-tasks` surfaces proposed groupings in its proposal prose (e.g. "Vertical slice 'auth-flow' covers T3 + T5 + T8"), and the implementer (or future `/lumina:run-batch`) respects the grouping informally when sequencing implementation, testing, and commit. When a real consumer materialises that needs to query groupings from the DB — most likely `/lumina:run-batch` choosing "dispatch these three tasks together as one verification + one commit" — a future migration will add `task_groups (id, story_id, kind, label)` + `task_group_members (group_id, task_id, seq)`. Until then the concept lives purely in skill prose and conversational coordination.
+**Groupings are NOT modelled in schema** — no `task_groups` table, no MCP tools, no validation. `/lumina:decompose-tasks` surfaces them in proposal prose ("Vertical slice 'auth-flow' covers T3 + T5 + T8") and the implementer respects them informally when sequencing implementation, testing, and commit. A future migration would add `task_groups` + `task_group_members` once a real consumer needs to query them from the DB.
 
 The pattern-replacement workflow signal at the per-task level is carried by `attributes.files_touched_pattern` — `/lumina:decompose-tasks` records the Grep pattern there on each task that's part of a pattern-replacement grouping (so a 9-file sweep split across 3 tasks records the pattern on all 3), and `/lumina:set-task-spec` + `/lumina:story-review` gate their pattern-replacement-specific behaviour on the presence of that key. This is the only DB-level trace of grouping membership in round-3.5; the named grouping itself (which group does this task belong to?) is purely in `/lumina:decompose-tasks`'s proposal prose and any downstream consumer's working memory until the future schema lands.
 
@@ -387,7 +351,7 @@ Round-3 does NOT persist `current_phase` to a column. The phase is recomputed ev
 
 `/lumina:plan-story` and `/lumina:create-project` are **chained runners**: skills whose body walks a sequence of sibling per-block skills. To "run block X", a runner issues `Skill("lumina:<block>", "<work_item_id>")` — dispatching each per-block sibling via the `Skill` tool, in §l.0 phase order, gated by the same `get_story_readiness` preconditions. The dispatched skill runs its own real body (the §b check-before-act 5-step sequence, the §c provenance write), so the runner delegates the block's work rather than re-implementing it.
 
-This path was formerly BLOCKED: every DB-mutating block skill carried `disable-model-invocation: true`, and the `Skill` tool is a model-driven invocation path (R1 path (c)), so a runner-issued `Skill("lumina:X")` was refused at the harness layer — even under an explicit human slash-invocation. That refusal is why an "inline-replication" workaround formerly lived here. The flag was removed plugin-wide (§a), so `Skill()`-dispatch is now the documented, working path; the workaround is retired.
+This path was formerly BLOCKED by `disable-model-invocation: true` on every DB-mutating block skill, which is why an "inline-replication" workaround once lived here. The flag was removed plugin-wide (§a), so `Skill()`-dispatch is now the documented, working path and the workaround is retired.
 
 Two rules bound the dispatch:
 
@@ -396,9 +360,9 @@ Two rules bound the dispatch:
 
 (The autonomous-mode AUQ-degradation rule that formerly lived here as §l.4(b) now lives in §d, where it applies uniformly to any skill's `AskUserQuestion` gate, dispatched or directly invoked.)
 
-**Single source of truth.** §l.4 is the ONE canonical home for this execution-path doctrine. `plan-story`'s Step 4, `create-project`'s block-dispatch steps, the dogfood runbook (`lumina/docs/runbooks/dogfood-lifecycle.md`), §a's invocation-path note, the README, and the project `CLAUDE.md` files CITE §l.4 rather than restating it.
+**Single source of truth.** §l.4 is the ONE canonical home for this execution-path doctrine; every other carrier (the two runners, the dogfood runbook, §a's invocation-path note, the README, the project `CLAUDE.md` files) CITES it rather than restating it.
 
-**Partial-state recoverability.** A chained runner that dies mid-walk does NOT corrupt the story: every dispatched block is independently idempotent (§b) and writes through its own single-mutation-path transaction, so a half-walk leaves a consistent prefix. `get_story_readiness` recomputes the phase verdict from booleans on every call (§l.3 — phase is never persisted), so a resumed walk picks up exactly where readiness says it is. The drift/coverage check (`scripts/verify-plan-story-blocks.sh`) guards this: it asserts the documented §l.0 phase blocks stay aligned with the `skills/` directory, that both runners document `Skill()`-dispatch, and that the `disable-model-invocation` flag does NOT reappear on any skill.
+**Partial-state recoverability.** A chained runner that dies mid-walk does NOT corrupt the story: every dispatched block is independently idempotent (§b) and writes through its own single-mutation-path transaction, so a half-walk leaves a consistent prefix, and `get_story_readiness` recomputes the phase verdict from booleans on every call (§l.3 — phase is never persisted). `scripts/verify-plan-story-blocks.sh` guards the contract: §l.0 phase blocks stay aligned with `skills/`, both runners document `Skill()`-dispatch, and `disable-model-invocation` never reappears.
 
 ## §m Epic/focus semantics (migration 0010)
 
@@ -438,13 +402,13 @@ Four new plugin skills are the kind-precondition writers for these fields. Each 
 
 ## §n Lifecycle/orchestration skills (migration 0016)
 
-Migration 0016 ([ADR-0005](../../../docs/adr/0005-sprint-lifecycle-worktree-ownership.md)) added a NEW skill category that is architecturally distinct from every §a-§m planning block. The four skills — `create-project`, `compose-sprint`, `run-sprint` (all mutating), and `lifecycle` (read-only) — do NOT fill one region of a story's data layout. They orchestrate the surrounding lifecycle: `create-project` bootstraps a `project → epic → focus → story` hierarchy; `compose-sprint` composes a worktree-OWNING sprint from a story's ready tasks (`create_sprint` defaults the sprint to `draft` status, then `create_worktree` / `add_tasks_to_sprint` / `set_sprint_status` drive it `draft→ready→active`); `run-sprint` drives the team-execution claim→complete→review loop (`claim_next_task` / `complete_task` / `record_task_commits` / the companion-executed `execute_worktree_merge`, with `record_worktree_merge` as the no-companion fallback); `lifecycle` is the read-only advisor (`get_sprint_quiescence` / `list_worktrees` / `get_worktree`) that reports state and recommends the next lifecycle action. The dogfood walkthrough threading all four is `lumina/docs/runbooks/dogfood-lifecycle.md`.
+Migration 0016 ([ADR-0005](../../../docs/adr/0005-sprint-lifecycle-worktree-ownership.md)) added a skill category architecturally distinct from every §a-§m planning block. `create-project`, `compose-sprint`, `run-sprint` (mutating) and `lifecycle` (read-only advisor) do NOT fill one region of a story's data layout — they orchestrate the surrounding project → sprint → run → merge lifecycle. The dogfood walkthrough threading all four is `lumina/docs/runbooks/dogfood-lifecycle.md`.
 
-Because these skills operate on the SPRINT / WORKTREE / WORK-QUEUE substrate rather than a single story field, three §a-§m conventions map differently. This section documents the deltas; everything else (the §e skill=instructions/MCP=execution split, the §f no-per-verb-fragmentation rule) applies unchanged.
+Because they operate on the SPRINT / WORKTREE / WORK-QUEUE substrate rather than a single story field, three §a-§m conventions map differently. This section documents those deltas; everything else (§e, §f) applies unchanged.
 
 ### §n.1 Idempotency — TXN-idempotent, NOT supersession-idempotent (delta from §b)
 
-The §b check-before-act + supersession pattern is the idempotency model for the PLANNING blocks: read the field, branch absent/present/match/mismatch, and on a real change prompt the user via the §b-supersession `AskUserQuestion` before writing. The lifecycle/orchestration skills do NOT use that model. Their mutating primitives — `claim_next_task`, `create_sprint`, `add_tasks_to_sprint`, `complete_task`, `record_task_commits` — are **TXN-idempotent at the repo layer**: each runs inside a single `BEGIN IMMEDIATE` transaction (`AnyPool::begin()` issues `BEGIN IMMEDIATE` per `lumina/src/db.rs`) whose own guards make re-execution safe. `claim_next_task` leases the first ready candidate atomically (a re-run claims a DIFFERENT task or returns `{ claimed: null }` — never a double-lease); `add_tasks_to_sprint` collapses an already-attached `(task, sprint)` pair via `ON CONFLICT DO NOTHING`; `record_task_commits` dedups via `UNIQUE(commit_sha, task_id)`; `complete_task` is a re-runnable two-txn sequence (crash-recovery safe on an already-`done` task). So these skills MUST NOT wrap their writes in a §b supersession `AskUserQuestion` — there is no "current value" to supersede and no user-mediated overwrite; the safety lives in the transaction, not in a confirm prompt. (`lifecycle`, being read-only, has no idempotency concern at all.)
+§b's check-before-act + supersession pattern is the PLANNING-block idempotency model. The lifecycle/orchestration skills do NOT use it. Their mutating primitives — `claim_next_task`, `create_sprint`, `add_tasks_to_sprint`, `complete_task`, `record_task_commits` — are **TXN-idempotent at the repo layer**: each runs inside a single `BEGIN IMMEDIATE` transaction whose own guards make re-execution safe. `claim_next_task` leases atomically (a re-run claims a DIFFERENT task or returns `{ claimed: null }` — never a double-lease); `add_tasks_to_sprint` collapses an already-attached pair via `ON CONFLICT DO NOTHING`; `record_task_commits` dedups via `UNIQUE(commit_sha, task_id)`; `complete_task` is a re-runnable two-txn sequence, crash-recovery safe on an already-`done` task. So these skills MUST NOT wrap their writes in a §b supersession `AskUserQuestion` — there is no "current value" to supersede; the safety lives in the transaction, not in a confirm prompt. (`lifecycle`, being read-only, has no idempotency concern at all.)
 
 ### §n.2 Provenance — record against a `sprint_id`, not a `work_item_id` (delta from §c)
 
@@ -458,9 +422,7 @@ The through-line: planning blocks prove provenance via a §c `record_task_activi
 
 ### §n.3 Frontmatter — the lifecycle mutators are model-invocable too (per §a)
 
-Per §a, no skill in this plugin carries `disable-model-invocation`, and the lifecycle mutators are no exception. The three mutating lifecycle skills (`create-project`, `compose-sprint`, `run-sprint`) mutate not just the lumina DB but the git working tree's worktrees and the live team-execution work queue — a higher blast radius than a planning write — yet they too are model-invocable by design: the autonomous engine and scheduler must be able to drive sprint composition and execution without a human at a terminal. Safety for these higher-blast-radius git/worktree/work-queue ops comes from §n.1 TXN-idempotency (each mutating primitive is safe to re-execute, with no "current value" to supersede) plus deliberate scheduler/operator invocation — NOT from removing the skills from the routing context.
-
-The `lifecycle` skill is read-only (it calls only `get_sprint_quiescence`, `list_worktrees`, `get_worktree` and writes nothing); like every other skill it is model-discoverable, letting an agent auto-find the lifecycle advisor when it needs to reason about sprint/worktree state.
+The three mutating lifecycle skills touch not just the lumina DB but the git working tree's worktrees and the live work queue — a higher blast radius than a planning write — yet they too are model-invocable by design: the autonomous engine and scheduler must drive sprint composition and execution without a human at a terminal. Safety comes from §n.1 TXN-idempotency plus deliberate scheduler/operator invocation, NOT from removing the skills from the routing context. `lifecycle` is read-only and likewise model-discoverable, so an agent can auto-find the advisor when it needs to reason about sprint/worktree state.
 
 ## §o The planning orchestrator (round-5)
 

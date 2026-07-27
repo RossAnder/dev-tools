@@ -7,97 +7,87 @@ argument-hint: "[work_item_id]"
 
 # `lumina:story-review`
 
-Critique a fully-planned story — read its problem_statement, approach narrative, accepted research notes, open questions, edge-case notes, contrarian-lens notes, risks, rejected alternatives, and task children (with their acceptance criteria) — and write structured critique findings back to lumina via `mcp__lumina__add_finding` with `kind: "story-review"`. This is the plugin's first critique surface. Round-5 added two devil's-advocate rubric categories (R51): one that ARGUES AGAINST the plan by steelmanning the rejected alternatives, and one that flags SCOPE CONSERVATISM (the plan being too narrow/cautious) as a finding. Whether it runs forked or inline is a RUNTIME decision keyed on the execution mode (see "Run mode: fork-vs-inline" below): in autonomous mode it forks into an isolated `agent: general-purpose` subagent so the multi-step rubric application, cross-block reading, and finding synthesis stay out of the parent's durable-comms transcript (the parent sees only the final structured summary); in interactive mode it runs inline so the user can watch the rubric fire and steer.
+Critique a fully-planned story — problem_statement, approach narrative, accepted research notes, open questions, edge-case notes, contrarian-lens notes, risks, rejected alternatives, and task children with their acceptance criteria — and write structured critique findings via `mcp__lumina__add_finding` with `kind: "story-review"`. Round-5 added two devil's-advocate rubric categories (R51): one that ARGUES AGAINST the plan by steelmanning the rejected alternatives, and one that flags SCOPE CONSERVATISM.
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied per-FINDING here rather than per-invocation), §c (provenance recording via `record_task_activity` with `entry_type: "execution"` — story-review is critique, NOT a vet skill), §d (run-mode / fork-vs-inline rationale — fork is a runtime mode decision, not a static per-skill property; see "Run mode: fork-vs-inline" below), §e (Sentry pattern — skill = instructions, MCP = execution), §i (the story-review pattern contract — load-bearing: that section governs `kind: "story-review"` reservation, severity taxonomy, supersession protocol, and provenance).
+Follows [CONVENTIONS.md](../../CONVENTIONS.md) §a/§b/§c/§d/§e, with §b applied per FINDING (see the mapping table at the end), and **§i as the load-bearing contract** for `kind: "story-review"` reservation, severity taxonomy, supersession protocol, and provenance. `entry_type` is `"execution"` — critique, not vet.
 
 ## Run mode: fork-vs-inline (per §d)
 
-Whether to fork is selected at runtime from the execution mode (the `LUMINA_AUTONOMOUS` signal, corroborated server-side against the session's spawned-provenance through lumina's single-source mode resolver, which fails SAFE to interactive whenever the signal is absent, unverified, or conflicts):
+- **Autonomous** → run FORKED in an isolated `agent: general-purpose` subagent: a critique pass reads every planning block, applies a rubric, cross-references task children, and synthesises findings — multi-step work whose intermediate output the parent's durable-comms transcript does not need.
+- **Interactive** (the fail-safe default) → run INLINE so the user can watch the rubric fire and weigh in.
 
-- **Autonomous mode** (lumina-spawned / scheduler-driven) → run FORKED in an isolated `agent: general-purpose` subagent. A critique pass reads every planning block, applies a rubric, cross-references task children, and synthesises findings — exactly the kind of multi-step workflow whose intermediate tool output the parent's durable-comms transcript does not need. The parent receives only the final structured summary.
-- **Interactive mode** (human terminal — the fail-safe default) → run INLINE so the user can watch the rubric fire and weigh in. story-review's idempotency does NOT depend on per-finding `AskUserQuestion` (the supersession decision is made by the heuristic in step 4, not a prompt — see the §b mapping), so the run's behaviour is identical in both modes; only the fork-vs-inline framing differs.
-
-Fork is no longer a static per-skill property recorded in frontmatter — §d (post-1C.1) treats it as a runtime/mode decision, so this skill carries no `context:`/`agent:` keys; the `agent: general-purpose` target applies only on the autonomous fork path described above.
+Behaviour is identical in both modes: idempotency does NOT depend on a per-finding `AskUserQuestion` — the supersession decision is the step-4 heuristic, not a prompt.
 
 ## MCP tools used
 
-- `mcp__lumina__get_work_item` — story read (folds in `research_notes`, `acceptance_criteria`, `open_questions`, `risks`, `rejected_alternatives`, task children, and existing `findings`).
-- `mcp__lumina__get_story_readiness` — optional readiness signal for the critique header (no write).
-- `mcp__lumina__add_finding` — writes a critique finding row with `kind: "story-review"`.
-- `mcp__lumina__update_finding` — marks a stale prior finding `status: "resolved"` (partial set-or-leave update).
-- `mcp__lumina__supersede_finding` — chains a new finding to an older one whose substance the new run materially restates (sets the old finding's `superseded_by`).
-- `mcp__lumina__record_task_activity` — provenance per §c (one entry per skill invocation, summarising the finding-count breakdown — NOT per finding).
+- `mcp__lumina__get_work_item` — story read (folds in `research_notes`, `acceptance_criteria`, `open_questions`, `risks`, `rejected_alternatives`, task children, existing `findings`).
+- `mcp__lumina__get_story_readiness` — optional readiness signal for the summary header (no write).
+- `mcp__lumina__add_finding` — writes a critique finding with `kind: "story-review"`.
+- `mcp__lumina__update_finding` — marks a stale prior finding `status: "resolved"` (partial set-or-leave).
+- `mcp__lumina__supersede_finding` — chains a new finding to an older one it materially restates.
+- `mcp__lumina__record_task_activity` — provenance per §c.
 
-See [`../mcp/SKILL.md`](../mcp/SKILL.md) §Planning & decision tools for canonical argument shapes. Per-call argument values this skill chooses are documented inline at each call site below. This skill is **read-only on risks / rejected_alternatives / research_notes / acceptance_criteria / open_questions** — it does NOT call any `add_*` tool for those sub-tables; it ONLY writes findings.
+This skill is **read-only on risks / rejected_alternatives / research_notes / acceptance_criteria / open_questions** — it calls no `add_*` for those sub-tables and ONLY writes findings. Never rewrite the findings list through `update_work_item` — that bypasses the supersession history. Canonical argument shapes: [`../mcp/SKILL.md`](../mcp/SKILL.md) §Planning & decision tools.
 
-## Procedure (the body the skill executes — forked in autonomous mode, inline in interactive)
+## Procedure
 
 ### 1. Prerequisite read
 
-Call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind:
+`mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind:
 
-- `detail.kind` — MUST equal `"story"`. If not, abort with a one-line error: `"story-review requires a story work item; got kind=<kind>."`
-- `detail.attributes.problem_statement` — required for several rubric checks; if absent, surface a non-blocking warning and continue with reduced coverage (skip the "AC not tied to problem_statement" and "silently-assumed open questions" checks):
+- `detail.kind` — MUST be `"story"`; otherwise abort before any write: `story-review requires a story work item; got kind=<kind>.`
+- `detail.attributes.problem_statement` — required for several rubric checks; if absent, warn non-blockingly and continue with reduced coverage (skip the "AC not tied to problem_statement" and "silently-assumed open questions" checks):
   > `⚠ This story has no problem_statement; critique coverage is reduced. Recommend running '/lumina:problem-statement <id>' first.`
-- `detail.attributes.execution_strategy` (the approach narrative) — required for "ungrounded approach", "uncovered edge cases", and "silently-assumed open questions" checks; absent → skip those checks with a non-blocking warning.
-- `detail.research_notes` — bind the **accepted** subset (`state == "accepted"`) for the grounding check; bind the `lens="edge-case"` subset for the uncovered-edge-cases check; bind the `lens="contrarian"` subset (round-5) for the scope-conservatism check below.
-- `detail.rejected_alternatives` — bind the **live** subset (`superseded_by == null`) for the argue-against / steelman check below. Each row carries `summary` / `body` / `rationale` / `confidence`.
-- `detail.attributes.not_doing` — the declared scope exclusions; consumed by the scope-conservatism check.
-- `detail.acceptance_criteria`, `detail.open_questions`, `detail.children` (task rows, each carrying its own `acceptance_criteria` fold + `attributes.files_touched` + `complexity` + `task_kind`).
-- `detail.findings.filter(f => f.kind === "story-review" && f.superseded_by == null && f.status != "resolved")` — bind the **prior live story-review findings**; these are the supersession candidates evaluated in step 5.
+- `detail.attributes.execution_strategy` — required for "ungrounded approach", "uncovered edge cases", and "silently-assumed open questions"; absent → skip those with a non-blocking warning.
+- `detail.research_notes` — bind the **accepted** subset for the grounding check, the `lens="edge-case"` subset for uncovered-edge-cases, and the `lens="contrarian"` subset for scope-conservatism.
+- `detail.rejected_alternatives` — bind the **live** subset (`superseded_by == null`) for the argue-against check. Each carries `summary` / `body` / `rationale` / `confidence`.
+- `detail.attributes.not_doing` — declared scope exclusions; consumed by scope-conservatism.
+- `detail.acceptance_criteria`, `detail.open_questions`, `detail.children` (task rows, each with its own `acceptance_criteria` fold + `attributes.files_touched` + `complexity` + `task_kind`).
+- `detail.findings.filter(f => f.kind === "story-review" && f.superseded_by == null && f.status != "resolved")` — the **prior live story-review findings**, the supersession candidates for step 3.
 
-Optionally call `mcp__lumina__get_story_readiness({id: "$work_item_id"})` and surface its verdict (`ready` / `blocked` / `incomplete`) in the final summary header.
+Optionally call `mcp__lumina__get_story_readiness({id: "$work_item_id"})` and surface its verdict (`ready` / `blocked` / `incomplete`) in the summary header.
 
-### 2. Kind-precondition (per §e exception)
+### 2. Rubric application (the heart of the skill)
 
-If `detail.kind != "story"`, abort with the one-line error above. The local kind check is permitted by §e's exception (server-side `add_finding` would not enforce this; the UX win for a friendlier early-abort justifies the duplication).
+Apply each category in turn. For each hit, draft a candidate finding — do NOT write yet; step 4 batches the supersession decision. Each candidate carries `severity`, `summary`, `description`, `confidence`, and its rubric category (which seeds the step-3 match heuristic).
 
-### 3. Rubric application (the heart of the skill)
+> **Severity taxonomy** — values come from the typed `Severity` enum (`critical | major | minor | suggestion`), enforced at the MCP-param surface. §i carries the rubric mapping; §k.2 documents the deliberate split from `RiskSeverity` on the `risks` table — do NOT use `low|medium|high` here.
 
-Apply each rubric category below in turn. For each hit, draft a candidate finding (do NOT write yet — step 5 batches the supersession decision against any prior live finding). Each candidate carries: `severity`, `summary`, `description`, `confidence`, and the rubric category (used to seed the supersession-match heuristic in step 5).
+- **Contradictions across blocks** (`critical` for direct factual contradiction; `major` for tonal / scope drift): scan `problem_statement` against `execution_strategy` for assertions that disagree. Quote both excerpts verbatim in `description`. `confidence: "high"` for structural disagreements (problem says "no caching" + approach says "add LRU cache"); `medium` otherwise.
+- **Ungrounded approach claims** (`major`): claims in `execution_strategy` that trace back to no **accepted** research note. Keyword overlap is a starting filter only — verify each match by reading both the claim and the candidate note. `confidence: "medium"` (heuristic).
+- **AC not tied to problem_statement** (`major`): per task child, scan its `acceptance_criteria.text` for word-overlap with the story's `problem_statement`. Empty or stop-words-only overlap suggests the AC tests something other than the stated problem. `confidence: "medium"`.
+- **Uncovered edge cases** (`minor`–`major` by impact): for each `lens == "edge-case"` note, check whether `execution_strategy` references it (paraphrase match acceptable). Noted in research but absent from the approach = uncovered. `confidence: "medium"`.
+- **Silently-assumed open questions** (`critical`): for each `status == "open"` question, check whether `execution_strategy` references its topic. An approach assuming an answer to an unresolved question is downstream-fragile. `confidence: "high"` (structural).
+- **Tasks with `complexity = "high"` not yet split** (`major`): each such task child with no task children of its own, surfaced for explicit confirmation. Cross-reference R27. `confidence: "high"` (structural).
+- **Pattern-replacement task missing exhaustive files_touched** (`major`): for each task child with `attributes.files_touched_pattern` set (the Grep pattern `/lumina:decompose-tasks` records on every task in a pattern-replacement grouping — §j.1: a grouping, NOT a `task_kind` value), check `attributes.files_touched` is non-empty AND holds specific paths, not glob expressions like `**/*.ts`. Cross-reference R25. `confidence: "high"` (structural).
 
-> **Severity taxonomy note** — values come directly from the typed `Severity` enum (`critical | major | minor | suggestion`), enforced at the MCP-param surface via `AddFindingParams.severity: Option<Severity>`. CONVENTIONS.md §i carries the rubric mapping; CONVENTIONS.md §k.2 documents the deliberate vocab split with `RiskSeverity::{Low, Medium, High, Critical}` on the `risks` table (the two enums share only the literal `Critical` and otherwise have disjoint vocabularies — do NOT use `low|medium|high` here).
+The two below are the round-5 **devil's-advocate** rubric (R51) — they critique the plan's *direction and ambition*, not just internal consistency. Mandatory on every run.
 
-**Rubric categories**:
+- **Argue against the plan / steelman the rejected alternatives** (category slug `argue-against`; `major` when a rejected alternative looks materially stronger than the chosen approach, `suggestion` for a weaker-but-credible rival): read the LIVE `rejected_alternatives` alongside `execution_strategy`. STEELMAN each — argue the strongest case it should have won — and check whether the recorded `rationale` actually rebuts that steelman. Thin, stale, or non-responsive rationale → emit a finding that the decision is under-justified, naming the specific axis (consistency / complexity-risk / parallelism / reversibility) where the alternative may beat the winner. An EMPTY `rejected_alternatives` on a non-trivial story is itself a `major` finding: the approach was chosen without a recorded competition — recommend re-running `/lumina:approach` (which runs a tournament and records the losers). Quote both the chosen approach and the steelmanned alternative verbatim in `description`. `confidence: "medium"` (judgement).
+- **Scope conservatism** (category slug `scope-conservatism`; `major`–`suggestion`): flag where the plan is *too narrow / too cautious* — the R51 failure mode. Signals: a `problem_statement` describing broad pain against an `execution_strategy` addressing only a sliver; `not_doing` exclusions deferring the actually-hard part; a task set that is all `polish`/`pattern-replacement` with no `foundation`/`vertical-slice` task tackling the core; a `contrarian`-lens note whose competing-direction or "this is too small" evidence the approach never engaged. Name the specific conservatism (what the plan could/should also do) and the cost of leaving it out. `major` when the omission undermines the stated success criteria; `suggestion` when it is a reasonable-but-debatable boundary. `confidence: "medium"` (judgement).
 
-- **Contradictions across blocks** (server severity `critical` for direct factual contradiction; `major` for tonal / scope drift): scan `problem_statement` against `execution_strategy` for assertions that disagree. Quote both excerpts verbatim in the finding's `description`. `confidence: "high"` for structural disagreements (e.g. problem says "no caching" + approach says "add LRU cache"); `medium` otherwise.
-- **Ungrounded approach claims** (`major`): identify claims in `execution_strategy` that do NOT trace back to any **accepted** `research_notes` row (`state == "accepted"`). Use semantic matching — keyword overlap is a starting filter, but verify each match by reading both the approach claim and the candidate note. `confidence: "medium"` (heuristic).
-- **AC not tied to problem_statement** (`major`): for each task child, scan its `acceptance_criteria.text` for word-overlap with the story's `problem_statement`. If the overlap is empty or trivial (only stop-words), the AC may be testing something other than the stated problem — flag for confirmation. `confidence: "medium"` (word-overlap heuristic).
-- **Uncovered edge cases** (`minor`–`major` depending on severity of the edge case): for each `research_notes` row with `lens == "edge-case"`, check whether `execution_strategy` references it (paraphrase match acceptable). An edge case noted during research but absent from the approach narrative is an uncovered case. `confidence: "medium"`.
-- **Silently-assumed open questions** (`critical`): for each `open_questions` row with `status == "open"`, check whether `execution_strategy` references the question's topic. If the approach assumes an answer to an unresolved question, the story is downstream-fragile. `confidence: "high"` (structural).
-- **Tasks with `complexity = "high"` not yet split** (`major`): for each task child with `complexity == "high"` and no further task children of its own, surface for explicit confirmation. Cross-reference R27 (the empirical reliability degradation for high-complexity tasks). `confidence: "high"` (structural).
-- **Pattern-replacement task missing exhaustive files_touched** (`major`): for each task child whose `attributes.files_touched_pattern` is set (the Grep pattern recorded by `/lumina:decompose-tasks` on every task that participates in a pattern-replacement grouping — see CONVENTIONS §j.1: pattern-replacement is an intra-story task-subset grouping, NOT a `task_kind` value, and a story may contain 0+ such groupings each spanning a different subset of tasks), check whether `attributes.files_touched` is non-empty AND contains specific paths (not glob expressions like `**/*.ts`). Cross-reference R25 (pattern-replacement requires exhaustive file enumeration). `confidence: "high"` (structural).
+A category producing no candidates is omitted from the summary's "most-fired rubric" tally — never emit an empty finding.
 
-The two categories below are the round-5 **devil's-advocate** rubric (R51) — they critique the plan's *direction and ambition*, not just its internal consistency. They are mandatory categories: apply them on every run.
+### 3. Supersession-match heuristic
 
-- **Argue against the plan / steelman the rejected alternatives** (`major`–`suggestion`; `major` when a rejected alternative looks materially stronger than the chosen approach, `suggestion` for a weaker-but-credible rival): read `detail.rejected_alternatives` (each carries `summary` / `body` / `rationale` / `confidence`) alongside `execution_strategy`. For each LIVE rejected alternative (`superseded_by == null`), STEELMAN it — argue the strongest case for why it should have won — and check whether the recorded `rationale` for rejecting it actually rebuts that steelman. If the rejection rationale is thin, stale, or does not address the alternative's strongest point, emit a finding that the decision is under-justified and names the specific axis (consistency / complexity-risk / parallelism / reversibility) where the rejected alternative may beat the winner. If `detail.rejected_alternatives` is EMPTY on a non-trivial story, that is itself a finding (`major`): the approach was chosen without a recorded competition — recommend re-running `/lumina:approach` (which now runs a tournament and records the losers). `confidence: "medium"` (judgement). Quote the relevant excerpts of both the chosen approach and the steelmanned alternative verbatim in `description`. Category slug: `argue-against`.
-- **Scope conservatism** (`major`–`suggestion`): flag where the plan is *too narrow / too cautious* — the R51 failure mode. Signals to weigh: a `problem_statement` describing a broad pain but an `execution_strategy` that addresses only a sliver; `not_doing` exclusions that defer the actually-hard part of the problem; a task set that is all `polish`/`pattern-replacement` with no `foundation`/`vertical-slice` task tackling the core; a `contrarian`-lens research note (`lens == "contrarian"`) whose competing-direction or "this is too small" evidence the approach never engaged. Emit a finding naming the specific conservatism (what the plan could/should also do) and the cost of leaving it out. `severity: "major"` when the omission undermines the stated success criteria; `suggestion` when it is a reasonable-but-debatable boundary. `confidence: "medium"` (judgement). Category slug: `scope-conservatism`.
+Score each candidate against every prior live story-review finding. A "match" is: same rubric category AND substantive overlap in `summary` / `description` (substring or paraphrase). Three outcomes:
 
-If a rubric category produces no candidates, omit it from the final summary's "most-fired rubric" tally; do not emit an empty finding.
+- **No match** → add path.
+- **Match, prior no longer applicable** (the contradiction / ungrounded claim / etc. has since been fixed) → drop the candidate AND `update_finding { id: <old_id>, status: "resolved" }`.
+- **Match, prior still relevant but materially restated** → supersession path.
 
-### 4. Supersession-match heuristic (against prior live story-review findings)
+If two candidates from THIS run match each other (two categories producing near-identical findings), merge them before writing — one finding with both categories noted in `category`.
 
-For each candidate finding, compute a similarity score against every prior live story-review finding (bound in step 1). A "match" is: same rubric category AND substantive overlap in `summary` / `description` (substring or paraphrase). Three outcomes:
+### 4. Finding writes (per §i, per finding)
 
-- **No match** → candidate goes to step 5's add path.
-- **Match, prior finding is no longer applicable** (the underlying contradiction / ungrounded claim / etc. has since been fixed in the current story state) → candidate is dropped, AND the prior finding gets `mcp__lumina__update_finding { id: <old_id>, status: "resolved" }` in step 5.
-- **Match, prior finding is still relevant but materially restated by this run** → candidate goes to step 5's supersession path (add new + supersede old in two MCP calls).
-
-Candidates that aren't matched by any prior live finding AND also don't match any other current candidate go through cleanly. If two candidates from this run match each other (e.g. two rubric categories produce nearly-identical findings), merge them before step 5 — emit one finding with both rubric categories noted in the `category` field.
-
-### 5. Finding writes (per §i, applied per-FINDING)
-
-For each candidate after step 4 routing:
-
-**Add path** (no prior match):
+**Add path**:
 
 ```
 mcp__lumina__add_finding {
   work_item_id: "$work_item_id",
   kind: "story-review",
-  severity: "<critical|major|minor|suggestion>",   // mapped per §3 severity-taxonomy note
-  category: "<rubric-category-slug>",              // e.g. "contradiction" / "ungrounded-approach" / "ac-not-tied" / "uncovered-edge-case" / "silently-assumed-question" / "complexity-high-unsplit" / "pattern-replacement-incomplete" / "argue-against" / "scope-conservatism"
+  severity: "<critical|major|minor|suggestion>",
+  category: "<rubric-category-slug>",              // "contradiction" / "ungrounded-approach" / "ac-not-tied" / "uncovered-edge-case" / "silently-assumed-question" / "complexity-high-unsplit" / "pattern-replacement-incomplete" / "argue-against" / "scope-conservatism"
   summary: "<one-line, ~80-120 chars>",
   description: "<3-8 sentences quoting offending excerpts verbatim + the inference rule>",
   confidence: "<low|medium|high>",
@@ -105,26 +95,18 @@ mcp__lumina__add_finding {
 }
 ```
 
-**Supersession path** (matched a still-relevant prior finding):
+**Supersession path** — `add_finding` MUST come first so the new id exists to reference:
 
 ```
 new = mcp__lumina__add_finding    { …new finding fields as above }
       mcp__lumina__supersede_finding { old_id: <prior_id>, new_id: <new.id> }
 ```
 
-The `add_finding` MUST come BEFORE `supersede_finding` so the new id exists to be referenced. This mirrors the two-call sequence documented in the `research-notes` skill's §5 supersession path.
+**Resolve path** (prior no longer applicable; no new finding): `mcp__lumina__update_finding { id: <prior_id>, status: "resolved" }`.
 
-**Resolve path** (matched a prior finding that's no longer applicable; no new finding):
+### 5. Provenance — ONE activity entry per invocation (§c)
 
-```
-mcp__lumina__update_finding { id: <prior_id>, status: "resolved" }
-```
-
-### 6. §c provenance (one activity entry per invocation)
-
-After all finding writes complete, append exactly ONE activity entry summarising the run. Per §c, the channel is `entry_type: "execution"` and `origin: "plan"` — story-review is critique, NOT a vet skill (the §c-exception for `entry_type: "vet"` is scoped to `vet-research` only; do NOT use it here).
-
-Before calling, verify `${CLAUDE_SESSION_ID}` substituted (per §c substitution guard); fall back to `session=unknown` + one-line warning if not.
+Not one per finding — story-review's critique is a single run that may emit many findings, and the per-finding audit trail lives on the `findings` table. (This differs from `research-notes`, which records one entry per note.)
 
 ```
 mcp__lumina__record_task_activity {
@@ -136,11 +118,9 @@ mcp__lumina__record_task_activity {
 }
 ```
 
-One activity entry per skill invocation, NOT per finding — this differs from `research-notes` (which records one activity entry per NOTE because each note is a distinct write). Story-review's batching reflects that the critique is a single run that may emit many findings; the per-finding audit trail is on the `findings` table itself, not on the activity log.
+Apply the §c substitution guard; fall back to `session=unknown` + a one-line warning.
 
-### 7. Final summary
-
-The final output is a single structured summary. In autonomous mode this is the fork's only output to the parent conversation (the §d benefit — intermediate rubric application and tool noise stay in the fork); in interactive mode it is the run's closing report to the user. Format:
+### 6. Final summary
 
 ```
 story-review: <N> findings on <story_id> (readiness=<ready|blocked|incomplete|n/a>)
@@ -160,27 +140,22 @@ Recommended next step: Review the new findings in lumina; resolve / dispute via
   before /lumina:wire-task-deps and sprint dispatch.
 ```
 
-In autonomous mode this is the entire visible output to the parent — the full rubric trace, the verbatim quoted excerpts (those live in the `findings` rows), and intermediate similarity-score calculations stay confined to the fork. In interactive mode the user has already seen the rubric fire live; this summary is the closing recap.
+In autonomous mode this is the fork's ONLY output to the parent — the full rubric trace, the verbatim quoted excerpts (those live in the `findings` rows), and the similarity-score work stay in the fork. In interactive mode it is the closing recap of a rubric the user already watched fire.
 
-## 5-step idempotency mapping (per §b — applied per-FINDING)
+## §b mapping (per FINDING)
 
-Per CONVENTIONS.md §b the 5-step Check-Before-Act sequence is normally applied per-skill-invocation; for `story-review` it is applied **per-candidate-finding** so the skill is correctly idempotent across re-runs (running `/lumina:story-review <id>` twice does NOT duplicate findings; the second invocation either skips covered cases, supersedes them, or resolves them via the routing in step 4).
+Applied per candidate so re-runs are idempotent: a second `/lumina:story-review <id>` does NOT duplicate findings — it skips, supersedes, or resolves via the step-3 routing.
 
-| §b step | Mapping for `story-review` |
+| §b step | Mapping |
 |---|---|
-| 1. Read | `get_work_item` → bind prior live findings (procedure step 1). |
-| 2. Inspect | Rubric application — produce candidate findings (procedure step 3). |
-| 3. Absent → create | Candidate has no prior match → `add_finding` (procedure step 5, add path). |
-| 4. Present and matches → no-op | Candidate matches a prior finding that's still applicable AND new run does NOT materially restate it → drop the candidate silently. |
-| 5. Present and differs → confirm-supersede | Candidate materially restates a prior finding → `add_finding` + `supersede_finding`; prior finding obsolete → `update_finding{status:"resolved"}` (procedure step 5, supersession / resolve paths). The supersession-match heuristic (step 4) is the equivalent of the §b-supersession `AskUserQuestion` for `research-notes` — story-review does NOT prompt the user per-finding because the rubric is large and per-finding prompts would be unworkable; the heuristic decision is documented in the final summary so the user can audit. |
-
-## Sentry-pattern compliance (per §e)
-
-The skill body decides which rubric checks to run, how to map rubric category to server-side `Severity`, which prior finding (if any) a new candidate matches, and which confidence grade to assign. The MCP tools handle every byte of business logic: `add_finding` writes the row (validates `Severity`, accepts free-text `kind`, accepts free-text `confidence` per migration 0003, stamps `origin`); `supersede_finding` sets the old row's `superseded_by` in one transaction; `update_finding` is a partial set-or-leave for the `status` flip; `record_task_activity` validates `entry_type` against the rejection of `verification`. The skill body MUST NOT read the existing `findings` list and rewrite it via `update_work_item` — that would defeat lumina's merge semantics and bypass the supersession history.
+| 1. Read | `get_work_item` → prior live findings (step 1). |
+| 2. Inspect | Rubric application produces candidates (step 2). |
+| 3. Absent → create | No prior match → `add_finding` (step 4, add path). |
+| 4. Present and matches | Candidate matches a still-applicable prior finding it does NOT materially restate → drop silently. |
+| 5. Present and differs | Materially restates a prior → `add_finding` + `supersede_finding`; prior obsolete → `update_finding{status:"resolved"}`. The step-3 heuristic stands in for §b-supersession's `AskUserQuestion`: the rubric is large and per-finding prompts would be unworkable, so the heuristic's decision is documented in the final summary for the user to audit. |
 
 ## Pointers
 
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c, §d, §e, §i.
-- MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — see Planning & decision tools, Findings family.
-- Companion research skill (`research-notes`): [`../research-notes/SKILL.md`](../research-notes/SKILL.md) — mirror its frontmatter shape (and its run-mode fork-vs-inline framing) and inline citation conventions.
-- Round-2 plan: [`../../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../../docs/plans/lumina-story-planning-round-2.md) — see R25 (pattern-replacement exhaustive `files_touched`) and R27 (complexity-high reliability degradation).
+- MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) — Planning & decision tools, Findings family.
+- Companion research skill: [`../research-notes/SKILL.md`](../research-notes/SKILL.md).
+- Round-2 plan: [`../../../../../docs/plans/lumina-story-planning-round-2.md`](../../../../../docs/plans/lumina-story-planning-round-2.md) — R25 (pattern-replacement exhaustive `files_touched`) and R27 (complexity-high reliability degradation).

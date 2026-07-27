@@ -18,20 +18,13 @@ fallback), and ladders the sprint `draft→ready→active`. It STOPS at `active`
 execution (`run-sprint`) and the terminal merge/rejection flip are a SEPARATE
 skill's job.
 
-This skill is a high-blast-radius MUTATOR (it mints a sprint, attaches tasks,
-records a worktree, drives status), yet it is model-invocable like the rest of
-the plugin — the flag was removed plugin-wide (§a/§n.3); its safety rests on
-§n.1 TXN-idempotency plus deliberate scheduler/operator invocation
-(`/lumina:compose-sprint <story_id>`, UI dispatch, explicit `Skill` call). It
-stays INLINE (four §a keys, NOT forked): the two gates are user-mediated and
-benefit from the parent context.
-
-Cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md):
-§a (four keys, mutating), §c (one activity row per write), §e (Sentry — skill =
-orchestration, MCP = state; the local `detail.kind == "story"` check at Step 1
-is the §e-blessed exception), §j (the dispatch plan composes
-`compute_task_batches` downstream — this composer consumes batches, never
-pre-batches), §k (tier derivation is server-side via `get_task_dispatch_plan`).
+A high-blast-radius MUTATOR (mints a sprint, attaches tasks, records a worktree,
+drives status). Runs INLINE — the gates are user-mediated and benefit from the
+parent context. Follows [CONVENTIONS.md](../../CONVENTIONS.md) §a/§c/§e, with §n
+as the on-point contract for the lifecycle category: safety rests on §n.1
+TXN-idempotency plus deliberate scheduler/operator invocation, NOT on a
+supersession prompt. §j and §k are load-bearing: the composer CONSUMES
+server-computed batches and tiers and never pre-batches or re-derives them.
 
 ## MCP tools used by this composer
 
@@ -250,23 +243,16 @@ compose-sprint: sprint <sprint_id> active; <added> tasks attached
   next: /lumina:run-sprint <sprint_id>.
 ```
 
-## Sentry-pattern compliance (per §e)
+## What the composer must NOT do
 
-Composer DECIDES: the compose order (read → select → mint → attach → checkpoint →
-worktree → ladder), the AUQ prompt shapes (task-set, checkpoints, worktree), the
-stop-at-`active` ceiling. Composer MUST
-NOT compute readiness or tiers client-side (always `get_story_readiness` /
-`get_task_dispatch_plan`); MUST NOT pre-batch tasks (§j — batching is
-server-side); MUST NOT lane-stamp planned tasks (they default `implement`); MUST
-NOT shell to git for the worktree mint while a companion is connected (Step 7's
-`execute_worktree_create` is the primary; manual `git worktree add` +
-`create_worktree` is the no-companion fallback); MUST NOT drive a
-worktree-owning sprint to a terminal status (use the worktree merge/rejection
-tools — terminal guard above). Local `detail.kind == "story"` at Step 1 is the
-§e-blessed exception.
+Compute readiness or tiers client-side (always `get_story_readiness` /
+`get_task_dispatch_plan`); pre-batch tasks (§j — batching is server-side);
+lane-stamp planned tasks (they default `implement`); shell to git for the
+worktree mint while a companion is connected (Step 7's `execute_worktree_create`
+is primary, manual `git worktree add` + `create_worktree` the fallback); or drive
+a worktree-owning sprint to a terminal status (terminal guard above).
 
 ## Pointers
 
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §c, §e, §j, §k.
 - Chained runner: [`../plan-story/SKILL.md`](../plan-story/SKILL.md) (populates the story this composer consumes).
 - Advisor: [`../next-block/SKILL.md`](../next-block/SKILL.md); MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md) (sprint-lifecycle / worktree tools, migration 0016).

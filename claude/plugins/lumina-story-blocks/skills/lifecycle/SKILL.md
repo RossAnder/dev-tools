@@ -15,19 +15,9 @@ not in mutating state itself. Where `next-block` advises WITHIN the six-phase
 story walk, `lifecycle` advises ACROSS the whole create→plan→decompose→compose→
 execute→merge runbook ([`../../../../../lumina/docs/runbooks/dogfood-lifecycle.md`](../../../../../lumina/docs/runbooks/dogfood-lifecycle.md)).
 
-## Read-only skill
-
-This skill is exclusively READ (`get_tree`, the sprint status read, and
-`get_sprint_quiescence`) — it writes nothing. Like every skill in this plugin
-now, it is model-discoverable, so agents can auto-find it; the former
-`disable-model-invocation` distinction was retired plugin-wide (CONVENTIONS.md
-§a). It mirrors the four-key frontmatter shape of
-[`../next-block/SKILL.md`](../next-block/SKILL.md) and the `mcp` catalogue.
-
-This is also why the §e Sentry split applies cleanly: skill body = WHAT TO ASK
-LUMINA + WHAT TO TELL THE USER; lumina owns the lifecycle state (sprint status,
-the gate predicates) and this skill merely TRANSLATES the observed state into a
-"you are HERE → next gate → run Y" recommendation.
+Strictly READ-ONLY: lumina owns the lifecycle state (sprint status, the gate
+predicates) and this skill only TRANSLATES the observed state into a
+recommendation. Follows [CONVENTIONS.md](../../CONVENTIONS.md) §a/§e.
 
 ## Body
 
@@ -141,5 +131,4 @@ advisor's job ends at "recommend"; it never persists its own invocation.
 - Sibling advisor (within-story): [`../next-block/SKILL.md`](../next-block/SKILL.md).
 - Orchestration skills this advisor points at: `/lumina:create-project`,
   `/lumina:plan-story`, `/lumina:compose-sprint`, `/lumina:run-sprint`.
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a (read-only
-  exception), §e (Sentry split); MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md).
+- MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md).

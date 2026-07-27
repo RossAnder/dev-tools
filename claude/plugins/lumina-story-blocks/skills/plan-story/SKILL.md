@@ -31,33 +31,18 @@ chain and the `scripts/verify-plan-story-blocks.sh` drift gate survive. Blocks
 remain independently invocable outside this orchestrator via the §l.2
 carve-out — no precondition fires on a direct `/lumina:<block>` call.
 
-Cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md):
-§a (four keys, NOT forked), §b (per-DISPATCHED-BLOCK; each block runs its own
-§b when the orchestrator dispatches it via `Skill()` per §l.4), §c (the
-orchestrator emits ONE activity per STAGE TRANSITION plus ONE rework-audit per
-rework, on top of each dispatched block's own §c), §d (execution mode —
-autonomous degrades grills to durable open-questions; corroborated via
-`get_execution_mode`), §e (Sentry — orchestrator = orchestration, MCP =
-state), §i (story-review fires in verify-design), §j (wire-task-deps composes
-with `compute_task_batches` in decompose), §k (dispatch tier Lite/Deep — a
-DIFFERENT concern from the gating tier below), **§l (the six-phase contract —
-phase table §l.0, carve-out §l.2, and §l.4 the `Skill()`-dispatch execution
-path)**, **§o (the orchestrator contract — stages, gating tiers +
-`compute_gating_tier`, plan epoch + the corrected liveness model, dossier-first
-reads, the rework contract, the devil's-advocate mandate, and the
-export-inert-epoch trade-off)**.
+Follows [CONVENTIONS.md](../../CONVENTIONS.md) §a/§b/§c/§d/§e, with **§l** (the
+six-phase contract — phase table §l.0, carve-out §l.2, `Skill()`-dispatch §l.4)
+and **§o** (the orchestrator contract — stages, gating tiers, plan epoch + the
+liveness model, dossier-first reads, the rework contract, the devil's-advocate
+mandate) as the load-bearing sections. Each dispatched block runs its OWN §b and
+§c; the orchestrator adds one §c per STAGE TRANSITION plus one rework-audit.
 
-## Gating tier vs dispatch tier — do not conflate
-
-This orchestrator works with TWO unrelated "tiers". Keep them distinct (the
-same deliberate non-unification as `Severity` vs `RiskSeverity`, §k.2):
-
-- **Gating tier** (`full` / `light` / `autonomous`, §o / A.2) — the per-story
-  INTERACTION level this orchestrator computes via `get_gating_tier`. It
-  decides how hard to grill the user. NOT persisted as a dispatch property.
-- **Dispatch tier** (`Lite` / `Deep`, §k) — the per-TASK agent-routing level
-  `compute_tier` derives for `/implement`. Surfaced inside the brief's Impact
-  section via `get_task_dispatch_plan`. A different concern entirely.
+Two unrelated "tiers" are in play — keep them distinct per §o.1: the **gating
+tier** (`full`/`light`/`autonomous`) is this orchestrator's per-story INTERACTION
+level from `get_gating_tier`; the **dispatch tier** (`Lite`/`Deep`, §k) is the
+per-TASK agent routing for `/implement`, surfaced inside the brief's Impact
+section.
 
 ## MCP tools used directly by this orchestrator
 
@@ -90,26 +75,16 @@ same deliberate non-unification as `Severity` vs `RiskSeverity`, §k.2):
   and `mcp__lumina__update_work_item` / `transition_status` to flip stale
   not-started tasks to `cancelled` (R28).
 
-Per-block execution is `Skill()`-DISPATCH (§l.4) — to "run" a block, call
-`Skill("lumina:<block>", "$work_item_id")`, binding `$work_item_id` as the
-block's `arguments` frontmatter expects. The dispatch invokes the REAL block
-skill, which runs its own §b 5-step check-before-act + §c provenance sequence
-against the raw `mcp__lumina__*` tools. A forked block (`research-explore`,
-`story-review`, `decompose-tasks` per §d) runs its REAL sub-agent fan-out
-automatically (§l.4(b)). (Historical aside: per-block skills formerly carried
-the model-invocation-disabling frontmatter flag, worked around by
-inline-replication; the flag was removed plugin-wide, so `Skill()`-dispatch is
-the canonical path and is expected to succeed — §l.4.)
+Per-block execution is `Skill()`-DISPATCH (§l.4): to "run" a block, call
+`Skill("lumina:<block>", "$work_item_id")`. The dispatch invokes the REAL block
+skill, which runs its own §b + §c sequence against the raw `mcp__lumina__*`
+tools; a forked block (`research-explore`, `story-review`, `decompose-tasks`)
+runs its REAL sub-agent fan-out automatically (§l.4(b)) — never collapse it.
 
-**Dossier-first reads (§o / A.7).** Every orchestrator-driven block reads
-`get_story_dossier` FIRST for full-story context — the whole picture (problem,
-approach, live research, live risks, the persisted task↔research links, the
-file footprint, the dispatch shape) rather than a bag of disconnected fields.
-This is what lets a block re-run mid-walk, or weeks later, with the same
-context the orchestrator has. The dossier is DERIVED (no new table) and
-liveness-filtered (see the rework stage and §o for the corrected
-liveness-vs-epoch model: liveness is the sole dossier filter; epoch is
-provenance/scoping metadata only, never a filter).
+**Dossier-first reads (§o.3).** Every orchestrator-driven block reads
+`get_story_dossier` FIRST, so it sees the whole picture rather than a bag of
+disconnected fields and can re-run mid-walk (or weeks later) with the same
+context the orchestrator has.
 
 ## Body — the stage machine
 
@@ -367,21 +342,16 @@ Record the §c-stage activity for `align` (before branching to `rework` or done)
 
 ### Stage 6 — `rework` (epoch-scoped invalidation; re-enter `plan`)
 
-On misalignment, apply the §o / A.5 rework contract. The corrected liveness
-model (§o): **liveness is the SOLE dossier filter** (a row is live ⟺ not
-superseded / not rejected / not cancelled / not retired); **epoch is
-provenance + rework-scoping only — NEVER a dossier filter.** Surviving live
-rows of ANY epoch keep rendering; invalidated rows drop out because they were
-MARKED stale, not because of their epoch.
+On misalignment, apply the §o.4 rework contract verbatim: bump the epoch via
+`bump_plan_epoch`, diff the affected phases, invalidate each affected block's
+stale rows through that table's OWN liveness signal (supersede / retire / cancel,
+with `remove_acceptance_criterion` the ONE hard-delete exception, under a confirm
+that degrades to a durable `open_question` in autonomous mode), record ONE
+rework-audit activity, then re-enter `plan`.
 
-1. **Bump the epoch.** `mcp__lumina__bump_plan_epoch({ story_id:
-   "$work_item_id" })` → `plan_epoch += 1`. (This records an EXPORT-INERT event
-   — a `plan_epoch` aggregate, not `work_item` — so the git-export snapshot's
-   `plan_epoch` self-heals on the next `work_item`-aggregate event; intentional,
-   §o.)
+The orchestrator-specific parts:
 
-2. **Diff which phases the directive touches** → set `reset_kind` +
-   `affected_phases`:
+1. **Phase diff** — map the user's directive to `reset_kind` + `affected_phases`:
    - **scope / problem** disagreement → FULL reset: re-enter at `frame`
      (`reset_kind="full"`, affected = frame + explore + decide + verify-design +
      decompose).
@@ -390,30 +360,7 @@ MARKED stale, not because of their epoch.
    - **decomposition** complaint → re-enter at Decompose
      (`reset_kind="partial"`, affected = decompose).
 
-3. **Invalidate the affected blocks' stale rows** (per their OWN liveness
-   signal — there is no single uniform predicate):
-   - research notes → `mcp__lumina__supersede_research_note`
-   - risks → `mcp__lumina__supersede_risk`
-   - rejected alternatives → `mcp__lumina__supersede_rejected_alternative`
-   - findings → `mcp__lumina__supersede_finding`
-   - stale NOT-STARTED tasks → flip to `cancelled` (R28 path, via
-     `transition_status` / `update_work_item`); the dossier excludes cancelled
-     tasks and their grounding links.
-   - stale OPEN QUESTIONS → `mcp__lumina__retire_open_question({ id })` (sets
-     `open_questions.retired_at`; the dossier filters on `retired_at IS NULL`
-     AND the pre-existing `status != 'cancelled'`).
-   - stale ACCEPTANCE CRITERIA → `mcp__lumina__remove_acceptance_criterion`
-     under a CONFIRM. ACs are the ONE HARD-DELETE exception — `acceptance_criteria`
-     has no liveness column and no supersede tool, so a removed AC is simply
-     absent (no supersede provenance; §o documents this and that the AC
-     `plan_epoch` stamp annotates LIVE rows only). In `autonomous` mode the
-     confirm degrades to a durable `open_question` per §d before deleting.
-
-   (Grounding edges of superseded notes / cancelled tasks drop from the dossier
-   via its live-only join; the rework also keeps the brief's Grounding from
-   ever citing a dead note.)
-
-4. **One rework-audit activity** (apply the §c substitution guard):
+2. **The rework-audit activity** (apply the §c substitution guard):
 
 ```
 mcp__lumina__record_task_activity {
@@ -425,7 +372,7 @@ mcp__lumina__record_task_activity {
 }
 ```
 
-5. **Re-enter `plan`** scoped to `affected_phases` (a full reset re-enters at
+3. **Re-enter `plan`** scoped to `affected_phases` (a full reset re-enters at
    `frame` first). Then `brief` → `align` again. Loop until `aligned`.
 
 Record the §c-stage activity for `rework` (the transition record) IN ADDITION
@@ -446,32 +393,18 @@ The suggested-next slash command mirrors
 slash-command table — the orchestrator cites by reference, does NOT
 re-implement.
 
-## Sentry-pattern compliance (per §e)
+## Orchestrator-level writes and boundaries
 
-The orchestrator DECIDES: stage order (`triage → frame → plan → brief → align
-→ rework`), phase order within `plan` (canonical six per §l.0), the gating-tier
-INTERACTION model (from `get_gating_tier`, never re-derived client-side — §e),
-when to fire the single mid-plan interrogation, the brief composition, and the
-rework affected-phase diff. The orchestrator MUST NOT compute readiness or the
-gating tier client-side, shadow a block's MCP-tool business logic (§e), or
-collapse a forked block's §d fan-out (the dispatched block runs its real
-fan-out itself, §l.4(b)). When it "runs" a block it does so by
-`Skill()`-DISPATCH (§l.4) — the real block runs its OWN §b check-before-act +
-§c sequence.
+Beyond the per-block dispatched writes, the orchestrator's ONLY direct writes
+are: (a) one §c activity per STAGE TRANSITION; (b) the per-epoch brief/align
+record; (c) in `rework`, the epoch bump, the invalidation writes, and the ONE
+rework-audit activity. The retired §l.1 skip-override path writes NOTHING.
 
-Beyond the per-block dispatched writes, the orchestrator's only
-ORCHESTRATOR-LEVEL direct writes are: (a) one §c activity per STAGE TRANSITION;
-(b) the per-epoch brief/align record; (c) in `rework`, the epoch bump, the
-supersede/retire/cancel/remove invalidation writes, and the ONE rework-audit
-activity. The retired §l.1 skip-override path writes NOTHING (the per-block
-gate it audited is gone — rework is audited instead). Local `detail.kind ==
-"story"` at Step 1 is the §e-blessed exception.
+Never compute readiness or the gating tier client-side, never shadow a block's
+MCP-tool business logic, and never collapse a forked block's fan-out.
 
 ## Pointers
 
-- Shared contract: [`../../CONVENTIONS.md`](../../CONVENTIONS.md) §a, §b, §c,
-  §d, §e, §i, §j, §k, **§l (incl. §l.4 the `Skill()`-dispatch execution
-  path)**, **§o (the orchestrator contract)**.
 - Advisor: [`../next-block/SKILL.md`](../next-block/SKILL.md) (surfaces the
   gating tier); MCP catalogue: [`../mcp/SKILL.md`](../mcp/SKILL.md).
 - Forked siblings dispatched via `Skill()` (real fan-out runs automatically,

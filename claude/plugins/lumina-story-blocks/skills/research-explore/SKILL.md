@@ -7,58 +7,53 @@ argument-hint: "[work_item_id]"
 
 # `lumina:research-explore`
 
-Multi-agent parallel research exploration for a story. This skill dispatches N (default 5: the four mechanical lenses + the always-on `contrarian` lens; 6 when complexity is high, adding `domain`) `research-deep` sub-agents — one per analytical lens — in a SINGLE Agent-tool message; each agent returns ≥3 findings with verbatim citations and an evidence grade; findings are composed into `add_research_note` rows with `state: "proposed"`. The downstream `/lumina:vet-research` skill triages those proposed notes (sample → spot-check → accept/reject). This is round-3's research-exploration entry point and mirrors `/plan-new` Phase 3's parallel-exploration contract (R30). Whether this skill itself runs forked or inline is a RUNTIME decision keyed on the execution mode (see "Run mode: fork-vs-inline" below) — distinct from the lens-agent fan-out, which it dispatches in either mode.
+Multi-agent parallel research exploration for a story. Dispatch N `research-deep` sub-agents — one per analytical lens, default 5 (the four mechanical lenses plus the always-on `contrarian`; 6 when complexity is high, adding `domain`) — in a SINGLE Agent-tool message. Each returns ≥3 findings with verbatim citations and an evidence grade; findings become `add_research_note` rows with `state: "proposed"` for `/lumina:vet-research` to triage. This is round-3's research-exploration entry point, mirroring `/plan-new` Phase 3's parallel-exploration contract (R30).
 
-This skill cites the shared contract at [`../../CONVENTIONS.md`](../../CONVENTIONS.md): §a (frontmatter shape), §b (5-step check-before-act idempotency, applied per-INVOCATION here — see "5-step idempotency mapping" below), §c (provenance recording via `record_task_activity` with `entry_type: "execution"` — `research-explore` is plan-time exploration, NOT a vet skill; only `/lumina:vet-research` carries the `entry_type: "vet"` exception), §d (run-mode / fork-vs-inline rationale — see "Run mode: fork-vs-inline" below), §e (Sentry pattern — skill = instructions, MCP = execution), §h (kind-precondition signpost — this skill is story-only). It ALSO cites the universal vet-pass procedure at [`claude/skills/flow-contract-vet-research`](../../../../skills/flow-contract-vet-research/SKILL.md) for evidence-grade triage that EACH sub-agent runs on its own findings — **do not re-state the contract's procedure inline**.
+Follows [CONVENTIONS.md](../../CONVENTIONS.md) §a/§b/§c/§d/§e, with §b applied per INVOCATION (see the mapping table at the end) and §h's story-only kind-precondition. `entry_type` is `"execution"` — this is plan-time exploration, and the `"vet"` channel is narrowed to `/lumina:vet-research`. Each sub-agent runs the evidence-grade triage in [`claude/skills/flow-contract-vet-research`](../../../../skills/flow-contract-vet-research/SKILL.md) on its own findings — **do not re-state that contract inline**.
 
 ## Run mode: fork-vs-inline (per §d)
 
-Whether to fork is selected at runtime from the execution mode (the `LUMINA_AUTONOMOUS` signal, corroborated server-side against the session's spawned-provenance through lumina's single-source mode resolver, which fails SAFE to interactive whenever the signal is absent, unverified, or conflicts):
+Two NESTED levels of dispatch: whether THIS skill runs in its own subagent (below) is separate from the lens-agent fan-out at step 4, which happens in either mode.
 
-- **Autonomous mode** (lumina-spawned / scheduler-driven) → run FORKED in an isolated `agent: general-purpose` subagent. This skill dispatches up to six parallel lens sub-agents, each of which itself runs Context7 / WebSearch / Read / Grep and synthesises ≥3 findings; the per-agent tool output saturates context fast, so forking keeps that churn out of the parent's durable-comms transcript — the parent receives only the final summary line and the lumina rows themselves.
-- **Interactive mode** (human terminal — the fail-safe default) → run INLINE. This skill takes no per-item `AskUserQuestion` (it is a one-shot, always-additive exploration pass — triage is the downstream `/lumina:vet-research`'s job), so its behaviour is identical in both modes; only the fork-vs-inline framing of the lens-agent tool noise differs.
-
-Note this is two NESTED levels of agent dispatch: the fork decision above is about whether THIS skill runs in its own subagent; the lens-agent fan-out (step 4) is the parallel `research-deep` dispatch this skill performs REGARDLESS of mode. Fork is no longer a static per-skill property recorded in frontmatter — §d (post-1C.1) treats it as a runtime/mode decision, so this skill carries no `context:`/`agent:` keys; the `agent: general-purpose` target applies only on the autonomous fork path described above.
+- **Autonomous** → run FORKED in an isolated `agent: general-purpose` subagent. Up to six parallel lens agents each run Context7 / WebSearch / Read / Grep and synthesise ≥3 findings; that per-agent output saturates context fast, so forking keeps the churn out of the parent's durable-comms transcript.
+- **Interactive** (the fail-safe default) → run INLINE. This skill takes no per-item `AskUserQuestion` (it is a one-shot, always-additive pass — triage is downstream), so behaviour is identical in both modes; only where the lens-agent noise lands differs.
 
 ## MCP tools used
 
-- `mcp__lumina__get_work_item` — story read (the §b step 1); binds `detail.kind`, `detail.attributes.problem_statement`, `detail.attributes.execution_strategy`, `detail.item.complexity`, and the existing `detail.research_notes` for the "do-not-re-find" set.
-- `mcp__lumina__get_story_readiness` — readiness aggregate (informational; surfaced as a one-line preface to the user). Note: `StoryReadiness` does NOT carry `complexity` — that field is read directly from `detail.item.complexity` on the story row (the schema column added by migration 0003 is per-work-item, not per-task-only; the typed `set_complexity` setter is task-scoped but the column itself accepts the value on any work-item kind, and the story-level value is what gates the `domain` lens here — the one complexity-gated addition on top of the five always-on lenses).
-- `mcp__lumina__add_research_note` — write per-finding row with `state: "proposed"`, `lens`, `summary`, `body`, optional `confidence` and `origin`. NEVER auto-promote to `accepted`; that is `/lumina:vet-research`'s exclusive job per the Sentry pattern.
-- `mcp__lumina__record_task_activity` — provenance per §c (one summary entry per skill invocation; `entry_type: "execution"`, `origin: "plan"` — NOT `"vet"`, which round-2 narrows to `/lumina:vet-research` exclusively).
+- `mcp__lumina__get_work_item` — story read (§b step 1); binds `detail.kind`, `detail.attributes.problem_statement`, `detail.attributes.execution_strategy`, `detail.item.complexity`, and existing `detail.research_notes` for the "do-not-re-find" set.
+- `mcp__lumina__get_story_readiness` — readiness aggregate (informational preface). `StoryReadiness` does NOT carry `complexity`: read it from `detail.item.complexity` on the story row. (Migration 0003's column is per-work-item; the typed `set_complexity` setter is task-scoped but the column accepts a value on any kind, and the story-level value is what gates the `domain` lens.)
+- `mcp__lumina__add_research_note` — one row per finding with `state: "proposed"`. NEVER auto-promote to `accepted` — that is `/lumina:vet-research`'s exclusive lifecycle, and never mutate `research_notes.state` through `update_work_item` raw attributes.
+- `mcp__lumina__record_task_activity` — one summary entry per invocation (§c).
 
-This skill ALSO uses tools available in its toolbelt — `Agent` (the parallel dispatch primitive — single message, multiple `<invoke>` blocks), `Read`, `Grep`, `WebSearch`, `WebFetch`, `mcp__plugin_context7_context7__query-docs` (in autonomous mode these run inside the fork). These are NOT lumina write tools; they appear inside the dispatched sub-agents' execution paths.
+Also in the toolbelt (inside the fork, in autonomous mode): `Agent` (the parallel dispatch primitive), `Read`, `Grep`, `WebSearch`, `WebFetch`, `mcp__plugin_context7_context7__query-docs`. This skill does NOT call `add_finding`, `set_story_plan`, `update_research_note`, or `supersede_research_note` — note-supersession belongs to `/lumina:vet-research`, finding emission to `/lumina:research-directed`. Canonical argument shapes: [`../mcp/SKILL.md`](../mcp/SKILL.md) §Planning & decision tools.
 
-This skill does NOT call `add_finding`, `set_story_plan`, `update_research_note`, or `supersede_research_note`. Note-supersession is `/lumina:vet-research`'s lifecycle; finding emission is downstream (post-vet, via `/lumina:research-directed`). See [`../mcp/SKILL.md`](../mcp/SKILL.md) §Planning & decision tools for canonical argument shapes.
+## Procedure
 
-## Procedure (the body the skill executes — forked in autonomous mode, inline in interactive)
+### 1. Prerequisite read (§b step 1; §h story-only fail-fast)
 
-### 1. Prerequisite read (§b step 1; §e kind-precondition exception per §h)
+`mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind:
 
-Call `mcp__lumina__get_work_item({id: "$work_item_id"})`. Bind:
+- `detail.kind` — MUST be `"story"` (the canonical 6-lens vocabulary is story-scoped); otherwise abort: `research-explore requires a story work item; got kind=<kind>.`
+- `detail.attributes.problem_statement` — REQUIRED. If absent, abort: `research-explore requires a problem_statement; run /lumina:problem-statement <id> first.` (a lens-agent without the problem framing produces noise).
+- `detail.attributes.execution_strategy` — INFORMATIONAL; absent is fine (exploration runs PRE-approach in the canonical Phase-3 sequence). The agent prompt emits `"(not yet set)"`.
+- `detail.research_notes.filter(n => n.state === "accepted")` — the "already-found" set, cited in each lens prompt so sub-agents don't re-discover them.
+- `detail.item.complexity` — `low`/`medium`/`high`/null; drives lens selection.
 
-- `detail.kind` — MUST equal `"story"`. Per §h, this skill writes lens-keyed research notes against a story's planning state, and the canonical 6-lens vocabulary is story-scoped. If `kind != "story"`, abort with: `"research-explore requires a story work item; got kind=<kind>."`
-- `detail.attributes.problem_statement` — REQUIRED. If absent, abort with: `"research-explore requires a problem_statement; run /lumina:problem-statement <id> first."` (a lens-agent without the problem framing produces noise).
-- `detail.attributes.execution_strategy` — INFORMATIONAL. Absent is fine — exploration runs PRE-approach in the canonical Phase-3 sequence; the agent prompt simply emits `"(not yet set)"` for that section.
-- `detail.research_notes.filter(n => n.state === "accepted")` — the "already-found" set; the per-lens prompts cite these so sub-agents do not waste tokens re-discovering them.
-- `detail.item.complexity` — the story's complexity grade if set (`low`/`medium`/`high`/null). Drives the lens-selection branch in step 2.
-
-Also call `mcp__lumina__get_story_readiness({story_id: "$work_item_id"})` and bind the readiness aggregate. Surface a one-line preface to the user before step 3, e.g. `"Read: problem_statement (set), execution_strategy (set/absent), <K> accepted research notes, complexity=<value>; dispatching <N> lens-agents."`
+Also call `mcp__lumina__get_story_readiness({story_id: "$work_item_id"})` and surface a one-line preface, e.g. `Read: problem_statement (set), execution_strategy (set/absent), <K> accepted research notes, complexity=<value>; dispatching <N> lens-agents.`
 
 ### 2. Lens selection
 
-The canonical lens vocabulary is exactly six values: **`codebase`, `library`, `risk`, `completeness`, `domain`, `contrarian`**. This list is the lens-vocabulary discipline (documented in CONVENTIONS.md §k.1 — round-3 added the original five; round-5 T11 amends §k.1 to add the sixth, `contrarian`. Lens names match `research_notes.lens` free-text column per migration 0003 + R32). DO NOT invent new lens names; new lenses are additive via a CONVENTIONS amendment, not ad-hoc. NOTE: the §k.1 vocabulary and this list MUST stay byte-consistent — the drift gate (`verify-plan-story-blocks.sh`) does NOT check lens-name consistency, so a mismatch passes CI silently; verify by hand against §k.1.
+The canonical lens vocabulary is exactly six values: **`codebase`, `library`, `risk`, `completeness`, `domain`, `contrarian`**. DO NOT invent lens names — new lenses are additive via a CONVENTIONS §k.1 amendment, not ad-hoc. **This list and the §k.1 vocabulary line MUST stay byte-consistent**; the drift gate (`verify-plan-story-blocks.sh`) does NOT check lens names, so a mismatch passes CI silently — verify by hand.
 
-Default selection:
-- ALWAYS dispatch the first four (`codebase`, `library`, `risk`, `completeness`) — these are the mechanical lenses.
-- ALWAYS dispatch the `contrarian` lens (User Decision 1, round-5 R51 devil's-advocate mandate) — a dedicated agent whose job is to find evidence the chosen/obvious direction is WRONG and surface competing patterns the other lenses' confirmatory framing tends to miss. This is the disconfirmation pass: it counterbalances the conservative, scope-narrowing bias R51 identifies. So the always-on set is FIVE agents (`codebase`, `library`, `risk`, `completeness`, `contrarian`).
-- ADD `domain` when `detail.item.complexity === "high"` — total 6 agents. High-complexity stories warrant a domain-specific lens (business invariants, regulatory shape, prior-art domain conventions) that the mechanical lenses tend to under-explore.
+- ALWAYS dispatch the four mechanical lenses (`codebase`, `library`, `risk`, `completeness`).
+- ALWAYS dispatch `contrarian` (User Decision 1, round-5 R51): a dedicated agent hunting evidence the chosen/obvious direction is WRONG and surfacing competing patterns the confirmatory lenses miss. Always-on set is therefore FIVE.
+- ADD `domain` when `detail.item.complexity === "high"` — total 6. High-complexity stories warrant business invariants, regulatory shape, and prior-art domain conventions that the mechanical lenses under-explore.
 
-**Optional argument extension (deferred to round-4)**: a future amendment will accept `--lens codebase,library` for lens-subset re-exploration. Round-3 ships the full default set per invocation; the subset arg is OUT-OF-SCOPE for this skill.
+A `--lens codebase,library` subset argument for re-exploration is deferred to a future round; this skill ships the full default set per invocation.
 
 ### 3. Per-lens prompt template (R35)
 
-Each per-lens sub-agent prompt MUST be self-contained (no inter-agent dependency per R30), MUST instruct the sub-agent to cite URLs / `file:line` verbatim, MUST instruct evidence-grading per [`flow-contract-vet-research`](../../../../skills/flow-contract-vet-research/SKILL.md), and MUST require ≥3 findings. Target prompt length per R35: ~600–1200 words. The template:
+Each prompt MUST be self-contained (no inter-agent dependency per R30), MUST instruct verbatim URL / `file:line` citation, MUST instruct evidence-grading per `flow-contract-vet-research`, and MUST require ≥3 findings. Target length ~600–1200 words.
 
 ```
 # Lens: <lens-name>
@@ -97,17 +92,17 @@ Citation discipline (R35, plan-review-finding P10 of round-2): EVERY external UR
 If you cannot reach the ≥3 finding floor for this lens (genuinely insufficient surface), return EXACTLY: `ESCALATE-TO-DEEP: <one-sentence reason>` and zero findings. The orchestrator will widen scope.
 ```
 
-Render the template once per selected lens, substituting `<lens-name>`, `<sibling-lens-list>`, and the per-lens definition paragraph.
+Render once per selected lens, substituting `<lens-name>`, `<sibling-lens-list>`, and the per-lens definition paragraph.
 
 ### 4. Single-message parallel dispatch (R30)
 
-Dispatch ALL lens-agents in ONE Agent-tool message — multiple parallel `<invoke>` blocks in a single tool-call batch. This is verbatim the `/plan-new` Phase 3 contract: per-agent context is the prompt body alone (no shared scratchpad). DO NOT dispatch sequentially or in multiple messages; sequential dispatch defeats the parallelism gain documented in R30 and inflates wall-clock time linearly with lens count.
+Dispatch ALL lens-agents in ONE Agent-tool message — multiple parallel `<invoke>` blocks in a single tool-call batch, verbatim the `/plan-new` Phase 3 contract (per-agent context is the prompt body alone; no shared scratchpad). Sequential or multi-message dispatch defeats the parallelism gain and inflates wall-clock linearly with lens count.
 
-Each sub-agent is dispatched as `research-deep` (1M context, unconstrained per-agent token budget per R35) — the deep variant is correct for the open-ended exploration shape of this skill. Lite (`research-lite`) is reserved for the directed verification pass in `/lumina:research-directed`.
+Each sub-agent is `research-deep` (1M context, unconstrained per-agent token budget per R35) — the deep variant fits this skill's open-ended exploration. `research-lite` is reserved for the directed verification pass in `/lumina:research-directed`.
 
-### 5. Compose findings into add_research_note calls (per-finding write)
+### 5. Compose findings into `add_research_note` calls
 
-For each finding returned by each sub-agent — iterate (agent, finding) pairs:
+Iterate (agent, finding) pairs — ONE call per finding, never one batched call per agent, so each note is independently triageable downstream:
 
 ```
 mcp__lumina__add_research_note {
@@ -117,21 +112,18 @@ mcp__lumina__add_research_note {
   anchors: [<finding.source>],     # the citation(s) as typed anchors — see note below
   lens: <agent.lens>,              # from the canonical 6 in step 2
   confidence: <finding.confidence>, # "high" | "medium" | "low"
-  state: "proposed",               # NEVER auto-promote — /lumina:vet-research's job (§e Sentry pattern)
+  state: "proposed",               # NEVER auto-promote — /lumina:vet-research's job
   origin: "plan"                   # per §c origin taxonomy
 }
 ```
 
-Notes:
+`anchors` (migration 0024) is a JSON array of citation strings, each EITHER a `<repo-relative-path>:<line>` reference (e.g. `lumina/src/repo.rs:412`) OR an `http(s)://` URL. Put every citation there — do NOT append it to `body` (the trailing `Source:` line convention is retired); `body` holds the prose finding only. Validation is all-or-nothing: one malformed entry (a non-URL with no `:<positive-line>`) rejects the whole write, so quote each anchor verbatim. The vet-pass reads `anchors` directly and `query_research_notes`'s `file`/`anchor` filters index them.
 
-- The `add_research_note` MCP tool now carries a typed `anchors` field (migration 0024): a JSON array of citation strings, each EITHER a `<repo-relative-path>:<line>` reference (e.g. `lumina/src/repo.rs:412`) OR an `http(s)://` URL. Put every `file:line` / URL citation into `anchors` — do NOT append it to `body` (the `Source:` trailing-line convention is retired). `body` holds the prose finding only. Validation is all-or-nothing: a malformed entry (a non-URL with no `:<positive-line>`) rejects the whole write, so quote each anchor verbatim. The downstream vet-pass reads `anchors` directly (and `query_research_notes`'s `file`/`anchor` filters index them) — so citations land where the vet-pass and cross-work-item queries expect them. Composing the `anchors` array from sub-agent `source` output is data shaping, not lifecycle logic, and is permitted under the Sentry pattern (§e).
-- DO NOT auto-promote to `state: "accepted"`. The proposed→accepted transition is `/lumina:vet-research`'s exclusive lifecycle (Sentry pattern + the §c vet-exception is narrowly scoped to that one skill).
-- The `lens` argument is free-form TEXT validated only against the canonical 6 by this skill body (NOT enforced server-side per R32). Pass the snake-case form verbatim.
-- One `add_research_note` call per finding — NOT one batched call per agent. Each note is an independently triageable row in the downstream vet-pass.
+`lens` is free-form TEXT validated only by this skill body against the canonical 6 (NOT enforced server-side per R32) — pass the snake-case form verbatim.
 
-### 6. Provenance — single activity entry per invocation (§c, no vet exception)
+### 6. Provenance — ONE activity entry per invocation (§c)
 
-After all `add_research_note` calls complete, append exactly ONE activity entry via `record_task_activity`. `entry_type: "execution"` (NOT `"vet"` — round-2 carved the `vet` channel exclusively for `/lumina:vet-research`; this skill is plan-time exploration, not audit):
+After all note writes, append exactly one entry — NOT one per finding. The per-finding writes get no activity row of their own; the exploration pass is a single planning event with aggregate counters.
 
 ```
 mcp__lumina__record_task_activity {
@@ -143,34 +135,24 @@ mcp__lumina__record_task_activity {
 }
 ```
 
-Apply the §c substitution guard VERBATIM: before the call, verify `${CLAUDE_SESSION_ID}` resolved to a non-empty value that does NOT contain the literal substring `CLAUDE_SESSION_ID`. On non-substitution, write `body: "session=unknown; lenses=[<lens-list>]; notes_added=<M>; escalations=<E>"` and emit a one-line warning to the user (e.g. `"warning: CLAUDE_SESSION_ID did not substitute; recorded as 'unknown'"`).
-
-One activity entry per skill invocation — NOT one per finding. The per-finding `add_research_note` writes do not each get their own activity row; the exploration pass is a single planning event with aggregate counters. `<E>` counts the number of lenses that returned `ESCALATE-TO-DEEP` (in which case the agent produced zero findings for that lens and the orchestrator should consider widening scope before the vet-pass).
+Apply the §c substitution guard; on non-substitution write `body: "session=unknown; lenses=[<lens-list>]; notes_added=<M>; escalations=<E>"` and warn. `<E>` counts lenses that returned `ESCALATE-TO-DEEP` (zero findings for that lens — consider widening scope before the vet-pass).
 
 ### 7. Final console summary (mandatory)
-
-Emit the exact line:
 
 ```
 research-explore: <N> agents dispatched, <M> proposed notes added across {<lens-list>}; run /lumina:vet-research <story_id> to triage
 ```
 
-If `<E> > 0` (any lens escalated), append a second line: `"warning: <E> lens(es) returned ESCALATE-TO-DEEP; consider re-running with /lumina:research-explore <story_id> after widening the problem_statement."`
+If `<E> > 0`, append: `warning: <E> lens(es) returned ESCALATE-TO-DEEP; consider re-running with /lumina:research-explore <story_id> after widening the problem_statement.` This line is IN ADDITION to the step-6 activity entry: one persists to lumina, the other surfaces live.
 
-This summary is in ADDITION to the activity-log entry at step 6 — one persists to lumina (audit trail), the other surfaces to the user's terminal (live feedback).
+## §b mapping (per INVOCATION)
 
-## 5-step idempotency mapping (per §b — applied PER-INVOCATION)
+One-shot exploration pass: re-invocation appends NEW proposed notes and mutates nothing existing (triage flows through `/lumina:vet-research`, post-decision verification through `/lumina:research-directed`).
 
-This skill is a one-shot exploration pass. Re-invocation appends NEW proposed notes; it does NOT mutate existing notes (those flow through `/lumina:vet-research` for triage, then optionally through `/lumina:research-directed` for post-decision verification). The §b 5-step sequence maps as follows:
-
-| §b step | Mapping for `research-explore` |
+| §b step | Mapping |
 |---|---|
-| 1. Read | `get_work_item` + `get_story_readiness` → bind story state and the already-accepted research_notes (step 1). |
-| 2. Inspect | Filter accepted notes for the "do-not-re-find" set (step 1); pick lens count from `complexity` (step 2). |
-| 3. Absent → create | Dispatch lens-agents (step 4); compose findings into `add_research_note` calls (step 5) — these are always-additive `state: "proposed"` writes. |
-| 4. Present and matches → no-op | Not applicable per-invocation. Per-lens, sub-agents are instructed to AVOID re-finding accepted notes; a finding that overlaps with an accepted note is the sub-agent's job to drop. |
-| 5. Present and differs → confirm + write | Not applicable. Supersession of stale notes happens in the downstream `/lumina:research-directed` flow, NOT here. |
-
-## Sentry-pattern compliance (per §e)
-
-The skill body decides WHICH lenses to dispatch, HOW MANY parallel sub-agents to fire, the per-lens prompt template, and the composition of sub-agent findings into `add_research_note` calls. The MCP tools handle every byte of business logic: `add_research_note` validates the `state` enum (`proposed`/`accepted`/`rejected`), writes the row, and emits the event-outbox entry; `record_task_activity` validates `entry_type` against the legal enum (`execution`/`vet`/`comment`). The skill body MUST NOT short-circuit by directly mutating `research_notes.state` via `update_work_item` raw attributes, MUST NOT write notes with `state: "accepted"` to bypass vet-pass, and MUST NOT inline the lens-validation enum as a server-side check (lens is free-form TEXT per R32; vocabulary discipline lives in the skill body + CONVENTIONS §k.1, not the schema). Local `detail.kind == "story"` check at step 1 is the §e-blessed exception.
+| 1. Read | `get_work_item` + `get_story_readiness` → story state and accepted notes (step 1). |
+| 2. Inspect | Filter accepted notes for the "do-not-re-find" set; pick lens count from `complexity` (step 2). |
+| 3. Absent → create | Dispatch lens-agents (step 4); compose findings into always-additive `state: "proposed"` writes (step 5). |
+| 4. Present and matches | Not applicable per-invocation. Per-lens, sub-agents are instructed to avoid re-finding accepted notes; dropping an overlap is the sub-agent's job. |
+| 5. Present and differs | Not applicable — supersession of stale notes happens in `/lumina:research-directed`. |
