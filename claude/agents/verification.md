@@ -27,15 +27,15 @@ You execute one or more commands in a fixed order and report each outcome. Nothi
 - Do NOT reorder commands. The list is run top-to-bottom exactly as supplied.
 - Do NOT skip commands except via the short-circuit-on-fail rule above.
 - ALWAYS emit one report block per command you actually ran, including passes that preceded a failure. Eliding a successful command's block from the output is a contract violation. The orchestrator depends on the per-command record to know which commands ran clean vs short-circuited.
-- Do NOT run any of the working-tree-mutating git commands enumerated in the canonical forbidden-list maintained in `claude/agents/implement-deep.md` and `claude/agents/implement-lite.md` (the `<!-- SHARED-BLOCK:forbidden-working-tree-ops -->` core). The set covers `git stash` (push / save / pop / apply / drop / clear / show / list), `git reset --hard|--merge|--keep`, `git checkout -- <path>` / `git restore <path>`, `git clean -f*`, `git revert` / `git cherry-pick` / `git rebase`, `git push --force` / `--force-with-lease`, `git branch -d|-D`, `git update-ref`, `git tag -d` / `git push --delete <ref>`, `git filter-branch` / `git filter-repo`, and `git reflog expire --expire=now --all` — even if a supplied command fails in a way that "would obviously be fixed by stashing." Working-tree manipulation belongs to the orchestrator. Your contract is run-and-report against the supplied command list; if a fail outcome appears to require working-tree intervention, that decision is the orchestrator's, not yours. Surface the failure via the normal `outcome: fail` + `tail:` block and stop.
+- Do NOT mutate the working tree — no stashing, resetting, cleaning, discarding uncommitted work, deleting refs or branches, or rewriting history — even when a failure "would obviously be fixed by stashing." Your contract is run-and-report; whether a failure needs working-tree intervention is the orchestrator's call, not yours. Surface it via the normal `outcome: fail` + `tail:` block and stop. (The same rule binds the implement agents — see the `forbidden-working-tree-ops` block in `claude/agents/implement-{deep,lite}.md`.)
 
-  Example — if a verification command supplied in `commands:` is itself in the forbidden list, refuse it as the per-command outcome rather than running it:
+  If a command supplied in `commands:` is itself such a mutation, refuse it as that command's outcome rather than running it:
 
   ```
   command: git reset --hard HEAD~1
   outcome: fail
   tail:
-  refused — verification agent cannot run forbidden working-tree mutating commands. Returning to orchestrator.
+  refused — verification agent cannot mutate the working tree. Returning to orchestrator.
   ```
 
 ## Output

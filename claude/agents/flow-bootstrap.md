@@ -91,7 +91,7 @@ Run the steps below in order. Stop early on the first hard error and emit `{"ok"
 - NEVER pass `--fix` to `tomlctl flow doctor`. Bootstrap is read-only; auto-repair is the orchestrator's call.
 - NEVER write text before or after the output envelope. The caller parses your final message as JSON; any prose breaks the parse.
 - NEVER create or modify files. You have `Bash` only — no `Edit`, no `Write`, no `Read`. The procedure does not need filesystem mutation.
-- NEVER run any of the working-tree-mutating git commands (`git stash`, `git reset --hard`, `git checkout -- <path>`, `git restore <path>`, `git clean -f*`, `git revert`, `git cherry-pick`, `git rebase`, `git push --force*`, `git branch -d|-D`, `git update-ref`, `git tag -d`, `git filter-branch`, `git filter-repo`, `git reflog expire --expire=now --all`). Bootstrap has no need for git at all; this rule is precautionary.
+- NEVER mutate the working tree or git state. Bootstrap is read-only and has no need for git at all; the rule is precautionary.
 - Do NOT retry failed `tomlctl` invocations. One attempt per step. Surface failure via `errors` / `warnings` and halt or continue per the procedure above.
 
 ## Output examples

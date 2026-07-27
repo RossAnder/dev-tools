@@ -1783,7 +1783,7 @@ body
         expect_hash(
             &report,
             "forbidden-working-tree-ops",
-            "8a5099689d67892f60c516479acf7269b8d08e0fe2f6e0e5737df4d29060f631",
+            "4701d2b8314c997366dfea83b6aa4e0bff5e275d2e1378517b67e5091d7fa026",
         );
     }
 
@@ -2079,6 +2079,7 @@ body
                 &[
                     "flow-contract-flow-context",
                     "flow-contract-ledger-schema",
+                    "flow-contract-apply-pipeline",
                     "flow-contract-apply-dependency-sort",
                     "flow-contract-apply-vet-implement-lite",
                     "flow-contract-apply-rollback-protocol",
@@ -2090,6 +2091,7 @@ body
                 &[
                     "flow-contract-flow-context",
                     "flow-contract-ledger-schema",
+                    "flow-contract-apply-pipeline",
                     "flow-contract-apply-dependency-sort",
                     "flow-contract-apply-vet-implement-lite",
                     "flow-contract-apply-rollback-protocol",
@@ -2102,10 +2104,18 @@ body
                     "flow-contract-flow-context",
                     "flow-contract-plansdirectory-prompt",
                     "flow-contract-execution-record-schema",
+                    "flow-contract-plan-restructure",
+                    "flow-contract-reconciler",
                     "flow-contract-vet-research",
                 ],
             ),
-            ("test-bootstrap.md", &["flow-contract-vet-research"]),
+            (
+                "test-bootstrap.md",
+                &[
+                    "flow-contract-showcase-bundle",
+                    "flow-contract-vet-research",
+                ],
+            ),
         ];
 
         let mut missing: Vec<String> = Vec::new();
