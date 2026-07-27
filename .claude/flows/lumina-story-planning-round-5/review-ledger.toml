@@ -1,0 +1,391 @@
+schema_version = 1
+last_updated = 2026-06-24
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R1"
+file = "lumina/core/src/repo/task_graph.rs"
+line = 203
+symbol = "bump_plan_epoch"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "bump_plan_epoch SELECT+UPDATE omit `deleted_at IS NULL` — a tombstoned story's epoch can still be bumped"
+description = "The new bump_plan_epoch pre-read (:193) and UPDATE (:203) carry no tombstone guard, unlike sibling setters set_task_tier (:855) and set_task_lane (:931) which both include `AND deleted_at IS NULL`. A soft-deleted story passes the NotFound check and gets its plan_epoch advanced plus an inert event. Add the guard to both statements for parity."
+evidence = ["task_graph.rs:193,203 (no guard) vs :855 set_task_tier, :931 set_task_lane (guarded)"]
+dedup_id = "ebe544b50b96c4bc"
+resolved = 2026-06-24
+resolution = "Added `AND deleted_at IS NULL` to bump_plan_epoch's pre-read SELECT and UPDATE (task_graph.rs), matching set_task_tier/set_task_lane parity so a tombstoned story's plan_epoch can no longer be bumped. Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R2"
+file = "claude/plugins/lumina-story-blocks/README.md"
+line = 64
+symbol = "skill catalogue / plan-story row"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "plan-story catalogue rows still describe the RETIRED round-3 'hard phase gates + skip-with-override audit' model"
+description = "README.md:64 and skills/mcp/SKILL.md:57 both describe plan-story as a 'six-phase canonical sequence with hard phase gates and skip-with-override audit (amended in round-3)'. Round-5 reshaped it into the planning orchestrator (stage machine + two grills + epoch rework); CONVENTIONS §l.1 is now a tombstone. The headline round-5 change is mis-described in both user-facing catalogues. Update both rows to the orchestrator model."
+evidence = [
+    "README.md:64",
+    "mcp/SKILL.md:57 vs README.md:85 (round-5 orchestrator para)",
+]
+dedup_id = "e23410430345634a"
+resolved = 2026-06-24
+resolution = "Rewrote the plan-story catalogue row in README.md and skills/mcp/SKILL.md from the retired round-3 hard-phase-gates + skip-with-override model to the round-5 planning-orchestrator (triage/frame/plan/brief/align/rework stage machine, gating-tier-aware grills, epoch rework). Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R3"
+file = "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md"
+line = 60
+symbol = "skill catalogue / wire-task-deps row"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "wire-task-deps catalogue rows describe the OLD additive 'wire edges' model, not the round-5 prune-down flip"
+description = "mcp/SKILL.md:60 and README.md:67 both read 'Wire explicit task->task dependency edges ... (amended in round-3)'. Round-5 flipped wire-task-deps to PROPOSE a maximally-parallel graph and ask the user to PRUNE/CONFIRM (R53, never add edges from zero); the skill frontmatter leads with that. Update both catalogue rows."
+evidence = ["mcp/SKILL.md:60, README.md:67 vs wire-task-deps/SKILL.md:3"]
+dedup_id = "a3fc122619498fd2"
+resolved = 2026-06-24
+resolution = "Rewrote the wire-task-deps catalogue row in skills/mcp/SKILL.md and README.md from the old additive wire-edges model to the round-5 prune-down flip (PROPOSE maximally-parallel graph, user PRUNEs/CONFIRMs, R53 never add edges from zero). Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R4"
+file = "CLAUDE.md"
+line = 98
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "Root CLAUDE.md 'next free migration = 0025' is stale — both 0025 and 0026 landed (should read 0027)"
+description = "The migration-0016 parenthetical ends 'so the next free migration = 0025', yet the same sentence states migration-0026 raised the surface to 99. 0025_neutralise_reviews_work_item_id.sql and 0026_plan_epoch_and_links.sql both exist on disk. Self-contradictory; the pointer should be 0027."
+evidence = ["CLAUDE.md:98; ls lumina/core/migrations shows 0025 + 0026 present"]
+dedup_id = "557936989fd1c303"
+resolved = 2026-06-24
+resolution = "Fixed the stale self-contradictory pointer in CLAUDE.md: next free migration = 0025 -> 0027 (0026 is the highest existing migration). Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R5"
+file = "lumina/core/src/repo/task_graph.rs"
+line = 184
+symbol = "bump_plan_epoch"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "bump_plan_epoch is deliberately NOT story-kind-gated — a non-story id bumps a column no reader consumes"
+description = "The docstring (:180-183) chooses existence-only guarding, diverging from every other round-5 surface (get_story_dossier/get_gating_tier/get_story_readiness are story-gated). The MCP param is named story_id and the tool description says 'story', so an accidental non-story id silently succeeds, writing dead state (only StoryReadiness/dossier read plan_epoch, both story-gated). Either kind-gate for consistency or tighten the tool doc to 'any work-item'."
+evidence = ["task_graph.rs:180-184 docstring 'NOT kind-gated'"]
+dedup_id = "5b1e6423737f8156"
+resolved = 2026-06-24
+resolution = "Story-kind-gated bump_plan_epoch (work_item_kind check -> Validation/invalid_params on a non-story id) and rewrote the docstring; aligns with the story-gated round-5 surfaces. Behaviour change: a non-story id now errors instead of silently writing dead state (no reader or test depended on the old success). Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R6"
+file = "lumina/server/src/http/dossier.rs"
+line = 40
+symbol = "GatingTierResponse"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "GatingTierResponse declared twice (mcp/reads.rs + http/dossier.rs) — identical 4-field shape, drift surface"
+description = "Both layers define a byte-identical GatingTierResponse{gating_tier, plan_epoch, unresolved_questions, verification_commands_set} with identical projection bodies, justified by a 'no http->mcp dep' comment. Promote the shape into lumina_core::domain (both layers already import it) so a future field cannot be added to one and silently missing from the other."
+evidence = ["http/dossier.rs:40-49,97-102 vs mcp/reads.rs:189-200,383-386"]
+dedup_id = "3b263d5449637a05"
+resolved = 2026-06-24
+resolution = "Promoted the byte-identical GatingTierResponse into lumina_core::domain::planning, imported it in both mcp/reads.rs and http/dossier.rs, and deleted both local definitions (added Clone to match sibling planning aggregates; removed the now-unused serde::Serialize import in http/dossier.rs). No wire/public-API change; build + clippy + tests green. Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R7"
+file = "lumina/core/migrations/0026_plan_epoch_and_links.sql"
+line = 56
+symbol = "task_research_links"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "task_research_links has no index on research_note_id — the ON DELETE CASCADE from a note delete scans the link table"
+description = "The composite PK (task_id, research_note_id) indexes the lead task_id (covers list_task_research_links + the task-delete cascade), but the research_note_id FK has no supporting index, so a research_notes hard-delete scans task_research_links. Notes are normally superseded (an UPDATE, no cascade), so impact is latent; add an index on task_research_links(research_note_id) if note hard-deletes ever become common."
+evidence = ["0026_plan_epoch_and_links.sql:56-61 (PK only, no second index)"]
+dedup_id = "a4bb2697cf9a5299"
+wontfix_rationale = "Editing the applied/committed migration 0026 breaks the sqlx migration checksum and forces a dev-DB recreate (project policy: never edit an applied migration). The missing index on task_research_links(research_note_id) is latent: research notes are superseded via UPDATE (no cascade), so the ON DELETE CASCADE scan never fires in normal operation, and the finding is explicitly conditional (add an index if note hard-deletes ever become common) -- that condition is not met. Defer to a forward index migration if/when note hard-deletes become a real workload. Orchestrator decision (review-apply)."
+resolved = 2026-06-24
+resolution = "Addressed by a new forward migration 0027_index_task_research_links.sql adding a covering index on task_research_links(research_note_id) for the note-side ON DELETE CASCADE; did NOT edit the applied 0026. Migration applies cleanly (build + full quick suite green). Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R8"
+file = "lumina/core/src/repo/dossier.rs"
+line = 83
+symbol = "get_story_dossier live-question filter"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Dossier live-question filter uses SQLite `status IS NOT 'cancelled'` — non-idiomatic vs `<>`; plus deferred retired_at read-model debt"
+description = "dossier.rs:83 uses `IS NOT 'cancelled'` (correct SQLite null-safe inequality) where the rest of the diff uses `<> 'cancelled'` (e.g. readiness.rs) — a future editor could misread it as identity comparison and 'fix' it into a `<>` that drops NULL-status rows. Separately, the dossier needs this extra round-trip + HashSet retain only because OpenQuestion's read model never threaded retired_at; the localized post-filter is reasonable scope-containment but leaves that debt. Normalise the operator; note the deferred read-model threading."
+evidence = ["dossier.rs:77-93 (separate live-id read + IS NOT 'cancelled')"]
+dedup_id = "ba746272f7c558aa"
+resolved = 2026-06-24
+resolution = "Preserved the null-safe status IS NOT cancelled predicate in get_story_dossier (open_questions.status is schema-nullable) and added a clarifying comment warning against the behaviour-changing <> cancelled rewrite that would drop NULL-status rows. Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "wontfix"
+flow = "lumina-story-planning-round-5"
+id = "R9"
+file = "lumina/core/src/repo/task_graph.rs"
+line = 386
+symbol = "unlink_task_research"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "unlink_task_research is pub(crate) + #[allow(dead_code)] — a complete tested rework primitive with no production consumer this pass"
+description = "The fn (the rework/cancel grounding-teardown counterpart) is exercised only by a test; the allow is honestly scoped and documented as awaiting its consumer. Track it: wire the rework/cancel path to unlink_task_research in a follow-up, or the allow(dead_code) lingers. CONVENTIONS §o.7 documents it as repo-internal."
+evidence = ["task_graph.rs:380-419 (#[allow(dead_code)] + docstring)"]
+dedup_id = "bb0ea849446bc2d0"
+wontfix_rationale = "Intentional, documented #[allow(dead_code)] on unlink_task_research (task_graph.rs:380-385); wiring its rework/cancel consumer is cross-cutting follow-up work, not a point-fix. No bytes written."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R10"
+file = "lumina/web/src/__tests__/readiness.test.ts"
+line = 88
+symbol = "StoryReadinessSchema tests"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "New round-5 readiness fields are happy-path fixture-only — no test rejects a bad gating_tier / non-number plan_epoch / non-bool verification_commands_set"
+description = "makeReadiness() carries plan_epoch/gating_tier/verification_commands_set so the schema ACCEPTS them, but the only rejection tests target next_recommended_action + problem_statement_set. A wire-mirror regression typing gating_tier as z.string() instead of z.enum([...]) would pass every test — exactly the SPA wire-mirror coupling footgun. Add a reject-test for a malformed gating_tier (and ideally the other two new fields)."
+evidence = ["readiness.test.ts:57-99 (new fields happy-path only; rejection tests cover only next_action + problem_statement_set)"]
+dedup_id = "82c7294607142c80"
+resolved = 2026-06-24
+resolution = "Added reject-tests in readiness.test.ts for a malformed gating_tier (out-of-enum), a non-number plan_epoch, and a non-bool verification_commands_set, closing the wire-mirror happy-path-only gap. Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R11"
+file = "lumina/server/tests/e2e.rs"
+line = 1948
+symbol = "retire_open_question coverage"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "retire_open_question: tests prove dossier EXCLUSION but nothing proves the row SURVIVES (soft-retire, not delete) with retired_at set"
+description = "The e2e (e2e.rs:1984) and the MCP misuse test assert the retired question is excluded from the live dossier, but no test asserts the row still exists with retired_at IS NOT NULL and is still visible via get_work_item_detail (the documented 'audit trail survives, not deleted' contract). A regression that hard-DELETEd on retire would pass. Add a survival assertion."
+evidence = ["e2e.rs:1948,1984; dossier.rs:19-20 docstring (detail view keeps showing retired questions)"]
+dedup_id = "0b95077f5b6525ea"
+resolved = 2026-06-24
+resolution = "Added a soft-retire survival assertion in the e2e round-5 thread: after retire_open_question the question row still exists with retired_at IS NOT NULL and remains visible via get_work_item_detail (audit-survives contract). Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R12"
+file = "lumina/server/tests/e2e.rs"
+line = 1987
+symbol = "dossier grounding liveness fold"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Dossier grounding drops a superseded note's edge, but no test has a task with TWO links (one live, one dead) proving the live one survives"
+description = "The rework test's task has only the one (now-dead) link, so it proves 'dead link drops' but not 'live sibling link kept'. A bug dropping ALL of a task's links when ANY note is superseded would pass. Add a second live link to the task and assert it survives the rework."
+evidence = ["e2e.rs:1987-1998 (single link to the doomed note; no surviving sibling asserted)"]
+dedup_id = "ec21c622bfd1328a"
+resolved = 2026-06-24
+resolution = "Added a second still-live research link to the rework-test task and asserted the live link survives the supersession while the dead link drops, proving per-link (not all-links) grounding teardown. Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R13"
+file = "CLAUDE.md"
+line = 98
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Migration 0025 (neutralise_reviews_work_item_id) is undocumented in any CLAUDE.md migration narrative"
+description = "The enumeration jumps 0024 -> 'next free 0025' while 0025_neutralise_reviews_work_item_id.sql is committed and 0026 is documented. No paragraph in root CLAUDE.md or lumina/CLAUDE.md says what 0025 did — a reader counting migrations finds an undocumented gap. Pre-dates round-5 but exposed by the round-5 count/migration touch; add a one-line 0025 note."
+evidence = ["ls migrations shows 0025_neutralise_reviews_work_item_id.sql; no 0025 paragraph in either CLAUDE.md"]
+dedup_id = "db5878eb8342e112"
+resolved = 2026-06-24
+resolution = "Added a one-line note in CLAUDE.md documenting migration 0025 (neutralise_reviews_work_item_id: write-deadens reviews_work_item_id forward-only with no DROP COLUMN, cancels in-flight old-model lane=review tasks + their dependency edges; story 1B-F9), verified against the SQL not guessed. Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R14"
+file = "lumina/CLAUDE.md"
+line = 163
+symbol = "migration-0026 paragraph"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "lumina/CLAUDE.md migration-0026 paragraph omits the per-pass 'next free migration = NNNN' pointer"
+description = "Prior migration paragraphs end with a 'next free migration' pointer; the new 0026 paragraph documents the tools + 94->99 correctly but carries none. Combined with the stale root pointer (R4), there is no correct 'next free = 0027' anywhere. Add it to restore the convention and give the next author the right number."
+evidence = ["lumina/CLAUDE.md:163 (no 'next free' clause)"]
+dedup_id = "fa8a1979b7ec17da"
+resolved = 2026-06-24
+resolution = "Added the per-pass next-free-migration = 0027 pointer to lumina/CLAUDE.md's migration-0026 paragraph, restoring the convention. Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R15"
+file = "claude/plugins/lumina-story-blocks/CONVENTIONS.md"
+line = 364
+symbol = "§l.0 Phase-6 Closure precondition"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "§l.0 Phase-6 precondition cites a 'round-4 extension' risk-gate as live, but §k.2 documents that extension as DEFERRED/unshipped"
+description = "The §l.0 phase table's Phase-6 precondition reads 'zero open critical/high risks (round-4 extension)', while §k.2 (:349) states the closure-gate risk-aware extension 'is deferred to a round-4 follow-up'. Nothing in round-5 indicates round-4 landed it. Pre-existing inconsistency left untouched while round-5 edited this very table. Reconcile (mark the precondition deferred or land/cite the extension)."
+evidence = ["CONVENTIONS.md:364 vs :349 (§k.2 deferred)"]
+dedup_id = "d824a5bc22d70262"
+resolved = 2026-06-24
+resolution = "Marked the CONVENTIONS.md Phase-6 Closure risk-gate precondition (zero open critical/high risks) as a DEFERRED round-4 extension (not yet live; see k.2), removing the contradiction with k.2 which documents that extension as deferred/unshipped. Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "fixed"
+flow = "lumina-story-planning-round-5"
+id = "R16"
+file = "lumina/web/src/api/work-items.ts"
+line = 149
+symbol = "WorkItem.plan_epoch / task_research_links"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Inconsistent wire-mirror strictness for always-present round-5 fields (work-items.ts uses .default(); readiness.ts makes peers required)"
+description = "WorkItem.plan_epoch is z.number().default(0) and task_research_links is .optional().default([]) (tolerant of an absent key), while StoryReadiness's three new fields are REQUIRED — yet all are server-always-emitted. The lenient form is safer against version skew but is applied inconsistently across the same migration's fields, so a reader cannot tell which are genuinely optional. Pick one convention for 0026 always-present fields and apply it uniformly."
+evidence = ["work-items.ts:149,611 (.default) vs readiness.ts:104-106 (required)"]
+dedup_id = "5623142160c86507"
+resolved = 2026-06-24
+resolution = "Unified the migration-0026 always-present wire-mirror fields on the lenient .default() convention: relaxed readiness.ts's three new fields (plan_epoch/gating_tier/verification_commands_set) to match work-items.ts's existing .default() form (gating_tier enum preserved, still rejects out-of-enum). NOTE: the fix landed in lumina/web/src/api/readiness.ts, not the ledger's nominal file work-items.ts which already conformed. The REQUIRED alternative was rejected because it would break the out-of-scope committed o6-skip-serializing.test.ts skew-tolerance contract; type-check + bun test green. Working tree (uncommitted)."
+
+[[items]]
+first_flagged = 2026-06-24
+rounds = 1
+status = "wontfix"
+flow = "lumina-story-planning-round-5"
+id = "R17"
+file = "lumina/core/src/repo/dossier.rs"
+line = 99
+symbol = "get_story_dossier child filtering"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Dossier walks detail.children twice (retain cancelled-tasks, then re-filter kind!=task) — readability vs the sibling reader's single-pass idiom"
+description = "retain (:99-101) keeps non-task children; the grounding loop (:111) then re-tests child.kind != task. get_story_readiness collects live task children into a Vec<&WorkItem> in one pass (readiness.rs:471-475). Aligning with that idiom reads clearer — but note the comment deliberately keeps filtered tasks on the detail so the rendered story matches the grounding, so collapse with care."
+evidence = ["dossier.rs:95-121 vs readiness.rs:471-475"]
+dedup_id = "ce358beb56c96822"
+wontfix_rationale = "The two passes are intentional and serve distinct purposes: the retain (dossier.rs:99-101) mutates detail.children to shape the rendered story.children (keeps non-task children, drops cancelled tasks) and detail is embedded as the rendered story, while the grounding loop is a read-only pass over the filtered children. The readiness sibling collects a separate Vec and does not mutate detail.children, so its single-pass idiom is not transferable. Collapsing risks changing which children render. Two-pass is correct; no bytes written."
+
+[[vet_events]]
+timestamp = "2026-06-24T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Deep agent. Spot-checked bump_plan_epoch deleted_at omission (task_graph.rs:193,203 — TRUE), bump not-kind-gated (docstring :180-183 — TRUE), GatingTierResponse duplication (cross-corroborated by completeness — TRUE), IS NOT 'cancelled' idiom (dossier.rs:83 — TRUE). No fabrications. Low-value no-change items (i64 signature, link TOCTOU, dossier N+1, read-then-update branch) not persisted."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-24T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Lite agent, 3 findings (under cap 5). All three (bump not kind-gated, retire no authz scope, IS NOT 'cancelled' footgun) are accepted-design / known-loopback-posture notes, source-verified; folded into R5/R8. SQL-injection sweep confirmed clean (all dynamic values bound params)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-24T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Deep agent; mostly positive confirmations (single-mutation-path, A.5 liveness no-epoch-filter, plan_epoch FromRow threading, migration 0026 ALTER constraints all verified correct). Spot-checked task_research_links missing FK index (migration 0026:56-61 — TRUE). No fabrications. Positive confirmations not persisted as ledger items."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-24T00:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Lite agent, 13 findings of which 9 were positive wiring confirmations (count-invariant 99, HTTP mirror parity, SPA wire-mirrors present — all verified, not persisted). Spot-checked stale 'next free = 0025' (CLAUDE.md:98 grep — TRUE) and undocumented 0025 (TRUE). Actionable doc-drift persisted as R4/R13/R14."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-24T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 5
+dropped_count = 2
+downgraded_count = 0
+rationale = ">30% sample-failure tripped. DROPPED the agent's two headline findings: 'mcp/planning.rs has NO inline tests / the 3 new write tools have ZERO coverage' is FALSE — round5_write_tool_misuse_maps_to_typed_errors (planning.rs:915) crosses all three tool wrappers (link->invalid_params, retire->not_found, bump->epoch=1); the 'e2e drives repo::*' note is true but immaterial given that test. Faulty grep was the cause. Did NOT re-dispatch: directly source-verified the surviving findings instead (stronger guarantee) — retire-survival-untested (R11), surviving-edge-untested (R12), SPA-rejection-test-missing (R10) all confirmed TRUE against source. Unverified minor suggestions (autonomous integration-untested, StoryDossier parse) NOT persisted given the demonstrated grep-unreliability."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-24T00:00:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+sampled_count = 5
+dropped_count = 2
+downgraded_count = 0
+rationale = "DROPPED 2 verified-clean: the §k.1 six-lens byte-consistency (CONVENTIONS:325 and research-explore step 2 both list codebase/library/risk/completeness/domain/contrarian — CONSISTENT) and the 0026 migration-number doubt (0026 correct on disk). Spot-checked stale plan-story rows (README:64 / mcp:57 — TRUE), stale wire-task-deps rows (mcp:60 / README:67 — TRUE), §l.0 round-4 risk-gate vs §k.2 deferred (TRUE). Persisted as R2/R3/R15."
+dedup_id = "45ca31c3315a5978"

@@ -1,0 +1,318 @@
+schema_version = 1
+last_updated = 2026-06-22
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-22
+agent = "implement"
+summary = "Flow status draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "a20818a758714f2f"
+
+[[items]]
+id = "E2"
+type = "verification"
+date = 2026-06-22
+agent = "implement"
+summary = "cargo build (tomlctl) passed at T1 checkpoint"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+task_ref = "t1-auto-create-write-pipeline"
+dedup_id = "7848698ba234abee"
+
+[[items]]
+id = "E3"
+type = "verification"
+date = 2026-06-22
+agent = "implement"
+summary = "cargo test (tomlctl) passed at T1 checkpoint"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+task_ref = "t1-auto-create-write-pipeline"
+dedup_id = "37d142491691c5a4"
+
+[[items]]
+id = "E4"
+type = "deviation"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t1-auto-create-write-pipeline"
+summary = "Widened flow::time module to pub(crate) so the dispatch-layer seed helper can call today_toml_date"
+original_intent = "Plan assumed cli::dispatch seed_doc_for could reach flow::time::today_toml_date, but flow/mod.rs declared the time module private (mod time), causing E0603."
+rationale = "Widened flow/mod.rs to pub(crate) mod time, a zero-behaviour visibility change the plan design presupposed; cheaper than reinventing the fallible date primitive, which constraint 4 forbids."
+commits = ["ee84c47"]
+dedup_id = "b23de64b8289529d"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t1-auto-create-write-pipeline"
+status = "done"
+summary = "Auto-create on missing write via OnMissing threaded into the three mutate_doc* wrappers; --no-create flag; seed_doc_for single source; execution_record_path_for promoted to pub(crate); bootstrap routed through seed_doc_for (byte-identical)."
+files = [
+    "tomlctl/src/io.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/src/flow/mod.rs",
+]
+commits = ["ee84c47"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "54d05ac2d3e1e98e"
+
+[[items]]
+id = "E6"
+type = "verification"
+date = 2026-06-22
+agent = "implement"
+summary = "cargo build (tomlctl) passed at Batch 2 (T2+T3) checkpoint"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+task_ref = "t2-thread-created-through-dispatch"
+dedup_id = "d537ad0a9e28899d"
+
+[[items]]
+id = "E7"
+type = "verification"
+date = 2026-06-22
+agent = "implement"
+summary = "cargo test (tomlctl) passed at Batch 2 (T2+T3) checkpoint: 250 unit + integration + render tests"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+task_ref = "t2-thread-created-through-dispatch"
+dedup_id = "485c44f78a4fdf39"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t2-thread-created-through-dispatch"
+status = "done"
+summary = "Surfaced the created bool across all 12 write sites: created + path in every success envelope plus a one-line stderr guidance note on creation (schema_version=1 suffix for recognised flow files); added integration + byte-identity regression tests; tightened the stale parent-dir auto-create test."
+files = [
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/integration.rs",
+]
+commits = ["c5a32b0"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "0e283b5c1e0dc6b2"
+
+[[items]]
+id = "E9"
+type = "deviation"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t3-flow-render-progress-log"
+summary = "Renderer emits a uniform spec-conformant GFM table separator; golden fixture updated to match the real PROGRESS-LOG.md hand-authored off-by-one Deferrals separator."
+original_intent = "Plan T3 acceptance asked for a render byte-identical to the real harness-progressive-disclosure-wave-2 PROGRESS-LOG.md."
+rationale = "The real file's Deferrals separator row was off-by-one short on two columns, a hand-authored quirk not derivable from any rule. Per the plan instruction that the spec wins, the renderer emits the consistent width-matched separator everywhere and the committed golden fixture copy was updated to the spec-conformant render; that one separator region is the sole divergence from the source file."
+commits = ["bf6cf57"]
+dedup_id = "251685e95ac49157"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t3-flow-render-progress-log"
+status = "done"
+summary = "Added flow render-progress-log: pure render_to_string + thin I/O dispatch; deterministic PROGRESS-LOG.md render (4 tables + empty-state + trailing newline, no sidecar); golden/idempotency/cross-reorder/empty-state/help tests; self-contained (date,id) sort with numeric E-id ordering."
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/flow/dispatch.rs",
+    "tomlctl/src/flow/mod.rs",
+    "tomlctl/.gitattributes",
+    "tomlctl/src/flow/render_progress_log.rs",
+    "tomlctl/tests/fixtures/render/context.toml",
+    "tomlctl/tests/fixtures/render/execution-record.toml",
+    "tomlctl/tests/fixtures/render/PROGRESS-LOG.md",
+    "tomlctl/tests/fixtures/render/render-fixture-plan.md",
+    "tomlctl/tests/render_progress_log.rs",
+]
+commits = ["bf6cf57"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "68db606a9f523929"
+
+[[items]]
+id = "E11"
+type = "verification"
+date = 2026-06-22
+agent = "implement"
+summary = "cargo build (tomlctl) passed at Phase-3 final verification"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+task_ref = "phase-3-final-verification"
+dedup_id = "bf10767bf437ab83"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-06-22
+agent = "implement"
+summary = "cargo test (tomlctl) passed at Phase-3 final verification: integration 55/55, command_lint + carrier_invokes_required_skills + render golden/idempotency tests green"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+task_ref = "phase-3-final-verification"
+dedup_id = "661888bc90f535d3"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-06-22
+agent = "implement"
+summary = "cargo clippy (tomlctl, all-targets) passed at Phase-3 final verification (2 pre-existing warnings in capabilities.rs/items.rs, not introduced)"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+task_ref = "phase-3-final-verification"
+dedup_id = "d524e05891857d37"
+
+[[items]]
+id = "E14"
+type = "deviation"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t2-thread-created-through-dispatch"
+summary = "Fixed three pre-existing envelope-assertion tests T2 missed; surfaced at Phase-3 final verification after a Batch-2 checkpoint false-pass."
+original_intent = "T2 added regression guards for the created+path envelope change and was recorded done (E8)."
+rationale = "T2 left three pre-existing add-many/array-append integration tests asserting the exact pre-change envelope string; the Batch-2 checkpoint verification agent false-passed (summarised one test binary), so they surfaced only at Phase-3 final verification. Loosened the three assertions to the stable ok + count fragments."
+commits = ["7649460"]
+dedup_id = "e0a2ba1a4c64edaf"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t4-tomlctl-skill-doc"
+status = "done"
+summary = "Documented auto-create-by-default, the created+path envelope field, --no-create and the --allow-outside double-opt-out, and the flow render-progress-log verb (3 fenced examples + Quick Ref row); replaced the plan-new Write-skeleton+integrity-refresh bootstrap note with auto-create reliance."
+files = ["claude/skills/tomlctl/SKILL.md"]
+commits = ["b9c9c8f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "02a5d3d20d725531"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t5-execution-record-schema-doc"
+status = "done"
+summary = "Replaced the render-from-log routine body with the tomlctl flow render-progress-log invocation (phrase eliminated), reframed the four-table column schemas + pinned derivations as the command reference spec, and updated the write/bootstrap note for auto-create; preserved the two-call heredoc append idiom."
+files = ["claude/skills/flow-contract-execution-record-schema/SKILL.md"]
+commits = ["b9c9c8f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "b32efd3fead6ca07"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t6-ledger-contract-docs"
+status = "done"
+summary = "Added first-write auto-create notes to the three ledger-write contract skills (ledger-schema main note; vet-research and apply-rollback-protocol array-append idioms); additive, no stale prose existed."
+files = [
+    "claude/skills/flow-contract-ledger-schema/SKILL.md",
+    "claude/skills/flow-contract-vet-research/SKILL.md",
+    "claude/skills/flow-contract-apply-rollback-protocol/SKILL.md",
+]
+commits = ["b9c9c8f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "fbb4e540bc5324a9"
+
+[[items]]
+id = "E18"
+type = "task-completion"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t7-plan-update-carrier"
+status = "done"
+summary = "Replaced all 17 render-from-log routine references with tomlctl flow render-progress-log; converted the execution-record Write-skeleton bootstrap to auto-create reliance; kept the legitimate integrity refresh recovery mention; all Skill() invocations preserved."
+files = ["claude/commands/plan-update.md"]
+commits = ["b9c9c8f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "5dc592be59388efd"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t8-implement-tdd-carriers"
+status = "done"
+summary = "implement.md + tdd.md: render-from-log routine eliminated (2 and 1 refs to 0) in favour of the render command; both Write-skeleton execution-record bootstraps converted to auto-create reliance; all Skill() invocations preserved."
+files = [
+    "claude/commands/implement.md",
+    "claude/commands/tdd.md",
+]
+commits = ["b9c9c8f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "e7e75e5203905b3e"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t9-review-optimise-carriers"
+status = "done"
+summary = "optimise.md in-memory-first ledger pre-create and review-plan.md Step-3.5 two-line self-bootstrap replaced with auto-create reliance; review.md, optimise-apply.md, review-apply.md had no such friction (correctly unchanged); all Skill() invocations preserved."
+files = [
+    "claude/commands/optimise.md",
+    "claude/commands/review-plan.md",
+]
+commits = ["b9c9c8f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "16ff30d09e108841"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t10-claude-md"
+status = "done"
+summary = "Added flow render-progress-log to the CLAUDE.md tomlctl command list and a terse auto-create + created-envelope note in the integrity-sidecar section; no stale bootstrap prose existed to remove."
+files = ["CLAUDE.md"]
+commits = ["b9c9c8f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "073fabb35bfd3644"
+
+[[items]]
+id = "E22"
+type = "deviation"
+date = 2026-06-22
+agent = "implement"
+task_ref = "t6-ledger-contract-docs"
+summary = "Corrected T6 ledger-schema note: flow-less .claude/reviews/<scope>.toml ledgers seed an empty doc, not the schema_version skeleton."
+original_intent = "T6 documented that a first ledger write auto-creates with the schema-aware skeleton for all four ledger paths the skill covers, including the flow-less <scope>.toml variants."
+rationale = "The seed is basename-keyed; only the four canonical basenames seed schema_version=1, so the flow-less <scope>.toml variants actually seed an empty doc. Surfaced by the post-merge E2E smoke; corrected the note to state the basename-keyed behaviour accurately."
+commits = ["25fa600"]
+dedup_id = "fe9f1b76bde42f02"
+
+[[items]]
+id = "E23"
+type = "status-transition"
+date = 2026-06-22
+agent = "plan-update"
+summary = "All 10 plan tasks complete; implementation finished, awaiting review sign-off"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "7a15ab7d64e28ffe"

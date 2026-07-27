@@ -1,0 +1,352 @@
+schema_version = 1
+last_updated = 2026-06-24
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-24
+agent = "implement"
+summary = "Flow status draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "a20818a758714f2f"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "add-migration-0026"
+status = "done"
+files = ["lumina/core/migrations/0026_plan_epoch_and_links.sql"]
+commits = ["dde1ed8"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Migration 0026: work_items.plan_epoch + nullable stamps on five planning child tables + open_questions.retired_at + task_research_links edge table"
+dedup_id = "4b73b7a749372be6"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "domain-types-gating-epoch-dossier"
+status = "done"
+files = [
+    "lumina/core/src/domain/enums.rs",
+    "lumina/core/src/domain/work_items.rs",
+    "lumina/core/src/domain/planning.rs",
+    "lumina/core/src/repo/shared.rs",
+    "lumina/core/src/repo/reads.rs",
+    "lumina/core/src/repo/readiness.rs",
+    "lumina/core/src/repo/task_graph.rs",
+    "lumina/core/src/export.rs",
+]
+commits = ["dde1ed8"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "GatingTier enum + compute_gating_tier single source + WorkItem.plan_epoch threaded through both work_items SELECTs + StoryReadiness fields + StoryDossier struct + task-research fold"
+dedup_id = "208d46683662c17c"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "repo-epoch-links-gating-dossier-retire"
+status = "done"
+files = [
+    "lumina/core/src/repo/events.rs",
+    "lumina/core/src/repo/task_graph.rs",
+    "lumina/core/src/repo/open_questions.rs",
+    "lumina/core/src/repo/dossier.rs",
+    "lumina/core/src/repo/mod.rs",
+    "lumina/core/src/domain/planning.rs",
+]
+commits = ["dde1ed8"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "bump_plan_epoch + link/unlink_task_research + retire_open_question + get_story_dossier composer + plan_epoch inert-aggregate registration + rework-sim and cross-story-rejection tests"
+dedup_id = "f42e574d66bd0c23"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-06-24
+agent = "implement"
+task_ref = "foundation-t2-t3-recarve"
+original_intent = "Plan split T2 (domain types, domain/ only) and T3 (repo layer) as separate green commits, with compute_gating_tier scoped to T3."
+rationale = "WorkItem, StoryReadiness, and the task detail are built via hand-written literal construction sites in repo/shared.rs, repo/reads.rs and repo/readiness.rs, so adding a struct field forces same-commit repo edits; T2 cannot be an independently-green commit. Merged T1, T2 and T3 into one foundation batch with one checkpoint commit and pulled compute_gating_tier plus all construction-site threading into T2 so the crate compiles after each pass; T3 stayed additive. All plan deliverables and acceptance criteria are preserved."
+commits = ["dde1ed8"]
+summary = "Merged T1-T3 into one foundation commit and re-carved compute_gating_tier from T3 to T2 for green-commit-ability"
+dedup_id = "3fb30c3f899a3d7c"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "mcp-tools-count-invariant-99"
+status = "done"
+files = [
+    "lumina/server/src/mcp/mod.rs",
+    "lumina/server/src/mcp/planning.rs",
+    "lumina/server/src/mcp/reads.rs",
+]
+commits = ["68245c9"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "5 new MCP tools (bump_plan_epoch/link_task_research/retire_open_question writes; get_story_dossier/get_gating_tier reads) + count-invariant 94->99 both assertions + task_research_links include-projection + misuse test"
+dedup_id = "a1719dda9e6183ec"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "spa-wire-mirrors"
+status = "done"
+files = [
+    "lumina/web/src/api/wire-enums.ts",
+    "lumina/web/src/api/work-items.ts",
+    "lumina/web/src/api/readiness.ts",
+    "lumina/web/src/api/execution.ts",
+    "lumina/web/src/__tests__/showcase.test.ts",
+    "lumina/web/src/__tests__/floating-chat.test.ts",
+    "lumina/web/src/__tests__/child-grid-filter.test.ts",
+    "lumina/web/src/__tests__/context-blocks.test.ts",
+    "lumina/web/src/__tests__/findings.test.ts",
+    "lumina/web/src/__tests__/fixtures.ts",
+    "lumina/web/src/__tests__/readiness.test.ts",
+]
+commits = ["4fd4493"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "SPA wire mirrors: GatingTier, WorkItem.plan_epoch, TaskResearchLink/FootprintFile, WorkItemDetail folds, StoryReadiness round-5 fields, StoryDossier/TaskResearchGrounding; 7 fixtures updated; type-check + 378 SPA tests green"
+dedup_id = "4faf7a24bc4e33fc"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "http-mirrors"
+status = "done"
+files = [
+    "lumina/server/src/http/dossier.rs",
+    "lumina/server/src/http/mod.rs",
+    "lumina/server/src/http/open_questions.rs",
+]
+commits = ["b3cc191"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "HTTP mirrors: new http/dossier.rs (GET dossier, GET gating-tier, POST plan-epoch bump, POST research-link) + POST retire-open-question; each delegates 1:1 to the round-5 repo fn; 3 narrow route tests pass"
+dedup_id = "7380f3f4ecc0fd1f"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "plan-story-orchestrator-rewrite"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/plan-story/SKILL.md"]
+commits = ["df1e80d"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Rewrote plan-story as the triage->frame->plan->brief->align->rework stage machine wrapping the six l.0 phases; dropped per-block gate; two grills; five-section decision brief; epoch-scoped rework; per-stage provenance; l.1 retired; l.4 preserved; cites section o. Human-reviewed."
+dedup_id = "7417e84919110d64"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "re-fuse-decomposition"
+status = "done"
+files = [
+    "claude/plugins/lumina-story-blocks/skills/decompose-tasks/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/set-task-spec/SKILL.md",
+]
+commits = ["0796ff7"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "decompose-tasks sets effort/complexity inline, sizes <=3-file one-session tasks, forbids parallel-task file overlap, persists grounding via link_task_research on create (R52), demotes vertical-slice to a grouping label; set-task-spec idempotent on inbound effort/complexity; R52/R53 cited; worked example with 3 disjoint Lite tasks"
+dedup_id = "26b2b27b5c5a2ddc"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "wire-task-deps-prune-down"
+status = "done"
+files = ["claude/plugins/lumina-story-blocks/skills/wire-task-deps/SKILL.md"]
+commits = ["856ee9f"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Flipped wire-task-deps to prune-down: derives candidate edges from per-task task_files overlap + foundation-consumption, surfaces compute_task_batches, asks to prune/confirm a maximally-parallel graph; R27 gate defaults to split; cites R53; old add-from-zero UX removed"
+dedup_id = "14cd74771c310467"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "devils-advocate-prose"
+status = "done"
+files = [
+    "claude/plugins/lumina-story-blocks/skills/approach/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/research-explore/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/story-review/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/user-interrogation/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/problem-statement/SKILL.md",
+]
+commits = ["65cc6eb"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "approach tournament + relaxed hard-fail; research-explore 6th contrarian lens (six: codebase/library/risk/completeness/domain/contrarian); story-review argue-against + scope-conservatism categories; user-interrogation scope-challenge axis + stricter heuristic; problem-statement framing scope-challenge"
+dedup_id = "c9fffcf684abf31b"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "conventions-o-gate-create-project-next-block"
+status = "done"
+files = [
+    "claude/plugins/lumina-story-blocks/CONVENTIONS.md",
+    "scripts/verify-plan-story-blocks.sh",
+    "claude/plugins/lumina-story-blocks/skills/create-project/SKILL.md",
+    "claude/plugins/lumina-story-blocks/skills/next-block/SKILL.md",
+]
+commits = ["0b5381e"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "CONVENTIONS section o (orchestrator contract) + k.1 six lenses (contrarian) + l.1 skip-override tombstoned + l.0 verification_commands_set note + create-project/next-block orchestrator+gating-tier updates + drift-gate comments; gate exits 0"
+dedup_id = "33b6f19fe3ee8266"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-06-24
+agent = "implement"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+summary = "drift gate OK: l.0 coverage, l.4 citation, Skill()-dispatch documented, no disable-model-invocation"
+dedup_id = "31f8711dea10424e"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-06-24
+agent = "implement"
+command = '''rg -q 'sqlx::query(_as|_scalar)?!\(' lumina/core/src lumina/server/src (must be 0)'''
+outcome = "pass"
+summary = "macro-eradication gate: 0 sqlx compile-time query macros"
+dedup_id = "725f602b2ece26d9"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-06-24
+agent = "implement"
+command = "cargo tree --manifest-path lumina/Cargo.toml -p lumina-server -e normal | rg -i git2|gix (must be 0)"
+outcome = "pass"
+summary = "control-plane purity: no git2/gix linked into lumina-server"
+dedup_id = "69d18a478c9e5e16"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-06-24
+agent = "implement"
+command = "CARGO_INCREMENTAL=0 LUMINA_SKIP_WEB_BUILD=1 cargo build --workspace --manifest-path lumina/Cargo.toml"
+outcome = "pass"
+summary = "full lumina workspace build clean (1m05s)"
+dedup_id = "811ae82ca8c53f73"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-06-24
+agent = "implement"
+command = "CARGO_INCREMENTAL=0 LUMINA_SKIP_WEB_BUILD=1 cargo nextest run --workspace --manifest-path lumina/Cargo.toml --profile ci -E 'not (binary(pty_e2e) | binary(conpty_minimal_repro))'"
+outcome = "pass"
+summary = "731 tests passed, 0 failed; nested-claude e2e binaries (pty_e2e/conpty_minimal_repro) excluded — round-5 touched no PTY code, run the full ci suite separately for those"
+dedup_id = "f2c8f92ae119a900"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-06-24
+agent = "implement"
+command = "LUMINA_SKIP_WEB_BUILD=1 cargo clippy --workspace --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "clippy clean, 0 warnings"
+dedup_id = "db71458ecf5d7f01"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-06-24
+agent = "implement"
+command = "cd lumina/web && bun run type-check"
+outcome = "pass"
+summary = "SPA type-check clean (vue-tsc --build)"
+dedup_id = "592f9f4c57fbee2d"
+
+[[items]]
+id = "E21"
+type = "verification"
+date = 2026-06-24
+agent = "implement"
+command = "cd lumina/web && bun test"
+outcome = "pass"
+summary = "SPA tests: 378 pass, 0 fail across 34 files"
+dedup_id = "c550ac9709ff71d6"
+
+[[items]]
+id = "E22"
+type = "verification"
+date = 2026-06-24
+agent = "implement"
+command = "cargo audit --file lumina/Cargo.lock"
+outcome = "pass"
+summary = "RUSTSEC: 0 vulnerabilities; 2 allowed unmaintained-crate warnings (jiff->proc-macro-error2, portable-pty->serial), both pre-existing transitive deps unrelated to round-5"
+dedup_id = "77438626aefac3b4"
+
+[[items]]
+id = "E23"
+type = "task-completion"
+date = 2026-06-24
+agent = "implement"
+task_ref = "e2e-thread-and-docs"
+status = "done"
+files = [
+    "lumina/server/tests/e2e.rs",
+    "CLAUDE.md",
+    "lumina/CLAUDE.md",
+    "claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md",
+    "claude/plugins/lumina-story-blocks/README.md",
+    "claude/plugins/lumina-story-blocks/skills/run-sprint/SKILL.md",
+]
+commits = [
+    "5c55b3b",
+    "d56de57",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "round-5 e2e thread (planning_round5_dossier_rework_db_export_http) asserting live dossier excludes superseded/retired rows while keeping older-epoch survivors; MCP count 94->99 across CLAUDE.md+lumina/CLAUDE.md; plan_epoch inert-vocab; 5-tool catalogue; section-o README pointer; run-sprint reword"
+dedup_id = "14f7f773ad785795"
+
+[[items]]
+id = "E24"
+type = "status-transition"
+date = 2026-06-24
+agent = "plan-update"
+summary = "All 12 plan tasks complete and verified; flow status in-progress -> review (awaiting /review + /optimise sign-off)"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "04791072f089d86a"

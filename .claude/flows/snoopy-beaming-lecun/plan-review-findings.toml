@@ -1,0 +1,135 @@
+schema_version = 1
+last_updated = 2026-06-22
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "risk"
+plan_section = "## Approach > Issue 2"
+summary = "Render spec omits the H1 title and --- section separators every existing PROGRESS-LOG.md carries; title source unresolved"
+description = "All 31 existing logs (e.g. harness-progressive-disclosure-wave-2/PROGRESS-LOG.md) have line 3 '# <Plan Title> -- Progress Log', --- rules between sections, blank lines, and a trailing newline. The plan spec lists only marker + 5 tables + (none) rows, so the Rust generator would silently reformat every regenerated log. The human title is NOT in execution-record.toml (it derives from the plan/context). Fix: have render read the title from context.toml plan_path (the plan '# Plan:' header), emit the --- separators + blank lines + trailing newline, and pin byte-identity against a real fixture."
+dedup_id = "96cd68eef114b9ab"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Approach > Issue 1"
+summary = "seed_doc_for must return Result (today_toml_date is fallible); schema_version must be Integer(1); auto-created files must byte-match flow-init output"
+description = "flow::time::today_toml_date returns Result<Datetime> (time.rs:70), so the plan signature seed_doc_for(path) -> TomlValue is wrong; it must be -> Result<TomlValue>. bootstrap_execution_record (init.rs:284) builds the skeleton via a raw format string (schema_version = 1 / last_updated = today_iso); seed_doc_for building a TomlValue and serialising could diverge byte-wise (schema_version must be TomlValue::Integer(1) not a string; last_updated a bare date). Promote the optional tidy (route bootstrap_execution_record through seed_doc_for) to REQUIRED, or add a unit test asserting the two seed paths are byte-identical."
+dedup_id = "c752ee7404b79a12"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "feasibility"
+plan_section = "#### T3: flow render-progress-log"
+summary = "T3 Files omit init.rs (execution_record_path_for is private) and query.rs (apply_sort is private)"
+description = "execution_record_path_for (init.rs:82) is a private fn, not pub(crate); sharing it needs an init.rs edit T3 does not list. apply_sort (query.rs:1331) is also private while apply_filters/apply_aggregation_group_by are pub(crate). Fix: fold the execution_record_path_for pub(crate) promotion into T1 (which already owns the optional init.rs touch), and have render use a self-contained deterministic (date,id) sort rather than reaching into query.rs -- safer for the byte-identity invariant and avoids touching query.rs. Then T3 only consumes pub fns."
+dedup_id = "6ea125044cba5a42"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "executability"
+plan_section = "#### T1: Auto-create in the write pipeline"
+summary = "T1 leaves two unresolved executor-time decisions: the OnMissing-vs-Option API shape and the optional init.rs edits"
+description = "T1 offers OnMissing { Error, Create(TomlValue) } OR Option<TomlValue> -- pick one (recommend the named enum; clearer at the 8 call sites). T1 also marks the bootstrap_execution_record/seed_doc_for refactor and the init.rs touch optional, leaving flow/init.rs conditionally in/out of T1 Files and the one-skeleton-definition goal unverifiable. Make the init.rs edits required (promote execution_record_path_for + route bootstrap through seed_doc_for) with their own acceptance, and list flow/init.rs in T1 Files."
+dedup_id = "8bc75b50ecb89fd4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "completeness"
+plan_section = "## Scope"
+summary = "Doc sweep omits review-plan.md, which hand-bootstraps plan-review-findings.toml with the same 2-line skeleton"
+description = "claude/commands/review-plan.md Step 3.5 says: if the file does not exist, bootstrap it with two lines schema_version = 1 / last_updated = today. This is exactly the friction Issue 1 removes, and plan-review-findings.toml is a recognised seed file. Add review-plan.md to the doc sweep (T9 or a new task) so its bootstrap prose points at auto-create."
+dedup_id = "a33b76ab110778cd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "executability"
+plan_section = "## Verification Commands"
+summary = "Acceptance over-relies on command_lint, which validates only tomlctl invocations not prose render-from-log references"
+description = "command_lint (dispatch.rs:1628) only tokenises lines inside bash fences starting with tomlctl; it cannot see the ~16 prose render-from-log routine references in plan-update.md or the Write-skeleton + integrity-refresh bootstrap prose. Doc tasks whose Acceptance is just command_lint passes prove nothing for prose edits. Add a negative-grep acceptance to T4/T5/T7 (and the sweep): zero remaining render-from-log routine / integrity refresh bootstrap snippets; require at least one bash-fenced example of each new verb so the linter actually exercises it."
+dedup_id = "9a1f4b9a84330491"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "risk"
+plan_section = "#### T2: Thread created through dispatch"
+summary = "Missing regression guard that auto-create does NOT alter existing-file behaviour, plus coverage for the dedupe/plan write paths"
+description = "T1/T2 acceptance covers the create path but not the back-compat invariant. Add: (a) writing to a PRE-EXISTING ledger returns created:false and leaves bytes + sidecar byte-identical to today; (b) the dedupe-elided add (mutate_doc_conditional) and remove/apply (mutate_doc_plan) paths report created correctly; (c) update/remove on a missing file ERRORS without persisting a stray file. The NotFound branch must match ONLY the NotFound tag so an existing-but-unreadable file is never overwritten by a seed."
+dedup_id = "6ec9019a6c57480a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "--allow-outside + auto-create bypasses the .claude/ containment the plan cites as the blast-radius bound"
+description = "guard_write_path runs before read_toml (io.rs:362), so create fires after the guard -- correct. But --allow-outside (io.rs:868) only warns then proceeds, so --allow-outside + auto-create + a typo'd path creates a stray file at an arbitrary location. The plan accepted-risk rationale (bounded by the .claude/ containment guard) is void under --allow-outside. Document the interaction (and ideally a test); consider implying --no-create when --allow-outside is set without explicit create intent."
+dedup_id = "f7bbace3f5a41403"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### T3: flow render-progress-log"
+summary = "Name a real golden fixture and pin the ambiguous column derivations the contract leaves open"
+description = "The contract prose (Item = task_ref slug or summary if richer; Notes may include files count or other metadata) is non-deterministic, but the existing fixtures pin it: Item = task_ref slug, Notes = <n> file(s), Commit = first commits SHA backticked. Use harness-progressive-disclosure-wave-2 (has a multi-type Session Log bucket) as the golden (execution-record.toml + context.toml + plan -> expected PROGRESS-LOG.md) triple, and add a .gitattributes text eol=lf pin (or build the expected string inline) so CRLF/BOM does not make the golden test flaky."
+dedup_id = "c963dfd0f9fbef29"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "suggestion"
+category = "completeness"
+plan_section = "#### T1: Auto-create in the write pipeline"
+summary = "Add --help snapshot tests for --no-create and flow render-progress-log per the crate snapshot convention"
+description = "The crate keeps --help snapshot tests for new flags/subcommands (capabilities tests). Add snapshot coverage for the --no-create flag (T1) and the render-progress-log verb (T3). Adding --no-create to WriteIntegrityArgs correctly keeps it off read-only subcommands (an existing test asserts read subs hide write-integrity flags)."
+dedup_id = "e899e9d351b1ed58"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Approach > Issue 1"
+summary = "Do not claim all write verbs uniformly -- mutate_active is a separate pipeline that already auto-creates"
+description = "flow/active.rs mutate_active (active.rs:287) open-codes its own pipeline (file.exists ? read_toml : empty_doc) and already bootstraps schema_version=1 -- it does NOT route through mutate_doc, so T1 change does not reach it and active-flow writes will not gain the created field (correct, and not required). Tighten the plan prose to carve out the active-flow path rather than implying total uniformity."
+dedup_id = "5319356d35516cdf"
+
+[[vet_events]]
+timestamp = "2026-06-22T00:00:00Z"
+command = "review-plan"
+review_round = 1
+agents = 4
+sampled = 16
+dropped = 1
+downgraded = 1
+rationale = "All codebase claims verified by Read: today_toml_date fallible (time.rs:70), apply_sort/execution_record_path_for private, mutate_active separate pipeline, existing PROGRESS-LOG.md carries H1 title + separators, review-plan.md self-bootstraps. Dropped plan-new.md C2 (retained flow-init behaviour, non-actionable). Downgraded command_lint-as-sole-acceptance to warning."
+dedup_id = "45ca31c3315a5978"

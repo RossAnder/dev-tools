@@ -472,3 +472,17 @@ scope = [
     "CLAUDE.md",
     "lumina/CLAUDE.md",
 ]
+
+[[active]]
+slug = "groovy-growing-yeti"
+last_used = "2026-06-30T11:48:29.1429777Z"
+
+[active.binding]
+branch = "fix/pty-initial-prompt-readiness-gate"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "lumina/server/src/pty/**",
+    "lumina/server/tests/**",
+    "lumina/.config/nextest.toml",
+    "lumina/CLAUDE.md",
+]

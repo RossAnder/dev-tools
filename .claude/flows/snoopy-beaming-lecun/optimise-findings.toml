@@ -1,0 +1,278 @@
+schema_version = 1
+last_updated = 2026-06-22
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "applied"
+flow = "snoopy-beaming-lecun"
+id = "O1"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 374
+symbol = "sorted_by_type / entry_sort_key"
+severity = "suggestion"
+effort = "trivial"
+category = "algorithm"
+summary = "sort_by_key re-invokes the allocating entry_sort_key O(n log n) times; sort_by_cached_key computes each key once"
+description = "Both sort sites (`sorted_by_type` :374, `render_session_log` :601) call `rows.sort_by_key(|it| entry_sort_key(it))`. std `sort_by_key` invokes the key fn once per comparison (~O(n log n) calls); `entry_sort_key` (:343) allocates a String via `date_key` and a second via `id_order`'s `Other` arm (:365), so one sort does ~n*log n key calls * up to 2 String allocs. Switch both sites to `sort_by_cached_key` (key computed once per element, n calls; both are stable sorts so ordering is identical). Independently flagged by all four active lenses (memory/serialization/query/algorithm) — highest-signal item, cleanest win. Risk: confirm the golden/idempotency tests still render byte-identical output."
+evidence = [
+    "https://doc.rust-lang.org/std/primitive.slice.html#method.sort_by_cached_key",
+    "rust-lang/rust PR #48639 (add slice::sort_by_cached_key)",
+    "rust-lang/rust PR #55821 (rustc switched to sort_by_cached_key for non-trivial key fns)",
+]
+dedup_id = "a6109cf4fe15af88"
+resolved = 2026-06-22
+resolution = "sort_by_key -> sort_by_cached_key at both sort sites (sorted_by_type :374, render_session_log :613); stable sort, golden byte-identical (no commit)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "applied"
+flow = "snoopy-beaming-lecun"
+id = "O2"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 233
+symbol = "render_to_string"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "render_to_string builds `out` with String::new() and no capacity hint — grows by doubling-reallocs through the whole render"
+description = "`let mut out = String::new()` (:233) reaches the final few-KB-to-~35KB markdown via repeated `push_str` reallocations (amortised O(1), but each doubling memcpys the whole buffer). Pre-size with an estimate, e.g. `String::with_capacity(2048 + items.len()*160)`, to sidestep the realloc chain. One allocation decision per invocation. Counter: an over-estimate wastes a transient few KB that mimalloc reclaims at process exit anyway."
+evidence = ["render_progress_log.rs:233 String::new() then push_str at :236,240,242,249,253,257 + per-row"]
+dedup_id = "dd9c93af99f29124"
+resolved = 2026-06-22
+resolution = "pre-sized out via String::with_capacity(2048 + items.len()*160) in render_to_string (no commit)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "applied"
+flow = "snoopy-beaming-lecun"
+id = "O3"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 240
+symbol = "render_to_string"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "Throwaway format! for the H1 title allocates a temp String only to copy into `out`; push_str/write! avoids it"
+description = "Line 240 `out.push_str(&format!(...))` heap-allocates a temp String purely to copy it into `out` and drop it. Replace with successive `push_str`/`push`, or `write!(out, ...)` via `std::fmt::Write`. Free win, independent of the rest. The format! calls in the cell helpers (:292/:321/:334/:635) return owned cells the current Vec<Vec<String>> design needs, so they only disappear if O4 (streaming push_row) is adopted."
+evidence = [
+    "render_progress_log.rs:240 single throwaway format! into push_str",
+    "std::fmt::Write — write! formats into an existing String with no temp",
+]
+dedup_id = "59858fc36d5bed37"
+resolved = 2026-06-22
+resolution = "H1 title emitted via successive push_str/push instead of throwaway format! at :240 (no commit)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "wontapply"
+flow = "snoopy-beaming-lecun"
+id = "O4"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 444
+symbol = "render_completed / render_deviations / render_deferrals / render_session_log"
+severity = "suggestion"
+effort = "medium"
+category = "memory"
+summary = "Each render fn materialises a Vec<Vec<String>> of cells only to copy them into `out` via push_row, then drops them"
+description = "The four render fns build a `Vec<Vec<String>>` (one outer Vec, one inner Vec per row, one heap String per cell via to_string/format!/clone) that `emit_table`/`push_row` (:383-442) immediately copies into `out` and frees — pure staging. A streaming `push_row` taking `&str`/`Display` would let `id_of`/`str_field` (which already return &str) flow in borrowed, eliminating most per-cell Strings. Effort medium: must thread the column count + the empty-cell rule (:433 empty cell renders ` |` not `  |`) through the new signature and keep golden output byte-identical. Allocation hygiene at this scale, not a latency fix."
+evidence = [
+    "render_progress_log.rs:444-458 rows: Vec<Vec<String>> built then consumed at emit_table",
+    "render_progress_log.rs:430-442 push_row already copies via push_str",
+    "str_field (:275) and id_of (:307) already return &str",
+]
+dedup_id = "8750b86b38beab28"
+wontapply_rationale = "requires deliberate refactor - allocation-hygiene only with no measurable gain, and high risk to byte-identical output (empty-cell spacing at :433, empty-state row, header/separator column-count all depend on the &[Vec<String>] contract); not worth it at this scale. O3/O5 applied standalone instead."
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "applied"
+flow = "snoopy-beaming-lecun"
+id = "O5"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 644
+symbol = "render_session_log"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "commits union does .iter().cloned().collect::<Vec<_>>().join — clones every SHA into a throwaway Vec; joining over &str avoids it"
+description = 'Lines 640-645 do `b.commits.iter().cloned().collect::<Vec<_>>().join(", ")` — `cloned()` deep-copies each SHA String and `collect` allocates a Vec only to call `join`. Since `BTreeSet` already iterates sorted, `b.commits.iter().map(String::as_str).collect::<Vec<&str>>().join(", ")` joins over borrows (no per-SHA clone). Per day-bucket this is k clones (k = distinct commits that day, small). The adjacent `changes_parts` join (:632-637) is owned format! strings, so its clone is unavoidable without restructuring.'
+evidence = [
+    "render_progress_log.rs:640-645 .cloned().collect::<Vec<_>>().join",
+    "BTreeSet iterates in sorted order (comment at :639)",
+]
+dedup_id = "91e4b3541fa97c3a"
+resolved = 2026-06-22
+resolution = "Session-Log commits join over &str (map(String::as_str)) instead of cloning each SHA; BTreeSet still sorted (no commit)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "applied"
+flow = "snoopy-beaming-lecun"
+id = "O6"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 609
+symbol = "render_session_log / SessionBucket::bump_type"
+severity = "suggestion"
+effort = "small"
+category = "algorithm"
+summary = "Session-log bucketing is O(items*distinct_dates) via buckets.iter_mut().find, plus a per-item ty.to_string(); exploit the contiguous date-sort and pass &str"
+description = "For each item `buckets.iter_mut().find(|b| b.date == day)` (:609) linear-scans buckets -> O(items*distinct_dates), worst case O(n^2). But `sorted` is already sorted by date (:601), so same-date rows are CONTIGUOUS — checking only `buckets.last()` (push new bucket iff its date differs, else `last_mut`) is O(1)/item with zero ordering loss and no map allocation (strictly better than a BTreeMap/IndexMap rekey, which Agent 2 floated). Separately, :617 does `str_field(it,type).to_string()` unconditionally; `bump_type` (:677) could take `&str` and allocate only on the not-seen branch. Benign at this scale (few distinct dates, ~7 fixed type values). Risk: relies on `sorted` staying date-primary-sorted."
+evidence = [
+    "render_progress_log.rs:609 bucket linear find",
+    "render_progress_log.rs:617 ty.to_string() per item",
+    "render_progress_log.rs:601 sort makes same-date rows contiguous",
+]
+dedup_id = "a6890c587e5a0d87"
+resolved = 2026-06-22
+resolution = "contiguous-date bucket via buckets.last()/last_mut() replacing per-item linear find; bump_type takes &str and allocates only on the not-seen branch (no commit)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "wontapply"
+flow = "snoopy-beaming-lecun"
+id = "O7"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 226
+symbol = "render_to_string"
+severity = "suggestion"
+effort = "medium"
+category = "algorithm"
+summary = "items is traversed+sorted 4 independent times (3x sorted_by_type + session-log sort); sort-once-then-filter could back all four tables"
+description = "`render_to_string` drives 3 `sorted_by_type` filter+sorts (completed/deviation/deferral) plus `render_session_log`'s own full sort — 4 passes + 4 sorts over n. Filtering a sorted slice preserves order, so one `entry_sort_key` sort of all items could back all four tables (`sorted.iter().filter(|it| type==ty)` per table), collapsing 4 sorts to 1. Asymptotically unchanged (O(n log n)); constant-factor win is small at n~100. Counter (the agent's own): the per-table `sorted_by_type` helper is self-documenting and the file's ethos is determinism/testability — the clarity cost of a fused pass likely outweighs the saved sorts. If pursued, do only the cheap half (reuse the session-log sort), keep the helper otherwise. Related to O1."
+evidence = [
+    "render_progress_log.rs:226 four independent passes/sorts",
+    "filtering a sorted slice preserves the sort order",
+]
+related = ["O1"]
+dedup_id = "df82a8e53334c356"
+wontapply_rationale = "requires deliberate refactor - marginal constant-factor gain at n=~100 does not justify fusing the passes; the typed tables are not pure type-splits of one sort (render_completed also filters status==done, render_deviations runs supersession_tips over its subset), and sorted_by_type stays self-documenting."
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "wontapply"
+flow = "snoopy-beaming-lecun"
+id = "O8"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 110
+symbol = "dispatch"
+severity = "suggestion"
+effort = "trivial"
+category = "serialization"
+summary = "dispatch envelope builds a serde_json::Value tree via json! only to serialise once; a derive(Serialize) struct skips the intermediate Value"
+description = "The `json!({...})` envelope (:110-119) materialises a serde_json::Value (IndexMap-backed under preserve_order) purely to hand to `print_json_compact` -> `to_writer`; the serde_json serializer docs note serialising data directly is more performant than going through Value. A `#[derive(Serialize)]` struct would serialise straight to the writer. Also :112 `progress_log_path.display().to_string()` allocates a String `to_writer` could stream. Counter (the agent's own): fires once per invocation over 4 leaves, and `json!` is markedly more readable — keep it unless converting envelopes project-wide (same calculus at dispatch.rs:374 write_envelope). Marginal."
+evidence = [
+    "serde_json serializer docs: serializing data directly is more performant than through the Value type",
+    "render_progress_log.rs:110-119 json! envelope",
+    "cli/dispatch.rs:374 write_envelope same pattern",
+]
+dedup_id = "2752136271e0e5fc"
+wontapply_rationale = "keep json! - converting one envelope in isolation contradicts the finding's own Counter and diverges from the crate-wide json! pattern (every other envelope uses json!); a project-wide envelope refactor is out of scope for this apply."
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "wontapply"
+flow = "snoopy-beaming-lecun"
+id = "O9"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 79
+symbol = "dispatch / maybe_verify_integrity"
+severity = "suggestion"
+effort = "small"
+category = "query"
+summary = "With --verify-integrity the execution-record file is read from disk twice — streamed for the SHA, then read+parsed again"
+description = "`maybe_verify_integrity` (:79) -> verify_integrity -> `sha256_hex_of_file` streams the whole record (integrity.rs:68-85) for its digest; then :84 `read_toml` reads the same bytes again and parses. So a verified render does 2 full disk reads of one file. This mirrors the crate-wide read_doc verify path (io.rs). A single-read refactor would fs::read_to_string once, hash the in-memory bytes for the sidecar compare, then toml::from_str the same buffer. Counter: --verify-integrity is opt-in (off by default), the <=35KB file is served from page cache on the 2nd read, and unifying changes a shared verify contract many dispatch arms depend on (blast radius exceeds this command). Verified accurate against the code."
+evidence = [
+    "render_progress_log.rs:79,84",
+    "integrity.rs:68-85 sha256_hex_of_file streams the file",
+    "io.rs read_doc: maybe_verify_integrity then read_toml (same pattern)",
+]
+dedup_id = "8575eebbaf4e7fe8"
+wontapply_rationale = "requires deliberate refactor - the clean fix is a crate-wide read_doc change shared by all dispatch arms; a local reimplementation would duplicate verify_integrity's sidecar logic (integrity.rs:152-207) and diverge from the shared maybe_verify_integrity+read_toml idiom. Benign double-read of a page-cached <=35KB file under an opt-in flag."
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "applied"
+flow = "snoopy-beaming-lecun"
+id = "O10"
+file = "tomlctl/src/flow/ensure_artifact.rs"
+line = 286
+symbol = "bootstrap_execution_record"
+severity = "suggestion"
+effort = "small"
+category = "query"
+summary = "Live --bootstrap writes body then reads it back from disk and SHA-256s it twice (refresh_sidecar + compute_report) though the bytes are already in memory"
+description = "The live bootstrap path: :288 `atomic_write(body)` -> :295 `refresh_sidecar` reads the file back (integrity.rs:135 fs::read) and hashes it -> :313 `compute_report` -> `sidecar_matches` (:227 sha256_hex_of_file) reads + hashes a THIRD time. The skeleton bytes are already in `body`, so both read-backs are redundant: `write_sidecar_for(artifact, body.as_bytes())` (which `write_toml_with_sidecar` already uses, hashing in-memory) skips the refresh read-back. Counter: --bootstrap is rare (once per flow) on a ~40-byte file, and compute_report's read-back is partly intentional — it reflects ACTUAL on-disk state so `sidecar_valid` stays honest if the warn-but-don't-escalate refresh branch fired. Verified accurate against the code."
+evidence = [
+    "ensure_artifact.rs:286-317 write -> refresh_sidecar -> compute_report",
+    "integrity.rs:123-150 refresh_sidecar fs::read back",
+    "ensure_artifact.rs:219-229 sidecar_matches re-hashes from disk",
+    "io.rs write_toml_with_sidecar hashes in-memory (the correct pattern)",
+]
+dedup_id = "d0a9579f717c3418"
+resolved = 2026-06-22
+resolution = "swapped refresh_sidecar (disk read-back) for crate::io::write_sidecar_for(artifact, body.as_bytes()) (in-memory hash) in bootstrap_execution_record live write; removed now-unused refresh_sidecar import; strict/warn handling preserved (no commit)"
+
+[[vet_events]]
+timestamp = "2026-06-22T12:59:53Z"
+command = "optimise"
+agent_index = 1
+lens = "memory"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 5 findings anchors verified against render_progress_log.rs (read in full). sort_by_cached_key std behaviour, the format!/BTreeSet/Vec-staging sites all confirmed in source. All suggestion-grade with honest Counter lines. 0 dropped, 0 downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T12:59:53Z"
+command = "optimise"
+agent_index = 2
+lens = "serialization"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 4 anchors verified. serde_json direct-vs-Value perf statement is a real doc claim; preserve_order confirmed genuinely required (R68). Findings dedup with Agent-1 into O1/O2/O3 + unique O6/O8. 0 dropped, 0 downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T12:59:53Z"
+command = "optimise"
+agent_index = 3
+lens = "query"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 3 verified against code: O9 double-read (integrity.rs:68 streams, then render_progress_log.rs:84 read_toml re-reads) and O10 bootstrap rehash (ensure_artifact.rs:227 third hash) both confirmed accurate including their Counter caveats. 0 dropped, 0 downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T12:59:53Z"
+command = "optimise"
+agent_index = 4
+lens = "algorithm"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 5 verified. 2 actionable (O1 sort, O6 contiguous-bucket); 3 examined-and-rejected by the agent (supersession_tips O(n^2) unreachable at real chain depth; bump_type O(1) over fixed ~7-value vocab) recorded as no-change, not laddered into ledger items. 0 dropped."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T12:59:53Z"
+command = "optimise"
+agent_index = 5
+lens = "concurrency"
+sampled_count = 0
+dropped_count = 0
+downgraded_count = 0
+rationale = "Empty finding set — correct/expected for a single-threaded synchronous CLI. Verified no in-invocation parallelisable I/O (render dispatch does 3 sequential KB reads; thread overhead dwarfs them) and threads exist only in #[cfg(test)]. Nothing to vet."
+dedup_id = "45ca31c3315a5978"

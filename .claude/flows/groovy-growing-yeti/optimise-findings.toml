@@ -1,0 +1,457 @@
+schema_version = 1
+last_updated = 2026-06-30
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "applied"
+flow = "groovy-growing-yeti"
+id = "O1"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 644
+symbol = "reap_exit"
+severity = "warning"
+effort = "medium"
+category = "concurrency"
+summary = "Clean child exit leaks the transport cancel task, ConPTY master/slave handles, and the JSONL tail + corpus tasks (reap_exit never cancels session.shutdown)"
+description = "reap_exit evicts the registry entry but never calls session.shutdown.cancel(), so the cancel task (pty_transport/mod.rs:666, owning master and the Windows slave) parks forever, and the detached JSONL render bridge + jsonl_tail::tail watcher + corpus drainer/writer (spawn.rs:342-582) never terminate. Circular liveness: tail only returns when its sole broadcast subscribers (the bridge/drainer) drop, and nothing drops them on a clean exit (verified jsonl_tail/mod.rs:325 + :408). One OS handle + one file-watcher + several parked tasks + the Arc<Session> leak per ended session; grows with session COUNT, not load. Fix: reap_exit cancels the removed session token, and select! the bridge/tail/corpus loops on shutdown.cancelled(). Escalates warning->critical under focus-1C autonomous churn; matches the documented Windows held-handle worktree-removal symptom."
+evidence = [
+    "lumina/server/src/pty/supervisor.rs:644",
+    "lumina/server/src/pty/pty_transport/mod.rs:662-678",
+    "lumina/core/src/jsonl_tail/mod.rs:325",
+    "lumina/core/src/jsonl_tail/mod.rs:408",
+]
+dedup_id = "fa5cf16ce5a646d5"
+resolved = 2026-06-30
+resolution = "reap_exit cancels the removed session's shutdown token; jsonl_tail::tail() made cancellable via an impl-Future shutdown (no tokio-util dep) — frees the PTY master/Windows-slave handles and unwinds the tail/render-bridge/corpus tasks on a clean exit (previously leaked per ended session). Files: supervisor.rs, core/jsonl_tail/mod.rs, spawn.rs."
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "applied"
+flow = "groovy-growing-yeti"
+id = "O2"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 263
+symbol = "dispatch_one"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "Idle+Ready session opens a BEGIN IMMEDIATE write txn every 250ms tick just to find an empty queue"
+description = "Once past the readiness grace, dispatch_gate returns Ready every tick, so dispatch_one calls Queue::pop_next_pending which (repo/pty.rs:702) opens db.begin() = BEGIN IMMEDIATE, taking the SQLite RESERVED writer lock, runs SELECT ... LIMIT 1, finds nothing, and commits an empty write txn. For each lingering Idle session this fires 4x/s and serialises against the render-bridge persist, the corpus writer, HTTP enqueues, and all /mcp domain writes on the shared lumina.db. Fix: peek with a non-transactional WAL read (concurrent, no lock); return early on None; open the write txn only to claim a present row (the supervisor is the sole popper, so peek-then-claim is race-free). Flagged independently by the queries and algorithm lenses."
+evidence = [
+    "lumina/server/src/pty/supervisor.rs:263",
+    "lumina/core/src/repo/pty.rs:702",
+]
+dedup_id = "9477bf2c8a836077"
+resolved = 2026-06-30
+resolution = "pop_next_pending_pty peeks via a non-transactional WAL read and opens the BEGIN IMMEDIATE write txn only to claim a present row (UPDATE ... WHERE id=? AND status='pending'; affected==0 -> None). The idle empty-queue path no longer opens an empty RESERVED-lock write txn each tick. File: core/repo/pty.rs."
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "applied"
+flow = "groovy-growing-yeti"
+id = "O3"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 586
+symbol = "reap_exit"
+severity = "warning"
+effort = "small"
+category = "query"
+summary = "reap_exit does a get_pty_session READ then a conditional ended-WRITE; collapse to one UPDATE ... WHERE ended_at IS NULL"
+description = "The already_terminal guard reads the row, checks ended_at.is_some(), then conditionally writes. A single UPDATE pty_sessions SET status=?, ended_at=?, exit_code=?, last_error=? WHERE id=? AND ended_at IS NULL returning rows_affected collapses two round-trips to one and closes the TOCTOU against a concurrent HTTP delete_pty_session (which also stamps ended_at): affected==1 means this reap stamped it, affected==0 means already terminal so preserve the diagnostic - exactly the current branch semantics, since reap evicts regardless of not-found."
+evidence = ["lumina/server/src/pty/supervisor.rs:586"]
+dedup_id = "c1f0a81699748685"
+resolved = 2026-06-30
+resolution = "reap_exit collapsed to one update_pty_session_ended_if_live (UPDATE pty_sessions ... WHERE id=? AND ended_at IS NULL): drops the get_pty_session read + conditional write and closes the TOCTOU vs a concurrent delete_pty_session (affected==1 stamped, 0 preserves diagnostic). Files: core/repo/pty.rs, supervisor.rs."
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "applied"
+flow = "groovy-growing-yeti"
+id = "O4"
+file = "lumina/server/src/pty/pty_transport/mod.rs"
+line = 445
+symbol = "PtyTransport::spawn (reader-blocking worker + drain bridge)"
+severity = "warning"
+effort = "medium"
+category = "memory"
+summary = "Every PTY read heap-copies up to 4 KiB into a Bytes the sole consumer discards; stamp first_output_at in the reader worker and delete the mpsc + drain bridge"
+description = "The reader-blocking worker does Bytes::copy_from_slice(&buf[..n]) per read and sends it down reader_tx; the drain-and-discard bridge (mod.rs:504-523) only stamps first_output_at once on the first non-empty chunk and drops everything. claude repaints a full TUI, so this is a hot per-chunk allocation for the session lifetime. Move the one-time stamp into the reader worker (it can hold the Arc<AtomicI64> clone), read-and-discard into the reused buf, and delete the per-chunk Bytes alloc, the 64-cap reader mpsc, and the spawned bridge task. Counter: a future live-terminal-mirroring consumer would need the channel back; today it is provably drain-and-discard."
+evidence = [
+    "lumina/server/src/pty/pty_transport/mod.rs:445",
+    "lumina/server/src/pty/pty_transport/mod.rs:504",
+]
+dedup_id = "a2599ef32f7df55d"
+resolved = 2026-06-30
+resolution = "reader-blocking worker now stamps first_output_at and reads-and-discards into the reused buf; deleted the per-chunk Bytes::copy_from_slice, the reader mpsc + drain-bridge task, and the dead READER_BRIDGE_CAP const. Readiness-signal timing preserved (stamp moved one hop earlier, still first non-empty PTY byte). File: pty_transport/mod.rs."
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "applied"
+flow = "groovy-growing-yeti"
+id = "O5"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 341
+symbol = "dispatch_one"
+severity = "warning"
+effort = "small"
+category = "serialization"
+summary = "dispatch_one builds the text-payload JSON twice (stringified for the DB row, Value for the broadcast) and clones the payload ~3x"
+description = "Line 341 builds serde_json::json!(text-payload).to_string() for the pty_messages row, line 367 rebuilds the same json! Value for the broadcast TypedMessage.content, plus entry.payload.clone() for raw_text. Build the Value once, to_string() it for the insert, then move it into the broadcast message; let raw_text move (it is the last use of payload). The whole 340-372 block also duplicates emit::persist_and_broadcast (the shared sequence-alloc + insert + broadcast helper) - routing through it collapses the double-build and the duplication (verify MessageKind::UserInput.as_wire()==user_input first). Flagged by the memory and serialization lenses."
+evidence = [
+    "lumina/server/src/pty/supervisor.rs:341",
+    "lumina/server/src/pty/supervisor.rs:367",
+    "lumina/server/src/pty/emit.rs:34",
+]
+dedup_id = "5cc642aaed52a3c2"
+resolved = 2026-06-30
+resolution = 'dispatch_one routes the user_input persist+broadcast through emit::persist_and_broadcast — the text-payload Value is built once and entry.payload moved into raw_text (last use). Verified MessageKind::UserInput.as_wire()=="user_input". File: supervisor.rs.'
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "applied"
+flow = "groovy-growing-yeti"
+id = "O6"
+file = "lumina/server/src/pty/pty_transport/mod.rs"
+line = 94
+symbol = "OUTBOUND_CAP / Transport::spawn"
+severity = "warning"
+effort = "trivial"
+category = "memory"
+summary = "A dead 1024-slot broadcast::<TypedMessage> ring (OUTBOUND_CAP) is allocated per session for a channel nothing ever sends on"
+description = "outbound_tx/outbound_rx are created at OUTBOUND_CAP=1024 (mod.rs:420); the only clone (_outbound_tx_keepalive) is a liveness pin, nothing ever sends, and spawn.rs:256 drops handle.outbound immediately. tokio::broadcast preallocates capacity slots (each an RwLock<Option<TypedMessage>>), so ~1024 dead slots per spawned session for a trait-compat channel. Drop OUTBOUND_CAP to 1 (zero behavioural change - never written) or make the Transport trait outbound optional so the dead channel disappears. If a future ACP/remote Transport revives outbound, restore the cap."
+evidence = [
+    "lumina/server/src/pty/pty_transport/mod.rs:94",
+    "lumina/server/src/pty/pty_transport/mod.rs:420",
+    "lumina/server/src/pty/spawn.rs:256",
+]
+dedup_id = "fbbb6fed56ceeefa"
+resolved = 2026-06-30
+resolution = "OUTBOUND_CAP 1024 -> 1: the broadcast<TypedMessage> ring is a dead trait-compat stub nothing produces into; held at the minimum legal capacity. Zero behavioural change. File: pty_transport/mod.rs."
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "applied"
+flow = "groovy-growing-yeti"
+id = "O7"
+file = "lumina/server/src/pty/spawn.rs"
+line = 578
+symbol = "spawn_pty_session_internal JSONL render bridge"
+severity = "warning"
+effort = "trivial"
+category = "concurrency"
+summary = "Render bridge silently drops JSONL records on broadcast Lagged(_), losing pty_messages rows with no log"
+description = "The render bridge does a DB write per record (persist_and_broadcast), so under SQLite-writer contention it can fall >1024 behind jsonl_tx and lag; Err(RecvError::Lagged(_)) => continue discards the records with a bare _. Unlike the corpus drainer (unbounded AND logs the drop at spawn.rs:437), this bridge is the SOLE writer of pty_messages from JSONL, so a >1024 burst behind permanently holes the persisted message list and the live WS. session_records still holds them (unbounded corpus), so the data is recoverable but pty_messages is not. Minimum: log the dropped count (mirror :437); better: emit a synthetic gap marker (the WS Skipped frame fires only for a lagging WS subscriber, a different hop)."
+evidence = [
+    "lumina/server/src/pty/spawn.rs:578",
+    "lumina/server/src/pty/spawn.rs:437",
+]
+dedup_id = "0496412e73d5e612"
+resolved = 2026-06-30
+resolution = "render bridge logs the broadcast Lagged(n) dropped-pty_messages count (it is the sole JSONL->pty_messages writer; corpus retains the rows but pty_messages + live WS are holed) instead of silently continuing. File: spawn.rs."
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "applied"
+flow = "groovy-growing-yeti"
+id = "O8"
+file = "lumina/server/src/pty/spawn.rs"
+line = 387
+symbol = "jsonl_tx broadcast / BroadcastRecord"
+severity = "warning"
+effort = "medium"
+category = "memory"
+summary = "Each JSONL record is deep-cloned per broadcast subscriber (verbatim raw String + owned parse tree); wrap parsed in Arc"
+description = "jsonl_tail::tail sends BroadcastRecord into a 1024-cap broadcast and tokio clones T to each receiver (currently 2: render bridge + corpus drainer); BroadcastRecord.parsed is JsonlRecordParsed::Known{raw:String, record} (core/parse.rs:153), both deep-Clone, so a large tool_result raw line is copied twice per record. Both consumers only borrow (map_record_to_typed(&parsed), corpus_raw(&rec.parsed)). Wrap as parsed: Arc<JsonlRecordParsed> so fan-out and the ring hold refcounts. CROSS-CRATE: touches the in-scope spawn.rs subscribers + the OUT-OF-SCOPE core type (lumina/core/src/jsonl_tail) + tail() send site. Counter: confirm raw sizes are non-trivial in practice before changing."
+evidence = [
+    "lumina/server/src/pty/spawn.rs:387",
+    "lumina/core/src/jsonl_tail/parse.rs:153",
+]
+dedup_id = "60cf2635430a42f4"
+resolved = 2026-06-30
+resolution = "BroadcastRecord.parsed wrapped in Arc<JsonlRecordParsed> so the broadcast fan-out + ring hold refcounts instead of deep-cloning the multi-KB raw line per receiver; all consumers borrow unchanged via deref coercion. Files: core/jsonl_tail/mod.rs, spawn.rs (test construction sites)."
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O9"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 465
+symbol = "mark_startup_timed_out"
+severity = "suggestion"
+effort = "small"
+category = "query"
+summary = "Wedged-startup teardown lists the whole queue then mark_failed per pending entry (N+1); one bulk UPDATE WHERE status=pending"
+description = "Queue::list materialises every queue row, the loop keeps only status==pending, then issues one BEGIN IMMEDIATE mark_failed UPDATE per match. A single UPDATE pty_queue SET status='failed', completed_at=?, error=? WHERE session_id=? AND status='pending' does it in one txn with no row materialisation and tightens the consistency window (the wedged-startup message is identical for all entries). Rare failsafe path (only on zero PTY output by MAX_STARTUP_MS=45s, typically 1 pending entry), so this is cleanliness/atomicity, not a measurable win. Flagged by the queries and algorithm lenses."
+evidence = ["lumina/server/src/pty/supervisor.rs:465"]
+dedup_id = "add843aaea23e919"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O10"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 261
+symbol = "dispatch_one / maybe_finalise_turn"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "session.id.to_string() heap-allocates a 36-byte UUID every tick on the no-op paths before the early-return guards"
+description = "dispatch_one binds session_id_str (261) then often returns on pop_next_pending Ok(None); maybe_finalise_turn binds it (504) then usually returns early (outstanding>0, last_ms==0, threshold not met) - so an Idle-at-rest or Awaiting-mid-turn session allocates the String 4x/s indefinitely. Stack-encode the uuid: let mut b=[0u8; uuid::fmt::Hyphenated::LENGTH]; let id = session.id.0.hyphenated().encode_lower(&mut b); yields a &str for the queries/logs with zero heap (tracing fields are already lazy - the String is the cost). Flagged by the memory and algorithm lenses."
+evidence = [
+    "lumina/server/src/pty/supervisor.rs:261",
+    "lumina/server/src/pty/supervisor.rs:504",
+]
+dedup_id = "c3ae853ec9a730e6"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O11"
+file = "lumina/server/src/pty/session.rs"
+line = 30
+symbol = "Session::broadcast_tx"
+severity = "suggestion"
+effort = "medium"
+category = "memory"
+summary = "Registry-side broadcast::Sender<TypedMessage> fans out by value (deep-clones the Value content per subscriber + retains owned msgs in the 1024 ring); use Arc<TypedMessage>"
+description = "broadcast::Sender<TypedMessage> clones the value per subscriber on send, and the ring holds up to BROADCAST_CAPACITY=1024 owned TypedMessages (each a heap Value tree + Strings) regardless of subscriber count. broadcast::Sender<Arc<TypedMessage>> makes each fan-out an Arc bump and the ring hold pointers. Touches the Session field, emit::persist_and_broadcast, dispatch_one send, and the WS subscriber in http/pty_sessions/ws.rs. Distinct from O8 (that is the jsonl_tail BroadcastRecord channel; this is the registry-side TypedMessage fan-out). Marginal at ~1 WS subscriber and human/model-paced rates; the durable win is the ring memory."
+evidence = [
+    "lumina/server/src/pty/session.rs:30",
+    "lumina/server/src/pty/session.rs:137",
+]
+dedup_id = "7a3091a38e5d2217"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O12"
+file = "lumina/core/src/jsonl_tail/parse.rs"
+line = 228
+symbol = "record_index_fields"
+severity = "suggestion"
+effort = "small"
+category = "serialization"
+summary = "Each corpus line is re-parsed into a full serde_json::Value just to pull ts/is_sidechain (already typed-parsed once by parse_line)"
+description = "parse_line already deserialises the line into the typed JsonlRecord; record_index_fields then does serde_json::from_str::<Value>(raw) (parse.rs:228 for the Known arm) - a second full-tree parse of the same line - solely to recover timestamp + isSidechain, which the typed variants do not model. Runs on the corpus-write path for every non-empty spawned-session record. Add #[serde(rename=timestamp)] ts: Option<String> and #[serde(rename=isSidechain, default)] is_sidechain: bool to the JsonlRecord variants so the single typed parse yields them. OUT OF FLOW SCOPE: lives in lumina/core/src/jsonl_tail (not lumina/server/src/pty/**) - surfaced because the in-scope corpus path drives it; the UnknownRaw arm still needs its Value parse. Counter: cheap at model-paced rates; scales only on long autonomous sessions; touches the parse tests."
+evidence = ["lumina/core/src/jsonl_tail/parse.rs:228"]
+dedup_id = "563ec08311aaf286"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O13"
+file = "lumina/server/src/pty/spawn.rs"
+line = 306
+symbol = "spawn_pty_session_internal (initial-prompt seed)"
+severity = "suggestion"
+effort = "trivial"
+category = "query"
+summary = "Initial-prompt seeding does Queue::list().map(rows.len()) to derive the next sequence on a provably-empty queue"
+description = "At step 5a' the session was created milliseconds earlier (step 3) and its queue is provably empty, so list() materialises zero rows and existing+1 is always 1. Use a literal sequence=1 (or SELECT COALESCE(MAX(sequence),0)+1 if defensiveness is wanted) to avoid the full-row SELECT and the Vec<PtyQueueEntry> allocation. Readability/intent more than measurable perf (the current call already loads 0 rows)."
+evidence = ["lumina/server/src/pty/spawn.rs:306"]
+dedup_id = "a9c080274cfea2d6"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O14"
+file = "lumina/server/src/pty/spawn.rs"
+line = 653
+symbol = "persist_corpus_records"
+severity = "suggestion"
+effort = "medium"
+category = "query"
+summary = "The <=256-row corpus batch inserts row-by-row; a multi-row INSERT ... VALUES cuts N statement steps to 1"
+description = "Each insert_session_record runs a separate tx.execute (SQLite reuses the cached prepared statement, so per-row cost is bind+step+reset). A multi-row VALUES collapses 256 steps to one. But the dominant cost - the single WAL fsync at tx.commit() - is already amortised by the batch, and a dynamic VALUES builder must chunk against SQLITE_MAX_VARIABLE_NUMBER (11 cols x 256 = 2816 params, under the 32766 default but worth bounding) and the args!/DbTx seam does not express it ergonomically. Marginal, off the interactive path; batch size 256 is well-sized. Defer unless corpus write throughput is profiled as a bottleneck."
+evidence = ["lumina/server/src/pty/spawn.rs:653"]
+dedup_id = "de7a1c9e342f4da8"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O15"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 234
+symbol = "tick_once (Idle arm)"
+severity = "suggestion"
+effort = "trivial"
+category = "algorithm"
+summary = "jiff::Timestamp::now() is read once per Idle session per tick; hoist to once per tick for N-1 fewer clock reads and a consistent instant"
+description = "now_ms is recomputed inside the per-session loop for each Idle session (234); maybe_finalise_turn reads its own now_ms (507). dispatch_gate is documented pure/deterministic, so reading the clock once per tick_once and passing it down removes N-1 reads and ensures two sessions in one tick are judged against the same instant (so they cannot straddle the readiness boundary within a tick). Cheap clock + small N, so this is consistency tidiness more than a measurable win."
+evidence = [
+    "lumina/server/src/pty/supervisor.rs:234",
+    "lumina/server/src/pty/supervisor.rs:507",
+]
+dedup_id = "08fdbc568f9d842d"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O16"
+file = "lumina/server/src/pty/pty_transport/mod.rs"
+line = 541
+symbol = "input-bridge (InputKind::Prompt)"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "The LF-to-CR translation collects a new Vec<u8> where it could mutate the owned String buffer in place"
+description = "frame.payload is owned; the code maps each LF byte to CR via into_bytes().into_iter().map().collect() - a second allocation. Instead reuse the existing allocation: take let mut bytes = frame.payload.into_bytes(); then overwrite LF bytes with CR in place over &mut bytes. Per-prompt (rare) and the buffer is then split for the separate-Enter path, so one saved alloc per submit, not hot."
+evidence = ["lumina/server/src/pty/pty_transport/mod.rs:541"]
+dedup_id = "896172ce5efae5cd"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O17"
+file = "lumina/server/src/pty/emit.rs"
+line = 37
+symbol = "persist_and_broadcast"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "persist_and_broadcast clones raw_text before the insert though tm is only moved into the broadcast after the awaited insert; borrow instead"
+description = "Line 37 clones tm.raw_text to satisfy the later tm move at line 61, but the insert (43-52) is fully awaited before send(tm), so it can borrow tm.raw_text.as_deref() with no overlapping move. Removes one String alloc per emitted message across all three producers (JSONL bridge, ask tool, answer endpoint). content_json already correctly borrows. Small (raw_text is None for tool_results; a short body otherwise). In scope: lumina/server/src/pty/emit.rs."
+evidence = [
+    "lumina/server/src/pty/emit.rs:37",
+    "lumina/server/src/pty/emit.rs:61",
+]
+dedup_id = "db87a75b790602f2"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O18"
+file = "lumina/server/src/pty/pty_transport/mod.rs"
+line = 434
+symbol = "reader/writer/child-wait spawn_blocking workers"
+severity = "suggestion"
+effort = "small"
+category = "concurrency"
+summary = "Each session pins 3 long-lived spawn_blocking threads for its lifetime; the default 512-thread blocking pool caps concurrent sessions at ~170"
+description = "reader read(), writer blocking_recv(), and child.wait() each hold a blocking-pool thread for the whole session (not short ops that cycle back), so 3 threads/session against the default max_blocking_threads=512 yields a ~170-session ceiling beyond which new spawns and any other spawn_blocking stall. reader/writer are structurally blocking (portable-pty 0.8.1 exposes Box<dyn Read>/Box<dyn Write>, no async). The child-wait thread could be reclaimed by polling child.try_wait() on an async interval (~340 ceiling) at the cost of exit-detection latency + a per-session timer; or raise max_blocking_threads if high session counts are planned. Note in the focus-1C scheduler design; no change to the gate."
+evidence = [
+    "lumina/server/src/pty/pty_transport/mod.rs:434",
+    "lumina/server/src/pty/pty_transport/mod.rs:467",
+    "lumina/server/src/pty/pty_transport/mod.rs:623",
+]
+dedup_id = "210e50bc6ae3e6fd"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O19"
+file = "lumina/server/src/pty/spawn.rs"
+line = 417
+symbol = "corpus drainer unbounded_channel"
+severity = "suggestion"
+effort = "trivial"
+category = "concurrency"
+summary = "Unbounded corpus buffer is the correct trade-off; add only a high-watermark tracing::warn! (do NOT bound it)"
+description = "The unbounded_channel backing the corpus can grow if the batched writer stalls, but bounding it would back-pressure the drainer, lag the 1024-cap broadcast, and reintroduce the exact R9 corpus loss it was built to close - so memory is the lesser evil. Growth is bounded in practice by claude JSONL append rate x writer-stall duration (small on a localhost WAL DB). The only defensible addition is observability: emit a tracing::warn! when corpus_buf_rx.len() crosses a high-watermark (e.g. 10k) so a pathological producer + stalled writer is visible before OOM. Validates the existing design."
+evidence = ["lumina/server/src/pty/spawn.rs:417"]
+dedup_id = "4d6287ea0d8923d4"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "open"
+flow = "groovy-growing-yeti"
+id = "O20"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 218
+symbol = "tick_once / dispatch_one"
+severity = "suggestion"
+effort = "medium"
+category = "concurrency"
+summary = "Head-of-line blocking: take the non-gating dispatch writes (audit insert + status persist) off the per-tick critical path so a slow tx cannot delay other sessions"
+description = "tick_once walks sessions sequentially in the single supervisor task; per Idle/Ready session dispatch_one does up to 3 serial SQLite writes through the single writer, so a contended write (up to the 5s busy_timeout) blocks the readiness re-eval + dispatch of all later sessions that tick. Do NOT parallelise with per-session tasks/join_all: SQLite is single-writer (parallelising adds no throughput) and it would forfeit the documented one-task invariant and widen the R15 TOCTOU. Defensible move: insert_pty_message (343) and the status persist (391) are not needed before the next session readiness check (the input frame is already sent), so reorder/offload them so dispatch latency is independent of DB contention. Latency-tail concern, not steady-state; measure tick duration under a multi-session run first."
+evidence = [
+    "lumina/server/src/pty/supervisor.rs:218",
+    "lumina/server/src/pty/supervisor.rs:343",
+]
+dedup_id = "22d110e6594ea861"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "optimise"
+agent_index = 1
+lens = "Memory"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked M1 (reader Bytes::copy_from_slice + drain bridge, mod.rs:445/504), M3 (id.to_string per tick, supervisor.rs:261/504), M4 (double json! build, supervisor.rs:341/367), M5 (LF->CR Vec, mod.rs:541) against full reads; all confirmed verbatim. Cross-checked M2 (BroadcastRecord deep-clone) against parse.rs:153 - JsonlRecordParsed::Known{raw,record} both derive Clone, confirmed. All Counter lines honestly calibrated to small-N localhost. 0 fabrications. Recorded as O4/O8/O10/O16; M6 (registry Vec snapshot) ruled keep-as-is, not recorded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "optimise"
+agent_index = 2
+lens = "Serialization"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked S2 (dispatch_one double-build, supervisor.rs:341/367), S3 (OUTBOUND_CAP dead 1024 ring - confirmed mod.rs:94/420, keepalive :502, drop spawn.rs:256), S5 (session.rs:30 broadcast_tx by value) against full reads; all confirmed. Cross-checked S1 (record_index_fields re-parse) against parse.rs:228 - second from_str::<Value>(raw) confirmed. S1/S6 reach into out-of-scope lumina/core (parse.rs/protocol.rs); S4 (emit.rs raw_text clone) is in pty/ scope. 0 fabrications. Recorded O5/O6/O11/O12/O17; S6 typed-content-enum well-countered, folded to report note."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "optimise"
+agent_index = 3
+lens = "Queries"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked Q1 (pop_next_pending opens BEGIN IMMEDIATE - confirmed repo/pty.rs:702 db.begin), Q2 (reap_exit read-then-write, supervisor.rs:586), Q4 (mark_startup_timed_out N+1, :465), Q5 (Queue::list().map(len) at spawn, spawn.rs:306), Q6 (persist_corpus_records row-by-row, :653) against full reads; all confirmed. Q7 index-coverage is a verified-good no-change note (migration 0008 partial index not independently re-read - low stakes, not recorded as a finding). 0 fabrications. Recorded O2/O3/O9/O13/O14; Q3 (3-txn dispatch) low-value per its own counter, folded to report note."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "optimise"
+agent_index = 4
+lens = "Algorithm"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked F1 (idle-tick DB poll = Q1 root), F3 (now_ms per-session at supervisor.rs:234), F5 (mark_startup filter-in-Rust = Q4), F6 (id.to_string per tick = M3) against full reads; all confirmed. Heavy intentional convergence with the memory and queries lenses (dedup applied). 2 items self-ruled-out (corpus batch Vec reuse already optimal; HashSets correctly bounded) - agreed, not recorded. 0 fabrications. Recorded O15 (jiff hoist); F1/F5/F6 merged into O2/O9/O10; F4 (readiness one-shot timer) folded to report note (both this lens and async ruled keep-the-poll)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "optimise"
+agent_index = 5
+lens = "Async"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked F1 (clean-exit leak - confirmed reap_exit:644 never cancels shutdown; cancel task mod.rs:666 holds master; tail circular-liveness verified jsonl_tail/mod.rs:325/408), F2 (render bridge Lagged silent drop, spawn.rs:578 vs corpus log :437), F3 (dispatch_one write sequence), F7 (lock-across-await audit - confirmed outstanding_tool_uses guard spawn.rs:505-529 has no await, ask-path locks never nested) against full reads; all confirmed. F1 is the highest-value finding of the run. 0 fabrications. Recorded O1/O7/O18/O19/O20; F6 (poll-vs-event) ruled keep-the-poll, folded to report note; F7 is a no-defect confirmation, not recorded."
+dedup_id = "45ca31c3315a5978"

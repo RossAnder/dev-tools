@@ -1,0 +1,152 @@
+schema_version = 1
+last_updated = 2026-06-30
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-06-30
+agent = "implement"
+summary = "flow status draft -> in-progress at implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "51e0f0174101dd18"
+
+[[items]]
+id = "E2"
+type = "deviation"
+date = 2026-06-30
+agent = "implement"
+task_ref = "build-run-the-throwaway-conpty-diagnostic-probe"
+summary = "Probe detects turns via PTY output + claude real projects dir, not the plan LUMINA_PTY_PROJECTS_ROOT/JSONL mechanism"
+original_intent = "Detect claude first JSONL by replicating pty_e2e temp LUMINA_PTY_PROJECTS_ROOT redirect, treating a delayed-prompt JSONL appearance as the suspect-#1 confirmation signal"
+rationale = "Real claude ignores LUMINA_PTY_PROJECTS_ROOT (pty_e2e redirects only the lumina watcher via a synthetic side-writer and never spawns real claude), and a short probe that hard-kills the child never observes claude incrementally-flushed JSONL. The probe instead watches the real ~/.claude/projects/<sanitised-cwd>/ dir for a fresh transcript, and confirmation is read from PTY output (Phase A: prompt wedged in input box, no turn; Phase B: spinner + model response) which is the reliable signal the fix itself uses. Suspect #1 CONFIRMED."
+commits = ["169316e"]
+dedup_id = "5dc131c309e30542"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-06-30
+agent = "implement"
+task_ref = "build-run-the-throwaway-conpty-diagnostic-probe"
+status = "done"
+files = [
+    "lumina/server/tests/pty_readiness_probe.rs",
+    "lumina/.config/nextest.toml",
+]
+commits = ["169316e"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Built the #[ignore]'d ConPTY readiness probe + nextest quick-exclude; ran vs real claude 2.1.196. CONFIRMED suspect #1 (immediate dispatch: prompt wedged unsubmitted, no turn; delayed: claude responds READY). Calibration for Tasks 2-3: fixed-grace signal; READY_DELAY_MS=2500 (T_first_output ~60ms, full-UI repaint ~1614ms, submission proven-good by ~3000ms); MAX_STARTUP_MS=45000."
+dedup_id = "a866378cd19d0d03"
+
+[[items]]
+id = "E4"
+type = "verification"
+date = 2026-06-30
+agent = "implement"
+task_ref = "plumb-the-pty-output-readiness-signal-onto-session"
+summary = "lumina quick test suite green at Task 2 checkpoint (792 passed, 0 failed)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile quick"
+outcome = "pass"
+dedup_id = "3b56355531a2ce80"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-06-30
+agent = "implement"
+task_ref = "plumb-the-pty-output-readiness-signal-onto-session"
+status = "done"
+files = [
+    "lumina/server/src/pty/session.rs",
+    "lumina/server/src/pty/transport.rs",
+    "lumina/server/src/pty/pty_transport/mod.rs",
+    "lumina/server/src/pty/spawn.rs",
+    "lumina/server/src/pty/supervisor.rs",
+    "lumina/server/src/pty/registry.rs",
+    "lumina/server/src/pty/ask.rs",
+    "lumina/server/src/http/pty_sessions/ask.rs",
+    "lumina/server/tests/auq_e2e.rs",
+    "lumina/server/tests/e2e.rs",
+]
+commits = ["44b5221"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+scope_warning = true
+summary = "Added first_output_at (Arc<AtomicI64>, stamped by the drain bridge on first PTY output) + spawned_at_ms to Session, threaded via TransportHandle; updated all 9 call/construction sites. clippy clean; checkpoint suite 792/792. http/pty_sessions/ask.rs touched for the signature ripple (out of pty/** scope)."
+dedup_id = "7d043cbb7e18e605"
+
+[[items]]
+id = "E6"
+type = "verification"
+date = 2026-06-30
+agent = "implement"
+task_ref = "add-the-supervisor-dispatch-gate-mark-failed-failsafe-regression-test"
+summary = "lumina quick test suite green at Task 3 checkpoint (798 passed, 0 failed; +6 new supervisor gate tests, no dispatch regression)"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile quick"
+outcome = "pass"
+dedup_id = "da97ae53832ed3c0"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-06-30
+agent = "implement"
+task_ref = "add-the-supervisor-dispatch-gate-mark-failed-failsafe-regression-test"
+status = "done"
+files = ["lumina/server/src/pty/supervisor.rs"]
+commits = ["3bb2b65"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Gated tick_once Idle->dispatch_one on a pure dispatch_gate(first_output_at,spawned_at_ms,now_ms) predicate (fixed-grace READY_DELAY_MS=2500); mark_startup_timed_out failsafe marks Failed at MAX_STARTUP_MS=45000 with zero output; 6 new tests (4 pure-predicate arms + tick_once hold-then-dispatch + startup-timeout). clippy clean; checkpoint suite 798/798."
+dedup_id = "c22d686c5fd5d5cb"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-06-30
+agent = "implement"
+task_ref = "document-the-readiness-gate-fix-doc-drift"
+status = "done"
+files = [
+    "lumina/CLAUDE.md",
+    "lumina/server/src/pty/pty_transport/mod.rs",
+]
+commits = ["36daea3"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Documented the PTY readiness gate in lumina/CLAUDE.md (PTY-output signal, JSONL-deadlock rationale, MAX_STARTUP_MS failsafe, re-verify probe command); corrected portable-pty 0.9->0.8.1 prose in CLAUDE.md (2) + pty_transport/mod.rs comments (5), per the plan research note flagging both files. Vetted: gate paragraph + 7 version fixes, no code changed."
+dedup_id = "60647b022effb08e"
+
+[[items]]
+id = "E9"
+type = "verification"
+date = 2026-06-30
+agent = "implement"
+task_ref = "phase-3-final-verification"
+summary = "Phase 3 final lint: workspace clippy clean (exit 0); only 2 pre-existing out-of-scope warnings in trust.rs; the probe to_path_buf warning fixed in commit a246e5f"
+command = "cargo clippy --workspace --manifest-path lumina/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "b254d9fcd004fce6"
+
+[[items]]
+id = "E10"
+type = "verification"
+date = 2026-06-30
+agent = "implement"
+task_ref = "phase-3-final-verification"
+summary = "Phase 3 final test: full ci suite 800 passed, 1 skipped (the ignored probe); real-claude pty_e2e passed in 4.9s, validating the gate end-to-end vs claude 2.1.196"
+command = "cargo nextest run --manifest-path lumina/Cargo.toml --profile ci"
+outcome = "pass"
+dedup_id = "036a7e575bf44714"
+
+[[items]]
+id = "E11"
+type = "status-transition"
+date = 2026-06-30
+agent = "plan-update"
+summary = "All 4 plan tasks complete and verified (probe + signal + gate + docs); implementation finished, awaiting review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "1ccf0faaeb475e93"

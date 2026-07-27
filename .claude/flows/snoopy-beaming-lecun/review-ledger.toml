@@ -1,0 +1,574 @@
+schema_version = 1
+last_updated = 2026-06-22
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R1"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 57
+symbol = "dispatch"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "render-progress-log never validates --slug, so a traversal slug escapes .claude/ for both the read and the unguarded write"
+description = "dispatch passes the raw CLI slug straight to execution_record_path_for(slug) (init.rs joins .claude/flows/<slug>/...) with no validate_slug call — every other slug entrypoint (init, ensure_artifact, active) validates against the ^[a-z0-9][a-z0-9-]{0,63}$ regex first. A slug like ../../../../tmp/x resolves the record path outside .claude/: the read_toml at line 72 becomes a file-existence + parse-error-snippet oracle for arbitrary paths, and the write at line 92 is a bare atomic_write with NO guard_write_path and NO recheck_claude_containment, so a PROGRESS-LOG.md is written into the traversed dir with no --allow-outside opt-out. The write primitive is bounded (it only fires where a sibling execution-record.toml already exists), but the read oracle is general. Fix: validate_slug at the top of dispatch and route the write through the guarded pipeline."
+evidence = [
+    "tomlctl/src/flow/render_progress_log.rs:57",
+    "tomlctl/src/flow/render_progress_log.rs:72",
+    "tomlctl/src/flow/render_progress_log.rs:92",
+    "tomlctl/src/flow/init.rs:338",
+]
+related = ["R19"]
+dedup_id = "a8599d7d0f5f9fab"
+resolved = 2026-06-22
+resolution = "Validate --slug via init::validate_slug before path resolution + plan_path containment check; closes the traversal read-oracle and unguarded write (a5da8e5)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R2"
+file = "tomlctl/tests/fixtures/render/execution-record.toml"
+line = 0
+symbol = "render_matches_golden_progress_log"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Deviations and Deferrals table data-row logic is entirely untested — the golden fixture has zero deviation/deferral items"
+description = "The only golden fixture contains solely status-transition / task-completion / verification items, so the golden PROGRESS-LOG.md renders (none) rows for both Deviations and Deferrals. The most logic-dense paths in the renderer — render_deviations' supersession-head filtering and Supersedes cell, and render_deferrals' six-column derivation — execute against ZERO real rows in any test. A supersession-filter or column-ordering regression would ship green. Add a fixture (or a direct render_to_string unit test, since it is pure and pub(crate)) exercising multi-row deviation + deferral tables."
+evidence = [
+    "tomlctl/tests/fixtures/render/execution-record.toml:1",
+    "tomlctl/src/flow/render_progress_log.rs:401",
+]
+related = ["R3"]
+dedup_id = "27e6ce1ef2fd7ec6"
+resolved = 2026-06-22
+resolution = "Extended golden fixture with deviation/deferral/supersession-chain/2nd-date rows and regenerated the PROGRESS-LOG.md golden so both tables render real rows (e40304d)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R3"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 407
+symbol = "render_deviations"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Supersession 'latest-per-chain' is implemented as 'drop any id pointed at by a supersedes_entry' — forked/re-pointed chains render multiple heads"
+description = "render_deviations builds the superseded set from every supersedes_entry value and keeps every entry whose id is not in it. If two entries both supersede E4, neither is itself superseded, so BOTH render as separate rows — there is no 'pick the latest by (date,id) among competing heads' step the plan's 'latest-per-supersession-chain' (plan line 173) implies. Separately, the Supersedes cell renders the raw supersedes_entry verbatim, so if it points at an id that was itself pruned, the table shows a dangling reference to a row that is absent. Both are correctness/clarity gaps in the exact table R2 shows is untested."
+evidence = [
+    "tomlctl/src/flow/render_progress_log.rs:407",
+    "docs/plans/snoopy-beaming-lecun.md:173",
+]
+related = ["R2"]
+dedup_id = "2ac5b871b3b517c4"
+resolved = 2026-06-22
+resolution = "render_deviations now renders the latest tip per supersession chain (fork-collapsing) via supersession_tips (a5da8e5)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "wontfix"
+flow = "snoopy-beaming-lecun"
+id = "R4"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 328
+symbol = "emit_table"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Render separator widths diverge from the pre-existing on-disk PROGRESS-LOG.md; the golden fixture was authored to match the renderer, leaving plan-constraint P1 unproven"
+description = "P1 says the render is 'verified against harness-progressive-disclosure-wave-2/PROGRESS-LOG.md' and must 'match the established on-disk format'. The real file's Deferrals separator (line 37, 14/17 dashes) differs from the renderer's width-matched output (15/18 dashes) — confirmed by direct diff. The committed golden fixture matches the renderer, not the real file, so render_matches_golden_progress_log proves self-consistency, not fidelity to the pre-existing corpus, and the first render-progress-log run on a real flow rewrites the separator line (GFM-equivalent but a non-no-op diff). The code comment at render_progress_log.rs:331-336 shows this is deliberate — so the fix is a decision: either accept that the renderer now defines the canonical format (and say so / regenerate the corpus) or match the established widths."
+evidence = [
+    "tomlctl/tests/fixtures/render/PROGRESS-LOG.md:37",
+    "tomlctl/src/flow/render_progress_log.rs:328",
+]
+related = ["R18"]
+dedup_id = "12c38d6062f4b0c0"
+wontfix_rationale = "The renderer emits GFM-correct width-matched separators; the historical on-disk corpus's hand-authored off-by-one is cosmetic and GFM-equivalent. The renderer is now the canonical format authority (documented via R18). No code change; regenerating the out-of-scope historical corpus is unwarranted. Orchestrator decision during /review-apply 2026-06-22."
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R5"
+file = "tomlctl/src/flow/ensure_artifact.rs"
+line = 254
+symbol = "bootstrap_execution_record"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "seed_doc_for single-source is incomplete and not test-guarded: a third skeleton definition survives and the byte-identity test never invokes a real bootstrap fn"
+description = '''P2/T1 required routing bootstrap_execution_record through seed_doc_for so the execution-record skeleton has exactly one definition. flow/init.rs's copy was routed, but flow/ensure_artifact.rs has its OWN bootstrap_execution_record that still writes a literal format!("schema_version = 1\nlast_updated = {today}\n") via today_utc_iso() — a third, independent skeleton. Compounding this, the seed_doc_for_matches_bootstrap_bytes test reconstructs `expected` from a literal of the same shape rather than calling flow::init::bootstrap_execution_record (or the ensure_artifact one), so if either bootstrap stopped routing through seed_doc_for the test would still pass. The single-source invariant is therefore neither complete nor cross-checked. Route ensure_artifact through seed_doc_for and assert_eq! the seed render against the real bootstrap output.'''
+evidence = [
+    "tomlctl/src/flow/ensure_artifact.rs:254",
+    "tomlctl/src/cli/dispatch.rs:2208",
+]
+dedup_id = "785a941f688640d6"
+resolved = 2026-06-22
+resolution = "Routed ensure_artifact bootstrap through cli::seed_doc_for; byte-identity test asserts against a real init::execution_record_skeleton path (5fd7fcd)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R6"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 1351
+symbol = "ItemsOp::BackfillDedupId"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "backfill-dedup-id cannot auto-create (pre-lock read errors NotFound first) yet docs list it in the auto-create family"
+description = "The backfill arm does a pre-lock read_doc(&file)? at dispatch.rs:1351 that propagates NotFound BEFORE the mutate_doc_plan seed path is reached, so `created` is structurally always false (the code comment at 1387-1396 admits this). But CLAUDE.md's 'Auto-create on first write' prose and tomlctl SKILL.md both name the `items backfill-dedup-id` family among verbs that 'CREATE a missing target file by default'. Either make backfill honour --no-create/auto-create like the other plan-path verbs, or document it as an explicit exception (backfill on an empty file is a no-op anyway). Today it is an undocumented divergence between behaviour and the user-facing docs."
+evidence = [
+    "tomlctl/src/cli/dispatch.rs:1351",
+    "tomlctl/src/cli/dispatch.rs:1387",
+]
+related = ["R13"]
+dedup_id = "619abd2460c95315"
+resolved = 2026-06-22
+resolution = "Excluded backfill-dedup-id from the auto-create family in CLAUDE.md + tomlctl SKILL.md with a by-design exception note (22b23a8)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R7"
+file = "claude/skills/flow-contract-execution-record-schema/SKILL.md"
+line = 184
+symbol = "Read-path integrity contract"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "execution-record-schema skill retains stale '/plan-new bootstrap via integrity refresh after the initial Write (step 7)' prose, contradicting the auto-create note one line below"
+description = "Line 184 still describes /plan-new's bootstrap as materialising the sidecar 'via tomlctl integrity refresh immediately after the initial Write (see step 7 of the bootstrap)' — but the recovery note added at line 185 (this work) states the chokepoint now auto-creates the record, and /plan-new bootstraps via `tomlctl flow init`, not a Write+refresh sequence. The referenced 'step 7' no longer exists. T5's action updated the new note but left the contradicting prose above it, leaving the in-scope skill internally inconsistent. Reconcile line 184 to the flow-init / auto-create reality."
+evidence = ["claude/skills/flow-contract-execution-record-schema/SKILL.md:184"]
+dedup_id = "5209484e678f1653"
+resolved = 2026-06-22
+resolution = "Reconciled stale /plan-new integrity-refresh bootstrap prose to flow init + auto-create; removed the dead step-7 reference (22b23a8)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R8"
+file = "claude/commands/plan-new.md"
+line = 99
+symbol = "execution-record bootstrap"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "plan-new.md carries the sole surviving 'render-from-log routine' reference plus stale Write+integrity-refresh bootstrap prose"
+description = "`rg -n 'render-from-log routine' claude/` returns exactly one hit: plan-new.md:99, which still tells the schema skill it loads a 'render-from-log routine' that no longer exists (the render is now a tomlctl command). plan-new.md:148 also enumerates the retired mkdir->Write->integrity refresh->Write->integrity refresh bootstrap dance. plan-new.md was deliberately OUT of the plan's declared carrier scope, so the sweep skipped it — but it fails the P6 negative-grep intent and now contradicts every other carrier. Update line 99 to cite `tomlctl flow render-progress-log` and line 148 to rely on `flow init` + auto-create."
+evidence = [
+    "claude/commands/plan-new.md:99",
+    "claude/commands/plan-new.md:148",
+]
+dedup_id = "e768450c76cdf26e"
+resolved = 2026-06-22
+resolution = "plan-new.md: render-from-log routine -> tomlctl flow render-progress-log; retired the Write+integrity-refresh bootstrap dance (22b23a8)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R9"
+file = "tomlctl/tests/integration.rs"
+line = 1750
+symbol = "items_add_to_missing_ledger_reports_created_true"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "T2 created/path integration assertions use loose .contains() substring matching instead of shape-pinned JSON parsing"
+description = 'Every T2 envelope assertion uses stdout.contains(r#"\"created\":true"#) / contains(r#"\"path\":"#) rather than parsing the JSON and asserting typed fields. This is exactly the exact-envelope .contains() drift footgun called out in project memory (commit 7649460): contains(r#"\"path\":"#) matches even when path is empty or malformed, and the bool match is brittle. The render write-mode test (render_progress_log.rs:182-189) already does serde_json::from_str + as_bool/as_u64 — mirror that on the write-side T2 tests so envelope-shape drift is actually caught.'
+evidence = [
+    "tomlctl/tests/integration.rs:1750",
+    "tomlctl/tests/integration.rs:1754",
+]
+dedup_id = "b0721b5e6dbfdc65"
+resolved = 2026-06-22
+resolution = "Replaced loose .contains() envelope assertions with parsed-JSON typed checks (ac75a75)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R10"
+file = "tomlctl/tests/integration.rs"
+line = 0
+symbol = "--no-create end-to-end"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "--no-create suppression is only tested at the clap-acceptance layer; no test confirms it actually returns NotFound and creates nothing"
+description = "no_create_flag_on_write_subcommands_only (dispatch.rs:2270) verifies clap accepts --no-create on writes and rejects it on reads, and io.rs unit mutate_doc_on_missing_error_propagates_not_found_and_creates_nothing covers the OnMissing::Error primitive — but nothing drives `tomlctl items add <missing> --no-create` through the binary to assert it errors AND leaves no file. The --no-create -> on_missing_for -> OnMissing::Error wiring (dispatch.rs:322) is untested end-to-end, so plan test (b) is only half-covered."
+evidence = [
+    "tomlctl/src/cli/dispatch.rs:2270",
+    "tomlctl/src/cli/dispatch.rs:322",
+]
+dedup_id = "4009bd190d47d4f5"
+resolved = 2026-06-22
+resolution = "Added e2e test: items add --no-create on a missing ledger errors not_found and writes nothing (ac75a75)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R11"
+file = "tomlctl/tests/integration.rs"
+line = 0
+symbol = "mutate_doc_plan created-reporting"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "The mutate_doc_plan variant's created reporting (apply/remove against a missing file) is never integration-tested though plan T2(d) required it"
+description = "The integration `created` assertions exercise only `items add` (mutate_doc_conditional) and `set` (mutate_doc). No test drives `items apply --ops` or `items remove` against a missing file to confirm `created:true` threads through the plan path (mutate_doc_plan). Plan T2 acceptance (d) explicitly required 'a remove/apply report created correctly' — the exact P7 inconsistency risk the plan flagged is the path left uncovered."
+evidence = ["tomlctl/tests/integration.rs:1729"]
+dedup_id = "a527fed242249032"
+resolved = 2026-06-22
+resolution = "Added e2e tests for the mutate_doc_plan apply (created:true) and remove (errors, no stray file) paths on a missing ledger (ac75a75)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R12"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 540
+symbol = "run (write sites)"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "The on_missing_for + warn_if_created + {ok,created,path} envelope triple is copy-pasted across ~11 write sites"
+description = """Every mutate_doc* call site repeats: on_missing = on_missing_for(&file,&integrity)? -> created = mutate_doc*(...)? -> warn_if_created(&file,created) -> print_json_compact(json!({"ok":true,"created":created,"path":file.display()...})). The bare {ok,created,path} envelope literal appears verbatim at ~8 simple sites (Set/SetJson/Update/Remove/Apply) plus enriched variants. A small finish_write(file, created, extra_keys) helper would collapse the boilerplate and remove the risk of one site drifting on the created/path field names — exactly the envelope-drift class R9 shows the tests don't catch. The dedupe/add-many arms carry extra keys so full factoring is non-trivial; the 5 identical simple arms are the easy win."""
+evidence = [
+    "tomlctl/src/cli/dispatch.rs:546",
+    "tomlctl/src/cli/dispatch.rs:585",
+]
+dedup_id = "8423d2bfa681f61f"
+resolved = 2026-06-22
+resolution = "Extracted a write_envelope helper across the simple write arms; envelope shape unchanged (5fd7fcd)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R13"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 1373
+symbol = "BackfillDedupId no-op fast path"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "backfill no-op fast-path envelope omits the new created/path fields present on every other write exit"
+description = 'The no-op fast path emits {"ok":true,"backfilled":0} with neither created nor path, while the live backfill arm (1403) and all other write sites now include both. A consumer that learned to read created/path from a backfill response gets them only sometimes — an inconsistency across the two backfill exit branches.'
+evidence = [
+    "tomlctl/src/cli/dispatch.rs:1373",
+    "tomlctl/src/cli/dispatch.rs:1403",
+]
+related = ["R6"]
+dedup_id = "73b0f3a8b52b1356"
+resolved = 2026-06-22
+resolution = "backfill no-op fast-path envelope now carries created:false + path for shape consistency (5fd7fcd)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "wontfix"
+flow = "snoopy-beaming-lecun"
+id = "R14"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 322
+symbol = "on_missing_for"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "seed_doc_for eagerly computes today_toml_date() on every write even when the target exists and the seed is discarded"
+description = "on_missing_for builds OnMissing::Create(seed_doc_for(file)?) before mutate_doc* knows whether the file exists, so for the common case (file present) the seed — including the fallible today_toml_date() clock read — is computed and dropped. Because today_toml_date is fallible, a clock failure could abort a write to an EXISTING file that never needed a date. Impact is negligible (the read is cheap and rarely fails); the clean fix is lazy seed computation (compute-on-miss). Flagged as a correctness-surface nit, not a perf problem."
+evidence = ["tomlctl/src/cli/dispatch.rs:322"]
+dedup_id = "4d548fbd49d8e0a2"
+wontfix_rationale = "Lazy-seed requires reworking the OnMissing enum + the three mutate_doc* variants in io.rs for negligible benefit (today_toml_date is cheap and rarely fails) — a deliberate refactor, not a point-fix. Out of the cluster's file scope."
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R15"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 72
+symbol = "dispatch"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "A malformed/missing execution-record surfaces a raw parse/NotFound error from render with no actionable guidance"
+description = "read_toml(&record_path)? propagates the bare error: a missing record yields 'reading <path>: No such file', a corrupt one 'parsing <path>: <toml err>' — neither mentions flow init or that the flow must be initialised. As the agent-facing replacement for a hand-render routine and the new primary entrypoint agents hit (rendering before any execution-record write), a .with_context naming the flow and suggesting initialisation would materially improve the failure mode."
+evidence = ["tomlctl/src/flow/render_progress_log.rs:72"]
+dedup_id = "54a2f1e9ba5e28b0"
+resolved = 2026-06-22
+resolution = "Added .with_context naming the flow and suggesting flow init to the render record-read error (a5da8e5)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R16"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 231
+symbol = "date_cell / date_key"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "A date field carrying a full RFC3339 timestamp would render verbatim in the Date column and fragment Session-Log grouping per-second"
+description = "date_cell renders Datetime::to_string() for any Datetime, and date_key (used for both sort and the Session-Log group-by) uses the same string. The schema convention is bare dates (what seed_doc_for / today_toml_date produce), so this is latent — but a hand- or tool-written record carrying date = 2026-05-20T14:00:00Z would show the full timestamp in the table AND land in its own per-second Session-Log bucket, breaking the one-row-per-day grouping. Defensively truncate to the date component, or document the bare-date precondition."
+evidence = ["tomlctl/src/flow/render_progress_log.rs:231"]
+dedup_id = "6a9440bf7b6e1a7a"
+resolved = 2026-06-22
+resolution = "date_cell/date_key render the date component only, so a timestamped entry collapses to its day in the Date column and Session-Log grouping (a5da8e5)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R17"
+file = "tomlctl/src/flow/mod.rs"
+line = 26
+symbol = "pub(crate) mod time"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "flow::time was widened to pub(crate) wholesale when only today_toml_date is needed cross-module"
+description = "seed_doc_for only needs today_toml_date, but the change made the entire `mod time` pub(crate), exposing now / now_rfc3339 / today_utc_date / today_utc_iso / parse_iso_to_date / ParseDateError / set_now_for_test crate-wide. A targeted `pub(crate) use time::today_toml_date;` re-export from flow/mod.rs would be the minimal surface. Low blast radius (the real new cross-module consumer is exactly one), and the inline comment documents intent — flagged only as visibility hygiene."
+evidence = ["tomlctl/src/flow/mod.rs:26"]
+dedup_id = "7b4690936594f487"
+resolved = 2026-06-22
+resolution = "Narrowed flow::time to a today_toml_date pub(crate) re-export; updated the dispatch call site (5fd7fcd)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R18"
+file = "claude/skills/flow-contract-execution-record-schema/SKILL.md"
+line = 116
+symbol = "PROGRESS-LOG.md reference spec"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "The skill is declared the command's reference spec but under-specifies the separator-width rule the Rust solely owns, inviting spec/impl drift"
+description = "The skill positions itself as the reference spec the command implements, but the separator-row width derivation ((header.len()+2).max(3) GFM width-matching) exists ONLY in the Rust and its inline comment — the spec's column lists and empty-state convention say nothing about dash counts. The only guard is a golden test against a fixture also derived from the code (see R4), so code and documented spec have no independent cross-check. Either pin the separator rule in the spec or note explicitly that whitespace/dash widths are owned by the command."
+evidence = [
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:116",
+    "tomlctl/src/flow/render_progress_log.rs:328",
+]
+related = ["R4"]
+dedup_id = "086cd9462bd13034"
+resolved = 2026-06-22
+resolution = "Documented render-progress-log as the canonical separator-width authority in the execution-record-schema reference spec (22b23a8)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R19"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 120
+symbol = "title_from_context"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "The plan_path title read opens an arbitrary (possibly absolute) path from context.toml with no containment check"
+description = "title_from_context reads plan_path from context.toml, joins a relative value against repo_or_cwd_root() or uses an absolute path verbatim, and read_to_string's it with no restriction that the resolved path stays under the repo or .claude/. Blast radius is limited (only the first '# Plan:' line is extracted, all errors fall back to the slug, and context.toml is itself .claude-contained), but combined with R1's unvalidated slug (which lets you choose WHICH context.toml is read) an absolute plan_path becomes a low-bandwidth disclosure path into PROGRESS-LOG.md output. Add a same-root containment check on plan_resolved."
+evidence = ["tomlctl/src/flow/render_progress_log.rs:120"]
+related = ["R1"]
+dedup_id = "6ee9dc697a8b0b31"
+resolved = 2026-06-22
+resolution = "Containment-checked the plan_path title read (path_under_root); escapes fall back to the slug title (a5da8e5)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R20"
+file = "tomlctl/tests/integration.rs"
+line = 1520
+symbol = "write_outside_claude_does_not_auto_create_parent_dirs"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "P8 --allow-outside + auto-create stray-file behaviour (parent already exists) is untested — only the auto-mkdir refusal is covered"
+description = "The existing test proves auto-mkdir won't fire outside .claude/, but the documented P8 behaviour is that --allow-outside DOES let a create land outside .claude/ when the parent dir already exists (the guard only warns). Plan T4 acceptance explicitly called for 'a test asserting the behaviour' of --allow-outside + auto-create + a typo creating a stray file. The documented escape-hatch double-opt-out semantics are currently unverified."
+evidence = ["tomlctl/tests/integration.rs:1520"]
+dedup_id = "9489e0577335c1d3"
+resolved = 2026-06-22
+resolution = "Added a test pinning the --allow-outside + existing-outside-parent stray-file create behaviour (ac75a75)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R21"
+file = "tomlctl/tests/render_progress_log.rs"
+line = 70
+symbol = "render coverage gaps"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Render --verify-integrity branch, the title-cased-slug fallback, and cross-date Session-Log ordering are untested end-to-end"
+description = "Three render paths are help-flag-presence-only or untested: (1) maybe_verify_integrity at render_progress_log.rs:70 — no test stages a mismatched .sha256 and asserts render fails fast; (2) the titlecase_slug fallback selected by resolve_title when context/plan is unreadable is never driven through dispatch (only the helper has a unit test); (3) the single-date golden fixture leaves the Session-Log's multi-date bucket first-appearance ordering unexercised. Each is a small fixture/test addition."
+evidence = [
+    "tomlctl/src/flow/render_progress_log.rs:70",
+    "tomlctl/src/flow/render_progress_log.rs:112",
+]
+dedup_id = "a426a784f80939a0"
+resolved = 2026-06-22
+resolution = "Added render tests: --verify-integrity sidecar mismatch, titlecase-slug fallback, cross-date Session-Log ordering (e40304d)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R22"
+file = "tomlctl/tests/render_progress_log.rs"
+line = 69
+symbol = "render_matches_golden_progress_log"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Golden mismatch diagnostic is a bare assert_eq! of two ~1.5KB strings, and empty-state assertions use loose .contains('| (none) |')"
+description = "On drift the golden test dumps two full multi-line blobs with no line-level diff, forcing manual eyeballing of where the bytes diverge — the exact pain the renderer is prone to (a trailing newline or separator-width slip). Consider pretty_assertions or a line-by-line zip reporting the first differing index. Separately, render_empty_completed_table_shows_none_row asserts completed_section.contains('| (none) |') after splitting on '## Deviations', but (none) appears in multiple tables; asserting the exact full empty row ('| (none) | | | | |') would pin the single-space empty-cell rendering the golden's other (none) rows depend on."
+evidence = ["tomlctl/tests/render_progress_log.rs:69"]
+dedup_id = "3468417b0e0be454"
+resolved = 2026-06-22
+resolution = "Golden mismatch now reports the first differing line (std-only); pinned the exact empty-state row shape (e40304d)"
+
+[[items]]
+first_flagged = 2026-06-22
+rounds = 1
+status = "fixed"
+flow = "snoopy-beaming-lecun"
+id = "R23"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 108
+symbol = "render success-envelope doc"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Render success-envelope doc states {ok,path,tables} unconditionally, but --stdout returns before the envelope; plan-update.md also duplicates the reference-spec format block"
+description = 'tomlctl SKILL.md:108 documents the render envelope unconditionally, but dispatch early-returns on --stdout (render_progress_log.rs:80-83) printing only markdown with NO JSON envelope — a reader parsing --stdout output for {"ok":true} would be surprised. Add a one-clause caveat. Separately, plan-update.md:337 correctly routes reformat to the command but then inlines a full PROGRESS-LOG.md format spec duplicating the reference spec now owned by the execution-record-schema skill — a second source of truth that can drift; replace the inline dump with a pointer.'
+evidence = [
+    "claude/skills/tomlctl/SKILL.md:108",
+    "claude/commands/plan-update.md:337",
+]
+dedup_id = "b001fa3accef6fb4"
+resolved = 2026-06-22
+resolution = "Documented --stdout envelope suppression; replaced the duplicated PROGRESS-LOG format block in plan-update.md with a pointer to the reference spec (22b23a8)"
+
+[[items]]
+id = "R24"
+file = "tomlctl/tests/integration.rs"
+line = 1564
+symbol = "write_outside_claude_does_not_auto_create_parent_dirs"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "Outside-containment test placed --allow-outside before the subcommand, so clap rejected it (exit 2) and the test passed for the wrong reason"
+description = "Discovered while applying R20. The flag is a per-subcommand WriteIntegrityArgs option and must follow the set positionals; placed before the subcommand it never exercised the write-path containment it documents."
+first_flagged = 2026-06-22
+rounds = 1
+related = ["R20"]
+status = "fixed"
+resolved = 2026-06-22
+resolution = "Moved --allow-outside after the set positionals so the test exercises real write-path containment instead of a clap arg-parse rejection (ac75a75)"
+flow = "snoopy-beaming-lecun"
+dedup_id = "0e0b938231dc7299"
+
+[[vet_events]]
+timestamp = "2026-06-22T13:45:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked #1 (golden fixture has zero deviation/deferral items), #2 (supersession = drop-superseded-ids at render_progress_log.rs:407), #4 (separator width diff fixture:37 vs real file:37), #6 (backfill pre-read errors NotFound, dispatch.rs:1351). All confirmed against code. The O(n^2) session-log note (#12) and the emit-table invariant note (#10) were not persisted as they are self-described non-issues; #1/#3/#9 folded into consolidated R1-R3."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T13:45:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Returned floor of 3 (agent explicitly declined to inflate to the cap-5). Verified F1 (slug unvalidated -> traversal for read + unguarded atomic_write, render_progress_log.rs:57/92) and F2 (plan_path read no containment check, :120). F3 (ensure_parent_under_claude mkdir ordering) the agent itself rated 'defensible, not a confirmed escape' so not persisted. F1->R1, F2->R19."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T13:45:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified #1 (separator fidelity, real vs fixture diff), #2 (spec under-specifies separator rule), #5 (envelope copy-paste). Five of the eleven returns (#3,#4,#6,#8,#10) were explicit 'confirming the positive, no change' verification notes, not actionable findings — not persisted. #1->R4, #2->R18, #5->R12, #7->R17, #9 folded into R1."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T13:45:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified #1 (backfill cannot auto-create, dispatch.rs:1351), #2 (no-op envelope omits created/path), #3 (SKILL.md:184 stale prose), #5 (ensure_artifact.rs:254 third skeleton). #4 (plan-new.md:99) cross-confirmed by package-quality lens. All confirmed. #1->R6, #2->R13, #3->R7, #4->R8, #5->R5."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T13:45:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified #1/#2 (deviation/deferral untested), #5 (loose .contains() at integration.rs:1750/1754), #8 (byte-identity test reconstructs expected from literal, dispatch.rs:2208 — does not call bootstrap fn). Coverage-gap items #3/#4/#6/#7/#10/#11 corroborated by direct code reading. All confirmed. Consolidated into R2,R9,R10,R11,R20,R21,R22; #8 merged with completeness #5 into R5."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T13:45:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified #1 (plan-new.md:99 sole render-from-log survivor via rg), #2 (SKILL.md:184 stale integrity-refresh bootstrap), #3 (--stdout suppresses envelope, render_progress_log.rs:80). Three returns (#5,#6,#8) were positive 'P9 retained / accurate / OK' confirmations, not persisted. #1->R8, #2->R7, #3+#7->R23. command_lint bash-fence coverage confirmed present."
+dedup_id = "45ca31c3315a5978"

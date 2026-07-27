@@ -1,0 +1,417 @@
+schema_version = 1
+last_updated = 2026-06-30
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R1"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 389
+symbol = "mark_startup_timed_out"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "Startup-timeout failsafe marks session Failed but never cancels session.shutdown or evicts the registry — leaks the wedged bypassPermissions claude child"
+description = "mark_startup_timed_out only writes the DB row + sets in-memory status to Failed. It never calls session.shutdown.cancel() (the documented hard-kill-child / drop-PTY-master handle, session.rs:32-39). The trigger is ZERO PTY output for 45s — a child in exactly that state is unlikely to ever exit, so its `completed` oneshot never fires, reap_exit (the only caller of registry.remove, supervisor.rs:537) never runs, and the session Arc + its parked exit-wait future linger forever. Net: an RCE-shaped `claude --permission-mode bypassPermissions` process is left alive after lumina declared the session Failed. Clean fix mirrors the existing terminal machinery: cancel the shutdown token (kills child -> child.wait() returns -> completed_tx fires -> reap_exit records the terminal row and evicts). Converged finding from the security, completeness, and architecture lenses."
+evidence = [
+    "supervisor.rs:389-405 (status-only, no shutdown.cancel/registry.remove)",
+    "supervisor.rs:537 (registry.remove only in reap_exit)",
+    "session.rs:32-39 (shutdown token = explicit child-kill, does not cancel on drop)",
+    "http/pty_sessions/mod.rs:419-429 (DELETE grace-then-cancel precedent)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "4e4eed15efe38514"
+resolved = 2026-06-30
+resolution = "mark_startup_timed_out now writes the diagnostic ended-row (update_pty_session_ended stamps ended_at + wedged last_error with elapsed), fails pending pty_queue entries, then cancels session.shutdown to hard-kill the wedged bypassPermissions child; reap_exit gained an ended_at-keyed preservation guard that evicts the registry without clobbering the diagnostic"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R2"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 396
+symbol = "mark_startup_timed_out"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "Startup-timeout terminal path uses update_pty_session_status (no ended_at) instead of update_pty_session_ended, leaving a terminal 'failed' row with NULL ended_at permanently"
+description = "mark_startup_timed_out calls update_pty_session_status(.., 'failed', ..), which SETs only status/last_error/updated_at (repo/pty.rs:250-256) — NOT ended_at or exit_code. Every other terminal path stamps ended_at: reap_exit uses update_pty_session_ended (repo/pty.rs:374-382), delete_pty_session sets ended_at. Because the wedged child never exits, reap never runs to backfill ended_at, so the NULL is permanent for exactly the sessions this failsafe targets. Any query sorting/filtering on ended_at or computing session duration mis-handles a timed-out session. (dispatch_one's input-channel-closed path shares this status-only shortcut — pre-existing there — but this new terminal path repeats it.) Folds naturally into the R1 fix if it routes through the shutdown-cancel -> reap_exit path."
+evidence = [
+    "repo/pty.rs:250-256 (update_pty_session_status sets status/last_error/updated_at only)",
+    "repo/pty.rs:374-382 (update_pty_session_ended sets status/ended_at/exit_code/last_error)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "0a00487fcc8240dd"
+resolved = 2026-06-30
+resolution = "terminal path routed through update_pty_session_ended (stamps ended_at/exit_code) instead of update_pty_session_status; folded into the R1 fix"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R3"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 592
+symbol = "idle_session_with_empty_queue_is_no_op"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Pre-existing test no longer exercises the empty-queue no-op path it is named for — the readiness gate short-circuits dispatch_one"
+description = "Post-change this test builds an Idle session with first_output_at == 0 and a fresh internally-stamped spawned_at_ms, so dispatch_gate returns Gate::Wait and dispatch_one is NEVER reached. The session 'stays Idle' because the gate holds the prompt, not because the queue is empty — the Queue::pop_next_pending -> Ok(None) -> early-return no-op path the test name asserts is now untested (silent coverage loss). A regression in that arm of dispatch_one would still pass. Backdate first_output_at (as the sibling tick test does at supervisor.rs:734) so the gate opens and the empty-queue pop path actually runs. Verified directly: the test does not backdate first_output_at."
+evidence = [
+    "supervisor.rs:609-628 (constructs fresh AtomicI64(0), never backdated)",
+    "supervisor.rs:219-227 (gate -> Wait before dispatch_one)",
+    "supervisor.rs:248-250 (the Ok(None) no-op arm now unreached)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "6abaf8218ad00c81"
+resolved = 2026-06-30
+resolution = "backdated first_output_at in idle_session_with_empty_queue_is_no_op so dispatch_gate returns Ready and the empty-queue pop no-op path is actually exercised"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R4"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 404
+symbol = "mark_startup_timed_out"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Queued prompt(s) left dangling 'pending' in pty_queue on startup timeout — the sibling Failed path marks them failed"
+description = "dispatch_one's input-channel-closed Failed path calls Queue::mark_failed on the offending entry (supervisor.rs:304) before flipping the session Failed. mark_startup_timed_out flips the session Failed but never touches pty_queue, so the seeded initial prompt (enqueued in spawn.rs:310) and any later inputs sit in 'pending' state indefinitely — and tick_once never revisits a Failed session (Idle/Awaiting arms only). A queue inspection (GET /api/pty/sessions/{id}/queue) after a startup timeout shows a stuck pending entry with no terminal disposition. The doc comment claims this 'Mirrors dispatch_one's mark-Failed path' — either mark the pending entries failed here too, or scope the 'mirrors' wording to the session-status half. Merged from the completeness + quality lenses."
+evidence = [
+    "supervisor.rs:304 (dispatch_one marks the entry failed)",
+    "supervisor.rs:389-405 (timeout path leaves the queue untouched)",
+    "spawn.rs:310 (initial_prompt enqueue)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "2d30df723380e338"
+resolved = 2026-06-30
+resolution = "startup-timeout path now fails still-pending pty_queue entries via Queue::list + Queue::mark_failed, matching dispatch_one"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R5"
+file = "lumina/CLAUDE.md"
+line = 0
+symbol = "Initial-prompt dispatch waits for claude readiness"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Doc claim that a wedged launch 'surfaces to get_sprint_quiescence' is aspirational — quiescence reads work_items/leases, never pty_sessions.status"
+description = "The new paragraph states a zero-output session marked Failed 'surfaces to get_sprint_quiescence / the SPA instead of hanging silently.' get_sprint_quiescence is derived purely over a sprint's work_items / sprint_tasks / leases (verified: core/src/repo/team_execution.rs has no pty_session reference). Marking a PTY session Failed updates only the pty_sessions row; it feeds no quiescence bucket. A wedged orchestrator never claims tasks, so quiescence would show claimable>0 / in_progress=0 — not a 'stalled' signal traceable to the failsafe. The '/ the SPA' half is reachable (a poller can read the pty_sessions row); the get_sprint_quiescence half is not. Strike or qualify it. Verified by the orchestrator."
+evidence = [
+    "core/src/repo/team_execution.rs (get_sprint_quiescence has no pty_sessions read)",
+    "lumina/CLAUDE.md PTY interaction section (the new paragraph)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "22e6e766aaff78a4"
+resolved = 2026-06-30
+resolution = "struck the false get_sprint_quiescence claim in lumina/CLAUDE.md; qualified surfacing to the pty_sessions row visible on re-fetch/poll (SPA refresh), not a live quiescence signal or WS push"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R6"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 196
+symbol = "dispatch_gate"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Missing dispatch_gate/tick test cases: the one-way precedence guarantee, the backward-clock saturating_sub guard, and the non-Idle-status bypass"
+description = "The four gate_* unit tests each exercise exactly one branch in isolation; three load-bearing cases are untested: (1) PRECEDENCE — first_output_at > 0 AND now - spawned_at_ms > MAX_STARTUP_MS must return Ready/Wait, NEVER StartupTimedOut (the `if first_output_at > 0` arm short-circuits the startup arm). This is the whole no-regression-on-interactive-POST-/input guarantee (asserted only in prose at supervisor.rs:193-195) — a future branch reorder would silently start failing long-lived interactive sessions with no test catching it. (2) BACKWARD-CLOCK — neither saturating_sub (supervisor.rs:198,203) has a now_ms < stamp test, so the underflow guards look removable to a future reader. (3) NON-IDLE BYPASS — no test that an Active session (first_output_at==0, ancient spawned_at_ms) is left untouched by a tick (the failsafe is keyed on the Idle arm only). Add all three; they are cheap, pure-predicate assertions."
+evidence = [
+    "supervisor.rs:196-208 (dispatch_gate)",
+    "supervisor.rs:193-195 (one-way guarantee in prose only)",
+    "supervisor.rs:219-237 (Idle-only gate eval; Active = post-spawn hold)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "ae05c631fa5e11fa"
+resolved = 2026-06-30
+resolution = "added 3 gate tests: output-seen-never-times-out precedence, backward-clock saturating_sub underflow guard, non-Idle tick bypass"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R7"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 392
+symbol = "mark_startup_timed_out"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Failsafe warn! lacks elapsed / spawned_at context needed to debug a wedged startup in production"
+description = "When the failsafe fires the only structured diagnostic is warn!(session_id, 'supervisor: startup timed out; marking session Failed') plus the same generic last_error for every session. To debug a real wedged launch an operator needs how long it actually waited (now_ms - spawned_at_ms), the spawned_at instant, and the MAX_STARTUP_MS threshold crossed — enough to distinguish a genuine 45s wedge from a clock anomaly. The caller (tick_once, supervisor.rs:220-226) already has first_output_at, spawned_at_ms, and now_ms in hand; thread elapsed into mark_startup_timed_out and add it to the warn! fields. Compare dispatch_one, which threads entry_id/kind/error."
+evidence = [
+    "supervisor.rs:392-395 (warn! with session_id only)",
+    "supervisor.rs:220-226 (caller has elapsed in hand)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "ea7b07df711be12c"
+resolved = 2026-06-30
+resolution = "threaded spawned_at_ms + elapsed into mark_startup_timed_out; warn! now carries elapsed/spawned_at_ms/max_startup_ms and the diagnostic last_error embeds elapsed"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R8"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 198
+symbol = "dispatch_gate"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Undocumented >= vs > boundary asymmetry between the Ready and StartupTimedOut arms reads like an accident"
+description = "The Ready arm uses now_ms.saturating_sub(first_output_at) >= READY_DELAY_MS (inclusive) while the StartupTimedOut arm uses now_ms.saturating_sub(spawned_at_ms) > MAX_STARTUP_MS (exclusive). Both are consistent with their unit tests (gate_ready_when_output_seen_and_grace_elapsed pins the inclusive boundary; gate_wait_when_no_output_within_startup_cap pins the exclusive one) — not a bug — but the mixed operators invite a future maintainer to 'fix' one to match the other and silently shift a test boundary. A one-line comment stating the asymmetry is deliberate (grace fires AT the boundary; the failsafe fires only PAST it) closes it."
+evidence = [
+    "supervisor.rs:198 (>=)",
+    "supervisor.rs:203 (>)",
+    "supervisor.rs:640-677 (the pinning tests)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "9ccb2bfc73750ecf"
+resolved = 2026-06-30
+resolution = "one-line comments documenting the deliberate >= (grace fires at boundary) vs > (failsafe fires past boundary) asymmetry"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R9"
+file = "lumina/server/src/pty/pty_transport/mod.rs"
+line = 512
+symbol = "spawn (drain bridge)"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Relaxed-ordering 'stamp once' load-then-store on first_output_at is correct only by an undocumented single-writer invariant"
+description = "The load(Relaxed)==0 then store(Relaxed) on first_output_at_bridge is race-free purely because the drain bridge is the ONLY task that writes this atomic (supervisor + Session only load). That single-writer invariant underpins the 'set once / never resets' guarantee, but neither the field doc (session.rs:49-58) nor the bridge comment states it — by contrast Session::next_sequence carries a full paragraph justifying its Relaxed use. Add a one-line note that this is the sole writer (so the non-atomic check-then-set cannot tear), or use compare_exchange to make the once-set self-evident; otherwise a future second tap point silently introduces a double/torn store. Related to R12."
+evidence = [
+    "pty_transport/mod.rs:501-515 (load-then-store, no single-writer note)",
+    "session.rs (next_sequence documents its Relaxed use)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "d70e24e6d0a7ce2e"
+resolved = 2026-06-30
+resolution = "added sole-writer comment at the first_output_at load-then-store in the drain bridge, documenting why Relaxed cannot tear"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R10"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 222
+symbol = "dispatch_gate / tick_once"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Both the readiness grace and the 45s startup cap measure elapsed time off wall-clock jiff::now(), exposing the gate to clock jumps"
+description = "now_ms = jiff::Timestamp::now().as_millisecond() is differenced against first_output_at / spawned_at_ms to measure ELAPSED durations. A backward NTP/clock step inflates saturating_sub toward 0 (prompt held longer / failsafe deferred); a forward step can prematurely open the grace or trip the 45s cap on a healthy startup. This IS consistent with the pre-existing last_record_at / IDLE_THRESHOLD quiescence check (right call for uniformity, and i64-ms is needed for test backdating), but elapsed-time gating ideally rides a monotonic Instant baseline. At minimum note the caveat that these windows are wall-clock and clock-jump-exposed. The same wall-clock dependence is the root of the integration-test flake window (the dispatch tick test backdates by only READY_DELAY_MS+100; widen to ~1000ms for parity with the failed-startup test)."
+evidence = [
+    "supervisor.rs:220-223 (now_ms via jiff)",
+    "supervisor.rs:196-208 (the elapsed diffs)",
+    "supervisor.rs:734 (READY_DELAY_MS+100 test margin vs 1000ms sibling)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "c3137ab31a9cc3ce"
+resolved = 2026-06-30
+resolution = "added wall-clock/clock-jump caveat comment at the now_ms read; widened dispatch-tick backdate margin from READY_DELAY_MS+100 to +1000 for parity with the failed-startup test"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R11"
+file = "lumina/server/src/pty/transport.rs"
+line = 72
+symbol = "TransportHandle::first_output_at"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "The 45s startup failsafe silently assumes the Transport stamps first_output_at; a non-stamping Transport impl would mark EVERY Idle session Failed at MAX_STARTUP_MS"
+description = "The readiness invariant ('first_output_at transitions 0 -> positive on first liveness') lives only in PtyTransport's drain bridge (pty_transport/mod.rs:501-518), not in the Transport trait contract. dispatch_gate treats first_output_at==0 past MAX_STARTUP_MS as a wedged startup. A future Transport (the ACP/remote slots the module docs reserve) that returns a fresh Arc::new(AtomicI64::new(0)) and signals readiness by another channel would have ALL its sessions falsely marked Failed at 45s. The coupling is implicit — nothing in the trait or TransportHandle docs makes 'you MUST stamp first_output_at on first liveness' a contract obligation. Either document it on the trait, or scope the supervisor timeout to known-PTY transports. confidence:low (forward-looking; no non-PtyTransport impl exists today)."
+evidence = [
+    "transport.rs (Transport trait has no readiness obligation)",
+    "pty_transport/mod.rs:501-518 (only PtyTransport stamps)",
+    "supervisor.rs:203 (fails on first_output_at==0 past cap)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "d38a4568ba5cabfb"
+resolved = 2026-06-30
+resolution = "documented the first_output_at readiness-stamping obligation on the Transport::spawn trait method so a future non-PtyTransport impl knows it must stamp 0 to positive on first liveness"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R12"
+file = "lumina/server/src/pty/session.rs"
+line = 58
+symbol = "Session::first_output_at"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "first_output_at is an Arc<AtomicI64> shared across the transport<->Session boundary while sibling readiness atomic last_record_at is owned — justify the asymmetric seam inline"
+description = "Session holds two wall-clock readiness atomics: last_record_at (owned AtomicI64, written by the JSONL bridge via its Arc<Session> clone) and first_output_at (Arc<AtomicI64>, created in PtyTransport::spawn and shared). The Arc is genuinely load-bearing — the drain bridge must be able to stamp BEFORE the Session exists (the Session is built from the returned TransportHandle in spawn.rs:221), so a shared atomic is the natural seam to carry the stamp across that ordering, and a Notify/oneshot wouldn't suffice because the gate needs the timestamp for the READY_DELAY_MS grace, not just a bool. That reasoning is defensible but the owned-vs-shared asymmetry leaks the transport-precedes-Session construction order into the Session type without an explicit note; record it so a future maintainer doesn't 'simplify' it to a status transition. Related to R9."
+evidence = [
+    "session.rs:48 (owned last_record_at) vs session.rs:58 (Arc first_output_at)",
+    "pty_transport/mod.rs:501 (created) -> spawn.rs:221-229 (threaded)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "59c5c0aae54c1a5e"
+resolved = 2026-06-30
+resolution = "added inline note on Session::first_output_at explaining the Arc-shared seam (transport precedes Session construction) vs the owned last_record_at"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R13"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 791
+symbol = "tick_marks_session_failed_on_startup_timeout"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Startup-timeout integration test asserts status='failed' but never asserts last_error carries the wedged-startup message"
+description = "mark_startup_timed_out writes msg='claude produced no PTY output within startup cap' into pty_sessions.last_error — the only signal that surfaces a wedged startup to a poller / the SPA. The test asserts row.status == 'failed' but reads nothing about last_error, so a regression that flips status to failed with an empty or wrong last_error (e.g. cascading the generic input-channel-closed message) would pass. Add an assertion on row.last_error to pin the operator-facing diagnostic string."
+evidence = [
+    "supervisor.rs:391-403 (writes the diagnostic last_error)",
+    "tick_marks_session_failed_on_startup_timeout (asserts status only)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "667f95b92426dbbe"
+resolved = 2026-06-30
+resolution = "test tick_marks_session_failed_on_startup_timeout now asserts last_error carries the wedged-startup diagnostic and ended_at is some"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "verified-clean"
+id = "R14"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 226
+symbol = "mark_startup_timed_out"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "Timeout-Failed flip is not broadcast as a live Status frame; SPA only sees it on next poll/refetch (known limitation)"
+description = "mark_startup_timed_out writes pty_sessions.status + in-memory status but broadcasts nothing on session.broadcast_tx, so a WS-subscribed SPA gets no live signal of the Failed transition. This is consistent with the other supervisor transitions (the Awaiting/Idle flips in dispatch_one/maybe_finalise_turn also don't push a Status frame) — NOT a regression introduced here — but it means the doc's 'surfaces to the SPA' is only true for a client that re-fetches the session row, not for a passively-subscribed live view. The WS protocol already defines a Status out-frame; emitting it on terminal transitions would close the gap. confidence:low (pre-existing; scope is the doc claim, not new code)."
+evidence = [
+    "supervisor.rs:389-405 (no broadcast_tx send)",
+    "supervisor.rs:357 (dispatch_one broadcasts user_input but no status frame)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "7d3abd734256cf90"
+verified_note = "No supervisor.rs doc comment claims the Failed flip surfaces via a live WS Status frame; the only broadcast/SPA claim (the user_input row) is accurate — audited during /review-apply 2026-06-30"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R15"
+file = "lumina/server/src/pty/supervisor.rs"
+line = 217
+symbol = "tick_once"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Within-tick TOCTOU: a concurrent Cancel/Delete flipping Idle->Cancelled after the status snapshot can be clobbered back to Awaiting (pre-existing, widened by the hold window)"
+description = "tick_once snapshots status once at the top (supervisor.rs:217); the readiness gate correctly short-circuits StartupTimedOut for a Cancelled session at the match level. But if a concurrent DELETE flips Idle->Cancelled AFTER that read and BEFORE dispatch_one's unconditional set_status(Awaiting) (supervisor.rs:365), the tick clobbers Cancelled->Awaiting and sends a frame to a session being torn down. This race predates the readiness gate (it exists for any Idle dispatch), but the new hold window keeps sessions Idle longer and so slightly widens the exposure. Consider re-checking status (or a CAS-style guard) before the set_status(Awaiting). confidence:low (pre-existing concurrency edge)."
+evidence = [
+    "supervisor.rs:217 (status snapshot)",
+    "supervisor.rs:365 (unconditional set_status(Awaiting))",
+    "http/pty_sessions/mod.rs (Cancelled flip)",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "aa681a09e6433b7d"
+resolved = 2026-06-30
+resolution = "documented the pre-existing Idle to Cancelled vs set_status(Awaiting) within-tick TOCTOU at the flip site (comment chosen over a re-check guard because the input frame is already PTY-sent by that point)"
+
+[[items]]
+first_flagged = 2026-06-30
+rounds = 1
+status = "fixed"
+id = "R16"
+file = "lumina/server/Cargo.toml"
+line = 60
+symbol = "vt100 dependency"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Dead vt100 dependency with a stale comment claiming it parses the TUI byte stream (pre-existing; sits beside this change's docstring edits)"
+description = "The Cargo.toml comment still describes vt100 as 'used to extract typed message blocks from Claude's interactive TUI byte stream', but that parser was retired at the T5/jsonl-tail cut — grep finds vt100 only in doc comments (pty_transport/mod.rs:35, transport.rs, session.rs), with no vt100:: / use vt100 / Parser usage anywhere in lumina/server/src. The drain bridge this change instruments is precisely the drain-and-discard replacement for that parser. Worth dropping the dep + stale comment while editing these same docstrings — but confirm with cargo machete / a build first. confidence:low on 100% removability; no source usage remains."
+evidence = [
+    "Cargo.toml:60-66 (vt100 dep + stale comment)",
+    "grep vt100:: -> 0 code hits in lumina/server/src",
+]
+flow = "groovy-growing-yeti"
+dedup_id = "0d71cd218f1af811"
+resolved = 2026-06-30
+resolution = "partial: removed the dead vt100 dependency + stale present-tense comment from server/Cargo.toml (cargo check confirms removable; Cargo.lock re-resolved) / left by judgment: the 4 .rs doc-comment vt100 mentions (pty_transport/mod.rs, transport.rs, session.rs) are accurate past-tense historical refs, not stale"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 7 returned. Independently confirmed portable-pty 0.8.1 docstrings match Cargo.toml:65 (no finding), gate logic sound, single-writer atomic safe. idle_session coverage regression spot-verified by reading the test."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 2
+dropped_count = 1
+downgraded_count = 0
+rationale = "Dropped the low-confidence reap_exit 'completed-overwrites-failed' masking finding — it is subsumed by the R1 wedged-child fix (cancelling shutdown makes the killed child exit non-success -> reap writes 'failed', not 'completed'). Headline wedged-child leak verified directly and merged into R1."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 4 kept. NULL-ended_at DB finding spot-verified by reading repo/pty.rs update_pty_session_status vs update_pty_session_ended. Confirmed the failsafe-vs-reap serialisation (single select! task) — no data race, corroborating the gate-on-every-tick is sound."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "Dropped the 'all Session::new call sites updated' item — it is a ruled-out non-finding (verified clean), not a defect. quiescence-doc-claim finding (R5) independently verified by grepping core/src/repo/team_execution.rs for pty_session (zero hits)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-30T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "Dropped the probe-gating item — it is a verified-clean confirmation (probe is correctly #[ignore]'d + quick-excluded), not a defect. Grouped the precedence + backward-clock + non-Idle-bypass test gaps into one cohesive item (R6); folded the clock-margin flake into R10."
+dedup_id = "45ca31c3315a5978"

@@ -1,0 +1,24 @@
+slug = "snoopy-beaming-lecun"
+plan_path = "docs/plans/snoopy-beaming-lecun.md"
+status = "review"
+created = 2026-06-22
+updated = 2026-06-22
+branch = "main"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "claude/skills/**",
+    "claude/commands/**",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 10
+completed = 10
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/snoopy-beaming-lecun/review-ledger.toml"
+optimise_findings = ".claude/flows/snoopy-beaming-lecun/optimise-findings.toml"
+execution_record = ".claude/flows/snoopy-beaming-lecun/execution-record.toml"
+plan_review_findings = ".claude/flows/snoopy-beaming-lecun/plan-review-findings.toml"

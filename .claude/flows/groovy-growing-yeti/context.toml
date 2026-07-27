@@ -1,0 +1,23 @@
+slug = "groovy-growing-yeti"
+plan_path = "docs/plans/groovy-growing-yeti.md"
+status = "review"
+created = 2026-06-30
+updated = 2026-06-30
+branch = "fix/pty-initial-prompt-readiness-gate"
+scope = [
+    "lumina/server/src/pty/**",
+    "lumina/server/tests/**",
+    "lumina/.config/nextest.toml",
+    "lumina/CLAUDE.md",
+]
+
+[tasks]
+total = 4
+completed = 4
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/groovy-growing-yeti/review-ledger.toml"
+optimise_findings = ".claude/flows/groovy-growing-yeti/optimise-findings.toml"
+execution_record = ".claude/flows/groovy-growing-yeti/execution-record.toml"
+plan_review_findings = ".claude/flows/groovy-growing-yeti/plan-review-findings.toml"

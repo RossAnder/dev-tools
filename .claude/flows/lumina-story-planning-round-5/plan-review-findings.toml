@@ -1,0 +1,261 @@
+schema_version = 1
+last_updated = 2026-06-22
+round = 1
+
+[[vet_events]]
+timestamp = "2026-06-22T12:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified readiness.ts StoryReadinessSchema location (F1), absence of repo/planning.rs, record_inert_event work_item-reject guard (F6), and the ground-truth anchors block; all held. 0 dropped/downgraded."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T12:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified work-items.ts WorkItem+WorkItemSchema break under required plan_epoch (F1, critical), the two 94 count assertions at mod.rs:593+608 (F3), and mcp SKILL.md catalogue authority (F5). All held. 0 dropped."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T12:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified phantom repo/planning.rs (F1) via glob, count-invariant assertion at mod.rs:593 not :590 (F7), and parallel-batch file-disjointness (F6). All held. 0 dropped."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-06-22T12:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified acceptance_criteria has no liveness column + remove is hard DELETE (F2, critical), open_questions pre-existing status open|answered|cancelled overlaps retired_at (F3), and SQLite migration semantics (F1). All held. 0 dropped."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "completeness"
+plan_section = "T6: SPA wire-mirrors (lockstep — see memory: SPA wire-mirror coupling)"
+summary = "T6 SPA file list is incomplete and mislocates the readiness mirror; required plan_epoch breaks type-check + WorkItem fixtures"
+description = "Verified: the StoryReadinessSchema z.object is in lumina/web/src/api/readiness.ts:81 (NOT execution.ts as T6's Action says). Adding plan_epoch:i64 (non-Option, required) to WorkItem (T2) forces the SPA WorkItem interface + WorkItemSchema (work-items.ts:78-141) to gain plan_epoch:number or 'bun run type-check' fails, and full-literal WorkItem fixtures (e.g. makeWorkItem in floating-chat.test.ts) break. If task_research_links folds as a first-class WorkItemDetail field (not into opaque attributes), the WorkItemDetail mirror in work-items.ts needs it too. T6 lists only wire-enums.ts/execution.ts/__tests__."
+anchor_old = "- **Files**: `lumina/web/src/api/wire-enums.ts`, `lumina/web/src/api/execution.ts`, snapshot helpers under `lumina/web/src/__tests__/`"
+anchor_new = "- **Files**: `lumina/web/src/api/wire-enums.ts`, `lumina/web/src/api/readiness.ts` (the `StoryReadinessSchema` `z.object` lives HERE, not `execution.ts`), `lumina/web/src/api/work-items.ts` (the `WorkItem` interface + `WorkItemSchema` — `plan_epoch` is a required `i64`, so it MUST be mirrored or `bun run type-check` breaks; plus the `WorkItemDetail` task-detail mirror if `task_research_links` folds as a first-class field rather than into opaque `attributes`), `lumina/web/src/api/execution.ts` (the new `StoryDossier` interface + `z.object`), and the full-literal `WorkItem`/readiness snapshot helpers + fixtures under `lumina/web/src/__tests__/` (e.g. the `makeWorkItem` factory in `floating-chat.test.ts`)"
+dedup_id = "9f7150ebfc3618a4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "feasibility"
+plan_section = "A.5 Rework: supersede + relevance + plan epoch (corrected liveness model)"
+summary = "Dossier liveness model has correctness holes — open_questions, task_research_links, and acceptance_criteria each break the single uniform filter"
+description = "T3's stated filter (line 218) is incomplete/inconsistent across the five child tables. (a) open_questions ALREADY has a status lifecycle open|answered|cancelled (0003:132,146); a question cancelled via resolve_open_question keeps retired_at NULL, so the filter must ALSO require status!='cancelled'. (b) supersede_research_note and task-cancel do NOT delete rows (supersede sets superseded_by; cancel sets status), so task_research_links rows survive a rework — the dossier Grounding must fold ONLY links whose note is live AND whose task is not cancelled, OR rework must unlink (A.5 step 2 never calls unlink_task_research) — else the brief re-introduces the exact R52 stale-grounding symptom this plan exists to fix. (c) acceptance_criteria has NO liveness column (0003:83-93) and remove_acceptance_criterion is a hard DELETE (acceptance_criteria.rs:204), so the 'preserve work without stale noise' thesis fails for ACs and the AC plan_epoch stamp annotates live rows only. Decide: add acceptance_criteria.retired_at for symmetry, OR carve ACs out in §o as the one hard-delete exception and soften the preserve-work claim."
+anchor_old = "- **Detail**: Dossier liveness filter = `not superseded/rejected/cancelled` AND (for open_questions) `retired_at IS NULL`. `compute_gating_tier` unit tests pin each branch, mirroring `compute_tier`'s tests at `task_graph.rs:649-703`."
+anchor_new = "- **Detail**: Dossier liveness filter, applied PER child-table by its OWN signal (no single uniform predicate): `research_notes`/`risks`/`rejected_alternatives` ⇒ `superseded_by IS NULL`; child tasks ⇒ `status != 'cancelled'`; `open_questions` ⇒ `retired_at IS NULL` AND `status != 'cancelled'` (the pre-existing 0003 lifecycle — a `resolve_open_question`-cancelled question keeps `retired_at` NULL); `task_research_links` ⇒ folded ONLY for links whose note is live (`superseded_by IS NULL`) AND whose task is not `cancelled` (else the brief's Grounding re-introduces R52, so rework must also `unlink_task_research` or the fold must join-filter); `acceptance_criteria` ⇒ NO liveness column (hard-DELETE via `remove_acceptance_criterion`), so a removed AC is simply absent — §o must declare ACs the one hard-delete exception and note the AC `plan_epoch` stamp annotates live rows only (or add `acceptance_criteria.retired_at` for symmetry). `compute_gating_tier` unit tests pin each branch, mirroring `compute_tier`'s tests at `task_graph.rs:649-703`."
+dedup_id = "ac5f5c94a88a502b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "feasibility"
+plan_section = "T3: Repo layer — epoch, links, gating, dossier, retire, readiness"
+summary = "bump_plan_epoch's export-inert event needs a NEW non-work_item aggregate-type literal registered in the record_inert_event guard"
+description = "record_inert_event (events.rs:109-115) HARD-REJECTS aggregate_type='work_item' and only allows run/sprint/finding/batch/session/worktree/task_files (confirmed in lumina/CLAUDE.md). T3/Reuse-map say epoch/link/retire events are export-inert via record_inert_event but never say a NEW aggregate literal (e.g. plan_epoch) must be registered — mirroring how migration 0023 added task_files. Without it the call rejects (work_item) or wrongly reuses an unrelated kind."
+anchor_old = "epoch/link/retire events are **export-inert** (non-`work_item` aggregate via `record_inert_event`)."
+anchor_new = "epoch/link/retire events are **export-inert** (non-`work_item` aggregate via `record_inert_event`) — this REQUIRES registering a NEW inert aggregate-type literal (e.g. `plan_epoch`) in the `record_inert_event` guard list (`events.rs`) + its doc comment + the inert-vocab enumerations in `lumina/CLAUDE.md`, since the guard rejects `work_item` and currently allows only run/sprint/finding/batch/session/worktree/task_files (mirror how migration 0023 added `task_files`)."
+dedup_id = "879f81f429ce5a5c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "completeness"
+plan_section = "T4: MCP tools + count-invariant (94 → 99)"
+summary = "The count-invariant has TWO 94 assertions (mod.rs:593 names.len() + mod.rs:608 unique.len()) plus an enumerating comment — T4 names only one"
+description = "mcp/mod.rs has assert_eq!(names.len(),94,...) at :590-595 AND assert_eq!(unique.len(),94,...) (the name-uniqueness guard) at :606-612 — BOTH must become 99. The tool-enumerating comment block at :578-589 (bottoming out at query_research_notes=94) must also append the five new tools. T4 cites only mod.rs:590."
+anchor_old = "Update the count-invariant at `mod.rs:590` from **94 to 99** and state the `+5` delta in the test comment."
+anchor_new = "Update BOTH count-invariant assertions — `names.len()` (`mod.rs:~593`) AND the `unique.len()` name-uniqueness guard (`mod.rs:~608`) — from **94 to 99**, append the five new tools to the enumerating comment block (`mod.rs:~578-589`), and state the `+5` delta in the test comment."
+dedup_id = "d3f5f0e74614a7f0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "executability"
+plan_section = "T3: Repo layer — epoch, links, gating, dossier, retire, readiness"
+summary = "T3 Files list cites a phantom repo/planning.rs and uses 'as applicable' — name exact homes per function"
+description = "Glob of lumina/core/src/repo/*.rs confirms there is NO planning.rs. get_story_readiness lives in repo/readiness.rs; retire_open_question belongs in repo/open_questions.rs (not listed); bump_plan_epoch/link_task_research/compute_gating_tier/get_story_dossier have no obvious home. The phantom file + 'as applicable' forces the executor to invent the layout."
+anchor_old = "- **Files**: `lumina/core/src/repo/` (`planning.rs`/`readiness.rs`/`task_graph.rs`/`research_notes.rs` as applicable)"
+anchor_new = "- **Files**: `lumina/core/src/repo/` — `compute_gating_tier` + `bump_plan_epoch` + `link_task_research`/`unlink_task_research` + `get_story_dossier` in `task_graph.rs` (beside `compute_tier`) or a new `repo/dossier.rs`; `retire_open_question` in `repo/open_questions.rs`; the readiness-query extension in `repo/readiness.rs`. (There is NO `repo/planning.rs`.)"
+dedup_id = "8893a13d48a0e5b1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "executability"
+plan_section = "T3: Repo layer — epoch, links, gating, dossier, retire, readiness"
+summary = "T3 (Effort L) is oversized for one session — 6-7 mutators/reads + ~10 branch tests + a dossier composition + a rework-simulation test"
+description = "T3 bundles bump_plan_epoch, link/unlink_task_research, compute_gating_tier (+ per-branch tests mirroring compute_tier's 8 at task_graph.rs:649-703), get_story_dossier (a liveness-filtered composition over WorkItemDetail+links+footprint+dispatch+readiness), retire_open_question, the readiness extension, AND a rework-simulation unit test. Consider splitting into T3a (mutators+gating+tests) then T3b (dossier+readiness+rework test), sequential (same repo dir, distinct functions)."
+dedup_id = "966eddaabbda1997"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "completeness"
+plan_section = "T11: CONVENTIONS §o + §k.1 amendment + drift gate + create-project + next-block"
+summary = "Adding verification_commands_set (T2) makes the CONVENTIONS §l.0 note stale; T7 should stop reading the attribute directly — not in T11"
+description = "CONVENTIONS.md (around :360-363) documents that verification_commands_set is NOT exposed by get_story_readiness and that plan-story reads detail.attributes.verification_commands directly. Once T2/T3 expose it, that note is wrong and the Phase-5 precondition can read the readiness field. T11 should amend the §l.0 note; T7 should switch plan-story to the readiness field. Interacts with the AC/decompose-deadlock the Phase-5 gate has historically caused."
+dedup_id = "558d110b932a4e45"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "completeness"
+plan_section = "T12: e2e round-5 thread + project/lumina/plugin docs"
+summary = "The authoritative MCP tool catalogue (skills/mcp/SKILL.md) is in no task — the 5 new tools must be documented there"
+description = "lumina/CLAUDE.md calls claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md 'the authoritative catalogue' that the plugin skills reference. The 5 new tools (bump_plan_epoch, link_task_research, retire_open_question, get_story_dossier, get_gating_tier) are in no task's file list for it — T12 lists README.md but not the catalogue (it has no hardcoded 94 to bump, but needs the 5 new entries). Add the catalogue to T11 or T12."
+dedup_id = "e17e87b83e7b53cf"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "executability"
+plan_section = "T5: HTTP mirrors"
+summary = "T5 defers a module-layout decision ('extend readiness.rs OR new dossier.rs') to the executor — pick one concretely"
+description = "T5 says 'extend readiness.rs or new dossier.rs' for the dossier+gating GET routes and 'new planning/epoch route' for bump/link — a real architectural choice handed to an implement-* agent that sees only the task text. A new module needs both a 'pub mod' decl (http/mod.rs:~40) and a .merge() (mod.rs:49-80); extending readiness.rs needs neither. Specify the concrete module + routes."
+dedup_id = "e13a3873ac7d5fe4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "executability"
+plan_section = "T7: Rewrite `plan-story` as the stage-machine orchestrator (stage machine + decision brief + rework)"
+summary = "T7 acceptance is not mechanically gated — verify-plan-story-blocks.sh checks 4 structural invariants, none covering stages/tiers/brief/rework"
+description = "The T7 gate (scripts/verify-plan-story-blocks.sh) asserts §l.0 coverage, §l.4 citation, presence of a Skill( call, and no disable-model-invocation: — none check for the stage machine, gating tiers, brief sections, or rework. The script passes on a rewrite that drops the stage machine entirely. T7 is the load-bearing L-effort full rewrite (R-risk-1 high) with the weakest gate."
+anchor_old = "- **Acceptance**: skill body references every stage + the three gating tiers + the brief's five sections + the rework contract; `bash scripts/verify-plan-story-blocks.sh` passes after T11."
+anchor_new = "- **Acceptance**: skill body contains the six stage names (`triage`/`frame`/`plan`/`brief`/`align`/`rework`), the three gating tiers (`full`/`light`/`autonomous`), the brief's five section headings, and the rework contract (all grep-checkable); `bash scripts/verify-plan-story-blocks.sh` passes after T11 — NOTE the script gates only §l.0 coverage / §l.4 citation / a `Skill(` call / no `disable-model-invocation:`, so it does NOT verify the stage machine; this task ALSO requires explicit human review of the rewritten prose in the verification pass."
+dedup_id = "a2844cb5b70534b7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "executability"
+plan_section = "T8: Re-fuse decomposition (sizing + parallelism + persisted grounding)"
+summary = "T8 acceptance conflates 'write an example' with 'run an example' — a SKILL.md edit cannot be run"
+description = "T8 edits two Markdown SKILL.md files; its acceptance 'a worked example in the skill yields ≥3 parallel Lite tasks each grounded to ≥1 note via link_task_research' reads as a runtime outcome. A SKILL.md cannot be run — reword to a doc-content assertion."
+anchor_old = "- **Acceptance**: a worked example in the skill yields ≥3 parallel Lite tasks each grounded to ≥1 note via `link_task_research`; bodies cite R52/R53."
+anchor_new = "- **Acceptance**: the `decompose-tasks` SKILL.md includes a worked example that SHOWS ≥3 file-disjoint Lite tasks, each with a `link_task_research` call grounding it to ≥1 note; both edited bodies contain the strings `R52` and `R53` (doc-content assertion — a SKILL.md cannot be 'run')."
+dedup_id = "c66069ff17ce2671"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "risk"
+plan_section = "T2: Domain types — gating tier, epoch, dossier, readiness/detail folds"
+summary = "StoryReadiness/StoryDossier are Serialize-only (no JsonSchema) — confirm get_gating_tier returns via Content::json vs Json<T> (decides if GatingTier's JsonSchema derive is load-bearing)"
+description = "StoryReadiness derives only Serialize (planning.rs comment: no JsonSchema; the MCP layer wraps it with Content::json). So the SPA mirror is hand-maintained (T6), and a JsonSchema derive on GatingTier is only useful where GatingTier is an MCP tool param/return wrapped as Json<T>. T2 should state whether get_gating_tier returns via Content::json (no schema) or Json<T> (needs JsonSchema), so the GatingTier derive list is not cargo-culted. Also confirm gating_tier is non-Option on StoryReadiness so every call site populates it."
+dedup_id = "0aecc1d3893108bd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "risk"
+plan_section = "R-risk-6 (low)"
+summary = "The 'export snapshot plan_epoch may lag' framing is misleading — the column self-heals on the next work_item event; T12 e2e must not assert exported epoch right after a bump"
+description = "export_pending renders the work_item's CURRENT state via get_work_item_detail on ANY work_item-aggregate event. plan_epoch rides that row, so a bump (export-inert event) does not lag indefinitely — it self-heals on the next work_item event (a rework emits several: cancelled-task flips + per-stage activities). Reword §o + R-risk-6 to 'reflects the value as of the last work_item render; self-heals on the next work_item event'."
+anchor_old = "- **R-risk-6 (low)** — Export-inert `plan_epoch` means the git-export snapshot's `plan_epoch` can lag a bump. *Mitigation*: deliberate, documented in §o; mirrors the `task_files`/`worktree` inert-event precedent; epoch is internal planning metadata, not exported audit semantics."
+anchor_new = "- **R-risk-6 (low)** — Export-inert `plan_epoch`: a bump records a non-`work_item` event so it does NOT itself trigger a re-export — but the column rides the `work_item` snapshot and SELF-HEALS on the next `work_item`-aggregate event (a rework emits several). So the snapshot reflects the epoch as of the last `work_item` render, not a standing divergence. *Mitigation*: deliberate, documented in §o; mirrors the `task_files`/`worktree` inert-event precedent; epoch is internal planning metadata. **T12's e2e must NOT assert the exported snapshot's `plan_epoch` immediately after `bump_plan_epoch` without an intervening `work_item` event + drain.**"
+dedup_id = "49b38378fd11bf7e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "suggestion"
+category = "completeness"
+plan_section = "T12: e2e round-5 thread + project/lumina/plugin docs"
+summary = "Skill-prose '94' references (run-sprint/SKILL.md:97,281) and the broad CLAUDE.md count occurrences go stale — grep all of them"
+description = "run-sprint/SKILL.md:97,281 say 'stays 94' (correct-in-context but reads stale at surface 99); reword to 'adds no tool'. The 94->99 doc update in CLAUDE.md/lumina/CLAUDE.md is broader than 'a paragraph' (94 appears many times). grep all 94 occurrences across both CLAUDE.md files (and the plugin cache copy per the plugin-cache-sync memory) rather than editing one paragraph."
+dedup_id = "0d209c3a6f9665ff"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "executability"
+plan_section = "T2: Domain types — gating tier, epoch, dossier, readiness/detail folds"
+summary = "T2 lists findings.rs 'as applicable' with no stated edit — drop it or specify"
+description = "T2's Action enumerates edits to enums.rs/work_items.rs/planning.rs but nothing for domain/findings.rs; task_research_links references research_notes, not findings, and StoryDossier folds WorkItemDetail (work_items.rs). Drop 'findings.rs as applicable' or state the intended edit."
+dedup_id = "86595d9fb5d9414f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "T10: Devil's-advocate prose (tournament / contrarian lens / sharpened review / framing scope-challenge)"
+summary = "research-explore six-lens prose (T10) must match CONVENTIONS §k.1 (T11) — the gate doesn't check lens-name consistency, so drift passes CI silently"
+description = "T10 edits research-explore/SKILL.md to add the contrarian lens; T11 amends §k.1 to six lenses. verify-plan-story-blocks.sh does not check lens-name consistency, so a vocab drift between the two would pass. Keep T10/T11 lens wording consistent (manual check in T11). Minor cite drift: the 'exactly five values' statement is at research-explore/SKILL.md:50 (plan cites :49-54) and the always-dispatch logic is around :52-54 — both must change."
+dedup_id = "103551caee745f05"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "T11: CONVENTIONS §o + §k.1 amendment + drift gate + create-project + next-block"
+summary = "When T7 drops the §l.1 skip-override path, T11 should tombstone/retire the §l.1 CONVENTIONS contract entry"
+description = "A.1/T7 remove the §l.1 skip-override path from plan-story; §l.1 also has a CONVENTIONS home (the skip-with-override-audit contract). Leaving a live §l.1 contract while the skill drops the path is doc-drift against the project's single-source discipline. Add an explicit '§l.1 retired/tombstoned' line to T11's Action."
+dedup_id = "ae47cc5170b35683"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "suggestion"
+category = "risk"
+plan_section = "T4: MCP tools + count-invariant (94 → 99)"
+summary = "Put the same-story + live-note validation for link_task_research in repo::link_task_research (not the MCP param layer) so the HTTP mirror inherits it"
+description = "task_research_links FKs do not enforce that a note belongs to the same story as the task. T4 pushes the check to AppError::Validation; per the single-mutation-path discipline it must live in repo::link_task_research so both the MCP tool and the T5 HTTP mirror enforce it. Add a T3 unit test for the cross-story (and superseded-note) rejection."
+dedup_id = "1ebdc2d5f01952c7"
