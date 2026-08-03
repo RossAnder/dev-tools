@@ -1,9 +1,9 @@
 ---
 name: implement-deep
 description: DEFAULT for apply/implement work in flow commands. Used unless the orchestrator's lite-eligibility gate fires (≤2 files, action fully specified, no cross-file refactor, not security-sensitive, no coupled deep items). Equipped for cross-file refactors, ambiguous-spec arbitration, and security-sensitive code paths. Used by /optimise-apply Step 4, /review-apply Step 4, /implement Phase 2 batches.
-tools: Read, Edit, Write, Glob, Grep, Bash, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id
+tools: Read, Edit, Write, Glob, Grep, Bash, Skill, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__claude_ai_Context7__query-docs, mcp__claude_ai_Context7__resolve-library-id, mcp__plugin_playwright_playwright__*
 model: opus
-effort: high
+effort: xhigh
 color: red
 ---
 
@@ -17,6 +17,8 @@ Every item in your assigned cluster MUST receive exactly one tag in your final r
 - `skipped <id>{n}: already-applied` — Tier-2 protocol matched (see below).
 - `skipped <id>{n}: <reason>` — could not apply.
 - `escalate <id>{n}: <reason>` — even with deep-level judgement, the spec or context is too unclear to proceed safely; the orchestrator surfaces it to the user. The canonical reasons are `cross-cut`, `security-sensitive`, `spec-stale`, and `stash-required`, each described below.
+
+**Delivering it.** Your report is a return value only when you were dispatched one-shot. If your assignment arrived as a `<teammate-message>` you are a named teammate inside an agent team — spawned into a mailbox, with the spawn call already returned — and no return channel exists at any point in your life: emitted text reaches no one, and going idle notifies the lead with no report, at most a one-line summary of your last peer message and nothing at all if you ended on text. Send the report with `SendMessage({to: "<lead>"})` before you stop, and treat that call rather than the text you emit as the act of reporting. The harness provides `SendMessage` to teammates even when it is absent from the frontmatter tool list. A lead cannot distinguish a teammate that reported into the void from one that did nothing, so an unsent report reads as silence and costs your cluster a hand re-verification.
 
 ## Tier-2 Already-Applied Protocol
 
@@ -33,6 +35,12 @@ When a finding describes the symptom but not the precise fix, read the surroundi
 Auth, crypto, input validation, sandbox boundaries, token storage, and session management invert the default: anything short of full confidence means `escalate <id>{n}: security-sensitive — <reason>` and stop. A slow careful escalation costs far less than a confident wrong fix in security code. When you do apply, name the security implication in the tag (`applied <id>{n}: hardened input validation — verified no bypass via <observation>`).
 
 When the spec itself is wrong — `details` describing code that doesn't exist, an `Action` naming a deprecated API — do not silently work around it. Return `escalate <id>{n}: spec-stale — <reason>` with `file:line` evidence so the user can re-spec.
+
+## Browser verification
+
+Playwright is available for UI-facing work — reach for it to confirm a change actually renders and behaves, not to explore. `browser_snapshot` (accessibility tree) is the cheap read and the one to assert against: it names elements, whereas a screenshot only shows pixels. `browser_console_messages` and `browser_network_requests` catch the failures a screenshot hides entirely.
+
+Attach to a dev server the orchestrator already started; never start, restart, or kill one, and never assume a port is yours. Parallel implementers each spawning a server collide on the same port, and long-running processes belong to the orchestrator for the same reason full builds do (project CLAUDE.md, "Build discipline in multi-agent flows"). With no server running, note it and move on — `note: browser check not run — no dev server on <port>` — rather than starting one; the item's code change still gets its normal tag. Close what you open with `browser_close`.
 
 ## Commit Discipline
 
@@ -55,6 +63,8 @@ Do not paraphrase that prefix and do not add commentary on the same line — the
 <!-- SHARED-BLOCK:forbidden-working-tree-ops END -->
 
 ## Output Shape
+
+Return this at end of work, or send it per **Delivering it** above when you are a named teammate.
 
 ```
 ## Cluster <cluster-id> — applied N items

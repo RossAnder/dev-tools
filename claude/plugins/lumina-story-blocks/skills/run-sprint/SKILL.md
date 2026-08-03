@@ -188,9 +188,11 @@ Each teammate loops, working entirely inside the SHARED worktree on disk:
    in the same loop — see Step 3. Pass `tier` only if this worker is specialised
    to a tier, so lite/deep workers self-select.)
 2. If `claimed == null`, the implement lane is (for now) dry — sweep the review
-   lane (Step 3); if BOTH return null, park and report to the lead. Null means no
-   ready task OR the sprint is frozen by an in-progress checkpoint task OR the
-   sprint is not `active` — never an error.
+   lane (Step 3); if BOTH return null, park and report to the lead via
+   `SendMessage` — emitted text reaches no one, and the bare idle notification
+   the lead sees carries no account of why you parked. Null means no ready task
+   OR the sprint is frozen by an in-progress checkpoint task OR the sprint is
+   not `active` — never an error.
    **Lane-fix note**: a planned task DEFAULTS to `lane='implement'` at create, so
    the implement-lane claim surfaces planned tasks DIRECTLY — there is no
    pre-stamp step and no finding-spawn detour.
@@ -363,6 +365,28 @@ complete (no `complete_task`). The lead watches for a task that stays
   silently wedge the sprint: nudge, then rely on lease-reclaim.
 - A worker that exits its loop with a task still claimed is the same case —
   reclaim via lease lapse.
+
+**Silent-idle monitoring (lead contract).** An `idle_notification` is
+payload-free — at most a one-line summary of the teammate's last PEER message,
+and nothing at all when it ended on text. It therefore cannot distinguish "did
+the work and reported into the void" from "did nothing". Treat a BARE idle —
+one from a teammate that has sent the lead no `SendMessage` since its last
+assignment — as an unanswered report rather than as completion:
+- Allow ONE turn boundary first. Inbound messages are injected at the lead's
+  turn boundaries and batched in both directions (0–120s observed), so a report
+  may still be in flight. Declaring silence inside that window is what produces
+  false "completed without reporting" verdicts.
+- Then RE-PING once via `SendMessage`: "send your report for task <id> via
+  SendMessage — text you emit does not reach me".
+- Establish ground truth INDEPENDENTLY rather than pinging twice —
+  `get_sprint_quiescence`, `list_work_items({ parent: <story> })` for per-task
+  status/assignee/lease, and `git diff --stat` on the shared worktree. The work
+  is usually already done and durably recorded; it is the ACCOUNT of it that is
+  missing, so a second ping buys nothing a read cannot.
+- A teammate that HAS sent the lead a message since its last assignment is
+  finished, not silent — do NOT ping it. Idle is its normal terminal state, and
+  re-pinging a done worker wakes a whole context to answer a question it has
+  already answered.
 
 **Termination verdict** — branch on the quiescence roll-up:
 
