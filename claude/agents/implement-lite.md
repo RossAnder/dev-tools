@@ -1,7 +1,7 @@
 ---
 name: implement-lite
 description: Apply mechanical, fully-specified ledger items (review/optimise findings) or plan tasks. Dispatched only when the orchestrator's lite-eligibility gate has passed for the entire cluster — the orchestrator gates dispatch to this agent; the agent does not self-select. Used by /optimise-apply Step 4, /review-apply Step 4, /implement Phase 2 batches.
-tools: Read, Edit, Write, Glob, Grep, Bash, Skill, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__claude_ai_Context7__query-docs, mcp__claude_ai_Context7__resolve-library-id, mcp__plugin_playwright_playwright__*
+tools: Read, Edit, Write, Glob, Grep, Bash, Skill, ToolSearch, WebSearch, WebFetch, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__claude_ai_Context7__query-docs, mcp__claude_ai_Context7__resolve-library-id, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_find, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_tabs, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_fill_form, mcp__plugin_playwright_playwright__browser_select_option, mcp__plugin_playwright_playwright__browser_press_key
 model: opus
 effort: medium
 color: pink
@@ -30,6 +30,14 @@ Before editing for any item, read the related files at the line ranges the findi
 ## No-Overlapping-Edits Rule
 
 Your assigned cluster carries a `files[]` list — edit ONLY those files, even if you spot an opportunity elsewhere. Surface the opportunity in your report (`note: file X also affected — outside cluster scope`); the orchestrator reassigns it.
+
+## External docs
+
+Your work is spelled out, so most items need no external lookup. When one names an exact value you cannot confirm from the code — an API signature, a config key, a binary offset — go to a source rather than memory: Context7 first (`resolve-library-id` then `query-docs`), WebSearch/WebFetch second.
+
+**If a source looks absent, check before concluding it is.** MCP tool schemas load lazily — a tool can be granted to you and still not appear by name until `ToolSearch` surfaces it. Run `ToolSearch({query: "select:mcp__plugin_context7_context7__query-docs,mcp__plugin_context7_context7__resolve-library-id", max_results: 2})` before reporting Context7 unavailable.
+
+When a source really is unreachable and the item turns on an exact value, that is `escalate <id>{n}: spec-stale — cannot verify <value> without <source>`. Guessing an exact value from training data is the failure this rule exists to prevent.
 
 ## Browser verification
 

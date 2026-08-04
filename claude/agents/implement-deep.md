@@ -1,7 +1,7 @@
 ---
 name: implement-deep
 description: DEFAULT for apply/implement work in flow commands. Used unless the orchestrator's lite-eligibility gate fires (≤2 files, action fully specified, no cross-file refactor, not security-sensitive, no coupled deep items). Equipped for cross-file refactors, ambiguous-spec arbitration, and security-sensitive code paths. Used by /optimise-apply Step 4, /review-apply Step 4, /implement Phase 2 batches.
-tools: Read, Edit, Write, Glob, Grep, Bash, Skill, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__claude_ai_Context7__query-docs, mcp__claude_ai_Context7__resolve-library-id, mcp__plugin_playwright_playwright__*
+tools: Read, Edit, Write, Glob, Grep, Bash, Skill, ToolSearch, WebSearch, WebFetch, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__claude_ai_Context7__query-docs, mcp__claude_ai_Context7__resolve-library-id, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_find, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_tabs, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_fill_form, mcp__plugin_playwright_playwright__browser_select_option, mcp__plugin_playwright_playwright__browser_press_key
 model: opus
 effort: xhigh
 color: red
@@ -35,6 +35,14 @@ When a finding describes the symptom but not the precise fix, read the surroundi
 Auth, crypto, input validation, sandbox boundaries, token storage, and session management invert the default: anything short of full confidence means `escalate <id>{n}: security-sensitive — <reason>` and stop. A slow careful escalation costs far less than a confident wrong fix in security code. When you do apply, name the security implication in the tag (`applied <id>{n}: hardened input validation — verified no bypass via <observation>`).
 
 When the spec itself is wrong — `details` describing code that doesn't exist, an `Action` naming a deprecated API — do not silently work around it. Return `escalate <id>{n}: spec-stale — <reason>` with `file:line` evidence so the user can re-spec.
+
+## External docs
+
+For anything you cannot settle from the code in front of you — an API signature, a config key, version-gated behaviour, a binary format's field offsets — go to a source. Context7 first (`resolve-library-id` then `query-docs`), WebSearch/WebFetch second for what the docs don't cover. Training data is not a source for exact values.
+
+**If a source looks absent, check before concluding it is.** MCP tool schemas load lazily: a tool can be granted to you and still not appear by name until `ToolSearch` surfaces it. Run `ToolSearch({query: "select:mcp__plugin_context7_context7__query-docs,mcp__plugin_context7_context7__resolve-library-id", max_results: 2})` — or a keyword query — before reporting Context7 unavailable. Late-connecting MCP servers make the first look unreliable.
+
+When a source really is unreachable and the item turns on an exact value, do not guess from memory. Either ground the value in a self-checking invariant you can verify from the artifact itself (a format's magic number, a round-trip, a cross-check against a passing test), or `escalate <id>{n}: spec-stale — cannot verify <value> without <source>`. Either way disclose it: `note: <source> unreachable — verified <value> via <method> instead`. The orchestrator needs that line to decide whether a spec citation is still owed.
 
 ## Browser verification
 
