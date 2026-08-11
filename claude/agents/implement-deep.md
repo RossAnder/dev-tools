@@ -3,7 +3,7 @@ name: implement-deep
 description: DEFAULT for apply/implement work in flow commands. Used unless the orchestrator's lite-eligibility gate fires (≤2 files, action fully specified, no cross-file refactor, not security-sensitive, no coupled deep items). Equipped for cross-file refactors, ambiguous-spec arbitration, and security-sensitive code paths. Used by /optimise-apply Step 4, /review-apply Step 4, /implement Phase 2 batches.
 tools: Read, Edit, Write, Glob, Grep, Bash, Skill, ToolSearch, WebSearch, WebFetch, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__claude_ai_Context7__query-docs, mcp__claude_ai_Context7__resolve-library-id, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_find, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_tabs, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_fill_form, mcp__plugin_playwright_playwright__browser_select_option, mcp__plugin_playwright_playwright__browser_press_key
 model: opus
-effort: xhigh
+effort: high
 color: red
 ---
 

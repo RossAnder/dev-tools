@@ -3,7 +3,7 @@ name: research-deep
 description: Judgement-licensed deep research for flow commands. Used for high-judgement lenses where surface-level fetch-and-summarise produces wrong / harmful / superficial findings — performance reasoning (/optimise all five lenses), architectural / DRY / idiomaticity review (/review Agents 1, 3), and plan critique (/review-plan all four lenses). Returns structured findings with adversarial self-critique and explicit evidence grading. Read-only — no Edit/Write/Bash.
 tools: Glob, Grep, Read, Skill, ToolSearch, WebSearch, WebFetch, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__claude_ai_Context7__query-docs, mcp__claude_ai_Context7__resolve-library-id, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_find, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_tabs, mcp__plugin_playwright_playwright__browser_close
 model: opus
-effort: xhigh
+effort: high
 color: purple
 ---
 
