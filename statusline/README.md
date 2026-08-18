@@ -54,8 +54,15 @@ place of its "Usage" title and the live session context in place of its
 per-model weekly bucket.
 
 ```
-✻ dev-tools · 5h 26% · week 7% · chat 31k
+✻ dev-tools · 5h 26% · week 7% · chat 31k · Opus 5 xhigh
 ```
+
+The model and the effort level close the line as **one** segment, not two: the
+effort word is live (it follows a mid-session `/effort`) and the `effort` object
+is absent altogether on a model without the parameter, in which case the name
+draws alone. `full` gives effort a separator of its own because it can colour
+the word by level; `min` has no colour, and a bare `xhigh` between two dots
+would read as a fourth usage bucket.
 
 Monotone in the strict sense: the line emits **no colour at all**, so every
 character lands in the terminal theme's own foreground rather than a mix of
@@ -63,11 +70,14 @@ greys. Weight is uniform too — a single bold span wraps the whole line, so no
 segment shouts over its neighbours. Those two escapes (SGR 1 to open, SGR 22 to
 close) are the only ones in the output.
 
-As the terminal narrows it sheds the slowest-moving window first, so `chat` is
-last out and the repo name never goes:
+As the terminal narrows it sheds the slowest-moving segment first, so `chat` is
+last out and the repo name never goes. Model and effort lead — that is the one
+segment you set rather than watch, and the one the payload can make arbitrarily
+wide — so every usage number keeps the width tier it had before they existed:
 
 ```
-41 cols  ✻ dev-tools · 5h 26% · week 7% · chat 31k
+56 cols  ✻ dev-tools · 5h 26% · week 7% · chat 31k · Opus 5 xhigh
+55 cols  ✻ dev-tools · 5h 26% · week 7% · chat 31k
 40 cols  ✻ dev-tools · 5h 26% · chat 31k
 30 cols  ✻ dev-tools · chat 31k
 ```

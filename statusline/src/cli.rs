@@ -18,8 +18,8 @@ USAGE
 STYLES (main)
     full    two colour-coded lines: cwd@branch (+/-) | model | effort | tokens,
             then 5h/7d rate-limit dots with reset times and API busy time
-    min     one monotone line: repo, 5h, week, session context tokens
-            (alias: minimal)
+    min     one monotone line: repo, 5h, week, session context tokens, then
+            model and effort (alias: minimal)
 
 STYLES (subagent)
     tiers   name, activity, badge, @N inbox, tokens, stalled, runtime — shed

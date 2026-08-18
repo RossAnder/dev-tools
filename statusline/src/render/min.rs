@@ -4,7 +4,7 @@
 //! per-model weekly bucket:
 //!
 //! ```text
-//! ✻ dev-tools · 5h 26% · week 7% · chat 31k
+//! ✻ dev-tools · 5h 26% · week 7% · chat 31k · Opus 5 xhigh
 //! ```
 //!
 //! Monotone in the strict sense: the line emits **no colour at all**, so every
@@ -13,7 +13,7 @@
 //! segment is louder than its neighbours.
 
 use crate::ansi::{BOLD, NOBOLD};
-use crate::fmt::{SEP, ellipsize, format_tokens, width};
+use crate::fmt::{SEP, clean_model_name, ellipsize, format_tokens, width};
 use crate::payload::Payload;
 
 /// U+273B, not the reference page's U+2733. emoji-data.txt lists
@@ -30,20 +30,51 @@ pub const DEFAULT_ICON: &str = "\u{273B}"; // ✻
 const MIN_COLS: usize = 24;
 
 struct Bucket {
-    label: &'static str,
-    value: String,
+    /// Shed identity, carried alongside the text rather than read back out of
+    /// it: the model segment's text is whatever the payload names the model,
+    /// so the degradation loop cannot key off what is drawn.
+    key: &'static str,
+    /// The segment exactly as it lands on the line, label included. One field
+    /// and not a `label`/`value` pair because `model` has no fixed label —
+    /// the model name *is* its leading word.
+    text: String,
 }
 
 impl Bucket {
     fn width(&self) -> usize {
-        width(self.label) + 1 + width(&self.value)
+        width(&self.text)
+    }
+}
+
+/// `Opus 5 xhigh` — the resolved model, and the live effort level when the
+/// model takes the parameter (it reflects a mid-session `/effort`, and the
+/// `effort` object is simply absent on models without one).
+///
+/// One segment rather than two: `full` can colour the effort word by level and
+/// so earns it a separator of its own, but `min` emits no colour, and a bare
+/// `xhigh` sitting between two dots reads as a fourth usage bucket.
+fn model_spec(p: &Payload) -> Option<String> {
+    let name = p
+        .model
+        .as_ref()
+        .and_then(|m| m.display_name.as_deref())
+        .map(clean_model_name)
+        .filter(|n| !n.is_empty())?;
+    match p
+        .effort
+        .as_ref()
+        .and_then(|e| e.level.as_deref())
+        .filter(|l| !l.is_empty())
+    {
+        Some(level) => Some(format!("{name} {level}")),
+        None => Some(name),
     }
 }
 
 fn buckets(p: &Payload) -> Vec<Bucket> {
-    let mut out = Vec::with_capacity(3);
+    let mut out = Vec::with_capacity(4);
     let rl = p.rate_limits.as_ref();
-    for (label, window) in [
+    for (key, window) in [
         ("5h", rl.and_then(|r| r.five_hour.as_ref())),
         ("week", rl.and_then(|r| r.seven_day.as_ref())),
     ] {
@@ -51,8 +82,8 @@ fn buckets(p: &Payload) -> Vec<Bucket> {
         // response; an absent window is silence, not a zero.
         if let Some(pct) = window.and_then(|w| w.used_percentage) {
             out.push(Bucket {
-                label,
-                value: format!("{}%", pct.round() as i64),
+                key,
+                text: format!("{key} {}%", pct.round() as i64),
             });
         }
     }
@@ -61,10 +92,20 @@ fn buckets(p: &Payload) -> Vec<Bucket> {
         let tokens = cw.tokens();
         if tokens > 0 {
             out.push(Bucket {
-                label: "chat",
-                value: format_tokens(tokens),
+                key: "chat",
+                text: format!("chat {}", format_tokens(tokens)),
             });
         }
+    }
+
+    // Last on the line and first to shed: the usage numbers keep the positions
+    // they have always had, and the segment that moves least often is the one
+    // a narrow terminal gives up first.
+    if let Some(spec) = model_spec(p) {
+        out.push(Bucket {
+            key: "model",
+            text: spec,
+        });
     }
     out
 }
@@ -73,15 +114,16 @@ pub fn render(p: &Payload, cols: usize, icon: &str) -> String {
     let title = p.repo_label();
     let mut buckets = buckets(p);
 
-    // Narrow-terminal degradation. Shed the slowest-moving window first so
-    // `chat` — the only number that moves while you work — is last out. The
-    // title never goes: a status line that cannot say which repo it belongs to
-    // is worse than a short one.
-    for doomed in ["week", "5h"] {
+    // Narrow-terminal degradation, slowest-moving segment first, so `chat` —
+    // the only number that moves while you work — is last out. `model` leads:
+    // it is the one segment you set rather than watch, and it is also the one
+    // the payload can make arbitrarily wide. The title never goes: a status
+    // line that cannot say which repo it belongs to is worse than a short one.
+    for doomed in ["model", "week", "5h"] {
         if line_width(icon, &title, &buckets) <= cols {
             break;
         }
-        buckets.retain(|b| b.label != doomed);
+        buckets.retain(|b| b.key != doomed);
     }
 
     // With nothing sheddable left the title gives ground last — clipped, never
@@ -115,7 +157,7 @@ fn paint(icon: &str, title: &str, buckets: &[Bucket]) -> String {
     };
     for b in buckets {
         out.push_str(SEP);
-        out.push_str(&format!("{} {}", b.label, b.value));
+        out.push_str(&b.text);
     }
     // One bold span around the lot: uniform weight, and the only escapes in the
     // line. `NOBOLD` (SGR 22) rather than a reset, so nothing else the terminal
@@ -141,6 +183,20 @@ mod tests {
         }
     }"#;
 
+    /// `FULL` plus the model and effort objects. Kept separate so every
+    /// assertion above stays a test of the payload that omits them — the shape
+    /// a session has before the first API response.
+    const SPEC: &str = r#"{
+        "workspace": {"repo": {"name": "dev-tools"}},
+        "model": {"display_name": "Claude Opus 5"},
+        "effort": {"level": "xhigh"},
+        "context_window": {"total_input_tokens": 31000, "used_percentage": 15},
+        "rate_limits": {
+            "five_hour": {"used_percentage": 26.4},
+            "seven_day": {"used_percentage": 7.1}
+        }
+    }"#;
+
     #[test]
     fn matches_the_reference_layout() {
         let line = render(&payload(FULL), 120, DEFAULT_ICON);
@@ -159,7 +215,11 @@ mod tests {
         // pinned separately by sheds_week_then_5h_as_the_terminal_narrows.
         let short = payload(FULL);
         let long = payload(&FULL.replace("dev-tools", &"n".repeat(50)));
-        for p in [&short, &long] {
+        // The model name is payload-supplied and unbounded, so it gets the
+        // same treatment as the repo name: a realistic one and a hostile one.
+        let spec = payload(SPEC);
+        let long_spec = payload(&SPEC.replace("Claude Opus 5", &"m".repeat(60)));
+        for p in [&short, &long, &spec, &long_spec] {
             for icon in [DEFAULT_ICON, ""] {
                 for cols in 0..=120 {
                     let rendered = plain(&render(p, cols, icon));
@@ -182,6 +242,59 @@ mod tests {
         // Past the last shed the line stops shrinking: the repo and the live
         // context number are the floor, not an empty string.
         assert_eq!(at(5), "\u{273b} dev-tools \u{b7} chat 31k");
+    }
+
+    #[test]
+    fn the_model_and_effort_close_the_line() {
+        assert_eq!(
+            plain(&render(&payload(SPEC), 120, DEFAULT_ICON)),
+            "\u{273b} dev-tools \u{b7} 5h 26% \u{b7} week 7% \u{b7} chat 31k \u{b7} Opus 5 xhigh"
+        );
+    }
+
+    #[test]
+    fn a_model_without_an_effort_parameter_draws_its_name_alone() {
+        // `effort` is absent on models that do not take the parameter, and a
+        // trailing separator or an empty word in its place would read as a
+        // dropped value rather than an inapplicable one.
+        for json in [
+            r#"{"cwd":"/x/proj","model":{"display_name":"Claude Haiku 4.5"}}"#,
+            r#"{"cwd":"/x/proj","model":{"display_name":"Claude Haiku 4.5"},"effort":{}}"#,
+            r#"{"cwd":"/x/proj","model":{"display_name":"Claude Haiku 4.5"},"effort":{"level":""}}"#,
+        ] {
+            assert_eq!(
+                plain(&render(&payload(json), 120, DEFAULT_ICON)),
+                "\u{273b} proj \u{b7} Haiku 4.5",
+                "{json}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_effort_level_never_stands_on_its_own() {
+        // Nothing upstream sends an effort without a model, and if that ever
+        // changes a bare `xhigh` beside the usage numbers reads as a fourth
+        // bucket. Drop the segment rather than draw a word with no subject.
+        let p = payload(r#"{"cwd":"/x/proj","effort":{"level":"xhigh"},
+                            "context_window":{"total_input_tokens":8000}}"#);
+        assert_eq!(plain(&render(&p, 120, DEFAULT_ICON)), "\u{273b} proj \u{b7} chat 8k");
+    }
+
+    #[test]
+    fn the_model_sheds_before_any_usage_number() {
+        // The point of putting it last: every number that was on the line
+        // before the model existed keeps its position and its width tier.
+        let p = payload(SPEC);
+        let at = |cols| plain(&render(&p, cols, DEFAULT_ICON));
+        assert_eq!(
+            at(56),
+            "\u{273b} dev-tools \u{b7} 5h 26% \u{b7} week 7% \u{b7} chat 31k \u{b7} Opus 5 xhigh"
+        );
+        assert_eq!(at(55), "\u{273b} dev-tools \u{b7} 5h 26% \u{b7} week 7% \u{b7} chat 31k");
+        // ...and from here the tiers are byte-identical to the model-less
+        // fixture's, pinned by sheds_week_then_5h_as_the_terminal_narrows.
+        assert_eq!(at(40), "\u{273b} dev-tools \u{b7} 5h 26% \u{b7} chat 31k");
+        assert_eq!(at(30), "\u{273b} dev-tools \u{b7} chat 31k");
     }
 
     #[test]

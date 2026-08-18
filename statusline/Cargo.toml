@@ -2,7 +2,7 @@
 name = "statusline"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.95"
+rust-version = "1.97"
 authors = ["Ross Anderson"]
 description = "Native Claude Code statusline renderer — replaces statusline.ps1 to cut per-refresh cost from ~1s of pwsh cold-start to milliseconds"
 license = "MIT OR Apache-2.0"

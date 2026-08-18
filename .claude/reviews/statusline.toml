@@ -1,0 +1,1386 @@
+last_updated = 2026-08-18
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R1"
+file = "statusline/src/render/agents.rs"
+line = 250
+symbol = "row"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Width contract not enforced: a row that sheds to one segment is never clipped and overflows cols"
+description = "The title-clip block is gated on segs.len() > 1, a guard meant only to stop segs.remove(0) emptying the row — but it also suppresses clipping. A task with tokenCount 0 has no protected segment, sheds to [name], and is emitted at full width. Reproduced live: name 't10-css-face-split' renders 18 chars at cols=12, 8 and 4. Same class: when the protected segments alone exceed cols, saturating_sub yields 0, the name is dropped and the residue is emitted unbounded ('@12 · 126k' is 10 chars). every_tier_fits_its_budget cannot see either because falcon() always carries tokenCount 31000 (so len >= 2) and the loop starts at 8. Fix: gate only the remove(0) branch on len > 1, and add a terminal clip for the last surviving segment."
+evidence = [
+    "agents.rs:234 while line_width > cols && segs.len() > 1",
+    "agents.rs:250-252 title clip also gated on segs.len() > 1",
+    "agents.rs:198 token_count.filter(|n| *n > 0)",
+    "measured: cols=4 -> 18 chars emitted",
+]
+dedup_id = "8667819d1486f9eb"
+resolved = 2026-08-18
+resolution = "Gated only the title-drop branch on segs.len() > 1 and added fit() as the single emission path, clipping the joined row to cols unconditionally - closes both the single-segment and protected-only-residue overflow classes"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R2"
+file = "statusline/src/render/min.rs"
+line = 74
+symbol = "render"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "min title is never clipped, so a long repo name overflows the terminal unbounded"
+description = "The shed loop removes buckets only; the title is passed to paint unmodified and never ellipsized. 'The title never goes' was implemented as 'never touched' rather than 'shed last, clip if needed'. Reproduced live: a 50-char repo name renders 67 chars at cols=40, 20 and 10. sheds_week_then_5h_as_the_terminal_narrows pins the floor with a 9-char title so it never exercises an over-budget name."
+evidence = [
+    "min.rs:71-80 shed loop touches buckets only",
+    "min.rs:92-96 paint concatenates title with no width check",
+    "measured: cols=10 -> 67 chars emitted",
+]
+dedup_id = "68930b2c08c70ef9"
+resolved = 2026-08-18
+resolution = "Clip the title after the shed loop via fmt::ellipsize, budgeted at cols.max(MIN_COLS), with the prose-only floor derived into a private MIN_COLS = 24; shed order and title-goes-last unchanged"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R3"
+file = "statusline/src/git.rs"
+line = 44
+symbol = "diff_stats"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Untimed git subprocess on the default style's hot path — measured ~280ms per tick, ~15x the teamdata disk I/O"
+description = "Merged from three lenses and confirmed by measurement. statusline min = 39.8ms/run, subagent (teamdata: readdir + 11 meta + inbox reads) = 59.1ms/run, full (spawns git) = 319.4ms/run in this repo. full is the unflagged default and show_changes is cols >= 100 against a default of 120, so this is the common path. Three separate problems: (a) Command::output() has no timeout anywhere in the crate, so a blocked git hangs the render with no fallback — the one failure mode that is a hang rather than an Err; (b) missing --no-optional-locks, so each tick refreshes the index and contends for index.lock with the user's own git; (c) git diff honours diff.external / diff.<driver>.textconv / core.fsmonitor from the target repo's own config, so pointing the statusline at a tree that ships its own .git executes a program that tree chose."
+evidence = [
+    'git.rs:45-47 Command::new("git").args([...]).output().ok()?',
+    "full.rs:69 show_changes = cols >= 100",
+    "measured: full 319.4ms vs min 39.8ms per run",
+    "https://git-scm.com/docs/git --no-optional-locks",
+]
+dedup_id = "e7438c2d1516c6c6"
+resolved = 2026-08-18
+resolution = "Bounded diff_stats with a std-only 1s thread+mpsc timeout (kill/reap, silent None fallback) and hardened the invocation with --no-optional-locks, -c core.fsmonitor=, --no-ext-diff, --no-textconv; flag names and positions verified against current git docs and a live git 2.55 run. Residual filter.<driver>.clean exec path filed as R60"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R4"
+file = "statusline/src/render/agents.rs"
+line = 78
+symbol = "Seg::badge"
+severity = "warning"
+effort = "trivial"
+category = "security"
+summary = "Badge, task type and model/effort segments bypass one_line, so raw ESC and newlines reach the TUI row"
+description = """one_line is the crate's only control-byte filter and is applied at exactly three sites: name_of (:116), activity_of (:130) and description_of (:144). Seg::badge does a bare format!(" {text} ") on agent_type read verbatim from customAgentType; t.r#type (:180) and model_label()/effort_label() (:185-190) are equally raw. serde_json escapes them for the NDJSON wire, which is correct framing but not sanitisation — Claude Code decodes them back to real bytes. Two consequences: an injected SGR repaints the row and everything after it (nothing closes it), and an SGR 0 would cancel Claude Code's own dim wrapper — the invariant CLAUDE.md calls load-bearing. Independently a correctness bug: fmt::width counts escape bytes as visible cells, so the shed logic budgets against a length the terminal never draws."""
+evidence = [
+    'agents.rs:78 let plain = format!(" {text} ")',
+    "agents.rs:116,130,144 the only three one_line sites",
+    "teamdata.rs:140 agent_type stored unfiltered",
+]
+dedup_id = "1e47b55e2ae2b167"
+resolved = 2026-08-18
+resolution = "Routed Seg::badge text, the t.r#type fallback and the model/effort labels through one_line - closes the SGR-injection path into the agent panel, restores the no-SGR-0 dim-wrapper invariant, and makes fmt::width budget against cells the terminal actually draws"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R5"
+file = "statusline/src/teamdata.rs"
+line = 77
+symbol = "sanitize"
+severity = "warning"
+effort = "trivial"
+category = "security"
+summary = """sanitize allows '.', so ".." survives as a whole component and escapes the teams/ root"""
+description = """The allow-list is alphanumeric plus '-', '_' and '.'. Separators become '_', capping the escape at one level per component, but the component ".." itself passes through unchanged: a teamName of ".." yields <claude>/teams/../inboxes/, i.e. ~/.claude/inboxes/. The comment above the function asserts a mismatch 'only ever costs the inbox count' — that is false once the path leaves the directory it was meant to pin. Fix: drop '.' from the allow-list, or reject '.', '..' and empty components explicitly."""
+evidence = [
+    "teamdata.rs:77 matches!(c, '-' | '_' | '.')",
+    'teamdata.rs:86-91 claude.join("teams").join(sanitize(team))',
+    '''teamdata.rs:166-171 sanitize tests cover 'a/b\\c:d' but never '..'''',
+]
+dedup_id = "7821f098dbf5bb1a"
+resolved = 2026-08-18
+resolution = "sanitize returns Option<String> and rejects empty, . and .. as whole path components (. still allowed inside a name); the misleading only-costs-the-inbox-count comment corrected; inbox_count degrades to 0 on rejection"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R6"
+file = "statusline/src/teamdata.rs"
+line = 120
+symbol = "load"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "The 16KB meta cap is checked with DirEntry::metadata but read with read_to_string, and the enumerated directory has no containment check"
+description = "DirEntry::metadata does not traverse symlinks while the read on the next line does, so a symlink named *.meta.json reports its own size, passes the cap and is then read in full. Weaker on Windows than on Unix, but the asymmetry is real. Separately subagents_dir (:53) derives its path from the payload's transcript_path with no check that the result is under the Claude state tree, so load() will enumerate any directory on the machine and feed whatever *.meta.json it finds into the row renderer."
+evidence = [
+    "teamdata.rs:120 entry.metadata().map(|m| m.len() > MAX_META_BYTES)",
+    "teamdata.rs:123 std::fs::read_to_string(&path)",
+    "teamdata.rs:53-57 subagents_dir, unconstrained payload path",
+]
+dedup_id = "b899fe703d95d9d2"
+resolved = 2026-08-18
+resolution = "Added read_capped (single handle, Read::take) so the 16KB cap binds the bytes actually read rather than a symlink's own stat, and gated load on a canonicalised containment check so a payload-derived subagents_dir outside the Claude state tree is never enumerated; canonicalisation is load-bearing since Path::starts_with treats .. as an ordinary component"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R7"
+file = "statusline/src/teamdata.rs"
+line = 97
+symbol = "inbox_count"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Inbox read has no size cap and materialises every queued message body just to take a length"
+description = "Raised independently by three lenses. MAX_META_BYTES guards the meta path; inbox_count has no size guard at all, and deserialises into Vec<serde_json::Value> — allocating every message body — purely to read v.len(). Message bodies are agent-to-agent prose and routinely run to kilobytes; this runs once per member, up to 64, per tick. This is structurally the same hazard the 'never parse config.json on a timer' rule exists for, on a path the rule does not guard. Two-line fix: apply an fs::metadata cap as the meta path does, and deserialise as Vec<serde::de::IgnoredAny> to count without allocating."
+evidence = [
+    "teamdata.rs:97 serde_json::from_str::<Vec<serde_json::Value>>(&text)",
+    "teamdata.rs:28 MAX_META_BYTES applied at :120 to meta files only",
+    "teamdata.rs:133-136 called for every parsed member",
+]
+dedup_id = "4ccbbad59dfc79f8"
+resolved = 2026-08-18
+resolution = "inbox_count now reads through the same capped reader (new MAX_INBOX_BYTES = 256KB) and counts via Vec<serde::de::IgnoredAny>, so message bodies are discarded during parse instead of allocated once per member per tick"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R8"
+file = "statusline/src/render/agents.rs"
+line = 151
+symbol = "runtime"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = 'status "completed" is unhandled, so a finished row keeps counting elapsed time forever'
+description = "The match special-cases pending, paused, failed and killed, then falls through to format_duration(now - started). completed takes the fallthrough, so a task that finished ten minutes ago shows a runtime that grows on every tick — indistinguishable from a running row, and specifically confusing beside a stalled row (is_stalled correctly gates on running). The payload carries no end time, so the honest options are a done marker or freezing the value. README enumerates the same four states and likewise omits completed."
+evidence = [
+    "agents.rs:152-157 arms for pending/paused/failed/killed only",
+    "subagent.rs:41 documents completed as a live status",
+    "subagent.rs:79 is_stalled does gate on status",
+]
+dedup_id = "dbff2d142e289205"
+resolved = 2026-08-18
+resolution = "Added a completed arm rendering the static marker 'done' so a finished row stops counting up; new test a_finished_row_stops_counting. README's runtime-replacement list updated to match"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R9"
+file = "statusline/src/subagent.rs"
+line = 45
+symbol = "Task::label"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = 'The label doc comment states the layout priority exactly backwards — "outranks name when space is short"'
+description = "This is the crate's central layout invariant and the comment inverts it. label becomes the activity segment at P_ACTIVITY = 10, the lowest priority and the first thing clipped then shed; name is P_NAME = u8::MAX and is never shed. The comment is a leftover from before the identity rework that CLAUDE.md explicitly warns against undoing, which makes it the single most likely line to mislead someone into restoring the old behaviour."
+evidence = [
+    'subagent.rs:44-46 "which is why it outranks name when space is short"',
+    "agents.rs:36-44 P_ACTIVITY 10 / P_NAME u8::MAX",
+    'CLAUDE.md:16 "Do not simplify that back to a plain label-over-name priority"',
+]
+dedup_id = "90252f9bc3472aaa"
+resolved = 2026-08-18
+resolution = "Corrected the inverted Task::label doc comment, then qualified it for the nameless case R15 introduced: the label is the P_ACTIVITY segment when the task has a name and takes P_NAME when it does not"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R10"
+file = "statusline/src/cli.rs"
+line = 22
+symbol = "HELP"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "HELP's tiers description misstates the shed order and implies name and tokens are sheddable"
+description = """"name, label, tokens, runtime — shed in that order as width tightens" says the name goes first and the runtime last. The actual order is the reverse in every respect: activity, model/effort, runtime, badge, stalled — with tokens protected and the name never shed, only clipped last. This is the one description a user sees from --help without reading README, and it contradicts both README's priority table and the code."""
+evidence = [
+    "cli.rs:22 tiers description",
+    "agents.rs:37-48 the priority constants",
+    "agents.rs:250-260 name clipped only after everything sheddable is gone",
+]
+dedup_id = "0b67ff878cacf1d3"
+resolved = 2026-08-18
+resolution = "Rewrote the tiers HELP description to the true shed order (activity, model/effort, runtime, badge, stalled) with tokens and @N protected and the name clipped-not-shed, confirmed against the P_* constants in render/agents.rs"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R11"
+file = "statusline/CLAUDE.md"
+line = 8
+symbol = "Structure paragraph"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = '"main.rs and teamdata.rs hold the only I/O" is false — git.rs reads files and spawns a subprocess from inside a renderer'
+description = """git::branch walks parent directories and read_to_strings .git/HEAD; git::diff_stats spawns a process. Both are called directly from render::full::render, so a renderer is not a pure payload -> String and the I/O surface is three files, not two. render/mod.rs:2 carries the same false claim in stronger form ("the only I/O in the crate is main's stdin read and stdout write"). README gets this right, so the two module-level claims are the outliers — and CLAUDE.md is the one loaded into every agent's context."""
+evidence = [
+    "CLAUDE.md:8",
+    "render/mod.rs:2",
+    "git.rs:16,26 read_to_string",
+    "full.rs:82,85 git::branch / git::diff_stats",
+]
+dedup_id = "ed5b446bf03382cc"
+resolved = 2026-08-18
+resolution = "Corrected the false only-I/O claim in CLAUDE.md:8 and the stronger form at render/mod.rs:2 - the I/O surface is three files (main.rs, teamdata.rs, git.rs) and render::full::render is not a pure payload-to-String"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 2
+status = "fixed"
+id = "R12"
+file = "statusline/CLAUDE.md"
+line = 14
+symbol = "no-colour gotcha"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "CLAUDE.md cites a test name that does not exist: agents::rows_carry_no_colour_of_their_own"
+description = 'The no-colour gotcha says "Three tests pin it" and names them. The two min:: names are correct; the agents one is not — the test was renamed to rows_carry_no_colour_beyond_the_badge when the badge was added. Anyone grepping the cited name to confirm the invariant before touching the palette finds nothing and may conclude the guard was deleted.'
+evidence = [
+    "CLAUDE.md:14 cites rows_carry_no_colour_of_their_own",
+    "agents.rs:519 fn rows_carry_no_colour_beyond_the_badge()",
+]
+dedup_id = "07704a642c5c0197"
+resolved = 2026-08-18
+resolution = "Fixed the cited test name to agents::rows_carry_no_colour_beyond_the_badge, and qualified the same bullet's 'subagent emits no colour at all' heading which the badge falsifies"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R13"
+file = "statusline/README.md"
+line = 88
+symbol = "subagent tiers example block"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "Five separate inaccuracies in the agent-row examples and prose — measured against the code"
+description = """(a) The 46-col example measures 48 characters, overflowing the budget it is labelled with; the real output at 46 sheds stalled too. (b) The 30-col example drops @2, but P_MSGS is P_PROTECTED and can never be shed. (c) The badge is written [implement-deep]; the code emits space padding, not brackets. (d) The rich example uses a 'name: activity' colon separator the renderer never emits — every pair is joined by SEP. (e) "The model/effort segment is the first thing shed" contradicts README's own table 60 lines earlier: P_SPEC 20 sits above P_ACTIVITY 10, so the activity goes first."""
+evidence = [
+    "README.md:88-90 tier examples",
+    "measured: the 46-col row is 48 chars",
+    'agents.rs:78 format!(" {text} ") — padding not brackets',
+    "agents.rs:37-38 P_ACTIVITY 10 < P_SPEC 20",
+]
+dedup_id = "599118808a537a7e"
+resolved = 2026-08-18
+resolution = "All five inaccuracies fixed with example lines regenerated from the real binary (76/48/30 tiers plus rich) rather than hand-patched; badge shown as space padding not brackets; colon separator removed; shed-order sentence corrected to activity-then-model/effort. Also carried the --icon min-only, Usage-aliases and completed-marker drift fixes"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R14"
+file = "statusline/src/subagent.rs"
+line = 83
+symbol = "Task::is_stalled"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "STALL_WINDOW is a minimum-length gate, not a window — the whole retained history must be flat, so detection takes up to 16 samples"
+description = """s.len() >= STALL_WINDOW && s.iter().all(|v| *v == s[0]) requires every retained sample to be equal, so once the upstream ring holds its full 16 entries a newly-stalled task is not flagged until all 16 are flat — roughly 1.8x the latency the constant advertises. The constant's name and its comment ("a little over half the available history") both describe a trailing window of 9. Windowing it against the newest sample matches the documented intent. The existing test passes either way because it feeds exactly 9 samples."""
+evidence = [
+    "subagent.rs:83 s.iter().all(|v| *v == s[0])",
+    "subagent.rs:15-17 STALL_WINDOW = 9 documented as half the history",
+    "subagent.rs:139 test supplies exactly 9 samples, hiding the distinction",
+]
+dedup_id = "937866f4b10d64c1"
+resolved = 2026-08-18
+resolution = "is_stalled keeps the STALL_WINDOW minimum-length gate but now tests flatness over only the trailing STALL_WINDOW samples, so a stall is flagged at the advertised 9 readings instead of waiting for all 16 retained samples to go flat"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R15"
+file = "statusline/src/render/agents.rs"
+line = 174
+symbol = "segments"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "For a nameless row the activity is the only identifier yet carries the lowest priority, so a narrow pane leaves bare numbers"
+description = "Task.name is documented absent for bash tasks and workflows. When there is no name but there is an activity, the activity is pushed at P_ACTIVITY (first to go); the else-if fallback that assigns P_NAME only fires when there is no activity at all. So a local_bash row with label 'bun run type-check' renders fine at 76 cols but collapses to '2k · 9s' around 14 — the exact bare tail the neighbouring comment says the fallback exists to prevent. The description fallback and the label fallback should carry the same priority when neither has a name."
+evidence = [
+    "agents.rs:174-182 activity pushed at P_ACTIVITY; fallback at P_NAME only when segs is empty",
+    "agents.rs:177-178 the comment stating the intent",
+    "subagent.rs:36-37 name absent for bash tasks and workflows",
+]
+dedup_id = "3aaa528021d14b7d"
+resolved = 2026-08-18
+resolution = "The activity takes P_NAME when the task has no name, matching the description fallback, so a nameless bash or workflow row's only identifier is no longer the first thing shed"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R16"
+file = "statusline/src/render/full.rs"
+line = 65
+symbol = "render"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "context_window_size is floored at 200k, so the displayed ratio contradicts the displayed percentage"
+description = "unwrap_or(0).max(200_000) raises a genuinely smaller reported window to 200k while pct_used comes from the payload unchanged. A 64k window at 48% renders 31k/200k (48%) — the two halves of one segment disagree. unwrap_or(200_000) expresses the apparent intent without distorting a present value. May be a faithful ps1 carry-over rather than a new defect."
+evidence = [
+    "full.rs:65 unwrap_or(0).max(200_000)",
+    "full.rs:131-135 both rendered in the same segment",
+]
+dedup_id = "b106bdfe40f1c4de"
+resolved = 2026-08-18
+resolution = "unwrap_or(0).max(200_000) replaced with unwrap_or(200_000), so a genuinely smaller reported window is no longer inflated into disagreeing with the pct_used printed beside it"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R17"
+file = "statusline/src/render/full.rs"
+line = 49
+symbol = "limit_segment"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "An absent rate-limit window renders as a confident 0% in full while min deliberately renders nothing"
+description = "unwrap_or(0.0) turns 'no data yet' into a five-dot empty gauge reading 0%, visually identical to a genuinely untouched window. min makes the opposite call two files away and documents it. full's legacy-fidelity mandate is a defensible reason to keep it, but the divergence deserves a comment so the next edit does not align one to the other by accident."
+evidence = [
+    "full.rs:49 unwrap_or(0.0)",
+    "min.rs:45-47 'an absent window is silence, not a zero'",
+]
+dedup_id = "e10d728ee3e1ab6e"
+resolved = 2026-08-18
+resolution = "Documented the deliberate absent-window-renders-0% divergence from min at limit_segment, pinned by an_absent_window_renders_exactly_like_a_zeroed_one; ps1-fidelity behaviour unchanged"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R18"
+file = "statusline/src/fmt.rs"
+line = 9
+symbol = "format_tokens"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "999_500..=999_999 renders as 1000k, one char past the tier's implied width, and {:.0} rounds half-to-even"
+description = 'format!("{:.0}k", n/1000.0) on 999_999 gives 1000k — a value that should have crossed into the m tier, and one character wider than any other output of the branch (width budgets implicitly assume <= 4). Separately {:.0} is round-half-to-even, so 1500 -> 2k, 2500 -> 2k, 3500 -> 4k; adjacent counts round inconsistently. Both cosmetic. A >= 999_500 guard on the m branch fixes the first.'
+evidence = [
+    "fmt.rs:8-12",
+    "fmt.rs:124-131 tokens_format_tiers stops short of both boundaries",
+]
+dedup_id = "9e4cb4746aacbb9d"
+resolved = 2026-08-18
+resolution = "Promoted num >= 999_500 to the m branch so the range that rounded to the five-character 1000k now renders 1.0m; new boundary test pins 999_499 vs 999_500 plus a max-4-char width assertion. Rounding mode deliberately untouched per the finding"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R19"
+file = "statusline/src/main.rs"
+line = 92
+symbol = "main_line"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "cols as i64 is a lossy sign conversion and full is the only renderer taking a signed width"
+description = "--columns 18446744073709551615 becomes -1, and every show_* tier silently evaluates false while compact becomes true. No panic and no realistic user hits it, but this is the only place in the crate where a width is signed — min::render, agents::render and fmt::width all use usize. Changing full::render to usize removes the cast and the inconsistency together."
+evidence = [
+    "main.rs:92 render::full::render(&data, cols as i64)",
+    "full.rs:63 fn render(data: &Payload, cols: i64)",
+    "min.rs:67 fn render(p: &Payload, cols: usize, icon: &str)",
+]
+dedup_id = "52fb9c03a5245673"
+resolved = 2026-08-18
+resolution = "full::render now takes cols: usize; dropped the as i64 cast at its sole call site, aligning it with min::render, agents::render and fmt::width"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R20"
+file = "statusline/src/main.rs"
+line = 50
+symbol = "main"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "print! panics on a write failure — the one path where this binary does not degrade silently"
+description = "Every other failure is swallowed deliberately: bad JSON becomes Claude, an unreadable meta file is skipped, a failed git spawn returns None. print! is the exception: on a broken pipe it panics, and under panic = abort that terminates without unwinding and surfaces in claude --debug as a crash rather than a missing status line. let _ = write!(stdout().lock(), ...) matches the crate's stated failure philosophy."
+evidence = [
+    "main.rs:50-52,62-65 three print! sites",
+    "main.rs:47 let _ = read_to_string shows the intended discipline",
+    'Cargo.toml:24 panic = "abort"',
+]
+dedup_id = "cf0457d50b2b7435"
+resolved = 2026-08-18
+resolution = "All three print! sites replaced with let _ = write!(stdout().lock(), ..); a broken pipe now degrades silently instead of aborting under panic = abort. Context7-verified that print! panics on a failed stdout write while write! returns a discardable io::Result"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R21"
+file = "statusline/src/fmt.rs"
+line = 97
+symbol = "width"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "chars().count() counts zero-width format characters as one cell; the bidi-override case can scramble neighbouring segments"
+description = "one_line strips whitespace and char::is_control, but is_control covers only category Cc. U+200B-U+200F, U+202A-U+202E and U+2066-U+2069 pass through: they count as width 1 while occupying zero cells, and an unterminated RTL override reorders the rest of the row. CLAUDE.md documents the east-asian-width shortfall as accepted because it over-counts in the safe direction; this one under-counts. Reachability is plausible but unproven — treat as hardening, not a confirmed live defect."
+evidence = [
+    "fmt.rs:97-99 chars().count()",
+    "fmt.rs:80 char::is_control is Cc only",
+    "CLAUDE.md:22 documents only the over-estimate direction",
+]
+dedup_id = "988b7433f9169009"
+resolved = 2026-08-18
+resolution = "one_line now drops the invisible Cf ranges (U+200B-U+200F, U+202A-U+202E, U+2066-U+2069) before the whitespace branch, so an unterminated bidi override cannot reorder a row; dropped outright rather than spaced, so no phantom gap appears"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R22"
+file = "statusline/src/render/agents.rs"
+line = 29
+symbol = "SEP"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "SEP is declared byte-identically in two render modules that both width-budget against their own copy"
+description = "agents.rs:29 and min.rs:25 declare the same constant, and full.rs builds its own separator. Both width-budgeting renderers compute against a private copy, so a change to one silently desynchronises layouts meant to look like one family. fmt already hosts the shared width/ellipsize vocabulary and is the natural home."
+evidence = [
+    "agents.rs:29",
+    "min.rs:25",
+    "full.rs:75",
+]
+dedup_id = "2adfa96b25655d16"
+resolved = 2026-08-18
+resolution = "Hoisted the duplicated SEP into fmt.rs as a single pub const; agents.rs and min.rs now import it, byte value and comment preserved, suite unchanged at 69 passing. full.rs was left alone - its separator is a dim-wrapped pipe of different glyph and width, not a third copy"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R23"
+file = "statusline/src/render/agents.rs"
+line = 67
+symbol = "Seg::text"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Seg::text clones plain into painted for every segment though only the badge ever differs"
+description = "Seg { painted: plain.clone(), plain, prio } allocates a second copy of every segment string, on every row, on every tick; one badge per row is the sole case where the two diverge. painted: Option<String> with as_deref().unwrap_or(&plain) at the join, or Cow, removes the allocation without changing behaviour. Modest in absolute terms — roughly six clones per row — but this is the path the crate's justification is measured on."
+evidence = [
+    "agents.rs:67-70",
+    "agents.rs:79-84 badge is the only diverging constructor",
+    "agents.rs:228-229,259 the clip steps rebuild via Seg::text, cloning again",
+]
+dedup_id = "8b132ab7e766cd74"
+resolved = 2026-08-18
+resolution = "Seg.painted is now Option<String> resolved at the single join site via Seg::emit, removing a per-segment heap clone on every row on every tick; a redundant clone in Seg::badge's unmapped-colour arm was removed too"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R24"
+file = "statusline/scripts/preview-icons.ps1"
+line = 141
+symbol = "grid mode"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Grid header is 4 columns wide against 3-wide cells, and the row label zero-pads to 4 digits"
+description = "The -join '' binds to the whole concatenation rather than the pipeline, so the array is stringified with $OFS and each header cell becomes 4 characters against 3-character cells — the header never lines up with the columns it labels. Separately {0:X4} formats 0x270 as 0270, printing 0270_ for the row covering U+2700-U+270F, which reads as U+0270x. Cosmetic, in a dev-only script, but both are unambiguous defects."
+evidence = [
+    "preview-icons.ps1:141 header build",
+    "preview-icons.ps1:147 3-character cells",
+    "preview-icons.ps1:149 '{0:X4}_'",
+]
+dedup_id = "a4914b0a45c74d53"
+resolved = 2026-08-18
+resolution = "Re-bound the grid header -join inside its own parens (binary -join is lower precedence than +, confirmed against the MS operator table) and changed the row label from {0:X4}_ to {0:X3}_ with a compensating space, so 0x2700 reads 270_ ; alignment verified by running grid mode over two ranges"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R25"
+file = "statusline/src/render/agents.rs"
+line = 48
+symbol = "P_PROTECTED"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "The flat u8 scale conflates shed order with shrink policy, so a segment inserted above 60 silently becomes unsheddable"
+description = "A segment has two independent attributes — where it sits in the shed order, and how it gives ground (drop whole / clip to a prefix / never drop). The u8 encodes the first; the second is expressed as two hardcoded comparisons against specific constants plus a threshold. The constants are 10-spaced precisely so new segments can be inserted between them, but P_PROTECTED = P_MSGS means an insertion at 65 changes the segment's class, not just its rank. A policy: Shrink { Drop, Clip, Keep } field on Seg collapses both special-cased passes into one generic step and lets the u8 mean only ordering. Worth doing only if the segment list is expected to keep growing."
+evidence = [
+    "agents.rs:37-48 constants plus P_PROTECTED = P_MSGS",
+    "agents.rs:222-231 clip pre-pass keyed on prio == P_ACTIVITY",
+    "agents.rs:238 shed loop keyed on prio < P_PROTECTED",
+    "agents.rs:250-261 title clip keyed on prio == P_NAME",
+]
+dedup_id = "66af7e6c6512c658"
+resolved = 2026-08-18
+resolution = "partial: documented the P_PROTECTED=P_MSGS class-vs-rank trap and pinned the unsheddable class by test (falsifier-checked - an insertion at priority 65 fails it) / pending: the Shrink { Drop, Clip, Keep } restructure, tracked as R63"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "wontfix"
+id = "R26"
+file = "statusline/src/cli.rs"
+line = 4
+symbol = "use crate::render::agents"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "The arg parser imports a renderer module purely to name a CLI value, inverting the natural layering"
+description = "MainStyle is defined in cli.rs while its sibling agents::Style is defined in render/agents.rs, so cli.rs imports a renderer to name a CLI value. Moving Style next to MainStyle is a five-line change that makes the dependency one-directional. Explicitly NOT a case for a trait: the three renderers have three genuinely different signatures over two payload types, so a common trait needs a lowest-common-denominator context struct that costs more than the six match arms it replaces — and dynamic dispatch in a binary optimised for startup cost is the wrong trade."
+evidence = [
+    "cli.rs:4 use crate::render::agents",
+    "cli.rs:50-59 MainStyle and Mode",
+    "render/agents.rs:51 pub enum Style",
+]
+dedup_id = "3005d026ec8fba95"
+wontfix_rationale = "MainStyle and agents::Style are not siblings, so moving Style into cli.rs would invert the layering rather than make it one-directional. MainStyle is a dispatch selector: main.rs matches it to choose a renderer, and neither render::full nor render::min ever sees it. agents::Style is a behaviour switch inside one renderer, threaded through render -> shed -> row -> segments and matched on to gate the rich-only spec and context segments, plus roughly fifteen test sites. Relocating it would put a renderer's own control flow in the argument parser and make render/agents.rs - documented as a pure payload -> String - depend on argv handling. Assessed under /review-apply 2026-08-18; no trait was introduced, per the finding's own guidance."
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R27"
+file = "statusline/src/render/full.rs"
+line = 164
+symbol = "render"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Compact mode builds the entire normal layout and then discards it, re-deriving the same values twice"
+description = "compact is decided at :73 but the function still builds parts1, the model, effort and token segments and line1, then at :164 discards all of it to construct cline from scratch — re-reading path_leaf(cwd) and re-extracting both rate-limit percentages that limit_segment already knows how to extract. The waste is cheap string formatting, so this is a structure finding: two layouts interleaved in one 130-line function, where a change to token colouring or percentage rounding has to be made twice or they drift. An early return right after :73 separates them."
+evidence = [
+    "full.rs:73 let compact = cols < 50",
+    "full.rs:75-162 non-compact layout built unconditionally",
+    "full.rs:164-189 re-derives path_leaf and both percentages",
+]
+dedup_id = "6d5bd7eacc2db9ec"
+resolved = 2026-08-18
+resolution = "Split the compact layout into compact_line() behind an early return at cols < 50 so the two layouts no longer interleave; output byte-identical, and a no-op filter left trivially true by the split was removed"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R28"
+file = "statusline/src/render/full.rs"
+line = 69
+symbol = "render"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "Three renderers, three width strategies — and the only one that never measures anything is the default"
+description = "min measures and sheds until the line fits; agents measures and runs the priority engine; full measures nothing — four boolean thresholds and no call to fmt::width anywhere in the file, so its output width is a guess. A long branch plus a long directory leaf plus a wide model label at cols=70 overflows with nothing to catch it, and no test asserts otherwise. The signature confirms the incoherence: full::render takes i64 while its siblings take usize. Defensible if bug-for-bug ps1 fidelity is the point — but then say so in the module header."
+evidence = [
+    "full.rs:69-73 four thresholds, no measurement",
+    "min.rs:85-90 / agents.rs:210-215 the two that do measure",
+    "main.rs:92 cols as i64",
+]
+dedup_id = "c39728e6bde6c392"
+resolved = 2026-08-18
+resolution = "Documented the deliberate no-width-measurement decision in full.rs's header - tier thresholds inherited from the ps1, Claude Code truncation the only backstop, and adding a guard would change rendered output. The finding's secondary claim was stale: the signature is usize, not i64"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R29"
+file = "statusline/src/ansi.rs"
+line = 18
+symbol = "RESET"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "ansi.rs holds two mutually incompatible palettes and the SGR-0 ban is enforced only by unit tests"
+description = "The module header claims one table for every style, but it is really two vocabularies that must never mix: the legacy full set terminated by RESET, and the modern set closing spans without SGR 0. The no-SGR-0 constraint is load-bearing, yet RESET is a plain pub const and full.rs glob-imports the whole table. Nothing but two assertions stops a future edit to agents.rs reaching for RESET. Moving RESET behind a legacy module, or renaming it, turns a test-enforced convention into a structural one for one line and three call-site edits."
+evidence = [
+    "ansi.rs:18 RESET alongside NOBOLD/FG/BG",
+    "full.rs:10 use crate::ansi::*",
+    "agents.rs:352 the assertion that currently carries the constraint",
+]
+dedup_id = "57abb0a818e578a3"
+resolved = 2026-08-18
+resolution = "RESET moved into ansi::legacy so full.rs's glob import can no longer surface SGR 0, and reaching for it now costs an explicit import; ansi.rs's header describes two vocabularies. Grep confirmed no module outside full.rs used it - no live defect"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R30"
+file = "statusline/src/render/agents.rs"
+line = 121
+symbol = "FILLER"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "The reverse-engineered Claude Code facts carry no version anchor and every one fails silently"
+description = """The couplings are well documented as facts — label = progressSummary || description, the dim-wrapper hazard, columns already net of the gutter, the meta-file shape — but none records which Claude Code build the observation was made against, and all degrade silently. FILLER = ["working"] is a bare UI string; if it becomes "Working..." the filter stops working and a useless column returns with no signal. STALL_WINDOW = 9 is justified by 'upstream keeps at most 16 samples'; if upstream drops to 8, stalled never fires again and nothing says so. A single 'Observed against Claude Code <version>, <date>' line per module gives a future reader a diff anchor. badge_bg's None path is the good pattern to copy."""
+evidence = [
+    "agents.rs:121 FILLER",
+    "subagent.rs:16-17 'upstream keeps at most 16 samples'",
+    "ansi.rs:32-44 badge_bg's None path, the well-behaved counter-example",
+]
+dedup_id = "84dd3094493ad3a7"
+resolved = 2026-08-18
+resolution = "Added an 'Observed against Claude Code 2.1.234, 2026-08-18' anchor to the render/agents.rs and subagent.rs module headers, each naming the silent fail-open mode of its constants (FILLER, STALL_WINDOW)"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R31"
+file = "statusline/src/render/full.rs"
+line = 81
+symbol = "render"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "full and min name the same session differently — Payload::repo_label exists and only min uses it"
+description = "min calls repo_label(), which prefers the origin remote then project_dir, deliberately avoiding cwd because cwd follows mid-session directory changes. full calls path_leaf(data.dir()), and dir() prefers workspace.current_dir — the exact field repo_label was written to avoid. After a cd into a subdirectory, full renders 'statusline@main' while min renders 'dev-tools' from one payload. Each accessor has exactly one caller, the tell that the abstraction was added for min and never reconciled. The divergence may be correct (full shows where am I, min shows which project) but nothing says so."
+evidence = [
+    "full.rs:81 path_leaf(cwd) where cwd = data.dir()",
+    "min.rs:68 p.repo_label()",
+    "payload.rs:114-137 one caller each, opposite cwd policies",
+]
+dedup_id = "877bc625e9c29fcb"
+resolved = 2026-08-18
+resolution = "Documented the dir() vs repo_label() divergence at full's call site - full answers 'where am I', min answers 'which project' - with the concrete statusline@main vs dev-tools example; the accessor itself is unchanged"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R32"
+file = "statusline/src/cli.rs"
+line = 101
+symbol = "parse"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "--icon is silently ignored outside min while a cross-mode --style is a hard error"
+description = "statusline --icon X (default style full) and statusline subagent --icon X both parse cleanly and render as if the flag were absent; icon is threaded only into min. The adjacent flag takes the opposite stance, with a test named a_style_valid_in_the_other_mode_is_rejected_not_silently_defaulted asserting that intent. HELP does say 'min only', so this is a consistency gap: the crate picks both conventions. The silent path is the one a user hits while iterating with preview-icons.ps1."
+evidence = [
+    "cli.rs:101-104 --icon parsed unconditionally",
+    "main.rs:94 consumed only in the MainStyle::Min arm",
+    "cli.rs:196-199 the opposite convention, with a test",
+]
+dedup_id = "6e71af4236bfa971"
+resolved = 2026-08-18
+resolution = "USER-FACING CLI BREAK: --icon outside --style min now exits 2 with '--icon applies to --style min only', mirroring the existing cross-mode --style rejection; added an_icon_outside_min_is_rejected_not_silently_ignored and re-pointed the existing icon test at -s min. preview-icons.ps1 already passes --style min everywhere, so the icon-preview workflow is unaffected"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R33"
+file = "statusline/src/cli.rs"
+line = 88
+symbol = "parse"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Three accepted spellings — subagents, agents, minimal — appear in no help text or --list-styles output"
+description = "parse accepts subagents and agents as mode aliases and minimal as a style alias (the latter has a pinned test). HELP documents only subagent, and STYLE_LIST — the entire payload of --list-styles, which README says names the styles — lists only full/min and tiers/rich. Either surface the aliases or drop them; right now --list-styles is not an accurate inventory of what parse will take."
+evidence = [
+    'cli.rs:88 matches!(first, "subagent" | "subagents" | "agents")',
+    'cli.rs:142 Some("min") | Some("minimal")',
+    "cli.rs:44-47 STYLE_LIST",
+]
+dedup_id = "04980bb078d0ee78"
+resolved = 2026-08-18
+resolution = "Surfaced rather than dropped: documented the subagents/agents mode aliases and the minimal style alias in HELP, and made STYLE_LIST an accurate inventory of every token parse accepts. No parser behaviour changed, so the pinned minimal test is untouched"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R34"
+file = "statusline/src/subagent.rs"
+line = 78
+symbol = "Task::is_stalled"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "is_stalled is a display heuristic with a tunable threshold living in the wire-types module"
+description = "payload.rs and subagent.rs are described as wire types but carry formatting and policy. For the label helpers that co-location is right — the interpretation belongs beside the field it interprets. is_stalled sits wrong: STALL_WINDOW is a display decision (how flat, for how long, before the row says stalled), it has exactly one consumer, and tuning row behaviour means editing a file whose stated job is the stdin payload. A judgement call rather than a defect; the current layering is defensible at this scale."
+evidence = [
+    "subagent.rs:16 STALL_WINDOW in the wire module",
+    "subagent.rs:78-84 is_stalled",
+    "agents.rs:201 sole consumer",
+]
+dedup_id = "64644a11217be3ea"
+resolved = 2026-08-18
+resolution = "Moved is_stalled and STALL_WINDOW from subagent.rs into render/agents.rs as a private free fn beside MIN_LABEL, its structural parallel; the wire fact it derives from (the 16-sample cap) stays documented on Task::token_samples"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R35"
+file = "statusline/src/teamdata.rs"
+line = 105
+symbol = "load"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "load reads an inbox for every member on disk rather than the handful actually on the panel"
+description = "main.rs calls teamdata::load before the renderer exists, so the loader builds facts for up to 64 members while render::agents only consults team.get(n) for names present in payload.tasks. The meta reads are unavoidable — the name lives inside the file — but the inbox read is a second file per member and is entirely skippable: pass the task-name set down and gate inbox_count on membership. Roughly halves the syscalls per tick when the panel is a strict subset of the team."
+evidence = [
+    "main.rs:61 teamdata::load(p.transcript_path.as_deref())",
+    "teamdata.rs:133-136 inbox_count called for every parsed member",
+    "agents.rs:164 team.get(n) for payload names only",
+]
+dedup_id = "39c76b4474e0b8d8"
+resolved = 2026-08-18
+resolution = "teamdata::load/load_from now take the set of names the panel is about to draw and gate the per-member inbox read on membership, roughly halving per-tick syscalls when the panel is a strict subset of the team; load_team stays a parameter so subagent_line remains pure, and the containment guard is untouched"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R36"
+file = "statusline/src/teamdata.rs"
+line = 1
+symbol = "module docs"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Record why teamdata deliberately has no cache, so nobody adds one"
+description = "The absence of caching is architecturally forced, not an oversight: the binary is a fresh process per tick, so there is no in-process state a cache could live in, and a cross-process cache would be a file that is itself opened, read and mtime-checked every tick — strictly more I/O than the ~330-byte reads it replaces, plus a staleness bug class on exactly the field (inbox depth) you cannot afford to serve stale. The header already justifies what it reads and what it refuses to read; one sentence on the no-cache decision closes the loop, framed as 'no cache while the source is N files' rather than an absolute."
+evidence = [
+    "teamdata.rs:1-18 documents sources and the config.json exclusion, not the cache decision",
+    "main.rs:33 process lifetime is one tick",
+]
+dedup_id = "15f11778c4751d1d"
+resolved = 2026-08-18
+resolution = "Recorded the no-cache decision in teamdata.rs's module header, framed conditionally ('no cache while the source stays a handful of small files') with the fresh-process, cross-process-I/O and stale-inbox-depth rationale"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R37"
+file = "statusline/src/main.rs"
+line = 85
+symbol = "main_line"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Zero columns is filtered to a sane default in subagent mode but taken literally for the main line"
+description = "agents::render filters c > 0 and falls back to 76. main_line has no such filter: --columns 0, or COLUMNS=0 in the environment, yields cols = 0, driving full into its compact branch and min into shedding both rate-limit windows while both still emit a line far wider than 0. Not a crash, but the two entry points disagree about what zero means and only one is defensive."
+evidence = [
+    "main.rs:85-90 no zero filter",
+    "agents.rs:95-98 .filter(|c| *c > 0).unwrap_or(DEFAULT_COLUMNS)",
+]
+dedup_id = "5a3c12cc5921a740"
+resolved = 2026-08-18
+resolution = "Applied agents.rs's .filter(|c| *c > 0) form in main_line so both entry points agree on what zero means; DEVIATION - kept main_line's existing 120 fallback rather than agents' 76, because the two measure different quantities (gutter-subtracted body width vs full terminal width) and harmonising would silently drop full's git segment (gated at cols >= 100) for every user with COLUMNS unset. Pinned by a_zero_width_falls_back_rather_than_shedding_everything"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R38"
+file = "statusline/src/subagent.rs"
+line = 33
+symbol = "Task"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Documented per-task field cwd is unmodelled"
+description = "The official subagentStatusLine docs enumerate thirteen per-task fields; Task models twelve. cwd is absent. It is the field that distinguishes rows running in different git worktrees — directly relevant to this repo's sprint-in-a-worktree workflow, where several teammates share a task-name prefix and differ only by working directory. Harmless to omit deliberately, but nothing records that it was a choice."
+evidence = [
+    "https://code.claude.com/docs/en/statusline per-task field list",
+    "subagent.rs:33-57 twelve fields modelled",
+]
+dedup_id = "03cc537f8de7e6a3"
+resolved = 2026-08-18
+resolution = "Added Task::cwd after confirming against live documentation that the payload carries thirteen per-task fields; modelled but not rendered, with the reason and an explicit drop-it-if-still-unread note so it does not become another dead field"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R39"
+file = "statusline/src/subagent.rs"
+line = 52
+symbol = "Task::context_window_size"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "context_window_size is deserialised but never read anywhere in the crate"
+description = "The field is modelled and then unused. The docs give it exactly one documented purpose: rendering a per-row context percentage from tokenCount. That is the natural companion to what rich already claims to add, and the main line renders precisely that ratio. Either use it in rich or drop the field so the struct stops implying coverage it does not have. Note the user explicitly chose token count without window size for the tiers style, so this applies to rich only."
+evidence = [
+    "subagent.rs:52 declared",
+    "agents.rs:184-192 Style::Rich uses model_label and effort_label only",
+    "full.rs:65-67 the main line does render this ratio",
+]
+dedup_id = "2472795852497482"
+resolved = 2026-08-18
+resolution = "rich now renders a context-fill percentage at a new P_CONTEXT=25 derived from tokenCount/contextWindowSize, resolving the dead field; tiers output verified byte-identical, honouring the explicit choice of token count without window size for that style"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R40"
+file = "statusline/src/payload.rs"
+line = 83
+symbol = "Cost"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "cost.total_lines_added / total_lines_removed are in the payload while full spawns git diff for the adjacent (+N -N) segment"
+description = "Cost models only total_api_duration_ms. The semantics genuinely differ — the payload counts lines Claude changed this session, git diff HEAD counts the whole working tree against HEAD — so this is not a drop-in substitution and the ps1 port's choice is defensible. Worth recording as a deliberate omission though, given R3 measured that subprocess at ~280ms per tick: the payload offers a free approximation of the same visual. README reads as a boast where it could read as a documented trade-off."
+evidence = [
+    "payload.rs:81-85 Cost models one field",
+    "https://code.claude.com/docs/en/statusline cost object",
+    "full.rs:84-90 the git-backed segment",
+]
+dedup_id = "aa2c170061a4beb5"
+resolved = 2026-08-18
+resolution = "Recorded cost.total_lines_added/total_lines_removed as a deliberate omission on Cost, with the session-scoped vs whole-working-tree distinction that makes them not a drop-in substitute; the README bullet was reframed from a boast into the documented trade-off. No unread fields added"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R41"
+file = "statusline/scripts/preview-icons.ps1"
+line = 51
+symbol = "param -Binary"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "preview-icons.ps1's -Binary parameter is undocumented in the script's own help, README and CLAUDE.md"
+description = "The script declares -Binary defaulting to the cargo bin path and hard-throws when it is missing, but the parameter appears in neither the comment-based help block nor README's walkthrough nor CLAUDE.md's signature line. A user who installed elsewhere, or is testing a target/release build rather than the installed one, hits the throw with no documented recovery even though the escape hatch exists."
+evidence = [
+    "preview-icons.ps1:51 param declaration",
+    "preview-icons.ps1:113 throw on missing binary",
+    "CLAUDE.md:30 signature omits -Binary",
+]
+dedup_id = "3b423ede1228a8b5"
+resolved = 2026-08-18
+resolution = "Documented -Binary in all three places - a .PARAMETER Binary block in the script's comment-based help (verified via Get-Help -Parameter Binary), a clause plus worked example in README's glyph walkthrough, and the signature line in CLAUDE.md with the throw and its escape hatch named"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 2
+status = "fixed"
+id = "R42"
+file = "statusline/CLAUDE.md"
+line = 26
+symbol = "Commands / cargo test line"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = '"width tiers are property-checked over 8..=80 columns" — the property test runs 8..=95'
+description = "every_tier_fits_its_budget loops 8..=95. The only 80-bounded loop is numbers_survive_even_when_the_label_cannot, which starts at 12, so the stated range matches neither test. Trivial, but it is the sentence a maintainer reads to decide whether a new tier is covered — and R1 shows the range is exactly where the property's blind spot lives."
+evidence = [
+    "CLAUDE.md:26",
+    "agents.rs:444 for cols in 8..=95",
+    "agents.rs:455 for cols in 12..=80",
+]
+dedup_id = "0149603cea02ec9a"
+resolved = 2026-08-18
+resolution = "Rewrote the cargo-test line to the post-R43 truth: every_tier_fits_its_budget property-checks over cols 1..=95 across five row fixtures times both subagent styles, asserting width <= cols unconditionally"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R43"
+file = "statusline/src/render/agents.rs"
+line = 441
+symbol = "tests::every_tier_fits_its_budget"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "The width property runs one fixture over 8..=95 and only Style::Tiers, so it cannot see the two overflow classes R1 confirmed"
+description = "Merged from two findings on the same test. (a) It scans only falcon(), which always yields >= 2 segments including a sheddable one — so neither a single-segment row nor a protected-only residue is reachable, which is exactly how R1 escaped. (b) Both helpers hardcode Style::Tiers, so the P_SPEC segment Rich adds is never budget-checked at any width; Rich is covered only by two exact-string assertions. Fix: hoist the loop over a fixture table indexed on the two axes the guards actually branch on — segment count, and whether the residue is entirely at/above P_PROTECTED — namely falcon, P_NAME-only (the local_bash fixture already in-suite), P_ACTIVITY-only, protected-only, each under both styles; and lower the floor to cols=1. Written as an unconditional width <= cols the property fails today, which is the correct outcome."
+evidence = [
+    "agents.rs:444 for cols in 8..=95 with only let t = falcon()",
+    "agents.rs:310,314 both helpers hardcode Style::Tiers",
+    "agents.rs:496 the one-segment fixture already present",
+]
+related = ["R1"]
+dedup_id = "7c2787a506b1df80"
+resolved = 2026-08-18
+resolution = "Hoisted every_tier_fits_its_budget over a five-fixture table indexed on the two axes the guards branch on (segment count, protected-only residue) times both styles times cols 1..=95, asserting width <= cols unconditionally. Falsified in an isolated copy: reverting R1 alone yields 104 violations, zero with R1 in place"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R44"
+file = "statusline/src/render/agents.rs"
+line = 323
+symbol = "tests::tiers_clip_the_activity_then_shed_by_priority"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Eight hand-computed transition widths are the only guard on the shed ordering; the ordering contract is never asserted as an invariant"
+description = "The literals at cols 36/35/31/30/19/12/9/5 each probe a real boundary and are worth keeping, but they are the sole guard on the priority table, checked at 8 of ~90 widths with arithmetic a human redoes on every change — and that arithmetic was wrong twice during development. Add the invariant they proxy: across the full range the surviving set must be a suffix of the priority-ordered set (nothing sheds while something strictly lower-priority survives) and must be monotone as cols falls. That catches a P_MSGS/P_TOKENS/P_PROTECTED reordering at every width; the literals then document intent rather than carrying the whole guard."
+evidence = [
+    "agents.rs:325-337 eight assert_eq! on hand-computed columns",
+    "agents.rs:234-245 the shed loop they are the only guard for",
+]
+dedup_id = "58bf2a9f57c50b9a"
+resolved = 2026-08-18
+resolution = "Added the_shed_order_holds_at_every_width - suffix and monotonicity invariants over cols 1..=95 x 6 fixtures x both styles - while keeping all eight hand-computed literals as intent documentation. Falsifier-checked: a min_by_key to max_by_key inversion fails it"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R45"
+file = "statusline/src/render/agents.rs"
+line = 112
+symbol = "render"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Empty output and empty row content are distinct protocol signals; neither is asserted"
+description = """An omitted id keeps a row's default rendering while an empty content HIDES the row. render returns "" for an empty tasks array via the join — the documented keep-the-defaults path — and row must never return "" for a real task or the row vanishes. The only render-level test covers two tasks. Two trivial additions: render with tasks: [] returns exactly "", and row is non-empty for every fixture across the full column range. The second pairs with R43 and guards the strictly worse failure mode: a row that vanishes is worse than one that overflows."""
+evidence = [
+    "subagent.rs:5-6 empty content hides the row",
+    "agents.rs:501-516 the only render-level test",
+]
+related = ["R43"]
+dedup_id = "4c6ddaf7d05c9157"
+resolved = 2026-08-18
+resolution = "Added no_tasks_means_no_output_at_all (an empty tasks array renders the empty string - the keep-the-defaults path) and a_row_is_never_empty_at_any_width over the same five-fixture table, pinning the two distinct protocol signals"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R46"
+file = "statusline/src/render/mod.rs"
+line = 2
+symbol = "module doc"
+severity = "warning"
+effort = "medium"
+category = "testability"
+summary = "The false purity claim is not just doc drift — it is precisely why full::render is untestable, and restoring it is the seam"
+description = "render/mod.rs states each renderer is a pure payload -> String. min and agents honour that and are heavily tested; full violates it (git::branch reads the filesystem, git::diff_stats spawns a subprocess) and has zero tests for render. The two facts are causally linked. Restoring the invariant IS the fix: resolve the git facts in main.rs and pass them in, e.g. full::render(data, cols, branch: Option<&str>, diff: Option<(u64,u64)>). agents::render already takes now_ms and &Team for exactly this reason, so the injected-dependency pattern is established in-crate. This also removes the untimed subprocess from the render path, which is R3."
+evidence = [
+    "render/mod.rs:2 the purity claim",
+    "full.rs:82,85 git::branch / git::diff_stats",
+    "agents.rs:88-94 the injected-dependency signature that works",
+]
+related = [
+    "R3",
+    "R11",
+    "R47",
+]
+dedup_id = "22db0a92caded0c4"
+resolved = 2026-08-18
+resolution = "Injected the git facts - full::render(data, cols, branch, diff), resolved by a new main::git_facts - so full.rs no longer imports crate::git and all three renderers are pure. Spawn guards preserved exactly, with CHANGES_COLS exported so the guard and the renderer cannot drift. The finding's doc-drift premise was already stale; the architectural half is what landed"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R47"
+file = "statusline/src/render/full.rs"
+line = 197
+symbol = "tests"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "full::render — five width tiers plus the entire compact branch — has no tests; the module covers only usage_dots and usage_color"
+description = "render is ~130 lines gating on show_changes, show_model, show_resets, show_line2 and compact, plus a structurally different compact branch. None is executed by a test, and limit_segment is uncovered too. A cheap win exists before the git seam of R46 lands: a payload with no cwd and no workspace.current_dir makes data.dir() return None, skipping the whole git block, so every tier boundary — 49/50, 69/70, 99/100 — is assertable today with no filesystem or subprocess involvement."
+evidence = [
+    "full.rs:69-73 five tier predicates, all uncovered",
+    "full.rs:164 compact branch, uncovered",
+    "full.rs:197-217 the whole test module: two tests on pure helpers",
+]
+related = ["R46"]
+dedup_id = "6f3d2d27599f1ba0"
+resolved = 2026-08-18
+resolution = "Added ten full::render tests: both sides of the 49/50, 69/70 and 99/100 tier boundaries, the compact branch, the no-branch path, cross-layout token_color sharing, the standalone busy segment, and three limit_segment cases including the R17 pin"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R48"
+file = "statusline/src/teamdata.rs"
+line = 105
+symbol = "load"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "load() resolves both input directories internally, so enumeration, meta filtering and inbox counting cannot be tested at all"
+description = "Split resolution from work: keep load(transcript_path) as a three-line wrapper over subagents_dir and claude_dir, and move the body to load_from(dir: &Path, claude: Option<&Path>). A test then writes *.meta.json files into a directory under std::env::temp_dir() — no tempfile crate, no dev-dependency. That reaches everything currently untested: the suffix filter, the size guard, the empty-name filter and the claude_dir/team_name pairing. This is the seam that would let R5, R6 and R7 be pinned by tests rather than argued."
+evidence = [
+    "teamdata.rs:107-113 path resolution inlined at the top of load",
+    "teamdata.rs:173-177 the only test touching load",
+]
+related = [
+    "R5",
+    "R6",
+    "R7",
+]
+dedup_id = "d37d460b2343972a"
+resolved = 2026-08-18
+resolution = "Split load into a thin resolving wrapper over a private load_from(dir, claude); the containment guard was deliberately kept on load, the function that receives the payload-supplied transcript path, so the seam opens no new route into directory enumeration. Four fixture tests now cover the previously unreachable suffix, size and empty-name filters"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R49"
+file = "statusline/src/teamdata.rs"
+line = 59
+symbol = "claude_dir"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Three ambient env reads are untestable in edition 2024 without unsafe"
+description = "claude_dir branches on CLAUDE_CONFIG_DIR, then USERPROFILE, then HOME; main_line falls back to COLUMNS. Neither branch set is covered. The crate is edition 2024, where std::env::set_var is an unsafe fn, so these cannot be tested by mutating the environment without unsafe plus a process-wide lock against the multi-threaded harness. Injection is the clean route: claude_dir_from(config, home) and resolve_columns(flag, env), each pure with the env read left at the call site. That also makes the COLUMNS=abc -> 120 fallback reachable, which no test can enter today."
+evidence = [
+    "Cargo.toml:4 edition = 2024",
+    "teamdata.rs:60-68 three-way env fallback, zero coverage",
+    "main.rs:86-90 COLUMNS fallback; every test passes an explicit Some(n)",
+]
+dedup_id = "87dcaa3a8c8d25b3"
+resolved = 2026-08-18
+resolution = "Extracted pure claude_dir_from(config, user_profile, home) and resolve_columns(flag, env) with the env reads left at their call sites; tests now cover the CLAUDE_CONFIG_DIR precedence, the empty-vs-unset asymmetry between it and USERPROFILE, and the COLUMNS=abc fallback to 120 that no test could previously reach"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R50"
+file = "statusline/src/teamdata.rs"
+line = 86
+symbol = "inbox_count"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "inbox_count fuses path construction with file reading and JSON counting; splitting it makes two thirds pure"
+description = "Split into inbox_path(claude, team, name) -> PathBuf and count_messages(text: &str) -> usize. inbox_path pins that sanitize is applied to BOTH the team and the name and that .json is appended after sanitising — directly relevant to R5, since sanitize_keeps_real_teammate_names_intact tests sanitize in isolation but nothing checks it is actually applied on the path. count_messages pins the array-or-zero rule. Both pure, no fixture needed."
+evidence = [
+    "teamdata.rs:87-91 path join with sanitize(team) and sanitize(name)",
+    "teamdata.rs:97-100 the array-or-zero rule, untested",
+]
+related = [
+    "R5",
+    "R7",
+]
+dedup_id = "726f93ac277cee06"
+resolved = 2026-08-18
+resolution = "Split inbox_path (sanitise and build, returning Option) and count_messages (pure parse) out of inbox_count, which now composes them with read_capped; tests pin that sanitize is applied to BOTH the team and the name and that .json is appended after sanitising"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R51"
+file = "statusline/src/teamdata.rs"
+line = 115
+symbol = "load"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "The bounded-work guards that justify running teamdata every tick have no coverage"
+description = "MAX_MEMBERS = 64 and MAX_META_BYTES = 16 KiB exist so per-tick cost stays bounded. Their interaction is subtle: .take(MAX_MEMBERS * 2) caps iteration while the break caps insertion, so a 200-file directory that is half non-meta yields fewer than 64 members despite 64 being available. Once load_from exists (R48), three fixture tests cover it: 100 valid meta files yields exactly 64; a 20 KiB meta file is skipped; 130 files whose first 128 are non-meta yields empty, documenting the take cap's real behaviour."
+evidence = [
+    "teamdata.rs:115 .take(MAX_MEMBERS * 2)",
+    "teamdata.rs:120 size skip",
+    "teamdata.rs:145-147 break at MAX_MEMBERS",
+]
+related = ["R48"]
+dedup_id = "5d3ef87bb2b44426"
+resolved = 2026-08-18
+resolution = "Added cap-interaction tests: 100 valid meta files yields exactly 64 members, an oversized meta file is skipped, and the take-budget behaviour is documented. The third test's dependence on directory iteration order is named in-test"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R52"
+file = "statusline/src/main.rs"
+line = 56
+symbol = "main"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "The subagent arm has no subagent_line counterpart to main_line, so the crate's most composed path is untested"
+description = "main_line exists precisely so the main-style composition is testable, and three tests exercise it. The subagent arm inlines the equivalent composition — parse_json, the clock read, teamdata::load, agents::render — directly in main, so none is reachable from a test. Extract the symmetric subagent_line(input, style, columns, now_ms, team), leaving only the clock read and the load call in main. That makes the documented empty-output-means-keep-the-defaults degradation assertable for empty, whitespace, non-JSON and malformed input, mirroring the existing main-line test."
+evidence = [
+    "main.rs:56-67 inlined composition, no seam",
+    "main.rs:72-97 main_line, the extraction this arm is missing",
+]
+dedup_id = "3901adb8b691c5e6"
+resolved = 2026-08-18
+resolution = "Extracted subagent_line(input, style, columns, now_ms, load_team) mirroring main_line; DEVIATION - the disk read is threaded as a fn pointer rather than a pre-loaded team value, because team is keyed by transcript_path which only exists after parsing, so passing it would force a second parse per refresh. Added empty_and_malformed_subagent_input_keeps_the_default_rows over four degradation inputs plus a_parseable_subagent_payload_emits_one_row_per_task so it cannot pass vacuously"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R53"
+file = "statusline/src/git.rs"
+line = 11
+symbol = "branch"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "branch() spawns nothing and reads only .git/HEAD, so its parent walk and gitdir: resolution is testable with std::fs alone — and is untested"
+description = "branch never invokes git; it walks parents for .git, follows a gitdir: pointer file, and resolves a relative pointer against the pointer's own directory. All three are reachable from a fixture built with create_dir_all and write under a unique temp_dir() subdirectory — no dev-dependency, no git binary. Worth writing: a nested subdir finds the ancestor .git/HEAD; a .git FILE containing a relative gitdir: resolves against the pointer's directory; an absolute gitdir: is used verbatim; walking off the top returns None. The last must use an isolated temp root — a fixture rooted inside the working tree would walk up into dev-tools' own .git and pass for the wrong reason."
+evidence = [
+    "git.rs:13-25 parent walk plus gitdir: handling, zero coverage",
+    "git.rs:19 relative-vs-absolute pointer resolution",
+    "git.rs:70-97 the test module covers only parse_head and sum_numstat",
+]
+dedup_id = "6efec7ef03f98227"
+resolved = 2026-08-18
+resolution = "Added four branch() fixture tests - ancestor walk, relative gitdir: pointer, absolute gitdir: pointer, and walking off the top - using std::fs alone with no dev-dependency; the fixture is rooted under temp_dir with a pid-keyed name so the None case cannot pass by finding dev-tools' own .git"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R54"
+file = "statusline/src/git.rs"
+line = 52
+symbol = "diff_stats"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The zero-changes-renders-nothing contract lives inside the subprocess wrapper, where it cannot be tested"
+description = "sum_numstat is pure and tested, but the behavioural rule — 0+0 maps to None so the renderer omits the (+n -m) group entirely, matching the ps1 — sits inside the spawning function and is unreachable. Extract stats_from_numstat(text) -> Option<(u64,u64)> wrapping sum_numstat with that gate. Then the empty, explicit-zero and binary-file cases are one-line assertions and the untestable residue shrinks to the four lines that actually spawn git."
+evidence = [
+    "git.rs:52 (added + deleted > 0).then_some(..)",
+    "git.rs:41-42 the documented rule",
+]
+dedup_id = "3d6af5842728dd10"
+resolved = 2026-08-18
+resolution = "Extracted stats_from_numstat(&str) -> Option<(u64,u64)> so the 0+0-renders-nothing rule the renderer depends on is reachable from a test; diff_stats now calls it. Kept module-private since nothing outside git.rs consumes it"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R55"
+file = "statusline/Cargo.toml"
+line = 10
+symbol = "[[bin]] statusline"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "No integration tests, so the binary's actual contract — no trailing newline, exit 0 vs exit 2 — is asserted nowhere"
+description = 'The whole suite is unit tests over internal functions; nothing runs the binary. Three documented contracts are unguarded: output carries no trailing newline (a print! silently becoming println! would misalign the status line with every test still green); a parse failure exits 2 with output on stderr; help/version exits 0 on stdout. A statusline/tests/cli.rs needs zero dev-dependencies — cargo sets CARGO_BIN_EXE_statusline for integration tests, so Command::new(env!("CARGO_BIN_EXE_statusline")) with piped stdin covers all three in ~30 lines. That file also gets CARGO_TARGET_TMPDIR, a better fixture root than temp_dir() for R48 and R53.'
+evidence = [
+    "main.rs:50 print! (no newline) is the contract; nothing asserts it",
+    "main.rs:41-43 eprint! + ExitCode::from(2), unasserted",
+    "no statusline/tests/ directory exists",
+]
+related = [
+    "R48",
+    "R53",
+]
+dedup_id = "ceb79f8e2705bb34"
+resolved = 2026-08-18
+resolution = "Added statusline/tests/cli.rs - seven process-level tests driving the real binary via CARGO_BIN_EXE_statusline with zero dev-dependencies: no trailing newline on stdout, exit 2 with a silent stdout on a usage error, help and version exiting 0, --doctor writing zero bytes to stdout, quiet degradation on malformed input, and a STATUSLINE_DUMP round-trip. Cargo.toml needed no change"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R56"
+file = "statusline/src/render/min.rs"
+line = 136
+symbol = "tests::width_accounting_matches_the_painted_line"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The test re-implements the SUT's shedding loop verbatim, so it cannot detect a change to that loop"
+description = "Confirmed by diff: min.rs:142-148 is a verbatim copy of the loop at min.rs:75-80. Whatever render does the copy does too, so a bug in the shed condition is mirrored rather than caught — the test only verifies that line_width agrees with plain().chars().count(), which its docstring claims but the structure obscures. Replace the copied loop with the invariant it proxies: across the full column range, plain(&render(..)).chars().count() <= cols.max(FLOOR) where FLOOR is the documented non-shrinking minimum. Ordering stays pinned by sheds_week_then_5h_as_the_terminal_narrows, which does not duplicate the SUT. Note this test also could not have caught R2."
+evidence = [
+    "min.rs:142-148 verbatim copy of min.rs:75-80",
+    "min.rs:140 only 7 hand-picked column values scanned",
+]
+related = ["R2"]
+dedup_id = "90b822e7a9f6a84f"
+resolved = 2026-08-18
+resolution = "Replaced the SUT-mirroring loop with the invariant it proxies - rendered width <= cols.max(MIN_COLS) over 0..=120 cols, both icon modes, and a 50-char repo-name payload that fails pre-R2. sheds_week_then_5h_as_the_terminal_narrows left untouched, so shed ordering stays pinned by a test that does not duplicate the SUT"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R57"
+file = "statusline/src/cli.rs"
+line = 44
+symbol = "STYLE_LIST"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Nothing gates the accepted-style set against the help text, and the drift is already present"
+description = "help_and_version_print_rather_than_run asserts only that the output contains USAGE. parse accepts minimal as an alias for min but neither HELP nor STYLE_LIST mentions it — the drift this class of test prevents has already happened (R33). Add a round-trip test: each accepted style name resolves to the expected Mode, and every accepted name minus deliberate aliases appears in both STYLE_LIST and HELP. The sibling crate already has the pattern — tomlctl's command_lint test gates carrier/CLI flag drift the same way."
+evidence = [
+    "cli.rs:142 minimal accepted",
+    "cli.rs:44-47 STYLE_LIST omits it",
+    "cli.rs:219-228 help test checks a single substring",
+]
+related = [
+    "R33",
+    "R10",
+]
+dedup_id = "ae729af13ff1ec71"
+resolved = 2026-08-18
+resolution = "Added a docs-to-parse round-trip gate driven by a single accepted_names() list, with whole-word document matching so 'min' cannot ride in on the substring inside 'minimal'. The specific drift the finding cited was already fixed; the missing gate is what landed"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R58"
+file = "statusline/src/fmt.rs"
+line = 50
+symbol = "format_epoch"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "format_epoch's output format is never asserted — only its None cases — because a naive test would be timezone-dependent"
+description = 'epoch_rejects_null_forms checks four is_none() cases and one bare is_some(); the rendering is unverified. Untested therefore: the chrono specifiers (%P for lowercase am/pm is easy to regress to %p), and the blanket .replace(":00", "") which strips any :00 in the string rather than only a zero-minute suffix. A deterministic test exists: build the input with chrono::Local.with_ymd_and_hms(...).timestamp(), then assert the rendered string — constructing in Local and rendering in Local cancels the timezone, so it holds on any machine. Pair with a zero-minute case to pin the :00 strip.'
+evidence = [
+    "fmt.rs:47-50 the format strings and the blanket :00 replace",
+    "fmt.rs:158 the only positive case asserts nothing about the output",
+]
+dedup_id = "1ed13245f7e01c3c"
+resolved = 2026-08-18
+resolution = "Added epoch_renders_lowercase_meridiem_and_drops_the_zero_minute - timezone-cancelling via Local.with_ymd_and_hms, covering both EpochStyle variants, pinning lowercase %P against a %p regression and the :00 strip. format_epoch's behaviour is unchanged"
+
+[[items]]
+first_flagged = 2026-08-18
+rounds = 1
+status = "fixed"
+id = "R59"
+file = "statusline/src/main.rs"
+line = 47
+symbol = "main"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Field diagnosis is impossible because the real payload cannot be captured; seven silent failure modes share one observable outcome"
+description = "In situ the binary is silent by design: a bad main payload renders Claude, a bad subagent payload renders nothing, and teamdata::load degrades quietly at seven points. A missing badge is therefore indistinguishable from no teammates, a wrong CLAUDE_CONFIG_DIR, a sanitize mismatch (R5), or the settings-snapshot gate that needs a Claude Code restart. --columns only helps once you already hold the payload, and there is no way to obtain it. Cheapest high-leverage affordance: a STATUSLINE_DUMP=<path> env var checked before rendering, writing stdin verbatim — two lines on a cold branch, no hot-path cost, and every field report becomes a deterministic offline repro. A --doctor flag printing the resolved subagents dir, claude dir, meta-parse count and column source to stderr (never stdout, which is the row protocol) is the natural companion."
+evidence = [
+    "main.rs:47 read_to_string result discarded, input unrecoverable",
+    "main.rs:57 a subagent parse failure produces no output, no stderr, and exit 0",
+    "teamdata.rs:107-131 seven silent degradation points, one observable outcome",
+]
+related = ["R5"]
+dedup_id = "a9383948cff8b215"
+resolved = 2026-08-18
+resolution = "Added STATUSLINE_DUMP=<path>, written after stdin and before rendering with write failures ignored, and a --doctor flag reporting to stderr and exiting 0 without drawing a row; both documented in HELP, and stdout purity is pinned by the new integration suite"
+
+[[items]]
+id = "R60"
+file = "statusline/src/git.rs"
+line = 44
+symbol = "diff_stats"
+severity = "warning"
+effort = "medium"
+category = "security"
+summary = "Foreign-repo filter.<driver>.clean/.process is still an execution path that fixed-argument flags cannot neutralise"
+description = "Surfaced while applying R3 and deliberately left outside its cited set. R3 closed diff.external, textconv and core.fsmonitor with fixed flags, but git diff HEAD runs worktree content through the configured clean filter, and the driver NAME comes from the target repo's own .gitattributes - so there is no fixed argument that disables it. Suppressing it properly means enumerating the foreign repo's config keys and overriding each, which is a scope expansion into config parsing. Only matters if the threat model includes pointing the statusline at untrusted trees. Note core.hooksPath was assessed and deliberately left alone: post-index-change is the only hook git diff can reach and --no-optional-locks already suppresses the index write that fires it."
+first_flagged = 2026-08-18
+rounds = 1
+related = ["R3"]
+status = "fixed"
+dedup_id = "23a2f3d0dd553d9b"
+resolved = 2026-08-18
+resolution = "Verified against current git diff-options documentation that no fixed argument can close the clean-filter path - only --no-ext-diff and --no-textconv exist and both are already passed - so the residual risk, its threat model and the core.hooksPath assessment are recorded on DIFF_ARGS_POST instead. Documentation-only: the execution path remains open, and closing it needs a config-enumeration layer"
+
+[[items]]
+id = "R61"
+file = "statusline/README.md"
+line = 0
+symbol = "Notes section"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "README Notes says neither min nor subagent emits colour, which the agent-type badge falsifies"
+description = "Surfaced while applying R12, which fixed the same contradiction in CLAUDE.md. README's Notes section states that neither min nor subagent emits colour; the agent-type badge is colour, and the same file says so correctly about 70 lines earlier (Beyond the badge, rows emit no colour). Left unedited under the no-widening rule because no selected finding cited it."
+first_flagged = 2026-08-18
+rounds = 1
+related = ["R12"]
+status = "fixed"
+dedup_id = "01ccd4dca1e617a5"
+resolved = 2026-08-18
+resolution = "README Notes bullet now reads that min emits no colour at all and subagent none beyond the agent-type badge, agreeing with the accurate statement about seventy lines earlier; the SGR-0 dim-wrapper trap explanation is preserved"
+
+[[items]]
+id = "R62"
+file = "statusline/README.md"
+line = 0
+symbol = "tiers section"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "README claims token count and runtime survive every tier, but runtime is P_RUNTIME 30 and demonstrably sheds"
+description = "Surfaced while applying R13. Runtime carries P_RUNTIME = 30 in render/agents.rs, well below P_PROTECTED, and the regenerated 48-col example in that very block has already dropped it. Pre-existing rather than introduced by this run - the previous 46-col example dropped it too - so the R13 edit created no new contradiction, but the sentence is still false. Only token count (and @N messages) are genuinely protected."
+first_flagged = 2026-08-18
+rounds = 1
+related = ["R13"]
+status = "fixed"
+dedup_id = "13ad194f815a3b2c"
+resolved = 2026-08-18
+resolution = "README tiers sentence now describes only the token count and the @N inbox depth as surviving every tier; runtime carries P_RUNTIME=30, below the P_PROTECTED floor of 60, and the 48-column worked example already drops it"
+
+[[items]]
+id = "R63"
+file = "statusline/src/render/agents.rs"
+line = 48
+symbol = "Seg"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "pending parts of R25: Shrink { Drop, Clip, Keep } field on Seg so the u8 encodes ordering alone"
+description = "R25 applied its durable half under /review-apply 2026-08-18 (the P_PROTECTED class-vs-rank trap is documented and pinned by the_unsheddable_class_is_exactly_the_two_counts_and_the_title). The restructure itself was deliberately not attempted: collapsing the activity-clip and title-clip passes into one generic shrink step rewrites row()'s three-pass algorithm, the most intricate and most heavily tested logic in the crate, for a hazard that is currently latent. Revisit when the segment list next grows."
+first_flagged = 2026-08-18
+rounds = 1
+related = ["R25"]
+status = "open"
+dedup_id = "0ada08606695a94c"

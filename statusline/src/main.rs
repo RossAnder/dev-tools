@@ -333,8 +333,15 @@ mod tests {
             "rate_limits": {"five_hour": {"used_percentage": 26},
                             "seven_day": {"used_percentage": 7}}
         }"#;
+        // Both styles now carry the model and the effort; they differ in where
+        // (`min` closes with them, `full` sets them mid-line-1), in weight and
+        // colour, and in `full`'s second line.
         let min = plain(&main_line(input, MainStyle::Min, Some(120), None));
-        assert_eq!(min, "\u{273b} dev-tools \u{b7} 5h 26% \u{b7} week 7% \u{b7} chat 31k");
+        assert_eq!(
+            min,
+            "\u{273b} dev-tools \u{b7} 5h 26% \u{b7} week 7% \u{b7} chat 31k \u{b7} Opus 5 xhigh"
+        );
+        assert!(!min.contains('\n'), "min is one line: {min:?}");
 
         let full = plain(&main_line(input, MainStyle::Full, Some(120), None));
         assert!(full.contains("Opus 5") && full.contains("xhigh") && full.contains("31k/200k"));
