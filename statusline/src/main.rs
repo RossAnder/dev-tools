@@ -1,517 +1,424 @@
-//! Native Claude Code statusline renderer — a faithful port of
-//! `~/.claude/statusline.ps1`.
+//! Native Claude Code statusline renderer.
 //!
-//! Reads the statusline JSON payload on stdin and prints:
-//!   Line 1: CWD@Branch (changes) | model | effort | tokens (pct)
-//!   Line 2: 5h dots pct @reset | 7d dots pct @reset | agent-busy time
+//! Two payloads, selected by argv:
+//! * default — the `statusLine` payload; styles `full` (the original two-line
+//!   port of `~/.claude/statusline.ps1`) and `min`.
+//! * `subagent` — the `subagentStatusLine` payload; emits NDJSON row overrides
+//!   for the agent panel.
 //!
-//! Claude Code invokes the statusline command on every refresh, per session;
-//! the pwsh script cost ~1s of cold-start CPU each time. This binary renders
-//! in single-digit milliseconds. Output is raw UTF-8 with ANSI colour codes
-//! and no trailing newline, exactly like the ps1's `Write-Host -NoNewline`.
+//! Claude Code invokes these on every refresh, per session; the pwsh script
+//! this replaced cost ~1s of cold-start CPU each time. Output is raw UTF-8 with
+//! ANSI colour codes and no trailing newline, exactly like the ps1's
+//! `Write-Host -NoNewline`.
 
+mod ansi;
+mod cli;
+mod fmt;
+mod git;
+mod payload;
+mod render;
+mod subagent;
+mod teamdata;
+#[cfg(test)]
+mod testing;
+
+use std::collections::HashSet;
 use std::env;
-use std::io::Read;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::io::{Read, Write, stdout};
+use std::path::Path;
+use std::process::ExitCode;
 
-use serde::Deserialize;
-use serde_json::Value;
+use cli::{Cli, MainStyle, Mode, Parsed};
+use payload::Payload;
+use subagent::SubagentPayload;
 
-const RED: &str = "\x1b[31m";
-const GREEN: &str = "\x1b[32m";
-const YELLOW: &str = "\x1b[33m";
-const CYAN: &str = "\x1b[36m";
-const WHITE: &str = "\x1b[37m";
-// The ps1 defined a distinct $orange that was also ANSI 33; the alias is kept
-// so the tier tables below read the same as the script they mirror.
-const ORANGE: &str = "\x1b[33m";
-const DIM: &str = "\x1b[90m";
-const RESET: &str = "\x1b[0m";
-
-const DOT_FILL: char = '\u{25CF}'; // ●
-const DOT_EMPTY: char = '\u{25CB}'; // ○
-
-// ===== Payload (every field optional — render whatever is present) =====
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct Payload {
-    cwd: Option<String>,
-    model: Option<Model>,
-    effort: Option<Effort>,
-    context_window: Option<ContextWindow>,
-    exceeds_200k_tokens: Option<bool>,
-    rate_limits: Option<RateLimits>,
-    cost: Option<Cost>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct Model {
-    display_name: Option<String>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct Effort {
-    level: Option<String>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct ContextWindow {
-    context_window_size: Option<i64>,
-    used_percentage: Option<f64>,
-    current_usage: Option<Usage>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct Usage {
-    input_tokens: Option<i64>,
-    cache_creation_input_tokens: Option<i64>,
-    cache_read_input_tokens: Option<i64>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct RateLimits {
-    five_hour: Option<LimitWindow>,
-    seven_day: Option<LimitWindow>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct LimitWindow {
-    used_percentage: Option<f64>,
-    // Number or string upstream; coerced in format_epoch.
-    resets_at: Option<Value>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(default)]
-struct Cost {
-    total_api_duration_ms: Option<f64>,
-}
-
-// ===== Git =====
-
-/// Resolve the branch by reading `.git/HEAD` directly — no `git` spawn. Walks
-/// up parents (subdir launches), follows the `gitdir:` pointer file
-/// (worktrees/submodules; relative pointers resolve against the pointer's
-/// directory), and falls back to a short sha for detached HEAD.
-fn git_branch(dir: &Path) -> Option<String> {
-    let mut d = dir;
-    let git_dir: PathBuf = loop {
-        let g = d.join(".git");
-        if g.is_file() {
-            let line = std::fs::read_to_string(&g).ok()?;
-            let rest = line.lines().next()?.strip_prefix("gitdir:")?.trim();
-            let p = PathBuf::from(rest);
-            break if p.is_absolute() { p } else { d.join(p) };
+fn main() -> ExitCode {
+    let cli = match cli::parse(env::args().skip(1)) {
+        Parsed::Run(c) => c,
+        Parsed::Print(s) => {
+            let _ = write!(stdout().lock(), "{s}");
+            return ExitCode::SUCCESS;
         }
-        if g.is_dir() {
-            break g;
+        Parsed::Fail(s) => {
+            eprint!("{s}");
+            return ExitCode::from(2);
         }
-        d = d.parent()?;
     };
-    let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
-    parse_head(head.lines().next()?.trim())
-}
 
-fn parse_head(head: &str) -> Option<String> {
-    if let Some(r) = head.strip_prefix("ref:") {
-        return r.trim().strip_prefix("refs/heads/").map(str::to_string);
-    }
-    let is_sha = (7..=40).contains(&head.len())
-        && head
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
-    is_sha.then(|| head[..7].to_string())
-}
-
-/// Staged + unstaged line counts via `git diff HEAD --numstat`. Returns None
-/// when git fails or there are no changes (the ps1 renders nothing for 0+0).
-fn diff_stats(cwd: &str) -> Option<(u64, u64)> {
-    let out = Command::new("git")
-        .args(["-C", cwd, "diff", "HEAD", "--numstat"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let (added, deleted) = sum_numstat(&String::from_utf8_lossy(&out.stdout));
-    (added + deleted > 0).then_some((added, deleted))
-}
-
-fn sum_numstat(text: &str) -> (u64, u64) {
-    let (mut added, mut deleted) = (0u64, 0u64);
-    for line in text.lines() {
-        let mut cols = line.split_whitespace();
-        // Binary files report "-" per column; skip whatever doesn't parse.
-        if let Some(a) = cols.next().and_then(|c| c.parse::<u64>().ok()) {
-            added += a;
-        }
-        if let Some(d) = cols.next().and_then(|c| c.parse::<u64>().ok()) {
-            deleted += d;
-        }
-    }
-    (added, deleted)
-}
-
-// ===== Formatting =====
-
-fn format_tokens(num: i64) -> String {
-    if num >= 1_000_000 {
-        format!("{:.1}m", num as f64 / 1_000_000.0)
-    } else if num >= 1000 {
-        format!("{:.0}k", num as f64 / 1000.0)
-    } else {
-        num.to_string()
-    }
-}
-
-fn usage_color(pct: i64) -> &'static str {
-    match pct {
-        90.. => RED,
-        70.. => ORANGE,
-        50.. => YELLOW,
-        _ => GREEN,
-    }
-}
-
-fn usage_dots(pct: i64) -> String {
-    let filled = ((pct as f64 / 20.0).ceil() as i64).clamp(0, 5);
-    const COLORS: [&str; 5] = [GREEN, GREEN, YELLOW, ORANGE, RED];
-    let mut s = String::new();
-    for (i, color) in COLORS.iter().enumerate() {
-        if (i as i64) < filled {
-            s.push_str(color);
-            s.push(DOT_FILL);
-        } else {
-            s.push_str(DIM);
-            s.push(DOT_EMPTY);
-        }
-        s.push_str(RESET);
-    }
-    s
-}
-
-fn format_duration(ms: i64) -> String {
-    if ms <= 0 {
-        return "0s".into();
-    }
-    let s = ms / 1000;
-    if s < 60 {
-        return format!("{s}s");
-    }
-    if s < 3600 {
-        return format!("{}m{}s", s / 60, s % 60);
-    }
-    format!("{}h{}m", s / 3600, (s % 3600) / 60)
-}
-
-enum EpochStyle {
-    Time,     // "2:30pm", ":00" stripped → "2pm"
-    DateTime, // "15/7, 2:30pm"
-}
-
-fn format_epoch(val: Option<&Value>, style: EpochStyle) -> Option<String> {
-    let secs = match val? {
-        Value::Number(n) => n.as_i64()?,
-        Value::String(s) => s.parse::<i64>().ok()?,
-        _ => return None,
-    };
-    if secs == 0 {
-        return None;
-    }
-    let dt = chrono::DateTime::from_timestamp(secs, 0)?.with_timezone(&chrono::Local);
-    let s = match style {
-        EpochStyle::Time => dt.format("%-I:%M%P").to_string(),
-        EpochStyle::DateTime => dt.format("%-d/%-m, %-I:%M%P").to_string(),
-    };
-    Some(s.replace(":00", ""))
-}
-
-/// "Claude Fable 5 (extra)" → "Fable 5": strip the leading "Claude " and a
-/// trailing parenthesised qualifier, mirroring the ps1 regexes.
-fn clean_model_name(name: &str) -> String {
-    let name = name.strip_prefix("Claude ").unwrap_or(name).trim_end();
-    if name.ends_with(')')
-        && let Some(i) = name.rfind('(') {
-            return name[..i].trim_end().to_string();
-        }
-    name.to_string()
-}
-
-fn path_leaf(p: &str) -> String {
-    Path::new(p)
-        .file_name()
-        .map(|f| f.to_string_lossy().into_owned())
-        .unwrap_or_else(|| p.to_string())
-}
-
-fn limit_segment(label: &str, w: Option<&LimitWindow>, style: EpochStyle, show_resets: bool) -> String {
-    let pct = w
-        .and_then(|w| w.used_percentage)
-        .unwrap_or(0.0)
-        .round() as i64;
-    let mut seg = format!(
-        "{WHITE}{label}{RESET} {} {}{pct}%{RESET}",
-        usage_dots(pct),
-        usage_color(pct)
-    );
-    if show_resets
-        && let Some(r) = format_epoch(w.and_then(|w| w.resets_at.as_ref()), style) {
-            seg.push_str(&format!(" {DIM}@{r}{RESET}"));
-        }
-    seg
-}
-
-// ===== Main =====
-
-fn main() {
     let mut input = String::new();
     let _ = std::io::stdin().read_to_string(&mut input);
-    if input.trim().is_empty() {
-        print!("Claude");
-        return;
+
+    // In situ this binary is silent by design — a bad payload renders `Claude`
+    // or nothing at all, and every disk read degrades quietly — so a wrong line
+    // is indistinguishable from a correct one about nothing. Two lines on a
+    // cold branch turn any field report into a deterministic offline repro.
+    // Written after stdin and before rendering, so a panic or a hang in a
+    // renderer still leaves the payload on disk; a failure to write is ignored,
+    // because a diagnostic that kills the status line is worse than none.
+    if let Ok(path) = env::var("STATUSLINE_DUMP")
+        && !path.is_empty()
+    {
+        let _ = std::fs::write(&path, &input);
     }
-    let data: Payload = match serde_json::from_str(&input) {
-        Ok(d) => d,
-        // The ps1 would die mid-render on bad JSON; degrade to the bare label.
-        Err(_) => {
-            print!("Claude");
-            return;
+
+    if cli.doctor {
+        // Stderr, never stdout: stdout is the row protocol, and anything extra
+        // there corrupts the status line or the agent panel.
+        eprint!("{}", doctor_report(&cli, &input));
+        return ExitCode::SUCCESS;
+    }
+
+    let line = match cli.mode {
+        Mode::Main(style) => main_line(&input, style, cli.columns, cli.icon.as_deref()),
+        Mode::Subagent(style) => {
+            let now = chrono::Local::now().timestamp_millis();
+            subagent_line(&input, style, cli.columns, now, teamdata::load)
         }
     };
+    // `print!` panics when the write fails, and the release profile aborts
+    // rather than unwinds — so a panel closing mid-refresh would surface in
+    // `claude --debug` as a crash instead of a missing line. Every other
+    // failure in this crate degrades silently; this one does too.
+    let _ = write!(stdout().lock(), "{line}");
+    ExitCode::SUCCESS
+}
 
-    let cw = data.context_window.unwrap_or_default();
-    let size = cw.context_window_size.unwrap_or(0).max(200_000);
-    let pct_used = cw.used_percentage.unwrap_or(0.0).round() as i64;
-    let usage = cw.current_usage.unwrap_or_default();
-    let current = usage.input_tokens.unwrap_or(0)
-        + usage.cache_creation_input_tokens.unwrap_or(0)
-        + usage.cache_read_input_tokens.unwrap_or(0);
-
-    // Width tiers. COLUMNS is set by Claude Code; querying the console handle
-    // is unreliable in piped contexts (same rationale as the ps1), so fall
-    // back to a wide default rather than probing.
-    let cols: i64 = env::var("COLUMNS")
-        .ok()
-        .and_then(|c| c.parse().ok())
-        .unwrap_or(120);
-    let show_changes = cols >= 100;
-    let show_model = cols >= 70;
-    let show_resets = cols >= 70;
-    let show_line2 = cols >= 50;
-    let compact = cols < 50;
-
-    let sep = format!(" {DIM}|{RESET} ");
-    let mut parts1: Vec<String> = Vec::new();
-
-    // Project@branch (changes)
-    let cwd = data.cwd.as_deref().filter(|c| !c.is_empty());
-    if let Some(cwd) = cwd {
-        let mut seg = format!("{CYAN}{}{RESET}", path_leaf(cwd));
-        if let Some(branch) = git_branch(Path::new(cwd)) {
-            seg.push_str(&format!("{DIM}@{RESET}{GREEN}{branch}{RESET}"));
-            if show_changes
-                && let Some((added, deleted)) = diff_stats(cwd) {
-                    seg.push_str(&format!(
-                        " {DIM}({RESET}{GREEN}+{added}{RESET} {RED}-{deleted}{RESET}{DIM}){RESET}"
-                    ));
-                }
-        }
-        parts1.push(seg);
-    }
-
-    // Model
-    let model_name = data
-        .model
-        .as_ref()
-        .and_then(|m| m.display_name.as_deref())
-        .map(clean_model_name)
-        .unwrap_or_default();
-    if !model_name.is_empty() && show_model {
-        parts1.push(format!("{DIM}{model_name}{RESET}"));
-    }
-
-    // Effort level — absent when the current model lacks the effort parameter.
-    if show_model
-        && let Some(level) = data
-            .effort
-            .as_ref()
-            .and_then(|e| e.level.as_deref())
-            .filter(|l| !l.is_empty())
-        {
-            let color = match level {
-                "low" => GREEN,
-                "medium" => YELLOW,
-                "high" => ORANGE,
-                "xhigh" => CYAN,
-                "max" => RED,
-                _ => WHITE,
-            };
-            parts1.push(format!("{color}{level}{RESET}"));
-        }
-
-    // Tokens — force red when past 200k regardless of proportional %
-    let token_color = if data.exceeds_200k_tokens == Some(true) {
-        RED
-    } else {
-        usage_color(pct_used)
+fn main_line(
+    input: &str,
+    style: MainStyle,
+    columns: Option<usize>,
+    icon: Option<&str>,
+) -> String {
+    // The ps1 would die mid-render on empty or bad JSON; degrade to the label.
+    let Some(data) = parse_json::<Payload>(input) else {
+        return "Claude".into();
     };
-    parts1.push(format!(
-        "{}/{} {DIM}({RESET}{token_color}{pct_used}%{RESET}{DIM}){RESET}",
-        format_tokens(current),
-        format_tokens(size)
-    ));
-
-    let line1 = parts1.join(&sep);
-
-    // Line 2: rate limits
-    let mut line2 = String::new();
-    if let Some(rl) = data.rate_limits.as_ref().filter(|_| show_line2) {
-        line2 = [
-            limit_segment("5h", rl.five_hour.as_ref(), EpochStyle::Time, show_resets),
-            limit_segment("7d", rl.seven_day.as_ref(), EpochStyle::DateTime, show_resets),
-        ]
-        .join(&sep);
-    }
-
-    // Agent-busy time (API wait). Appended to line 2, or shown standalone.
-    let api_ms = data
-        .cost
-        .as_ref()
-        .and_then(|c| c.total_api_duration_ms)
-        .unwrap_or(0.0) as i64;
-    if api_ms > 0 {
-        let busy = format!("{DIM}busy{RESET} {WHITE}{}{RESET}", format_duration(api_ms));
-        line2 = if line2.is_empty() {
-            busy
-        } else {
-            format!("{line2}{sep}{busy}")
-        };
-    }
-
-    // Output
-    if compact {
-        let mut cline = String::new();
-        if let Some(cwd) = cwd {
-            cline = format!("{CYAN}{}{RESET}", path_leaf(cwd));
+    let cols = resolve_columns(columns, env::var("COLUMNS").ok().as_deref());
+    match style {
+        MainStyle::Full => {
+            let (branch, diff) = git_facts(&data, cols);
+            render::full::render(&data, cols, branch.as_deref(), diff)
         }
-        cline.push_str(&format!(" {token_color}{pct_used}%{RESET}"));
-        if let Some(rl) = &data.rate_limits {
-            let p5 = rl
-                .five_hour
-                .as_ref()
-                .and_then(|w| w.used_percentage)
-                .unwrap_or(0.0)
-                .round() as i64;
-            let p7 = rl
-                .seven_day
-                .as_ref()
-                .and_then(|w| w.used_percentage)
-                .unwrap_or(0.0)
-                .round() as i64;
-            cline.push_str(&format!(
-                " {DIM}|{RESET} {}5h:{p5}%{RESET} {}7d:{p7}%{RESET}",
-                usage_color(p5),
-                usage_color(p7)
+        MainStyle::Min => {
+            render::min::render(&data, cols, icon.unwrap_or(render::min::DEFAULT_ICON))
+        }
+    }
+}
+
+/// The main line's width budget: the flag, else `COLUMNS`, else a wide default.
+///
+/// `COLUMNS` is set by Claude Code; querying the console handle is unreliable in
+/// piped contexts (same rationale as the ps1), so this falls back to a wide
+/// default rather than probing. A zero width says nothing a renderer can honour
+/// — every style still emits a line — so it falls back too, the way
+/// `render::agents` reads its own width. The flag short-circuits before the
+/// environment is consulted, so `--columns 0` lands on the default rather than
+/// deferring to `COLUMNS`.
+///
+/// The env READ stays at the call site: edition 2024 makes `std::env::set_var`
+/// an `unsafe fn`, so a test that drove `COLUMNS` for real would need `unsafe`
+/// plus a process-wide lock against the multi-threaded test harness. Passing the
+/// value in costs nothing and makes every branch reachable — including
+/// `COLUMNS=abc`, which no test could reach while the read was inline.
+fn resolve_columns(flag: Option<usize>, env: Option<&str>) -> usize {
+    flag.or_else(|| env.and_then(|c| c.parse().ok()))
+        .filter(|c| *c > 0)
+        .unwrap_or(120)
+}
+
+/// The git facts [`render::full`] draws, resolved here rather than inside the
+/// renderer so every style stays a pure `payload -> String` and the crate's disk
+/// reads and its one subprocess spawn stay in `main` — the same reason
+/// [`subagent_line`] takes `load_team` as a parameter.
+///
+/// The guards are not an optimisation, they are the pre-existing behaviour:
+/// `full` draws the changes group only inside the branch group and only at
+/// [`render::full::CHANGES_COLS`] or wider, and `git::diff_stats` spawns a real
+/// `git` on a line that re-renders on every refresh. Resolving it at every width
+/// would put that spawn on the hot path the crate exists to keep cheap.
+fn git_facts(data: &Payload, cols: usize) -> (Option<String>, Option<(u64, u64)>) {
+    let Some(cwd) = data.dir() else {
+        return (None, None);
+    };
+    let branch = git::branch(Path::new(cwd));
+    let diff = (branch.is_some() && cols >= render::full::CHANGES_COLS)
+        .then(|| git::diff_stats(cwd))
+        .flatten();
+    (branch, diff)
+}
+
+/// The `subagent` counterpart to [`main_line`]. `load_team` is threaded in
+/// rather than called directly so this stays a pure `input -> String` and the
+/// crate's only disk reads stay in `main`; the payload is parsed once here
+/// because the transcript path that keys the lookup comes out of it.
+fn subagent_line(
+    input: &str,
+    style: render::agents::Style,
+    columns: Option<usize>,
+    now_ms: i64,
+    load_team: fn(Option<&str>, &HashSet<&str>) -> teamdata::Team,
+) -> String {
+    // No output means "keep the default rendering" for every row, which is the
+    // right failure mode for an unreadable or empty payload.
+    let Some(p) = parse_json::<SubagentPayload>(input) else {
+        return String::new();
+    };
+    // Agent type, teammate colour and inbox depth are not in the payload; they
+    // come off disk, keyed by the transcript path.
+    //
+    // The names are handed down with it because `render::agents` only ever asks
+    // the map about rows it is drawing, and one of the two files per member —
+    // the inbox — is only read to answer that. The meta files still all have to
+    // be read (the name is inside the file), but the inbox reads for a team
+    // larger than the panel are pure waste, so the loader is told which ones
+    // matter. `load_team` stays a parameter rather than a direct call so this
+    // function remains pure and testable; only its type widened.
+    let drawn: HashSet<&str> = p.tasks.iter().filter_map(|t| t.name.as_deref()).collect();
+    let team = load_team(p.transcript_path.as_deref(), &drawn);
+    render::agents::render(&p, style, columns, now_ms, &team)
+}
+
+/// `--doctor`. Everything this binary resolved before drawing anything, as
+/// prose on stderr — the answer to "the badge is missing and nothing said why".
+///
+/// It reports after stdin is read rather than exiting early like `--help`,
+/// because the two facts worth having — whether the subagents directory was
+/// derivable and how many members parsed out of it — both come from the
+/// payload. With no payload piped in it still resolves the claude dir and the
+/// width, and says the rest is unavailable rather than inventing it.
+fn doctor_report(cli: &Cli, input: &str) -> String {
+    let mut out = String::from("statusline --doctor\n");
+    for (key, value) in doctor_fields(cli, input) {
+        out.push_str(&format!("  {key:<16}{value}\n"));
+    }
+    out
+}
+
+/// The report as label/value pairs, so the resolution logic is separable from
+/// the layout — and so a test can assert on a field without matching prose.
+fn doctor_fields(cli: &Cli, input: &str) -> Vec<(&'static str, String)> {
+    let unresolved = |p: Option<std::path::PathBuf>, absent: &str| {
+        p.map_or_else(|| absent.to_string(), |p| p.display().to_string())
+    };
+    let mut f: Vec<(&'static str, String)> = vec![
+        ("version", env!("CARGO_PKG_VERSION").to_string()),
+        ("claude dir", unresolved(teamdata::claude_dir(), "<unresolved>")),
+    ];
+
+    match cli.mode {
+        Mode::Main(_) => {
+            let env_cols = env::var("COLUMNS").ok();
+            f.push(("mode", "main".to_string()));
+            f.push((
+                "columns",
+                resolve_columns(cli.columns, env_cols.as_deref()).to_string(),
+            ));
+            f.push((
+                "columns source",
+                match (cli.columns, env_cols.as_deref()) {
+                    (Some(n), _) if n > 0 => "--columns".to_string(),
+                    (_, Some(c)) if c.parse::<usize>().is_ok_and(|n| n > 0) => {
+                        format!("COLUMNS={c}")
+                    }
+                    _ => "default".to_string(),
+                },
+            ));
+            f.push((
+                "payload",
+                match parse_json::<Payload>(input) {
+                    Some(_) => "parsed".to_string(),
+                    None => "unparseable or absent (renders the bare label)".to_string(),
+                },
             ));
         }
-        print!("{cline}");
-    } else if !line2.is_empty() {
-        print!("{line1}\n{line2}");
-    } else {
-        print!("{line1}");
+        Mode::Subagent(_) => {
+            f.push(("mode", "subagent".to_string()));
+            let Some(p) = parse_json::<SubagentPayload>(input) else {
+                f.push(("payload", "unparseable or absent (emits no rows)".to_string()));
+                for key in ["columns source", "transcript", "subagents dir", "members parsed"] {
+                    f.push((key, "<needs a payload on stdin>".to_string()));
+                }
+                return f;
+            };
+            f.push(("payload", format!("{} task(s)", p.tasks.len())));
+            f.push((
+                "columns source",
+                match (cli.columns, p.columns) {
+                    (Some(n), _) if n > 0 => "--columns".to_string(),
+                    (_, Some(n)) if n > 0 => format!("payload columns={n}"),
+                    _ => "default".to_string(),
+                },
+            ));
+            let transcript = p.transcript_path.as_deref();
+            f.push((
+                "transcript",
+                transcript.unwrap_or("<absent from payload>").to_string(),
+            ));
+            f.push((
+                "subagents dir",
+                unresolved(
+                    transcript.and_then(teamdata::subagents_dir),
+                    "<underivable>",
+                ),
+            ));
+            let drawn: HashSet<&str> =
+                p.tasks.iter().filter_map(|t| t.name.as_deref()).collect();
+            // Zero here with a plausible directory above is the interesting
+            // case: the containment guard refused it, the directory is empty,
+            // or nothing in it parsed.
+            f.push((
+                "members parsed",
+                teamdata::load(transcript, &drawn).len().to_string(),
+            ));
+        }
     }
+    f
+}
+
+fn parse_json<T: serde::de::DeserializeOwned>(input: &str) -> Option<T> {
+    if input.trim().is_empty() {
+        return None;
+    }
+    serde_json::from_str(input).ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use testing::plain;
 
     #[test]
-    fn tokens_format_tiers() {
-        assert_eq!(format_tokens(999), "999");
-        assert_eq!(format_tokens(1_000), "1k");
-        assert_eq!(format_tokens(85_000), "85k");
-        assert_eq!(format_tokens(200_000), "200k");
-        assert_eq!(format_tokens(1_234_567), "1.2m");
-        assert_eq!(format_tokens(2_960_000), "3.0m");
+    fn empty_and_malformed_input_degrade_to_the_bare_label() {
+        for input in ["", "   ", "not json", "{oops"] {
+            assert_eq!(main_line(input, MainStyle::Full, Some(120), None), "Claude");
+            assert_eq!(main_line(input, MainStyle::Min, Some(120), None), "Claude");
+        }
+    }
+
+    /// The disk lookup stubbed out: `subagent_line` is pure given a loader.
+    fn no_team(_: Option<&str>, _: &HashSet<&str>) -> teamdata::Team {
+        teamdata::Team::new()
     }
 
     #[test]
-    fn duration_format_tiers() {
-        assert_eq!(format_duration(0), "0s");
-        assert_eq!(format_duration(-5), "0s");
-        assert_eq!(format_duration(59_000), "59s");
-        assert_eq!(format_duration(60_000), "1m0s");
-        assert_eq!(format_duration(754_321), "12m34s");
-        assert_eq!(format_duration(3_600_000), "1h0m");
-        assert_eq!(format_duration(5_430_000), "1h30m");
+    fn empty_and_malformed_subagent_input_keeps_the_default_rows() {
+        for input in ["", "   ", "not json", "{oops"] {
+            let out =
+                subagent_line(input, render::agents::Style::Tiers, Some(80), 0, no_team);
+            assert_eq!(out, "", "no output means keep the defaults: {input:?}");
+        }
     }
 
     #[test]
-    fn head_parsing() {
-        assert_eq!(parse_head("ref: refs/heads/main"), Some("main".into()));
+    fn a_parseable_subagent_payload_emits_one_row_per_task() {
+        let input = r#"{"columns": 60, "tasks": [
+            {"id": "a", "name": "t10-css-face-split", "status": "running"},
+            {"id": "b", "name": "t11-token-budget", "status": "running"}
+        ]}"#;
+        let out = subagent_line(input, render::agents::Style::Tiers, None, 0, no_team);
+        let rows: Vec<&str> = out.lines().collect();
+        assert_eq!(rows.len(), 2, "one NDJSON row per task: {out:?}");
+        assert!(rows[0].starts_with(r#"{"id":"a","content":"#), "{out:?}");
+        assert!(rows[0].contains("t10-css-face-split"), "{out:?}");
+    }
+
+    #[test]
+    fn the_two_main_styles_render_the_same_payload_differently() {
+        let input = r#"{
+            "workspace": {"repo": {"name": "dev-tools"}},
+            "model": {"display_name": "Claude Opus 5"},
+            "effort": {"level": "xhigh"},
+            "context_window": {"total_input_tokens": 31000, "context_window_size": 200000,
+                               "used_percentage": 15},
+            "rate_limits": {"five_hour": {"used_percentage": 26},
+                            "seven_day": {"used_percentage": 7}}
+        }"#;
+        let min = plain(&main_line(input, MainStyle::Min, Some(120), None));
+        assert_eq!(min, "\u{273b} dev-tools \u{b7} 5h 26% \u{b7} week 7% \u{b7} chat 31k");
+
+        let full = plain(&main_line(input, MainStyle::Full, Some(120), None));
+        assert!(full.contains("Opus 5") && full.contains("xhigh") && full.contains("31k/200k"));
+        assert!(full.contains('\n'), "full is two lines: {full:?}");
+    }
+
+    #[test]
+    fn the_columns_flag_beats_the_environment() {
+        let input = r#"{"workspace":{"repo":{"name":"dev-tools"}},
+                        "context_window":{"total_input_tokens":31000},
+                        "rate_limits":{"five_hour":{"used_percentage":26},
+                                       "seven_day":{"used_percentage":7}}}"#;
         assert_eq!(
-            parse_head("ref: refs/heads/feature/x-1"),
-            Some("feature/x-1".into())
+            plain(&main_line(input, MainStyle::Min, Some(31), None)),
+            "\u{273b} dev-tools \u{b7} 5h 26% \u{b7} chat 31k"
         );
-        assert_eq!(
-            parse_head("5a715f7deadbeef5a715f7deadbeef5a715f7dea"),
-            Some("5a715f7".into())
-        );
-        // Uppercase hex and non-hex are rejected, matching the ps1 regex.
-        assert_eq!(parse_head("5A715F7DEADBEEF"), None);
-        assert_eq!(parse_head("not-a-head"), None);
-        assert_eq!(parse_head("ref: refs/tags/v1"), None);
     }
 
     #[test]
-    fn model_name_cleaning() {
-        assert_eq!(clean_model_name("Claude Fable 5"), "Fable 5");
-        assert_eq!(clean_model_name("Claude Sonnet 4.5 (thinking)"), "Sonnet 4.5");
-        assert_eq!(clean_model_name("Fable 5"), "Fable 5");
-        assert_eq!(clean_model_name("Claude "), "");
+    fn the_width_resolves_flag_then_environment_then_a_wide_default() {
+        // The flag wins outright, including over a usable COLUMNS.
+        assert_eq!(resolve_columns(Some(31), Some("100")), 31);
+        assert_eq!(resolve_columns(None, Some("100")), 100);
+        assert_eq!(resolve_columns(None, None), 120);
+        // Zero says nothing a renderer can honour, from either source.
+        assert_eq!(resolve_columns(Some(0), Some("100")), 120);
+        assert_eq!(resolve_columns(None, Some("0")), 120);
+        // A COLUMNS that is not a number at all — unreachable while the read
+        // was inline, because edition 2024 makes `set_var` unsafe.
+        assert_eq!(resolve_columns(None, Some("abc")), 120);
+        assert_eq!(resolve_columns(None, Some("")), 120);
     }
 
+    /// `--doctor` exists because a missing badge is otherwise indistinguishable
+    /// from "no teammates". These pin the fields it must name, not their values.
     #[test]
-    fn numstat_summing() {
-        let text = "10\t2\tsrc/main.rs\n-\t-\tassets/logo.png\n3\t0\tREADME.md\n";
-        assert_eq!(sum_numstat(text), (13, 2));
-        assert_eq!(sum_numstat(""), (0, 0));
-    }
+    fn the_doctor_report_names_what_it_resolved() {
+        let doctor = |argv: &[&str], input: &str| {
+            let cli = match cli::parse(argv.iter().map(|s| s.to_string())) {
+                Parsed::Run(c) => c,
+                _ => panic!("expected a run for {argv:?}"),
+            };
+            doctor_fields(&cli, input)
+                .into_iter()
+                .collect::<std::collections::HashMap<_, _>>()
+        };
 
-    #[test]
-    fn dots_fill_counts() {
-        let filled = |pct| usage_dots(pct).matches(DOT_FILL).count();
-        assert_eq!(filled(0), 0);
-        assert_eq!(filled(1), 1);
-        assert_eq!(filled(63), 4);
-        assert_eq!(filled(100), 5);
-    }
+        let main = doctor(&["--doctor", "--columns", "31"], "");
+        assert_eq!(main["mode"], "main");
+        assert_eq!(main["columns"], "31");
+        assert_eq!(main["columns source"], "--columns");
+        assert!(main.contains_key("claude dir"));
 
-    #[test]
-    fn usage_color_boundaries() {
-        assert_eq!(usage_color(49), GREEN);
-        assert_eq!(usage_color(50), YELLOW);
-        assert_eq!(usage_color(70), ORANGE);
-        assert_eq!(usage_color(90), RED);
-    }
-
-    #[test]
-    fn epoch_rejects_null_forms() {
-        assert!(format_epoch(None, EpochStyle::Time).is_none());
-        assert!(format_epoch(Some(&Value::Null), EpochStyle::Time).is_none());
+        let payload = r#"{"columns": 60, "transcript_path": "/p/proj/sess.jsonl",
+            "tasks": [{"id": "a", "name": "t10", "status": "running"}]}"#;
+        let sub = doctor(&["subagent", "--doctor"], payload);
+        assert_eq!(sub["mode"], "subagent");
+        assert_eq!(sub["payload"], "1 task(s)");
+        assert_eq!(sub["columns source"], "payload columns=60");
+        assert_eq!(sub["transcript"], "/p/proj/sess.jsonl");
         assert!(
-            format_epoch(Some(&Value::String("null".into())), EpochStyle::Time).is_none()
+            sub["subagents dir"].contains("sess") && sub["subagents dir"].ends_with("subagents"),
+            "{:?}",
+            sub["subagents dir"]
         );
-        assert!(format_epoch(Some(&serde_json::json!(0)), EpochStyle::Time).is_none());
-        assert!(format_epoch(Some(&serde_json::json!(1752571800)), EpochStyle::Time).is_some());
+        // The path is not inside any real Claude tree, so the containment
+        // guard refuses it and the count is the honest zero.
+        assert_eq!(sub["members parsed"], "0");
+
+        // No payload: it still reports what is resolvable and says so.
+        let bare = doctor(&["subagent", "--doctor"], "");
+        assert!(bare["payload"].contains("unparseable or absent"));
+        assert!(bare["members parsed"].contains("needs a payload"));
+    }
+
+    #[test]
+    fn a_zero_width_falls_back_rather_than_shedding_everything() {
+        let input = r#"{"workspace":{"repo":{"name":"dev-tools"}},
+                        "context_window":{"total_input_tokens":31000},
+                        "rate_limits":{"five_hour":{"used_percentage":26},
+                                       "seven_day":{"used_percentage":7}}}"#;
+        assert_eq!(
+            plain(&main_line(input, MainStyle::Min, Some(0), None)),
+            plain(&main_line(input, MainStyle::Min, Some(120), None))
+        );
     }
 }
