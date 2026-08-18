@@ -54,7 +54,7 @@ place of its "Usage" title and the live session context in place of its
 per-model weekly bucket.
 
 ```
-✻ dev-tools · 5h 26% · week 7% · chat 31k · Opus 5 xhigh
+✻ dev-tools · hour 26% · week 7% · chat 31k · Opus 5 xhigh
 ```
 
 The model and the effort level close the line as **one** segment, not two: the
@@ -76,9 +76,9 @@ segment you set rather than watch, and the one the payload can make arbitrarily
 wide — so every usage number keeps the width tier it had before they existed:
 
 ```
-56 cols  ✻ dev-tools · 5h 26% · week 7% · chat 31k · Opus 5 xhigh
-55 cols  ✻ dev-tools · 5h 26% · week 7% · chat 31k
-40 cols  ✻ dev-tools · 5h 26% · chat 31k
+58 cols  ✻ dev-tools · hour 26% · week 7% · chat 31k · Opus 5 xhigh
+57 cols  ✻ dev-tools · hour 26% · week 7% · chat 31k
+42 cols  ✻ dev-tools · hour 26% · chat 31k
 30 cols  ✻ dev-tools · chat 31k
 ```
 

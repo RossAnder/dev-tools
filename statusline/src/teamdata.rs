@@ -32,6 +32,12 @@ use serde::Deserialize;
 
 /// Bound the work per tick regardless of how large a team grows.
 const MAX_MEMBERS: usize = 64;
+/// Bound the `read_dir` walk itself, which happens before the iteration budget
+/// below can be applied in a deterministic order. Set far above any real
+/// subagents directory — it is a guard against a pathological one, not a
+/// second budget: the sort that follows is what makes the walk reproducible,
+/// and it needs the listing in hand first.
+const MAX_SCAN_ENTRIES: usize = 4096;
 /// A meta file is ~330 bytes; anything far larger is not one.
 const MAX_META_BYTES: u64 = 16 * 1024;
 /// An inbox holds pending prose messages, so it is legitimately much larger
@@ -231,8 +237,21 @@ fn load_from(dir: &Path, claude: Option<&Path>, wanted: &HashSet<&str>) -> Team 
         return out;
     };
 
-    for entry in entries.flatten().take(MAX_MEMBERS * 2) {
-        let path = entry.path();
+    // Sorted, because `read_dir` order is filesystem-defined: NTFS hands back
+    // entries sorted, ext4/btrfs hand back hash order. The iteration budget
+    // below truncates the walk, so an unsorted listing makes *which* members
+    // survive it depend on the filesystem — and on Linux that is not even
+    // stable across ticks, so a badge could appear and vanish between two
+    // refreshes of the same panel. Sorting first makes the truncation a
+    // deterministic prefix everywhere.
+    let mut paths: Vec<PathBuf> = entries
+        .flatten()
+        .take(MAX_SCAN_ENTRIES)
+        .map(|e| e.path())
+        .collect();
+    paths.sort_unstable();
+
+    for path in paths.into_iter().take(MAX_MEMBERS * 2) {
         if !path.to_string_lossy().ends_with(".meta.json") {
             continue;
         }
@@ -561,8 +580,9 @@ mod tests {
         let dir = fixture_dir("iteration-budget");
         // `.take(MAX_MEMBERS * 2)` caps ITERATION while the `break` caps
         // INSERTION, so entries that are skipped still cost budget. Zero-padded
-        // names put every filler entry ahead of the two real meta files in the
-        // natural directory order.
+        // names put every filler entry ahead of the two real meta files once
+        // the listing is sorted — which is the only reason this is assertable
+        // at all. Unsorted, it passed on NTFS and failed on ext4/btrfs.
         for i in 0..MAX_MEMBERS * 2 {
             std::fs::write(dir.join(format!("{i:03}.txt")), "filler").expect("write");
         }
@@ -575,6 +595,33 @@ mod tests {
         // Two members were readable and available; the budget was gone by the
         // time the walk reached them.
         assert!(load_from(&dir, None, &wanted(&[])).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The companion to the test above: when the budget truncates, *which*
+    /// members survive must be the sorted prefix, not whatever order the
+    /// filesystem happened to hand back. Written so it can only pass by
+    /// sorting — the meta files straddle the budget by name, and the creation
+    /// order is deliberately the reverse of the name order.
+    #[test]
+    fn the_surviving_members_are_the_sorted_prefix_not_the_readdir_order() {
+        let dir = fixture_dir("sorted-prefix");
+        // Created last-to-first, so a filesystem that returns creation order
+        // (or its reverse) disagrees with the sort.
+        for i in (0..MAX_MEMBERS * 2 + 10).rev() {
+            let name = format!("m{i:03}");
+            std::fs::write(dir.join(format!("{i:03}.meta.json")), meta_json(&name))
+                .expect("write");
+        }
+
+        let team = load_from(&dir, None, &wanted(&[]));
+        // Insertion stops at MAX_MEMBERS, and every entry here is a meta file,
+        // so the budget never binds — the member cap does.
+        assert_eq!(team.len(), MAX_MEMBERS);
+        for i in 0..MAX_MEMBERS {
+            assert!(team.contains_key(&format!("m{i:03}")), "missing m{i:03}");
+        }
+        assert!(!team.contains_key(&format!("m{:03}", MAX_MEMBERS)));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

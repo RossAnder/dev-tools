@@ -339,7 +339,7 @@ mod tests {
         let min = plain(&main_line(input, MainStyle::Min, Some(120), None));
         assert_eq!(
             min,
-            "\u{273b} dev-tools \u{b7} 5h 26% \u{b7} week 7% \u{b7} chat 31k \u{b7} Opus 5 xhigh"
+            "\u{273b} dev-tools \u{b7} hour 26% \u{b7} week 7% \u{b7} chat 31k \u{b7} Opus 5 xhigh"
         );
         assert!(!min.contains('\n'), "min is one line: {min:?}");
 
@@ -355,8 +355,8 @@ mod tests {
                         "rate_limits":{"five_hour":{"used_percentage":26},
                                        "seven_day":{"used_percentage":7}}}"#;
         assert_eq!(
-            plain(&main_line(input, MainStyle::Min, Some(31), None)),
-            "\u{273b} dev-tools \u{b7} 5h 26% \u{b7} chat 31k"
+            plain(&main_line(input, MainStyle::Min, Some(33), None)),
+            "\u{273b} dev-tools \u{b7} hour 26% \u{b7} chat 31k"
         );
     }
 
