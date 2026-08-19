@@ -2062,9 +2062,67 @@ body
         }
 
         // Expected carrier → required flow-contract skills mapping (verified
-        // during the wave-2 review). A miss means a skeletonised carrier dropped
-        // its delegation to a skill it must still invoke.
+        // during the wave-2 review, extended when `flow-contract-task-visibility`
+        // landed across every multi-step carrier). A miss means a skeletonised
+        // carrier dropped its delegation to a skill it must still invoke.
+        //
+        // `flow-contract-task-visibility` is listed for every carrier on
+        // purpose. Its whole failure mode is silence: the Task tools sit behind
+        // a model-version gate that has caught this project before, so a carrier
+        // that quietly loses the invocation produces a run that looks completely
+        // normal and simply renders no progress anywhere. There is no runtime
+        // signal to catch that, which makes this the main guard against a
+        // dropped line — but not a complete one: the test self-skips when
+        // `claude/commands/` is absent (a packaged or partial checkout), so it
+        // is a guard for this repo's own tree rather than an absolute one.
         let expected: &[(&str, &[&str])] = &[
+            (
+                "implement.md",
+                &[
+                    "flow-contract-flow-context",
+                    "flow-contract-execution-record-schema",
+                    "flow-contract-task-visibility",
+                ],
+            ),
+            (
+                "review.md",
+                &[
+                    "flow-contract-flow-context",
+                    "flow-contract-ledger-schema",
+                    "flow-contract-ledger-disposition-sweep",
+                    "flow-contract-vet-research",
+                    "flow-contract-task-visibility",
+                ],
+            ),
+            (
+                "plan-new.md",
+                &[
+                    "flow-contract-flow-context",
+                    "flow-contract-plansdirectory-prompt",
+                    "flow-contract-plan-output-format",
+                    "flow-contract-execution-record-schema",
+                    "flow-contract-vet-research",
+                    "flow-contract-task-visibility",
+                ],
+            ),
+            (
+                "review-plan.md",
+                &[
+                    "flow-contract-flow-context",
+                    "flow-contract-plansdirectory-prompt",
+                    "flow-contract-plan-output-format",
+                    "flow-contract-vet-research",
+                    "flow-contract-task-visibility",
+                ],
+            ),
+            (
+                "tdd.md",
+                &[
+                    "flow-contract-flow-context",
+                    "flow-contract-execution-record-schema",
+                    "flow-contract-task-visibility",
+                ],
+            ),
             (
                 "optimise.md",
                 &[
@@ -2072,6 +2130,7 @@ body
                     "flow-contract-ledger-schema",
                     "flow-contract-ledger-disposition-sweep",
                     "flow-contract-vet-research",
+                    "flow-contract-task-visibility",
                 ],
             ),
             (
@@ -2084,6 +2143,7 @@ body
                     "flow-contract-apply-vet-implement-lite",
                     "flow-contract-apply-rollback-protocol",
                     "flow-contract-apply-constraints",
+                    "flow-contract-task-visibility",
                 ],
             ),
             (
@@ -2096,6 +2156,7 @@ body
                     "flow-contract-apply-vet-implement-lite",
                     "flow-contract-apply-rollback-protocol",
                     "flow-contract-apply-constraints",
+                    "flow-contract-task-visibility",
                 ],
             ),
             (
@@ -2107,6 +2168,7 @@ body
                     "flow-contract-plan-restructure",
                     "flow-contract-reconciler",
                     "flow-contract-vet-research",
+                    "flow-contract-task-visibility",
                 ],
             ),
             (
@@ -2114,8 +2176,23 @@ body
                 &[
                     "flow-contract-showcase-bundle",
                     "flow-contract-vet-research",
+                    "flow-contract-task-visibility",
                 ],
             ),
+        ];
+
+        // Plugin orchestrators live outside `claude/commands/` but are carriers
+        // in every sense that matters here: `run-sprint` drives an agent team for
+        // hours, `plan-story` drives a six-stage machine with research fan-out.
+        // Scanning only the commands tree is what let them sit uncovered.
+        let plugin_skills_dir = repo_root
+            .join("claude")
+            .join("plugins")
+            .join("lumina-story-blocks")
+            .join("skills");
+        let expected_plugins: &[(&str, &[&str])] = &[
+            ("run-sprint", &["flow-contract-task-visibility"]),
+            ("plan-story", &["flow-contract-task-visibility"]),
         ];
 
         let mut missing: Vec<String> = Vec::new();
@@ -2133,6 +2210,53 @@ body
                 if !text.contains(skill) {
                     missing.push(format!("{carrier}: missing invocation of `{skill}`"));
                 }
+            }
+        }
+
+        // Plugin carriers are scanned only when the plugin tree is present, so a
+        // checkout without it degrades the same way the commands scan does.
+        if plugin_skills_dir.exists() {
+            for (carrier, skills) in expected_plugins {
+                let path = plugin_skills_dir.join(carrier).join("SKILL.md");
+                let text = match fs::read_to_string(&path) {
+                    Ok(t) => t,
+                    Err(_) => {
+                        missing.push(format!("plugins/{carrier}: SKILL.md not readable"));
+                        continue;
+                    }
+                };
+                for skill in *skills {
+                    if !text.contains(skill) {
+                        missing.push(format!(
+                            "plugins/{carrier}: missing invocation of `{skill}`"
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Asserting the invocation TEXT is only half the contract: a carrier can
+        // faithfully name a skill that no longer exists, and nothing else catches
+        // that — `command_lint` gates its scan on `skill.exists()`, so a deleted
+        // skill silently drops out of linting rather than failing, and
+        // `verify_skills_clean` is dormant post-wave-2.
+        let mut required: Vec<&str> = expected
+            .iter()
+            .flat_map(|(_, skills)| skills.iter().copied())
+            .chain(
+                expected_plugins
+                    .iter()
+                    .flat_map(|(_, skills)| skills.iter().copied()),
+            )
+            .collect();
+        required.sort_unstable();
+        required.dedup();
+        let skills_dir = repo_root.join("claude").join("skills");
+        for skill in required {
+            if !skills_dir.join(skill).join("SKILL.md").is_file() {
+                missing.push(format!(
+                    "claude/skills/{skill}/SKILL.md: required by a carrier but absent"
+                ));
             }
         }
 

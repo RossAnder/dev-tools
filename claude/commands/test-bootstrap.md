@@ -56,6 +56,8 @@ Use `Glob` and `Read` in a single batched response message to detect:
 
 ## Phase 2: Parallel research-agent fan-out
 
+Invoke the `flow-contract-task-visibility` skill for the run-scoped task-surface contract (view-not-store rule, subject prefix with lowercase `<ref>`, `activeForm`, lifecycle, granularity floor, silent degradation). Mint one task per research agent plus one each for Phase 3 synthesis and Phase 4 scaffolding, subject-prefixed `no-flow /test-bootstrap · <a|b|c|d|synthesis|scaffold>` — this command is not flow-aware, so the slug slot is always the literal `no-flow`, before dispatching; `TaskUpdate` each agent's task `→ completed` only after its Phase-2.5 vet.
+
 Dispatch **4 research agents in a single response message** — one Agent tool-use block each, all `subagent_type: "research-lite"`, all given the full Project Profile. The orchestrator MUST NOT serialise these calls.
 
 Place a **byte-identical preamble** atop each prompt so the 5-minute prompt cache covers the shared prefix: the full Project Profile blob, then the task framing — *surface current best-practice options for `{decision}` given this profile; return 2-3 ranked candidates with package name, version range (e.g. `^4.2.0`), install command, verbatim ready-to-write config-file template, a summary of breaking changes in the last ~6 months, and a one-paragraph rationale tying the candidate to the profile signals (scale / project_type / ci_provider / performance_signal); cap ~400 words per candidate to keep Phase 3 synthesis tractable; rank by suitability for THIS profile, not generic popularity.* Per-agent divergence goes below a `--- AGENT-SPECIFIC SECTION: <A|B|C|D>` divider.

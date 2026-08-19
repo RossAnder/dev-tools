@@ -88,6 +88,21 @@ context the orchestrator has.
 
 ## Body — the stage machine
 
+## Task visibility (run-scoped progress surface)
+
+Invoke the `flow-contract-task-visibility` skill for the run-scoped task-surface contract
+(view-not-store rule, subject prefix with lowercase `<ref>`, `activeForm`, lifecycle,
+granularity floor, silent degradation). Mint one task per STAGE on entry to the stage machine
+— `triage`, `frame`, `plan`, `brief`, `align` — subject-prefixed
+`<story-slug> /plan-story · <stage>`, and `TaskUpdate` at each stage transition alongside the
+§c provenance entry. `rework` is minted on entry when it fires, never up front; it is
+epoch-scoped and re-enters `plan`, so on re-entry complete the stranded stage rows rather than
+re-minting them.
+
+Stage 3 (`plan`) is the long one — it auto-runs phases 2-5 with research fan-out — so it is the
+row a reader watches. Do NOT mint per research note, per open question, or per task child:
+lumina owns that state.
+
 The orchestrator runs the stages in order. Init at the top:
 `stage = "triage"`; `gating_tier`/`exec_mode` resolved in `triage`;
 `affected_phases = []`; `aligned = false`. Record ONE §c activity per STAGE

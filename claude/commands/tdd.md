@@ -39,6 +39,8 @@ Invoke the `flow-contract-execution-record-schema` skill before the first execut
 
 Finite state machine RED → GREEN → REFACTOR → cycle decision (loop or stop), gated by recorded entries in the cycle sub-flow's `execution-record.toml`; states cannot be skipped or reordered.
 
+Invoke the `flow-contract-task-visibility` skill for the run-scoped task-surface contract (view-not-store rule, subject prefix with lowercase `<ref>`, `activeForm`, lifecycle, granularity floor, silent degradation, and the resume rule). Mint one task per FSM state at the start of each cycle, subject-prefixed `<parent-slug> /tdd · c<NNN>-<red|green|refactor>` using the same zero-padded cycle counter the sub-flow slug carries, and `TaskUpdate` on each state transition — the cycle sub-flow's execution record remains the gate, and a task call must never influence the FSM. **On `/tdd resume` re-entering a halted cycle, mint nothing**: the contract forbids reading entries back, so the carrier cannot detect its own prior set and a second mint would duplicate every subject. Complete the stranded rows with the halt reason named instead.
+
 **RED**: author ONE failing test (`test-author` skill), run the parent's `test:` command, require FAIL, append a `verification` entry with `outcome=fail`. Commit `red: <cycle-slug>`. Capture `red_test_fingerprint` **POST-COMMIT** from the `red:` commit's tree (NOT the working tree), excluding snapshot artifacts (`**/__snapshots__/**`, `*.snap*`, `**/snapshots/**`, `*.snapshot`, `.snap.new`). Fingerprint pipeline (single source of truth):
 
 ```

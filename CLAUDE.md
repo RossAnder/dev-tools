@@ -8,6 +8,15 @@ Enable the repo-local hooks directory once per clone:
 git config core.hooksPath .githooks
 ```
 
+Enable the task tools once per machine, so the flow carriers' progress surface is not silently empty:
+
+```json
+// ~/.claude/settings.json  →  "env"
+"CLAUDE_CODE_ENABLE_TODO_TOOLS": "1"
+```
+
+This repo's `.claude/settings.json` already sets it for work inside the repo; the user-level copy covers worktrees and any clone elsewhere. Without it every carrier degrades to a silent no-op (see **Task visibility** below) — correct behaviour, but no progress is rendered anywhere.
+
 The hook runs `scripts/verify-shared-blocks.sh` (byte-identity of each block named in `scripts/shared-blocks.toml`, across every file carrying it) and `scripts/verify-plan-story-blocks.sh` (the lumina-story-blocks §l.4 `Skill()`-dispatch gate). Each verifier inspects only the files its manifest names, so most commits are untouched.
 
 Gotchas:
@@ -59,6 +68,18 @@ Each has its own `CLAUDE.md`, loaded when you work in that subtree:
 ## Testing discipline
 
 Three composable packages — `/test-bootstrap` (once per project), `/tdd` (once per feature), and the model-invoked `test-author` skill. Mechanics live in the `testing-discipline` skill (`.claude/skills/testing-discipline/SKILL.md`).
+
+## Task visibility (live progress surface)
+
+Every multi-step carrier invokes the `flow-contract-task-visibility` skill and mints run-scoped `TaskCreate` / `TaskUpdate` entries so a human — or an external reader — can see what an orchestrator is doing mid-run. That is the ten commands under `claude/commands/` plus the two lumina plugin orchestrators (`run-sprint`, `plan-story`).
+
+Claude Code persists them one JSON file per task under `~/.claude/tasks/<list-id>/<task-id>.json` (`id`, `subject`, `description`, `activeForm`, `owner`, `status`, `blocks`, `blockedBy`, optional `metadata`). The directory also holds `.lock` and `.highwatermark` dotfiles, so a reader takes only `*.json` and skips entries carrying `metadata._internal`. The list id resolves `CLAUDE_CODE_TASK_LIST_ID` → team name → a leader's team name propagated into a teammate → session id, so an orchestrator and every teammate it spawns share one list.
+
+- **Task entries are a VIEW, never a store.** The ledger or execution record owns durable per-item state. Never mint a task per finding, never read tasks back to decide control flow, never use them for idempotency, and **never mirror one into a persisted field** — a run with a full task set and a run with none must produce byte-identical ledgers, records, commits, and reports.
+- **Subjects carry a mandatory prefix**: `<slug> /<command> · <ref> — <title>`, `<ref>` lowercase. One session's task directory accumulates across successive commands, and the prefix is the only thing that keeps it legible.
+- **The list self-clears when every task completes.** ~5s after the last task reaches `completed`, Claude Code advances `.highwatermark` and unlinks every `*.json`; `TaskList` then reports none. It is a UI sweep, not a session-end hook. So *empty directory + non-zero `.highwatermark`* means "a run finished and was swept", not "no run happened", and surviving ids start at `.highwatermark + 1`.
+- **The tools are gated on the running model** — a per-family version threshold (currently opus ≥ 4.8, sonnet/fable/mythos ≥ 5), above which they appear only when `CLAUDE_CODE_ENABLE_TODO_TOOLS` is set or a remote flag is on. Entries stopped repo-wide on 2026-08-15 and stayed dark for four days; setting the env var restored them within seconds on 2026-08-19. The coincident v2.1.233 install is the likeliest cause but is **not proven** — the threshold table is byte-identical across 2.1.233/234/235, so a remote-flag flip fits the evidence equally. Either way there is no error: the tools are filtered out of the tool surface, and `~/.claude/tasks/` simply stops growing. Hence the contract's hard rule: **never gate flow progress on a task call**.
+- **`carrier_invokes_required_skills`** (`tomlctl/src/cli/dispatch.rs`) asserts every carrier still invokes the skill and that each required `SKILL.md` exists. It is the main guard — a dropped invocation produces a run that looks entirely normal and renders nothing — but it self-skips when `claude/commands/` is absent, so it guards this repo's tree rather than a packaged checkout.
 
 ## Commit conventions
 

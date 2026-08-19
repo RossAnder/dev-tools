@@ -120,6 +120,22 @@ commit-message trailers.
 
 ## Body
 
+## Task visibility (run-scoped progress surface)
+
+Invoke the `flow-contract-task-visibility` skill for the run-scoped task-surface contract
+(view-not-store rule, subject prefix with lowercase `<ref>`, `activeForm`, lifecycle,
+granularity floor, silent degradation). `run-sprint` is the only orchestrator in this repo
+that runs a real agent team, so it is the one case where the contract's list-id resolution
+actually binds: every teammate writes into the LEAD's team-named list, not its own, and the
+whole pool therefore shares one surface.
+
+Mint one task per Kahn phase-batch at the start of Step 2, subject-prefixed
+`<sprint-slug> /run-sprint · p<n>`, and `TaskUpdate` at each phase boundary in Step 4. Do NOT
+mint per work-item — lumina's own records own per-task state, and duplicating them here is the
+shadowing §1 forbids. This surface is additive to `record_task_activity`; it never replaces it,
+is never read back, and a run with the task tools absent must produce byte-identical lumina
+records and merges.
+
 ### Step 1 — pre-flight (sprint active + one shared worktree + topology selection)
 
 1. Read the sprint. If its status is `draft` or `ready`, raise it to `active`

@@ -247,12 +247,17 @@ topo-level → sequential-batch rule.
 
 ## Step 4: Launch implementation agents
 
-**Task tracking (runtime only)**: call `TaskCreate` once per file cluster — `subject` names the
-cluster, `description` lists its item IDs — plus one `subject: verification` task for Step 5.
-Move each through `pending → in_progress → completed` with `TaskUpdate`. Do NOT mint per-finding
-tasks; the ledger is the persistent source of truth for per-item state. Tasks do not persist
-across commands. For sequential batches, complete batch-k's tasks before minting batch-(k+1)'s
-so progress reads cleanly without inter-batch leakage.
+**Task tracking (runtime only)**: invoke the `flow-contract-task-visibility` skill for the
+run-scoped task-surface contract (view-not-store rule, subject prefix, lifecycle, granularity
+floor, silent degradation, and the apply-flow per-batch exception). Call `TaskCreate` once per
+file cluster — `subject` carries the prefix `<slug> <CMD> · c<n>` and names the cluster,
+`description` lists its item IDs, `activeForm` is the present-participle form — plus one
+`<slug> <CMD> · verify` task for Step 5. Move each
+through `pending → in_progress → completed` with `TaskUpdate`, completing a cluster only after
+its Step-4.5 vet. Do NOT mint per-finding tasks; the ledger is the persistent source of truth
+for per-item state. Tasks do not persist across commands. For sequential batches, complete
+batch-k's tasks before minting batch-(k+1)'s so progress reads cleanly without inter-batch
+leakage.
 
 ### Lite-eligibility gate (orchestrator decision, per cluster)
 
