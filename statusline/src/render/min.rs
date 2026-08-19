@@ -7,17 +7,13 @@
 //! ✻ dev-tools · hour 26% · week 7% · chat 31k · Opus 5 xhigh
 //! ```
 //!
-//! Monotone where it counts: **no data on the line is ever coloured**, so every
-//! character of every segment lands in the terminal theme's own foreground
-//! rather than a mix of greys. Weight is uniform too — one bold span wraps the
-//! whole line, so no segment is louder than its neighbours.
-//!
-//! The leading icon is the sole exception, and deliberately so: it is red
-//! always, reporting nothing, which is exactly why it cannot compete with the
-//! numbers beside it. A colour that *varied* — a red icon at 90% usage, say —
-//! would be the thing this rule exists to forbid.
+//! Monotone in the strict sense: the line emits **no colour at all**, so every
+//! character lands in the terminal theme's own foreground rather than a mix of
+//! greys. Weight is uniform too — one bold span wraps the whole line, so no
+//! segment is louder than its neighbours. That holds for the leading icon as
+//! much as for the numbers: colouring it was tried and reverted.
 
-use crate::ansi::{BOLD, FG, NOBOLD, RED};
+use crate::ansi::{BOLD, NOBOLD};
 use crate::fmt::{SEP, clean_model_name, ellipsize, format_tokens, width};
 use crate::payload::Payload;
 
@@ -155,18 +151,10 @@ fn line_width(icon: &str, title: &str, buckets: &[Bucket]) -> usize {
 }
 
 fn paint(icon: &str, title: &str, buckets: &[Bucket]) -> String {
-    // The icon is the one coloured thing on the line, and the colour is static
-    // — it marks the line as Claude's, it does not report anything. That is
-    // what keeps it clear of the rule below: no *data* on this line is ever
-    // coloured, so no segment can shout over its neighbours.
-    //
-    // Closed with `FG` (SGR 39, default foreground) rather than a reset: SGR 0
-    // would drop the bold span the whole line sits inside, and clear whatever
-    // else the terminal had set for itself.
     let mut out = if icon.is_empty() {
         title.to_string()
     } else {
-        format!("{RED}{icon}{FG} {title}")
+        format!("{icon} {title}")
     };
     for b in buckets {
         out.push_str(SEP);
@@ -338,33 +326,12 @@ mod tests {
         let line = render(&payload(FULL), 120, DEFAULT_ICON);
         assert!(line.starts_with("\u{1b}[1m"), "must open bold: {line:?}");
         assert!(line.ends_with("\u{1b}[22m"), "must close with SGR 22: {line:?}");
-        // Four escapes and no more: bold open, the icon's red, back to the
-        // default foreground, bold close.
-        assert_eq!(line.matches('\u{1b}').count(), 4, "unexpected escapes: {line:?}");
-        assert!(
-            line.starts_with("\u{1b}[1m\u{1b}[31m\u{273b}\u{1b}[39m "),
-            "the icon and only the icon is red: {line:?}"
-        );
-        // SGR 0 would drop the bold span and clear terminal state besides.
-        assert!(!line.contains("[0m"), "no reset: {line:?}");
-        // Every character of every *segment* lands in the theme's foreground:
-        // the body past the icon carries no escape at all.
-        let body = line.split_once("\u{1b}[39m").expect("icon closes").1;
-        assert_eq!(
-            body.matches('\u{1b}').count(),
-            1,
-            "the body carries nothing but the bold close: {body:?}"
-        );
-    }
-
-    /// The exception is the icon, not the glyph position: `--icon ""` drops the
-    /// marker, and must take the colour with it rather than leave a stray span
-    /// wrapped around the repo name.
-    #[test]
-    fn dropping_the_icon_drops_its_colour_too() {
-        let line = render(&payload(FULL), 120, "");
-        assert_eq!(line.matches('\u{1b}').count(), 2, "bold open and close: {line:?}");
-        assert!(!line.contains("[31m"), "no orphaned red: {line:?}");
+        assert_eq!(line.matches('\u{1b}').count(), 2, "no inner escapes: {line:?}");
+        // Every character lands in the terminal theme's own foreground — the
+        // icon included, which is where a reverted experiment put a red span.
+        for code in ["[30m", "[31m", "[32m", "[33m", "[36m", "[37m", "[39m", "[90m", "[0m"] {
+            assert!(!line.contains(code), "unexpected colour {code} in {line:?}");
+        }
     }
 
     #[test]
@@ -397,18 +364,20 @@ mod tests {
         );
         // Stronger than counting: the two lines must carry the *same* escapes
         // in the same order, so saturation cannot buy a segment any styling at
-        // all. The icon's red is in both, which is the point of it being static
-        // — a colour that tracked usage would split these sequences apart.
+        // all — not even by tinting the icon, which is what a usage-tracking
+        // colour would do and what would split these two sequences apart.
         let escapes = |s: &str| {
-            s.split('\u{1b}').skip(1).map(|e| {
-                e.split_inclusive(|c: char| c.is_ascii_alphabetic())
-                    .next()
-                    .unwrap_or("")
-                    .to_string()
-            })
-            .collect::<Vec<_>>()
+            s.split('\u{1b}')
+                .skip(1)
+                .map(|e| {
+                    e.split_inclusive(|c: char| c.is_ascii_alphabetic())
+                        .next()
+                        .unwrap_or("")
+                        .to_string()
+                })
+                .collect::<Vec<_>>()
         };
         assert_eq!(escapes(&hot), escapes(&cool), "{hot:?} vs {cool:?}");
-        assert_eq!(escapes(&hot), ["[1m", "[31m", "[39m", "[22m"], "{hot:?}");
+        assert_eq!(escapes(&hot), ["[1m", "[22m"], "one bold span, nothing more: {hot:?}");
     }
 }
