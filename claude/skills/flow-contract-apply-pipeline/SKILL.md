@@ -158,6 +158,13 @@ small ledgers.
 Delegate pre-analysis reads to an `Explore` agent (`subagent_type: "Explore"`,
 `thoroughness: "quick"`). Below 10 items the delegation overhead isn't worth it — read inline.
 
+**Dispatch it one-shot — never pass `name:`.** A named spawn becomes an `in_process_teammate`
+with no return channel, and `Explore` is a built-in that carries no teammate-delivery
+instruction (unlike `claude/agents/*.md`, which do), so its classification table is simply lost:
+you get a "Teammate @x finished" notification and nothing else. If that happens, treat it as a
+failed dispatch and re-dispatch unnamed — do not try to recover it with `SendMessage`, because a
+completed teammate has nothing left to send.
+
 Forward: the selected item IDs with their `file`, `line`, `symbol`, `severity`, `category`,
 `summary` and the recommended-fix text to match against; the deleted-file detection rules;
 the Tier-1 already-applied test; and the carrier's narration requirement.
