@@ -217,17 +217,28 @@
   }
   .subtitle { font-size: 0.875rem; margin: 0; }
 
+  /* Fields come and go with the source, so this is a wrap rather than a
+     fixed column count — a hidden field leaves no gap behind it. */
   .controls {
-    display: grid;
-    grid-template-columns: minmax(9rem, 20rem) 8rem 9rem auto;
-    justify-content: start;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
     gap: 0.75rem;
-    align-items: end;
     padding: 1rem;
   }
+  .controls .field { flex: 0 0 auto; }
+  .field-source { width: 12rem; }
+  .field-theme { flex: 1 1 12rem; max-width: 20rem; }
+  .field-size, .field-diff, .field-day { width: 9rem; }
+  .field-date { width: 10.5rem; }
+  .ctl-note {
+    flex: 1 1 100%;
+    font-size: 0.75rem;
+    margin: 0.1rem 0 0;
+    line-height: 1.5;
+  }
   @media (max-width: 640px) {
-    .controls { grid-template-columns: 1fr 1fr; }
-    .controls .field-action { grid-column: 1 / -1; }
+    .controls .field { flex: 1 1 100%; max-width: none; width: auto; }
     .controls .btn { width: 100%; }
   }
 
@@ -324,7 +335,11 @@
     display: grid;
     grid-template-columns: repeat(var(--n), minmax(0, 1fr));
     width: min(100%, 600px);
-    gap: 0;
+    /* The rules between squares ARE the gaps: one 1px channel per shared edge,
+       with the container's line colour showing through. Drawing a border or
+       outline on each cell instead stacks two lines on every interior edge and
+       one on the rim, which is what makes a grid look unevenly ruled. */
+    gap: 1px;
     background: hsl(var(--cw-line));
     border: 2px solid hsl(var(--cw-frame));
     border-radius: 4px;
@@ -334,6 +349,8 @@
     touch-action: manipulation;
     transition: box-shadow .25s ease, border-color .25s ease;
   }
+  /* Sunday NYT puzzles are 21x21; give them a little more room to breathe. */
+  .grid.wide { width: min(100%, 760px); }
   .grid.solved {
     border-color: hsl(var(--success));
     box-shadow: 0 0 0 4px hsl(var(--success) / .18);
@@ -346,18 +363,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    outline: 1px solid hsl(var(--cw-line));
-    outline-offset: -0.5px;
     font-size: calc(100cqi / var(--n) * 0.56);
     font-weight: 500;
     line-height: 1;
     cursor: pointer;
     transition: background-color .12s ease;
   }
+  /* A block bleeds its colour 1px outwards to fill the surrounding channels, so
+     neighbouring blocks read as one solid mass rather than a tiled one. The
+     grid's own overflow clip keeps that bleed off the outer frame. */
   .cell.block {
     background: hsl(var(--cw-block));
     cursor: default;
-    outline-color: hsl(var(--cw-block));
+    box-shadow: 0 0 0 1px hsl(var(--cw-block));
   }
   /* Firefox-new-tab-style tile hover: a soft ring that follows the pointer */
   .cell:not(.block):hover { background: hsl(var(--cw-hover)); }
@@ -387,6 +405,13 @@
   }
   .cell.cursor .num { color: hsl(var(--cw-cursor-fg) / .7); }
   .cell .ltr { pointer-events: none; padding-top: 4%; }
+  /* a rebus square holds a whole word — shrink it to fit rather than clip */
+  .cell .ltr.rebus {
+    font-size: 38%;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    padding-top: 0;
+  }
 
   /* offscreen keyboard capture */
   #kbd {
@@ -536,7 +561,7 @@
     <div class="title-row">
       <div>
         <h1>Crossword</h1>
-        <p class="subtitle muted">Generated with the APIVerve crossword API. Your key, puzzle and progress stay in this browser.</p>
+        <p class="subtitle muted">Play the New York Times archive (1976&ndash;2018), or generate a fresh puzzle with an APIVerve key. Everything stays in this browser.</p>
       </div>
       <div class="head-rail">
         <div id="credits" class="badge hidden"></div>
@@ -549,7 +574,15 @@
     </div>
 
     <div class="card controls">
-      <div>
+      <div class="field field-source">
+        <label class="label" for="source">Source</label>
+        <select id="source" class="select">
+          <option value="nyt" selected>NYT archive</option>
+          <option value="apiverve">APIVerve (generated)</option>
+        </select>
+      </div>
+
+      <div class="field field-theme" data-src="apiverve">
         <label class="label" for="theme">Theme</label>
         <input id="theme" class="input" list="themes" placeholder="random" autocomplete="off" spellcheck="false" />
         <datalist id="themes">
@@ -561,7 +594,7 @@
           <option value="geography"></option>
         </datalist>
       </div>
-      <div>
+      <div class="field field-size" data-src="apiverve">
         <label class="label" for="size">Size</label>
         <select id="size" class="select">
           <option value="small">Small</option>
@@ -569,7 +602,7 @@
           <option value="large">Large</option>
         </select>
       </div>
-      <div>
+      <div class="field field-diff" data-src="apiverve">
         <label class="label" for="difficulty">Difficulty</label>
         <select id="difficulty" class="select">
           <option value="easy">Easy</option>
@@ -577,12 +610,38 @@
           <option value="hard">Hard</option>
         </select>
       </div>
-      <div class="field-action">
+
+      <div class="field field-day" data-src="nyt">
+        <label class="label" for="dow">Day</label>
+        <select id="dow" class="select">
+          <option value="any" selected>Any day</option>
+          <option value="1">Monday</option>
+          <option value="2">Tuesday</option>
+          <option value="3">Wednesday</option>
+          <option value="4">Thursday</option>
+          <option value="5">Friday</option>
+          <option value="6">Saturday</option>
+          <option value="0">Sunday</option>
+        </select>
+      </div>
+      <div class="field field-date" data-src="nyt">
+        <label class="label" for="date">Date <span class="muted">(optional)</span></label>
+        <input id="date" class="input" type="date" min="1976-01-01" max="2018-03-09" />
+      </div>
+
+      <div class="field field-action">
         <button id="new-puzzle" class="btn btn-primary">
           <span class="spinner hidden" id="spin"></span>
           <span id="new-label">New puzzle</span>
         </button>
       </div>
+
+      <p class="ctl-note muted" data-src="nyt">
+        Puzzles get harder through the week — Monday is the gentlest, Saturday the toughest,
+        and Sunday is a 21&times;21. Leave the date blank for a random one. Fetched straight from the
+        <a href="https://github.com/doshea/nyt_crosswords" target="_blank" rel="noreferrer noopener">doshea/nyt_crosswords</a>
+        archive on GitHub, so no key is needed; it runs to 9 March 2018 and skips a scattering of dates.
+      </p>
     </div>
 
     <div id="keybar" class="card keybar hidden">
@@ -610,7 +669,7 @@
   <!-- empty state -->
   <section id="empty" class="card state">
     <h2>No puzzle yet</h2>
-    <p class="muted">Pick a theme and difficulty, then generate a puzzle. It will be saved here — along with everything you type — until you request a new one.</p>
+    <p class="muted">Choose a source above and press the button. The puzzle is kept here — along with everything you type — until you ask for a new one.</p>
     <button class="btn btn-outline" data-generate>Generate puzzle</button>
   </section>
 
@@ -626,7 +685,10 @@
       <div class="board-meta">
         <span class="badge" id="meta-theme">theme</span>
         <span class="badge" id="meta-diff">difficulty</span>
+        <span class="badge hidden" id="meta-by"></span>
         <span class="badge" id="meta-words">0 words</span>
+        <span class="badge hidden" id="meta-rebus"
+              title="Some squares hold a whole word. Typing its first letter counts as correct; Reveal fills in the rest."></span>
         <span class="badge badge-success hidden" id="meta-solved">✓ Solved</span>
         <span style="flex:1"></span>
         <span class="muted" id="meta-progress" style="font-size:.75rem"></span>
@@ -690,6 +752,17 @@
      ===================================================================== */
 
   const API_URL   = "https://api.apiverve.com/v1/crossword";
+
+  /* The NYT archive is a plain directory of JSON on GitHub: <year>/<month>/<day>.json.
+     raw.githubusercontent.com answers with `Access-Control-Allow-Origin: *`, so the
+     page can read it directly, with no key and no proxy. Coverage starts on
+     1 Jan 1976 and stops mid-March 2018, and roughly one date in fourteen is
+     absent — hence the re-roll loop in fetchNyt(). */
+  const NYT_BASE  = "https://raw.githubusercontent.com/doshea/nyt_crosswords/master/";
+  const NYT_MIN   = "1976-01-01";
+  const NYT_MAX   = "2018-03-09";
+  const NYT_TRIES = 10;
+
   const STORE     = "apiverve.crossword.v2";
   const STORE_OLD = "apiverve.crossword.v1";   // pre-trim coordinates — unusable
   const PREFS     = "apiverve.crossword.prefs.v1";
@@ -699,6 +772,7 @@
 
   const $ = (id) => document.getElementById(id);
   const el = {
+    source: $("source"), dow: $("dow"), date: $("date"),
     theme: $("theme"), size: $("size"), difficulty: $("difficulty"), newBtn: $("new-puzzle"),
     spin: $("spin"), newLabel: $("new-label"), error: $("error"),
     empty: $("empty"), loading: $("loading"), game: $("game"),
@@ -706,8 +780,8 @@
     curKicker: $("cur-kicker"), curClue: $("cur-clue"),
     prev: $("prev-clue"), next: $("next-clue"),
     listAcross: $("list-across"), listDown: $("list-down"),
-    metaTheme: $("meta-theme"), metaDiff: $("meta-diff"),
-    metaWords: $("meta-words"), metaSolved: $("meta-solved"),
+    metaTheme: $("meta-theme"), metaDiff: $("meta-diff"), metaBy: $("meta-by"),
+    metaWords: $("meta-words"), metaRebus: $("meta-rebus"), metaSolved: $("meta-solved"),
     metaProgress: $("meta-progress"), toolNote: $("tool-note"),
     keybar: $("keybar"), keySetup: $("key-setup"), keyStatus: $("key-status"),
     apikey: $("apikey"), keySave: $("key-save"), keyCancel: $("key-cancel"),
@@ -831,8 +905,9 @@
   function renderKeyUi(opts) {
     const has = !!apiKey;
     const editing = !!(opts && opts.edit);
-    // the form card only takes up room when there is actually something to fill in
-    el.keybar.classList.toggle("hidden", has && !editing);
+    // the form card only takes up room when there is actually something to fill
+    // in — the archive needs no key, so it stays out of the way there too
+    el.keybar.classList.toggle("hidden", editing ? false : (has || !needsKey()));
     el.keySetup.classList.remove("hidden");
     el.keyStatus.classList.toggle("hidden", !has || editing);
     el.keyCancel.classList.toggle("hidden", !has);
@@ -840,11 +915,29 @@
     updateGate();
   }
 
-  /** Generating needs a key; playing a restored puzzle does not. */
+  const needsKey = () => el.source.value === "apiverve";
+
+  /** Generating from APIVerve needs a key; the archive and a restored puzzle do not. */
   function updateGate() {
-    const blocked = loading || !apiKey;
+    const blocked = loading || (needsKey() && !apiKey);
     el.newBtn.disabled = blocked;
     document.querySelectorAll("[data-generate]").forEach((b) => (b.disabled = blocked));
+  }
+
+  /** Show only the fields that belong to the selected source. */
+  function syncFields() {
+    const src = el.source.value;
+    document.querySelectorAll("[data-src]").forEach((node) =>
+      node.classList.toggle("hidden", node.dataset.src !== src));
+    el.credits.classList.toggle("hidden", src !== "apiverve" || !el.credits.textContent);
+  }
+
+  /* Splitting the key bar out of syncFields() keeps boot quiet: the key is
+     still being unwrapped then, and touching the bar would flash the "enter
+     your key" form on every load. */
+  function syncSourceUi() {
+    syncFields();
+    renderKeyUi();
   }
 
   async function saveKeyFromInput() {
@@ -944,7 +1037,7 @@
         if (!entries[idx].clue) entries[idx].clue = c.clue || "";
       }
     }
-    for (const e of entries) if (!e.clue) e.clue = "(no clue supplied — " + e.answer.length + " letters)";
+    for (const e of entries) if (!e.clue) e.clue = "(no clue supplied — " + e.cells.length + " squares)";
 
     // index every cell to its across / down entry
     for (const e of entries) for (const [r, c] of e.cells) cells[r][c][e.dir] = e.id;
@@ -992,6 +1085,7 @@
   function savePrefs() {
     try {
       localStorage.setItem(PREFS, JSON.stringify({
+        source: el.source.value, dow: el.dow.value, date: el.date.value,
         theme: el.theme.value, size: el.size.value, difficulty: el.difficulty.value,
       }));
     } catch (err) { /* ignore */ }
@@ -1001,10 +1095,14 @@
     let prefs = null;
     try { prefs = JSON.parse(localStorage.getItem(PREFS) || "null"); } catch (e) {}
     if (prefs) {
+      if (prefs.source === "nyt" || prefs.source === "apiverve") el.source.value = prefs.source;
+      if (typeof prefs.dow === "string") el.dow.value = prefs.dow;
+      if (typeof prefs.date === "string") el.date.value = prefs.date;
       if (typeof prefs.theme === "string") el.theme.value = prefs.theme;
       if (prefs.size) el.size.value = prefs.size;
       if (prefs.difficulty) el.difficulty.value = prefs.difficulty;
     }
+    syncFields();
 
     // letters in a pre-trim save are keyed to the untrimmed grid, so they
     // cannot be carried across; drop the record instead of restoring it askew
@@ -1032,7 +1130,7 @@
 
   async function requestPuzzle() {
     if (loading) return;
-    if (!apiKey) {
+    if (needsKey() && !apiKey) {
       showError("Add your APIVerve API key first.");
       renderKeyUi({ edit: true });
       el.apikey.focus();
@@ -1042,41 +1140,11 @@
     setBusy(true);
     hideError();
     show("loading");
-
-    const theme = (el.theme.value || "").trim() || "random";
-    const difficulty = el.difficulty.value;
     savePrefs();
 
-    const url = new URL(API_URL);
-    url.searchParams.set("size", el.size.value);
-    url.searchParams.set("theme", theme);
-    url.searchParams.set("difficulty", difficulty);
-
     try {
-      const res = await fetch(url, { headers: { "x-api-key": apiKey } });
-
-      const remaining = res.headers.get("x-api-remaining-credits");
-      if (remaining !== null) {
-        el.credits.textContent = remaining + " API credits left";
-        el.credits.classList.remove("hidden");
-      }
-
-      let body = null;
-      try { body = await res.json(); } catch (e) {}
-
-      if (!res.ok) {
-        if (res.status === 429) throw new Error("Rate limit reached on this API key. Wait a moment and try again.");
-        if (res.status === 401 || res.status === 403) {
-          renderKeyUi({ edit: true });
-          throw new Error("The API key was rejected (HTTP " + res.status + "). Check it and save it again.");
-        }
-        throw new Error((body && (body.error || body.message)) || ("Request failed with HTTP " + res.status + "."));
-      }
-      if (!body || body.status !== "ok" || !body.data || !Array.isArray(body.data.grid)) {
-        throw new Error((body && body.error) || "The API returned an unexpected response.");
-      }
-
-      game = buildGame(body.data, {}, null, "across");   // fresh puzzle -> progress reset
+      const raw = el.source.value === "nyt" ? await fetchNyt() : await fetchApiverve();
+      game = buildGame(raw, {}, null, "across");   // fresh puzzle -> progress reset
       game.savedAt = Date.now();
       save();
       renderAll();
@@ -1088,6 +1156,139 @@
       loading = false;
       setBusy(false);
     }
+  }
+
+  async function fetchApiverve() {
+    const url = new URL(API_URL);
+    url.searchParams.set("size", el.size.value);
+    url.searchParams.set("theme", (el.theme.value || "").trim() || "random");
+    url.searchParams.set("difficulty", el.difficulty.value);
+
+    const res = await fetch(url, { headers: { "x-api-key": apiKey } });
+
+    const remaining = res.headers.get("x-api-remaining-credits");
+    if (remaining !== null) {
+      el.credits.textContent = remaining + " API credits left";
+      el.credits.classList.remove("hidden");
+    }
+
+    let body = null;
+    try { body = await res.json(); } catch (e) {}
+
+    if (!res.ok) {
+      if (res.status === 429) throw new Error("Rate limit reached on this API key. Wait a moment and try again.");
+      if (res.status === 401 || res.status === 403) {
+        renderKeyUi({ edit: true });
+        throw new Error("The API key was rejected (HTTP " + res.status + "). Check it and save it again.");
+      }
+      throw new Error((body && (body.error || body.message)) || ("Request failed with HTTP " + res.status + "."));
+    }
+    if (!body || body.status !== "ok" || !body.data || !Array.isArray(body.data.grid)) {
+      throw new Error((body && body.error) || "The API returned an unexpected response.");
+    }
+    body.data.source = "apiverve";
+    return body.data;
+  }
+
+  /* ---------------------------------------------------------------------
+     NYT archive
+     ---------------------------------------------------------------------
+     Dates are handled in UTC throughout: the archive is keyed by calendar
+     date, and a local-time Date would shift the file name by a day for
+     anyone west of Greenwich.
+     --------------------------------------------------------------------- */
+
+  const DAY_MS = 86400000;
+  const parseISO = (s) => {
+    const p = String(s).split("-").map(Number);
+    return Date.UTC(p[0], p[1] - 1, p[2]);
+  };
+  const toISO = (t) => new Date(t).toISOString().slice(0, 10);
+  const nytPath = (iso) => iso.slice(0, 4) + "/" + iso.slice(5, 7) + "/" + iso.slice(8, 10) + ".json";
+
+  /** A random date in range, nudged forward onto the requested weekday. */
+  function randomNytDate(dow) {
+    const lo = parseISO(NYT_MIN), hi = parseISO(NYT_MAX);
+    let t = lo + Math.floor(Math.random() * ((hi - lo) / DAY_MS + 1)) * DAY_MS;
+    if (dow !== "any") {
+      t += ((+dow - new Date(t).getUTCDay() + 7) % 7) * DAY_MS;
+      if (t > hi) t -= 7 * DAY_MS;
+    }
+    return toISO(t);
+  }
+
+  async function fetchNyt() {
+    const explicit = el.date.value;
+    if (explicit && (explicit < NYT_MIN || explicit > NYT_MAX)) {
+      throw new Error("The archive runs from " + NYT_MIN + " to " + NYT_MAX + ".");
+    }
+    const tries = explicit ? 1 : NYT_TRIES;
+
+    for (let i = 0; i < tries; i++) {
+      const iso = explicit || randomNytDate(el.dow.value);
+      let res;
+      try {
+        res = await fetch(NYT_BASE + nytPath(iso));
+      } catch (err) {
+        throw new Error("Could not reach the archive on GitHub — check the connection.");
+      }
+      if (res.status === 404) {
+        // a gap in the archive: with no date asked for, just roll again
+        if (explicit) throw new Error("No puzzle for " + iso + " — the archive skips a scattering of dates.");
+        continue;
+      }
+      if (!res.ok) throw new Error("The archive returned HTTP " + res.status + ".");
+      return adaptNyt(await res.json(), iso);
+    }
+    throw new Error("Landed on a missing date " + tries + " times running. Try again.");
+  }
+
+  /* Reshapes an archive entry into the same shape the APIVerve endpoint
+     returns — a row-major grid plus numbered clue lists — so everything
+     downstream, including buildGame() and the saved-game format, is
+     unchanged. The archive's own `gridnums` is deliberately ignored:
+     buildGame derives identical numbering from the grid, and deriving it
+     keeps one numbering path rather than two. */
+  function adaptNyt(p, iso) {
+    const size = p && p.size;
+    if (!p || !Array.isArray(p.grid) || !size || p.grid.length !== size.rows * size.cols) {
+      throw new Error("That archive entry is not in the expected format.");
+    }
+
+    const grid = [];
+    let rebus = 0;
+    for (let r = 0; r < size.rows; r++) {
+      const row = [];
+      for (let c = 0; c < size.cols; c++) {
+        const raw = p.grid[r * size.cols + c];
+        const cell = raw == null ? "" : String(raw).trim().toUpperCase();
+        if (!cell || cell === ".") { row.push(null); continue; }
+        if (cell.length > 1) rebus++;    // a whole word crammed into one square
+        row.push(cell);
+      }
+      grid.push(row);
+    }
+
+    // clues arrive as "12. Clue text"; the number is only ever the leading run
+    const clues = (list) => (Array.isArray(list) ? list : []).reduce((out, s) => {
+      const m = /^\s*(\d+)\s*[.:]\s*([\s\S]*)$/.exec(String(s));
+      if (m) out.push({ number: +m[1], clue: m[2].trim() });
+      return out;
+    }, []);
+
+    return {
+      source: "nyt",
+      grid,
+      across: clues(p.clues && p.clues.across),
+      down: clues(p.clues && p.clues.down),
+      date: iso,
+      dow: p.dow || "",
+      // most weekday entries title themselves "NY TIMES, THU, JAN 01, 1976",
+      // which the date badge beside it already says
+      title: /^ *NY TIMES/i.test(p.title || "") ? "" : (p.title || "").trim(),
+      author: (p.author || "").trim(),
+      rebus,
+    };
   }
 
   function setBusy(on) {
@@ -1131,6 +1332,7 @@
   function renderGrid() {
     cellNodes.clear();
     el.grid.style.setProperty("--n", game.cols);
+    el.grid.classList.toggle("wide", game.cols > 15);
     el.grid.setAttribute("aria-rowcount", String(game.rows));
     const frag = document.createDocumentFragment();
 
@@ -1189,9 +1391,36 @@
 
   function renderMeta() {
     const d = game.raw;
-    el.metaTheme.textContent = d.theme || "random";
-    el.metaDiff.textContent = d.difficulty || "medium";
+    if (d.source === "nyt") {
+      el.metaTheme.textContent = d.title || "NYT crossword";
+      el.metaDiff.textContent = [d.dow, prettyDate(d.date)].filter(Boolean).join(" ") || "NYT archive";
+      el.metaBy.textContent = d.author ? "by " + d.author : "";
+    } else {
+      el.metaTheme.textContent = d.theme || "random";
+      el.metaDiff.textContent = d.difficulty || "medium";
+      el.metaBy.textContent = "";
+    }
+    el.metaBy.classList.toggle("hidden", !el.metaBy.textContent);
     el.metaWords.textContent = game.entries.length + " words";
+    el.metaRebus.textContent = d.rebus ? d.rebus + " rebus squares" : "";
+    el.metaRebus.classList.toggle("hidden", !d.rebus);
+  }
+
+  function prettyDate(iso) {
+    if (!iso) return "";
+    try {
+      return new Date(parseISO(iso)).toLocaleDateString(undefined,
+        { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
+    } catch (e) { return iso; }
+  }
+
+  /* A rebus square's answer is a whole word, but the grid only ever takes one
+     keystroke at a time — so its first letter counts as having solved it, and
+     Reveal is what writes the word out in full. */
+  function correctAt(k, cell) {
+    const v = game.letters[k];
+    if (!v) return false;
+    return v === cell.sol || (cell.sol.length > 1 && v === cell.sol.charAt(0));
   }
 
   /** Repaints everything that depends on letters / selection. */
@@ -1212,8 +1441,10 @@
         const k = key(r, c);
         const node = cellNodes.get(k);
         const ltr = game.letters[k] || "";
-        if (ltr) { filled++; if (ltr === cell.sol) correct++; }
-        node.querySelector(".ltr").textContent = ltr;
+        if (ltr) { filled++; if (correctAt(k, cell)) correct++; }
+        const slot = node.querySelector(".ltr");
+        slot.textContent = ltr;
+        slot.classList.toggle("rebus", ltr.length > 1);
         node.classList.toggle("in-word", inWord.has(k) && !(cur && cur.r === r && cur.c === c));
         node.classList.toggle("cursor", !!cur && cur.r === r && cur.c === c);
         node.classList.toggle("wrong", game.wrong.has(k));
@@ -1229,7 +1460,7 @@
 
     // clue bar
     if (active) {
-      el.curKicker.textContent = active.num + " " + (active.dir === "across" ? "Across" : "Down") + " · " + active.answer.length + " letters";
+      el.curKicker.textContent = active.num + " " + (active.dir === "across" ? "Across" : "Down") + " · " + active.cells.length + " squares";
       el.curClue.textContent = active.clue;
       el.curClue.classList.remove("muted");
     } else {
@@ -1424,7 +1655,7 @@
       const k = key(r, c);
       const ltr = game.letters[k];
       if (!ltr) { blank++; continue; }
-      if (ltr === game.cells[r][c].sol) game.wrong.delete(k);
+      if (correctAt(k, game.cells[r][c])) game.wrong.delete(k);
       else { game.wrong.add(k); wrong++; }
     }
     paint();
@@ -1443,7 +1674,7 @@
     for (const [r, c] of cells) {
       const k = key(r, c);
       const sol = game.cells[r][c].sol;
-      if (game.letters[k] === sol) continue;
+      if (correctAt(k, game.cells[r][c])) continue;
       game.letters[k] = sol;
       game.revealed.add(k);
       game.wrong.delete(k);
@@ -1544,12 +1775,15 @@
     renderKeyUi();
   });
 
+  el.source.addEventListener("change", () => { hideError(); syncSourceUi(); savePrefs(); });
   el.theme.addEventListener("change", savePrefs);
   el.size.addEventListener("change", savePrefs);
   el.difficulty.addEventListener("change", savePrefs);
-  el.theme.addEventListener("keydown", (ev) => {
+  el.dow.addEventListener("change", savePrefs);
+  el.date.addEventListener("change", savePrefs);
+  [el.theme, el.date].forEach((node) => node.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") { ev.preventDefault(); requestPuzzle(); }
-  });
+  }));
 
   // pagehide fires where beforeunload is skipped (bfcache, mobile tab eviction),
   // and hiding the tab is the moment a new-tab page usually goes away for good.
@@ -1563,8 +1797,9 @@
      ===================================================================== */
 
   el.grid.classList.add("blurred");
+  syncFields();                     // restore() re-runs this once prefs load
   if (!restore()) show("empty");
-  updateGate();                     // no generating until the key resolves
+  updateGate();                     // the archive is playable before the key resolves
   // the key bar stays hidden for this one tick so a stored key does not
   // flash the "enter your key" form on every new tab
   loadKey().then((k) => { apiKey = k; renderKeyUi(); });
