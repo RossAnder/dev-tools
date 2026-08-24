@@ -53,5 +53,6 @@
   },
   "enabledMcpjsonServers": [
     "lumina"
-  ]
+  ],
+  "outputStyle": "Concise"
 }

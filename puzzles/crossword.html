@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Crossword</title>
+<style>
+  /* ---------------------------------------------------------------------
+     shadcn/ui design tokens (new-york / zinc), light + dark
+     --------------------------------------------------------------------- */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 72.2% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 142 71% 35%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.625rem;
+
+    /* crossword-specific */
+    --cw-cell: 0 0% 100%;
+    --cw-block: 240 6% 12%;
+    --cw-frame: 240 6% 12%;
+    --cw-line: 240 5.9% 78%;
+    --cw-word: 213 97% 89%;
+    --cw-cursor: 45 96% 64%;
+    --cw-cursor-fg: 240 10% 3.9%;
+    --cw-hover: 240 5% 93%;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: 240 10% 3.9%;
+      --foreground: 0 0% 98%;
+      --card: 240 10% 5.5%;
+      --card-foreground: 0 0% 98%;
+      --primary: 0 0% 98%;
+      --primary-foreground: 240 5.9% 10%;
+      --secondary: 240 3.7% 15.9%;
+      --secondary-foreground: 0 0% 98%;
+      --muted: 240 3.7% 15.9%;
+      --muted-foreground: 240 5% 64.9%;
+      --accent: 240 3.7% 15.9%;
+      --accent-foreground: 0 0% 98%;
+      --destructive: 0 62.8% 50%;
+      --destructive-foreground: 0 0% 98%;
+      --success: 142 60% 45%;
+      --border: 240 3.7% 17%;
+      --input: 240 3.7% 17%;
+      --ring: 240 4.9% 83.9%;
+
+      --cw-cell: 240 5% 21%;
+      --cw-block: 240 8% 5%;
+      --cw-frame: 240 4% 34%;
+      --cw-line: 240 4% 34%;
+      --cw-word: 215 55% 30%;
+      --cw-cursor: 45 90% 58%;
+      --cw-cursor-fg: 240 10% 4%;
+      --cw-hover: 240 5% 23%;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem 3rem;
+  }
+
+  /* ---------------------------------- primitives ---------------------- */
+
+  .card {
+    background: hsl(var(--card));
+    color: hsl(var(--card-foreground));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    box-shadow: 0 1px 2px 0 hsl(240 6% 10% / 0.04);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+    border-radius: calc(var(--radius) - 2px);
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1;
+    height: 2.25rem;
+    padding: 0 0.875rem;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background-color .15s ease, color .15s ease, border-color .15s ease, opacity .15s ease;
+    font-family: inherit;
+  }
+  .btn:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .btn-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+  .btn-primary:hover:not(:disabled) { background: hsl(var(--primary) / .9); }
+
+  .btn-outline {
+    background: hsl(var(--background));
+    border-color: hsl(var(--input));
+    color: hsl(var(--foreground));
+  }
+  .btn-outline:hover:not(:disabled) { background: hsl(var(--accent)); }
+
+  .btn-ghost { background: transparent; color: hsl(var(--foreground)); }
+  .btn-ghost:hover:not(:disabled) { background: hsl(var(--accent)); }
+
+  .btn-icon { width: 2rem; height: 2rem; padding: 0; }
+
+  .label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1;
+    margin-bottom: 0.4rem;
+    color: hsl(var(--foreground));
+  }
+
+  .input, .select {
+    display: flex;
+    width: 100%;
+    height: 2.25rem;
+    border-radius: calc(var(--radius) - 2px);
+    border: 1px solid hsl(var(--input));
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    padding: 0 0.7rem;
+    font-size: 0.875rem;
+    font-family: inherit;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .input::placeholder { color: hsl(var(--muted-foreground)); }
+  .input:focus-visible, .select:focus-visible {
+    outline: none;
+    border-color: hsl(var(--ring));
+    box-shadow: 0 0 0 3px hsl(var(--ring) / .12);
+  }
+  .select {
+    appearance: none;
+    padding-right: 1.9rem;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    cursor: pointer;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    border-radius: 9999px;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--secondary));
+    color: hsl(var(--secondary-foreground));
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.25;
+  }
+  .badge-success {
+    background: hsl(var(--success) / .12);
+    border-color: hsl(var(--success) / .35);
+    color: hsl(var(--success));
+  }
+
+  .muted { color: hsl(var(--muted-foreground)); }
+  .sep { height: 1px; background: hsl(var(--border)); border: 0; margin: 0; }
+
+  /* ---------------------------------- header -------------------------- */
+
+  header.top { margin-bottom: 1.25rem; }
+
+  .title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 0.25rem;
+  }
+  .subtitle { font-size: 0.875rem; margin: 0; }
+
+  .controls {
+    display: grid;
+    grid-template-columns: minmax(9rem, 20rem) 8rem 9rem auto;
+    justify-content: start;
+    gap: 0.75rem;
+    align-items: end;
+    padding: 1rem;
+  }
+  @media (max-width: 640px) {
+    .controls { grid-template-columns: 1fr 1fr; }
+    .controls .field-action { grid-column: 1 / -1; }
+    .controls .btn { width: 100%; }
+  }
+
+  /* ---------------------------------- tools --------------------------- */
+
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    margin-top: 0.9rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid hsl(var(--border));
+  }
+  .tools-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    margin-right: 0.15rem;
+  }
+  .tools-sep { width: 1px; height: 1.1rem; background: hsl(var(--border)); margin: 0 0.4rem; }
+  .tool-note { font-size: 0.75rem; margin-left: auto; padding-left: 0.5rem; }
+
+  .cell.wrong { background: hsl(var(--destructive) / .12); }
+  .cell.wrong .ltr { color: hsl(var(--destructive)); }
+  .cell.revealed .ltr { color: hsl(var(--muted-foreground)); font-style: italic; }
+
+  /* ---------------------------------- api key ------------------------- */
+
+  .keybar { padding: 1rem; margin-top: 0.75rem; }
+  .key-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .key-row .input {
+    flex: 0 1 26rem;
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .key-note { font-size: 0.75rem; margin: 0.65rem 0 0; line-height: 1.55; max-width: 62ch; }
+  .key-note a { color: inherit; text-underline-offset: 2px; }
+  .key-status { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+  .head-rail { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+  .key-fp { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .btn-sm { height: 1.85rem; padding: 0 0.6rem; font-size: 0.8125rem; }
+
+  /* ---------------------------------- layout -------------------------- */
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 21rem;
+    gap: 1.25rem;
+    align-items: start;
+    margin-top: 1.25rem;
+  }
+  @media (max-width: 960px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  .board { padding: 1rem; }
+
+  .board-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+
+  /* current clue bar */
+  .cluebar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: hsl(var(--muted));
+    border: 1px solid hsl(var(--border));
+    border-radius: calc(var(--radius) - 2px);
+    padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+    margin-bottom: 0.85rem;
+    min-height: 3rem;
+  }
+  .cluebar .text { flex: 1; min-width: 0; font-size: 0.9375rem; line-height: 1.35; }
+  .cluebar .kicker {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    display: block;
+    margin-bottom: 0.15rem;
+  }
+
+  /* grid */
+  .grid-wrap { display: flex; justify-content: center; }
+  .grid {
+    container-type: inline-size;
+    display: grid;
+    grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+    width: min(100%, 600px);
+    gap: 0;
+    background: hsl(var(--cw-line));
+    border: 2px solid hsl(var(--cw-frame));
+    border-radius: 4px;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    transition: box-shadow .25s ease, border-color .25s ease;
+  }
+  .grid.solved {
+    border-color: hsl(var(--success));
+    box-shadow: 0 0 0 4px hsl(var(--success) / .18);
+  }
+
+  .cell {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    background: hsl(var(--cw-cell));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    outline: 1px solid hsl(var(--cw-line));
+    outline-offset: -0.5px;
+    font-size: calc(100cqi / var(--n) * 0.56);
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color .12s ease;
+  }
+  .cell.block {
+    background: hsl(var(--cw-block));
+    cursor: default;
+    outline-color: hsl(var(--cw-block));
+  }
+  /* Firefox-new-tab-style tile hover: a soft ring that follows the pointer */
+  .cell:not(.block):hover { background: hsl(var(--cw-hover)); }
+  .cell.in-word { background: hsl(var(--cw-word)); }
+  .cell.cursor {
+    background: hsl(var(--cw-cursor));
+    color: hsl(var(--cw-cursor-fg));
+  }
+  .cell.cursor::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    box-shadow: inset 0 0 0 2px hsl(var(--foreground) / .55);
+    pointer-events: none;
+  }
+  .grid.blurred .cell.cursor::after { box-shadow: inset 0 0 0 2px hsl(var(--foreground) / .2); }
+
+  .cell .num {
+    position: absolute;
+    top: 3%;
+    left: 7%;
+    font-size: calc(100cqi / var(--n) * 0.27);
+    font-weight: 600;
+    line-height: 1;
+    color: hsl(var(--muted-foreground));
+    pointer-events: none;
+  }
+  .cell.cursor .num { color: hsl(var(--cw-cursor-fg) / .7); }
+  .cell .ltr { pointer-events: none; padding-top: 4%; }
+
+  /* offscreen keyboard capture */
+  #kbd {
+    position: fixed;
+    top: 50%;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    border: 0;
+    padding: 0;
+    font-size: 16px; /* prevents iOS zoom */
+  }
+
+  /* clue lists */
+  .clues { display: flex; flex-direction: column; gap: 1rem; }
+  .clue-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .clue-head {
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .clue-list {
+    position: relative;
+    overflow-y: auto;
+    max-height: 19rem;
+    padding: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    scrollbar-width: thin;
+  }
+  @media (max-width: 960px) { .clue-list { max-height: 15rem; } }
+
+  .clue {
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+    text-align: left;
+    width: 100%;
+    background: transparent;
+    border: 0;
+    border-left: 2px solid transparent;
+    border-radius: calc(var(--radius) - 4px);
+    padding: 0.4rem 0.55rem;
+    font: inherit;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: hsl(var(--foreground));
+    cursor: pointer;
+    transition: background-color .12s ease, border-color .12s ease;
+  }
+  .clue:hover { background: hsl(var(--accent)); }
+  .clue.cross { background: hsl(var(--muted)); }
+  .clue.active {
+    background: hsl(var(--cw-word));
+    border-left-color: hsl(var(--foreground) / .55);
+    font-weight: 500;
+  }
+  .clue.filled .clue-num { color: hsl(var(--muted-foreground) / .6); }
+  .clue.filled .clue-text { opacity: .55; }
+  .clue-num {
+    min-width: 1.4rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: hsl(var(--muted-foreground));
+    flex: none;
+  }
+  .clue.active .clue-num { color: inherit; }
+
+  /* states */
+  .state {
+    padding: 3rem 1.5rem;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .state h2 { font-size: 1.0625rem; font-weight: 600; margin: 0; }
+  .state p { margin: 0; font-size: 0.875rem; max-width: 34rem; }
+
+  .alert {
+    display: flex;
+    gap: 0.7rem;
+    align-items: flex-start;
+    border: 1px solid hsl(var(--destructive) / .4);
+    background: hsl(var(--destructive) / .07);
+    color: hsl(var(--destructive));
+    border-radius: var(--radius);
+    padding: 0.85rem 1rem;
+    font-size: 0.875rem;
+    margin-top: 1rem;
+  }
+  .alert strong { display: block; margin-bottom: .15rem; }
+
+  .spinner {
+    width: 0.9rem;
+    height: 0.9rem;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    flex: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .skeleton {
+    background: linear-gradient(90deg,
+      hsl(var(--muted)) 25%, hsl(var(--accent)) 37%, hsl(var(--muted)) 63%);
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease infinite;
+    border-radius: calc(var(--radius) - 2px);
+  }
+  @keyframes shimmer { 0% { background-position: 100% 0 } 100% { background-position: 0 0 } }
+
+  footer.hints {
+    margin-top: 1.25rem;
+    font-size: 0.75rem;
+    display: flex;
+    gap: 0.4rem 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.6875rem;
+    border: 1px solid hsl(var(--border));
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0.05rem 0.3rem;
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="top">
+    <div class="title-row">
+      <div>
+        <h1>Crossword</h1>
+        <p class="subtitle muted">Generated with the APIVerve crossword API. Your key, puzzle and progress stay in this browser.</p>
+      </div>
+      <div class="head-rail">
+        <div id="credits" class="badge hidden"></div>
+        <div id="key-status" class="key-status hidden">
+          <span class="badge">Key <code class="key-fp" id="key-fp"></code></span>
+          <button id="key-change" class="btn btn-ghost btn-sm">Change</button>
+          <button id="key-forget" class="btn btn-ghost btn-sm">Forget</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card controls">
+      <div>
+        <label class="label" for="theme">Theme</label>
+        <input id="theme" class="input" list="themes" placeholder="random" autocomplete="off" spellcheck="false" />
+        <datalist id="themes">
+          <option value="random"></option>
+          <option value="animals"></option>
+          <option value="food"></option>
+          <option value="sports"></option>
+          <option value="science"></option>
+          <option value="geography"></option>
+        </datalist>
+      </div>
+      <div>
+        <label class="label" for="size">Size</label>
+        <select id="size" class="select">
+          <option value="small">Small</option>
+          <option value="medium" selected>Medium</option>
+          <option value="large">Large</option>
+        </select>
+      </div>
+      <div>
+        <label class="label" for="difficulty">Difficulty</label>
+        <select id="difficulty" class="select">
+          <option value="easy">Easy</option>
+          <option value="medium" selected>Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+      </div>
+      <div class="field-action">
+        <button id="new-puzzle" class="btn btn-primary">
+          <span class="spinner hidden" id="spin"></span>
+          <span id="new-label">New puzzle</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="keybar" class="card keybar hidden">
+      <div id="key-setup">
+        <label class="label" for="apikey">APIVerve API key</label>
+        <div class="key-row">
+          <input id="apikey" class="input" type="password" placeholder="apv_…"
+                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+          <button id="key-save" class="btn btn-primary">Save key</button>
+          <button id="key-cancel" class="btn btn-ghost hidden">Cancel</button>
+        </div>
+        <p class="key-note muted">
+          Kept in this browser's storage only, wrapped rather than written in the clear, and sent
+          nowhere except <code>api.apiverve.com</code>. That guards against a glance at the profile
+          folder or a synced backup — it cannot hide the key from anything able to run script in
+          this page, so treat it as revocable.
+          <a href="https://apiverve.com" target="_blank" rel="noreferrer noopener">Get a free key</a>.
+        </p>
+      </div>
+    </div>
+
+    <div id="error" class="alert hidden"></div>
+  </header>
+
+  <!-- empty state -->
+  <section id="empty" class="card state">
+    <h2>No puzzle yet</h2>
+    <p class="muted">Pick a theme and difficulty, then generate a puzzle. It will be saved here — along with everything you type — until you request a new one.</p>
+    <button class="btn btn-outline" data-generate>Generate puzzle</button>
+  </section>
+
+  <!-- loading skeleton -->
+  <section id="loading" class="card state hidden">
+    <div class="skeleton" style="width:min(100%,420px);aspect-ratio:1"></div>
+    <p class="muted">Building your grid…</p>
+  </section>
+
+  <!-- game -->
+  <main id="game" class="layout hidden">
+    <section class="card board">
+      <div class="board-meta">
+        <span class="badge" id="meta-theme">theme</span>
+        <span class="badge" id="meta-diff">difficulty</span>
+        <span class="badge" id="meta-words">0 words</span>
+        <span class="badge badge-success hidden" id="meta-solved">✓ Solved</span>
+        <span style="flex:1"></span>
+        <span class="muted" id="meta-progress" style="font-size:.75rem"></span>
+      </div>
+
+      <div class="cluebar">
+        <div class="text">
+          <span class="kicker" id="cur-kicker">Across</span>
+          <span id="cur-clue" class="muted">Select a square to see its clue.</span>
+        </div>
+        <button class="btn btn-ghost btn-icon" id="prev-clue" title="Previous clue (Shift+Tab)" aria-label="Previous clue">‹</button>
+        <button class="btn btn-ghost btn-icon" id="next-clue" title="Next clue (Tab)" aria-label="Next clue">›</button>
+      </div>
+
+      <div class="grid-wrap">
+        <div id="grid" class="grid" role="grid" aria-label="Crossword grid"></div>
+      </div>
+
+      <div class="tools">
+        <span class="tools-label">Check</span>
+        <button class="btn btn-outline btn-sm" data-check="letter">Letter</button>
+        <button class="btn btn-outline btn-sm" data-check="word">Word</button>
+        <button class="btn btn-outline btn-sm" data-check="grid">Grid</button>
+        <span class="tools-sep" aria-hidden="true"></span>
+        <span class="tools-label">Reveal</span>
+        <button class="btn btn-outline btn-sm" data-reveal="letter">Letter</button>
+        <button class="btn btn-outline btn-sm" data-reveal="word">Word</button>
+        <button class="btn btn-outline btn-sm" data-reveal="grid">Grid</button>
+        <span class="tool-note muted" id="tool-note" role="status" aria-live="polite"></span>
+      </div>
+
+      <footer class="hints muted">
+        <span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> move</span>
+        <span><kbd>Space</kbd> flip across / down</span>
+        <span><kbd>Tab</kbd> next clue</span>
+        <span><kbd>Esc</kbd> clear square</span>
+      </footer>
+    </section>
+
+    <aside class="clues">
+      <section class="card clue-panel">
+        <div class="clue-head">Across</div>
+        <div class="clue-list" id="list-across"></div>
+      </section>
+      <section class="card clue-panel">
+        <div class="clue-head">Down</div>
+        <div class="clue-list" id="list-down"></div>
+      </section>
+    </aside>
+  </main>
+
+  <input id="kbd" type="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" aria-hidden="true" tabindex="-1" />
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  /* =====================================================================
+     Config
+     ===================================================================== */
+
+  const API_URL   = "https://api.apiverve.com/v1/crossword";
+  const STORE     = "apiverve.crossword.v2";
+  const STORE_OLD = "apiverve.crossword.v1";   // pre-trim coordinates — unusable
+  const PREFS     = "apiverve.crossword.prefs.v1";
+  const KEY_STORE = "apiverve.crossword.k.v1";
+  const PAD_STORE = "apiverve.crossword.p.v1";
+  const PEPPER    = "apiverve.crossword/key-wrap/v1";
+
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    theme: $("theme"), size: $("size"), difficulty: $("difficulty"), newBtn: $("new-puzzle"),
+    spin: $("spin"), newLabel: $("new-label"), error: $("error"),
+    empty: $("empty"), loading: $("loading"), game: $("game"),
+    grid: $("grid"), kbd: $("kbd"), credits: $("credits"),
+    curKicker: $("cur-kicker"), curClue: $("cur-clue"),
+    prev: $("prev-clue"), next: $("next-clue"),
+    listAcross: $("list-across"), listDown: $("list-down"),
+    metaTheme: $("meta-theme"), metaDiff: $("meta-diff"),
+    metaWords: $("meta-words"), metaSolved: $("meta-solved"),
+    metaProgress: $("meta-progress"), toolNote: $("tool-note"),
+    keybar: $("keybar"), keySetup: $("key-setup"), keyStatus: $("key-status"),
+    apikey: $("apikey"), keySave: $("key-save"), keyCancel: $("key-cancel"),
+    keyChange: $("key-change"), keyForget: $("key-forget"), keyFp: $("key-fp"),
+  };
+
+  /* =====================================================================
+     State
+     ===================================================================== */
+
+  /** @type {null | {
+   *   raw: object, rows: number, cols: number,
+   *   cells: Array<Array<null|{sol:string,num:number|null,across:number,down:number}>>,
+   *   entries: Array<{id:number,dir:string,num:number,clue:string,answer:string,cells:number[][]}>,
+   *   letters: Record<string,string>, cur: {r:number,c:number}, dir: string
+   * }} */
+  let game = null;
+  let loading = false;
+  let apiKey = null;              // decrypted for this page load only, never re-rendered
+  const cellNodes = new Map();  // "r,c" -> element
+  const clueNodes = new Map();  // entry id -> element
+
+  const key = (r, c) => r + "," + c;
+
+  /* =====================================================================
+     API key
+     ---------------------------------------------------------------------
+     The key is typed in, not shipped in this file. At rest it is wrapped
+     with AES-GCM under a per-install random pad, so localStorage holds
+     ciphertext instead of something a grep for "apv_" would find in a
+     profile directory or a synced backup.
+
+     This is obfuscation with a real cipher, not secrecy. The pad sits
+     beside the ciphertext because a page with no server and no passphrase
+     has nowhere else to put it, and a passphrase would have to be retyped
+     in every new tab. Anything that can execute script here can still
+     recover the key — so treat it as revocable, and keep the plan on the
+     free tier where the blast radius is a credit quota.
+     ===================================================================== */
+
+  const b64 = {
+    enc: (buf) => btoa(String.fromCharCode.apply(null, new Uint8Array(buf))),
+    dec: (str) => Uint8Array.from(atob(str), (ch) => ch.charCodeAt(0)),
+  };
+
+  const cryptoOk = () =>
+    typeof crypto !== "undefined" && !!crypto.subtle && typeof crypto.subtle.digest === "function";
+
+  /** Per-install random pad, minted on first use. */
+  function getPad() {
+    let stored = null;
+    try { stored = localStorage.getItem(PAD_STORE); } catch (e) {}
+    if (stored) {
+      try { return b64.dec(stored); } catch (e) { /* corrupt — mint a new one */ }
+    }
+    const pad = crypto.getRandomValues(new Uint8Array(32));
+    try { localStorage.setItem(PAD_STORE, b64.enc(pad)); } catch (e) {}
+    return pad;
+  }
+
+  async function wrappingKey() {
+    const pad = getPad();
+    const pep = new TextEncoder().encode(PEPPER);
+    const seed = new Uint8Array(pad.length + pep.length);
+    seed.set(pad, 0);
+    seed.set(pep, pad.length);
+    const digest = await crypto.subtle.digest("SHA-256", seed);
+    return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  }
+
+  /** Last resort for a context without WebCrypto — still not plaintext. */
+  function xorPad(bytes, pad) {
+    const out = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ pad[i % pad.length];
+    return out;
+  }
+
+  async function storeKey(plain) {
+    const bytes = new TextEncoder().encode(plain);
+    let record;
+    if (cryptoOk()) {
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await wrappingKey(), bytes);
+      record = { v: 1, iv: b64.enc(iv), ct: b64.enc(ct) };
+    } else {
+      record = { v: 0, ct: b64.enc(xorPad(bytes, getPad())) };
+    }
+    localStorage.setItem(KEY_STORE, JSON.stringify(record));
+    apiKey = plain;
+  }
+
+  async function loadKey() {
+    let record = null;
+    try { record = JSON.parse(localStorage.getItem(KEY_STORE) || "null"); } catch (e) {}
+    if (!record || !record.ct) return null;
+    try {
+      if (record.v === 1) {
+        if (!cryptoOk()) return null;
+        const out = await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv: b64.dec(record.iv) }, await wrappingKey(), b64.dec(record.ct));
+        return new TextDecoder().decode(out);
+      }
+      return new TextDecoder().decode(xorPad(b64.dec(record.ct), getPad()));
+    } catch (err) {
+      // a wiped pad or a half-written record: drop it and ask again
+      console.warn("stored key could not be unwrapped — clearing it");
+      forgetKey();
+      return null;
+    }
+  }
+
+  function forgetKey() {
+    apiKey = null;
+    try { localStorage.removeItem(KEY_STORE); localStorage.removeItem(PAD_STORE); } catch (e) {}
+  }
+
+  const fingerprint = (k) =>
+    k.length <= 12 ? k.slice(0, 2) + "…" + k.slice(-2) : k.slice(0, 8) + "…" + k.slice(-4);
+
+  /** `edit` forces the input open even when a key is already held. */
+  function renderKeyUi(opts) {
+    const has = !!apiKey;
+    const editing = !!(opts && opts.edit);
+    // the form card only takes up room when there is actually something to fill in
+    el.keybar.classList.toggle("hidden", has && !editing);
+    el.keySetup.classList.remove("hidden");
+    el.keyStatus.classList.toggle("hidden", !has || editing);
+    el.keyCancel.classList.toggle("hidden", !has);
+    if (has) el.keyFp.textContent = fingerprint(apiKey);
+    updateGate();
+  }
+
+  /** Generating needs a key; playing a restored puzzle does not. */
+  function updateGate() {
+    const blocked = loading || !apiKey;
+    el.newBtn.disabled = blocked;
+    document.querySelectorAll("[data-generate]").forEach((b) => (b.disabled = blocked));
+  }
+
+  async function saveKeyFromInput() {
+    const value = el.apikey.value.trim();
+    if (!value) { el.apikey.focus(); return; }
+    el.apikey.value = "";                 // never leave it sitting in the DOM
+    try {
+      await storeKey(value);
+      hideError();
+      renderKeyUi();
+    } catch (err) {
+      apiKey = value;                     // usable this session even if it could not be persisted
+      renderKeyUi();
+      showError("The key works in this tab but could not be saved — localStorage may be blocked.");
+    }
+  }
+
+  /* =====================================================================
+     Puzzle construction
+     ---------------------------------------------------------------------
+     The API returns a letter grid plus clue lists keyed by number, but no
+     coordinates. Standard crossword numbering (reading order, a number at
+     every square that begins an across and/or down run) reproduces exactly
+     the numbers the API uses, so the slots are derived from the grid and
+     the clues are attached by number.
+     ===================================================================== */
+
+  /* The generator often leaves a fully blank rim on the grid, which renders
+     as a black band down the side or across the top. Trimming it is safe:
+     a blank row or column holds no squares, so it starts no words and shifts
+     no clue numbers. Interior blank lines are left alone — those are part of
+     the puzzle's shape. Trimming happens here rather than at fetch time so a
+     puzzle restored from storage lands in exactly the same coordinates. */
+  function trimGrid(grid) {
+    if (!grid.length || !grid[0].length) return grid;
+    const rowBlank = (row) => row.every((cell) => !cell);
+    let top = 0, bottom = grid.length - 1;
+    while (top <= bottom && rowBlank(grid[top])) top++;
+    while (bottom >= top && rowBlank(grid[bottom])) bottom--;
+    if (top > bottom) return grid;                       // nothing playable — leave it be
+    const kept = grid.slice(top, bottom + 1);
+    const colBlank = (c) => kept.every((row) => !row[c]);
+    let left = 0, right = kept[0].length - 1;
+    while (left <= right && colBlank(left)) left++;
+    while (right >= left && colBlank(right)) right--;
+    return kept.map((row) => row.slice(left, right + 1));
+  }
+
+  function buildGame(raw, letters, cur, dir) {
+    const grid = trimGrid(raw.grid);
+    const rows = grid.length, cols = grid[0].length;
+    const at = (r, c) =>
+      r >= 0 && r < rows && c >= 0 && c < cols && grid[r][c] ? grid[r][c] : null;
+
+    const cells = Array.from({ length: rows }, () => Array(cols).fill(null));
+    const entries = [];
+    const byNum = { across: new Map(), down: new Map() };
+    let num = 0;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (!at(r, c)) continue;
+        cells[r][c] = { sol: at(r, c).toUpperCase(), num: null, across: -1, down: -1 };
+      }
+    }
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (!at(r, c)) continue;
+        const startsAcross = !at(r, c - 1) && !!at(r, c + 1);
+        const startsDown   = !at(r - 1, c) && !!at(r + 1, c);
+        if (!startsAcross && !startsDown) continue;
+        num += 1;
+        cells[r][c].num = num;
+
+        if (startsAcross) {
+          const list = [];
+          for (let cc = c; at(r, cc); cc++) list.push([r, cc]);
+          byNum.across.set(num, entries.length);
+          entries.push({ id: entries.length, dir: "across", num, clue: "", answer: list.map(([a, b]) => cells[a][b].sol).join(""), cells: list });
+        }
+        if (startsDown) {
+          const list = [];
+          for (let rr = r; at(rr, c); rr++) list.push([rr, c]);
+          byNum.down.set(num, entries.length);
+          entries.push({ id: entries.length, dir: "down", num, clue: "", answer: list.map(([a, b]) => cells[a][b].sol).join(""), cells: list });
+        }
+      }
+    }
+
+    // attach clues by number + direction
+    for (const dirName of ["across", "down"]) {
+      for (const c of raw[dirName] || []) {
+        const idx = byNum[dirName].get(c.number);
+        if (idx === undefined) { console.warn("clue with no matching slot", dirName, c); continue; }
+        // the API occasionally repeats a number with a second wording — keep the first
+        if (!entries[idx].clue) entries[idx].clue = c.clue || "";
+      }
+    }
+    for (const e of entries) if (!e.clue) e.clue = "(no clue supplied — " + e.answer.length + " letters)";
+
+    // index every cell to its across / down entry
+    for (const e of entries) for (const [r, c] of e.cells) cells[r][c][e.dir] = e.id;
+
+    // ordering used by Tab / prev / next: across in number order, then down
+    const order = entries
+      .map((e) => e.id)
+      .sort((a, b) => {
+        const A = entries[a], B = entries[b];
+        if (A.dir !== B.dir) return A.dir === "across" ? -1 : 1;
+        return A.num - B.num;
+      });
+
+    // both are deliberately absent from save(): marks are a point-in-time
+    // aid, not part of the solve, so they do not survive a reload
+    const g = { raw, rows, cols, cells, entries, order, letters: letters || {}, cur: null,
+                dir: dir === "down" ? "down" : "across", wrong: new Set(), revealed: new Set() };
+
+    // restore or pick a starting square
+    if (cur && cells[cur.r] && cells[cur.r][cur.c]) g.cur = { r: cur.r, c: cur.c };
+    else {
+      const first = entries.find((e) => e.dir === "across") || entries[0];
+      g.cur = first ? { r: first.cells[0][0], c: first.cells[0][1] } : null;
+    }
+    return g;
+  }
+
+  /* =====================================================================
+     Persistence
+     ===================================================================== */
+
+  function save() {
+    if (!game) return;
+    try {
+      localStorage.setItem(STORE, JSON.stringify({
+        savedAt: game.savedAt || Date.now(),
+        raw: game.raw,
+        letters: game.letters,
+        cur: game.cur,
+        dir: game.dir,
+      }));
+    } catch (err) { console.warn("could not save progress", err); }
+  }
+
+  function savePrefs() {
+    try {
+      localStorage.setItem(PREFS, JSON.stringify({
+        theme: el.theme.value, size: el.size.value, difficulty: el.difficulty.value,
+      }));
+    } catch (err) { /* ignore */ }
+  }
+
+  function restore() {
+    let prefs = null;
+    try { prefs = JSON.parse(localStorage.getItem(PREFS) || "null"); } catch (e) {}
+    if (prefs) {
+      if (typeof prefs.theme === "string") el.theme.value = prefs.theme;
+      if (prefs.size) el.size.value = prefs.size;
+      if (prefs.difficulty) el.difficulty.value = prefs.difficulty;
+    }
+
+    // letters in a pre-trim save are keyed to the untrimmed grid, so they
+    // cannot be carried across; drop the record instead of restoring it askew
+    try { localStorage.removeItem(STORE_OLD); } catch (e) {}
+
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(STORE) || "null"); } catch (e) {}
+    if (!saved || !saved.raw || !Array.isArray(saved.raw.grid)) return false;
+
+    try {
+      game = buildGame(saved.raw, saved.letters, saved.cur, saved.dir);
+      game.savedAt = saved.savedAt;
+      renderAll();
+      return true;
+    } catch (err) {
+      console.error("stored puzzle could not be rebuilt", err);
+      localStorage.removeItem(STORE);
+      return false;
+    }
+  }
+
+  /* =====================================================================
+     Fetching
+     ===================================================================== */
+
+  async function requestPuzzle() {
+    if (loading) return;
+    if (!apiKey) {
+      showError("Add your APIVerve API key first.");
+      renderKeyUi({ edit: true });
+      el.apikey.focus();
+      return;
+    }
+    loading = true;
+    setBusy(true);
+    hideError();
+    show("loading");
+
+    const theme = (el.theme.value || "").trim() || "random";
+    const difficulty = el.difficulty.value;
+    savePrefs();
+
+    const url = new URL(API_URL);
+    url.searchParams.set("size", el.size.value);
+    url.searchParams.set("theme", theme);
+    url.searchParams.set("difficulty", difficulty);
+
+    try {
+      const res = await fetch(url, { headers: { "x-api-key": apiKey } });
+
+      const remaining = res.headers.get("x-api-remaining-credits");
+      if (remaining !== null) {
+        el.credits.textContent = remaining + " API credits left";
+        el.credits.classList.remove("hidden");
+      }
+
+      let body = null;
+      try { body = await res.json(); } catch (e) {}
+
+      if (!res.ok) {
+        if (res.status === 429) throw new Error("Rate limit reached on this API key. Wait a moment and try again.");
+        if (res.status === 401 || res.status === 403) {
+          renderKeyUi({ edit: true });
+          throw new Error("The API key was rejected (HTTP " + res.status + "). Check it and save it again.");
+        }
+        throw new Error((body && (body.error || body.message)) || ("Request failed with HTTP " + res.status + "."));
+      }
+      if (!body || body.status !== "ok" || !body.data || !Array.isArray(body.data.grid)) {
+        throw new Error((body && body.error) || "The API returned an unexpected response.");
+      }
+
+      game = buildGame(body.data, {}, null, "across");   // fresh puzzle -> progress reset
+      game.savedAt = Date.now();
+      save();
+      renderAll();
+    } catch (err) {
+      console.error(err);
+      showError(err && err.message ? err.message : String(err));
+      show(game ? "game" : "empty");
+    } finally {
+      loading = false;
+      setBusy(false);
+    }
+  }
+
+  function setBusy(on) {
+    el.spin.classList.toggle("hidden", !on);
+    el.newLabel.textContent = on ? "Generating…" : "New puzzle";
+    updateGate();
+  }
+
+  function showError(msg) {
+    el.error.innerHTML = "";
+    const box = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.textContent = "Could not fetch a puzzle";
+    const span = document.createElement("span");
+    span.textContent = msg;
+    box.appendChild(strong); box.appendChild(span);
+    el.error.appendChild(box);
+    el.error.classList.remove("hidden");
+  }
+  function hideError() { el.error.classList.add("hidden"); }
+
+  function show(which) {
+    el.empty.classList.toggle("hidden", which !== "empty");
+    el.loading.classList.toggle("hidden", which !== "loading");
+    el.game.classList.toggle("hidden", which !== "game");
+  }
+
+  /* =====================================================================
+     Rendering
+     ===================================================================== */
+
+  function renderAll() {
+    if (!game) return show("empty");
+    renderGrid();
+    renderClues();
+    renderMeta();
+    paint();
+    show("game");
+  }
+
+  function renderGrid() {
+    cellNodes.clear();
+    el.grid.style.setProperty("--n", game.cols);
+    el.grid.setAttribute("aria-rowcount", String(game.rows));
+    const frag = document.createDocumentFragment();
+
+    for (let r = 0; r < game.rows; r++) {
+      for (let c = 0; c < game.cols; c++) {
+        const cell = game.cells[r][c];
+        const node = document.createElement("div");
+        node.className = "cell" + (cell ? "" : " block");
+        if (cell) {
+          node.dataset.r = r; node.dataset.c = c;
+          node.setAttribute("role", "gridcell");
+          if (cell.num) {
+            const n = document.createElement("span");
+            n.className = "num";
+            n.textContent = cell.num;
+            node.appendChild(n);
+          }
+          const l = document.createElement("span");
+          l.className = "ltr";
+          node.appendChild(l);
+          cellNodes.set(key(r, c), node);
+        }
+        frag.appendChild(node);
+      }
+    }
+    el.grid.replaceChildren(frag);
+  }
+
+  function renderClues() {
+    clueNodes.clear();
+    const build = (dir, host) => {
+      const frag = document.createDocumentFragment();
+      game.entries
+        .filter((e) => e.dir === dir)
+        .sort((a, b) => a.num - b.num)
+        .forEach((e) => {
+          const btn = document.createElement("button");
+          btn.className = "clue";
+          btn.type = "button";
+          btn.dataset.id = e.id;
+          const num = document.createElement("span");
+          num.className = "clue-num";
+          num.textContent = e.num;
+          const txt = document.createElement("span");
+          txt.className = "clue-text";
+          txt.textContent = e.clue;
+          btn.append(num, txt);
+          frag.appendChild(btn);
+          clueNodes.set(e.id, btn);
+        });
+      host.replaceChildren(frag);
+    };
+    build("across", el.listAcross);
+    build("down", el.listDown);
+  }
+
+  function renderMeta() {
+    const d = game.raw;
+    el.metaTheme.textContent = d.theme || "random";
+    el.metaDiff.textContent = d.difficulty || "medium";
+    el.metaWords.textContent = game.entries.length + " words";
+  }
+
+  /** Repaints everything that depends on letters / selection. */
+  function paint() {
+    if (!game) return;
+    const cur = game.cur;
+    const active = cur ? currentEntry() : null;
+    const inWord = new Set();
+    if (active) for (const [r, c] of active.cells) inWord.add(key(r, c));
+
+    let filled = 0, total = 0, correct = 0;
+
+    for (let r = 0; r < game.rows; r++) {
+      for (let c = 0; c < game.cols; c++) {
+        const cell = game.cells[r][c];
+        if (!cell) continue;
+        total++;
+        const k = key(r, c);
+        const node = cellNodes.get(k);
+        const ltr = game.letters[k] || "";
+        if (ltr) { filled++; if (ltr === cell.sol) correct++; }
+        node.querySelector(".ltr").textContent = ltr;
+        node.classList.toggle("in-word", inWord.has(k) && !(cur && cur.r === r && cur.c === c));
+        node.classList.toggle("cursor", !!cur && cur.r === r && cur.c === c);
+        node.classList.toggle("wrong", game.wrong.has(k));
+        node.classList.toggle("revealed", game.revealed.has(k));
+      }
+    }
+
+    const solved = total > 0 && correct === total;
+    el.grid.classList.toggle("solved", solved);
+    el.metaSolved.textContent = game.revealed.size ? "✓ Completed with help" : "✓ Solved";
+    el.metaSolved.classList.toggle("hidden", !solved);
+    el.metaProgress.textContent = solved ? "" : filled + " / " + total + " squares";
+
+    // clue bar
+    if (active) {
+      el.curKicker.textContent = active.num + " " + (active.dir === "across" ? "Across" : "Down") + " · " + active.answer.length + " letters";
+      el.curClue.textContent = active.clue;
+      el.curClue.classList.remove("muted");
+    } else {
+      el.curKicker.textContent = "";
+      el.curClue.textContent = "Select a square to see its clue.";
+      el.curClue.classList.add("muted");
+    }
+
+    // clue lists
+    const crossId = cur ? game.cells[cur.r][cur.c][game.dir === "across" ? "down" : "across"] : -1;
+    for (const e of game.entries) {
+      const node = clueNodes.get(e.id);
+      if (!node) continue;
+      node.classList.toggle("active", !!active && e.id === active.id);
+      node.classList.toggle("cross", e.id === crossId && (!active || e.id !== active.id));
+      node.classList.toggle("filled", e.cells.every(([r, c]) => game.letters[key(r, c)]));
+    }
+    if (active) {
+      const node = clueNodes.get(active.id);
+      if (node) scrollIntoList(node);
+    }
+  }
+
+  function scrollIntoList(node) {
+    const list = node.parentElement;
+    const top = node.offsetTop, bottom = top + node.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top - 6;
+    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight + 6;
+  }
+
+  /* =====================================================================
+     Selection — Firefox-new-tab style tile navigation
+     ---------------------------------------------------------------------
+     The grid behaves like a board of tiles: pointer hover rings a tile,
+     arrow keys walk from tile to tile (blocks are skipped), clicking a
+     tile selects it, and clicking the selected tile again flips the
+     across/down orientation. A hidden input carries real keyboard focus
+     so typing and mobile keyboards work.
+     ===================================================================== */
+
+  function currentEntry() {
+    if (!game || !game.cur) return null;
+    const cell = game.cells[game.cur.r][game.cur.c];
+    if (!cell) return null;
+    const id = cell[game.dir] >= 0 ? cell[game.dir] : cell[game.dir === "across" ? "down" : "across"];
+    return id >= 0 ? game.entries[id] : null;
+  }
+
+  function focusKbd() {
+    try { el.kbd.focus({ preventScroll: true }); } catch (e) { el.kbd.focus(); }
+  }
+
+  function selectCell(r, c, opts) {
+    const cell = game.cells[r] && game.cells[r][c];
+    if (!cell) return;
+    const same = game.cur && game.cur.r === r && game.cur.c === c;
+    if (opts && opts.toggle && same) {
+      flipDirection();
+      return;
+    }
+    game.cur = { r, c };
+    // keep a usable orientation if this square has no entry in the current one
+    if (cell[game.dir] < 0) game.dir = game.dir === "across" ? "down" : "across";
+    focusKbd();
+    paint();
+    save();
+  }
+
+  function flipDirection() {
+    const cell = game.cells[game.cur.r][game.cur.c];
+    const other = game.dir === "across" ? "down" : "across";
+    if (cell[other] >= 0) game.dir = other;
+    paint();
+    save();
+  }
+
+  function selectEntry(entry, opts) {
+    if (!entry) return;
+    game.dir = entry.dir;
+    let target = entry.cells[0];
+    if (!opts || opts.firstEmpty !== false) {
+      const empty = entry.cells.find(([r, c]) => !game.letters[key(r, c)]);
+      if (empty) target = empty;
+    }
+    game.cur = { r: target[0], c: target[1] };
+    focusKbd();
+    paint();
+    save();
+  }
+
+  function stepEntry(delta) {
+    const active = currentEntry();
+    const order = game.order;
+    let idx = active ? order.indexOf(active.id) : -1;
+    idx = (idx + delta + order.length) % order.length;
+    selectEntry(game.entries[order[idx]]);
+  }
+
+  /** Move one tile in a direction, skipping block squares. */
+  function moveTile(dr, dc) {
+    const wanted = dr !== 0 ? "down" : "across";
+    let { r, c } = game.cur;
+    for (let i = 0; i < Math.max(game.rows, game.cols); i++) {
+      r += dr; c += dc;
+      if (r < 0 || c < 0 || r >= game.rows || c >= game.cols) break;
+      if (game.cells[r][c]) {
+        if (game.cells[r][c][wanted] >= 0) game.dir = wanted;
+        selectCell(r, c);
+        return;
+      }
+    }
+    // at the edge: adopt the orientation the arrow implies, if this square has one
+    const cell = game.cells[game.cur.r][game.cur.c];
+    if (cell[wanted] >= 0 && game.dir !== wanted) { game.dir = wanted; paint(); save(); }
+  }
+
+  function typeLetter(ch) {
+    const { r, c } = game.cur;
+    const k = key(r, c);
+    game.letters[k] = ch;
+    game.wrong.delete(k);            // a fresh guess is not yet judged
+    game.revealed.delete(k);
+    advance();
+    paint();
+    save();
+  }
+
+  function advance() {
+    const e = currentEntry();
+    if (!e) return;
+    const i = e.cells.findIndex(([r, c]) => r === game.cur.r && c === game.cur.c);
+    // prefer the next empty square in this word, otherwise just the next square
+    for (let j = i + 1; j < e.cells.length; j++) {
+      if (!game.letters[key(e.cells[j][0], e.cells[j][1])]) {
+        game.cur = { r: e.cells[j][0], c: e.cells[j][1] };
+        return;
+      }
+    }
+    if (i + 1 < e.cells.length) game.cur = { r: e.cells[i + 1][0], c: e.cells[i + 1][1] };
+  }
+
+  function clearSquare(k) {
+    delete game.letters[k];
+    game.wrong.delete(k);
+    game.revealed.delete(k);
+  }
+
+  function retreat() {
+    const k = key(game.cur.r, game.cur.c);
+    if (game.letters[k]) { clearSquare(k); paint(); save(); return; }
+    const e = currentEntry();
+    if (!e) return;
+    const i = e.cells.findIndex(([r, c]) => r === game.cur.r && c === game.cur.c);
+    if (i > 0) {
+      game.cur = { r: e.cells[i - 1][0], c: e.cells[i - 1][1] };
+      clearSquare(key(game.cur.r, game.cur.c));
+      paint();
+      save();
+    }
+  }
+
+  /* =====================================================================
+     Check / reveal
+     ===================================================================== */
+
+  function allCells() {
+    const out = [];
+    for (let r = 0; r < game.rows; r++)
+      for (let c = 0; c < game.cols; c++) if (game.cells[r][c]) out.push([r, c]);
+    return out;
+  }
+
+  /** Cells covered by a scope, or null when there is no current word. */
+  function scopeCells(scope) {
+    if (scope === "grid") return allCells();
+    if (scope === "word") { const e = currentEntry(); return e ? e.cells : null; }
+    return game.cur ? [[game.cur.r, game.cur.c]] : null;
+  }
+
+  let noteTimer = 0;
+  function note(msg) {
+    el.toolNote.textContent = msg;
+    clearTimeout(noteTimer);
+    if (msg) noteTimer = setTimeout(() => { el.toolNote.textContent = ""; }, 4000);
+  }
+
+  function checkScope(scope) {
+    const cells = scopeCells(scope);
+    if (!cells) return;
+    let wrong = 0, blank = 0;
+    for (const [r, c] of cells) {
+      const k = key(r, c);
+      const ltr = game.letters[k];
+      if (!ltr) { blank++; continue; }
+      if (ltr === game.cells[r][c].sol) game.wrong.delete(k);
+      else { game.wrong.add(k); wrong++; }
+    }
+    paint();
+    focusKbd();
+    note(wrong ? wrong + (wrong === 1 ? " square is wrong" : " squares are wrong")
+               : blank !== cells.length ? "No mistakes so far"
+               : cells.length === 1 ? "That square is empty"
+               : "Nothing filled in yet");
+  }
+
+  function revealScope(scope) {
+    if (scope === "grid" && !confirm("Reveal the whole grid? This fills in every remaining answer.")) return;
+    const cells = scopeCells(scope);
+    if (!cells) return;
+    let filled = 0;
+    for (const [r, c] of cells) {
+      const k = key(r, c);
+      const sol = game.cells[r][c].sol;
+      if (game.letters[k] === sol) continue;
+      game.letters[k] = sol;
+      game.revealed.add(k);
+      game.wrong.delete(k);
+      filled++;
+    }
+    paint();
+    save();
+    focusKbd();
+    note(filled ? filled + (filled === 1 ? " square revealed" : " squares revealed") : "Already correct");
+  }
+
+  /* =====================================================================
+     Events
+     ===================================================================== */
+
+  document.querySelectorAll("[data-check]").forEach((b) =>
+    b.addEventListener("click", () => game && checkScope(b.dataset.check)));
+  document.querySelectorAll("[data-reveal]").forEach((b) =>
+    b.addEventListener("click", () => game && revealScope(b.dataset.reveal)));
+
+  el.grid.addEventListener("pointerdown", (ev) => {
+    const node = ev.target.closest(".cell");
+    if (!node || node.classList.contains("block") || !game) return;
+    ev.preventDefault();
+    selectCell(+node.dataset.r, +node.dataset.c, { toggle: true });
+  });
+
+  const onClueClick = (ev) => {
+    const node = ev.target.closest(".clue");
+    if (!node || !game) return;
+    selectEntry(game.entries[+node.dataset.id]);
+  };
+  el.listAcross.addEventListener("click", onClueClick);
+  el.listDown.addEventListener("click", onClueClick);
+
+  el.prev.addEventListener("click", () => game && stepEntry(-1));
+  el.next.addEventListener("click", () => game && stepEntry(1));
+
+  // Letters arrive through the hidden input so that IMEs and mobile
+  // keyboards behave; control keys are handled on keydown.
+  el.kbd.addEventListener("input", () => {
+    const v = el.kbd.value;
+    el.kbd.value = "";
+    if (!game || !game.cur) return;
+    const ch = v.slice(-1).toUpperCase();
+    if (/^[A-Z]$/.test(ch)) typeLetter(ch);
+  });
+
+  el.kbd.addEventListener("keydown", (ev) => {
+    if (!game || !game.cur) return;
+    const k = ev.key;
+
+    if (k === "ArrowLeft")  { ev.preventDefault(); moveTile(0, -1); return; }
+    if (k === "ArrowRight") { ev.preventDefault(); moveTile(0,  1); return; }
+    if (k === "ArrowUp")    { ev.preventDefault(); moveTile(-1, 0); return; }
+    if (k === "ArrowDown")  { ev.preventDefault(); moveTile( 1, 0); return; }
+
+    if (k === " ")       { ev.preventDefault(); flipDirection(); return; }
+    if (k === "Tab")     { ev.preventDefault(); stepEntry(ev.shiftKey ? -1 : 1); return; }
+    if (k === "Enter")   { ev.preventDefault(); stepEntry(ev.shiftKey ? -1 : 1); return; }
+    if (k === "Backspace") { ev.preventDefault(); retreat(); return; }
+    if (k === "Delete" || k === "Escape") {
+      ev.preventDefault();
+      clearSquare(key(game.cur.r, game.cur.c));
+      paint(); save();
+      return;
+    }
+    if (k === "Home") {
+      ev.preventDefault();
+      const e = currentEntry();
+      if (e) selectEntry(e, { firstEmpty: false });
+      return;
+    }
+    if (k === "End") {
+      ev.preventDefault();
+      const e = currentEntry();
+      if (e) { const last = e.cells[e.cells.length - 1]; selectCell(last[0], last[1]); }
+      return;
+    }
+  });
+
+  el.kbd.addEventListener("blur", () => el.grid.classList.add("blurred"));
+  el.kbd.addEventListener("focus", () => el.grid.classList.remove("blurred"));
+
+  el.newBtn.addEventListener("click", requestPuzzle);
+  document.querySelectorAll("[data-generate]").forEach((b) =>
+    b.addEventListener("click", requestPuzzle)
+  );
+  el.keySave.addEventListener("click", saveKeyFromInput);
+  el.apikey.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); saveKeyFromInput(); }
+  });
+  el.keyChange.addEventListener("click", () => { renderKeyUi({ edit: true }); el.apikey.focus(); });
+  el.keyCancel.addEventListener("click", () => { el.apikey.value = ""; hideError(); renderKeyUi(); });
+  el.keyForget.addEventListener("click", () => {
+    if (!confirm("Forget the stored API key? The current puzzle and your progress stay.")) return;
+    forgetKey();
+    renderKeyUi();
+  });
+
+  el.theme.addEventListener("change", savePrefs);
+  el.size.addEventListener("change", savePrefs);
+  el.difficulty.addEventListener("change", savePrefs);
+  el.theme.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); requestPuzzle(); }
+  });
+
+  // pagehide fires where beforeunload is skipped (bfcache, mobile tab eviction),
+  // and hiding the tab is the moment a new-tab page usually goes away for good.
+  window.addEventListener("pagehide", save);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") save();
+  });
+
+  /* =====================================================================
+     Boot
+     ===================================================================== */
+
+  el.grid.classList.add("blurred");
+  if (!restore()) show("empty");
+  updateGate();                     // no generating until the key resolves
+  // the key bar stays hidden for this one tick so a stored key does not
+  // flash the "enter your key" form on every new tab
+  loadKey().then((k) => { apiKey = k; renderKeyUi(); });
+})();
+</script>
+</body>
+</html>
