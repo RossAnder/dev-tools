@@ -103,17 +103,40 @@ below that. Here the row is budgeted against the `columns` Claude Code supplies
 and degrades in named tiers:
 
 ```
-76 cols  task-07-remove-runtime-deps ·  implement-deep  · @2 · 86k · stalled · 3m33s
-48 cols  task-07-remove-runtime-deps · @2 · 86k · stalled
-30 cols  task-07-remove-run… · @2 · 86k
+76 cols  task-07-remove-runtime-deps ·  implement-deep  · @2    stalled · 86k · 3m33s
+48 cols  task-07-remove-runtime-deps · @2   stalled · 86k
+30 cols  task-07-remove-run… · @2   86k
 ```
+
+The row has two groups. Identity — title, badge, model/effort, inbox depth,
+activity — stays flush left, where the eye starts reading. The tail — `stalled`,
+token count, context fill, runtime — is flushed right against the same budget,
+so those fields land in one column down the panel instead of starting at a
+different place on every row. The gutter is never narrower than the ` · `
+separator it replaces, so a row that fits still fits; a row that does not is
+clipped flush left, and a row shed down to nothing but its numbers stays flush
+left too, rather than being indented away from the rows above it.
+
+Within each group the order is by **positional stability**, mirrored about the
+gutter. Fields that are settled for a row's whole life — the title, the badge,
+the resolved model; the token count, the context reading, the clock — sit
+against their group's anchored edge. Fields that come and go, or change width
+while they are there, sit against the gutter. So `stalled` opens leftward *into*
+the gutter instead of wedging itself between the token count and the runtime,
+and the activity is last on the left rather than in the middle of the identity
+group. The point is what happens *between* two refreshes: a field appearing
+against the gutter eats slack that was already blank, so nothing else on the row
+moves; the same field appearing against the anchored edge would push every
+neighbour a column sideways on a panel you are reading down.
 
 The space-padded `implement-deep` cell is a colour badge: the teammate's own
 assigned colour as the background with the foreground inverted to black, drawn
 from ANSI indices so it takes the terminal's scheme rather than a palette baked
 into the binary. The padding is the chip; there are no brackets in the output.
 
-Every field carries a shed priority — lowest goes first:
+Every field carries a shed priority — lowest goes first. This is a separate axis
+from the layout above: priority decides what a *narrow* pane gives up, position
+decides where a field sits when it fits.
 
 | priority | field | source |
 |---|---|---|
@@ -149,7 +172,7 @@ So a `label` equal to `description` is treated as *no activity*, as is the
 filler string `working`. The row becomes:
 
 ```
-t10-css-face-split · 126k · 2m13s
+t10-css-face-split                                       126k · 2m13s
 ```
 
 A genuine progress summary still shows, because it differs from the description.
@@ -185,7 +208,7 @@ thing the default row can never tell you — and the context-window fill as a
 percentage, alongside the token count it is derived from:
 
 ```
-research-deep · reading claude binary strings · opus-5 high · 31k · 15% · 4m12s
+research-deep · opus-5 high · reading claude binary strings   31k · 15% · 4m12s
 ```
 
 The model/effort segment sits one step above the activity in the shed order, so

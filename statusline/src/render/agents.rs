@@ -7,8 +7,24 @@
 //! narrow pane sheds the least useful segment instead of clipping the line:
 //!
 //! ```text
-//! t10-css-face-split · implement-deep · @2 · 126k · stalled · 2m13s
+//! t10-css-face-split · implement-deep · @2   stalled · 126k · 2m13s
 //! ```
+//!
+//! The row has two groups. Identity — title, badge, spec, inbox, activity —
+//! stays flush left, where the eye starts reading. The tail — stall marker,
+//! token count, context fill, runtime — is flushed right against the same
+//! budget, so those fields land in one column down the panel instead of
+//! drifting with the length of each row's title. See `in_tail`.
+//!
+//! Within each group the order is by *positional stability*, mirrored about the
+//! gutter: fields that hold their value for a row's whole life sit against the
+//! group's anchored edge, and fields that come and go — or change width every
+//! tick — sit against the gutter, where their appearing and vanishing spends
+//! slack instead of shoving a neighbour into a new column. So `stalled` opens
+//! leftward *into* the gutter rather than wedging itself between the token count
+//! and the clock, and the activity, the widest-swinging field on the row, is
+//! last on the left rather than in the middle of the identity group. See
+//! `segments`.
 //!
 //! `name` is the task title and is never sacrificed: it is the one field that
 //! reliably identifies a row. Everything else is shed in priority order and,
@@ -102,7 +118,7 @@ const P_PROTECTED: u8 = P_MSGS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Style {
-    /// Name, agent type, activity, messages, tokens, stall, runtime.
+    /// Name, agent type, messages, activity, stall, tokens, runtime.
     Tiers,
     /// As `tiers`, plus resolved model and effort when the width allows.
     Rich,
@@ -276,33 +292,47 @@ fn runtime(t: &Task, now_ms: i64) -> Option<String> {
     Some(format_duration(now_ms.saturating_sub(started)))
 }
 
+/// Build the row's fields in *layout* order. Push order is layout order; `prio`
+/// is shed order, and the two are independent — nothing here changes which field
+/// a narrow pane gives up.
+///
+/// The order within each group is by positional stability, mirrored about the
+/// gutter `fit` opens between them. The identity group is anchored at the left
+/// edge, so its settled fields — the title, the badge, the resolved model —
+/// come first and its coming-and-going ones last. The status group is anchored
+/// at the right edge, so it is the mirror image: the stall marker leads, and the
+/// fields that are there for every tick of a row's life trail it.
+///
+/// The point is what a row does *between* two refreshes. A field that appears
+/// mid-run costs its group the width of itself plus a separator; put it against
+/// the anchored edge and every field on its gutter side moves a column, on a
+/// panel the eye is reading down. Against the gutter it eats the slack that is
+/// already blank, and nothing else on the row moves at all. Hence `stalled`
+/// ahead of the token count rather than between the count and the clock, and the
+/// activity — free-form text that can change width on every single tick — last
+/// on the left rather than in the middle of the identity group.
 fn segments(t: &Task, style: Style, now_ms: i64, team: &Team) -> Vec<Seg> {
     let member = t.name.as_deref().and_then(|n| team.get(n));
     // Nine: the seven `tiers` segments plus `rich`'s model/effort spec and its
     // context reading, so the widest style never reallocates mid-row.
     let mut segs = Vec::with_capacity(9);
 
-    // Identity. The name is the only segment with no shed priority.
-    if let Some(n) = name_of(t) {
-        segs.push(Seg::text(n, P_NAME));
-    }
+    // --- Identity, flush left, settled fields first.
+    let mut activity = activity_of(t);
+    // The title, and the only segment with no shed priority. `name` when there is
+    // one; a bash task or a workflow carries none, and then the activity — or,
+    // failing that, the description, or the bare task kind — is the only thing
+    // identifying the row, so it is promoted into the title slot rather than left
+    // in the sheddable, gutter-hugging activity one.
+    let title = name_of(t)
+        .or_else(|| activity.take())
+        .or_else(|| description_of(t))
+        .unwrap_or_else(|| one_line(t.r#type.as_deref().unwrap_or("agent")));
+    segs.push(Seg::text(title, P_NAME));
+
     if let Some(kind) = member.and_then(|m| m.agent_type.as_deref()) {
         segs.push(Seg::badge(kind, member.and_then(|m| m.color.as_deref())));
     }
-    if let Some(a) = activity_of(t) {
-        // `name` is absent for bash tasks and workflows, and then the activity is
-        // the only thing identifying the row — so it takes the title's priority
-        // rather than the first-to-be-shed one, exactly as the fallback below does.
-        let prio = if segs.is_empty() { P_NAME } else { P_ACTIVITY };
-        segs.push(Seg::text(a, prio));
-    } else if segs.is_empty() {
-        // Nothing identifies this row yet: fall back to the description, then to
-        // the task kind, rather than emitting a bare tail.
-        let text = description_of(t)
-            .unwrap_or_else(|| one_line(t.r#type.as_deref().unwrap_or("agent")));
-        segs.push(Seg::text(text, P_NAME));
-    }
-
     if style == Style::Rich {
         // Both labels are payload-supplied strings, so they take the same
         // control-byte filter every other free-text field goes through.
@@ -316,24 +346,32 @@ fn segments(t: &Task, style: Style, now_ms: i64, team: &Team) -> Vec<Seg> {
             segs.push(Seg::text(spec.join(" "), P_SPEC));
         }
     }
-
-    // Status.
+    // An inbox fills and drains mid-run, so it follows everything settled.
     if let Some(n) = member.map(|m| m.inbox).filter(|n| *n > 0) {
         segs.push(Seg::text(format!("@{n}"), P_MSGS));
+    }
+    // Last on the left, hard against the gutter: the activity both comes and goes
+    // and re-widths itself when it does neither, and this is the one position
+    // where that costs no other field its column.
+    if let Some(a) = activity {
+        segs.push(Seg::text(a, P_ACTIVITY));
+    }
+
+    // --- Status, flush right, settled fields last. The stall marker is the only
+    // field here that arrives mid-run, so it leads and opens leftward into the
+    // gutter; the count, the reading and the clock keep the columns they had.
+    if is_stalled(t) {
+        segs.push(Seg::text("stalled", P_STALLED));
     }
     if let Some(n) = t.token_count.filter(|n| *n > 0) {
         segs.push(Seg::text(format_tokens(n), P_TOKENS));
     }
-    // Pushed next to the count it is derived from, so the two read together:
-    // `31k · 62%`. Push order is layout order; `prio` is shed order, and the two
-    // are independent.
+    // Next to the count it is derived from, so the two still read together:
+    // `124k · 62%`.
     if style == Style::Rich
         && let Some(pct) = context_pct(t)
     {
         segs.push(Seg::text(pct, P_CONTEXT));
-    }
-    if is_stalled(t) {
-        segs.push(Seg::text("stalled", P_STALLED));
     }
     if let Some(s) = runtime(t, now_ms) {
         segs.push(Seg::text(s, P_RUNTIME));
@@ -341,25 +379,70 @@ fn segments(t: &Task, style: Style, now_ms: i64, team: &Team) -> Vec<Seg> {
     segs
 }
 
-fn line_width(segs: &[Seg]) -> usize {
-    if segs.is_empty() {
-        return 0;
+/// Width of a segment run joined with `SEP`. Takes an iterator rather than a
+/// slice so the same accounting serves the whole row and each of `fit`'s two
+/// groups, which are borrowed rather than owned.
+fn line_width<'a>(segs: impl IntoIterator<Item = &'a Seg>) -> usize {
+    let mut total = 0;
+    let mut n = 0usize;
+    for s in segs {
+        total += width(&s.plain);
+        n += 1;
     }
-    segs.iter().map(|s| width(&s.plain)).sum::<usize>() + width(SEP) * (segs.len() - 1)
+    total + width(SEP) * n.saturating_sub(1)
 }
 
-/// Join for stdout, clipped to the budget. The shed and title passes cannot
-/// always get inside `cols` on their own — a lone segment has nothing left to
-/// shed, and a residue entirely at or above `P_PROTECTED` is by definition
-/// unsheddable — so the last word on width is here, unconditionally. The clip
-/// runs on the plain text: a half-written escape is worse than a lost badge
-/// colour, and a row this narrow has already shed the badge anyway.
+fn join<'a>(segs: impl IntoIterator<Item = &'a Seg>) -> String {
+    segs.into_iter().map(Seg::emit).collect::<Vec<_>>().join(SEP)
+}
+
+/// Segments that ride in the right-hand column rather than beside the title.
+///
+/// The counts and the clock are read *down* a panel more than along a row, and
+/// left-flush they start at a different column on every line, because the title
+/// and activity in front of them differ in length. Flushed right they become a
+/// column: same fields, same place, every row — while the activity, which is
+/// read along the row, stays where the eye starts.
+///
+/// Membership is by priority, not by position, so push order cannot silently
+/// change it. The four are nonetheless contiguous at the end of `segments`, so
+/// the split takes the tail's own reading — `stalled · 124k · 62% · 4m12s` —
+/// across whole; only the join in front of it turns from a separator into a
+/// gutter. `@N` stays on the left: an inbox depth identifies a teammate's state
+/// rather than measuring its progress, and it is pushed before the count.
+fn in_tail(prio: u8) -> bool {
+    matches!(prio, P_TOKENS | P_CONTEXT | P_STALLED | P_RUNTIME)
+}
+
+/// Join for stdout, clipped to the budget, with the tail flushed right. The
+/// shed and title passes cannot always get inside `cols` on their own — a lone
+/// segment has nothing left to shed, and a residue entirely at or above
+/// `P_PROTECTED` is by definition unsheddable — so the last word on width is
+/// here, unconditionally. The clip runs on the plain text: a half-written escape
+/// is worse than a lost badge colour, and a row this narrow has already shed the
+/// badge anyway. An over-budget row is clipped flush left: there is no slack to
+/// align with, and padding it would only push the tail off the end.
 fn fit(segs: &[Seg], cols: usize) -> String {
-    if line_width(segs) <= cols {
-        return segs.iter().map(Seg::emit).collect::<Vec<_>>().join(SEP);
+    if line_width(segs) > cols {
+        let plain = segs.iter().map(|s| s.plain.as_str()).collect::<Vec<_>>().join(SEP);
+        return ellipsize(&plain, cols);
     }
-    let plain = segs.iter().map(|s| s.plain.as_str()).collect::<Vec<_>>().join(SEP);
-    ellipsize(&plain, cols)
+    let (head, tail): (Vec<&Seg>, Vec<&Seg>) = segs.iter().partition(|s| !in_tail(s.prio));
+    // Nothing to align against. A row shed down to its bare numbers reads better
+    // flush left than indented away from every row above it, and a row with no
+    // tail at all has no column to flush.
+    if head.is_empty() || tail.is_empty() {
+        return join(segs);
+    }
+    // The two group widths together are `line_width` less the single separator
+    // the gutter replaces, so the gap is at least `SEP` wide for any row that
+    // fits — which the branch above has already established. Saturating anyway:
+    // the arithmetic is proved, but an underflow here would wrap in release and
+    // ask for a string of near-`usize::MAX` spaces, and a collapsed gutter is a
+    // cheaper way to be wrong than an allocation that takes the session with it.
+    let content = line_width(head.iter().copied()) + line_width(tail.iter().copied());
+    let gap = " ".repeat(cols.saturating_sub(content));
+    format!("{}{gap}{}", join(head.iter().copied()), join(tail))
 }
 
 /// Everything `row` does except the final join: build the segments, clip the
@@ -478,6 +561,23 @@ mod tests {
         ))
     }
 
+    /// A wedged row: nine flat samples, so it renders the stall marker. Shared by
+    /// the stall test and the width fixtures, and the `_stalled` half of the
+    /// stability pair below — `flat` is the same task with one growing sample, so
+    /// the two differ in the marker and in nothing else.
+    fn stalled_row() -> Task {
+        kite(&"9000,".repeat(9))
+    }
+
+    fn kite(samples: &str) -> Task {
+        task(&format!(
+            r#"{{"id":"s","name":"Kite","status":"running","tokenCount":9000,
+                 "startTime":{},"tokenSamples":[{}]}}"#,
+            NOW - 60_000,
+            samples.trim_end_matches(',')
+        ))
+    }
+
     fn at(t: &Task, cols: usize) -> String {
         plain(&row(t, Style::Tiers, cols, NOW, &no_team()))
     }
@@ -486,26 +586,42 @@ mod tests {
         plain(&row(t, Style::Tiers, cols, NOW, team))
     }
 
+    /// The expected text of a two-group row: `head`, the gutter, and the tail
+    /// flushed right against `cols`. Spelling the gutter out in every literal
+    /// would bury the segment content these tests are actually about, and a row
+    /// that was never going to fit underflows loudly here rather than quietly
+    /// asserting the wrong string.
+    fn aligned(head: &str, tail: &str, cols: usize) -> String {
+        format!("{head}{}{tail}", " ".repeat(cols - width(head) - width(tail)))
+    }
+
     #[test]
     fn wide_row_keeps_name_activity_tokens_and_runtime() {
-        assert_eq!(at(&falcon(), 80), "Falcon \u{b7} research-deep \u{b7} 31k \u{b7} 4m12s");
+        assert_eq!(
+            at(&falcon(), 80),
+            aligned("Falcon \u{b7} research-deep", "31k \u{b7} 4m12s", 80)
+        );
     }
 
     #[test]
     fn tiers_clip_the_activity_then_shed_by_priority() {
         let t = falcon();
-        assert_eq!(at(&t, 36), "Falcon \u{b7} research-deep \u{b7} 31k \u{b7} 4m12s");
+        let tail = "31k \u{b7} 4m12s";
+        assert_eq!(at(&t, 36), aligned("Falcon \u{b7} research-deep", tail, 36));
         // One char short: the title holds, the activity gives ground.
-        assert_eq!(at(&t, 35), "Falcon \u{b7} research-de\u{2026} \u{b7} 31k \u{b7} 4m12s");
-        assert_eq!(at(&t, 31), "Falcon \u{b7} researc\u{2026} \u{b7} 31k \u{b7} 4m12s");
+        assert_eq!(at(&t, 35), aligned("Falcon \u{b7} research-de\u{2026}", tail, 35));
+        assert_eq!(at(&t, 31), aligned("Falcon \u{b7} researc\u{2026}", tail, 31));
         // Below a readable activity it is dropped whole, not clipped to noise.
-        assert_eq!(at(&t, 30), "Falcon \u{b7} 31k \u{b7} 4m12s");
+        assert_eq!(at(&t, 30), aligned("Falcon", tail, 30));
         // Runtime is the next lowest priority.
-        assert_eq!(at(&t, 19), "Falcon \u{b7} 31k");
-        // Then the title itself is clipped, never the numbers.
-        assert_eq!(at(&t, 12), "Falcon \u{b7} 31k");
-        assert_eq!(at(&t, 9), "Fa\u{2026} \u{b7} 31k");
-        // With no room even for a marker, the number alone beats a bare "…".
+        assert_eq!(at(&t, 19), aligned("Falcon", "31k", 19));
+        // Then the title itself is clipped, never the numbers. At 12 the gutter
+        // is down to its `SEP`-wide floor, which is where a fitting row bottoms
+        // out — one column narrower and the title starts giving ground.
+        assert_eq!(at(&t, 12), aligned("Falcon", "31k", 12));
+        assert_eq!(at(&t, 9), aligned("Fa\u{2026}", "31k", 9));
+        // With no room even for a marker, the number alone beats a bare "…" —
+        // and with nothing left to align against it goes flush left.
         assert_eq!(at(&t, 5), "31k");
     }
 
@@ -546,7 +662,7 @@ mod tests {
         // goes with the rest — unsheddable is not un-droppable, and once it is
         // too narrow even to clip, the numbers say more than a bare marker.
         let team = with_member("Falcon", "implement-deep", "purple", 3);
-        assert_eq!(at_team(&falcon(), 8, &team), "@3 \u{b7} 31k");
+        assert_eq!(at_team(&falcon(), 8, &team), aligned("@3", "31k", 8));
     }
 
     #[test]
@@ -555,7 +671,11 @@ mod tests {
         let team = with_member("Falcon", "implement-deep", "green", 0);
         assert_eq!(
             at_team(&t, 90, &team),
-            "Falcon \u{b7}  implement-deep  \u{b7} research-deep \u{b7} 31k \u{b7} 4m12s"
+            aligned(
+                "Falcon \u{b7}  implement-deep  \u{b7} research-deep",
+                "31k \u{b7} 4m12s",
+                90
+            )
         );
         let painted = row(&t, Style::Tiers, 90, NOW, &team);
         // Green background, black foreground, closed with SGR 49/39 so the
@@ -585,8 +705,9 @@ mod tests {
         let t = falcon();
         let team = with_member("Falcon", "implement-deep", "blue", 2);
         assert!(at_team(&t, 90, &team).contains("@2"));
-        // Squeezed: activity, runtime, then the badge go; the count stays.
-        assert_eq!(at_team(&t, 24, &team), "Falcon \u{b7} @2 \u{b7} 31k");
+        // Squeezed: activity, runtime, then the badge go; the count stays — and
+        // the inbox depth stays with the identity on the left.
+        assert_eq!(at_team(&t, 24, &team), aligned("Falcon \u{b7} @2", "31k", 24));
         // An empty inbox renders nothing at all.
         let quiet = with_member("Falcon", "implement-deep", "blue", 0);
         assert!(!at_team(&t, 90, &quiet).contains('@'));
@@ -594,13 +715,12 @@ mod tests {
 
     #[test]
     fn a_stalled_task_says_so_and_outranks_the_runtime() {
-        let t = task(&format!(
-            r#"{{"id":"s","name":"Kite","status":"running","tokenCount":9000,
-                 "startTime":{},"tokenSamples":[9000,9000,9000,9000,9000,9000,9000,9000,9000]}}"#,
-            NOW - 60_000
-        ));
-        assert_eq!(at(&t, 80), "Kite \u{b7} 9k \u{b7} stalled \u{b7} 1m0s");
-        assert_eq!(at(&t, 20), "Kite \u{b7} 9k \u{b7} stalled");
+        let t = stalled_row();
+        // The marker opens leftward into the gutter: the count and the clock hold
+        // the columns they had before it appeared — see
+        // `an_appearing_field_never_shifts_a_settled_one`.
+        assert_eq!(at(&t, 80), aligned("Kite", "stalled \u{b7} 9k \u{b7} 1m0s", 80));
+        assert_eq!(at(&t, 20), aligned("Kite", "stalled \u{b7} 9k", 20));
     }
 
     /// Moved here with `STALL_WINDOW` and `is_stalled`: the threshold is a
@@ -647,9 +767,9 @@ mod tests {
             serde_json::Value::String(prompt.into()),
             NOW - 133_000
         ));
-        assert_eq!(at(&t, 76), "t10-css-face-split \u{b7} 126k \u{b7} 2m13s");
-        assert_eq!(at(&t, 25), "t10-css-face-split \u{b7} 126k");
-        assert_eq!(at(&t, 24), "t10-css-face-spl\u{2026} \u{b7} 126k");
+        assert_eq!(at(&t, 76), aligned("t10-css-face-split", "126k \u{b7} 2m13s", 76));
+        assert_eq!(at(&t, 25), aligned("t10-css-face-split", "126k", 25));
+        assert_eq!(at(&t, 24), aligned("t10-css-face-spl\u{2026}", "126k", 24));
     }
 
     #[test]
@@ -659,7 +779,7 @@ mod tests {
                  "tokenCount":4000,"startTime":{}}}"#,
             NOW - 9_000
         ));
-        assert_eq!(at(&t, 76), "Kestrel \u{b7} 4k \u{b7} 9s");
+        assert_eq!(at(&t, 76), aligned("Kestrel", "4k \u{b7} 9s", 76));
     }
 
     #[test]
@@ -670,14 +790,14 @@ mod tests {
             r###"{"id":"t","type":"local_agent","status":"running",
                   "description":"## Shared context\n\nsplit the faces","tokenCount":2000}"###,
         );
-        assert_eq!(at(&t, 76), "Shared context split the faces \u{b7} 2k");
+        assert_eq!(at(&t, 76), aligned("Shared context split the faces", "2k", 76));
     }
 
     #[test]
     fn a_task_without_a_start_time_shows_no_runtime() {
         let t =
             task(r#"{"id":"t","name":"Wren","status":"running","startTime":0,"tokenCount":5000}"#);
-        assert_eq!(at(&t, 76), "Wren \u{b7} 5k");
+        assert_eq!(at(&t, 76), aligned("Wren", "5k", 76));
     }
 
     /// The shapes the shed guards actually branch on: how many segments a row
@@ -716,6 +836,10 @@ mod tests {
             // constants rather than appended past them — so the width and shed
             // properties below actually exercise the ten-spacing they document.
             ("rich context", context_row(), no_team()),
+            // The only fixture carrying `P_STALLED`, and so the only one whose
+            // tail is more than the count-and-clock pair. Without it the width
+            // and flush-right properties never see a three-field tail at all.
+            ("stalled", stalled_row(), with_member("Kite", "verification", "yellow", 1)),
         ]
     }
 
@@ -816,6 +940,108 @@ mod tests {
         }
     }
 
+    /// The tail is a *column*, not a suffix: on every row that fits its budget
+    /// and carries both groups, the last character of the tail sits in the last
+    /// usable column, so the counts and the clock line up down the panel however
+    /// long the titles in front of them are.
+    ///
+    /// Asserted as a width identity rather than by matching the rendered text,
+    /// which would only restate `aligned`'s arithmetic. The two excluded shapes
+    /// are excluded deliberately: an over-budget row has no slack to spend on a
+    /// gutter, and a row with an empty group has nothing to align against.
+    #[test]
+    fn the_tail_is_flush_right_on_every_row_that_fits() {
+        for (label, t, team) in width_fixtures() {
+            for style in [Style::Tiers, Style::Rich] {
+                for cols in 1..=95 {
+                    let segs = shed(&t, style, cols, NOW, &team);
+                    let both = segs.iter().any(|s| in_tail(s.prio))
+                        && segs.iter().any(|s| !in_tail(s.prio));
+                    if !both || line_width(&segs) > cols {
+                        continue;
+                    }
+                    let r = plain(&row(&t, style, cols, NOW, &team));
+                    assert_eq!(
+                        width(&r),
+                        cols,
+                        "{label} ({style:?}) at {cols} cols: tail not flush right: {r:?}"
+                    );
+                    // The gutter is padding, never a trailing edge.
+                    assert!(!r.ends_with(' '), "{label} ({style:?}) at {cols} cols: {r:?}");
+                }
+            }
+        }
+    }
+
+    /// The column a rendered field starts in, or `None` when the row does not
+    /// carry it. Columns rather than byte offsets: `SEP` is multi-byte, so a byte
+    /// index would move for reasons that have nothing to do with layout.
+    fn column_of(rendered: &str, field: &str) -> Option<usize> {
+        rendered.find(field).map(|i| width(&rendered[..i]))
+    }
+
+    /// The rule both group orders exist for: a field that arrives, departs, or
+    /// re-widths itself mid-run spends the gutter, never a neighbour's column.
+    ///
+    /// This is the property `in_tail` and `segments`'s push order *jointly*
+    /// produce, and neither can be checked for it alone — a correct order still
+    /// shifts every column if `fit` flushes the wrong group, and a right-flushed
+    /// tail still shifts them if the marker is pushed into the middle of it. So
+    /// it is asserted where the two meet, on rendered columns, which is also what
+    /// the eye actually tracks down a refreshing panel.
+    ///
+    /// Each case renders one task twice, differing only in the transient field,
+    /// and pins every settled field to the same column in both.
+    #[test]
+    fn an_appearing_field_never_shifts_a_settled_one() {
+        // Same nine samples as `stalled_row`, with the last one growing — so the
+        // pair differs in the stall marker and in nothing else at all.
+        let growing = kite(&format!("{}9100,", "9000,".repeat(8)));
+        let verbose = task(&format!(
+            r#"{{"id":"t1","name":"Falcon","status":"running","tokenCount":31000,
+                 "label":"reading src/render/agents.rs","startTime":{},
+                 "model":"claude-opus-5","effort":"high"}}"#,
+            NOW - 252_000
+        ));
+        let quiet = with_member("Falcon", "implement-deep", "purple", 0);
+        let busy = with_member("Falcon", "implement-deep", "purple", 2);
+
+        // (what changed, before, after, the fields that must not have moved)
+        let cases: [(&str, String, String, &[&str]); 3] = [
+            (
+                "the stall marker arrives",
+                at(&growing, 80),
+                at(&stalled_row(), 80),
+                &["Kite", "9k", "1m0s"],
+            ),
+            (
+                "the inbox fills",
+                at_team(&falcon(), 80, &quiet),
+                at_team(&falcon(), 80, &busy),
+                // The badge with its padding, which is how `plain` renders it.
+                &["Falcon", " implement-deep ", "31k", "4m12s"],
+            ),
+            (
+                "the activity re-widths",
+                plain(&row(&falcon(), Style::Rich, 80, NOW, &no_team())),
+                plain(&row(&verbose, Style::Rich, 80, NOW, &no_team())),
+                &["Falcon", "opus-5 high", "31k", "4m12s"],
+            ),
+        ];
+
+        for (case, before, after, settled) in cases {
+            assert_ne!(before, after, "{case}: the pair must actually differ");
+            for field in settled {
+                let (b, a) = (column_of(&before, field), column_of(&after, field));
+                assert!(b.is_some(), "{case}: {field:?} is missing from {before:?}");
+                assert_eq!(
+                    b, a,
+                    "{case}: {field:?} changed column\n  before: {before:?}\n  after:  {after:?}"
+                );
+            }
+        }
+    }
+
     /// An omitted id keeps a row's default rendering; empty content *hides* the
     /// row. A vanished row is worse than an overflowing one, so no real task may
     /// ever render to nothing.
@@ -849,9 +1075,9 @@ mod tests {
     #[test]
     fn queued_and_paused_rows_say_so_instead_of_zero() {
         let t = task(r#"{"id":"t","label":"waiting","status":"pending","tokenCount":0}"#);
-        assert_eq!(at(&t, 60), "waiting \u{b7} queued");
+        assert_eq!(at(&t, 60), aligned("waiting", "queued", 60));
         let t = task(r#"{"id":"t","label":"held","status":"paused","tokenCount":900}"#);
-        assert_eq!(at(&t, 60), "held \u{b7} 900 \u{b7} paused");
+        assert_eq!(at(&t, 60), aligned("held", "900 \u{b7} paused", 60));
     }
 
     #[test]
@@ -860,7 +1086,7 @@ mod tests {
             r#"{{"id":"c","name":"Wren","status":"completed","tokenCount":7000,"startTime":{}}}"#,
             NOW - 600_000
         ));
-        assert_eq!(at(&t, 60), "Wren \u{b7} 7k \u{b7} done");
+        assert_eq!(at(&t, 60), aligned("Wren", "7k \u{b7} done", 60));
     }
 
     #[test]
@@ -872,7 +1098,10 @@ mod tests {
         ));
         let r = at(&t, 80);
         assert!(!r.contains('\n'), "row must be single-line: {r:?}");
-        assert_eq!(r, "Wren \u{b7} reading src/main.rs then editing \u{b7} 8k \u{b7} 1m3s");
+        assert_eq!(
+            r,
+            aligned("Wren \u{b7} reading src/main.rs then editing", "8k \u{b7} 1m3s", 80)
+        );
     }
 
     #[test]
@@ -880,12 +1109,12 @@ mod tests {
         let t = falcon();
         assert_eq!(
             plain(&row(&t, Style::Rich, 80, NOW, &no_team())),
-            "Falcon \u{b7} research-deep \u{b7} opus-5 high \u{b7} 31k \u{b7} 4m12s"
+            aligned("Falcon \u{b7} opus-5 high \u{b7} research-deep", "31k \u{b7} 4m12s", 80)
         );
-        // Model/effort outranks only the activity, so it goes second.
+        // Model/effort outranks only the activity, so it is shed second.
         assert_eq!(
             plain(&row(&t, Style::Rich, 30, NOW, &no_team())),
-            "Falcon \u{b7} 31k \u{b7} 4m12s"
+            aligned("Falcon", "31k \u{b7} 4m12s", 30)
         );
     }
 
@@ -897,21 +1126,21 @@ mod tests {
         let t = context_row();
         assert_eq!(
             plain(&row(&t, Style::Rich, 80, NOW, &no_team())),
-            "Osprey \u{b7} opus-5 \u{b7} 124k \u{b7} 62% \u{b7} 1m35s"
+            aligned("Osprey \u{b7} opus-5", "124k \u{b7} 62% \u{b7} 1m35s", 80)
         );
-        // `tiers` was specified as the raw token count WITHOUT a window ratio,
-        // and is byte-identical to before: no percentage, no model either.
-        assert_eq!(at(&t, 80), "Osprey \u{b7} 124k \u{b7} 1m35s");
+        // `tiers` was specified as the raw token count WITHOUT a window ratio:
+        // no percentage, no model either.
+        assert_eq!(at(&t, 80), aligned("Osprey", "124k \u{b7} 1m35s", 80));
         // Shed order among rich's two extras: the static spec goes first, then
         // the reading — which is a restatement of a count that is never shed at
         // all, so it gives ground before the runtime nothing else reports.
         assert_eq!(
             plain(&row(&t, Style::Rich, 30, NOW, &no_team())),
-            "Osprey \u{b7} 124k \u{b7} 62% \u{b7} 1m35s"
+            aligned("Osprey", "124k \u{b7} 62% \u{b7} 1m35s", 30)
         );
         assert_eq!(
             plain(&row(&t, Style::Rich, 24, NOW, &no_team())),
-            "Osprey \u{b7} 124k \u{b7} 1m35s"
+            aligned("Osprey", "124k \u{b7} 1m35s", 24)
         );
     }
 
@@ -961,6 +1190,7 @@ mod tests {
         }
         assert!(lines[0].contains(r#"say \"hi\""#), "quotes must be escaped: {}", lines[0]);
     }
+
 
     #[test]
     fn rows_carry_no_colour_beyond_the_badge() {
