@@ -64,3 +64,10 @@ strip = true
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# Doc-link rot is silent: a renamed item leaves every [`Link`] to it pointing at
+# nothing, and rustdoc only warns. Denied here so it fails the build instead.
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+invalid_html_tags = "deny"

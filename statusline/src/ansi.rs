@@ -35,8 +35,8 @@ pub const NOBOLD: &str = "\x1b[22m";
 /// **Do not import this from `render::min` or `render::agents`.** Claude Code
 /// dims unselected agent rows with its own `\x1b[2m`; an SGR 0 anywhere in a row
 /// body cancels that for the rest of the line, so the modern styles close their
-/// spans with SGR 22 / 39 / 49 instead ([`super::NOBOLD`], [`super::FG`],
-/// [`super::BG`]). `full` is exempt only because it is a bug-for-bug port of the
+/// spans with SGR 22 / 39 / 49 instead ([`NOBOLD`], [`FG`],
+/// [`BG`]). `full` is exempt only because it is a bug-for-bug port of the
 /// ps1, which reset after every span.
 pub mod legacy {
     /// Reset all attributes (SGR 0).

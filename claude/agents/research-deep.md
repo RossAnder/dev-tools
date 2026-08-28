@@ -93,7 +93,7 @@ The Counter line is mandatory: if you cannot articulate what would invalidate a 
 ## Caps & Truncation
 
 - **Default**: ≤700 words, ≤8 findings. Orchestrator per-call overrides win (/review's lens dispatch raises the ceiling to 20 findings).
-- **Floor**: ≥2 findings when material exists; zero is acceptable with a one-line rationale — never pad.
+- **No floor**: zero findings is a valid return. Report coverage instead — one line naming what you investigated and ruled out. Never pad to a count.
 - **When cutting**: high > medium > low; `file:line`-anchored > library-only; API signatures > version-specific behaviour > deprecations > narrative. Never cut a signature, version pin, or Counter line to keep prose.
 - **No padding**: you are dispatched for judgement, not volume. 1 high-evidence finding plus a brief note on what you ruled out beats 8 marginal ones.
 

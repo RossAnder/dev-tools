@@ -10,3 +10,6 @@ fi
 ROOT="$(git rev-parse --show-toplevel)"
 "$ROOT/scripts/verify-shared-blocks.sh"
 "$ROOT/scripts/verify-plan-story-blocks.sh"
+# Reports, does not block. Promote with DOC_GATE_MODE=block once its
+# false-positive rate is proven against real commits rather than specimens.
+"$ROOT/scripts/doc-diff-gate.sh"

@@ -1,6 +1,6 @@
 ---
 name: flow-contract-plan-output-format
-description: "On-disk plan-document structure for flow-carrying commands — the canonical section order and authoring contract for the markdown plan file written by /plan-new Phase 7. Defines the header block (`# Plan:` title, `**Plan path**`, `**Created**`, `**Status**`) and every section in order: `## Context`, `## Scope` (in/out/affected-areas/estimated-file-count), `## Research Notes` (extracted into RESEARCH-NOTES.md by /plan-update reformat), `## User Decisions`, `## Approach`, `## Verification Commands` (build/test/lint fenced block), `## Execution Policy` (checkpoint cadence, checkpoint markers, max parallel agents, commit granularity — consumed by /implement's frontier scheduler), `## Tasks` (numbered, with Files/Depends-on/Action/Detail/Acceptance and S/M/L effort tags), `## Dependency Graph` (task DAG + checkpoint markers), `## Verification`, and `## Risks`. Covers task-effort sizing (S <30 min/1-2 files, M 30-120 min/2-3 files, L >120 min/4+ files or cross-cutting) and the format rules (repo-relative paths everywhere including prose and commands, Files-line closure — every edit target named in Action/Detail/Acceptance appears in Files, numeric dependency references, acceptance-reachability edges covering collection-time test coupling, mechanically-verifiable AND falsifiable acceptance, registration seams requiring a named call site, derive-don't-transcribe for filenames and enumeration counts, no literal control bytes, sourced research notes, many-small-file-disjoint-task decomposition, frontier parallelism up to the declared max-parallel, checkpoint markers as valid topological cuts with no orphaned tasks, phase/wave grouping above 8 tasks). Consult when writing or reformatting a plan document — /plan-new Phase 7, /plan-update reformat, /review-plan."
+description: "On-disk plan-document structure for flow-carrying commands — the canonical section order and authoring contract for the markdown plan file written by /plan-new Phase 7. Defines the header block (`# Plan:` title, `**Plan path**`, `**Created**`, `**Status**`) and every section in order: `## Context`, `## Scope` (in/out/affected-areas), `## Research Notes` (extracted into RESEARCH-NOTES.md by /plan-update reformat), `## User Decisions`, `## Approach`, `## Verification Commands` (build/test/lint fenced block, machine-parsed by /implement, /tdd and test-author, plus any integration/smoke/manual steps in prose), `## Execution Policy` (checkpoint cadence, checkpoint markers, max parallel agents, commit granularity — consumed by /implement's frontier scheduler), `## Tasks` (numbered, with Files/Depends-on/Action/Detail/Acceptance and S/M/L effort tags), `## Dependency Graph` (checkpoint markers only — per-task Depends-on edges are authoritative and are never mirrored here), and `## Risks`. Covers task-effort sizing (S <30 min/1-2 files, M 30-120 min/2-3 files, L >120 min/4+ files or cross-cutting) and the format rules (repo-relative paths everywhere including prose and commands, Files-line closure — every edit target named in Action/Detail/Acceptance appears in Files, numeric dependency references, acceptance-reachability edges covering collection-time test coupling, mechanically-verifiable AND falsifiable acceptance, registration seams requiring a named call site, derive-don't-transcribe for filenames and enumeration counts, no literal control bytes, sourced research notes, many-small-file-disjoint-task decomposition, frontier parallelism up to the declared max-parallel, checkpoint markers as valid topological cuts with no orphaned tasks, phase/wave grouping above 8 tasks). Consult when writing or reformatting a plan document — /plan-new Phase 7, /plan-update reformat, /review-plan."
 ---
 
 ## Plan Output Format
@@ -23,7 +23,6 @@ If sourced from a design doc or spec, reference it here.]
 - **In scope**: [what this plan covers]
 - **Out of scope**: [what it explicitly does not cover]
 - **Affected areas**: [modules, services, or layers that will be touched]
-- **Estimated file count**: [total unique files across all tasks]
 
 ## Research Notes
 [Technology findings, API discoveries, pattern analysis from Phase 3 (initial research) and any Phase 5 (directed research) additions.
@@ -43,13 +42,23 @@ Reference existing codebase patterns and utilities that should be reused, with f
 
 ## Verification Commands
 [Build, test, and lint commands discovered during exploration.
-These are passed directly to `/implement` so the verification agent does not need to re-discover them.]
+These are passed directly to `/implement` so the verification agent does not need to re-discover them.
+This heading and the fenced block below are PARSED, not read: `/implement` extracts them for
+Phase 3, `/tdd` halts without a `test:` line, and the `test-author` skill infers the project's
+framework from it. Do not rename the heading or unfence the block.
+
+Anything the commands do not cover — integration or smoke passes, manual verification steps —
+goes in prose directly beneath the fence. It used to live in a separate `## Verification`
+section near the end of the plan, which restated the same build and test commands a second
+time and drifted from them.]
 
 ```
 build: <command>
 test: <command>
 lint: <command>
 ```
+
+[Integration / smoke / manual steps, if any — prose, not a second command list.]
 
 ## Execution Policy
 [How `/implement` schedules dispatches and places commits for this plan.
@@ -88,22 +97,22 @@ after every dependency level) — existing plans execute unchanged.]
 [Continue for all tasks. Number sequentially. Group into phases/waves if >8 tasks.]
 
 ## Dependency Graph
-[Task DAG summary: per-task edges (mirroring each task's **Depends on**) plus checkpoint
-markers. Scheduling is frontier-based — a task is dispatchable the moment its dependencies
-are terminal. Do NOT introduce lockstep waves beyond the true edges; any wave/phase
-grouping in prose is presentational only.]
+[**Checkpoint markers only. Do NOT transcribe per-task edges here.** Each task's **Depends
+on** line is authoritative and `/implement` builds the DAG from those; a copy in this section
+is a second representation of the same fact that goes stale on any renumbering, and the merge
+paths then have to re-derive it. State each checkpoint's task closure and why it is a
+buildable increment.
 
-1 → 2, 3, 4            (2–4 run in parallel once 1 lands)
-2 → 5
+Scheduling is frontier-based — a task is dispatchable the moment its dependencies are
+terminal. Do NOT introduce lockstep waves beyond the true edges; any wave or phase grouping in
+prose is presentational only.
+
+The heading itself is load-bearing: `/review-plan` detects the house format by the presence of
+`## Tasks` and `## Dependency Graph`, and omitting it silently downgrades every plan review to
+foreign-format critique. Keep the heading even when there is a single checkpoint.]
+
 — CHECKPOINT A after tasks 1–4: foundational API + direct consumers (buildable increment) —
-5, 6, 7                (independent leaf work, fully parallel)
-
-## Verification
-[End-to-end test plan:
-- Build command(s)
-- Test command(s)
-- Integration or smoke tests
-- Manual verification steps if applicable]
+— CHECKPOINT B after tasks 5–7: independent leaf work —
 
 ## Risks
 [Known risks, each with a mitigation:

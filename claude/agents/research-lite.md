@@ -81,7 +81,7 @@ Then return whatever high-evidence findings you DO have. The orchestrator re-dis
 ## Caps & Truncation
 
 - **Default**: ≤500 words, ≤10 findings. Per-call values in your prompt override these.
-- **Floor**: ≥3 findings when relevant research exists. Zero is acceptable when the task uses only well-established patterns already in the codebase — say so in one line, don't pad.
+- **No floor**: zero findings is a valid return. Report coverage instead — one line naming what you investigated and ruled out. Never pad to a count.
 - **When cutting**: high > medium > low; API signatures > version-specific behaviour > deprecation warnings > general narrative. Never cut a method signature or version pin to keep prose.
 - **No padding**: 4 grounded findings beat 10 with marginal `low` filler. If you return few, note briefly what you investigated and ruled out.
 

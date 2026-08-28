@@ -1,0 +1,62 @@
+# .claude/documentation-conventions.toml
+#
+# Layer 1 of the documentation-conventions precedence chain. Its primary job is the
+# short-circuit: with `stage` and `deliverable` pinned, the skill never runs baseline
+# inference and never opens references/stage-and-density.md.
+#
+# This file NAMES the file that owns each setting it mentions; it never copies a value.
+# Layer 2 (lint and compiler config) beats this file on any fact layer 2 covers, because
+# executable reality wins over prose. A config that restates a lint setting is exactly the
+# duplicated-fact defect this skill exists to prevent.
+#
+# Generated <date> per the config runbook. Evidence: <how stage and baseline were derived>.
+
+stage = "S1"          # S0..S5 — see references/stage-and-density.md. Governs what is
+                      # REQUIRED and what is FORBIDDEN AS PREMATURE, not a quality bar.
+deliverable = "code"  # code | decisions | prototype.
+                      # `decisions` inverts the ladder: decision records held to S3,
+                      # everything mirroring the apparatus held at S0.
+
+# MEASURED, not aspirational. Regenerate with the command below; never hand-edit.
+# Excludes generated code (see [measure].exclude) and delimiter-only comment lines.
+comment_share_baseline = 21
+measured_on = "2026-08-28"
+
+[measure]
+command = "scripts/doc-density.sh"   # owns the canonical definition; do not restate it here
+exclude = ["**/dist/**", "**/*.d.ts", "**/generated/**", "**/node_modules/**", "**/target/**"]
+
+[blocks]
+max_lines_at_declaration = 4
+max_lines_module_header  = 15
+hard_stop = 20        # a block past this is a relocation defect regardless of quality
+
+[adr]
+convention = "supersede"      # supersede | amend-in-place. Declared ONCE, here.
+                              # Both work; mixing them is the defect. Under amend-in-place
+                              # the admission test MUST be applied per amendment.
+index = "docs/adr/README.md"
+working_sheets = "docs/decisions/"   # provisional decisions; deleted at graduation
+
+[enforcement]
+scope = ["src/**", "packages/*/src/**"]   # MUST equal declared scope — a rule that claims
+                                          # more than the gate scans is how a standard ends
+                                          # up governing only the tier that was already small
+gate = "scripts/doc-diff-gate.sh"
+mode = "warn"                             # warn | block
+
+[owns]
+# Facts this file NAMES but does not RESTATE. Point at the owner; never copy the value.
+lint_policy    = "Cargo.toml [lints], .oxlintrc.json"
+doc_file_policy = "Directory.Build.props, .editorconfig"
+version_pins   = "Cargo.toml, package.json"
+build_commands = "CLAUDE.md ## Build & test"
+
+[overrides."**/*.rs"]
+safety_comments = "required"   # clippy::missing_safety_doc is warn-by-default; never allow
+
+[overrides."**/*.ts"]
+require_param = "off"          # recommended-typescript leaves this ON and manufactures echo
+
+[opt_out]
+paths = ["docs/plans/**", "**/generated/**"]

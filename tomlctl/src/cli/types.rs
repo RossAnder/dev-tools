@@ -384,7 +384,7 @@ pub(crate) enum Cmd {
         integrity: ReadIntegrityArgs,
     },
 
-    /// Operations on [[items]] arrays-of-tables (ledger schema).
+    /// Operations on `[[items]]` arrays-of-tables (ledger schema).
     Items {
         #[command(subcommand)]
         op: ItemsOp,

@@ -317,7 +317,7 @@ fn id_of(item: &TomlValue) -> &str {
 }
 
 /// First SHA in `commits[]` wrapped in backticks, or an empty cell when there
-/// are no commits. Mirrors the real PROGRESS-LOG.md's `\`<sha>\`` form.
+/// are no commits. Mirrors the real PROGRESS-LOG.md's `` `<sha>` `` form.
 fn first_commit_backticked(item: &TomlValue) -> String {
     match item
         .get("commits")
