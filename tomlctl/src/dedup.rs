@@ -154,145 +154,84 @@ fn promote_source_tag(mut group: JsonValue) -> JsonValue {
     group
 }
 
-/// T6a: extract the tier-B fingerprint used by `find_duplicates_tier_b` as a
-/// reusable helper. Hashes the canonical five-field concatenation
-/// `file | summary | severity | category | symbol` (pipe-separated) with
-/// SHA-256 and returns the first 16 lowercase hex chars (= 64 bits;
-/// ~4B-item birthday collision bound).
+/// Truncated SHA-256 over `values` joined with `|` — the separator sits
+/// *between* values, so a five-element list carries four separators. Keeps
+/// the leading 8 bytes (64 bits; ~4B-item birthday collision bound).
 ///
-/// "Normalisation": each field is read via `str_field` (empty string on
-/// missing / non-string) and concatenated verbatim — no additional trimming,
-/// lower-casing, or unicode normalisation. This matches the pre-extraction
-/// inline code exactly; tier B's output must remain byte-identical across
-/// the refactor.
+/// Values are hashed verbatim: no trimming, case folding or unicode
+/// normalisation. A caller wanting a folded field hashes the folded form.
 ///
-/// **Field order is load-bearing.** Do not reorder or rename without also
-/// editing `FINGERPRINTED_FIELDS` and bumping every ledger's `dedup_id`
-/// (Task 11's `backfill-dedup-id` is the canonical rebuild path).
-/// R46: TomlValue-wrapping form retained for the cross-tier test harness
-/// that asserts byte-equivalence between this helper, its `_table`
-/// sibling, and `tier_b_fingerprint_json`. Production callers go through
-/// `tier_b_fingerprint_table` (which avoids the per-call clone for the
-/// `&Table` they already hold) or `tier_b_fingerprint_json` (which feeds
-/// the JSON write-funnel without the TomlValue intermediate).
-#[cfg(test)]
-pub(crate) fn tier_b_fingerprint(item: &TomlValue) -> String {
-    let Some(tbl) = item.as_table() else {
-        // Non-table items can't participate in tier-B grouping; return the
-        // digest of "empty | empty | empty | empty | empty" so the helper is
-        // total. The tier-B grouping path filters non-tables earlier, so in
-        // practice this branch is only reachable from the new auto-populate
-        // caller if someone hands it a scalar — which `items_add_value_to`
-        // rejects before this helper runs.
-        return fingerprint_from_strs("", "", "", "", "");
-    };
-    tier_b_fingerprint_table(tbl)
-}
-
-/// R46: borrow-friendly sibling of `tier_b_fingerprint` for callers that
-/// already have a `&toml::Table` in hand. The previous shape — wrapping
-/// `&Table` in `TomlValue::Table(tbl.clone())` to feed `tier_b_fingerprint`
-/// — cloned the whole item table once per backfilled row purely to
-/// satisfy the public signature. The backfill helper at items.rs walks
-/// every item in the array, so this clone scaled per-row × per-field;
-/// taking the table by reference here drops it entirely while preserving
-/// the byte-identical digest.
-pub(crate) fn tier_b_fingerprint_table(tbl: &toml::Table) -> String {
-    fingerprint_from_strs(
-        str_field(tbl, "file"),
-        str_field(tbl, "summary"),
-        str_field(tbl, "severity"),
-        str_field(tbl, "category"),
-        str_field(tbl, "symbol"),
-    )
-}
-
-/// T6b: JSON-payload sibling of `tier_b_fingerprint`. Used by the write-funnel
-/// auto-populate logic so `items_add_value_to` / `items_update_value_to` can
-/// compute the fingerprint from the incoming `JsonValue::Object` without a
-/// round-trip through `TomlValue` (same data, skips an intermediate clone).
-///
-/// String field extraction: for each fingerprinted key, accept
-/// `JsonValue::String` verbatim; anything else (missing key, null, number,
-/// array, object) becomes the empty string. Identical to `str_field`'s
-/// "empty on non-string" semantics on the TOML side, which keeps this helper
-/// and `tier_b_fingerprint` output byte-identical when given the same
-/// underlying field values.
-pub(crate) fn tier_b_fingerprint_json(obj: &serde_json::Map<String, JsonValue>) -> String {
-    // O64: extracted JSON-side `str_field_json` helper sits in `convert.rs`
-    // next to its TomlValue sibling; the previous private `json_str_field`
-    // wrapper was deleted to avoid drift with the TOML-side helper.
-    fingerprint_from_strs(
-        str_field_json(obj, "file"),
-        str_field_json(obj, "summary"),
-        str_field_json(obj, "severity"),
-        str_field_json(obj, "category"),
-        str_field_json(obj, "symbol"),
-    )
-}
-
-/// T6a: shared core of `tier_b_fingerprint` and `tier_b_fingerprint_json`.
-/// Feeds Sha256 incrementally with the `field | field | …` format and
-/// returns the first 16 hex chars. Kept `#[inline]` so both callers compile
-/// down to a single hash pass with no intermediate `String` allocation.
+/// Feeding the hasher incrementally is what lets the whole family share one
+/// core with no intermediate `String`.
 #[inline]
-fn fingerprint_from_strs(file: &str, summary: &str, severity: &str, category: &str, symbol: &str) -> String {
-    // 8 bytes → 16 hex chars; preserves the prior `full[..16]` truncation.
-    hex_lower(&fingerprint_bytes_from_strs(file, summary, severity, category, symbol))
-}
-
-/// O62: bytes-returning sibling of `fingerprint_from_strs`. Returns the
-/// truncated 8-byte (64-bit) digest used as the tier-B grouping key without
-/// the per-call hex-string allocation. Public-API consumers (`items.rs`'s
-/// `dedup_id` write path, the `tier_b_fingerprint` / `tier_b_fingerprint_json`
-/// helpers) still get the hex `String` form via `fingerprint_from_strs`,
-/// which is just `hex_lower` over this byte array.
-#[inline]
-fn fingerprint_bytes_from_strs(
-    file: &str,
-    summary: &str,
-    severity: &str,
-    category: &str,
-    symbol: &str,
-) -> [u8; 8] {
-    // O31: feed Sha256 incrementally — avoids the throwaway `canonical`
-    // String, the full 64-char hex String, and the substring `to_string()`
-    // clone. Field order and the `|` separator are preserved exactly, so
-    // the resulting digest (and the 16-hex-char fingerprint) is
-    // byte-identical to the prior one-shot form used by tier B.
+pub(crate) fn fingerprint_bytes<'a>(values: impl IntoIterator<Item = &'a str>) -> [u8; 8] {
     let mut h = Sha256::new();
-    h.update(file.as_bytes());
-    h.update(b"|");
-    h.update(summary.as_bytes());
-    h.update(b"|");
-    h.update(severity.as_bytes());
-    h.update(b"|");
-    h.update(category.as_bytes());
-    h.update(b"|");
-    h.update(symbol.as_bytes());
+    for (i, value) in values.into_iter().enumerate() {
+        if i > 0 {
+            h.update(b"|");
+        }
+        h.update(value.as_bytes());
+    }
     let digest = h.finalize();
     let mut out = [0u8; 8];
     out.copy_from_slice(&digest[..8]);
     out
 }
 
-/// O62: TOML-side bytes-returning fingerprint helper. Same field-extraction
-/// semantics as `tier_b_fingerprint` (each field via `str_field`,
-/// non-table → all-empty), but returns the raw 8-byte truncated digest so
-/// the tier-B grouping path can key its `BTreeMap` on stack bytes rather
-/// than a 16-char hex `String`. Hex encoding is done once per surviving
-/// group at emit time instead of once per item.
+/// `fingerprint_bytes` as 16 lowercase hex chars.
+#[inline]
+pub(crate) fn fingerprint_hex<'a>(values: impl IntoIterator<Item = &'a str>) -> String {
+    hex_lower(&fingerprint_bytes(values))
+}
+
+/// Digest of `fields` read off a TOML table in the given order, each via
+/// `str_field` — missing and non-string fields hash as the empty string.
+///
+/// **The order of `fields` is load-bearing**: it is the byte order fed to
+/// the hasher, so reordering re-keys every `dedup_id` computed with that
+/// list. `FINGERPRINTED_FIELDS` is the ledger's frozen order.
+pub(crate) fn fingerprint_bytes_from_table(tbl: &toml::Table, fields: &[&str]) -> [u8; 8] {
+    fingerprint_bytes(fields.iter().map(|field| str_field(tbl, field)))
+}
+
+/// JSON-side `fingerprint_bytes_from_table`. `str_field_json` mirrors
+/// `str_field`'s empty-on-missing-or-non-string rule, which is what keeps
+/// the two sides byte-identical for the same underlying values — the JSON
+/// write funnel and the TOML grouping path must never disagree.
+pub(crate) fn fingerprint_bytes_from_json(
+    obj: &serde_json::Map<String, JsonValue>,
+    fields: &[&str],
+) -> [u8; 8] {
+    fingerprint_bytes(fields.iter().map(|field| str_field_json(obj, field)))
+}
+
+/// Tier-B fingerprint of a whole item, 16 lowercase hex chars.
+///
+/// R46: the `TomlValue`-wrapping form exists for the cross-path
+/// byte-equivalence tests. Production callers hold a `&Table` or a JSON
+/// object and go through the siblings, avoiding a per-row clone.
+#[cfg(test)]
+pub(crate) fn tier_b_fingerprint(item: &TomlValue) -> String {
+    hex_lower(&tier_b_fingerprint_bytes(item))
+}
+
+pub(crate) fn tier_b_fingerprint_table(tbl: &toml::Table) -> String {
+    hex_lower(&fingerprint_bytes_from_table(tbl, &FINGERPRINTED_FIELDS))
+}
+
+pub(crate) fn tier_b_fingerprint_json(obj: &serde_json::Map<String, JsonValue>) -> String {
+    hex_lower(&tier_b_fingerprint_bytes_json(obj))
+}
+
+/// Raw 8-byte tier-B digest, so the grouping path keys its `BTreeMap` on
+/// stack bytes and hex-encodes once per surviving group instead of once per
+/// item. A non-table item hashes as five empty fields, keeping the helper
+/// total for a grouping pass that has not filtered scalars out yet.
 fn tier_b_fingerprint_bytes(item: &TomlValue) -> [u8; 8] {
-    let Some(tbl) = item.as_table() else {
-        return fingerprint_bytes_from_strs("", "", "", "", "");
-    };
-    fingerprint_bytes_from_strs(
-        str_field(tbl, "file"),
-        str_field(tbl, "summary"),
-        str_field(tbl, "severity"),
-        str_field(tbl, "category"),
-        str_field(tbl, "symbol"),
-    )
+    match item.as_table() {
+        Some(tbl) => fingerprint_bytes_from_table(tbl, &FINGERPRINTED_FIELDS),
+        None => fingerprint_bytes(FINGERPRINTED_FIELDS.iter().map(|_| "")),
+    }
 }
 
 fn dup_group_json(tier: &str, key: &str, items: &[&TomlValue]) -> JsonValue {
@@ -365,7 +304,7 @@ fn find_duplicates_tier_b(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
         let Some(tbl) = item.as_table() else { continue };
         // T6a: fingerprint computation shares its core with the
         // `dedup_id` auto-populate path (`items.rs`) — both go through
-        // `fingerprint_bytes_from_strs` so the same five fields hash in the
+        // `fingerprint_bytes` so the same five fields hash in the
         // same order with the same truncation. The hex-string form lives
         // in `tier_b_fingerprint`; here we want the raw bytes.
         let short = tier_b_fingerprint_bytes(item);
@@ -474,7 +413,7 @@ fn find_duplicates_tier_c(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
 // These functions mirror the TOML-side `items_find_duplicates*` family
 // byte-for-byte (same hashing, same field order, same emit shape) so the
 // non-verify-integrity read path can skip the owned `TomlValue`
-// intermediate. The shared helper `fingerprint_bytes_from_strs` is
+// intermediate. The shared helper `fingerprint_bytes` is
 // re-used directly from the TOML side, which is the fingerprint-parity
 // guarantee — both paths feed identical 8-byte digests into their
 // grouping maps for the same field values.
@@ -618,7 +557,7 @@ fn find_duplicates_tier_a_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
 }
 
 /// O64: JSON-side sibling of `find_duplicates_tier_b`. Reuses the
-/// shared `fingerprint_bytes_from_strs` core so the 8-byte digest is
+/// shared `fingerprint_bytes` core so the 8-byte digest is
 /// byte-identical to the TOML-side digest for the same field values.
 fn find_duplicates_tier_b_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
     let mut groups: BTreeMap<([u8; 8], String), Vec<usize>> = BTreeMap::new();
@@ -651,19 +590,8 @@ fn find_duplicates_tier_b_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
     Ok(out)
 }
 
-/// O64: JSON-side bytes-returning fingerprint helper, mirroring
-/// `tier_b_fingerprint_bytes` on the TOML side. Same field-extraction
-/// (`str_field_json` on the five fingerprinted fields, all-empty on
-/// non-object) and the same `fingerprint_bytes_from_strs` core, so the
-/// 8-byte digests agree byte-for-byte across paths.
 fn tier_b_fingerprint_bytes_json(obj: &serde_json::Map<String, JsonValue>) -> [u8; 8] {
-    fingerprint_bytes_from_strs(
-        str_field_json(obj, "file"),
-        str_field_json(obj, "summary"),
-        str_field_json(obj, "severity"),
-        str_field_json(obj, "category"),
-        str_field_json(obj, "symbol"),
-    )
+    fingerprint_bytes_from_json(obj, &FINGERPRINTED_FIELDS)
 }
 
 /// O64: JSON-side sibling of `find_duplicates_tier_c`. Identical
@@ -1022,6 +950,45 @@ category = "quality"
             .collect();
         assert!(sources.contains(&"review.toml"));
         assert!(sources.contains(&"optimise.toml"));
+    }
+
+    /// Byte-identity pin against digests computed outside this crate with
+    /// `printf '<values joined by |>' | sha256sum | cut -c1-16`
+    /// (2026-09-01). The second fixture is a row that exists on disk under
+    /// `.claude/flows/composed-painting-truffle/review-ledger.toml`, so this
+    /// also pins the digest against real stored data rather than only
+    /// against a synthetic one. A change to the field order, the separator
+    /// or the truncation re-keys every stored `dedup_id`; it fails here
+    /// first.
+    #[test]
+    fn tier_b_fingerprint_matches_digests_pinned_outside_the_crate() {
+        let synthetic: TomlValue = toml::from_str(
+            r#"file = "src/a.rs"
+summary = "dup-summary"
+severity = "warning"
+category = "quality""#,
+        )
+        .unwrap();
+        assert_eq!(tier_b_fingerprint(&synthetic), "95953a6bf4f9bfb7");
+
+        let stored: TomlValue = toml::from_str(
+            r#"file = 'lumina/companion/src/git/shell.rs'
+summary = 'detach_worktree NotFound classifier arms are dead code under checkout --detach; comment documents messages git never emits there'
+severity = 'warning'
+category = 'quality'
+symbol = 'ShellGit::detach_worktree'"#,
+        )
+        .unwrap();
+        assert_eq!(tier_b_fingerprint(&stored), "75fc04ebd198cec5");
+    }
+
+    /// The generalised core must join with `|` between values for any
+    /// arity, not only the ledger's five — the backlog fingerprint passes a
+    /// three-field list through the same function.
+    #[test]
+    fn fingerprint_hex_joins_any_arity_with_a_single_separator() {
+        assert_eq!(fingerprint_hex(["a", "b", "c"]), "a52dd81bfd5e4e66");
+        assert_eq!(fingerprint_hex(["", "", ""]), "565d240f5343e625");
     }
 
     #[test]

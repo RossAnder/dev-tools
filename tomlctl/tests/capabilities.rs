@@ -32,6 +32,15 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         &["items", "find-duplicates", "--help"],
         &["items", "orphans", "--help"],
         &["items", "next-id", "--help"],
+        &["backlog", "check", "--help"],
+        &["backlog", "list", "--help"],
+        &["backlog", "show", "--help"],
+        &["backlog", "cluster", "--help"],
+        &["backlog", "evidence", "audit", "--help"],
+        // `backlog evidence dir` writes one non-TOML marker file and takes
+        // neither integrity bundle, so the write-side flags must be absent
+        // here too — including `--allow-outside`, which repo policy denies.
+        &["backlog", "evidence", "dir", "--help"],
     ];
     for path in read_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();
@@ -68,6 +77,10 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["items", "remove", "--help"],
         &["items", "apply", "--help"],
         &["items", "add-many", "--help"],
+        &["backlog", "add", "--help"],
+        &["backlog", "relate", "--help"],
+        &["backlog", "triage", "--help"],
+        &["backlog", "compact", "--help"],
     ];
     for path in write_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();
@@ -1550,6 +1563,12 @@ fn capabilities_features_contains_every_plan_feature() {
         "flow_stale",
         "flow_find_plans",
         "json_ops",
+        // Repo-scoped capture log: the `backlog` subcommand cluster.
+        "backlog_capture",
+        "backlog_check",
+        "backlog_cluster",
+        "backlog_compact",
+        "backlog_evidence",
     ];
     for name in expected {
         assert!(

@@ -132,7 +132,7 @@ fn parse_dedupe_fields(raw: Option<&str>) -> Result<Vec<String>> {
 ///   `--json -` would otherwise hang forever with no prompt or feedback.
 /// - Caps the read at `MAX_STDIN_BYTES`; an oversize payload is truncated
 ///   on the input side so a misrouted log doesn't balloon tomlctl's heap.
-fn read_json_arg(arg: &str) -> Result<String> {
+pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
     if arg == "-" {
         // R32: a single invocation can only consume stdin once. A second `-`
         // sentinel would read an already-drained handle and silently return an
@@ -320,7 +320,10 @@ pub(crate) fn seed_doc_for(path: &std::path::Path) -> Result<toml::Value> {
 /// schema-aware skeleton via `seed_doc_for`. Fallible because the seed embeds
 /// today's date. Threaded into every `mutate_doc*` write site so the
 /// flag→policy mapping lives in one place.
-fn on_missing_for(file: &std::path::Path, integrity: &WriteIntegrityArgs) -> Result<OnMissing> {
+pub(crate) fn on_missing_for(
+    file: &std::path::Path,
+    integrity: &WriteIntegrityArgs,
+) -> Result<OnMissing> {
     if integrity.no_create {
         Ok(OnMissing::Error)
     } else {
@@ -342,7 +345,7 @@ fn on_missing_for(file: &std::path::Path, integrity: &WriteIntegrityArgs) -> Res
 /// is rendered via `Path::display()` — the same convention every other stderr
 /// note in this layer (`guard_write_path`, `warn_if_read_outside_claude`,
 /// the lock-wait notes in `io.rs`) uses for filesystem paths.
-fn warn_if_created(file: &std::path::Path, created: bool) {
+pub(crate) fn warn_if_created(file: &std::path::Path, created: bool) {
     if !created {
         return;
     }
@@ -369,7 +372,7 @@ fn warn_if_created(file: &std::path::Path, created: bool) {
 /// (`array-append` / `items add[-many]` / `backfill`) keep their inline
 /// envelopes because they interleave arm-specific keys (`appended` / `added` /
 /// `skipped_rows` / `backfilled`) — pure data, no behaviour change.
-fn write_envelope(file: &std::path::Path, created: bool) -> Result<()> {
+pub(crate) fn write_envelope(file: &std::path::Path, created: bool) -> Result<()> {
     warn_if_created(file, created);
     print_json_compact(&serde_json::json!({
         "ok": true,
@@ -421,7 +424,7 @@ fn dry_run_read_opts(integrity: &WriteIntegrityArgs) -> IntegrityOpts {
 /// into this function, move it to `Query::from_query_input` in `query.rs`
 /// instead — the POD type's whole job is to keep the cli/query boundary
 /// a straight-line data transfer.
-fn query_input_from_cli(
+pub(crate) fn query_input_from_cli(
     legacy: &LegacyShortcuts<'_>,
     q: &QueryArgs,
 ) -> crate::query::QueryInput {
@@ -677,6 +680,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         }
         Cmd::Integrity { op } => integrity_dispatch(op)?,
         Cmd::Flow { op } => crate::flow::dispatch(op)?,
+        Cmd::Backlog { op } => crate::backlog::dispatch::dispatch(op)?,
         Cmd::Json { op } => {
             // Resolve `--json -` stdin sentinel for `json set` at the CLI
             // boundary, mirroring TOML `set-json` / `items add` behaviour.

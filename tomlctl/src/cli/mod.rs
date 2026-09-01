@@ -24,8 +24,11 @@
 mod dispatch;
 mod types;
 
-pub(crate) use dispatch::{read_integrity_opts, run, seed_doc_for, write_integrity_opts};
+pub(crate) use dispatch::{
+    on_missing_for, query_input_from_cli, read_integrity_opts, read_json_arg, run, seed_doc_for,
+    warn_if_created, write_envelope, write_integrity_opts,
+};
 pub(crate) use types::{
-    ActiveOp, ArtifactKind, Cli, EnvelopeOp, ErrorFormat, FlowOp, JsonOp, ReadIntegrityArgs,
-    WriteIntegrityArgs,
+    ActiveOp, ArtifactKind, BacklogOp, Cli, ClusterBy, EnvelopeOp, ErrorFormat, EvidenceOp, FlowOp,
+    JsonOp, OnDuplicate, ReadIntegrityArgs, RelationKind, TriageMode, WriteIntegrityArgs,
 };
