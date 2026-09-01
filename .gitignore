@@ -17,3 +17,11 @@
 *.db-shm
 *.db-wal
 *.db.*
+
+# Plan-merge rollback siblings (one generation, deleted by /plan-update complete)
+*.premerge.md
+
+# Backlog evidence: this repo is public and has no LFS, so evidence contents stay
+# untracked while the `.evidence` marker keeps each item directory visible cross-clone.
+/.claude/backlog-evidence/*/*
+!/.claude/backlog-evidence/*/.evidence
