@@ -1,6 +1,5 @@
-//! R59: TOML↔JSON conversion, scalar parsing, date-coercion, and dotted-path
-//! traversal helpers. Split out of `main.rs` as a pure-function module with no
-//! I/O or CLI coupling.
+//! TOML↔JSON conversion, scalar parsing, date-coercion, and dotted-path
+//! traversal helpers. Pure functions only — no I/O and no CLI coupling.
 //!
 //! Public surface:
 //! - `ScalarType` — explicit scalar-type override for `set`
@@ -46,7 +45,7 @@ pub(crate) const DATE_KEYS: &[&str] = &[
     "date",
 ];
 
-/// T5: JSON-side dotted-path walker used by `items add --dedupe-by`.
+/// JSON-side dotted-path walker used by `items add --dedupe-by`.
 ///
 /// Mirrors the `navigate` contract on the TOML side: split `path` on `.`
 /// and descend one segment at a time, returning `None` when any segment
@@ -64,11 +63,8 @@ pub(crate) const DATE_KEYS: &[&str] = &[
 ///     `Option<&JsonValue>` shape so missing-on-both is equal and
 ///     missing-on-one-only is unequal.
 ///
-/// Introduced by T5 (plan `docs/plans/tomlctl-capability-gaps.md`) because
-/// the `--where` predicate family does NOT currently factor out a nested-
-/// path walker — `eval_predicate` in `query.rs` uses flat `tbl.get(key)`
-/// lookups. Rather than widen the query-engine surface mid-T5, we add this
-/// JSON-side sibling and keep `--where`'s single-key lookup unchanged.
+/// The `--where` predicate family shares none of this: `eval_predicate` in
+/// `query.rs` uses flat `tbl.get(key)` lookups and stays single-key.
 pub(crate) fn walk_json_path<'a>(v: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
     let mut cur = v;
     for seg in path.split('.') {
@@ -84,7 +80,7 @@ pub(crate) fn walk_json_path<'a>(v: &'a JsonValue, path: &str) -> Option<&'a Jso
 
 /// Read-side dotted-path traversal. Each segment either:
 ///   - indexes the current table by its key, OR
-///   - (R49) when the current value is an array and the segment parses as a
+///   - when the current value is an array and the segment parses as a
 ///     `usize`, indexes the array. No negative indices, no slice syntax —
 ///     an out-of-bounds index returns `None` like a missing key does.
 pub(crate) fn navigate<'a>(root: &'a TomlValue, path: &str) -> Option<&'a TomlValue> {
@@ -110,7 +106,7 @@ pub(crate) fn set_at_path(root: &mut TomlValue, path: &str, value: TomlValue) ->
 
     let mut cur: &mut TomlValue = root;
     for p in parents {
-        // R49: parent traversal also supports integer-indexed arrays, matching
+        // Parent traversal also supports integer-indexed arrays, matching
         // `navigate`. Auto-vivification of array slots is NOT supported — the
         // array index must already exist.
         if cur.is_array() {
@@ -211,16 +207,14 @@ pub(crate) fn toml_to_json(v: &TomlValue) -> JsonValue {
             .unwrap_or(JsonValue::Null),
         TomlValue::Boolean(b) => JsonValue::Bool(*b),
         TomlValue::Datetime(dt) => JsonValue::String(dt.to_string()),
-        // O39: Vec arm — `slice::Iter::map(...).collect::<Vec<_>>()` already
-        // presizes via `size_hint`/ExactSizeIterator, so the iterator form
-        // is equivalent to `Vec::with_capacity(a.len())` + push and is left
-        // as-is.
+        // `collect::<Vec<_>>()` presizes from the `ExactSizeIterator` hint, so
+        // this arm needs no explicit `with_capacity`.
         TomlValue::Array(a) => JsonValue::Array(a.iter().map(toml_to_json).collect()),
         TomlValue::Table(t) => {
-            // O39: presize the JSON object — `serde_json::Map::with_capacity`
-            // is available because `serde_json` is built with `preserve_order`
-            // (Cargo.toml), which backs `Map` with `IndexMap`. Saves the
-            // grow/rehash chain on every nested table conversion.
+            // `serde_json::Map::with_capacity` is available only because
+            // `serde_json` is built with `preserve_order` (Cargo.toml), which
+            // backs `Map` with `IndexMap`. Saves the grow/rehash chain on
+            // every nested table conversion.
             let mut m = serde_json::Map::with_capacity(t.len());
             for (k, v) in t.iter() {
                 m.insert(k.clone(), toml_to_json(v));
@@ -230,7 +224,7 @@ pub(crate) fn toml_to_json(v: &TomlValue) -> JsonValue {
     }
 }
 
-/// O10: borrowed-lifetime sibling of `toml_to_json`. Walks the
+/// Borrowed-lifetime sibling of `toml_to_json`. Walks the
 /// `toml::de::DeTable<'a>` produced by `io::read_doc_borrowed` and emits an
 /// owned `serde_json::Value`. The key win over `toml_to_json` is that
 /// `DeTable` leaves unescaped strings as `Cow::Borrowed(&'a str)`; here we
@@ -253,7 +247,7 @@ pub(crate) fn detable_to_json(table: &toml::de::DeTable<'_>) -> JsonValue {
     JsonValue::Object(m)
 }
 
-/// O10 helper: `DeValue` → `JsonValue`. Mirrors `toml_to_json`'s arm shape so
+/// `DeValue` → `JsonValue`. Mirrors `toml_to_json`'s arm shape so
 /// JSON output for a borrowed parse is byte-identical to the owned parse.
 fn devalue_to_json(v: &toml::de::DeValue<'_>) -> JsonValue {
     use toml::de::DeValue;
@@ -321,7 +315,7 @@ pub(crate) fn json_to_toml(v: &JsonValue) -> Result<TomlValue> {
         }
         JsonValue::String(s) => Ok(TomlValue::String(s.clone())),
         JsonValue::Array(a) => {
-            // O39: `Result<Vec<_>>::from_iter` short-circuits on `Err` and
+            // `Result<Vec<_>>::from_iter` short-circuits on `Err` and
             // does NOT honour `size_hint`, so build the Vec explicitly with
             // a presized buffer and push, propagating errors as we go.
             let mut items: Vec<TomlValue> = Vec::with_capacity(a.len());
@@ -331,7 +325,7 @@ pub(crate) fn json_to_toml(v: &JsonValue) -> Result<TomlValue> {
             Ok(TomlValue::Array(items))
         }
         JsonValue::Object(m) => {
-            // O39: presize via `toml::Table::with_capacity` — available
+            // Presize via `toml::Table::with_capacity` — available
             // because `toml` is built with `preserve_order` (Cargo.toml),
             // backing `Table` with `IndexMap`.
             let mut t = toml::Table::with_capacity(m.len());
@@ -343,12 +337,12 @@ pub(crate) fn json_to_toml(v: &JsonValue) -> Result<TomlValue> {
     }
 }
 
-/// O38: jump-table membership test mirroring `DATE_KEYS` exactly. The const
-/// is retained because `items.rs` iterates it in the
-/// `date_keys_roundtrip_as_toml_datetime` parity test; this helper is the
-/// hot-path lookup used per-key on every JSON object inserted. A debug-only
-/// assertion pins the two lists to the same set so silent drift between this
-/// `matches!` and `DATE_KEYS` fails in tests rather than at runtime.
+/// Jump-table membership test mirroring `DATE_KEYS` exactly — the hot-path
+/// lookup used per key on every JSON object inserted. `DATE_KEYS` remains the
+/// enumerable form, iterated by `items.rs` in the
+/// `date_keys_roundtrip_as_toml_datetime` parity test. Extend this `matches!`
+/// and `DATE_KEYS` together: the `debug_assert_eq!` in `maybe_date_coerce`
+/// turns drift between them into a test failure rather than a runtime one.
 #[inline]
 pub(crate) fn is_date_key(key: &str) -> bool {
     matches!(
@@ -373,26 +367,22 @@ pub(crate) fn maybe_date_coerce(key: &str, v: &JsonValue) -> Result<TomlValue> {
 }
 
 /// Read a string field out of a TOML table, defaulting to `""` when the key is
-/// missing or the value is not a string. R20: factors a pattern that repeated
-/// 15+ times across `items_list`, `items_orphans`, and the duplicate tiers.
+/// missing or the value is not a string.
 pub(crate) fn str_field<'a>(tbl: &'a toml::Table, key: &str) -> &'a str {
     tbl.get(key).and_then(|v| v.as_str()).unwrap_or("")
 }
 
 /// Read an integer field out of a TOML table, defaulting to `0` when missing
-/// or non-integer. Companion to `str_field` (R20).
+/// or non-integer. Companion to `str_field`.
 pub(crate) fn i64_field(tbl: &toml::Table, key: &str) -> i64 {
     tbl.get(key).and_then(|v| v.as_integer()).unwrap_or(0)
 }
 
-/// O64: JSON-side sibling of `str_field`. Returns `""` when the key is
-/// missing or the value is not a JSON string. Used by the borrowed-DeTable
-/// fast-path's dedup tiers in `dedup.rs`, mirroring the TOML-side
-/// "empty string on missing / non-string" semantics so the two paths
-/// produce byte-identical fingerprints and grouping keys for the same
-/// underlying data. (Pre-O64 this helper lived privately inside `dedup.rs`
-/// as `json_str_field`; relocated here so it sits next to `str_field` and
-/// can be reused by `find_duplicates_*_json` without duplication.)
+/// JSON-side sibling of `str_field`. Returns `""` when the key is missing or
+/// the value is not a JSON string. Used by the borrowed-DeTable fast-path's
+/// dedup tiers in `dedup.rs`, mirroring the TOML-side "empty string on
+/// missing / non-string" semantics so the two paths produce byte-identical
+/// fingerprints and grouping keys for the same underlying data.
 pub(crate) fn str_field_json<'a>(
     obj: &'a serde_json::Map<String, serde_json::Value>,
     key: &str,
@@ -400,7 +390,7 @@ pub(crate) fn str_field_json<'a>(
     obj.get(key).and_then(|v| v.as_str()).unwrap_or("")
 }
 
-/// O64: JSON-side sibling of `i64_field`. Returns `0` when the key is
+/// JSON-side sibling of `i64_field`. Returns `0` when the key is
 /// missing or the value is not a JSON integer. Used by `find_duplicates_tier_c_json`
 /// to read the `line` field; the TOML side reads `i64_field(tbl, "line")`
 /// and the JSON side must match its "non-integer / missing → 0" semantics
@@ -410,7 +400,7 @@ pub(crate) fn i64_field_json(obj: &serde_json::Map<String, serde_json::Value>, k
     obj.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
 }
 
-/// R36: return the JSON type-name discriminant for a `serde_json::Value`
+/// Return the JSON type-name discriminant for a `serde_json::Value`
 /// without echoing any user-supplied content. Used in error messages on
 /// apply-op parse failures, where the value could be an agent-generated
 /// `resolution` / `wontfix_rationale` string and would otherwise land on
@@ -429,7 +419,7 @@ pub(crate) fn json_type_name(v: &JsonValue) -> &'static str {
 /// Recognised `@type:` prefix tags for the query-engine RHS grammar.
 /// Single source of truth shared by `parse_typed_value`, `compare_typed`,
 /// and `query::eq_typed` so the tag list doesn't drift across three call
-/// sites (R66).
+/// sites.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TypeHint {
     Date,
@@ -603,8 +593,8 @@ pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp
 mod tests {
     use super::*;
 
-    /// O10 parity: `detable_to_json` over a borrowed `DeTable` must produce
-    /// the same JSON shape as `toml_to_json` over an owned `TomlValue` for
+    /// `detable_to_json` over a borrowed `DeTable` must produce the same JSON
+    /// shape as `toml_to_json` over an owned `TomlValue` for
     /// every scalar kind the flow schemas exercise (string, integer, float,
     /// bool, date, nested table, array-of-tables). Pins the borrowed
     /// fast-path byte-identical to the owned path so a regression in either
@@ -648,10 +638,10 @@ count = 3
         );
     }
 
-    /// Phase 6 / T6: type-coercion rewrites must enumerate the acceptable
-    /// types (or the parse contract) so an agent reading the error knows
-    /// which RHS forms are accepted. `parse_scalar` for `ScalarType::Int`
-    /// on a non-integer input now names the i64 contract directly.
+    /// A type-coercion error must enumerate the acceptable types (or the
+    /// parse contract) so an agent reading it knows which RHS forms are
+    /// accepted. `parse_scalar` for `ScalarType::Int` on a non-integer input
+    /// names the i64 contract directly.
     #[test]
     fn error_message_type_coercion_enumerates_int_contract() {
         let err = parse_scalar("not-a-number", Some(ScalarType::Int))
@@ -665,12 +655,12 @@ count = 3
         );
     }
 
-    /// Phase 6 / T6: type-coercion rewrites in `compare_typed` must reject
-    /// type-hint mismatches with an enumeration of the acceptable hints.
-    /// Comparing an Integer field with `@string:42` is the canonical probe —
-    /// the body parses as i64 (passes the parse step) but the type hint
-    /// is rejected by the post-parse `matches!` check, which now enumerates
-    /// the acceptable numeric prefixes (`int, float`) in its bail message.
+    /// `compare_typed` must reject a type-hint mismatch with an enumeration
+    /// of the acceptable hints. Comparing an Integer field with `@string:42`
+    /// is the canonical probe — the body parses as i64 (passes the parse
+    /// step) but the type hint is rejected by the post-parse `matches!`
+    /// check, whose bail message enumerates the acceptable numeric prefixes
+    /// (`int, float`).
     #[test]
     fn error_message_type_coercion_enumerates_acceptable_type_hints() {
         let field = TomlValue::Integer(42);
@@ -681,10 +671,9 @@ count = 3
         );
     }
 
-    /// Phase 6 / T6: path-shape rewrites must quote the expected form.
-    /// `set_at_path` on a non-numeric segment under an array parent now
-    /// names the array-index shape (`items.0.id`) so the caller sees a
-    /// concrete example instead of just the bare rejection.
+    /// A path-shape error must quote the expected form. `set_at_path` on a
+    /// non-numeric segment under an array parent names the array-index shape
+    /// (`items.0.id`) so the caller sees a concrete example.
     #[test]
     fn error_message_path_shape_quotes_expected_array_index_form() {
         let mut root: TomlValue = toml::from_str(
@@ -710,9 +699,9 @@ id = "R1"
         );
     }
 
-    /// Phase 6 / T6: partial-enum rewrites extend the original message with
-    /// actionable context. `set_at_path` on an out-of-bounds array index now
-    /// suggests the discovery command (`tomlctl get <file> --path <parent>`).
+    /// A partial-enum error extends the original message with actionable
+    /// context: `set_at_path` on an out-of-bounds array index suggests the
+    /// discovery command (`tomlctl get <file> --path <parent>`).
     #[test]
     fn error_message_partial_enum_array_oob_suggests_discovery_command() {
         // Build a doc with a small array under `items`, then attempt to set

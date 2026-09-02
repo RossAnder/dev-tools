@@ -1,6 +1,7 @@
-//! R62: `items orphans` logic split out of `main.rs`.
+//! `items orphans`: ledger rows whose `file`, `symbol` or `depends_on` no
+//! longer resolve.
 //!
-//! Reports three orphan classes:
+//! Reports five orphan classes:
 //!   - `missing-file`     — ledger `file` points at a non-existent path
 //!   - `symbol-missing`   — file exists but does not contain the `symbol`
 //!   - `io-error`         — file exists but cannot be read
@@ -19,12 +20,12 @@ use crate::convert::str_field;
 use crate::io::{item_id, items_array, repo_or_cwd_root};
 
 pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
-    // R44: items_array returns an empty slice when missing, so the early-return
-    // on error disappears — an empty ledger naturally produces zero orphans.
+    // `items_array` yields an empty slice when the array is missing, so an
+    // absent ledger produces zero orphans rather than an error.
     let items = items_array(doc, "items");
 
     // Build set of known IDs for dangling-dep check.
-    // O28 freebie: pre-size to items.len() — upper bound on distinct ids.
+    // `items.len()` is an upper bound on the number of distinct ids.
     let mut known_ids: HashSet<String> = HashSet::with_capacity(items.len());
     for item in items {
         if let Some(id) = item_id(item) {
@@ -33,28 +34,25 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
     }
 
     let root = repo_or_cwd_root()?;
-    // O42: hoist `root.canonicalize()` out of the per-item loop. The root is
-    // process-invariant; canonicalising it once per call removes a syscall
-    // per item. Fall back to the un-canonicalised root if canonicalize fails
-    // (matches the pre-O42 (Some(c), None) arm).
+    // The root is process-invariant, so `canonicalize` is hoisted out of the
+    // per-item loop. Falling back to the un-canonicalised root when it fails
+    // keeps containment checked against something.
     let canonical_root: Option<PathBuf> = root.canonicalize().ok();
-    // O42: cache `(exists, contained)` per unique resolved path so repeated
-    // ledger entries pointing at the same file each cost one `canonicalize` +
-    // one `exists` regardless of how many items reference them.
+    // `(exists, contained)` per unique resolved path, so repeated ledger
+    // entries naming the same file cost one `canonicalize` + one `exists`
+    // between them rather than one each.
     let mut path_cache: HashMap<PathBuf, (bool, bool)> = HashMap::new();
-    // O28: sibling cache so `fs::read_to_string` runs at most once per unique
-    // resolved path. We store `Result<String, io::ErrorKind>` rather than
-    // `Result<String, io::Error>` because `io::Error` is not `Clone`; the
-    // existing call site only inspects success/failure to choose between
-    // `symbol-missing` and `io-error`, so kind-only round-tripping preserves
-    // behaviour. Same key (`PathBuf`) as the path_cache.
+    // Sibling cache so `fs::read_to_string` runs at most once per unique
+    // resolved path. Holds `Result<String, io::ErrorKind>` rather than
+    // `Result<String, io::Error>` because `io::Error` is not `Clone`; the call
+    // site only inspects success/failure to choose between `symbol-missing`
+    // and `io-error`, so kind-only round-tripping preserves behaviour. Same
+    // key (`PathBuf`) as `path_cache`.
     let mut read_cache: HashMap<PathBuf, Result<String, std::io::ErrorKind>> = HashMap::new();
-    // O29: per-call cache of compiled word-boundary regexes keyed on the raw
-    // symbol string. Compiling once per distinct symbol keeps the cost flat
-    // even when the same symbol recurs across many ledger entries. `None` is
-    // cached for symbols whose regex compilation fails so we fall back to the
-    // legacy `contents.contains` substring check on every reuse without
-    // re-attempting compilation.
+    // Compiled word-boundary regexes keyed on the raw symbol string, so a
+    // symbol recurring across many ledger entries compiles once. `None` is
+    // cached for symbols whose regex fails to compile, so the substring
+    // fallback reuses it without re-attempting compilation.
     let mut symbol_cache: HashMap<String, Option<Regex>> = HashMap::new();
 
     let mut out = Vec::new();
@@ -68,22 +66,15 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
         // failing check wins).
         if !file.is_empty() {
             let resolved = resolve_relative_to_root(&root, file);
-            // R38: a RELATIVE ledger-item `file` field that escapes the root
-            // via `..` (e.g. `../../etc/passwd`) turns `fs::read_to_string`
-            // into an existence/symbol-presence oracle on arbitrary host
-            // paths. Canonicalise and assert containment for relative inputs.
-            //
-            // R28: the same oracle exists for ABSOLUTE ledger-item `file`
-            // values (e.g. `/etc/shadow`, `~/.ssh/id_rsa`) — the ledger
-            // author is not always the tool operator (a crafted
-            // review-ledger.toml can arrive via any supply-chain path), so
-            // absolute paths must be subjected to the same containment
-            // check. Mirroring the relative-branch idiom: canonicalise,
-            // require `starts_with(canonical_root)`, otherwise surface as
-            // `outside-repo` and skip `exists()` / `read_to_string`. Does
-            // not gate behind a new `--allow-outside` flag — that'd widen
-            // the public API for a closed-class hardening fix.
-            // O42: probe cache; on miss compute (exists, contained) and insert.
+            // A ledger-item `file` field is attacker-controllable: the ledger
+            // author is not always the tool operator, and a crafted ledger can
+            // arrive by any supply-chain path. Unchecked, a relative path
+            // escaping the root via `..` (`../../etc/passwd`) or an absolute
+            // one (`/etc/shadow`, `~/.ssh/id_rsa`) turns `fs::read_to_string`
+            // into an existence/symbol-presence oracle over arbitrary host
+            // files. Both forms are canonicalised and must satisfy
+            // `starts_with(canonical_root)`; anything else surfaces as
+            // `outside-repo` with no `exists()` or `read_to_string` call.
             let (exists, contained) = if let Some(hit) = path_cache.get(&resolved) {
                 *hit
             } else {
@@ -109,28 +100,21 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
                 obj.insert("file".into(), JsonValue::String(file.into()));
                 out.push(JsonValue::Object(obj));
             } else if !symbol.is_empty() {
-                // R27: explicit match — IO errors surface as an `io-error`
-                // orphan instead of silently treating the file as empty
-                // (which would fire `symbol-missing` spuriously for
-                // unreadable-but-existing files).
-                // O28: probe read_cache; populate on miss so duplicate ledger
-                // entries pointing at the same file each pay one read.
+                // IO errors surface as an `io-error` orphan rather than being
+                // treated as an empty file, which would fire `symbol-missing`
+                // spuriously for unreadable-but-existing files.
                 let cached = read_cache
                     .entry(resolved.clone())
                     .or_insert_with(|| fs::read_to_string(&resolved).map_err(|e| e.kind()));
                 match cached {
                     Ok(contents) => {
-                        // O29: word-boundary match. The previous
-                        // `contents.contains(symbol)` produced false-positives
-                        // when `symbol` appeared as a substring of an unrelated
-                        // identifier, comment, or string literal — a freshly
-                        // renamed `id` symbol would still appear "present" in
-                        // any file containing words like `valid`, `paid`, or
-                        // `lived`. Compile once per distinct symbol, cache the
-                        // Regex, and fall back to the legacy substring check
-                        // when compilation fails (defensive — `regex::escape`
-                        // should make this unreachable). `(?-u:\b)` pins ASCII
-                        // semantics regardless of crate feature flags.
+                        // Word-boundary match: a bare `contents.contains`
+                        // reports a renamed `id` symbol as still present in
+                        // any file containing `valid`, `paid`, or `lived`.
+                        // The substring fallback is defensive only —
+                        // `regex::escape` should make it unreachable.
+                        // `(?-u:\b)` pins ASCII semantics regardless of crate
+                        // feature flags.
                         let compiled =
                             symbol_cache.entry(symbol.to_string()).or_insert_with(|| {
                                 let pat = format!(r"(?-u:\b){}(?-u:\b)", regex::escape(symbol));
@@ -202,9 +186,9 @@ mod tests {
 
     #[test]
     fn items_orphans_reports_missing_file_symbol_and_dangling_dep() {
-        // R28: absolute `file` fields now get the same containment check as
-        // relative ones, so we pin the repo root to the sandbox — otherwise
-        // the absolute `/tmp/.../real.rs` paths would (correctly) surface as
+        // Absolute `file` fields get the same containment check as relative
+        // ones, so the repo root is pinned to the sandbox — otherwise the
+        // absolute `/tmp/.../real.rs` paths would (correctly) surface as
         // `outside-repo`.
         let orphans = with_root(|root| {
             // Create a real source file that contains a specific symbol.
@@ -242,7 +226,7 @@ summary = "dangling dep"
             let doc: TomlValue = toml::from_str(&ledger).unwrap();
             items_orphans(&doc).unwrap()
         });
-        // Expect three orphan records: R2 symbol-missing, R3 missing-file, R4 dangling-dep.
+        // Expect three orphan records: symbol-missing, missing-file, dangling-dep.
         let classes: Vec<(&str, &str)> = orphans
             .iter()
             .map(|o| {
@@ -255,7 +239,7 @@ summary = "dangling dep"
         assert!(classes.contains(&("R2", "symbol-missing")), "{classes:?}");
         assert!(classes.contains(&("R3", "missing-file")), "{classes:?}");
         assert!(classes.contains(&("R4", "dangling-dep")), "{classes:?}");
-        // R1 is valid — no orphan entry for it.
+        // The fully-valid row yields no orphan entry.
         assert!(classes.iter().all(|(id, _)| *id != "R1"));
         // dangling-dep names only the missing ids.
         let r4 = orphans
@@ -267,8 +251,8 @@ summary = "dangling dep"
         assert_eq!(deps[0], "R99");
     }
 
-    /// R28 regression: absolute-path ledger rows pointing OUTSIDE the repo
-    /// root must surface as `outside-repo` rather than triggering an
+    /// Absolute-path ledger rows pointing OUTSIDE the repo root must surface
+    /// as `outside-repo` rather than triggering an
     /// existence/symbol-presence oracle against arbitrary host files. Pins
     /// the root to one tempdir, then feeds a ledger row whose `file` points
     /// at a sibling tempdir (known-to-exist, outside the pinned root).
@@ -293,10 +277,11 @@ summary = "oracle attempt"
             let doc: TomlValue = toml::from_str(&ledger).unwrap();
             items_orphans(&doc).unwrap()
         });
-        // The file DOES exist and the symbol IS present, so the pre-R28
-        // behaviour would emit zero orphans (silently reading the file).
-        // Post-R28 the row surfaces as `outside-repo` and neither `exists()`
-        // nor `read_to_string` get to leak information about the target.
+        // The file DOES exist and the symbol IS present, so an implementation
+        // without the containment check emits zero orphans and silently reads
+        // the file. The row must instead surface as `outside-repo`, with
+        // neither `exists()` nor `read_to_string` able to leak information
+        // about the target.
         assert_eq!(orphans.len(), 1, "{orphans:?}");
         assert_eq!(
             orphans[0].get("class").and_then(|v| v.as_str()),
