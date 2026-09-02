@@ -140,7 +140,7 @@ Supports `--dry-run`; see [Dry-run](#dry-run).
 
 ### Append a single new item
 
-`--json` takes one JSON object representing the new `[[items]]` entry. Field order in the JSON becomes field order in the emitted TOML, so pass fields in the canonical key order from `## Ledger Schema`:
+`--json` takes one JSON object representing the new `[[items]]` entry. Field order in the JSON becomes field order in the emitted TOML, so pass fields in the canonical key order the `flow-contract-ledger-schema` skill defines:
 `id, file, line, symbol, severity, effort, category, summary, description, evidence, first_flagged, rounds, related, status, <disposition-specific>, flow`.
 
 ```bash
@@ -285,7 +285,7 @@ tomlctl items next-id .claude/flows/foo/review-ledger.toml --infer-from-file
 # → "R23"
 ```
 
-`--prefix` and `--infer-from-file` are mutually exclusive (one is required). `--prefix` on a missing file returns `<prefix>1` as a bootstrapping fast path (see [Strict reads](#strict-reads---strict-read) for how to disable that default). `--infer-from-file` cannot bootstrap — it needs existing items to infer from.
+`--prefix` and `--infer-from-file` are mutually exclusive (one is required). `--prefix` on a missing file returns `<prefix>1` as a bootstrapping fast path (the query reference's strict-reads section covers how to disable that default). `--infer-from-file` cannot bootstrap — it needs existing items to infer from.
 
 Returns the JSON-encoded string of the next id (prefix + `max(existing numeric suffixes) + 1`).
 
