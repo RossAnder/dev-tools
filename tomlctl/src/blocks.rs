@@ -1,12 +1,13 @@
-//! Shared-markdown-block parity verification. Used by the git pre-commit
-//! hook to ensure `## Flow Context` and `## Ledger Schema` blocks remain
-//! byte-identical across `claude/commands/{optimise,review,optimise-apply,review-apply}.md`.
+//! Shared-markdown-block parity verification, backing the `blocks verify` verb
+//! the git pre-commit hook runs.
 //!
-//! Public surface:
-//! - `blocks_verify` — the dispatch entrypoint
-//! - `BlocksReport` — return shape: `{ok, report: <json>}`
-//! - `extract_block` / `scan_block_names` / `scan_block_names_warn` — helpers
-//!   reusable by tests and future consumers
+//! A shared block is a `<!-- SHARED-BLOCK:NAME START -->` … `END` span
+//! duplicated across several files that must stay byte-identical.
+//! `blocks_verify` hashes each named span in each named file and reports the
+//! blocks whose carriers disagree. Which blocks exist and which files carry
+//! them is owned by `scripts/shared-blocks.toml`; both arrive as arguments, so
+//! this module holds no list of either and does not rot when the manifest
+//! changes.
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value as JsonValue;
