@@ -1,12 +1,10 @@
-//! Capability-surface integration tests split out of the monolithic
-//! `integration.rs` by R23. Covers everything the T7 capabilities JSON
-//! advertises — `--count-distinct` (T1), `--raw` (T2), `--lines` (T3),
-//! `--error-format` (T8), `--strict-read` (T9), the `capabilities`
-//! subcommand (T7) itself, the read-/write-subcommand `--help` snapshots
-//! that pin the global-flag visibility surface (R44 + R74), and the T11
-//! backfill → T1 count-distinct end-to-end contract (R45). Every test
-//! body is byte-identical to its pre-split form; helpers live in
-//! `tests/common/mod.rs`.
+//! Capability-surface integration tests — everything the `capabilities`
+//! JSON advertises: `--count-distinct`, `--raw`, `--lines`,
+//! `--error-format`, `--strict-read`, the `capabilities` subcommand itself,
+//! the read-/write-subcommand `--help` snapshots that pin the global-flag
+//! visibility surface, the `backfill-dedup-id` → count-distinct end-to-end
+//! contract, and the README ↔ `capabilities` feature-vocabulary parity
+//! gate. Shared helpers live in `tests/common/mod.rs`.
 
 use assert_cmd::Command;
 use std::fs;
@@ -16,7 +14,7 @@ use common::{
     QUERY_FIXTURE, parse_json_error_envelope, run_list_query, run_list_query_with, seed_ledger,
 };
 
-/// R74: read-only subcommands (`parse`, `get`, `validate`, `items list`,
+/// Read-only subcommands (`parse`, `get`, `validate`, `items list`,
 /// `items get`, `items find-duplicates`, `items orphans`, `items next-id`)
 /// must NOT expose the write-side integrity flags (`--allow-outside`,
 /// `--no-write-integrity`, `--strict-integrity`). They still accept
@@ -79,9 +77,8 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
     }
 }
 
-/// R74 (complement): write subcommands MUST continue to list every integrity
-/// flag in `--help`. Pins the structural guarantee that the split didn't
-/// accidentally strip a flag from a writer.
+/// Write subcommands MUST list every integrity flag in `--help` — the
+/// complement of the read-side ban above.
 #[test]
 fn write_subcommands_expose_all_integrity_flags_in_help() {
     let write_subs: &[&[&str]] = &[
@@ -122,7 +119,7 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
     }
 }
 
-/// R76: `--count`, `--count-by`, `--group-by`, `--pluck` are declared as a
+/// `--count`, `--count-by`, `--group-by`, `--pluck` are declared as a
 /// mutually exclusive clap ArgGroup on `items list`. Two of them on the
 /// same command must fail at parse time with clap's "cannot be used with"
 /// error — not silently collapse to one shape via the `build_query`
@@ -176,17 +173,13 @@ fn items_list_shape_flags_are_mutually_exclusive_at_parse_time() {
 }
 
 // ---------------------------------------------------------------------------
-// Task 1 (plan `docs/plans/tomlctl-capability-gaps.md`): `items list` grows
-// `--count-distinct <FIELD>`, a scalar-cardinality aggregate that replaces
-// the 4-stage `--pluck X | jq -r '.[]' | sort -u | wc -l` pipe chain agents
-// were spelling out. Output: `{"count_distinct":N,"field":"<name>"}`.
-// Null/missing field values are excluded (`--pluck` semantics). The flag
-// joins the existing `shape` ArgGroup, so pairwise-mutex with every other
-// aggregation shape is enforced at clap parse time.
+// `items list --count-distinct <FIELD>` is a scalar-cardinality aggregate
+// emitting `{"count_distinct":N,"field":"<name>"}`. Null/missing field values
+// are excluded (`--pluck` semantics). The flag is a member of the `shape`
+// ArgGroup, so pairwise-mutex with every other aggregation shape is enforced
+// at clap parse time.
 // ---------------------------------------------------------------------------
 
-/// T1: end-to-end happy path. Fixture has 3 distinct categories across 6
-/// rows — output shape must be `{count_distinct:3, field:"category"}`.
 #[test]
 fn items_list_count_distinct_emits_expected_object() {
     let stdout = run_list_query(&["--count-distinct", "category"]);
@@ -204,7 +197,7 @@ fn items_list_count_distinct_emits_expected_object() {
     );
 }
 
-/// T1: `--count-distinct` composes with `--where` — the distinct count is
+/// `--count-distinct` composes with `--where` — the distinct count is
 /// over the FILTERED set. Same contract as Count / CountBy.
 #[test]
 fn items_list_count_distinct_composes_with_where() {
@@ -220,7 +213,7 @@ fn items_list_count_distinct_composes_with_where() {
     );
 }
 
-/// T1 / Risk #2: `--count-distinct` and `--pluck` both in the same call
+/// `--count-distinct` and `--pluck` both in the same call
 /// must error at clap parse time (via the `shape` ArgGroup), NOT
 /// silently collapse via the build_query priority ladder.
 #[test]
@@ -247,9 +240,8 @@ fn count_distinct_and_pluck_are_mutex_at_parse_time() {
     );
 }
 
-/// T1: `--count-distinct` + `--count` also errors at clap (same
-/// ArgGroup). Pins that the ArgGroup was extended, not a new disjoint
-/// group created.
+/// `--count-distinct` + `--count` errors at clap: both belong to the one
+/// `shape` ArgGroup, not to two disjoint groups.
 #[test]
 fn count_distinct_with_count_errors_at_clap() {
     let (dir, ledger) = seed_ledger(QUERY_FIXTURE);
@@ -273,9 +265,9 @@ fn count_distinct_with_count_errors_at_clap() {
     );
 }
 
-/// T1: `--count-distinct` + `--select` errors via `validate_query`, which
-/// T8 tagged `kind=validation`. Assert both the human-readable mutex
-/// wording and (with `--error-format json`) the structured kind tag.
+/// `--count-distinct` + `--select` errors via `validate_query`, tagged
+/// `kind=validation`. Assert both the human-readable mutex wording and
+/// (with `--error-format json`) the structured kind tag.
 #[test]
 fn count_distinct_with_select_errors_via_validate_query() {
     let (dir, ledger) = seed_ledger(QUERY_FIXTURE);
@@ -332,10 +324,9 @@ fn count_distinct_with_select_errors_via_validate_query() {
 }
 
 // ---------------------------------------------------------------------------
-// Task 3 (plan `docs/plans/tomlctl-capability-gaps.md`): `--lines` and
-// `--pluck` + `--ndjson` composition. `--lines` is a discoverable spelling
-// of `--ndjson` for the Pluck case; both flags enable one-value-per-line
-// streaming. Aggregation shapes silently treat the bit as a no-op.
+// `--lines` is a discoverable spelling of `--ndjson` for the Pluck case;
+// both flags enable one-value-per-line streaming. Aggregation shapes
+// silently treat the bit as a no-op.
 // ---------------------------------------------------------------------------
 
 /// 4-row fixture whose items each carry a `x` string field. Kept as a
@@ -360,17 +351,16 @@ id = "R4"
 x = "v4"
 "#;
 
-/// T3-1: `--pluck x --lines` emits one quoted JSON string per line. Asserts
-/// the exact byte sequence so a future refactor that e.g. emits bare
-/// strings (T2's `--raw` territory) trips this test rather than silently
-/// changing the contract.
+/// `--pluck x --lines` emits one quoted JSON string per line. Asserts the
+/// exact byte sequence, so a refactor that emits bare strings (`--raw`
+/// territory) trips this test rather than silently changing the contract.
 #[test]
 fn lines_with_pluck_emits_one_json_value_per_line() {
     let stdout = run_list_query_with(PLUCK_FIXTURE, &["--pluck", "x", "--lines"]);
     assert_eq!(stdout, "\"v1\"\n\"v2\"\n\"v3\"\n\"v4\"\n");
 }
 
-/// T3-2: `--pluck x --ndjson` is byte-identical to `--pluck x --lines`.
+/// `--pluck x --ndjson` is byte-identical to `--pluck x --lines`.
 /// The two spellings are aliases at the semantic level — this test pins
 /// the identity so future work can't accidentally diverge them.
 #[test]
@@ -383,7 +373,7 @@ fn ndjson_with_pluck_is_byte_identical_to_lines_with_pluck() {
     );
 }
 
-/// T3-3: `--lines` composes with `--distinct` and `--sort-by`. The slow-path
+/// `--lines` composes with `--distinct` and `--sort-by`. The slow-path
 /// branch of `run_streaming` handles these; this test pins that sort/distinct
 /// still apply in the streaming emit order.
 #[test]
@@ -420,7 +410,7 @@ x = "beta"
     assert_eq!(stdout, "\"alpha\"\n\"beta\"\n\"gamma\"\n");
 }
 
-/// T3-4: `--lines` composes with `--limit` — exactly N lines in the output.
+/// `--lines` composes with `--limit` — exactly N lines in the output.
 /// Catches a regression where the streaming slow path fails to honour
 /// `apply_window`.
 #[test]
@@ -434,7 +424,7 @@ fn lines_with_pluck_and_limit() {
     assert_eq!(stdout, "\"v1\"\n\"v2\"\n");
 }
 
-/// T3-5: `--lines` shows up in `items list --help` as a discrete entry.
+/// `--lines` shows up in `items list --help` as a discrete entry.
 /// Clap aliases don't render in help, so this test is the structural guard
 /// against someone "simplifying" the flag into `alias = "lines"`.
 #[test]
@@ -452,15 +442,15 @@ fn lines_flag_listed_in_items_list_help() {
         stdout.contains("--lines"),
         "items list --help must list --lines as a discrete flag; got:\n{stdout}"
     );
-    // Both flags should be visible — the point of T3 is that --ndjson and
-    // --lines coexist, not that one replaces the other.
+    // Both flags must stay visible — --ndjson and --lines coexist; neither
+    // replaces the other.
     assert!(
         stdout.contains("--ndjson"),
         "items list --help must still list --ndjson alongside --lines; got:\n{stdout}"
     );
 }
 
-/// T3-6: `--lines` on a non-Pluck/non-Array shape is a silent no-op. For
+/// `--lines` on a non-Pluck/non-Array shape is a silent no-op. For
 /// Count the output is a single `{"count": N}` object regardless — per-line
 /// decomposition has no meaning. Agents can blanket-add `--lines` to
 /// scripts without branching on shape.
@@ -492,7 +482,7 @@ fn lines_on_count_shape_is_noop_single_object() {
     );
 }
 
-/// T3-7: null/missing plucked values are dropped in streaming — same
+/// Null/missing plucked values are dropped in streaming — same
 /// contract as `apply_pluck` in the non-streaming path. Pins the parity
 /// constraint that motivated mirroring the `None | Some(JsonValue::Null)`
 /// match in `run_streaming`.
@@ -524,19 +514,19 @@ x = "v3"
 }
 
 // ---------------------------------------------------------------------------
-// Task 8 (plan `docs/plans/tomlctl-capability-gaps.md`): `--error-format
-// {text,json}` global flag + closed `ErrorKind` taxonomy. Tagged call sites:
+// `--error-format {text,json}` global flag + closed `ErrorKind` taxonomy.
+// Tagged call sites:
 //   - io.rs `read_toml` / `read_toml_str` missing-file      -> kind=not_found
 //   - io.rs `read_toml` / `read_doc_borrowed` TOML parse    -> kind=parse
 //   - integrity.rs `verify_integrity` sidecar failure       -> kind=integrity
 //   - query.rs `validate_query` mutex violations            -> kind=validation
 //   - items.rs `items_next_id` prefix-shape validation      -> kind=validation
 // Every other `bail!` / `anyhow!` falls through to kind=other. Exit code
-// stays 1 regardless of format. Text-mode output is byte-identical to the
-// pre-T8 `eprintln!("tomlctl: {:#}", err)` stream.
+// stays 1 regardless of format; text mode emits the plain
+// `eprintln!("tomlctl: {:#}", err)` stream.
 // ---------------------------------------------------------------------------
 
-/// T8 Test 1: missing-file path -> `kind=not_found`. `items get` on a
+/// Missing-file path -> `kind=not_found`. `items get` on a
 /// nonexistent file is the cleanest trigger — it goes straight through
 /// `read_toml`'s NotFound arm with the path known, so the envelope also
 /// carries a non-null `file` field.
@@ -579,7 +569,7 @@ fn error_format_json_missing_file_tagged_not_found() {
     );
 }
 
-/// T8 Test 2: sidecar hash mismatch -> `kind=integrity`. Write a valid TOML
+/// Sidecar hash mismatch -> `kind=integrity`. Write a valid TOML
 /// with a deliberately-wrong sidecar; `--verify-integrity` triggers
 /// `integrity.rs::verify_integrity` which tags the mismatch.
 #[test]
@@ -628,7 +618,7 @@ fn error_format_json_sidecar_mismatch_tagged_integrity() {
     );
 }
 
-/// T8 Test 3: TOML parse error -> `kind=parse`. Malformed TOML, `parse`
+/// TOML parse error -> `kind=parse`. Malformed TOML, `parse`
 /// subcommand. Exercises the borrowed fast-path (`read_doc_borrowed`) since
 /// `--verify-integrity` is absent. Owned path (`read_toml`) is covered
 /// transitively by any `items list` / `get` / `items get` on the same bad
@@ -664,7 +654,7 @@ fn error_format_json_bad_toml_tagged_parse() {
     );
 }
 
-/// T8 Test 4: query mutex violation -> `kind=validation`. `items list
+/// Query mutex violation -> `kind=validation`. `items list
 /// --select x --exclude y` is rejected inside `validate_query`'s first
 /// branch. Uses an existing (empty-items) ledger so the file read succeeds
 /// and the error genuinely comes from `validate_query`, not `read_toml`.
@@ -703,10 +693,10 @@ fn error_format_json_query_mutex_tagged_validation() {
     assert!(err["file"].is_null(), "query validation has no file hint");
 }
 
-/// T8 Test 5: `items_next_id` prefix validation -> `kind=validation`. Pass
-/// `--prefix ""` against an EXISTING (empty-items) ledger so control reaches
-/// `items_next_id`'s empty-prefix check (the cli.rs missing-file fast path
-/// has its own untagged bail, which isn't the plan's tag site).
+/// `items_next_id` prefix validation -> `kind=validation`. Pass `--prefix ""`
+/// against an EXISTING (empty-items) ledger so control reaches
+/// `items_next_id`'s empty-prefix check — the cli.rs missing-file fast path
+/// has its own untagged bail and is not a tag site.
 #[test]
 fn error_format_json_next_id_empty_prefix_tagged_validation() {
     let dir = tempfile::tempdir().unwrap();
@@ -739,10 +729,10 @@ fn error_format_json_next_id_empty_prefix_tagged_validation() {
     );
 }
 
-/// T8 Test 6: untagged error -> `kind=other`. `items get <file> <missing-id>`
-/// errors inside `items_get_from` (not on the plan's closed list), so it
-/// should fall through to the generic `other` bucket. Confirms the default
-/// fallback works for every un-annotated bail in the codebase.
+/// Untagged error -> `kind=other`. `items get <file> <missing-id>` errors
+/// inside `items_get_from`, which is not on the tagged-call-site list above,
+/// so it falls through to the generic `other` bucket — the default for every
+/// un-annotated bail in the codebase.
 #[test]
 fn error_format_json_untagged_fallback_kind_other() {
     let dir = tempfile::tempdir().unwrap();
@@ -791,10 +781,10 @@ summary = "present"
     );
 }
 
-/// T8 Test 7: text-mode regression — when `--error-format` is absent the
-/// stderr stream is byte-identical to the pre-T8 `tomlctl: {:#}` line. Spot
-/// checks three of the tagged kinds (not_found, validation-query,
-/// validation-next-id) to pin no-prefix / no-bracketed-annotation rendering.
+/// Text mode: when `--error-format` is absent the stderr stream is the plain
+/// `tomlctl: {:#}` line. Spot checks three of the tagged kinds (not_found,
+/// validation-query, validation-next-id) to pin no-prefix /
+/// no-bracketed-annotation rendering.
 #[test]
 fn error_format_text_mode_byte_identical_across_tag_kinds() {
     let dir = tempfile::tempdir().unwrap();
@@ -866,7 +856,7 @@ fn error_format_text_mode_byte_identical_across_tag_kinds() {
     );
 }
 
-/// T8: `--error-format json` is a global flag — caller can place it BEFORE
+/// `--error-format json` is a global flag — caller can place it BEFORE
 /// or AFTER the subcommand name with identical behaviour. Pin both positions
 /// against a missing-file trigger so the `global = true` attribute doesn't
 /// silently regress.
@@ -921,18 +911,16 @@ fn error_format_json_flag_position_is_global() {
 }
 
 // ---------------------------------------------------------------------------
-// Task 9 (plan `docs/plans/tomlctl-capability-gaps.md`): `--strict-read` on
-// every read subcommand — surface `kind=not_found` on a missing file instead
-// of returning an empty default. Today the only read path with a "missing →
-// silent default" branch is `items next-id --prefix <P>` (returns `"<P>1"`);
-// every other read subcommand already errors on a missing file via
-// `read_toml`'s T8-tagged NotFound, so `--strict-read` is a no-op there but
-// accepted uniformly so callers can pass it without branching on subcommand.
+// `--strict-read` on every read subcommand — surface `kind=not_found` on a
+// missing file instead of returning an empty default. The only read path with
+// a "missing → silent default" branch is `items next-id --prefix <P>`
+// (returns `"<P>1"`); every other read subcommand already errors on a missing
+// file via `read_toml`'s tagged NotFound, so `--strict-read` is a no-op there
+// but accepted uniformly so callers can pass it without branching on
+// subcommand.
 //
-// Default (flag absent) behaviour must stay byte-identical to pre-T9:
-// `items next-id --prefix R <missing>` still mints `"R1"` for flows that
-// bootstrap the ledger lazily. Pinned in `items_next_id_on_missing_file_prints_prefix_one`
-// above; the (a) test below re-asserts it for the T9 section's completeness.
+// Default (flag absent) behaviour: `items next-id --prefix R <missing>` still
+// mints `"R1"` for flows that bootstrap the ledger lazily.
 //
 // Layering: `--strict-read` fires BEFORE `--verify-integrity`, so
 // `items list <missing> --strict-read --verify-integrity` produces
@@ -940,12 +928,11 @@ fn error_format_json_flag_position_is_global() {
 // "File state contract" subsection guarantees.
 // ---------------------------------------------------------------------------
 
-/// T9 (a): default (flag absent) behaviour on `items next-id` with a missing
-/// ledger stays byte-identical to pre-T9 — `"R1"` is the R19 bootstrapping
-/// fast path, and nothing about the T9 addition is allowed to disturb it.
-/// Duplicates `items_next_id_on_missing_file_prints_prefix_one` in spirit
-/// but lives in the T9 section so a regression in the strict-read gate
-/// surfaces alongside the T9 tests instead of in the far-away R58 block.
+/// Default (flag absent) behaviour on `items next-id` with a missing ledger:
+/// `"R1"` is the lazy-bootstrap fast path, and the strict-read gate must not
+/// disturb it. Duplicates `items_next_id_on_missing_file_prints_prefix_one`
+/// in spirit, but lives beside the strict-read tests so a regression in the
+/// gate surfaces here rather than in a distant module.
 #[test]
 fn strict_read_default_preserves_next_id_missing_file_fast_path() {
     let dir = tempfile::tempdir().unwrap();
@@ -970,7 +957,7 @@ fn strict_read_default_preserves_next_id_missing_file_fast_path() {
     );
 }
 
-/// T9 (b): `--strict-read` on a missing-file `items next-id` errors with the
+/// `--strict-read` on a missing-file `items next-id` errors with the
 /// documented "file does not exist" prose on stderr and exits 1. Without the
 /// flag the command succeeds with `"R1"` (covered above).
 #[test]
@@ -1002,14 +989,15 @@ fn strict_read_next_id_missing_file_errors_with_not_found_prose() {
     );
 }
 
-/// T9 (c): `--strict-read` composes with `--error-format json` — the stderr
+/// `--strict-read` composes with `--error-format json` — the stderr
 /// envelope's `error.kind` is `"not_found"` and the `file` field is populated
 /// with the missing path. Uses `items list` to cover the "benign no-op"
-/// dispatch arm: today `items list` already errors on a missing file via
+/// dispatch arm: `items list` already errors on a missing file via
 /// `read_toml`, so `--strict-read` doesn't change the outcome there, but it
-/// MUST still surface `kind=not_found` through the T9 gate (rather than
-/// letting `read_toml`'s own NotFound win, which would be behaviourally
-/// identical but bypass the T9 ordering contract in (d) below).
+/// MUST still surface `kind=not_found` through the strict-read gate rather
+/// than letting `read_toml`'s own NotFound win — behaviourally identical, but
+/// it would bypass the ordering contract pinned by
+/// `strict_read_fires_before_verify_integrity_on_missing_file`.
 #[test]
 fn strict_read_items_list_missing_file_json_envelope_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
@@ -1043,7 +1031,7 @@ fn strict_read_items_list_missing_file_json_envelope_is_not_found() {
     );
 }
 
-/// T9 (d): layering — `--strict-read` fires BEFORE `--verify-integrity`.
+/// Layering: `--strict-read` fires BEFORE `--verify-integrity`.
 /// A missing file under both flags surfaces `kind=not_found`, NOT
 /// `kind=integrity`, even though the sidecar verify would also have failed
 /// (the sidecar is trivially missing too). Pins the ordering documented in
@@ -1083,7 +1071,7 @@ fn strict_read_fires_before_verify_integrity_on_missing_file() {
     );
 }
 
-/// T9 (e): `--strict-read` is accepted on every read subcommand and emits
+/// `--strict-read` is accepted on every read subcommand and emits
 /// a consistent `kind=not_found` envelope. Spot-check `parse`, `get`,
 /// `validate`, `items get`, `items orphans`, and `items find-duplicates`
 /// — each is a different dispatch arm that flattens `ReadIntegrityArgs`.
@@ -1137,18 +1125,16 @@ fn strict_read_uniform_across_read_subcommands() {
 }
 
 // ---------------------------------------------------------------------------
-// Task 2 (plan `docs/plans/tomlctl-capability-gaps.md`): `--raw` bare-scalar
-// output for `items list --count` / `--count-distinct` / `--pluck` (N=1 or
-// `--lines`-streamed) and for `get <file> <scalar-path>`. The motivation is
-// the ~35 `tomlctl ... | jq -r .count` pipe chains the transcript audit
-// uncovered: agents consuming counts or single-scalar `get` results into a
-// bash `read -r N` loop want the bare integer/string on stdout, not the
+// `--raw` bare-scalar output for `items list --count` / `--count-distinct` /
+// `--pluck` (N=1 or `--lines`-streamed) and for `get <file> <scalar-path>`:
+// agents piping counts or single-scalar `get` results into a bash
+// `read -r N` loop want the bare integer/string on stdout, not the
 // JSON-wrapped form. Error strings on invalid compositions are load-bearing
-// — tests assert byte-for-byte — so a downstream script checking for an
-// exact substring stays stable across releases.
+// — the tests below assert them byte-for-byte, so a downstream script
+// matching an exact substring stays stable across releases.
 // ---------------------------------------------------------------------------
 
-/// T2-1: `items list --count --raw` emits a bare integer plus a single
+/// `items list --count --raw` emits a bare integer plus a single
 /// trailing newline. Byte-identity check — the whole point of `--raw` is
 /// that the stdout is parseable by `read -r N` without jq.
 #[test]
@@ -1160,7 +1146,7 @@ fn items_list_count_raw_emits_bare_integer() {
     );
 }
 
-/// T2-2: `items list --count-distinct foo --raw` emits the bare count,
+/// `items list --count-distinct foo --raw` emits the bare count,
 /// dropping the `field` key. Stdout is a single integer line with no
 /// JSON wrapping.
 #[test]
@@ -1170,7 +1156,7 @@ fn items_list_count_distinct_raw_emits_bare_integer() {
     assert_eq!(stdout, "4\n", "expected bare `4\\n`; got:\n{stdout}");
 }
 
-/// T2-3: `--pluck foo --raw` with N=1 (string) emits the unquoted string.
+/// `--pluck foo --raw` with N=1 (string) emits the unquoted string.
 /// Uses the `symbol` field from QUERY_FIXTURE which only R2 carries.
 #[test]
 fn items_list_pluck_raw_n_eq_1_string_emits_unquoted() {
@@ -1182,13 +1168,11 @@ fn items_list_pluck_raw_n_eq_1_string_emits_unquoted() {
     );
 }
 
-/// T2-4: `--pluck foo --raw` with N=1 (integer) emits the bare integer.
+/// `--pluck foo --raw` with N=1 (integer) emits the bare integer.
 /// Exercise the JsonValue::Number arm of `emit_raw` with a genuine integer
 /// coming out of toml's `Integer` type.
 #[test]
 fn items_list_pluck_raw_n_eq_1_integer_emits_bare() {
-    // Use `--where id=R1` + `--pluck rounds` — but QUERY_FIXTURE doesn't
-    // carry `rounds`. Build a one-row fixture instead.
     let fixture = r#"schema_version = 1
 
 [[items]]
@@ -1199,8 +1183,8 @@ n = 42
     assert_eq!(stdout, "42\n", "expected bare `42\\n`; got:\n{stdout}");
 }
 
-/// T2-5: `--pluck foo --raw` on a 0-item result errors with the exact
-/// task-spec wording. Tests assert byte-for-byte — a reword to
+/// `--pluck foo --raw` on a 0-item result errors with the exact pinned
+/// wording. Tests assert byte-for-byte — a reword to
 /// "no items matched" or "empty result" would break agent scripts.
 #[test]
 fn items_list_pluck_raw_n_eq_0_errors_with_exact_message() {
@@ -1228,7 +1212,7 @@ fn items_list_pluck_raw_n_eq_0_errors_with_exact_message() {
     );
 }
 
-/// T2-6: `--pluck foo --raw` on N>1 rows errors with the pinned wording
+/// `--pluck foo --raw` on N>1 rows errors with the pinned wording
 /// (including the suggested `--lines` remediation). Substitutes the
 /// actual N in — asserts on the literal `(got 6 items)` so a drift in
 /// count arithmetic would be caught.
@@ -1257,7 +1241,7 @@ fn items_list_pluck_raw_n_gt_1_errors_with_exact_message_and_count() {
     );
 }
 
-/// T2-7: `--pluck foo --raw --lines` emits one bare value per line. The
+/// `--pluck foo --raw --lines` emits one bare value per line. The
 /// streaming path threads `q.raw` through to the per-item emit point,
 /// so strings come out unquoted. Pin the byte sequence to catch any
 /// regression that accidentally re-quotes.
@@ -1270,7 +1254,7 @@ fn items_list_pluck_raw_with_lines_emits_bare_per_line() {
     );
 }
 
-/// T2-8: `tomlctl get <file> <scalar-path> --raw` emits the bare value on
+/// `tomlctl get <file> <scalar-path> --raw` emits the bare value on
 /// a scalar target (integer here). Covers the `Cmd::Get` raw branch.
 #[test]
 fn get_raw_on_integer_scalar_emits_bare_integer() {
@@ -1294,9 +1278,9 @@ fn get_raw_on_integer_scalar_emits_bare_integer() {
     assert_eq!(stdout, "7\n", "expected bare `7\\n`; got:\n{stdout}");
 }
 
-/// T2-9: `get <file> <table-path> --raw` errors with the exact wording the
-/// task spec pins. `[tasks]` is a TOML table, so navigating to `tasks`
-/// returns a JSON object — `emit_raw` rejects it.
+/// `get <file> <table-path> --raw` errors with the exact pinned wording.
+/// `[tasks]` is a TOML table, so navigating to `tasks` returns a JSON
+/// object — `emit_raw` rejects it.
 #[test]
 fn get_raw_on_table_errors_with_exact_message() {
     let dir = tempfile::tempdir().unwrap();
@@ -1322,7 +1306,7 @@ fn get_raw_on_table_errors_with_exact_message() {
     );
 }
 
-/// T2-10: `get <file> <array-path> --raw` errors with the exact wording.
+/// `get <file> <array-path> --raw` errors with the exact wording.
 /// `scope` below is a TOML array.
 #[test]
 fn get_raw_on_array_errors_with_exact_message() {
@@ -1349,7 +1333,7 @@ fn get_raw_on_array_errors_with_exact_message() {
     );
 }
 
-/// T2-11: `items list --count-by foo --raw` is rejected at `validate_query`
+/// `items list --count-by foo --raw` is rejected at `validate_query`
 /// with the exact canonical message. `--count-by` emits a map, which has
 /// no bare-scalar form.
 #[test]
@@ -1377,7 +1361,7 @@ fn items_list_count_by_with_raw_errors_with_exact_message() {
     );
 }
 
-/// T2-12: same error for `--group-by foo --raw`. Pins that validation hits
+/// Same error for `--group-by foo --raw`. Pins that validation hits
 /// both shapes — not just CountBy by accident.
 #[test]
 fn items_list_group_by_with_raw_errors_with_exact_message() {
@@ -1404,14 +1388,14 @@ fn items_list_group_by_with_raw_errors_with_exact_message() {
     );
 }
 
-/// T2-13: `--pluck foo --distinct --raw` — distinct narrows the pluck
+/// `--pluck foo --distinct --raw` — distinct narrows the pluck
 /// array to 1 row; raw then emits that lone bare value. Covers the
 /// interaction between the pluck-field dedup path and the N==1 raw
 /// happy case, which has a non-obvious code path (dedup runs in the
 /// slow path of `run()` since `--distinct` is engaged).
 #[test]
 fn items_list_pluck_distinct_raw_n_eq_1_emits_bare() {
-    // Fixture has four identical x values — dedup collapses to one.
+    // Fixture has three identical x values — dedup collapses to one.
     let fixture = r#"schema_version = 1
 
 [[items]]
@@ -1430,7 +1414,7 @@ x = "only"
     assert_eq!(stdout, "only\n", "expected bare `only\\n`; got:\n{stdout}");
 }
 
-/// T2-14: `--count --raw --error-format json` on a HAPPY path emits the
+/// `--count --raw --error-format json` on a HAPPY path emits the
 /// bare integer on stdout — the `--error-format json` flag only affects
 /// errors. Pins that `--raw` output is NOT JSON-wrapped just because the
 /// error-format is `json`.
@@ -1458,10 +1442,9 @@ fn items_list_count_raw_with_error_format_json_still_bare_on_happy_path() {
     );
 }
 
-/// T2-15: `--strict-read` wins against `--raw`-N=0: a missing ledger must
-/// surface `kind=not_found`, NOT the "(got 0 items)" raw-validation error,
-/// because the strict-read gate fires BEFORE the query pipeline runs.
-/// Tests the documented ordering contract from T9.
+/// `--strict-read` wins against `--raw`-N=0: a missing ledger must surface
+/// `kind=not_found`, NOT the "(got 0 items)" raw-validation error, because
+/// the strict-read gate fires BEFORE the query pipeline runs.
 #[test]
 fn items_list_pluck_raw_strict_read_on_missing_file_wins() {
     let dir = tempfile::tempdir().unwrap();
@@ -1495,7 +1478,7 @@ fn items_list_pluck_raw_strict_read_on_missing_file_wins() {
     );
 }
 
-/// T2-16: `--pluck foo --raw` with N=1 boolean emits `true` / `false` bare.
+/// `--pluck foo --raw` with N=1 boolean emits `true` / `false` bare.
 /// Covers the JsonValue::Bool arm of `emit_raw`.
 #[test]
 fn items_list_pluck_raw_n_eq_1_bool_emits_true() {
@@ -1510,15 +1493,13 @@ active = true
 }
 
 // ---------------------------------------------------------------------------
-// Task 7 (plan `docs/plans/tomlctl-capability-gaps.md`): `tomlctl
-// capabilities` emits a JSON description of the binary's user-facing
-// surface so downstream flow-command templates can feature-gate cleanly
-// without parsing `--help` prose. Also pins the 0.1.0 → 0.2.0 version
-// bump that this minor release carries (new flags, new subcommand,
-// auto-populated `dedup_id` field, structured `--error-format json`).
+// `tomlctl capabilities` emits a JSON description of the binary's
+// user-facing surface so downstream flow-command templates can feature-gate
+// cleanly without parsing `--help` prose. The `version` key is pinned
+// against `tomlctl/Cargo.toml` by `capabilities_version_matches_cargo_toml`.
 // ---------------------------------------------------------------------------
 
-/// T7-1: `tomlctl capabilities` writes a JSON object to stdout with the
+/// `tomlctl capabilities` writes a JSON object to stdout with the
 /// three top-level keys the spec pins (`version`, `features`, `subcommands`).
 /// Also asserts it parses cleanly as JSON — no trailing garbage, no BOM.
 #[test]
@@ -1548,11 +1529,10 @@ fn capabilities_output_parses_as_json() {
     );
 }
 
-/// T7-2: the `features` array advertises every T1..T11 feature the plan
-/// enumerated. The expected list duplicates the names from `cli::FEATURES`
-/// deliberately — if the const drifts (someone removes a feature or renames
-/// one), this test fails in review rather than silently shipping a
-/// half-advertised capability set.
+/// The `features` array advertises the whole feature vocabulary. The expected
+/// list duplicates the names from `cli::FEATURES` deliberately — if the const
+/// drifts (a feature removed or renamed), this test fails rather than
+/// silently shipping a half-advertised capability set.
 #[test]
 fn capabilities_features_contains_every_plan_feature() {
     let out = Command::cargo_bin("tomlctl")
@@ -1573,21 +1553,21 @@ fn capabilities_features_contains_every_plan_feature() {
     // Exhaustive list duplicated from cli::FEATURES — drift between the
     // two is caught here in review.
     let expected = [
-        "count_distinct",         // T1
-        "raw",                    // T2
-        "lines",                  // T3
-        "infer_prefix",           // T4
-        "dedupe_by",              // T5
-        "dedup_id_auto",          // T6b
-        "find_duplicates_across", // T6c
-        "capabilities",           // T7
-        "error_format_json",      // T8
-        "strict_read",            // T9
-        "dry_run",                // T10
-        "backfill_dedup_id",      // T11
-        "integrity_refresh",      // sidecar bootstrap / recovery primitive
-        "agent_context",          // T6a: capabilities .commands flag schema
-        // Flow-tracking-overhaul plan: new flow / json subcommand cluster.
+        "count_distinct",
+        "raw",
+        "lines",
+        "infer_prefix",
+        "dedupe_by",
+        "dedup_id_auto",
+        "find_duplicates_across",
+        "capabilities",
+        "error_format_json",
+        "strict_read",
+        "dry_run",
+        "backfill_dedup_id",
+        "integrity_refresh", // sidecar bootstrap / recovery primitive
+        "agent_context",     // capabilities .commands flag schema
+        // The flow / json subcommand cluster.
         "flow_resolve",
         "flow_active",
         "flow_doctor",
@@ -1648,7 +1628,7 @@ fn capabilities_version_matches_cargo_toml() {
     );
 }
 
-/// T7-4: the `subcommands` array includes the metadata subcommand itself
+/// The `subcommands` array includes the metadata subcommand itself
 /// (so `tomlctl capabilities | jq '.subcommands | index("capabilities")'`
 /// is truthy) plus at least one real data-path subcommand (`items`). Both
 /// sanity-check the list is populated and not an empty placeholder.
@@ -1679,23 +1659,21 @@ fn capabilities_subcommands_contains_capabilities_and_items() {
 }
 
 // ---------------------------------------------------------------------------
-// R44: plan T7 acceptance requires a `--help` snapshot test for each new
-// flag introduced by tasks T1..T11. The existing
-// `lines_flag_listed_in_items_list_help` test (T3) establishes the shape:
-// invoke the relevant subcommand with `--help`, then `assert!(stdout.contains("--flag"))`.
-// The tests below clone that shape for every other T1..T11 flag, so a clap
-// refactor that silently drops or hides a flag fails here in CI rather
+// One `--help` snapshot test per agent-facing flag: invoke the relevant
+// subcommand with `--help`, then `assert!(stdout.contains("--flag"))`, so a
+// clap refactor that silently drops or hides a flag fails here in CI rather
 // than during an agent-facing invocation. `--error-format` is the only
 // truly global flag (it attaches at the top-level clap::Parser), so it is
 // asserted against `tomlctl --help`. The other "global-ish" flags
 // (`--strict-read`, `--dry-run`) are flattened into ReadIntegrityArgs /
-// WriteIntegrityArgs which hang off specific subcommands — the tests pick
-// one representative subcommand where each flag is surfaced.
+// WriteIntegrityArgs which hang off specific subcommands — each test picks
+// one representative subcommand where the flag is surfaced.
 // ---------------------------------------------------------------------------
 
-/// R44 (T1): `items list --help` lists `--count-distinct` as a discrete
-/// flag. Paired with `lines_flag_listed_in_items_list_help` to pin every
-/// T1..T3 `items list` flag against clap drift.
+/// `items list --help` lists `--count-distinct` as a discrete flag. Paired
+/// with `lines_flag_listed_in_items_list_help` and
+/// `raw_flag_listed_in_items_list_help` to pin every `items list` query flag
+/// against clap drift.
 #[test]
 fn count_distinct_flag_listed_in_items_list_help() {
     let out = Command::cargo_bin("tomlctl")
@@ -1713,9 +1691,9 @@ fn count_distinct_flag_listed_in_items_list_help() {
     );
 }
 
-/// R44 (T2): `items list --help` lists `--raw` as a discrete flag. `--raw`
-/// also appears on `get --help`, but `items list` is the primary surface
-/// T2 targets (bare-scalar output for counts / single-pluck).
+/// `items list --help` lists `--raw` as a discrete flag. `--raw` also appears
+/// on `get --help`, but `items list` is the primary surface (bare-scalar
+/// output for counts / single-pluck).
 #[test]
 fn raw_flag_listed_in_items_list_help() {
     let out = Command::cargo_bin("tomlctl")
@@ -1733,10 +1711,10 @@ fn raw_flag_listed_in_items_list_help() {
     );
 }
 
-/// R44 (T4): `items next-id --help` lists `--infer-from-file` as a
-/// discrete flag. T4 makes `--prefix` and `--infer-from-file` a required
-/// mutex via an ArgGroup — clap renders both as unadorned in the usage
-/// line, so a substring match on the flag name is the stable assertion.
+/// `items next-id --help` lists `--infer-from-file` as a discrete flag.
+/// `--prefix` and `--infer-from-file` form a required mutex via an ArgGroup
+/// — clap renders both as unadorned in the usage line, so a substring match
+/// on the flag name is the stable assertion.
 #[test]
 fn infer_from_file_flag_listed_in_items_next_id_help() {
     let out = Command::cargo_bin("tomlctl")
@@ -1754,7 +1732,7 @@ fn infer_from_file_flag_listed_in_items_next_id_help() {
     );
 }
 
-/// R44 (T5): `items add --help` lists `--dedupe-by` as a discrete flag.
+/// `items add --help` lists `--dedupe-by` as a discrete flag.
 /// The same flag is also defined on `items add-many`; `add` is chosen as
 /// the representative surface because it is the single-item path agents
 /// reach for first.
@@ -1775,8 +1753,8 @@ fn dedupe_by_flag_listed_in_items_add_help() {
     );
 }
 
-/// R44 (T6c): `items find-duplicates --help` lists `--across` as a
-/// discrete flag. Cross-ledger duplicate detection is the sole surface
+/// `items find-duplicates --help` lists `--across` as a discrete flag.
+/// Cross-ledger duplicate detection is the sole surface
 /// `--across` attaches to.
 #[test]
 fn across_flag_listed_in_items_find_duplicates_help() {
@@ -1795,7 +1773,7 @@ fn across_flag_listed_in_items_find_duplicates_help() {
     );
 }
 
-/// R44 (T8): top-level `tomlctl --help` lists `--error-format` as a
+/// Top-level `tomlctl --help` lists `--error-format` as a
 /// discrete flag. `--error-format` is defined on the top-level Cli struct
 /// with `global = true`, so it renders in the root help block — the
 /// natural surface for a stderr-format selector that predates any
@@ -1815,7 +1793,7 @@ fn error_format_flag_listed_in_top_level_help() {
     );
 }
 
-/// R44 (T9): `items next-id --help` lists `--strict-read` as a discrete
+/// `items next-id --help` lists `--strict-read` as a discrete
 /// flag. `--strict-read` lives on `ReadIntegrityArgs` which is flattened
 /// into every read subcommand; `next-id` is the representative surface
 /// because the flag's documented purpose — errorring on a missing ledger
@@ -1838,9 +1816,8 @@ fn strict_read_flag_listed_in_items_next_id_help() {
     );
 }
 
-/// R44 (T10): `items remove --help` lists `--dry-run` as a discrete flag.
-/// `--dry-run` is defined on three T10/T11 subcommands (`items remove`,
-/// `items apply`, `items backfill-dedup-id`); `remove` is chosen as the
+/// `items remove --help` lists `--dry-run` as a discrete flag. `--dry-run` is
+/// defined on every write subcommand; `remove` is chosen as the
 /// representative surface because it is the smallest command and the one
 /// most likely to be invoked ad-hoc where a preview matters.
 #[test]
@@ -1860,10 +1837,9 @@ fn dry_run_flag_listed_in_items_remove_help() {
     );
 }
 
-/// R19 (T5): `flow envelope build --help` lists every documented flag as a
-/// discrete entry. Clones the R44 shape for the envelope-build subcommand so
-/// a clap refactor that silently drops or hides one of the envelope flags
-/// fails here in CI rather than during an agent-facing invocation.
+/// `flow envelope build --help` lists every documented flag as a discrete
+/// entry, so a clap refactor that silently drops or hides one of the envelope
+/// flags fails here in CI rather than during an agent-facing invocation.
 #[test]
 fn flow_envelope_build_flags_listed_in_help() {
     let out = Command::cargo_bin("tomlctl")
@@ -1891,26 +1867,20 @@ fn flow_envelope_build_flags_listed_in_help() {
 }
 
 // ---------------------------------------------------------------------------
-// R45: plan T11 acceptance (d) — the end-to-end contract linking
-// `items backfill-dedup-id` to the T1 query surface. Seed a ledger with
-// N items that are all missing `dedup_id` (via `TOMLCTL_NO_DEDUP_ID=1`
-// during seeding to defeat the auto-populate on `add`), run backfill,
-// then assert the T1 surface reports N distinct dedup_id values.
+// End-to-end contract linking `items backfill-dedup-id` to the query
+// surface. Seed a ledger with N items that are all missing `dedup_id` (via
+// `TOMLCTL_NO_DEDUP_ID=1` during seeding, to defeat the auto-populate on
+// `add`), run backfill, then assert N distinct dedup_id values are visible.
 //
-// The plan spec literally writes the verification query as
-// `items list --pluck dedup_id --distinct --count-distinct dedup_id --raw`,
-// but `--pluck` and `--count-distinct` live in the same clap `shape`
-// ArgGroup (cli.rs:621) and are mutually exclusive. The achievable T1
-// equivalent that preserves the plan's intent — "confirm N distinct
-// dedup_id values are present on the T1 surface after backfill" — is
-// `items list --count-distinct dedup_id --raw`, which is tested below.
+// `--pluck` and `--count-distinct` are members of the same clap `shape`
+// ArgGroup and so cannot be combined; `items list --count-distinct dedup_id
+// --raw` is the single-shape query that carries the contract.
 // ---------------------------------------------------------------------------
 
-/// R45 / T11 (d): backfill + T1 surface — after `items backfill-dedup-id`
-/// on an N-item legacy ledger, `items list --count-distinct dedup_id
-/// --raw` reports exactly N. This pins the plan-level contract that the
-/// backfill path populates *distinct* dedup_id values (not duplicates)
-/// on every item, visible from the agent-facing query surface.
+/// After `items backfill-dedup-id` on an N-item legacy ledger, `items list
+/// --count-distinct dedup_id --raw` reports exactly N: the backfill path
+/// populates *distinct* dedup_id values (not duplicates) on every item,
+/// visible from the agent-facing query surface.
 #[test]
 fn items_backfill_dedup_id_then_count_distinct_reports_n() {
     let (dir, ledger) = seed_ledger("schema_version = 1\n");
@@ -1948,7 +1918,7 @@ fn items_backfill_dedup_id_then_count_distinct_reports_n() {
         .assert()
         .success();
 
-    // T1 surface: count of distinct dedup_id values must equal N (3).
+    // Count of distinct dedup_id values must equal N (3).
     // `--raw` emits the bare integer plus a trailing newline, byte-identical
     // to the existing items_list_count_distinct_raw_emits_bare_integer test.
     let out = Command::cargo_bin("tomlctl")
@@ -1971,18 +1941,17 @@ fn items_backfill_dedup_id_then_count_distinct_reports_n() {
 }
 
 // ---------------------------------------------------------------------------
-// T-glistening: capabilities `.commands` schema. The new top-level key
-// describes every subcommand's flag surface (types, defaults, mutex groups)
-// so downstream agents can introspect the CLI without parsing `--help`.
-// `build_agent_context()` walks the live `<Cli as CommandFactory>::command()`
-// tree at runtime (see src/capabilities.rs); these tests pin the user-facing
-// shape: `--count` is bool on `items list`, the shape ArgGroup surfaces as
-// a mutex_groups entry, and clap-derive flags like `--dry-run` show up
-// automatically without per-flag wiring.
+// The capabilities `.commands` key describes every subcommand's flag surface
+// (types, defaults, mutex groups) so downstream agents can introspect the CLI
+// without parsing `--help`. `build_agent_context` walks the live
+// `<Cli as CommandFactory>::command()` tree at runtime; these tests pin the
+// user-facing shape: `--count` is bool on `items list`, the shape ArgGroup
+// surfaces as a mutex_groups entry, and clap-derive flags like `--dry-run`
+// show up automatically without per-flag wiring.
 // ---------------------------------------------------------------------------
 
-/// T-glistening: `tomlctl capabilities` emits a non-empty `commands`
-/// JSON object. Pins the bare existence of the schema before any of the
+/// `tomlctl capabilities` emits a non-empty `commands` JSON object.
+/// Pins the bare existence of the schema before any of the
 /// per-flag assertions run — a regression that wiped `commands` would
 /// fail here loudly rather than producing confusing per-flag failures.
 #[test]
@@ -2009,8 +1978,8 @@ fn capabilities_emits_commands_key() {
     );
 }
 
-/// T-glistening: `commands.items.subcommands.list.flags["--count"]` exists
-/// and has `type == "bool"`. Pins the user-facing flag-schema shape on a
+/// `commands.items.subcommands.list.flags["--count"]` exists and has
+/// `type == "bool"`. Pins the user-facing flag-schema shape on a
 /// concrete representative flag (the `items list --count` boolean is one
 /// of the oldest agent-facing surfaces in the binary). A clap reflection
 /// regression that flipped this to "string" or "enum" would fail here.
@@ -2041,8 +2010,8 @@ fn capabilities_commands_includes_items_list_with_count_flag() {
     );
 }
 
-/// T-glistening: `commands.items.subcommands.list.mutex_groups` is an array
-/// containing a group set-equal to `[count, count_by, group_by, pluck,
+/// `commands.items.subcommands.list.mutex_groups` is an array containing a
+/// group set-equal to `[count, count_by, group_by, pluck,
 /// count_distinct]` (the shape ArgGroup declared on `ItemsOp::List`). Set
 /// equality (not order-equality) — clap doesn't promise a stable ordering
 /// when emitting group members, and the const-supplemented `MUTEX_GROUPS`
@@ -2088,12 +2057,11 @@ fn capabilities_commands_includes_mutex_groups_for_items_list() {
     );
 }
 
-/// T-glistening: `commands.set.flags["--dry-run"]["type"]` is `"bool"`.
-/// `--dry-run` was added to the `Set` clap variant in T1; the agent-context
-/// builder picks it up automatically via clap-reflection (no per-flag
-/// allowlist). This test pins that the reflection path covers the
-/// dry-run flag specifically — a regression that hid `--dry-run` from the
-/// `set` schema would fail here even though `--help` still showed it.
+/// `commands.set.flags["--dry-run"]["type"]` is `"bool"`. The agent-context
+/// builder picks `--dry-run` up via clap-reflection with no per-flag
+/// allowlist; this pins that the reflection path covers it — a regression
+/// that hid `--dry-run` from the `set` schema would fail here even though
+/// `--help` still showed the flag.
 #[test]
 fn capabilities_commands_set_arm_includes_dry_run_flag() {
     let out = Command::cargo_bin("tomlctl")
@@ -2116,5 +2084,151 @@ fn capabilities_commands_set_arm_includes_dry_run_flag() {
         dry_run.get("type").and_then(|t| t.as_str()),
         Some("bool"),
         "set --dry-run must be type=bool; got: {dry_run}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// README ↔ `capabilities` feature-vocabulary parity. The vocabulary is
+// transcribed in three places besides `cli::FEATURES`: the sample
+// `capabilities` stdout block in tomlctl/README.md, that file's "Feature
+// meanings" table, and the `expected` array above. Only the array was gated,
+// and it gates against the binary, so either README copy could drift with the
+// suite green. Both parsers below assert a non-zero yield — a parse that
+// silently matches nothing is a gate that passes while checking nothing.
+// ---------------------------------------------------------------------------
+
+fn readme_markdown() -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md");
+    fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("README.md must be readable at {}: {e}", path.display()))
+}
+
+/// Feature names transcribed in the sample `capabilities` stdout block: the
+/// quoted entries of its `"features": [ ... ]` array.
+fn features_in_readme_sample(markdown: &str) -> Vec<String> {
+    const KEY: &str = "\"features\": [";
+    let Some(open) = markdown.find(KEY) else {
+        return Vec::new();
+    };
+    let body = &markdown[open + KEY.len()..];
+    let Some(close) = body.find(']') else {
+        return Vec::new();
+    };
+    body[..close]
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_string)
+        .collect()
+}
+
+/// Feature names transcribed in the "Feature meanings" table: the backticked
+/// first cell of every data row. The `|---|---|` separator has no backticks,
+/// so it drops out without a special case.
+fn features_in_readme_table(markdown: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut in_table = false;
+    for line in markdown.lines() {
+        if line.starts_with("| Feature ") && line.contains("| What it enables") {
+            in_table = true;
+            continue;
+        }
+        if !in_table {
+            continue;
+        }
+        if !line.starts_with('|') {
+            break;
+        }
+        let cell = line.split('|').nth(1).unwrap_or("").trim();
+        if let Some(name) = cell.strip_prefix('`').and_then(|c| c.strip_suffix('`')) {
+            names.push(name.to_string());
+        }
+    }
+    names
+}
+
+fn reject_vacuous(names: Vec<String>, source: &str) -> Vec<String> {
+    assert!(
+        !names.is_empty(),
+        "{source} yielded 0 feature names — the parse matched nothing, so the parity assertion it feeds would be vacuous"
+    );
+    names
+}
+
+/// Both README transcriptions of the feature vocabulary agree with the set the
+/// binary advertises. Without this the sample-output block and the table can
+/// each drift silently: only `capabilities_features_contains_every_plan_feature`
+/// is gated, and it reads the binary, never the README.
+#[test]
+fn readme_feature_transcriptions_match_capabilities_features() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}"));
+    let advertised: std::collections::BTreeSet<String> = v
+        .get("features")
+        .and_then(|f| f.as_array())
+        .expect("`features` must be a JSON array")
+        .iter()
+        .filter_map(|e| e.as_str())
+        .map(str::to_string)
+        .collect();
+    assert!(
+        !advertised.is_empty(),
+        "`tomlctl capabilities` advertised 0 features; stdout:\n{stdout}"
+    );
+
+    let markdown = readme_markdown();
+    let sample = "the README `capabilities` sample-output block";
+    let table = "the README \"Feature meanings\" table";
+    for (source, names) in [
+        (
+            sample,
+            reject_vacuous(features_in_readme_sample(&markdown), sample),
+        ),
+        (
+            table,
+            reject_vacuous(features_in_readme_table(&markdown), table),
+        ),
+    ] {
+        let transcribed: std::collections::BTreeSet<String> = names.iter().cloned().collect();
+        assert_eq!(
+            transcribed.len(),
+            names.len(),
+            "{source} lists a feature name more than once: {names:?}"
+        );
+        let missing: Vec<&String> = advertised.difference(&transcribed).collect();
+        let unadvertised: Vec<&String> = transcribed.difference(&advertised).collect();
+        assert!(
+            missing.is_empty() && unadvertised.is_empty(),
+            "{source} has drifted from `tomlctl capabilities` .features — \
+             advertised but missing from the README: {missing:?}; \
+             in the README but not advertised: {unadvertised:?}"
+        );
+    }
+}
+
+#[test]
+#[should_panic(expected = "yielded 0 feature names")]
+fn readme_sample_parse_yielding_nothing_is_rejected_as_vacuous() {
+    let markdown = "# tomlctl\n\nA README carrying no `capabilities` sample block.\n";
+    reject_vacuous(
+        features_in_readme_sample(markdown),
+        "the README `capabilities` sample-output block",
+    );
+}
+
+#[test]
+#[should_panic(expected = "yielded 0 feature names")]
+fn readme_table_parse_yielding_nothing_is_rejected_as_vacuous() {
+    let markdown = "| Flag | What it does |\n|---|---|\n| `--raw` | bare scalar |\n";
+    reject_vacuous(
+        features_in_readme_table(markdown),
+        "the README \"Feature meanings\" table",
     );
 }
