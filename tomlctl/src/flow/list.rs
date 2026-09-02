@@ -1,4 +1,4 @@
-//! T9: `tomlctl flow list [--status <s>] [--branch <b>] [--active-only] [--json]`.
+//! `tomlctl flow list [--status <s>] [--branch <b>] [--active-only] [--json]`.
 //!
 //! Read-only enumeration of every `<root>/.claude/flows/<slug>/context.toml`
 //! record. Output is a JSON array of records:
@@ -24,10 +24,10 @@
 //! - `--status <s>` / `--branch <s>` are exact-string predicates against the
 //!   matching field.
 //! - `--active-only` cross-references with `.claude/active-flow.toml`'s
-//!   `[[active]].slug` set; a missing registry yields `[]` (matches T3's
-//!   "missing-registry-is-empty" semantics — no warning emitted because the
-//!   read-only `flow active list` already surfaces the legacy-pointer
-//!   warning at its own call site).
+//!   `[[active]].slug` set; a missing registry yields `[]`, matching the
+//!   registry reader's "missing-registry-is-empty" semantics — no warning
+//!   emitted because the read-only `flow active list` already surfaces the
+//!   legacy-pointer warning at its own call site.
 //!
 //! Error tolerance: a malformed `context.toml` in one flow does NOT abort
 //! the whole list; we emit a stderr warning of the form
@@ -194,8 +194,8 @@ fn read_context_record(path: &Path, slug: &str) -> Result<FlowRecord> {
     let s = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let doc: TomlValue =
         toml::from_str(&s).with_context(|| format!("parsing {}", path.display()))?;
-    // R13: route through the shared `FlowProjection` parse so list and
-    // resolve consume one canonical projection.
+    // Route through the shared `FlowProjection` parse so list and resolve
+    // consume one canonical projection.
     let proj = FlowProjection::from_toml_value(&doc)
         .ok_or_else(|| anyhow::anyhow!("context.toml root is not a table"))?;
     Ok(FlowRecord {
@@ -209,8 +209,8 @@ fn read_context_record(path: &Path, slug: &str) -> Result<FlowRecord> {
 }
 
 /// Load the set of slugs from `<root>/.claude/active-flow.toml` for the
-/// `--active-only` cross-reference. Missing file → empty set (matches T3's
-/// "missing registry behaves like empty registry" contract). A malformed
+/// `--active-only` cross-reference. Missing file → empty set (a missing
+/// registry behaves like an empty registry). A malformed
 /// registry is tolerated as empty — `flow active list` is the proper
 /// surface for the legacy/parse-warning paths, and silently treating
 /// breakage as "no active flows" here keeps `flow list --active-only` from
@@ -233,10 +233,9 @@ fn load_active_slug_set(root: &Path) -> Result<std::collections::HashSet<String>
                 .with_context(|| format!("reading {}", registry.display()));
         }
     };
-    // R17: route through the canonical schema parser so list.rs and
-    // resolve.rs share one source of truth for the registry's wire shape.
-    // Malformed TOML degrades to "no active flows" — same defensive
-    // contract the previous TomlValue walk maintained.
+    // Route through the canonical schema parser so this module and
+    // `flow::resolve` share one source of truth for the registry's wire
+    // shape. Malformed TOML degrades to "no active flows".
     let doc = match ActiveDoc::from_toml_str(&s) {
         Ok(d) => d,
         Err(_) => return Ok(set),

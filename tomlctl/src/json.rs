@@ -1,6 +1,5 @@
-//! T2 of `docs/plans/flow-tracking-overhaul.md`: JSON-document
-//! `get`/`set`/`unset` on a dotted path. Sibling of the TOML side's
-//! `get` / `set` / `set-json`, scoped to JSON files (e.g.
+//! JSON-document `get`/`set`/`unset` on a dotted path. Sibling of the
+//! TOML side's `get` / `set` / `set-json`, scoped to JSON files (e.g.
 //! `.claude/settings.json`).
 //!
 //! Mirrors the TOML pipeline byte-for-byte where it can:
@@ -395,8 +394,8 @@ fn handle_set(
     }
 
     with_exclusive_lock(file, || {
-        // O17 mirror: in-lock containment guard so a swap of the leaf
-        // symlink between guard and persist is caught.
+        // In-lock containment guard so a swap of the leaf symlink between
+        // guard and persist is caught.
         guard_write_path(file, integrity.allow_outside)?;
         // Read existing doc; treat missing file as `{}` so first-write to
         // a brand-new JSON file works without a separate bootstrap step.
@@ -422,8 +421,8 @@ fn handle_set(
             verify_sidecar_if_requested(file, true)?;
         }
         set_at_path_json(&mut doc, path, parsed.clone())?;
-        // R3 TOCTOU narrowing: re-check containment immediately before
-        // the atomic persist, mirroring `mutate_doc`.
+        // TOCTOU narrowing: re-check containment immediately before the
+        // atomic persist, mirroring `mutate_doc`.
         if !integrity.allow_outside {
             recheck_claude_containment(file)?;
         }

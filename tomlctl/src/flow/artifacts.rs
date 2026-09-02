@@ -1,16 +1,8 @@
-//! R9: canonical flow-artifact path map — single source of truth for the
-//! four well-known artifacts that a flow's `context.toml` references.
+//! Canonical flow-artifact path map — single source of truth for the four
+//! well-known artifacts that a flow's `context.toml` references.
 //!
-//! Pre-R9, three sites computed this map independently with three slightly
-//! different shapes:
-//! - `flow::init::artifacts_for` returned a struct of `String` fields.
-//! - `flow::resolve::canonical_artifacts` returned a different struct.
-//! - `flow::doctor::canonical_artifacts` returned `Vec<(&'static str, String)>`
-//!   so it could iterate during the per-key check.
-//!
-//! Consolidation: the canonical struct lives here. A `to_pairs` accessor
-//! produces the iterable form `doctor` consumed; field accessors stay on
-//! the struct for `init` / `resolve` which want named fields.
+//! `to_pairs` yields the iterable form `flow::doctor` needs for its per-key
+//! check; the named field accessors serve `flow::init` and `flow::resolve`.
 
 /// Four canonical artifact paths for a flow, repo-relative. The string
 /// values are exactly what `flow init` writes into `context.toml`'s
