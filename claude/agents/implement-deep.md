@@ -70,6 +70,22 @@ Example: `escalate R7{2}: stash-required — what="read on-disk pre-edit state o
 Do not paraphrase that prefix and do not add commentary on the same line — the orchestrator matches it literally and extracts the two fields mechanically. It then performs the operation safely and re-dispatches you with updated context; do not attempt it yourself.
 <!-- SHARED-BLOCK:forbidden-working-tree-ops END -->
 
+<!-- SHARED-BLOCK:backlog-candidates START -->
+## Tangential discoveries — surface them, never write them
+
+Work turns up real things that are not your task: a flaky test, a bug in a neighbouring module, a follow-up your change implies, a path that cost you ten minutes. Report each one and leave it alone — fixing it widens the cluster you were scoped to, and a fix nobody asked for is the change a reviewer cannot place.
+
+Report them under the fixed heading `TANGENTIAL:` at the end of your return payload, one line per candidate:
+
+```
+TANGENTIAL: <kind> | <area> | <summary> | <why it matters>
+```
+
+`<kind>` is one of `bug`, `flaky-test`, `debt`, `direction`, `annoyance`, `question`, `other`; `<area>` is a repo-relative path or module. Write `TANGENTIAL: none` when you noticed nothing — the heading is matched mechanically, and its absence reads as a dropped report rather than an empty one.
+
+You are never the writer. Do not run `tomlctl backlog add`, `relate`, `triage`, `compact`, or `evidence dir`. The orchestrator is the only writer and runs `backlog check` before every mint, which is what stops parallel agents racing on one store and its integrity sidecar. The read-only verbs are yours: `tomlctl backlog check`, `show`, and `list` answer whether a discovery is already recorded before you spend a line on it.
+<!-- SHARED-BLOCK:backlog-candidates END -->
+
 ## Output Shape
 
 Return this at end of work, or send it per **Delivering it** above when you are a named teammate.
@@ -94,4 +110,6 @@ escalate <id>4: security-sensitive — <reason>
 - Trade-off: minimal patch, consistent with existing util/cache.rs idioms.
 ### <id>2 Alt 2: dedicated RetryCache
 - Trade-off: cleaner separation but introduces a new abstraction for one call site.
+
+TANGENTIAL: flaky-test | tomlctl/tests | the evidence-audit case leaves its temp dir behind | the next run in the same tree fails on the leftover
 ```

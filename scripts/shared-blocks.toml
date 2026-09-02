@@ -17,11 +17,11 @@
 #   ledger-disposition-sweep, apply-vet-implement-lite,
 #   vet-research, and plansdirectory-prompt.
 #
-#   After wave 2 the manifest carries exactly ONE block:
-#   forbidden-working-tree-ops, which spans the two implement agent
-#   files (neither is a command carrier, so it was untouched by the
-#   migration). The agent files do not externalise this block to a skill,
-#   so it carries no `skill = "..."` field.
+#   The manifest carries two blocks — forbidden-working-tree-ops and
+#   backlog-candidates — each spanning the same two implement agent files
+#   (neither file is a command carrier, so both were untouched by the
+#   migration). Neither block is externalised to a skill, so neither
+#   carries a `skill = "..."` field.
 #
 #   The optional `skill = "..."` field (now unused, since no surviving block
 #   is externalised) records the externalised skill path for a block once it
@@ -31,6 +31,13 @@
 
 [[block]]
 name = "forbidden-working-tree-ops"
+files = [
+  "claude/agents/implement-deep.md",
+  "claude/agents/implement-lite.md",
+]
+
+[[block]]
+name = "backlog-candidates"
 files = [
   "claude/agents/implement-deep.md",
   "claude/agents/implement-lite.md",
