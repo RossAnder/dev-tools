@@ -36,7 +36,10 @@ mod stale;
 // widening the whole module to `pub(crate)`, keeping the cross-layer
 // visibility surface minimal.
 mod time;
-pub(crate) use time::today_toml_date;
+pub(crate) use stale::parse_threshold;
+pub(crate) use time::{today_toml_date, today_utc_date};
+#[cfg(test)]
+pub(crate) use time::today_utc_iso;
 
 mod dispatch;
 

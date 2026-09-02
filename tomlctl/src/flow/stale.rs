@@ -174,7 +174,7 @@ fn verdict_from_iso_string(
 /// returns a `Duration`. Rejects bare numbers, unknown suffixes, empty
 /// inputs, and zero-length integer prefixes — every error is tagged
 /// `kind=validation` per the plan's contract.
-fn parse_threshold(input: &str) -> Result<Duration> {
+pub(crate) fn parse_threshold(input: &str) -> Result<Duration> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return Err(tagged_err(
