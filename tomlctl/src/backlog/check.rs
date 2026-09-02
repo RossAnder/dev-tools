@@ -13,9 +13,8 @@
 //! true at the moment it is taken.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{IsTerminal, Read};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
@@ -30,7 +29,7 @@ use super::schema::{
 };
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::items_array;
+use crate::io::{items_array, read_text_arg};
 use crate::output::print_json;
 
 /// Number of shared leading `area` components, or shared tags, at which a
@@ -387,28 +386,11 @@ fn resolve_summary(raw: String) -> Result<String> {
     if raw != SUMMARY_STDIN {
         return Ok(raw);
     }
-    if std::io::stdin().is_terminal() {
-        return Err(tagged_err(
-            ErrorKind::Validation,
-            None,
-            "--summary - reads the summary from stdin, and stdin is a TTY; pipe the text in \
-             (e.g. `… --summary - <<'EOF'`) or pass it as a literal"
-                .to_string(),
-        ));
-    }
-    let mut buf = String::new();
-    std::io::stdin()
-        .read_to_string(&mut buf)
-        .context("reading --summary from stdin")?;
+    // Routed through the shared funnel so the single-consumption guard and the
+    // stdin byte cap hold on this path too.
+    let buf = read_text_arg(SUMMARY_STDIN)?;
     let text = buf.strip_suffix('\n').unwrap_or(&buf);
     let text = text.strip_suffix('\r').unwrap_or(text);
-    if text.trim().is_empty() {
-        return Err(tagged_err(
-            ErrorKind::Validation,
-            None,
-            "--summary - read an empty stdin; the summary is required".to_string(),
-        ));
-    }
     Ok(text.to_string())
 }
 

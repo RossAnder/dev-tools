@@ -417,12 +417,16 @@ the top-level crate directory that every row under a crate shares.
 
 ## Evidence directories
 
-Each item may have a drop-box at `.claude/backlog-evidence/<item-id>/`. Two `.gitignore` rules
-govern it — `/.claude/backlog-evidence/*/*` ignores the contents and
+Each item may have a drop-box at `.claude/backlog-evidence/<item-id>/`. Three `.gitignore` rules
+govern it — `/.claude/backlog-evidence/**` ignores everything beneath it,
+`!/.claude/backlog-evidence/*/` re-includes the per-item directories, and
 `!/.claude/backlog-evidence/*/.evidence` negates the marker back in — so the
 directory survives into a fresh clone once its files have been left behind, and a screenshot
-cannot be published by reflex. Publishing one is a deliberate `git add -f <file>`, taken after
-reading the file for credentials, personal data and session tokens.
+cannot be published by reflex. The directory re-include must precede the marker negation: git
+will not re-include a file inside a directory that is itself still excluded, so the `**`
+exclusion has to be lifted for the directory before the marker rule can take effect. Publishing
+a file is a deliberate `git add -f <file>`, taken after reading it for credentials, personal
+data and session tokens.
 
 **Never hand-derive the path.** Ids widen on collision, so a directory built from an eyeballed
 8-hex prefix is owned by nothing: `audit` reports it `unowned`, and it is invisible to `show`

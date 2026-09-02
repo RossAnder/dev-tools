@@ -1115,3 +1115,36 @@ summary = "review-apply R66 R70: TERMINAL_DATE_FIELDS is derived from the TERMIN
 original_intent = "R13 introduced the cluster table beside a hand-written date slice; flow/resolve.rs kept its own clamp after R18 shared one"
 rationale = "Two sources for one fact were cross-checked only by a test; the third clamp copy survived the R18 dedup. A span failure in resolve now reads as age zero rather than a stale verdict with an unreferenced reason string."
 dedup_id = "f7eb84ef7a909a96"
+
+[[items]]
+id = "E88"
+type = "deviation"
+date = 2026-09-02
+agent = "review-apply"
+task_ref = "share-the-stdin-guard-with-the-check-verb"
+original_intent = "Add a read_text_arg beside read_json_arg that shares the single-consumption guard and byte cap, with an empty-input error naming text rather than a JSON payload, and call it from the check verb in place of its local stdin read."
+rationale = "The new helper takes no flag label, so the check verb's stdin sentinel now emits the generic TTY-refusal and empty-input wordings and has lost its flag-specific heredoc hint; resolve_summary's own empty check was deleted as unreachable once the shared funnel rejects whitespace-only input. A label parameter would have preserved the wording byte-for-byte but adds API surface for a single caller. The validation-kind error envelope is preserved via tagged_err, and no test asserted either string."
+summary = "The check verb's stdin errors became the shared funnel's generic text wordings rather than keeping their flag-specific hint."
+dedup_id = "07f022a64e769df9"
+
+[[items]]
+id = "E89"
+type = "deviation"
+date = 2026-09-02
+agent = "review-apply"
+task_ref = "assert-the-sandbox-git-init-status"
+original_intent = "Assert that git init succeeded in the shared test sandbox, so a failed init stops surfacing later as an unrelated tracked-count assertion."
+rationale = "The assertion is gated on the spawn succeeding rather than run unconditionally. Only 1 of the 26 sandbox call sites gates on git_available, so an unconditional assert would turn a machine without git into a hard failure for the other 25 tests. An init that runs and fails, which is the misattribution the finding describes, now fails loudly at the point it happens."
+summary = "The git init assertion is gated on spawn success, so an absent git still yields a git-less sandbox."
+dedup_id = "d7e5017cd7bfbccd"
+
+[[items]]
+id = "E90"
+type = "deviation"
+date = 2026-09-02
+agent = "review-apply"
+task_ref = "prove-the-triage-mode-flags-conflict"
+original_intent = "Assert that the triage two-mode-flags parser error names both conflicting flags, so a typo in either flag name no longer passes the test."
+rationale = "clap renders the named-conflict form only under its error-context feature, and the crate builds clap with default-features = false, omitting it; the conflict currently prints without either flag name. Enabling the feature would add the named line plus Usage blocks to every clap error the binary emits, a behaviour change across all exit-2 paths made to satisfy one assertion. The substring asserted instead is the one common to both renderings, and it still fails on a flag-name typo, which now produces an unexpected-argument error."
+summary = "The mode-conflict test asserts a conflict-shaped substring rather than both flag names, which clap cannot render under this crate's feature set."
+dedup_id = "b720dd3b9b2a766c"

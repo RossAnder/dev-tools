@@ -2,8 +2,9 @@
 //!
 //! Split out of `integration.rs` (R23) so each topic-specific test binary
 //! (`items_dry_run.rs`, `items_dedupe.rs`, `capabilities.rs`, `blocks.rs`,
-//! and the leftover `integration.rs`) can share the tempdir/ledger
-//! bootstrap, the list-query fixture, JSON error-envelope parsing, and the
+//! `backlog_read.rs`, `backlog_write.rs`, and the leftover `integration.rs`)
+//! can share the tempdir/ledger bootstrap, the list-query fixture, the
+//! backlog sandbox and its CLI runners, JSON error-envelope parsing, and the
 //! sidecar-digest assertion without duplicating their bodies.
 //!
 //! Each test binary declares `mod common;` to pull this module in. Cargo
@@ -213,4 +214,155 @@ pub fn parse_json_error_envelope(stderr: &str) -> serde_json::Value {
         "error.file key must always be present (null when unknown), got: {err}"
     );
     err
+}
+
+/// The repository's own rules, verbatim: every `tracked` verdict a backlog
+/// test makes is a claim about what this ignore set does, so a drifted
+/// fixture would assert against rules nobody ships.
+const GITIGNORE: &str = "/.claude/backlog-evidence/**\n\
+                         !/.claude/backlog-evidence/*/\n\
+                         !/.claude/backlog-evidence/*/.evidence\n";
+
+/// What every evidence rule starts with once the `!` of a negation is stripped.
+const EVIDENCE_RULE_PREFIX: &str = "/.claude/backlog-evidence/";
+
+/// [`GITIGNORE`], checked against the evidence rules the repository's own
+/// `.gitignore` carries — hand-kept copies, and nothing else would notice them
+/// diverging. A checkout is not guaranteed (a vendored crate has no repo root
+/// to read), so the check is skipped there rather than failed.
+fn shipped_gitignore() -> &'static str {
+    let repo_gitignore = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|repo| repo.join(".gitignore"))
+        .and_then(|path| fs::read_to_string(path).ok());
+    if let Some(text) = repo_gitignore {
+        let shipped: String = text
+            .lines()
+            .filter(|line| line.trim_start_matches('!').starts_with(EVIDENCE_RULE_PREFIX))
+            .map(|line| format!("{line}\n"))
+            .collect();
+        assert_eq!(
+            shipped, GITIGNORE,
+            "the sandbox fixture and the evidence rules the repository ships have diverged"
+        );
+    }
+    GITIGNORE
+}
+
+/// A throwaway repo root with `.claude/` and the evidence ignore rules in
+/// place. The `TempDir` is returned so the caller keeps it alive for the whole
+/// test — dropping it deletes the tree.
+pub fn sandbox() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    // `TOMLCTL_ROOT` is canonicalised by the binary, so canonicalise here too
+    // or every emitted path fails to relativise against it.
+    let root = dir.path().canonicalize().unwrap();
+    fs::create_dir_all(root.join(".claude")).unwrap();
+    fs::write(root.join(".gitignore"), shipped_gitignore()).unwrap();
+    // An init that ran and failed would surface much later as an unrelated
+    // tracked-count assertion, so it is caught here instead. A git that never
+    // ran at all stays tolerated: the tests that need a repo gate on
+    // `git_available`, the rest do not care.
+    if let Ok(init) = std::process::Command::new("git")
+        .args(["init", "-q", "."])
+        .current_dir(&root)
+        .output()
+    {
+        assert!(
+            init.status.success(),
+            "`git init` failed in {}: {}",
+            root.display(),
+            String::from_utf8_lossy(&init.stderr)
+        );
+        assert!(
+            root.join(".git").is_dir(),
+            "`git init` reported success but {} has no .git directory",
+            root.display()
+        );
+    }
+    (dir, root)
+}
+
+pub fn store_path(root: &Path) -> PathBuf {
+    root.join(".claude").join("backlog.toml")
+}
+
+pub fn cli(root: &Path) -> Command {
+    let mut cmd = Command::cargo_bin("tomlctl").unwrap();
+    cmd.env("TOMLCTL_ROOT", root)
+        .env("TOMLCTL_LOCK_TIMEOUT", "5");
+    cmd
+}
+
+/// Run `tomlctl backlog <args…>`, require success, and hand back stdout.
+pub fn backlog_stdout(root: &Path, args: &[&str]) -> String {
+    let out = cli(root)
+        .arg("backlog")
+        .args(args)
+        .write_stdin("")
+        .assert()
+        .success();
+    String::from_utf8_lossy(&out.get_output().stdout).to_string()
+}
+
+/// Run `tomlctl backlog <args…>`, require success, and parse stdout as JSON.
+pub fn backlog(root: &Path, args: &[&str]) -> serde_json::Value {
+    let stdout = backlog_stdout(root, args);
+    serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+        panic!(
+            "`backlog {}` stdout must be JSON: {e}; got: {stdout}",
+            args.join(" ")
+        )
+    })
+}
+
+pub fn git_available() -> bool {
+    std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+/// Rewrite the row's terminal date to one far enough back that any realistic
+/// `--older-than` fires. The clock cannot be moved and a same-day terminal
+/// date is zero days old, so the fixture is aged instead.
+pub fn age_terminal_date(store: &Path, field: &str) {
+    let text = fs::read_to_string(store).unwrap();
+    let needle = format!("{field} = ");
+    let mut hit = false;
+    let aged: Vec<String> = text
+        .lines()
+        .map(|line| {
+            if line.starts_with(&needle) {
+                hit = true;
+                format!("{needle}2020-01-01")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    assert!(hit, "no `{field} = …` line to age in:\n{text}");
+    fs::write(store, format!("{}\n", aged.join("\n"))).unwrap();
+    refresh_sidecar(store);
+}
+
+/// Rewrite `<file>.sha256` over the live bytes, in the same
+/// `<hex>  <basename>\n` shape [`assert_sidecar_matches`] checks. A fixture
+/// edited out of band otherwise leaves a stale digest behind, so any later
+/// `--verify-integrity` read would fail as an apparent product bug.
+fn refresh_sidecar(file: &Path) {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+    let bytes = fs::read(file).unwrap();
+    let mut hex = String::with_capacity(64);
+    for b in Sha256::digest(&bytes).iter() {
+        let _ = write!(hex, "{:02x}", b);
+    }
+    let sidecar: PathBuf = {
+        let mut s = file.as_os_str().to_os_string();
+        s.push(".sha256");
+        PathBuf::from(s)
+    };
+    let basename = file.file_name().unwrap().to_string_lossy();
+    fs::write(&sidecar, format!("{hex}  {basename}\n")).unwrap();
 }

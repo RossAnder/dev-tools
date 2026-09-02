@@ -894,6 +894,40 @@ mod tests {
     }
 
     #[test]
+    fn a_bump_unions_related_without_replacing_it() {
+        with_root(|root| {
+            run(capture("the first item being pointed at")).unwrap();
+            run(capture("the second item being pointed at")).unwrap();
+            let first = rows(root)[0][FIELD_ID].as_str().unwrap().to_string();
+            let second = rows(root)[1][FIELD_ID].as_str().unwrap().to_string();
+
+            let summary = "an item whose edges accrue across sightings";
+            run(Capture {
+                related: &[&first],
+                ..capture(summary)
+            })
+            .unwrap();
+            // Incoming leads with the new id and repeats the held one, so the
+            // expected order separates a union from both a replacement
+            // (`[second, first]`) and a duplicating append.
+            run(Capture {
+                related: &[&second, &first],
+                ..capture(summary)
+            })
+            .unwrap();
+
+            let rows = rows(root);
+            let related: Vec<&str> = rows[2][FIELD_RELATED]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(TomlValue::as_str)
+                .collect();
+            assert_eq!(related, [first.as_str(), second.as_str()]);
+        });
+    }
+
+    #[test]
     fn credential_and_machine_local_shapes_raise_an_advisory_each() {
         let req = |summary: &str, tags: &[&str], evidence: &[&str], context: Option<&str>| {
             AddRequest {
@@ -1003,6 +1037,25 @@ mod tests {
             assert_eq!(row[FIELD_STATUS].as_str(), Some(STATUS_OPEN));
             assert_eq!(row[FIELD_CONTEXT].as_str(), Some("pass --json - to stream it"));
             assert_eq!(row["duplicate_of"].as_str(), Some("B-7f0e2d91"));
+            assert_eq!(schema::validate(&toml_to_json(&rows[0])), Ok(()));
+        });
+    }
+
+    #[test]
+    fn a_json_payload_stores_origin_and_flow() {
+        with_root(|root| {
+            run(Capture {
+                json: Some(
+                    r#"{"summary":"provenance reaches the stored row","kind":"bug",
+                        "area":"tomlctl/src","origin":"implement",
+                        "flow":"lumina-pty-hardening"}"#,
+                ),
+                ..Capture::default()
+            })
+            .unwrap();
+            let rows = rows(root);
+            assert_eq!(rows[0][FIELD_ORIGIN].as_str(), Some("implement"));
+            assert_eq!(rows[0][FIELD_FLOW].as_str(), Some("lumina-pty-hardening"));
             assert_eq!(schema::validate(&toml_to_json(&rows[0])), Ok(()));
         });
     }

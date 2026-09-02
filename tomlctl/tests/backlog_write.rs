@@ -10,13 +10,15 @@
 //! that minted it, so a change to the id derivation surfaces as a failed
 //! shape assertion rather than as a silently-passing lookup.
 
-use assert_cmd::Command;
-use serde_json::{Value, json};
+use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::{assert_sidecar_matches, parse_json_error_envelope};
+use common::{
+    age_terminal_date, assert_sidecar_matches, backlog, cli, parse_json_error_envelope, sandbox,
+    store_path,
+};
 
 const FLAKE_SUMMARY: &str = "pty_readiness_probe flakes on slow CI";
 const FLAKE_AREA: &str = "lumina/server/tests/pty_readiness_probe.rs";
@@ -25,62 +27,12 @@ const FLAKE_CONTEXT: &str =
 const DRIFT_SUMMARY: &str = "sqlite migration checksum drifts after a renormalise";
 const DRIFT_AREA: &str = "lumina/server/db/migrate.rs";
 
-/// The two rules the repo's own `.gitignore` carries for drop-boxes: contents
-/// ignored, marker negated back in.
-const GITIGNORE: &str =
-    "/.claude/backlog-evidence/*/*\n!/.claude/backlog-evidence/*/.evidence\n";
-
-/// A throwaway repo root with `.claude/` and the evidence ignore rules in
-/// place. The `TempDir` is returned so the caller keeps it alive for the whole
-/// test — dropping it deletes the tree.
-fn sandbox() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    // `TOMLCTL_ROOT` is canonicalised by the binary, so canonicalise here too
-    // or every emitted path fails to relativise against it.
-    let root = dir.path().canonicalize().unwrap();
-    fs::create_dir_all(root.join(".claude")).unwrap();
-    fs::write(root.join(".gitignore"), GITIGNORE).unwrap();
-    let _ = std::process::Command::new("git")
-        .args(["init", "-q", "."])
-        .current_dir(&root)
-        .output();
-    (dir, root)
-}
-
-fn store_path(root: &Path) -> PathBuf {
-    root.join(".claude").join("backlog.toml")
-}
-
 fn sidecar_path(root: &Path) -> PathBuf {
     root.join(".claude").join("backlog.toml.sha256")
 }
 
 fn evidence_dir(root: &Path, id: &str) -> PathBuf {
     root.join(".claude").join("backlog-evidence").join(id)
-}
-
-fn cli(root: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("tomlctl").unwrap();
-    cmd.env("TOMLCTL_ROOT", root)
-        .env("TOMLCTL_LOCK_TIMEOUT", "5");
-    cmd
-}
-
-/// Run `tomlctl backlog <args…>`, require success, and parse stdout as JSON.
-fn backlog(root: &Path, args: &[&str]) -> Value {
-    let out = cli(root)
-        .arg("backlog")
-        .args(args)
-        .write_stdin("")
-        .assert()
-        .success();
-    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
-        panic!(
-            "`backlog {}` stdout must be JSON: {e}; got: {stdout}",
-            args.join(" ")
-        )
-    })
 }
 
 /// Store and sidecar bytes together — the pair a dry run must leave alone.
@@ -134,28 +86,6 @@ fn assert_minted_id(id: &str) {
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "id must be lowercase hex; got {id:?}"
     );
-}
-
-/// Rewrite the row's terminal date to one far enough back that any realistic
-/// `--older-than` fires. The clock cannot be moved and a same-day terminal
-/// date is zero days old, so the fixture is aged instead.
-fn age_terminal_date(store: &Path, field: &str) {
-    let text = fs::read_to_string(store).unwrap();
-    let needle = format!("{field} = ");
-    let mut hit = false;
-    let aged: Vec<String> = text
-        .lines()
-        .map(|line| {
-            if line.starts_with(&needle) {
-                hit = true;
-                format!("{needle}2020-01-01")
-            } else {
-                line.to_string()
-            }
-        })
-        .collect();
-    assert!(hit, "no `{field} = …` line to age in:\n{text}");
-    fs::write(store, format!("{}\n", aged.join("\n"))).unwrap();
 }
 
 /// The core write walk: mint → bump → second capture → relate → triage →
@@ -334,6 +264,79 @@ fn add_dry_run_leaves_the_store_and_sidecar_byte_identical() {
     );
 }
 
+/// The coercion is fail-soft — the capture succeeds and the row stores
+/// `other` — so the warning on stderr is the only signal that the kind the
+/// caller typed was not understood. Nothing else would notice it going away.
+#[test]
+fn an_unknown_kind_warns_on_stderr() {
+    let (_tmp, root) = sandbox();
+
+    let out = cli(&root)
+        .args([
+            "backlog",
+            "add",
+            "--summary",
+            DRIFT_SUMMARY,
+            "--kind",
+            "regression",
+            "--area",
+            DRIFT_AREA,
+        ])
+        .write_stdin("")
+        .assert()
+        .success();
+
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    for fragment in ["unknown backlog kind", "`regression`", "`other`"] {
+        assert!(
+            stderr.contains(fragment),
+            "the unknown-kind warning must carry {fragment}; got: {stderr:?}"
+        );
+    }
+}
+
+/// Each backlog read verb threads `--verify-integrity` through its own call
+/// site, so a passing verified read cannot tell a plumbed verb from one that
+/// silently drops the flag. Only a sidecar that no longer covers the store
+/// separates them.
+#[test]
+fn list_verify_integrity_rejects_a_tampered_sidecar() {
+    let (_tmp, root) = sandbox();
+    backlog(
+        &root,
+        &[
+            "add",
+            "--summary",
+            FLAKE_SUMMARY,
+            "--kind",
+            "flaky-test",
+            "--area",
+            FLAKE_AREA,
+        ],
+    );
+
+    let sidecar = sidecar_path(&root);
+    let mut digest = fs::read(&sidecar).unwrap();
+    digest[0] = if digest[0] == b'0' { b'1' } else { b'0' };
+    fs::write(&sidecar, digest).unwrap();
+
+    let out = cli(&root)
+        .args([
+            "--error-format",
+            "json",
+            "backlog",
+            "list",
+            "--verify-integrity",
+        ])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(err["kind"], json!("integrity"));
+}
+
 #[test]
 fn evidence_dir_writes_only_the_marker_and_is_idempotent() {
     let (_tmp, root) = sandbox();
@@ -454,9 +457,42 @@ fn on_duplicate_add_is_not_a_parser_value() {
 }
 
 #[test]
+fn dismiss_stores_its_terminal_date_and_reason() {
+    let (_tmp, root) = sandbox();
+    let added = backlog(
+        &root,
+        &[
+            "add",
+            "--summary",
+            DRIFT_SUMMARY,
+            "--kind",
+            "bug",
+            "--area",
+            DRIFT_AREA,
+        ],
+    );
+    let id = added["id"].as_str().unwrap().to_string();
+
+    let reason = "the renormalise guard removed the drift";
+    let triaged = backlog(&root, &["triage", &id, "--dismiss", "--reason", reason]);
+    assert_eq!(triaged["transition"], json!("dismiss"));
+    assert_eq!(triaged["ids"], json!([id]));
+
+    let doc = read_store(&root);
+    let dismissed = row(&doc, "backlog", &id);
+    assert_eq!(field(dismissed, "status"), Some("dismissed"));
+    assert_eq!(field(dismissed, "dismiss_reason"), Some(reason));
+    assert!(
+        dismissed.get("dismissed").is_some(),
+        "a dismissed row carries its terminal date; got {dismissed}"
+    );
+    assert_sidecar_matches(&store_path(&root));
+}
+
+#[test]
 fn triage_with_two_mode_flags_is_a_parser_error() {
     let (_tmp, root) = sandbox();
-    cli(&root)
+    let out = cli(&root)
         .args([
             "backlog",
             "triage",
@@ -472,4 +508,12 @@ fn triage_with_two_mode_flags_is_a_parser_error() {
         .assert()
         .failure()
         .code(2);
+    // Exit 2 is clap's blanket usage code — a misspelt flag earns it too, and
+    // would leave the mutual exclusion itself untested. The conflict wording
+    // is what distinguishes it from an unrecognised argument.
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("cannot be used with"),
+        "the refusal must be a conflict, not an unrecognised flag; got: {stderr:?}"
+    );
 }

@@ -282,3 +282,21 @@ Feature meanings:
 | `backfill_dedup_id` | `items backfill-dedup-id <file>` |
 | `integrity_refresh` | `tomlctl integrity refresh <file>` — sidecar bootstrap / recovery primitive |
 | `agent_context` | `tomlctl capabilities .commands` emits per-subcommand flag schema (type / required / default / values / repeatable + mutex_groups) for runtime introspection without parsing `--help` prose |
+| `flow_resolve` | `flow resolve` — the 6-step active-flow resolution, emitting the JSON flow envelope |
+| `flow_active` | `flow active list` / `add` / `remove` — the `.claude/active-flow.toml` registry |
+| `flow_doctor` | `flow doctor` — cross-flow invariant checks; `--fix` repairs sidecar mismatches and prunes stale registry entries |
+| `flow_init` | `flow init --slug <SLUG> --plan <PATH>` — idempotent bootstrap of a new flow |
+| `flow_ensure_artifact` | `flow ensure-artifact --kind <KIND>` — report a flow artifact, and with `--bootstrap` materialise it |
+| `flow_envelope_build` | `flow envelope build --command <CARRIER>` — emit the canonical `flow-bootstrap` input envelope on stdout |
+| `flow_stale` | `flow stale --slug <SLUG> --threshold <DURATION>` — staleness verdict for a flow's `context.toml` |
+| `flow_find_plans` | `flow find-plans` — discover plan markdown under the configured plans directories or `--dirs` |
+| `json_ops` | `json get` / `set` / `unset` — dotted-path read and write against JSON files such as `.claude/settings.json` |
+| `backlog_capture` | `backlog add` — capture a discovery into the repo-scoped backlog store |
+| `backlog_check` | `backlog check --summary <TEXT>` — read-only graded verdict on whether a discovery is already known, before minting it |
+| `backlog_cluster` | `backlog cluster --by <VIEW>` — group open items into candidate work scopes |
+| `backlog_compact` | `backlog compact --older-than <DURATION>` — age decided items into `[[compacted]]`; `open` items are never touched |
+| `backlog_evidence` | `backlog evidence dir` / `audit` — per-item evidence directories under `.claude/backlog-evidence/` |
+| `backlog_list` | `backlog list` — query the store, with `--open` / `--area-prefix` / `--has-evidence` on top of the shared filter and projection surface |
+| `backlog_show` | `backlog show <ID>` — one item with its one-hop relation neighbourhood and evidence listing |
+| `backlog_relate` | `backlog relate <A> --to <ID> --as <KIND>` — write a typed edge between two items |
+| `backlog_triage` | `backlog triage <ID>... --promote` / `--dismiss` / `--resolve` / `--reopen` — transition items out of (or back into) `open` |

@@ -797,7 +797,7 @@ resolution = "Link targets ../../agents/flow-bootstrap.md; the in-page note is r
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R40"
 file = "tomlctl/src/backlog/add.rs"
@@ -809,11 +809,13 @@ category = "testability"
 summary = "--related is never exercised at any level"
 description = "run() hardcodes Vec::new() for related, the test Capture struct (add.rs:554) has no related field, and neither integration file passes the flag, so both the fresh-mint arm (303) and the bump-union arm (249) are unreached. Add related to Capture, mint with --related B-x, re-capture with --related B-y, assert the union."
 dedup_id = "c7fcb204f118163f"
+resolved = 2026-09-02
+resolution = "Added a bump-union test asserting related accrues across sightings without replacing or duplicating. The finding's premise was partly wrong: the Capture harness already carried related and the reject and fresh-mint arms were covered, so only the union arm was missing."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R41"
 file = "tomlctl/src/backlog/add.rs"
@@ -825,11 +827,13 @@ category = "testability"
 summary = "--origin and --flow are never asserted on a stored row"
 description = "run() passes None, None; request_from_payload reads them from JSON but a_json_payload_mints_and_re_derives_identity carries neither key. These are the provenance fields /backlog relies on. Add one JSON-payload case asserting both land."
 dedup_id = "401e396bc4e6efe4"
+resolved = 2026-09-02
+resolution = "Added a JSON-payload case asserting origin and flow land on the stored row."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R42"
 file = "tomlctl/src/backlog/cluster.rs"
@@ -841,11 +845,13 @@ category = "testability"
 summary = "The --strict-read missing-store branch has no test and the test that names it never calls dispatch"
 description = "a_missing_store_yields_empty_views (cluster.rs:564) asserts the path does not exist then calls build_views(&[], ...) which trivially yields empty views. Neither the lenient Vec::new() fallback nor the strict NotFound error is covered; every sibling leaf pins the pair. Call cluster::dispatch under an empty sandbox with strict_read false and true."
 dedup_id = "c29f22bcae76c72c"
+resolved = 2026-09-02
+resolution = "Replaced the trivially-passing missing-store test with one that calls cluster::dispatch lenient-then-strict: empty views off the real read_store path, and a not_found error under strict."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R43"
 file = "tomlctl/tests/backlog_write.rs"
@@ -858,11 +864,13 @@ summary = "--verify-integrity on the backlog store is tested only on the passing
 description = "Four read paths each thread integrity through their own call site (check.rs:392, query.rs:304, evidence_ops.rs:311, cluster.rs:44); a leaf that forgot read_integrity_opts would still pass. Mutate one sidecar byte, run backlog list --verify-integrity --error-format json, assert kind=integrity."
 dedup_id = "95b0ea655bf9eddb"
 depends_on = ["R48"]
+resolved = 2026-09-02
+resolution = "Added a test that flips one byte of the store's .sha256 sidecar and asserts backlog list --verify-integrity exits 1 with an integrity-kind envelope."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R44"
 file = "tomlctl/src/backlog/check.rs"
@@ -875,11 +883,13 @@ summary = "duplicate-id is the only verdict without an end-to-end CLI test pinni
 description = "Five verdicts are pinned in backlog_read.rs; duplicate-id is covered only at evaluate level. Seed two same-id different-dedup_id rows, run backlog check, assert verdict and candidates[].reason."
 dedup_id = "cd155720740bb181"
 depends_on = ["R48"]
+resolved = 2026-09-02
+resolution = "Added an end-to-end CLI test pinning the duplicate-id verdict and both candidate reasons, over a fixture of two rows sharing an id with distinct dedup_id values."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R45"
 file = "tomlctl/tests/backlog_read.rs"
@@ -893,11 +903,13 @@ description = "let _ = git init drops both error and exit status, and git_availa
 related = ["R46"]
 dedup_id = "d713138bec97a54b"
 depends_on = ["R48"]
+resolved = 2026-09-02
+resolution = "sandbox() now asserts git init succeeded and that .git is a directory, with captured stderr in the message. Gated on spawn success so an absent git still yields a git-less sandbox for the 25 ungated call sites."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R46"
 file = "tomlctl/tests/backlog_read.rs"
@@ -911,11 +923,13 @@ description = "A non-zero git add produces the same confusing tracked == 1 failu
 related = ["R45"]
 dedup_id = "911c754548d294b9"
 depends_on = ["R48"]
+resolved = 2026-09-02
+resolution = "The force-add call now binds its output and asserts the exit status succeeded, with captured stderr in the message."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R47"
 file = "tomlctl/tests/backlog_read.rs"
@@ -928,11 +942,13 @@ summary = "age_terminal_date rewrites the store without refreshing the sidecar, 
 description = "If that default flipped, check_reports_previously_resolved_against_a_compacted_row and the compact leg of the write walk would fail as an apparent compaction bug. Refresh the sidecar in the helper or assert the dependence in a comment-backed pre-check."
 dedup_id = "c460e8de61c6b62e"
 depends_on = ["R48"]
+resolved = 2026-09-02
+resolution = "age_terminal_date() now refreshes the store's .sha256 sidecar after its out-of-band write, via a refresh_sidecar helper matching write_sidecar_for's digest and basename shape."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R48"
 file = "tomlctl/tests/backlog_read.rs"
@@ -945,11 +961,13 @@ summary = "Five test helpers are duplicated near-byte-identically between backlo
 description = "sandbox, cli, store_path, age_terminal_date and GITIGNORE appear in both files (read:110-190, write:30-159), and the read copy's comment points at the sibling — the drift warning made explicit. Lift into common/mod.rs as backlog_sandbox()."
 related = ["R11"]
 dedup_id = "de1039edc85bf26b"
+resolved = 2026-09-02
+resolution = "Lifted the ignore fixture, sandbox, store_path, cli, backlog, backlog_stdout, git_available and age_terminal_date into tests/common/mod.rs. Reconciled the stale two-rule write-side ignore fixture onto the canonical three-rule form, kept the better doc comments, and provided both CLI runners so neither binary lost a capability. Net 161 lines removed, 152 added."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R49"
 file = "tomlctl/src/backlog/schema.rs"
@@ -966,11 +984,13 @@ depends_on = [
     "R48",
     "R14",
 ]
+resolved = 2026-09-02
+resolution = "Added an integration case asserting the unknown-kind coercion warning reaches stderr, pinning three fragments so deleting the eprintln fails the test."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R50"
 file = "tomlctl/src/backlog/evidence_ops.rs"
@@ -983,11 +1003,13 @@ summary = "--max-bytes wiring and the EVIDENCE_MAX_BYTES default are unproven"
 description = "oversize_fires_one_byte_over_the_threshold_only calls audit() with an explicit threshold. Run backlog evidence audit --max-bytes 1 over a 2-byte file and assert counts.oversize == 1."
 dedup_id = "22590476b79fc668"
 depends_on = ["R48"]
+resolved = 2026-09-02
+resolution = "Added a test asserting a 2-byte file is clear under the built-in default threshold and oversize under --max-bytes 1, exercising both arms of dispatch_audit's unwrap_or."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R51"
 file = "tomlctl/tests/backlog_write.rs"
@@ -1000,6 +1022,8 @@ summary = "The two-mode-flags test asserts only exit 2, and promote, dismiss and
 description = "Exit 2 is clap's blanket usage code, so a typo in either flag name also passes. Assert stderr names both conflicting flags, and add one CLI-level --dismiss round-trip."
 dedup_id = "9460edd34cea2de7"
 depends_on = ["R48"]
+resolved = 2026-09-02
+resolution = "partial: strengthened the mode-conflict test to assert the refusal is a conflict rather than an unrecognised flag, and added a dismiss CLI round-trip asserting the stored terminal date and reason / pending: naming both conflicting flags needs clap's error-context feature, which this crate deliberately omits, and the promote and reopen modes remain CLI-untested. Tracked as R77."
 
 [[items]]
 first_flagged = 2026-09-02
@@ -1271,13 +1295,15 @@ summary = "The evidence ignore rules are hand-duplicated in .gitignore, an evide
 description = "If the three drift, every tracked and sensitive-published assertion silently tests rules nobody ships. Either have the fixtures read the repo's .gitignore, or register the rule block in scripts/shared-blocks.toml so the pre-commit verifier holds them byte-identical."
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 related = [
     "R2",
     "R48",
 ]
 flow = "tomlctl-backlog-capture"
 dedup_id = "8c012465c252de13"
+resolved = 2026-09-02
+resolution = "Both remaining ignore-rule copies now derive from the repo .gitignore via a shipped_gitignore helper that asserts the literal matches and degrades to it off-checkout. The finding undercounted: a fourth, already-drifted two-rule copy existed in the write-side binary. Registering the block in shared-blocks.toml was not available, since its markers are HTML comments and are invalid in both .gitignore and Rust."
 
 [[items]]
 id = "R66"
@@ -1344,10 +1370,12 @@ summary = "Ten inline TOMLCTL_ROOT set/remove blocks in io.rs and orphans.rs uni
 description = "io.rs has eight and orphans.rs two inline set_var/remove_var pairs around test bodies; an assertion that panics between them leaves TOMLCTL_ROOT set for every later test in the process. with_root now exists (R11) with a Drop guard, so each is a mechanical conversion."
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 related = ["R11"]
 flow = "tomlctl-backlog-capture"
 dedup_id = "20428695be23b556"
+resolved = 2026-09-02
+resolution = "partial: routed 9 of the 11 inline TOMLCTL_ROOT set/remove pairs through test_support::with_root, 7 in io.rs and 2 in orphans.rs / pending: two TOMLCTL_LOCK_TIMEOUT sites need a second env-var guard in test_support.rs. Tracked as R76."
 
 [[items]]
 id = "R70"
@@ -1400,10 +1428,12 @@ summary = "pending parts of R1: check's stdin read bypasses io.rs's once-per-inv
 description = "io.rs keeps STDIN_CONSUMED and MAX_STDIN_BYTES private and read_json_arg's empty-input error names a JSON payload, so check.rs reads stdin locally. Harmless while check has one stdin-capable flag; a second one on any backlog verb makes a double consume reachable. Add a pub(crate) read_text_arg beside read_json_arg sharing the guard and cap, and call it from check."
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 related = ["R1"]
 flow = "tomlctl-backlog-capture"
 dedup_id = "91f80f01abe54ae8"
+resolved = 2026-09-02
+resolution = "Added io::read_text_arg, sharing the single-consumption guard and byte cap via a factored claim_stdin, and routed the check verb's stdin summary read through it. read_json_arg's error text is unchanged for its existing callers, and the validation-kind envelope is preserved via tagged_err."
 
 [[items]]
 id = "R75"
@@ -1417,13 +1447,15 @@ summary = "The Evidence directories section describes two .gitignore rules; the 
 description = "After R2 the rules are /.claude/backlog-evidence/**, !/.claude/backlog-evidence/*/ and !/.claude/backlog-evidence/*/.evidence; the reference still describes the one-level pattern plus the marker negation. State the three rules and why the directory re-include must precede the marker one."
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 related = [
     "R2",
     "R65",
 ]
 flow = "tomlctl-backlog-capture"
 dedup_id = "90b9c5eba1b2f5a7"
+resolved = 2026-09-02
+resolution = "Restated the three shipped .gitignore rules and explained why the directory re-include must precede the marker negation."
 
 [[items]]
 id = "R72"
@@ -1437,13 +1469,15 @@ summary = "The README's Feature meanings table stops at agent_context and now ex
 description = "R23 refreshed the capabilities sample so its features array matches the binary, but the explanatory table below it never gained rows for the flow_*, json_ops and backlog_* features. Add one row per missing feature, sourced from the FEATURES doc comments in cli/types.rs."
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 related = [
     "R23",
     "R17",
 ]
 flow = "tomlctl-backlog-capture"
 dedup_id = "a29b49af460a2394"
+resolved = 2026-09-02
+resolution = "Added 18 rows to the Feature meanings table, each sourced from that feature's FEATURES doc comment; the table now covers all 32 entries with no extras. The finding's 33-entry and 19-missing counts were both miscounts, of the code and of its own list respectively."
 
 [[items]]
 id = "R73"
@@ -1461,3 +1495,37 @@ status = "open"
 related = ["R34"]
 flow = "tomlctl-backlog-capture"
 dedup_id = "d6f449026b27ef9d"
+
+[[items]]
+id = "R76"
+file = "tomlctl/src/io.rs"
+line = 0
+symbol = "TOMLCTL_ROOT"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "pending parts of R69: two TOMLCTL_LOCK_TIMEOUT sites still leak the override on a panic"
+description = "with_root covers TOMLCTL_ROOT only, so two io.rs tests stayed on inline set_var/remove_var: with_exclusive_lock_contention_times_out also sets TOMLCTL_LOCK_TIMEOUT and holds the root across a two-thread window (with_root takes env_lock itself, so it cannot nest inside that test's existing env_lock guard without deadlocking), and tomlctl_lock_timeout_clamps_at_24h touches only TOMLCTL_LOCK_TIMEOUT. Closing both needs a TOMLCTL_LOCK_TIMEOUT-shaped Drop guard, or a generic with_env_var, in tomlctl/src/test_support.rs."
+first_flagged = 2026-09-02
+rounds = 1
+related = ["R69"]
+status = "open"
+flow = "tomlctl-backlog-capture"
+dedup_id = "9e4b3e6f95f2c5f8"
+
+[[items]]
+id = "R77"
+file = "tomlctl/tests/backlog_write.rs"
+line = 387
+symbol = "triage_with_two_mode_flags_is_a_parser_error"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "pending parts of R51: the mode-conflict test cannot name both flags, and --promote and --reopen are still CLI-untested"
+description = "The conflict assertion settled for the substring 'cannot be used with' because TriageMode is a clap group and tomlctl/Cargo.toml:19 builds clap with default-features = false, omitting error-context — the feature that renders the named form. Enabling it would add the named-conflict line plus Usage blocks to every clap error in the binary, so it is a deliberate behaviour change rather than a test fix. Separately, the walk test covers a --resolve round-trip and this round added --dismiss, leaving --promote reachable only through the parser-error case and --reopen (TriageMode::reopen, dispatched as Transition::Reopen in backlog/triage.rs) with no CLI test at all."
+first_flagged = 2026-09-02
+rounds = 1
+related = ["R51"]
+status = "open"
+flow = "tomlctl-backlog-capture"
+dedup_id = "c5a6fad91fe9fbd3"

@@ -215,6 +215,21 @@ const MAX_STDIN_BYTES: u64 = 32 * 1024 * 1024;
 /// per-invocation isolation the real CLI gets for free.
 static STDIN_CONSUMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Claim the invocation's single stdin read for a `-` sentinel. Every funnel
+/// that consumes stdin goes through here; one that skips it reads an
+/// already-drained handle and silently returns an empty payload.
+///
+/// `swap(true, SeqCst)` is both the check and the mark, so concurrent calls
+/// can't both see `false`.
+fn claim_stdin() -> Result<()> {
+    if STDIN_CONSUMED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        bail!(
+            "stdin already consumed by another flag on this invocation; only one --json/--ops/--ndjson/--defaults-json flag can use the `-` sentinel per call"
+        );
+    }
+    Ok(())
+}
+
 /// Resolve a JSON argument: if it's literally "-", read stdin to a String.
 /// Otherwise return the argument as-is.
 ///
@@ -226,16 +241,7 @@ static STDIN_CONSUMED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 ///   on the input side so a misrouted log doesn't balloon tomlctl's heap.
 pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
     if arg == "-" {
-        // R32: a single invocation can only consume stdin once. A second `-`
-        // sentinel would read an already-drained handle and silently return an
-        // empty payload, which downstream would treat as a no-op or a parse
-        // error with a confusing message. `swap(true, SeqCst)` is both the
-        // check and the mark, so concurrent calls can't both see `false`.
-        if STDIN_CONSUMED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-            bail!(
-                "stdin already consumed by another flag on this invocation; only one --json/--ops/--ndjson/--defaults-json flag can use the `-` sentinel per call"
-            );
-        }
+        claim_stdin()?;
         if std::io::stdin().is_terminal() {
             bail!(
                 "stdin is a TTY — pipe JSON (e.g. `cat payload.json | tomlctl … --json -`) or pass `--json '<literal>'`"
@@ -254,6 +260,42 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
     } else {
         Ok(arg.to_string())
     }
+}
+
+/// Resolve a free-text argument: if it's literally "-", read stdin to a
+/// String. Otherwise return the argument as-is.
+///
+/// Shares `read_json_arg`'s single-consumption guard and `MAX_STDIN_BYTES`
+/// cap. The bytes are not required to parse as anything, and trailing-
+/// whitespace policy is left to the caller.
+pub(crate) fn read_text_arg(arg: &str) -> Result<String> {
+    if arg != "-" {
+        return Ok(arg.to_string());
+    }
+    claim_stdin()?;
+    if std::io::stdin().is_terminal() {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "the `-` sentinel reads the value from stdin, and stdin is a TTY; pipe the text in \
+             (e.g. `… - <<'EOF'`) or pass it as a literal"
+                .to_string(),
+        ));
+    }
+    let mut buf = String::new();
+    std::io::stdin()
+        .lock()
+        .take(MAX_STDIN_BYTES)
+        .read_to_string(&mut buf)
+        .context("reading text from stdin")?;
+    if buf.trim().is_empty() {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "the `-` sentinel read an empty stdin; a value is required".to_string(),
+        ));
+    }
+    Ok(buf)
 }
 
 /// O35: parse a JSON `--json`/`--ops`/`--defaults-json` argument directly
@@ -277,12 +319,7 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
 /// `serde_json::from_str(&text).context("parsing --<flag>")`.
 pub(crate) fn read_json_value_from_arg(arg: &str) -> Result<serde_json::Value> {
     if arg == "-" {
-        // R32: identical swap-and-mark check as `read_json_arg`.
-        if STDIN_CONSUMED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-            bail!(
-                "stdin already consumed by another flag on this invocation; only one --json/--ops/--ndjson/--defaults-json flag can use the `-` sentinel per call"
-            );
-        }
+        claim_stdin()?;
         if std::io::stdin().is_terminal() {
             bail!(
                 "stdin is a TTY — pipe JSON (e.g. `cat payload.json | tomlctl … --json -`) or pass `--json '<literal>'`"
@@ -1668,7 +1705,7 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
 mod tests {
     use super::*;
     use crate::integrity::{sidecar_path, verify_integrity};
-    use crate::test_support::env_lock;
+    use crate::test_support::{env_lock, with_root};
 
     const LEDGER: &str = r#"schema_version = 1
 last_updated = 2026-04-16
@@ -1810,20 +1847,9 @@ resolution = "fix in abc123"
 
     #[test]
     fn tomlctl_root_env_wins_over_git_toplevel() {
-        // Serialise env-mutation so parallel tests don't race on the same var.
-        let _guard = env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let canonical = dir.path().canonicalize().unwrap();
-        // SAFETY: set_var is unsafe in edition 2024; acceptable inside tests
-        // where we hold the env lock.
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
-        }
-        let got = repo_or_cwd_root().unwrap();
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-        assert_eq!(got, canonical);
+        with_root(|root| {
+            assert_eq!(repo_or_cwd_root().unwrap().as_path(), root);
+        });
     }
 
     #[test]
@@ -1902,27 +1928,19 @@ resolution = "fix in abc123"
     #[test]
     fn guard_write_path_refuses_symlink_leaf_outside_claude() {
         use std::os::unix::fs::symlink;
-        let _guard = env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let canonical = dir.path().canonicalize().unwrap();
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
-        }
-        // Create the `.claude/` root (containment anchor) and a file OUTSIDE
-        // it that a malicious symlink would target.
-        let claude_dir = canonical.join(".claude");
-        std::fs::create_dir_all(&claude_dir).unwrap();
-        let outside_target = canonical.join("outside.toml");
-        fs::write(&outside_target, "x = 1\n").unwrap();
-        // Create a symlink INSIDE `.claude/` pointing at the outside file.
-        let symlink_at = claude_dir.join("escape.toml");
-        symlink(&outside_target, &symlink_at).unwrap();
+        let result = with_root(|root| {
+            // Create the `.claude/` root (containment anchor) and a file OUTSIDE
+            // it that a malicious symlink would target.
+            let claude_dir = root.join(".claude");
+            std::fs::create_dir_all(&claude_dir).unwrap();
+            let outside_target = root.join("outside.toml");
+            fs::write(&outside_target, "x = 1\n").unwrap();
+            // Create a symlink INSIDE `.claude/` pointing at the outside file.
+            let symlink_at = claude_dir.join("escape.toml");
+            symlink(&outside_target, &symlink_at).unwrap();
 
-        let result = guard_write_path(&symlink_at, false);
-
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
+            guard_write_path(&symlink_at, false)
+        });
 
         let err = result.expect_err("write through symlink escaping .claude/ must be refused");
         let msg = format!("{err:#}");
@@ -1972,78 +1990,63 @@ resolution = "fix in abc123"
     /// trips a clear failure.
     #[test]
     fn lock_path_goes_under_claude_locks_and_not_sidecar() {
-        let _guard = env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let canonical = dir.path().canonicalize().unwrap();
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
-        }
-        let claude_dir = canonical.join(".claude");
-        std::fs::create_dir_all(&claude_dir).unwrap();
-        let target = claude_dir.join("ledger.toml");
-        fs::write(&target, LEDGER).unwrap();
+        with_root(|root| {
+            let claude_dir = root.join(".claude");
+            std::fs::create_dir_all(&claude_dir).unwrap();
+            let target = claude_dir.join("ledger.toml");
+            fs::write(&target, LEDGER).unwrap();
 
-        let lock = super::lock_path_for(&target).unwrap();
+            let lock = super::lock_path_for(&target).unwrap();
 
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-
-        let expected_dir = canonical.join(".claude").join(".locks");
-        assert!(
-            lock.starts_with(&expected_dir),
-            "lock path must live under {}, got {}",
-            expected_dir.display(),
-            lock.display()
-        );
-        let fname = lock.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        assert!(
-            fname.ends_with(".lock"),
-            "lock filename must end in .lock, got {fname}"
-        );
-        // Stem must be a 64-char lowercase hex digest (SHA-256).
-        let stem = &fname[..fname.len() - ".lock".len()];
-        assert_eq!(stem.len(), 64, "digest length: {}", stem.len());
-        assert!(
-            stem.chars()
-                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
-            "digest must be lowercase hex: {stem}"
-        );
-        // The old sidecar location must not be what we return.
-        assert!(
-            !lock.to_string_lossy().ends_with("ledger.toml.lock"),
-            "O44 regression: lock path must not be sidecar `<file>.toml.lock`"
-        );
-        // Directory must actually exist on disk — lock_path_for creates it.
-        assert!(expected_dir.is_dir(), "lock dir must be created on demand");
+            let expected_dir = claude_dir.join(".locks");
+            assert!(
+                lock.starts_with(&expected_dir),
+                "lock path must live under {}, got {}",
+                expected_dir.display(),
+                lock.display()
+            );
+            let fname = lock.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            assert!(
+                fname.ends_with(".lock"),
+                "lock filename must end in .lock, got {fname}"
+            );
+            // Stem must be a 64-char lowercase hex digest (SHA-256).
+            let stem = &fname[..fname.len() - ".lock".len()];
+            assert_eq!(stem.len(), 64, "digest length: {}", stem.len());
+            assert!(
+                stem.chars()
+                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+                "digest must be lowercase hex: {stem}"
+            );
+            // The old sidecar location must not be what we return.
+            assert!(
+                !lock.to_string_lossy().ends_with("ledger.toml.lock"),
+                "O44 regression: lock path must not be sidecar `<file>.toml.lock`"
+            );
+            // Directory must actually exist on disk — lock_path_for creates it.
+            assert!(expected_dir.is_dir(), "lock dir must be created on demand");
+        });
     }
 
     #[test]
     fn guard_write_path_rejects_outside_claude_by_default() {
-        let _guard = env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        // Anchor containment at the tempdir so `.claude/` becomes tempdir/.claude.
-        let canonical = dir.path().canonicalize().unwrap();
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
-        }
-        // Path outside `.claude/` — refused when allow_outside=false.
-        let outside = canonical.join("outside.toml");
-        fs::write(&outside, "x = 1\n").unwrap();
-        let refused = guard_write_path(&outside, false);
-        // With --allow-outside the same call succeeds.
-        let allowed = guard_write_path(&outside, true);
+        let (refused, allowed, inside_ok) = with_root(|root| {
+            // Path outside `.claude/` — refused when allow_outside=false.
+            let outside = root.join("outside.toml");
+            fs::write(&outside, "x = 1\n").unwrap();
+            let refused = guard_write_path(&outside, false);
+            // With --allow-outside the same call succeeds.
+            let allowed = guard_write_path(&outside, true);
 
-        // Path inside `.claude/` — permitted.
-        let inside_dir = canonical.join(".claude");
-        fs::create_dir_all(&inside_dir).unwrap();
-        let inside = inside_dir.join("ledger.toml");
-        fs::write(&inside, "x = 1\n").unwrap();
-        let inside_ok = guard_write_path(&inside, false);
+            // Path inside `.claude/` — permitted.
+            let inside_dir = root.join(".claude");
+            fs::create_dir_all(&inside_dir).unwrap();
+            let inside = inside_dir.join("ledger.toml");
+            fs::write(&inside, "x = 1\n").unwrap();
+            let inside_ok = guard_write_path(&inside, false);
 
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
+            (refused, allowed, inside_ok)
+        });
 
         assert!(
             refused.is_err(),
@@ -2125,57 +2128,49 @@ arr = [1, 2]
     /// write-path guard + lock resolve there and leave no stray repo artifacts.
     #[test]
     fn mutate_doc_seeds_missing_file_and_reports_created() {
-        let _guard = env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let canonical = dir.path().canonicalize().unwrap();
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
-        }
-        let claude = canonical.join(".claude");
-        fs::create_dir_all(&claude).unwrap();
-        let target = claude.join("execution-record.toml");
-        assert!(!target.exists(), "precondition: target must not exist");
+        with_root(|root| {
+            let claude = root.join(".claude");
+            fs::create_dir_all(&claude).unwrap();
+            let target = claude.join("execution-record.toml");
+            assert!(!target.exists(), "precondition: target must not exist");
 
-        // Seed mirrors the recognised-flow-file skeleton; the closure then
-        // mutates a `tasks.total` scalar so we can prove BOTH the seed and the
-        // mutation landed.
-        let mut seed_table = toml::map::Map::new();
-        seed_table.insert("schema_version".to_string(), TomlValue::Integer(1));
-        let seed = TomlValue::Table(seed_table);
+            // Seed mirrors the recognised-flow-file skeleton; the closure then
+            // mutates a `tasks.total` scalar so we can prove BOTH the seed and the
+            // mutation landed.
+            let mut seed_table = toml::map::Map::new();
+            seed_table.insert("schema_version".to_string(), TomlValue::Integer(1));
+            let seed = TomlValue::Table(seed_table);
 
-        let created = mutate_doc(
-            &target,
-            false,
-            integrity_write_only(),
-            OnMissing::Create(seed),
-            |doc| {
-                let root = doc.as_table_mut().expect("seed is a table");
-                root.insert("touched".to_string(), TomlValue::Boolean(true));
-                Ok(())
-            },
-        )
-        .unwrap();
+            let created = mutate_doc(
+                &target,
+                false,
+                integrity_write_only(),
+                OnMissing::Create(seed),
+                |doc| {
+                    let table = doc.as_table_mut().expect("seed is a table");
+                    table.insert("touched".to_string(), TomlValue::Boolean(true));
+                    Ok(())
+                },
+            )
+            .unwrap();
 
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-
-        assert!(created, "a seeded missing file must report created == true");
-        assert!(target.exists(), "the file must have been materialised");
-        let on_disk = read_toml(&target).unwrap();
-        let table = on_disk.as_table().unwrap();
-        // Seed survived…
-        assert_eq!(
-            table.get("schema_version").and_then(|v| v.as_integer()),
-            Some(1),
-            "seed field must be present"
-        );
-        // …and the closure's mutation landed on top of it.
-        assert_eq!(
-            table.get("touched").and_then(|v| v.as_bool()),
-            Some(true),
-            "closure mutation must be persisted atop the seed"
-        );
+            assert!(created, "a seeded missing file must report created == true");
+            assert!(target.exists(), "the file must have been materialised");
+            let on_disk = read_toml(&target).unwrap();
+            let table = on_disk.as_table().unwrap();
+            // Seed survived…
+            assert_eq!(
+                table.get("schema_version").and_then(|v| v.as_integer()),
+                Some(1),
+                "seed field must be present"
+            );
+            // …and the closure's mutation landed on top of it.
+            assert_eq!(
+                table.get("touched").and_then(|v| v.as_bool()),
+                Some(true),
+                "closure mutation must be persisted atop the seed"
+            );
+        });
     }
 
     /// T1 (b): `mutate_doc` against a missing path with `OnMissing::Error`
@@ -2183,44 +2178,36 @@ arr = [1, 2]
     /// no file, no sidecar.
     #[test]
     fn mutate_doc_on_missing_error_propagates_not_found_and_creates_nothing() {
-        let _guard = env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let canonical = dir.path().canonicalize().unwrap();
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
-        }
-        let claude = canonical.join(".claude");
-        fs::create_dir_all(&claude).unwrap();
-        let target = claude.join("ledger.toml");
-        assert!(!target.exists(), "precondition: target must not exist");
+        with_root(|root| {
+            let claude = root.join(".claude");
+            fs::create_dir_all(&claude).unwrap();
+            let target = claude.join("ledger.toml");
+            assert!(!target.exists(), "precondition: target must not exist");
 
-        let err = mutate_doc(
-            &target,
-            false,
-            integrity_write_only(),
-            OnMissing::Error,
-            |_doc| panic!("closure must not run when the read errors"),
-        )
-        .unwrap_err();
+            let err = mutate_doc(
+                &target,
+                false,
+                integrity_write_only(),
+                OnMissing::Error,
+                |_doc| panic!("closure must not run when the read errors"),
+            )
+            .unwrap_err();
 
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-
-        // The original NotFound tag must be preserved (not re-wrapped).
-        let tagged = err
-            .downcast_ref::<crate::errors::TaggedError>()
-            .expect("error must carry the NotFound tag");
-        assert!(
-            matches!(tagged.kind, ErrorKind::NotFound),
-            "OnMissing::Error must propagate kind=not_found, got {:?}",
-            tagged.kind
-        );
-        assert!(!target.exists(), "no file must be created on the Error path");
-        assert!(
-            !sidecar_path(&target).exists(),
-            "no sidecar must be created on the Error path"
-        );
+            // The original NotFound tag must be preserved (not re-wrapped).
+            let tagged = err
+                .downcast_ref::<crate::errors::TaggedError>()
+                .expect("error must carry the NotFound tag");
+            assert!(
+                matches!(tagged.kind, ErrorKind::NotFound),
+                "OnMissing::Error must propagate kind=not_found, got {:?}",
+                tagged.kind
+            );
+            assert!(!target.exists(), "no file must be created on the Error path");
+            assert!(
+                !sidecar_path(&target).exists(),
+                "no sidecar must be created on the Error path"
+            );
+        });
     }
 
     /// T1: a non-`NotFound` read failure (a corrupt/unparseable existing file)
@@ -2228,36 +2215,28 @@ arr = [1, 2]
     /// never clobber a file that exists but won't parse.
     #[test]
     fn mutate_doc_create_does_not_clobber_unparseable_existing_file() {
-        let _guard = env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let canonical = dir.path().canonicalize().unwrap();
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
-        }
-        let claude = canonical.join(".claude");
-        fs::create_dir_all(&claude).unwrap();
-        let target = claude.join("corrupt.toml");
-        // Invalid TOML on disk — read_toml will tag this `kind=parse`.
-        fs::write(&target, "this is = = not valid toml [[[").unwrap();
+        let (err, on_disk_after) = with_root(|root| {
+            let claude = root.join(".claude");
+            fs::create_dir_all(&claude).unwrap();
+            let target = claude.join("corrupt.toml");
+            // Invalid TOML on disk — read_toml will tag this `kind=parse`.
+            fs::write(&target, "this is = = not valid toml [[[").unwrap();
 
-        let mut seed_table = toml::map::Map::new();
-        seed_table.insert("schema_version".to_string(), TomlValue::Integer(1));
-        let seed = TomlValue::Table(seed_table);
+            let mut seed_table = toml::map::Map::new();
+            seed_table.insert("schema_version".to_string(), TomlValue::Integer(1));
+            let seed = TomlValue::Table(seed_table);
 
-        let err = mutate_doc(
-            &target,
-            false,
-            integrity_write_only(),
-            OnMissing::Create(seed),
-            |_doc| panic!("closure must not run when the existing file fails to parse"),
-        )
-        .unwrap_err();
+            let err = mutate_doc(
+                &target,
+                false,
+                integrity_write_only(),
+                OnMissing::Create(seed),
+                |_doc| panic!("closure must not run when the existing file fails to parse"),
+            )
+            .unwrap_err();
 
-        let on_disk_after = fs::read_to_string(&target).unwrap();
-
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
+            (err, fs::read_to_string(&target).unwrap())
+        });
 
         let tagged = err
             .downcast_ref::<crate::errors::TaggedError>()

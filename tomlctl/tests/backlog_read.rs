@@ -7,13 +7,15 @@
 //! claim about the fingerprint `add` would land on, so a hand-written
 //! `dedup_id` would prove nothing.
 
-use assert_cmd::Command;
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::{ids_from, parse_json_error_envelope};
+use common::{
+    age_terminal_date, backlog, backlog_stdout, cli, git_available, ids_from,
+    parse_json_error_envelope, sandbox, store_path,
+};
 
 const FLAKE_SUMMARY: &str = "pty_readiness_probe flakes on slow CI";
 const FLAKE_AREA: &str = "lumina/server/tests/pty_readiness_probe.rs";
@@ -23,13 +25,6 @@ const FLAKE_CONTEXT: &str =
 const TOTAL_AREA: &str = "lumina/web/src/checkout/Total.vue";
 const TOTAL_SUMMARY: &str = "checkout total overlaps the confirm button below 1400px";
 const TOTAL_PARAPHRASE: &str = "checkout total overlaps the confirm button below 1440px";
-
-/// The repository's own rules, verbatim: every `tracked` verdict below is a
-/// claim about what this ignore set does, so a drifted fixture would assert
-/// against rules nobody ships.
-const GITIGNORE: &str = "/.claude/backlog-evidence/**\n\
-                         !/.claude/backlog-evidence/*/\n\
-                         !/.claude/backlog-evidence/*/.evidence\n";
 
 /// Three rows spanning status ∈ {open, dismissed}, kind ∈ {flaky-test, bug,
 /// debt}, and two sibling area prefixes that differ only past a component
@@ -111,23 +106,34 @@ status = "open"
 dedup_id = "a3a3a3a3a3a3a3a3"
 "#;
 
-fn sandbox() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
-    // `TOMLCTL_ROOT` is canonicalised by the binary, so canonicalise here too
-    // or every emitted path fails to relativise against it.
-    let root = dir.path().canonicalize().unwrap();
-    fs::create_dir_all(root.join(".claude")).unwrap();
-    fs::write(root.join(".gitignore"), GITIGNORE).unwrap();
-    let _ = std::process::Command::new("git")
-        .args(["init", "-q", "."])
-        .current_dir(&root)
-        .output();
-    (dir, root)
-}
+/// Two rows sharing an id but not a fingerprint — what a text merge of two
+/// worktrees leaves behind. They are the whole store, so no weaker rung can
+/// contribute a candidate and the verdict is the collision alone.
+const COLLIDING_ID_FIXTURE: &str = r#"schema_version = 1
+last_updated = 2026-09-01
 
-fn store_path(root: &Path) -> PathBuf {
-    root.join(".claude").join("backlog.toml")
-}
+[[backlog]]
+id = "B-00000001"
+kind = "flaky-test"
+summary = "readiness probe flakes on slow ci"
+area = "lumina/server/pty/probe.rs"
+status = "open"
+created = 2026-09-01
+last_seen = 2026-09-01
+seen_count = 1
+dedup_id = "1111111111111111"
+
+[[backlog]]
+id = "B-00000001"
+kind = "bug"
+summary = "guard_write_path accepts a symlinked leaf"
+area = "tomlctl/src/io.rs"
+status = "open"
+created = 2026-09-01
+last_seen = 2026-09-01
+seen_count = 1
+dedup_id = "4444444444444444"
+"#;
 
 fn evidence_root(root: &Path) -> PathBuf {
     root.join(".claude").join("backlog-evidence")
@@ -135,62 +141,6 @@ fn evidence_root(root: &Path) -> PathBuf {
 
 fn seed(root: &Path, body: &str) {
     fs::write(store_path(root), body).unwrap();
-}
-
-fn cli(root: &Path) -> Command {
-    let mut cmd = Command::cargo_bin("tomlctl").unwrap();
-    cmd.env("TOMLCTL_ROOT", root)
-        .env("TOMLCTL_LOCK_TIMEOUT", "5");
-    cmd
-}
-
-/// Run `tomlctl backlog <args…>`, require success, and hand back stdout.
-fn backlog_stdout(root: &Path, args: &[&str]) -> String {
-    let out = cli(root)
-        .arg("backlog")
-        .args(args)
-        .write_stdin("")
-        .assert()
-        .success();
-    String::from_utf8_lossy(&out.get_output().stdout).to_string()
-}
-
-fn backlog(root: &Path, args: &[&str]) -> Value {
-    let stdout = backlog_stdout(root, args);
-    serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
-        panic!(
-            "`backlog {}` stdout must be JSON: {e}; got: {stdout}",
-            args.join(" ")
-        )
-    })
-}
-
-fn git_available() -> bool {
-    std::process::Command::new("git")
-        .arg("--version")
-        .output()
-        .is_ok_and(|o| o.status.success())
-}
-
-/// See the sibling helper in `backlog_write.rs`: the clock cannot be moved, so
-/// the fixture's terminal date is aged instead.
-fn age_terminal_date(store: &Path, field: &str) {
-    let text = fs::read_to_string(store).unwrap();
-    let needle = format!("{field} = ");
-    let mut hit = false;
-    let aged: Vec<String> = text
-        .lines()
-        .map(|line| {
-            if line.starts_with(&needle) {
-                hit = true;
-                format!("{needle}2020-01-01")
-            } else {
-                line.to_string()
-            }
-        })
-        .collect();
-    assert!(hit, "no `{field} = …` line to age in:\n{text}");
-    fs::write(store, format!("{}\n", aged.join("\n"))).unwrap();
 }
 
 // ---------------------------------------------------------------- check
@@ -412,6 +362,36 @@ fn check_reports_previously_resolved_against_a_compacted_row() {
     assert_eq!(hit["reason"], json!("compacted"));
     // The stored workaround is the reason an aged-out row is surfaced at all.
     assert_eq!(hit["context"], json!(FLAKE_CONTEXT));
+}
+
+#[test]
+fn check_reports_duplicate_id_for_rows_sharing_an_id() {
+    let (_tmp, root) = sandbox();
+    seed(&root, COLLIDING_ID_FIXTURE);
+
+    // The probe matches neither row on text nor on structure: a collision
+    // makes every later id lookup ambiguous, so it is reported whatever was
+    // asked.
+    let v = backlog(
+        &root,
+        &[
+            "check",
+            "--summary",
+            "sidecar rename races the antivirus scanner",
+            "--kind",
+            "bug",
+            "--area",
+            "statusline/src/render.rs",
+        ],
+    );
+    assert_eq!(v["verdict"], json!("duplicate-id"));
+    let candidates = v["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 2, "{v}");
+    for hit in candidates {
+        assert_eq!(hit["id"], json!("B-00000001"));
+        assert_eq!(hit["reason"], json!("duplicate-id"));
+        assert_eq!(hit["status"], json!("open"));
+    }
 }
 
 // ----------------------------------------------------------------- list
@@ -670,6 +650,30 @@ fn audit_strict_fails_on_an_unowned_drop_box_and_passes_once_it_is_gone() {
 }
 
 #[test]
+fn a_lowered_max_bytes_flags_a_file_the_default_threshold_clears() {
+    let (_tmp, root) = sandbox();
+    seed(&root, FIXTURE);
+    let dir = evidence_root(&root).join("B-00000001");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join(".evidence"), "B-00000001  seeded\n").unwrap();
+    fs::write(dir.join("shot.png"), b"xx").unwrap();
+
+    let default = backlog(&root, &["evidence", "audit"]);
+    assert_eq!(default["counts"]["oversize"], json!(0), "{default}");
+
+    let lowered = backlog(&root, &["evidence", "audit", "--max-bytes", "1"]);
+    assert_eq!(lowered["counts"]["oversize"], json!(1), "{lowered}");
+    assert!(
+        lowered["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| { f["class"] == json!("oversize") && f["file"] == json!("shot.png") }),
+        "{lowered}"
+    );
+}
+
+#[test]
 fn a_force_added_evidence_file_is_tracked_and_strict_still_passes() {
     if !git_available() {
         eprintln!("skipping: git is not on PATH");
@@ -681,11 +685,19 @@ fn a_force_added_evidence_file_is_tracked_and_strict_still_passes() {
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join(".evidence"), "B-00000001  seeded\n").unwrap();
     fs::write(dir.join("shot.png"), b"x").unwrap();
-    std::process::Command::new("git")
+    let add = std::process::Command::new("git")
         .args(["add", "-f", ".claude/backlog-evidence/B-00000001/shot.png"])
         .current_dir(&root)
         .output()
         .unwrap();
+    // An add that ran and failed would otherwise surface below as a bare
+    // tracked-count mismatch, with nothing naming git as the cause.
+    assert!(
+        add.status.success(),
+        "`git add -f` failed in {}: {}",
+        root.display(),
+        String::from_utf8_lossy(&add.stderr)
+    );
 
     let report = backlog(&root, &["evidence", "audit", "--strict"]);
     assert_eq!(report["counts"]["tracked"], json!(1));

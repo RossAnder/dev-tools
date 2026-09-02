@@ -555,15 +555,34 @@ duplicate_of = "B-01"
         );
     }
 
-    #[test]
-    fn a_missing_store_yields_empty_views() {
-        let exists = crate::test_support::with_root(|_| {
-            crate::backlog::schema::backlog_path().unwrap().exists()
-        });
-        assert!(!exists);
-        let view = build_views(&[], ClusterBy::All, 2, 2);
-        for view_key in [VIEW_AREA, VIEW_TAGS, VIEW_RELATIONS] {
-            assert_eq!(view[view_key].as_array().unwrap().len(), 0);
+    fn read_args() -> ReadIntegrityArgs {
+        ReadIntegrityArgs {
+            verify_integrity: false,
+            strict_read: false,
         }
+    }
+
+    fn kind_of(err: &anyhow::Error) -> &'static str {
+        err.downcast_ref::<crate::errors::TaggedError>()
+            .map_or("other", |tagged| tagged.kind.as_str())
+    }
+
+    #[test]
+    fn a_missing_store_yields_empty_views_unless_strict() {
+        let (lenient, views, strict) = crate::test_support::with_root(|_| {
+            let lenient = dispatch(ClusterBy::All, 2, 2, false, read_args());
+            let views = read_store(&read_args())
+                .map(|doc| build_views(&parse_items(&doc, false), ClusterBy::All, 2, 2));
+            let mut args = read_args();
+            args.strict_read = true;
+            let strict = dispatch(ClusterBy::All, 2, 2, false, args);
+            (lenient, views, strict)
+        });
+        assert!(lenient.is_ok(), "{:#}", lenient.unwrap_err());
+        let views = views.unwrap();
+        for view_key in [VIEW_AREA, VIEW_TAGS, VIEW_RELATIONS] {
+            assert_eq!(views[view_key].as_array().unwrap().len(), 0);
+        }
+        assert_eq!(kind_of(&strict.unwrap_err()), "not_found");
     }
 }

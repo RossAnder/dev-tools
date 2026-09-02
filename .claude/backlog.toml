@@ -285,3 +285,33 @@ dedup_id = "80707fecea8843c2"
 origin = "review-apply"
 flow = "tomlctl-backlog-capture"
 context = "Five manual_filter in io.rs and one unnecessary_map_or in capabilities.rs, all auto-fixable with cargo clippy --fix --bin tomlctl. While they stand, a genuinely new warning in those two files reads as pre-existing. Fix them in one dedicated commit so verification can require zero warnings."
+
+[[backlog]]
+id = "B-0b8dbd44"
+kind = "bug"
+summary = "capabilities FEATURES omits flow list and flow render-progress-log, so two shipped verbs are unadvertised"
+area = "tomlctl/src/cli/types.rs"
+tags = []
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "0b8dbd446d82bf28"
+origin = "review-apply"
+flow = "tomlctl-backlog-capture"
+context = "The README feature table was brought to 32 rows to match FEATURES, but FlowOp carries two variants with no FEATURES entry at all, so capabilities under-advertises them and no table row can exist. Add the two entries to FEATURES in cli/types.rs, then the README row follows."
+
+[[backlog]]
+id = "B-65331044"
+kind = "debt"
+summary = "the shipped_gitignore extractor is duplicated between tests/common/mod.rs and src/backlog/evidence_ops.rs"
+area = "tomlctl/src/backlog/evidence_ops.rs"
+tags = []
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "6533104449f2ed2a"
+origin = "review-apply"
+flow = "tomlctl-backlog-capture"
+context = "Deduplicating the evidence ignore RULES replaced three hand-kept rule copies with two copies of a ~26-line extractor plus literal. tomlctl is bin-only so tests/ cannot import from src/, and the shared-block verifier cannot help because its markers are HTML comments, invalid in Rust. Both copies self-check against the repo .gitignore, so rule drift fails loudly; extractor drift does not. Closing it needs either a lib target or a build-script-generated shared module."

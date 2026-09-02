@@ -499,6 +499,33 @@ mod tests {
                              !/.claude/backlog-evidence/*/\n\
                              !/.claude/backlog-evidence/*/.evidence\n";
 
+    /// What every evidence rule starts with once the `!` of a negation is
+    /// stripped.
+    const EVIDENCE_RULE_PREFIX: &str = "/.claude/backlog-evidence/";
+
+    /// [`GITIGNORE`], checked against the evidence rules the repository's own
+    /// `.gitignore` carries — hand-kept copies, and nothing else would notice
+    /// them diverging. A checkout is not guaranteed (a vendored crate has no
+    /// repo root to read), so the check is skipped there rather than failed.
+    fn shipped_gitignore() -> &'static str {
+        let repo_gitignore = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(|repo| repo.join(".gitignore"))
+            .and_then(|path| fs::read_to_string(path).ok());
+        if let Some(text) = repo_gitignore {
+            let shipped: String = text
+                .lines()
+                .filter(|line| line.trim_start_matches('!').starts_with(EVIDENCE_RULE_PREFIX))
+                .map(|line| format!("{line}\n"))
+                .collect();
+            assert_eq!(
+                shipped, GITIGNORE,
+                "the sandbox fixture and the evidence rules the repository ships have diverged"
+            );
+        }
+        GITIGNORE
+    }
+
     /// The shared `RootGuard` plus the per-drop-box path helpers this module's
     /// tests need. The guard has to outlive the test body rather than a
     /// closure, so these tests hold it directly instead of calling
@@ -511,7 +538,7 @@ mod tests {
         fn new(git: bool) -> Self {
             let guard = crate::test_support::RootGuard::new();
             if git {
-                fs::write(guard.root().join(".gitignore"), GITIGNORE).unwrap();
+                fs::write(guard.root().join(".gitignore"), shipped_gitignore()).unwrap();
                 let _ = Command::new("git")
                     .args(["init", "-q", "."])
                     .current_dir(guard.root())
