@@ -33,10 +33,12 @@ fingerprint contract. The read-only verbs live in [query.md](query.md).
 
 ```bash
 # 1. Append a task-completion entry with commits[], bump last_updated
-tomlctl items add .claude/flows/<slug>/execution-record.toml --json '{
+cat <<'EOF' | tomlctl items add .claude/flows/<slug>/execution-record.toml --json -
+{
   "id":"E12","type":"task-completion","task_ref":"T3",
   "timestamp":"2026-04-18T14:32:00Z","commits":["ab12cd3","9e8f1a2"]
-}'
+}
+EOF
 tomlctl set .claude/flows/<slug>/execution-record.toml last_updated 2026-04-18
 ```
 
@@ -144,7 +146,8 @@ Supports `--dry-run`; see [Dry-run](#dry-run).
 `id, file, line, symbol, severity, effort, category, summary, description, evidence, first_flagged, rounds, related, status, <disposition-specific>, flow`.
 
 ```bash
-tomlctl items add .claude/flows/foo/optimise-findings.toml --json '{
+cat <<'EOF' | tomlctl items add .claude/flows/foo/optimise-findings.toml --json -
+{
   "id": "O7",
   "file": "src/svc/foo.rs",
   "line": 44,
@@ -155,7 +158,8 @@ tomlctl items add .claude/flows/foo/optimise-findings.toml --json '{
   "first_flagged": "2026-04-17",
   "rounds": 1,
   "status": "open"
-}'
+}
+EOF
 ```
 
 `dedup_id` is auto-populated by the write funnel if the payload doesn't set it — see [Dedup fingerprint contract](#dedup-fingerprint-contract). Rendered output (e.g. PROGRESS-LOG columns) is unaffected; the field only appears in the TOML.
@@ -201,11 +205,13 @@ Matched by `id`. The JSON object is merged into the item (shallow). Existing unm
 
 ```bash
 # Mark an item applied with resolution commit
-tomlctl items update .claude/flows/foo/review-ledger.toml R22 --json '{
+cat <<'EOF' | tomlctl items update .claude/flows/foo/review-ledger.toml R22 --json -
+{
   "status": "applied",
   "resolved": "2026-04-17",
   "resolution": "Fixed in ab12cd3"
-}'
+}
+EOF
 
 # Increment rounds (read current, then set)
 tomlctl items update .claude/flows/foo/review-ledger.toml R22 --json '{"rounds": 2}'
@@ -233,9 +239,11 @@ In `items apply` batches, an `update` op accepts a per-op `unset` array of field
 ```
 
 ```bash
-tomlctl items apply ledger.toml --ops '[
+tomlctl items apply ledger.toml --ops - <<'EOF'
+[
   {"op":"update","id":"R7","json":{"status":"open"},"unset":["defer_reason","defer_trigger"]}
-]'
+]
+EOF
 ```
 
 Supports `--dry-run`; see [Dry-run](#dry-run).
@@ -255,11 +263,13 @@ Supports `--dry-run`; see [Dry-run](#dry-run).
 For runs that mix add/update/remove on `[[items]]` in the same ledger, use `items apply` to parse + rewrite the file once. `--ops` is a JSON array; each op is `{"op": "add|update|remove", ...}` with the same payload shape as the single-op commands (`json` for add/update, `id` for update/remove). Ops run in array order; any op error aborts the whole batch and the file is left unchanged.
 
 ```bash
-tomlctl items apply .claude/flows/foo/review-ledger.toml --ops '[
+tomlctl items apply .claude/flows/foo/review-ledger.toml --ops - <<'EOF'
+[
   {"op":"add",    "json":{"id":"R24","severity":"minor","summary":"...","status":"open"}},
   {"op":"update", "id":"R22", "json":{"status":"applied","resolved":"2026-04-17"}},
   {"op":"remove", "id":"R17"}
-]'
+]
+EOF
 ```
 
 Prefer this over looping single-op invocations — one parse + one write instead of N. For homogeneous add-only batches prefer `items add-many` (simpler input shape). For append-only non-`items` arrays prefer `array-append`.
@@ -295,13 +305,15 @@ For append-only arrays such as `[[rollback_events]]` (written by `/review-apply`
 
 ```bash
 # Single record
-tomlctl array-append <ledger> rollback_events --json '{
+cat <<'EOF' | tomlctl array-append <ledger> rollback_events --json -
+{
   "timestamp": "2026-04-18T14:32:00Z",
   "command": "review-apply",
   "cause": "build failure",
   "items": ["R3","R7"],
   "stash_ref": "stash@{0}"
-}'
+}
+EOF
 
 # Many records via NDJSON — stage to a sibling file and pass --ndjson <path>.
 # Same >5-item / Windows-heredoc rule as `items add-many` above. Staging file is
