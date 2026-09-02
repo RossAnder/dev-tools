@@ -1,0 +1,1121 @@
+schema_version = 1
+last_updated = 2026-09-02
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-09-02
+agent = "implement"
+summary = "Flow entered implementation: draft -> in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "b6496df471686e7e"
+
+[[items]]
+id = "E2"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "reformat-the-tomlctl-crate"
+summary = "Added a commit boundary after task 1 that the Execution Policy does not declare"
+original_intent = "## Execution Policy declares checkpoints after tasks 5, 20, 25 and 34, so tasks 1-5 would commit as one train at checkpoint A."
+rationale = "Task 1's Detail requires its commit to contain nothing but formatting, because task 6 records that SHA in .git-blame-ignore-revs. Tasks 2 and 5 re-touch files task 1 reformatted (io.rs, capabilities.rs, CLAUDE.md), and the commit train merges any groups whose files[] overlap. Committing task 1 alone before dispatching tasks 2/4/5 is the only way to preserve the formatting-only property the plan depends on."
+dedup_id = "b0c1ca7696f8c2e2"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "reformat-the-tomlctl-crate"
+status = "done"
+summary = "Ran cargo fmt on stock defaults across the tomlctl crate; 52 *.rs files reformatted, --check exits 0, no non-.rs file touched"
+files = [
+    "tomlctl/src/backlog/add.rs",
+    "tomlctl/src/backlog/check.rs",
+    "tomlctl/src/backlog/cluster.rs",
+    "tomlctl/src/backlog/compact.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/backlog/evidence.rs",
+    "tomlctl/src/backlog/evidence_ops.rs",
+    "tomlctl/src/backlog/ids.rs",
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/src/backlog/relate.rs",
+    "tomlctl/src/backlog/schema.rs",
+    "tomlctl/src/blocks.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/convert.rs",
+    "tomlctl/src/dedup.rs",
+    "tomlctl/src/flow/active.rs",
+    "tomlctl/src/flow/artifacts.rs",
+    "tomlctl/src/flow/dispatch.rs",
+    "tomlctl/src/flow/doctor.rs",
+    "tomlctl/src/flow/envelope.rs",
+    "tomlctl/src/flow/find_plans.rs",
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/src/flow/list.rs",
+    "tomlctl/src/flow/render_progress_log.rs",
+    "tomlctl/src/flow/resolve.rs",
+    "tomlctl/src/flow/schema.rs",
+    "tomlctl/src/flow/stale.rs",
+    "tomlctl/src/integrity.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/items.rs",
+    "tomlctl/src/json.rs",
+    "tomlctl/src/orphans.rs",
+    "tomlctl/src/query.rs",
+    "tomlctl/src/time.rs",
+    "tomlctl/tests/backlog_read.rs",
+    "tomlctl/tests/backlog_write.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/tests/common/mod.rs",
+    "tomlctl/tests/flow_active.rs",
+    "tomlctl/tests/flow_doctor.rs",
+    "tomlctl/tests/flow_ensure_artifact.rs",
+    "tomlctl/tests/flow_find_plans.rs",
+    "tomlctl/tests/flow_init.rs",
+    "tomlctl/tests/flow_resolve.rs",
+    "tomlctl/tests/flow_stale.rs",
+    "tomlctl/tests/integration.rs",
+    "tomlctl/tests/items_dedupe.rs",
+    "tomlctl/tests/items_dry_run.rs",
+    "tomlctl/tests/json.rs",
+    "tomlctl/tests/render_progress_log.rs",
+]
+commits = ["ec689ba309b65dec6739cb0249dc484e2b2d2ff1"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "da3d5eddda972e76"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "assert-non-empty-block-extraction-in-verify-shared-blocks-sh"
+status = "done"
+summary = "Split hash_block into extract_block plus a non-empty guard, so a block extracting to zero lines fails the verifier instead of hashing the empty string and reporting parity OK"
+files = ["scripts/verify-shared-blocks.sh"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "9ab914c9bb999b92"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "assert-non-empty-block-extraction-in-verify-shared-blocks-sh"
+summary = "Task 25's stated acceptance reproduction (BINMODE=3 in the awk environment) does not reproduce the failure; an equivalent double-CR marker fixture was used instead"
+original_intent = "Acceptance: running the script with BINMODE=3 in the awk environment reproduces the CR-preserving case, exits non-zero and names the empty block."
+rationale = "Measured on GNU Awk 5.4.0 under Git Bash: gawk does not honour BINMODE from the environment, only from an explicit -v assignment, so BINMODE=3 bash scripts/verify-shared-blocks.sh is a no-op and exits 0 both before and after the change. Applying -v BINMODE=3 to every awk breaks the manifest parse first, so the described silent-pass state is unreachable that way. The delegate and the orchestrator independently reproduced the real failure shape with marker lines ending CR-CR-LF: grep -qF substring-matches them so the marker guards pass, while awk's whole-line equality does not, yielding zero extracted lines. With the guard the verifier exits 1 naming both files and the block; with the guard neutralised it prints shared-block parity: OK and exits 0."
+dedup_id = "9f3cb3068215da8b"
+
+[[items]]
+id = "E6"
+type = "checkpoint"
+date = 2026-09-02
+agent = "implement"
+kind = "commit-train"
+summary = "ec689ba309b65dec6739cb0249dc484e2b2d2ff1 -> reformat-the-tomlctl-crate"
+commits = ["ec689ba309b65dec6739cb0249dc484e2b2d2ff1"]
+dedup_id = "dac60852f00279be"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "auto-fix-the-six-pre-existing-clippy-warnings"
+status = "done"
+summary = "Rewrote five manual_filter chains in io.rs as .filter(|p| !p.as_os_str().is_empty()) and one unnecessary_map_or in capabilities.rs as is_some_and; crate clippy now at zero warnings"
+files = [
+    "tomlctl/src/io.rs",
+    "tomlctl/src/capabilities.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "66a96779eefb0909"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "correct-the-ids-rs-collision-doc-comment"
+status = "done"
+summary = "Rewrote the ids.rs module doc comment to drop the non-existent caller-side re-derivation claim and state that stored ids are frozen because evidence::dir_for keys on them, so a widening collision is rejected by validate_ids_unique"
+files = ["tomlctl/src/backlog/ids.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "a705f8a38fb93f93"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-json-rs-flow-list-rs-and-flow-artifacts-rs"
+status = "done"
+summary = "Removed or rewrote 10 finding-id and task-ref comment hits across the three files; 54 changed lines, none of them code; strict_read_check cross-reference left intact for task 32"
+files = [
+    "tomlctl/src/json.rs",
+    "tomlctl/src/flow/list.rs",
+    "tomlctl/src/flow/artifacts.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "823542481b27cee8"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "lift-field-last-updated-into-backlog-schema-rs"
+status = "done"
+summary = "Lifted the four duplicated private FIELD_LAST_UPDATED constants into one pub(crate) definition in backlog/schema.rs and rewired all four call sites through the existing schema imports"
+files = [
+    "tomlctl/src/backlog/schema.rs",
+    "tomlctl/src/backlog/add.rs",
+    "tomlctl/src/backlog/compact.rs",
+    "tomlctl/src/backlog/relate.rs",
+    "tomlctl/src/backlog/triage.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "a3953b822c78e876"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "arm-the-pre-commit-fmt-gate-and-correct-the-developer-documentation"
+status = "done"
+summary = "Armed a staged-rs-guarded blocking cargo fmt --check step in the pre-commit hook, created the root .git-blame-ignore-revs header, and corrected CLAUDE.md's false CI claim plus the blame-ignore setup step and two rustfmt gotchas"
+files = [
+    ".githooks/pre-commit",
+    ".git-blame-ignore-revs",
+    "CLAUDE.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "4a1a58c36889b7e3"
+
+[[items]]
+id = "E12"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-json-rs-flow-list-rs-and-flow-artifacts-rs"
+summary = "The sweep's grep pattern misses a whole class of finding id, so tasks 7-20 would finish reporting a clean crate while P-prefixed ids remain; minted task 35 to close it"
+original_intent = "Tasks 7-20 sweep finding ids from comments across tomlctl/src, with per-task acceptance greps on the pattern [RO][0-9]+ and per-file hit counts predicted at planning time."
+rationale = "Two measured gaps. First, the predicted counts were derived from an [RO][0-9]+ scan only, so they omit T-prefixed task refs which the sweep rule also covers: task 18 predicted 6 hits and found 10. Sibling tasks likely under-predict the same way, so per-task counts are advisory and each agent re-derives its own hit set. Second, and structurally worse, P-prefixed finding ids are outside the pattern entirely: 10 comment hits survive across cli/dispatch.rs, flow/find_plans.rs and json.rs, plus a stale file:line citation and a changelog-narration block in json.rs, all of which .claude/rules/documentation.md forbids. Widening 13 in-flight sweep tasks mid-run would leave the crate inconsistent, so the residue is collected into one new task 35 scheduled after the last writer of each affected file."
+dedup_id = "6bf310d6049b3eb5"
+
+[[items]]
+id = "E13"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-the-residual-p-prefixed-finding-id-comments"
+summary = "Minted task 35 - the plan carries no task for the P-prefixed finding-id residue in tomlctl/src"
+original_intent = "The plan's Scope puts the crate-wide finding-id comment sweep across tomlctl/src in scope, but its 14 sweep tasks (7-20) partition the work by file under an [RO][0-9]+ acceptance grep, so no task owns the P-prefixed hits."
+rationale = "Necessary work no task owns. Task 35 sweeps the 10 residual P-prefixed comment hits plus the stale dispatch.rs file:line citation and the Plan deviation changelog block, across cli/dispatch.rs, flow/find_plans.rs and json.rs. It depends on 19, 32 and 34 so it runs after the last writer of each of those files, and it belongs to checkpoint group D."
+dedup_id = "6274bccfc5215de8"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "deny-the-two-fixed-lints-at-the-manifest"
+status = "done"
+summary = "Added a commented [lints.clippy] table to tomlctl/Cargo.toml denying manual_filter and unnecessary_map_or; both denials proven to bite at error level by reverting one site each and restoring byte-identically"
+files = ["tomlctl/Cargo.toml"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "b3224ca2bba2ca28"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "extract-the-dispatch-rs-test-module-into-per-concern-modules"
+status = "done"
+summary = "Moved all 11 tests out of dispatch.rs's inline cfg(test) block into dispatch/tests/{mod,lint,skills}.rs split by concern; bodies unchanged, test-name set identical before and after, 435 bin tests pass"
+files = [
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/dispatch/tests/mod.rs",
+    "tomlctl/src/cli/dispatch/tests/lint.rs",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "758f7d3df9f9dc8b"
+
+[[items]]
+id = "E16"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "extract-the-dispatch-rs-test-module-into-per-concern-modules"
+summary = "Task 4's Detail assigns only 6 of the 11 tests in the block; the other 5 were distributed by concern rather than parked in mod.rs"
+original_intent = "Split by concern: command_lint and command_lint_scan_set into lint.rs; carrier_invokes_required_skills, skill_bodies_under_line_ceiling and skill_references_under_line_ceiling plus the dormant verify_skills_clean into skills.rs; mod.rs declares both and re-exports whatever the moved tests share."
+rationale = "The block holds 11 tests, not 6. Five are unnamed by the plan: blocks_verify_detects_drift, blocks_verify_missing_marker_reports_per_file, scan_block_names_warn_emits_for_typo_but_keeps_canonical, blocks_verify_reproduces_shell_hashes and no_create_flag_on_write_subcommands_only. The Acceptance requires dispatch.rs to end with no cfg(test) block, so all 11 had to move, and the Files line caps the task at four files so no third leaf module could be minted. The four crate::blocks tests joined skills.rs, which the plan already establishes as the crate::blocks home, and the clap flag-surface test joined lint.rs alongside command_lint. mod.rs stays declarations-only. Consequence: skills.rs is 652 lines and now also holds the block-parity tests that tasks 22, 23 and 34 will see; nothing they touch was renamed. Also noted: command_lint_scan_set is a private helper fn, not a test."
+dedup_id = "d89fdd6cbd90013a"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-cli-types-rs-and-cli-mod-rs"
+status = "done"
+summary = "Swept all 82 finding-id, task-ref and plan-doc comment citations across cli/types.rs and cli/mod.rs, restating invariants and deleting provenance; 224 changed lines, zero code lines, fmt and clippy clean"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "9486cafcee82bd96"
+
+[[items]]
+id = "E18"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-cli-types-rs-and-cli-mod-rs"
+summary = "A third hole in the sweep's acceptance pattern - a trailing letter hides T6a-style task refs from the word-boundary grep; task 35's scope widened to cover it"
+original_intent = "Task 11 predicted 31 comment-line finding-id references across cli/types.rs and cli/mod.rs, with an acceptance grep on the pattern [RO][0-9]+."
+rationale = "The actual count is 82 hit lines across roughly 55 comment sites - nearly triple the estimate, and the largest under-prediction measured so far. Separately, five lines carrying T6a, T6b and T6c escape the T[0-9]+ pattern entirely because the trailing letter defeats the closing word boundary. That is a distinct hole from the P-prefixed one recorded earlier: three pattern classes now escape the plan's acceptance greps. All 82 were swept in this task, so nothing is left undone here, but task 35's scope is widened to sweep T<n><letter> refs alongside the P-prefixed residue, and every remaining sweep task re-derives its own hit set rather than trusting the plan's count. One further judgement recorded: the acceptance grep flagged R1 inside the --strict-read doc, which was a CLI output value and not a finding id; it was generalised to a prefix-generic example rather than deleted."
+supersedes_entry = "E12"
+dedup_id = "405582fe657bdf03"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-query-rs"
+status = "done"
+summary = "Swept 115 finding-id and task-ref comment citations from query.rs (81 R/O as predicted plus 34 T-prefixed), rewriting each comment to keep its invariant; diff is 100 percent comment lines, fmt and clippy --all-targets clean"
+files = ["tomlctl/src/query.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "c374650d77b8b47c"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-items-rs"
+status = "done"
+summary = "Swept all 135 finding-id and task-ref comment references from items.rs (93 R/O as predicted plus 42 T-prefixed and Task/Phase refs); 534 changed lines all comments, every TOML and JSON fixture byte-identical, is_empty_json rationale preserved for task 28"
+files = ["tomlctl/src/items.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "557e31f40c9a4921"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-time-rs-blocks-rs-and-main-rs"
+status = "done"
+summary = "Removed or rewrote 17 comment blocks (19 matching lines) across time.rs, blocks.rs and main.rs; 108 changed lines all comments, verify-skills engine left intact for task 34, and a test doc that asserted the opposite of its own test corrected"
+files = [
+    "tomlctl/src/time.rs",
+    "tomlctl/src/blocks.rs",
+    "tomlctl/src/main.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "8e069c1e88413b67"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "cover-the-ignored-set-no-path-ignored-branch"
+status = "done"
+summary = "Added an_unignored_evidence_tree_audits_as_fully_published covering ignored_set's previously-unreached git check-ignore exit-1 arm, via a new Sandbox::with_gitignore builder; falsifier confirmed both halves of the test detect the mutation, shipped_gitignore left byte-untouched for task 33"
+files = ["tomlctl/src/backlog/evidence_ops.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "c908ebd5da6d9f83"
+
+[[items]]
+id = "E23"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-orphans-rs-and-convert-rs"
+status = "done"
+summary = "Swept all 45 comment-line finding-id and task-ref citations from orphans.rs and convert.rs, preserving every invariant and leaving all 17 fixture and assertion literals byte-identical; 234 changed lines all comments, DATE_KEYS and is_date_key untouched for task 26"
+files = [
+    "tomlctl/src/orphans.rs",
+    "tomlctl/src/convert.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "31f77e12360b5ffe"
+
+[[items]]
+id = "E24"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-the-residual-p-prefixed-finding-id-comments"
+summary = "Measured the sweep's file partition against the crate: four files are owned by no sweep task, so task 19's crate-wide acceptance is unreachable until task 35 runs"
+original_intent = "Tasks 7-20 partition the finding-id sweep by file across tomlctl/src, and task 19's acceptance asserts that a crate-wide grep over tomlctl/src returns no comment line - implying the partition covers the directory."
+rationale = "It does not. A measured scan of comment lines carrying [ROP]<n> or T<n><letter> shows four files that no sweep task's Files line names: errors.rs (3 hits, T8), flow/dispatch.rs (1 hit, T3), and the two modules task 4 created, cli/dispatch/tests/lint.rs (2 hits, T5 and T1) and cli/dispatch/tests/skills.rs (6 hits) - the latter two holding comments that travelled out of dispatch.rs with the test move, so no sweep task could have owned them at planning time. Two already-swept files also retain residue the acceptance greps cannot see: items.rs keeps 5 T10b refs (trailing-letter class) and json.rs keeps 7 P-prefixed refs. Task 35's scope is widened to all six, and it is scheduled after every remaining sweep and after task 34 so it sees each file's final state. Until it runs, task 19 will fail its own crate-wide acceptance through no fault of its own - that is expected, not a regression, and task 19 is judged on its four named files."
+supersedes_entry = "E13"
+dedup_id = "58c3d140900c942f"
+
+[[items]]
+id = "E25"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "arm-the-pre-commit-fmt-gate-and-correct-the-developer-documentation"
+summary = "checkpoint A gate: rustfmt check"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+dedup_id = "6290f498ba12a6cb"
+
+[[items]]
+id = "E26"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "arm-the-pre-commit-fmt-gate-and-correct-the-developer-documentation"
+summary = "checkpoint A gate: shared-block parity"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "b668503bdab85b16"
+
+[[items]]
+id = "E27"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "arm-the-pre-commit-fmt-gate-and-correct-the-developer-documentation"
+summary = "checkpoint A gate: clippy all-targets, zero warnings under the new deny"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "cbbab29dd46c7a92"
+
+[[items]]
+id = "E28"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "arm-the-pre-commit-fmt-gate-and-correct-the-developer-documentation"
+summary = "checkpoint A gate: build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "8b3e90a616af2683"
+
+[[items]]
+id = "E29"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "arm-the-pre-commit-fmt-gate-and-correct-the-developer-documentation"
+summary = "checkpoint A gate: 19 test binaries, 809 passed, 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "86b0ebf0e167ac92"
+
+[[items]]
+id = "E30"
+type = "checkpoint"
+date = 2026-09-02
+agent = "implement"
+kind = "commit-train"
+summary = "b337ce8 -> auto-fix-the-six-pre-existing-clippy-warnings; 5fb6495 -> deny-the-two-fixed-lints-at-the-manifest; 977a57a -> extract-the-dispatch-rs-test-module-into-per-concern-modules; 8f21311 -> arm-the-pre-commit-fmt-gate-and-correct-the-developer-documentation"
+commits = [
+    "b337ce82bf0c161488722a58714d1610887ad556",
+    "5fb6495f53d979fcfce219c2a6234be6d59f7311",
+    "977a57ac10fe05ccbe9d69c9b121897c4ca28e60",
+    "8f2131113ca6fb8f06d3a53f774c0dcc3e9aceb8",
+]
+dedup_id = "162e605cf2fbe55a"
+
+[[items]]
+id = "E31"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-integrity-rs-and-two-flow-modules"
+status = "done"
+summary = "Swept all 16 finding-id and task-ref citations from integrity.rs, flow/ensure_artifact.rs and flow/envelope.rs; 70 changed lines all comments, SECURITY markers preserved, and a hash-mismatch comment claiming tamper detection corrected to match the documented sidecar contract"
+files = [
+    "tomlctl/src/integrity.rs",
+    "tomlctl/src/flow/ensure_artifact.rs",
+    "tomlctl/src/flow/envelope.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "dbeefb3a07d15d15"
+
+[[items]]
+id = "E32"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-the-four-remaining-single-hit-modules"
+status = "done"
+summary = "Swept 8 finding-id and task-ref comment lines across flow/stale.rs, flow/mod.rs, flow/find_plans.rs and capabilities.rs; 50 changed lines all comments; two ISO-datetime false positives and two P4 sentinels correctly left alone"
+files = [
+    "tomlctl/src/flow/stale.rs",
+    "tomlctl/src/flow/mod.rs",
+    "tomlctl/src/flow/find_plans.rs",
+    "tomlctl/src/capabilities.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "3d39df4f9aac8473"
+
+[[items]]
+id = "E33"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-output-rs-flow-doctor-rs-and-flow-schema-rs"
+status = "done"
+summary = "Removed or rewrote 29 finding-id and task-ref comment references across output.rs, flow/doctor.rs and flow/schema.rs; 126 comment lines plus 3 blank-line collapses, no code line changed, doctor check-name literals untouched"
+files = [
+    "tomlctl/src/output.rs",
+    "tomlctl/src/flow/doctor.rs",
+    "tomlctl/src/flow/schema.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "e2d15d83bd0d9344"
+
+[[items]]
+id = "E34"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-three-flow-modules"
+status = "done"
+summary = "Swept 47 comment-line citations across flow/render_progress_log.rs, flow/init.rs and flow/active.rs, keeping every byte-determinism and slug-validation security invariant restated without its id; 187 changed lines, no code moved"
+files = [
+    "tomlctl/src/flow/render_progress_log.rs",
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/src/flow/active.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "ba74a566edd571dd"
+
+[[items]]
+id = "E36"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-flow-resolve-rs-and-dedup-rs"
+status = "done"
+summary = "Swept 51 comment-line citations from flow/resolve.rs and dedup.rs, keeping the scope-glob precedence rule and the fingerprint field-order constraint; 227 changed lines, one blank-line collapse, TOML fixtures untouched"
+files = [
+    "tomlctl/src/flow/resolve.rs",
+    "tomlctl/src/dedup.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "93b36318974f320c"
+
+[[items]]
+id = "E37"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-cli-dispatch-rs"
+status = "done"
+summary = "Swept all 79 in-scope finding-id and task-ref comment references from cli/dispatch.rs, rewriting nine narration-carrying blocks as invariants; code proven byte-identical by stripping comments from both revisions and diffing, P19 left for task 35"
+files = ["tomlctl/src/cli/dispatch.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "2d4858c5df857402"
+
+[[items]]
+id = "E38"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "record-the-reformat-commit-as-blame-ignorable"
+status = "done"
+summary = "Appended the unabbreviated rustfmt SHA ec689ba309b65dec6739cb0249dc484e2b2d2ff1 to .git-blame-ignore-revs; blame contrast confirmed 100 lines in items.rs reattributed away from the reformat, 0 remaining"
+files = [".git-blame-ignore-revs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "f18cddaf1df47263"
+
+[[items]]
+id = "E39"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-io-rs"
+status = "done"
+summary = "Swept all 119 comment-line citations from io.rs preserving every path-safety invariant as id-free prose (TOCTOU narrowing, symlink-swap window, containment bound, sidecar-first ordering); 447 changed lines all comments, 3 fixture literals byte-identical"
+files = ["tomlctl/src/io.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "1de6cdac27600f0c"
+
+[[items]]
+id = "E40"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "tighten-carrier-invokes-required-skills-to-a-phrase-match"
+status = "done"
+summary = "Replaced the bare-substring skill check and its plugin mirror with a negation-aware invocation-phrase predicate plus a unit test pinning the accept/reject boundary; real carrier corpus passes unchanged with no drift surfaced"
+files = ["tomlctl/src/cli/dispatch/tests/skills.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "c04f190553e341d0"
+
+[[items]]
+id = "E41"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-the-crate-manifest"
+status = "done"
+summary = "Removed five finding-id and task-ref citation sites from tomlctl/Cargo.toml dependency comments (one more than predicted) plus one changelog sentence; every dependency rationale preserved, zero data lines changed"
+files = ["tomlctl/Cargo.toml"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "07db315d61268412"
+
+[[items]]
+id = "E42"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-the-four-remaining-single-hit-modules"
+summary = "The orchestrator-supplied hit counts were themselves inflated - the T-digit pattern matches the T in ISO-8601 datetimes"
+original_intent = "Each sweep dispatch carried an orchestrator-measured per-file hit count, derived over comment lines with a pattern covering R/O/P-prefixed finding ids and T-prefixed task refs, offered as a correction to the plan's under-counted estimates."
+rationale = "That pattern has its own false-positive class: the T in an ISO-8601 datetime such as T00:00:00Z matches the task-ref alternative, so two of the three predicted flow/stale.rs hits were timestamps in a doc comment and a format string rather than task refs. The task also correctly excluded two P4 sentinel refs assigned to task 35. Real ownable set was 8 comment lines against a predicted 13. No harm done - every dispatch instructed the agent to derive its own set and treat the number as advisory, which is what happened, and several agents caught the discrepancy independently. Recorded so the pattern is not reused unqualified: a task-ref grep must exclude a digit-colon continuation to avoid matching timestamps."
+dedup_id = "5d4ef33f07ba5801"
+
+[[items]]
+id = "E43"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "tighten-carrier-invokes-required-skills-to-a-phrase-match"
+summary = "The plan's two accepted phrasings, applied literally, would still let a negated invocation satisfy the guard, contradicting the task's own acceptance criterion"
+original_intent = 'Require either the "Invoke the <name> skill" phrasing the carriers already use, or a backtick-quoted name followed by the word "skill". Keep the existing cross-check that each required SKILL.md exists on disk.'
+rationale = """Both specified forms are satisfied by the sentence "do NOT invoke the <name> skill", which is exactly the fixture the Acceptance requires to fail - so the plan's Detail and its Acceptance contradict each other. Resolved by adding a clause-scoped negation guard on top of the specified phrase match, scanning back to the previous sentence terminator or newline for cues such as do not, never, must not, rather than, instead of. It cannot cause a false negative because one qualifying phrase anywhere in the carrier suffices, and it does not fire on the current corpus. The rejected alternative was a literal phrase match with no guard, which would have shipped a gate that a prohibition still satisfies - the exact hole the task exists to close. Separately: the tightened check surfaced no drift, so all 11 command carriers and both lumina plugin carriers already write each required skill in an accepted invocation form."""
+dedup_id = "ca7847e39b43bb64"
+
+[[items]]
+id = "E44"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "make-the-six-multi-line-write-md-snippets-lintable"
+status = "done"
+summary = "Converted the six unbalanced-quote multi-line snippets in write.md to stdin heredoc form, emptying command_lint's skip list (6 skipped before, 0 after) with the documented invocation count unchanged at 51"
+files = ["claude/skills/tomlctl/references/write.md"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "ccca9f44b9822c0e"
+
+[[items]]
+id = "E45"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "teach-command-lint-to-recognise-angle-bracket-placeholders"
+status = "done"
+summary = "Taught command_lint to substitute placeholder tokens with a parseable stand-in instead of truncating the argv, extracted the lint core into a testable command_lint_report, and added drift-after-placeholder and shell-plumbing-truncation fixture tests"
+files = ["tomlctl/src/cli/dispatch/tests/lint.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "ec00cf5d9c48272a"
+
+[[items]]
+id = "E46"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "teach-command-lint-to-recognise-angle-bracket-placeholders"
+summary = "Unblinding placeholders surfaced one real-corpus failure that is a demonstrated false positive - clap-style usage-synopsis notation, not drift - plus an acceptance clause clap cannot satisfy"
+original_intent = "Distinguish a placeholder from a redirection and substitute a parseable dummy so the remaining flags reach Cli::try_parse_from. Acceptance: a fixture line fails command_lint where today it passes, and any real-corpus failure is genuine drift to be reported, not silenced."
+rationale = "Two findings. First, the corpus line at claude/commands/plan-new.md documents optional flags in clap usage-synopsis form with square brackets and a trailing ellipsis; clap rejected the literal bracketed token even though all three flags exist on flow init. That is notation, not a runnable invocation, so it is a false positive rather than drift. Handled by peeling a leading bracket, a trailing ellipsis and a trailing bracket before parsing, which preserves the check - a misspelt flag inside the brackets still fails - rather than silencing the fence. Second, the Acceptance implies the failure names the offending flag, which is impossible here: the crate builds clap with default-features off and without error-context, so every rejection renders as a bare unexpected-argument message with no token. The fixture asserts the reported line and the rejection text instead. Also noted: the dummy value chosen is the digit 1, because it parses as usize, u64, f64, String and PathBuf, so a placeholder in a typed flag's value slot cannot abort the parse and re-blind the very flags this task unblinds."
+dedup_id = "ffaf3893827d8b36"
+
+[[items]]
+id = "E47"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-the-crate-manifest"
+summary = "checkpoint B gate: rustfmt check"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+dedup_id = "d185b97d356172a1"
+
+[[items]]
+id = "E48"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-the-crate-manifest"
+summary = "checkpoint B gate: shared-block parity"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "ce9c2ceb82742bac"
+
+[[items]]
+id = "E49"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-the-crate-manifest"
+summary = "checkpoint B gate: clippy all-targets"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "17bf30ba99f0ed04"
+
+[[items]]
+id = "E50"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-the-crate-manifest"
+summary = "checkpoint B gate: build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "1559b49162ba1ca1"
+
+[[items]]
+id = "E51"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-finding-id-comments-from-the-crate-manifest"
+summary = "checkpoint B gate: 19 test binaries, 0 failed; main.rs 436 to 439 matching the three new fixture tests"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "05f54ee3e3529182"
+
+[[items]]
+id = "E52"
+type = "checkpoint"
+date = 2026-09-02
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint B: 15 per-task commits covering the finding-id sweep across tomlctl/src and the manifest, plus the blame-ignore SHA; commits listed in task order 6 through 20"
+commits = [
+    "8f35444f6dea910e754efd21446ed01d01728f7a",
+    "69e23ab284e8649562a024a0a3da6219703b1fec",
+    "99585b0b95e6a75e516d472c946263f2789b8a4a",
+    "c7f11e53a556774f78368a51484b3f64acadba63",
+    "9aae6ac5384016ff20c1dcf064af0e0b412d66b5",
+    "ae19ef9f5998b3d057c3d64b913051ea92980bd5",
+    "b0c71815f8c7254ee93f795ccda7d4c1cece4501",
+    "0612e931dc93d7ef3af50912c4a401f28ad84c5f",
+    "0d0ecb16861402d4374cec474be11bb0f44dfda3",
+    "f3628804eed514abe50e66293bc0bab5fafbddfa",
+    "8850d0a6dfeda18870cfbf982ad46f667fef3d0f",
+    "80fe4917b6070cbb0388a8085aeb7d735884ef66",
+    "6dcd7f362dd611b6285d3d96ad40f0cf7bf3c45c",
+    "ec6ed697322144bb94e2b5fef5ab38b24b4a6704",
+    "7fbcca8f734ce05fcb503767ee0ed2f0f4d9adc7",
+]
+dedup_id = "c454a0ad479591ee"
+
+[[items]]
+id = "E53"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "advertise-the-two-missing-flow-verbs"
+summary = "Task 27's Files line is incomplete - the feature list is transcribed in four places, two of which the plan does not name, so the task cannot go green within two files"
+original_intent = "Files: tomlctl/src/cli/types.rs and tomlctl/README.md. Add flow_list and flow_render_progress_log to the FEATURES constant and the corresponding rows to the README feature table."
+rationale = "The delegate confirmed the premise (both FlowOp variants exist and are unadvertised; FEATURES and the README table are both 32 entries) and then stopped without editing, correctly refusing to touch a file outside its Files line. Two further transcriptions exist. First, tomlctl/tests/capabilities.rs holds an exhaustive expected copy of FEATURES plus an assert_eq on the two lengths, so adding two entries fails it 34 against 32; that file is outside the plan's Files line, so the task as specified cannot produce a green checkpoint. Second, tomlctl/README.md carries a prose sample of capabilities stdout that also transcribes the list - in scope by file, but unmentioned by the plan's Detail, which names only the table. Resolution: re-dispatch task 27 with tomlctl/tests/capabilities.rs added, three files total, and the README sample block included in its brief. No retry budget is consumed - this was a correct escalation, not a failure. Underlying cause worth carrying to the backlog: the feature vocabulary is hand-maintained in four places with no mechanical parity check, so every feature addition is a four-site edit."
+dedup_id = "33fde01757a8a36f"
+
+[[items]]
+id = "E54"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "advertise-the-two-missing-flow-verbs"
+status = "done"
+summary = "Added flow_list and flow_render_progress_log across all four hand-maintained transcription sites (FEATURES, README table, README capabilities sample, and the capabilities test expected array), each moving 32 to 34; falsifier confirmed the length assertion still fires on divergence"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/README.md",
+    "tomlctl/tests/capabilities.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "f3fa5ddb246cefea"
+
+[[items]]
+id = "E55"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "add-a-markdown-link-existence-checker"
+status = "done"
+summary = "Added skill_markdown_links_resolve (corpus gate over 24 relative links with a non-zero-count assertion) and a temp-tree falsifier test, plus a testable link-checking core; corpus passes with zero broken links"
+files = ["tomlctl/src/cli/dispatch/tests/skills.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "a3c20cae8895c5f7"
+
+[[items]]
+id = "E56"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "widen-the-date-key-promotion-list"
+status = "done"
+summary = "Added promoted, dismissed and last_seen to DATE_KEYS and the is_date_key jump table; excluded terminal_date and compacted_on on evidence that backlog compact writes them as native datetimes and they never reach the coercion funnel; new falsifier test pins the coerced bytes on both sides"
+files = ["tomlctl/src/convert.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "3b6e50958576f3d5"
+
+[[items]]
+id = "E57"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "widen-the-date-key-promotion-list"
+summary = "Minted task 36 - widening DATE_KEYS drifted two documents that enumerate or describe it, and no task in the plan owns either"
+original_intent = "Task 26's Files line is tomlctl/src/convert.rs alone; the plan treats the DATE_KEYS widening as a single-file change confined to the slice and its jump table."
+rationale = "The constant is described in two places outside that file, both of which the change falsifies. First, claude/skills/tomlctl/references/write.md enumerates the DATE_KEYS set verbatim as created, updated, first_flagged, last_updated, resolved and date - now missing the three added keys, so the reference documents a set the code no longer has. Second, the read_date doc comment in tomlctl/src/backlog/compact.rs states that items add leaves promoted and dismissed as quoted strings, which was the bug and is no longer true; its string-tolerant match arm must stay, because stores written before this change still hold string-shaped dates, but the prose is now wrong. Both are in scope by the plan's own Scope section, and leaving them makes this run the cause of the drift rather than an inheritor of it. Minted as task 36 with those two files. It is scheduled after checkpoint C commits, because write.md carries task 24's uncommitted edit and staging it earlier would fold group C and group D work into one commit."
+dedup_id = "722bf9e79bd89ca2"
+
+[[items]]
+id = "E58"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "share-shipped-gitignore-through-the-block-verifier"
+status = "done"
+summary = "Moved shipped_gitignore and its two constants into test_support.rs, unified the doc comments with the tests/common/mod.rs copy, and put both under a new shipped-gitignore parity block proven to fail on either side independently"
+files = [
+    "tomlctl/src/test_support.rs",
+    "tomlctl/tests/common/mod.rs",
+    "tomlctl/src/backlog/evidence_ops.rs",
+    "scripts/shared-blocks.toml",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "757ef664ca1ea085"
+
+[[items]]
+id = "E59"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "share-shipped-gitignore-through-the-block-verifier"
+summary = "Task 33's acceptance asks the verifier to report the new block on success, which it cannot do; substituted two checkable proofs instead"
+original_intent = "Acceptance: bash scripts/verify-shared-blocks.sh exits 0 and reports the new block. Changing one character inside either marked region makes it exit non-zero."
+rationale = "The verifier never names blocks on success - it prints a single parity OK line regardless of how many blocks it checked - so the reporting half of the acceptance is not literally reachable. The delegate substituted two independently checkable proofs that the block is live rather than declaring the clause met: the block extracts 38 non-empty lines hashing identically on both sides, which also shows task 25's empty-extraction guard is not being satisfied vacuously, and both falsifier runs name the shipped-gitignore block explicitly in their drift output. The second half of the acceptance was met in full and in both directions - a one-character edit in the src carrier and a separate one in the tests carrier each produced exit 1 with differing hashes, proving neither side is outside the gate. Also recorded: scripts/shared-blocks.toml now carries prose saying the manifest holds two blocks across two implement agent files, which this change falsifies on both the count and the file kinds. Task 33 was scoped to adding only its block entry, so the paragraph is reassigned to task 34, which already edits that file."
+dedup_id = "358dc9be56a1e531"
+
+[[items]]
+id = "E60"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "make-json-optional-for-an-unset-only-items-update"
+status = "done"
+summary = "Made --json optional on items update (defaulting to an empty patch) with a hand-rolled required-one-of guard in dispatch matching array-append's precedent; null-does-not-clear semantics untouched and the guard proven to refuse a silent no-op write"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "5ba16e596534a6bf"
+
+[[items]]
+id = "E61"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "make-json-optional-for-an-unset-only-items-update"
+summary = "The dispatch steered toward clap ArgGroup for the required-one-of check; it was built, measured, and rejected because without error-context the message names neither flag"
+original_intent = "Decide whether to express the at-least-one-of requirement with clap's ArgGroup(required = true) or a hand-rolled post-parse check, noting that types.rs already uses ArgGroup mutexes elsewhere and the file's existing idiom should be followed."
+rationale = "The ArgGroup version was implemented first and parsed correctly - Context7 confirms required plus multiple gives exactly at-least-one semantics. It was rejected on measurement: the crate declares clap with default-features off and without error-context, so the group's refusal renders as a bare one-or-more-required-arguments message naming neither flag, which fails the task's own requirement that the error be actionable. Enabling error-context is a manifest change outside the task's Files line that would shift every clap error string in the CLI. The crate already solves this exact shape the other way - array-append declares its mutex at the parser but hand-rolls the at-least-one requirement as a bail in dispatch, with an integration test asserting the message names both flags - so ArgGroup is this file's idiom for mutexes only, and the hand-rolled check is its idiom for a required-one-of. A dispatch bail also flows through --error-format json as a proper envelope, which a clap parse error does not. Falsifier worth preserving: with the guard neutralised, an update naming neither flag exited 0 and round-tripped the TOML byte-identically, but still ran the write funnel and refreshed the integrity sidecar - a silent no-op write, which is what the guard refuses."
+dedup_id = "78cd1bf377b52ad4"
+
+[[items]]
+id = "E62"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "assert-non-empty-block-extraction-in-verify-shared-blocks-sh"
+summary = "checkpoint C gate: rustfmt check"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+dedup_id = "333796dc9f525702"
+
+[[items]]
+id = "E63"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "assert-non-empty-block-extraction-in-verify-shared-blocks-sh"
+summary = "checkpoint C gate: shared-block parity, now covering the new shipped-gitignore block"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "6481653afddc4400"
+
+[[items]]
+id = "E64"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "assert-non-empty-block-extraction-in-verify-shared-blocks-sh"
+summary = "checkpoint C gate: clippy all-targets, zero warnings reported"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "72d7962e87e2b1a5"
+
+[[items]]
+id = "E65"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "assert-non-empty-block-extraction-in-verify-shared-blocks-sh"
+summary = "checkpoint C gate: build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "a5fefc790c93c85c"
+
+[[items]]
+id = "E66"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "assert-non-empty-block-extraction-in-verify-shared-blocks-sh"
+summary = "checkpoint C gate: 19 binaries, 582 passed, 0 failed; main.rs 439 to 442 and no compilation warnings, resolving the earlier unused-import observation"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "bd111890a271e966"
+
+[[items]]
+id = "E67"
+type = "checkpoint"
+date = 2026-09-02
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint C: 4 commits - verify-shared-blocks guard, command_lint placeholders, the merged skills.rs pair (tasks 22 and 23 share a file and are no longer separable in the tree), and the write.md heredoc conversion"
+commits = [
+    "aca394f692bd2017c2e254e5eb9848ec91a323d2",
+    "0059f195e92754ef57508dd0db45f29c4dfcab3b",
+    "d582aa2a9ab2547e56ebc0d0a3c6c06c0383606b",
+    "edc8ba5b310592005910effdfb08c17f10002945",
+]
+dedup_id = "8a2564d4ad9c92a7"
+
+[[items]]
+id = "E68"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "refresh-the-two-documents-that-describe-date-keys"
+status = "done"
+summary = "Widened write.md's DATE_KEYS enumeration to the current nine keys and added a pointer naming the owning constant; rewrote read_date's doc comment to attribute its string-tolerant arm to pre-widening rows rather than current items add behaviour, leaving the arm itself intact"
+files = [
+    "claude/skills/tomlctl/references/write.md",
+    "tomlctl/src/backlog/compact.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "21d1404a669ee7a8"
+
+[[items]]
+id = "E69"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "promote-strict-read-check-to-a-single-shared-definition"
+status = "done"
+summary = "Collapsed the three strict_read_check copies into one pub(crate) definition in io.rs and rewired cli/dispatch.rs, json.rs and backlog/schema.rs through it; read_store's empty-table fallback preserved and inverting the shared gate proven to change every caller"
+files = [
+    "tomlctl/src/io.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/json.rs",
+    "tomlctl/src/backlog/schema.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "86104a376da888ea"
+
+[[items]]
+id = "E70"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "promote-strict-read-check-to-a-single-shared-definition"
+summary = "The task as written is not achievable in its three named files - pub(crate) alone cannot expose a helper living in a private module, so a fourth file was unavoidable"
+original_intent = "Files: tomlctl/src/cli/dispatch.rs, tomlctl/src/json.rs, tomlctl/src/backlog/schema.rs. Action: make strict_read_check pub(crate) and call it from the two places that currently re-implement it."
+rationale = "mod dispatch is private to cli, so pub(crate) does not make the path crate::cli::dispatch::strict_read_check resolvable from crate::json or crate::backlog::schema. Every variant of this task therefore needs a file the plan's Files line omits: either cli/mod.rs for a new re-export, or a new home in infrastructure. The re-export route is closed by cli/mod.rs's own module doc, which states that only clap-derived types and two named translators cross that boundary outward, and that a verb group needing a helper should have it moved down into crate::io rather than re-exported. The helper's signature is already all primitives, matching io.rs's stated contract that nothing in it reaches back into crate::cli, and all three consumers already import from crate::io, so each call site cost one added name in an existing use list. The definition now lives in tomlctl/src/io.rs, making four files. Behaviour is unchanged across all four strict-mode and file-presence combinations; read_store's empty-table fallback stayed in place and only the existence gate moved. The one observable difference is an extra stat call when strict-read is set and the file exists; the non-strict path short-circuits before touching the filesystem, so the common case is unchanged."
+dedup_id = "697769a22f72bdfb"
+
+[[items]]
+id = "E71"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "delete-the-vacuous-blocks-verify-skills-verb"
+status = "done"
+summary = "Deleted the blocks verify-skills verb - clap variant, dispatch arm, drift engine and its three private helpers, eleven unit tests, the dormant verify_skills_clean guard and the doc section - after confirming against the pre-change binary that it iterated zero blocks; corrected three stale block-count and dormancy claims"
+files = [
+    "tomlctl/src/blocks.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+    "claude/skills/tomlctl/references/flow.md",
+    "scripts/shared-blocks.toml",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "c45e336c5a0ea275"
+
+[[items]]
+id = "E72"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "sweep-the-residual-p-prefixed-finding-id-comments"
+status = "done"
+summary = "Swept the 25 residual finding-id and task-ref comment lines the fourteen partitioned sweep tasks could not reach across eight files, plus json.rs's stale dispatch.rs file:line self-citation, its Plan deviation changelog block, and an errors.rs plan-doc Task 8 citation; the crate-wide gate now returns only one ISO-timestamp false positive"
+files = [
+    "tomlctl/src/json.rs",
+    "tomlctl/src/items.rs",
+    "tomlctl/src/errors.rs",
+    "tomlctl/src/flow/find_plans.rs",
+    "tomlctl/src/flow/dispatch.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/dispatch/tests/lint.rs",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "70535f6fc0811654"
+
+[[items]]
+id = "E73"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "delete-the-vacuous-blocks-verify-skills-verb"
+summary = "Phase 3 final pass: rustfmt check"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+dedup_id = "9fa22ae264a0f28c"
+
+[[items]]
+id = "E74"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "delete-the-vacuous-blocks-verify-skills-verb"
+summary = "Phase 3 final pass: shared-block parity across all three blocks"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "adb7358d1bf5e5c2"
+
+[[items]]
+id = "E75"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "delete-the-vacuous-blocks-verify-skills-verb"
+summary = "Phase 3 final pass: plan-story block gate"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+dedup_id = "08648623810084ef"
+
+[[items]]
+id = "E76"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "delete-the-vacuous-blocks-verify-skills-verb"
+summary = "Phase 3 final pass: clippy all-targets, zero warnings under the new deny"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "b2a1294176f875e0"
+
+[[items]]
+id = "E77"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "delete-the-vacuous-blocks-verify-skills-verb"
+summary = "Phase 3 final pass: build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "522401cbd4bfe153"
+
+[[items]]
+id = "E78"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "delete-the-vacuous-blocks-verify-skills-verb"
+summary = "Phase 3 final pass: 19 binaries, 0 failed. main.rs 442 to 431 reconciled exactly - blocks.rs lost 10 tests and verify_skills_clean 1, all belonging to the deleted verb"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "258bce3136e85b6d"
+
+[[items]]
+id = "E79"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "delete-the-vacuous-blocks-verify-skills-verb"
+summary = "Phase 3 final pass: RUSTSEC audit, 0 vulnerabilities and 0 warnings"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+dedup_id = "1f9b591e340ae200"
+
+[[items]]
+id = "E80"
+type = "checkpoint"
+date = 2026-09-02
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint D: 3 commits. Per-task granularity collapsed - nine of the eleven group-D tasks form one connected component through shared files (types.rs, dispatch.rs, schema.rs, compact.rs, evidence_ops.rs, shared-blocks.toml, json.rs, skills.rs), so tasks 27, 28, 30, 31, 32, 33, 34, 35 and 36 land in one commit; only 26 and 29 stayed separable"
+commits = [
+    "0fb20aa28f5f0d4d4f89e1a15ead86ead408b3f4",
+    "a4fdef94ca70957836064ab2351a19d701c5ff5a",
+    "95b0cfd6d6b4ca3f6696ea1f158ab34ba4487c71",
+]
+dedup_id = "609c23eedbbff92b"
+
+[[items]]
+id = "E81"
+type = "status-transition"
+date = 2026-09-02
+agent = "plan-update"
+summary = "All 36 executed tasks complete and verified; flow moves to review awaiting /review and /optimise"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "479747fcdefbbb50"

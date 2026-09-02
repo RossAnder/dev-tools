@@ -505,3 +505,22 @@ scope = [
     "scripts/shared-blocks.toml",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "tomlctl-followups"
+last_used = "2026-09-02T13:25:00.033007Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "scripts/**",
+    ".githooks/**",
+    "claude/skills/tomlctl/references/**",
+    "CLAUDE.md",
+    ".git-blame-ignore-revs",
+]

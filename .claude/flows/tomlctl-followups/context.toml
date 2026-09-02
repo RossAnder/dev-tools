@@ -1,0 +1,28 @@
+slug = "tomlctl-followups"
+plan_path = "docs/plans/tomlctl-followups.md"
+status = "review"
+created = 2026-09-02
+updated = 2026-09-02
+branch = "main"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "scripts/**",
+    ".githooks/**",
+    "claude/skills/tomlctl/references/**",
+    "CLAUDE.md",
+    ".git-blame-ignore-revs",
+]
+
+[tasks]
+total = 36
+completed = 36
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/tomlctl-followups/review-ledger.toml"
+optimise_findings = ".claude/flows/tomlctl-followups/optimise-findings.toml"
+execution_record = ".claude/flows/tomlctl-followups/execution-record.toml"
+plan_review_findings = ".claude/flows/tomlctl-followups/plan-review-findings.toml"
