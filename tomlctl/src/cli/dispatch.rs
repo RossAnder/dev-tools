@@ -1,8 +1,7 @@
-//! R21: dispatch — `fn run()`, the `items`/`blocks` sub-dispatchers, plus
+//! dispatch — `fn run()`, the `items`/`blocks` sub-dispatchers, plus
 //! the NDJSON source resolver and the integrity-opts translators
-//! that glue clap types to `IntegrityOpts`. Extracted from the former
-//! monolithic `cli.rs` so the clap surface (`super::types`) and the
-//! output helpers (`crate::output`) each live in their own file.
+//! that glue clap types to `IntegrityOpts`. The clap surface lives in
+//! `super::types` and the output helpers in `crate::output`.
 //!
 //! Pure plumbing; no business logic — every `Cmd` / `ItemsOp` / `BlocksOp`
 //! arm delegates to `items::` / `blocks::` / `io::` helpers that own the
@@ -45,7 +44,7 @@ use crate::output::{
 };
 use crate::query::{self, Query, ShapeDispatch};
 
-/// R44: maximum number of ops accepted in a single `items apply` batch.
+/// Maximum number of ops accepted in a single `items apply` batch.
 /// The 32 MiB stdin cap alone does not bound op count — a well-formed 32 MiB
 /// JSON array of tiny `{"op":"update","id":"Rx"}` records can hold tens of
 /// thousands of operations, and `items_apply_to_opts` iterates serially.
@@ -58,9 +57,8 @@ const MAX_OPS_PER_APPLY: usize = 10_000;
 /// Resolve an NDJSON source argument. A literal dash reads stdin via
 /// `io::read_json_arg` (preserving its guard against a second
 /// `-` sentinel on the same invocation); any other value is a file path
-/// read verbatim with `fs::read_to_string`. Extracted (R84) so the
-/// identical resolution logic doesn't live in both `Cmd::ArrayAppend` and
-/// `ItemsOp::AddMany`.
+/// read verbatim with `fs::read_to_string`. Shared by `Cmd::ArrayAppend`
+/// and `ItemsOp::AddMany`.
 fn read_ndjson_source(src: &str) -> Result<String> {
     if src == "-" {
         read_json_arg("-")
@@ -69,7 +67,7 @@ fn read_ndjson_source(src: &str) -> Result<String> {
     }
 }
 
-/// T5: parse the `--dedupe-by` flag value into a `Vec<String>` of field
+/// Parse the `--dedupe-by` flag value into a `Vec<String>` of field
 /// paths. `None` (flag absent) returns an empty Vec — the caller treats
 /// that as "dedupe off" and the existing add/add-many code paths run
 /// unchanged. `Some("")` or `Some(",,")` (all-empty after split-and-trim)
@@ -97,11 +95,11 @@ fn parse_dedupe_fields(raw: Option<&str>) -> Result<Vec<String>> {
 /// Translate the flattened integrity-args structs from a subcommand variant
 /// into the module-local `IntegrityOpts` bundle. Kept next to the CLI
 /// definition (rather than in `integrity.rs`) so the integrity module stays
-/// free of the clap-derived types. R74 split `IntegrityArgs` in two — read
-/// paths hand us `ReadIntegrityArgs` (only `verify_integrity` matters), write
-/// paths hand us `WriteIntegrityArgs` (the full set). Both flow through the
-/// same `IntegrityOpts` so every downstream consumer
-/// (`maybe_verify_integrity` / `write_toml_with_sidecar`) stays unchanged.
+/// free of the clap-derived types. Read paths hand us `ReadIntegrityArgs`
+/// (only `verify_integrity` matters), write paths hand us
+/// `WriteIntegrityArgs` (the full set). Both flow through the same
+/// `IntegrityOpts` so every downstream consumer
+/// (`maybe_verify_integrity` / `write_toml_with_sidecar`) sees one type.
 pub(crate) fn read_integrity_opts(args: &ReadIntegrityArgs) -> IntegrityOpts {
     IntegrityOpts {
         // Read-side paths never write a sidecar; default to true so that if
@@ -117,7 +115,7 @@ pub(crate) fn read_integrity_opts(args: &ReadIntegrityArgs) -> IntegrityOpts {
     }
 }
 
-/// T9: single gate applied at every read dispatch site so `--strict-read`
+/// Single gate applied at every read dispatch site so `--strict-read`
 /// fires BEFORE `read_doc` (and therefore before `maybe_verify_integrity`).
 /// This is the ordering guarantee documented in the README's "File state
 /// contract" subsection: a missing file under `--strict-read
@@ -150,15 +148,14 @@ pub(crate) fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
     }
 }
 
-/// R12: emit the canonical success envelope for the SIMPLE write arms
+/// Emit the canonical success envelope for the SIMPLE write arms
 /// (`set` / `set-json` / `update` / `remove` / `apply`) and pair it with the
-/// `warn_if_created` stderr note. The shape is exactly the copy-pasted
-/// `{"ok":true,"created":<bool>,"path":<file.display()>}` (key order
-/// load-bearing — `serde_json`'s `preserve_order` keeps insertion order, so
-/// `ok`→`created`→`path` is the emitted order). The ENRICHED arms
+/// `warn_if_created` stderr note. Key order is load-bearing —
+/// `serde_json`'s `preserve_order` keeps insertion order, so the emitted
+/// order is `ok`→`created`→`path`. The ENRICHED arms
 /// (`array-append` / `items add[-many]` / `backfill`) keep their inline
 /// envelopes because they interleave arm-specific keys (`appended` / `added` /
-/// `skipped_rows` / `backfilled`) — pure data, no behaviour change.
+/// `skipped_rows` / `backfilled`).
 fn write_envelope(file: &std::path::Path, created: bool) -> Result<()> {
     warn_if_created(file, created);
     print_json_compact(&serde_json::json!({
@@ -196,16 +193,16 @@ fn refuse_json_extension_for_toml_writers(file: &std::path::Path) -> Result<()> 
 /// this; splitting lets the binary target stay trivially small while all
 /// the parsing/dispatch/output plumbing lives in a normal module.
 ///
-/// R18: the `Cli` is parsed once in `main.rs` and threaded in here. This
-/// eliminates the earlier double-parse (peek via `try_parse()` for
-/// `--error-format`, then a full `Cli::parse()` on entry) which silently
-/// swallowed errors on the peek path and risked double `--help` rendering.
+/// The `Cli` is parsed once in `main.rs` and threaded in here. A second
+/// parse here (a `try_parse()` peek for `--error-format`, then a full
+/// `Cli::parse()` on entry) would silently swallow errors on the peek path
+/// and risk double `--help` rendering.
 pub(crate) fn run(cli: Cli) -> Result<()> {
     match cli.cmd {
         Cmd::Parse { file, integrity } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
-            // O10: `parse` is the single dispatch arm whose whole output is
+            // `parse` is the single dispatch arm whose whole output is
             // "the entire TOML doc as JSON" — no dotted-path navigation, no
             // per-item filtering — so it benefits most from the borrowed
             // DeTable fast-path that skips the per-scalar `String` clone
@@ -247,7 +244,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 })
             })?;
             if raw {
-                // T2: bare-scalar emit. `emit_raw` validates the value is a
+                // Bare-scalar emit. `emit_raw` validates the value is a
                 // scalar (string / number / bool) and errors byte-for-byte
                 // on table/array targets. Null is impossible here — `navigate`
                 // returns `None` for a missing path, which we already
@@ -268,14 +265,14 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         } => {
             refuse_json_extension_for_toml_writers(&file)?;
             if dry_run {
-                // R22: a caller passing `tomlctl set --dry-run /etc/passwd`
+                // A caller passing `tomlctl set --dry-run /etc/passwd`
                 // would otherwise silently parse the file as TOML and
                 // surface its parsed contents in the dry-run plan.
                 // Advisory warn (matches the cross-ledger FindDuplicates
                 // path); the actual containment refusal lives on the write
                 // side via `guard_write_path`.
                 warn_if_read_outside_claude(&file);
-                // T6b: dry-run path — read-only compute via the same
+                // Dry-run path — read-only compute via the same
                 // `compute_set_mutation` the live writer would invoke,
                 // emitted via the scalar dry-run envelope. Mirrors the
                 // `ItemsOp::Apply` reference: never acquire the exclusive
@@ -288,10 +285,10 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             let opts = write_integrity_opts(&integrity);
-            // T1: auto-create a missing target (default) or restore the strict
+            // Auto-create a missing target (default), or fail with the strict
             // not_found error (`--no-create`).
             let on_missing = on_missing_for(&file, integrity.no_create)?;
-            // T2: surface T1's `created` signal — `"created"` + `"path"` in the
+            // Surface the `created` signal — `"created"` + `"path"` in the
             // success envelope, plus the one-line stderr guidance when seeded.
             let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 let v = parse_scalar(&value, ty)?;
@@ -307,17 +304,15 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             integrity,
         } => {
             refuse_json_extension_for_toml_writers(&file)?;
-            // O35: parse stdin/literal JSON straight into a `JsonValue`,
-            // skipping the intermediate String allocation. The parse moves
-            // out of the `mutate_doc` closure, which is a side-benefit:
-            // a malformed payload now fails before we open the doc.
-            //
-            // T6b: parsing also lifts above the `if dry_run` branch so
-            // both paths share the same parse semantics (and a malformed
-            // --json fails identically in dry-run and live mode).
+            // Parse stdin/literal JSON straight into a `JsonValue`, skipping
+            // the intermediate String allocation. Keeping the parse outside
+            // the `mutate_doc` closure means a malformed payload fails
+            // before the doc is opened; keeping it above the `if dry_run`
+            // branch means a malformed `--json` fails identically in
+            // dry-run and live mode.
             let parsed: JsonValue = read_json_value_from_arg(&json).context("parsing --json")?;
             if dry_run {
-                // R22: see `Cmd::Set` dry-run for the rationale on this
+                // See `Cmd::Set` dry-run for the rationale on this
                 // advisory warn. Same threat shape: a caller passing
                 // `--dry-run /etc/passwd` to set-json would otherwise
                 // silently parse the file as TOML and echo it back in the
@@ -331,9 +326,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             let opts = write_integrity_opts(&integrity);
-            // T1: see `Cmd::Set`.
+            // Auto-create policy; see `Cmd::Set`.
             let on_missing = on_missing_for(&file, integrity.no_create)?;
-            // T2: surface `created` + `path` (see `Cmd::Set`).
+            // Surface `created` + `path` (see `Cmd::Set`).
             let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 let last_key = path
                     .rsplit_once('.')
@@ -369,12 +364,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                     "array-append requires one of --json or --ndjson (e.g. `--json '{{\"k\":\"v\"}}'` for a single row, `--ndjson rows.ndjson` for a batch)"
                 );
             }
-            // T6b: lift the rows parse above the dry-run/live split so both
-            // paths share parse semantics. `--json` / `--ndjson` resolution
+            // The rows parse sits above the dry-run/live split so both paths
+            // share parse semantics. `--json` / `--ndjson` resolution
             // (including stdin) happens once.
             let rows: Vec<JsonValue> = if let Some(j) = json {
-                // O35: parse straight to `JsonValue`, dropping the prior
-                // `read_json_arg` String + `serde_json::from_str` two-step.
+                // Parse straight to `JsonValue`, avoiding a `read_json_arg`
+                // String + `serde_json::from_str` two-step.
                 let parsed: JsonValue = read_json_value_from_arg(&j).context("parsing --json")?;
                 if !parsed.is_object() {
                     bail!(
@@ -389,7 +384,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 parse_ndjson(&text)?
             };
             if dry_run {
-                // R22: advisory warn for dry-run reads outside `.claude/`.
+                // Advisory warn for dry-run reads outside `.claude/`.
                 // Same threat shape as the other dry-run arms — a caller
                 // pointing `array-append --dry-run` at an arbitrary file
                 // would otherwise leak the parsed TOML through the plan
@@ -404,10 +399,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             }
             let opts = write_integrity_opts(&integrity);
             let mut appended: usize = 0;
-            // T1: auto-create policy.
+            // Auto-create policy.
             let on_missing = on_missing_for(&file, integrity.no_create)?;
-            // T2: surface `created` + `path` alongside the pre-existing
-            // `appended` count.
+            // Surface `created` + `path` alongside the `appended` count.
             let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 appended = array_append(doc, &array, &rows)?;
                 Ok(())
@@ -455,7 +449,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             crate::json::dispatch(op)?
         }
         Cmd::Capabilities => {
-            // T7: pretty-print matches the rest of the read-path surface
+            // Pretty-print matches the rest of the read-path surface
             // (`parse`, `get`, `items list`) — `print_json` is the same
             // helper they use. The `version` string is resolved at compile
             // time via `env!("CARGO_PKG_VERSION")`, so it tracks the
@@ -497,27 +491,27 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 count,
             };
             let q = Query::from_query_input(&query.to_query_input(&legacy))?;
-            // R82: `ndjson` is an output-encoding choice, not a shape. Only
+            // `ndjson` is an output-encoding choice, not a shape. Only
             // the Array and Pluck shape + ndjson encoding combinations are
             // meaningful; for aggregation shapes (Count/CountBy/
             // CountDistinct/GroupBy) the ndjson bit is silently ignored
             // since the output is a single JSON value that has no per-line
             // decomposition.
             //
-            // T3: added Pluck to the streaming-eligible set. `--pluck f
+            // Pluck is streaming-eligible too: `--pluck f
             // --lines` (or `--pluck f --ndjson`) streams one plucked JSON
             // value per line; `run_streaming` mirrors `apply_pluck`'s
             // null/missing-drop so the set of emitted values is identical
             // to the non-streaming path.
             if q.ndjson && q.shape.is_streamable() {
-                // O34: stream one compact JSON value per line directly via
+                // Stream one compact JSON value per line directly via
                 // `query::run_streaming`, avoiding the `Vec<JsonValue>` that
                 // `query::run` would otherwise materialise only for us to
                 // iterate and re-serialise. The streaming path walks the
                 // same pipeline and emits per-item — peak memory scales with
                 // the filtered set, not the full output array.
                 //
-                // T2: `--pluck foo --lines --raw` flows through here too;
+                // `--pluck foo --lines --raw` flows through here too;
                 // `run_streaming` reads `q.raw` and emits bare values per
                 // line instead of quoted JSON. The Array variant of this
                 // branch (full-row ndjson) does not honour `--raw` — each
@@ -570,14 +564,14 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let opts = write_integrity_opts(&integrity);
             let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
             if dry_run {
-                // R22: a caller passing `tomlctl items add --dry-run
+                // A caller passing `tomlctl items add --dry-run
                 // /etc/passwd` would otherwise silently parse the file as
                 // TOML and surface its parsed contents in the dry-run plan.
                 // Advisory warn (matches the cross-ledger FindDuplicates
                 // path); the actual containment refusal lives on the write
                 // side via `guard_write_path`.
                 warn_if_read_outside_claude(&file);
-                // T6b: dry-run path mirrors the live arm's two-branch
+                // Dry-run path mirrors the live arm's two-branch
                 // structure — `compute_add_mutation` for the no-dedupe
                 // case, `compute_add_many_mutation` with a single-row vec
                 // for the dedupe case. Both go through the same
@@ -585,12 +579,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // funnels the live path uses, so validation surfaces and
                 // dedup_id auto-population are byte-identical.
                 //
-                // R47: parse `--json` once at the top so both branches
-                // share the parse semantics (and stdin cost) — the prior
-                // shape diverged here (`read_json_arg` String for no-dedupe
-                // vs `read_json_value_from_arg` JsonValue for dedupe), which
-                // made the per-branch stdin behaviour and `parsing --json`
-                // error site asymmetric.
+                // Parse `--json` once at the top so both branches share the
+                // parse semantics (and the stdin cost). A per-branch parse
+                // (`read_json_arg` String for no-dedupe vs
+                // `read_json_value_from_arg` JsonValue for dedupe) makes the
+                // stdin behaviour and the `parsing --json` error site
+                // asymmetric.
                 let patch: JsonValue = read_json_value_from_arg(&json).context("parsing --json")?;
                 let read_opts = dry_run_read_opts(integrity.verify_integrity);
                 let plan = if dedupe_fields.is_empty() {
@@ -607,23 +601,17 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 return Ok(());
             }
             if dedupe_fields.is_empty() {
-                // No-dedupe path: byte-identical behaviour to pre-T5 —
-                // same helper, same `{"ok":true}` output, same
-                // `mutate_doc` (always-write) pipeline. The T5 plan
-                // suggested emitting `{"ok":true,"added":1}` even in the
-                // no-dedupe case, but that would break the byte-identity
-                // constraint ("absent --dedupe-by → current behaviour
-                // byte-identical") since today's shape is plain
-                // `{"ok":true}`. Keep the legacy shape for back-compat
-                // and reserve the enriched shape for the `--dedupe-by`
+                // No-dedupe path: the envelope stays plain `{"ok":true}` and
+                // the always-write `mutate_doc` pipeline runs unconditionally.
+                // Absent `--dedupe-by` the output must not gain an `added`
+                // count; the enriched shape belongs to the `--dedupe-by`
                 // branch below.
                 let json = read_json_arg(&json)?;
-                // T1: auto-create policy.
+                // Auto-create policy.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
-                // T2: surface `created` + `path`. The legacy no-dedupe shape
-                // is plain `{"ok":true}` (see the byte-identity note above);
-                // the new keys are purely additive so existing consumers that
-                // read no extra keys keep working.
+                // Surface `created` + `path`. Purely additive on top of the
+                // plain `{"ok":true}` shape, so consumers reading no extra
+                // keys are unaffected.
                 let created =
                     mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                         items_add_to(doc, &array, &json)
@@ -638,16 +626,16 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // are untouched.
                 let patch: JsonValue = read_json_value_from_arg(&json).context("parsing --json")?;
                 let mut outcome: Option<AddOutcome> = None;
-                // T1: auto-create policy. On a dedupe hit against a
+                // Auto-create policy. On a dedupe hit against a
                 // freshly-seeded missing file the closure returns `Ok(false)`,
                 // so `mutate_doc_conditional` skips the write and leaves no
                 // stray file — and reports `created=false` (nothing persisted),
                 // which is exactly what we surface below.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
-                // T2: `created` from `mutate_doc_conditional` is already correct
-                // — true only when the seed fired AND a write actually landed.
-                // Surface it (plus `path`) on BOTH the `Added` and `Skipped`
-                // arms, preserving each arm's pre-existing keys.
+                // `created` from `mutate_doc_conditional` is true only when
+                // the seed fired AND a write actually landed. Surface it
+                // (plus `path`) on BOTH the `Added` and `Skipped` arms,
+                // alongside each arm's own keys.
                 let created = mutate_doc_conditional(
                     &file,
                     integrity.allow_outside,
@@ -694,25 +682,24 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
         } => {
             let opts = write_integrity_opts(&integrity);
             let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
-            // NDJSON source resolution factored into `read_ndjson_source` (R84);
-            // the STDIN_CONSUMED guard in `read_json_arg` still refuses a second
+            // The STDIN_CONSUMED guard inside `read_json_arg` refuses a second
             // `-` when `--defaults-json -` also wants stdin on the same call.
             let ndjson_text = read_ndjson_source(&ndjson)?;
             let rows = parse_ndjson(&ndjson_text)?;
             let defaults: Option<JsonValue> = match defaults_json.as_deref() {
-                // O35: parse straight to `JsonValue`, dropping the prior
-                // `read_json_arg` String + `serde_json::from_str` two-step.
+                // Parse straight to `JsonValue`, avoiding a `read_json_arg`
+                // String + `serde_json::from_str` two-step.
                 Some(s) => Some(read_json_value_from_arg(s).context("parsing --defaults-json")?),
                 None => None,
             };
             if dry_run {
-                // R22: advisory warn for dry-run reads outside `.claude/`.
+                // Advisory warn for dry-run reads outside `.claude/`.
                 // Same threat shape as the other dry-run arms — a caller
                 // pointing `items add-many --dry-run` at an arbitrary file
                 // would otherwise leak the parsed TOML through the plan
                 // envelope.
                 warn_if_read_outside_claude(&file);
-                // T6b: dry-run flows through the same `compute_add_many_mutation`
+                // Dry-run flows through the same `compute_add_many_mutation`
                 // helper the live dedupe path's compute-side mirrors, with
                 // `dedupe_fields` honoured (empty slice → `items_add_many`
                 // funnel inside the helper; non-empty → the dedupe funnel).
@@ -724,14 +711,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 return Ok(());
             }
             if dedupe_fields.is_empty() {
-                // No-dedupe path: byte-identical to pre-T5. Same helper,
-                // same output shape (`{"ok":true,"added":N}`), same
-                // always-write pipeline.
+                // No-dedupe path: output shape is `{"ok":true,"added":N}` and
+                // the always-write pipeline runs unconditionally.
                 let mut added: usize = 0;
-                // T1: auto-create policy.
+                // Auto-create policy.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
-                // T2: surface `created` + `path` alongside the pre-existing
-                // `added` count.
+                // Surface `created` + `path` alongside the `added` count.
                 let created =
                     mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                         added = items_add_many(doc, &array, &rows, defaults.as_ref())?;
@@ -751,14 +736,14 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // untouched and the sidecar must not bump for a pure-
                 // skip batch. Any `added > 0` takes the write branch.
                 let mut outcome: Option<AddManyOutcome> = None;
-                // T1: auto-create policy. A pure-skip batch (added == 0)
+                // Auto-create policy. A pure-skip batch (added == 0)
                 // against a freshly-seeded missing file returns `Ok(false)`, so
                 // the write is skipped, no stray file lands, and `created` comes
                 // back `false` — exactly what we surface below.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
-                // T2: `created` from `mutate_doc_conditional` is already correct
-                // (true only when seed fired AND a write landed). Surface it
-                // (plus `path`) alongside the pre-existing batch-count keys.
+                // `created` from `mutate_doc_conditional` is true only when
+                // the seed fired AND a write landed. Surface it (plus `path`)
+                // alongside the batch-count keys.
                 let created = mutate_doc_conditional(
                     &file,
                     integrity.allow_outside,
@@ -809,13 +794,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             integrity,
         } => {
             let opts = write_integrity_opts(&integrity);
-            // T6b: lift the json arg parse above the dry-run/live split.
+            // The json arg parse sits above the dry-run/live split.
             // `compute_update_mutation` takes the raw &str and parses
             // internally (same surface as `items_update_to`), so both
             // branches share the resolved string.
             let json = read_json_arg(&json)?;
             if dry_run {
-                // R22: advisory warn for dry-run reads outside `.claude/`.
+                // Advisory warn for dry-run reads outside `.claude/`.
                 // Same threat shape as the other dry-run arms — a caller
                 // pointing `items update --dry-run` at an arbitrary file
                 // would otherwise leak the parsed TOML through the plan
@@ -828,7 +813,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 emit_dry_run_plan(&plan)?;
                 return Ok(());
             }
-            // T1: auto-create policy. An `update` against a freshly-seeded
+            // Auto-create policy. An `update` against a freshly-seeded
             // missing file finds no matching id and the closure errors out
             // BEFORE the persist (`mutate_doc`'s `?`), so nothing is written —
             // no stray seeded file. This preserves the transactional
@@ -838,7 +823,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // present — impossible on a 2-key skeleton — so in practice this
             // surfaces `created=false` or errors out first).
             let on_missing = on_missing_for(&file, integrity.no_create)?;
-            // T2: surface `created` + `path`.
+            // Surface `created` + `path`.
             let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                 items_update_to(doc, &array, &id, &json, &unset)
             })?;
@@ -853,13 +838,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
         } => {
             let opts = write_integrity_opts(&integrity);
             if dry_run {
-                // R22: advisory warn for dry-run reads outside `.claude/`.
+                // Advisory warn for dry-run reads outside `.claude/`.
                 // Same threat shape as the other dry-run arms — a caller
                 // pointing `items remove --dry-run` at an arbitrary file
                 // would otherwise leak the parsed TOML through the plan
                 // envelope.
                 warn_if_read_outside_claude(&file);
-                // T10: dry-run path — compute the plan on a locally-read
+                // Dry-run path — compute the plan on a locally-read
                 // doc (no exclusive lock) and emit the would_change
                 // summary. The compute phase runs the same validation
                 // as the live path (`compute_remove_mutation` delegates
@@ -877,13 +862,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // stage byte-for-byte. The read happens inside the
                 // exclusive lock via `mutate_doc_plan` so the same
                 // TOCTOU narrowing as `mutate_doc` holds.
-                // T1: auto-create policy. A `remove` against a freshly-seeded
+                // Auto-create policy. A `remove` against a freshly-seeded
                 // missing file finds no matching id and `compute_remove_mutation`
                 // errors out BEFORE the persist (`mutate_doc_plan`'s `?`), so
                 // nothing is written — so in practice `created` here surfaces
                 // `false` or the call errors out first.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
-                // T2: surface `created` + `path`.
+                // Surface `created` + `path`.
                 let created =
                     mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
                         compute_remove_mutation(doc, &array, &id)
@@ -900,25 +885,24 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             integrity,
         } => {
             let opts = write_integrity_opts(&integrity);
-            // R45: parse `--ops` ONCE at the CLI boundary and thread the
-            // parsed `JsonValue` through both the `MAX_OPS_PER_APPLY` length
-            // check and `compute_apply_mutation`. Previously this arm parsed
-            // twice (here for the count cap, again inside
-            // `compute_apply_mutation` → `items_apply_to_opts`), which
-            // doubles the JSON parse cost on every Apply invocation
-            // (proportional to ops payload size). The post-O35
-            // `read_json_value_from_arg` helper already encapsulates the
-            // stdin / TTY / `MAX_STDIN_BYTES` discipline that `read_json_arg`
-            // does; we use it so the parse semantics stay identical.
+            // Parse `--ops` ONCE at the CLI boundary and thread the parsed
+            // `JsonValue` through both the `MAX_OPS_PER_APPLY` length check
+            // and `compute_apply_mutation`. Parsing separately in each
+            // (here for the count cap, again inside
+            // `compute_apply_mutation` → `items_apply_to_opts`) doubles the
+            // JSON parse cost on every Apply invocation, proportional to the
+            // ops payload size. `read_json_value_from_arg` encapsulates the
+            // same stdin / TTY / `MAX_STDIN_BYTES` discipline as
+            // `read_json_arg`, so the parse semantics stay identical.
             let parsed_ops: JsonValue = read_json_value_from_arg(&ops).context("parsing --ops")?;
-            // R44: bound the ops count at the CLI boundary. `MAX_STDIN_BYTES`
+            // Bound the ops count at the CLI boundary. `MAX_STDIN_BYTES`
             // only caps the raw payload size; a 32 MiB JSON array of minimal
             // `{"op":"update","id":"Rx"}` records can still hold tens of
             // thousands of ops, which `items_apply_to_opts` iterates serially.
             // Check length here (before locking + the mutator runs) so an
             // over-large payload fails fast with a directed message, and the
             // user-visible error predates any disk mutation.
-            // T10: the check also gates `--dry-run`, so an over-large preview
+            // The check also gates `--dry-run`, so an over-large preview
             // refuses with the same message a real run would emit.
             if let JsonValue::Array(arr) = &parsed_ops
                 && arr.len() > MAX_OPS_PER_APPLY
@@ -932,14 +916,14 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 );
             }
             if dry_run {
-                // R22: a caller passing `tomlctl items apply --dry-run
+                // A caller passing `tomlctl items apply --dry-run
                 // /etc/passwd` would otherwise silently parse the file as
                 // TOML and surface its parsed contents in the dry-run plan.
                 // Advisory warn (matches the cross-ledger FindDuplicates
                 // path); the actual containment refusal lives on the write
                 // side via `guard_write_path`.
                 warn_if_read_outside_claude(&file);
-                // T10: same compute phase as the live path, but we stop
+                // Same compute phase as the live path, but we stop
                 // before the I/O stage. `compute_apply_mutation` runs
                 // `items_apply_parsed_to_opts` on a cloned doc, so every
                 // validation gate — `--no-remove`, op-shape, missing id,
@@ -951,13 +935,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 })?;
                 emit_dry_run_plan(&plan)?;
             } else {
-                // T1: auto-create policy. An all-`update`/all-`remove` batch
+                // Auto-create policy. An all-`update`/all-`remove` batch
                 // against a freshly-seeded missing file errors in
                 // `compute_apply_mutation` (no matching id) BEFORE the persist,
                 // so nothing is written. Batches with `add` ops seed-then-append
                 // into the new file as expected — `created=true` on that path.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
-                // T2: surface `created` + `path`.
+                // Surface `created` + `path`.
                 let created =
                     mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
                         compute_apply_mutation(doc, &array, &parsed_ops, no_remove)
@@ -975,14 +959,14 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // `--prefix` / `--infer-from-file` reaches us; no runtime
             // "both unset" or "both set" check is needed.
             //
-            // T9: `--strict-read` fires BEFORE R19's missing-file fast path,
+            // `--strict-read` fires BEFORE the missing-file fast path below,
             // so a caller who opted out of the bootstrap default on this
             // subcommand gets `kind=not_found` instead of the `"<prefix>1"`
             // fallback. `strict_read_check` returns `Ok(())` when the flag
             // is absent OR the file exists, so the default (non-strict)
-            // invocation flows straight into the R19 branch below unchanged.
+            // invocation flows straight into that branch.
             strict_read_check(&file, integrity.strict_read)?;
-            // R19: if the target ledger doesn't exist yet, there's nothing to
+            // If the target ledger doesn't exist yet, there's nothing to
             // parse or verify — the "next" id is trivially `<prefix>1`. This
             // lets flows call `items next-id` before the ledger is initialised
             // (e.g. during bootstrap of a new flow directory). When the caller
@@ -997,13 +981,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     );
                 }
                 let prefix = prefix.as_deref().expect("clap required_unless_present guarantees prefix is Some when infer_from_file is false");
-                // R26: route the missing-file prefix validation through
+                // Route the missing-file prefix validation through
                 // `items_next_id` on an empty doc so the empty-prefix and
                 // all-digit-prefix rejections are tagged `ErrorKind::Validation`
-                // consistently with the file-exists branch below. Prior to
-                // the extraction this branch used bare `bail!` → `kind=other`
-                // in `--error-format json`, producing different kinds for the
-                // same input depending on whether the ledger existed.
+                // consistently with the file-exists branch below. A bare
+                // `bail!` here would surface `kind=other` under
+                // `--error-format json`, making the kind depend on whether
+                // the ledger existed.
                 let empty_doc = toml::Value::Table(toml::Table::new());
                 let id = items_next_id(&empty_doc, prefix)?;
                 print_json_compact(&serde_json::Value::from(id))?;
@@ -1030,10 +1014,9 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             strict_read_check(&file, integrity.strict_read)?;
             if let Some(other) = across.as_ref() {
                 strict_read_check(other, integrity.strict_read)?;
-                // R38: the `--across` path is a new read surface added by T6c;
-                // unlike the primary ledger (which flows through the write-side
+                // Unlike the primary ledger (which flows through the write-side
                 // `guard_write_path` before any mutation), the cross-ledger
-                // read has no containment check. A caller passing
+                // `--across` read has no containment check. A caller passing
                 // `--across <arbitrary.toml>` could coax tomlctl into reading
                 // any file the process can see, and the TOML parser's error
                 // output would echo the path + a caret snippet of the content
@@ -1051,7 +1034,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     |doc| items_find_duplicates_json(doc, tier),
                 )?,
                 Some(other_path) => {
-                    // T6c: load both ledgers under the same integrity
+                    // Load both ledgers under the same integrity
                     // contract; errors propagate for either. Clone the
                     // primary's items out of the locked closure so the
                     // second read can fire sequentially without nesting
@@ -1074,7 +1057,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                             tier,
                         )?
                     } else {
-                        // O64: borrowed-DeTable fast-path. Both ledgers go
+                        // Borrowed-DeTable fast-path. Both ledgers go
                         // through the borrowed parse + detable_to_json
                         // boundary; the cross-ledger join then runs in
                         // JsonValue space via items_find_duplicates_across_json.
@@ -1116,7 +1099,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             dry_run,
             integrity,
         } => {
-            // T11: kill-switch short-circuit. Checked at the dispatch
+            // Kill-switch short-circuit. Checked at the dispatch
             // boundary (rather than inside `compute_backfill_mutation`) so
             // both live and dry-run paths surface the documented
             // `disabled-by-env` output WITHOUT touching the filesystem —
@@ -1164,9 +1147,9 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // does NOT re-hash, the file mtime does NOT bump, the
                 // exclusive lock is never taken — the ledger is
                 // byte-identical and the caller sees `backfilled:0`.
-                // Mirrors T5's `mutate_doc_conditional` "no-mutation →
+                // Mirrors `mutate_doc_conditional`'s "no-mutation →
                 // no-write" contract without needing a new wrapper.
-                // R13: carry `created`/`path` for envelope-shape parity with
+                // Carry `created`/`path` for envelope-shape parity with
                 // the live branch and every other write site. Backfill never
                 // creates — the pre-read above errors `kind=not_found` on a
                 // missing ledger first — so `created` is always `false` here.
@@ -1185,13 +1168,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // reflects what actually landed on disk, not the
                 // pre-read snapshot.
                 let mut written: usize = 0;
-                // T1: thread the policy for consistency with the other write
+                // Thread the policy for consistency with the other write
                 // sites, though the seed branch is unreachable here — the
                 // pre-read above (`read_doc`) already errors `kind=not_found`
                 // on a missing ledger before we reach this in-lock recompute,
                 // so a backfill never seeds a file.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
-                // T2: surface `created` + `path` for parity with the other
+                // Surface `created` + `path` for parity with the other
                 // write sites. `created` is structurally always `false` here
                 // (the pre-read short-circuits a missing ledger), so
                 // `warn_if_created` never fires — but threading it keeps the
@@ -1240,7 +1223,7 @@ fn blocks_dispatch(op: BlocksOp) -> Result<()> {
 fn integrity_dispatch(op: IntegrityOp) -> Result<()> {
     match op {
         IntegrityOp::Refresh { file, integrity } => {
-            // R4: `integrity refresh` flattens `WriteIntegrityArgs` for parity
+            // `integrity refresh` flattens `WriteIntegrityArgs` for parity
             // with every other write subcommand, but not every flag has a
             // semantic hook on this sidecar-only operation. Surface the
             // semantically-meaningless ones here so composable wrapper scripts
@@ -1261,7 +1244,7 @@ fn integrity_dispatch(op: IntegrityOp) -> Result<()> {
                     "--no-write-integrity is meaningless on `integrity refresh` — the subcommand's entire purpose is to write the sidecar"
                 );
             }
-            let _ = integrity.strict_integrity; // R4: silently ignored; see above.
+            let _ = integrity.strict_integrity; // Silently ignored; see above.
             let allow_outside = integrity.allow_outside;
             let verify_before_overwrite = integrity.verify_integrity;
             // Take the same exclusive lock any write path would, so a
@@ -1274,7 +1257,7 @@ fn integrity_dispatch(op: IntegrityOp) -> Result<()> {
                 // could otherwise trick us into writing next to an
                 // arbitrary target.
                 guard_write_path(&file, allow_outside)?;
-                // R4: `--verify-integrity` on refresh means "verify the
+                // `--verify-integrity` on refresh means "verify the
                 // existing sidecar matches before overwriting". This gates
                 // the recovery path against clobbering a mismatched sidecar
                 // (e.g. if the TOML was tampered with between the previous
@@ -1285,8 +1268,8 @@ fn integrity_dispatch(op: IntegrityOp) -> Result<()> {
                 if verify_before_overwrite && sidecar_path(&file).exists() {
                     verify_integrity(&file)?;
                 }
-                // R2: in-lock pre-persist containment re-check. Mirrors the
-                // mutate_doc O17/R3 pattern — the inside-lock `guard_write_path`
+                // In-lock pre-persist containment re-check, mirroring
+                // `mutate_doc` — the inside-lock `guard_write_path`
                 // above is the primary defence; this call is the belt-and-braces
                 // TOCTOU narrowing against a parent-symlink swap between the
                 // guard and the `atomic_write` inside `refresh_sidecar`.
