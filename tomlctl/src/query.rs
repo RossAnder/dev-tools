@@ -2402,11 +2402,45 @@ v = 42
     }
 
     /// Filter semantics — `--where` narrows the input set BEFORE
-    /// `--count-distinct` counts. Restricting to open-status rows leaves
-    /// the categories security, quality and performance.
+    /// `--count-distinct` counts. The two non-open rows carry categories
+    /// that appear nowhere else, so the filtered and unfiltered
+    /// cardinalities differ (3 vs 5) and an implementation that aggregated
+    /// before filtering would count 5. The shared `fixture()` cannot show
+    /// that: its open rows already cover every category it has.
     #[test]
     fn count_distinct_after_filter() {
-        let doc = fixture();
+        let src = r#"
+[[items]]
+id = "R1"
+status = "open"
+category = "security"
+
+[[items]]
+id = "R2"
+status = "open"
+category = "quality"
+
+[[items]]
+id = "R3"
+status = "fixed"
+category = "docs"
+
+[[items]]
+id = "R4"
+status = "wontfix"
+category = "tooling"
+
+[[items]]
+id = "R5"
+status = "open"
+category = "performance"
+
+[[items]]
+id = "R6"
+status = "open"
+category = "quality"
+"#;
+        let doc: TomlValue = toml::from_str(src).unwrap();
         let q = Query {
             predicates: vec![Predicate::Where {
                 key: "status".into(),
@@ -2419,6 +2453,14 @@ v = 42
         // The four open rows cover security, quality (twice) and
         // performance → distinct = 3.
         assert_eq!(out["count_distinct"], 3);
+
+        // Control: the same query without the predicate must NOT agree,
+        // or the assertion above holds under either ordering.
+        let q_all = Query {
+            shape: OutputShape::CountDistinct("category".into()),
+            ..Default::default()
+        };
+        assert_eq!(run(&doc, "items", &q_all).unwrap()["count_distinct"], 5);
     }
 
     /// Adding `--sort-by` sends the query through the slow path but
