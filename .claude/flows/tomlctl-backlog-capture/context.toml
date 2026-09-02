@@ -1,0 +1,28 @@
+slug = "tomlctl-backlog-capture"
+plan_path = "docs/plans/tomlctl-backlog-capture.md"
+status = "review"
+created = 2026-09-01
+updated = 2026-09-02
+branch = "main"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "claude/skills/**",
+    "claude/commands/**",
+    "claude/agents/**",
+    "scripts/shared-blocks.toml",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 31
+completed = 31
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/tomlctl-backlog-capture/review-ledger.toml"
+optimise_findings = ".claude/flows/tomlctl-backlog-capture/optimise-findings.toml"
+execution_record = ".claude/flows/tomlctl-backlog-capture/execution-record.toml"
+plan_review_findings = ".claude/flows/tomlctl-backlog-capture/plan-review-findings.toml"

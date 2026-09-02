@@ -424,6 +424,35 @@ fn on_duplicate_fail_reports_a_validation_envelope_and_writes_nothing() {
     );
 }
 
+/// One store id maps to one row, so there is no mode that appends a second
+/// row under an id the store already holds. The parser is where that is
+/// refused — `add` never sees the value.
+#[test]
+fn on_duplicate_add_is_not_a_parser_value() {
+    let (_tmp, root) = sandbox();
+    cli(&root)
+        .args([
+            "backlog",
+            "add",
+            "--summary",
+            FLAKE_SUMMARY,
+            "--kind",
+            "flaky-test",
+            "--area",
+            FLAKE_AREA,
+            "--on-duplicate",
+            "add",
+        ])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(2);
+    assert!(
+        !store_path(&root).exists(),
+        "a rejected parse must not create the store"
+    );
+}
+
 #[test]
 fn triage_with_two_mode_flags_is_a_parser_error() {
     let (_tmp, root) = sandbox();

@@ -7,9 +7,9 @@
 //!
 //! `audit` reports and nothing else — no delete, no move, no rename. A
 //! drop-box is a human's working area, so a stale finding costs less than a
-//! swept-away capture. Only the first five classes are strict-worthy:
-//! `tracked` is what a deliberate `git add -f` looks like from the outside,
-//! and `empty` is the expected state of every drop-box in a fresh clone.
+//! swept-away capture. `STRICT_CLASSES` is the whole strict contract: plain
+//! `tracked` is out because a deliberate `git add -f` is a human decision, and
+//! `empty` is the expected state of every drop-box in a fresh clone.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -18,7 +18,9 @@ use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
-use super::evidence::{self, EVIDENCE_EXTENSIONS, EVIDENCE_MAX_BYTES, MARKER_NAME};
+use super::evidence::{
+    self, EVIDENCE_EXTENSIONS, EVIDENCE_MAX_BYTES, MARKER_NAME, SENSITIVE_EXTENSIONS,
+};
 use super::schema::{self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_ID, FIELD_SUMMARY};
 use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
@@ -38,6 +40,21 @@ pub(crate) const CLASS_TRACKED: &str = "tracked";
 pub(crate) const CLASS_EMPTY: &str = "empty";
 pub(crate) const CLASS_GIT_UNAVAILABLE: &str = "git-unavailable";
 
+/// A file sitting at the evidence root rather than inside an item's drop-box.
+/// It belongs to no item, so no per-item ignore rule covers it and nothing
+/// else in the walk would ever see it.
+pub(crate) const CLASS_STRAY: &str = "stray";
+
+/// A tracked file whose extension is in `SENSITIVE_EXTENSIONS`. Emitted
+/// INSTEAD of `tracked`, never alongside it, so `counts` stays one entry per
+/// file and the strict total is not double-charged.
+pub(crate) const CLASS_SENSITIVE_PUBLISHED: &str = "sensitive-published";
+
+/// A subdirectory inside a drop-box. Its contents are ignored by the same
+/// rules and are not walked, so this is a reporting gap rather than an
+/// exposure — hence advisory.
+pub(crate) const CLASS_NESTED: &str = "nested";
+
 /// Emitted in this order under `counts`, every class present with a zero so
 /// a consumer can index the map without a presence check.
 const CLASSES: &[&str] = &[
@@ -46,18 +63,24 @@ const CLASSES: &[&str] = &[
     CLASS_OVERSIZE,
     CLASS_DISALLOWED_EXTENSION,
     CLASS_REFERENCED_MISSING,
+    CLASS_STRAY,
+    CLASS_SENSITIVE_PUBLISHED,
     CLASS_TRACKED,
+    CLASS_NESTED,
     CLASS_EMPTY,
     CLASS_GIT_UNAVAILABLE,
 ];
 
-/// The classes `--strict` exits non-zero on.
+/// The classes `--strict` exits non-zero on: every way the tree can be one
+/// `git add -A` or one careless commit away from publishing a secret.
 const STRICT_CLASSES: &[&str] = &[
     CLASS_UNOWNED,
     CLASS_NO_MARKER,
     CLASS_OVERSIZE,
     CLASS_DISALLOWED_EXTENSION,
     CLASS_REFERENCED_MISSING,
+    CLASS_STRAY,
+    CLASS_SENSITIVE_PUBLISHED,
 ];
 
 #[derive(Debug)]
@@ -106,7 +129,11 @@ pub(crate) fn ensure_dir(doc: &TomlValue, id: &str, no_create: bool) -> Result<D
             .unwrap_or_default();
         // Also the containment-bounded `mkdir -p` of the drop-box itself.
         guard_write_path(&marker, false)?;
-        atomic_write(&marker, evidence::marker_text(&id, summary).as_bytes())?;
+        let ignored = drop_box_ignored(&dir);
+        atomic_write(
+            &marker,
+            evidence::marker_text(&id, summary, ignored).as_bytes(),
+        )?;
     }
     let files = evidence::list_dir(&dir)?.map_or(0, |f| f.len());
     Ok(DirOutcome {
@@ -190,10 +217,19 @@ pub(crate) fn audit(doc: Option<&TomlValue>, root: &Path, max_bytes: u64) -> Res
     if root.is_dir() {
         for entry in read_dir_sorted(root)? {
             let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
             if !path.is_dir() {
+                findings.push(Finding {
+                    class: CLASS_STRAY,
+                    dir: relativise(&repo, root),
+                    file: Some(name),
+                    detail:
+                        "at the evidence root, not in an item drop-box — move it under the item's \
+                         directory or delete it"
+                            .to_string(),
+                });
                 continue;
             }
-            let name = entry.file_name().to_string_lossy().into_owned();
             let dir = relativise(&repo, &path);
             let item = doc.and_then(|d| find_item(d, &name));
             let files = evidence::list_dir(&path)?.unwrap_or_default();
@@ -222,6 +258,24 @@ pub(crate) fn audit(doc: Option<&TomlValue>, root: &Path, max_bytes: u64) -> Res
                     detail: format!(
                         "{} file(s) present without a `{MARKER_NAME}` marker",
                         files.len()
+                    ),
+                });
+            }
+
+            // `list_dir` is regular-files-only at one level, so a subdirectory
+            // is otherwise invisible to every class below.
+            for sub in read_dir_sorted(&path)? {
+                if !sub.path().is_dir() {
+                    continue;
+                }
+                let sub_name = sub.file_name().to_string_lossy().into_owned();
+                findings.push(Finding {
+                    class: CLASS_NESTED,
+                    dir: dir.clone(),
+                    file: Some(sub_name.clone()),
+                    detail: format!(
+                        "`{sub_name}/` is a subdirectory; its contents stay ignored but are not \
+                         sized, classified, or matched against the item's citations"
                     ),
                 });
             }
@@ -274,14 +328,30 @@ pub(crate) fn audit(doc: Option<&TomlValue>, root: &Path, max_bytes: u64) -> Res
         match ignored_set(&repo, &paths) {
             Some(ignored) => {
                 for (path, dir, file) in &candidates {
-                    if !ignored.contains(path) {
-                        findings.push(Finding {
-                            class: CLASS_TRACKED,
-                            dir: dir.clone(),
-                            file: Some(file.clone()),
-                            detail: "not git-ignored — a deliberate `git add -f`, or a missing ignore rule".to_string(),
-                        });
+                    if ignored.contains(path) {
+                        continue;
                     }
+                    let (class, detail) = if extension_is_sensitive(file) {
+                        (
+                            CLASS_SENSITIVE_PUBLISHED,
+                            "not git-ignored, and its format routinely carries Authorization \
+                             headers, cookies and session tokens — read it before committing, \
+                             or `git rm --cached` it"
+                                .to_string(),
+                        )
+                    } else {
+                        (
+                            CLASS_TRACKED,
+                            "not git-ignored — a deliberate `git add -f`, or a missing ignore rule"
+                                .to_string(),
+                        )
+                    };
+                    findings.push(Finding {
+                        class,
+                        dir: dir.clone(),
+                        file: Some(file.clone()),
+                        detail,
+                    });
                 }
             }
             None => findings.push(Finding {
@@ -347,13 +417,32 @@ fn find_item<'a>(doc: &'a TomlValue, id: &str) -> Option<&'a TomlValue> {
 /// Extensionless counts as disallowed: a bare `screenshot` tells a later
 /// reader nothing about how to open it.
 fn extension_allowed(name: &str) -> bool {
+    extension_of(name).is_some_and(|ext| EVIDENCE_EXTENSIONS.contains(&ext.as_str()))
+}
+
+fn extension_is_sensitive(name: &str) -> bool {
+    extension_of(name).is_some_and(|ext| SENSITIVE_EXTENSIONS.contains(&ext.as_str()))
+}
+
+/// Lowercased extension, `None` when there is none — a leading dot is a
+/// hidden file rather than a bare extension, so `.evidence` has none.
+fn extension_of(name: &str) -> Option<String> {
     match name.rsplit_once('.') {
-        Some((stem, extension)) if !stem.is_empty() => {
-            let lower = extension.to_ascii_lowercase();
-            EVIDENCE_EXTENSIONS.contains(&lower.as_str())
-        }
-        _ => false,
+        Some((stem, extension)) if !stem.is_empty() => Some(extension.to_ascii_lowercase()),
+        _ => None,
     }
+}
+
+/// Whether a file dropped into `dir` would be git-ignored, `None` when git
+/// could not answer. Asked of a path inside the drop-box, never of the
+/// drop-box: the ignore rules re-include the item directories so their
+/// markers survive a clone, so the directory answers "not ignored" even where
+/// every file in it is ignored. The probe need not exist — `check-ignore`
+/// matches pathnames, and the marker is written while the box is still empty.
+fn drop_box_ignored(dir: &Path) -> Option<bool> {
+    let repo = repo_or_cwd_root().ok()?;
+    let probe = dir.join("evidence.log");
+    ignored_set(&repo, std::slice::from_ref(&probe)).map(|ignored| ignored.contains(&probe))
 }
 
 /// Which of `paths` git considers ignored, or `None` when git could not
@@ -418,6 +507,13 @@ mod tests {
     use std::fs;
     use std::process::Command;
 
+    /// The repository's own rules, verbatim — the audit classes only mean
+    /// what they claim if they are read against the ignore set that actually
+    /// ships.
+    const GITIGNORE: &str = "/.claude/backlog-evidence/**\n\
+                             !/.claude/backlog-evidence/*/\n\
+                             !/.claude/backlog-evidence/*/.evidence\n";
+
     /// Holds the env lock for the whole test and drops `TOMLCTL_ROOT` in
     /// `Drop`, so a failed assertion cannot leak the override into whatever
     /// test runs next on this thread.
@@ -450,11 +546,7 @@ mod tests {
             }
             fs::create_dir_all(root.join(".claude")).unwrap();
             if git {
-                fs::write(
-                    root.join(".gitignore"),
-                    "/.claude/backlog-evidence/*/*\n!/.claude/backlog-evidence/*/.evidence\n",
-                )
-                .unwrap();
+                fs::write(root.join(".gitignore"), GITIGNORE).unwrap();
                 let _ = Command::new("git")
                     .args(["init", "-q", "."])
                     .current_dir(&root)
@@ -496,7 +588,11 @@ mod tests {
             let dir = self.evidence(id);
             fs::create_dir_all(&dir).unwrap();
             if marker {
-                fs::write(dir.join(MARKER_NAME), evidence::marker_text(id, "seeded")).unwrap();
+                fs::write(
+                    dir.join(MARKER_NAME),
+                    evidence::marker_text(id, "seeded", Some(true)),
+                )
+                .unwrap();
             }
             for (name, size) in files {
                 fs::write(dir.join(name), vec![b'x'; *size]).unwrap();
@@ -757,6 +853,113 @@ context = "The overlap is visible in `shot.png` at 1280px."
         assert_eq!(hits[0].file.as_deref(), Some("shot.png"));
         assert!(classes(&report, CLASS_GIT_UNAVAILABLE).is_empty());
         assert_eq!(report.strict_failures(), 0);
+    }
+
+    /// A file at the evidence root belongs to no item, so no per-item rule
+    /// covers it and the walk would otherwise skip straight past it.
+    #[test]
+    fn a_file_at_the_evidence_root_is_stray_and_fails_strict() {
+        let sb = Sandbox::new(true);
+        let doc = sb.seed(STORE);
+        sb.populate("B-a1b2c3d4", true, &[("a.log", 1)]);
+        fs::write(sb.root_dir().join("leak.har"), b"x").unwrap();
+
+        let report = audit(Some(&doc), &sb.root_dir(), EVIDENCE_MAX_BYTES).unwrap();
+        let stray = classes(&report, CLASS_STRAY);
+        assert_eq!(stray.len(), 1, "{:?}", report.findings);
+        assert_eq!(stray[0].file.as_deref(), Some("leak.har"));
+        assert_eq!(stray[0].dir, ".claude/backlog-evidence");
+        assert!(report.strict_failures() > 0);
+        // Not mistaken for a drop-box of its own.
+        assert!(classes(&report, CLASS_UNOWNED).is_empty());
+    }
+
+    /// A force-added `.har` is a request log: `tracked` alone would let it
+    /// through `--strict` on the strength of the force-add being deliberate.
+    #[test]
+    fn a_force_added_sensitive_format_is_promoted_out_of_tracked() {
+        if !git_available() {
+            eprintln!("skipping: git is not on PATH");
+            return;
+        }
+        let sb = Sandbox::new(true);
+        let doc = sb.seed(STORE);
+        sb.populate("B-a1b2c3d4", true, &[("trace.har", 1), ("shot.png", 1)]);
+        sb.git(&["add", "-f", ".claude/backlog-evidence/B-a1b2c3d4/trace.har"]);
+        sb.git(&["add", "-f", ".claude/backlog-evidence/B-a1b2c3d4/shot.png"]);
+
+        let report = audit(Some(&doc), &sb.root_dir(), EVIDENCE_MAX_BYTES).unwrap();
+        let sensitive = classes(&report, CLASS_SENSITIVE_PUBLISHED);
+        assert_eq!(sensitive.len(), 1, "{:?}", report.findings);
+        assert_eq!(sensitive[0].file.as_deref(), Some("trace.har"));
+
+        // Promoted INSTEAD of `tracked`, so the file is counted once.
+        let tracked = classes(&report, CLASS_TRACKED);
+        assert_eq!(tracked.len(), 1, "{:?}", report.findings);
+        assert_eq!(tracked[0].file.as_deref(), Some("shot.png"));
+        assert_eq!(report.strict_failures(), 1);
+    }
+
+    /// An ignored `.har` is evidence doing its job; only publication is the
+    /// failure.
+    #[test]
+    fn an_unpublished_sensitive_format_is_not_a_finding() {
+        if !git_available() {
+            eprintln!("skipping: git is not on PATH");
+            return;
+        }
+        let sb = Sandbox::new(true);
+        let doc = sb.seed(STORE);
+        sb.populate("B-a1b2c3d4", true, &[("trace.har", 1)]);
+
+        let report = audit(Some(&doc), &sb.root_dir(), EVIDENCE_MAX_BYTES).unwrap();
+        assert!(
+            classes(&report, CLASS_SENSITIVE_PUBLISHED).is_empty(),
+            "{:?}",
+            report.findings
+        );
+        assert_eq!(report.strict_failures(), 0);
+    }
+
+    #[test]
+    fn a_subdirectory_is_reported_once_and_never_strict() {
+        let sb = Sandbox::new(true);
+        let doc = sb.seed(STORE);
+        let dir = sb.populate("B-a1b2c3d4", true, &[("a.log", 1)]);
+        fs::create_dir(dir.join("har-dump")).unwrap();
+        fs::write(dir.join("har-dump").join("deep.har"), b"x").unwrap();
+
+        let report = audit(Some(&doc), &sb.root_dir(), EVIDENCE_MAX_BYTES).unwrap();
+        let nested = classes(&report, CLASS_NESTED);
+        assert_eq!(nested.len(), 1, "{:?}", report.findings);
+        assert_eq!(nested[0].file.as_deref(), Some("har-dump"));
+        assert!(nested[0].detail.contains("har-dump/"), "{:?}", nested[0]);
+        assert_eq!(report.strict_failures(), 0);
+        // The subdirectory is not sized or extension-checked as if it were a file.
+        assert!(classes(&report, CLASS_DISALLOWED_EXTENSION).is_empty());
+    }
+
+    /// The marker may only claim the ignore status of the clone it is written
+    /// into; `Sandbox::new(false)` has no repository, so git cannot answer.
+    #[test]
+    fn the_marker_records_the_ignore_status_of_this_clone() {
+        let ignored = {
+            if !git_available() {
+                eprintln!("skipping: git is not on PATH");
+                return;
+            }
+            let sb = Sandbox::new(true);
+            let doc = sb.seed(STORE);
+            let dir = ensure_dir(&doc, "B-a1b2c3d4", false).unwrap().dir;
+            fs::read_to_string(dir.join(MARKER_NAME)).unwrap()
+        };
+        assert!(ignored.contains("are git-ignored;"), "{ignored}");
+
+        let sb = Sandbox::new(false);
+        let doc = sb.seed(STORE);
+        let dir = ensure_dir(&doc, "B-a1b2c3d4", false).unwrap().dir;
+        let unknown = fs::read_to_string(dir.join(MARKER_NAME)).unwrap();
+        assert!(unknown.contains("could not be determined"), "{unknown}");
     }
 
     #[test]

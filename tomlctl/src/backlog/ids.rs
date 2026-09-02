@@ -60,7 +60,8 @@ pub(crate) fn dedup_id_from_parts(kind: &str, area: &str, summary: &str) -> Stri
     fingerprint_hex(BACKLOG_FINGERPRINT_FIELDS.map(|field| match field {
         FIELD_KIND => kind,
         FIELD_AREA => area,
-        _ => summary.as_str(),
+        FIELD_SUMMARY => summary.as_str(),
+        other => unreachable!("fingerprint field {other} has no input"),
     }))
 }
 

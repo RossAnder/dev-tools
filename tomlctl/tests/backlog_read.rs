@@ -24,8 +24,12 @@ const TOTAL_AREA: &str = "lumina/web/src/checkout/Total.vue";
 const TOTAL_SUMMARY: &str = "checkout total overlaps the confirm button below 1400px";
 const TOTAL_PARAPHRASE: &str = "checkout total overlaps the confirm button below 1440px";
 
-const GITIGNORE: &str =
-    "/.claude/backlog-evidence/*/*\n!/.claude/backlog-evidence/*/.evidence\n";
+/// The repository's own rules, verbatim: every `tracked` verdict below is a
+/// claim about what this ignore set does, so a drifted fixture would assert
+/// against rules nobody ships.
+const GITIGNORE: &str = "/.claude/backlog-evidence/**\n\
+                         !/.claude/backlog-evidence/*/\n\
+                         !/.claude/backlog-evidence/*/.evidence\n";
 
 /// Three rows spanning status ∈ {open, dismissed}, kind ∈ {flaky-test, bug,
 /// debt}, and two sibling area prefixes that differ only past a component

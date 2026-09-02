@@ -126,10 +126,8 @@ fn plan_compaction(doc: &TomlValue, today: Date, threshold: Duration) -> Result<
 /// no matter how old they are.
 fn terminal_cluster(item: &TomlValue) -> Option<(&str, &'static str, &'static str)> {
     let status = item.get(FIELD_STATUS).and_then(TomlValue::as_str)?;
-    match schema::required_fields(status) {
-        [date_field, reason_field] => Some((status, *date_field, *reason_field)),
-        _ => None,
-    }
+    let (date_field, reason_field) = schema::terminal_pair(status)?;
+    Some((status, date_field, reason_field))
 }
 
 /// The terminal date of a row old enough to fold, or `None`.
@@ -572,7 +570,7 @@ seen_count = 3
             fs::create_dir_all(&dir).unwrap();
             fs::write(
                 dir.join(evidence::MARKER_NAME),
-                evidence::marker_text("B-7f0e2d91", "checkout total overlaps"),
+                evidence::marker_text("B-7f0e2d91", "checkout total overlaps", Some(true)),
             )
             .unwrap();
             fs::write(dir.join("shot.png"), b"1234").unwrap();

@@ -111,7 +111,8 @@ impl Probe {
         let trigram = jaccard(&self.trigrams, &char_trigrams(row.summary));
         let words = jaccard(&self.words, &word_tokens(row.summary));
         // Reported strength is the better of the two measures whichever rung
-        // matched, which keeps the sort by score monotone in the ladder.
+        // matched, so it is not comparable across rungs: a structural match can
+        // out-score a textual one. Candidates sort by rung first for that reason.
         let score = trigram.max(words);
         if trigram >= thresholds.strong {
             return Some((Reason::Trigram, score));
@@ -300,11 +301,13 @@ fn evaluate(doc: &TomlValue, probe: &Probe, thresholds: &Thresholds) -> Verdicts
             }
         })
         .collect();
+    // Rung outranks score: `--limit` must truncate the weaker reasons, never
+    // the stronger ones. Score only orders candidates within one rung.
     candidates.sort_by(|a, b| {
-        b.score
-            .total_cmp(&a.score)
-            .then(a.reason.cmp(&b.reason))
-            .then(a.id.cmp(&b.id))
+        a.reason
+            .cmp(&b.reason)
+            .then_with(|| b.score.total_cmp(&a.score))
+            .then_with(|| a.id.cmp(&b.id))
     });
 
     Verdicts {
@@ -803,7 +806,7 @@ mod tests {
             fs::create_dir_all(&dir).unwrap();
             fs::write(
                 dir.join(evidence::MARKER_NAME),
-                evidence::marker_text("B-a1b2c3d4", FLAKE_SUMMARY),
+                evidence::marker_text("B-a1b2c3d4", FLAKE_SUMMARY, Some(true)),
             )
             .unwrap();
             fs::write(dir.join("probe.log"), b"tail").unwrap();
@@ -938,6 +941,43 @@ mod tests {
         assert_eq!(verdicts.candidates.len(), 2);
         assert_eq!(verdicts.candidates[0].id, "B-11111111");
         assert!(scores[0] > scores[1], "{scores:?}");
+    }
+
+    #[test]
+    fn a_stronger_rung_outranks_a_higher_score() {
+        let doc = store(
+            vec![
+                live_row(
+                    "B-11111111",
+                    KIND_BUG,
+                    "tomlctl/src/backlog/add.rs",
+                    "renamings sidecars denials",
+                    "",
+                ),
+                live_row(
+                    "B-22222222",
+                    KIND_BUG,
+                    "lumina/server/src/pty/spawn.rs",
+                    "renaming the sidecar denied while indexing scans locked archives",
+                    "",
+                ),
+            ],
+            vec![],
+        );
+        let probe = probe(
+            "renaming the sidecar denied",
+            "tomlctl/src/backlog/check.rs",
+            KIND_BUG,
+        );
+        let (_, candidates) = verdict_of(&doc, &probe);
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|(id, reason, _)| (id.as_str(), reason.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("B-22222222", "words"), ("B-11111111", "area")]
+        );
+        assert!(candidates[0].2 < candidates[1].2, "{candidates:?}");
     }
 
     #[test]

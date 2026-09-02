@@ -486,3 +486,22 @@ scope = [
     "lumina/.config/nextest.toml",
     "lumina/CLAUDE.md",
 ]
+
+[[active]]
+slug = "tomlctl-backlog-capture"
+last_used = "2026-09-01T12:40:20.0900479Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "claude/skills/**",
+    "claude/commands/**",
+    "claude/agents/**",
+    "scripts/shared-blocks.toml",
+    "CLAUDE.md",
+]

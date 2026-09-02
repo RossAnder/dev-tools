@@ -1,0 +1,240 @@
+schema_version = 1
+last_updated = 2026-09-02
+
+[[backlog]]
+id = "B-de0a0d87"
+kind = "debt"
+summary = "command_lint truncates argv at a <placeholder> token so flags after a placeholder go unlinted"
+area = "tomlctl/src/cli/dispatch.rs"
+tags = [
+    "lint",
+    "docs",
+]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "de0a0d87cd93a648"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "is_shell_op treats any token starting with < as shell plumbing. Put placeholders last in a fence line or use concrete example values until the tokeniser learns angle-bracket placeholders."
+
+[[backlog]]
+id = "B-fb853ff8"
+kind = "debt"
+summary = "command_lint skips six multi-line --json and --ops snippets as unbalanced quotes so those invocations are ungated"
+area = "claude/skills/tomlctl/references/write.md"
+tags = [
+    "lint",
+    "docs",
+]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "fb853ff88deff336"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "The skip list is printed, not failed. Convert the snippets to the --json - heredoc form or teach the linter to stitch quoted multi-line blocks."
+
+[[backlog]]
+id = "B-0a34cd73"
+kind = "debt"
+summary = "carrier_invokes_required_skills matches skill names by bare substring so a mention satisfies it"
+area = "tomlctl/src/cli/dispatch.rs"
+tags = ["lint"]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "0a34cd73189e3ac9"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "Any prose naming the skill, including a do-not-use sentence, passes. Match the Invoke-the phrase or a backtick-quoted name followed by the word skill."
+
+[[backlog]]
+id = "B-4aa2bbbf"
+kind = "bug"
+summary = "date-key promotion list omits promoted, dismissed and last_seen so backlog rows written through items add store those as strings"
+area = "tomlctl/src/convert.rs"
+tags = ["backlog"]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "4aa2bbbf06733d23"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "backlog compact tolerates string dates read-side and the backlog verbs write native dates, so only rows routed through items add are affected. Widen the promotion list or document that backlog rows must go through the backlog verbs."
+
+[[backlog]]
+id = "B-e69651d3"
+kind = "debt"
+summary = "shared-block hashing relies on awk stripping CR from CRLF marker lines and has no non-empty-extraction assertion"
+area = "scripts/verify-shared-blocks.sh"
+tags = [
+    "hooks",
+    "windows",
+]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "e69651d378b828cd"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "Under a CR-preserving awk every block hashes the empty string and parity reads OK vacuously. Assert each extracted block is non-empty."
+
+[[backlog]]
+id = "B-cc214a62"
+kind = "debt"
+summary = "four backlog leaves each define a private FIELD_LAST_UPDATED constant"
+area = "tomlctl/src/backlog"
+tags = [
+    "backlog",
+    "dry",
+]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "cc214a6297c58561"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "Lift the constant into backlog/schema.rs beside the other field names."
+
+[[backlog]]
+id = "B-4175a4bf"
+kind = "direction"
+summary = "nothing gates markdown links between skills and their references so a retargeted anchor can rot silently"
+area = "tomlctl/src/cli/dispatch.rs"
+tags = [
+    "lint",
+    "docs",
+]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "4175a4bf5d16267b"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "A short bash link checker was written during the tomlctl SKILL.md rewrite. Port it as a sibling of skill_bodies_under_line_ceiling."
+
+[[backlog]]
+id = "B-46de01dc"
+kind = "debt"
+summary = "strict_read_check is private so three backlog read leaves reimplement the same four-line gate"
+area = "tomlctl/src/cli/dispatch.rs"
+tags = [
+    "backlog",
+    "dry",
+]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "46de01dcb3a69e9a"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "Promote it to pub(crate) and call it from check, query and cluster."
+
+[[backlog]]
+id = "B-98a1c2e6"
+kind = "debt"
+summary = "ids.rs documents that the caller re-derives the incumbent on a widening collision but add deliberately never does"
+area = "tomlctl/src/backlog/ids.rs"
+tags = [
+    "backlog",
+    "docs",
+]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "98a1c2e618f37354"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "The design freezes the incumbent's id so its evidence directory is never orphaned. Fix the doc comment to match the behaviour."
+
+[[backlog]]
+id = "B-f37b7739"
+kind = "annoyance"
+summary = "cargo fmt -- --check with a path argument ignores the path and checks the whole crate"
+area = "tomlctl"
+tags = ["tooling"]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "f37b7739f8e82141"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "Use rustfmt --edition 2024 with the path in parallel-agent work so one agent does not reformat files it does not own."
+
+[[backlog]]
+id = "B-4eaf4d34"
+kind = "direction"
+summary = "blocks verify-skills is vacuous because no manifest block sets the skill field"
+area = "claude/skills/tomlctl/references/flow.md"
+tags = ["tomlctl"]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "4eaf4d348a8ed852"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "It sits in a collapsed Old patterns block. If that stays true it is a deletion candidate for the verb, not a documentation one."
+
+[[backlog]]
+id = "B-f3469081"
+kind = "debt"
+summary = "the git exit-1 branch of ignored_set, no path ignored, has no test"
+area = "tomlctl/src/backlog/evidence_ops.rs"
+tags = [
+    "backlog",
+    "tests",
+]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "f3469081aa912343"
+origin = "implement"
+flow = "tomlctl-backlog-capture"
+context = "Reachable only in a repo whose .gitignore lost the backlog rules; it then correctly reports every file as tracked."
+
+[[backlog]]
+id = "B-7269164c"
+kind = "debt"
+summary = "tomlctl crate has no rustfmt gate so every new module lands unformatted"
+area = "tomlctl"
+tags = [
+    "fmt",
+    "hooks",
+]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "7269164c53057656"
+origin = "review"
+flow = "tomlctl-backlog-capture"
+context = "cargo fmt --check reported 397 hunks across 51 files on 2026-09-02, 40 files pre-dating the backlog flow (items.rs 39, cli/dispatch.rs 43, query.rs 17). Neither .githooks/pre-commit nor the documented build commands run rustfmt. Format the crate in one dedicated commit, then add a fmt check to the hook or to CI."
+related = ["B-f37b7739"]
+
+[[backlog]]
+id = "B-2fa6e384"
+kind = "question"
+summary = "gitignore also ignores plan premerge.md siblings which review-plan audits recall against"
+area = ".gitignore"
+tags = ["flow"]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "2fa6e38481388a97"
+origin = "review"
+flow = "tomlctl-backlog-capture"
+context = "Commit 520db43 added the *.premerge.md ignore alongside the evidence rules, but the plan's Scope names .gitignore only for evidence. <plan>.premerge.md is the artifact /review-plan audits recall against, and ignoring it makes it unreviewable cross-clone. Confirm this was intended before treating it as settled."

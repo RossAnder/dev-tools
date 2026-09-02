@@ -2144,6 +2144,62 @@ body
         }
     }
 
+    /// A reference file is where an over-long body gets moved to, so leaving it
+    /// ungated just relocates the drift. The ceiling is looser than a body's:
+    /// a reference is read on demand rather than loaded with the skill.
+    #[test]
+    fn skill_references_under_line_ceiling() {
+        const CEILING: usize = 600;
+
+        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+        let skills_dir = repo_root.join("claude").join("skills");
+        if !skills_dir.exists() {
+            eprintln!("skill_references_under_line_ceiling: claude/skills/ not found, skipping");
+            return;
+        }
+
+        let mut offenders: Vec<(String, usize)> = Vec::new();
+        for entry in fs::read_dir(&skills_dir).expect("read claude/skills").flatten() {
+            let references = entry.path().join("references");
+            let Ok(files) = fs::read_dir(&references) else {
+                continue;
+            };
+            for file in files.flatten() {
+                let path = file.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("md") {
+                    continue;
+                }
+                let Ok(text) = fs::read_to_string(&path) else {
+                    continue;
+                };
+                let lines = text.lines().count();
+                if lines > CEILING {
+                    let rel = path
+                        .strip_prefix(&repo_root)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    offenders.push((rel, lines));
+                }
+            }
+        }
+        offenders.sort();
+
+        if !offenders.is_empty() {
+            let mut msg = format!(
+                "skill_references_under_line_ceiling: {} reference file(s) over the \
+                 {CEILING}-line ceiling. Split the overflow into a further \
+                 `references/*.md` and link it from the body:\n",
+                offenders.len()
+            );
+            for (f, n) in &offenders {
+                msg.push_str(&format!("  {f}: {n} lines ({} over)\n", n - CEILING));
+            }
+            panic!("{msg}");
+        }
+    }
+
     /// T6: progressive-disclosure invocation guard. A skeletonised carrier must
     /// still INVOKE each `flow-contract-*` skill it delegates to — `command_lint`
     /// only catches CLI-flag drift, and `verify_skills_clean` is dormant
@@ -2183,6 +2239,7 @@ body
                     "flow-contract-flow-context",
                     "flow-contract-execution-record-schema",
                     "flow-contract-task-visibility",
+                    "backlog-capture",
                 ],
             ),
             (
@@ -2193,6 +2250,7 @@ body
                     "flow-contract-ledger-disposition-sweep",
                     "flow-contract-vet-research",
                     "flow-contract-task-visibility",
+                    "backlog-capture",
                 ],
             ),
             (
@@ -2222,6 +2280,7 @@ body
                     "flow-contract-flow-context",
                     "flow-contract-execution-record-schema",
                     "flow-contract-task-visibility",
+                    "backlog-capture",
                 ],
             ),
             (
@@ -2232,6 +2291,7 @@ body
                     "flow-contract-ledger-disposition-sweep",
                     "flow-contract-vet-research",
                     "flow-contract-task-visibility",
+                    "backlog-capture",
                 ],
             ),
             (

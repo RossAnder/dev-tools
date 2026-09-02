@@ -2,8 +2,9 @@
 //!
 //! Three edges over one write path. `relates-to` is symmetric and carries no
 //! status change; `duplicates` and `supersedes` are directed and dismiss one
-//! side, so each writes the terminal date alongside the reason and re-checks
-//! the row through `schema::validate` before the document is persisted.
+//! side, so each clears the cluster it does not write, stamps the dismissal
+//! date alongside the reason, and re-checks the row through
+//! `schema::validate` before the document is persisted.
 //!
 //! Both ids are resolved inside the `mutate_doc` closure, against the
 //! post-lock document, and a miss returns `Err` so nothing is written.
@@ -17,7 +18,7 @@ use toml::value::Datetime;
 
 use super::schema::{
     self, ARRAY_BACKLOG, FIELD_DISMISS_REASON, FIELD_DISMISSED, FIELD_DUPLICATE_OF, FIELD_ID,
-    FIELD_RELATED, FIELD_STATUS, FIELD_SUPERSEDES, STATUS_DISMISSED,
+    FIELD_RELATED, FIELD_STATUS, FIELD_SUPERSEDES, MANAGED_FIELDS, STATUS_DISMISSED,
 };
 use crate::cli::{
     RelationKind, WriteIntegrityArgs, on_missing_for, warn_if_created, write_integrity_opts,
@@ -166,10 +167,20 @@ fn set_edge(item: &mut TomlValue, field: &'static str, target: &str) -> Result<b
 
 /// An already-dismissed row keeps the date and reason it was dismissed with:
 /// the first dismissal is the one that carries the context.
+///
+/// Clearing the rest of the managed cluster is what lets an edge dismiss a
+/// `promoted` or `resolved` row: `schema::validate` refuses a row still
+/// carrying another status's date or companion.
 fn dismiss(item: &mut TomlValue, today: Datetime, reason: String) -> Result<bool> {
     let table = table_of(item, FIELD_STATUS)?;
     if table.get(FIELD_STATUS).and_then(TomlValue::as_str) == Some(STATUS_DISMISSED) {
         return Ok(false);
+    }
+    for field in MANAGED_FIELDS {
+        if *field == FIELD_DISMISSED || *field == FIELD_DISMISS_REASON {
+            continue;
+        }
+        table.remove(*field);
     }
     table.insert(
         FIELD_STATUS.to_string(),
@@ -350,6 +361,42 @@ status = "resolved"
             row(&d, "B-a1b2c3d4").get(FIELD_DISMISSED).unwrap().as_datetime(),
             Some(&today())
         );
+    }
+
+    #[test]
+    fn duplicates_clears_the_terminal_cluster_it_replaces() {
+        let mut d: TomlValue = toml::from_str(
+            r#"schema_version = 1
+
+[[backlog]]
+id = "B-a1b2c3d4"
+summary = "fixed once, then found to be a duplicate"
+status = "resolved"
+resolved = 2026-08-01
+resolution = "fixed in abc123"
+
+[[backlog]]
+id = "B-7f0e2d91"
+summary = "the original"
+status = "open"
+"#,
+        )
+        .unwrap();
+        assert!(
+            apply_relation(
+                &mut d,
+                "B-a1b2c3d4",
+                "B-7f0e2d91",
+                RelationKind::Duplicates,
+                today()
+            )
+            .unwrap()
+        );
+        let subject = row(&d, "B-a1b2c3d4");
+        assert_eq!(subject.get(schema::FIELD_RESOLVED), None);
+        assert_eq!(subject.get(schema::FIELD_RESOLUTION), None);
+        assert_eq!(status(&d, "B-a1b2c3d4"), STATUS_DISMISSED);
+        assert_eq!(schema::validate(&toml_to_json(subject)), Ok(()));
     }
 
     #[test]

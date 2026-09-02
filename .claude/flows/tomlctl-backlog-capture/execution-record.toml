@@ -1,0 +1,961 @@
+schema_version = 1
+last_updated = 2026-09-02
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-09-01
+agent = "implement"
+summary = "Flow status draft -> in-progress at /implement Phase 1"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "9b70f42d7c43e181"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-09-01
+agent = "implement"
+task_ref = "add-the-evidence-directory-ignore-rules"
+status = "done"
+summary = "Appended anchored evidence exclude plus .evidence negation to .gitignore; both check-ignore probes verified by orchestrator"
+files = [".gitignore"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+scope_warning = true
+dedup_id = "c110a56b202f440b"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-09-01
+agent = "implement"
+task_ref = "create-the-backlog-module-skeleton"
+status = "done"
+summary = "Added mod backlog with 14 leaf files and widened five cli/dispatch.rs write-path helpers to pub(crate); clippy clean"
+files = [
+    "tomlctl/src/main.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/backlog/mod.rs",
+    "tomlctl/src/backlog/schema.rs",
+    "tomlctl/src/backlog/normalise.rs",
+    "tomlctl/src/backlog/ids.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/backlog/add.rs",
+    "tomlctl/src/backlog/check.rs",
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/src/backlog/relate.rs",
+    "tomlctl/src/backlog/triage.rs",
+    "tomlctl/src/backlog/cluster.rs",
+    "tomlctl/src/backlog/compact.rs",
+    "tomlctl/src/backlog/evidence.rs",
+    "tomlctl/src/backlog/evidence_ops.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "150b32563b618986"
+
+[[items]]
+id = "E4"
+type = "deviation"
+date = 2026-09-01
+agent = "implement"
+task_ref = "create-the-backlog-module-skeleton"
+summary = "backlog/mod.rs declares pub(crate) mod dispatch rather than re-exporting the function, so Task 5's call site gains one path segment"
+original_intent = "Task 5 adds the arm Cmd::Backlog { op } => crate::backlog::dispatch(op)?, mirroring flow's idiom, which relies on flow/mod.rs carrying pub(crate) use dispatch::dispatch to re-export the function into the parent module's value namespace."
+rationale = "That re-export is E0432 while backlog/dispatch.rs is the empty placeholder Task 1's Action requires, so clippy could not exit 0. backlog/mod.rs is owned solely by Task 1 and is not in Task 5's Files line, so the re-export cannot land later without a file-claim collision. Resolved by declaring pub(crate) mod dispatch and binding Task 5 to the call site crate::backlog::dispatch::dispatch(op)? - one extra path segment, frontier stays file-disjoint, Task 13 inherits the same spelling."
+dedup_id = "95be42f04a6a12d7"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-09-01
+agent = "implement"
+task_ref = "implement-summary-normalisation-and-similarity-scoring"
+status = "done"
+summary = "Implemented the ASCII byte normalise pipeline, word/trigram tokenisers, jaccard and the two similarity constants; 9 unit tests pass"
+files = ["tomlctl/src/backlog/normalise.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "1137555d4ca0c363"
+
+[[items]]
+id = "E6"
+type = "deviation"
+date = 2026-09-01
+agent = "implement"
+task_ref = "implement-summary-normalisation-and-similarity-scoring"
+summary = "The plan's curly-apostrophe acceptance case does not discriminate the byte pipeline from str::to_lowercase; an accented-letter case was added as the real guard"
+original_intent = "Task 3's Acceptance asserts that a summary containing a non-ASCII character (a curly apostrophe) normalises identically under repeated application, described as pinning the ASCII byte path against str::to_lowercase."
+rationale = """Falsified in-editor: swapping the byte pipeline for str::to_lowercase plus char::is_alphanumeric leaves the curly-apostrophe case PASSING, because U+2019 is non-alphanumeric under either reading and the whitespace collapse hides the byte-count difference. The plan's case is satisfiable by exactly the implementation the Detail forbids. The prescribed case was kept, and non_ascii_letters_are_dropped_not_lowercased (normalise("Cafe latte" with an accented e) == "caf latte") added alongside it - a char pipeline yields the accented form and fails. Task 4 should use the accented-letter case, not the apostrophe case, as the dedup_id regression guard, and references/backlog.md should state the rule as non-ASCII letters are dropped, not transliterated."""
+dedup_id = "1c868bc9c95bdff5"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-09-01
+agent = "implement"
+task_ref = "declare-the-backlog-cli-surface"
+status = "done"
+summary = "Declared Cmd::Backlog with nine ops plus the evidence subgroup, the TriageMode ArgGroup, three ValueEnums, SUBCOMMANDS/FEATURES entries and both capabilities placement arrays; 62 capabilities tests pass"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/src/cli/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "56bfb05fa1f1c286"
+
+[[items]]
+id = "E8"
+type = "deviation"
+date = 2026-09-01
+agent = "implement"
+task_ref = "declare-the-backlog-cli-surface"
+summary = "tomlctl/src/cli/mod.rs is in no task's Files line, but crate::backlog cannot name cli::types symbols without a re-export there; Task 5 added BacklogOp to it"
+original_intent = "Task 5's Files line (cli/types.rs, cli/dispatch.rs, backlog/dispatch.rs, tests/capabilities.rs) was assumed sufficient to make crate::backlog::dispatch::dispatch(op: BacklogOp) compile."
+rationale = "cli/mod.rs declares mod types as private to cli, so crate::cli::types::BacklogOp is E0603 from crate::backlog, which is not a descendant of cli. FlowOp compiles only because cli/mod.rs carries pub(crate) use types::{... FlowOp ...}. cli/mod.rs appears in no task's Files line anywhere in the plan. Task 5 added the single word BacklogOp to that existing re-export list rather than leave the crate uncompilable for every parallel agent in the frontier. No other task owned the file, so there was no collision."
+dedup_id = "42b04cf18403f437"
+
+[[items]]
+id = "E9"
+type = "deviation"
+date = 2026-09-01
+agent = "implement"
+task_ref = "widen-the-cli-module-re-exports-for-the-backlog-leaves"
+summary = "Minted task 30: no plan task owns tomlctl/src/cli/mod.rs, so Tasks 6-13 would each hit E0603 on the symbols they consume"
+original_intent = "The plan assigns the five write-path helpers' visibility widening to Task 1 and the CLI type declarations to Task 5, implying Tasks 6-13 can call them directly from tomlctl/src/backlog/<leaf>.rs."
+rationale = "Task 1 widened read_json_arg, on_missing_for, warn_if_created, write_envelope and query_input_from_cli to pub(crate) fn, but they live in the private module cli::dispatch and cli/mod.rs re-exports only read_integrity_opts, run, seed_doc_for and write_integrity_opts. Tasks 6, 8, 9, 10 and 12 call them from crate::backlog and would each hit E0603, as would Task 13 on EvidenceOp and Tasks 6/9/10/11 on TriageMode, OnDuplicate, RelationKind and ClusterBy. Five concurrent agents editing one use line is a guaranteed collision, so the work is minted as its own file-disjoint task 30 scheduled between Task 5 and the Milestone-2 leaf frontier, in Checkpoint 1's group. Cost: unused pub(crate) use emits a warning until each consumer lands; the crate has no deny-warnings and already carries pre-existing warnings, so this does not fail any gate."
+dedup_id = "ecab6f0cb3536a9a"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-09-01
+agent = "implement"
+task_ref = "widen-the-cli-module-re-exports-for-the-backlog-leaves"
+status = "done"
+summary = "Minted task: widened cli/mod.rs pub(crate) use lists with EvidenceOp, TriageMode, OnDuplicate, RelationKind, ClusterBy and the five write-path helpers so crate::backlog can name them"
+files = ["tomlctl/src/cli/mod.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "d6e1ba88fc4dc0fe"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-09-01
+agent = "implement"
+task_ref = "implement-the-backlog-schema-vocabulary-and-validator"
+status = "done"
+summary = "Implemented backlog field constants, kind/status vocabularies, per-status required clusters, COMPACTED_FIELDS, validate, validate_ids_unique and backlog_path; 18 unit tests pass"
+files = ["tomlctl/src/backlog/schema.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "8ae8238ef840875d"
+
+[[items]]
+id = "E12"
+type = "deviation"
+date = 2026-09-01
+agent = "implement"
+task_ref = "implement-the-backlog-schema-vocabulary-and-validator"
+summary = "No artefacts array-name constant was defined; the plan's Action contradicts its own Scope and Detail"
+original_intent = "Task 2's Action says to define the field-name constants including the array names backlog, compacted and artefacts."
+rationale = "The plan's Scope out-of-scope list states the opposite in as many words - no [[artefacts]] array, no per-file digest, caption, media type or count - and Task 2's own Detail says no evidence field is added here. No other task references an artefacts array. Read as a stale word in the Action rather than a requirement, and omitted. If it was meant as the evidence directory root name, that belongs to Task 28 and is spelled backlog-evidence there. Recommend striking artefacts from Task 2's Action at the next /plan-update reformat."
+dedup_id = "c0162d26cd32e91c"
+
+[[items]]
+id = "E13"
+type = "deviation"
+date = 2026-09-01
+agent = "implement"
+task_ref = "implement-the-backlog-schema-vocabulary-and-validator"
+summary = "backlog_path() returns anyhow::Result<PathBuf> rather than PathBuf, and is_empty_json is reimplemented privately rather than reused"
+original_intent = """Task 2's Action specifies backlog_path() -> PathBuf resolving io::repo_or_cwd_root().join(".claude/backlog.toml"), and its Detail says to reuse items::is_empty_json semantics for missing."""
+rationale = "io::repo_or_cwd_root() is fallible because it canonicalises TOMLCTL_ROOT, and the precedent the Action names - flow::active::active_flow_path - returns Result<PathBuf> for exactly that reason, so the infallible signature is unimplementable. Task 28's evidence_root() must therefore carry the ?. Separately items::is_empty_json is a bare private fn at tomlctl/src/items.rs:437 and tomlctl/src/items.rs is not in Task 2's Files line, so it could not be widened; the predicate is reimplemented privately in schema.rs with a doc line pointing at the original. Widening items::is_empty_json to pub(crate) is a one-word edit if a single copy is preferred later."
+dedup_id = "442d5e3fbc01c557"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-09-01
+agent = "implement"
+task_ref = "implement-content-derived-ids-and-the-backlog-fingerprint"
+status = "done"
+summary = "Generalised the tier-B hasher to a field list across all seven entry points with byte-identity preserved, and added dedup_id/derive_id/existing_dedup_ids; 51 dedup plus 9 ids tests pass, five pre-existing tier-B tests unmodified"
+files = [
+    "tomlctl/src/dedup.rs",
+    "tomlctl/src/backlog/ids.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "9e4c30266f48eb0d"
+
+[[items]]
+id = "E15"
+type = "deviation"
+date = 2026-09-01
+agent = "implement"
+task_ref = "implement-content-derived-ids-and-the-backlog-fingerprint"
+summary = "Task 4's Action and Detail specify contradictory id-widening tie-breaks; the total order was implemented and Task 6 gains a re-derive obligation"
+original_intent = "Task 4's Action says derive_id widens when an existing item already holds that id with a different dedup_id, which means the incumbent keeps the short id. Its Detail and the Approach section instead say the widening tie-break is a total order over dedup_id, the lexicographically smaller keeping the short id, never insertion order."
+rationale = "The two rules cannot both hold. If the larger fingerprint is minted first into an empty store it takes the short id, but by the total order a smaller fingerprint arriving later is the rightful owner; incumbent-keeps makes the pair's assignment depend on mint order, which is the cross-worktree divergence User Decision 1 exists to remove. The total order was implemented, since the Detail states it twice. Consequence and caller obligation: derive_id can now return an id an incumbent currently holds, so Task 6 (backlog add) MUST re-derive the id of any stored row whose dedup_id shares the new row's 8-hex prefix before writing, or the append trips schema::validate_ids_unique. The collision set is computable from existing_dedup_ids; the case is astronomically rare at 32 bits of prefix. Recorded in the ids.rs module doc and to be handed to Task 6's dispatch."
+dedup_id = "96cc90f81cf81560"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-09-01
+agent = "implement"
+task_ref = "implement-the-evidence-directory-policy-module"
+status = "done"
+summary = "Implemented the evidence policy surface - root/marker/extension constants, evidence_root, dir_for with a path-component guard, resolve_id, marker_text, tri-state list_dir and referenced_names; 13 unit tests pass"
+files = ["tomlctl/src/backlog/evidence.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "25a16807a33d86c0"
+
+[[items]]
+id = "E18"
+type = "deviation"
+date = 2026-09-01
+agent = "implement"
+task_ref = "implement-the-evidence-directory-policy-module"
+summary = "referenced_names required a filename-shape rule the Action does not name, or every prose word in context would become a referenced-missing finding"
+original_intent = "Task 28's Action describes referenced_names as extracting bare filenames from an item's context and evidence[], with two exclusions - a token containing / is a repo path and one matching ...:<digits> is the path:line source-pointer form."
+rationale = "Those two exclusions alone accept every ordinary prose word in context (The, overlap, visible), and Task 29 turns each returned name into a referenced-missing finding, so the audit would emit a wall of false positives. Added a filename-shape requirement: non-empty stem, filename-safe charset, and a 2-8 character alphanumeric extension containing at least one letter. Two consequences Task 29's author must know: an extensionless evidence file cannot be detected as an inline reference (it is still flaggable in the directory via EVIDENCE_EXTENSIONS), and a prose token shaped like a filename such as Node.js is treated as a reference. Separately, EVIDENCE_EXTENSIONS membership was chosen from the artefact classes the plan's prose names, since the plan specifies only .pem as an example of what must be flagged."
+dedup_id = "3fd6daf913f19a70"
+
+[[items]]
+id = "E17"
+type = "deviation"
+date = 2026-09-01
+agent = "implement"
+task_ref = "implement-the-evidence-directory-policy-module"
+summary = "The no-backslash acceptance is unsatisfiable on Windows for an absolute PathBuf; replaced with a component-wise ends_with plus a full-literal relativised equality"
+original_intent = "Task 28's Acceptance asserts that dir_for of B-a1b2c3d4 ends .claude/backlog-evidence/B-a1b2c3d4 and contains no backslash."
+rationale = "TOMLCTL_ROOT canonicalises to a verbatim device prefix on Windows and PathBuf::join uses the platform separator, so an absolute path necessarily contains backslashes. Asserting the absence of a backslash on the relativised string instead would be VACUOUS, because io::relativise replaces every backslash unconditionally. Replaced with two falsifiable assertions: a component-wise ends_with following the schema.rs backlog_path test's precedent, and a full-literal equality on io::relativise output. The substantive guarantee is enforced in code instead - dir_for rejects any item_id that is not a single path component, which also blocks a merge-mangled parent-directory row from walking the join out of .claude/ before guard_write_path sees it."
+dedup_id = "17112e3e60b2d34a"
+
+[[items]]
+id = "E19"
+type = "verification"
+date = 2026-09-01
+agent = "implement"
+task_ref = "create-the-backlog-module-skeleton"
+summary = "Checkpoint 1 gate: tomlctl build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "9fbd40e7072cbbcc"
+
+[[items]]
+id = "E20"
+type = "verification"
+date = 2026-09-01
+agent = "implement"
+task_ref = "create-the-backlog-module-skeleton"
+summary = "Checkpoint 1 gate: tomlctl full test suite, 17 binaries, 580 tests, 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "d340b9078502cffb"
+
+[[items]]
+id = "E21"
+type = "checkpoint"
+date = 2026-09-01
+agent = "implement"
+kind = "commit-train"
+summary = "Checkpoint 1 (Milestone 1) commit train, gate-verified. 520db435 -> add-the-evidence-directory-ignore-rules. 960677bf -> create-the-backlog-module-skeleton, implement-the-backlog-schema-vocabulary-and-validator, implement-summary-normalisation-and-similarity-scoring, implement-content-derived-ids-and-the-backlog-fingerprint, declare-the-backlog-cli-surface, implement-the-evidence-directory-policy-module, widen-the-cli-module-re-exports-for-the-backlog-leaves. The seven merged into one commit because Task 1 created the placeholder files its siblings filled, so path-level staging could not separate them."
+commits = [
+    "520db43530bf4bbfe5afcec4f30df312e16aa5de",
+    "960677bfc23748147beef0c58309360176ba3a01",
+]
+dedup_id = "f31ba3abf1f73bef"
+
+[[items]]
+id = "E22"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "orchestrator-seam-prep"
+summary = "Orchestrator widened three re-export seams before the Milestone 2 fan-out: flow/stale.rs parse_threshold to pub(crate), flow/mod.rs re-exports for parse_threshold and the three today helpers, cli/mod.rs re-exports for LegacyShortcuts and QueryArgs"
+original_intent = "Task 12 owns tomlctl/src/flow/stale.rs and promotes parse_threshold itself; Task 8 builds a Query via query_input_from_cli using types it can name"
+rationale = "crate::flow::stale and cli::types are private modules, so Task 12 would also need tomlctl/src/flow/mod.rs and Task 8 would need tomlctl/src/cli/mod.rs (the same E0603 seam E8/E9 hit in Milestone 1). Neither file is in any task's Files line. Doing the three edits once in the main conversation, before dispatch, keeps the eight leaves file-disjoint; clippy was green afterwards"
+dedup_id = "d23ef65a41c1fb9c"
+
+[[items]]
+id = "E23"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "implement-backlog-relate"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Implemented backlog relate as a pure apply_relation core plus mutate_doc dispatch: symmetric relates-to, duplicates and supersedes dismissals validated per row, idempotent re-runs; 8 unit tests pass, 7 falsified; orchestrator vet passed"
+files = ["tomlctl/src/backlog/relate.rs"]
+dedup_id = "1e3d42166e9d93c6"
+
+[[items]]
+id = "E24"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "implement-backlog-triage"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented backlog triage: TriageMode maps to a Transition, every row's terminal cluster is rewritten and staged through schema::validate before any store, bulk sweeps are all-or-nothing; 15 unit tests pass, 10 falsified"
+files = ["tomlctl/src/backlog/triage.rs"]
+dedup_id = "ce54ba8d698a29a0"
+
+[[items]]
+id = "E25"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "implement-backlog-check"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented backlog check: probe fingerprint matches add's derivation, a pure evaluate walks the six-rung ladder over both arrays with exact hits short-circuiting the similarity scan, cap applied after the verdict, --strict-read honoured; 18 unit tests pass, 10 falsified"
+files = ["tomlctl/src/backlog/check.rs"]
+dedup_id = "dec7268e51b6e993"
+
+[[items]]
+id = "E26"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "implement-backlog-cluster"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented backlog cluster: independent area (longest-common-prefix collapse to --min-size, unscoped exempt), tags (pairwise shared-tag threshold merged transitively) and relations (connected components, no singletons) views over open rows; 10 unit tests pass, 11 falsified"
+files = ["tomlctl/src/backlog/cluster.rs"]
+dedup_id = "1b2ba6ebd4f51a11"
+
+[[items]]
+id = "E27"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "implement-backlog-compact"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented backlog compact: pure plan_compaction over a pinned today with a strict boundary, projection onto COMPACTED_FIELDS, mutate_doc_conditional so a no-op sweep writes nothing, dry-run byte-identical; 13 unit tests pass, 9 falsified"
+files = ["tomlctl/src/backlog/compact.rs"]
+dedup_id = "eb45c4bf9120c583"
+
+[[items]]
+id = "E28"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "implement-backlog-add"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented backlog add: mint/bump/skip/fail/add on the content fingerprint via mutate_doc_conditional, --json payload exclusive with field flags and re-minting identity fields, dry-run through MutationPlan; 16 unit tests pass, 20 mutations falsified"
+files = ["tomlctl/src/backlog/add.rs"]
+dedup_id = "64282d6414104d33"
+
+[[items]]
+id = "E29"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "implement-backlog-add"
+summary = "validate_ids_unique is skipped only on the --on-duplicate add path against a matched incumbent; add never re-derives an incumbent id on a widening collision"
+original_intent = "Task 6 says to call validate_ids_unique on the resulting doc AND that --on-duplicate add appends anyway producing two rows under one id; ids.rs documents that the caller re-derives the incumbent on a widening collision (E15)"
+rationale = "The two instructions contradict: rows sharing a dedup_id derive the same id, which the uniqueness gate rejects. The gate now runs on every path except a deliberate --on-duplicate add against its own match, so an unrelated widening collision is still refused. Re-deriving the incumbent would rename a stored id and orphan its evidence directory, contradicting the Approach's rule that widening lengthens only the incoming id; add leaves the incumbent untouched and lets the gate refuse the write"
+dedup_id = "d8760c5de22dd5e7"
+
+[[items]]
+id = "E30"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "implement-backlog-evidence-dir-and-backlog-evidence-audit"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented evidence dir (resolve id, write exactly the marker, store and sidecar untouched) and evidence audit (seven classes plus git-unavailable, batched git check-ignore -z --stdin without --no-index so force-added files read as tracked, --strict errors after the report prints); 19 unit tests pass, 11 falsified"
+files = ["tomlctl/src/backlog/evidence_ops.rs"]
+dedup_id = "0faf7593a700ae52"
+
+[[items]]
+id = "E31"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "implement-backlog-list-and-backlog-show"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented backlog list (Rust pre-filter for --tag/--area-prefix/--has-evidence then delegation to query::run mirroring ItemsOp::List) and show (item, directory-derived evidence, deduped both-direction one-hop neighbourhood); 12 unit tests pass, 13 falsified"
+files = ["tomlctl/src/backlog/query.rs"]
+dedup_id = "9c89a62d5e8d4b3d"
+
+[[items]]
+id = "E32"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "wire-the-backlog-group-into-dispatch-and-the-auto-create-seed"
+summary = "Task 13 widened from two files to four to add the missing --count flag on BacklogOp::List and thread it into query::dispatch_list"
+original_intent = "Task 8 assumed the delegated query::run surface already honours --count; Task 13 owns only backlog/dispatch.rs and cli/dispatch.rs"
+rationale = "--count is a per-variant flag on ItemsOp::List carried through LegacyShortcuts.count, not part of QueryArgs, so BacklogOp::List never declared it and backlog list --count is unparseable. Task 8's agent reported the gap but could not fix it inside its Files line; with every leaf terminal no file claim conflicts, so Task 13 absorbs the one-field addition in cli/types.rs and the one-parameter threading in backlog/query.rs rather than minting a separate task"
+dedup_id = "a00effd38617b53d"
+
+[[items]]
+id = "E33"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "wire-the-backlog-group-into-dispatch-and-the-auto-create-seed"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Replaced the bail stub with an explicit fan-out to all ten leaf entry points, added backlog.toml to SCHEMA_SEEDED_FLOW_FILES with an ordering test, declared and threaded backlog list --count; 161 backlog unit tests pass, smoke run of every verb from a scratch root green; orchestrator then dropped the unused write_envelope re-export and cfg(test)-gated today_utc_iso"
+files = [
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/flow/mod.rs",
+]
+dedup_id = "6e3fb743a2cdcc64"
+
+[[items]]
+id = "E34"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "add-black-box-cli-tests-for-the-backlog-group"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added 24 assert_cmd black-box cases over the backlog group in two new test binaries: the mint/bump/relate/triage/compact walk with both dry-run byte-identity checks, evidence dir and audit, the five check verdicts, list filters plus the generic query surface, show neighbourhoods and evidence shapes, cluster views; 6 falsified"
+files = [
+    "tomlctl/tests/backlog_write.rs",
+    "tomlctl/tests/backlog_read.rs",
+]
+dedup_id = "1e92a085c7e061c8"
+
+[[items]]
+id = "E35"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "wire-the-backlog-group-into-dispatch-and-the-auto-create-seed"
+summary = "Checkpoint 2 gate: tomlctl build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "edf5594731f99092"
+
+[[items]]
+id = "E36"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "wire-the-backlog-group-into-dispatch-and-the-auto-create-seed"
+summary = "Checkpoint 2 gate: tomlctl full test suite, 19 binaries, 650 tests, 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "510b50b8950ecd52"
+
+[[items]]
+id = "E37"
+type = "checkpoint"
+date = 2026-09-02
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "b9458e6",
+    "ce59b6f",
+    "5f4986d",
+    "5f58a5d",
+    "808771a",
+    "490cc0e",
+    "812887d",
+    "422ceed",
+    "2dcd87c",
+]
+summary = "Checkpoint 2 (Milestone 2) commit train, gate-verified at 650 tests. b9458e6 -> implement-backlog-relate. ce59b6f -> implement-backlog-triage. 5f4986d -> implement-backlog-check. 5f58a5d -> implement-backlog-cluster. 808771a -> implement-backlog-compact plus the flow/stale.rs and flow/mod.rs seam edits from orchestrator-seam-prep. 490cc0e -> implement-backlog-add. 812887d -> implement-backlog-evidence-dir-and-backlog-evidence-audit. 422ceed -> implement-backlog-list-and-backlog-show and wire-the-backlog-group-into-dispatch-and-the-auto-create-seed, merged because both edited backlog/query.rs, carrying the cli/mod.rs seam edit. 2dcd87c -> add-black-box-cli-tests-for-the-backlog-group."
+dedup_id = "c5840f2e57769717"
+
+[[items]]
+id = "E38"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "widen-command_lint-s-scan-set-and-latch-the-skill-ceiling"
+summary = "skill_bodies_under_line_ceiling lands under #[ignore] until the SKILL.md rewrite; the orchestrator removes the attribute before the Checkpoint 4 gate"
+original_intent = "Task 21 adds the latch as a live test that is expected to fail until Task 24, with Checkpoint 3 placed after Tasks 22-23 for that reason"
+rationale = "Checkpoint 3 still precedes Task 24, so a live failing test would make the Checkpoint 3 gate red and the train tip non-bisectable. Ignoring it keeps every commit tip green while the gate is written and runnable with -- --ignored; un-ignoring is a one-attribute edit no task owns, so the orchestrator applies it after Task 24 and records it"
+dedup_id = "112f23c428673699"
+
+[[items]]
+id = "E39"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "bump-the-tomlctl-version-and-its-pinned-assertion"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Bumped tomlctl 0.5.0 to 0.6.0 with Cargo.lock following, repointed the capabilities version pin with a backlog-group rationale and a why-only comment, raised flow-bootstrap's pre-flight gate and both error literals to 0.6; capabilities 62 pass, command_lint passes, both gates falsified"
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/tests/capabilities.rs",
+    "claude/agents/flow-bootstrap.md",
+]
+dedup_id = "c7fa159074906cc3"
+
+[[items]]
+id = "E40"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "widen-command_lint-s-scan-set-and-latch-the-skill-ceiling"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Extracted command_lint_scan_set and widened it from 34 to 46 files (every skills/*/SKILL.md plus one level of references/*.md), added the tempdir scan-set test and the #[ignore]-latched skill_bodies_under_line_ceiling gate; 3 gates falsified. Agent restored one falsifier edit with git checkout on the single file it had just modified, verified clean"
+files = ["tomlctl/src/cli/dispatch.rs"]
+dedup_id = "c1539ca301e602ba"
+
+[[items]]
+id = "E41"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "bring-the-apply-pipeline-skill-under-the-line-ceiling"
+summary = "Minted task 31: plan carries no task for bringing claude/skills/flow-contract-apply-pipeline/SKILL.md under the 500-line ceiling"
+original_intent = "plan carries no task for a second ceiling offender; Task 24's SKILL.md rewrite was assumed to be the only thing keeping skill_bodies_under_line_ceiling red"
+rationale = "The latch Task 21 wrote reports two offenders: tomlctl/SKILL.md at 869 and flow-contract-apply-pipeline/SKILL.md at 576. Task 19 only makes a prose edit to the latter, so nothing in the plan turns the gate green once un-ignored. Task 31 splits its overflow into references/*.md after Task 19 lands (same file, so it depends on 19) and belongs to the Checkpoint 4 closure; the orchestrator un-ignores the gate once 24 and 31 are both terminal"
+dedup_id = "47fe66cb5fd1bda4"
+
+[[items]]
+id = "E42"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "author-the-backlog-capture-skill"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Authored the backlog-capture skill in 217 lines: mint criteria, the mandatory check-before-add gate with the kind/area fingerprint trap, vocabularies, the orchestrator-only writer rule with the TANGENTIAL surfacing heading, evidence hygiene and publication contract, eight lint-gated idioms; command_lint passes and was falsified against the file"
+files = ["claude/skills/backlog-capture/SKILL.md"]
+dedup_id = "2e18b72b4880ebec"
+
+[[items]]
+id = "E43"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "extract-the-tomlctl-read-query-and-write-references"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Extracted the read/query surface into references/query.md (207 lines) and the write surface into references/write.md (461 lines) with ToCs, nine dry-run previews folded into one Dry-run section; 72 invocations moved with an empty diff against the source ranges, 86 total preserved, SKILL.md byte-untouched; command_lint falsified against both files"
+files = [
+    "claude/skills/tomlctl/references/query.md",
+    "claude/skills/tomlctl/references/write.md",
+]
+dedup_id = "b7c35bd2ecc1c296"
+
+[[items]]
+id = "E44"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "wire-capture-points-into-implement-and-tdd"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Wired the backlog harvest into /implement Phase 4 (TANGENTIAL lines plus out-of-plan discoveries, check then add --origin implement, a Backlog summary subsection) and into /tdd's deferred follow-ups (check then add --origin tdd), both invoking backlog-capture and stating the orchestrator-only writer rule; command_lint and carrier_invokes_required_skills pass, falsified once; orchestrator vet passed"
+files = [
+    "claude/commands/implement.md",
+    "claude/commands/tdd.md",
+]
+dedup_id = "2c99ed0073fbc5fa"
+
+[[items]]
+id = "E45"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "wire-capture-points-into-review-and-optimise"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Step 1 of /review and /optimise now loads open backlog rows as lens prior context, and Step 3 gains an out-of-ledger disposition path (check then add --origin review|optimise) with a Backlog console line; each carrier's existing disposition vocabulary byte-unchanged (defer R{n}=2, wontapply=2); command_lint and carrier_invokes_required_skills pass, falsified once; orchestrator vet passed"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+]
+dedup_id = "4a17d528402a96ae"
+
+[[items]]
+id = "E46"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "close-the-apply-pipeline-out-of-scope-gap"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Step 6's out-of-scope deviation branch now mints backlog items behind the check gate with --origin <CMD>, and a Capped-skip capture subsection routes the two apply-constraints skip tags into the store; in-scope branch untouched (grep count 1); command_lint passes, falsified once; file grew 576 to 617 lines; orchestrator vet passed"
+files = ["claude/skills/flow-contract-apply-pipeline/SKILL.md"]
+dedup_id = "fb0d1f3dda1617f1"
+
+[[items]]
+id = "E47"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "add-the-backlog-sweep-command"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added the /backlog sweep carrier (107 lines: no-flow pre-flight with a 0.6 binary gate, cluster, user-gated dispositions, evidence audit, optional compact, summary; invokes flow-contract-task-visibility and backlog-capture) and registered it in the carrier_invokes_required_skills table; both gates pass and were falsified"
+files = [
+    "claude/commands/backlog.md",
+    "tomlctl/src/cli/dispatch.rs",
+]
+dedup_id = "e055cf4514e02102"
+
+[[items]]
+id = "E48"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "add-the-candidate-capture-block-to-both-implementer-agents"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Added the byte-identical backlog-candidates shared block to both implementer agents with the TANGENTIAL heading and the orchestrator-only writer rule, a TANGENTIAL example line in each Output Shape skeleton, and registered the block as a second manifest entry; shell verifier OK and falsified, Rust hash test and blocks verify agree"
+files = [
+    "claude/agents/implement-deep.md",
+    "claude/agents/implement-lite.md",
+    "scripts/shared-blocks.toml",
+]
+dedup_id = "2b04b9c56b6be00b"
+
+[[items]]
+id = "E49"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "author-the-backlog-capture-skill"
+summary = "Orchestrator reconciled the backlog-capture skill's writer rule: sub-agents may run read-only check/show/list; every write verb stays orchestrator-only"
+original_intent = "Task 15's skill text forbade sub-agents from running backlog check; Task 20's shared block, per its Action, permits read-only check/show/list"
+rationale = "User decision 3 restricts writing, not reading: a sub-agent that can ask whether something is already known produces better TANGENTIAL candidates and still cannot race the store. The two harness files must agree, so the skill sentence was widened to name every write verb explicitly and allow the three read verbs; command_lint still passes"
+dedup_id = "c81e6b11ae728c53"
+
+[[items]]
+id = "E50"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "bring-the-apply-pipeline-skill-under-the-line-ceiling"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Minted task: split seven detail sections of flow-contract-apply-pipeline/SKILL.md into references/{pre-analysis,agent-prompt-contract,verification}.md, leaving a 434-line navigational body with Step 6 and frontmatter byte-identical; heading conservation empty, all seven reference links verified against the real slugger, command_lint falsified; the ceiling latch now names only tomlctl/SKILL.md"
+files = [
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md",
+    "claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md",
+    "claude/skills/flow-contract-apply-pipeline/references/agent-prompt-contract.md",
+    "claude/skills/flow-contract-apply-pipeline/references/verification.md",
+]
+dedup_id = "fd21438378a60750"
+
+[[items]]
+id = "E51"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "extract-the-flow-and-maintenance-references-and-document-the-backlog-group"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Extracted the flow, integrity and maintenance sections into references/flow.md (180 lines, 12 invocations, parity with the source ranges) with the three drift defects fixed and blocks verify-skills folded into a collapsed Old patterns block, and wrote references/backlog.md (452 lines) as the nine-verb flag reference; both corrected blocks verify forms exit 0, command_lint falsified three times"
+files = [
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/references/backlog.md",
+]
+dedup_id = "b254021356aaf279"
+
+[[items]]
+id = "E52"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "extract-the-flow-and-maintenance-references-and-document-the-backlog-group"
+summary = "Checkpoint 3 gate: tomlctl build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "fe965ce807831371"
+
+[[items]]
+id = "E53"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "extract-the-flow-and-maintenance-references-and-document-the-backlog-group"
+summary = "Checkpoint 3 gate: tomlctl full test suite, 19 binaries, 718 tests, 0 failed, 1 ignored (the skill ceiling latch)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "5248b5e7c3a48b91"
+
+[[items]]
+id = "E54"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "extract-the-flow-and-maintenance-references-and-document-the-backlog-group"
+summary = "Checkpoint 3 gate: shared-block parity OK"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "c6178942073c0d3b"
+
+[[items]]
+id = "E55"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "extract-the-flow-and-maintenance-references-and-document-the-backlog-group"
+summary = "Checkpoint 3 gate: plan-story blocks OK"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+dedup_id = "e2470b233d6861fb"
+
+[[items]]
+id = "E56"
+type = "checkpoint"
+date = 2026-09-02
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "19e77c1",
+    "4b1d501",
+    "158ba50",
+    "1240f6f",
+    "9b486f9",
+    "3b565b0",
+    "0734ea8",
+    "59f1af4",
+    "ee06930",
+]
+summary = "Checkpoint 3 (Milestone 3 reference-extraction cut, plus every other terminal task) commit train, gate-verified at 718 tests plus both shell verifiers. 19e77c1 -> bump-the-tomlctl-version-and-its-pinned-assertion. 4b1d501 -> author-the-backlog-capture-skill (carrying the orchestrator's writer-rule reconciliation). 158ba50 -> widen-command_lint-s-scan-set-and-latch-the-skill-ceiling and add-the-backlog-sweep-command, merged because both edited cli/dispatch.rs. 1240f6f -> wire-capture-points-into-implement-and-tdd. 9b486f9 -> wire-capture-points-into-review-and-optimise. 3b565b0 -> add-the-candidate-capture-block-to-both-implementer-agents. 0734ea8 -> close-the-apply-pipeline-out-of-scope-gap and bring-the-apply-pipeline-skill-under-the-line-ceiling, merged because both edited the apply-pipeline SKILL.md. 59f1af4 -> extract-the-tomlctl-read-query-and-write-references. ee06930 -> extract-the-flow-and-maintenance-references-and-document-the-backlog-group."
+dedup_id = "b8de4ea68fb17e4e"
+
+[[items]]
+id = "E57"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "rewrite-the-tomlctl-skill-md-body"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Reduced tomlctl SKILL.md from 869 to 148 lines: frontmatter byte-identical, all 43 pre-edit headings conserved across SKILL.md plus references, every anchor retargeted or demoted to prose, each reference linked exactly once, version sample now 0.6.0, two genuinely dangling links in references/write.md fixed; ceiling latch passes with --ignored, command_lint passes, 5 gates falsified"
+files = [
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/write.md",
+]
+dedup_id = "e98faebe60ae9296"
+
+[[items]]
+id = "E58"
+type = "deviation"
+date = 2026-09-02
+agent = "implement"
+task_ref = "rewrite-the-tomlctl-skill-md-body"
+summary = "The post-split unique invocation count is 96, not the plan's 86 (or the 98 measured after the backlog reference landed)"
+original_intent = "Task 24's acceptance pins the sort -u count of tomlctl invocation lines across SKILL.md plus references at the pre-split 86"
+rationale = "Task 23 added 12 backlog invocations (86 to 98) and deliberately replaced the two dead blocks verify lines with corrected ones rather than copying them, so deleting the SKILL.md originals removes two lines that exist nowhere else by design: 98 minus 2 is 96. Nothing was lost; the two dropped lines targeted command files that carry no shared-block marker"
+dedup_id = "45147ccc72e2b751"
+
+[[items]]
+id = "E59"
+type = "task-completion"
+date = 2026-09-02
+agent = "implement"
+task_ref = "update-the-repo-documentation"
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Added the backlog group to the README quick tour (every line parse-checked with --help), refreshed the capabilities sample to 0.6.0, retargeted both SKILL.md deep links at references/{query,write}.md, and added a five-line Backlog capture section to CLAUDE.md pointing at the skill and the flag reference; the historical 'added in 0.4.0' prose stays, so that grep reads 1 by design; orchestrator vet passed"
+files = [
+    "tomlctl/README.md",
+    "CLAUDE.md",
+]
+dedup_id = "3c5b102542ea086b"
+
+[[items]]
+id = "E60"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "update-the-repo-documentation"
+summary = "Phase 3 final pass: tomlctl build (CARGO_INCREMENTAL=0)"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "e2b0ed86b74642c3"
+
+[[items]]
+id = "E61"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "update-the-repo-documentation"
+summary = "Phase 3 final pass: tomlctl full test suite, 19 binaries, 719 tests, 0 failed, 0 ignored (ceiling latch un-ignored and passing)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "63a22fefdbf91932"
+
+[[items]]
+id = "E62"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "update-the-repo-documentation"
+summary = "Phase 3 final pass: clippy exit 0, 6 pre-existing warnings in io.rs and capabilities.rs, none in backlog code"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "48c36dfce1a02bdd"
+
+[[items]]
+id = "E63"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "update-the-repo-documentation"
+summary = "Phase 3 final pass: RUSTSEC audit clean"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+dedup_id = "bf6efbb9c4b8a82a"
+
+[[items]]
+id = "E64"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "update-the-repo-documentation"
+summary = "Phase 3 final pass: shared-block parity OK across both manifest blocks"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "0b3c57ade1d2a769"
+
+[[items]]
+id = "E65"
+type = "verification"
+date = 2026-09-02
+agent = "implement"
+task_ref = "update-the-repo-documentation"
+summary = "Phase 3 final pass: plan-story blocks OK"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+dedup_id = "f1a16d802e2eed4a"
+
+[[items]]
+id = "E66"
+type = "checkpoint"
+date = 2026-09-02
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "61efcc7",
+    "188c190",
+    "c168c68",
+]
+summary = "Checkpoint 4 (closure: everything) commit train, gate-verified by the Phase 3 final pass at 719 tests, clippy, audit and both shell verifiers. 61efcc7 -> rewrite-the-tomlctl-skill-md-body. 188c190 -> update-the-repo-documentation. c168c68 -> the orchestrator's removal of the #[ignore] on skill_bodies_under_line_ceiling recorded in E38, now that both offenders are under the ceiling."
+dedup_id = "67ae6a9a9882518d"
+
+[[items]]
+id = "E67"
+type = "status-transition"
+date = 2026-09-02
+agent = "plan-update"
+summary = "Flow status in-progress -> review at /implement Phase 4.5 (plan-update status): all 31 tasks done (30 planned plus one minted), Phase 3 final pass green"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "ee89cd1e5bb49b4a"
+
+[[items]]
+id = "E68"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "implement-backlog-add"
+summary = "review-apply R5 R52 R56 R62 R19 R4: OnDuplicate::Add removed and validate_ids_unique unconditional; a compacted-only fingerprint is refused by name; --related ids resolve before mutation; envelope path relativised; --json conflict list kept with its invariant stated; credential and machine-local-path advisory on add"
+original_intent = "Task 11 delivered add with three on-duplicate modes, an incumbent search over the live array only, unchecked --related strings, and an absolute envelope path"
+rationale = "Review found the add mode lands two rows under one id and bricks every later add (reproduced), the compacted-only case re-mints under a name the caller never chose, and unknown related ids persist silently; the advisory closes the only unguarded publication path in the store. Supersedes E29, whose skip-on-add rule no longer exists."
+supersedes_entry = "E29"
+dedup_id = "73cd049e34bc1266"
+
+[[items]]
+id = "E69"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "implement-the-backlog-schema-vocabulary-and-validator"
+summary = "review-apply R6 R7 R13 R14: validate rejects a foreign terminal date or companion on any status; MANAGED_FIELDS lives in schema.rs and relate::dismiss clears it; TERMINAL_CLUSTERS table feeds required_fields and a new terminal_pair; coerce_kind no longer called from validate"
+original_intent = "Task 2 delivered a validator that applied the no-foreign-terminal-date rule to open rows only, with the managed-field sweep private to triage and required_fields as a bare slice"
+rationale = "Two module docs claimed a rule the validator did not implement, relate produced rows triage would never write, compact inferred the date/companion pair by slice arity, and a pure validator printed to stderr once per row on every read"
+dedup_id = "c4c69dc8c14c6e9f"
+
+[[items]]
+id = "E70"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "implement-backlog-evidence-dir-and-backlog-evidence-audit"
+summary = "review-apply R2 R3 R55 R61: .gitignore evidence rule widened to ** with directory and marker re-includes; audit gained strict stray and sensitive-published classes and an advisory nested class; marker_text is tri-state from a git check-ignore probe and no longer asserts the repository is public"
+original_intent = "Task 12 and the Task 1 ignore rules delivered a one-level ignore pattern, seven audit classes with tracked always advisory, and a marker that hardcoded the ignore and visibility claims"
+rationale = "A file dropped at the evidence root was publishable by git add -A and invisible to audit; a force-added HAR passed --strict; the marker stated dev-tools facts in a globally installed binary. The single-star rule the review proposed was verified to leave item-dir files trackable, so ** was used instead."
+dedup_id = "d5645a37a8f27907"
+
+[[items]]
+id = "E71"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "declare-the-backlog-cli-surface"
+summary = "review-apply R5 R16 R17: OnDuplicate enum loses its add variant; Bump help names related; FEATURES gains backlog_list, backlog_show, backlog_relate and backlog_triage with backlog_capture annotated as the add verb"
+original_intent = "Task 5 declared three on-duplicate modes and five backlog_* capability features for nine verbs"
+rationale = "The add mode was unusable by construction (see E68), the help omitted a field the code unions, and carriers could not feature-gate on four of the verbs"
+dedup_id = "c20ce11342aa4493"
+
+[[items]]
+id = "E72"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "implement-backlog-check"
+summary = "review-apply R8 R20 R60: check candidates sort by rung before score; cluster --min-shared-tags is clamped to 1; dedup_id_from_parts matches FIELD_SUMMARY explicitly with an unreachable catch-all"
+original_intent = "Tasks 4, 8 and 9 delivered a score-first candidate sort, an unfloored shared-tag threshold, and a catch-all fingerprint arm"
+rationale = "A weaker rung could outrank a stronger one under --limit, a zero threshold collapsed the tags view to one keyless group, and a fourth fingerprint field would have silently hashed the summary twice"
+dedup_id = "5d7b1edab143b040"
+
+[[items]]
+id = "E73"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "widen-command_lint-s-scan-set-and-latch-the-skill-ceiling"
+summary = "review-apply R29 R38: backlog-capture added to the expected-skill lists of implement, review, optimise and tdd; a sibling skill_references_under_line_ceiling test walks references/*.md at 600 lines"
+original_intent = "Task 17 latched the SKILL.md ceiling and registered backlog.md but did not extend the four carriers' expected lists or gate the reference files the split created"
+rationale = "A dropped backlog-capture invocation would have produced a run that captures nothing while every test passed, and the extraction moved the bulk of the prose into files the ceiling no longer watched"
+dedup_id = "c55db2184217b4e2"

@@ -1564,11 +1564,15 @@ fn capabilities_features_contains_every_plan_feature() {
         "flow_find_plans",
         "json_ops",
         // Repo-scoped capture log: the `backlog` subcommand cluster.
-        "backlog_capture",
+        "backlog_capture", // the `add` verb
         "backlog_check",
         "backlog_cluster",
         "backlog_compact",
         "backlog_evidence",
+        "backlog_list",
+        "backlog_show",
+        "backlog_relate",
+        "backlog_triage",
     ];
     for name in expected {
         assert!(

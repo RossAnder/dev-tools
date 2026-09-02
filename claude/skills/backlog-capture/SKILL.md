@@ -159,7 +159,10 @@ detail for whoever has it; it is never the record.
 and `evidence` string you write ships to every clone, forever, and stays in git history after
 any later edit. So: no secrets, no tokens, no customer or personal data, and no verbatim
 error output quoting filesystem paths outside the repository. Describe the failure in your
-own words instead of pasting the log.
+own words instead of pasting the log. `add` prints a stderr advisory when a `summary`,
+`context`, `tag` or `evidence` string carries a credential-shaped token or a machine-local
+path, but it never blocks the write — the rule above is what governs, and the advisory only
+tells you to look.
 
 ## After the mint
 

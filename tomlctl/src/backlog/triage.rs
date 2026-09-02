@@ -3,9 +3,9 @@
 //!
 //! Every transition rewrites the whole managed cluster — the three terminal
 //! date/companion pairs plus `reopen_rationale` — not just the pair it sets.
-//! `schema::validate` rejects a row carrying a terminal date its status does
-//! not name, so `resolved` → `dismissed` without clearing `resolved` /
-//! `resolution` would produce a row the validator refuses.
+//! `schema::validate` rejects a row carrying a terminal date or companion
+//! its status does not name, so `resolved` → `dismissed` without clearing
+//! `resolved` / `resolution` would produce a row the validator refuses.
 //!
 //! A bulk sweep is all-or-nothing: every id is resolved and every rewritten
 //! row validated before the first is stored, so one unknown id leaves the
@@ -23,18 +23,6 @@ use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{item_id, items_array, items_array_mut, mutate_doc};
 use crate::output::print_json_compact;
-
-/// Fields triage owns outright. A transition clears every one it does not
-/// itself write, which is what lets a row move between two terminal states.
-const MANAGED_FIELDS: &[&str] = &[
-    schema::FIELD_PROMOTED,
-    schema::FIELD_PROMOTED_TO,
-    schema::FIELD_DISMISSED,
-    schema::FIELD_DISMISS_REASON,
-    schema::FIELD_RESOLVED,
-    schema::FIELD_RESOLUTION,
-    schema::FIELD_REOPEN_RATIONALE,
-];
 
 const FIELD_LAST_UPDATED: &str = "last_updated";
 
@@ -162,7 +150,7 @@ fn rewrite(row: &mut TomlValue, t: &Transition, today: toml::value::Datetime) ->
         )
     })?;
     let (date_field, companion_field, value) = t.writes();
-    for field in MANAGED_FIELDS {
+    for field in schema::MANAGED_FIELDS {
         if Some(*field) == date_field || *field == companion_field {
             continue;
         }

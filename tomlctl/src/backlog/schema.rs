@@ -104,6 +104,19 @@ pub(crate) const STATUSES: &[&str] = &[
 pub(crate) const TERMINAL_DATE_FIELDS: &[&str] =
     &[FIELD_PROMOTED, FIELD_DISMISSED, FIELD_RESOLVED];
 
+/// Fields a status transition owns outright. A transition clears every one
+/// it does not itself write, which is what lets a row move between two
+/// terminal states.
+pub(crate) const MANAGED_FIELDS: &[&str] = &[
+    FIELD_PROMOTED,
+    FIELD_PROMOTED_TO,
+    FIELD_DISMISSED,
+    FIELD_DISMISS_REASON,
+    FIELD_RESOLVED,
+    FIELD_RESOLUTION,
+    FIELD_REOPEN_RATIONALE,
+];
+
 /// Row shape written by `compact` and read by `check`'s
 /// `previously-resolved` verdict. `dedup_id` and `context` are load-bearing:
 /// the verdict keys on the first and reports the second.
@@ -120,15 +133,32 @@ pub(crate) const COMPACTED_FIELDS: &[&str] = &[
     FIELD_COMPACTED_ON,
 ];
 
+/// The date/companion pair each terminal status owns, and the single source
+/// `required_fields` and `terminal_pair` both read. Typed at exactly two, so
+/// a status that grows a third required field is a compile error here rather
+/// than a silent `None` in the callers that want the pair.
+const TERMINAL_CLUSTERS: &[(&str, [&str; 2])] = &[
+    (STATUS_PROMOTED, [FIELD_PROMOTED, FIELD_PROMOTED_TO]),
+    (STATUS_DISMISSED, [FIELD_DISMISSED, FIELD_DISMISS_REASON]),
+    (STATUS_RESOLVED, [FIELD_RESOLVED, FIELD_RESOLUTION]),
+];
+
+fn cluster_of(status: &str) -> Option<&'static [&'static str; 2]> {
+    TERMINAL_CLUSTERS
+        .iter()
+        .find_map(|(name, fields)| (*name == status).then_some(fields))
+}
+
 /// Fields an item must carry non-empty for its `status`. `open` requires
 /// none; `reopen_rationale` is optional on it.
 pub(crate) fn required_fields(status: &str) -> &'static [&'static str] {
-    match status {
-        STATUS_PROMOTED => &[FIELD_PROMOTED, FIELD_PROMOTED_TO],
-        STATUS_DISMISSED => &[FIELD_DISMISSED, FIELD_DISMISS_REASON],
-        STATUS_RESOLVED => &[FIELD_RESOLVED, FIELD_RESOLUTION],
-        _ => &[],
-    }
+    cluster_of(status).map_or(&[], |fields| fields.as_slice())
+}
+
+/// The (date, companion) pair a terminal status owns; `None` for `open` and
+/// for any unrecognised status.
+pub(crate) fn terminal_pair(status: &str) -> Option<(&'static str, &'static str)> {
+    cluster_of(status).map(|[date, companion]| (*date, *companion))
 }
 
 /// Resolve a stored `kind` against the vocabulary, coercing an unrecognised
@@ -169,9 +199,11 @@ pub(crate) enum BacklogError {
         status: String,
         field: &'static str,
     },
-    /// A terminal date on an `open` item — the reverse half of the
-    /// terminal-status invariant.
-    TerminalFieldOnOpen {
+    /// A terminal date or companion belonging to some status other than the
+    /// row's own — the reverse half of the terminal-status invariant, and
+    /// what holds a row to exactly one cluster.
+    ForeignTerminalField {
+        status: String,
         field: &'static str,
     },
     DuplicateId {
@@ -186,7 +218,7 @@ impl BacklogError {
             | Self::MissingField { .. }
             | Self::UnknownStatus { .. }
             | Self::MissingStatusField { .. }
-            | Self::TerminalFieldOnOpen { .. }
+            | Self::ForeignTerminalField { .. }
             | Self::DuplicateId { .. } => ErrorKind::Validation,
         }
     }
@@ -217,9 +249,9 @@ impl std::fmt::Display for BacklogError {
                 f,
                 "backlog item with status=\"{status}\" is missing required field `{field}`"
             ),
-            Self::TerminalFieldOnOpen { field } => write!(
+            Self::ForeignTerminalField { status, field } => write!(
                 f,
-                "backlog item with status=\"{STATUS_OPEN}\" must not carry the terminal field `{field}`"
+                "backlog item with status=\"{status}\" must not carry the terminal field `{field}`"
             ),
             Self::DuplicateId { id } => {
                 write!(f, "backlog id \"{id}\" appears more than once")
@@ -248,13 +280,15 @@ fn missing(map: &serde_json::Map<String, JsonValue>, field: &str) -> bool {
 
 /// Validate one backlog item. `id`, `summary` and `status` are required of
 /// every row — `dedup_id`, the id and the evidence directory all derive from
-/// the first two. The status invariant runs both ways: a terminal status
-/// carries its date and companion non-empty, and `open` carries no terminal
-/// date at all, though it may hold `reopen_rationale`.
+/// the first two. The status invariant runs both ways: a row carries the
+/// date and companion its own status names, non-empty, and no field from any
+/// other status's cluster — so `open` carries no terminal cluster at all,
+/// though it may hold `reopen_rationale`.
 ///
 /// An unknown `status` is rejected rather than coerced, because `triage`,
 /// `check` and `compact` all select on the four known values and would skip
-/// a typo'd row forever. An unknown `kind` coerces — see `coerce_kind`.
+/// a typo'd row forever. `kind` is not checked here: an unknown one coerces
+/// where it is read — see `coerce_kind`.
 ///
 /// Ids are unique across both arrays, which no single item can check — call
 /// `validate_ids_unique` on the document too.
@@ -292,15 +326,18 @@ pub(crate) fn validate(value: &JsonValue) -> std::result::Result<(), BacklogErro
             });
         }
     }
-    if status == STATUS_OPEN {
-        for field in TERMINAL_DATE_FIELDS {
+    for (owner, [date_field, companion]) in TERMINAL_CLUSTERS {
+        if *owner == status {
+            continue;
+        }
+        for field in [*date_field, *companion] {
             if !missing(map, field) {
-                return Err(BacklogError::TerminalFieldOnOpen { field });
+                return Err(BacklogError::ForeignTerminalField {
+                    status: status.to_string(),
+                    field,
+                });
             }
         }
-    }
-    if let Some(kind) = map.get(FIELD_KIND).and_then(|v| v.as_str()) {
-        coerce_kind(kind);
     }
     Ok(())
 }
@@ -455,10 +492,43 @@ mod tests {
                 .insert((*field).into(), json!("2026-09-01"));
             assert_eq!(
                 validate(&v),
-                Err(BacklogError::TerminalFieldOnOpen { field }),
+                Err(BacklogError::ForeignTerminalField {
+                    status: STATUS_OPEN.into(),
+                    field
+                }),
                 "status=open must reject a `{field}` date"
             );
         }
+    }
+
+    #[test]
+    fn a_terminal_status_rejects_another_status_cluster() {
+        let mut v = with(
+            STATUS_DISMISSED,
+            &[
+                (FIELD_DISMISSED, "2026-09-01"),
+                (FIELD_DISMISS_REASON, "superseded by B-7f0e2d91"),
+                (FIELD_RESOLVED, "2026-08-01"),
+            ],
+        );
+        assert_eq!(
+            validate(&v),
+            Err(BacklogError::ForeignTerminalField {
+                status: STATUS_DISMISSED.into(),
+                field: FIELD_RESOLVED,
+            })
+        );
+        let map = v.as_object_mut().unwrap();
+        map.remove(FIELD_RESOLVED);
+        map.insert(FIELD_RESOLUTION.into(), json!("fixed in abc123"));
+        assert_eq!(
+            validate(&v),
+            Err(BacklogError::ForeignTerminalField {
+                status: STATUS_DISMISSED.into(),
+                field: FIELD_RESOLUTION,
+            }),
+            "the companion is as foreign as the date"
+        );
     }
 
     #[test]
@@ -631,6 +701,24 @@ status = "resolved"
             &["open", "promoted", "dismissed", "resolved"]
         );
         assert_eq!(TERMINAL_DATE_FIELDS, &["promoted", "dismissed", "resolved"]);
+    }
+
+    #[test]
+    fn every_terminal_status_owns_a_pair_and_open_owns_none() {
+        assert_eq!(terminal_pair(STATUS_OPEN), None);
+        assert!(required_fields(STATUS_OPEN).is_empty());
+        for status in STATUSES.iter().filter(|s| **s != STATUS_OPEN) {
+            let Some((date, companion)) = terminal_pair(status) else {
+                panic!("status=\"{status}\" must own a terminal pair");
+            };
+            assert_eq!(date, *status, "the date field is spelled as its status");
+            assert!(TERMINAL_DATE_FIELDS.contains(&date));
+            assert_eq!(
+                required_fields(status),
+                &[date, companion],
+                "the pair and the required cluster must not disagree"
+            );
+        }
     }
 
     #[test]

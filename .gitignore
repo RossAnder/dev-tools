@@ -21,7 +21,12 @@
 # Plan-merge rollback siblings (one generation, deleted by /plan-update complete)
 *.premerge.md
 
-# Backlog evidence: this repo is public and has no LFS, so evidence contents stay
-# untracked while the `.evidence` marker keeps each item directory visible cross-clone.
-/.claude/backlog-evidence/*/*
+# Backlog evidence: this repo is public and has no LFS, so everything under the
+# evidence tree stays untracked at every depth — including a file dropped at the root
+# rather than into an item directory. The two negations re-admit exactly the item
+# directories and their `.evidence` markers, which is what keeps each drop-box visible
+# cross-clone; the directory re-include must precede the marker one, because git cannot
+# re-include a child of a directory that is still excluded.
+/.claude/backlog-evidence/**
+!/.claude/backlog-evidence/*/
 !/.claude/backlog-evidence/*/.evidence

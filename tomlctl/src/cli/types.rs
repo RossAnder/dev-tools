@@ -45,11 +45,15 @@ pub(crate) const FEATURES: &[&str] = &[
     "flow_find_plans",
     "json_ops",
     // Repo-scoped capture log: the `backlog` subcommand cluster.
-    "backlog_capture",
+    "backlog_capture", // the `add` verb
     "backlog_check",
     "backlog_cluster",
     "backlog_compact",
     "backlog_evidence",
+    "backlog_list",
+    "backlog_show",
+    "backlog_relate",
+    "backlog_triage",
 ];
 
 /// T7: user-facing top-level subcommand names, as they appear in
@@ -1068,15 +1072,13 @@ pub(crate) struct TriageMode {
 /// store.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum OnDuplicate {
-    /// Increment `seen_count`, refresh `last_seen`, union `tags` and
-    /// `evidence`; leave `summary` and `status` alone.
+    /// Increment `seen_count`, refresh `last_seen`, union `tags`, `evidence`
+    /// and `related`; leave `summary` and `status` alone.
     Bump,
     /// Report the existing item and write nothing.
     Skip,
     /// Error.
     Fail,
-    /// Append anyway, producing two rows under one id.
-    Add,
 }
 
 /// Typed relation written by `backlog relate`.

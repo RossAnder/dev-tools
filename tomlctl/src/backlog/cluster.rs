@@ -207,6 +207,9 @@ fn cluster_area(items: &[Item], min_size: usize) -> Vec<JsonValue> {
 }
 
 fn cluster_tags(items: &[Item], min_shared: usize) -> Vec<JsonValue> {
+    // A shared-tag group needs at least one shared tag: at zero every pair
+    // qualifies vacuously and the view collapses to one keyless group.
+    let min_shared = min_shared.max(1);
     let mut parent: Vec<usize> = (0..items.len()).collect();
     let mut edges: Vec<(usize, usize, BTreeSet<&str>)> = Vec::new();
     for (i, a) in items.iter().enumerate() {
@@ -450,6 +453,15 @@ mod tests {
         assert_eq!(keys(&groups), ["ci"]);
         assert_eq!(ids(&groups[0]), ["B-01", "B-02"]);
         assert_eq!(groups[0]["reason"], "share tags ci");
+    }
+
+    #[test]
+    fn tags_zero_threshold_is_clamped_to_one() {
+        let items = [tagged("B-01", &[]), tagged("B-02", &[])];
+        assert!(cluster_tags(&items, 0).is_empty());
+
+        let mixed = [tagged("B-01", &["ci"]), tagged("B-02", &[])];
+        assert!(cluster_tags(&mixed, 0).is_empty());
     }
 
     #[test]

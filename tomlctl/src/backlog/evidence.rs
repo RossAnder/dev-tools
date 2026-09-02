@@ -42,6 +42,12 @@ pub(crate) const EVIDENCE_EXTENSIONS: &[&str] = &[
     "diff",
 ];
 
+/// Formats whose bytes routinely carry an Authorization header, a session
+/// cookie or a token — a `.har` is a whole request log. Compared lowercased,
+/// and a subset of `EVIDENCE_EXTENSIONS`: capturing one is legitimate, so
+/// only publishing one is a strict failure.
+pub(crate) const SENSITIVE_EXTENSIONS: &[&str] = &["har", "json", "log", "patch", "diff"];
+
 /// Default `audit --max-bytes` threshold. The repository is public and has no
 /// LFS configuration, so anything published here lands in every clone forever.
 pub(crate) const EVIDENCE_MAX_BYTES: u64 = 2 * 1024 * 1024;
@@ -103,18 +109,34 @@ pub(crate) fn resolve_id(doc: &TomlValue, id: &str) -> Result<String> {
     ))
 }
 
-/// The marker's four fixed lines. Written once at directory creation and
-/// never rewritten, which is safe because `add --on-duplicate bump` leaves
-/// `summary` untouched by contract. Whitespace in the summary is folded so a
-/// multi-line one cannot push the prose out of the caption line.
-pub(crate) fn marker_text(id: &str, summary: &str) -> String {
+/// Caption line plus the publication policy that holds in THIS clone:
+/// `ignored` is git's answer for a file dropped in the directory, `None` when
+/// git could not be asked. `tomlctl` is installed globally, so the ignore
+/// rules are a fact of the checkout, not of this repository.
+///
+/// Written once at directory creation and never rewritten, which is safe
+/// because `add --on-duplicate bump` leaves `summary` untouched by contract.
+/// Whitespace in the summary is folded so a multi-line one cannot push the
+/// prose out of the caption line.
+pub(crate) fn marker_text(id: &str, summary: &str, ignored: Option<bool>) -> String {
     let caption = summary.split_whitespace().collect::<Vec<_>>().join(" ");
-    format!(
-        "{id}  {caption}\n\
-         Evidence for this backlog item. Files here are git-ignored by default. Publish\n\
-         one deliberately with `git add -f <file>`, after checking it for credentials,\n\
-         personal data and session tokens. This repository is public.\n"
-    )
+    let policy = match ignored {
+        Some(true) => {
+            "Files here are git-ignored; publish one deliberately with `git add -f\n\
+             <file>` after checking it for credentials, personal data and session\n\
+             tokens."
+        }
+        Some(false) => {
+            "Files here are NOT git-ignored — add the backlog-evidence rules to\n\
+             .gitignore before copying anything in."
+        }
+        None => {
+            "Whether files here are git-ignored could not be determined: `git\n\
+             check-ignore` did not run. Verify .gitignore by hand before copying\n\
+             anything in."
+        }
+    };
+    format!("{id}  {caption}\nEvidence for this backlog item. {policy}\n")
 }
 
 /// `None` when the directory is absent, `Some(files)` otherwise, name-sorted
@@ -323,7 +345,11 @@ status = "resolved"
         assert_eq!(list_dir(&dir).unwrap(), None);
 
         fs::create_dir(&dir).unwrap();
-        fs::write(dir.join(MARKER_NAME), marker_text("B-a1b2c3d4", "live row")).unwrap();
+        fs::write(
+            dir.join(MARKER_NAME),
+            marker_text("B-a1b2c3d4", "live row", Some(true)),
+        )
+        .unwrap();
         assert_eq!(list_dir(&dir).unwrap(), Some(vec![]));
 
         fs::write(dir.join("shot.png"), b"1234").unwrap();
@@ -353,22 +379,46 @@ status = "resolved"
         let text = marker_text(
             "B-a1b2c3d4",
             "checkout total overlaps the confirm button below 1400px",
+            Some(true),
         );
         assert!(
             text.starts_with("B-a1b2c3d4  checkout total overlaps"),
             "{text}"
         );
         assert!(text.contains("git add -f"));
-        assert!(text.contains("This repository is public."));
-        assert_eq!(text.lines().count(), 4);
+        assert!(text.contains("credentials, personal data and session"), "{text}");
         assert!(text.ends_with('\n'));
+    }
+
+    /// The marker may only claim what git actually answered for this clone,
+    /// and may never claim the repository it sits in is public.
+    #[test]
+    fn marker_text_states_only_the_ignore_status_git_confirmed() {
+        let ignored = marker_text("B-a1b2c3d4", "s", Some(true));
+        let exposed = marker_text("B-a1b2c3d4", "s", Some(false));
+        let unknown = marker_text("B-a1b2c3d4", "s", None);
+
+        assert!(ignored.contains("are git-ignored;"), "{ignored}");
+        assert!(!ignored.contains("NOT git-ignored"), "{ignored}");
+
+        assert!(exposed.contains("NOT git-ignored"), "{exposed}");
+        assert!(exposed.contains(".gitignore before copying"), "{exposed}");
+        assert!(!exposed.contains("git add -f"), "{exposed}");
+
+        assert!(unknown.contains("could not be determined"), "{unknown}");
+        assert!(unknown.contains("Verify .gitignore by hand"), "{unknown}");
+
+        for text in [&ignored, &exposed, &unknown] {
+            assert!(!text.contains("public"), "{text}");
+            assert!(text.starts_with("B-a1b2c3d4  s\n"), "{text}");
+            assert!(text.ends_with('\n'), "{text}");
+        }
     }
 
     #[test]
     fn marker_text_folds_a_multi_line_summary_into_the_caption() {
-        let text = marker_text("B-a1b2c3d4", "two\nlines   here");
+        let text = marker_text("B-a1b2c3d4", "two\nlines   here", Some(true));
         assert!(text.starts_with("B-a1b2c3d4  two lines here\n"), "{text}");
-        assert_eq!(text.lines().count(), 4);
     }
 
     fn item(body: &str) -> TomlValue {

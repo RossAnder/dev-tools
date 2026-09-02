@@ -17,10 +17,10 @@ use toml::Value as TomlValue;
 
 use super::ids;
 use super::schema::{
-    self, ARRAY_BACKLOG, BacklogError, FIELD_AREA, FIELD_CONTEXT, FIELD_CREATED, FIELD_DEDUP_ID,
-    FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID, FIELD_KIND, FIELD_LAST_SEEN, FIELD_ORIGIN, FIELD_RELATED,
-    FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, KIND_OTHER, STATUS_OPEN,
-    TERMINAL_DATE_FIELDS,
+    self, ARRAY_BACKLOG, ARRAY_COMPACTED, BacklogError, FIELD_AREA, FIELD_CONTEXT, FIELD_CREATED,
+    FIELD_DEDUP_ID, FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID, FIELD_KIND, FIELD_LAST_SEEN,
+    FIELD_ORIGIN, FIELD_RELATED, FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS,
+    KIND_OTHER, STATUS_OPEN, TERMINAL_DATE_FIELDS,
 };
 use crate::cli::{
     OnDuplicate, WriteIntegrityArgs, on_missing_for, read_json_arg, warn_if_created,
@@ -105,6 +105,9 @@ pub(crate) fn dispatch(
         on_duplicate,
         json,
     )?;
+    for advisory in advisories(&req) {
+        eprintln!("tomlctl: {advisory}");
+    }
 
     if dry_run {
         let mut doc = preview_doc(&file, &integrity)?;
@@ -133,13 +136,14 @@ pub(crate) fn dispatch(
     match outcome.ok_or_else(|| anyhow!("backlog add reached the write path without a decision"))? {
         AddOutcome::Added { id, dedup_id } => {
             warn_if_created(&file, created);
+            let path = io::relativise(&io::repo_or_cwd_root()?, &file);
             print_json_compact(&serde_json::json!({
                 "ok": true,
                 "action": "added",
                 "id": id,
                 "dedup_id": dedup_id,
                 "created": created,
-                "path": file.display().to_string(),
+                "path": path,
             }))
         }
         AddOutcome::Bumped { id, seen_count } => print_json_compact(&serde_json::json!({
@@ -160,30 +164,44 @@ pub(crate) fn dispatch(
 /// branches, so a caller that declines to persist leaves a doc identical to
 /// the one it read.
 fn add_item(doc: &mut TomlValue, req: &AddRequest, file: &Path) -> Result<AddOutcome> {
+    resolve_related(doc, req, file)?;
     let dedup_id = ids::dedup_id_from_parts(&req.kind, &req.area, &req.summary);
-    let incumbent = find_by_dedup_id(doc, &dedup_id);
 
-    if let Some(idx) = incumbent {
-        let id = stored_id(doc, idx);
-        match req.on_duplicate {
-            OnDuplicate::Skip => return Ok(AddOutcome::Skipped { id }),
-            OnDuplicate::Fail => {
-                return Err(tagged_err(
-                    ErrorKind::Validation,
-                    Some(file.to_path_buf()),
-                    format!(
-                        "backlog item \"{id}\" already carries dedup_id {dedup_id}; \
-                         re-run with --on-duplicate bump, skip or add"
-                    ),
-                ));
-            }
+    if let Some(idx) = find_by_dedup_id(doc, ARRAY_BACKLOG, &dedup_id) {
+        let id = stored_id(doc, ARRAY_BACKLOG, idx);
+        return match req.on_duplicate {
+            OnDuplicate::Skip => Ok(AddOutcome::Skipped { id }),
+            OnDuplicate::Fail => Err(tagged_err(
+                ErrorKind::Validation,
+                Some(file.to_path_buf()),
+                format!(
+                    "backlog item \"{id}\" already carries dedup_id {dedup_id}; \
+                     re-run with --on-duplicate bump or skip"
+                ),
+            )),
             OnDuplicate::Bump => {
                 stamp_root(doc, req)?;
                 let seen_count = bump_row(doc, idx, req)?;
-                return Ok(AddOutcome::Bumped { id, seen_count });
+                Ok(AddOutcome::Bumped { id, seen_count })
             }
-            OnDuplicate::Add => {}
-        }
+        };
+    }
+
+    // A compacted row still owns its id, so deriving one here would hand the
+    // new row the aged-out row's id and fail the uniqueness check under a name
+    // the caller never chose. Name the incumbent instead.
+    if let Some(idx) = find_by_dedup_id(doc, ARRAY_COMPACTED, &dedup_id) {
+        let id = stored_id(doc, ARRAY_COMPACTED, idx);
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            Some(file.to_path_buf()),
+            format!(
+                "backlog item \"{id}\" carries dedup_id {dedup_id} in [[compacted]] — this \
+                 discovery was decided and aged out; inspect it with `backlog show {id}`. No \
+                 verb restores a compacted row: if that decision no longer holds, capture the \
+                 new situation under a different summary and pass `--related {id}`"
+            ),
+        ));
     }
 
     let id = ids::derive_id(&dedup_id, &ids::existing_dedup_ids(doc));
@@ -191,22 +209,40 @@ fn add_item(doc: &mut TomlValue, req: &AddRequest, file: &Path) -> Result<AddOut
     schema::validate(&toml_to_json(&row)).map_err(|e| e.into_tagged(Some(file.to_path_buf())))?;
     stamp_root(doc, req)?;
     items_array_mut(doc, ARRAY_BACKLOG)?.push(row);
-    if incumbent.is_none() {
-        // A second row under one id is what `--on-duplicate add` was asked
-        // for; every other path treats a shared id as the collision it is.
-        schema::validate_ids_unique(doc).map_err(|e| e.into_tagged(Some(file.to_path_buf())))?;
-    }
+    schema::validate_ids_unique(doc).map_err(|e| e.into_tagged(Some(file.to_path_buf())))?;
     Ok(AddOutcome::Added { id, dedup_id })
 }
 
-fn find_by_dedup_id(doc: &TomlValue, dedup_id: &str) -> Option<usize> {
-    items_array(doc, ARRAY_BACKLOG)
+/// `related` may only name ids that resolve, the same rule `relate` enforces
+/// on its endpoints. Compacted rows count here — an id that aged out is still
+/// a real pointer — and the check runs before any mutation, so a typo leaves
+/// the document untouched.
+fn resolve_related(doc: &TomlValue, req: &AddRequest, file: &Path) -> Result<()> {
+    for wanted in &req.related {
+        let known = [ARRAY_BACKLOG, ARRAY_COMPACTED].into_iter().any(|array| {
+            items_array(doc, array)
+                .iter()
+                .any(|row| row.get(FIELD_ID).and_then(TomlValue::as_str) == Some(wanted.as_str()))
+        });
+        if !known {
+            return Err(tagged_err(
+                ErrorKind::NotFound,
+                Some(file.to_path_buf()),
+                format!("no backlog item with id \"{wanted}\""),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn find_by_dedup_id(doc: &TomlValue, array: &str, dedup_id: &str) -> Option<usize> {
+    items_array(doc, array)
         .iter()
         .position(|row| row.get(FIELD_DEDUP_ID).and_then(TomlValue::as_str) == Some(dedup_id))
 }
 
-fn stored_id(doc: &TomlValue, idx: usize) -> String {
-    items_array(doc, ARRAY_BACKLOG)[idx]
+fn stored_id(doc: &TomlValue, array: &str, idx: usize) -> String {
+    items_array(doc, array)[idx]
         .get(FIELD_ID)
         .and_then(TomlValue::as_str)
         .unwrap_or_default()
@@ -315,6 +351,62 @@ fn string_array(values: &[String]) -> TomlValue {
     TomlValue::Array(values.iter().cloned().map(TomlValue::String).collect())
 }
 
+/// Token prefixes that carry a credential often enough to be worth a look.
+const CREDENTIAL_MARKERS: [&str; 6] = ["ghp_", "gho_", "sk-", "AKIA", "Bearer ", "-----BEGIN"];
+
+/// Path shapes that only exist on the machine that captured them.
+const LOCAL_PATH_MARKERS: [&str; 2] = ["/Users/", "/home/"];
+
+/// A marker counts only where a token starts, so ordinary prose — "task-",
+/// "risk-" — does not read as the `sk-` shape.
+fn carries_marker(value: &str, marker: &str) -> bool {
+    value.match_indices(marker).any(|(at, _)| {
+        at == 0 || {
+            let before = value.as_bytes()[at - 1];
+            !before.is_ascii_alphanumeric() && before != b'_'
+        }
+    })
+}
+
+fn looks_machine_local(value: &str) -> bool {
+    LOCAL_PATH_MARKERS.iter().any(|m| value.contains(m))
+        || value
+            .as_bytes()
+            .windows(3)
+            .any(|w| w[0].is_ascii_alphabetic() && w[1] == b':' && w[2] == b'\\')
+}
+
+/// One line per field value that reads as a credential or a machine-local
+/// path. Pure and advisory: the store is a tracked file in a public
+/// repository, so the caller is told what it is about to publish and the
+/// write proceeds regardless — the prose rule, not this scan, is the control.
+fn advisories(req: &AddRequest) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut scan = |field: &str, value: &str| {
+        let shape = if CREDENTIAL_MARKERS.iter().any(|m| carries_marker(value, m)) {
+            "a credential"
+        } else if looks_machine_local(value) {
+            "a machine-local path"
+        } else {
+            return;
+        };
+        out.push(format!(
+            "`{field}` looks like {shape}; .claude/backlog.toml is tracked and ships to every clone"
+        ));
+    };
+    scan(FIELD_SUMMARY, &req.summary);
+    if let Some(context) = &req.context {
+        scan(FIELD_CONTEXT, context);
+    }
+    for tag in &req.tags {
+        scan(FIELD_TAGS, tag);
+    }
+    for evidence in &req.evidence {
+        scan(FIELD_EVIDENCE, evidence);
+    }
+    out
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_request(
     file: &Path,
@@ -333,6 +425,9 @@ fn build_request(
     let today = crate::flow::today_toml_date()?;
     let req = match json {
         Some(raw) => {
+            // Not clap `conflicts_with`: the clash has to reach the caller as a
+            // tagged `kind=validation` envelope, where a parser rejection would
+            // exit 2 with usage prose no `--error-format json` reader can branch on.
             let conflicting: Vec<&str> = [
                 ("--summary", summary.is_some()),
                 ("--kind", kind.is_some()),
@@ -557,6 +652,8 @@ mod tests {
         area: Option<&'a str>,
         tags: &'a [&'a str],
         evidence: &'a [&'a str],
+        related: &'a [&'a str],
+        context: Option<&'a str>,
         on_duplicate: OnDuplicate,
         json: Option<&'a str>,
         dry_run: bool,
@@ -570,6 +667,8 @@ mod tests {
                 area: None,
                 tags: &[],
                 evidence: &[],
+                related: &[],
+                context: None,
                 on_duplicate: OnDuplicate::Bump,
                 json: None,
                 dry_run: false,
@@ -585,8 +684,8 @@ mod tests {
             c.area.map(str::to_string),
             owned(c.tags),
             owned(c.evidence),
-            Vec::new(),
-            None,
+            owned(c.related),
+            c.context.map(str::to_string),
             None,
             None,
             c.on_duplicate,
@@ -755,20 +854,121 @@ mod tests {
         });
     }
 
+    /// A fingerprint that survives only in `[[compacted]]` still owns its id,
+    /// so the capture is refused by name rather than minting a row that the
+    /// uniqueness check would then reject under an id nobody chose.
     #[test]
-    fn on_duplicate_add_appends_a_second_row_under_one_id() {
+    fn a_compacted_fingerprint_is_named_rather_than_re_minted() {
         in_sandbox(|root| {
-            let summary = "two captures, one fingerprint";
-            run(capture(summary)).unwrap();
+            let summary = "aged out, then rediscovered";
+            let dedup_id = ids::dedup_id_from_parts(
+                "flaky-test",
+                "lumina/server/tests/pty_readiness_probe.rs",
+                summary,
+            );
+            fs::write(
+                store_path(root),
+                format!(
+                    "schema_version = 1\n\n[[compacted]]\nid = \"B-0000dead\"\n\
+                     dedup_id = \"{dedup_id}\"\nsummary = \"{summary}\"\nstatus = \"resolved\"\n"
+                ),
+            )
+            .unwrap();
+
+            let err = run(capture(summary)).unwrap_err();
+            assert_eq!(kind_of(&err), "validation");
+            let rendered = format!("{err:#}");
+            assert!(rendered.contains("B-0000dead"), "{rendered}");
+            assert!(rendered.contains("backlog show B-0000dead"), "{rendered}");
+            assert!(rendered.contains("--related B-0000dead"), "{rendered}");
+            assert!(rows(root).is_empty(), "the backlog array must be untouched");
+        });
+    }
+
+    #[test]
+    fn a_related_id_that_resolves_to_nothing_is_rejected() {
+        in_sandbox(|root| {
+            run(capture("an item worth pointing at")).unwrap();
+            let file = store_path(root);
+            let before = fs::read(&file).unwrap();
+
+            let err = run(Capture {
+                related: &["B-nope"],
+                ..capture("a capture naming a typo'd edge")
+            })
+            .unwrap_err();
+            assert_eq!(kind_of(&err), "not_found");
+            assert!(format!("{err:#}").contains("B-nope"), "{err:#}");
+            assert_eq!(fs::read(&file).unwrap(), before);
+        });
+    }
+
+    #[test]
+    fn a_resolvable_related_id_is_stored() {
+        in_sandbox(|root| {
+            run(capture("the item being pointed at")).unwrap();
+            let id = rows(root)[0][FIELD_ID].as_str().unwrap().to_string();
             run(Capture {
-                on_duplicate: OnDuplicate::Add,
-                ..capture(summary)
+                related: &[&id],
+                ..capture("the item doing the pointing")
             })
             .unwrap();
             let rows = rows(root);
-            assert_eq!(rows.len(), 2);
-            assert_eq!(rows[0][FIELD_ID], rows[1][FIELD_ID]);
+            assert_eq!(rows[1][FIELD_RELATED].as_array().unwrap().len(), 1);
+            assert_eq!(rows[1][FIELD_RELATED][0].as_str(), Some(id.as_str()));
+            // Storage is one-directional: `relate --as relates-to` is what
+            // writes the back-edge.
+            assert!(rows[0].get(FIELD_RELATED).is_none());
         });
+    }
+
+    #[test]
+    fn credential_and_machine_local_shapes_raise_an_advisory_each() {
+        let req = |summary: &str, tags: &[&str], evidence: &[&str], context: Option<&str>| {
+            AddRequest {
+                kind: "bug".to_string(),
+                summary: summary.to_string(),
+                area: "C:\\Users\\someone\\repo".to_string(),
+                tags: tags.iter().map(|t| (*t).to_string()).collect(),
+                status: STATUS_OPEN.to_string(),
+                origin: None,
+                flow: None,
+                context: context.map(str::to_string),
+                evidence: evidence.iter().map(|e| (*e).to_string()).collect(),
+                related: Vec::new(),
+                extra: toml::Table::new(),
+                on_duplicate: OnDuplicate::Bump,
+                today: "2026-09-02".parse().unwrap(),
+            }
+        };
+
+        let flagged = advisories(&req(
+            "repro log names C:\\Users\\someone\\repro.txt",
+            &["ghp_placeholder"],
+            &["/home/someone/trace.log"],
+            Some("retry with the Bearer token from the vault"),
+        ));
+        assert_eq!(flagged.len(), 4, "{flagged:?}");
+        assert!(flagged[0].contains(FIELD_SUMMARY), "{flagged:?}");
+        assert!(flagged[1].contains(FIELD_CONTEXT), "{flagged:?}");
+        assert!(flagged[2].contains(FIELD_TAGS), "{flagged:?}");
+        assert!(flagged[3].contains(FIELD_EVIDENCE), "{flagged:?}");
+        // No value is echoed back — the advisory names the field only.
+        assert!(!flagged.iter().any(|line| line.contains("placeholder")));
+        // `area` carries the same shape and is deliberately not scanned: it is
+        // a repo-relative prefix the store already constrains.
+        assert!(!flagged.iter().any(|line| line.contains(FIELD_AREA)));
+
+        // Prose that merely embeds a marker mid-token is not a credential.
+        assert!(
+            advisories(&req(
+                "task-visibility carrier renders no rows",
+                &["risk-low"],
+                &["tomlctl/src/io.rs:88"],
+                Some("disk-full on the runner"),
+            ))
+            .is_empty()
+        );
     }
 
     #[test]

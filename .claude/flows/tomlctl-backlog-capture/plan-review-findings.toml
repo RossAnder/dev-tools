@@ -1,0 +1,509 @@
+schema_version = 1
+last_updated = 2026-09-01
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "**5. Declare the `backlog` CLI surface** — L"
+summary = "Task 5 adds a `Cmd` variant with no match arm — the crate stops compiling and Checkpoint 1's tip is red"
+description = "`run(cli: Cli)` at `tomlctl/src/cli/dispatch.rs:472` matches `cli.cmd` exhaustively across 12 `Cmd::` arms with NO catch-all (verified: the only `_ =>` in the file is at :1977, inside a test). Adding `Cmd::Backlog { op }` in Task 5 while the dispatch arm is deferred to Task 13 is E0004. Consequences: (a) Task 5's own Acceptance (`cargo test --test capabilities`, `cargo run -- backlog --help`) requires a compiling binary and cannot pass; (b) Checkpoint 1's marker is 'after Task 5', so the checkpoint build+test gate runs against a non-compiling tree; (c) under frontier scheduling Task 5 is ready at level 1 (Depends on: 1), so it lands before Tasks 4 and 6-12, and every acceptance that runs `cargo test` builds the whole crate — tasks 2,3,4,6,7,8,9,10,11,12,13,14 all fail while Task 5 sits merged. Adding edge 5->13 is a cycle (13 depends on 5). Fix: Task 5 must ship the `Cmd::Backlog { op } => crate::backlog::dispatch(op)?` arm plus a stub `backlog::dispatch`, adding `tomlctl/src/cli/dispatch.rs` and `tomlctl/src/backlog/dispatch.rs` to its Files line."
+dedup_id = "aac2419b5baaefb4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Execution Policy"
+summary = "Checkpoint 1's closure is {1,5}, not the declared 'Tasks 1-5' — tasks 2, 3, 4 are outside it"
+description = "A checkpoint marker closes on the marker task's dependency closure. closure(5) = {1,5} because Task 5 depends only on Task 1. The `## Dependency Graph` bullet 'Checkpoint 1 — after Task 5. Tasks 1-5.' is therefore factually wrong: tasks 2, 3 and 4 are not committed at Checkpoint 1 and slip into Checkpoint 2's closure. Task 4 (Depends on: 1, 3) sits one dependency level DEEPER than Task 5 (Depends on: 1), so a drain triggered on Task 5's completion commits before Task 4 exists. Groups 2 and 3 are otherwise clean — no task in group k depends on a task in group >k (Task 24's `22, 23, 25` are all group 3; Tasks 21 and 25 depend only on 14, a valid backward edge). Fix: name every group-closing task in the marker line (e.g. 'after Tasks 2, 4 and 5') and correct the Dependency Graph bullets to the true closures."
+dedup_id = "37b8967ac180ff3b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Dependency Graph"
+summary = "Tasks 16, 17, 18, 19 lie inside no checkpoint marker's closure — four tasks with no bisectable commit"
+description = "Computed closures: closure(5) = {1,5}; closure(14) = {1..14}; closure(26) = closure(24) union closure(25) union {26} = {1-15, 20, 21, 22, 23, 24, 25, 26}. Diffing against the full set 1-26 leaves exactly {16, 17, 18, 19} — the `/backlog` carrier, the `/implement`+`/tdd` wiring, the `/review`+`/optimise` wiring and the apply-pipeline gap-closer. They are graph sinks off Task 15 and nothing depends on them, so under `checkpoints: milestones` they are swept up only by the final Phase-3 train, uncommitted and unverified in between. That is four of the plan's five behavioural harness changes — precisely the bisectability that choosing `milestones` over `single` was meant to buy. Fix: extend Checkpoint 3's marker to 'after Tasks 16, 17, 18, 19 and 26', or add a closing edge (Task 26 `Depends on: 16, 17, 18, 19, 24, 25` is defensible — the README/CLAUDE.md summary genuinely postdates the wiring it describes)."
+dedup_id = "53254d902bd7d4fc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "critical"
+category = "feasibility"
+plan_section = "**6. Implement `backlog add`** — M"
+summary = "Five write-path helpers the leaf tasks are told to call are module-private; four tasks would have to edit an undeclared, contended file"
+description = "Verified with `grep -n 'fn on_missing_for|fn warn_if_created|fn write_envelope|fn read_json_arg|fn query_input_from_cli' tomlctl/src/cli/dispatch.rs`: `read_json_arg` (:135), `on_missing_for` (:323), `warn_if_created` (:345), `write_envelope` (:372), `query_input_from_cli` (:424) are all bare `fn`, private to `crate::cli::dispatch`. Only `read_integrity_opts` (:226), `write_integrity_opts` (:266) and `seed_doc_for` (:300) are `pub(crate)`. Affected: Task 6 (`on_missing_for`, `read_json_arg` for `--json -`, `write_envelope`), Task 8 (`query_input_from_cli` — `query::run` at `tomlctl/src/query.rs:522` takes `&Query`, not `QueryArgs`, and `Query::from_input` at :1690 takes a `QueryInput` only that adapter builds), Tasks 9/10/12 (`on_missing_for` + `write_envelope`). Each needs a visibility edit in `tomlctl/src/cli/dispatch.rs`, which appears on none of their Files lines and is already claimed by Tasks 13, 16 and 21 — a hidden four-way write collision in the max-parallel-7 frontier. The cited `flow` precedent does not help: `grep -rn 'on_missing_for|read_json_arg|write_envelope|warn_if_created' tomlctl/src/flow/` returns zero hits, so the flow group bypasses the auto-create machinery entirely and Task 13's `SCHEMA_SEEDED_FLOW_FILES` addition is inert unless this is resolved. Fix: promote the five helpers to `pub(crate)` once, in Task 1 or Task 5, before the leaf frontier opens."
+dedup_id = "7f2edd04592ebc71"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "critical"
+category = "completeness"
+plan_section = "**15. Author the `backlog-capture` skill** — M"
+summary = "`command_lint` never scans the new skill or the README, so Tasks 15 and 26 both assert a gate that does not exist"
+description = """The scan-set builder (`tomlctl/src/cli/dispatch.rs:1855-1888`) pushes exactly: `claude/skills/tomlctl/SKILL.md` by literal path, then only `claude/skills/` entries whose directory name `starts_with("flow-contract-")`, then `claude/commands/*.md`, then `claude/agents/*.md`; it returns early if `claude/` is absent. Two instances. (a) Task 15 — `claude/skills/backlog-capture/SKILL.md` matches none of those, so its Detail claim 'Every `tomlctl` example goes in a ```bash fence so `command_lint` gates it' is false and its Acceptance passes over a fence full of invented flags. Task 21's widening adds only `claude/skills/*/references/*.md`, which does not fix it. The same hole already exists for `test-author`, `commit-conventions` and `documentation-conventions` — 4 unscanned SKILL.md files today, 5 after Task 15. (b) Task 26 — `tomlctl/README.md` is outside `claude/` entirely, so 'command_lint passes over the new README fences' is unreachable; the README already carries 3 never-linted bash fences. The `## Approach` sentence claiming command_lint 'otherwise reads only `claude/skills/*/SKILL.md`' is also wrong. Fix: have Task 21 drop the `flow-contract-` prefix filter so every `claude/skills/*/SKILL.md` is scanned, and either add `tomlctl/README.md` to the scan set or drop that clause from Task 26."""
+dedup_id = "f69d46696a229271"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "critical"
+category = "executability"
+plan_section = "## Verification Commands"
+summary = "The fence carries bare commands with no `build:` / `test:` / `lint:` keys — `/implement` Phase 3 and `/tdd` both parse those keys"
+description = "The plan-output-format contract requires the fenced block to contain `build: <command>`, `test: <command>`, `lint: <command>`. The plan's fence (lines 479-486) is six bare shell lines with no keys — verified by reading it. `claude/commands/tdd.md:83` extracts 'the `test:` line; if absent/empty, halt with the literal `No test framework detected. Run /test-bootstrap first.`' and :34 makes a working `test:` line a hard prerequisite; `claude/commands/implement.md:40` extracts `## Verification Commands` for Phase 3. As written, `/tdd` against this plan halts unconditionally and `/implement` extracts nothing. `cargo audit` and the two `bash scripts/verify-*.sh` lines have no key and belong in prose beneath the fence, which the contract explicitly provides for."
+dedup_id = "d240134d1c08a195"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "critical"
+category = "executability"
+plan_section = "## Tasks"
+summary = "All 26 task headings are bold lines (`**1. Name** — L`), not `### 1. Name [L]`; heading extraction finds 3 Milestone headings instead of 26 tasks"
+description = "`claude/skills/flow-contract-plan-restructure/SKILL.md:16` defines heading extraction as operating on a heading line, tolerating `##`/`####` and missing effort tags — but a `**bold**` line is not a heading at any level, so it falls outside even the tolerant path. The only `###` lines inside `## Tasks` are `### Milestone 1 — crate foundations` / `2` / `3`, which the extractor picks up as three task names. Consequences: `/plan-update reformat`'s mandatory heading-equality assertion compares 3 headings instead of 26 and passes while every task heading silently changes; `/implement`'s `task_ref` idempotency skip-list has no stable slug source, so a resumed run re-executes completed tasks. The effort tag is also `— L` rather than the ` [L]` the strip rule removes, so the effort letter would survive into any derived slug. Fix: convert all 26 to `### N. Name [S|M|L]` and demote the Milestone headings to non-heading phase labels."
+dedup_id = "4eb1767ac421089d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "critical"
+category = "executability"
+plan_section = "**19. Close the apply-pipeline out-of-scope gap** — S"
+summary = "Task 19's acceptance asserts a string that appears zero times in the target file"
+description = """`grep -c 'Skill("plan-update","deviation")' claude/skills/flow-contract-apply-pipeline/SKILL.md` returns 0, as does the spaced variant. The actual Step 6 in-scope branch (:550-552) is prose: 'auto-invoke the `plan-update` skill via the `Skill` tool with the literal argument … `plan-update deviation` can record them.' The only `Skill("plan-update", …)` literal in the file is `Skill("plan-update", "status")` at :563. So the acceptance fails immediately if run as a grep, and is unverifiable if read as prose. The same fabricated quote propagates to `## Exploration Notes` (the capture-points table row for `flow-contract-apply-pipeline`) and to Task 19's Detail. Fix: quote the real prose, or assert against the actual literal."""
+dedup_id = "cfa968ac02e042dc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "critical"
+category = "risk"
+plan_section = "### The store"
+summary = "The repository is PUBLIC; auto-capture at five carrier seams publishes agent-authored prose with no redaction rule or review gate"
+description = """`gh repo view --json visibility` returns `{"isPrivate":false,"visibility":"PUBLIC"}` for `RossAnder/dev-tools`. The Approach justifies tracking `.claude/backlog.toml` in git solely on '`.claude/` is not gitignored — 314 files are already tracked' (verified: `git ls-files .claude | wc -l` = 314) and never considers visibility. Every existing tracked `.claude/` artefact is human-authored or human-reviewed; this store is written AUTOMATICALLY at five seams (`/implement` Phase 4, `/tdd` REFACTOR, `/review` and `/optimise` Step 3/4, apply-pipeline Step 6) carrying free-text `summary`, `context`, `evidence` file:line, and — per Task 19 — raw `skipped <id>: …` reason text. Nothing in Scope, Approach or Risks names a redaction rule, an opt-out, or a review-before-commit gate. Fix: state the constraint in the plan and in the `backlog-capture` skill, and make the orchestrator review minted rows before the commit train stages them."""
+dedup_id = "d2789046f44f11c2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "critical"
+category = "executability"
+plan_section = "**12. Implement `backlog compact`** — M"
+summary = "The `[[compacted]]` row shape omits `dedup_id`, `resolution` and `context` — the three fields Task 7's `previously-resolved` verdict is specified to read"
+description = "Task 12 defines the compacted row as `{id, summary, kind, area, status, terminal_date, compacted_on}`. Task 7 requires '`previously-resolved` on a `dedup_id` hit inside `[[compacted]]`' and specifies candidates carrying `{id, summary, score, reason, status, seen_count, context}`; `## Approach` says the agent should 'read the recorded resolution'. None of `dedup_id`, `resolution`, `seen_count` or `context` survives compaction, so the verdict can never fire and the recorded answer is destroyed — which is exactly what Task 12's Detail claims to prevent. Task 7 does not depend on 12, and Task 2 pins only the ARRAY NAMES ('including the array names `items` and `compacted`'), so the row shape is pinned nowhere both tasks can see: an executor-time decision the plan should have made. Task 7's acceptance ('a hand-written `[[compacted]]` fixture row returning `previously-resolved`') is self-consistent by construction — the same agent authors the fixture — so it will not catch the mismatch. Fix: define `COMPACTED_FIELDS` in `tomlctl/src/backlog/schema.rs` (Task 2) including `dedup_id`, `context` and the terminal reason/resolution, and have both tasks read it from there."
+dedup_id = "48a56adbf662b661"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "critical"
+category = "completeness"
+plan_section = "**24. Rewrite the tomlctl SKILL.md body** — M"
+summary = "13 of the 16 intra-document anchor links in SKILL.md point at sections Tasks 22/23 move and Task 24 deletes; no task fixes them and no acceptance detects them"
+description = "`grep -c '](#' claude/skills/tomlctl/SKILL.md` returns 16. Targets that Tasks 22/23 move out: :26 `#filters-…`, :36 `#envelope-construction--flow-envelope-build`, :44 `#render-progress-logmd--flow-render-progress-log`, :45 and :97 `#sidecar-files`, :175 `#output-shapes---raw----lines----ndjson`, :360 `#advanced--maintenance`, :455 and :516 `#dedup-fingerprint-contract`, :481 `#stdin-input-for-large-json-payloads`, :604 `#strict-reads---strict-read`, :659 and :827 `#auto-create-on-first-write`, :793 `#--verify-integrity-support-matrix`. Only `#constraints-and-gotchas` and `#flow-bootstrap-agent-entrypoint` (an explicit `<a id=…>` inside the retained Quick Reference) survive. Each becomes a dead in-page anchor after Task 24's deletion. Task 24's Acceptance checks only that each `references/*.md` is linked exactly once — it never inspects the `](#` set. R3 also forbids reference-to-reference links, so several of these must become plain prose rather than cross-file links. NOTE: the enumerated line list came from a count of 15; the true count is 16, so treat the list as indicative, not closed — re-derive it before editing."
+dedup_id = "e4fa1f4372ffca75"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "critical"
+category = "completeness"
+plan_section = "**22. Extract the tomlctl query and write references** — M"
+summary = "Six SKILL.md sections are assigned to no reference file, so Task 24's keep-list deletes them outright rather than moving them"
+description = "Task 24 reduces the body to 'overview, when-to-use, Quick Reference, install and capabilities, constraints/gotchas/permissions, and links'. Cross-referencing that keep-list against `grep -n '^##' claude/skills/tomlctl/SKILL.md` and Tasks 22/23's copy-lists leaves these unassigned: `## Common recipes` (:49, 46 L), `## Read operations` (:171), `### Strict reads (--strict-read)` (:197), `### Verify shared-block parity across markdown files` (:358), `### Regenerate a missing sidecar — integrity refresh` (:655), and `## Dedup fingerprint contract` (:743). `#dedup-fingerprint-contract` and `#strict-reads---strict-read` are live link targets (:455, :516, :604), so their loss is not cosmetic. This contradicts the plan's own 'moved, not deleted' rule (R6), and Task 24's Acceptance is blind to it — it greps only for `### Patch an existing item`. Fix: extend Task 22's copy-list to the read+query surface including `## Read operations`, `### Strict reads`, `## Dedup fingerprint contract` and `## Common recipes`, and add a heading-conservation check to Task 24."
+dedup_id = "57c86bf50c43342d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "critical"
+category = "feasibility"
+plan_section = "### The store"
+summary = """Naming the store's array `items` puts it inside the generic `tomlctl items` verbs' default target, where a ledger-shaped `dedup_id` auto-stamp silently breaks `id = "B-" + dedup_id[..8]`"""
+description = """Task 2 defines 'the array names `items` and `compacted`'. `tomlctl items add|update|apply` default to `--array items` and unconditionally auto-stamp `dedup_id` from the LEDGER field list: `apply_dedup_id_on_add` (`tomlctl/src/items.rs:63-77`) inserts `tier_b_fingerprint_json(obj)` whenever the payload lacks the key, over `FINGERPRINTED_FIELDS = ["file","summary","severity","category","symbol"]` (`tomlctl/src/dedup.rs:38-39`). A backlog row has none of `file`, `severity`, `category`, `symbol`, so `tomlctl items add .claude/backlog.toml --json '{…}'` writes a `dedup_id` computed over a mostly-empty field set that no longer matches the already-minted `id`, and nothing detects the divergence. `items find-duplicates` and `items backfill-dedup-id` carry the same hazard. The plan's Approach explicitly protects `FINGERPRINTED_FIELDS` from change but never protects the store from that constant. Fix: name the array `backlog`, or have `schema::validate` reject a row whose stored `dedup_id` disagrees with the backlog fingerprint."""
+dedup_id = "69e7c1a61df62238"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "warning"
+category = "executability"
+plan_section = "**21. Widen `command_lint`'s scan set to skill reference files** — S"
+summary = "Tasks 16 and 21 both edit `tomlctl/src/cli/dispatch.rs` with no directed dependency path between them"
+description = "Exhaustive file-claim check over all 26 Files lines: 13 files are claimed by 2 or more tasks — the eleven `tomlctl/src/backlog/*.rs` leaves (each Task 1 plus one owner, all with a valid path back to 1), `tomlctl/tests/capabilities.rs` (Tasks 5 and 25; path 25->14->13->5 exists), and `tomlctl/src/cli/dispatch.rs` (Tasks 13, 16, 21). 15 claimant pairs checked, 1 violation: 13->16 has a path (16->15->14->13) and 13->21 has a path (21->14->13), but 16 and 21 share only the common ANCESTOR 14 — a common ancestor is not a path between them. `/implement` frontier-schedules off these edges, so both dispatch in the same Milestone-3 frontier and race on the same 2,000-line file (Task 16 edits the `carrier_invokes_required_skills` table at :2055; Task 21 edits the `command_lint` scan set at :1859). Fix: add `21` to Task 16's Depends on — they are independent in content, so either direction works."
+dedup_id = "249230436e22d83e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "warning"
+category = "feasibility"
+plan_section = "**12. Implement `backlog compact`** — M"
+summary = "The cited precedent is wrong: `flow/stale.rs` does not parse durations with `jiff`, and its parser is private"
+description = "`grep -rn 'jiff' tomlctl/src/ --include=*.rs` returns exactly three hits, none in `stale.rs`: `flow/resolve.rs:700`, `flow/time.rs:23`, `flow/time.rs:24`. `tomlctl/src/flow/stale.rs:19-21` states outright 'Threshold parser is deliberately local (no `humantime` dep) and accepts `<n>{s|m|h|d|w}` only; bare numbers are rejected'; :24 is `use std::time::Duration` and the implementation is a private `fn parse_threshold(&str) -> Result<Duration>` at :177. So Task 12's Detail points an implementer at a file that will not show them what it promises, and the reusable primitive needs a visibility edit to `tomlctl/src/flow/stale.rs` — a file on no task's Files line. The 'no new dependency' conclusion still holds (jiff is `^0.2` at `tomlctl/Cargo.toml:31`). Note jiff CAN parse `90d`, but it also accepts `1y`, `90 days`, `2:00:00` and ISO `P90D`, which `flow stale --threshold` rejects — following the Detail literally ships two duration grammars in one CLI. Fix: promote `parse_threshold` to `pub(crate)`, reuse it, and add `tomlctl/src/flow/stale.rs` to Task 12's Files."
+dedup_id = "ace20b96fcd8d257"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "warning"
+category = "feasibility"
+plan_section = "**6. Implement `backlog add`** — M"
+summary = "Tasks 6-12 each consume the `BacklogOp` arg structs Task 5 defines, but none lists 5 as a dependency"
+description = "Task 5 defines `BacklogOp` 'with `Add`, `Check`, `List`, `Show`, `Relate`, `Triage`, `Cluster`, `Compact` and their flags' in `tomlctl/src/cli/types.rs`. Tasks 6-12 implement the leaves that receive those structs and reference their flags by name — Task 6 `--on-duplicate`, Task 7 `--limit`/`--strong`/`--related`, Task 8 `--area-prefix`, Task 10 the clap `ArgGroup`, Task 11 `--min-size`/`--min-shared-tags`, Task 12 `--older-than`. Their Depends on lines are `2`, `2,3,4`, `2`, `2`, `2`, `2`, `2` — none names 5. Under frontier scheduling all seven become dispatchable before Task 5 lands, and each one's `cargo test` acceptance fails on missing types. Combined with P1 (Task 5 breaking the build until Task 13), the ordering is unsound in both directions. Fix: add `5` to the Depends on line of tasks 6, 7, 8, 9, 10, 11 and 12."
+dedup_id = "0bbeb221f998de8e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "warning"
+category = "executability"
+plan_section = "**21. Widen `command_lint`'s scan set to skill reference files** — S"
+summary = "Task 21's acceptance test is not achievable against the code as written — the scan-set builder is inline in the test fn and hard-binds the repo root"
+description = """The acceptance asks for 'a new unit test asserting the scan-set builder includes a file it writes to a temporary `claude/skills/x/references/y.md`'. There is no scan-set builder to call: it is ~24 inline lines inside `#[test] fn command_lint()` (`tomlctl/src/cli/dispatch.rs:1847-1888`), with the root fixed at `let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent()` and `claude_dir = repo_root.join("claude")` — no parameter. Satisfying the acceptance requires first extracting `fn command_lint_scan_set(claude_dir: &Path) -> Vec<PathBuf>`; without that, 'a file it writes to a temporary …' would have to be written into the live repo tree, which a test must not do. Fix: state the extraction in the Action so the implementer does not discover it at acceptance time."""
+dedup_id = "52f2be36f7fd307f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "warning"
+category = "completeness"
+plan_section = "**5. Declare the `backlog` CLI surface** — L"
+summary = "The read-vs-write flag-placement guards cited as the safety net are hardcoded lists that will not cover `backlog`, and `--no-create` is not asserted there at all"
+description = "`read_only_subcommands_hide_write_integrity_flags_in_help` (`tomlctl/tests/capabilities.rs:25`) iterates a literal 8-entry array (`parse`, `get`, `validate`, `items list|get|find-duplicates|orphans|next-id`); `write_subcommands_expose_all_integrity_flags_in_help` (:61) iterates a literal 8-entry `write_subs`. Neither enumerates from `SUBCOMMANDS` nor reflects over clap, and neither contains any `flow` subcommand — the previous verb group was added without extending them. So `backlog check/list/show/cluster` and `backlog add/relate/triage/compact` are silently uncovered, and a misplaced `--allow-outside` on a read verb would ship green. Additionally `grep -c 'no-create' tomlctl/tests/capabilities.rs` returns 0 — that coverage lives in `tomlctl/tests/integration.rs`, so Task 5's Detail misattributes it. Note `tomlctl/src/capabilities.rs:41` IS clap-reflected (`build_agent_context` walks `<Cli as CommandFactory>::command()`), so the `.commands` schema needs no edit. Fix: extend both literal arrays with the eight `backlog` paths in Task 5."
+dedup_id = "7c591a7ccc7d8cf6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "warning"
+category = "feasibility"
+plan_section = "**4. Implement content-derived ids and the backlog fingerprint** — M"
+summary = "'Generalise the tier-B hasher' understates the surface: seven entry points over two parallel implementations with fixed 5-parameter arity"
+description = "`grep -n 'tier_b_fingerprint|fn fingerprint' tomlctl/src/dedup.rs` gives :179 `tier_b_fingerprint`, :200 `tier_b_fingerprint_table`, :221 `tier_b_fingerprint_json`, :239 `fingerprint_from_strs(file, summary, severity, category, symbol)`, :251 `fingerprint_bytes_from_strs`, :285 `tier_b_fingerprint_bytes`, :659 `tier_b_fingerprint_bytes_json`. The TOML-side and JSON-side paths are separate implementations and the two `*_from_strs` bottoms take five positional `&str` params, so taking 'an explicit field list' changes their arity and touches all seven sites — achievable, but not the one-function change 'must be a pure extraction' implies. Separately, the acceptance 'pin the expected hex in the test' pins whatever the edit produced, so it is not a regression check: the existing guard `tier_b_fingerprint_matches_grouping_key` (:824) only asserts self-consistency between the helper and the group key, and both move together under a bad refactor. A real baseline is available — `printf 'src/a.rs|dup-summary|warning|quality|' | sha256sum | cut -c1-16` gives `95953a6bf4f9bfb7` (verified 2026-09-01) — and `.claude/**/*.toml` already holds 2234 real `dedup_id` values to re-derive against. Fix: pin the hex captured from HEAD BEFORE editing, and name the five existing tests (:824, :873, :897, :922, :949) as the byte-identity net."
+dedup_id = "30dc5205cbd72e23"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "warning"
+category = "completeness"
+plan_section = "**23. Extract the flow and maintenance references and document the backlog group** — M"
+summary = "Task 23's `blocks verify` fix is incomplete twice over: the `--block` names must change too, and a second invocation in the same fence has the identical defect"
+description = "`claude/skills/tomlctl/SKILL.md:851-859` is ONE fence containing TWO invocations. (a) :853-855 targets four `claude/commands/*.md` files with `--block flow-context --block ledger-schema`. Retargeting only the FILES at the two agent files leaves those block names, and neither exists there — `scripts/shared-blocks.toml` carries exactly one entry, `forbidden-working-tree-ops`, over `claude/agents/implement-{deep,lite}.md`. A `--block` naming an absent marker is a non-zero exit, so Task 23's acceptance fails. The `--block` argument must become `forbidden-working-tree-ops` (plus `backlog-candidates` once Task 20 lands — which is what makes Task 23's otherwise-puzzling `Depends on: 20` load-bearing). (b) :858 is `tomlctl blocks verify claude/commands/*.md`; since no file under `claude/commands/` carries a `SHARED-BLOCK` marker (`grep -rl 'SHARED-BLOCK' claude/` returns only the two implement agents and SKILL.md itself), it errors exactly as the first does. Task 23's acceptance is singular and passes with :858 left wrong. Fix: retarget and re-block BOTH, and assert both exit 0."
+dedup_id = "150b11a373293baf"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P21"
+severity = "warning"
+category = "risk"
+plan_section = "**25. Bump the tomlctl version and its pinned assertion** — S"
+summary = "`flow-bootstrap`'s pre-flight gate is `>=0.5`, so a stale installed binary passes it and then fails on every `backlog` seam"
+description = """`claude/agents/flow-bootstrap.md` step 2 gates on 'major < 0 OR (major == 0 AND minor < 5)' and emits 'tomlctl >=0.5.0 required; run "cargo install --path tomlctl" to upgrade'. After Task 25 bumps to 0.6.0, an operator still running the installed 0.5.0 binary passes that gate cleanly, and then every `backlog check` / `backlog add` seam Tasks 17-19 wire into `/implement`, `/tdd`, `/review`, `/optimise` and the apply pipeline fails at runtime with 'unknown subcommand'. This exact failure is already on record for the previous bump: `.claude/flows/flow-tracking-overhaul/plan-review-findings.toml:169` — 'After Task 15's shared-block rewrite, `tomlctl flow resolve` calls fail with unknown subcommand until user re-installs.' No task raises the gate, and Task 25's Files line does not include `claude/agents/flow-bootstrap.md`. Fix: raise the gate and both error literals to 0.6 in Task 25, add the file to its Files line, and put the `cargo install --path tomlctl` line in that task's commit message."""
+dedup_id = "5907fa9e453afe7a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P22"
+severity = "warning"
+category = "completeness"
+plan_section = "**26. Update the repo documentation** — S"
+summary = "`tomlctl/README.md` carries the same `0.4.0` drift the plan calls defect #1 plus TWO deep links into sections Tasks 22/24 move and delete; Task 26 fixes none of the three"
+description = """(a) `tomlctl/README.md:209` reads `"version": "0.4.0",` inside a `tomlctl capabilities` sample — the identical drift the plan records only for `claude/skills/tomlctl/SKILL.md:133`, and it will be two majors stale after Task 25 bumps to 0.6.0. (b) `tomlctl/README.md:59` links `…/SKILL.md#query-items-full-query-surface`, targeting `## Query items (full query surface)` (SKILL.md:212), which Task 22 copies into `references/query.md` and Task 24 deletes. (c) `tomlctl/README.md:61` links `…/SKILL.md#stdin-input-for-large-json-payloads`, targeting SKILL.md:691, also moved to `references/write.md`. These are the only two `tomlctl/SKILL.md#…` deep links in the tree. Task 26's Files line already includes `tomlctl/README.md`, so this is a scope gap, not a file-claim conflict. `tomlctl/README.md:250`'s 'added in 0.4.0' is historical prose and correctly stays."""
+dedup_id = "fd958159660367ba"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P23"
+severity = "warning"
+category = "completeness"
+plan_section = "### `tomlctl` skill — current state (workstream B)"
+summary = "Drift defects #4 and #5 are recorded as confirmed but no task fixes either; Task 23 addresses only #2 and #3"
+description = "Defect #4 — `claude/skills/flow-contract-ledger-schema/SKILL.md`'s `description` still reads 'with identical copies still embedded in the optimise/review-apply/optimise-apply carriers pending migration'. Verified false: `grep -rl 'SHARED-BLOCK' claude/` returns only `claude/agents/implement-deep.md`, `claude/agents/implement-lite.md` and `claude/skills/tomlctl/SKILL.md`. No task's Files line includes that skill. Defect #5 — `claude/skills/tomlctl/SKILL.md:845` reads 'Kept documented for hook/script authors and release-engineering work', but `.githooks/pre-commit` invokes the bash scripts, not `tomlctl blocks`. Task 23 says 'Fix two drift defects while copying' and names only the `blocks verify` retarget and the `verify-skills` demotion, so a verbatim copy carries #5 forward into `references/flow.md`. Both are cheap in-place edits; leaving them recorded-but-unassigned is how they survive to the next audit."
+dedup_id = "ce703b855b19dd5f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P24"
+severity = "warning"
+category = "risk"
+plan_section = "**24. Rewrite the tomlctl SKILL.md body** — M"
+summary = "Every acceptance on the plan's only destructive task is negative; roughly 90% of the moved content has no preservation check"
+description = '''Task 24's acceptance is four negatives (line count <=500, `grep -c '0\.4\.0'` = 0, `grep -c '^### Patch an existing item'` = 0, no reference-to-reference link) plus `command_lint`. The only content-preservation check anywhere is Task 22's `grep -h '^tomlctl ' … | sort -u | wc -l >= <baseline>`, which covers only lines BEGINNING `tomlctl ` — a measured 86 of 869 lines, about 10% of the file — and, being `sort -u`'d and an inequality, cannot detect a dropped section whose commands recur elsewhere. Recovery for a wrong deletion is `git show <sha>^:claude/skills/tomlctl/SKILL.md`, cheap but unnamed in the plan. Fix: add a heading-conservation acceptance — capture `grep -h '^#\{2,3\} ' claude/skills/tomlctl/SKILL.md | sort` before editing, and assert every captured heading appears at least once across the post-change SKILL.md plus `claude/skills/tomlctl/references/*.md`, with any deliberate drop named.'''
+dedup_id = "84b76bf01f321459"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P25"
+severity = "warning"
+category = "risk"
+plan_section = "## Execution Policy"
+summary = "Milestone 3 runs 12 tasks under one checkpoint, including the plan's only destructive edit and a change to the gate itself"
+description = "Cadence is a user decision and stays `milestones`; this is checkpoint PLACEMENT only. Checkpoint 2 sits after Task 14 and Checkpoint 3 after Task 26, so tasks 15-26 share one gate. That span contains the only destructive edit (Task 24 deletes the sections Tasks 22/23 copied out of an 869-line live skill), a change to the gate itself (Task 21 widens `command_lint`'s scan set), a version bump on a `cargo install`-ed binary (Task 25), and five carrier/agent edits (17-20). With `commit granularity: per-task`, intermediate commits exist but only the train's tip is gate-verified, so a wrong Task 24 deletion is discovered twelve tasks downstream. Task 23 is a valid topological cut and the last recoverable state: 24 and 26 depend on it, 25 depends only on 14 so it lands before it, and at that point all four reference files exist while `claude/skills/tomlctl/SKILL.md` is still intact. Fix: add a fourth marker after Task 23."
+dedup_id = "77eb65e8cca6e82d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P26"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks"
+summary = "Three acceptances are vacuous — they hold before any edit is made (Tasks 22, 26, 1)"
+description = '''(a) Task 22 — `grep -h '^tomlctl ' claude/skills/tomlctl/SKILL.md claude/skills/tomlctl/references/*.md | sort -u | wc -l` >= 86. Measured baseline: `grep -c '^tomlctl ' claude/skills/tomlctl/SKILL.md` = 86, `| sort -u | wc -l` = 86, indented `tomlctl` lines = 0 (so the `^` anchor does match — the check is not broken, it is unfailable). Task 22 explicitly leaves SKILL.md untouched, so the union is >=86 even if the agent copies nothing. The check belongs on Task 24, which is the task that deletes, restated as an equality against the recorded baseline of 86. (b) Task 26 — `grep -c 'dedup_id\|seen_count' CLAUDE.md` returns 0 today, so 'returns 0' is satisfied by doing nothing (it can still fail if an implementer restates the schema, so it is weak rather than empty). (c) Task 1 — 'exits 0 with no new warnings': `tomlctl/Cargo.toml` sets only `[lints.rustdoc]` and there is no `-D warnings`, so exit 0 is guaranteed; 'new' has no recorded baseline, and eleven empty modules will in fact emit dead-code warnings.'''
+dedup_id = "90256361f4da7a6c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P27"
+severity = "warning"
+category = "completeness"
+plan_section = "**18. Wire capture points into `/review` and `/optimise`** — S"
+summary = "Task 18's Detail premise is false for `claude/commands/optimise.md`, and no acceptance covers that half of the task"
+description = "`grep -c 'defer R{n}' claude/commands/review.md` returns 2 (:59, :63), so the acceptance is falsifiable there — just baseline-less. But `grep -c 'defer R{n}' claude/commands/optimise.md` returns 0. `/optimise`'s vocabulary is different: `claude/commands/optimise.md:39` states 'the disposition vocabulary is `open` / `deferred` / `applied` / `wontapply` — there is no `verified-clean` counterpart', ids are `O{n}` not `R{n}`, and the literal `wontfix` does not appear there either. So the Action's 'mint to the backlog rather than forcing a `wontfix`' and the Detail's 'leave the existing `defer R{n} — reason — trigger` and `wontfix R{n} — rationale` syntax byte-unchanged' are ungrounded for `optimise.md`, whose only acceptance coverage is `command_lint`. Fix: state each carrier's real vocabulary and add a per-carrier acceptance."
+dedup_id = "77cbe97433a8b274"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P28"
+severity = "warning"
+category = "executability"
+plan_section = "**23. Extract the flow and maintenance references and document the backlog group** — M"
+summary = "'Copy verbatim' and '`grep -c 'blocks verify-skills'` returns exactly 1' are mutually exclusive — the string appears three times in the source"
+description = "`grep -c 'blocks verify-skills' claude/skills/tomlctl/SKILL.md` returns 3: the `### Drift checks — blocks verify-skills` heading (:863), a prose sentence (:865), and the bash fence body (:868). A verbatim copy of the Advanced/maintenance section into `references/flow.md` yields 3 and fails the acceptance; satisfying the acceptance requires deleting the heading and the fence, which contradicts 'Move `blocks verify-skills` into a collapsed `<details>` Old patterns block'. The plan does not say which of the three survives — an executor-time decision. Dropping the fence also removes the only `command_lint`-gated occurrence of the verb. Fix: assert 3, all relocated inside one `<details>` block, with the fence surviving."
+dedup_id = "da2ac401b727c8fe"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P29"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks"
+summary = "Four acceptances are human judgements or prose rather than commands (Tasks 17, 23, 24, 22)"
+description = """(a) Task 17 — 'in both files every `backlog add` is preceded by a `backlog check` in the same step' requires a reader to decide what 'the same step' means; no command derives it. (b) Task 23 — 'the corrected `blocks verify` example exits 0 when run against the two agent files' names no command and no working directory; the presumed form `tomlctl blocks verify claude/agents/implement-deep.md claude/agents/implement-lite.md`, run from the repo root, returns `{"ok":true,…}`. Write it as that command. (c) Task 24 — 'the version string it does contain equals the `version` in `tomlctl/Cargo.toml`' is prose; a command exists. (d) Task 22 — 'every distinct invocation must survive' the `--dry-run` collapse is asserted only in Detail, never in Acceptance."""
+dedup_id = "6a6f42253f502f12"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P30"
+severity = "warning"
+category = "executability"
+plan_section = "**10. Implement `backlog triage`** — M"
+summary = "`--reopen` writes a `reopen_rationale` field that no schema task defines and no CLI flag supplies"
+description = "Task 10 says `--reopen` 'records `reopen_rationale`', but the Approach item shape has no such field; Task 2's schema Action does not name it and its Detail says `open` 'must carry none of `promoted`/`dismissed`/`resolved`' without mentioning it; and Task 5's flag list names no `--reopen-rationale`. Task 10's Files line is `tomlctl/src/backlog/triage.rs` only, so it cannot add the field to `schema.rs`. The executor must either invent the flag and the validator slot or silently drop the field — a decision the plan should have made. Fix: declare a required `--rationale <r>` on the `--reopen` mode in Task 5, admit `reopen_rationale` for `open` items in Task 2's validator, and add it to the Approach item shape."
+dedup_id = "abf11b3292c64289"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P31"
+severity = "warning"
+category = "completeness"
+plan_section = "**20. Add the candidate-capture block to both implementer agents** — S"
+summary = "The cited Rust test does not cover a new block, so it does not force the manifest and carriers into one commit"
+description = '`blocks_verify_reproduces_shell_hashes` (`tomlctl/src/cli/dispatch.rs:1609`) reads `scripts/shared-blocks.toml` but then hardcodes a single lookup — `let forbidden_pair = carriers_for("forbidden-working-tree-ops");` at :1661 — and pins one hash. Adding a `backlog-candidates` block leaves that test passing unchanged; it gates nothing new. The only real gate is `bash scripts/verify-shared-blocks.sh`, which runs from `.githooks/pre-commit` and is opt-in per clone (`git config core.hooksPath .githooks`). Fix: keep the shell check in the acceptance and correct or drop the Rust claim.'
+dedup_id = "c0305e5c65a5aa86"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P32"
+severity = "warning"
+category = "risk"
+plan_section = "### Identity and dedupe"
+summary = "Content-derived ids do not make a git merge converge — they produce same-id duplicate rows or a conflict"
+description = '''`.gitattributes` carries only `*.sql text eol=lf` and `git config --get-regexp 'merge\.'` returns nothing, so `.claude/backlog.toml` merges as plain text with no TOML-aware driver. Git can auto-collapse two branch-side additions only when the added lines are BYTE-IDENTICAL. Two worktrees minting the same discovery agree on `dedup_id` and `id` but differ on `created`, `last_seen`, `origin`, `flow`, `evidence` and the agent-authored `context`, so the appended `[[items]]` blocks are not byte-identical and the merge yields either a conflict hunk or — for non-adjacent appends — two rows sharing one `id`. R8's beads guarantee is about ids not colliding between DIFFERENT issues, not about text merges. None of the eight verbs repairs this and `schema::validate` has no id-uniqueness rule. Fix: state what the scheme does and does not buy, enforce id-uniqueness across `[[items]]` union `[[compacted]]` in the validator, and give `check` a `duplicate-id` verdict so the condition is visible rather than silent.'''
+dedup_id = "ad6b3c8419627481"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P33"
+severity = "warning"
+category = "risk"
+plan_section = '### Answering "is this already known?"'
+summary = "`[[compacted]]` grows monotonically and `check` scans it in full on every mint at five automatic seams"
+description = "Task 12 only ever moves rows INTO `[[compacted]]`; nothing prunes it. Task 7 ranks 'every item in both the `items` and `compacted` arrays' and computes char-trigram Jaccard per candidate, so `check` is O(items + compacted) with a per-candidate trigram set build, invoked before every `add` at `/implement` Phase 4, `/tdd` REFACTOR, `/review` and `/optimise` Step 3/4, and apply-pipeline Step 6. The Risks section names compaction as the rot-control countermeasure but discusses `[[items]]` only. Whether this is actually hot is unmeasured — at a few hundred rows it is irrelevant. Fix, cheap and worth stating in Task 7's Detail: build a `dedup_id`-keyed map once per invocation so `duplicate` and `previously-resolved` are O(1) hash lookups and Jaccard runs only on the fallback path, and document a store ceiling."
+dedup_id = "b6cef7071787d67c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P34"
+severity = "warning"
+category = "risk"
+plan_section = "**10. Implement `backlog triage`** — M"
+summary = "`#[group(...)]` is not a documented Subcommand-variant attribute; the mode flags need their own flattened `Args` struct"
+description = "Context7 over the clap derive reference shows `#[group(GROUP ATTRIBUTE)]` only on `#[derive(Parser)]` and `#[derive(Args)]` STRUCTS; enum variants take `#[command(CMD ATTRIBUTE)]`, and the supported Subcommand-variant attributes are `skip`, `flatten`, `external_subcommand`. The working tutorial example puts `#[group(required = true, multiple = false)]` on a separate `Args` struct that is `#[command(flatten)]`-ed into the parser. The parse-time error the plan wants is real — `ArgGroup` with `required(true)` and default `multiple(false)` yields `ErrorKind::ArgumentConflict` on two flags — but the placement must change. The companion values (`--to`, `--reason`, `--resolution`) must live inside or `requires`-link to that struct, or they escape the group. Fix: declare a `#[derive(Args)] #[group(required = true, multiple = false)] struct TriageMode` and flatten it into the `Triage` variant."
+dedup_id = "96546d37f02f6c30"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P35"
+severity = "warning"
+category = "executability"
+plan_section = "## Exploration Notes"
+summary = "`## Exploration Notes` is not a contract section and sits where `## Research Notes` is expected"
+description = "The plan-output-format contract's order is `## Context`, `## Scope`, `## Research Notes`, `## User Decisions`, `## Approach`, … This plan interposes a 149-line `## Exploration Notes` (lines 60-208) between Scope and Research Notes. `/plan-update reformat` extracts `## Research Notes` into `RESEARCH-NOTES.md`; the Exploration section — which carries the load-bearing `file:line` anchors every task cites — is covered by no preservation rule, so a reformat can silently drop or mangle it. Fix: fold it into `## Research Notes` as unlettered grounding notes, keeping the existing lettered R1-R15 subsections beneath it."
+dedup_id = "be65ca503863bcd0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P36"
+severity = "suggestion"
+category = "executability"
+plan_section = "**1. Create the backlog module skeleton** — L"
+summary = "Task 1's Detail miscounts the placeholders, misattributes their owners, and transcribes a wrong file count"
+description = "The Files line names 13 files (`main.rs` plus 12 under `backlog/`). `mod.rs` gets the declarations and `main.rs` gets `mod backlog;`, leaving ELEVEN placeholders, not ten. Those eleven are owned by tasks 2, 3, 4, 6, 7, 8, 9, 10, 11, 12 and 13 (`backlog/dispatch.rs`) — not 'Tasks 2-12', a range that includes Task 5 (which owns `cli/types.rs`, no backlog leaf) and excludes Task 13. And 'Mirror the layout of `tomlctl/src/flow/` (16 files…)' — `ls tomlctl/src/flow/ | wc -l` returns 15. The 13-file L argument itself is sound and should be kept: a `mod` line without its file is E0583 and a file without its `mod` line is never compiled, so the alternative makes `mod.rs` a shared file across eleven tasks and serialises the whole milestone. Per derive-don't-transcribe, drop the counts rather than correcting them."
+dedup_id = "88c80c58452389d8"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P37"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Execution Policy"
+summary = "The checkpoint key is written `**Checkpoint markers**`, not the contract's `**Checkpoint after**`"
+description = "`claude/skills/flow-contract-plan-restructure/SKILL.md:56` names the key verbatim — '`Checkpoint after:` references task NUMBERS, and unlike heading slugs the marker-to-task mapping is positional. When tasks are renumbered, update the marker numbers…'. A renamed key risks the renumbering re-map missing it entirely. Related sizing nits, neither breaking the <=3-file cap: Task 5 is tagged L on 2 files, and Task 9 is tagged S for a three-mode, idempotent, validated write verb where M fits better."
+dedup_id = "a0bcd4cf71f883bc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P38"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "The id-widening tie-break is unpinned and insertion-order-dependent, reintroducing the worktree divergence decision 1 removes"
+description = "`derive_id(dedup_id, existing)` widens 'when an existing item already holds that id with a different `dedup_id`' — so which of two colliding discoveries keeps `B-xxxxxxxx` depends on insertion order. Mint them in opposite orders in two worktrees and the ids are swapped: content-derived, but not order-independent. Task 4's acceptance tests only the 8->10 step; the 10->12 tier is untested and, at 40 bits, unreachable in this store's lifetime. Fix: pin the tie-break to a total order over `dedup_id` (lexicographically smaller keeps the short id, the other widens) so both worktrees agree, and either test 10->12 or drop the tier."
+dedup_id = "c31f26262bec6a02"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P39"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "**3. Implement summary normalisation and similarity scoring** — M"
+summary = "The regex/Unicode constraint is a non-sequitur; the real freezing constraint is which lowercase operation is used"
+description = """`tomlctl/Cargo.toml:42-43` confirms `regex = { version = "^1", default-features = false, features = ["std", "perf"] }` — no Unicode features. But the plan's own `normalise` design uses no regex at all (byte-wise lowercase, non-alphanumeric to space, collapse, stopword drop), so the constraint as written binds nothing. The constraint the task actually needs: `normalise` must use `u8::to_ascii_lowercase` over bytes, not `str::to_lowercase`, because the two differ on non-ASCII input (a curly quote, an em dash, an accented identifier) and every stored `dedup_id` is frozen on whichever is chosen — exactly the Risks entry about the normaliser being effectively immutable."""
+dedup_id = "0a53103c8efe7b41"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P40"
+severity = "suggestion"
+category = "executability"
+plan_section = "**7. Implement `backlog check`** — M"
+summary = "`--related` means two different things inside one verb group"
+description = "In the Approach verdict table and Task 5, `--related <id>` on `backlog add` is a repeated `Vec<String>` of item ids ('Mint, and pass `--related <id>` so the edge is recorded'; Task 5: 'Use repeated `--tag` / `--evidence` / `--related` as `Vec<String>`'). In Task 7, `--related` on `backlog check` is a float threshold override for `SIMILARITY_RELATED`. Same flag name, an id list on one verb and a score on another, in a group agents are meant to drive mechanically. Fix: rename the overrides to `--similarity-strong` / `--similarity-related` to match their constants."
+dedup_id = "c5b7031354500455"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P41"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Research Notes"
+summary = "R15's clap cookbook citation is accurate but describes a pattern Task 5 does not build"
+description = "WebFetch of the clap git-derive cookbook confirms the quoted idiom verbatim — `#[derive(Debug, Args)] #[command(args_conflicts_with_subcommands = true)] #[command(flatten_help = true)] struct StashArgs { #[command(subcommand)] command: Option<StashCommands>, #[command(flatten)] push: StashPushArgs }`. But that is an `Args` struct combining a nested subcommand with DEFAULT flattened args for the bare-`git stash` case. Task 5 declares `Backlog { #[command(subcommand)] op: BacklogOp }` — a plain nested group with no default-arg fallback, structurally identical to the existing `Cmd::Flow { op }` / `Cmd::Items { op }`, where neither `args_conflicts_with_subcommands` nor `flatten_help` applies. Harmless if an implementer follows Task 5's Detail, misleading if one follows R15. Fix: trim R15 to the two claims Task 5 relies on — `value_delimiter` is opt-in in clap 4, and a repeated flag gets implicit `Append`."
+dedup_id = "1c3b6db0748d13ab"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P42"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Harness surface"
+summary = "`disable-model-invocation` is NOT banned repo-wide — invariant 4 scans only the lumina plugin's skills tree"
+description = """`scripts/verify-plan-story-blocks.sh:46` sets `SKILLS="$PLUGIN/skills"` and invariant 4 loops over `"$SKILLS"/*/` — it never reads `claude/skills/`. So the exploration claim '`disable-model-invocation` is banned repo-wide (gated by `scripts/verify-plan-story-blocks.sh` invariant 4)' is wrong: `claude/skills/backlog-capture/SKILL.md` could carry the flag and both hook verifiers would pass. The consequence is small — the plan already says frontmatter is `name` + `description` only — but it cites a gate that does not cover the file it is about to create."""
+dedup_id = "6564624685faf4f5"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P43"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Verification Commands"
+summary = "`.githooks/pre-commit` also runs `scripts/doc-diff-gate.sh`, which the plan's verification list and exploration notes both omit"
+description = """`.githooks/pre-commit` invokes three scripts — `verify-shared-blocks.sh` (:11), `verify-plan-story-blocks.sh` (:12) and `doc-diff-gate.sh` (:15), the last added in `d26d436 Add documentation conventions and doc-diff gate`, the most recent commit. The plan's Exploration Notes list only the first two as the hook's contents and demote `doc-diff-gate.sh` to 'scripts/ also holds…'. It runs in `warn` mode today (`MODE="${DOC_GATE_MODE:-warn}"`) so it cannot block a commit, but Milestone 3 adds several hundred staged markdown lines — a new SKILL.md, four `references/*.md`, a new command carrier — that it will report on. Worth naming so the noise is expected rather than diagnosed mid-run."""
+dedup_id = "868f3ce254d70ec8"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P44"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Verification Commands"
+summary = "No automated latch keeps either SKILL.md under 500 lines after the split; Task 21 makes one nearly free"
+description = "The plan concedes 'Nothing official enforces the ceiling (R7), so this is a manual assertion.' But Task 21 is already editing the one test that walks the `claude/` tree with repo-root resolution and a graceful skip (`command_lint`, `tomlctl/src/cli/dispatch.rs:1843-1855`). A sibling `#[test] fn skill_bodies_under_line_ceiling()` asserting <=500 for every `claude/skills/*/SKILL.md` costs about 15 lines, reuses the same skip pattern, and converts Milestone 3 from a one-time cleanup into a maintained invariant. Without it the file that grew to 869 lines regrows unobserved — which is how it got here."
+dedup_id = "894f44428df3d8a4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P45"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Measured baseline for the skill split"
+summary = "Three transcribed measurements are wrong; the other eleven re-derive exactly"
+description = "WRONG (3): (a) 'all 18 `flow-contract-*` skills' — `ls -d claude/skills/flow-contract-*/ | wc -l` returns 16. (b) '`tomlctl/src/flow/` (16 files)' — `ls tomlctl/src/flow/ | wc -l` returns 15. (c) 'the current tomlctl description is 708 chars' — measured 693 (694 with the newline); still well under the 1,024 ceiling, so the leave-it-alone conclusion holds. CORRECT (11), re-derived: SKILL.md 869 lines / 56,096 bytes / 50 ```bash fences / 86 lines beginning `tomlctl ` (all 86 unique) / 12 `--dry-run` / 12 `--verify-integrity`; `flow-contract-apply-pipeline/SKILL.md` 36,883 B; `.claude/` 314 tracked files; `scripts/shared-blocks.toml` exactly one `[[block]]`; commit `bf6cf57` 4 src + 5 test files; `tomlctl/src/cli/types.rs` 1228 L; clap 4.6.6; v0.5.0 / edition 2024 / MSRV 1.95. Per derive-don't-transcribe, replace the counts with the commands that derive them."
+dedup_id = "ebf799112eb97885"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P46"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### tomlctl crate architecture (`tomlctl/`, v0.5.0, edition 2024, MSRV 1.95)"
+summary = "Line-number drift, enumerated: three cited anchors are off by one to two lines. All cited filenames exist"
+description = """(1) `types.rs:52` 'claiming one integration assertion' — the comment is at `tomlctl/src/cli/types.rs:54`; the claim itself is correct and stale (`grep -n 'subcommands' tomlctl/tests/integration.rs` returns only comment lines, no assertion), so the plan's 'do not go looking for it' note stands. (2) `tomlctl/src/flow/active.rs:59` cited as the `backlog_path` model — `fn active_flow_path()` is at :57. (3) Exploration Notes cite `capabilities.rs:1590` for the version pin while Tasks 5 and 25 cite :1589; the assertion `version, "0.5.0",` is at :1589 and the rationale message at :1590, so the task lines are right and the exploration line is off by one. VERIFIED ON-ANCHOR: `dispatch.rs:471` (`fn run`), :282 (`SCHEMA_SEEDED_FLOW_FILES`), :1843 (`fn command_lint`), :2055 (`fn carrier_invokes_required_skills`); `types.rs:22` (`FEATURES`), :55 (`SUBCOMMANDS`); `dedup.rs:38` (`FINGERPRINTED_FIELDS`); `items.rs:1767` (`fn validate`), :1745 (`#[allow(dead_code)]`); `flow/dispatch.rs:11`; `implement.md:60/:91/:94`; `tdd.md:65/:67`; apply-pipeline SKILL.md:542; apply-constraints SKILL.md:12/:15/:16; tomlctl SKILL.md:133/:843/:863-869. `tomlctl/tests/common/mod.rs` exists and exports `assert_sidecar_matches` (:151) and `seed_ledger` (:26) as Task 14 assumes. `.claude/backlog.toml` is not gitignored, confirming the plan's tracking claim."""
+dedup_id = "b71a8247691d4dde"
