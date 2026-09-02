@@ -1,7 +1,5 @@
-//! R63 / R21: top-level CLI module. Formerly a single `cli.rs` (~2100 lines)
-//! mixing four concerns — clap derive types, `run()` dispatch + per-command
-//! routing, output helpers, and unit tests. R21 split the file along those
-//! seams:
+//! Top-level CLI module, split along concern seams — clap derive types,
+//! `run()` dispatch + per-command routing, and output helpers:
 //!
 //! - [`types`] (`cli/types.rs`) — the clap-derive `Cli`, `Cmd`, `ItemsOp`,
 //!   `BlocksOp` enums plus the per-variant argument bundles
