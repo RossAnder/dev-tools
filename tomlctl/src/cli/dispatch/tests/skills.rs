@@ -2,7 +2,7 @@
 
 use crate::blocks::{self, blocks_verify, scan_block_names_warn};
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 // ----- blocks verify ---------------------------------------------------
 
@@ -414,14 +414,306 @@ fn skill_references_under_line_ceiling() {
     }
 }
 
+/// Every markdown file the link check scans: each skill's body plus one level
+/// of its `references/`, sorted.
+fn skill_markdown_files(skills_dir: &Path) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = Vec::new();
+    let Ok(entries) = fs::read_dir(skills_dir) else {
+        return files;
+    };
+    for entry in entries.flatten() {
+        let skill_dir = entry.path();
+        if !skill_dir.is_dir() {
+            continue;
+        }
+        let body = skill_dir.join("SKILL.md");
+        if body.is_file() {
+            files.push(body);
+        }
+        if let Ok(refs) = fs::read_dir(skill_dir.join("references")) {
+            for r in refs.flatten() {
+                let p = r.path();
+                if p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("md") {
+                    files.push(p);
+                }
+            }
+        }
+    }
+    files.sort();
+    files
+}
+
+/// The inline-link targets in `text`, in source order, with any `"title"`
+/// suffix dropped. Reference-style links (`[a][b]`) carry no target and an
+/// escaped `\](` is not a link, so neither appears.
+fn markdown_link_targets(text: &str) -> Vec<&str> {
+    let bytes = text.as_bytes();
+    let mut out: Vec<&str> = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(rel) = text[cursor..].find("](") {
+        let open = cursor + rel + 2;
+        cursor = open;
+        if open >= 3 && bytes[open - 3] == b'\\' {
+            continue;
+        }
+        let Some(close) = text[open..].find(')') else {
+            break;
+        };
+        let target = text[open..open + close].trim();
+        cursor = open + close + 1;
+        if let Some(target) = target.split_whitespace().next() {
+            out.push(target);
+        }
+    }
+    out
+}
+
+/// Collapse `.` and `..` without touching the filesystem, so a resolved path
+/// is reportable as the location a reader would go and create.
+fn lexical_normalise(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+fn repo_relative(path: &Path, repo_root: &Path) -> String {
+    path.strip_prefix(repo_root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+/// Link-existence outcome over one file set.
+#[derive(Default)]
+struct MarkdownLinkReport {
+    /// Relative path targets resolved against their linking file's directory.
+    /// Zero means the walk found nothing and the check proved nothing.
+    checked: usize,
+    /// (linking file, raw target, resolved path that is absent).
+    broken: Vec<(String, String, String)>,
+}
+
+/// Resolve every relative path link in `files` against its own linking file's
+/// directory. Absolute URLs and pure-anchor links name no path; a `#fragment`
+/// on a path link is dropped, since anchor resolution needs GitHub's slug
+/// algorithm and is out of scope.
+fn check_markdown_links(files: &[PathBuf], repo_root: &Path) -> MarkdownLinkReport {
+    let mut report = MarkdownLinkReport::default();
+
+    for file in files {
+        let Ok(text) = fs::read_to_string(file) else {
+            continue;
+        };
+        let rel = repo_relative(file, repo_root);
+        let dir = file.parent().unwrap_or(Path::new("."));
+
+        for target in markdown_link_targets(&text) {
+            if target.starts_with('#') || target.contains("://") || target.starts_with("mailto:") {
+                continue;
+            }
+            let path_part = target.split('#').next().unwrap_or("");
+            if path_part.is_empty() {
+                continue;
+            }
+            report.checked += 1;
+            let resolved = dir.join(path_part);
+            if !resolved.exists() {
+                report.broken.push((
+                    rel.clone(),
+                    target.to_string(),
+                    repo_relative(&lexical_normalise(&resolved), repo_root),
+                ));
+            }
+        }
+    }
+
+    report
+}
+
+/// A skill's cross-references are its navigation, and a body trimmed under the
+/// line ceiling pushes ever more of itself behind them — so a link to a file
+/// that was renamed or never split out strands the content silently. Same
+/// graceful skip as `command_lint` for a checkout without the harness tree.
+#[test]
+fn skill_markdown_links_resolve() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+    let skills_dir = repo_root.join("claude").join("skills");
+    if !skills_dir.exists() {
+        eprintln!("skill_markdown_links_resolve: claude/skills/ not found, skipping");
+        return;
+    }
+
+    let files = skill_markdown_files(&skills_dir);
+    let report = check_markdown_links(&files, &repo_root);
+
+    // A walk rooted at the wrong directory, or an extractor that never fires,
+    // yields an empty broken list and a green test that gated nothing.
+    assert!(
+        report.checked > 0,
+        "skill_markdown_links_resolve: scanned {} file(s) and found zero relative \
+         links to check — the walk or the link extractor is broken, not the corpus",
+        files.len()
+    );
+
+    if !report.broken.is_empty() {
+        let mut msg = format!(
+            "skill_markdown_links_resolve: {} of {} relative link(s) point at a \
+             path that does not exist:\n",
+            report.broken.len(),
+            report.checked
+        );
+        for (file, target, resolved) in &report.broken {
+            msg.push_str(&format!(
+                "  {file}\n    link:     {target}\n    resolved: {resolved}\n"
+            ));
+        }
+        panic!("{msg}");
+    }
+}
+
+/// The link checker over a temp tree, so the live corpus cannot make it pass
+/// by accident: a missing sibling is named, traversal resolves against the
+/// linking file rather than the root, and anchors/URLs are not paths.
+#[test]
+fn skill_markdown_links_flags_a_missing_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let skills = root.join("claude").join("skills");
+    let skill = skills.join("x");
+    fs::create_dir_all(skill.join("references")).unwrap();
+
+    fs::write(skill.join("references").join("present.md"), "# present\n").unwrap();
+    fs::write(
+        skill.join("SKILL.md"),
+        "See [present](references/present.md) and [gone](references/gone.md).\n\
+         Not paths: [anchor](#a-section), [url](https://example.com/nope.md).\n\
+         A fragment on a path checks the path only: [p](references/present.md#verbs).\n",
+    )
+    .unwrap();
+    fs::write(
+        skill.join("references").join("nested.md"),
+        "Traversal is relative to this file: [body](../SKILL.md), [up](../../../nope.md).\n",
+    )
+    .unwrap();
+
+    let files = skill_markdown_files(&skills);
+    assert_eq!(
+        files.len(),
+        3,
+        "scan set must reach body + references: {files:?}"
+    );
+
+    let report = check_markdown_links(&files, root);
+    assert_eq!(
+        report.checked, 5,
+        "anchors and URLs must not be counted as paths: {:?}",
+        report.broken
+    );
+
+    let broken: Vec<&str> = report.broken.iter().map(|(_, t, _)| t.as_str()).collect();
+    assert_eq!(
+        broken,
+        ["references/gone.md", "../../../nope.md"],
+        "every broken link must be reported, not just the first: {:?}",
+        report.broken
+    );
+    assert_eq!(
+        report.broken[0].2, "claude/skills/x/references/gone.md",
+        "the report must name the resolved path: {:?}",
+        report.broken
+    );
+    assert_eq!(
+        report.broken[1].2, "claude/nope.md",
+        "`../` must resolve against the linking file's directory: {:?}",
+        report.broken
+    );
+}
+
+/// Whether `text` invokes `skill`, as opposed to merely naming it.
+///
+/// An invocation is a backtick-quoted skill name followed by the word "skill"
+/// ("Invoke the `x` skill", "run the `x` skill's gate") whose clause carries no
+/// negation cue — so a cross-reference, a path, or a sentence warning against
+/// the skill does not qualify. One qualifying phrase in the file is enough.
+fn invokes_skill(text: &str, skill: &str) -> bool {
+    const NEGATIONS: &[&str] = &[
+        "do not",
+        "don't",
+        "never",
+        "no longer",
+        "must not",
+        "cannot",
+        "can't",
+        "rather than",
+        "instead of",
+    ];
+    // How far back a negation cue may sit and still govern the phrase.
+    const CLAUSE_WINDOW: usize = 160;
+
+    let quoted = format!("`{skill}`");
+    let mut cursor = 0usize;
+    while let Some(rel) = text[cursor..].find(&quoted) {
+        let start = cursor + rel;
+        let after_quote = start + quoted.len();
+        cursor = after_quote;
+
+        // Markdown emphasis and a wrapped line break can both sit between the
+        // closing backtick and the noun.
+        let tail = text[after_quote..]
+            .trim_start_matches(|c: char| c.is_whitespace() || c == '*' || c == '_');
+        let Some(head) = tail.get(..5) else {
+            continue;
+        };
+        if !head.eq_ignore_ascii_case("skill") {
+            continue;
+        }
+        // Accepts "skill", "skill's", "skill**"; rejects "skillset".
+        if tail[5..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric())
+        {
+            continue;
+        }
+
+        let window_start = text[..start]
+            .char_indices()
+            .rev()
+            .take(CLAUSE_WINDOW)
+            .last()
+            .map_or(0, |(i, _)| i);
+        let preceding = text[window_start..start].to_ascii_lowercase();
+        let clause = match preceding.rfind(['.', '!', '?', '\n']) {
+            Some(i) => &preceding[i + 1..],
+            None => &preceding[..],
+        };
+        if NEGATIONS.iter().any(|n| clause.contains(n)) {
+            continue;
+        }
+        return true;
+    }
+    false
+}
+
 /// T6: progressive-disclosure invocation guard. A skeletonised carrier must
 /// still INVOKE each `flow-contract-*` skill it delegates to — `command_lint`
 /// only catches CLI-flag drift, and `verify_skills_clean` is dormant
 /// post-wave-2, so without this test a carrier could silently drop an
 /// "Invoke the `flow-contract-X` skill" line and no check would fail. For
-/// each migrated carrier we assert the file text mentions every expected
-/// skill name. Same repo-root resolution + graceful-skip-on-absent-files
-/// pattern as `command_lint`.
+/// each migrated carrier we assert the file text carries an invocation phrase
+/// (see `invokes_skill`) for every expected skill. Same repo-root resolution +
+/// graceful-skip-on-absent-files pattern as `command_lint`.
 #[test]
 fn carrier_invokes_required_skills() {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -586,7 +878,7 @@ fn carrier_invokes_required_skills() {
             }
         };
         for skill in *skills {
-            if !text.contains(skill) {
+            if !invokes_skill(&text, skill) {
                 missing.push(format!("{carrier}: missing invocation of `{skill}`"));
             }
         }
@@ -605,7 +897,7 @@ fn carrier_invokes_required_skills() {
                 }
             };
             for skill in *skills {
-                if !text.contains(skill) {
+                if !invokes_skill(&text, skill) {
                     missing.push(format!(
                         "plugins/{carrier}: missing invocation of `{skill}`"
                     ));
@@ -648,5 +940,63 @@ fn carrier_invokes_required_skills() {
             msg.push_str(&format!("  {m}\n"));
         }
         panic!("{msg}");
+    }
+}
+
+/// The predicate behind `carrier_invokes_required_skills`. A bare-substring
+/// check passes every one of the rejected fixtures below, which is what made
+/// the guard satisfiable by prose.
+#[test]
+fn invokes_skill_requires_an_invocation_phrase() {
+    let accepted = [
+        "Invoke the `flow-contract-task-visibility` skill to load the surface.",
+        "5. **Task surface** — invoke the `flow-contract-task-visibility` skill for the run.",
+        "run the `backlog-capture` skill's check-then-add gate before minting",
+        "honour the contract — **invoke the `flow-contract-plan-restructure` skill** to load it",
+        "see the\n`flow-contract-showcase-bundle` skill.",
+    ];
+    for text in accepted {
+        assert!(
+            invokes_skill(text, text.split('`').nth(1).unwrap()),
+            "should count as an invocation: {text}"
+        );
+    }
+
+    // A carrier whose only mention is a warning against the skill.
+    let negative_only = "\
+# /demo
+
+Do NOT invoke the `flow-contract-task-visibility` skill here; this carrier is
+single-step and mints no task entries.
+";
+    assert!(
+        !invokes_skill(negative_only, "flow-contract-task-visibility"),
+        "a negative sentence must not satisfy the invocation guard"
+    );
+
+    let rejected = [
+        // Bare name, no noun — a cross-reference, not a delegation.
+        (
+            "per the `flow-contract-ledger-schema` contract",
+            "flow-contract-ledger-schema",
+        ),
+        // Unquoted prose mention.
+        (
+            "the flow-contract-vet-research skill is documented elsewhere",
+            "flow-contract-vet-research",
+        ),
+        // A frontmatter/path occurrence with no phrase at all.
+        ("claude/skills/backlog-capture/SKILL.md", "backlog-capture"),
+        // Word-boundary: the noun must be "skill".
+        (
+            "the `flow-contract-flow-context` skillset overview",
+            "flow-contract-flow-context",
+        ),
+    ];
+    for (text, skill) in rejected {
+        assert!(
+            !invokes_skill(text, skill),
+            "should not count as an invocation: {text}"
+        );
     }
 }
