@@ -1,4 +1,4 @@
-//! T-glistening: runtime clap-reflection helper for the `capabilities`
+//! Runtime clap-reflection helper for the `capabilities`
 //! subcommand. `build_agent_context()` walks the live `<Cli as
 //! CommandFactory>::command()` tree and emits a per-subcommand flag schema
 //! suitable for agents that need to introspect `tomlctl`'s surface without
