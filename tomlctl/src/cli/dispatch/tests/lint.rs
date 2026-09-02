@@ -52,50 +52,141 @@ fn command_lint_scan_set(claude_dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// T5: carrier↔CLI flag-drift guard. Every `tomlctl …` invocation written
-/// in the project's command/skill markdown is fed to the REAL clap `Cli`
-/// parser; an `UnknownArgument` / `InvalidSubcommand` error is a lint
-/// failure. This catches the class of bug that shipped in the pilot — a
-/// `--flow` vs `--flow-override` mismatch that no review lens caught because
-/// lenses read prose, they don't execute the parser.
-///
-/// What is NOT a failure: missing-required-argument / value-validation
-/// errors. Doc snippets use placeholders (`<ledger>`, `<slug>`) for required
-/// positionals, so a parse that fails only because a required value is
-/// absent or bogus is expected and ignored.
-///
-/// Opt-out: a ```bash fence whose info-string carries the token
-/// `ignore-command-lint` skips the whole block (for deliberately partial /
-/// illustrative snippets). Same repo-root resolution + graceful-skip pattern
-/// as `blocks_verify_reproduces_shell_hashes`.
-#[test]
-fn command_lint() {
+/// Stand-in substituted for a documented `<placeholder>` before the argv
+/// reaches clap. `1` parses as an integer, a float, a string and a path, so a
+/// placeholder occupying a typed flag's value slot cannot abort the parse
+/// before the flags written after it.
+const PLACEHOLDER_STAND_IN: &str = "1";
+
+/// A shell token's role in a documented invocation.
+enum TokenRole {
+    /// Plumbing the shell consumes before exec: argv ends at this token.
+    ShellOp,
+    /// A `<name>` placeholder, rendered with the stand-in substituted.
+    Placeholder(String),
+    Argv,
+}
+
+/// Peel the optionality brackets and repetition ellipsis a usage synopsis
+/// wraps a flag in (`[--branch <branch>]`, `[--scope <glob>]...`) so the flag
+/// inside is still parsed — a misspelt `[--brnch]` must stay a lint failure.
+/// A JSON array passed as a flag value loses its outer brackets here too,
+/// which is inert: clap only checks that the value is present.
+fn strip_synopsis_notation(token: &str) -> &str {
+    let token = token.strip_prefix('[').unwrap_or(token);
+    let token = token.strip_suffix("...").unwrap_or(token);
+    token.strip_suffix(']').unwrap_or(token)
+}
+
+/// `<` opens either a redirection or a documentation placeholder, and only
+/// the closing bracket separates them: `<slug>` and `<slug>/context.toml` are
+/// argv, while a bare `<`, `<>` and `<file` are redirections.
+fn classify_token(token: &str) -> TokenRole {
+    if token.starts_with("<<")
+        || token.starts_with("2>")
+        || token.starts_with("1>")
+        || token.starts_with('>')
+        || token == "<"
+    {
+        return TokenRole::ShellOp;
+    }
+    let Some(rest) = token.strip_prefix('<') else {
+        return TokenRole::Argv;
+    };
+    match rest.find('>') {
+        Some(0) | None => TokenRole::ShellOp,
+        Some(close) => {
+            TokenRole::Placeholder(format!("{PLACEHOLDER_STAND_IN}{}", &rest[close + 1..]))
+        }
+    }
+}
+
+/// Lint outcome over one file set.
+#[derive(Default)]
+struct CommandLintReport {
+    /// (file, logical line, first line of the clap error rendering).
+    failures: Vec<(String, String, String)>,
+    /// Lines skipped because the quote tokeniser choked — surfaced so an
+    /// unparseable snippet doesn't silently vanish.
+    unbalanced: Vec<(String, String)>,
+}
+
+/// Feed one logical shell line to the real parser when it invokes `tomlctl`.
+fn lint_logical(rel: &str, logical: &str, report: &mut CommandLintReport) {
     use clap::Parser as _;
     use clap::error::ErrorKind;
 
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
-    let claude_dir = repo_root.join("claude");
-    if !claude_dir.exists() {
-        eprintln!("command_lint: claude/ dir not found, skipping");
+    let trimmed = logical.trim_start();
+    // A pipe into tomlctl (`… | tomlctl items add …`) — take the substring
+    // from that `tomlctl` so the heredoc/cat prefix and its body don't
+    // masquerade as argv.
+    let candidate = if let Some(idx) = trimmed.find("| tomlctl ") {
+        &trimmed[idx + 2..]
+    } else {
+        trimmed
+    };
+    if !candidate.starts_with("tomlctl") {
         return;
     }
+    let raw_tokens = match shell_words::split(candidate) {
+        Ok(t) => t,
+        Err(_) => {
+            report
+                .unbalanced
+                .push((rel.to_string(), candidate.to_string()));
+            return;
+        }
+    };
+    // Everything from the first redirection or heredoc opener onward is
+    // shell syntax consumed before exec, so it must not reach clap. A bare
+    // `-` (the stdin sentinel for `--ndjson -` / `--ops -`) is a real argv
+    // token and is preserved.
+    let mut tokens: Vec<String> = Vec::new();
+    for raw in &raw_tokens {
+        let token = strip_synopsis_notation(raw);
+        // A token that was pure notation (`...`) is not argv; an argument
+        // written as an empty string is.
+        if token.is_empty() && !raw.is_empty() {
+            continue;
+        }
+        match classify_token(token) {
+            TokenRole::ShellOp => break,
+            TokenRole::Placeholder(stand_in) => tokens.push(stand_in),
+            TokenRole::Argv => tokens.push(token.to_string()),
+        }
+    }
+    if tokens.is_empty() {
+        return;
+    }
+    // shell_words yields "tomlctl" as the first token, which is exactly the
+    // program name clap's `try_parse_from` expects.
+    if let Err(e) = Cli::try_parse_from(&tokens) {
+        match e.kind() {
+            ErrorKind::UnknownArgument | ErrorKind::InvalidSubcommand => {
+                report.failures.push((
+                    rel.to_string(),
+                    candidate.to_string(),
+                    e.to_string().lines().next().unwrap_or("").to_string(),
+                ));
+            }
+            // Missing-required / value-validation / help / version are all
+            // acceptable: placeholders mean required values are legitimately
+            // absent or type-mismatched in docs.
+            _ => {}
+        }
+    }
+}
 
-    let files = command_lint_scan_set(&claude_dir);
+/// Walk each file's ```bash fences and lint every `tomlctl …` line in them.
+fn command_lint_report(files: &[PathBuf], repo_root: &Path) -> CommandLintReport {
+    let mut report = CommandLintReport::default();
 
-    // Collected lint failures: (file, logical-line, clap error rendering).
-    let mut failures: Vec<(String, String, String)> = Vec::new();
-    // Lines we skipped because the quote tokeniser choked — surfaced in the
-    // report so an unparseable snippet doesn't silently vanish.
-    let mut unbalanced: Vec<(String, String)> = Vec::new();
-
-    for file in &files {
-        let text = match fs::read_to_string(file) {
-            Ok(t) => t,
-            Err(_) => continue,
+    for file in files {
+        let Ok(text) = fs::read_to_string(file) else {
+            continue;
         };
         let rel = file
-            .strip_prefix(&repo_root)
+            .strip_prefix(repo_root)
             .unwrap_or(file)
             .to_string_lossy()
             .replace('\\', "/");
@@ -108,69 +199,6 @@ fn command_lint() {
         let mut skip_block = false;
         // Buffer for stitching shell line-continuations (trailing `\`).
         let mut cont = String::new();
-
-        let lint_logical = |rel: &str,
-                            logical: &str,
-                            failures: &mut Vec<(String, String, String)>,
-                            unbalanced: &mut Vec<(String, String)>| {
-            let trimmed = logical.trim_start();
-            // A pipe into tomlctl (`… | tomlctl items add …`) — take the
-            // substring from that `tomlctl` so the heredoc/cat prefix and
-            // its body don't masquerade as argv.
-            let candidate = if let Some(idx) = trimmed.find("| tomlctl ") {
-                &trimmed[idx + 2..]
-            } else {
-                trimmed
-            };
-            if !candidate.starts_with("tomlctl") {
-                return;
-            }
-            let raw_tokens = match shell_words::split(candidate) {
-                Ok(t) => t,
-                Err(_) => {
-                    unbalanced.push((rel.to_string(), candidate.to_string()));
-                    return;
-                }
-            };
-            // Strip shell plumbing that is NOT part of tomlctl's argv:
-            // redirections (`2>/dev/null`, `>/dev/null`, `2>&1`) and the
-            // heredoc opener (`<<'EOF'`). Everything from the first such
-            // operator onward is shell syntax the shell consumes before
-            // exec, so it must not be fed to clap. A bare `-` (the stdin
-            // sentinel for `--ndjson -` / `--ops -`) is a real argv token
-            // and is preserved.
-            let is_shell_op = |t: &str| -> bool {
-                t.starts_with("<<")
-                    || t.starts_with("2>")
-                    || t.starts_with("1>")
-                    || t.starts_with('>')
-                    || (t.starts_with('<') && t != "<")
-            };
-            let tokens: Vec<String> = raw_tokens
-                .into_iter()
-                .take_while(|t| !is_shell_op(t))
-                .collect();
-            if tokens.is_empty() {
-                return;
-            }
-            // shell_words yields "tomlctl" as the first token, which is
-            // exactly the program name clap's `try_parse_from` expects.
-            if let Err(e) = Cli::try_parse_from(&tokens) {
-                match e.kind() {
-                    ErrorKind::UnknownArgument | ErrorKind::InvalidSubcommand => {
-                        failures.push((
-                            rel.to_string(),
-                            candidate.to_string(),
-                            e.to_string().lines().next().unwrap_or("").to_string(),
-                        ));
-                    }
-                    // Missing-required / value-validation / help / version
-                    // are all acceptable: placeholders mean required values
-                    // are legitimately absent in docs.
-                    _ => {}
-                }
-            }
-        };
 
         for line in text.lines() {
             let trimmed = line.trim_start();
@@ -207,32 +235,64 @@ fn command_lint() {
                 full.push_str(body);
                 full
             };
-            lint_logical(&rel, &logical, &mut failures, &mut unbalanced);
+            lint_logical(&rel, &logical, &mut report);
         }
     }
 
-    if !unbalanced.is_empty() {
+    report
+}
+
+/// T5: carrier↔CLI flag-drift guard. Every `tomlctl …` invocation written
+/// in the project's command/skill markdown is fed to the REAL clap `Cli`
+/// parser; an `UnknownArgument` / `InvalidSubcommand` error is a lint
+/// failure. This catches the class of bug that shipped in the pilot — a
+/// `--flow` vs `--flow-override` mismatch that no review lens caught because
+/// lenses read prose, they don't execute the parser.
+///
+/// What is NOT a failure: missing-required-argument / value-validation
+/// errors. Doc snippets use placeholders (`<ledger>`, `<slug>`) for required
+/// positionals, so a parse that fails only because a required value is
+/// absent or bogus is expected and ignored.
+///
+/// Opt-out: a ```bash fence whose info-string carries the token
+/// `ignore-command-lint` skips the whole block (for deliberately partial /
+/// illustrative snippets). Same repo-root resolution + graceful-skip pattern
+/// as `blocks_verify_reproduces_shell_hashes`.
+#[test]
+fn command_lint() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+    let claude_dir = repo_root.join("claude");
+    if !claude_dir.exists() {
+        eprintln!("command_lint: claude/ dir not found, skipping");
+        return;
+    }
+
+    let files = command_lint_scan_set(&claude_dir);
+    let report = command_lint_report(&files, &repo_root);
+
+    if !report.unbalanced.is_empty() {
         eprintln!(
             "command_lint: {} line(s) skipped (unbalanced quotes in snippet):",
-            unbalanced.len()
+            report.unbalanced.len()
         );
-        for (f, l) in &unbalanced {
+        for (f, l) in &report.unbalanced {
             eprintln!("  {f}: {l}");
         }
     }
 
-    if !failures.is_empty() {
+    if !report.failures.is_empty() {
         let mut msg = String::new();
         msg.push_str(&format!(
             "command_lint: {} carrier↔CLI flag/subcommand drift(s) found.\n",
-            failures.len()
+            report.failures.len()
         ));
         msg.push_str(
             "Each line below is a `tomlctl …` invocation in the project \
              markdown that the real clap parser rejected as an unknown \
              argument or subcommand:\n",
         );
-        for (f, l, e) in &failures {
+        for (f, l, e) in &report.failures {
             msg.push_str(&format!("  {f}\n    line:  {l}\n    error: {e}\n"));
         }
         panic!("{msg}");
@@ -319,5 +379,78 @@ fn no_create_flag_on_write_subcommands_only() {
         Some(ClapErrorKind::UnknownArgument),
         "`--no-create` must NOT exist on the read subcommand `get` \
          (expected UnknownArgument), got: {read_err_kind:?}"
+    );
+}
+
+/// A flag written after a `<placeholder>` still reaches the parser: the
+/// placeholder is argv, not a redirection that ends the command line. Asserted
+/// over a temp tree so the live corpus cannot make it pass by accident.
+#[test]
+fn command_lint_checks_flags_written_after_a_placeholder() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let commands = root.join("claude").join("commands");
+    fs::create_dir_all(&commands).unwrap();
+
+    let drifted = commands.join("drifted.md");
+    fs::write(
+        &drifted,
+        "```bash\ntomlctl flow init --slug <slug> --bogus-flag\n```\n",
+    )
+    .unwrap();
+    let report = command_lint_report(std::slice::from_ref(&drifted), root);
+    assert_eq!(
+        report.failures.len(),
+        1,
+        "a bogus flag written after a placeholder must be reported: {:?}",
+        report.failures
+    );
+    // clap is built without `error-context`, so its rendering names the
+    // rejection but not the token — the reported line carries that.
+    assert_eq!(
+        report.failures[0].1, "tomlctl flow init --slug <slug> --bogus-flag",
+        "the failure must quote the offending line: {:?}",
+        report.failures[0]
+    );
+    assert!(
+        report.failures[0].2.contains("unexpected argument"),
+        "the failure must carry clap's rejection: {:?}",
+        report.failures[0]
+    );
+}
+
+/// The placeholder substitution must not swallow shell plumbing: a
+/// redirection, a heredoc opener and a bare `<` still end the argv, and a
+/// well-formed invocation carrying placeholders is not drift.
+#[test]
+fn command_lint_still_truncates_at_shell_plumbing() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let commands = root.join("claude").join("commands");
+    fs::create_dir_all(&commands).unwrap();
+
+    let clean = commands.join("clean.md");
+    fs::write(
+        &clean,
+        "```bash\n\
+         tomlctl flow init --slug <slug> --plan docs/plans/<slug>.md\n\
+         tomlctl items add-many <ledger> --ndjson - <<'EOF'\n\
+         tomlctl flow active > /dev/null --bogus-flag\n\
+         tomlctl flow active 2>/dev/null --bogus-flag\n\
+         tomlctl flow active < --bogus-flag\n\
+         ```\n",
+    )
+    .unwrap();
+
+    let report = command_lint_report(std::slice::from_ref(&clean), root);
+    assert!(
+        report.failures.is_empty(),
+        "shell plumbing must still end the argv: {:?}",
+        report.failures
+    );
+    assert!(
+        report.unbalanced.is_empty(),
+        "fixture must tokenise cleanly: {:?}",
+        report.unbalanced
     );
 }
