@@ -300,17 +300,23 @@ file(s) using the agent-supplied tail, determine root cause, then fix directly o
 targeted fix agent (`implement-deep` for non-trivial fixes, `implement-lite` if the fix is
 mechanical and the lite-eligibility gate would pass). Re-run Step 5a after each attempt.
 
+### Verify agent-reported `applied` claims
+
 Before constructing the ledger-mutation ops, reconcile every `applied <ID>` tag against the union
 of the working-tree, index, and untracked-file diffs; a claim with no corresponding diff is
 downgraded to `<REJECTED>` and surfaced under `### Downgraded`. See
 [Verify agent-reported `applied` claims](references/verification.md#verify-agent-reported-applied-claims).
 
-Then run the ledger-schema dedup rule against **every** previously-`<APPLIED>` item, not only
+### Regression cross-check
+
+Run the ledger-schema dedup rule against **every** previously-`<APPLIED>` item, not only
 those already chained via `related`. A match on a file touched in this run is a regression: flag
 it and mint a new item under `### Regressions Triggered`. See
 [Regression cross-check](references/verification.md#regression-cross-check).
 
-Finally mutate the same ledger file consumed in Step 1, one transition per selected item, scan the
+### Ledger mutation
+
+Mutate the same ledger file consumed in Step 1, one transition per selected item, scan the
 serialised payload for secrets, and write it with the two-call pattern: `items apply` for the
 per-item ops, then `set` for `last_updated`. A `severity = "critical"` item in a
 `<CRITICAL-CATEGORIES>` category never takes a silent `<REJECTED>`. See
@@ -369,25 +375,13 @@ For each, check whether the cited file matches any `scope` glob in the resolved 
   `plan-update deviation` can record them.
 - **Out-of-scope** (no matching glob, or no flow resolved): no plan update fires, so capture the
   deviation in the repo-scoped backlog instead of leaving it in prose. Invoke the `backlog-capture`
-  skill for the capture discipline before the first mint of the run. Per deviation, run the mandatory
-  gate with the same `--kind` and `--area` the mint will use:
-
-  ```bash
-  tomlctl backlog check --summary "<deviation summary>" --kind debt --area "<deviation file>"
-  ```
-
-  Act on the verdict — `duplicate`, `previously-resolved` and `duplicate-id` mint nothing;
-  `likely-duplicate` mints only after reading the named candidate; `related` mints with
-  `--related "<candidate id>"`; `novel` mints:
-
-  ```bash
-  tomlctl backlog add --summary "<deviation summary>" --kind debt --area "<deviation file>" --context "<the deviation's rationale>" --origin <CMD> --flow "<slug>"
-  ```
-
-  `--origin` takes the bound carrier command name — `review-apply` or `optimise-apply`, since this
-  contract is shared by both. Report each deviation in the final summary with the item ID, file path,
-  applied fix, the note that it falls outside the active flow's scope, and the backlog id it minted
-  (or the verdict that suppressed the mint).
+  skill for the capture discipline before the first mint of the run, then run its check-then-add gate
+  per deviation — the deviation's summary and file as the candidate, its rationale as the item's
+  context, `--origin <CMD>` and `--flow "<slug>"` as provenance. `<CMD>` is the bound carrier command
+  name, `review-apply` or `optimise-apply`, since this contract is shared by both. Report each
+  deviation in the final summary with the item ID, file path, applied fix, the note that it falls
+  outside the active flow's scope, and the backlog id it minted (or the verdict that suppressed the
+  mint).
 
 ### Capped-skip capture
 
@@ -398,19 +392,13 @@ The apply-constraints contract makes an agent emit `skipped <ID>: cross-file ref
 cap` and `skipped <ID>: requires deliberate refactor` when an item is real but too large for its
 dispatch. Unless the orchestrator writes a `<REJECTED>` transition carrying that reason, the work
 disappears with the run's prose. Route each such tag into the backlog after the ledger mutation,
-gate first:
+through the same check-then-add gate — the ledger item's summary and file as the candidate, the skip
+reason as the item's context.
 
-```bash
-tomlctl backlog check --summary "<the ledger item's summary>" --kind debt --area "<the ledger item's file>"
-```
-
-```bash
-tomlctl backlog add --summary "<the ledger item's summary>" --kind debt --area "<the ledger item's file>" --context "<the skip reason>" --origin <CMD> --flow "<slug>"
-```
-
-Never `add` before `check`. The orchestrator is the only writer here — cluster agents and the
-`verification` agent never touch the store; they surface candidates in their return payload and the
-orchestrator mints them.
+The orchestrator is the only writer here — cluster agents and the `verification` agent never touch
+the store. Each cluster agent closes its report with the fixed `TANGENTIAL:` heading, one
+`<kind> | <area> | <summary> | <context>` line per candidate or the single word `none`; the
+orchestrator collects those lines and runs the same gate on every entry that is not `none`.
 
 ### Sync plan context
 

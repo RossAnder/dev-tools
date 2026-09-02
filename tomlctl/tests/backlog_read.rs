@@ -249,6 +249,51 @@ fn check_reports_duplicate_on_the_fingerprint_add_minted() {
     assert_eq!(hit["evidence_files"], json!(0));
 }
 
+/// A summary is text some other agent wrote. The `-` sentinel is what lets it
+/// reach the gate as data instead of as a shell token, so the verdict it earns
+/// has to match the one the same text earns as a literal.
+#[test]
+fn check_reads_the_summary_from_stdin_under_the_dash_sentinel() {
+    let (_tmp, root) = sandbox();
+    let added = backlog(
+        &root,
+        &[
+            "add",
+            "--summary",
+            FLAKE_SUMMARY,
+            "--kind",
+            "flaky-test",
+            "--area",
+            FLAKE_AREA,
+            "--context",
+            FLAKE_CONTEXT,
+        ],
+    );
+
+    let out = cli(&root)
+        .arg("backlog")
+        .args([
+            "check",
+            "--summary",
+            "-",
+            "--kind",
+            "flaky-test",
+            "--area",
+            FLAKE_AREA,
+        ])
+        // The trailing newline a heredoc supplies is not part of the summary:
+        // keep it and the fingerprint stops matching the flag-minted row.
+        .write_stdin(format!("{FLAKE_SUMMARY}\n"))
+        .assert()
+        .success();
+
+    let v: Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    assert_eq!(v["verdict"], json!("duplicate"));
+    assert_eq!(v["dedup_id"], added["dedup_id"]);
+    assert_eq!(v["candidates"][0]["id"], added["id"]);
+    assert_eq!(v["candidates"][0]["context"], json!(FLAKE_CONTEXT));
+}
+
 #[test]
 fn check_reports_likely_duplicate_for_a_near_paraphrase() {
     let (_tmp, root) = sandbox();

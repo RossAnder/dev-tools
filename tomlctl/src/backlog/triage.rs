@@ -20,7 +20,8 @@ use crate::cli::{TriageMode, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{
-    item_id, items_array, items_array_mut, mutate_doc, on_missing_for, warn_if_created,
+    item_id, items_array, items_array_mut, mutate_doc, on_missing_for, relativise,
+    repo_or_cwd_root, warn_if_created,
 };
 use crate::output::print_json_compact;
 
@@ -242,7 +243,7 @@ pub(crate) fn dispatch(
         "ok": true,
         "transition": transition.name(),
         "ids": ids,
-        "path": path.display().to_string(),
+        "path": relativise(&repo_or_cwd_root()?, &path),
     }))
 }
 

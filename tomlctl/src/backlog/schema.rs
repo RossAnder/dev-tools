@@ -100,8 +100,15 @@ pub(crate) const STATUSES: &[&str] = &[
 
 /// The date field each terminal status must carry, and which `open` must
 /// carry none of. Each is spelled the same as its status.
-pub(crate) const TERMINAL_DATE_FIELDS: &[&str] =
-    &[FIELD_PROMOTED, FIELD_DISMISSED, FIELD_RESOLVED];
+pub(crate) const TERMINAL_DATE_FIELDS: &[&str] = &{
+    let mut fields = [""; TERMINAL_CLUSTERS.len()];
+    let mut i = 0;
+    while i < fields.len() {
+        fields[i] = TERMINAL_CLUSTERS[i].1[0];
+        i += 1;
+    }
+    fields
+};
 
 /// The typed relation fields, in the order `show` reports them. `related`
 /// holds an array of ids; the other two hold a single id.
@@ -744,7 +751,6 @@ status = "resolved"
                 panic!("status=\"{status}\" must own a terminal pair");
             };
             assert_eq!(date, *status, "the date field is spelled as its status");
-            assert!(TERMINAL_DATE_FIELDS.contains(&date));
             assert_eq!(
                 required_fields(status),
                 &[date, companion],

@@ -270,3 +270,18 @@ origin = "review-apply"
 flow = "tomlctl-backlog-capture"
 context = '''Comments such as R6 / R39 route through crate::time cite ledger ids that resolve to nothing once the ledger is reaped, which .claude/rules/documentation.md forbids. Sweep with grep -nE '\bR[0-9]+\b|\bO[0-9]+\b' over tomlctl/src and replace each with the invariant or delete it.'''
 related = ["B-98a1c2e6"]
+
+[[backlog]]
+id = "B-80707fec"
+kind = "debt"
+summary = "six pre-existing clippy warnings in io.rs and capabilities.rs are treated as expected noise by every verification pass"
+area = "tomlctl/src/io.rs"
+tags = ["lint"]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "80707fecea8843c2"
+origin = "review-apply"
+flow = "tomlctl-backlog-capture"
+context = "Five manual_filter in io.rs and one unnecessary_map_or in capabilities.rs, all auto-fixable with cargo clippy --fix --bin tomlctl. While they stand, a genuinely new warning in those two files reads as pre-existing. Fix them in one dedicated commit so verification can require zero warnings."

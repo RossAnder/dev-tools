@@ -73,7 +73,7 @@ Three composable packages — `/test-bootstrap` (once per project), `/tdd` (once
 
 ## Task visibility (live progress surface)
 
-Every multi-step carrier invokes the `flow-contract-task-visibility` skill and mints run-scoped `TaskCreate` / `TaskUpdate` entries so a human — or an external reader — can see what an orchestrator is doing mid-run. That is the ten commands under `claude/commands/` plus the two lumina plugin orchestrators (`run-sprint`, `plan-story`).
+Every multi-step carrier invokes the `flow-contract-task-visibility` skill and mints run-scoped `TaskCreate` / `TaskUpdate` entries so a human — or an external reader — can see what an orchestrator is doing mid-run. That is every multi-step command under `claude/commands/` plus the two lumina plugin orchestrators (`run-sprint`, `plan-story`).
 
 Claude Code persists them one JSON file per task under `~/.claude/tasks/<list-id>/<task-id>.json` (`id`, `subject`, `description`, `activeForm`, `owner`, `status`, `blocks`, `blockedBy`, optional `metadata`). The directory also holds `.lock` and `.highwatermark` dotfiles, so a reader takes only `*.json` and skips entries carrying `metadata._internal`. The list id resolves `CLAUDE_CODE_TASK_LIST_ID` → team name → a leader's team name propagated into a teammate → session id, so an orchestrator and every teammate it spawns share one list.
 

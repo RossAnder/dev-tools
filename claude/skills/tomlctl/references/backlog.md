@@ -33,12 +33,14 @@ Every mutating op (`add`, `relate`, `triage`, `compact`) carries the shared writ
 The store lives inside the `.claude/` containment guard, so none of these needs
 `--allow-outside`. `backlog evidence dir` carries the read bundle but not the write one: it
 reads the store to resolve the id, and the one file it writes is a non-TOML marker, so there
-is no sidecar to refresh.
+is no sidecar to refresh. Every op also takes the global `--error-format text|json`; see
+[flow.md](flow.md#error-format---error-format-json) for the JSON envelope and its `kind`
+taxonomy.
 
 ## `backlog add`
 
 ```bash
-tomlctl backlog add --summary "conpty spawn intermittently fails with CreateProcessW error 5" --kind flaky-test --area lumina/server/src/pty --tag pty --context "Empty PATH entry in HKLM; set LUMINA_CLAUDE_BIN to an absolute path to work around it." --evidence "lumina/server/src/pty/spawn.rs:214" --related B-1a2b3c4d --origin /implement --flow lumina-pty-hardening
+tomlctl backlog add --summary "conpty spawn intermittently fails with CreateProcessW error 5" --kind flaky-test --area lumina/server/src/pty --tag pty --context "Empty PATH entry in HKLM; set LUMINA_CLAUDE_BIN to an absolute path to work around it." --evidence "lumina/server/src/pty/spawn.rs:214" --related B-1a2b3c4d --origin implement --flow lumina-pty-hardening
 ```
 
 | Flag | Value | Meaning | Default |
@@ -50,7 +52,7 @@ tomlctl backlog add --summary "conpty spawn intermittently fails with CreateProc
 | `--evidence` | ref, repeatable | A `path:line` pointer into tracked source, or a bare filename inside the item's own evidence directory. Nothing else. | none |
 | `--related` | id, repeatable | Existing backlog id this item relates to. | none |
 | `--context` | text | How to work around the issue. The field that makes a later `check` hit actionable. | none |
-| `--origin` | text | Command or agent that minted the row. | none |
+| `--origin` | text | Command or agent that minted the row — a bare command or agent name, no leading slash. | none |
 | `--flow` | slug | Flow in force at mint time. | none |
 | `--on-duplicate` | `bump` \| `skip` \| `fail` \| `add` | Behaviour when the computed `dedup_id` is already stored. | `bump` |
 | `--json` | payload or `-` | Whole-item JSON instead of the field flags; `-` reads stdin. Mutually exclusive with every field flag above — passing both errors with `kind=validation`. | — |
@@ -68,7 +70,7 @@ honoured.
 Envelope — one of three actions:
 
 ```json
-{"ok":true,"action":"added","id":"B-a1b2c3d4","dedup_id":"<64 hex>","created":false,"path":".claude/backlog.toml"}
+{"ok":true,"action":"added","id":"B-a1b2c3d4","dedup_id":"<16 hex>","created":false,"path":".claude/backlog.toml"}
 {"ok":true,"action":"bumped","id":"B-a1b2c3d4","seen_count":3}
 {"ok":true,"action":"skipped","id":"B-a1b2c3d4"}
 ```
@@ -84,9 +86,15 @@ Read-only. A missing store answers `novel`, so the first capture in a repo needs
 tomlctl backlog check --summary "conpty spawn intermittently fails with CreateProcessW error 5" --kind flaky-test --area lumina/server/src/pty --tag pty --limit 5
 ```
 
+```bash
+tomlctl backlog check --summary - --kind flaky-test --area lumina/server/src/pty --tag pty <<'SUMMARY'
+conpty spawn intermittently fails with CreateProcessW error 5
+SUMMARY
+```
+
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--summary` | text | The discovery being weighed. Required. | — |
+| `--summary` | text or `-` | The discovery being weighed. Required. `-` reads the whole of stdin as the summary, less one trailing newline — the path text somebody else wrote takes to the gate without being tokenised by a shell. Empty stdin is a `kind=validation` error. | — |
 | `--kind` | text | Must match the `--kind` the following `add` will use — it is hashed into the fingerprint. | `other` |
 | `--area` | repo-relative path | Must match the following `add` for the same reason; also feeds the structural `related` rung. | empty |
 | `--tag` | text, repeatable | Feeds the structural `related` rung only. | none |
@@ -97,7 +105,7 @@ tomlctl backlog check --summary "conpty spawn intermittently fails with CreatePr
 A threshold outside 0.0–1.0, or NaN, errors with `kind=validation`.
 
 ```json
-{"verdict":"related","dedup_id":"<64 hex>","thresholds":{"strong":0.75,"related":0.35},
+{"verdict":"related","dedup_id":"<16 hex>","thresholds":{"strong":0.75,"related":0.35},
  "candidates":[{"id":"B-a1b2c3d4","summary":"…","score":0.41,"reason":"words",
                 "status":"open","seen_count":2,"context":"…","evidence_files":1}]}
 ```
@@ -108,7 +116,7 @@ time; nothing in the store records it.
 ## `backlog list`
 
 The three filters below narrow the `backlog` array before the generic query engine sees it, so
-the whole `items list` surface — `--where-*` predicates, `--select` / `--omit` / `--pluck`,
+the whole `items list` surface — `--where-*` predicates, `--select` / `--exclude` / `--pluck`,
 `--sort-by` / `--limit` / `--offset`, `--count-by` / `--group-by`, `--raw` / `--lines` /
 `--ndjson` — applies on top. See [query.md](query.md) for that half.
 
@@ -289,33 +297,38 @@ tomlctl backlog evidence audit --strict --max-bytes 2097152
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--strict` | — | Exit 1 on the five failing classes below. | off |
+| `--strict` | — | Exit 1 on the seven failing classes below. | off |
 | `--max-bytes` | integer | Oversize threshold in bytes. | `2097152` (2 MiB) |
 
-Seven finding classes, plus `git-unavailable`:
+Eleven finding classes, seven of them strict:
 
 | Class | Meaning | `--strict` fails |
 |---|---|---|
 | `unowned` | A directory no stored id resolves to — usually a hand-derived path. | yes |
-| `no-marker` | A drop-box with no `.evidence` file, so it will not survive a fresh clone. | yes |
+| `no-marker` | A drop-box holding files but no `.evidence` file, so it will not survive a fresh clone. | yes |
 | `oversize` | A file past `--max-bytes`. | yes |
 | `disallowed-extension` | An extension outside `png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `txt`, `log`, `json`, `har`, `csv`, `md`, `patch`, `diff`, compared lowercased. An extensionless file lands here too. | yes |
-| `referenced-missing` | A filename named in the item's `context` prose or `evidence` list is not in the directory. | yes |
-| `tracked` | A file that is committed rather than ignored. | no |
+| `referenced-missing` | A filename named in the item's `context` prose or `evidence` list is not in the populated directory. | yes |
+| `stray` | A file sitting at the evidence root rather than in an item's drop-box, where no per-item ignore rule covers it. | yes |
+| `sensitive-published` | A published file whose format routinely carries an `Authorization` header, a cookie or a token — `har`, `json`, `log`, `patch`, `diff`. | yes |
+| `tracked` | A published file — committed or staged rather than ignored. A sensitive extension promotes it to `sensitive-published`, which is emitted instead of this class rather than alongside it. | no |
+| `nested` | A subdirectory inside a drop-box. Its contents stay ignored but are not sized, classified, or matched against the item's citations. | no |
 | `empty` | A drop-box holding only its marker. | no |
-| `git-unavailable` | `git check-ignore` did not run, so the `tracked` class was skipped entirely. | no |
+| `git-unavailable` | `git check-ignore` did not run, so nothing could be classified as published. | no |
 
-`tracked` and `empty` are excluded deliberately: a tracked file is a considered `git add -f`
-and an empty directory is the normal state in a fresh clone. The extension list and the size
-threshold are advisory constants that only `audit` consults — no write path enforces either,
-so the audit is the only thing standing between a stray `.pem` and a reviewer.
+`tracked`, `nested` and `empty` are advisory deliberately: a tracked file is a considered
+`git add -f`, a subdirectory is a reporting gap rather than an exposure, and an empty directory
+is the normal state in a fresh clone. The extension lists and the size threshold are advisory
+constants that only `audit` consults — no write path enforces any of them, so the audit is the
+only thing standing between a stray `.pem` and a reviewer.
 
 ```json
 {"root":".claude/backlog-evidence",
  "findings":[{"class":"unowned","dir":".claude/backlog-evidence/B-deadbeef","detail":"…"},
              {"class":"oversize","dir":".claude/backlog-evidence/B-a1b2c3d4","file":"trace.log","detail":"…"}],
  "counts":{"unowned":1,"no-marker":0,"oversize":1,"disallowed-extension":0,
-           "referenced-missing":0,"tracked":0,"empty":0,"git-unavailable":0}}
+           "referenced-missing":0,"stray":0,"sensitive-published":0,"tracked":0,
+           "nested":0,"empty":0,"git-unavailable":0}}
 ```
 
 `file` is present only on file-scoped findings. Every class appears under `counts` with a zero,
@@ -406,7 +419,7 @@ the top-level crate directory that every row under a crate shares.
 
 Each item may have a drop-box at `.claude/backlog-evidence/<item-id>/`. Two `.gitignore` rules
 govern it — `/.claude/backlog-evidence/*/*` ignores the contents and
-`!/.claude/backlog-evidence/*/.evidence` negates the four-line marker back in — so the
+`!/.claude/backlog-evidence/*/.evidence` negates the marker back in — so the
 directory survives into a fresh clone once its files have been left behind, and a screenshot
 cannot be published by reflex. Publishing one is a deliberate `git add -f <file>`, taken after
 reading the file for credentials, personal data and session tokens.

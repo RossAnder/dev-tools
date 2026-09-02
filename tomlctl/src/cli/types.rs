@@ -932,7 +932,10 @@ pub(crate) enum BacklogOp {
     /// Read-only; emits a graded verdict plus the matching items' stored
     /// context.
     Check {
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "The discovery being weighed; pass `-` to read it from stdin"
+        )]
         summary: String,
         #[arg(long)]
         area: Option<String>,

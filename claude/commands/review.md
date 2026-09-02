@@ -66,19 +66,7 @@ Cross-reference all agent results; apply the dedup, merge, and regression rules 
 
 Render the merged ledger state as severity-grouped markdown tables (Critical / Warnings / Suggestions) plus Still-Open / Resolved-Since / Regressions sub-groupings — **rendered inline in console output only, never persisted**. Persist the merged state via the parse-rewrite two-call pattern from the ledger-schema skill: one batched `tomlctl items add-many --ndjson -` (pure-add) or `tomlctl items apply --ops -` (mixed) for all mutations, followed by `tomlctl set <ledger> last_updated <YYYY-MM-DD>`. After the report, prompt the user with a concrete `/review-apply R{a},R{b}` invocation for the lowest-hanging quick wins, plus disposition syntax (`defer R{n} — reason — trigger`, `wontfix R{n} — rationale`).
 
-**Observations outside the ledger's scope.** An agent finding whose `file` lies outside the review scope, and a cross-cutting observation that is not a finding against an in-scope file, are neither: do not mint an `R{n}` for them, and do not force a terminal disposition onto an item the ledger never owned. Capture each in the backlog instead — probe first, passing `check` the same `--kind` and `--area` the mint will use:
-
-```bash
-tomlctl backlog check --summary "<summary>" --kind <kind> --area <repo-relative-path>
-```
-
-then mint the ones the verdict allows, with provenance and a workaround:
-
-```bash
-tomlctl backlog add --summary "<summary>" --kind <kind> --area <repo-relative-path> --context "<how to work around it, or what the next reader should do first>" --origin review --flow <slug>
-```
-
-Sub-agents never write the store; the orchestrator mints from their surfaced candidates and lists the resulting ids on a `Backlog` line in the console report.
+**Observations outside the ledger's scope.** An agent finding whose `file` lies outside the review scope, and a cross-cutting observation that is not a finding against an in-scope file, are neither: do not mint an `R{n}` for them, and do not force a terminal disposition onto an item the ledger never owned. Capture each in the backlog instead, alongside every `TANGENTIAL:` line the lens agents returned: run the `backlog-capture` skill's check-then-add gate on each candidate, minting with `--origin review --flow <slug>`, and list the resulting ids on a `Backlog` line in the console report.
 
 ## Step 4: Handle Dispositions (if user responds)
 

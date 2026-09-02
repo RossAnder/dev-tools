@@ -70,7 +70,7 @@ dedup_id = "45ca31c3315a5978"
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R1"
 file = "claude/skills/backlog-capture/SKILL.md"
@@ -82,6 +82,8 @@ category = "security"
 summary = "TANGENTIAL text is interpolated into orchestrator shell commands with no stdin path for check"
 description = "Sub-agent summary/context text lands inside double-quoted --summary/--context bash arguments (SKILL.md:177,183 and every carrier). A crafted string with a quote plus $(...) executes in the orchestrator's shell. backlog check --summary is a bare String with no `-` sentinel (types.rs:877), so only add --json - has a safe path. Fix: state that TANGENTIAL text is untrusted data never interpolated into a shell string, mint via add --json - from a staging file, and add a stdin sentinel to BacklogOp::Check."
 dedup_id = "09bbf00677a83be1"
+resolved = 2026-09-02
+resolution = "partial: backlog check --summary - reads stdin (TTY refused, empty input is a validation error naming the flag), the skill states TANGENTIAL text is data never interpolated into a shell and both capture idioms use stdin, the reference documents the sentinel; black-box stdin test added / pending: check's read has neither the once-per-invocation stdin guard nor the byte cap because io.rs keeps them private (child R74). Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
@@ -446,7 +448,7 @@ resolution = "min_shared clamped to at least 1 inside cluster_tags with a test f
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R21"
 file = "claude/skills/tomlctl/references/backlog.md"
@@ -458,11 +460,13 @@ category = "completeness"
 summary = "Both documented JSON envelopes say dedup_id is <64 hex>; the real fingerprint is 16 hex"
 description = "backlog.md:70 and :99 show <64 hex>. ids.rs:117 documents sha256sum | cut -c1-16 and asserts len 16; a live check returns a 16-char value. Fix both envelopes to <16 hex>."
 dedup_id = "ed29799bd134f9fd"
+resolved = 2026-09-02
+resolution = "Both envelopes show <16 hex>. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R22"
 file = "tomlctl/README.md"
@@ -474,11 +478,13 @@ category = "completeness"
 summary = "README quick-tour fence lists five of the ten backlog leaves"
 description = "check, add, show, evidence dir and cluster appear; list, relate, triage, compact and evidence audit appear nowhere in the README, so a reader who never opens the skill cannot discover the triage half. Add one line each."
 dedup_id = "592a84e3f164603b"
+resolved = 2026-09-02
+resolution = "Quick tour gained list, relate, triage, evidence audit and compact rows with flags taken from each verb's help. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R23"
 file = "tomlctl/README.md"
@@ -491,11 +497,13 @@ summary = "README capabilities sample was bumped to 0.6.0 but omits the five bac
 description = "tomlctl capabilities emits backlog_capture, backlog_check, backlog_cluster, backlog_compact and backlog_evidence plus a backlog subcommand; the sample lists none, and because its version line was refreshed it reads as current. The sample has also omitted flow and json since before this flow. Add them or label the block abridged."
 dedup_id = "ab3fd442c23bddb3"
 depends_on = ["R17"]
+resolved = 2026-09-02
+resolution = "Capabilities sample's features and subcommands arrays refreshed; the orchestrator added the four backlog_* entries R17 introduced, which the installed binary predates. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R24"
 file = "claude/skills/flow-contract-apply-pipeline/SKILL.md"
@@ -507,11 +515,13 @@ category = "completeness"
 summary = "The apply pipeline never names the TANGENTIAL: heading, so the implementer candidates block has no consumer in /review-apply and /optimise-apply"
 description = "The shared backlog-candidates block makes both implementers emit a mechanically matched TANGENTIAL: heading. Only commands/implement.md:85 collects it; grep for TANGENTIAL under flow-contract-apply-pipeline/ returns nothing. Name the heading in the capture sections beside the deviation and capped-skip seams."
 dedup_id = "3cc6191b8604c0d7"
+resolved = 2026-09-02
+resolution = "The capped-skip capture paragraph names the TANGENTIAL: heading and the check-then-add gate the orchestrator runs on every non-none entry. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R25"
 file = "claude/skills/tomlctl/references/backlog.md"
@@ -523,11 +533,13 @@ category = "completeness"
 summary = "The reference enumerates the shared read and write bundles but never mentions --error-format, present on all ten leaves"
 description = "An agent reading only this reference will not know the JSON error taxonomy is available on the group. Add one clause pointing at flow.md's error-format section."
 dedup_id = "3216f40826cb294f"
+resolved = 2026-09-02
+resolution = "Bundle preamble names the global --error-format and links flow.md's section. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R26"
 file = "claude/skills/tomlctl/references/backlog.md"
@@ -539,11 +551,13 @@ category = "package-quality"
 summary = "backlog list prose advertises --omit; the binary's projection-drop flag is --exclude"
 description = "backlog list --help emits --select --exclude --pluck and query.md:93 documents --exclude correctly. command_lint misses it because the token sits in prose. Rename to --exclude."
 dedup_id = "b7c94857ac0be49b"
+resolved = 2026-09-02
+resolution = "--omit corrected to --exclude. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R27"
 file = "claude/skills/backlog-capture/SKILL.md"
@@ -555,11 +569,13 @@ category = "package-quality"
 summary = "Skill examples mint --origin /implement while every carrier mints a bare command name"
 description = "SKILL.md:183 and references/backlog.md:40 use a leading slash; implement.md:94, tdd.md:78, review.md:78, optimise.md:108 and the apply pipeline use bare names. origin is free text with no normalisation, so list --count-by origin would split the bucket permanently. Drop the slash in both examples and state the bare-name convention once in the --origin row of the store-shape table."
 dedup_id = "15845f806d7c872f"
+resolved = 2026-09-02
+resolution = "Both examples pass --origin implement; the bare-name convention is stated once in the add flag table's --origin row. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R28"
 file = "claude/skills/flow-contract-apply-pipeline/SKILL.md"
@@ -571,6 +587,8 @@ category = "package-quality"
 summary = "Applied-claim reconciliation, regression cross-check and ledger mutation now sit under ### Failure handling and read as conditional on outcome: fail"
 description = "At d26d436 these were three ### peers (lines 404, 426, 440). The new file has no heading between 296 and 319, so the unconditional steps inherit the failure precondition. Restore three ### headings or a ### Step 5b: Reconcile and mutate around lines 303, 308 and 313."
 dedup_id = "e0b64fc680eaaf41"
+resolved = 2026-09-02
+resolution = "Three ### headings restored with text copied from references/verification.md so anchors agree; sequencing words dropped. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
@@ -593,7 +611,7 @@ resolution = "backlog-capture appended to the expected lists for implement, revi
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R30"
 file = "claude/skills/flow-contract-task-visibility/SKILL.md"
@@ -605,11 +623,13 @@ category = "package-quality"
 summary = "/backlog uses the no-flow slug slot but the contract's carrier list and its two-carriers sentence do not sanction it"
 description = "The description at line 3 ends at /test-bootstrap and line 45 says two carriers mint without a slug. Add /backlog to the description and make the sentence read three carriers."
 dedup_id = "7959f39ce114591e"
+resolved = 2026-09-02
+resolution = "/backlog added to the description carrier list; the no-flow paragraph names three carriers. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R31"
 file = "CLAUDE.md"
@@ -621,11 +641,13 @@ category = "package-quality"
 summary = "Task-visibility paragraph says ten commands under claude/commands/; there are now twelve files"
 description = "backlog.md was added by this flow alongside the existing commit.md. A hardcoded count is exactly what the repo's documentation rule says to replace. Use every multi-step command under claude/commands/."
 dedup_id = "bedd8bdbfea4ebc2"
+resolved = 2026-09-02
+resolution = "Hardcoded count replaced by every multi-step command under claude/commands/. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R32"
 file = "claude/commands/backlog.md"
@@ -637,11 +659,13 @@ category = "package-quality"
 summary = "The four minted task subjects stop at <ref> with no — <title>"
 description = "The mandatory format is <slug> /<command> · <ref> — <title>; the examples are no-flow /backlog · cluster and siblings. Append a title to each, e.g. — group the open set."
 dedup_id = "6b8f63088c21fa78"
+resolved = 2026-09-02
+resolution = "The four /backlog task subjects carry titles. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R33"
 file = "claude/skills/backlog-capture/SKILL.md"
@@ -654,11 +678,13 @@ summary = "Five passages are near-verbatim between backlog-capture/SKILL.md and 
 description = "The fingerprint warning including the sentence about defeating the gate (SKILL:58-62 vs ref:373-376), never-hand-derive-the-path (118-123 vs 413-416), the filename-caption rule (125-129 vs 426-431), the null vs files: [] distinction (131-133 vs 422-424), and the audit extension list plus 2 MiB threshold (139-140 vs 292,301) which mirror code constants. Keep the discipline framing in the skill and replace the mechanical restatements with pointers; at minimum delete the duplicated extension list and byte threshold."
 related = ["R34"]
 dedup_id = "b5eceecfc971b0e2"
+resolved = 2026-09-02
+resolution = "Skill keeps the discipline framing and links the reference's Id derivation, Evidence directories and audit sections; the extension list and byte threshold are gone from the skill. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R34"
 file = "claude/commands/implement.md"
@@ -675,11 +701,13 @@ depends_on = [
     "R24",
     "R28",
 ]
+resolved = 2026-09-02
+resolution = "Seven fenced check/add pairs and the duplicated fingerprint and writer sentences deleted; each carrier keeps its skill invocation, what it collects, and one sentence running the skill's gate with its own --origin and --flow (68 lines removed across five files). No shared block registered. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R35"
 file = "claude/skills/tomlctl/references/flow.md"
@@ -691,11 +719,13 @@ category = "package-quality"
 summary = "flow.md reintroduces <file>.lock as a lock path and links to a section that says that form is deliberately not used"
 description = "Line 45 reads <file>.lock / .claude/.locks/<hash>.lock and links to SKILL.md#constraints-and-gotchas, which states the lock lives under .claude/.locks/<sha256>.lock rather than a sidecar that could collide with a real file. Drop the <file>.lock alternative."
 dedup_id = "217f1d2ff2b8b733"
+resolved = 2026-09-02
+resolution = "Lock bullet names only .claude/.locks/<hash>.lock; the orchestrator also corrected the section lead-in that said both sidecars sit beside the target. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R36"
 file = "claude/skills/tomlctl/SKILL.md"
@@ -707,11 +737,13 @@ category = "package-quality"
 summary = "The skill description names neither the backlog group nor the flow group nor .claude/backlog.toml"
 description = "The description is the only discovery surface before the body loads; an agent searching for backlog handling finds only backlog-capture, never the flag reference. Add the backlog and flow verb groups and the store path. Evidence grade B."
 dedup_id = "57f99420a0dc057c"
+resolved = 2026-09-02
+resolution = "Description names the flow and backlog verb groups and .claude/backlog.toml. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R37"
 file = "claude/skills/tomlctl/SKILL.md"
@@ -723,6 +755,8 @@ category = "package-quality"
 summary = "Body still calls itself the authoritative tomlctl reference after the flag tables moved to references/"
 description = "The README's two deep links now bypass this body and point at references/query.md and references/write.md. Reword to: this document is the navigational entry point; the flag tables live under references/. Evidence grade B."
 dedup_id = "6ceb432239d7064d"
+resolved = 2026-09-02
+resolution = "Body introduces itself as the navigational entry point with the flag tables under References. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
@@ -745,7 +779,7 @@ resolution = "Sibling test skill_references_under_line_ceiling walks references/
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R39"
 file = "claude/skills/tomlctl/SKILL.md"
@@ -757,6 +791,8 @@ category = "package-quality"
 summary = "Link text is the agent file path but the target is an in-page anchor"
 description = "The row reads [see claude/agents/flow-bootstrap.md](#flow-bootstrap-agent-entrypoint); it resolves but lands two paragraphs down instead of the file. Point at ../../agents/flow-bootstrap.md or reword the text. Evidence grade B."
 dedup_id = "0776030717bd0ca9"
+resolved = 2026-09-02
+resolution = "Link targets ../../agents/flow-bootstrap.md; the in-page note is referenced as prose and its anchor kept. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
@@ -1109,7 +1145,7 @@ resolution = "flow/time.rs moved to src/time.rs as a crate-level module via git 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R59"
 file = "claude/skills/tomlctl/SKILL.md"
@@ -1122,6 +1158,8 @@ summary = "After the split, the --allow-outside plus auto-create double-opt-out 
 description = "The navigational body retains the full containment-guard paragraph and references/write.md:104 carries the same warning at greater length. Same shape in the apply-pipeline split: the plus-or-minus-50-lines read range is stated in SKILL.md:163 and owned by references/pre-analysis.md:46. Neither pair disagrees yet. Replace the body paragraph with the one-line rule plus the write.md link."
 related = ["R33"]
 dedup_id = "6e4a47011f23e36d"
+resolved = 2026-09-02
+resolution = "Containment-guard bullet keeps the one-line pairing rule and links write.md's auto-create section. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
@@ -1191,10 +1229,12 @@ summary = "relate, triage and compact emit the extended-length absolute store pa
 description = "relate.rs:57, triage.rs:257 and compact.rs:217 each emit path.display().to_string(), which renders as an extended-length absolute path on Windows, while references/backlog.md lines 171, 200 and 254 document .claude/backlog.toml. flow render-progress-log's success envelope has the same shape. add was fixed under R62 via io::relativise(repo_or_cwd_root()); apply the same three lines to the other verbs."
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 related = ["R62"]
 flow = "tomlctl-backlog-capture"
 dedup_id = "92afc6f76be3c0b1"
+resolved = 2026-09-02
+resolution = "relate, triage, compact and render-progress-log envelopes emit repo-relative paths via relativise. Uncommitted."
 
 [[items]]
 id = "R64"
@@ -1208,7 +1248,7 @@ summary = "The evidence audit docs enumerate seven classes and five strict ones;
 description = "R2, R3 and R61 added stray (strict), sensitive-published (strict) and nested (advisory). references/backlog.md lines 291-305 say exit 1 on the five failing classes and list seven; backlog-capture/SKILL.md lines 115 and 136-138 say a four-line marker and strict on the first five only; commands/backlog.md line 85 enumerates the non-tracked classes. Update all three, and note in the tracked row that a sensitive extension promotes it."
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 related = [
     "R2",
     "R3",
@@ -1216,6 +1256,8 @@ related = [
 ]
 flow = "tomlctl-backlog-capture"
 dedup_id = "9d375880ef8276ee"
+resolved = 2026-09-02
+resolution = "Eleven-class, seven-strict table with per-class meaning and the tracked to sensitive-published promotion note; counts envelope, skill sentence and command list corrected; four-line marker claim dropped. Uncommitted."
 
 [[items]]
 id = "R65"
@@ -1249,10 +1291,12 @@ summary = "TERMINAL_DATE_FIELDS duplicates the date column of the new TERMINAL_C
 description = "After R13 the cluster table is the source for required_fields and terminal_pair, but TERMINAL_DATE_FIELDS survives as a second copy of its date column because add.rs payload_value and two test sites want a flat slice. A test cross-checks them; nothing at compile time does. Derive the slice from the table or fold the callers onto terminal_pair."
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 related = ["R13"]
 flow = "tomlctl-backlog-capture"
 dedup_id = "b099d9f21021cd8e"
+resolved = 2026-09-02
+resolution = "TERMINAL_DATE_FIELDS is derived from column 0 of TERMINAL_CLUSTERS in a const loop, so its length follows the table; the tautological cross-check assertion removed. Uncommitted."
 
 [[items]]
 id = "R67"
@@ -1317,10 +1361,12 @@ summary = "A third copy of the clamped day-span arithmetic survives in flow/reso
 description = "resolve.rs computes signed_days, age_days and age_seconds inline exactly as stale.rs did before R18. Replace the block with crate::time::age_days(updated, today) and the saturating multiply."
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 related = ["R18"]
 flow = "tomlctl-backlog-capture"
 dedup_id = "2514a105ce48012c"
+resolved = 2026-09-02
+resolution = "compute_staleness calls time::age_days; a span failure now reads as age zero rather than a stale verdict with reason could not compute span, a string nothing else referenced. Uncommitted."
 
 [[items]]
 id = "R71"
@@ -1341,3 +1387,77 @@ related = [
 ]
 flow = "tomlctl-backlog-capture"
 dedup_id = "a5403093dacf9365"
+
+[[items]]
+id = "R74"
+file = "tomlctl/src/backlog/check.rs"
+line = 378
+symbol = "resolve_summary"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "pending parts of R1: check's stdin read bypasses io.rs's once-per-invocation guard and byte cap"
+description = "io.rs keeps STDIN_CONSUMED and MAX_STDIN_BYTES private and read_json_arg's empty-input error names a JSON payload, so check.rs reads stdin locally. Harmless while check has one stdin-capable flag; a second one on any backlog verb makes a double consume reachable. Add a pub(crate) read_text_arg beside read_json_arg sharing the guard and cap, and call it from check."
+first_flagged = 2026-09-02
+rounds = 1
+status = "open"
+related = ["R1"]
+flow = "tomlctl-backlog-capture"
+dedup_id = "91f80f01abe54ae8"
+
+[[items]]
+id = "R75"
+file = "claude/skills/tomlctl/references/backlog.md"
+line = 422
+symbol = "Evidence directories"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The Evidence directories section describes two .gitignore rules; the repo ships three"
+description = "After R2 the rules are /.claude/backlog-evidence/**, !/.claude/backlog-evidence/*/ and !/.claude/backlog-evidence/*/.evidence; the reference still describes the one-level pattern plus the marker negation. State the three rules and why the directory re-include must precede the marker one."
+first_flagged = 2026-09-02
+rounds = 1
+status = "open"
+related = [
+    "R2",
+    "R65",
+]
+flow = "tomlctl-backlog-capture"
+dedup_id = "90b9c5eba1b2f5a7"
+
+[[items]]
+id = "R72"
+file = "tomlctl/README.md"
+line = 264
+symbol = "Feature meanings"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "The README's Feature meanings table stops at agent_context and now explains fourteen of the twenty-eight advertised features"
+description = "R23 refreshed the capabilities sample so its features array matches the binary, but the explanatory table below it never gained rows for the flow_*, json_ops and backlog_* features. Add one row per missing feature, sourced from the FEATURES doc comments in cli/types.rs."
+first_flagged = 2026-09-02
+rounds = 1
+status = "open"
+related = [
+    "R23",
+    "R17",
+]
+flow = "tomlctl-backlog-capture"
+dedup_id = "a29b49af460a2394"
+
+[[items]]
+id = "R73"
+file = "claude/commands/review.md"
+line = 39
+symbol = "backlog list --open --area-prefix"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "The prior-context backlog read fence and its hand-rows-to-agents sentence are near-identical in review.md and optimise.md"
+description = "review.md:39-46 and optimise.md:41-48 carry the same tomlctl backlog list --open --area-prefix fence and the same instruction to pass each row's summary and context to the lens agents. R34 reduced the write-path idiom to pointers; the read-path copy has the same drift shape. Either register it as a shared block or move the wording into the backlog-capture skill and point at it."
+first_flagged = 2026-09-02
+rounds = 1
+status = "open"
+related = ["R34"]
+flow = "tomlctl-backlog-capture"
+dedup_id = "d6f449026b27ef9d"

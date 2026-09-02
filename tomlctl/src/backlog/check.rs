@@ -13,8 +13,9 @@
 //! true at the moment it is taken.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{IsTerminal, Read};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
@@ -76,6 +77,9 @@ impl Reason {
 }
 
 const VERDICT_NOVEL: &str = "novel";
+
+/// `--summary` value that means "the summary is on stdin".
+const SUMMARY_STDIN: &str = "-";
 
 struct Thresholds {
     strong: f64,
@@ -371,6 +375,43 @@ fn threshold(flag: &str, value: Option<f64>, default: f64) -> Result<f64> {
     }
 }
 
+/// The summary a caller passed, or the whole of stdin under the `-` sentinel.
+///
+/// A summary is text somebody else wrote — the caller is relaying a discovery,
+/// not composing a command — and a flag value is the one place a shell gets to
+/// re-tokenise it. The sentinel is what lets the text stay data end to end.
+///
+/// One trailing newline is dropped, so a heredoc and a staging file fingerprint
+/// identically.
+fn resolve_summary(raw: String) -> Result<String> {
+    if raw != SUMMARY_STDIN {
+        return Ok(raw);
+    }
+    if std::io::stdin().is_terminal() {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "--summary - reads the summary from stdin, and stdin is a TTY; pipe the text in \
+             (e.g. `… --summary - <<'EOF'`) or pass it as a literal"
+                .to_string(),
+        ));
+    }
+    let mut buf = String::new();
+    std::io::stdin()
+        .read_to_string(&mut buf)
+        .context("reading --summary from stdin")?;
+    let text = buf.strip_suffix('\n').unwrap_or(&buf);
+    let text = text.strip_suffix('\r').unwrap_or(text);
+    if text.trim().is_empty() {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "--summary - read an empty stdin; the summary is required".to_string(),
+        ));
+    }
+    Ok(text.to_string())
+}
+
 // One parameter per flag on the CLI variant, which is the dispatch contract.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn dispatch(
@@ -387,6 +428,7 @@ pub(crate) fn dispatch(
         strong: threshold("--similarity-strong", similarity_strong, SIMILARITY_STRONG)?,
         related: threshold("--similarity-related", similarity_related, SIMILARITY_RELATED)?,
     };
+    let summary = resolve_summary(summary)?;
     let probe = Probe::new(&summary, area.as_deref(), kind.as_deref(), &tag);
 
     let doc = schema::read_store(&integrity)?;

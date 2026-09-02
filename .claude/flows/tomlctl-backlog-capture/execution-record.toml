@@ -1005,3 +1005,113 @@ summary = "review-apply R11 R12 R15: one panic-safe sandbox helper, test_support
 original_intent = "Task 1's skeleton carried blanket dead_code allows on the substrate modules and each leaf grew its own sandbox helper as it was implemented"
 rationale = "Six helpers claimed unwind safety they lacked and leaked the env override on a panicking assertion; the blanket allows hid any vocabulary entry that lost its last consumer. dedup_id's removal is tracked as R71."
 dedup_id = "29d16863931f6e7d"
+
+[[items]]
+id = "E78"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "author-the-backlog-capture-skill"
+summary = "review-apply R1 R27 R33 R64: the skill states that TANGENTIAL text is data never interpolated into a shell, its capture idioms feed check via --summary - on stdin and add via a staged --json - payload, the --origin examples use bare command names, the five mechanical passages duplicated from the reference are replaced by links, and the audit-class sentence matches the eleven-class code"
+original_intent = "Task 19 authored the skill with argv-interpolated check and add idioms, slash-prefixed origin examples, restated flag tables and a seven-class audit description"
+rationale = "A sub-agent's TANGENTIAL text is derived from files it read and can carry shell metacharacters; check had no stdin path until R1 added one. Two spellings of origin split a queryable field. The restated passages mirrored code constants and had already drifted."
+dedup_id = "f7a3451cc7926ef3"
+
+[[items]]
+id = "E79"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "extract-the-flow-and-maintenance-references-and-document-the-backlog-group"
+summary = "review-apply R21 R25 R26 R35 R64: references/backlog.md shows a 16-hex dedup_id, names --error-format, says --exclude, documents --summary - and carries the eleven-class seven-strict audit table; references/flow.md names only the hashed lock path"
+original_intent = "Task 27 documented the backlog group with 64-hex envelopes, an --omit projection flag, a seven-class audit table and a lock bullet that offered the sidecar form"
+rationale = "Each was a drift between the reference and the binary; the lock bullet contradicted the skill body it linked to"
+dedup_id = "6b0ae2d388f05705"
+
+[[items]]
+id = "E80"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "rewrite-the-tomlctl-skill-md-body"
+summary = "review-apply R36 R37 R39 R59: the description names the flow and backlog groups and the backlog store, the body introduces itself as the navigational entry point, the flow-bootstrap row links the agent file, and the containment-guard bullet points at write.md instead of restating it"
+original_intent = "Task 28 rewrote the body as navigational but left the description, the authoritative-reference sentence and one restated warning from the pre-split file"
+rationale = "The description is the only discovery surface before the body loads; after the split each fact should have one owner"
+dedup_id = "939cce4e3148beab"
+
+[[items]]
+id = "E81"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "wire-capture-points-into-implement-and-tdd"
+summary = "review-apply R34: implement.md and tdd.md keep their backlog-capture invocation, what they collect and one sentence running the skill's gate with their own --origin and --flow; the fenced check and add pairs and the duplicated fingerprint and writer sentences are gone"
+original_intent = "Task 20 wired each carrier with a full fenced check-then-add idiom"
+rationale = "Seven near-identical copies across six files could not be held byte-identical by the shared-block verifier and would each need editing when the gate changed; the skill owns the idiom"
+dedup_id = "d1e900954d0ce169"
+
+[[items]]
+id = "E82"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "wire-capture-points-into-review-and-optimise"
+summary = "review-apply R34: review.md and optimise.md keep the sentence ruling out an R or O mint for out-of-scope observations and delegate the gate to the backlog-capture skill; their fenced pairs are gone"
+original_intent = "Task 21 wired both carriers with a full fenced check-then-add idiom"
+rationale = "Same replication as E81; the read-path prior-context fence in both files remains duplicated and is tracked as R73"
+dedup_id = "ce8af2d71dcef824"
+
+[[items]]
+id = "E83"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "close-the-apply-pipeline-out-of-scope-gap"
+summary = "review-apply R24 R28 R34: the apply-pipeline skill restores the three verification sub-headings that had been folded under Failure handling, names the TANGENTIAL: heading its cluster agents emit, and delegates the capped-skip and out-of-scope gates to the backlog-capture skill"
+original_intent = "Task 24 closed the out-of-scope gap with two fenced check-then-add pairs and left the applied-claim, regression and ledger-mutation paragraphs under the failure-handling heading after the reference extraction"
+rationale = "Unconditional steps read as failure-conditional, the TANGENTIAL heading had no defined consumer in the apply flows, and the fenced pairs duplicated the skill"
+dedup_id = "2dfcc19608608784"
+
+[[items]]
+id = "E84"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "add-the-backlog-sweep-command"
+summary = "review-apply R30 R32 R64: /backlog's task subjects carry titles, its audit-class list matches the code, and the task-visibility contract names /backlog as a third no-flow carrier"
+original_intent = "Task 16 added the sweep command with title-less task subjects and a five-class list, and did not extend the task-visibility contract's carrier list"
+rationale = "The contract's subject form requires a title; the class list drifted when R2, R3 and R61 added classes; a carrier using the no-flow slot must be sanctioned by the contract"
+dedup_id = "19882578a0c03b38"
+
+[[items]]
+id = "E85"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "update-the-repo-documentation"
+summary = "review-apply R22 R23 R31: the README quick tour lists all ten backlog leaves, its capabilities sample matches the binary's feature and subcommand lists, and CLAUDE.md no longer hardcodes the command count"
+original_intent = "Task 26 added five of ten leaves to the quick tour, bumped the sample version without refreshing its arrays, and left the ten-commands count"
+rationale = "A reader who never opens the skill could not discover the triage half of the group; a refreshed version line made stale arrays read as current; hardcoded counts drift"
+dedup_id = "2c6c8ea91e39849e"
+
+[[items]]
+id = "E86"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "implement-backlog-relate"
+summary = "review-apply R63: relate, triage, compact and flow render-progress-log envelopes emit repo-relative paths through io::relativise, matching add and the documented shape"
+original_intent = "Tasks 7, 8, 10 and the render command emitted path.display(), which renders as the extended-length absolute path on Windows"
+rationale = "The reference documents .claude/backlog.toml and the absolute form leaks the operator's home directory into transcripts"
+dedup_id = "cd701f73ba1a2fec"
+
+[[items]]
+id = "E87"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "implement-the-backlog-schema-vocabulary-and-validator"
+summary = "review-apply R66 R70: TERMINAL_DATE_FIELDS is derived from the TERMINAL_CLUSTERS table in a const loop so its length follows the table, and flow::resolve's staleness age uses time::age_days"
+original_intent = "R13 introduced the cluster table beside a hand-written date slice; flow/resolve.rs kept its own clamp after R18 shared one"
+rationale = "Two sources for one fact were cross-checked only by a test; the third clamp copy survived the R18 dedup. A span failure in resolve now reads as age zero rather than a stale verdict with an unreferenced reason string."
+dedup_id = "f7eb84ef7a909a96"

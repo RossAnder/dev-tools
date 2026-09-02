@@ -36,7 +36,7 @@ use toml::Value as TomlValue;
 use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::flow::init::execution_record_path_for;
 use crate::integrity::maybe_verify_integrity;
-use crate::io::{atomic_write, read_toml, repo_or_cwd_root};
+use crate::io::{atomic_write, read_toml, relativise, repo_or_cwd_root};
 use crate::output::print_json_compact;
 
 /// EM DASH (U+2014) — the H1 separator and the empty-`supersedes` placeholder.
@@ -109,7 +109,7 @@ pub(crate) fn dispatch(slug: &str, stdout: bool, integrity: &ReadIntegrityArgs) 
 
     let envelope = json!({
         "ok": true,
-        "path": progress_log_path.display().to_string(),
+        "path": relativise(&repo_or_cwd_root()?, &progress_log_path),
         "tables": {
             "completed": rendered.completed,
             "deviations": rendered.deviations,

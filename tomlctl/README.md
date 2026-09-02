@@ -50,9 +50,14 @@ tomlctl flow stale --slug <s> [--threshold <duration>]              # check whet
 tomlctl blocks verify  <file>... [--block <marker-name>]...  # cross-file shared-block parity
 tomlctl backlog check  --summary <s> [--area PATH] [--kind K] [--tag T]...  # is it already known? read-only graded verdict
 tomlctl backlog add    --summary <s> [--kind K] [--area PATH] [--evidence path:line]... [--context <how-to-work-around>]
+tomlctl backlog list   [--open] [--kind K] [--tag T]... [--area-prefix PATH] [--has-evidence] [--count]   # plus the full --where-* query surface
 tomlctl backlog show   <id>                            # one item + its one-hop relations + its evidence listing
+tomlctl backlog relate B7 --to B3 --as relates-to|duplicates|supersedes   # duplicates dismisses B7, supersedes dismisses B3
+tomlctl backlog triage --promote --to tomlctl-backlog-capture B7   # or --dismiss --reason / --resolve --resolution / --reopen --rationale
 tomlctl backlog evidence dir <id>                      # per-item .claude/backlog-evidence/<id>/, created on demand
+tomlctl backlog evidence audit [--strict] [--max-bytes N]   # unowned dirs, policy breaches, stale references
 tomlctl backlog cluster --by all                       # group open items into candidate work scopes
+tomlctl backlog compact [--older-than 90d] [--dry-run]  # ages decided items into [[compacted]]; open items never move
 
 # Integrity flags (accepted after the subcommand name on any TOML-touching command):
 #   --allow-outside           bypass the best-effort .claude/ containment guard (not a sandbox)
@@ -216,10 +221,15 @@ downstream flow-command templates can feature-gate at boot without parsing
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "capabilities", "error_format_json", "strict_read",
                "dry_run", "backfill_dedup_id", "integrity_refresh",
-               "agent_context"],
+               "agent_context", "flow_resolve", "flow_active",
+               "flow_doctor", "flow_init", "flow_ensure_artifact",
+               "flow_envelope_build", "flow_stale", "flow_find_plans",
+               "json_ops", "backlog_capture", "backlog_check",
+               "backlog_cluster", "backlog_compact", "backlog_evidence",
+               "backlog_list", "backlog_show", "backlog_relate", "backlog_triage"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
-                  "integrity"],
+                  "integrity", "flow", "json", "backlog"],
   "commands": {
     "items": {
       "subcommands": {

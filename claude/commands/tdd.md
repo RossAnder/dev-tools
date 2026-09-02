@@ -66,19 +66,7 @@ tomlctl set <cycle-record> last_updated <today>
 
 **Cycle decision**: loop to RED for `<NNN+1>` if uncovered behaviour remains OR coverage gating appended a follow-up; stop when all feature behaviour is covered AND changed-line coverage ≥90% AND all tests pass. On stop, summarise cycles run, total commits, final coverage, and deferred follow-ups.
 
-**Deferred follow-ups.** A follow-up inside the feature's plan scope keeps its existing path — it appends a parent task, unchanged. One that falls outside that scope goes to the repo backlog: invoke the `backlog-capture` skill, then probe with the same `--kind` and `--area` the mint will use:
-
-```bash
-tomlctl backlog check --summary "<summary>" --kind <kind> --area <area>
-```
-
-Act on the verdict per the skill; on `novel` or `related`, mint:
-
-```bash
-tomlctl backlog add --summary "<summary>" --kind <kind> --area <area> --context "<how to work around it>" --origin tdd --flow <parent-slug>
-```
-
-Sub-agents never write the store; the orchestrator is the only writer. The stop summary lists the minted or bumped ids with their verdicts beside the deferred follow-ups (`(none)` when empty).
+**Deferred follow-ups.** A follow-up inside the feature's plan scope keeps its existing path — it appends a parent task, unchanged. One that falls outside that scope goes to the repo backlog: invoke the `backlog-capture` skill, then run its check-then-add gate on each such follow-up, minting with `--origin tdd --flow <parent-slug>`. The stop summary lists the minted or bumped ids with their verdicts beside the deferred follow-ups (`(none)` when empty).
 
 ## Cycle sub-flow layout
 

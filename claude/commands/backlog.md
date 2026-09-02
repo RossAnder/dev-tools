@@ -11,7 +11,7 @@ Walks `.claude/backlog.toml` — the repo-scoped store of tangential discoveries
 
 Invoke the `backlog-capture` skill for the capture discipline — the mint test, the `backlog check` gate and its verdict ladder, the `kind` and `status` vocabularies, the orchestrator-only writer rule, and the evidence-publication rules. That skill owns all of them and this carrier does not restate any. Consult it whenever the user dictates a new item mid-sweep, and mint through the same `check`-then-`add` gate every other carrier uses.
 
-Invoke the `flow-contract-task-visibility` skill for the run-scoped task-surface contract (view-not-store rule, subject prefix with lowercase `<ref>`, `activeForm`, lifecycle, granularity floor, silent degradation). This command is repo-scoped rather than flow-aware, so the slug slot is the literal `no-flow` per that contract's no-flow rule. Mint one task each for Steps 1-4 — `no-flow /backlog · cluster`, `· dispositions`, `· evidence-audit`, `· compact` — as a set before Step 1 opens; Step 0 and Step 5 sit below the granularity floor. `TaskUpdate` each `→ in_progress` as its step opens and `→ completed` when it closes, naming a skipped step's reason in its `description` rather than leaving the row `pending`. When the task tools are absent, continue the sweep unchanged.
+Invoke the `flow-contract-task-visibility` skill for the run-scoped task-surface contract (view-not-store rule, subject prefix with lowercase `<ref>`, `activeForm`, lifecycle, granularity floor, silent degradation). This command is repo-scoped rather than flow-aware, so the slug slot is the literal `no-flow` per that contract's no-flow rule. Mint one task each for Steps 1-4 — `no-flow /backlog · cluster — group the open set`, `· dispositions — apply the user's verdicts`, `· evidence-audit — check the drop-boxes`, `· compact — fold aged terminal rows` — as a set before Step 1 opens; Step 0 and Step 5 sit below the granularity floor. `TaskUpdate` each `→ in_progress` as its step opens and `→ completed` when it closes, naming a skipped step's reason in its `description` rather than leaving the row `pending`. When the task tools are absent, continue the sweep unchanged.
 
 ## Step 0: Pre-flight (binary, then open set)
 
@@ -77,12 +77,14 @@ tomlctl backlog relate B-1a2b3c4d --to B-5e6f7a8b --as relates-to
 tomlctl backlog evidence audit
 ```
 
-Report every finding grouped by class, and name the item each belongs to. Two classes are not defects and must be described as such:
+Report every finding grouped by class, and name the item each belongs to. Four classes are not defects and must be described as such:
 
 - `tracked` — a file in the git-ignored drop-box that is nonetheless staged or committed, so it is **about to be published**. Surface it for review before the next commit; the `backlog-capture` skill's publication rules decide it.
+- `nested` — a subdirectory inside a drop-box. Its contents stay ignored, but nothing sizes or classifies them, so report it as unexamined rather than as clean.
 - `empty` — a directory with a marker and no files. The expected state in a fresh clone, because the contents never left the machine that captured them.
+- `git-unavailable` — `git check-ignore` did not run, so no file could be classified as published. Report the gap; it says nothing about the tree.
 
-The rest — `unowned`, `no-marker`, `oversize`, `disallowed-extension`, `referenced-missing` — are real findings. Run without `--strict` here: this step is a report, not a gate.
+The rest — `unowned`, `no-marker`, `oversize`, `disallowed-extension`, `referenced-missing`, `stray`, `sensitive-published` — are real findings, and `sensitive-published` leads: it is a published file whose format routinely carries an `Authorization` header or a session token. Run without `--strict` here: this step is a report, not a gate.
 
 ## Step 4: Compact (offer, do not assume)
 

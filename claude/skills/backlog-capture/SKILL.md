@@ -53,18 +53,15 @@ needs no setup.
 
 ### The fingerprint includes kind and area
 
-An item's id is `B-` plus the leading hex of `dedup_id = sha256(kind | area |
-normalise(summary))`. Two consequences:
+The id is derived from `kind`, `area` and the summary together, so **`check` and the mint that
+follows it must be given the same `--kind` and `--area`.** Change either between the two calls
+and you probed a different fingerprint than you are about to write: the gate returns `novel`
+and the mint lands a second row for a known issue. This is the single most common way to
+defeat the gate.
 
-- **Give `check` the same `--kind` and `--area` the following mint will use.** Change either
-  between the two calls and you have probed a different fingerprint than you are about to
-  write — the gate returns `novel` and the mint lands a second row for a known issue. This is
-  the single most common way to defeat the gate.
-- Because the derivation is content-only, the same discovery minted from another worktree,
-  another branch, or another machine lands on the same id. Ids are stable, not allocated.
-
-A rephrased summary is a different fingerprint. If you mean the same issue, reuse the wording
-the store already has rather than improving it.
+A rephrased summary is a different fingerprint too, so reuse the wording the store already has
+rather than improving it. The derivation itself, and why an id is stable across worktrees, is
+under [Id derivation](../tomlctl/references/backlog.md#id-derivation).
 
 ## Vocabularies
 
@@ -95,6 +92,11 @@ orchestrator can find it mechanically.
 `--origin <the command>` and `--flow <the flow slug>`. Concentrating writes in one place is
 what keeps parallel sub-agents from racing on one TOML file and its integrity sidecar.
 
+A `TANGENTIAL:` line is text a sub-agent derived from files it read, so it is **data, never a
+shell token**. Feed the summary to `backlog check --summary -` on stdin — a heredoc or a
+staging file — and mint from a staged JSON payload with `backlog add --json -`. Interpolating
+that text into a quoted argument instead hands whoever wrote the file a shell.
+
 ## Minting
 
 The field that earns the item its keep is `--context`: how to work around the issue, or what
@@ -112,34 +114,28 @@ inside the item's own evidence directory. Nothing else.
 ## Evidence directories
 
 Each item may have a drop-box at `.claude/backlog-evidence/<item-id>/`. Its contents are
-git-ignored; a four-line `.evidence` marker is tracked, and is what makes the directory
-survive into a fresh clone once the files have been left behind.
+git-ignored; the `.evidence` marker is tracked, and is what makes the directory survive into a
+fresh clone once the files have been left behind.
 
-**Never hand-derive the path.** Ids widen from 8 to 10 to 12 hex on collision, so a directory
-built from an eyeballed prefix is owned by nothing — `evidence audit` reports it `unowned`
-and it is invisible to `show` and to `list --has-evidence`. Ask for the path:
+**Never hand-derive the path.** Ids widen on collision, so a directory built from an eyeballed
+prefix is owned by nothing: `evidence audit` reports it `unowned`, and it is invisible to
+`show` and to `list --has-evidence`. Ask for it — `tomlctl backlog evidence dir <id>` resolves
+the id against the store, creates the directory and its marker if absent, and prints the path.
+Copy into exactly the path it printed.
 
-Run `tomlctl backlog evidence dir <id>`, which resolves the id against the store, creates the
-directory and marker if absent, and prints the path. Copy into exactly the path it printed.
-
-**Name the file for what it shows.** A manual `cp` carries no caption; the filename is the
-only one it will ever have. `pty-spawn-error-5.png`, not `Screenshot 2026-09-02 141233.png`.
+**Name the file for what it shows.** A manual `cp` carries no caption, so the filename is the
+only one it will ever have: `pty-spawn-error-5.png`, not `Screenshot 2026-09-02 141233.png`.
 Where a filename clarifies a sentence, reference it by that bare name in the item's `context`
-prose — the audit follows those references and reports a `referenced-missing` when the file
-is gone.
+prose, which is what lets the audit notice when the file goes missing.
 
-Nothing in the store enumerates evidence files. `show` reads the directory live: `null` means
-no directory was ever created, `files: []` means one exists but its contents are not in this
-clone, and a populated list is the files as they are on this machine right now.
+Nothing in the store enumerates evidence files; `show` reads the directory live, and the three
+answers it distinguishes are under
+[Evidence directories](../tomlctl/references/backlog.md#evidence-directories).
 
-`evidence audit` classifies findings as `unowned`, `no-marker`, `oversize`,
-`disallowed-extension`, `referenced-missing`, `tracked`, or `empty` (plus `git-unavailable`
-when tracked-ness cannot be determined). `--strict` exits non-zero on the first five only:
-a `tracked` file is a deliberate publication and an `empty` directory is the normal state in
-a fresh clone. Allowed extensions are `png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `txt`,
-`log`, `json`, `har`, `csv`, `md`, `patch`, `diff`; the default oversize threshold is 2 MiB.
-Both are advisory constants that only `audit` consults — no write path enforces them, so the
-audit is the only thing standing between a stray `.pem` and a reviewer.
+`evidence audit` grades every drop-box against the publication policy, and `--strict` exits
+non-zero on the seven classes that could put bytes in front of a reviewer. No write path
+enforces any of that policy, so the audit is the only gate there is. Its class table is under
+[`backlog evidence audit`](../tomlctl/references/backlog.md#backlog-evidence-audit).
 
 ### Publishing a file is a deliberate act
 
@@ -174,16 +170,26 @@ a dead item should be dismissed rather than left to rot.
 
 ## Idioms
 
-Probe before minting — same `--kind` and `--area` the mint will use:
+Probe before minting — same `--kind` and `--area` the mint will use, and the summary on stdin
+rather than in an argument:
 
 ```bash
-tomlctl backlog check --summary "conpty spawn intermittently fails with CreateProcessW error 5" --kind flaky-test --area lumina/server/src/pty --tag pty
+tomlctl backlog check --summary - --kind flaky-test --area lumina/server/src/pty --tag pty <<'SUMMARY'
+conpty spawn intermittently fails with CreateProcessW error 5
+SUMMARY
 ```
 
-Mint, with provenance and a workaround:
+Mint with provenance and a workaround, staging the whole item as JSON — write
+`.claude/_backlog-add.json`:
+
+```json
+{"summary":"conpty spawn intermittently fails with CreateProcessW error 5","kind":"flaky-test","area":"lumina/server/src/pty","tags":["pty"],"context":"Empty PATH entry in HKLM; set LUMINA_CLAUDE_BIN to an absolute path to work around it.","evidence":["lumina/server/src/pty/spawn.rs:214"],"related":["B-1a2b3c4d"],"origin":"implement","flow":"lumina-pty-hardening"}
+```
+
+then pipe it in:
 
 ```bash
-tomlctl backlog add --summary "conpty spawn intermittently fails with CreateProcessW error 5" --kind flaky-test --area lumina/server/src/pty --tag pty --context "Empty PATH entry in HKLM; set LUMINA_CLAUDE_BIN to an absolute path to work around it." --evidence "lumina/server/src/pty/spawn.rs:214" --related B-1a2b3c4d --origin /implement --flow lumina-pty-hardening
+cat .claude/_backlog-add.json | tomlctl backlog add --json -
 ```
 
 Ask for the drop-box, then copy into the path it prints:

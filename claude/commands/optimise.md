@@ -96,16 +96,4 @@ Persist via the skill's mandatory parse-rewrite two-call pattern: one batched `t
 
 Render the merged ledger state as grouped markdown tables **inline in console output only, never persisted** (the TOML on disk is the authoritative artifact), with the resolved ledger path in the report header so `/optimise-apply` can locate it. Group as: **New this run**, severity-grouped Critical / Warnings / Suggestions, each row carrying ID, `file:line` (or `file:symbol` when the line has drifted), category, summary, effort; **Recurring** (`rounds >= 2`, still open) as a dedicated sub-group emphasising chronic items at `rounds >= 3`; **Regressions**, listing new ID, previously-applied ID, and summary; and one-liners for existing non-open matches ("matches existing `<status>` item `<id>`, not re-reporting"). Render an item's `description` below the table for anything the user is likely to act on (typically critical and warnings) rather than inlining the full body into every row. Then prompt: *"Run `/optimise-apply` to implement these findings, or select specific items by ID (e.g. `/optimise-apply O1,O3,O5`). Legacy positional selectors (`/optimise-apply 1,3,5`) still work and resolve against this run's report."*
 
-**Observations outside the ledger's scope.** An agent finding whose `file` lies outside the optimise scope, and a cross-cutting observation that is not a finding against an in-scope file, are neither: do not mint an `O{n}` for them, and do not force a terminal disposition onto an item the ledger never owned. Capture each in the backlog instead — probe first, passing `check` the same `--kind` and `--area` the mint will use:
-
-```bash
-tomlctl backlog check --summary "<summary>" --kind <kind> --area <repo-relative-path>
-```
-
-then mint the ones the verdict allows, with provenance and a workaround:
-
-```bash
-tomlctl backlog add --summary "<summary>" --kind <kind> --area <repo-relative-path> --context "<how to work around it, or what the next reader should do first>" --origin optimise --flow <slug>
-```
-
-Sub-agents never write the store; the orchestrator mints from their surfaced candidates and lists the resulting ids on a `Backlog` line in the console report.
+**Observations outside the ledger's scope.** An agent finding whose `file` lies outside the optimise scope, and a cross-cutting observation that is not a finding against an in-scope file, are neither: do not mint an `O{n}` for them, and do not force a terminal disposition onto an item the ledger never owned. Capture each in the backlog instead, alongside every `TANGENTIAL:` line the lens agents returned: run the `backlog-capture` skill's check-then-add gate on each candidate, minting with `--origin optimise --flow <slug>`, and list the resulting ids on a `Backlog` line in the console report.

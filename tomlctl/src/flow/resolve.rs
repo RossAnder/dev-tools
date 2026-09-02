@@ -911,18 +911,7 @@ fn compute_staleness(table: &toml::map::Map<String, TomlValue>) -> JsonValue {
         }
     };
 
-    let span = match updated_date.until(today) {
-        Ok(s) => s,
-        Err(_) => {
-            return json!({
-                "stale": true,
-                "age_seconds": JsonValue::Null,
-                "reason": "could not compute span",
-            });
-        }
-    };
-    let signed_days: i64 = span.get_days() as i64;
-    let age_days: u64 = if signed_days > 0 { signed_days as u64 } else { 0 };
+    let age_days = crate::time::age_days(updated_date, today);
     let age_seconds: u64 = age_days.saturating_mul(86_400);
     let threshold = Duration::from_secs(7 * 86_400);
     let stale = Duration::from_secs(age_seconds) > threshold;

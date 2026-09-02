@@ -23,7 +23,10 @@ use super::schema::{
 use crate::cli::{RelationKind, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{items_array, items_array_mut, mutate_doc, on_missing_for, warn_if_created};
+use crate::io::{
+    items_array, items_array_mut, mutate_doc, on_missing_for, relativise, repo_or_cwd_root,
+    warn_if_created,
+};
 use crate::output::print_json_compact;
 
 const FIELD_LAST_UPDATED: &str = "last_updated";
@@ -52,7 +55,7 @@ pub(crate) fn dispatch(
         "a": a,
         "b": to,
         "changed": changed,
-        "path": path.display().to_string(),
+        "path": relativise(&repo_or_cwd_root()?, &path),
     }))
 }
 

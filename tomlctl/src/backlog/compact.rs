@@ -26,7 +26,7 @@ use super::schema::{
 use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
 use crate::io::{
     dry_run_read_opts, items_array, items_array_mut, mutate_doc_conditional, on_missing_for,
-    read_doc,
+    read_doc, relativise, repo_or_cwd_root,
 };
 use crate::output::print_json_compact;
 
@@ -203,7 +203,7 @@ fn emit_result(path: &Path, compacted: usize, remaining: usize) -> Result<()> {
         "ok": true,
         "compacted": compacted,
         "remaining": remaining,
-        "path": path.display().to_string(),
+        "path": relativise(&repo_or_cwd_root()?, path),
     }))
 }
 
