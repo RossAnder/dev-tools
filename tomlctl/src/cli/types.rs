@@ -917,6 +917,8 @@ pub(crate) enum BacklogOp {
         /// the store records whether evidence exists.
         #[arg(long = "has-evidence", help = "Keep only items whose evidence directory holds files")]
         has_evidence: bool,
+        #[arg(long, help = "Emit only the row count")]
+        count: bool,
         #[command(flatten)]
         query: QueryArgs,
         #[command(flatten)]

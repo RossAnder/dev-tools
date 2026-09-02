@@ -284,6 +284,7 @@ const SCHEMA_SEEDED_FLOW_FILES: &[&str] = &[
     "review-ledger.toml",
     "optimise-findings.toml",
     "plan-review-findings.toml",
+    "backlog.toml",
 ];
 
 /// T1: compute the schema-conformant seed doc to use when a write target does
@@ -2414,6 +2415,25 @@ body
                 "{name} must seed a `last_updated` date"
             );
         }
+    }
+
+    /// The backlog store is auto-created by `backlog add` before any explicit
+    /// bootstrap, so its `schema_version` must serialise ahead of
+    /// `last_updated` the way every other recognised file's does.
+    #[test]
+    fn seed_doc_for_backlog_orders_schema_version_first() {
+        let path = std::path::Path::new(".claude/backlog.toml");
+        let rendered = toml::to_string_pretty(&seed_doc_for(path).unwrap()).unwrap();
+        let schema_at = rendered
+            .find("schema_version")
+            .expect("backlog.toml must seed schema_version");
+        let updated_at = rendered
+            .find("last_updated")
+            .expect("backlog.toml must seed last_updated");
+        assert!(
+            schema_at < updated_at,
+            "schema_version must precede last_updated, got: {rendered:?}"
+        );
     }
 
     /// T1 (d): `--no-create` appears on a WRITE subcommand (`set`) and is
