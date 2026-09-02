@@ -1,4 +1,4 @@
-//! R59: shared-markdown-block parity verification. Used by the git pre-commit
+//! Shared-markdown-block parity verification. Used by the git pre-commit
 //! hook to ensure `## Flow Context` and `## Ledger Schema` blocks remain
 //! byte-identical across `claude/commands/{optimise,review,optimise-apply,review-apply}.md`.
 //!
@@ -20,7 +20,7 @@ use crate::integrity::hex_lower;
 #[derive(Debug)]
 pub(crate) struct BlocksReport {
     pub(crate) ok: bool,
-    /// R28: the rendered JSON payload (top-level object containing `ok` +
+    /// The rendered JSON payload (top-level object containing `ok` +
     /// `blocks`) that the dispatcher prints to stdout.
     pub(crate) report: JsonValue,
 }
@@ -69,7 +69,7 @@ pub(crate) fn scan_block_names(contents: &str) -> Vec<String> {
     scan_block_names_warn(contents, None)
 }
 
-/// R53: same as `scan_block_names` but also emits a stderr warning for lines
+/// Same as `scan_block_names` but also emits a stderr warning for lines
 /// that look like SHARED-BLOCK markers but don't match the canonical
 /// `<!-- SHARED-BLOCK:<name> START -->` / `... END -->` shape. Typical typos
 /// caught: missing hyphen (`SHAREDBLOCK`), lowercase keyword, trailing
@@ -135,10 +135,9 @@ pub(crate) fn blocks_verify(files: &[PathBuf], blocks: &[String]) -> Result<Bloc
             "blocks verify: no files supplied; pass one or more file paths (e.g. `tomlctl blocks verify a.md b.md`)"
         );
     }
-    // Preload every file once. R53: run typo-aware scan on each file's
-    // contents up-front, so a `<!-- SHAREDBLOCK:... START -->` (missing
-    // hyphen) in ANY file surfaces as a warning — not just the first one
-    // that feeds `effective_blocks`.
+    // Preload every file once, running the typo-aware scan up-front, so a
+    // `<!-- SHAREDBLOCK:... START -->` (missing hyphen) in ANY file surfaces
+    // as a warning — not just in the first one that feeds `effective_blocks`.
     let mut contents_by_file: HashMap<PathBuf, String> = HashMap::new();
     for f in files {
         let c = fs::read_to_string(f).with_context(|| format!("reading {}", f.display()))?;
@@ -172,9 +171,6 @@ pub(crate) fn blocks_verify(files: &[PathBuf], blocks: &[String]) -> Result<Bloc
             }
         }
 
-        // R22: filter_map collapses the `is_some` filter and the later
-        // `.as_ref().unwrap()` calls into a single pass. `present` is now a
-        // Vec<(&PathBuf, &String)> — no Option unwraps below.
         let mut present: Vec<(&PathBuf, &String)> = per_file
             .iter()
             .filter_map(|(p, h)| h.as_ref().map(|d| (p, d)))
@@ -263,8 +259,8 @@ fn path_to_string(p: &Path) -> String {
 ///
 /// The `verify-skills` engine (this struct, `verify_skills`, and the private
 /// `strip_frontmatter` / `normalise_block` / `first_difference` helpers) is
-/// reached from the `tomlctl blocks verify-skills` dispatch route (T4) as well
-/// as the in-crate unit tests.
+/// reached from the `tomlctl blocks verify-skills` dispatch route as well as
+/// the in-crate unit tests.
 #[derive(Debug)]
 pub(crate) struct SkillDriftReport {
     pub(crate) ok: bool,
@@ -586,10 +582,8 @@ body
         );
     }
 
-    /// Phase 6 / T6: path-shape rewrites in `blocks_verify` must quote the
-    /// expected invocation form when no files are supplied. The rewritten
-    /// message embeds an example invocation so an agent sees the shape
-    /// directly.
+    /// `blocks_verify`'s no-files error must embed an example invocation, so
+    /// an agent reading it sees the expected argument shape directly.
     #[test]
     fn error_message_path_shape_blocks_verify_quotes_expected_invocation() {
         let err = blocks_verify(&[], &[]).unwrap_err().to_string();

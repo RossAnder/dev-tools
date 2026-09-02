@@ -1,19 +1,10 @@
-//! R6/R39: consolidated clock and duration helpers.
+//! Clock and duration helpers.
 //!
 //! Crate-level infrastructure, owned by no verb group: `flow` and `backlog`
 //! both resolve "today" and parse age thresholds, so neither may own the
-//! helpers the other needs.
-//!
-//! Five pre-consolidation sites (`flow::active::now_rfc3339`,
-//! `flow::init::now_rfc3339` / `today_toml_date`, `flow::stale`'s
-//! `Timestamp::now()` calls, `flow::resolve::compute_staleness`,
-//! `flow::ensure_artifact::today_utc_iso`) each constructed `jiff::Timestamp::now()`
-//! independently. R6 collapses them to a single module; R39 adds a
-//! test-only injection seam (`set_now_for_test`) so unit tests can pin a
-//! deterministic clock without touching every call site.
-//!
-//! Production callers see no behavioural change: `now()` resolves to
-//! `jiff::Timestamp::now()` exactly as the per-site helpers did.
+//! helpers the other needs. Every wall-clock read in the crate goes through
+//! `now()` rather than `jiff::Timestamp::now()`, so the test seam below
+//! covers all of them.
 //!
 //! ## Test injection
 //!
@@ -217,9 +208,8 @@ mod tests {
         assert_eq!(today_utc_iso().unwrap(), "2026-05-08");
     }
 
-    /// R39 (a): age_seconds-at-boundary — pin "today" to noon and verify
-    /// age computation against an `updated` from earlier the same day
-    /// resolves to 0 days (date-only granularity).
+    /// Age is date-only: an `updated` from earlier the same calendar day
+    /// resolves to zero days, never a fraction of one.
     #[test]
     fn boundary_same_day_yields_zero_age() {
         let now_ts: Timestamp = "2026-05-08T12:00:00Z".parse().unwrap();
@@ -229,10 +219,9 @@ mod tests {
         assert_eq!(today, updated);
     }
 
-    /// R39 (b): UTC-midnight crossing — fixing "now" to one second before
-    /// midnight yields the same date as fixing it to one second past
-    /// midnight on the SAME calendar day. The transition tested here
-    /// pins both sides of the boundary explicitly.
+    /// The calendar date is derived in UTC, not local time: one second
+    /// either side of UTC midnight lands on different dates regardless of
+    /// the host timezone.
     #[test]
     fn utc_midnight_crossing_changes_date() {
         // Just before midnight on the 8th.
@@ -246,8 +235,7 @@ mod tests {
         assert_eq!(today_utc_iso().unwrap(), "2026-05-09");
     }
 
-    /// R39 (c): malformed input surfaces as `ParseDateError::Invalid`,
-    /// not a panic.
+    /// Malformed input surfaces as `ParseDateError::Invalid`, not a panic.
     #[test]
     fn malformed_input_returns_error_not_panic() {
         assert!(parse_iso_to_date("").is_err());
