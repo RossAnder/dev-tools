@@ -71,3 +71,11 @@ opt-level = 2
 broken_intra_doc_links = "deny"
 private_intra_doc_links = "deny"
 invalid_html_tags = "deny"
+
+# Both of these were cleared crate-wide once; denied so the hand-rolled shapes
+# cannot creep back in as warnings nobody reads. A bare string is shorthand for
+# `{ level = "deny", priority = 0 }` — any lint GROUP added here must carry
+# `priority = -1`, or Cargo rejects the same-priority conflict with its members.
+[lints.clippy]
+manual_filter = "deny"
+unnecessary_map_or = "deny"
