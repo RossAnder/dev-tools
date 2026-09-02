@@ -1517,7 +1517,7 @@ mod tests {
     use crate::blocks::{self, blocks_verify, scan_block_names_warn};
     use crate::test_support::env_lock;
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     // ----- blocks verify ---------------------------------------------------
 
@@ -1828,6 +1828,54 @@ body
         );
     }
 
+    /// The harness markdown `command_lint` parses, rooted at a `claude/` dir so
+    /// the set is testable against a temp tree rather than only the live repo.
+    ///
+    /// Every skill body plus one level of `references/*.md`: an unscanned skill
+    /// is an ungated skill, so the skills glob carries no name prefix.
+    /// `templates/`, `scripts/` and anything nested deeper stay out — template
+    /// argv is placeholder text that is not meant to parse. std `read_dir`; no
+    /// glob crate is in the dependency tree.
+    fn command_lint_scan_set(claude_dir: &Path) -> Vec<PathBuf> {
+        let md = |p: &Path| p.extension().and_then(|e| e.to_str()) == Some("md");
+        let mut files: Vec<PathBuf> = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(claude_dir.join("skills")) {
+            for entry in entries.flatten() {
+                let skill_dir = entry.path();
+                if !skill_dir.is_dir() {
+                    continue;
+                }
+                let body = skill_dir.join("SKILL.md");
+                if body.is_file() {
+                    files.push(body);
+                }
+                if let Ok(refs) = fs::read_dir(skill_dir.join("references")) {
+                    for r in refs.flatten() {
+                        let p = r.path();
+                        if p.is_file() && md(&p) {
+                            files.push(p);
+                        }
+                    }
+                }
+            }
+        }
+
+        for dir in ["commands", "agents"] {
+            if let Ok(entries) = fs::read_dir(claude_dir.join(dir)) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_file() && md(&p) {
+                        files.push(p);
+                    }
+                }
+            }
+        }
+
+        files.sort();
+        files
+    }
+
     /// T5: carrier↔CLI flag-drift guard. Every `tomlctl …` invocation written
     /// in the project's command/skill markdown is fed to the REAL clap `Cli`
     /// parser; an `UnknownArgument` / `InvalidSubcommand` error is a lint
@@ -1857,43 +1905,7 @@ body
             return;
         }
 
-        // Build the scan set: the tomlctl skill, every flow-contract skill, and
-        // every command file. Use std directory reads for the two globs — no
-        // `glob` crate is in the dependency tree and std is sufficient here.
-        let mut files: Vec<std::path::PathBuf> = Vec::new();
-        files.push(claude_dir.join("skills").join("tomlctl").join("SKILL.md"));
-        let skills_dir = claude_dir.join("skills");
-        if let Ok(entries) = fs::read_dir(&skills_dir) {
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                if name.starts_with("flow-contract-") {
-                    let skill = entry.path().join("SKILL.md");
-                    if skill.exists() {
-                        files.push(skill);
-                    }
-                }
-            }
-        }
-        let commands_dir = claude_dir.join("commands");
-        if let Ok(entries) = fs::read_dir(&commands_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().and_then(|e| e.to_str()) == Some("md") {
-                    files.push(p);
-                }
-            }
-        }
-        let agents_dir = claude_dir.join("agents");
-        if let Ok(entries) = fs::read_dir(&agents_dir) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.extension().and_then(|e| e.to_str()) == Some("md") {
-                    files.push(p);
-                }
-            }
-        }
-        files.sort();
+        let files = command_lint_scan_set(&claude_dir);
 
         // Collected lint failures: (file, logical-line, clap error rendering).
         let mut failures: Vec<(String, String, String)> = Vec::new();
@@ -2048,6 +2060,91 @@ body
         }
     }
 
+    /// The scan set must reach a skill whose name carries no `flow-contract-`
+    /// prefix, and must reach one level into `references/` without descending
+    /// into `templates/`. Asserted over a temp tree so the live repo's contents
+    /// cannot make it pass by accident.
+    #[test]
+    fn command_lint_scan_set_includes_skill_and_reference_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let claude_dir = dir.path();
+        let skill = claude_dir.join("skills").join("x");
+        fs::create_dir_all(skill.join("references")).unwrap();
+        fs::create_dir_all(skill.join("templates")).unwrap();
+        fs::create_dir_all(claude_dir.join("commands")).unwrap();
+        fs::create_dir_all(claude_dir.join("agents")).unwrap();
+
+        let body = skill.join("SKILL.md");
+        let reference = skill.join("references").join("y.md");
+        let template = skill.join("templates").join("z.md");
+        let command = claude_dir.join("commands").join("c.md");
+        let agent = claude_dir.join("agents").join("a.md");
+        let not_markdown = skill.join("references").join("y.txt");
+        for p in [&body, &reference, &template, &command, &agent, &not_markdown] {
+            fs::write(p, "# fixture\n").unwrap();
+        }
+
+        let set = command_lint_scan_set(claude_dir);
+        for p in [&body, &reference, &command, &agent] {
+            assert!(set.contains(p), "scan set must include {}: {set:?}", p.display());
+        }
+        for p in [&template, &not_markdown] {
+            assert!(!set.contains(p), "scan set must exclude {}: {set:?}", p.display());
+        }
+        let mut sorted = set.clone();
+        sorted.sort();
+        assert_eq!(set, sorted, "scan set must be returned sorted");
+    }
+
+    /// Anthropic's skill-authoring guidance caps a SKILL.md body at 500 lines
+    /// and nothing upstream enforces it, so a body drifts past the ceiling with
+    /// no signal at all. Same graceful skip as `command_lint` for a checkout
+    /// without the harness tree.
+    #[test]
+    #[ignore = "claude/skills/tomlctl/SKILL.md is above the ceiling until its split lands"]
+    fn skill_bodies_under_line_ceiling() {
+        const CEILING: usize = 500;
+
+        let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+        let skills_dir = repo_root.join("claude").join("skills");
+        if !skills_dir.exists() {
+            eprintln!("skill_bodies_under_line_ceiling: claude/skills/ not found, skipping");
+            return;
+        }
+
+        let mut offenders: Vec<(String, usize)> = Vec::new();
+        for entry in fs::read_dir(&skills_dir).expect("read claude/skills").flatten() {
+            let body = entry.path().join("SKILL.md");
+            let Ok(text) = fs::read_to_string(&body) else {
+                continue;
+            };
+            let lines = text.lines().count();
+            if lines > CEILING {
+                let rel = body
+                    .strip_prefix(&repo_root)
+                    .unwrap_or(&body)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                offenders.push((rel, lines));
+            }
+        }
+        offenders.sort();
+
+        if !offenders.is_empty() {
+            let mut msg = format!(
+                "skill_bodies_under_line_ceiling: {} skill body/bodies over the \
+                 {CEILING}-line ceiling. Move the overflow into \
+                 `references/*.md` and leave a navigational body:\n",
+                offenders.len()
+            );
+            for (f, n) in &offenders {
+                msg.push_str(&format!("  {f}: {n} lines ({} over)\n", n - CEILING));
+            }
+            panic!("{msg}");
+        }
+    }
+
     /// T6: progressive-disclosure invocation guard. A skeletonised carrier must
     /// still INVOKE each `flow-contract-*` skill it delegates to — `command_lint`
     /// only catches CLI-flag drift, and `verify_skills_clean` is dormant
@@ -2183,6 +2280,10 @@ body
                     "flow-contract-vet-research",
                     "flow-contract-task-visibility",
                 ],
+            ),
+            (
+                "backlog.md",
+                &["flow-contract-task-visibility", "backlog-capture"],
             ),
         ];
 
