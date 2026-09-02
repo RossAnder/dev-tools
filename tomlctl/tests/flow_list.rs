@@ -1,4 +1,4 @@
-//! T9 integration tests for `tomlctl flow list`.
+//! Integration tests for `tomlctl flow list`.
 //!
 //! Each test builds a self-contained tempdir laid out as a mock repo root
 //! with a `.claude/flows/<slug>/context.toml` per flow plus an optional
@@ -80,7 +80,7 @@ fn seed_flow(root: &Path, slug: &str, body: &str) {
 
 /// Seed `<root>/.claude/active-flow.toml` with the given list of slugs.
 /// Each slug becomes a `[[active]]` entry carrying only `slug` + a
-/// minimal-but-valid `last_used` (the registry-shape contract from T3).
+/// minimal-but-valid `last_used` (the registry-shape contract).
 fn seed_active_registry(root: &Path, slugs: &[&str]) {
     let mut body = String::from("schema_version = 1\n");
     for s in slugs {
@@ -328,10 +328,10 @@ updated = 2026-03-20
     );
 }
 
-/// `--active-only` with NO active-flow.toml present returns `[]` — matches
-/// T3's "missing-registry-is-empty" semantics. No warning is emitted on
-/// stderr because the legacy-pointer warning is `flow active list`'s
-/// responsibility, not `flow list`'s.
+/// `--active-only` with NO active-flow.toml present returns `[]`, matching
+/// the registry's "missing-registry-is-empty" semantics. No warning is
+/// emitted on stderr because the legacy-pointer warning is `flow active
+/// list`'s responsibility, not `flow list`'s.
 #[test]
 fn active_only_with_missing_registry_returns_empty() {
     let (_g, root) = make_root();

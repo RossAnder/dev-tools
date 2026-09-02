@@ -1,5 +1,4 @@
-//! Integration tests for `tomlctl flow envelope build` (T5 of
-//! `docs/plans/harness-progressive-disclosure.md`).
+//! Integration tests for `tomlctl flow envelope build`.
 //!
 //! Pure read-only subcommand — no filesystem state to stage. Each test
 //! invokes the CLI through `assert_cmd` and asserts on the emitted JSON
@@ -57,7 +56,7 @@ fn flow_envelope_build_minimal_args_emits_default_envelope() {
         ]
     );
 
-    // R18: the key-set assertion above pins only the SET of keys. envelope.rs
+    // The key-set assertion above pins only the SET of keys. envelope.rs
     // documents that field ORDER matches the schema doc byte-for-byte (serde_json
     // `preserve_order` enabled), so assert the actual emission order on the raw
     // stdout string — a HashMap round-trip would lose insertion order and not
@@ -90,7 +89,7 @@ fn flow_envelope_build_minimal_args_emits_default_envelope() {
     }
 }
 
-/// R20: passing the same `--require-artifact` value twice pins the current
+/// Passing the same `--require-artifact` value twice pins the current
 /// contract — the impl does NOT de-duplicate, so both occurrences land in
 /// `require_artifacts` as a duplicate array `["execution_record",
 /// "execution_record"]`. This documents (not changes) the behaviour: if a
@@ -191,12 +190,11 @@ fn flow_envelope_build_rejects_unknown_command() {
         .write_stdin("")
         .assert()
         .failure()
-        // R16: exit 1 is intentional. The impl tags this via
+        // Exit 1 is intentional. The impl tags this via
         // `tagged_err(ErrorKind::Validation, ...)`, which routes through the
         // binary's anyhow-error convention (exit 1) consistently across every
-        // validation site. Plan T5's "exit 2 for validation errors" was
-        // aspirational and superseded by that convention — do not "fix" this to
-        // `.code(2)`; the source exit code is the contract being pinned here.
+        // validation site — do not "fix" this to `.code(2)`; the source exit
+        // code is the contract being pinned here.
         .code(1);
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     let err = parse_json_error_envelope(&stderr);
@@ -233,10 +231,9 @@ fn flow_envelope_build_rejects_unknown_require_artifact() {
         .write_stdin("")
         .assert()
         .failure()
-        // R16: exit 1 is intentional here too — same ErrorKind::Validation /
-        // anyhow convention as the `--command` path above. Plan T5's "exit 2"
-        // was superseded; the asserted `.code(1)` pins the binary's real
-        // contract.
+        // Exit 1 is intentional here too — same ErrorKind::Validation /
+        // anyhow convention as the `--command` path above. The asserted
+        // `.code(1)` pins the binary's real contract.
         .code(1);
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     let err = parse_json_error_envelope(&stderr);

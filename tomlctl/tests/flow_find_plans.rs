@@ -1,4 +1,4 @@
-//! T4: integration tests for `tomlctl flow find-plans`.
+//! Integration tests for `tomlctl flow find-plans`.
 //!
 //! Each test builds a self-contained tempdir laid out as a mock repo root
 //! (containing `.claude/` and one or more plan directories), points
@@ -195,7 +195,7 @@ fn default_fallback_when_neither_configured() {
     assert_eq!(slugs, vec!["default-plan"]);
 }
 
-/// P4 sentinel: `plansDirectory == "__DONT_ASK__"` is treated as
+/// Sentinel: `plansDirectory == "__DONT_ASK__"` is treated as
 /// "explicitly unset" and resolution falls through to the default.
 #[test]
 fn plans_directory_sentinel_falls_through_to_default() {
@@ -215,7 +215,7 @@ fn plans_directory_sentinel_falls_through_to_default() {
     assert_eq!(slugs, vec!["d"]);
 }
 
-/// P4 sentinel on the namespaced array. When every entry is the sentinel,
+/// Sentinel on the namespaced array. When every entry is the sentinel,
 /// the whole key is treated as unset and we fall through to (potentially)
 /// `plansDirectory` and then the default.
 #[test]
@@ -376,7 +376,7 @@ branch = "main"
 "#,
     );
 
-    // R7: `--json` flag dropped — `flow find-plans` always emits JSON.
+    // `flow find-plans` always emits JSON; there is no `--json` flag.
     let arr = run_find_plans(&root, &[]);
     assert_eq!(arr.len(), 2);
 

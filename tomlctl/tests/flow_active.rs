@@ -1,4 +1,4 @@
-//! T3 integration tests for `tomlctl flow active {list,add,remove,touch}`
+//! Integration tests for `tomlctl flow active {list,add,remove,touch}`
 //! against a tempdir-rooted `.claude/active-flow.toml` registry.
 //!
 //! Sandbox strategy: every test creates a `tempfile::tempdir()` and points

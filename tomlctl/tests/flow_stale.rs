@@ -1,5 +1,4 @@
-//! Integration tests for `tomlctl flow stale` (T5 of
-//! `docs/plans/flow-tracking-overhaul.md`).
+//! Integration tests for `tomlctl flow stale`.
 //!
 //! Each test materialises a temp `<root>/.claude/flows/<slug>/context.toml`
 //! (or omits it, for the missing-file paths) and runs the CLI through

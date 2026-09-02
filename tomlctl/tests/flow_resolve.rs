@@ -1,11 +1,11 @@
-//! T10 integration tests for `tomlctl flow resolve` — the 5-step (in
+//! Integration tests for `tomlctl flow resolve` — the 5-step (in
 //! practice 6-path) flow-resolution keystone.
 //!
 //! Sandbox strategy mirrors `tests/flow_active.rs`: each test materialises
 //! a `tempfile::tempdir()` and points `TOMLCTL_ROOT` at it via
-//! `assert_cmd::Command::env`. Per the plan's P11 acceptance, fixtures are
-//! synthesised in-test rather than relying on the live `.claude/flows/`
-//! snapshot (which mutates while the overhaul is implemented).
+//! `assert_cmd::Command::env`. Fixtures are synthesised in-test rather
+//! than relying on the live `.claude/flows/` snapshot, which mutates out
+//! of band and would make these assertions non-deterministic.
 //!
 //! Source-path coverage (one fixture per path):
 //!   1. explicit-flag
@@ -614,7 +614,7 @@ fn resolved_envelope_carries_canonical_keys() {
     );
 }
 
-/// R40: contract for a malformed `.claude/active-flow.toml` — the
+/// Contract for a malformed `.claude/active-flow.toml` — the
 /// registry parse error is TOLERATED (treated as empty registry) rather
 /// than escalated to a hard error. The implementation routes through
 /// `load_active_entries`, which catches `read_toml`'s parse error,
@@ -661,7 +661,7 @@ slug = "broken"
     );
 }
 
-/// R42: contract pin for `tomlctl flow doctor`'s independent silent-pass
+/// Contract pin for `tomlctl flow doctor`'s independent silent-pass
 /// path on a malformed `.claude/active-flow.toml`. Doctor's
 /// `collect_stale_active_slugs` swallows the parse error and returns an
 /// empty stale-slug list (mirrors the resolver's `load_active_entries`
@@ -710,14 +710,14 @@ slug = "broken"
 }
 
 // ---------------------------------------------------------------------------
-// R44: step-3 tie → step-4 active-latest fallthrough composition
+// step-3 tie → step-4 active-latest fallthrough composition
 // ---------------------------------------------------------------------------
 
-/// R44: Two registry entries whose `binding.branch` both equal the caller's
+/// Two registry entries whose `binding.branch` both equal the caller's
 /// `--branch` produce a step-3 binding-match tie. The tie causes
 /// `best_binding_match` to return `None`, falling through to step-4
 /// active-latest. Pins the full CLI composition of step-3-tie →
-/// step-4-fallthrough that previously had only a unit test in resolve.rs.
+/// step-4-fallthrough.
 #[test]
 fn step_3_binding_tie_falls_through_to_active_latest() {
     let (dir, _claude) = fresh_root();
@@ -766,12 +766,11 @@ branch = "feat/x"
 }
 
 // ---------------------------------------------------------------------------
-// R45: tie-resolution envelope shape pin (5-key shape)
+// tie-resolution envelope shape pin (5-key shape)
 // ---------------------------------------------------------------------------
 
-/// R45: pair the resolved-happy-path 13-key shape pin with a 5-key shape
-/// pin for the tie-resolution envelope. The unresolved-with-ties envelope
-/// emits exactly 5 keys: `resolved`, `source`, `ties_broken`,
+/// Shape pin for the tie-resolution envelope. The unresolved-with-ties
+/// envelope emits exactly 5 keys: `resolved`, `source`, `ties_broken`,
 /// `tie_candidates`, `warnings`. Adding or dropping a key in
 /// `ResolveEnvelope::to_json` must trip this test.
 #[test]
@@ -810,7 +809,7 @@ fn tie_resolution_envelope_carries_canonical_5_keys() {
 }
 
 // ---------------------------------------------------------------------------
-// R49: 13-key resolved-envelope shape pin across all resolution paths
+// 13-key resolved-envelope shape pin across all resolution paths
 // ---------------------------------------------------------------------------
 
 /// Canonical 13-key set for the resolved envelope. Used by the
@@ -843,7 +842,7 @@ fn assert_resolved_keys(v: &serde_json::Value, source_label: &str) {
     );
 }
 
-/// R49: scope-glob resolution path emits the 13-key resolved envelope.
+/// The scope-glob resolution path emits the 13-key resolved envelope.
 #[test]
 fn resolved_envelope_keys_via_scope_glob() {
     let (dir, _claude) = fresh_root();
@@ -860,7 +859,7 @@ fn resolved_envelope_keys_via_scope_glob() {
     assert_resolved_keys(&v, "scope-glob");
 }
 
-/// R49: active-binding resolution path emits the 13-key resolved envelope.
+/// The active-binding resolution path emits the 13-key resolved envelope.
 #[test]
 fn resolved_envelope_keys_via_active_binding() {
     let (dir, _claude) = fresh_root();
@@ -888,7 +887,7 @@ branch = "feat/x"
     assert_resolved_keys(&v, "active-binding");
 }
 
-/// R49: active-latest resolution path emits the 13-key resolved envelope.
+/// The active-latest resolution path emits the 13-key resolved envelope.
 #[test]
 fn resolved_envelope_keys_via_active_latest() {
     let (dir, _claude) = fresh_root();
@@ -916,7 +915,7 @@ last_used = "2026-05-08T10:00:00Z"
     assert_resolved_keys(&v, "active-latest");
 }
 
-/// R49: branch-match resolution path emits the 13-key resolved envelope.
+/// The branch-match resolution path emits the 13-key resolved envelope.
 /// (Registry intentionally absent → step-5 fires.)
 #[test]
 fn resolved_envelope_keys_via_branch_match() {

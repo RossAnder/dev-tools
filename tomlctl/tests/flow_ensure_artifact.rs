@@ -1,5 +1,4 @@
-//! T8: integration tests for `tomlctl flow ensure-artifact` (per
-//! `docs/plans/flow-tracking-overhaul.md` Task 8).
+//! Integration tests for `tomlctl flow ensure-artifact`.
 //!
 //! Each test materialises a sandbox tempdir at `<tmp>/.claude/flows/<slug>/`,
 //! optionally seeds the artifact + sidecar, and runs the built `tomlctl`

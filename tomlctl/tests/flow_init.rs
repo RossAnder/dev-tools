@@ -1,4 +1,4 @@
-//! T7 integration tests for `tomlctl flow init` against a tempdir-rooted
+//! Integration tests for `tomlctl flow init` against a tempdir-rooted
 //! `.claude/flows/<slug>/` layout.
 //!
 //! Sandbox strategy mirrors `tests/flow_active.rs`: every test creates a

@@ -1,4 +1,4 @@
-//! T11 integration tests for `tomlctl flow doctor`.
+//! Integration tests for `tomlctl flow doctor`.
 //!
 //! Each test materialises a tempdir-rooted fake repo, synthesises one or
 //! more flows under `<tmp>/.claude/flows/<slug>/`, and runs the built

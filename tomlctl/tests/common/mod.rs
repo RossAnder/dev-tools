@@ -1,12 +1,5 @@
 //! Shared helpers for the integration-test binaries under `tomlctl/tests/`.
 //!
-//! Split out of `integration.rs` (R23) so each topic-specific test binary
-//! (`items_dry_run.rs`, `items_dedupe.rs`, `capabilities.rs`, `blocks.rs`,
-//! `backlog_read.rs`, `backlog_write.rs`, and the leftover `integration.rs`)
-//! can share the tempdir/ledger bootstrap, the list-query fixture, the
-//! backlog sandbox and its CLI runners, JSON error-envelope parsing, and the
-//! sidecar-digest assertion without duplicating their bodies.
-//!
 //! Each test binary declares `mod common;` to pull this module in. Cargo
 //! does NOT treat `tomlctl/tests/common/mod.rs` as its own test binary
 //! (only top-level files under `tests/` are test binaries), so this file

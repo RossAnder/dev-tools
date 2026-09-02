@@ -1,15 +1,14 @@
-//! T2 of `docs/plans/flow-tracking-overhaul.md`: integration tests for
-//! `tomlctl json {get,set,unset}`.
+//! Integration tests for `tomlctl json {get,set,unset}`.
 //!
 //! Test scenarios (one `#[test]` each):
 //!  1. round-trip get/set/unset against `.claude/settings.json`.
 //!  2. `--dry-run` on `set` emits a `would_change` envelope and leaves
 //!     the file + sidecar byte-identical.
-//!  3. sidecar SKIPPED on `settings.json` writes (P16).
+//!  3. sidecar SKIPPED on `settings.json` writes.
 //!  4. sidecar UPDATED on a non-`settings.json` JSON write.
 //!  5. `unset` of a non-existent key is a no-op.
 //!  6. containment guard refuses outside-`.claude/` paths.
-//!  7. `tomlctl set foo.json key val` symmetric P19 rejection — DEFERRED
+//!  7. `tomlctl set foo.json key val` symmetric rejection — DEFERRED
 //!     (test stub `#[ignore]`d so it shows up in the suite as a TODO).
 //!  8. `get` returns 2-space-indented JSON with trailing newline.
 //!  9. `--raw` on a scalar emits bare unquoted output.
@@ -180,7 +179,7 @@ fn json_set_dry_run_does_not_touch_file_or_sidecar() {
     drop(dir);
 }
 
-/// (3) P16: writes to `settings.json` skip sidecar refresh and emit
+/// (3) Writes to `settings.json` skip sidecar refresh and emit
 /// `sidecar_skipped:"co-writer-protected"` in the envelope.
 #[test]
 fn json_set_on_settings_json_skips_sidecar_and_marks_envelope() {
@@ -335,7 +334,7 @@ fn json_set_refuses_path_outside_claude() {
     drop(dir);
 }
 
-/// (7) Symmetric P19 rejection on the TOML write side: `tomlctl set` /
+/// (7) Symmetric rejection on the TOML write side: `tomlctl set` /
 /// `tomlctl set-json` / `tomlctl array-append` against a `.json` target
 /// must error `kind=validation` with a message that points the caller at
 /// `tomlctl json set`. Pairs with `json_set_refuses_toml_extension` below
@@ -370,8 +369,8 @@ fn tomlctl_set_on_dot_json_path_refers_to_json_set() {
     drop(dir);
 }
 
-/// (7b) JSON writers refuse `.toml` targets (positive half of P19). This
-/// pairs with the deferred negative half in (7) above.
+/// (7b) JSON writers refuse `.toml` targets (the positive half of the
+/// extension guard). Pairs with the deferred negative half in (7) above.
 #[test]
 fn json_set_refuses_toml_extension() {
     let (dir, root) = fresh_tempdir();

@@ -1,21 +1,16 @@
-//! Black-box integration tests for the `blocks` subcommand. Split out of the
-//! monolithic `integration.rs` by R23; the original `blocks_verify_rejects_integrity_flags`
-//! test body is byte-identical to its pre-split form — `cargo test --test blocks`
-//! runs it in isolation.
+//! Black-box integration tests for the `blocks` subcommand.
 
 use assert_cmd::Command;
 
 mod common;
 
-/// R60: `blocks verify` must NOT accept any of the four integrity/containment
+/// `blocks verify` must NOT accept any of the four integrity/containment
 /// flags (`--verify-integrity`, `--no-write-integrity`, `--strict-integrity`,
-/// `--allow-outside`). They were previously `global = true` on `Cli` and
-/// silently ignored here (`blocks verify` scans markdown, not the TOML +
-/// sidecar pair). The R60 refactor moves them onto each TOML-touching
+/// `--allow-outside`): it scans markdown, not the TOML + sidecar pair, so
+/// they have no semantic hook here. They live on each TOML-touching
 /// subcommand via a flattened `IntegrityArgs`, which structurally keeps them
-/// off `blocks verify`. Passing one now errors at the clap layer — this test
-/// locks in that contract so a future refactor can't silently re-introduce
-/// the flag on a subcommand where it has no semantic hook.
+/// off `blocks verify`; passing one errors at the clap layer. This test locks
+/// that contract in so a refactor can't silently re-introduce the flag.
 #[test]
 fn blocks_verify_rejects_integrity_flags() {
     for flag in [

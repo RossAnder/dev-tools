@@ -1,6 +1,4 @@
-//! T3: integration tests for `tomlctl flow render-progress-log`
-//! (`docs/plans/flow-tracking-overhaul.md`-adjacent file-auto-creation plan,
-//! Phase 1).
+//! Integration tests for `tomlctl flow render-progress-log`.
 //!
 //! The renderer is a PURE function of `execution-record.toml` + the flow
 //! title; these tests drive it through the binary's `--stdout` preview path
@@ -67,7 +65,7 @@ fn render_matches_golden_progress_log() {
     let (_dir, root) = stage_flow(FIXTURE_RECORD);
     let got = render_stdout(&root, &[]);
     let got_str = String::from_utf8_lossy(&got);
-    // R22(a): on mismatch, point at the FIRST differing line (std only — no
+    // On mismatch, point at the FIRST differing line (std only — no
     // pretty_assertions dependency) so the failure is diagnosable without
     // eyeballing two large blobs.
     if got_str != GOLDEN_PROGRESS_LOG {
@@ -150,7 +148,7 @@ to_status = "in-progress"
         completed_section.contains("## Completed Items"),
         "output must contain the Completed Items header, got:\n{got}"
     );
-    // R22(b): pin the EXACT empty-row shape for the 5-column Completed table —
+    // Pin the EXACT empty-row shape for the 5-column Completed table —
     // `| (none) | | | | |` — in the Completed section specifically, rather than
     // the loose `| (none) |` substring that would match any table's empty row.
     assert!(
@@ -247,7 +245,7 @@ fn render_help_lists_expected_flags() {
     );
 }
 
-/// R1 (security): a `--slug` carrying path-traversal components is REJECTED by
+/// Security: a `--slug` carrying path-traversal components is REJECTED by
 /// the strict slug validator BEFORE any path is resolved or read/written. The
 /// command must fail (non-zero) with a validation error and leave NO stray file
 /// behind anywhere under the staged tree.
@@ -288,7 +286,7 @@ fn render_rejects_traversal_slug() {
     );
 }
 
-/// R21(a): `--verify-integrity` against a record whose `.sha256` sidecar
+/// `--verify-integrity` against a record whose `.sha256` sidecar
 /// MISMATCHES the file bytes fails fast (before rendering); WITHOUT the flag the
 /// same record renders normally (the integrity check is opt-in).
 #[test]
@@ -340,7 +338,7 @@ fn render_verify_integrity_mismatch_fails_but_renders_without_flag() {
     );
 }
 
-/// R21(b): the title-cased-slug FALLBACK. When the flow's plan file is absent
+/// The title-cased-slug FALLBACK. When the flow's plan file is absent
 /// (so no `# Plan:` header can be read), the H1 falls through to the
 /// title-cased slug. We stage a flow WITHOUT the plan file and assert the H1 is
 /// the title-cased SLUG, not a plan-derived title.
@@ -365,7 +363,7 @@ fn render_falls_back_to_titlecased_slug_when_plan_absent() {
     );
 }
 
-/// R3: a FORKED supersession chain — two deviation entries that re-point at the
+/// A FORKED supersession chain — two deviation entries that re-point at the
 /// SAME predecessor — collapses to a SINGLE rendered head (the latest by
 /// `(date, id)`), not both. Drives `--stdout` against a hand-built record so the
 /// fork case is exercised independently of the golden fixture's linear chain.
@@ -433,7 +431,7 @@ supersedes_entry = "E1"
         "the losing fork arm E2 must collapse away, got:\n{deviations_section}"
     );
     // E3's `Supersedes` cell correctly cites its immediate predecessor E1 even
-    // though E1's row was pruned (dangling-after-prune provenance — R3).
+    // though E1's row was pruned (dangling-after-prune provenance).
     assert!(
         deviations_section.contains("| rationale-B | E1 |"),
         "the rendered tip must cite its immediate predecessor in Supersedes, got:\n{deviations_section}"
@@ -444,7 +442,7 @@ supersedes_entry = "E1"
 // helpers
 // ---------------------------------------------------------------------------
 
-/// R22(a): build a human-readable diagnostic naming the FIRST line index where
+/// Build a human-readable diagnostic naming the FIRST line index where
 /// `got` and `want` differ (1-based), with both lines quoted, plus a
 /// total-line-count note. Pure std — deliberately avoids a pretty_assertions
 /// dependency. Used by the golden test so a render drift reports *where* it
