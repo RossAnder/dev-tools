@@ -1,4 +1,4 @@
-//! Integrity-sidecar helpers split out from `main.rs` as part of R24.
+//! Integrity-sidecar helpers — the `<file>.sha256` read and write surface.
 //!
 //! Scope:
 //!   - `IntegrityOpts` bundle (the pair of read/write integrity flags)
@@ -109,7 +109,7 @@ pub(crate) fn maybe_verify_integrity(file: &Path, integrity: IntegrityOpts) -> R
 /// a round-trip through `tomlctl set` (which would rewrite the TOML and
 /// bump mtime for no semantic reason).
 ///
-/// R5: refresh is a pure content-digest primitive — it hashes raw bytes and
+/// Refresh is a pure content-digest primitive — it hashes raw bytes and
 /// never parses TOML. A malformed file (e.g. a truncated partial write, or
 /// hand-corrupted content) will silently get a valid sidecar; the next
 /// `--verify-integrity` read will still pass digest, but the first TOML
@@ -120,14 +120,14 @@ pub(crate) fn maybe_verify_integrity(file: &Path, integrity: IntegrityOpts) -> R
 /// The caller MUST wrap the call in `with_exclusive_lock(file, ...)` so
 /// a concurrent writer observes a consistent (TOML, sidecar) pair.
 pub(crate) fn refresh_sidecar(file: &Path) -> Result<()> {
-    // R6: read the file's current bytes into memory, then let the shared
+    // Read the file's current bytes into memory, then let the shared
     // `io::write_sidecar_for` helper compute the digest and atomic-write
     // the sidecar. `refresh_sidecar` targets small TOML files (KiB, not
     // GiB) — peak memory bounded by file size is acceptable and keeps the
     // hash-and-format contract co-located with the rest of the sidecar
     // plumbing in `io.rs`.
     //
-    // NotFound tagging (R6): match directly on the `io::Error` BEFORE any
+    // NotFound tagging: match directly on the `io::Error` BEFORE any
     // `with_context` wrap so the tag is attached to the innermost error
     // layer (mirrors `read_toml`'s NotFound pattern). Other I/O errors
     // fall through the untagged `with_context` branch.
@@ -151,11 +151,10 @@ pub(crate) fn refresh_sidecar(file: &Path) -> Result<()> {
 pub(crate) fn verify_integrity(file: &Path) -> Result<()> {
     let sidecar = sidecar_path(file);
     if !sidecar.exists() {
-        // T8: missing sidecar is a sidecar-surface failure — tag it as
+        // A missing sidecar is a sidecar-surface failure — tag it as
         // `Integrity` so `--error-format json` surfaces `kind=integrity`.
-        // The message prose is byte-identical to the pre-T8 `bail!(...)`
-        // form; `tagged_err` builds the anyhow::Error with TaggedError as
-        // the innermost layer whose `Display` emits the message verbatim.
+        // `tagged_err` puts TaggedError at the innermost layer, whose
+        // `Display` emits this message verbatim.
         return Err(tagged_err(
             ErrorKind::Integrity,
             Some(file.to_owned()),
@@ -190,9 +189,10 @@ pub(crate) fn verify_integrity(file: &Path) -> Result<()> {
     }
     let actual = sha256_hex_of_file(file)?;
     if !expected.eq_ignore_ascii_case(&actual) {
-        // T8: the canonical hash-mismatch case — tag `Integrity` so
-        // downstream callers can distinguish "file tampered" from generic
-        // I/O errors without regexing prose.
+        // The canonical hash-mismatch case — tag `Integrity` so downstream
+        // callers can distinguish "content diverged from the sidecar" from
+        // generic I/O errors without regexing prose. Report only: mismatch
+        // never rewrites the sidecar.
         return Err(tagged_err(
             ErrorKind::Integrity,
             Some(file.to_owned()),

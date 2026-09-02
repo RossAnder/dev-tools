@@ -1,8 +1,7 @@
-//! T5 (harness progressive disclosure): `tomlctl flow envelope build` —
-//! emit the canonical `flow-bootstrap` input envelope as JSON on stdout.
+//! `tomlctl flow envelope build` — emit the canonical `flow-bootstrap`
+//! input envelope as JSON on stdout, in place of the inline carrier prose
+//! each flow command's Step-0 dispatch would otherwise hand-roll.
 //!
-//! This subcommand replaces the ~15 lines of inline carrier prose that
-//! hand-rolled this envelope in every flow command's Step-0 dispatch.
 //! The schema is the one documented in
 //! `claude/agents/flow-bootstrap.md` (Contract section). The subcommand
 //! is read-only and pure — no filesystem writes, no flow-state mutation.
@@ -79,7 +78,7 @@ pub(crate) fn dispatch(
         }
     }
 
-    // R7 (SECURITY): each `path_args` entry is emitted verbatim into the
+    // SECURITY: each `path_args` entry is emitted verbatim into the
     // JSON envelope that the flow-bootstrap sub-agent consumes as its
     // prompt, so untrusted `$ARGUMENTS` path tokens must be sanitised
     // before they cross that boundary. Reject `..` traversal segments,
@@ -127,7 +126,7 @@ pub(crate) fn dispatch(
         }
     }
 
-    // R8 (SECURITY): `staleness_threshold` is echoed verbatim into the
+    // SECURITY: `staleness_threshold` is echoed verbatim into the
     // envelope; pin it to the documented grammar `<n>{s|m|h|d|w}` so a
     // freeform token can't ride through. Manual char scan rather than a
     // `regex::Regex` build — the grammar is trivial and this avoids
@@ -159,11 +158,10 @@ pub(crate) fn dispatch(
         "path_args": path_args,
         "branch": branch,
         "worktree": worktree,
-        // R21: `cwd` is emitted as a canonical schema field here, but
-        // `claude/agents/flow-bootstrap.md` (step 48) treats it as a
-        // tolerated-and-ignored legacy extra. The two contracts disagree;
-        // reconciling them means editing that agent doc (a separate
-        // change). Until then `cwd` is emitted but the consumer ignores it.
+        // `cwd` is a canonical schema field here, but
+        // `claude/agents/flow-bootstrap.md` treats it as a tolerated-and-
+        // ignored legacy extra. The two contracts disagree: the field is
+        // emitted and the consumer ignores it.
         "cwd": cwd,
         "require_artifacts": require_artifacts,
         "staleness_threshold": staleness_threshold,

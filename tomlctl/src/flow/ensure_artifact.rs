@@ -1,4 +1,4 @@
-//! T8: `flow ensure-artifact` — report (and optionally bootstrap) a flow
+//! `flow ensure-artifact` — report (and optionally bootstrap) a flow
 //! artifact under `.claude/flows/<slug>/`.
 //!
 //! Read-only by default. `--bootstrap` materialises the atomic 2-line
@@ -107,11 +107,9 @@ fn artifact_path_for(root: &Path, slug: &str, kind: ArtifactKind) -> PathBuf {
 /// (`^[a-z0-9][a-z0-9-]{0,63}$`); this helper is deliberately narrower —
 /// `ensure-artifact` is also called against pre-existing flows whose slugs
 /// were minted under earlier conventions, so we only reject the actively
-/// dangerous shapes rather than the full init-grade allow-list.
-///
-/// R11: previously named `validate_slug` — same name as the strict-regex
-/// variant in `flow::init`. Renamed `_lenient` so a future cross-leaf
-/// reader can tell the two validators apart at a glance.
+/// dangerous shapes rather than the full init-grade allow-list. The
+/// `_lenient` suffix keeps it distinguishable from `flow::init`'s
+/// strict-regex `validate_slug`.
 fn validate_slug_lenient(slug: &str) -> Result<()> {
     if slug.is_empty() {
         return Err(tagged_err(
@@ -249,13 +247,12 @@ fn bootstrap_execution_record(
         return print_json_compact(&report);
     }
 
-    // R5: source the skeleton from the single-source `io::seed_doc_for`
-    // helper (the SAME helper the auto-create write path and
-    // `flow::init::bootstrap_execution_record` use) rather than a hand-rolled
-    // literal. Render it through `toml::to_string_pretty` — the exact writer
-    // `io::write_toml_with_sidecar` runs — so the on-disk bytes stay
-    // byte-identical to the former literal `schema_version = 1\nlast_updated =
-    // <date>\n` (integer `1`, bare date, trailing newline, that key order).
+    // Source the skeleton from `io::seed_doc_for` — the SAME helper the
+    // auto-create write path and `flow::init::bootstrap_execution_record`
+    // use — and render it through `toml::to_string_pretty`, the exact
+    // writer `io::write_toml_with_sidecar` runs, so every bootstrap route
+    // emits byte-identical skeletons (integer `1`, bare date, trailing
+    // newline, that key order).
     let seed = crate::io::seed_doc_for(artifact)?;
     let body = toml::to_string_pretty(&seed).context("serialising TOML")?;
 
@@ -333,11 +330,6 @@ fn emit_bootstrap_noop(root: &Path, artifact: &Path, kind: ArtifactKind) -> Resu
     }
     print_json_compact(&report)
 }
-
-// R3 / R6: `write_integrity_opts` is sourced from `crate::cli`.
-// R5: the execution-record skeleton (and its embedded date) is no longer
-// computed here — it comes from the single-source `crate::io::seed_doc_for`
-// helper, so the former `today_utc_iso` import is gone.
 
 #[cfg(test)]
 mod tests {
