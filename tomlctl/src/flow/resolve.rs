@@ -46,10 +46,10 @@ use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::{ActiveDoc, ActiveEntry, FlowProjection};
-use crate::time::{parse_iso_to_date, today_utc_date};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
 use crate::io::{read_dir_sorted, read_toml, relativise, repo_or_cwd_root};
 use crate::output::print_json_compact;
+use crate::time::{parse_iso_to_date, today_utc_date};
 
 // ---------------------------------------------------------------------------
 // R4: Source enum
@@ -376,7 +376,11 @@ impl ResolveEnvelope {
     /// the five "outcome-class" fields (`resolved`, `source`,
     /// `ties_broken`, `tie_candidates`, `warnings`) — the rest stay
     /// unset and are skipped in `to_json`.
-    fn unresolved(source: ResolveSource, tie_candidates: Vec<String>, warnings: Vec<String>) -> Self {
+    fn unresolved(
+        source: ResolveSource,
+        tie_candidates: Vec<String>,
+        warnings: Vec<String>,
+    ) -> Self {
         Self {
             resolved: false,
             slug: None,
@@ -420,11 +424,12 @@ impl ResolveEnvelope {
             "source".to_string(),
             JsonValue::String(self.source.as_str().to_string()),
         );
-        obj.insert(
-            "ties_broken".to_string(),
-            JsonValue::Bool(self.ties_broken),
-        );
-        let ties: Vec<JsonValue> = self.tie_candidates.into_iter().map(JsonValue::String).collect();
+        obj.insert("ties_broken".to_string(), JsonValue::Bool(self.ties_broken));
+        let ties: Vec<JsonValue> = self
+            .tie_candidates
+            .into_iter()
+            .map(JsonValue::String)
+            .collect();
         obj.insert("tie_candidates".to_string(), JsonValue::Array(ties));
         if self.resolved {
             obj.insert(
@@ -439,7 +444,9 @@ impl ResolveEnvelope {
             );
             obj.insert(
                 "plan_path".to_string(),
-                self.plan_path.map(JsonValue::String).unwrap_or(JsonValue::Null),
+                self.plan_path
+                    .map(JsonValue::String)
+                    .unwrap_or(JsonValue::Null),
             );
             let scope_arr: Vec<JsonValue> = self
                 .scope
@@ -450,11 +457,15 @@ impl ResolveEnvelope {
             obj.insert("scope".to_string(), JsonValue::Array(scope_arr));
             obj.insert(
                 "branch".to_string(),
-                self.branch.map(JsonValue::String).unwrap_or(JsonValue::Null),
+                self.branch
+                    .map(JsonValue::String)
+                    .unwrap_or(JsonValue::Null),
             );
             obj.insert(
                 "status".to_string(),
-                self.status.map(JsonValue::String).unwrap_or(JsonValue::Null),
+                self.status
+                    .map(JsonValue::String)
+                    .unwrap_or(JsonValue::Null),
             );
             obj.insert("stale".to_string(), self.stale.unwrap_or(JsonValue::Null));
         }
@@ -607,10 +618,7 @@ fn read_or_compute_artifacts(
         review_ledger: pluck("review_ledger", &canonical.review_ledger),
         optimise_findings: pluck("optimise_findings", &canonical.optimise_findings),
         execution_record: pluck("execution_record", &canonical.execution_record),
-        plan_review_findings: pluck(
-            "plan_review_findings",
-            &canonical.plan_review_findings,
-        ),
+        plan_review_findings: pluck("plan_review_findings", &canonical.plan_review_findings),
     }
 }
 
@@ -630,9 +638,7 @@ fn load_active_entries(file: &Path) -> Result<Vec<ActiveEntry>> {
     let doc = match read_toml(file) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!(
-                "warning: active-flow.toml unreadable — falling through to step-5; {e}"
-            );
+            eprintln!("warning: active-flow.toml unreadable — falling through to step-5; {e}");
             return Ok(Vec::new());
         }
     };
@@ -1050,5 +1056,4 @@ mod tests {
         let latest = pick_active_latest(&entries);
         assert_eq!(latest.unwrap().slug, "b");
     }
-
 }

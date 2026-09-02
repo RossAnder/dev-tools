@@ -128,7 +128,10 @@ fn build_views(
         out.insert(VIEW_AREA.into(), cluster_area(items, min_size).into());
     }
     if matches!(by, ClusterBy::Tags | ClusterBy::All) {
-        out.insert(VIEW_TAGS.into(), cluster_tags(items, min_shared_tags).into());
+        out.insert(
+            VIEW_TAGS.into(),
+            cluster_tags(items, min_shared_tags).into(),
+        );
     }
     if matches!(by, ClusterBy::Relations | ClusterBy::All) {
         out.insert(VIEW_RELATIONS.into(), cluster_relations(items).into());
@@ -197,11 +200,7 @@ fn cluster_tags(items: &[Item], min_shared: usize) -> Vec<JsonValue> {
     let mut edges: Vec<(usize, usize, BTreeSet<&str>)> = Vec::new();
     for (i, a) in items.iter().enumerate() {
         for (j, b) in items.iter().enumerate().skip(i + 1) {
-            let shared: BTreeSet<&str> = a
-                .tags
-                .intersection(&b.tags)
-                .map(String::as_str)
-                .collect();
+            let shared: BTreeSet<&str> = a.tags.intersection(&b.tags).map(String::as_str).collect();
             if shared.len() >= min_shared {
                 union(&mut parent, i, j);
                 edges.push((i, j, shared));
@@ -285,7 +284,11 @@ fn union(parent: &mut [usize], a: usize, b: usize) {
     }
     // Lowest index wins, so a component's representative does not depend on
     // the order the edges were discovered in.
-    if ra < rb { parent[rb] = ra } else { parent[ra] = rb }
+    if ra < rb {
+        parent[rb] = ra
+    } else {
+        parent[ra] = rb
+    }
 }
 
 /// Components of two or more members, keyed by representative. Singletons
@@ -376,16 +379,11 @@ mod tests {
         assert_eq!(keys(&groups), ["lumina/server/pty"]);
         assert_eq!(ids(&groups[0]), ["B-01", "B-02", "B-03"]);
         assert_eq!(groups[0]["size"], 3);
-        assert_eq!(
-            groups[0]["reason"],
-            "shared path prefix lumina/server/pty"
-        );
+        assert_eq!(groups[0]["reason"], "shared path prefix lumina/server/pty");
         // The lone neighbour is never swept up into the pty group, and with
         // nowhere else to land it drops out of the view entirely.
         assert!(
-            !groups
-                .iter()
-                .any(|g| ids(g).contains(&"B-04")),
+            !groups.iter().any(|g| ids(g).contains(&"B-04")),
             "{groups:?}"
         );
     }

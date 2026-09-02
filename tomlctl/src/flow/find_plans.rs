@@ -48,10 +48,7 @@ use crate::output::print_json;
 /// "explicitly unset" and falls through to the next resolution step.
 const SENTINEL_UNSET: &str = "__DONT_ASK__";
 
-pub(crate) fn dispatch(
-    dirs: Vec<PathBuf>,
-    integrity: ReadIntegrityArgs,
-) -> Result<()> {
+pub(crate) fn dispatch(dirs: Vec<PathBuf>, integrity: ReadIntegrityArgs) -> Result<()> {
     let root = repo_or_cwd_root()?;
 
     // Step 1–4: resolve plan directories. We track whether the source was
@@ -92,10 +89,7 @@ pub(crate) fn dispatch(
 /// source was an explicit configuration (CLI or settings.json) — needed so
 /// `--strict-read` can distinguish "configured-but-missing" from
 /// "default-fallback-missing".
-fn resolve_plan_dirs(
-    cli_dirs: &[PathBuf],
-    root: &Path,
-) -> Result<(Vec<PathBuf>, bool)> {
+fn resolve_plan_dirs(cli_dirs: &[PathBuf], root: &Path) -> Result<(Vec<PathBuf>, bool)> {
     // Step 1: --dirs.
     if !cli_dirs.is_empty() {
         return Ok((cli_dirs.to_vec(), true));
@@ -137,8 +131,7 @@ fn read_settings_json(path: &Path) -> Result<Option<JsonValue>> {
             Ok(Some(v))
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(anyhow::Error::new(e))
-            .with_context(|| format!("reading {}", path.display())),
+        Err(e) => Err(anyhow::Error::new(e)).with_context(|| format!("reading {}", path.display())),
     }
 }
 
@@ -207,7 +200,8 @@ fn walk_plans(
     let entries = read_dir_sorted(dir)?;
     for entry in &entries {
         let path = entry.path();
-        if path.is_file() && is_markdown(&path)
+        if path.is_file()
+            && is_markdown(&path)
             && let Some(slug) = slug_from_md_filename(&path)
         {
             top_level_md_slugs.insert(slug);
@@ -235,7 +229,10 @@ fn walk_plans(
         if !path.is_dir() {
             continue;
         }
-        let Some(parent_slug) = path.file_name().and_then(|n| n.to_str()).map(str::to_string)
+        let Some(parent_slug) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::to_string)
         else {
             continue;
         };
@@ -366,7 +363,10 @@ fn read_context_toml(path: &Path) -> Option<ContextSummary> {
     let s = fs::read_to_string(path).ok()?;
     let doc: toml::Value = toml::from_str(&s).ok()?;
     let table = doc.as_table()?;
-    let status = table.get("status").and_then(|v| v.as_str()).map(str::to_string);
+    let status = table
+        .get("status")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     // `updated` is normally a TOML date literal (parsed as Datetime). Render
     // its `Display` form (YYYY-MM-DD) so the JSON output is a plain string,
     // not a typed-date object. Strings are also accepted for forward compat.
@@ -375,7 +375,10 @@ fn read_context_toml(path: &Path) -> Option<ContextSummary> {
         toml::Value::String(s) => s.clone(),
         other => other.to_string(),
     });
-    let branch = table.get("branch").and_then(|v| v.as_str()).map(str::to_string);
+    let branch = table
+        .get("branch")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     Some(ContextSummary {
         status,
         updated,
@@ -395,8 +398,7 @@ mod tests {
 
     #[test]
     fn sentinel_array_falls_through() {
-        let doc: JsonValue =
-            serde_json::json!({"tomlctl": {"plansDirectories": ["__DONT_ASK__"]}});
+        let doc: JsonValue = serde_json::json!({"tomlctl": {"plansDirectories": ["__DONT_ASK__"]}});
         assert!(read_tomlctl_plans_directories(&doc).is_none());
     }
 
@@ -406,7 +408,10 @@ mod tests {
             "tomlctl": {"plansDirectories": ["docs/plans/", "__DONT_ASK__", "other/"]}
         });
         let dirs = read_tomlctl_plans_directories(&doc).unwrap();
-        assert_eq!(dirs, vec![PathBuf::from("docs/plans/"), PathBuf::from("other/")]);
+        assert_eq!(
+            dirs,
+            vec![PathBuf::from("docs/plans/"), PathBuf::from("other/")]
+        );
     }
 
     #[test]
@@ -424,7 +429,10 @@ mod tests {
         let dirs = read_plans_directory(&doc).unwrap();
         assert_eq!(
             dirs,
-            vec![PathBuf::from("docs/plans/"), PathBuf::from(".claude/plans/")]
+            vec![
+                PathBuf::from("docs/plans/"),
+                PathBuf::from(".claude/plans/")
+            ]
         );
     }
 

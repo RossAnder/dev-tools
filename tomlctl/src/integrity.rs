@@ -67,8 +67,7 @@ pub(crate) fn hex_lower(bytes: &[u8]) -> String {
 /// buffer rather than the file size.
 pub(crate) fn sha256_hex_of_file(file: &Path) -> Result<String> {
     use std::io::Read;
-    let f = File::open(file)
-        .with_context(|| format!("opening {} for hashing", file.display()))?;
+    let f = File::open(file).with_context(|| format!("opening {} for hashing", file.display()))?;
     let mut r = BufReader::with_capacity(64 * 1024, f);
     let mut h = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
@@ -172,7 +171,10 @@ pub(crate) fn verify_integrity(file: &Path) -> Result<()> {
         tagged_err(
             ErrorKind::Integrity,
             Some(file.to_owned()),
-            format!("integrity sidecar {} is empty or malformed", sidecar.display()),
+            format!(
+                "integrity sidecar {} is empty or malformed",
+                sidecar.display()
+            ),
         )
     })?;
     if expected.len() != 64 || !expected.chars().all(|c| c.is_ascii_hexdigit()) {

@@ -178,7 +178,10 @@ impl ActiveEntry {
             .get("binding")
             .and_then(|v| v.as_table())
             .map(|bt| {
-                let branch = bt.get("branch").and_then(|v| v.as_str()).map(str::to_string);
+                let branch = bt
+                    .get("branch")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
                 let worktree = bt
                     .get("worktree")
                     .and_then(|v| v.as_str())

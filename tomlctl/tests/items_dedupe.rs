@@ -246,8 +246,7 @@ summary = "beta"
         .success();
     let stdout_hit = String::from_utf8_lossy(&out_hit.get_output().stdout).to_string();
     assert!(
-        stdout_hit.contains(r#""added":0"#)
-            && stdout_hit.contains(r#""matched_id":"R1""#),
+        stdout_hit.contains(r#""added":0"#) && stdout_hit.contains(r#""matched_id":"R1""#),
         "nested dedupe-by meta.source_run must match R1; got: {stdout_hit}"
     );
 
@@ -323,8 +322,7 @@ dedup_id = "abc123def4567890"
         .success();
     let stdout_hit = String::from_utf8_lossy(&out_hit.get_output().stdout).to_string();
     assert!(
-        stdout_hit.contains(r#""added":0"#)
-            && stdout_hit.contains(r#""matched_id":"R1""#),
+        stdout_hit.contains(r#""added":0"#) && stdout_hit.contains(r#""matched_id":"R1""#),
         "explicit dedup_id must match; got: {stdout_hit}"
     );
 
@@ -430,7 +428,9 @@ fn items_add_auto_populates_dedup_id_on_disk() {
         .expect("dedup_id auto-populated");
     assert_eq!(dedup_id.len(), 16, "must be 16 hex chars; got {dedup_id:?}");
     assert!(
-        dedup_id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        dedup_id
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "lowercase hex only; got {dedup_id:?}"
     );
 }
@@ -450,19 +450,35 @@ fn items_update_summary_recomputes_dedup_id() {
         .write_stdin("").assert().success();
     let before: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
     let dedup_before = before.get("items").and_then(|v| v.as_array()).unwrap()[0]
-        .as_table().unwrap()
-        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+        .as_table()
+        .unwrap()
+        .get("dedup_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
 
-    Command::cargo_bin("tomlctl").unwrap()
-        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
         .env_remove("TOMLCTL_NO_DEDUP_ID")
-        .arg("items").arg("update").arg(&ledger).arg("R1")
-        .arg("--json").arg(r#"{"summary":"new"}"#)
-        .write_stdin("").assert().success();
+        .arg("items")
+        .arg("update")
+        .arg(&ledger)
+        .arg("R1")
+        .arg("--json")
+        .arg(r#"{"summary":"new"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
     let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
     let dedup_after = after.get("items").and_then(|v| v.as_array()).unwrap()[0]
-        .as_table().unwrap()
-        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+        .as_table()
+        .unwrap()
+        .get("dedup_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
     assert_ne!(
         dedup_before, dedup_after,
         "summary change must recompute dedup_id"
@@ -483,19 +499,35 @@ fn items_update_non_fingerprint_field_preserves_dedup_id() {
         .write_stdin("").assert().success();
     let before: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
     let dedup_before = before.get("items").and_then(|v| v.as_array()).unwrap()[0]
-        .as_table().unwrap()
-        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+        .as_table()
+        .unwrap()
+        .get("dedup_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
 
-    Command::cargo_bin("tomlctl").unwrap()
-        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
         .env_remove("TOMLCTL_NO_DEDUP_ID")
-        .arg("items").arg("update").arg(&ledger).arg("R1")
-        .arg("--json").arg(r#"{"status":"fixed"}"#)
-        .write_stdin("").assert().success();
+        .arg("items")
+        .arg("update")
+        .arg(&ledger)
+        .arg("R1")
+        .arg("--json")
+        .arg(r#"{"status":"fixed"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
     let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
     let dedup_after = after.get("items").and_then(|v| v.as_array()).unwrap()[0]
-        .as_table().unwrap()
-        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+        .as_table()
+        .unwrap()
+        .get("dedup_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
     assert_eq!(
         dedup_before, dedup_after,
         "non-fingerprint patch must preserve dedup_id"
@@ -514,16 +546,28 @@ fn items_update_explicit_dedup_id_preserved() {
         .arg("--json")
         .arg(r#"{"id":"R1","file":"src/a.rs","summary":"x","severity":"warning","category":"quality"}"#)
         .write_stdin("").assert().success();
-    Command::cargo_bin("tomlctl").unwrap()
-        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
         .env_remove("TOMLCTL_NO_DEDUP_ID")
-        .arg("items").arg("update").arg(&ledger).arg("R1")
-        .arg("--json").arg(r#"{"dedup_id":"explicit"}"#)
-        .write_stdin("").assert().success();
+        .arg("items")
+        .arg("update")
+        .arg(&ledger)
+        .arg("R1")
+        .arg("--json")
+        .arg(r#"{"dedup_id":"explicit"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
     let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
     let got = after.get("items").and_then(|v| v.as_array()).unwrap()[0]
-        .as_table().unwrap()
-        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+        .as_table()
+        .unwrap()
+        .get("dedup_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
     assert_eq!(got, "explicit", "explicit dedup_id must win");
 }
 
@@ -539,16 +583,28 @@ fn items_update_explicit_dedup_id_wins_over_fingerprint_patch() {
         .arg("--json")
         .arg(r#"{"id":"R1","file":"src/a.rs","summary":"old","severity":"warning","category":"quality"}"#)
         .write_stdin("").assert().success();
-    Command::cargo_bin("tomlctl").unwrap()
-        .env("TOMLCTL_ROOT", dir.path()).env("TOMLCTL_LOCK_TIMEOUT", "5")
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
         .env_remove("TOMLCTL_NO_DEDUP_ID")
-        .arg("items").arg("update").arg(&ledger).arg("R1")
-        .arg("--json").arg(r#"{"summary":"new","dedup_id":"explicit"}"#)
-        .write_stdin("").assert().success();
+        .arg("items")
+        .arg("update")
+        .arg(&ledger)
+        .arg("R1")
+        .arg("--json")
+        .arg(r#"{"summary":"new","dedup_id":"explicit"}"#)
+        .write_stdin("")
+        .assert()
+        .success();
     let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
     let got = after.get("items").and_then(|v| v.as_array()).unwrap()[0]
-        .as_table().unwrap()
-        .get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+        .as_table()
+        .unwrap()
+        .get("dedup_id")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
     assert_eq!(
         got, "explicit",
         "explicit dedup_id must beat recompute even when summary also changes"
@@ -629,7 +685,11 @@ category = "quality"
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let groups = parsed.as_array().unwrap();
-    assert_eq!(groups.len(), 1, "expected one cross-ledger group; got: {stdout}");
+    assert_eq!(
+        groups.len(),
+        1,
+        "expected one cross-ledger group; got: {stdout}"
+    );
     let items = groups[0].get("items").and_then(|v| v.as_array()).unwrap();
     assert_eq!(items.len(), 2);
     let source_files: Vec<&str> = items
@@ -734,7 +794,8 @@ fn items_backfill_dedup_id_populates_every_missing_item() {
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(
-        v["backfilled"], serde_json::json!(3),
+        v["backfilled"],
+        serde_json::json!(3),
         "three items were missing dedup_id, so backfilled=3"
     );
     // "reason" must NOT appear on the success-with-work shape.
@@ -758,7 +819,8 @@ fn items_backfill_dedup_id_populates_every_missing_item() {
             .expect("dedup_id must be populated after backfill");
         assert_eq!(fp.len(), 16, "must be 16 hex chars; got {fp:?}");
         assert!(
-            fp.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            fp.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
             "lowercase hex only; got {fp:?}"
         );
     }
@@ -766,7 +828,14 @@ fn items_backfill_dedup_id_populates_every_missing_item() {
     // into the fingerprint input).
     let fps: Vec<&str> = items_after
         .iter()
-        .map(|i| i.as_table().unwrap().get("dedup_id").unwrap().as_str().unwrap())
+        .map(|i| {
+            i.as_table()
+                .unwrap()
+                .get("dedup_id")
+                .unwrap()
+                .as_str()
+                .unwrap()
+        })
         .collect();
     assert_ne!(fps[0], fps[1]);
     assert_ne!(fps[1], fps[2]);
@@ -820,26 +889,41 @@ category = "quality"
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(
-        v["backfilled"], serde_json::json!(2),
+        v["backfilled"],
+        serde_json::json!(2),
         "only R1 and R3 were missing dedup_id"
     );
 
     let after: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
     let items = after.get("items").and_then(|v| v.as_array()).unwrap();
     // R1 — newly populated, valid 16-hex.
-    let r1_fp = items[0].as_table().unwrap().get("dedup_id").and_then(|v| v.as_str()).unwrap();
+    let r1_fp = items[0]
+        .as_table()
+        .unwrap()
+        .get("dedup_id")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert_eq!(r1_fp.len(), 16);
     // R2 — preserved verbatim, even though it doesn't match the real
     // fingerprint. Preservation is a hard contract — callers who want to
     // rewrite a "wrong" digest must use `items update` explicitly.
     assert_eq!(
-        items[1].as_table().unwrap().get("dedup_id").and_then(|v| v.as_str()),
+        items[1]
+            .as_table()
+            .unwrap()
+            .get("dedup_id")
+            .and_then(|v| v.as_str()),
         Some("preexisting-legacy"),
         "pre-existing dedup_id must be preserved byte-for-byte"
     );
     // R3 — newly populated, valid 16-hex, differs from R1 (different
     // summary feeds a different digest).
-    let r3_fp = items[2].as_table().unwrap().get("dedup_id").and_then(|v| v.as_str()).unwrap();
+    let r3_fp = items[2]
+        .as_table()
+        .unwrap()
+        .get("dedup_id")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert_eq!(r3_fp.len(), 16);
     assert_ne!(r1_fp, r3_fp);
 }
@@ -879,7 +963,8 @@ category = "quality"
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["backfilled"], serde_json::json!(0));
     assert_eq!(
-        v["reason"], serde_json::json!("disabled-by-env"),
+        v["reason"],
+        serde_json::json!("disabled-by-env"),
         "kill-switch short-circuit must emit documented reason; got: {stdout}"
     );
     let after_bytes = fs::read(&ledger).unwrap();

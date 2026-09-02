@@ -127,12 +127,7 @@ impl FlowRecord {
         if let Some(b) = self.branch.as_deref() {
             obj.insert("branch".to_string(), JsonValue::String(b.to_string()));
         }
-        let scope_arr: Vec<JsonValue> = self
-            .scope
-            .iter()
-            .cloned()
-            .map(JsonValue::String)
-            .collect();
+        let scope_arr: Vec<JsonValue> = self.scope.iter().cloned().map(JsonValue::String).collect();
         obj.insert("scope".to_string(), JsonValue::Array(scope_arr));
         JsonValue::Object(obj)
     }
@@ -155,7 +150,11 @@ fn enumerate_flows(flows_dir: &Path, strict_read: bool) -> Result<Vec<FlowRecord
         if !path.is_dir() {
             continue;
         }
-        let Some(slug) = path.file_name().and_then(|n| n.to_str()).map(str::to_string) else {
+        let Some(slug) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(str::to_string)
+        else {
             continue;
         };
         let ctx_path = path.join("context.toml");
@@ -175,10 +174,7 @@ fn enumerate_flows(flows_dir: &Path, strict_read: bool) -> Result<Vec<FlowRecord
                         format!("parsing {}: {}", ctx_path.display(), e),
                     ));
                 }
-                eprintln!(
-                    "tomlctl: flow {}: malformed context.toml — skipped",
-                    slug
-                );
+                eprintln!("tomlctl: flow {}: malformed context.toml — skipped", slug);
             }
         }
     }
@@ -195,10 +191,9 @@ fn enumerate_flows(flows_dir: &Path, strict_read: bool) -> Result<Vec<FlowRecord
 /// `Result<_>` whose inner error we project into either a stderr warning
 /// or a `kind=parse` re-tag at the `enumerate_flows` boundary.
 fn read_context_record(path: &Path, slug: &str) -> Result<FlowRecord> {
-    let s = fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let doc: TomlValue = toml::from_str(&s)
-        .with_context(|| format!("parsing {}", path.display()))?;
+    let s = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let doc: TomlValue =
+        toml::from_str(&s).with_context(|| format!("parsing {}", path.display()))?;
     // R13: route through the shared `FlowProjection` parse so list and
     // resolve consume one canonical projection.
     let proj = FlowProjection::from_toml_value(&doc)
@@ -251,5 +246,3 @@ fn load_active_slug_set(root: &Path) -> Result<std::collections::HashSet<String>
     }
     Ok(set)
 }
-
-

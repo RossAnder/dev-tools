@@ -174,7 +174,9 @@ struct Row<'a> {
 }
 
 fn str_field<'a>(item: &'a TomlValue, key: &str) -> &'a str {
-    item.get(key).and_then(TomlValue::as_str).unwrap_or_default()
+    item.get(key)
+        .and_then(TomlValue::as_str)
+        .unwrap_or_default()
 }
 
 fn rows(doc: &TomlValue) -> Vec<Row<'_>> {
@@ -408,7 +410,11 @@ pub(crate) fn dispatch(
 ) -> Result<()> {
     let thresholds = Thresholds {
         strong: threshold("--similarity-strong", similarity_strong, SIMILARITY_STRONG)?,
-        related: threshold("--similarity-related", similarity_related, SIMILARITY_RELATED)?,
+        related: threshold(
+            "--similarity-related",
+            similarity_related,
+            SIMILARITY_RELATED,
+        )?,
     };
     let summary = resolve_summary(summary)?;
     let probe = Probe::new(&summary, area.as_deref(), kind.as_deref(), &tag);

@@ -17,7 +17,9 @@ use super::types::{
 };
 
 use crate::blocks::blocks_verify;
-use crate::convert::{detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path, toml_to_json};
+use crate::convert::{
+    detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path, toml_to_json,
+};
 use crate::dedup::{
     items_find_duplicates, items_find_duplicates_across, items_find_duplicates_across_json,
     items_find_duplicates_json,
@@ -63,8 +65,7 @@ fn read_ndjson_source(src: &str) -> Result<String> {
     if src == "-" {
         read_json_arg("-")
     } else {
-        std::fs::read_to_string(src)
-            .with_context(|| format!("reading NDJSON file `{}`", src))
+        std::fs::read_to_string(src).with_context(|| format!("reading NDJSON file `{}`", src))
     }
 }
 
@@ -224,7 +225,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             };
             print_json(&out)?;
         }
-        Cmd::Get { file, path, raw, integrity } => {
+        Cmd::Get {
+            file,
+            path,
+            raw,
+            integrity,
+        } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             let out = read_doc(&file, opts, |doc| {
@@ -293,7 +299,13 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             })?;
             write_envelope(&file, created)?;
         }
-        Cmd::SetJson { file, path, json, dry_run, integrity } => {
+        Cmd::SetJson {
+            file,
+            path,
+            json,
+            dry_run,
+            integrity,
+        } => {
             refuse_json_extension_for_toml_writers(&file)?;
             // O35: parse stdin/literal JSON straight into a `JsonValue`,
             // skipping the intermediate String allocation. The parse moves
@@ -323,7 +335,10 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             let on_missing = on_missing_for(&file, integrity.no_create)?;
             // T2: surface `created` + `path` (see `Cmd::Set`).
             let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                let last_key = path.rsplit_once('.').map(|(_, k)| k).unwrap_or(path.as_str());
+                let last_key = path
+                    .rsplit_once('.')
+                    .map(|(_, k)| k)
+                    .unwrap_or(path.as_str());
                 let v = maybe_date_coerce(last_key, &parsed)?;
                 set_at_path(doc, &path, v)
             })?;
@@ -360,8 +375,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             let rows: Vec<JsonValue> = if let Some(j) = json {
                 // O35: parse straight to `JsonValue`, dropping the prior
                 // `read_json_arg` String + `serde_json::from_str` two-step.
-                let parsed: JsonValue =
-                    read_json_value_from_arg(&j).context("parsing --json")?;
+                let parsed: JsonValue = read_json_value_from_arg(&j).context("parsing --json")?;
                 if !parsed.is_object() {
                     bail!(
                         "--json must be a JSON object (e.g. {{\"k\":\"v\"}}); got JSON {}",
@@ -516,7 +530,9 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 use std::io::Write;
                 let stdout = std::io::stdout();
                 let mut h = stdout.lock();
-                read_doc(&file, opts, |doc| query::run_streaming(doc, &array, &q, &mut h))?;
+                read_doc(&file, opts, |doc| {
+                    query::run_streaming(doc, &array, &q, &mut h)
+                })?;
                 h.flush()?;
             } else {
                 let out = read_doc(&file, opts, |doc| query::run(doc, &array, &q))?;
@@ -527,7 +543,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 }
             }
         }
-        ItemsOp::Get { file, id, array, integrity } => {
+        ItemsOp::Get {
+            file,
+            id,
+            array,
+            integrity,
+        } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             let out = read_doc_either(
@@ -538,7 +559,14 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             )?;
             print_json(&out)?;
         }
-        ItemsOp::Add { file, json, array, dedupe_by, dry_run, integrity } => {
+        ItemsOp::Add {
+            file,
+            json,
+            array,
+            dedupe_by,
+            dry_run,
+            integrity,
+        } => {
             let opts = write_integrity_opts(&integrity);
             let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
             if dry_run {
@@ -563,8 +591,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // vs `read_json_value_from_arg` JsonValue for dedupe), which
                 // made the per-branch stdin behaviour and `parsing --json`
                 // error site asymmetric.
-                let patch: JsonValue =
-                    read_json_value_from_arg(&json).context("parsing --json")?;
+                let patch: JsonValue = read_json_value_from_arg(&json).context("parsing --json")?;
                 let read_opts = dry_run_read_opts(integrity.verify_integrity);
                 let plan = if dedupe_fields.is_empty() {
                     read_doc(&file, read_opts, |doc| {
@@ -597,9 +624,10 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // is plain `{"ok":true}` (see the byte-identity note above);
                 // the new keys are purely additive so existing consumers that
                 // read no extra keys keep working.
-                let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                    items_add_to(doc, &array, &json)
-                })?;
+                let created =
+                    mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                        items_add_to(doc, &array, &json)
+                    })?;
                 write_envelope(&file, created)?;
             } else {
                 // Dedupe path: parse JSON once up-front so we can feed it
@@ -608,8 +636,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // bump when the scan returns a match; the caller sees
                 // `added:0,matched_id:...` and the on-disk file + sidecar
                 // are untouched.
-                let patch: JsonValue =
-                    read_json_value_from_arg(&json).context("parsing --json")?;
+                let patch: JsonValue = read_json_value_from_arg(&json).context("parsing --json")?;
                 let mut outcome: Option<AddOutcome> = None;
                 // T1: auto-create policy. On a dedupe hit against a
                 // freshly-seeded missing file the closure returns `Ok(false)`,
@@ -621,17 +648,19 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // — true only when the seed fired AND a write actually landed.
                 // Surface it (plus `path`) on BOTH the `Added` and `Skipped`
                 // arms, preserving each arm's pre-existing keys.
-                let created = mutate_doc_conditional(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                    let result = items_add_value_with_dedupe_to(
-                        doc,
-                        patch,
-                        &array,
-                        &dedupe_fields,
-                    )?;
-                    let mutated = matches!(result, AddOutcome::Added);
-                    outcome = Some(result);
-                    Ok(mutated)
-                })?;
+                let created = mutate_doc_conditional(
+                    &file,
+                    integrity.allow_outside,
+                    opts,
+                    on_missing,
+                    |doc| {
+                        let result =
+                            items_add_value_with_dedupe_to(doc, patch, &array, &dedupe_fields)?;
+                        let mutated = matches!(result, AddOutcome::Added);
+                        outcome = Some(result);
+                        Ok(mutated)
+                    },
+                )?;
                 warn_if_created(&file, created);
                 match outcome.expect("closure always sets outcome on success") {
                     AddOutcome::Added => {
@@ -673,9 +702,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let defaults: Option<JsonValue> = match defaults_json.as_deref() {
                 // O35: parse straight to `JsonValue`, dropping the prior
                 // `read_json_arg` String + `serde_json::from_str` two-step.
-                Some(s) => Some(
-                    read_json_value_from_arg(s).context("parsing --defaults-json")?,
-                ),
+                Some(s) => Some(read_json_value_from_arg(s).context("parsing --defaults-json")?),
                 None => None,
             };
             if dry_run {
@@ -705,10 +732,11 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
                 // T2: surface `created` + `path` alongside the pre-existing
                 // `added` count.
-                let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                    added = items_add_many(doc, &array, &rows, defaults.as_ref())?;
-                    Ok(())
-                })?;
+                let created =
+                    mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                        added = items_add_many(doc, &array, &rows, defaults.as_ref())?;
+                        Ok(())
+                    })?;
                 warn_if_created(&file, created);
                 print_json_compact(&serde_json::json!({
                     "ok": true,
@@ -731,18 +759,24 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // T2: `created` from `mutate_doc_conditional` is already correct
                 // (true only when seed fired AND a write landed). Surface it
                 // (plus `path`) alongside the pre-existing batch-count keys.
-                let created = mutate_doc_conditional(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                    let result = items_add_many_with_dedupe(
-                        doc,
-                        &array,
-                        &rows,
-                        defaults.as_ref(),
-                        &dedupe_fields,
-                    )?;
-                    let mutated = result.added > 0;
-                    outcome = Some(result);
-                    Ok(mutated)
-                })?;
+                let created = mutate_doc_conditional(
+                    &file,
+                    integrity.allow_outside,
+                    opts,
+                    on_missing,
+                    |doc| {
+                        let result = items_add_many_with_dedupe(
+                            doc,
+                            &array,
+                            &rows,
+                            defaults.as_ref(),
+                            &dedupe_fields,
+                        )?;
+                        let mutated = result.added > 0;
+                        outcome = Some(result);
+                        Ok(mutated)
+                    },
+                )?;
                 warn_if_created(&file, created);
                 let outcome = outcome.expect("closure always sets outcome on success");
                 let skipped_rows_json: Vec<JsonValue> = outcome
@@ -810,7 +844,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             })?;
             write_envelope(&file, created)?;
         }
-        ItemsOp::Remove { file, id, array, dry_run, integrity } => {
+        ItemsOp::Remove {
+            file,
+            id,
+            array,
+            dry_run,
+            integrity,
+        } => {
             let opts = write_integrity_opts(&integrity);
             if dry_run {
                 // R22: advisory warn for dry-run reads outside `.claude/`.
@@ -844,13 +884,21 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // `false` or the call errors out first.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
                 // T2: surface `created` + `path`.
-                let created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                    compute_remove_mutation(doc, &array, &id)
-                })?;
+                let created =
+                    mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                        compute_remove_mutation(doc, &array, &id)
+                    })?;
                 write_envelope(&file, created)?;
             }
         }
-        ItemsOp::Apply { file, ops, array, no_remove, dry_run, integrity } => {
+        ItemsOp::Apply {
+            file,
+            ops,
+            array,
+            no_remove,
+            dry_run,
+            integrity,
+        } => {
             let opts = write_integrity_opts(&integrity);
             // R45: parse `--ops` ONCE at the CLI boundary and thread the
             // parsed `JsonValue` through both the `MAX_OPS_PER_APPLY` length
@@ -862,8 +910,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // `read_json_value_from_arg` helper already encapsulates the
             // stdin / TTY / `MAX_STDIN_BYTES` discipline that `read_json_arg`
             // does; we use it so the parse semantics stay identical.
-            let parsed_ops: JsonValue =
-                read_json_value_from_arg(&ops).context("parsing --ops")?;
+            let parsed_ops: JsonValue = read_json_value_from_arg(&ops).context("parsing --ops")?;
             // R44: bound the ops count at the CLI boundary. `MAX_STDIN_BYTES`
             // only caps the raw payload size; a 32 MiB JSON array of minimal
             // `{"op":"update","id":"Rx"}` records can still hold tens of
@@ -911,13 +958,19 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // into the new file as expected — `created=true` on that path.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
                 // T2: surface `created` + `path`.
-                let created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                    compute_apply_mutation(doc, &array, &parsed_ops, no_remove)
-                })?;
+                let created =
+                    mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                        compute_apply_mutation(doc, &array, &parsed_ops, no_remove)
+                    })?;
                 write_envelope(&file, created)?;
             }
         }
-        ItemsOp::NextId { file, prefix, infer_from_file, integrity } => {
+        ItemsOp::NextId {
+            file,
+            prefix,
+            infer_from_file,
+            integrity,
+        } => {
             // The clap ArgGroup `id_source` guarantees exactly one of
             // `--prefix` / `--infer-from-file` reaches us; no runtime
             // "both unset" or "both set" check is needed.
@@ -968,7 +1021,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 print_json_compact(&serde_json::Value::from(id))?;
             }
         }
-        ItemsOp::FindDuplicates { file, tier, across, integrity } => {
+        ItemsOp::FindDuplicates {
+            file,
+            tier,
+            across,
+            integrity,
+        } => {
             strict_read_check(&file, integrity.strict_read)?;
             if let Some(other) = across.as_ref() {
                 strict_read_check(other, integrity.strict_read)?;
@@ -1052,7 +1110,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let orphans = read_doc(&file, opts, items_orphans)?;
             print_json(&JsonValue::Array(orphans))?;
         }
-        ItemsOp::BackfillDedupId { file, array, dry_run, integrity } => {
+        ItemsOp::BackfillDedupId {
+            file,
+            array,
+            dry_run,
+            integrity,
+        } => {
             // T11: kill-switch short-circuit. Checked at the dispatch
             // boundary (rather than inside `compute_backfill_mutation`) so
             // both live and dry-run paths surface the documented
@@ -1133,11 +1196,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // (the pre-read short-circuits a missing ledger), so
                 // `warn_if_created` never fires — but threading it keeps the
                 // envelope shape uniform across every write arm.
-                let created = mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                    let plan = compute_backfill_mutation(doc, &array)?;
-                    written = plan.updated.len();
-                    Ok(plan)
-                })?;
+                let created =
+                    mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                        let plan = compute_backfill_mutation(doc, &array)?;
+                        written = plan.updated.len();
+                        Ok(plan)
+                    })?;
                 warn_if_created(&file, created);
                 print_json_compact(&serde_json::json!({
                     "ok": true,
@@ -1260,8 +1324,7 @@ line two
 ";
         fs::write(&a, good).unwrap();
         fs::write(&b, good).unwrap();
-        let report =
-            blocks_verify(&[a.clone(), b.clone()], &["flow-context".to_string()]).unwrap();
+        let report = blocks_verify(&[a.clone(), b.clone()], &["flow-context".to_string()]).unwrap();
         assert!(report.ok, "equal content must be ok");
 
         let drifted = "\
@@ -1274,7 +1337,11 @@ DIFFERENT
         let report = blocks_verify(&[a, b], &["flow-context".to_string()]).unwrap();
         assert!(!report.ok);
         // drift entries carry per-file hash detail
-        let blocks = report.report.get("blocks").and_then(|v| v.as_array()).unwrap();
+        let blocks = report
+            .report
+            .get("blocks")
+            .and_then(|v| v.as_array())
+            .unwrap();
         assert_eq!(blocks.len(), 1);
         let drift_arr = blocks[0].get("drift").and_then(|v| v.as_array()).unwrap();
         assert_eq!(drift_arr.len(), 2);
@@ -1297,7 +1364,11 @@ body
         fs::write(&b, "nothing here\n").unwrap();
         let report = blocks_verify(&[a, b], &["x".to_string()]).unwrap();
         assert!(!report.ok);
-        let blocks = report.report.get("blocks").and_then(|v| v.as_array()).unwrap();
+        let blocks = report
+            .report
+            .get("blocks")
+            .and_then(|v| v.as_array())
+            .unwrap();
         let missing = blocks[0].get("missing").and_then(|v| v.as_array()).unwrap();
         assert_eq!(missing.len(), 1);
     }
@@ -1359,9 +1430,7 @@ body
         let manifest_text = match fs::read_to_string(&manifest_path) {
             Ok(t) => t,
             Err(_) => {
-                eprintln!(
-                    "blocks_verify_reproduces_shell_hashes: manifest not found, skipping"
-                );
+                eprintln!("blocks_verify_reproduces_shell_hashes: manifest not found, skipping");
                 return;
             }
         };
@@ -1395,9 +1464,7 @@ body
         // in isolation; degrade gracefully if someone packages it without
         // the command tree.
         if !forbidden_pair.iter().all(|p| p.exists()) {
-            eprintln!(
-                "blocks_verify_reproduces_shell_hashes: command files not found, skipping"
-            );
+            eprintln!("blocks_verify_reproduces_shell_hashes: command files not found, skipping");
             return;
         }
 
@@ -1422,10 +1489,7 @@ body
                 .iter()
                 .find(|b| b.get("name").and_then(|v| v.as_str()) == Some(name))
                 .unwrap_or_else(|| {
-                    panic!(
-                        "block `{name}` missing from report: {:?}",
-                        report.report
-                    )
+                    panic!("block `{name}` missing from report: {:?}", report.report)
                 });
 
             // The "happy" shape (`blocks_verify` reports parity): a single
@@ -1468,10 +1532,7 @@ body
                 .get("drift")
                 .and_then(|v| v.as_array())
                 .unwrap_or_else(|| {
-                    panic!(
-                        "block `{name}` has neither `hash` nor `drift`: {:?}",
-                        block
-                    )
+                    panic!("block `{name}` has neither `hash` nor `drift`: {:?}", block)
                 });
             let mut msg = String::new();
             msg.push_str(&format!(
@@ -1501,11 +1562,8 @@ body
         // --- 2-file forbidden-working-tree-ops block (the sole surviving
         //     block after the wave-2 migration; spans the two implement
         //     agent files) ---
-        let report = blocks_verify(
-            &forbidden_pair,
-            &["forbidden-working-tree-ops".to_string()],
-        )
-        .unwrap();
+        let report =
+            blocks_verify(&forbidden_pair, &["forbidden-working-tree-ops".to_string()]).unwrap();
         assert!(
             report.ok,
             "forbidden-working-tree-ops block must be parity: {:?}",
@@ -1659,68 +1717,69 @@ body
             // Buffer for stitching shell line-continuations (trailing `\`).
             let mut cont = String::new();
 
-            let lint_logical = |rel: &str,
-                                logical: &str,
-                                    failures: &mut Vec<(String, String, String)>,
-                                    unbalanced: &mut Vec<(String, String)>| {
-                let trimmed = logical.trim_start();
-                // A pipe into tomlctl (`… | tomlctl items add …`) — take the
-                // substring from that `tomlctl` so the heredoc/cat prefix and
-                // its body don't masquerade as argv.
-                let candidate = if let Some(idx) = trimmed.find("| tomlctl ") {
-                    &trimmed[idx + 2..]
-                } else {
-                    trimmed
-                };
-                if !candidate.starts_with("tomlctl") {
-                    return;
-                }
-                let raw_tokens = match shell_words::split(candidate) {
-                    Ok(t) => t,
-                    Err(_) => {
-                        unbalanced.push((rel.to_string(), candidate.to_string()));
+            let lint_logical =
+                |rel: &str,
+                 logical: &str,
+                 failures: &mut Vec<(String, String, String)>,
+                 unbalanced: &mut Vec<(String, String)>| {
+                    let trimmed = logical.trim_start();
+                    // A pipe into tomlctl (`… | tomlctl items add …`) — take the
+                    // substring from that `tomlctl` so the heredoc/cat prefix and
+                    // its body don't masquerade as argv.
+                    let candidate = if let Some(idx) = trimmed.find("| tomlctl ") {
+                        &trimmed[idx + 2..]
+                    } else {
+                        trimmed
+                    };
+                    if !candidate.starts_with("tomlctl") {
                         return;
                     }
-                };
-                // Strip shell plumbing that is NOT part of tomlctl's argv:
-                // redirections (`2>/dev/null`, `>/dev/null`, `2>&1`) and the
-                // heredoc opener (`<<'EOF'`). Everything from the first such
-                // operator onward is shell syntax the shell consumes before
-                // exec, so it must not be fed to clap. A bare `-` (the stdin
-                // sentinel for `--ndjson -` / `--ops -`) is a real argv token
-                // and is preserved.
-                let is_shell_op = |t: &str| -> bool {
-                    t.starts_with("<<")
-                        || t.starts_with("2>")
-                        || t.starts_with("1>")
-                        || t.starts_with('>')
-                        || (t.starts_with('<') && t != "<")
-                };
-                let tokens: Vec<String> = raw_tokens
-                    .into_iter()
-                    .take_while(|t| !is_shell_op(t))
-                    .collect();
-                if tokens.is_empty() {
-                    return;
-                }
-                // shell_words yields "tomlctl" as the first token, which is
-                // exactly the program name clap's `try_parse_from` expects.
-                if let Err(e) = Cli::try_parse_from(&tokens) {
-                    match e.kind() {
-                        ErrorKind::UnknownArgument | ErrorKind::InvalidSubcommand => {
-                            failures.push((
-                                rel.to_string(),
-                                candidate.to_string(),
-                                e.to_string().lines().next().unwrap_or("").to_string(),
-                            ));
+                    let raw_tokens = match shell_words::split(candidate) {
+                        Ok(t) => t,
+                        Err(_) => {
+                            unbalanced.push((rel.to_string(), candidate.to_string()));
+                            return;
                         }
-                        // Missing-required / value-validation / help / version
-                        // are all acceptable: placeholders mean required values
-                        // are legitimately absent in docs.
-                        _ => {}
+                    };
+                    // Strip shell plumbing that is NOT part of tomlctl's argv:
+                    // redirections (`2>/dev/null`, `>/dev/null`, `2>&1`) and the
+                    // heredoc opener (`<<'EOF'`). Everything from the first such
+                    // operator onward is shell syntax the shell consumes before
+                    // exec, so it must not be fed to clap. A bare `-` (the stdin
+                    // sentinel for `--ndjson -` / `--ops -`) is a real argv token
+                    // and is preserved.
+                    let is_shell_op = |t: &str| -> bool {
+                        t.starts_with("<<")
+                            || t.starts_with("2>")
+                            || t.starts_with("1>")
+                            || t.starts_with('>')
+                            || (t.starts_with('<') && t != "<")
+                    };
+                    let tokens: Vec<String> = raw_tokens
+                        .into_iter()
+                        .take_while(|t| !is_shell_op(t))
+                        .collect();
+                    if tokens.is_empty() {
+                        return;
                     }
-                }
-            };
+                    // shell_words yields "tomlctl" as the first token, which is
+                    // exactly the program name clap's `try_parse_from` expects.
+                    if let Err(e) = Cli::try_parse_from(&tokens) {
+                        match e.kind() {
+                            ErrorKind::UnknownArgument | ErrorKind::InvalidSubcommand => {
+                                failures.push((
+                                    rel.to_string(),
+                                    candidate.to_string(),
+                                    e.to_string().lines().next().unwrap_or("").to_string(),
+                                ));
+                            }
+                            // Missing-required / value-validation / help / version
+                            // are all acceptable: placeholders mean required values
+                            // are legitimately absent in docs.
+                            _ => {}
+                        }
+                    }
+                };
 
             for line in text.lines() {
                 let trimmed = line.trim_start();
@@ -1762,7 +1821,10 @@ body
         }
 
         if !unbalanced.is_empty() {
-            eprintln!("command_lint: {} line(s) skipped (unbalanced quotes in snippet):", unbalanced.len());
+            eprintln!(
+                "command_lint: {} line(s) skipped (unbalanced quotes in snippet):",
+                unbalanced.len()
+            );
             for (f, l) in &unbalanced {
                 eprintln!("  {f}: {l}");
             }
@@ -1806,16 +1868,31 @@ body
         let command = claude_dir.join("commands").join("c.md");
         let agent = claude_dir.join("agents").join("a.md");
         let not_markdown = skill.join("references").join("y.txt");
-        for p in [&body, &reference, &template, &command, &agent, &not_markdown] {
+        for p in [
+            &body,
+            &reference,
+            &template,
+            &command,
+            &agent,
+            &not_markdown,
+        ] {
             fs::write(p, "# fixture\n").unwrap();
         }
 
         let set = command_lint_scan_set(claude_dir);
         for p in [&body, &reference, &command, &agent] {
-            assert!(set.contains(p), "scan set must include {}: {set:?}", p.display());
+            assert!(
+                set.contains(p),
+                "scan set must include {}: {set:?}",
+                p.display()
+            );
         }
         for p in [&template, &not_markdown] {
-            assert!(!set.contains(p), "scan set must exclude {}: {set:?}", p.display());
+            assert!(
+                !set.contains(p),
+                "scan set must exclude {}: {set:?}",
+                p.display()
+            );
         }
         let mut sorted = set.clone();
         sorted.sort();
@@ -1839,7 +1916,10 @@ body
         }
 
         let mut offenders: Vec<(String, usize)> = Vec::new();
-        for entry in fs::read_dir(&skills_dir).expect("read claude/skills").flatten() {
+        for entry in fs::read_dir(&skills_dir)
+            .expect("read claude/skills")
+            .flatten()
+        {
             let body = entry.path().join("SKILL.md");
             let Ok(text) = fs::read_to_string(&body) else {
                 continue;
@@ -1886,7 +1966,10 @@ body
         }
 
         let mut offenders: Vec<(String, usize)> = Vec::new();
-        for entry in fs::read_dir(&skills_dir).expect("read claude/skills").flatten() {
+        for entry in fs::read_dir(&skills_dir)
+            .expect("read claude/skills")
+            .flatten()
+        {
             let references = entry.path().join("references");
             let Ok(files) = fs::read_dir(&references) else {
                 continue;
@@ -2174,14 +2257,8 @@ body
         use clap::error::ErrorKind as ClapErrorKind;
 
         // WRITE path (`set`) must accept `--no-create`.
-        let ok = Cli::try_parse_from([
-            "tomlctl",
-            "set",
-            "/tmp/x.toml",
-            "key",
-            "val",
-            "--no-create",
-        ]);
+        let ok =
+            Cli::try_parse_from(["tomlctl", "set", "/tmp/x.toml", "key", "val", "--no-create"]);
         assert!(
             ok.is_ok(),
             "`--no-create` must be accepted on the write subcommand `set`, got: {:?}",
@@ -2190,15 +2267,10 @@ body
 
         // READ path (`get`) must reject `--no-create` as an unknown argument.
         // Map to the clap error kind first so we never need `Debug` on `Cli`.
-        let read_err_kind = Cli::try_parse_from([
-            "tomlctl",
-            "get",
-            "/tmp/x.toml",
-            "key",
-            "--no-create",
-        ])
-        .map_err(|e| e.kind())
-        .err();
+        let read_err_kind =
+            Cli::try_parse_from(["tomlctl", "get", "/tmp/x.toml", "key", "--no-create"])
+                .map_err(|e| e.kind())
+                .err();
         assert_eq!(
             read_err_kind,
             Some(ClapErrorKind::UnknownArgument),

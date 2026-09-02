@@ -77,9 +77,9 @@ pub(crate) fn today_utc_iso() -> Result<String> {
 /// `context.toml`.
 pub(crate) fn today_toml_date() -> Result<toml::value::Datetime> {
     let date_str = today_utc_iso()?;
-    date_str.parse::<toml::value::Datetime>().with_context(|| {
-        format!("converting today ({date_str}) to TOML date")
-    })
+    date_str
+        .parse::<toml::value::Datetime>()
+        .with_context(|| format!("converting today ({date_str}) to TOML date"))
 }
 
 /// Parse an ISO-8601-ish `updated` value (date-only `YYYY-MM-DD` or full
@@ -257,9 +257,18 @@ mod tests {
 
     #[test]
     fn parse_threshold_accepts_known_suffixes() {
-        assert_eq!(parse_threshold("7d").unwrap(), Duration::from_secs(7 * 86_400));
-        assert_eq!(parse_threshold("48h").unwrap(), Duration::from_secs(48 * 3600));
-        assert_eq!(parse_threshold("1w").unwrap(), Duration::from_secs(7 * 86_400));
+        assert_eq!(
+            parse_threshold("7d").unwrap(),
+            Duration::from_secs(7 * 86_400)
+        );
+        assert_eq!(
+            parse_threshold("48h").unwrap(),
+            Duration::from_secs(48 * 3600)
+        );
+        assert_eq!(
+            parse_threshold("1w").unwrap(),
+            Duration::from_secs(7 * 86_400)
+        );
         assert_eq!(parse_threshold("60m").unwrap(), Duration::from_secs(3600));
         assert_eq!(parse_threshold("300s").unwrap(), Duration::from_secs(300));
     }

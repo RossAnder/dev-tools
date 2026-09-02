@@ -42,13 +42,13 @@ use crate::cli::{
 };
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::schema::{ActiveDoc, ActiveEntry as SchemaEntry};
-use crate::time::now_rfc3339;
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
 use crate::io::{
-    guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root,
-    with_exclusive_lock, write_toml_with_sidecar,
+    guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root, with_exclusive_lock,
+    write_toml_with_sidecar,
 };
 use crate::output::print_json_compact;
+use crate::time::now_rfc3339;
 
 /// Resolve `<repo-or-cwd-root>/.claude/active-flow.toml`. The root honours
 /// `TOMLCTL_ROOT` first (test sandbox), then `git rev-parse --show-toplevel`,
@@ -96,10 +96,7 @@ fn read_doc_or_default(file: &Path, integrity: IntegrityOpts) -> Result<TomlValu
 /// the same default rather than carrying a byte-equivalent copy.
 pub(crate) fn empty_doc() -> TomlValue {
     let mut tbl = toml::map::Map::new();
-    tbl.insert(
-        "schema_version".to_string(),
-        TomlValue::Integer(1),
-    );
+    tbl.insert("schema_version".to_string(), TomlValue::Integer(1));
     tbl.insert("active".to_string(), TomlValue::Array(Vec::new()));
     TomlValue::Table(tbl)
 }
@@ -239,10 +236,7 @@ pub(crate) fn build_entry(
     scope: &[String],
 ) -> TomlValue {
     let mut entry = toml::map::Map::new();
-    entry.insert(
-        "slug".to_string(),
-        TomlValue::String(slug.to_string()),
-    );
+    entry.insert("slug".to_string(), TomlValue::String(slug.to_string()));
     entry.insert(
         "last_used".to_string(),
         TomlValue::String(last_used.to_string()),
@@ -261,10 +255,7 @@ pub(crate) fn build_entry(
         );
     }
     if !scope.is_empty() {
-        let arr: Vec<TomlValue> = scope
-            .iter()
-            .map(|s| TomlValue::String(s.clone()))
-            .collect();
+        let arr: Vec<TomlValue> = scope.iter().map(|s| TomlValue::String(s.clone())).collect();
         binding.insert("scope".to_string(), TomlValue::Array(arr));
     }
     if !binding.is_empty() {
@@ -284,11 +275,7 @@ pub(crate) fn build_entry(
 /// `write_toml_with_sidecar` materialises the file + sidecar atomically.
 /// `guard_write_path` runs unconditionally (even on bootstrap) so the
 /// `.claude/` containment rule is enforced before the first byte hits disk.
-pub(crate) fn mutate_active<F>(
-    file: &Path,
-    integrity_args: &WriteIntegrityArgs,
-    f: F,
-) -> Result<()>
+pub(crate) fn mutate_active<F>(file: &Path, integrity_args: &WriteIntegrityArgs, f: F) -> Result<()>
 where
     F: FnOnce(&mut TomlValue) -> Result<()>,
 {
@@ -396,13 +383,7 @@ fn add(
     validate_slug(&slug)?;
     let file = active_flow_path()?;
     let now = now_rfc3339();
-    let new_entry = build_entry(
-        &slug,
-        &now,
-        branch.as_deref(),
-        worktree.as_deref(),
-        &scope,
-    );
+    let new_entry = build_entry(&slug, &now, branch.as_deref(), worktree.as_deref(), &scope);
     if dry_run {
         let envelope = json!({
             "ok": true,
@@ -510,10 +491,7 @@ fn touch(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<(
                 // shape rather than the pre-touch one. Other fields are
                 // preserved byte-for-byte from the existing entry.
                 let mut tbl = e.as_table().cloned().unwrap_or_default();
-                tbl.insert(
-                    "last_used".to_string(),
-                    TomlValue::String(now.clone()),
-                );
+                tbl.insert("last_used".to_string(), TomlValue::String(now.clone()));
                 entry_to_json(&TomlValue::Table(tbl))
             })
             .unwrap_or(JsonValue::Null);

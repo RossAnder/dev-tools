@@ -152,7 +152,11 @@ status = "open"
     let items = parsed.get("items").and_then(|v| v.as_array()).unwrap();
     assert_eq!(items.len(), 1, "R1 must be gone; R2 remains");
     assert_eq!(
-        items[0].as_table().unwrap().get("id").and_then(|v| v.as_str()),
+        items[0]
+            .as_table()
+            .unwrap()
+            .get("id")
+            .and_then(|v| v.as_str()),
         Some("R2")
     );
 }
@@ -223,7 +227,10 @@ status = "open"
 
     let after_bytes = fs::read(&ledger).unwrap();
     let after_sidecar_bytes = fs::read(&sidecar).unwrap();
-    assert_eq!(before_bytes, after_bytes, "ledger must be unchanged after apply --dry-run");
+    assert_eq!(
+        before_bytes, after_bytes,
+        "ledger must be unchanged after apply --dry-run"
+    );
     assert_eq!(
         before_sidecar_bytes, after_sidecar_bytes,
         "sidecar must be unchanged after apply --dry-run"
@@ -484,12 +491,23 @@ fn run_dry_run_invariant(
     for (k, v) in extra_envs {
         cmd.env(k, v);
     }
-    let out = cmd.args(extra_args).arg("--dry-run").write_stdin("").assert().success();
+    let out = cmd
+        .args(extra_args)
+        .arg("--dry-run")
+        .write_stdin("")
+        .assert()
+        .success();
 
     let after_bytes = fs::read(ledger).unwrap();
     let after_sidecar = fs::read(&sidecar).unwrap();
-    assert_eq!(before_bytes, after_bytes, "dry-run must not change ledger bytes");
-    assert_eq!(before_sidecar, after_sidecar, "dry-run must not change sidecar bytes");
+    assert_eq!(
+        before_bytes, after_bytes,
+        "dry-run must not change ledger bytes"
+    );
+    assert_eq!(
+        before_sidecar, after_sidecar,
+        "dry-run must not change sidecar bytes"
+    );
 
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     serde_json::from_str(stdout.trim())
@@ -520,13 +538,21 @@ status = "open"
     let v = run_dry_run_invariant(
         &dir,
         &ledger,
-        &["items", "add", ledger.to_str().unwrap(), "--json",
-          r#"{"id":"R2","summary":"second","status":"open"}"#],
+        &[
+            "items",
+            "add",
+            ledger.to_str().unwrap(),
+            "--json",
+            r#"{"id":"R2","summary":"second","status":"open"}"#,
+        ],
         &[],
     );
 
     let after_mtime = fs::metadata(&sidecar).unwrap().modified().unwrap();
-    assert_eq!(before_mtime, after_mtime, "dry-run must not touch sidecar mtime");
+    assert_eq!(
+        before_mtime, after_mtime,
+        "dry-run must not touch sidecar mtime"
+    );
 
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["dry_run"], serde_json::json!(true));
@@ -570,7 +596,13 @@ status = "open"
     let v = run_dry_run_invariant(
         &dir,
         &ledger,
-        &["items", "add-many", ledger.to_str().unwrap(), "--ndjson", &ndjson_str],
+        &[
+            "items",
+            "add-many",
+            ledger.to_str().unwrap(),
+            "--ndjson",
+            &ndjson_str,
+        ],
         &[],
     );
 
@@ -607,7 +639,14 @@ status = "open"
     let v = run_dry_run_invariant(
         &dir,
         &ledger,
-        &["items", "update", ledger.to_str().unwrap(), "R1", "--json", r#"{"status":"fixed"}"#],
+        &[
+            "items",
+            "update",
+            ledger.to_str().unwrap(),
+            "R1",
+            "--json",
+            r#"{"status":"fixed"}"#,
+        ],
         &[],
     );
 
@@ -662,7 +701,10 @@ fn set_dry_run_emits_scalar_envelope_and_leaves_file_unchanged() {
 
     let after_bytes = fs::read(&ledger).unwrap();
     let after_sidecar = fs::read(&sidecar).unwrap();
-    assert_eq!(before_bytes, after_bytes, "ledger bytes must be unchanged after set --dry-run");
+    assert_eq!(
+        before_bytes, after_bytes,
+        "ledger bytes must be unchanged after set --dry-run"
+    );
     assert_eq!(
         before_sidecar, after_sidecar,
         "sidecar bytes must be unchanged after set --dry-run"
@@ -770,8 +812,13 @@ fn array_append_dry_run_emits_envelope_and_leaves_file_unchanged() {
     let v = run_dry_run_invariant(
         &dir,
         &ledger,
-        &["array-append", ledger.to_str().unwrap(), "rollback_events",
-          "--json", r#"{"id":"E2","cause":"second"}"#],
+        &[
+            "array-append",
+            ledger.to_str().unwrap(),
+            "rollback_events",
+            "--json",
+            r#"{"id":"E2","cause":"second"}"#,
+        ],
         &[],
     );
 
@@ -963,8 +1010,14 @@ status = "open"
 
     let after_bytes = fs::read(&ledger).unwrap();
     let after_sidecar = fs::read(&sidecar).unwrap();
-    assert_eq!(before_bytes, after_bytes, "dry-run must not change ledger bytes");
-    assert_eq!(before_sidecar, after_sidecar, "dry-run must not change sidecar bytes");
+    assert_eq!(
+        before_bytes, after_bytes,
+        "dry-run must not change ledger bytes"
+    );
+    assert_eq!(
+        before_sidecar, after_sidecar,
+        "dry-run must not change sidecar bytes"
+    );
 
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     let v: serde_json::Value = serde_json::from_str(stdout.trim())

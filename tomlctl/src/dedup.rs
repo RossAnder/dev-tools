@@ -357,11 +357,10 @@ fn find_duplicates_tier_c(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
             continue;
         }
         let file = str_field(tbl, "file");
-        by_file.entry(file).or_default().push(Candidate {
-            idx: i,
-            file,
-            line,
-        });
+        by_file
+            .entry(file)
+            .or_default()
+            .push(Candidate { idx: i, file, line });
     }
 
     // O52: sort each per-file Vec in place during the build pass, then iterate
@@ -394,7 +393,9 @@ fn find_duplicates_tier_c(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
                     "C",
                     &format!(
                         "file={} line_window=[{}..{}]",
-                        sorted[i].file, sorted[i].line, sorted[j - 1].line
+                        sorted[i].file,
+                        sorted[i].line,
+                        sorted[j - 1].line
                     ),
                     &refs,
                 ));
@@ -427,10 +428,7 @@ fn find_duplicates_tier_c(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
 /// items array from a `JsonValue` doc and dispatches the requested tier.
 /// Returns the same `Vec<JsonValue>` shape `items_find_duplicates` does
 /// for the same underlying data — the parity test pins this.
-pub(crate) fn items_find_duplicates_json(
-    doc: &JsonValue,
-    tier: DupTier,
-) -> Result<Vec<JsonValue>> {
+pub(crate) fn items_find_duplicates_json(doc: &JsonValue, tier: DupTier) -> Result<Vec<JsonValue>> {
     let items: &[JsonValue] = items_array_json(doc, "items");
     match tier {
         DupTier::A => find_duplicates_tier_a_json(items),
@@ -520,7 +518,9 @@ fn find_duplicates_tier_a_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
     let mut by_symbol: BTreeMap<(&str, &str), Vec<usize>> = BTreeMap::new();
     let mut by_summary: BTreeMap<(&str, &str), Vec<usize>> = BTreeMap::new();
     for (i, item) in items.iter().enumerate() {
-        let Some(obj) = item.as_object() else { continue };
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
         let file = str_field_json(obj, "file");
         let symbol = str_field_json(obj, "symbol");
         if !symbol.is_empty() {
@@ -562,7 +562,9 @@ fn find_duplicates_tier_a_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
 fn find_duplicates_tier_b_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
     let mut groups: BTreeMap<([u8; 8], String), Vec<usize>> = BTreeMap::new();
     for (i, item) in items.iter().enumerate() {
-        let Some(obj) = item.as_object() else { continue };
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
         let short = tier_b_fingerprint_bytes_json(obj);
         let file = str_field_json(obj, "file");
         let basename = Path::new(file)
@@ -607,7 +609,9 @@ fn find_duplicates_tier_c_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
     }
     let mut by_file: HashMap<&str, Vec<Candidate>> = HashMap::new();
     for (i, item) in items.iter().enumerate() {
-        let Some(obj) = item.as_object() else { continue };
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
         let symbol = str_field_json(obj, "symbol");
         if !symbol.is_empty() {
             continue;
@@ -617,11 +621,10 @@ fn find_duplicates_tier_c_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
             continue;
         }
         let file = str_field_json(obj, "file");
-        by_file.entry(file).or_default().push(Candidate {
-            idx: i,
-            file,
-            line,
-        });
+        by_file
+            .entry(file)
+            .or_default()
+            .push(Candidate { idx: i, file, line });
     }
     for v in by_file.values_mut() {
         v.sort_by(|a, b| a.line.cmp(&b.line).then(a.idx.cmp(&b.idx)));
@@ -644,7 +647,9 @@ fn find_duplicates_tier_c_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
                     "C",
                     &format!(
                         "file={} line_window=[{}..{}]",
-                        sorted[i].file, sorted[i].line, sorted[j - 1].line
+                        sorted[i].file,
+                        sorted[i].line,
+                        sorted[j - 1].line
                     ),
                     &refs,
                 ));
@@ -775,7 +780,8 @@ category = "quality"
         );
         assert_eq!(fp1.len(), 16, "fingerprint must be 16 hex chars (64 bits)");
         assert!(
-            fp1.chars().all(|c| c.is_ascii_hexdigit() && (!c.is_ascii_uppercase())),
+            fp1.chars()
+                .all(|c| c.is_ascii_hexdigit() && (!c.is_ascii_uppercase())),
             "fingerprint must be lowercase hex: got {fp1:?}"
         );
 
@@ -811,10 +817,7 @@ category = "quality"
             let mut changed = base.clone();
             changed.insert((*key).to_string(), TomlValue::String("MUTATED".into()));
             let fp = tier_b_fingerprint(&TomlValue::Table(changed));
-            assert_ne!(
-                fp, base_fp,
-                "changing `{key}` must change the fingerprint"
-            );
+            assert_ne!(fp, base_fp, "changing `{key}` must change the fingerprint");
         }
     }
 
@@ -898,8 +901,9 @@ file = "x""#,
     /// This is a unit-level pin; the integration test covers the CLI side.
     #[test]
     fn items_find_duplicates_across_rejects_tier_c() {
-        let err = items_find_duplicates_across(Vec::new(), "a.toml", Vec::new(), "b.toml", DupTier::C)
-            .unwrap_err();
+        let err =
+            items_find_duplicates_across(Vec::new(), "a.toml", Vec::new(), "b.toml", DupTier::C)
+                .unwrap_err();
         assert_eq!(
             err.to_string(),
             "tier C is file-scoped; use --tier A or --tier B with --across"

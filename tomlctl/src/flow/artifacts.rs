@@ -70,10 +70,7 @@ impl CanonicalArtifacts {
             ("review_ledger", self.review_ledger.as_str()),
             ("optimise_findings", self.optimise_findings.as_str()),
             ("execution_record", self.execution_record.as_str()),
-            (
-                "plan_review_findings",
-                self.plan_review_findings.as_str(),
-            ),
+            ("plan_review_findings", self.plan_review_findings.as_str()),
         ]
     }
 }

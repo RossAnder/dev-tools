@@ -14,9 +14,9 @@ use std::collections::HashMap;
 use toml::Value as TomlValue;
 
 use crate::convert::{json_type_name, maybe_date_coerce, str_field, toml_to_json, walk_json_path};
-use crate::dedup::{FINGERPRINTED_FIELDS, tier_b_fingerprint_json, tier_b_fingerprint_table};
 #[cfg(test)]
 use crate::dedup::tier_b_fingerprint;
+use crate::dedup::{FINGERPRINTED_FIELDS, tier_b_fingerprint_json, tier_b_fingerprint_table};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{capture_row_id, item_id, item_id_json, items_array, items_array_mut};
 
@@ -115,8 +115,7 @@ fn apply_dedup_id_on_update(
     let explicit_dedup_id = patch_obj
         .get("dedup_id")
         .map(|v| {
-            !matches!(v, JsonValue::Null)
-                && !matches!(v, JsonValue::String(s) if s.is_empty())
+            !matches!(v, JsonValue::Null) && !matches!(v, JsonValue::String(s) if s.is_empty())
         })
         .unwrap_or(false);
     if explicit_dedup_id {
@@ -239,8 +238,9 @@ pub(crate) fn items_add(doc: &mut TomlValue, json: &str) -> Result<()> {
 
 /// R57: array-parametric `items add`. See `List --array`.
 pub(crate) fn items_add_to(doc: &mut TomlValue, array_name: &str, json: &str) -> Result<()> {
-    let patch: JsonValue = serde_json::from_str(json)
-        .context("parsing --json (expected JSON object, e.g. `{\"id\":\"R1\",\"status\":\"resolved\"}`)")?;
+    let patch: JsonValue = serde_json::from_str(json).context(
+        "parsing --json (expected JSON object, e.g. `{\"id\":\"R1\",\"status\":\"resolved\"}`)",
+    )?;
     items_add_value_to(doc, patch, array_name)
 }
 
@@ -493,7 +493,9 @@ pub(crate) fn items_update_value_to(
 
     let arr = items_array_mut(doc, array_name)?;
     for item in arr.iter_mut() {
-        let Some(tbl) = item.as_table_mut() else { continue };
+        let Some(tbl) = item.as_table_mut() else {
+            continue;
+        };
         let matches = tbl.get("id").and_then(|v| v.as_str()) == Some(id);
         if !matches {
             continue;
@@ -529,11 +531,7 @@ pub(crate) fn items_apply(doc: &mut TomlValue, ops_json: &str) -> Result<()> {
 }
 
 #[cfg(test)]
-pub(crate) fn items_apply_to(
-    doc: &mut TomlValue,
-    ops_json: &str,
-    array_name: &str,
-) -> Result<()> {
+pub(crate) fn items_apply_to(doc: &mut TomlValue, ops_json: &str, array_name: &str) -> Result<()> {
     items_apply_to_opts(doc, ops_json, array_name, false)
 }
 
@@ -783,7 +781,10 @@ fn apply_op_indexed(
             }
             Ok(())
         }
-        other => bail!("unknown op `{}`; expected one of: add, update, remove", other),
+        other => bail!(
+            "unknown op `{}`; expected one of: add, update, remove",
+            other
+        ),
     }
 }
 
@@ -877,11 +878,7 @@ fn update_at_index(
 /// value, eliminating the per-row patch clone the previous `&JsonValue`
 /// signature forced. Caller (`items_apply_to_opts`) iterates the parsed
 /// ops array via `.into_iter()` to feed owned values here.
-pub(crate) fn apply_single_op(
-    doc: &mut TomlValue,
-    op: JsonValue,
-    array_name: &str,
-) -> Result<()> {
+pub(crate) fn apply_single_op(doc: &mut TomlValue, op: JsonValue, array_name: &str) -> Result<()> {
     let got_type = crate::convert::json_type_name(&op);
     let JsonValue::Object(mut obj) = op else {
         bail!(
@@ -893,9 +890,7 @@ pub(crate) fn apply_single_op(
         .get("op")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            anyhow!(
-                "op missing `op` field; required shape is {{\"op\":\"add|update|remove\",...}}"
-            )
+            anyhow!("op missing `op` field; required shape is {{\"op\":\"add|update|remove\",...}}")
         })?
         .to_string();
     match op_name.as_str() {
@@ -947,7 +942,10 @@ pub(crate) fn apply_single_op(
             // R57: remove also follows the --array parameter.
             items_remove_from(doc, array_name, id)
         }
-        other => bail!("unknown op `{}`; expected one of: add, update, remove", other),
+        other => bail!(
+            "unknown op `{}`; expected one of: add, update, remove",
+            other
+        ),
     }
 }
 
@@ -1289,11 +1287,19 @@ pub(crate) fn compute_apply_mutation(
                 added.push(id);
             }
             "update" => {
-                let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let id = obj
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 updated.push(id);
             }
             "remove" => {
-                let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let id = obj
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 removed.push(id);
             }
             _ => {}
@@ -1369,10 +1375,7 @@ pub(crate) fn compute_remove_mutation(
 /// the named array exists but isn't an array-of-tables). Empty-array (array
 /// absent or zero items) returns an empty-`updated` plan, letting the
 /// dispatch skip the write and emit `{"ok":true,"backfilled":0}`.
-pub(crate) fn compute_backfill_mutation(
-    doc: &TomlValue,
-    array_name: &str,
-) -> Result<MutationPlan> {
+pub(crate) fn compute_backfill_mutation(doc: &TomlValue, array_name: &str) -> Result<MutationPlan> {
     let mut new_doc = doc.clone();
     let mut updated: Vec<String> = Vec::new();
     // `items_array_mut` auto-creates the array if missing; this keeps the
@@ -1711,10 +1714,7 @@ pub(crate) enum DispositionError {
     /// `status` is set to a disposition value (`fixed`, `applied`,
     /// `deferred`, `wontfix`, `wontapply`, `verified-clean`) but one or
     /// more of its required companion fields is missing or empty.
-    MissingDispositionField {
-        status: String,
-        field: &'static str,
-    },
+    MissingDispositionField { status: String, field: &'static str },
 }
 
 impl std::fmt::Display for DispositionError {
@@ -1798,9 +1798,9 @@ impl Item {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::env_lock;
     use crate::convert::{DATE_KEYS, ScalarType, infer_type, json_to_toml, navigate, set_at_path};
     use crate::query::{self, Predicate, Query};
+    use crate::test_support::env_lock;
 
     const LEDGER: &str = r#"schema_version = 1
 last_updated = 2026-04-16
@@ -1913,13 +1913,12 @@ optimise_findings = ".claude/flows/x/optimise-findings.toml"
             Some(2)
         );
         assert_eq!(
-            navigate(&doc, "created").and_then(|v| v.as_datetime()).map(|d| d.to_string()),
+            navigate(&doc, "created")
+                .and_then(|v| v.as_datetime())
+                .map(|d| d.to_string()),
             Some("2026-04-08".into())
         );
-        assert_eq!(
-            navigate(&doc, "slug").and_then(|v| v.as_str()),
-            Some("x")
-        );
+        assert_eq!(navigate(&doc, "slug").and_then(|v| v.as_str()), Some("x"));
     }
 
     #[test]
@@ -2067,8 +2066,8 @@ optimise_findings = ".claude/flows/x/optimise-findings.toml"
         // test fails with the offending key named in the assertion message.
         for key in DATE_KEYS {
             let v = JsonValue::String("2026-04-18".into());
-            let coerced = maybe_date_coerce(key, &v)
-                .unwrap_or_else(|e| panic!("{key}: coerce failed: {e}"));
+            let coerced =
+                maybe_date_coerce(key, &v).unwrap_or_else(|e| panic!("{key}: coerce failed: {e}"));
             match coerced {
                 TomlValue::Datetime(dt) => {
                     assert_eq!(dt.to_string(), "2026-04-18", "{key} produced wrong dt");
@@ -2158,13 +2157,7 @@ summary = "something"
         assert_eq!(item["summary"], "something");
 
         // No-op for absent key is fine.
-        items_update(
-            &mut doc,
-            "R1",
-            r#"{}"#,
-            &["nonexistent_key".into()],
-        )
-        .unwrap();
+        items_update(&mut doc, "R1", r#"{}"#, &["nonexistent_key".into()]).unwrap();
     }
 
     #[test]
@@ -2399,8 +2392,14 @@ detail = "two"
 
         // items_update_to mutates the named array's record, not `items`.
         items_update_to(&mut doc, "audit", "A1", r#"{"status":"closed"}"#, &[]).unwrap();
-        assert_eq!(items_get_from(&doc, "audit", "A1").unwrap()["status"], "closed");
-        assert_eq!(items_get_from(&doc, "items", "I1").unwrap()["status"], "open");
+        assert_eq!(
+            items_get_from(&doc, "audit", "A1").unwrap()["status"],
+            "closed"
+        );
+        assert_eq!(
+            items_get_from(&doc, "items", "I1").unwrap()["status"],
+            "open"
+        );
 
         // items_remove_from drops from the named array only.
         items_remove_from(&mut doc, "audit", "A2").unwrap();
@@ -2449,11 +2448,7 @@ summary = "existing"
     fn items_apply_no_remove_rejects_remove_op() {
         let mut doc = led();
         // Without the flag, a remove op succeeds.
-        items_apply(
-            &mut doc,
-            r#"[{"op":"remove","id":"R1"}]"#,
-        )
-        .unwrap();
+        items_apply(&mut doc, r#"[{"op":"remove","id":"R1"}]"#).unwrap();
         // Target reset.
         let mut doc2 = led();
         // With --no-remove, the same op errors before any mutation.
@@ -2468,7 +2463,10 @@ summary = "existing"
         )
         .unwrap_err();
         let msg = format!("{err:#}");
-        assert!(msg.contains("remove op"), "expected remove-op rejection, got: {msg}");
+        assert!(
+            msg.contains("remove op"),
+            "expected remove-op rejection, got: {msg}"
+        );
         assert!(msg.contains("op[1]"), "expected index in error, got: {msg}");
         // Confirm no partial mutation: R1 still `open`, R4 still present.
         assert_eq!(items_get(&doc2, "R1").unwrap()["status"], "open");
@@ -2825,10 +2823,8 @@ summary = "design finding"
     #[test]
     fn items_add_many_merges_defaults() {
         let mut doc = led();
-        let defaults: JsonValue = serde_json::from_str(
-            r#"{"status":"open","rounds":1,"severity":"warning"}"#,
-        )
-        .unwrap();
+        let defaults: JsonValue =
+            serde_json::from_str(r#"{"status":"open","rounds":1,"severity":"warning"}"#).unwrap();
         let rows: Vec<JsonValue> = vec![
             serde_json::from_str(r#"{"id":"R10","file":"a.rs","line":1,"summary":"a","category":"quality","effort":"small","first_flagged":"2026-04-18"}"#).unwrap(),
             serde_json::from_str(r#"{"id":"R11","file":"b.rs","line":2,"summary":"b","category":"quality","effort":"small","first_flagged":"2026-04-18","severity":"critical"}"#).unwrap(),
@@ -2888,7 +2884,8 @@ summary = "design finding"
         // no `id`, so array-append of an id-less row must still succeed.
         let mut doc = led();
         let row: JsonValue =
-            serde_json::from_str(r#"{"timestamp":"2026-05-22T00:00:00Z","agent_index":1}"#).unwrap();
+            serde_json::from_str(r#"{"timestamp":"2026-05-22T00:00:00Z","agent_index":1}"#)
+                .unwrap();
         items_add_value_to(&mut doc, row, "vet_events").unwrap();
         let events = items_array(&doc, "vet_events");
         assert_eq!(events.len(), 1);
@@ -2897,10 +2894,9 @@ summary = "design finding"
     #[test]
     fn items_add_many_preserves_date_coercion_for_first_flagged() {
         let mut doc = led();
-        let defaults: JsonValue = serde_json::from_str(
-            r#"{"first_flagged":"2026-04-18","status":"open","rounds":1}"#,
-        )
-        .unwrap();
+        let defaults: JsonValue =
+            serde_json::from_str(r#"{"first_flagged":"2026-04-18","status":"open","rounds":1}"#)
+                .unwrap();
         let rows: Vec<JsonValue> = vec![serde_json::from_str(
             r#"{"id":"R20","file":"c.rs","line":3,"severity":"warning","effort":"small","category":"quality","summary":"c"}"#,
         )
@@ -3037,10 +3033,8 @@ status = "open"
         // the helper itself pins the contract so a careless refactor
         // can't flip it to "match on everything".
         let doc = dedupe_fixture();
-        let payload: JsonValue = serde_json::from_str(
-            r#"{"file":"src/a.rs","summary":"alpha"}"#,
-        )
-        .unwrap();
+        let payload: JsonValue =
+            serde_json::from_str(r#"{"file":"src/a.rs","summary":"alpha"}"#).unwrap();
         let got = find_dedupe_match(&doc, "items", &payload, &[]);
         assert_eq!(got, None, "empty fields must never match");
     }
@@ -3049,10 +3043,9 @@ status = "open"
     fn find_dedupe_match_multi_field_all_must_match() {
         let doc = dedupe_fixture();
         // Both `file` and `summary` match R1 — hit.
-        let hit: JsonValue = serde_json::from_str(
-            r#"{"file":"src/a.rs","summary":"alpha","status":"new"}"#,
-        )
-        .unwrap();
+        let hit: JsonValue =
+            serde_json::from_str(r#"{"file":"src/a.rs","summary":"alpha","status":"new"}"#)
+                .unwrap();
         assert_eq!(
             find_dedupe_match(
                 &doc,
@@ -3064,10 +3057,8 @@ status = "open"
         );
 
         // `file` matches R1 but `summary` differs — miss.
-        let miss: JsonValue = serde_json::from_str(
-            r#"{"file":"src/a.rs","summary":"different"}"#,
-        )
-        .unwrap();
+        let miss: JsonValue =
+            serde_json::from_str(r#"{"file":"src/a.rs","summary":"different"}"#).unwrap();
         assert_eq!(
             find_dedupe_match(
                 &doc,
@@ -3103,10 +3094,8 @@ status = "open"
         // "x" (R1 lacks it). `extra_key` is missing on the candidate
         // side and present on the payload side → unequal → miss.
         let doc = dedupe_fixture();
-        let payload: JsonValue = serde_json::from_str(
-            r#"{"file":"src/a.rs","extra_key":"x"}"#,
-        )
-        .unwrap();
+        let payload: JsonValue =
+            serde_json::from_str(r#"{"file":"src/a.rs","extra_key":"x"}"#).unwrap();
         let got = find_dedupe_match(
             &doc,
             "items",
@@ -3120,8 +3109,7 @@ status = "open"
     fn items_add_value_with_dedupe_to_appends_on_miss_and_skips_on_hit() {
         let mut doc = dedupe_fixture();
         let patch: JsonValue =
-            serde_json::from_str(r#"{"id":"R3","file":"src/c.rs","summary":"gamma"}"#)
-                .unwrap();
+            serde_json::from_str(r#"{"id":"R3","file":"src/c.rs","summary":"gamma"}"#).unwrap();
         // First call: no existing row with file=src/c.rs — append.
         let outcome = items_add_value_with_dedupe_to(
             &mut doc,
@@ -3155,14 +3143,11 @@ status = "open"
         let mut doc = dedupe_fixture();
         let rows: Vec<JsonValue> = vec![
             // Row 1: new → added.
-            serde_json::from_str(r#"{"id":"R3","file":"src/c.rs","summary":"gamma"}"#)
-                .unwrap(),
+            serde_json::from_str(r#"{"id":"R3","file":"src/c.rs","summary":"gamma"}"#).unwrap(),
             // Row 2: duplicate of R1 → skipped.
-            serde_json::from_str(r#"{"id":"R99","file":"src/a.rs","summary":"alpha"}"#)
-                .unwrap(),
+            serde_json::from_str(r#"{"id":"R99","file":"src/a.rs","summary":"alpha"}"#).unwrap(),
             // Row 3: new → added.
-            serde_json::from_str(r#"{"id":"R4","file":"src/d.rs","summary":"delta"}"#)
-                .unwrap(),
+            serde_json::from_str(r#"{"id":"R4","file":"src/d.rs","summary":"delta"}"#).unwrap(),
         ];
         let outcome = items_add_many_with_dedupe(
             &mut doc,
@@ -3227,9 +3212,7 @@ status = "open"
     fn dedup_id_update_branch_1_explicit_preserved_even_with_fingerprint_patch() {
         let _guard = env_lock();
         let existing = existing_with_dedup_id();
-        let mut patch = patch_obj(
-            r#"{"summary":"new-summary","dedup_id":"caller_provided"}"#,
-        );
+        let mut patch = patch_obj(r#"{"summary":"new-summary","dedup_id":"caller_provided"}"#);
         apply_dedup_id_on_update(&existing, &mut patch);
         assert_eq!(
             patch.get("dedup_id").and_then(|v| v.as_str()),
@@ -3370,14 +3353,22 @@ status = "open"
             r#"{"file":"src/a.rs","summary":"x","severity":"warning","category":"bug","symbol":""}"#,
         );
         apply_dedup_id_on_add(&mut obj);
-        let fp1 = obj.get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+        let fp1 = obj
+            .get("dedup_id")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
         assert_eq!(fp1.len(), 16);
 
         let mut obj2 = patch_obj(
             r#"{"file":"src/a.rs","summary":"x","severity":"warning","category":"bug","symbol":""}"#,
         );
         apply_dedup_id_on_add(&mut obj2);
-        let fp2 = obj2.get("dedup_id").and_then(|v| v.as_str()).unwrap().to_string();
+        let fp2 = obj2
+            .get("dedup_id")
+            .and_then(|v| v.as_str())
+            .unwrap()
+            .to_string();
         assert_eq!(fp1, fp2, "same payload must produce the same digest");
     }
 
@@ -3386,9 +3377,8 @@ status = "open"
     #[test]
     fn dedup_id_add_preserves_explicit_value() {
         let _guard = env_lock();
-        let mut obj = patch_obj(
-            r#"{"file":"src/a.rs","summary":"x","dedup_id":"caller_provided"}"#,
-        );
+        let mut obj =
+            patch_obj(r#"{"file":"src/a.rs","summary":"x","dedup_id":"caller_provided"}"#);
         apply_dedup_id_on_add(&mut obj);
         assert_eq!(
             obj.get("dedup_id").and_then(|v| v.as_str()),
@@ -3531,7 +3521,8 @@ summary = "first"
         let ops: JsonValue = serde_json::from_str(r#"[{"op":"remove","id":"R1"}]"#).unwrap();
         let err = compute_apply_mutation(&doc, "items", &ops, true).unwrap_err();
         assert!(
-            err.to_string().contains("is a remove op, but --no-remove was set"),
+            err.to_string()
+                .contains("is a remove op, but --no-remove was set"),
             "expected --no-remove gate message; got: {err}"
         );
     }
@@ -3584,7 +3575,11 @@ category = "quality"
         //   - R1 now has a dedup_id matching `tier_b_fingerprint`,
         //   - R2's preserved exactly,
         //   - R3 now has a dedup_id matching `tier_b_fingerprint`.
-        let items = plan.new_doc.get("items").and_then(|v| v.as_array()).unwrap();
+        let items = plan
+            .new_doc
+            .get("items")
+            .and_then(|v| v.as_array())
+            .unwrap();
         let r1 = items[0].as_table().unwrap();
         let r1_fp = r1.get("dedup_id").and_then(|v| v.as_str()).unwrap();
         assert_eq!(
@@ -3741,8 +3736,7 @@ status = "open"
         let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
 
         let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
-        let plan =
-            compute_add_many_mutation(&plan_doc, "items", &dup_rows, None, &dedupe).unwrap();
+        let plan = compute_add_many_mutation(&plan_doc, "items", &dup_rows, None, &dedupe).unwrap();
         let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
         assert_eq!(
             live_bytes, plan_bytes,
@@ -3831,8 +3825,7 @@ note = "baseline"
         let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
 
         let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
-        let plan =
-            compute_array_append_mutation(&plan_doc, "rollback_events", &rows).unwrap();
+        let plan = compute_array_append_mutation(&plan_doc, "rollback_events", &rows).unwrap();
         let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
 
         assert_eq!(
@@ -3847,7 +3840,11 @@ note = "baseline"
         assert!(plan.skipped.is_empty());
 
         // Sanity: the items array in the original fixture is untouched.
-        let items = plan.new_doc.get("items").and_then(|v| v.as_array()).unwrap();
+        let items = plan
+            .new_doc
+            .get("items")
+            .and_then(|v| v.as_array())
+            .unwrap();
         assert_eq!(items.len(), 1);
         let events = plan
             .new_doc
@@ -3917,8 +3914,7 @@ note = "baseline"
 
     #[test]
     fn item_validate_flags_deferred_missing_defer_trigger() {
-        let v =
-            serde_json::json!({"id": "R1", "status": "deferred", "defer_reason": "blocked"});
+        let v = serde_json::json!({"id": "R1", "status": "deferred", "defer_reason": "blocked"});
         let err = Item::validate(&v).unwrap_err();
         assert_eq!(
             err,

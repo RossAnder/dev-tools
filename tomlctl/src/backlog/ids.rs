@@ -26,8 +26,7 @@ use crate::io::items_array;
 ///
 /// Deliberately not `dedup::FINGERPRINTED_FIELDS`: that list is the ledger's
 /// and is frozen against pre-existing `dedup_id`s.
-pub(crate) const BACKLOG_FINGERPRINT_FIELDS: [&str; 3] =
-    [FIELD_KIND, FIELD_AREA, FIELD_SUMMARY];
+pub(crate) const BACKLOG_FINGERPRINT_FIELDS: [&str; 3] = [FIELD_KIND, FIELD_AREA, FIELD_SUMMARY];
 
 const ID_PREFIX: &str = "B-";
 

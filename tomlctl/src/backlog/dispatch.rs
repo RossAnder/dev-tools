@@ -94,14 +94,22 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             resolution,
             rationale,
             integrity,
-        } => crate::backlog::triage::dispatch(ids, mode, to, reason, resolution, rationale, integrity),
+        } => crate::backlog::triage::dispatch(
+            ids, mode, to, reason, resolution, rationale, integrity,
+        ),
         BacklogOp::Cluster {
             by,
             min_size,
             min_shared_tags,
             all_statuses,
             integrity,
-        } => crate::backlog::cluster::dispatch(by, min_size, min_shared_tags, all_statuses, integrity),
+        } => crate::backlog::cluster::dispatch(
+            by,
+            min_size,
+            min_shared_tags,
+            all_statuses,
+            integrity,
+        ),
         BacklogOp::Compact {
             older_than,
             dry_run,

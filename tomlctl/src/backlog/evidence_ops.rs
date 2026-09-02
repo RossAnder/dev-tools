@@ -142,7 +142,11 @@ pub(crate) fn ensure_dir(doc: &TomlValue, id: &str, no_create: bool) -> Result<D
     })
 }
 
-pub(crate) fn dispatch_dir(id: String, no_create: bool, integrity: ReadIntegrityArgs) -> Result<()> {
+pub(crate) fn dispatch_dir(
+    id: String,
+    no_create: bool,
+    integrity: ReadIntegrityArgs,
+) -> Result<()> {
     let doc = schema::read_store(&integrity)?;
     let outcome = ensure_dir(&doc, &id, no_create)?;
     let root = repo_or_cwd_root()?;
@@ -515,7 +519,10 @@ mod tests {
         if let Some(text) = repo_gitignore {
             let shipped: String = text
                 .lines()
-                .filter(|line| line.trim_start_matches('!').starts_with(EVIDENCE_RULE_PREFIX))
+                .filter(|line| {
+                    line.trim_start_matches('!')
+                        .starts_with(EVIDENCE_RULE_PREFIX)
+                })
                 .map(|line| format!("{line}\n"))
                 .collect();
             assert_eq!(
@@ -569,7 +576,10 @@ mod tests {
         }
 
         fn evidence(&self, id: &str) -> PathBuf {
-            self.root().join(".claude").join("backlog-evidence").join(id)
+            self.root()
+                .join(".claude")
+                .join("backlog-evidence")
+                .join(id)
         }
 
         fn root_dir(&self) -> PathBuf {

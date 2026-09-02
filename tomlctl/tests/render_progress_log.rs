@@ -233,7 +233,10 @@ fn render_help_lists_expected_flags() {
         .assert()
         .success();
     let help = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    assert!(help.contains("--slug"), "help must list --slug, got:\n{help}");
+    assert!(
+        help.contains("--slug"),
+        "help must list --slug, got:\n{help}"
+    );
     assert!(
         help.contains("--stdout"),
         "help must list --stdout, got:\n{help}"
@@ -302,7 +305,11 @@ fn render_verify_integrity_mismatch_fails_but_renders_without_flag() {
         s.push(".sha256");
         PathBuf::from(s)
     };
-    fs::write(&sidecar, format!("{}  execution-record.toml\n", "0".repeat(64))).unwrap();
+    fs::write(
+        &sidecar,
+        format!("{}  execution-record.toml\n", "0".repeat(64)),
+    )
+    .unwrap();
 
     // WITH --verify-integrity → hard fail on the digest mismatch.
     let assert = Command::cargo_bin("tomlctl")

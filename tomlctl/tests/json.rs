@@ -161,8 +161,8 @@ fn json_set_dry_run_does_not_touch_file_or_sidecar() {
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
-        .expect("dry-run stdout must be JSON");
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("dry-run stdout must be JSON");
     assert!(
         parsed.get("would_change").is_some(),
         "dry-run output must contain `would_change`, got: {stdout}"
@@ -207,8 +207,7 @@ fn json_set_on_settings_json_skips_sidecar_and_marks_envelope() {
 
     // Envelope must mark sidecar as skipped.
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    let env: serde_json::Value =
-        serde_json::from_str(stdout.trim()).expect("envelope is JSON");
+    let env: serde_json::Value = serde_json::from_str(stdout.trim()).expect("envelope is JSON");
     assert_eq!(env["ok"], serde_json::Value::Bool(true));
     assert_eq!(
         env["sidecar_skipped"].as_str(),
@@ -290,8 +289,7 @@ fn json_unset_of_missing_leaf_is_noop() {
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    let env: serde_json::Value =
-        serde_json::from_str(stdout.trim()).expect("envelope is JSON");
+    let env: serde_json::Value = serde_json::from_str(stdout.trim()).expect("envelope is JSON");
     assert_eq!(env["ok"], serde_json::Value::Bool(true));
 
     // File bytes unchanged.
@@ -330,8 +328,7 @@ fn json_set_refuses_path_outside_claude() {
     // What we DO want to assert is that the message names the
     // outside-`.claude/` refusal, which is the load-bearing contract.
     assert!(
-        stderr.contains("refusing to write outside .claude/")
-            || stderr.contains("\"kind\""),
+        stderr.contains("refusing to write outside .claude/") || stderr.contains("\"kind\""),
         "expected outside-.claude refusal or JSON envelope, got: {stderr}"
     );
 

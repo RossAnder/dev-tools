@@ -211,39 +211,107 @@ pub(crate) struct WriteIntegrityArgs {
 #[derive(Args, Clone)]
 #[command(next_help_heading = "Query options")]
 pub(crate) struct QueryArgs {
-    #[arg(long = "where", value_name = "KEY=VAL", help = "Filter: field equals value (repeatable)")]
+    #[arg(
+        long = "where",
+        value_name = "KEY=VAL",
+        help = "Filter: field equals value (repeatable)"
+    )]
     pub(crate) where_eq: Vec<String>,
-    #[arg(long = "where-not", value_name = "KEY=VAL", help = "Filter: field does not equal value (repeatable)")]
+    #[arg(
+        long = "where-not",
+        value_name = "KEY=VAL",
+        help = "Filter: field does not equal value (repeatable)"
+    )]
     pub(crate) where_not: Vec<String>,
-    #[arg(long = "where-in", value_name = "KEY=V1,V2,...", help = "Filter: field in comma-separated set (repeatable)")]
+    #[arg(
+        long = "where-in",
+        value_name = "KEY=V1,V2,...",
+        help = "Filter: field in comma-separated set (repeatable)"
+    )]
     pub(crate) where_in: Vec<String>,
-    #[arg(long = "where-has", value_name = "KEY", help = "Filter: field is present (repeatable)")]
+    #[arg(
+        long = "where-has",
+        value_name = "KEY",
+        help = "Filter: field is present (repeatable)"
+    )]
     pub(crate) where_has: Vec<String>,
-    #[arg(long = "where-missing", value_name = "KEY", help = "Filter: field is absent (repeatable)")]
+    #[arg(
+        long = "where-missing",
+        value_name = "KEY",
+        help = "Filter: field is absent (repeatable)"
+    )]
     pub(crate) where_missing: Vec<String>,
-    #[arg(long = "where-gt", value_name = "KEY=VAL", help = "Filter: field > value (repeatable)")]
+    #[arg(
+        long = "where-gt",
+        value_name = "KEY=VAL",
+        help = "Filter: field > value (repeatable)"
+    )]
     pub(crate) where_gt: Vec<String>,
-    #[arg(long = "where-gte", value_name = "KEY=VAL", help = "Filter: field >= value (repeatable)")]
+    #[arg(
+        long = "where-gte",
+        value_name = "KEY=VAL",
+        help = "Filter: field >= value (repeatable)"
+    )]
     pub(crate) where_gte: Vec<String>,
-    #[arg(long = "where-lt", value_name = "KEY=VAL", help = "Filter: field < value (repeatable)")]
+    #[arg(
+        long = "where-lt",
+        value_name = "KEY=VAL",
+        help = "Filter: field < value (repeatable)"
+    )]
     pub(crate) where_lt: Vec<String>,
-    #[arg(long = "where-lte", value_name = "KEY=VAL", help = "Filter: field <= value (repeatable)")]
+    #[arg(
+        long = "where-lte",
+        value_name = "KEY=VAL",
+        help = "Filter: field <= value (repeatable)"
+    )]
     pub(crate) where_lte: Vec<String>,
-    #[arg(long = "where-contains", value_name = "KEY=SUB", help = "Filter: field string contains SUB (repeatable)")]
+    #[arg(
+        long = "where-contains",
+        value_name = "KEY=SUB",
+        help = "Filter: field string contains SUB (repeatable)"
+    )]
     pub(crate) where_contains: Vec<String>,
-    #[arg(long = "where-prefix", value_name = "KEY=S", help = "Filter: field string starts with S (repeatable)")]
+    #[arg(
+        long = "where-prefix",
+        value_name = "KEY=S",
+        help = "Filter: field string starts with S (repeatable)"
+    )]
     pub(crate) where_prefix: Vec<String>,
-    #[arg(long = "where-suffix", value_name = "KEY=S", help = "Filter: field string ends with S (repeatable)")]
+    #[arg(
+        long = "where-suffix",
+        value_name = "KEY=S",
+        help = "Filter: field string ends with S (repeatable)"
+    )]
     pub(crate) where_suffix: Vec<String>,
-    #[arg(long = "where-regex", value_name = "KEY=PAT", help = "Filter: field string matches regex PAT (repeatable)")]
+    #[arg(
+        long = "where-regex",
+        value_name = "KEY=PAT",
+        help = "Filter: field string matches regex PAT (repeatable)"
+    )]
     pub(crate) where_regex: Vec<String>,
-    #[arg(long = "select", value_name = "F1,F2,...", help = "Projection: keep only the listed fields")]
+    #[arg(
+        long = "select",
+        value_name = "F1,F2,...",
+        help = "Projection: keep only the listed fields"
+    )]
     pub(crate) select: Option<String>,
-    #[arg(long = "exclude", value_name = "F1,F2,...", help = "Projection: drop the listed fields")]
+    #[arg(
+        long = "exclude",
+        value_name = "F1,F2,...",
+        help = "Projection: drop the listed fields"
+    )]
     pub(crate) exclude: Option<String>,
-    #[arg(long = "pluck", value_name = "FIELD", help = "Projection: return a flat [value, ...] array of FIELD")]
+    #[arg(
+        long = "pluck",
+        value_name = "FIELD",
+        help = "Projection: return a flat [value, ...] array of FIELD"
+    )]
     pub(crate) pluck: Option<String>,
-    #[arg(long = "sort-by", value_name = "FIELD[:asc|desc]", help = "Sort by FIELD (repeatable for tiebreakers)")]
+    #[arg(
+        long = "sort-by",
+        value_name = "FIELD[:asc|desc]",
+        help = "Sort by FIELD (repeatable for tiebreakers)"
+    )]
     pub(crate) sort_by: Vec<String>,
     #[arg(long = "limit", value_name = "N", help = "Return at most N items")]
     pub(crate) limit: Option<usize>,
@@ -251,9 +319,17 @@ pub(crate) struct QueryArgs {
     pub(crate) offset: Option<usize>,
     #[arg(long = "distinct", help = "Dedup on the projected shape")]
     pub(crate) distinct: bool,
-    #[arg(long = "group-by", value_name = "FIELD", help = "Aggregate: emit {value: [item, ...], ...}")]
+    #[arg(
+        long = "group-by",
+        value_name = "FIELD",
+        help = "Aggregate: emit {value: [item, ...], ...}"
+    )]
     pub(crate) group_by: Option<String>,
-    #[arg(long = "count-by", value_name = "FIELD", help = "Aggregate: emit {value: N, ...}")]
+    #[arg(
+        long = "count-by",
+        value_name = "FIELD",
+        help = "Aggregate: emit {value: N, ...}"
+    )]
     pub(crate) count_by: Option<String>,
     /// T1: scalar-cardinality aggregate. Emits
     /// `{"count_distinct": N, "field": "<name>"}` where N is the number of
@@ -271,7 +347,10 @@ pub(crate) struct QueryArgs {
         help = "Aggregate: count distinct values of FIELD (excludes null/missing), emit {\"count_distinct\":N,\"field\":\"<name>\"}"
     )]
     pub(crate) count_distinct: Option<String>,
-    #[arg(long = "ndjson", help = "Output one JSON value per line (for piping into add-many/apply)")]
+    #[arg(
+        long = "ndjson",
+        help = "Output one JSON value per line (for piping into add-many/apply)"
+    )]
     pub(crate) ndjson: bool,
     /// T3: discoverable spelling of `--ndjson` for the `--pluck` case. A clap
     /// `alias` wouldn't appear in `items list --help`, defeating the whole
@@ -474,9 +553,17 @@ pub(crate) enum Cmd {
         file: PathBuf,
         #[arg(help = "Array-of-tables name (e.g. rollback_events)")]
         array: String,
-        #[arg(long, conflicts_with = "ndjson", help = "JSON object for a single record; pass `-` to read from stdin")]
+        #[arg(
+            long,
+            conflicts_with = "ndjson",
+            help = "JSON object for a single record; pass `-` to read from stdin"
+        )]
         json: Option<String>,
-        #[arg(long = "ndjson", conflicts_with = "json", help = "NDJSON source: `-` for stdin, otherwise a file path")]
+        #[arg(
+            long = "ndjson",
+            conflicts_with = "json",
+            help = "NDJSON source: `-` for stdin, otherwise a file path"
+        )]
         ndjson: Option<String>,
         /// T10: preview the operation without writing. Emits a `would_change`
         /// summary on stdout and leaves the file + sidecar byte-identical.
@@ -634,7 +721,10 @@ pub(crate) enum FlowOp {
     /// Resolve the active flow via the 6-step algorithm.
     Resolve {
         /// Step-1 explicit override: bypass discovery and use this slug.
-        #[arg(long = "flow", help = "Step-1 override: resolve to this flow slug verbatim")]
+        #[arg(
+            long = "flow",
+            help = "Step-1 override: resolve to this flow slug verbatim"
+        )]
         flow: Option<String>,
         /// Step-2 scope-glob filter: paths to test against each candidate flow's
         /// `scope` array. Repeatable.
@@ -646,13 +736,22 @@ pub(crate) enum FlowOp {
         path: Vec<PathBuf>,
         /// Step-3/5 branch hint — match active-flow registry binding by branch,
         /// else fall through to step-5 branch-match against `context.toml`.
-        #[arg(long = "branch", help = "Step-3 binding hint / step-5 branch-match filter")]
+        #[arg(
+            long = "branch",
+            help = "Step-3 binding hint / step-5 branch-match filter"
+        )]
         branch: Option<String>,
         /// Step-3 binding hint — match active-flow registry binding by worktree path.
-        #[arg(long = "worktree", help = "Step-3 binding hint: match active-flow registry by worktree")]
+        #[arg(
+            long = "worktree",
+            help = "Step-3 binding hint: match active-flow registry by worktree"
+        )]
         worktree: Option<PathBuf>,
         /// Annotate the resolved envelope with `{stale, age_seconds, reason}`.
-        #[arg(long = "with-staleness", help = "Annotate envelope with staleness verdict (7d threshold)")]
+        #[arg(
+            long = "with-staleness",
+            help = "Annotate envelope with staleness verdict (7d threshold)"
+        )]
         with_staleness: bool,
         /// Emit JSON. On by default — `--json=false` would emit JSON anyway
         /// (read-side tomlctl idiom). Retained for callers that pass it explicitly.
@@ -965,7 +1064,11 @@ pub(crate) enum BacklogOp {
         status: Option<String>,
         #[arg(long, help = "Exact match on the item's `kind` field")]
         kind: Option<String>,
-        #[arg(long = "tag", value_name = "TAG", help = "Item carries TAG (repeatable, AND across repeats)")]
+        #[arg(
+            long = "tag",
+            value_name = "TAG",
+            help = "Item carries TAG (repeatable, AND across repeats)"
+        )]
         tag: Vec<String>,
         #[arg(long, help = "Shorthand for --status open")]
         open: bool,
@@ -975,7 +1078,10 @@ pub(crate) enum BacklogOp {
         area_prefix: Option<String>,
         /// Computed by reading `.claude/backlog-evidence/<id>/` — nothing in
         /// the store records whether evidence exists.
-        #[arg(long = "has-evidence", help = "Keep only items whose evidence directory holds files")]
+        #[arg(
+            long = "has-evidence",
+            help = "Keep only items whose evidence directory holds files"
+        )]
         has_evidence: bool,
         #[arg(long, help = "Emit only the row count")]
         count: bool,
@@ -1030,7 +1136,11 @@ pub(crate) enum BacklogOp {
     Cluster {
         #[arg(long = "by", value_enum, default_value_t = ClusterBy::All)]
         by: ClusterBy,
-        #[arg(long = "min-size", default_value_t = 2, help = "Smallest group the area view will emit")]
+        #[arg(
+            long = "min-size",
+            default_value_t = 2,
+            help = "Smallest group the area view will emit"
+        )]
         min_size: usize,
         #[arg(
             long = "min-shared-tags",
@@ -1038,7 +1148,10 @@ pub(crate) enum BacklogOp {
             help = "Tags two items must share before the tags view groups them"
         )]
         min_shared_tags: usize,
-        #[arg(long = "all-statuses", help = "Cluster every item, not just `open` ones")]
+        #[arg(
+            long = "all-statuses",
+            help = "Cluster every item, not just `open` ones"
+        )]
         all_statuses: bool,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
@@ -1083,7 +1196,10 @@ pub(crate) enum EvidenceOp {
     /// prefix is owned by nobody and `audit` later reports it as `unowned`.
     Dir {
         id: String,
-        #[arg(long = "no-create", help = "Report the directory without creating it; error if absent")]
+        #[arg(
+            long = "no-create",
+            help = "Report the directory without creating it; error if absent"
+        )]
         no_create: bool,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
@@ -1098,7 +1214,11 @@ pub(crate) enum EvidenceOp {
         /// fresh clone.
         #[arg(long)]
         strict: bool,
-        #[arg(long = "max-bytes", value_name = "N", help = "Oversize threshold; omit for the built-in default")]
+        #[arg(
+            long = "max-bytes",
+            value_name = "N",
+            help = "Oversize threshold; omit for the built-in default"
+        )]
         max_bytes: Option<u64>,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
@@ -1123,7 +1243,11 @@ pub(crate) struct TriageMode {
     /// the parser because `reopen_rationale` is the only companion field an
     /// `open` item is allowed to carry, so a bare `--reopen` would write an
     /// item the validator then rejects.
-    #[arg(long, requires = "rationale", help = "Status → open; requires --rationale")]
+    #[arg(
+        long,
+        requires = "rationale",
+        help = "Status → open; requires --rationale"
+    )]
     pub(crate) reopen: bool,
 }
 
@@ -1296,7 +1420,10 @@ pub(crate) enum ItemsOp {
     /// Append a new item. --json is the JSON object payload.
     Add {
         file: PathBuf,
-        #[arg(long, help = "JSON object for the new item; pass `-` to read from stdin")]
+        #[arg(
+            long,
+            help = "JSON object for the new item; pass `-` to read from stdin"
+        )]
         json: String,
         /// R57: target array-of-tables name. See `List --array`.
         #[arg(long, default_value = "items")]
@@ -1329,9 +1456,15 @@ pub(crate) enum ItemsOp {
     /// mutating the file. Output: `{"ok":true,"added":N}`.
     AddMany {
         file: PathBuf,
-        #[arg(long = "ndjson", help = "NDJSON source: `-` for stdin, otherwise a file path")]
+        #[arg(
+            long = "ndjson",
+            help = "NDJSON source: `-` for stdin, otherwise a file path"
+        )]
         ndjson: String,
-        #[arg(long = "defaults-json", help = "JSON object of default field values; pass `-` to read from stdin")]
+        #[arg(
+            long = "defaults-json",
+            help = "JSON object of default field values; pass `-` to read from stdin"
+        )]
         defaults_json: Option<String>,
         #[arg(long, default_value = "items")]
         array: String,
@@ -1361,7 +1494,10 @@ pub(crate) enum ItemsOp {
     Update {
         file: PathBuf,
         id: String,
-        #[arg(long, help = "JSON patch object merged into the item; pass `-` to read from stdin")]
+        #[arg(
+            long,
+            help = "JSON patch object merged into the item; pass `-` to read from stdin"
+        )]
         json: String,
         /// Remove a field from the matched item. Repeatable. Applied AFTER the
         /// `--json` patch, so an `--unset` trumps a same-key set from `--json`.
@@ -1451,7 +1587,10 @@ pub(crate) enum ItemsOp {
     /// Apply a batch of add/update/remove operations in a single file rewrite.
     Apply {
         file: PathBuf,
-        #[arg(long, help = "JSON array of ops, each `{\"op\":\"add|update|remove\", ...}`; pass `-` to read from stdin")]
+        #[arg(
+            long,
+            help = "JSON array of ops, each `{\"op\":\"add|update|remove\", ...}`; pass `-` to read from stdin"
+        )]
         ops: String,
         /// Target array-of-tables name. Defaults to `items` (the ledger schema).
         /// Use e.g. `--array rollback_events` to append to a different array.

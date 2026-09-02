@@ -33,13 +33,13 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::active::{build_entry as build_active_entry, find_slug_index, mutate_active};
 use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::ActiveEntry as SchemaEntry;
-use crate::time::{now_rfc3339, today_toml_date};
 use crate::integrity::refresh_sidecar;
 use crate::io::{
-    guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root,
-    with_exclusive_lock, write_toml_with_sidecar,
+    guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root, with_exclusive_lock,
+    write_toml_with_sidecar,
 };
 use crate::output::print_json_compact;
+use crate::time::{now_rfc3339, today_toml_date};
 
 /// Slug-shape regex: lowercase alphanumeric (digit allowed at start), with
 /// optional `-` separators, total length 1..=64. Anchored to the full
@@ -47,9 +47,7 @@ use crate::output::print_json_compact;
 /// captures the `1..=64` range without an explicit length check.
 fn slug_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"^[a-z0-9][a-z0-9-]{0,63}$").expect("slug regex compiles")
-    })
+    RE.get_or_init(|| Regex::new(r"^[a-z0-9][a-z0-9-]{0,63}$").expect("slug regex compiles"))
 }
 
 /// Validate the `--slug` CLI argument against the canonical regex. Returns
@@ -66,9 +64,7 @@ pub(crate) fn validate_slug(slug: &str) -> Result<()> {
     Err(tagged_err(
         ErrorKind::Validation,
         None,
-        format!(
-            "invalid slug: {slug} (must match ^[a-z0-9][a-z0-9-]{{0,63}}$)"
-        ),
+        format!("invalid slug: {slug} (must match ^[a-z0-9][a-z0-9-]{{0,63}}$)"),
     ))
 }
 
@@ -129,19 +125,13 @@ fn build_seed_doc(
         "plan_path".to_string(),
         TomlValue::String(plan_path.display().to_string()),
     );
-    root.insert(
-        "status".to_string(),
-        TomlValue::String("draft".to_string()),
-    );
+    root.insert("status".to_string(), TomlValue::String("draft".to_string()));
     root.insert("created".to_string(), TomlValue::Datetime(today));
     root.insert("updated".to_string(), TomlValue::Datetime(today));
     if let Some(b) = branch {
         root.insert("branch".to_string(), TomlValue::String(b.to_string()));
     }
-    let scope_arr: Vec<TomlValue> = scope
-        .iter()
-        .map(|s| TomlValue::String(s.clone()))
-        .collect();
+    let scope_arr: Vec<TomlValue> = scope.iter().map(|s| TomlValue::String(s.clone())).collect();
     root.insert("scope".to_string(), TomlValue::Array(scope_arr));
 
     let mut tasks = toml::map::Map::new();
@@ -385,14 +375,7 @@ pub(crate) fn dispatch(
         let seed_json = if let Some(ref existing_doc) = existing {
             doc_to_json(existing_doc)
         } else {
-            let seed = build_seed_doc(
-                &slug,
-                &plan,
-                branch.as_deref(),
-                &scope,
-                today,
-                &artifacts,
-            );
+            let seed = build_seed_doc(&slug, &plan, branch.as_deref(), &scope, today, &artifacts);
             doc_to_json(&seed)
         };
 
@@ -430,14 +413,7 @@ pub(crate) fn dispatch(
         "noop"
     } else {
         // Fresh init: write the seed under the standard write pipeline.
-        let seed = build_seed_doc(
-            &slug,
-            &plan,
-            branch.as_deref(),
-            &scope,
-            today,
-            &artifacts,
-        );
+        let seed = build_seed_doc(&slug, &plan, branch.as_deref(), &scope, today, &artifacts);
         let opts = write_integrity_opts(&integrity);
         let allow_outside = integrity.allow_outside;
         with_exclusive_lock(&context_path, || {

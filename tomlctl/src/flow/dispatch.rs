@@ -11,9 +11,7 @@ use crate::cli::{EnvelopeOp, FlowOp};
 pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
     match op {
         FlowOp::Active { op } => crate::flow::active::dispatch(op),
-        FlowOp::FindPlans { dirs, integrity } => {
-            crate::flow::find_plans::dispatch(dirs, integrity)
-        }
+        FlowOp::FindPlans { dirs, integrity } => crate::flow::find_plans::dispatch(dirs, integrity),
         FlowOp::Stale {
             slug,
             threshold,

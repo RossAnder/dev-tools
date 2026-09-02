@@ -43,8 +43,9 @@ use common::{
 /// in `tomlctl/tests/render_progress_log.rs` (`serde_json::from_str` +
 /// `as_bool`/`as_u64`).
 fn parse_write_envelope(stdout: &str) -> serde_json::Value {
-    serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("write-success stdout must be a JSON envelope: {e}; got: {stdout}"))
+    serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+        panic!("write-success stdout must be a JSON envelope: {e}; got: {stdout}")
+    })
 }
 
 /// R9: assert a write-success envelope reports the expected `created` bool and
@@ -290,9 +291,7 @@ fn items_next_id_infer_from_file_rejects_empty_ledger() {
         .failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
-        stderr.contains(
-            "--infer-from-file requires a non-empty ledger or explicit --prefix"
-        ),
+        stderr.contains("--infer-from-file requires a non-empty ledger or explicit --prefix"),
         "expected empty-ledger error, got stderr:\n{stderr}"
     );
 }
@@ -400,7 +399,8 @@ status = "open"
     )
     .unwrap();
 
-    let payload = r#"[{"op":"add","json":{"id":"R42","summary":"added via stdin","status":"open"}}]"#;
+    let payload =
+        r#"[{"op":"add","json":{"id":"R42","summary":"added via stdin","status":"open"}}]"#;
 
     Command::cargo_bin("tomlctl")
         .unwrap()
@@ -498,9 +498,7 @@ summary = "seed"
         }
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(
-            err.contains("lock held")
-                || err.contains("acquire")
-                || err.contains("could not"),
+            err.contains("lock held") || err.contains("acquire") || err.contains("could not"),
             "failing child must report a lock error, got stderr:\n{err}"
         );
     }
@@ -508,7 +506,8 @@ summary = "seed"
     // The surviving state must still parse as valid TOML and contain at
     // least the seed `R1` plus one of the two racers.
     let contents = fs::read_to_string(&ledger).unwrap();
-    let parsed: toml::Value = toml::from_str(&contents).expect("post-race ledger must be valid TOML");
+    let parsed: toml::Value =
+        toml::from_str(&contents).expect("post-race ledger must be valid TOML");
     let items = parsed.get("items").and_then(|v| v.as_array()).unwrap();
     assert!(
         items.len() >= 2,
@@ -585,13 +584,27 @@ fn items_add_many_happy_path_with_defaults() {
     let by_id = |id: &str| -> &toml::Table {
         items
             .iter()
-            .find(|it| it.as_table().and_then(|t| t.get("id")).and_then(|v| v.as_str()) == Some(id))
+            .find(|it| {
+                it.as_table()
+                    .and_then(|t| t.get("id"))
+                    .and_then(|v| v.as_str())
+                    == Some(id)
+            })
             .and_then(|v| v.as_table())
             .unwrap_or_else(|| panic!("missing {id}"))
     };
-    assert_eq!(by_id("R1").get("status").and_then(|v| v.as_str()), Some("open"));
-    assert_eq!(by_id("R3").get("status").and_then(|v| v.as_str()), Some("wontfix"));
-    assert_eq!(by_id("R5").get("status").and_then(|v| v.as_str()), Some("open"));
+    assert_eq!(
+        by_id("R1").get("status").and_then(|v| v.as_str()),
+        Some("open")
+    );
+    assert_eq!(
+        by_id("R3").get("status").and_then(|v| v.as_str()),
+        Some("wontfix")
+    );
+    assert_eq!(
+        by_id("R5").get("status").and_then(|v| v.as_str()),
+        Some("open")
+    );
 }
 
 #[test]
@@ -696,7 +709,10 @@ summary = "seed"
         contents.contains("timestamp = \"2026-04-18T14:32:00Z\""),
         "serialised form must quote the string; got:\n{contents}"
     );
-    assert_eq!(ev.get("command").and_then(|v| v.as_str()), Some("review-apply"));
+    assert_eq!(
+        ev.get("command").and_then(|v| v.as_str()),
+        Some("review-apply")
+    );
 
     // Seed [[items]] row must remain untouched.
     let items = parsed.get("items").and_then(|v| v.as_array()).unwrap();
@@ -743,7 +759,14 @@ fn array_append_ndjson_appends_many() {
     // Insertion order must be preserved.
     let causes: Vec<&str> = events
         .iter()
-        .map(|e| e.as_table().unwrap().get("cause").unwrap().as_str().unwrap())
+        .map(|e| {
+            e.as_table()
+                .unwrap()
+                .get("cause")
+                .unwrap()
+                .as_str()
+                .unwrap()
+        })
         .collect();
     assert_eq!(causes, vec!["first", "second", "third"]);
 }
@@ -893,8 +916,12 @@ fn items_list_distinct_on_projected_shape() {
     for el in arr {
         let m = el.as_object().expect("each element is an object");
         let keys: Vec<&String> = m.keys().collect();
-        assert_eq!(keys, vec![&"category".to_string()],
-            "each element must project to {{category}} only, got {:?}", m.keys().collect::<Vec<_>>());
+        assert_eq!(
+            keys,
+            vec![&"category".to_string()],
+            "each element must project to {{category}} only, got {:?}",
+            m.keys().collect::<Vec<_>>()
+        );
     }
 }
 
@@ -923,7 +950,11 @@ fn items_list_ndjson_shape() {
         .split('\n')
         .filter(|l| !l.trim().is_empty())
         .collect();
-    assert_eq!(lines.len(), 4, "expected 4 open items as 4 NDJSON lines; got:\n{stdout}");
+    assert_eq!(
+        lines.len(),
+        4,
+        "expected 4 open items as 4 NDJSON lines; got:\n{stdout}"
+    );
     for line in &lines {
         let v: serde_json::Value = serde_json::from_str(line)
             .unwrap_or_else(|e| panic!("each NDJSON line must parse: {e}; line:\n{line}"));
@@ -1033,8 +1064,14 @@ fn items_list_exclude_drops_fields() {
     let arr = v.as_array().expect("list output is a JSON array");
     assert_eq!(arr.len(), 1);
     let obj = arr[0].as_object().expect("element is an object");
-    assert!(!obj.contains_key("summary"), "summary must be excluded, got {obj:?}");
-    assert!(!obj.contains_key("symbol"), "symbol must be excluded, got {obj:?}");
+    assert!(
+        !obj.contains_key("summary"),
+        "summary must be excluded, got {obj:?}"
+    );
+    assert!(
+        !obj.contains_key("symbol"),
+        "symbol must be excluded, got {obj:?}"
+    );
     assert_eq!(obj.get("id").and_then(|v| v.as_str()), Some("R2"));
     assert_eq!(obj.get("severity").and_then(|v| v.as_str()), Some("major"));
 }
@@ -1341,14 +1378,10 @@ fn settings_json_contains_tomlctl_allow_with_outside_deny() {
     // `.claude/settings.json`. Using env!() keeps the test `cd`-free.
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let settings_path = manifest.join("..").join(".claude").join("settings.json");
-    let raw = fs::read_to_string(&settings_path).unwrap_or_else(|e| {
-        panic!(
-            "failed to read {}: {e}",
-            settings_path.display()
-        )
-    });
-    let v: serde_json::Value = serde_json::from_str(&raw)
-        .expect(".claude/settings.json must be valid JSON");
+    let raw = fs::read_to_string(&settings_path)
+        .unwrap_or_else(|e| panic!("failed to read {}: {e}", settings_path.display()));
+    let v: serde_json::Value =
+        serde_json::from_str(&raw).expect(".claude/settings.json must be valid JSON");
     let allow = v
         .pointer("/permissions/allow")
         .and_then(|x| x.as_array())
@@ -1364,7 +1397,8 @@ fn settings_json_contains_tomlctl_allow_with_outside_deny() {
         allow
     );
     assert!(
-        deny.iter().any(|s| s.as_str() == Some("Bash(tomlctl --allow-outside *)")),
+        deny.iter()
+            .any(|s| s.as_str() == Some("Bash(tomlctl --allow-outside *)")),
         "permissions.deny must contain `Bash(tomlctl --allow-outside *)`; got {:?}",
         deny
     );
@@ -1387,7 +1421,10 @@ fn integrity_refresh_materialises_sidecar_for_bootstrapped_file() {
     // Simulate `/plan-new`'s Write: 2-line TOML skeleton, NO sidecar.
     fs::write(&target, "schema_version = 1\nlast_updated = 2026-04-21\n").unwrap();
     let sidecar = target.with_extension("toml.sha256");
-    assert!(!sidecar.exists(), "precondition: sidecar must not exist before refresh");
+    assert!(
+        !sidecar.exists(),
+        "precondition: sidecar must not exist before refresh"
+    );
 
     // A verify-integrity read must fail in this state — this is the
     // error the user hit that prompted this fix.
@@ -1514,7 +1551,10 @@ fn write_under_claude_auto_creates_missing_parent_dirs() {
     fs::create_dir_all(&claude_dir).unwrap();
     let flow_dir = claude_dir.join("flows").join("hashed-kindling-engelbart");
     let target = flow_dir.join("execution-record.toml");
-    assert!(!flow_dir.exists(), "precondition: flow dir must not exist yet");
+    assert!(
+        !flow_dir.exists(),
+        "precondition: flow dir must not exist yet"
+    );
 
     // POST-T1: the call now SUCCEEDS — the auto-`mkdir -p` creates the flow
     // directory, the missing target is seeded with the schema skeleton, and
@@ -1568,7 +1608,10 @@ fn write_outside_claude_does_not_auto_create_parent_dirs() {
     fs::create_dir_all(dir.path().join(".claude")).unwrap();
     let outside_parent = dir.path().join("outside-dir");
     let outside_target = outside_parent.join("stray.toml");
-    assert!(!outside_parent.exists(), "precondition: parent must not exist");
+    assert!(
+        !outside_parent.exists(),
+        "precondition: parent must not exist"
+    );
 
     Command::cargo_bin("tomlctl")
         .unwrap()
@@ -1617,7 +1660,9 @@ fn integrity_refresh_refuses_outside_claude_by_default() {
         .write_stdin("")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("refusing to write outside .claude/"));
+        .stderr(predicate::str::contains(
+            "refusing to write outside .claude/",
+        ));
 }
 
 /// `integrity refresh` is idempotent on an unchanged file: running it
@@ -1685,7 +1730,10 @@ fn integrity_refresh_allow_outside_writes_sidecar() {
     let outside = dir.path().join("outside.toml");
     fs::write(&outside, "x = 1\n").unwrap();
     let sidecar = outside.with_extension("toml.sha256");
-    assert!(!sidecar.exists(), "precondition: sidecar must not exist before refresh");
+    assert!(
+        !sidecar.exists(),
+        "precondition: sidecar must not exist before refresh"
+    );
 
     Command::cargo_bin("tomlctl")
         .unwrap()
@@ -1700,7 +1748,10 @@ fn integrity_refresh_allow_outside_writes_sidecar() {
         .success()
         .stdout(predicate::str::contains("\"ok\":true"));
 
-    assert!(sidecar.exists(), "sidecar must exist after refresh --allow-outside");
+    assert!(
+        sidecar.exists(),
+        "sidecar must exist after refresh --allow-outside"
+    );
     let sidecar_text = fs::read_to_string(&sidecar).unwrap();
     assert!(
         sidecar_text.ends_with("  outside.toml\n"),
@@ -1721,8 +1772,7 @@ fn integrity_refresh_allow_outside_writes_sidecar() {
 /// could theoretically spin or mis-handle EOF-on-first-read.
 #[test]
 fn integrity_refresh_handles_zero_byte_file() {
-    const EMPTY_SHA256: &str =
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     let dir = tempfile::tempdir().unwrap();
     let claude_dir = dir.path().join(".claude").join("flows").join("test");

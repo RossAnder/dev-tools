@@ -12,7 +12,9 @@ use assert_cmd::Command;
 use std::fs;
 
 mod common;
-use common::{parse_json_error_envelope, run_list_query, run_list_query_with, seed_ledger, QUERY_FIXTURE};
+use common::{
+    QUERY_FIXTURE, parse_json_error_envelope, run_list_query, run_list_query_with, seed_ledger,
+};
 
 /// R74: read-only subcommands (`parse`, `get`, `validate`, `items list`,
 /// `items get`, `items find-duplicates`, `items orphans`, `items next-id`)
@@ -51,8 +53,7 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
             cmd.arg(a);
         }
         let assert = cmd.write_stdin("").assert().success();
-        let stdout =
-            String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+        let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
         for required in ["--verify-integrity", "--strict-read"] {
             assert!(
                 stdout.contains(required),
@@ -62,7 +63,11 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
                 stdout
             );
         }
-        for banned in ["--allow-outside", "--no-write-integrity", "--strict-integrity"] {
+        for banned in [
+            "--allow-outside",
+            "--no-write-integrity",
+            "--strict-integrity",
+        ] {
             assert!(
                 !stdout.contains(banned),
                 "read-only sub `{}` must NOT list `{}` in --help; got:\n{}",
@@ -99,8 +104,7 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
             cmd.arg(a);
         }
         let assert = cmd.write_stdin("").assert().success();
-        let stdout =
-            String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+        let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
         for required in [
             "--allow-outside",
             "--no-write-integrity",
@@ -142,8 +146,7 @@ fn items_list_shape_flags_are_mutually_exclusive_at_parse_time() {
         .failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
-        stderr.contains("cannot be used with")
-            || stderr.contains("argument cannot be used"),
+        stderr.contains("cannot be used with") || stderr.contains("argument cannot be used"),
         "expected clap mutex error, got stderr:\n{stderr}"
     );
     // --ndjson + --count-by must still be parse-accepted (they're orthogonal;
@@ -239,8 +242,7 @@ fn count_distinct_and_pluck_are_mutex_at_parse_time() {
         .failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
-        stderr.contains("cannot be used with")
-            || stderr.contains("argument cannot be used"),
+        stderr.contains("cannot be used with") || stderr.contains("argument cannot be used"),
         "expected clap ArgGroup mutex error on --pluck + --count-distinct; got stderr:\n{stderr}"
     );
 }
@@ -266,8 +268,7 @@ fn count_distinct_with_count_errors_at_clap() {
         .failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
-        stderr.contains("cannot be used with")
-            || stderr.contains("argument cannot be used"),
+        stderr.contains("cannot be used with") || stderr.contains("argument cannot be used"),
         "expected clap ArgGroup mutex error on --count + --count-distinct; got stderr:\n{stderr}"
     );
 }
@@ -407,7 +408,14 @@ x = "beta"
 "#;
     let stdout = run_list_query_with(
         fixture,
-        &["--pluck", "x", "--lines", "--distinct", "--sort-by", "x:asc"],
+        &[
+            "--pluck",
+            "x",
+            "--lines",
+            "--distinct",
+            "--sort-by",
+            "x:asc",
+        ],
     );
     assert_eq!(stdout, "\"alpha\"\n\"beta\"\n\"gamma\"\n");
 }
@@ -417,12 +425,12 @@ x = "beta"
 /// `apply_window`.
 #[test]
 fn lines_with_pluck_and_limit() {
-    let stdout = run_list_query_with(
-        PLUCK_FIXTURE,
-        &["--pluck", "x", "--lines", "--limit", "2"],
-    );
+    let stdout = run_list_query_with(PLUCK_FIXTURE, &["--pluck", "x", "--lines", "--limit", "2"]);
     let line_count = stdout.lines().count();
-    assert_eq!(line_count, 2, "expected 2 lines with --limit 2; got:\n{stdout}");
+    assert_eq!(
+        line_count, 2,
+        "expected 2 lines with --limit 2; got:\n{stdout}"
+    );
     assert_eq!(stdout, "\"v1\"\n\"v2\"\n");
 }
 
@@ -459,8 +467,9 @@ fn lines_flag_listed_in_items_list_help() {
 #[test]
 fn lines_on_count_shape_is_noop_single_object() {
     let stdout = run_list_query_with(PLUCK_FIXTURE, &["--count", "--lines"]);
-    let v: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("stdout must parse as a single JSON value: {e}; stdout:\n{stdout}"));
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+        panic!("stdout must parse as a single JSON value: {e}; stdout:\n{stdout}")
+    });
     assert_eq!(
         v.get("count").and_then(|n| n.as_u64()),
         Some(4),
@@ -508,8 +517,9 @@ x = "v3"
     assert_eq!(stdout, "\"v1\"\n\"v3\"\n");
     // Non-streaming path must drop the same items (byte-set parity).
     let stdout_array = run_list_query_with(fixture, &["--pluck", "x"]);
-    let arr: serde_json::Value = serde_json::from_str(&stdout_array)
-        .unwrap_or_else(|e| panic!("--pluck x (no lines) must be JSON: {e}; stdout:\n{stdout_array}"));
+    let arr: serde_json::Value = serde_json::from_str(&stdout_array).unwrap_or_else(|e| {
+        panic!("--pluck x (no lines) must be JSON: {e}; stdout:\n{stdout_array}")
+    });
     assert_eq!(arr, serde_json::json!(["v1", "v3"]));
 }
 
@@ -560,7 +570,9 @@ fn error_format_json_missing_file_tagged_not_found() {
             || message.contains("cannot find"),
         "expected missing-file prose in message, got: {message}"
     );
-    let file = err["file"].as_str().expect("file must be populated on not_found");
+    let file = err["file"]
+        .as_str()
+        .expect("file must be populated on not_found");
     assert!(
         file.contains("nope.toml"),
         "file field must carry the target path, got: {file}"
@@ -647,8 +659,7 @@ fn error_format_json_bad_toml_tagged_parse() {
     let message = err["message"].as_str().unwrap();
     assert!(
         message.contains("parse")
-            && (message.contains("borrowed TOML")
-                || message.contains("parsing")),
+            && (message.contains("borrowed TOML") || message.contains("parsing")),
         "expected TOML parse prose, got: {message}"
     );
 }
@@ -880,8 +891,7 @@ fn error_format_json_flag_position_is_global() {
         .assert()
         .failure()
         .code(1);
-    let stderr_before =
-        String::from_utf8_lossy(&out_before.get_output().stderr).to_string();
+    let stderr_before = String::from_utf8_lossy(&out_before.get_output().stderr).to_string();
     let env_before = parse_json_error_envelope(&stderr_before);
     assert_eq!(env_before["kind"], serde_json::json!("not_found"));
 
@@ -1144,7 +1154,10 @@ fn strict_read_uniform_across_read_subcommands() {
 #[test]
 fn items_list_count_raw_emits_bare_integer() {
     let stdout = run_list_query(&["--count", "--raw"]);
-    assert_eq!(stdout, "6\n", "QUERY_FIXTURE has 6 rows; expected bare `6\\n`");
+    assert_eq!(
+        stdout, "6\n",
+        "QUERY_FIXTURE has 6 rows; expected bare `6\\n`"
+    );
 }
 
 /// T2-2: `items list --count-distinct foo --raw` emits the bare count,
@@ -1163,7 +1176,10 @@ fn items_list_count_distinct_raw_emits_bare_integer() {
 fn items_list_pluck_raw_n_eq_1_string_emits_unquoted() {
     let stdout = run_list_query(&["--where-has", "symbol", "--pluck", "symbol", "--raw"]);
     // QUERY_FIXTURE R2 has symbol = "old::fn".
-    assert_eq!(stdout, "old::fn\n", "expected bare `old::fn\\n`; got:\n{stdout}");
+    assert_eq!(
+        stdout, "old::fn\n",
+        "expected bare `old::fn\\n`; got:\n{stdout}"
+    );
 }
 
 /// T2-4: `--pluck foo --raw` with N=1 (integer) emits the bare integer.
@@ -1248,7 +1264,10 @@ fn items_list_pluck_raw_n_gt_1_errors_with_exact_message_and_count() {
 #[test]
 fn items_list_pluck_raw_with_lines_emits_bare_per_line() {
     let stdout = run_list_query_with(PLUCK_FIXTURE, &["--pluck", "x", "--raw", "--lines"]);
-    assert_eq!(stdout, "v1\nv2\nv3\nv4\n", "expected 4 bare lines; got:\n{stdout}");
+    assert_eq!(
+        stdout, "v1\nv2\nv3\nv4\n",
+        "expected 4 bare lines; got:\n{stdout}"
+    );
 }
 
 /// T2-8: `tomlctl get <file> <scalar-path> --raw` emits the bare value on
@@ -1511,8 +1530,9 @@ fn capabilities_output_parses_as_json() {
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    let v: serde_json::Value = serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}; stdout:\n{stdout}"));
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+        panic!("capabilities stdout must parse as JSON: {e}; stdout:\n{stdout}")
+    });
     let obj = v
         .as_object()
         .expect("capabilities output must be a JSON object");
@@ -1522,7 +1542,10 @@ fn capabilities_output_parses_as_json() {
         obj.contains_key("subcommands"),
         "missing `subcommands` key: {v}"
     );
-    assert!(obj.contains_key("commands"), "capabilities output must include `commands` key (agent_context schema)");
+    assert!(
+        obj.contains_key("commands"),
+        "capabilities output must include `commands` key (agent_context schema)"
+    );
 }
 
 /// T7-2: the `features` array advertises every T1..T11 feature the plan
@@ -1969,8 +1992,9 @@ fn capabilities_emits_commands_key() {
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    let v: serde_json::Value = serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}; stdout:\n{stdout}"));
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
+        panic!("capabilities stdout must parse as JSON: {e}; stdout:\n{stdout}")
+    });
     let commands = v
         .get("commands")
         .expect("capabilities output must carry a top-level `commands` key");

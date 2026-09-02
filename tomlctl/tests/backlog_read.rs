@@ -19,8 +19,7 @@ use common::{
 
 const FLAKE_SUMMARY: &str = "pty_readiness_probe flakes on slow CI";
 const FLAKE_AREA: &str = "lumina/server/tests/pty_readiness_probe.rs";
-const FLAKE_CONTEXT: &str =
-    "Only reproduces when the readiness gate races the first prompt write.";
+const FLAKE_CONTEXT: &str = "Only reproduces when the readiness gate races the first prompt write.";
 
 const TOTAL_AREA: &str = "lumina/web/src/checkout/Total.vue";
 const TOTAL_SUMMARY: &str = "checkout total overlaps the confirm button below 1400px";
@@ -470,10 +469,7 @@ fn has_evidence_reads_the_drop_box_rather_than_the_store() {
 fn count_emits_the_aggregation_shape() {
     let (_tmp, root) = sandbox();
     seed(&root, FIXTURE);
-    assert_eq!(
-        backlog(&root, &["list", "--count"]),
-        json!({ "count": 3 })
-    );
+    assert_eq!(backlog(&root, &["list", "--count"]), json!({ "count": 3 }));
 }
 
 #[test]
@@ -485,7 +481,12 @@ fn the_generic_query_surface_is_threaded_through_list() {
     let rows = projected.as_array().unwrap();
     assert_eq!(rows.len(), 2);
     for row in rows {
-        let keys: Vec<&str> = row.as_object().unwrap().keys().map(String::as_str).collect();
+        let keys: Vec<&str> = row
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
         assert_eq!(keys, vec!["id", "status"], "unexpected projection: {row}");
     }
 
@@ -582,7 +583,12 @@ fn cluster_by_all_emits_every_view_and_by_area_emits_one() {
     seed(&root, CLUSTER_FIXTURE);
 
     let all = backlog(&root, &["cluster", "--by", "all"]);
-    let mut keys: Vec<&str> = all.as_object().unwrap().keys().map(String::as_str).collect();
+    let mut keys: Vec<&str> = all
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     keys.sort_unstable();
     assert_eq!(keys, vec!["area", "relations", "tags"]);
 
@@ -704,9 +710,11 @@ fn a_force_added_evidence_file_is_tracked_and_strict_still_passes() {
     assert_eq!(report["counts"]["git-unavailable"], json!(0));
     assert_eq!(report["counts"]["unowned"], json!(0));
     assert!(
-        report["findings"].as_array().unwrap().iter().any(|f| {
-            f["class"] == json!("tracked") && f["file"] == json!("shot.png")
-        }),
+        report["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| { f["class"] == json!("tracked") && f["file"] == json!("shot.png") }),
         "{report}"
     );
 }

@@ -127,8 +127,7 @@ fn find_check<'a>(v: &'a JsonValue, name: &str, scope: Option<&str>) -> &'a Json
     let arr = v["checks"].as_array().expect("checks must be array");
     arr.iter()
         .find(|c| {
-            c["name"].as_str() == Some(name)
-                && scope.is_none_or(|s| c["scope"].as_str() == Some(s))
+            c["name"].as_str() == Some(name) && scope.is_none_or(|s| c["scope"].as_str() == Some(s))
         })
         .unwrap_or_else(|| {
             panic!(
@@ -225,7 +224,10 @@ fn tampered_context_sidecar_reports_check_failure_no_repair() {
     assert!(v["fixes_applied"].as_array().unwrap().is_empty());
 
     // Sidecar bytes unchanged from the bogus state.
-    assert_eq!(fs::read_to_string(sidecar_path(&context)).unwrap(), bogus_sidecar);
+    assert_eq!(
+        fs::read_to_string(sidecar_path(&context)).unwrap(),
+        bogus_sidecar
+    );
 }
 
 /// `--fix` regenerates the tampered sidecar. The sidecar bytes must change
@@ -253,12 +255,14 @@ fn tampered_sidecar_regenerated_under_fix() {
     .unwrap();
 
     let v = run_doctor(&root, &["--slug", "feature-x", "--fix"]);
-    let fixes = v["fixes_applied"].as_array().expect("fixes_applied must be array");
+    let fixes = v["fixes_applied"]
+        .as_array()
+        .expect("fixes_applied must be array");
     assert!(
-        fixes
-            .iter()
-            .any(|f| f["name"] == JsonValue::String("sidecar-refresh".to_string())
-                && f["ok"] == JsonValue::Bool(true)),
+        fixes.iter().any(
+            |f| f["name"] == JsonValue::String("sidecar-refresh".to_string())
+                && f["ok"] == JsonValue::Bool(true)
+        ),
         "fixes_applied must include a sidecar-refresh ok=true entry; got: {v}"
     );
 
@@ -363,9 +367,11 @@ fn stale_active_flow_entry_pruned_under_fix() {
     let v = run_doctor(&root, &["--fix"]);
     let fixes = v["fixes_applied"].as_array().expect("fixes must be array");
     assert!(
-        fixes.iter().any(|f| f["name"] == JsonValue::String("active-prune".to_string())
-            && f["scope"] == JsonValue::String("gone".to_string())
-            && f["ok"] == JsonValue::Bool(true)),
+        fixes.iter().any(
+            |f| f["name"] == JsonValue::String("active-prune".to_string())
+                && f["scope"] == JsonValue::String("gone".to_string())
+                && f["ok"] == JsonValue::Bool(true)
+        ),
         "fixes_applied must include an active-prune entry for `gone`; got: {v}"
     );
 
@@ -471,23 +477,17 @@ fn fix_dry_run_emits_plan_without_writing() {
     assert_eq!(v["dry_run"], JsonValue::Bool(true));
     let fixes = v["fixes_applied"].as_array().expect("fixes must be array");
     assert!(
-        fixes
-            .iter()
-            .any(|f| f["name"] == JsonValue::String("active-prune".to_string())
-                && f["action"]
-                    .as_str()
-                    .unwrap_or("")
-                    .contains("would prune")),
+        fixes.iter().any(
+            |f| f["name"] == JsonValue::String("active-prune".to_string())
+                && f["action"].as_str().unwrap_or("").contains("would prune")
+        ),
         "dry-run plan must include `would prune` action; got: {fixes:?}"
     );
     assert!(
-        fixes
-            .iter()
-            .any(|f| f["name"] == JsonValue::String("sidecar-refresh".to_string())
-                && f["action"]
-                    .as_str()
-                    .unwrap_or("")
-                    .contains("would refresh")),
+        fixes.iter().any(
+            |f| f["name"] == JsonValue::String("sidecar-refresh".to_string())
+                && f["action"].as_str().unwrap_or("").contains("would refresh")
+        ),
         "dry-run plan must include `would refresh` action; got: {fixes:?}"
     );
 

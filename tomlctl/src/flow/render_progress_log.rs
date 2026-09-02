@@ -210,9 +210,7 @@ fn titlecase_slug(slug: &str) -> String {
         .map(|seg| {
             let mut chars = seg.chars();
             match chars.next() {
-                Some(first) => {
-                    first.to_uppercase().collect::<String>() + chars.as_str()
-                }
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
                 None => String::new(),
             }
         })
@@ -497,7 +495,14 @@ fn render_deviations(out: &mut String, items: &[TomlValue]) -> usize {
         .collect();
     emit_table(
         out,
-        &["#", "Deviation", "Date", "Commit", "Rationale", "Supersedes"],
+        &[
+            "#",
+            "Deviation",
+            "Date",
+            "Commit",
+            "Rationale",
+            "Supersedes",
+        ],
         &rows,
     )
 }

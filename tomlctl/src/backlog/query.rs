@@ -53,10 +53,7 @@ pub(crate) fn dispatch_list(
         area_prefix: area_prefix.as_deref(),
         has_evidence,
     };
-    let narrowed = narrowed_doc(filter_backlog(
-        items_array(&doc, ARRAY_BACKLOG),
-        &filters,
-    )?);
+    let narrowed = narrowed_doc(filter_backlog(items_array(&doc, ARRAY_BACKLOG), &filters)?);
 
     let q = build_query(&status, &kind, open, count, &query)?;
     if q.ndjson && q.shape.is_streamable() {
@@ -318,10 +315,7 @@ mod tests {
     }
 
     fn ids(items: &[TomlValue]) -> Vec<&str> {
-        items
-            .iter()
-            .filter_map(|i| row_str(i, FIELD_ID))
-            .collect()
+        items.iter().filter_map(|i| row_str(i, FIELD_ID)).collect()
     }
 
     fn kind_of(err: &anyhow::Error) -> &'static str {
@@ -474,10 +468,24 @@ kind = "debt"
     #[test]
     fn status_and_kind_reach_the_predicate_surface() {
         let d = doc(STATUSES);
-        let q = build_query(&Some("resolved".into()), &None, false, false, &query_args(&[])).unwrap();
+        let q = build_query(
+            &Some("resolved".into()),
+            &None,
+            false,
+            false,
+            &query_args(&[]),
+        )
+        .unwrap();
         assert_eq!(run_ids(&d, &q), ["B-2"]);
 
-        let q = build_query(&None, &Some("flaky-test".into()), true, false, &query_args(&[])).unwrap();
+        let q = build_query(
+            &None,
+            &Some("flaky-test".into()),
+            true,
+            false,
+            &query_args(&[]),
+        )
+        .unwrap();
         assert_eq!(run_ids(&d, &q), ["B-1"]);
     }
 
@@ -487,7 +495,14 @@ kind = "debt"
         let q = build_query(&None, &None, true, false, &query_args(&["--limit", "1"])).unwrap();
         assert_eq!(run_ids(&d, &q), ["B-1"]);
 
-        let q = build_query(&None, &None, false, false, &query_args(&["--count-by", "status"])).unwrap();
+        let q = build_query(
+            &None,
+            &None,
+            false,
+            false,
+            &query_args(&["--count-by", "status"]),
+        )
+        .unwrap();
         let out = crate::query::run(&d, ARRAY_BACKLOG, &q).unwrap();
         assert_eq!(out["open"], json!(2));
         assert_eq!(out["resolved"], json!(1));
@@ -604,10 +619,7 @@ duplicate_of = "B-1"
         assert_eq!(out["evidence"], JsonValue::Null);
 
         let marker_only = &out["neighbours"][0]["evidence"];
-        assert_eq!(
-            marker_only["dir"],
-            json!(".claude/backlog-evidence/B-2")
-        );
+        assert_eq!(marker_only["dir"], json!(".claude/backlog-evidence/B-2"));
         assert_eq!(marker_only["files"], json!([]));
 
         let populated = &out["neighbours"][1]["evidence"];
@@ -647,10 +659,7 @@ duplicate_of = "B-1"
             .unwrap();
             assert!(items_array(&d, ARRAY_BACKLOG).is_empty());
             let q = build_query(&None, &None, true, false, &query_args(&[])).unwrap();
-            assert_eq!(
-                crate::query::run(&d, ARRAY_BACKLOG, &q).unwrap(),
-                json!([])
-            );
+            assert_eq!(crate::query::run(&d, ARRAY_BACKLOG, &q).unwrap(), json!([]));
         });
     }
 }

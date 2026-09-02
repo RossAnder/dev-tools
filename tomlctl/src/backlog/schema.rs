@@ -112,8 +112,7 @@ pub(crate) const TERMINAL_DATE_FIELDS: &[&str] = &{
 
 /// The typed relation fields, in the order `show` reports them. `related`
 /// holds an array of ids; the other two hold a single id.
-pub(crate) const RELATION_FIELDS: &[&str] =
-    &[FIELD_RELATED, FIELD_DUPLICATE_OF, FIELD_SUPERSEDES];
+pub(crate) const RELATION_FIELDS: &[&str] = &[FIELD_RELATED, FIELD_DUPLICATE_OF, FIELD_SUPERSEDES];
 
 /// Fields a status transition owns outright. A transition clears every one
 /// it does not itself write, which is what lets a row move between two
@@ -342,12 +341,12 @@ pub(crate) fn validate(value: &JsonValue) -> std::result::Result<(), BacklogErro
             return Err(BacklogError::MissingField { field });
         }
     }
-    let status = map
-        .get(FIELD_STATUS)
-        .and_then(|v| v.as_str())
-        .ok_or(BacklogError::MissingField {
-            field: FIELD_STATUS,
-        })?;
+    let status =
+        map.get(FIELD_STATUS)
+            .and_then(|v| v.as_str())
+            .ok_or(BacklogError::MissingField {
+                field: FIELD_STATUS,
+            })?;
     if !STATUSES.contains(&status) {
         return Err(BacklogError::UnknownStatus {
             status: status.to_string(),
@@ -652,8 +651,7 @@ status = "resolved"
 
     #[test]
     fn ids_are_unique_within_the_backlog_array() {
-        let d = doc(
-            r#"
+        let d = doc(r#"
 [[backlog]]
 id = "B-a1b2c3d4"
 summary = "one"
@@ -663,8 +661,7 @@ status = "open"
 id = "B-a1b2c3d4"
 summary = "two"
 status = "open"
-"#,
-        );
+"#);
         assert_eq!(
             validate_ids_unique(&d),
             Err(BacklogError::DuplicateId {
@@ -675,8 +672,7 @@ status = "open"
 
     #[test]
     fn distinct_ids_and_an_empty_store_pass() {
-        let d = doc(
-            r#"
+        let d = doc(r#"
 [[backlog]]
 id = "B-a1b2c3d4"
 summary = "one"
@@ -686,8 +682,7 @@ status = "open"
 id = "B-7f0e2d91"
 summary = "two"
 status = "resolved"
-"#,
-        );
+"#);
         assert_eq!(validate_ids_unique(&d), Ok(()));
         assert_eq!(validate_ids_unique(&doc("schema_version = 1\n")), Ok(()));
     }
@@ -731,15 +726,9 @@ status = "resolved"
                 "other"
             ]
         );
-        assert_eq!(
-            STATUSES,
-            &["open", "promoted", "dismissed", "resolved"]
-        );
+        assert_eq!(STATUSES, &["open", "promoted", "dismissed", "resolved"]);
         assert_eq!(TERMINAL_DATE_FIELDS, &["promoted", "dismissed", "resolved"]);
-        assert_eq!(
-            RELATION_FIELDS,
-            &["related", "duplicate_of", "supersedes"]
-        );
+        assert_eq!(RELATION_FIELDS, &["related", "duplicate_of", "supersedes"]);
     }
 
     #[test]
@@ -761,9 +750,8 @@ status = "resolved"
 
     #[test]
     fn backlog_path_resolves_under_dot_claude() {
-        let (root, got) = crate::test_support::with_root(|root| {
-            (root.to_path_buf(), backlog_path().unwrap())
-        });
+        let (root, got) =
+            crate::test_support::with_root(|root| (root.to_path_buf(), backlog_path().unwrap()));
         assert_eq!(got, root.join(".claude").join("backlog.toml"));
         assert!(got.ends_with(std::path::Path::new(".claude/backlog.toml")));
     }

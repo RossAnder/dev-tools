@@ -177,7 +177,10 @@ fn explicit_flag_resolves_the_named_flow() {
     assert_eq!(v["ties_broken"], serde_json::json!(false));
     assert_eq!(v["tie_candidates"], serde_json::json!([]));
     // Stale block null when --with-staleness not set.
-    assert!(v["stale"].is_null(), "stale must be null without --with-staleness");
+    assert!(
+        v["stale"].is_null(),
+        "stale must be null without --with-staleness"
+    );
     // No artifact warnings — we seeded all four files.
     let warnings = v["warnings"].as_array().unwrap();
     assert!(
@@ -561,10 +564,7 @@ fn missing_artifacts_populate_warnings_array() {
     let v = run_resolve(&dir, &["--flow", "feature-x"]);
     assert_eq!(v["resolved"], serde_json::json!(true));
     let warnings = v["warnings"].as_array().unwrap();
-    let warning_strs: Vec<&str> = warnings
-        .iter()
-        .filter_map(|w| w.as_str())
-        .collect();
+    let warning_strs: Vec<&str> = warnings.iter().filter_map(|w| w.as_str()).collect();
     let missing_count = warning_strs
         .iter()
         .filter(|s| s.starts_with("artifact missing:"))

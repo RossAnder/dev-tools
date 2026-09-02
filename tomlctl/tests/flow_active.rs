@@ -69,7 +69,10 @@ fn sidecar_for(file: &Path) -> PathBuf {
 #[test]
 fn list_empty_when_registry_missing_emits_default_envelope() {
     let (dir, registry) = fresh_root();
-    assert!(!registry.exists(), "precondition: registry must not pre-exist");
+    assert!(
+        !registry.exists(),
+        "precondition: registry must not pre-exist"
+    );
 
     let out = run_active(&dir, &["list"]).success();
     let v = json_stdout(&out);
@@ -93,11 +96,7 @@ fn list_empty_when_registry_missing_emits_default_envelope() {
 fn add_bootstraps_registry_and_sidecar() {
     let (dir, registry) = fresh_root();
 
-    let out = run_active(
-        &dir,
-        &["add", "--slug", "feature-x", "--branch", "feat/x"],
-    )
-    .success();
+    let out = run_active(&dir, &["add", "--slug", "feature-x", "--branch", "feat/x"]).success();
     let v = json_stdout(&out);
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["slug"], serde_json::json!("feature-x"));
@@ -139,16 +138,16 @@ fn add_existing_slug_updates_in_place_no_duplicates() {
 
     run_active(&dir, &["add", "--slug", "feature-x", "--branch", "feat/x"]).success();
     // Second add updates the binding (different branch) and bumps last_used.
-    run_active(
-        &dir,
-        &["add", "--slug", "feature-x", "--branch", "feat/y"],
-    )
-    .success();
+    run_active(&dir, &["add", "--slug", "feature-x", "--branch", "feat/y"]).success();
 
     let list_out = run_active(&dir, &["list"]).success();
     let v = json_stdout(&list_out);
     let arr = v["active"].as_array().expect("active must be array");
-    assert_eq!(arr.len(), 1, "second add of same slug must NOT create a duplicate");
+    assert_eq!(
+        arr.len(),
+        1,
+        "second add of same slug must NOT create a duplicate"
+    );
     assert_eq!(arr[0]["slug"], serde_json::json!("feature-x"));
     assert_eq!(
         arr[0]["binding"]["branch"],
@@ -237,7 +236,9 @@ fn touch_updates_last_used_only_other_fields_unchanged() {
     let (dir, registry) = fresh_root();
     run_active(
         &dir,
-        &["add", "--slug", "x", "--branch", "feat/x", "--scope", "src/**"],
+        &[
+            "add", "--slug", "x", "--branch", "feat/x", "--scope", "src/**",
+        ],
     )
     .success();
 

@@ -253,9 +253,7 @@ fn check_one_flow(
     // per-flow check count stable at 6 (8 total once globals are added).
     if context_exists {
         match sidecar_state(&context_file)? {
-            Some(SidecarStatus::Ok) => {
-                checks.push(Check::ok("context-sidecar", slug.to_string()))
-            }
+            Some(SidecarStatus::Ok) => checks.push(Check::ok("context-sidecar", slug.to_string())),
             Some(SidecarStatus::Mismatch { expected, actual }) => {
                 checks.push(Check::fail(
                     "context-sidecar",
@@ -284,10 +282,7 @@ fn check_one_flow(
                 checks.push(Check::fail(
                     "context-sidecar",
                     slug.to_string(),
-                    format!(
-                        "sidecar missing for {}",
-                        relativise(root, &context_file)
-                    ),
+                    format!("sidecar missing for {}", relativise(root, &context_file)),
                 ));
                 stale_sidecars.push((context_file.clone(), slug.to_string()));
             }
@@ -326,10 +321,7 @@ fn check_one_flow(
                 checks.push(Check::fail(
                     "execution-record-sidecar",
                     slug.to_string(),
-                    format!(
-                        "sidecar digest mismatch for {}",
-                        relativise(root, &er_file)
-                    ),
+                    format!("sidecar digest mismatch for {}", relativise(root, &er_file)),
                 ));
                 stale_sidecars.push((er_file.clone(), slug.to_string()));
             }
@@ -425,12 +417,7 @@ fn check_artifacts_canonical(slug: &str, doc: &TomlValue, checks: &mut Vec<Check
 /// Check that `plan_path` (top-level string field of `context.toml`)
 /// resolves to a file on disk, treating a relative value as relative to
 /// the repo root. An absolute path is checked verbatim.
-fn check_plan_path_resolves(
-    root: &Path,
-    slug: &str,
-    doc: &TomlValue,
-    checks: &mut Vec<Check>,
-) {
+fn check_plan_path_resolves(root: &Path, slug: &str, doc: &TomlValue, checks: &mut Vec<Check>) {
     let plan_path = doc
         .as_table()
         .and_then(|t| t.get("plan_path"))
@@ -608,10 +595,7 @@ fn apply_active_prune(
         let root_tbl = doc
             .as_table_mut()
             .context("active-flow.toml root is not a table")?;
-        if let Some(arr) = root_tbl
-            .get_mut("active")
-            .and_then(|v| v.as_array_mut())
-        {
+        if let Some(arr) = root_tbl.get_mut("active").and_then(|v| v.as_array_mut()) {
             arr.retain(|entry| {
                 let slug = entry
                     .as_table()

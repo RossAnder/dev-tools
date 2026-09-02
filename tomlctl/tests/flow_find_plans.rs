@@ -243,10 +243,18 @@ fn tomlctl_plans_directories_all_sentinel_falls_through() {
 fn multi_file_plan_uses_outline_md() {
     let (_g, root) = make_root();
     seed_plan(&root, "docs/plans/big-feature/00-outline.md", "# outline\n");
-    seed_plan(&root, "docs/plans/big-feature/01-research.md", "# research\n");
+    seed_plan(
+        &root,
+        "docs/plans/big-feature/01-research.md",
+        "# research\n",
+    );
 
     let arr = run_find_plans(&root, &[]);
-    assert_eq!(arr.len(), 1, "multi-file plan must produce exactly one record");
+    assert_eq!(
+        arr.len(),
+        1,
+        "multi-file plan must produce exactly one record"
+    );
     let r = &arr[0];
     assert_eq!(r.get("slug").and_then(|s| s.as_str()), Some("big-feature"));
     let path = r.get("path").and_then(|s| s.as_str()).unwrap();
@@ -375,8 +383,14 @@ branch = "main"
     // Every record must carry `path`, `slug`, `has_flow`. Wired records
     // additionally carry `status`/`updated`/`branch` (per the spec contract).
     for r in &arr {
-        assert!(r.get("path").and_then(|v| v.as_str()).is_some(), "path: {r}");
-        assert!(r.get("slug").and_then(|v| v.as_str()).is_some(), "slug: {r}");
+        assert!(
+            r.get("path").and_then(|v| v.as_str()).is_some(),
+            "path: {r}"
+        );
+        assert!(
+            r.get("slug").and_then(|v| v.as_str()).is_some(),
+            "slug: {r}"
+        );
         assert!(
             r.get("has_flow").and_then(|v| v.as_bool()).is_some(),
             "has_flow: {r}"
@@ -390,8 +404,14 @@ branch = "main"
         .find(|r| r.get("slug").and_then(|s| s.as_str()) == Some("p1"))
         .expect("p1 must be present");
     assert_eq!(p1.get("has_flow").and_then(|v| v.as_bool()), Some(true));
-    assert_eq!(p1.get("status").and_then(|v| v.as_str()), Some("in-progress"));
-    assert_eq!(p1.get("updated").and_then(|v| v.as_str()), Some("2026-05-08"));
+    assert_eq!(
+        p1.get("status").and_then(|v| v.as_str()),
+        Some("in-progress")
+    );
+    assert_eq!(
+        p1.get("updated").and_then(|v| v.as_str()),
+        Some("2026-05-08")
+    );
     assert_eq!(p1.get("branch").and_then(|v| v.as_str()), Some("main"));
 
     let p2 = arr

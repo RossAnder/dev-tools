@@ -47,10 +47,7 @@ fn run_init(dir: &tempfile::TempDir, args: &[&str]) -> assert_cmd::assert::Asser
 
 /// Run `tomlctl flow init <args>` with `--error-format json` so test
 /// callers asserting on a failure can parse the structured envelope.
-fn run_init_with_error_json(
-    dir: &tempfile::TempDir,
-    args: &[&str],
-) -> assert_cmd::assert::Assert {
+fn run_init_with_error_json(dir: &tempfile::TempDir, args: &[&str]) -> assert_cmd::assert::Assert {
     let mut cmd = Command::cargo_bin("tomlctl").unwrap();
     cmd.env("TOMLCTL_ROOT", dir.path())
         .env("TOMLCTL_LOCK_TIMEOUT", "5")
@@ -91,11 +88,7 @@ fn fresh_init_creates_context_record_sidecars_and_active_entry() {
     let (dir, plan, context) = fresh_root("feature-x");
     let plan_str = plan.to_string_lossy().to_string();
 
-    let out = run_init(
-        &dir,
-        &["--slug", "feature-x", "--plan", &plan_str],
-    )
-    .success();
+    let out = run_init(&dir, &["--slug", "feature-x", "--plan", &plan_str]).success();
 
     let v = json_stdout(&out);
     assert_eq!(v["ok"], serde_json::json!(true));
@@ -163,24 +156,15 @@ fn fresh_init_creates_context_record_sidecars_and_active_entry() {
     // zero, artifacts populated.
     let ctx_text = fs::read_to_string(&context).unwrap();
     let ctx: toml::Value = toml::from_str(&ctx_text).unwrap();
-    assert_eq!(
-        ctx.get("status").and_then(|v| v.as_str()),
-        Some("draft")
-    );
+    assert_eq!(ctx.get("status").and_then(|v| v.as_str()), Some("draft"));
     assert_eq!(
         ctx.get("tasks")
             .and_then(|t| t.get("total"))
             .and_then(|v| v.as_integer()),
         Some(0)
     );
-    assert!(
-        ctx.get("created").is_some(),
-        "created must be present"
-    );
-    assert!(
-        ctx.get("updated").is_some(),
-        "updated must be present"
-    );
+    assert!(ctx.get("created").is_some(), "created must be present");
+    assert!(ctx.get("updated").is_some(), "updated must be present");
 }
 
 // ---------------------------------------------------------------------------
@@ -304,11 +288,7 @@ fn dry_run_does_not_mutate_anything() {
 fn slug_sanitiser_rejects_uppercase() {
     let (dir, plan, _ctx) = fresh_root("placeholder");
     let plan_str = plan.to_string_lossy().to_string();
-    let out = run_init_with_error_json(
-        &dir,
-        &["--slug", "UPPER", "--plan", &plan_str],
-    )
-    .failure();
+    let out = run_init_with_error_json(&dir, &["--slug", "UPPER", "--plan", &plan_str]).failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     let v: serde_json::Value = serde_json::from_str(stderr.trim())
         .unwrap_or_else(|e| panic!("stderr must be JSON: {e}; stderr:\n{stderr}"));
@@ -319,11 +299,8 @@ fn slug_sanitiser_rejects_uppercase() {
 fn slug_sanitiser_rejects_whitespace() {
     let (dir, plan, _ctx) = fresh_root("placeholder");
     let plan_str = plan.to_string_lossy().to_string();
-    let out = run_init_with_error_json(
-        &dir,
-        &["--slug", "with space", "--plan", &plan_str],
-    )
-    .failure();
+    let out =
+        run_init_with_error_json(&dir, &["--slug", "with space", "--plan", &plan_str]).failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     let v: serde_json::Value = serde_json::from_str(stderr.trim()).unwrap();
     assert_eq!(v["error"]["kind"], serde_json::json!("validation"));
@@ -333,11 +310,7 @@ fn slug_sanitiser_rejects_whitespace() {
 fn slug_sanitiser_rejects_underscore_prefix() {
     let (dir, plan, _ctx) = fresh_root("placeholder");
     let plan_str = plan.to_string_lossy().to_string();
-    let out = run_init_with_error_json(
-        &dir,
-        &["--slug", "_under", "--plan", &plan_str],
-    )
-    .failure();
+    let out = run_init_with_error_json(&dir, &["--slug", "_under", "--plan", &plan_str]).failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     let v: serde_json::Value = serde_json::from_str(stderr.trim()).unwrap();
     assert_eq!(v["error"]["kind"], serde_json::json!("validation"));
@@ -347,11 +320,7 @@ fn slug_sanitiser_rejects_underscore_prefix() {
 fn slug_sanitiser_rejects_empty_slug() {
     let (dir, plan, _ctx) = fresh_root("placeholder");
     let plan_str = plan.to_string_lossy().to_string();
-    let out = run_init_with_error_json(
-        &dir,
-        &["--slug", "", "--plan", &plan_str],
-    )
-    .failure();
+    let out = run_init_with_error_json(&dir, &["--slug", "", "--plan", &plan_str]).failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     let v: serde_json::Value = serde_json::from_str(stderr.trim()).unwrap();
     assert_eq!(v["error"]["kind"], serde_json::json!("validation"));
@@ -364,11 +333,7 @@ fn slug_sanitiser_rejects_overlong_slug() {
     // 65 chars: 1 leading char + 64 trailing chars (the regex caps total
     // length at 64 via `[a-z0-9][a-z0-9-]{0,63}`).
     let too_long: String = "a".repeat(65);
-    let out = run_init_with_error_json(
-        &dir,
-        &["--slug", &too_long, "--plan", &plan_str],
-    )
-    .failure();
+    let out = run_init_with_error_json(&dir, &["--slug", &too_long, "--plan", &plan_str]).failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     let v: serde_json::Value = serde_json::from_str(stderr.trim()).unwrap();
     assert_eq!(v["error"]["kind"], serde_json::json!("validation"));
@@ -481,11 +446,7 @@ fn repeated_scope_args_accumulate() {
 fn omitted_branch_is_absent_not_empty() {
     let (dir, plan, context) = fresh_root("no-branch");
     let plan_str = plan.to_string_lossy().to_string();
-    run_init(
-        &dir,
-        &["--slug", "no-branch", "--plan", &plan_str],
-    )
-    .success();
+    run_init(&dir, &["--slug", "no-branch", "--plan", &plan_str]).success();
 
     let ctx_text = fs::read_to_string(&context).unwrap();
     let ctx: toml::Value = toml::from_str(&ctx_text).unwrap();

@@ -303,7 +303,9 @@ fn devalue_to_json(v: &toml::de::DeValue<'_>) -> JsonValue {
 
 pub(crate) fn json_to_toml(v: &JsonValue) -> Result<TomlValue> {
     match v {
-        JsonValue::Null => bail!("TOML has no null type; remove the field or replace with an explicit empty value (`\"\"` for strings, `[]` for arrays)"),
+        JsonValue::Null => bail!(
+            "TOML has no null type; remove the field or replace with an explicit empty value (`\"\"` for strings, `[]` for arrays)"
+        ),
         JsonValue::Bool(b) => Ok(TomlValue::Boolean(*b)),
         JsonValue::Number(n) => {
             if let Some(i) = n.as_i64() {
@@ -311,7 +313,10 @@ pub(crate) fn json_to_toml(v: &JsonValue) -> Result<TomlValue> {
             } else if let Some(f) = n.as_f64() {
                 Ok(TomlValue::Float(f))
             } else {
-                bail!("JSON number `{}` is not representable as TOML int or float (must fit i64 or be finite f64)", n)
+                bail!(
+                    "JSON number `{}` is not representable as TOML int or float (must fit i64 or be finite f64)",
+                    n
+                )
             }
         }
         JsonValue::String(s) => Ok(TomlValue::String(s.clone())),
@@ -401,10 +406,7 @@ pub(crate) fn str_field_json<'a>(
 /// and the JSON side must match its "non-integer / missing → 0" semantics
 /// byte-for-byte so `--tier C` produces the same line-window grouping
 /// regardless of which read path delivered the doc.
-pub(crate) fn i64_field_json(
-    obj: &serde_json::Map<String, serde_json::Value>,
-    key: &str,
-) -> i64 {
+pub(crate) fn i64_field_json(obj: &serde_json::Map<String, serde_json::Value>, key: &str) -> i64 {
     obj.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
 }
 
@@ -486,9 +488,12 @@ pub(crate) fn parse_typed_value(s: &str) -> Result<JsonValue> {
     };
     match hint {
         TypeHint::Date => {
-            let _dt: toml::value::Datetime = rest
-                .parse()
-                .with_context(|| format!("`{}` is not a valid ISO date (expected `YYYY-MM-DD` after `@date:`)", rest))?;
+            let _dt: toml::value::Datetime = rest.parse().with_context(|| {
+                format!(
+                    "`{}` is not a valid ISO date (expected `YYYY-MM-DD` after `@date:`)",
+                    rest
+                )
+            })?;
             Ok(JsonValue::String(rest.to_string()))
         }
         TypeHint::DateTime => {
@@ -498,9 +503,12 @@ pub(crate) fn parse_typed_value(s: &str) -> Result<JsonValue> {
             Ok(JsonValue::String(rest.to_string()))
         }
         TypeHint::Int => {
-            let n: i64 = rest
-                .parse()
-                .with_context(|| format!("`{}` is not a valid int (expected an integer after `@int:`, e.g. `@int:42`)", rest))?;
+            let n: i64 = rest.parse().with_context(|| {
+                format!(
+                    "`{}` is not a valid int (expected an integer after `@int:`, e.g. `@int:42`)",
+                    rest
+                )
+            })?;
             Ok(JsonValue::from(n))
         }
         TypeHint::Float => {
@@ -510,9 +518,12 @@ pub(crate) fn parse_typed_value(s: &str) -> Result<JsonValue> {
             Ok(JsonValue::from(f))
         }
         TypeHint::Bool => {
-            let b: bool = rest
-                .parse()
-                .with_context(|| format!("`{}` is not a valid bool (expected `true` or `false` after `@bool:`)", rest))?;
+            let b: bool = rest.parse().with_context(|| {
+                format!(
+                    "`{}` is not a valid bool (expected `true` or `false` after `@bool:`)",
+                    rest
+                )
+            })?;
             Ok(JsonValue::Bool(b))
         }
         TypeHint::Str => Ok(JsonValue::String(rest.to_string())),
@@ -544,7 +555,10 @@ pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp
                 .parse()
                 .with_context(|| format!("`{}` is not comparable as int (RHS must parse as i64 to compare against an Integer field)", body))?;
             if hint.is_some() && !matches!(hint, Some(TypeHint::Int)) {
-                bail!("type hint `{:?}` rejected; expected one of: int, float (TOML's only numeric types). Field is Integer — use `@int:` or omit the prefix.", hint);
+                bail!(
+                    "type hint `{:?}` rejected; expected one of: int, float (TOML's only numeric types). Field is Integer — use `@int:` or omit the prefix.",
+                    hint
+                );
             }
             Ok(i.cmp(&n))
         }
@@ -553,14 +567,20 @@ pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp
                 .parse()
                 .with_context(|| format!("`{}` is not comparable as float (RHS must parse as a finite f64 to compare against a Float field)", body))?;
             if hint.is_some() && !matches!(hint, Some(TypeHint::Float)) {
-                bail!("type hint `{:?}` rejected; expected one of: int, float (TOML's only numeric types). Field is Float — use `@float:` or omit the prefix.", hint);
+                bail!(
+                    "type hint `{:?}` rejected; expected one of: int, float (TOML's only numeric types). Field is Float — use `@float:` or omit the prefix.",
+                    hint
+                );
             }
             Ok(f.partial_cmp(&x).unwrap_or(Ordering::Equal))
         }
         TomlValue::Boolean(b) => {
-            let c: bool = body
-                .parse()
-                .with_context(|| format!("`{}` is not comparable as bool (expected `true` or `false`)", body))?;
+            let c: bool = body.parse().with_context(|| {
+                format!(
+                    "`{}` is not comparable as bool (expected `true` or `false`)",
+                    body
+                )
+            })?;
             Ok(b.cmp(&c))
         }
         TomlValue::Datetime(dt) => {
@@ -573,7 +593,9 @@ pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp
             Ok(dt.to_string().cmp(&parsed.to_string()))
         }
         TomlValue::String(s) => Ok(s.as_str().cmp(body)),
-        _ => bail!("field is not a scalar; cannot compare with --where-gt/gte/lt/lte (only String, Integer, Float, Boolean, Datetime fields are orderable)"),
+        _ => bail!(
+            "field is not a scalar; cannot compare with --where-gt/gte/lt/lte (only String, Integer, Float, Boolean, Datetime fields are orderable)"
+        ),
     }
 }
 
@@ -636,7 +658,9 @@ count = 3
             .unwrap_err()
             .to_string();
         assert!(
-            err.contains("not-a-number") && err.contains("is not a valid int") && err.contains("i64"),
+            err.contains("not-a-number")
+                && err.contains("is not a valid int")
+                && err.contains("i64"),
             "type-coercion error must name the bad input AND the i64 contract; got: {err}"
         );
     }
@@ -650,9 +674,7 @@ count = 3
     #[test]
     fn error_message_type_coercion_enumerates_acceptable_type_hints() {
         let field = TomlValue::Integer(42);
-        let err = compare_typed(&field, "@string:42")
-            .unwrap_err()
-            .to_string();
+        let err = compare_typed(&field, "@string:42").unwrap_err().to_string();
         assert!(
             err.contains("rejected") && err.contains("int") && err.contains("float"),
             "type-coercion error must enumerate the acceptable numeric hints; got: {err}"
@@ -665,16 +687,23 @@ count = 3
     /// concrete example instead of just the bare rejection.
     #[test]
     fn error_message_path_shape_quotes_expected_array_index_form() {
-        let mut root: TomlValue = toml::from_str(r#"
+        let mut root: TomlValue = toml::from_str(
+            r#"
 [[items]]
 id = "R1"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         // `items.notanindex.id` triggers the parent-array index-parse branch
         // because the parent traversal must convert `notanindex` to a usize
         // to descend into the array.
-        let err = set_at_path(&mut root, "items.notanindex.id", TomlValue::String("x".into()))
-            .unwrap_err()
-            .to_string();
+        let err = set_at_path(
+            &mut root,
+            "items.notanindex.id",
+            TomlValue::String("x".into()),
+        )
+        .unwrap_err()
+        .to_string();
         assert!(
             err.contains("not a valid array index") && err.contains("items.0"),
             "path-shape error must quote the expected array-index form; got: {err}"
@@ -689,10 +718,13 @@ id = "R1"
         // Build a doc with a small array under `items`, then attempt to set
         // an element at index 99 via a parent traversal that hits the
         // pre-final-segment OOB branch.
-        let mut root: TomlValue = toml::from_str(r#"
+        let mut root: TomlValue = toml::from_str(
+            r#"
 [[items]]
 id = "R1"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         // Path `items.99.id` triggers the parent-array OOB branch because
         // the traversal must descend into `items[99]` to reach `id`.
         let err = set_at_path(&mut root, "items.99.id", TomlValue::String("x".into()))

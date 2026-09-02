@@ -369,7 +369,10 @@ status = "resolved"
             "{text}"
         );
         assert!(text.contains("git add -f"));
-        assert!(text.contains("credentials, personal data and session"), "{text}");
+        assert!(
+            text.contains("credentials, personal data and session"),
+            "{text}"
+        );
         assert!(text.ends_with('\n'));
     }
 

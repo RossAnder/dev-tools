@@ -44,15 +44,26 @@ use crate::output::{print_json, print_json_compact};
 
 pub(crate) fn dispatch(op: JsonOp) -> Result<()> {
     match op {
-        JsonOp::Get { file, path, raw, json: json_flag, integrity } => {
-            handle_get(&file, &path, raw, json_flag, integrity)
-        }
-        JsonOp::Set { file, path, json, dry_run, integrity } => {
-            handle_set(&file, &path, &json, dry_run, integrity)
-        }
-        JsonOp::Unset { file, path, dry_run, integrity } => {
-            handle_unset(&file, &path, dry_run, integrity)
-        }
+        JsonOp::Get {
+            file,
+            path,
+            raw,
+            json: json_flag,
+            integrity,
+        } => handle_get(&file, &path, raw, json_flag, integrity),
+        JsonOp::Set {
+            file,
+            path,
+            json,
+            dry_run,
+            integrity,
+        } => handle_set(&file, &path, &json, dry_run, integrity),
+        JsonOp::Unset {
+            file,
+            path,
+            dry_run,
+            integrity,
+        } => handle_unset(&file, &path, dry_run, integrity),
     }
 }
 
@@ -60,7 +71,10 @@ pub(crate) fn dispatch(op: JsonOp) -> Result<()> {
 /// half (TOML writers refuse `.json`) requires a touch on `cli/dispatch.rs`
 /// and is deferred — see module docstring.
 fn refuse_toml_extension(file: &Path) -> Result<()> {
-    if file.extension().is_some_and(|e| e.eq_ignore_ascii_case("toml")) {
+    if file
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("toml"))
+    {
         return Err(tagged_err(
             ErrorKind::Validation,
             Some(file.to_path_buf()),
@@ -387,12 +401,13 @@ fn handle_set(
         // Read existing doc; treat missing file as `{}` so first-write to
         // a brand-new JSON file works without a separate bootstrap step.
         let mut doc = match fs::read_to_string(file) {
-            Ok(s) => serde_json::from_str::<JsonValue>(&s)
-                .map_err(|e| tagged_err(
+            Ok(s) => serde_json::from_str::<JsonValue>(&s).map_err(|e| {
+                tagged_err(
                     ErrorKind::Parse,
                     Some(file.to_path_buf()),
                     format!("parsing {}: {}", file.display(), e),
-                ))?,
+                )
+            })?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 JsonValue::Object(serde_json::Map::new())
             }
@@ -486,7 +501,11 @@ fn handle_unset(
 /// failure-handling shape (warn on stderr by default, fail-hard under
 /// `--strict-integrity`) so the JSON and TOML write paths surface
 /// identical operator-facing behaviour on a stuck disk / bad sidecar.
-fn refresh_sidecar_after_write(file: &Path, skip: bool, integrity: &WriteIntegrityArgs) -> Result<()> {
+fn refresh_sidecar_after_write(
+    file: &Path,
+    skip: bool,
+    integrity: &WriteIntegrityArgs,
+) -> Result<()> {
     if skip || integrity.no_write_integrity {
         return Ok(());
     }
@@ -524,9 +543,7 @@ fn emit_set_unset_envelope(
         "file": file.display().to_string(),
         "path": path,
     });
-    if sidecar_skipped
-        && let Some(map) = env.as_object_mut()
-    {
+    if sidecar_skipped && let Some(map) = env.as_object_mut() {
         map.insert(
             "sidecar_skipped".to_string(),
             JsonValue::String("co-writer-protected".to_string()),
@@ -562,11 +579,7 @@ fn dry_run_set(
     emit_dry_run_envelope(file, path, "set", old_value, Some(new_value))
 }
 
-fn dry_run_unset(
-    file: &Path,
-    path: &str,
-    integrity: WriteIntegrityArgs,
-) -> Result<()> {
+fn dry_run_unset(file: &Path, path: &str, integrity: WriteIntegrityArgs) -> Result<()> {
     let _ = integrity;
     let doc = match fs::read_to_string(file) {
         Ok(s) => serde_json::from_str::<JsonValue>(&s).map_err(|e| {
@@ -622,10 +635,8 @@ mod tests {
 
     #[test]
     fn navigate_json_walks_objects_and_arrays() {
-        let v: JsonValue = serde_json::from_str(
-            r#"{"permissions":{"allow":["a","b","c"]}}"#,
-        )
-        .unwrap();
+        let v: JsonValue =
+            serde_json::from_str(r#"{"permissions":{"allow":["a","b","c"]}}"#).unwrap();
         assert_eq!(
             navigate_json(&v, "permissions.allow.1"),
             Some(&JsonValue::String("b".to_string()))
@@ -638,10 +649,7 @@ mod tests {
     fn set_at_path_json_autovivifies_missing_parents() {
         let mut v = JsonValue::Object(serde_json::Map::new());
         set_at_path_json(&mut v, "a.b.c", JsonValue::Bool(true)).unwrap();
-        assert_eq!(
-            navigate_json(&v, "a.b.c"),
-            Some(&JsonValue::Bool(true))
-        );
+        assert_eq!(navigate_json(&v, "a.b.c"), Some(&JsonValue::Bool(true)));
     }
 
     #[test]
@@ -669,8 +677,7 @@ mod tests {
 
     #[test]
     fn format_json_for_disk_emits_two_space_indent_and_trailing_newline() {
-        let v: JsonValue =
-            serde_json::from_str(r#"{"a":1,"b":[2,3]}"#).unwrap();
+        let v: JsonValue = serde_json::from_str(r#"{"a":1,"b":[2,3]}"#).unwrap();
         let bytes = format_json_for_disk(&v).unwrap();
         let s = String::from_utf8(bytes).unwrap();
         assert!(s.ends_with('\n'), "must end in newline: {s:?}");

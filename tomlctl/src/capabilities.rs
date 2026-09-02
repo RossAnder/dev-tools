@@ -15,13 +15,7 @@ use crate::cli::Cli;
 /// `subcommand_path` is the space-separated chain ("items list" / "items get").
 const MUTEX_GROUPS: &[(&str, &[&[&str]])] = &[(
     "items list",
-    &[&[
-        "count",
-        "count_by",
-        "group_by",
-        "pluck",
-        "count_distinct",
-    ]],
+    &[&["count", "count_by", "group_by", "pluck", "count_distinct"]],
 )];
 
 /// Fallback enum value sets for `ValueEnum` flags whose
@@ -328,10 +322,10 @@ mod tests {
 
     #[test]
     fn enum_values_match_value_enum_variants() {
-        use clap::ValueEnum;
         use crate::cli::ErrorFormat;
         use crate::convert::ScalarType;
         use crate::dedup::DupTier;
+        use clap::ValueEnum;
 
         fn variants_of<T: ValueEnum>() -> Vec<String> {
             T::value_variants()
@@ -356,8 +350,7 @@ mod tests {
             };
             let expected: Vec<String> = vals.iter().map(|s| s.to_string()).collect();
             assert_eq!(
-                actual,
-                expected,
+                actual, expected,
                 "ENUM_VALUES for `{name}` drifted from <T as ValueEnum>::value_variants(); update the const to match"
             );
         }

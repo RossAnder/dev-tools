@@ -359,7 +359,10 @@ status = "resolved"
             .unwrap()
         );
         assert_eq!(
-            row(&d, "B-a1b2c3d4").get(FIELD_DISMISSED).unwrap().as_datetime(),
+            row(&d, "B-a1b2c3d4")
+                .get(FIELD_DISMISSED)
+                .unwrap()
+                .as_datetime(),
             Some(&today())
         );
     }
@@ -422,7 +425,10 @@ status = "open"
         );
         assert_eq!(schema::validate(&toml_to_json(object)), Ok(()));
         assert_eq!(
-            row(&d, "B-a1b2c3d4").get(FIELD_SUPERSEDES).unwrap().as_str(),
+            row(&d, "B-a1b2c3d4")
+                .get(FIELD_SUPERSEDES)
+                .unwrap()
+                .as_str(),
             Some("B-7f0e2d91")
         );
     }
@@ -439,7 +445,10 @@ status = "open"
         )
         .unwrap_err();
         assert_eq!(kind_of(&err), "validation");
-        assert_eq!(toml::to_string(&d).unwrap(), toml::to_string(&doc()).unwrap());
+        assert_eq!(
+            toml::to_string(&d).unwrap(),
+            toml::to_string(&doc()).unwrap()
+        );
     }
 
     #[test]

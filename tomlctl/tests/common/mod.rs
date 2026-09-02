@@ -140,7 +140,12 @@ pub fn ids_from(stdout: &str) -> Vec<String> {
     let arr = v.as_array().expect("list output is a JSON array");
     let mut ids: Vec<String> = arr
         .iter()
-        .map(|el| el.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string())
+        .map(|el| {
+            el.get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        })
         .collect();
     ids.sort();
     ids
@@ -238,7 +243,10 @@ fn shipped_gitignore() -> &'static str {
     if let Some(text) = repo_gitignore {
         let shipped: String = text
             .lines()
-            .filter(|line| line.trim_start_matches('!').starts_with(EVIDENCE_RULE_PREFIX))
+            .filter(|line| {
+                line.trim_start_matches('!')
+                    .starts_with(EVIDENCE_RULE_PREFIX)
+            })
             .map(|line| format!("{line}\n"))
             .collect();
         assert_eq!(

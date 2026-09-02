@@ -115,9 +115,9 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
                 // unreadable-but-existing files).
                 // O28: probe read_cache; populate on miss so duplicate ledger
                 // entries pointing at the same file each pay one read.
-                let cached = read_cache.entry(resolved.clone()).or_insert_with(|| {
-                    fs::read_to_string(&resolved).map_err(|e| e.kind())
-                });
+                let cached = read_cache
+                    .entry(resolved.clone())
+                    .or_insert_with(|| fs::read_to_string(&resolved).map_err(|e| e.kind()));
                 match cached {
                     Ok(contents) => {
                         // O29: word-boundary match. The previous
@@ -131,9 +131,8 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
                         // when compilation fails (defensive — `regex::escape`
                         // should make this unreachable). `(?-u:\b)` pins ASCII
                         // semantics regardless of crate feature flags.
-                        let compiled = symbol_cache
-                            .entry(symbol.to_string())
-                            .or_insert_with(|| {
+                        let compiled =
+                            symbol_cache.entry(symbol.to_string()).or_insert_with(|| {
                                 let pat = format!(r"(?-u:\b){}(?-u:\b)", regex::escape(symbol));
                                 Regex::new(&pat).ok()
                             });
@@ -189,7 +188,11 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
 
 fn resolve_relative_to_root(root: &Path, file: &str) -> PathBuf {
     let p = Path::new(file);
-    if p.is_absolute() { p.to_path_buf() } else { root.join(p) }
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        root.join(p)
+    }
 }
 
 #[cfg(test)]

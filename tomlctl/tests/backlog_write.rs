@@ -22,8 +22,7 @@ use common::{
 
 const FLAKE_SUMMARY: &str = "pty_readiness_probe flakes on slow CI";
 const FLAKE_AREA: &str = "lumina/server/tests/pty_readiness_probe.rs";
-const FLAKE_CONTEXT: &str =
-    "Only reproduces when the readiness gate races the first prompt write.";
+const FLAKE_CONTEXT: &str = "Only reproduces when the readiness gate races the first prompt write.";
 const DRIFT_SUMMARY: &str = "sqlite migration checksum drifts after a renormalise";
 const DRIFT_AREA: &str = "lumina/server/db/migrate.rs";
 
@@ -158,7 +157,10 @@ fn mint_bump_relate_triage_and_compact_walk() {
     assert_minted_id(&id_b);
     assert_ne!(id_b, id_a);
 
-    let edge = backlog(&root, &["relate", &id_a, "--to", &id_b, "--as", "relates-to"]);
+    let edge = backlog(
+        &root,
+        &["relate", &id_a, "--to", &id_b, "--as", "relates-to"],
+    );
     assert_eq!(edge["relation"], json!("relates-to"));
     assert_eq!(edge["changed"], json!(true));
     let doc = read_store(&root);
@@ -166,7 +168,10 @@ fn mint_bump_relate_triage_and_compact_walk() {
     assert_eq!(related(row(&doc, "backlog", &id_b)), vec![id_a.clone()]);
 
     let resolution = "fixed by resolving the binary absolutely";
-    let triaged = backlog(&root, &["triage", &id_a, "--resolve", "--resolution", resolution]);
+    let triaged = backlog(
+        &root,
+        &["triage", &id_a, "--resolve", "--resolution", resolution],
+    );
     assert_eq!(triaged["transition"], json!("resolve"));
     assert_eq!(triaged["ids"], json!([id_a]));
     let doc = read_store(&root);
@@ -360,7 +365,10 @@ fn evidence_dir_writes_only_the_marker_and_is_idempotent() {
     assert_eq!(first["id"].as_str(), Some(id.as_str()));
     assert_eq!(first["created"], json!(true));
     assert_eq!(first["files"], json!(0));
-    assert_eq!(first["dir"], json!(format!(".claude/backlog-evidence/{id}")));
+    assert_eq!(
+        first["dir"],
+        json!(format!(".claude/backlog-evidence/{id}"))
+    );
 
     let dir = evidence_dir(&root, &id);
     assert!(dir.is_dir(), "the drop-box must exist at {}", dir.display());

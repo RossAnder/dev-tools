@@ -323,7 +323,10 @@ last_seen = {}
         assert_eq!(ago(91), "2026-06-02");
 
         let at = plan_compaction(&resolved_store(&ago(90)), today(), ninety_days()).unwrap();
-        assert!(at.compacted.is_empty(), "exactly at the threshold must stay");
+        assert!(
+            at.compacted.is_empty(),
+            "exactly at the threshold must stay"
+        );
         assert_eq!(at.remaining, 1);
         assert!(items_array(&at.new_doc, ARRAY_COMPACTED).is_empty());
 

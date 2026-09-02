@@ -116,20 +116,15 @@ pub(crate) fn dispatch(
     let opts = write_integrity_opts(&integrity);
     let on_missing = on_missing_for(&file, integrity.no_create)?;
     let mut outcome: Option<AddOutcome> = None;
-    let created = io::mutate_doc_conditional(
-        &file,
-        integrity.allow_outside,
-        opts,
-        on_missing,
-        |doc| {
+    let created =
+        io::mutate_doc_conditional(&file, integrity.allow_outside, opts, on_missing, |doc| {
             let result = add_item(doc, &req, &file)?;
             // `skip` must leave the file AND its sidecar untouched, which is
             // the whole reason this goes through the conditional wrapper.
             let persist = !matches!(result, AddOutcome::Skipped { .. });
             outcome = Some(result);
             Ok(persist)
-        },
-    )?;
+        })?;
 
     match outcome.ok_or_else(|| anyhow!("backlog add reached the write path without a decision"))? {
         AddOutcome::Added { id, dedup_id } => {
@@ -274,10 +269,7 @@ fn bump_row(doc: &mut TomlValue, idx: usize, req: &AddRequest) -> Result<i64> {
         .unwrap_or(1)
         .saturating_add(1);
     row.insert(FIELD_SEEN_COUNT.to_string(), TomlValue::Integer(seen_count));
-    row.insert(
-        FIELD_LAST_SEEN.to_string(),
-        TomlValue::Datetime(req.today),
-    );
+    row.insert(FIELD_LAST_SEEN.to_string(), TomlValue::Datetime(req.today));
     union_into(row, FIELD_TAGS, &req.tags);
     union_into(row, FIELD_EVIDENCE, &req.evidence);
     union_into(row, FIELD_RELATED, &req.related);
@@ -334,7 +326,10 @@ fn build_row(req: &AddRequest, id: &str, dedup_id: &str) -> TomlValue {
             row.insert(field.to_string(), TomlValue::String(value.clone()));
         }
     }
-    for (field, values) in [(FIELD_EVIDENCE, &req.evidence), (FIELD_RELATED, &req.related)] {
+    for (field, values) in [
+        (FIELD_EVIDENCE, &req.evidence),
+        (FIELD_RELATED, &req.related),
+    ] {
         if !values.is_empty() {
             row.insert(field.to_string(), string_array(values));
         }
@@ -515,7 +510,9 @@ fn request_from_payload(
     }
     Ok(AddRequest {
         kind: schema::coerce_kind(string_of(&map, FIELD_KIND).unwrap_or(KIND_OTHER)).to_string(),
-        summary: string_of(&map, FIELD_SUMMARY).unwrap_or_default().to_string(),
+        summary: string_of(&map, FIELD_SUMMARY)
+            .unwrap_or_default()
+            .to_string(),
         area: string_of(&map, FIELD_AREA).unwrap_or_default().to_string(),
         tags: strings_of(&map, FIELD_TAGS),
         status: string_of(&map, FIELD_STATUS)
@@ -929,8 +926,8 @@ mod tests {
 
     #[test]
     fn credential_and_machine_local_shapes_raise_an_advisory_each() {
-        let req = |summary: &str, tags: &[&str], evidence: &[&str], context: Option<&str>| {
-            AddRequest {
+        let req =
+            |summary: &str, tags: &[&str], evidence: &[&str], context: Option<&str>| AddRequest {
                 kind: "bug".to_string(),
                 summary: summary.to_string(),
                 area: "C:\\Users\\someone\\repo".to_string(),
@@ -944,8 +941,7 @@ mod tests {
                 extra: toml::Table::new(),
                 on_duplicate: OnDuplicate::Bump,
                 today: "2026-09-02".parse().unwrap(),
-            }
-        };
+            };
 
         let flagged = advisories(&req(
             "repro log names C:\\Users\\someone\\repro.txt",
@@ -1035,7 +1031,10 @@ mod tests {
             assert_eq!(row[FIELD_SEEN_COUNT].as_integer(), Some(1));
             assert_eq!(row[FIELD_KIND].as_str(), Some("bug"));
             assert_eq!(row[FIELD_STATUS].as_str(), Some(STATUS_OPEN));
-            assert_eq!(row[FIELD_CONTEXT].as_str(), Some("pass --json - to stream it"));
+            assert_eq!(
+                row[FIELD_CONTEXT].as_str(),
+                Some("pass --json - to stream it")
+            );
             assert_eq!(row["duplicate_of"].as_str(), Some("B-7f0e2d91"));
             assert_eq!(schema::validate(&toml_to_json(&rows[0])), Ok(()));
         });

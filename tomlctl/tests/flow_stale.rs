@@ -146,8 +146,14 @@ fn flow_stale_missing_context_default_returns_stale_true_no_error() {
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is JSON");
     assert_eq!(v["stale"], serde_json::json!(true));
     assert_eq!(v["reason"], serde_json::json!("context.toml missing"));
-    assert!(v["last_activity"].is_null(), "last_activity must be null on missing-file");
-    assert!(v["age_seconds"].is_null(), "age_seconds must be null on missing-file");
+    assert!(
+        v["last_activity"].is_null(),
+        "last_activity must be null on missing-file"
+    );
+    assert!(
+        v["age_seconds"].is_null(),
+        "age_seconds must be null on missing-file"
+    );
 }
 
 /// Acceptance: `--strict-read` on a missing `context.toml` flips the
@@ -343,7 +349,10 @@ updated = {today}
         serde_json::from_str(&String::from_utf8_lossy(&out.get_output().stdout)).unwrap();
     let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(|s| s.as_str()).collect();
     keys.sort();
-    assert_eq!(keys, vec!["age_seconds", "last_activity", "reason", "stale"]);
+    assert_eq!(
+        keys,
+        vec!["age_seconds", "last_activity", "reason", "stale"]
+    );
 
     // Branch B: 9-day-old flow → out-of-threshold.
     let body_old = format!(
@@ -367,7 +376,10 @@ updated = {past}
         serde_json::from_str(&String::from_utf8_lossy(&out2.get_output().stdout)).unwrap();
     let mut keys2: Vec<&str> = v2.as_object().unwrap().keys().map(|s| s.as_str()).collect();
     keys2.sort();
-    assert_eq!(keys2, vec!["age_seconds", "last_activity", "reason", "stale"]);
+    assert_eq!(
+        keys2,
+        vec!["age_seconds", "last_activity", "reason", "stale"]
+    );
 
     // Branch C: missing context.toml (still emits the full key set, with
     // last_activity/age_seconds as JSON null).
@@ -386,5 +398,8 @@ updated = {past}
         serde_json::from_str(&String::from_utf8_lossy(&out3.get_output().stdout)).unwrap();
     let mut keys3: Vec<&str> = v3.as_object().unwrap().keys().map(|s| s.as_str()).collect();
     keys3.sort();
-    assert_eq!(keys3, vec!["age_seconds", "last_activity", "reason", "stale"]);
+    assert_eq!(
+        keys3,
+        vec!["age_seconds", "last_activity", "reason", "stale"]
+    );
 }

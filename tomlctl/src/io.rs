@@ -154,7 +154,10 @@ pub(crate) fn item_id(item: &TomlValue) -> Option<&str> {
 /// key isn't a JSON array — symmetric with the TomlValue-side `items_array`
 /// behaviour so callers can swap between the two without changing their
 /// loop shape.
-pub(crate) fn items_array_json<'a>(doc: &'a serde_json::Value, name: &str) -> &'a [serde_json::Value] {
+pub(crate) fn items_array_json<'a>(
+    doc: &'a serde_json::Value,
+    name: &str,
+) -> &'a [serde_json::Value] {
     static EMPTY: Vec<serde_json::Value> = Vec::new();
     doc.get(name)
         .and_then(|v| v.as_array())
@@ -254,7 +257,9 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
             .read_to_string(&mut buf)
             .context("reading JSON from stdin")?;
         if buf.trim().is_empty() {
-            bail!("stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)");
+            bail!(
+                "stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)"
+            );
         }
         Ok(buf)
     } else {
@@ -333,7 +338,9 @@ pub(crate) fn read_json_value_from_arg(arg: &str) -> Result<serde_json::Value> {
         // and we want our own message rather than serde's EOF wording.
         let initial = r.fill_buf().context("reading JSON from stdin")?;
         if initial.is_empty() {
-            bail!("stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)");
+            bail!(
+                "stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)"
+            );
         }
         // `from_reader` consumes the BufReader's internal buffer before
         // refilling from the underlying `Take<StdinLock>`, so the peek
@@ -1275,9 +1282,7 @@ fn ensure_parent_under_claude(file: &Path) -> Result<()> {
     let Ok(claude_canonical) = claude_dir.canonicalize() else {
         return Ok(());
     };
-    if anchor_canonical != claude_canonical
-        && !anchor_canonical.starts_with(&claude_canonical)
-    {
+    if anchor_canonical != claude_canonical && !anchor_canonical.starts_with(&claude_canonical) {
         return Ok(());
     }
     fs::create_dir_all(parent)
@@ -2202,7 +2207,10 @@ arr = [1, 2]
                 "OnMissing::Error must propagate kind=not_found, got {:?}",
                 tagged.kind
             );
-            assert!(!target.exists(), "no file must be created on the Error path");
+            assert!(
+                !target.exists(),
+                "no file must be created on the Error path"
+            );
             assert!(
                 !sidecar_path(&target).exists(),
                 "no sidecar must be created on the Error path"
@@ -2385,7 +2393,9 @@ arr = [1, 2]
                 "{name} must seed schema_version = 1"
             );
             assert!(
-                table.get("last_updated").is_some_and(|v| v.as_datetime().is_some()),
+                table
+                    .get("last_updated")
+                    .is_some_and(|v| v.as_datetime().is_some()),
                 "{name} must seed a `last_updated` date"
             );
         }

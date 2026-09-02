@@ -92,7 +92,15 @@ fn compile_user_regex(pattern: &str) -> Result<Regex> {
         .size_limit(REGEX_COMPILE_SIZE_LIMIT)
         .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
         .build()
-        .map_err(|e| anyhow::anyhow!("invalid regex `{}`: {} (regex must compile under size_limit={}/dfa_size_limit={})", pattern, e, REGEX_COMPILE_SIZE_LIMIT, REGEX_DFA_SIZE_LIMIT))
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "invalid regex `{}`: {} (regex must compile under size_limit={}/dfa_size_limit={})",
+                pattern,
+                e,
+                REGEX_COMPILE_SIZE_LIMIT,
+                REGEX_DFA_SIZE_LIMIT
+            )
+        })
 }
 
 /// Sort direction for a single `--sort-by` key.
@@ -274,9 +282,9 @@ impl ShapeDispatch for OutputShape {
         match self {
             OutputShape::Count => {
                 // Shape is `{"count": N}` — reach in, render the bare integer.
-                let n = v
-                    .get("count")
-                    .ok_or_else(|| anyhow::anyhow!("internal: --count output missing `count` key"))?;
+                let n = v.get("count").ok_or_else(|| {
+                    anyhow::anyhow!("internal: --count output missing `count` key")
+                })?;
                 emit_raw(n)
             }
             OutputShape::CountDistinct(_) => {
@@ -294,11 +302,13 @@ impl ShapeDispatch for OutputShape {
                 // Shape is `[v0, v1, ...]`. N==1 is the only emittable
                 // cardinality without `--lines`; anything else errors with
                 // the exact task-spec wording (tests assert byte-for-byte).
-                let arr = v
-                    .as_array()
-                    .ok_or_else(|| anyhow::anyhow!("internal: --pluck output was not a JSON array"))?;
+                let arr = v.as_array().ok_or_else(|| {
+                    anyhow::anyhow!("internal: --pluck output was not a JSON array")
+                })?;
                 match arr.len() {
-                    0 => bail!("--raw requires single-value output (got 0 items); for a possibly-empty pluck use `--pluck <f> --lines` to stream zero-or-more JSON values one per line"),
+                    0 => bail!(
+                        "--raw requires single-value output (got 0 items); for a possibly-empty pluck use `--pluck <f> --lines` to stream zero-or-more JSON values one per line"
+                    ),
                     1 => emit_raw(&arr[0]),
                     n => bail!(
                         "--raw requires single-value output (got {} items); use --lines for newline-delimited",
@@ -312,7 +322,9 @@ impl ShapeDispatch for OutputShape {
                 // error rather than a corrupt pretty-print of a JSON array
                 // with quotes stripped. Byte-for-byte wording isn't pinned
                 // by the task spec for this case; keep it descriptive.
-                bail!("--raw requires a scalar target (string|number|bool); got array — use `--lines` (or omit --raw) to emit JSON");
+                bail!(
+                    "--raw requires a scalar target (string|number|bool); got array — use `--lines` (or omit --raw) to emit JSON"
+                );
             }
             OutputShape::CountBy(_) | OutputShape::GroupBy(_) => {
                 // Unreachable in practice: `validate_query` rejects these
@@ -412,14 +424,10 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
             // narrow. Mirror the CountBy/Count wording so agents reading the
             // error see a consistent style across aggregation shapes.
             if q.select.is_some() {
-                validation_bail!(
-                    "--select and --count-distinct are mutually exclusive"
-                );
+                validation_bail!("--select and --count-distinct are mutually exclusive");
             }
             if q.exclude.is_some() {
-                validation_bail!(
-                    "--exclude and --count-distinct are mutually exclusive"
-                );
+                validation_bail!("--exclude and --count-distinct are mutually exclusive");
             }
         }
         OutputShape::GroupBy(_) => {
@@ -434,12 +442,7 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
     // well-defined bare-scalar conversion, so we fail loud here rather
     // than let the agent see a confusing error from `emit_raw` on the
     // object shape. Wording is load-bearing — tests pin the exact string.
-    if q.raw
-        && matches!(
-            q.shape,
-            OutputShape::CountBy(_) | OutputShape::GroupBy(_)
-        )
-    {
+    if q.raw && matches!(q.shape, OutputShape::CountBy(_) | OutputShape::GroupBy(_)) {
         validation_bail!(
             "--raw is not supported on --count-by / --group-by (output is a map, not a scalar)"
         );
@@ -541,10 +544,8 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
     // has already rejected --count/--pluck/--count-by + --select/--exclude,
     // so projection can't interact with the output either. GroupBy is not
     // fast-pathed — its grouped item bodies still need full materialisation.
-    let window_untouched = q.sort_by.is_empty()
-        && !q.distinct
-        && q.offset.is_none()
-        && q.limit.is_none();
+    let window_untouched =
+        q.sort_by.is_empty() && !q.distinct && q.offset.is_none() && q.limit.is_none();
     if window_untouched {
         match &q.shape {
             OutputShape::Count => {
@@ -680,13 +681,19 @@ pub(crate) fn emit_raw(v: &JsonValue) -> Result<String> {
         JsonValue::Number(n) => Ok(n.to_string()),
         JsonValue::Bool(b) => Ok(b.to_string()),
         JsonValue::Null => {
-            bail!("--raw cannot emit null value; --raw expects a scalar (string|number|bool) — use plain JSON output (omit --raw) to round-trip null")
+            bail!(
+                "--raw cannot emit null value; --raw expects a scalar (string|number|bool) — use plain JSON output (omit --raw) to round-trip null"
+            )
         }
         JsonValue::Array(_) => {
-            bail!("--raw requires a scalar target (string|number|bool); got array — use `--lines` (or omit --raw) to emit JSON")
+            bail!(
+                "--raw requires a scalar target (string|number|bool); got array — use `--lines` (or omit --raw) to emit JSON"
+            )
         }
         JsonValue::Object(_) => {
-            bail!("--raw requires a scalar target (string|number|bool); got table — use plain JSON output (omit --raw) to emit the object")
+            bail!(
+                "--raw requires a scalar target (string|number|bool); got table — use plain JSON output (omit --raw) to emit the object"
+            )
         }
     }
 }
@@ -741,10 +748,8 @@ pub(crate) fn run_streaming<W: Write>(
     };
     let filtered = apply_filters(items, &q.predicates)?;
 
-    let window_untouched = q.sort_by.is_empty()
-        && !q.distinct
-        && q.offset.is_none()
-        && q.limit.is_none();
+    let window_untouched =
+        q.sort_by.is_empty() && !q.distinct && q.offset.is_none() && q.limit.is_none();
 
     // T3: Pluck streaming. The structure mirrors the Array branch below —
     // a fast-path that skips the full Vec<JsonValue> materialisation when
@@ -1064,12 +1069,15 @@ fn eval_predicate(
         // row because `TomlValue::as_str` only matches TOML Strings. Behaviour
         // change: `--where-contains line=00` against `line=100` now matches
         // where it silently missed before (release-note worthy).
-        Predicate::WhereContains { key, sub } => Ok(value_as_string(tbl.get(key))
-            .is_some_and(|s| s.contains(sub))),
-        Predicate::WherePrefix { key, prefix } => Ok(value_as_string(tbl.get(key))
-            .is_some_and(|s| s.starts_with(prefix))),
-        Predicate::WhereSuffix { key, suffix } => Ok(value_as_string(tbl.get(key))
-            .is_some_and(|s| s.ends_with(suffix))),
+        Predicate::WhereContains { key, sub } => {
+            Ok(value_as_string(tbl.get(key)).is_some_and(|s| s.contains(sub)))
+        }
+        Predicate::WherePrefix { key, prefix } => {
+            Ok(value_as_string(tbl.get(key)).is_some_and(|s| s.starts_with(prefix)))
+        }
+        Predicate::WhereSuffix { key, suffix } => {
+            Ok(value_as_string(tbl.get(key)).is_some_and(|s| s.ends_with(suffix)))
+        }
         Predicate::WhereRegex { key, .. } => {
             // R72: the regex was compiled once in `apply_filters`; we just
             // look it up here.
@@ -1253,9 +1261,7 @@ fn cmp_pred(
             ))),
         },
         ParsedRhs::Datetime(dt) => match f {
-            TomlValue::Datetime(field_dt) => {
-                Some(Ok(field_dt.to_string().cmp(&dt.to_string())))
-            }
+            TomlValue::Datetime(field_dt) => Some(Ok(field_dt.to_string().cmp(&dt.to_string()))),
             _ => Some(Err(anyhow::anyhow!(
                 "invalid typed RHS `{}` for --where predicate on key `{}`: @date:/@datetime: requires a datetime field; the field's TOML type is not Datetime",
                 rhs,
@@ -1682,7 +1688,10 @@ fn split_kv(s: &str) -> Result<(String, String)> {
         bail!("expected KEY=VAL (e.g. `status=open`), got `{}`", s);
     };
     if k.is_empty() {
-        bail!("KEY=VAL has empty key in `{}` (e.g. `status=open`); the LHS before `=` must be non-empty", s);
+        bail!(
+            "KEY=VAL has empty key in `{}` (e.g. `status=open`); the LHS before `=` must be non-empty",
+            s
+        );
     }
     Ok((k.to_string(), v.to_string()))
 }
@@ -2568,10 +2577,7 @@ v = 42
         let out = run(&doc, "items", &q).unwrap();
         // src/a.rs has R1, R2.
         let a_group = out["src/a.rs"].as_array().unwrap();
-        let ids: Vec<_> = a_group
-            .iter()
-            .map(|v| v["id"].as_str().unwrap())
-            .collect();
+        let ids: Vec<_> = a_group.iter().map(|v| v["id"].as_str().unwrap()).collect();
         assert_eq!(ids, vec!["R1", "R2"]);
         // src/b.rs has R3 only.
         assert_eq!(out["src/b.rs"].as_array().unwrap().len(), 1);
@@ -2590,10 +2596,7 @@ v = 42
             ..Default::default()
         };
         let out = run(&doc, "items", &q).unwrap();
-        assert_eq!(
-            out,
-            serde_json::json!(["R1", "R2", "R5", "R6"])
-        );
+        assert_eq!(out, serde_json::json!(["R1", "R2", "R5", "R6"]));
     }
 
     // -- validate_query rejections ------------------------------------
@@ -2606,10 +2609,7 @@ v = 42
             ..Default::default()
         };
         let err = validate_query(&q).unwrap_err().to_string();
-        assert!(
-            err.contains("--select") && err.contains("--pluck"),
-            "{err}"
-        );
+        assert!(err.contains("--select") && err.contains("--pluck"), "{err}");
     }
 
     #[test]
@@ -2620,10 +2620,7 @@ v = 42
             ..Default::default()
         };
         let err = validate_query(&q).unwrap_err().to_string();
-        assert!(
-            err.contains("--count") && err.contains("--select"),
-            "{err}"
-        );
+        assert!(err.contains("--count") && err.contains("--select"), "{err}");
     }
 
     #[test]
@@ -2904,7 +2901,10 @@ x = "v5"
             .map(|l| serde_json::from_str(l).unwrap())
             .collect();
 
-        let q_run = Query { ndjson: false, ..q_stream.clone() };
+        let q_run = Query {
+            ndjson: false,
+            ..q_stream.clone()
+        };
         let non_streamed = run(&doc, "items", &q_run).unwrap();
         let non_streamed_array: Vec<JsonValue> = non_streamed
             .as_array()

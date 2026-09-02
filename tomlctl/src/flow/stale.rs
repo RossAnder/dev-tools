@@ -74,7 +74,11 @@ pub(crate) fn dispatch(
 /// (via `repo_or_cwd_root`) — the same anchor every other read path uses.
 fn resolve_context_path(slug: &str) -> Result<PathBuf> {
     let root = repo_or_cwd_root()?;
-    Ok(root.join(".claude").join("flows").join(slug).join("context.toml"))
+    Ok(root
+        .join(".claude")
+        .join("flows")
+        .join(slug)
+        .join("context.toml"))
 }
 
 /// Compute the staleness verdict given a parsed `context.toml` document.
@@ -133,9 +137,8 @@ fn verdict_from_iso_string(
 ) -> Result<JsonValue> {
     // R6 / R39: parse + today-resolution route through `crate::time`,
     // sharing the injection seam with `flow::resolve::compute_staleness`.
-    let updated_date = parse_iso_to_date(iso).map_err(|_| {
-        anyhow::anyhow!("parsing `updated` as a date or timestamp: {iso}")
-    })?;
+    let updated_date = parse_iso_to_date(iso)
+        .map_err(|_| anyhow::anyhow!("parsing `updated` as a date or timestamp: {iso}"))?;
     let today = today_utc_date()?;
 
     // Date-only granularity: a flow updated earlier today is age zero.

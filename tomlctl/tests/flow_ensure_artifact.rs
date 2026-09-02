@@ -92,10 +92,7 @@ fn ensure_artifact_present_and_valid_reports_true() {
     assert!(artifact.exists());
     assert!(sidecar_path(&artifact).exists());
 
-    let v = run_ensure(
-        &root,
-        &["--slug", "present", "--kind", "execution-record"],
-    );
+    let v = run_ensure(&root, &["--slug", "present", "--kind", "execution-record"]);
     assert_eq!(v["exists"], JsonValue::Bool(true));
     assert_eq!(v["sidecar_valid"], JsonValue::Bool(true));
     let path = v["path"].as_str().expect("path key");
@@ -124,8 +121,14 @@ fn ensure_artifact_missing_reports_false_with_null_sidecar() {
     );
 
     // No write side-effect.
-    assert!(!artifact.exists(), "report path must not create the artifact");
-    assert!(!sidecar_path(&artifact).exists(), "report path must not write the sidecar");
+    assert!(
+        !artifact.exists(),
+        "report path must not create the artifact"
+    );
+    assert!(
+        !sidecar_path(&artifact).exists(),
+        "report path must not write the sidecar"
+    );
 }
 
 /// tampered sidecar (artifact present, sidecar digest mismatch):
@@ -143,10 +146,7 @@ fn ensure_artifact_tampered_sidecar_reports_false_no_repair() {
     .unwrap();
 
     let pre_sidecar = fs::read_to_string(sidecar_path(&artifact)).unwrap();
-    let v = run_ensure(
-        &root,
-        &["--slug", "tampered", "--kind", "execution-record"],
-    );
+    let v = run_ensure(&root, &["--slug", "tampered", "--kind", "execution-record"]);
     assert_eq!(v["exists"], JsonValue::Bool(true));
     assert_eq!(v["sidecar_valid"], JsonValue::Bool(false));
 
@@ -191,10 +191,15 @@ fn bootstrap_execution_record_materialises_file_and_sidecar() {
     // and a YYYY-MM-DD value).
     let body = fs::read_to_string(&artifact).unwrap();
     let lines: Vec<&str> = body.lines().collect();
-    assert_eq!(lines.len(), 2, "bootstrap body must be exactly 2 lines: {body:?}");
+    assert_eq!(
+        lines.len(),
+        2,
+        "bootstrap body must be exactly 2 lines: {body:?}"
+    );
     assert_eq!(lines[0], "schema_version = 1");
     assert!(
-        lines[1].starts_with("last_updated = ") && lines[1].len() == "last_updated = 2026-05-08".len(),
+        lines[1].starts_with("last_updated = ")
+            && lines[1].len() == "last_updated = 2026-05-08".len(),
         "second line must be `last_updated = YYYY-MM-DD`, got: {:?}",
         lines[1]
     );
@@ -215,7 +220,11 @@ fn bootstrap_execution_record_materialises_file_and_sidecar() {
         use std::fmt::Write;
         let _ = write!(want, "{:02x}", b);
     }
-    assert_eq!(hex.to_ascii_lowercase(), want, "sidecar digest must match body");
+    assert_eq!(
+        hex.to_ascii_lowercase(),
+        want,
+        "sidecar digest must match body"
+    );
 }
 
 /// `--bootstrap --dry-run` for execution-record emits a `would_change`
@@ -278,7 +287,10 @@ fn bootstrap_review_ledger_is_noop_with_marker() {
     );
 
     // Hard guarantee: no file created.
-    assert!(!artifact.exists(), "review-ledger bootstrap must not create the file");
+    assert!(
+        !artifact.exists(),
+        "review-ledger bootstrap must not create the file"
+    );
     assert!(
         !sidecar_path(&artifact).exists(),
         "review-ledger bootstrap must not create a sidecar"

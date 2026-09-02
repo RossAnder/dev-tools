@@ -100,9 +100,7 @@ pub(crate) fn dispatch(
         // Path-traversal: reject any `..` component. Check both `/` and `\`
         // separators so a Windows-style token can't sneak a parent ref past
         // a Unix-only split.
-        let has_dotdot = p
-            .split(['/', '\\'])
-            .any(|seg| seg == "..");
+        let has_dotdot = p.split(['/', '\\']).any(|seg| seg == "..");
         if has_dotdot {
             return Err(tagged_err(
                 ErrorKind::Validation,
@@ -116,9 +114,7 @@ pub(crate) fn dispatch(
         // Absolute paths: Unix `/foo`, Windows `\foo` / `C:\foo` / `C:/foo`.
         let is_absolute = p.starts_with('/')
             || p.starts_with('\\')
-            || p.as_bytes()
-                .get(1)
-                .is_some_and(|&b| b == b':');
+            || p.as_bytes().get(1).is_some_and(|&b| b == b':');
         if is_absolute {
             return Err(tagged_err(
                 ErrorKind::Validation,

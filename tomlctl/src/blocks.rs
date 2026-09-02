@@ -116,7 +116,9 @@ pub(crate) fn scan_block_names_warn(contents: &str, src_label: Option<&str>) -> 
         if !(has_shared && has_block) {
             continue;
         }
-        let path_prefix = src_label.map(|p| format!("file {} ", p)).unwrap_or_default();
+        let path_prefix = src_label
+            .map(|p| format!("file {} ", p))
+            .unwrap_or_default();
         eprintln!(
             "tomlctl: warning: {}line {}: probable typo'd SHARED-BLOCK marker: {}",
             path_prefix,
@@ -129,7 +131,9 @@ pub(crate) fn scan_block_names_warn(contents: &str, src_label: Option<&str>) -> 
 
 pub(crate) fn blocks_verify(files: &[PathBuf], blocks: &[String]) -> Result<BlocksReport> {
     if files.is_empty() {
-        bail!("blocks verify: no files supplied; pass one or more file paths (e.g. `tomlctl blocks verify a.md b.md`)");
+        bail!(
+            "blocks verify: no files supplied; pass one or more file paths (e.g. `tomlctl blocks verify a.md b.md`)"
+        );
     }
     // Preload every file once. R53: run typo-aware scan on each file's
     // contents up-front, so a `<!-- SHAREDBLOCK:... START -->` (missing
@@ -137,8 +141,7 @@ pub(crate) fn blocks_verify(files: &[PathBuf], blocks: &[String]) -> Result<Bloc
     // that feeds `effective_blocks`.
     let mut contents_by_file: HashMap<PathBuf, String> = HashMap::new();
     for f in files {
-        let c = fs::read_to_string(f)
-            .with_context(|| format!("reading {}", f.display()))?;
+        let c = fs::read_to_string(f).with_context(|| format!("reading {}", f.display()))?;
         // Side-effect: emit typo warnings to stderr. Return value discarded
         // here because `effective_blocks` is derived below from the first
         // file only when the user didn't pass `--block`.
@@ -404,9 +407,14 @@ pub(crate) fn verify_skills(manifest_path: &Path) -> Result<SkillDriftReport> {
     let mut blocks_out: Vec<JsonValue> = Vec::new();
 
     for block in &blocks {
-        let Some(tbl) = block.as_table() else { continue };
+        let Some(tbl) = block.as_table() else {
+            continue;
+        };
         let name = tbl.get("name").and_then(|v| v.as_str()).unwrap_or_default();
-        let skill = tbl.get("skill").and_then(|v| v.as_str()).unwrap_or_default();
+        let skill = tbl
+            .get("skill")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         let files: Vec<String> = tbl
             .get("files")
             .and_then(|v| v.as_array())
@@ -435,8 +443,14 @@ pub(crate) fn verify_skills(manifest_path: &Path) -> Result<SkillDriftReport> {
             Err(_) => {
                 all_ok = false;
                 let mut o = serde_json::Map::new();
-                o.insert("error".into(), JsonValue::String("skill file missing".into()));
-                o.insert("path".into(), JsonValue::String(path_to_string(&skill_path)));
+                o.insert(
+                    "error".into(),
+                    JsonValue::String("skill file missing".into()),
+                );
+                o.insert(
+                    "path".into(),
+                    JsonValue::String(path_to_string(&skill_path)),
+                );
                 drift.push(JsonValue::Object(o));
                 None
             }
@@ -530,14 +544,15 @@ fn first_difference(a: &[String], b: &[String]) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sha2::{Digest, Sha256};
     use crate::integrity::hex_lower;
+    use sha2::{Digest, Sha256};
 
     /// Fix A: `extract_block` must return `Some(...)` for CRLF input and the
     /// digest must equal the digest produced from the LF equivalent.
     #[test]
     fn extract_block_crlf_matches_lf_digest() {
-        let lf = "<!-- SHARED-BLOCK:foo START -->\nline one\nline two\n<!-- SHARED-BLOCK:foo END -->\n";
+        let lf =
+            "<!-- SHARED-BLOCK:foo START -->\nline one\nline two\n<!-- SHARED-BLOCK:foo END -->\n";
         let crlf = "<!-- SHARED-BLOCK:foo START -->\r\nline one\r\nline two\r\n<!-- SHARED-BLOCK:foo END -->\r\n";
 
         let lf_bytes = extract_block(lf, "foo").expect("LF: extract_block returned None");
