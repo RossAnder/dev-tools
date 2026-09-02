@@ -1,30 +1,20 @@
-//! T10: `tomlctl flow resolve` — the 6-step flow resolution keystone.
+//! `tomlctl flow resolve` — the 6-step flow resolution keystone.
 //!
-//! Read-only. Composes Phase A primitives via internal Rust calls (NOT
+//! Read-only. Composes primitives via internal Rust calls (NOT
 //! subprocesses): the `.claude/active-flow.toml` parser is mirrored from
 //! `flow::active`, and the staleness arithmetic mirrors `flow::stale`.
 //!
 //! # Source enum
 //!
-//! The plan's envelope sketch lists six `source` strings:
-//! `explicit-flag | active-binding | active-latest | branch-match |
-//! prompt-required | none` (`prompt-required` is reserved — never emitted
-//! by the current resolver). The algorithm body, however, has SIX distinct
-//! paths plus the terminal "none" outcome — the scope-glob match (step 2)
-//! has no dedicated string in the plan's enum.
+//! Six emission paths plus the terminal "none" outcome. The step-2
+//! scope-glob hit carries its own `source = "scope-glob"` rather than
+//! folding into `branch-match`: branch-match scans `.claude/flows/*` and
+//! filters by `branch`, whereas scope-glob filters by `--path` against
+//! each flow's `scope`. Test fixtures pin the `scope-glob` literal, so
+//! collapsing the two strings breaks the suite.
 //!
-//! Resolution: this implementation emits `source = "scope-glob"` for the
-//! step-2 hit, treating the plan's enum as illustrative-not-exhaustive.
-//! The alternative (folding scope-glob into `branch-match`) would conflate
-//! two semantically distinct resolution paths: branch-match scans
-//! `.claude/flows/*` and filters by `branch`, whereas scope-glob filters
-//! by `--path` against each flow's `scope`. Test fixtures pin the
-//! `scope-glob` literal so a future regression that folded the strings
-//! together would break the suite.
-//!
-//! Step-6 ("none") emits literal `source = "none"` with `resolved: false`
-//! per the plan body. The `prompt-required` enum string is reserved for
-//! future use; this implementation does not emit it.
+//! Step-6 ("none") emits literal `source = "none"` with `resolved: false`.
+//! `prompt-required` is a reserved string this resolver never emits.
 //!
 //! # Read integrity
 //!
@@ -52,20 +42,17 @@ use crate::output::print_json_compact;
 use crate::time::{parse_iso_to_date, today_utc_date};
 
 // ---------------------------------------------------------------------------
-// R4: Source enum
+// Source enum
 // ---------------------------------------------------------------------------
 
-/// R4: the typed envelope `source` field. Pre-R4 this was a bare `&str`
-/// threaded through every envelope-builder; the bare-string form admitted
-/// typos at compile time. The `as_str` accessor produces the exact wire
-/// strings the JSON envelope carries — wire-format must remain
-/// byte-identical to the pre-R4 output.
+/// Typed envelope `source` field. `as_str` produces the exact wire
+/// strings the JSON envelope carries — changing one changes the wire
+/// format.
 ///
 /// Variants correspond to the resolve algorithm's six emission paths:
 /// `explicit-flag`, `scope-glob`, `active-binding`, `active-latest`,
-/// `branch-match`, and the terminal `none`. The plan's enum sketch also
-/// lists `prompt-required` as a reserved future variant; this
-/// implementation does not emit it today, so it is intentionally absent.
+/// `branch-match`, and the terminal `none`. The reserved
+/// `prompt-required` string has no variant because nothing emits it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ResolveSource {
     ExplicitFlag,
@@ -180,7 +167,7 @@ fn resolve(
 
     // Step 2: scope-glob match.
     if !paths.is_empty() {
-        // R5: route through the cached `scope_set` (built once in
+        // Route through the cached `scope_set` (built once in
         // `enumerate_flows`) — each candidate gets a single
         // `GlobSet::is_match` sweep per caller path.
         let candidates: Vec<&FlowSummary> = flows
@@ -338,7 +325,7 @@ fn resolve(
 
     // Step 6: none.
     warnings.push("no flow resolves; user prompt required".to_string());
-    // R18: route through `ResolveEnvelope::unresolved` so the unresolved
+    // Route through `ResolveEnvelope::unresolved` so the unresolved
     // shape is built once. `tie_candidates` empty → `ties_broken` is false
     // (the unresolved ctor anchors `ties_broken` on the tie list emptiness).
     Ok(ResolveEnvelope::unresolved(ResolveSource::None, Vec::new(), warnings).to_json())
@@ -348,12 +335,11 @@ fn resolve(
 // Envelope construction
 // ---------------------------------------------------------------------------
 
-/// R18: typed envelope for the resolved-flow output. Field order in the
-/// emitted JSON matches the `to_json` build order exactly — wire format
-/// is byte-identical to the pre-R18 hand-rolled envelope. The struct
-/// exists so a future schema addition is one named field on the struct
-/// plus one matching `obj.insert(...)` rather than two parallel edits
-/// in `build_resolved_envelope` and `build_unresolved_envelope_with_ties`.
+/// Typed envelope for the resolved-flow output. Field order in the
+/// emitted JSON matches the `to_json` build order exactly — that order
+/// is the wire format. Both `build_resolved_envelope` and
+/// `build_unresolved_envelope_with_ties` emit through this struct, so a
+/// schema addition is one named field plus one `obj.insert(...)`.
 struct ResolveEnvelope {
     resolved: bool,
     slug: Option<String>,
@@ -403,8 +389,7 @@ impl ResolveEnvelope {
     /// context_path, artifacts, plan_path, scope, branch, status,
     /// stale, warnings`. Optional fields are emitted as JSON `null`
     /// when unset on the resolved path; on the unresolved path the
-    /// post-`source`/`tie_candidates` fields are omitted entirely so
-    /// the byte shape matches the pre-R18 unresolved envelope.
+    /// post-`source`/`tie_candidates` fields are omitted entirely.
     /// Naming-convention exception: `to_json` consumes `self` (rather
     /// than `into_json`) to mirror the existing `to_json` shape on
     /// `CanonicalArtifacts` and `Check` / `Fix` in `flow::doctor`.
@@ -624,7 +609,7 @@ fn read_or_compute_artifacts(
 
 // ---------------------------------------------------------------------------
 // Active-flow registry parsing (delegates to flow::schema for the canonical
-// typed projection; R17 consolidated the three per-site walks).
+// typed projection).
 // ---------------------------------------------------------------------------
 
 fn active_flow_path(root: &Path) -> PathBuf {
@@ -696,12 +681,11 @@ fn best_binding_match(
     }
 }
 
-/// Step-4 fallback: most-recent `last_used` wins. R24: parses each
-/// `last_used` to `jiff::Timestamp` so a hand-edited entry with a TZ
-/// offset (which would lex-compare wrong vs UTC-Z entries) surfaces as a
-/// stderr warning and that entry is treated as ancient (sorts last).
-/// Empty `last_used` strings also sort to the bottom — same pre-R24
-/// behaviour.
+/// Step-4 fallback: most-recent `last_used` wins. Each `last_used` is
+/// parsed to `jiff::Timestamp` so a hand-edited entry with a TZ offset
+/// (which would lex-compare wrong against UTC-Z entries) surfaces as a
+/// stderr warning and is treated as ancient (sorts last). Empty
+/// `last_used` strings also sort to the bottom.
 fn pick_active_latest(entries: &[ActiveEntry]) -> Option<ActiveEntry> {
     use jiff::Timestamp;
 
@@ -748,7 +732,7 @@ struct FlowSummary {
     /// what `any_path_matches_scope` actually consults.
     #[allow(dead_code)]
     scope: Vec<String>,
-    /// R5: pre-compiled scope `GlobSet`, built once during flow
+    /// Pre-compiled scope `GlobSet`, built once during flow
     /// enumeration so repeat `any_path_matches_scope` calls (one per
     /// caller `--path` against each candidate flow) skip the
     /// per-invocation compile loop. `None` when the flow has no
@@ -804,14 +788,13 @@ fn enumerate_flows(root: &Path) -> Result<Vec<FlowSummary>> {
             Ok(v) => v,
             Err(_) => continue,
         };
-        // R13: route through the shared `FlowProjection` parse — same
-        // projection `flow::list` consumes. `None` (not a table) is
-        // tolerated as "skip this flow", matching the pre-R13
-        // best-effort enumeration contract.
+        // Shared `FlowProjection` parse — the same projection
+        // `flow::list` consumes. `None` (not a table) is tolerated as
+        // "skip this flow": enumeration is best-effort.
         let Some(proj) = FlowProjection::from_toml_value(&doc) else {
             continue;
         };
-        // R5: pre-compile the scope GlobSet once per flow during
+        // Pre-compile the scope GlobSet once per flow during
         // enumeration. Subsequent `any_path_matches_scope` calls reuse
         // this cached set instead of recompiling per candidate.
         let scope_set = compile_scope_globset(&proj.scope);
@@ -831,11 +814,10 @@ fn enumerate_flows(root: &Path) -> Result<Vec<FlowSummary>> {
 // Glob matching (step 2)
 // ---------------------------------------------------------------------------
 
-/// R5: compile a `GlobSet` for the flow's scope. Returns `None` when
-/// every pattern fails to compile (defensive against hand-edited
-/// malformed globs — that case must not crash the resolver). Compile
-/// failures on individual patterns are silently dropped, matching the
-/// pre-R5 per-pattern `if let Ok(g)` behaviour.
+/// Compile a `GlobSet` for the flow's scope. Returns `None` when every
+/// pattern fails to compile (defensive against hand-edited malformed
+/// globs — that case must not crash the resolver). Compile failures on
+/// individual patterns are silently dropped.
 fn compile_scope_globset(scope: &[String]) -> Option<GlobSet> {
     if scope.is_empty() {
         return None;
@@ -855,10 +837,7 @@ fn compile_scope_globset(scope: &[String]) -> Option<GlobSet> {
 }
 
 /// True when ANY of the caller's `--path` args matches ANY of `scope`'s
-/// globs. R5: routes through `GlobSet::is_match` which performs a
-/// single Aho-Corasick-style sweep across all compiled patterns at once,
-/// instead of the prior nested `for path { for matcher { ... } }` loop.
-/// Used by the unit tests; production resolve consumes the cached
+/// globs. Used by the unit tests; production resolve consumes the cached
 /// `FlowSummary::scope_set` directly.
 #[cfg(test)]
 fn any_path_matches_scope(paths: &[PathBuf], scope: &[String]) -> bool {
@@ -893,9 +872,9 @@ fn compute_staleness(table: &toml::map::Map<String, TomlValue>) -> JsonValue {
         }
     };
 
-    // R6: route the parse + today resolution through `crate::time` so
-    // R39's injection seam can pin the clock during tests, and the
-    // identical-format error messages stay in lock-step with `stale.rs`.
+    // Parse + today resolution route through `crate::time` so tests can
+    // pin the clock through its injection seam, and the error messages
+    // stay in lock-step with `stale.rs`.
     let updated_date = match parse_iso_to_date(&iso) {
         Ok(d) => d,
         Err(_) => {
@@ -932,12 +911,6 @@ fn compute_staleness(table: &toml::map::Map<String, TomlValue>) -> JsonValue {
         "reason": reason,
     })
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-// R3 / R2: `read_integrity_opts` and `relativise` now sourced from
-// `crate::cli` and `crate::io` respectively.
 
 #[cfg(test)]
 mod tests {

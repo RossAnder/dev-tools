@@ -1,8 +1,4 @@
-//! R62: `items find-duplicates` tiered dedup logic split out of `main.rs`.
-//!
-//! Depends on `items_array` (in `items.rs` or still in `main.rs` depending on
-//! extraction order), and `str_field`/`i64_field` from `convert.rs` for
-//! table-field pulls.
+//! Tiered dedup logic behind `items find-duplicates`.
 
 use anyhow::{Result, bail};
 use clap::ValueEnum;
@@ -25,23 +21,19 @@ pub(crate) enum DupTier {
     C,
 }
 
-/// T6a: canonical fingerprinted-field list, in the order the tier-B hash
+/// Canonical fingerprinted-field list, in the order the tier-B hash
 /// inlines them. Shared between `tier_b_fingerprint` (and its JSON sibling)
 /// and the `items update` / `items apply` auto-populate logic, so the
 /// "is this patch touching a fingerprinted field?" check in `items.rs`
 /// stays pinned to the exact same set the fingerprint hashes.
 ///
-/// Order matches the pre-extraction inline hashing order at tier-B:
-/// `file | summary | severity | category | symbol`. Deviating here would
-/// silently break byte-identity of the fingerprint against pre-refactor
-/// tier-B output, so this const is the single source of truth.
+/// The order `file | summary | severity | category | symbol` is part of
+/// the fingerprint: reordering changes every emitted `dedup_id`.
 pub(crate) const FINGERPRINTED_FIELDS: [&str; 5] =
     ["file", "summary", "severity", "category", "symbol"];
 
 pub(crate) fn items_find_duplicates(doc: &TomlValue, tier: DupTier) -> Result<Vec<JsonValue>> {
-    // R26: tier fns take `&[TomlValue]`; no need to clone into an owned Vec.
-    // R44: items_array now returns &[TomlValue] directly (empty slice when
-    // missing) so the prior Err→empty fallback is gone.
+    // A missing `items` array yields an empty slice, not an error.
     let items: &[TomlValue] = items_array(doc, "items");
     match tier {
         DupTier::A => find_duplicates_tier_a(items),
@@ -50,21 +42,17 @@ pub(crate) fn items_find_duplicates(doc: &TomlValue, tier: DupTier) -> Result<Ve
     }
 }
 
-/// T6c: cross-ledger duplicate detection. Loads the union of `primary_items`
+/// Cross-ledger duplicate detection. Loads the union of `primary_items`
 /// and `other_items` (each already extracted from its doc by the caller),
 /// tags every emitted item with `source_file` (the basename of its origin
 /// ledger), and runs the selected tier over the union. `source_file` is an
 /// OUTPUT-ONLY key — it's spliced into each JSON item at emit time and
 /// never written back to either on-disk ledger. Tier C is file-scoped by
 /// design (its line-window grouping assumes a single source file); passing
-/// `DupTier::C` here errors with the exact string documented in the plan.
+/// `DupTier::C` here errors.
 ///
-/// O61: takes `primary_items` / `other_items` by value so the source-file
-/// tag can be inserted in-place via `tag_with_source_in_place` (a single
-/// `BTreeMap::insert` per item) instead of cloning the whole TOML table per
-/// entry. Callers in `cli/dispatch.rs` already construct these as owned
-/// `Vec<TomlValue>` from the read_doc closures, so by-value passing is
-/// natural.
+/// Both item vectors are taken by value so `tag_with_source_in_place` can
+/// insert the source tag without cloning each TOML table.
 pub(crate) fn items_find_duplicates_across(
     mut primary_items: Vec<TomlValue>,
     primary_file: &str,
@@ -78,7 +66,7 @@ pub(crate) fn items_find_duplicates_across(
     // Build a union vector where each entry remembers its source basename.
     // We carry the `source_file` tag through to emit-time by stashing it as
     // an in-memory TOML field directly on each owned item — no per-item
-    // table clone (O61). The tier fns already use `toml_to_json` on emit,
+    // table clone. The tier fns already use `toml_to_json` on emit,
     // so an in-memory field with a reserved name just propagates through
     // the JSON output automatically.
     //
@@ -116,14 +104,9 @@ pub(crate) fn items_find_duplicates_across(
     Ok(groups.into_iter().map(promote_source_tag).collect())
 }
 
-/// T6c helper: insert a reserved `__tomlctl_source_file` field into `item`
-/// in place. Non-table items (defensive) are left unchanged — the tier fns
-/// already filter non-tables via `as_table()`.
-///
-/// O61: mutates the existing TOML table directly rather than cloning it,
-/// dropping the prior O(items × fields) per-item table-clone cost down to
-/// a single `BTreeMap::insert` (plus an optional `remove` on the
-/// defensive-only `source_file` collision branch).
+/// Insert a reserved `__tomlctl_source_file` field into `item` in place.
+/// Non-table items (defensive) are left unchanged — the tier fns already
+/// filter non-tables via `as_table()`.
 fn tag_with_source_in_place(item: &mut TomlValue, source: &str) {
     let Some(tbl) = item.as_table_mut() else {
         return;
@@ -139,7 +122,7 @@ fn tag_with_source_in_place(item: &mut TomlValue, source: &str) {
     );
 }
 
-/// T6c helper: rename the reserved tag to the user-facing `source_file`
+/// Rename the reserved tag to the user-facing `source_file`
 /// key on every item inside a group's `items` array.
 fn promote_source_tag(mut group: JsonValue) -> JsonValue {
     if let Some(items) = group.get_mut("items").and_then(|v| v.as_array_mut()) {
@@ -207,7 +190,7 @@ pub(crate) fn fingerprint_bytes_from_json(
 
 /// Tier-B fingerprint of a whole item, 16 lowercase hex chars.
 ///
-/// R46: the `TomlValue`-wrapping form exists for the cross-path
+/// The `TomlValue`-wrapping form exists for the cross-path
 /// byte-equivalence tests. Production callers hold a `&Table` or a JSON
 /// object and go through the siblings, avoiding a per-row clone.
 #[cfg(test)]
@@ -250,9 +233,9 @@ fn find_duplicates_tier_a(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
     //   by (file, symbol) when symbol is non-empty
     //   by (file, summary) otherwise
     // An item appears in exactly one group (either symbol-keyed or summary-keyed).
-    // O30: borrow keys from `items` (`str_field` returns `&'a str`) rather than
-    // allocating a `String` per entry; emit-time `format!` still allocates once
-    // per surviving group (O(groups), not O(items)).
+    // Keys borrow from `items` (`str_field` returns `&'a str`) rather than
+    // allocating a `String` per entry; emit-time `format!` allocates once
+    // per surviving group.
     let mut by_symbol: BTreeMap<(&str, &str), Vec<usize>> = BTreeMap::new();
     let mut by_summary: BTreeMap<(&str, &str), Vec<usize>> = BTreeMap::new();
     for (i, item) in items.iter().enumerate() {
@@ -293,16 +276,14 @@ fn find_duplicates_tier_a(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
 }
 
 fn find_duplicates_tier_b(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
-    // O62: key the grouping map on the raw 8-byte fingerprint plus basename
-    // — `[u8; 8]` is `Ord` and lives entirely on the stack, so we drop the
-    // per-item 16-char hex `String` allocation that the hex-keyed map paid
-    // for. Hex encoding is deferred to `hex_lower` once per surviving group
-    // at emit time. The `basename` component of the group key stays local
-    // to grouping — it's a display aid, not part of the fingerprint.
+    // The grouping map keys on the raw 8-byte fingerprint plus basename;
+    // hex encoding is deferred to `hex_lower` once per surviving group at
+    // emit time. The `basename` component of the group key stays local to
+    // grouping — it's a display aid, not part of the fingerprint.
     let mut groups: BTreeMap<([u8; 8], String), Vec<usize>> = BTreeMap::new();
     for (i, item) in items.iter().enumerate() {
         let Some(tbl) = item.as_table() else { continue };
-        // T6a: fingerprint computation shares its core with the
+        // Fingerprint computation shares its core with the
         // `dedup_id` auto-populate path (`items.rs`) — both go through
         // `fingerprint_bytes` so the same five fields hash in the
         // same order with the same truncation. The hex-string form lives
@@ -336,9 +317,8 @@ fn find_duplicates_tier_b(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
 
 fn find_duplicates_tier_c(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
     // Candidates: items with empty/missing symbol AND line > 0.
-    // O30: `Candidate.file` borrows from `items` via `str_field`'s `&'a str`
-    // return, and the `by_file` map keys off the same borrow — drops the
-    // per-item `String` allocation plus the prior `file.clone()` into the key.
+    // `Candidate.file` borrows from `items` via `str_field`'s `&'a str`
+    // return, and the `by_file` map keys off the same borrow.
     #[derive(Clone, Copy)]
     struct Candidate<'a> {
         idx: usize,
@@ -363,9 +343,9 @@ fn find_duplicates_tier_c(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
             .push(Candidate { idx: i, file, line });
     }
 
-    // O52: sort each per-file Vec in place during the build pass, then iterate
-    // `by_file` read-only at emit time — drops the per-file `to_vec()` clone
-    // and preserves the prior `(line, idx)` sort key exactly.
+    // Sort each per-file Vec in place during the build pass so emit time
+    // can iterate `by_file` read-only. The `(line, idx)` sort key is what
+    // makes the greedy window deterministic.
     for v in by_file.values_mut() {
         v.sort_by(|a, b| a.line.cmp(&b.line).then(a.idx.cmp(&b.idx)));
     }
@@ -409,22 +389,19 @@ fn find_duplicates_tier_c(items: &[TomlValue]) -> Result<Vec<JsonValue>> {
 }
 
 // =====================================================================
-// O64: JSON-side dedup family — borrowed-DeTable fast-path siblings.
+// JSON-side dedup family — borrowed-DeTable fast-path siblings.
 //
 // These functions mirror the TOML-side `items_find_duplicates*` family
 // byte-for-byte (same hashing, same field order, same emit shape) so the
 // non-verify-integrity read path can skip the owned `TomlValue`
-// intermediate. The shared helper `fingerprint_bytes` is
-// re-used directly from the TOML side, which is the fingerprint-parity
-// guarantee — both paths feed identical 8-byte digests into their
-// grouping maps for the same field values.
+// intermediate. Both sides call the shared `fingerprint_bytes`, which is
+// what guarantees identical 8-byte digests for the same field values.
 //
-// The owned `TomlValue` path is unchanged. `--verify-integrity` reads
-// stay on the owned path because `read_doc_either` only swings to JSON
-// when integrity verification is OFF; the integrity contract is intact.
+// `--verify-integrity` reads stay on the owned path: `read_doc_either`
+// only swings to JSON when integrity verification is OFF.
 // =====================================================================
 
-/// O64: JSON-side sibling of `items_find_duplicates`. Reads the named
+/// JSON-side sibling of `items_find_duplicates`. Reads the named
 /// items array from a `JsonValue` doc and dispatches the requested tier.
 /// Returns the same `Vec<JsonValue>` shape `items_find_duplicates` does
 /// for the same underlying data — the parity test pins this.
@@ -437,7 +414,7 @@ pub(crate) fn items_find_duplicates_json(doc: &JsonValue, tier: DupTier) -> Resu
     }
 }
 
-/// O64: JSON-side sibling of `items_find_duplicates_across`. Identical
+/// JSON-side sibling of `items_find_duplicates_across`. Identical
 /// semantics: error on `DupTier::C`, tag each item with its source
 /// basename via the reserved `__tomlctl_source_file` key, run the union
 /// through the requested tier, then promote the reserved tag to
@@ -479,7 +456,7 @@ pub(crate) fn items_find_duplicates_across_json(
     Ok(groups.into_iter().map(promote_source_tag).collect())
 }
 
-/// O64: JSON-side `tag_with_source_in_place`. Mutates a JSON object
+/// JSON-side `tag_with_source_in_place`. Mutates a JSON object
 /// item in place to carry its source-file tag under the reserved
 /// `__tomlctl_source_file` key (renamed to `source_file` at emit time
 /// by `promote_source_tag`).
@@ -496,7 +473,7 @@ fn tag_with_source_in_place_json(item: &mut JsonValue, source: &str) {
     );
 }
 
-/// O64: JSON-side `dup_group_json`. The TOML-side helper takes
+/// JSON-side `dup_group_json`. The TOML-side helper takes
 /// `&[&TomlValue]` and calls `toml_to_json` on each; here we already
 /// have JSON, so we clone each item value into the output array.
 fn dup_group_json_json(tier: &str, key: &str, items: &[&JsonValue]) -> JsonValue {
@@ -510,10 +487,10 @@ fn dup_group_json_json(tier: &str, key: &str, items: &[&JsonValue]) -> JsonValue
     JsonValue::Object(obj)
 }
 
-/// O64: JSON-side sibling of `find_duplicates_tier_a`. Field-extraction
+/// JSON-side sibling of `find_duplicates_tier_a`. Field-extraction
 /// goes through `str_field_json` so missing/non-string fields hash as
 /// "" in lockstep with the TOML side. Map keys borrow from the items
-/// array's lifetime (`&str`), mirroring O30 on the owned side.
+/// array's lifetime (`&str`), as on the owned side.
 fn find_duplicates_tier_a_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
     let mut by_symbol: BTreeMap<(&str, &str), Vec<usize>> = BTreeMap::new();
     let mut by_summary: BTreeMap<(&str, &str), Vec<usize>> = BTreeMap::new();
@@ -556,7 +533,7 @@ fn find_duplicates_tier_a_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
     Ok(out)
 }
 
-/// O64: JSON-side sibling of `find_duplicates_tier_b`. Reuses the
+/// JSON-side sibling of `find_duplicates_tier_b`. Reuses the
 /// shared `fingerprint_bytes` core so the 8-byte digest is
 /// byte-identical to the TOML-side digest for the same field values.
 fn find_duplicates_tier_b_json(items: &[JsonValue]) -> Result<Vec<JsonValue>> {
@@ -596,7 +573,7 @@ fn tier_b_fingerprint_bytes_json(obj: &serde_json::Map<String, JsonValue>) -> [u
     fingerprint_bytes_from_json(obj, &FINGERPRINTED_FIELDS)
 }
 
-/// O64: JSON-side sibling of `find_duplicates_tier_c`. Identical
+/// JSON-side sibling of `find_duplicates_tier_c`. Identical
 /// candidate-filter (empty/missing symbol AND `line > 0`), identical
 /// per-file sort key (`(line, idx)`), identical greedy 10-line window
 /// extension. Field reads go through `str_field_json` / `i64_field_json`.
@@ -736,7 +713,8 @@ summary = "w"
 "#;
         let doc: TomlValue = toml::from_str(src).unwrap();
         let groups = items_find_duplicates(&doc, DupTier::C).unwrap();
-        // R1+R2 group (lines 10/15 within 10 window); R3+R4 NOT grouped (lines 10/30).
+        // Lines 10/15 fall inside the 10-line window and group; lines
+        // 10/30 do not.
         assert_eq!(groups.len(), 1);
         let items = groups[0].get("items").and_then(|v| v.as_array()).unwrap();
         assert_eq!(items.len(), 2);
@@ -748,7 +726,7 @@ summary = "w"
         assert!(ids.contains(&"R2"));
     }
 
-    // ---- T6a: tier_b_fingerprint helper -----------------------------------
+    // ---- tier_b_fingerprint helper ----------------------------------------
 
     /// The extracted helper must produce the 16-hex-char fingerprint the
     /// tier-B grouping path already emits. Build an item, hash it, and
@@ -897,7 +875,7 @@ file = "x""#,
         assert_eq!(tier_b_fingerprint(&a), tier_b_fingerprint(&b));
     }
 
-    /// T6c: `--across` with tier C errors with the exact documented message.
+    /// `--across` with tier C errors with the exact documented message.
     /// This is a unit-level pin; the integration test covers the CLI side.
     #[test]
     fn items_find_duplicates_across_rejects_tier_c() {
@@ -910,7 +888,7 @@ file = "x""#,
         );
     }
 
-    /// T6c: two items (one per ledger) carrying identical fingerprinted
+    /// Two items (one per ledger) carrying identical fingerprinted
     /// fields group together under tier B, and each emitted item carries
     /// a `source_file` tag naming its origin basename.
     #[test]
