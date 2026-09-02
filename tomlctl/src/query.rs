@@ -4,7 +4,7 @@
 //! `Query` spec (built by `main.rs` clap dispatch) and returns a
 //! `serde_json::Value` shaped per the requested output.
 //!
-//! Pipeline order (mirrors the plan):
+//! Pipeline order:
 //!   filter → distinct → sort → offset/limit → aggregate OR project → shape
 //!
 //! All RHS values the caller hands us are raw strings (`--where key=val`);
@@ -27,7 +27,7 @@ use crate::convert::{
 };
 use crate::errors::{ErrorKind, tagged_err};
 
-// T1 / R43: test-only invocation counters that let unit tests assert the
+// Test-only invocation counters that let unit tests assert the
 // fast-path narrows to the plucked field instead of materialising the whole
 // item via `toml_to_json`. Counters are thread-local so parallel cargo-test
 // threads don't cross-pollute each other's measurements — each call site
@@ -59,7 +59,7 @@ fn snapshot_invocation_counters() -> (usize, usize) {
 /// Narrowed `toml_to_json` call used by aggregation fast-paths (Pluck /
 /// CountBy / CountDistinct). Bumps the thread-local
 /// `FAST_PATH_NARROW_CALLS` counter under cfg(test) so the structural fast-
-/// path narrowing contract (R43 / plan T1) can be asserted without relying
+/// path narrowing contract can be asserted without relying
 /// on timing or memory. In release builds this is a transparent pass-through.
 fn narrow_toml_to_json(v: &TomlValue) -> JsonValue {
     #[cfg(test)]
@@ -77,7 +77,7 @@ fn full_item_toml_to_json(v: &TomlValue) -> JsonValue {
     toml_to_json(v)
 }
 
-/// Per-compile memory cap for user-supplied regex patterns (R72). Chosen to
+/// Per-compile memory cap for user-supplied regex patterns. Chosen to
 /// bound a pathological pattern's NFA compile / DFA cache at ~1 MiB each,
 /// well above anything a ledger field regex would realistically need.
 const REGEX_COMPILE_SIZE_LIMIT: usize = 1 << 20;
@@ -86,7 +86,7 @@ const REGEX_DFA_SIZE_LIMIT: usize = 1 << 20;
 /// Compile a user-supplied regex pattern with memory caps applied so an
 /// adversarial pattern can't consume unbounded memory during compilation
 /// or DFA construction. Factored out so both the per-predicate hoist and
-/// tests can share one configuration (R72).
+/// tests can share one configuration.
 fn compile_user_regex(pattern: &str) -> Result<Regex> {
     RegexBuilder::new(pattern)
         .size_limit(REGEX_COMPILE_SIZE_LIMIT)
@@ -131,7 +131,7 @@ pub(crate) enum Predicate {
     WhereRegex { key: String, pattern: String },
 }
 
-/// O66: per-predicate evaluation-cost rank used by `apply_filters` to
+/// Per-predicate evaluation-cost rank used by `apply_filters` to
 /// reorder the predicate vector before the per-item loop. Lower rank ==
 /// cheaper to evaluate per item, so we want them tried first; the first
 /// false short-circuits the rest of the predicates for that item via the
@@ -163,23 +163,23 @@ fn predicate_cost(p: &Predicate) -> u8 {
         // than scalar compare; substring search itself is O(field len).
         Predicate::WherePrefix { .. } | Predicate::WhereSuffix { .. } => 4,
         Predicate::WhereContains { .. } => 5,
-        // Regex match: pattern is pre-compiled once at apply_filters entry
-        // (R72), but per-item match-cost is still substantially higher
-        // than fixed-string substring search. Always last.
+        // Regex match: pattern is pre-compiled once at apply_filters entry,
+        // but per-item match-cost is still substantially higher than
+        // fixed-string substring search. Always last.
         Predicate::WhereRegex { .. } => 6,
     }
 }
 
 /// Mutually-exclusive output shapes. `Array` is the default when none of the
 /// aggregation/pluck flags are set. `ndjson` is an *encoding* choice handled
-/// at the CLI layer (R82) and no longer appears here.
+/// at the CLI layer, so it is not a variant here.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) enum OutputShape {
     #[default]
     Array,
     Count,
     CountBy(String),
-    /// T1: scalar-cardinality aggregate. Emits
+    /// Scalar-cardinality aggregate. Emits
     /// `{"count_distinct": N, "field": "<name>"}` where N is the number of
     /// distinct non-null/non-missing values of the field in the filtered
     /// set. Null and missing values are excluded (consistent with `--pluck`
@@ -204,14 +204,12 @@ pub(crate) enum OutputShape {
     Pluck(String),
 }
 
-/// R16: trait dispatch for the three OutputShape-enumerating operations that
-/// fanned across six-plus match sites prior to this refactor — the slow-path
-/// terminal shape switch in `run()`, the `emit_list_raw` match in `cli.rs`,
-/// and the two streaming-guard `matches!` predicates. Keeping one `impl
-/// ShapeDispatch for OutputShape` block (inner matches) with three methods
-/// collapses those sites into three — one per trait method — so adding a
-/// new variant forces exactly one edit per method instead of six-plus
-/// scattered enumerations.
+/// Trait dispatch for the three OutputShape-enumerating operations — the
+/// slow-path terminal shape switch in `run()`, the `emit_list_raw` match in
+/// `cli.rs`, and the two streaming-guard `matches!` predicates. Holding all
+/// three in one `impl ShapeDispatch for OutputShape` block means a new
+/// variant costs exactly one edit per trait method rather than an edit at
+/// every scattered enumeration site.
 ///
 /// Some enumeration sites — the fast-path in `run()`, the distinct-key
 /// branch in `build_pipeline`, the per-variant `validate_query` mutex,
@@ -254,7 +252,7 @@ impl ShapeDispatch for OutputShape {
             OutputShape::Count => apply_aggregation_count(windowed),
             OutputShape::CountBy(field) => apply_aggregation_count_by(windowed, field),
             OutputShape::CountDistinct(field) => {
-                // T1: slow-path tail. `windowed` is `Vec<JsonValue>` — each
+                // Slow-path tail. `windowed` is `Vec<JsonValue>` — each
                 // item is already materialised because sort/distinct/window
                 // is engaged. `apply_aggregation_count_distinct` walks once,
                 // picks the plucked field per item, and accumulates into a
@@ -361,7 +359,7 @@ pub(crate) struct Query {
     /// when `shape == Array`; `run()` ignores it (it always returns a
     /// `JsonValue::Array`).
     pub ndjson: bool,
-    /// T2: bare-scalar output (`--raw`). `run()` itself is oblivious to
+    /// Bare-scalar output (`--raw`). `run()` itself is oblivious to
     /// this bit — raw-conversion happens at the cli.rs dispatch boundary
     /// AFTER `run()` returns the JSON-shaped result. The exception is
     /// the streaming Pluck path (`--pluck f --lines --raw`) which
@@ -377,13 +375,13 @@ pub(crate) struct Query {
 /// call keeps clap-level help-text lean (no need for clap's
 /// `conflicts_with` on every pair) and centralises the rules.
 pub(crate) fn validate_query(q: &Query) -> Result<()> {
-    // T8: every mutex violation in this function is a CLI-surface validation
+    // Every mutex violation in this function is a CLI-surface validation
     // failure — tag the whole `bail!` set with `kind=validation` so
     // `--error-format json` surfaces the same kind regardless of which
-    // specific pair collided. The `validation_bail!` macro keeps the prose
-    // byte-identical to the pre-T8 `bail!(...)` form — `tagged_err` builds an
-    // anyhow::Error with `TaggedError` as the innermost layer whose `Display`
-    // is the formatted message, so text-mode `{:#}` rendering is unchanged.
+    // specific pair collided. `validation_bail!` renders identically to a
+    // plain `bail!(...)`: `tagged_err` builds an anyhow::Error with
+    // `TaggedError` as the innermost layer whose `Display` is the formatted
+    // message, so text-mode `{:#}` output carries no extra prefix.
     macro_rules! validation_bail {
         ($($arg:tt)*) => {
             return Err(tagged_err(ErrorKind::Validation, None, format!($($arg)*)))
@@ -418,7 +416,7 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
             }
         }
         OutputShape::CountDistinct(_) => {
-            // T1: projection on an aggregation-only shape is ambiguous — the
+            // Projection on an aggregation-only shape is ambiguous — the
             // output is a single `{count_distinct, field}` object, not an
             // array of items, so `--select`/`--exclude` has no row shape to
             // narrow. Mirror the CountBy/Count wording so agents reading the
@@ -435,7 +433,7 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
         }
         OutputShape::Array => {}
     }
-    // T2: `--raw` is a scalar-output primitive — only meaningful on shapes
+    // `--raw` is a scalar-output primitive — only meaningful on shapes
     // that collapse to a single scalar (Count / CountDistinct) or a
     // single-value Pluck. `--count-by` emits a map `{bucket: count, ...}`
     // and `--group-by` emits `{bucket: [items, ...], ...}`; neither has a
@@ -455,21 +453,19 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
     Ok(())
 }
 
-/// R5: shared slow-path pipeline for `run()` and `run_streaming()`. Both
-/// entry points historically re-implemented the same
-/// materialise → sort → distinct → window sequence with only the terminal
-/// emit differing, and the two distinct-key branches (Array via projection,
-/// Pluck via field) had to stay byte-identical. Factoring here keeps the
-/// invariant in one place: callers get back the fully-windowed
+/// Shared slow-path pipeline for `run()` and `run_streaming()`. Both entry
+/// points need the same materialise → sort → distinct → window sequence and
+/// differ only in the terminal emit; the two distinct-key branches (Array via
+/// projection, Pluck via field) must stay byte-identical, and this is the one
+/// place that invariant lives: callers get back the fully-windowed
 /// `Vec<JsonValue>` and are responsible only for per-shape terminal emit
 /// (build_pipeline does NOT run the fast-path guard — each caller decides
 /// how to handle the `window_untouched` short-circuit since the emit shape
 /// varies, and bypassing this helper for the fast-path keeps the per-item
 /// cost of CountDistinct / Pluck / CountBy at O(field size) as before).
 ///
-/// Note: materialisation uses `full_item_toml_to_json` so the R43 counters
-/// record one "full-item" hit per filtered row. This mirrors the behaviour
-/// of the pre-refactor inline code verbatim.
+/// Materialisation goes through `full_item_toml_to_json`, so the test-only
+/// counters record one "full-item" hit per filtered row.
 fn build_pipeline(filtered: &[&TomlValue], q: &Query) -> Vec<JsonValue> {
     // 2. Project (select/exclude) before shaping for Array/Pluck/Distinct
     // so distinct/pluck see the already-narrowed shape. Aggregations
@@ -490,7 +486,7 @@ fn build_pipeline(filtered: &[&TomlValue], q: &Query) -> Vec<JsonValue> {
         // user expectation is that `--pluck f --distinct` dedupes by the
         // plucked field f — `apply_projection` only honours --select/--exclude
         // and does not narrow to the pluck field, so we build the dedup key
-        // from just that field here (R9).
+        // from just that field here.
         match &q.shape {
             OutputShape::Array => {
                 let projected: Vec<JsonValue> =
@@ -530,11 +526,11 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
     };
 
     // 1. Filter
-    // O47: pass the array slice directly instead of materialising a
+    // Pass the array slice directly instead of materialising a
     // Vec<&TomlValue> first. `apply_filters` borrows through the slice.
     let filtered = apply_filters(items, &q.predicates)?;
 
-    // O21/O55: Count / Pluck / CountBy fast-paths. When the user wants one
+    // Count / Pluck / CountBy fast-paths. When the user wants one
     // of these shapes with no sort/distinct/window mutations downstream,
     // the per-item `toml_to_json` materialisation of every field is pure
     // waste — Count only needs `filtered.len()`; Pluck and CountBy only
@@ -582,14 +578,14 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
                 return Ok(JsonValue::Object(counts));
             }
             OutputShape::CountDistinct(field) => {
-                // T1: structural analogue of the CountBy fast-path — one
+                // Structural analogue of the CountBy fast-path — one
                 // `toml_to_json` call per item, applied to the plucked
                 // field only. We never materialise the rest of the item,
                 // so per-item cost stays O(field size) rather than O(row
                 // size). Null/missing values are dropped (consistent with
                 // `--pluck`'s apply_pluck behaviour).
                 //
-                // O71: bucket-based canonicalisation preserves TYPE
+                // Bucket-based canonicalisation preserves TYPE
                 // distinctness without re-allocating string-typed values.
                 // String-typed values are consumed directly into
                 // `seen_strings` (no JSON-quoting, no re-allocation —
@@ -606,7 +602,7 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
                 // rather than by JSON-quoting. Documented in the enum
                 // doc-comment.
                 //
-                // R43: `narrow_toml_to_json` increments the fast-path
+                // `narrow_toml_to_json` increments the fast-path
                 // narrowing counter under cfg(test) so the structural
                 // contract ("fast-path must NOT materialise the whole
                 // item") is asserted directly rather than inferred from
@@ -636,19 +632,19 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
         }
     }
 
-    // R5: slow-path pipeline (materialise → sort → distinct → window) lives
+    // Slow-path pipeline (materialise → sort → distinct → window) lives
     // in `build_pipeline` so `run()` and `run_streaming()` share one
     // implementation. Only the per-shape terminal emit below differs.
     let windowed = build_pipeline(&filtered, q);
 
-    // 6. Shape. R16: single-arm dispatch via `ShapeDispatch::compute` —
+    // 6. Shape. Single-arm dispatch via `ShapeDispatch::compute` —
     // per-variant bodies (including the project-then-aggregate branches
     // for Array and GroupBy) live in the `impl ShapeDispatch for OutputShape`
     // block so adding a new variant here is one `match` arm, not six.
     Ok(q.shape.compute(&windowed, q))
 }
 
-/// T2: convert a single `JsonValue` scalar into its bare on-stdout form.
+/// Convert a single `JsonValue` scalar into its bare on-stdout form.
 ///
 /// - String: emits the underlying `&str` verbatim — no quotes, no escapes.
 ///   A string containing a newline is a legitimate single logical value
@@ -671,7 +667,7 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
 /// the inner count integer and feeds just that number in, so the Object
 /// arm is never reached from the aggregation paths.
 ///
-/// R14: lives in `query` rather than `cli` so `run_streaming` can emit
+/// Lives in `query` rather than `cli` so `run_streaming` can emit
 /// bare scalars without inverting the module layering (cli → query is
 /// the correct direction). Pure `JsonValue → String` transform; the
 /// module's "I/O-free" docstring continues to hold at this function.
@@ -698,7 +694,7 @@ pub(crate) fn emit_raw(v: &JsonValue) -> Result<String> {
     }
 }
 
-/// O34: streaming NDJSON sibling of `run()`. For `OutputShape::Array` with
+/// Streaming NDJSON sibling of `run()`. For `OutputShape::Array` with
 /// `q.ndjson == true`, emits one compact JSON object per line directly to
 /// `writer`, avoiding the `Vec<JsonValue>` that `run()` would otherwise
 /// materialise only to have the CLI iterate and re-serialise it. For every
@@ -707,8 +703,8 @@ pub(crate) fn emit_raw(v: &JsonValue) -> Result<String> {
 /// caller (cli.rs NDJSON branch) is only invoked on the Array+ndjson path
 /// in practice, but the fallback keeps the contract total and testable.
 ///
-/// T3: extended to also stream `OutputShape::Pluck(field)` when ndjson is
-/// set. Each surviving plucked value is emitted on its own line using the
+/// `OutputShape::Pluck(field)` streams too when ndjson is set. Each
+/// surviving plucked value is emitted on its own line using the
 /// compact `serde_json::to_writer` encoding (strings quoted, numbers bare,
 /// etc.). Null/missing values are dropped to match `apply_pluck`'s
 /// semantics byte-for-byte — the streaming path MUST preserve which values
@@ -751,7 +747,7 @@ pub(crate) fn run_streaming<W: Write>(
     let window_untouched =
         q.sort_by.is_empty() && !q.distinct && q.offset.is_none() && q.limit.is_none();
 
-    // T3: Pluck streaming. The structure mirrors the Array branch below —
+    // Pluck streaming. The structure mirrors the Array branch below —
     // a fast-path that skips the full Vec<JsonValue> materialisation when
     // sort/distinct/window are all disengaged, and a slow-path that walks
     // the full pipeline but emits per-item at the tail. Null/missing
@@ -762,11 +758,11 @@ pub(crate) fn run_streaming<W: Write>(
         if window_untouched {
             // Fast-path: never materialise the full row — pluck the field
             // straight off the TomlValue and convert only the plucked
-            // value. This matches the fast-path in `run()` at lines
-            // 235-244, keeping streaming and non-streaming membership
-            // identical.
+            // value. This mirrors the `OutputShape::Pluck` arm of `run()`'s
+            // `window_untouched` fast-path, keeping streaming and
+            // non-streaming membership identical.
             //
-            // T2: when `q.raw` is set, emit the bare-scalar form (strings
+            // When `q.raw` is set, emit the bare-scalar form (strings
             // unquoted) instead of the JSON-encoded one. Null/missing
             // drops are identical — raw is purely an encoding choice at
             // the emit point. Re-using the local `emit_raw` keeps the
@@ -789,7 +785,7 @@ pub(crate) fn run_streaming<W: Write>(
             return Ok(());
         }
         // Slow path: share the materialise → sort → distinct → window
-        // pipeline with `run()` via `build_pipeline` (R5). Pluck's
+        // pipeline with `run()` via `build_pipeline`. Pluck's
         // plucked-field distinct-key branch lives inside that helper so
         // both entry points stay in sync. The final emit below
         // replicates `apply_pluck`'s null/missing drop.
@@ -798,7 +794,7 @@ pub(crate) fn run_streaming<W: Write>(
             match v.get(field) {
                 None | Some(JsonValue::Null) => {}
                 Some(item_val) => {
-                    // T2: same raw-vs-json fork as the fast-path above.
+                    // Same raw-vs-json fork as the fast-path above.
                     if q.raw {
                         writer.write_all(emit_raw(item_val)?.as_bytes())?;
                     } else {
@@ -817,7 +813,7 @@ pub(crate) fn run_streaming<W: Write>(
     // reduction in peak memory vs `run()`.
     if window_untouched {
         for t in &filtered {
-            // R43: Array streaming already materialises the full row
+            // Array streaming already materialises the full row
             // because `apply_projection` needs the whole object shape —
             // this is not the fast-path narrowing contract, so we bill
             // it to the full-item counter so test assertions on narrow-
@@ -831,7 +827,7 @@ pub(crate) fn run_streaming<W: Write>(
     }
 
     // Array slow path (sort/distinct/window touched): share the pipeline
-    // with `run()` via `build_pipeline` (R5), then emit per-item at the
+    // with `run()` via `build_pipeline`, then emit per-item at the
     // tail rather than collecting.
     let windowed = build_pipeline(&filtered, q);
     for v in &windowed {
@@ -850,7 +846,7 @@ pub(crate) fn apply_filters<'a>(
     items: &'a [TomlValue],
     preds: &[Predicate],
 ) -> Result<Vec<&'a TomlValue>> {
-    // R72: compile every `WhereRegex` pattern once, up-front, before we
+    // Compile every `WhereRegex` pattern once, up-front, before we
     // touch the item loop. A compiled regex is indexed by its position in
     // `preds` so `eval_predicate` can do an O(1) lookup instead of
     // recompiling per (item × predicate). We also apply memory caps via
@@ -864,7 +860,7 @@ pub(crate) fn apply_filters<'a>(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // O19/O20: pre-parse every type-coercive RHS once, up-front, parallel to
+    // Pre-parse every type-coercive RHS once, up-front, parallel to
     // the regex hoist above. A typed-prefix RHS (`@int:5`, `@date:2026-04-18`)
     // is otherwise parsed via `parse_typed_value` once per (item × predicate)
     // inside `eq_typed` / `compare_typed`. With the cache, the parse runs
@@ -896,7 +892,7 @@ pub(crate) fn apply_filters<'a>(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // O66: cost-aware predicate reorder. Build a permutation of indices
+    // Cost-aware predicate reorder. Build a permutation of indices
     // sorted by `predicate_cost` ascending so cheap presence checks run
     // ahead of expensive regex matches; on a per-item false the `'item`
     // continue short-circuits, so cheap-first means we touch the regex
@@ -923,7 +919,7 @@ pub(crate) fn apply_filters<'a>(
     Ok(out)
 }
 
-/// O19/O20: per-RHS pre-parse. One enum per recognised TypeHint variant plus
+/// Per-RHS pre-parse. One enum per recognised TypeHint variant plus
 /// `Untyped` for the bare-string fallback path. Field-side native-coercion
 /// (Integer field + bare RHS → parse as i64) intentionally remains per-item;
 /// the cache only short-circuits the typed-prefix path because that's where
@@ -942,7 +938,7 @@ enum ParsedRhs {
     Untyped,
 }
 
-/// O19/O20: per-predicate cache aligned with `preds`. Single-RHS predicates
+/// Per-predicate cache aligned with `preds`. Single-RHS predicates
 /// store one entry; WhereIn stores a Vec aligned with its RHS list.
 #[derive(Clone, Debug)]
 enum PredicateCache {
@@ -952,9 +948,9 @@ enum PredicateCache {
     None,
 }
 
-/// O19/O20: parse one RHS string into a `ParsedRhs` for the cache. `key` is
-/// only used to make `@type:` parse failures actionable (mirrors the error
-/// shape `eq_typed` raised before the cache was introduced — R73).
+/// Parse one RHS string into a `ParsedRhs` for the cache. `key` is only used
+/// to make `@type:` parse failures actionable: the error names the offending
+/// key and the expected literal form, matching what `eq_typed` raises.
 fn parse_rhs_for_cache(rhs: &str, key: &str) -> Result<ParsedRhs> {
     let Some((hint, body)) = split_type_hint(rhs) else {
         return Ok(ParsedRhs::Untyped);
@@ -1018,7 +1014,7 @@ fn eval_predicate(
         Some(t) => t,
         None => return Ok(false),
     };
-    // O19/O20: pull the pre-parsed RHS out of the cache; helpers below take
+    // Pull the pre-parsed RHS out of the cache; helpers below take
     // it instead of re-parsing per item. `expect_single` / `expect_multi`
     // panic on cache/predicate mismatch — that's an internal invariant
     // violation in `apply_filters`, not user input.
@@ -1063,12 +1059,11 @@ fn eval_predicate(
                 matches!(o, std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
             })
         }
-        // O37: stringify non-string scalars (Int/Float/Bool/Datetime) before
-        // running substring/prefix/suffix — previously a `--where-contains`
-        // against e.g. an Integer field silently returned false for every
-        // row because `TomlValue::as_str` only matches TOML Strings. Behaviour
-        // change: `--where-contains line=00` against `line=100` now matches
-        // where it silently missed before (release-note worthy).
+        // Stringify non-string scalars (Int/Float/Bool/Datetime) before
+        // running substring/prefix/suffix. `TomlValue::as_str` matches only
+        // TOML Strings, so comparing through the stringified form is what
+        // lets `--where-contains line=00` match an Integer `line = 100`
+        // instead of silently returning false for every non-String field.
         Predicate::WhereContains { key, sub } => {
             Ok(value_as_string(tbl.get(key)).is_some_and(|s| s.contains(sub)))
         }
@@ -1079,7 +1074,7 @@ fn eval_predicate(
             Ok(value_as_string(tbl.get(key)).is_some_and(|s| s.ends_with(suffix)))
         }
         Predicate::WhereRegex { key, .. } => {
-            // R72: the regex was compiled once in `apply_filters`; we just
+            // The regex was compiled once in `apply_filters`; we just
             // look it up here.
             let re = compiled_regex.ok_or_else(|| {
                 anyhow::anyhow!(
@@ -1123,10 +1118,10 @@ fn field_present_nonempty(v: Option<&TomlValue>) -> bool {
 /// field's native type. Fall back to string compare.
 ///
 /// `key` is only used to build a user-facing error when the RHS carries a
-/// `@type:` prefix but fails to parse — previously this was swallowed as
-/// `return false`, which silently dropped the query row (R73).
+/// `@type:` prefix but fails to parse. That case must error rather than
+/// return false: a swallowed parse failure silently drops query rows.
 ///
-/// O19/O20: `pre` carries the cached pre-parsed RHS built once in
+/// `pre` carries the cached pre-parsed RHS built once in
 /// `apply_filters`. When it's a typed variant, dispatch goes through the
 /// cached value and skips the per-item `parse_typed_value` round-trip
 /// entirely. `Untyped` falls through to the existing native-coercion path.
@@ -1161,7 +1156,7 @@ fn eq_typed(field: Option<&TomlValue>, rhs: &str, key: &str, pre: &ParsedRhs) ->
     }
     // Defensive: if a typed-prefix RHS slipped past cache-build (shouldn't
     // happen because `parse_rhs_for_cache` validates), still surface a parse
-    // error in the same shape as before so the R73 contract holds.
+    // error rather than reporting the row as non-matching.
     if let Some((hint, _rest)) = split_type_hint(rhs) {
         let parsed = parse_typed_value(rhs).map_err(|e| {
             anyhow::anyhow!(
@@ -1230,11 +1225,11 @@ fn cmp_pred(
 ) -> Result<bool> {
     use std::cmp::Ordering;
     let Some(f) = field else { return Ok(false) };
-    // O19/O20: cached typed-prefix dispatch. When the cache holds a parsed
-    // numeric / bool / datetime, compare directly against the field's native
+    // Cached typed-prefix dispatch. When the cache holds a parsed numeric /
+    // bool / datetime, compare directly against the field's native
     // representation — no per-item `compare_typed` round-trip through the
-    // RHS parser. A type-hint vs field-type mismatch surfaces as the same
-    // shape of error that `compare_typed` produced before the cache.
+    // RHS parser. A type-hint vs field-type mismatch surfaces in the same
+    // shape of error `compare_typed` raises.
     let ord_opt: Option<Result<Ordering>> = match pre {
         ParsedRhs::Int(n) => match f {
             TomlValue::Integer(i) => Some(Ok(i.cmp(n))),
@@ -1281,7 +1276,7 @@ fn cmp_pred(
     if let Some(res) = ord_opt {
         return Ok(check(res?));
     }
-    // R73 / Untyped: surface parse errors up to the caller rather than
+    // Untyped RHS: surface parse errors up to the caller rather than
     // silently treating the item as non-matching. A malformed RHS is a user
     // bug worth failing loudly on.
     let ord = compare_typed(f, rhs).map_err(|e| {
@@ -1313,11 +1308,11 @@ pub(crate) fn apply_projection(item: &JsonValue, q: &Query) -> JsonValue {
         return JsonValue::Object(out);
     }
     if let Some(drop) = &q.exclude {
-        // O25: avoid the clone-then-remove allocation churn (full Map clone
-        // followed by per-key removal). Build the kept-keys map directly with
-        // a HashSet membership probe — same allocation shape as the select
-        // branch above, and preserves insertion order via the indexmap-backed
-        // Map (preserve_order feature on serde_json).
+        // Build the kept-keys map directly with a HashSet membership probe
+        // rather than cloning the whole Map and removing per key — same
+        // allocation shape as the select branch above, and preserves
+        // insertion order via the indexmap-backed Map (preserve_order
+        // feature on serde_json).
         let drop_set: HashSet<&str> = drop.iter().map(String::as_str).collect();
         let mut out = serde_json::Map::with_capacity(obj.len().saturating_sub(drop.len()));
         for (k, v) in obj {
@@ -1338,12 +1333,11 @@ fn apply_sort(mut items: Vec<JsonValue>, sort_by: &[(String, SortDir)]) -> Vec<J
     if sort_by.is_empty() {
         return items;
     }
-    // O23: single O(N log N) pass using a composed comparator instead of K
+    // Single O(N log N) pass using a composed comparator instead of K
     // separate stable sorts (one per key). Walks the sort_by spec in
     // primary-first order and folds per-key Orderings via `Ordering::then_with`,
     // so a tie on the primary key falls through to the next-most-significant
-    // tiebreaker. Behaviourally equivalent to the previous LSB-first repeated
-    // sort, but does the work in one pass.
+    // tiebreaker.
     items.sort_by(|a, b| {
         sort_by
             .iter()
@@ -1375,7 +1369,7 @@ fn cmp_json_scalars(a: Option<&JsonValue>, b: Option<&JsonValue>) -> std::cmp::O
             (JsonValue::Bool(p), JsonValue::Bool(q)) => p.cmp(q),
             (JsonValue::String(s1), JsonValue::String(s2)) => s1.cmp(s2),
             _ => {
-                // O24: mixed-type fallback. Compare type-name discriminants
+                // Mixed-type fallback. Compare type-name discriminants
                 // (cheap &'static str lex order from `convert::json_type_name`)
                 // instead of materialising both values via `to_string()` —
                 // saves two allocations per cross-type comparison and still
@@ -1387,13 +1381,13 @@ fn cmp_json_scalars(a: Option<&JsonValue>, b: Option<&JsonValue>) -> std::cmp::O
 }
 
 fn dedup_preserve_first(source: &[JsonValue], shape: &[JsonValue]) -> Vec<JsonValue> {
-    // R67: `HashSet::insert` returns `true` on first sight of a key, which
-    // is exactly the keep-decision we want. O(n) amortised instead of the
-    // previous O(n²) Vec-scan.
+    // `HashSet::insert` returns `true` on first sight of a key, which is
+    // exactly the keep-decision we want, and keeps this O(n) amortised
+    // rather than an O(n²) Vec scan.
     //
-    // O22: structurally hash each shape value into a u64 instead of fully
-    // serialising to a JSON string. `serde_json::to_string` allocates a
-    // fresh String per item plus all the formatting machinery; the
+    // Each shape value is structurally hashed into a u64 instead of being
+    // fully serialised to a JSON string: `serde_json::to_string` allocates a
+    // fresh String per item plus all the formatting machinery, whereas the
     // structural-hash walk just feeds bytes into a DefaultHasher and stores
     // the resulting 64-bit digest. `serde_json::Value` deliberately does not
     // implement `Hash` (Number's float interior + Map's key ordering
@@ -1409,7 +1403,7 @@ fn dedup_preserve_first(source: &[JsonValue], shape: &[JsonValue]) -> Vec<JsonVa
     out
 }
 
-/// O22: structurally hash a `serde_json::Value` into a `u64` digest. Walks
+/// Structurally hash a `serde_json::Value` into a `u64` digest. Walks
 /// the value recursively, feeding a per-variant tag byte and the contained
 /// scalar (or recursively-hashed children) into a `DefaultHasher`. Hash
 /// collisions across distinct structural values would only cause dedup to
@@ -1421,7 +1415,8 @@ fn dedup_preserve_first(source: &[JsonValue], shape: &[JsonValue]) -> Vec<JsonVa
 /// equality, matching the existing JSON-string serialisation behaviour where
 /// `NaN` simply isn't representable. Object keys are walked in iteration
 /// order — with `serde_json/preserve_order` enabled (Cargo.toml) this is
-/// insertion order, mirroring how the old `to_string` key was constructed.
+/// insertion order, so two objects carrying the same pairs in a different
+/// order hash differently.
 fn json_structural_hash(v: &JsonValue) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -1489,7 +1484,7 @@ fn apply_window(
     if off >= items.len() {
         return Vec::new();
     }
-    // O49: fuse skip+take into a single iterator chain so we only allocate
+    // Fuse skip+take into a single iterator chain so we only allocate
     // the output Vec once instead of materialising an intermediate `tail`.
     items
         .into_iter()
@@ -1507,17 +1502,10 @@ pub(crate) fn apply_aggregation_count(items: &[JsonValue]) -> JsonValue {
 }
 
 pub(crate) fn apply_aggregation_count_by(items: &[JsonValue], field: &str) -> JsonValue {
-    // R68 + O53: `HashMap<String, u64>` accumulator combined with a
-    // parallel `Vec<String>` first-occurrence tracker. The prior
-    // `serde_json::Map::get_mut` path still allocated a fresh `String`
-    // key per item even on a hit (the `bucket_key` call materialises the
-    // owned key before the hash lookup, then drops it). Using the `entry`
-    // API on a plain HashMap isn't enough on its own — entry still takes
-    // the key by value — so we peek with `get_mut` first and only clone
-    // the key on a genuine insert. The `Vec::contains` for order tracking
-    // is O(M) where M is distinct buckets (typically <20 for ledger fields
-    // like status/category/tier); the net walk is still a large win vs
-    // N×`String` alloc-then-drop.
+    // `HashMap<String, u64>` accumulator plus a parallel `Vec<String>`
+    // first-occurrence tracker. `bucket_key` hands back an owned `String`
+    // which `entry` consumes, so only the order tracker clones a key, and
+    // only on the miss path.
     let mut counts: HashMap<String, u64> = HashMap::new();
     let mut order: Vec<String> = Vec::new();
     for it in items {
@@ -1547,15 +1535,14 @@ pub(crate) fn apply_aggregation_group_by(
     projected: &[JsonValue],
     field: &str,
 ) -> JsonValue {
-    // R68: same Map-backed accumulator as `apply_aggregation_count_by`, but
-    // the slot value is a Vec of grouped items.
+    // Same Map-backed accumulator as `apply_aggregation_count_by`, but the
+    // slot value is a Vec of grouped items.
     //
-    // O67: borrow-first bucket-key lookup, mirroring the O53 `CountBy`
-    // get_mut-first pattern. `bucket_key_borrowed` returns a `Cow<str>` so
-    // the common case — string-typed group field — borrows directly off
-    // the source `JsonValue` and never allocates on a hit. Only the miss
-    // path (and the unavoidable non-string canonicalisation path) takes
-    // ownership via `into_owned()` for the `groups.insert` call.
+    // Borrow-first bucket-key lookup: `bucket_key_borrowed` returns a
+    // `Cow<str>` so the common case — a string-typed group field — borrows
+    // directly off the source `JsonValue` and never allocates on a hit. Only
+    // the miss path (and the unavoidable non-string canonicalisation path)
+    // takes ownership via `into_owned()` for the `groups.insert` call.
     let mut groups: serde_json::Map<String, JsonValue> = serde_json::Map::new();
     for (i, it) in raw.iter().enumerate() {
         let key = bucket_key_borrowed(it.get(field));
@@ -1570,7 +1557,7 @@ pub(crate) fn apply_aggregation_group_by(
     JsonValue::Object(groups)
 }
 
-/// T1: slow-path `--count-distinct` aggregator. The fast-path (in `run()`
+/// Slow-path `--count-distinct` aggregator. The fast-path (in `run()`
 /// when no sort/distinct/window is engaged) operates on `&[&TomlValue]`
 /// directly; this variant runs after the pipeline has already materialised
 /// items as `Vec<JsonValue>` so dedup walks `v.get(field)` instead of
@@ -1614,7 +1601,7 @@ fn bucket_key(v: Option<&JsonValue>) -> String {
     }
 }
 
-/// O67: borrow-friendly sibling of `bucket_key`. Returns a `Cow<str>` that
+/// Borrow-friendly sibling of `bucket_key`. Returns a `Cow<str>` that
 /// borrows directly off the source `JsonValue` for the missing/null and
 /// string cases (the common ones for ledger group-by fields like
 /// `status` / `category` / `tier`). Non-string scalars still need a fresh
@@ -1699,22 +1686,19 @@ fn split_kv(s: &str) -> Result<(String, String)> {
 impl Query {
     /// Build a `Query` from a POD `QueryInput`. Validation is handled by
     /// `run` itself — the first thing it does is call `validate_query` on
-    /// the spec, so callers don't need to (R88).
+    /// the spec, so callers don't need to.
     ///
-    /// R15: the input type is a plain-old-data `QueryInput` owned by this
-    /// module, NOT `&crate::cli::LegacyShortcuts` + `&crate::cli::QueryArgs`
-    /// as earlier revisions used. The cli crate now provides
-    /// `query_input_from_cli` as a trivial field-copy adapter, severing
-    /// the inverted `query → cli` import. R69's bundling motivation still
-    /// holds: the dispatch site is a one-line call rather than a 26-line
-    /// arg spray.
+    /// The input is a plain-old-data `QueryInput` owned by this module
+    /// rather than `&crate::cli::LegacyShortcuts` + `&crate::cli::QueryArgs`;
+    /// `cli::query_input_from_cli` is the field-copy adapter. That keeps the
+    /// import direction cli → query, and keeps the dispatch site a one-line
+    /// call instead of a 26-argument spray.
     ///
-    /// R30: this translation from CLI args into domain-level `Predicate`
-    /// / `OutputShape` values is business logic tightly coupled to
-    /// `query`'s types, not pure CLI plumbing, so it lives here (not in
-    /// cli.rs).
+    /// Translating CLI args into domain-level `Predicate` / `OutputShape`
+    /// values is business logic coupled to `query`'s types, not CLI
+    /// plumbing, so it lives here rather than in cli.rs.
     pub(crate) fn from_query_input(input: &QueryInput) -> Result<Self> {
-        // O46: pre-size the predicate vec. The `4` covers the four legacy
+        // Pre-size the predicate vec. The `4` covers the four legacy
         // shortcut slots (`status`, `category`, `file`, `newer_than`); the
         // remaining terms sum the upper bound for every `--where-*` family.
         // Slight over-allocation when legacy shortcuts are absent is fine;
@@ -1838,8 +1822,8 @@ impl Query {
             .as_deref()
             .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
 
-        // Sort: each entry is `FIELD` or `FIELD:asc` or `FIELD:desc`. Unknown
-        // suffix defaults to `asc` (matches the plan).
+        // Sort: each entry is `FIELD` or `FIELD:asc` or `FIELD:desc`. An
+        // unrecognised suffix defaults to `asc`.
         let mut sort_list: Vec<(String, SortDir)> = Vec::new();
         for entry in &input.sort_by {
             let (field, dir) = match entry.split_once(':') {
@@ -1855,9 +1839,9 @@ impl Query {
             sort_list.push((field, dir));
         }
 
-        // OutputShape priority (plan): count > count-by > count-distinct >
-        // group-by > pluck > default Array. `ndjson` is an *encoding* choice
-        // (R82), not a shape — it lives on `Query.ndjson` and only applies
+        // OutputShape priority: count > count-by > count-distinct >
+        // group-by > pluck > default Array. `ndjson` is an *encoding* choice,
+        // not a shape — it lives on `Query.ndjson` and only applies
         // when the chosen shape is Array. Multiple shape flags would
         // typically collapse to the highest-priority one here; the clap
         // `shape` ArgGroup at the CLI layer makes this impossible in
@@ -1865,11 +1849,11 @@ impl Query {
         // the priority ladder as a belt-and-braces for programmatic callers
         // that skip clap (`Query::from_query_input` is called from tests too).
         //
-        // T1: `--count-distinct` sits at EQUAL precedence to the other
-        // aggregation shapes — NOT as a sub-form of Pluck. Risk #2 in the
-        // plan: the ArgGroup guarantees exclusivity at parse time; the
+        // `--count-distinct` sits at EQUAL precedence to the other
+        // aggregation shapes — NOT as a sub-form of Pluck. The ArgGroup
+        // guarantees exclusivity at parse time and the
         // `count_distinct_and_pluck_are_mutex_at_parse_time` integration
-        // test pins this contract.
+        // test pins that contract.
         let shape = if input.count {
             OutputShape::Count
         } else if let Some(f) = input.count_by.as_deref() {
@@ -1893,7 +1877,7 @@ impl Query {
             offset: input.offset,
             distinct: input.distinct,
             shape,
-            // T3: `--lines` and `--ndjson` both map onto the same internal
+            // `--lines` and `--ndjson` both map onto the same internal
             // boolean — the spellings differ only at the CLI surface. `--lines`
             // is the discoverable spelling for the Pluck case; `--ndjson` is
             // the historic spelling for the Array case. Both enable the
@@ -1903,7 +1887,7 @@ impl Query {
             // collapses to the same bytes). This keeps downstream pipeline
             // logic inspecting a single boolean.
             ndjson: input.ndjson || input.lines,
-            // T2: propagate `--raw` through to the query spec. Most of the
+            // Propagate `--raw` through to the query spec. Most of the
             // dispatch machinery is oblivious; the cli.rs `items list`
             // branch post-processes the `run()` result when `raw` is set,
             // and the streaming Pluck path threads this bit through to
@@ -2054,7 +2038,8 @@ defer_reason = ""
             key: "defer_reason".into(),
         }]);
         let out = run(&doc, "items", &q).unwrap();
-        // R4 has non-empty defer_reason; R6 has empty string; others absent.
+        // Only the non-empty defer_reason survives: an empty string counts
+        // as absent, as does a missing field.
         assert_eq!(ids(&out), vec!["R4"]);
     }
 
@@ -2174,7 +2159,8 @@ defer_reason = ""
     fn sort_multi_key_primary_then_tiebreaker() {
         let doc = fixture();
         // Primary: status asc (fixed, open, open, open, open, wontfix)
-        // Tiebreaker within status=open: rounds desc → (R1 rounds=3, R2/R5/R6 rounds=1).
+        // Tiebreaker within status=open: rounds desc — one open row has
+        // rounds=3, the other three have rounds=1.
         let q = Query {
             sort_by: vec![
                 ("status".into(), SortDir::Asc),
@@ -2197,9 +2183,9 @@ defer_reason = ""
             ..Default::default()
         };
         let out = run(&doc, "items", &q).unwrap();
-        // 2025-12-31 is R4; earliest.
+        // Earliest first_flagged in the fixture is 2025-12-31.
         assert_eq!(ids(&out)[0], "R4");
-        // 2026-04-18 is R6; latest.
+        // Latest is 2026-04-18.
         assert_eq!(ids(&out)[5], "R6");
     }
 
@@ -2274,9 +2260,9 @@ defer_reason = ""
         assert_eq!(out["wontfix"], 1);
     }
 
-    // -- T1: --count-distinct shape ---------------------------------------
+    // -- --count-distinct shape -------------------------------------------
 
-    /// T1: baseline — distinct categories in the 6-row fixture are
+    /// Baseline — distinct categories in the 6-row fixture are
     /// security, quality, performance → 3 distinct.
     #[test]
     fn count_distinct_counts_distinct_values() {
@@ -2292,25 +2278,26 @@ defer_reason = ""
         );
     }
 
-    /// T1: items lacking the plucked field are excluded from the count —
+    /// Items lacking the plucked field are excluded from the count —
     /// mirror of `apply_pluck`'s missing-field drop.
     #[test]
     fn count_distinct_excludes_missing_field() {
-        // `defer_reason` exists on R4 only (R6's defer_reason is empty
-        // string — a value, not missing — so it counts as one distinct).
+        // One fixture row carries a non-empty `defer_reason` and one carries
+        // the empty string — a value, not a missing field, so it counts as
+        // one distinct.
         let doc = fixture();
         let q = Query {
             shape: OutputShape::CountDistinct("defer_reason".into()),
             ..Default::default()
         };
         let out = run(&doc, "items", &q).unwrap();
-        // R4: "vendor fix", R6: "" → 2 distinct values; other four rows
-        // missing the field are excluded.
+        // "vendor fix" and "" → 2 distinct values; the other four rows are
+        // missing the field and are excluded.
         assert_eq!(out["count_distinct"], 2);
         assert_eq!(out["field"], "defer_reason");
     }
 
-    /// T1: explicit TOML-null-equivalents (missing field) are excluded.
+    /// Explicit TOML-null-equivalents (missing field) are excluded.
     /// Distinct from `count_distinct_excludes_missing_field` above in
     /// that we build the fixture explicitly so the intent is unambiguous.
     #[test]
@@ -2344,7 +2331,7 @@ id = "d"
         assert_eq!(out["field"], "ref");
     }
 
-    /// T1: empty [[items]] → count_distinct = 0.
+    /// Empty [[items]] → count_distinct = 0.
     #[test]
     fn count_distinct_empty_array() {
         let src = r#"
@@ -2362,7 +2349,7 @@ schema_version = 1
         );
     }
 
-    /// T1: 1000 items × 500 distinct values → N=500. Exercises the
+    /// 1000 items × 500 distinct values → N=500. Exercises the
     /// HashSet sizing path and confirms dedup fires even on the fast-path
     /// (no sort/distinct/window in this query).
     #[test]
@@ -2383,14 +2370,12 @@ schema_version = 1
         assert_eq!(out["count_distinct"], 500);
     }
 
-    /// T1: type distinctness contract — integer 42 and string "42" at
-    /// the same field count as 2 distinct values. Rationale: different
-    /// TOML types round-trip through `toml_to_json().to_string()` to
-    /// different canonical forms (`42` vs `"42"`), so the HashSet keeps
-    /// them apart. Callers who want string-coerced equality can combine
-    /// `--pluck f` with a downstream `jq -r 'tostring'` — but the
-    /// transcript audit shows nobody does that; they want type-aware
-    /// counts.
+    /// Type distinctness contract — integer 42 and string "42" at the same
+    /// field count as 2 distinct values, because the two TOML types
+    /// round-trip through `toml_to_json().to_string()` to different
+    /// canonical forms (`42` vs `"42"`) and the HashSet keeps them apart.
+    /// Callers wanting string-coerced equality combine `--pluck f` with a
+    /// downstream `jq -r 'tostring'`.
     #[test]
     fn count_distinct_different_types() {
         let src = r#"
@@ -2416,10 +2401,9 @@ v = 42
         assert_eq!(out["count_distinct"], 2);
     }
 
-    /// T1: filter semantics — `--where` narrows the input set BEFORE
-    /// `--count-distinct` counts. Check by restricting to open-status
-    /// rows: categories present among open rows of the fixture are
-    /// security (R1) and quality (R2, R6) — 2 distinct, not 3.
+    /// Filter semantics — `--where` narrows the input set BEFORE
+    /// `--count-distinct` counts. Restricting to open-status rows leaves
+    /// the categories security, quality and performance.
     #[test]
     fn count_distinct_after_filter() {
         let doc = fixture();
@@ -2432,12 +2416,12 @@ v = 42
             ..Default::default()
         };
         let out = run(&doc, "items", &q).unwrap();
-        // Open items: R1 (security), R2 (quality), R5 (performance),
-        // R6 (quality) → distinct = {security, quality, performance} = 3.
+        // The four open rows cover security, quality (twice) and
+        // performance → distinct = 3.
         assert_eq!(out["count_distinct"], 3);
     }
 
-    /// T1: adding `--sort-by` sends the query through the slow path but
+    /// Adding `--sort-by` sends the query through the slow path but
     /// must still yield the same cardinality (sort doesn't change the
     /// distinct-set). Regression guard for the compute-before-sort
     /// assumption.
@@ -2459,7 +2443,7 @@ v = 42
         assert_eq!(a["count_distinct"], 3);
     }
 
-    /// T1 / R43 structural assertion: the fast-path MUST NOT materialise
+    /// Structural assertion: the fast-path MUST NOT materialise
     /// the entire item via `toml_to_json(item)` — only the plucked field.
     /// Instrumentation via the thread-local `FAST_PATH_NARROW_CALLS` /
     /// `FULL_ITEM_MATERIALISE_CALLS` counters (see the cfg(test) block at
@@ -2536,7 +2520,7 @@ v = 42
         assert_eq!(a["count_distinct"], 5);
     }
 
-    /// T1: mutex with `--select` via `validate_query`.
+    /// Mutex with `--select` via `validate_query`.
     #[test]
     fn count_distinct_plus_select_rejected() {
         let q = Query {
@@ -2551,7 +2535,7 @@ v = 42
         );
     }
 
-    /// T1: mutex with `--exclude` via `validate_query`.
+    /// Mutex with `--exclude` via `validate_query`.
     #[test]
     fn count_distinct_plus_exclude_rejected() {
         let q = Query {
@@ -2575,11 +2559,11 @@ v = 42
             ..Default::default()
         };
         let out = run(&doc, "items", &q).unwrap();
-        // src/a.rs has R1, R2.
+        // Two fixture rows share src/a.rs.
         let a_group = out["src/a.rs"].as_array().unwrap();
         let ids: Vec<_> = a_group.iter().map(|v| v["id"].as_str().unwrap()).collect();
         assert_eq!(ids, vec!["R1", "R2"]);
-        // src/b.rs has R3 only.
+        // Only one row lives in src/b.rs.
         assert_eq!(out["src/b.rs"].as_array().unwrap().len(), 1);
     }
 
@@ -2712,7 +2696,7 @@ v = 42
             rhs: "2026-01-01".into(),
         }]);
         let out = run(&doc, "items", &q).unwrap();
-        // Everything except R4 (2025-12-31).
+        // Everything except the 2025-12-31 row.
         let mut got = ids(&out);
         got.sort();
         assert_eq!(got, vec!["R1", "R2", "R3", "R5", "R6"]);
@@ -2726,15 +2710,16 @@ v = 42
             rhs: "@date:2026-01-01".into(),
         }]);
         let out = run(&doc, "items", &q).unwrap();
-        // Strictly greater than 2026-01-01 excludes R1 (exactly that date) and R4.
+        // Strictly greater than 2026-01-01 drops the row dated exactly that
+        // day as well as the earlier 2025-12-31 one.
         let mut got = ids(&out);
         got.sort();
         assert_eq!(got, vec!["R2", "R3", "R5", "R6"]);
     }
 
-    // -- R72 / R73 regressions ----------------------------------------
+    // -- regex + typed-RHS regressions --------------------------------
 
-    /// R72: a regex pattern whose compiled NFA would exceed our 1 MiB
+    /// A regex pattern whose compiled NFA would exceed our 1 MiB
     /// size_limit must fail *at compile time*, not silently expand
     /// in-process. `a{N}` with N large is the canonical probe.
     #[test]
@@ -2752,7 +2737,7 @@ v = 42
         );
     }
 
-    /// R73: a malformed typed RHS on `--where` must propagate as a
+    /// A malformed typed RHS on `--where` must propagate as a
     /// `Result::Err`, not silently skip every row.
     #[test]
     fn where_eq_bad_typed_rhs_propagates_error() {
@@ -2768,7 +2753,7 @@ v = 42
         );
     }
 
-    /// R73: the same contract holds for ordered predicates (Gt/Gte/Lt/Lte).
+    /// The same contract holds for ordered predicates (Gt/Gte/Lt/Lte).
     #[test]
     fn where_gt_bad_typed_rhs_propagates_error() {
         let doc = fixture();
@@ -2783,9 +2768,9 @@ v = 42
         );
     }
 
-    // -- T3: streaming Pluck ------------------------------------------
+    // -- streaming Pluck ----------------------------------------------
 
-    /// T3 fast-path: `run_streaming` on Pluck+ndjson with no
+    /// Fast-path: `run_streaming` on Pluck+ndjson with no
     /// sort/distinct/window should emit one compact JSON value per line,
     /// dropping null/missing plucked fields to match `apply_pluck`.
     #[test]
@@ -2814,10 +2799,10 @@ x = "v3"
         assert_eq!(String::from_utf8(buf).unwrap(), "\"v1\"\n\"v3\"\n");
     }
 
-    /// T3 slow-path: with sort/distinct engaged, the Pluck streaming
-    /// branch falls into the full-pipeline arm. The emitted byte stream
-    /// must still be one-per-line, respect sort order, and dedupe by the
-    /// plucked field (R9 parity with `run()`).
+    /// Slow-path: with sort/distinct engaged, the Pluck streaming branch
+    /// falls into the full-pipeline arm. The emitted byte stream must still
+    /// be one-per-line, respect sort order, and dedupe by the plucked field
+    /// in parity with `run()`.
     #[test]
     fn run_streaming_pluck_slow_path_sort_and_distinct() {
         let src = r#"
@@ -2853,7 +2838,7 @@ x = "beta"
         );
     }
 
-    /// T3 parity: streaming and non-streaming Pluck must emit the same
+    /// Parity: streaming and non-streaming Pluck must emit the same
     /// set of values in the same order. Proves the null/missing-drop and
     /// windowing logic is byte-aligned with `apply_pluck` + the
     /// non-streaming slow-path.
@@ -2917,12 +2902,12 @@ x = "v5"
         );
     }
 
-    // -- R9 regression ------------------------------------------------
+    // -- pluck + distinct regression ------------------------------------
 
-    /// R9: `--pluck <field> --distinct` must dedupe by the plucked field,
-    /// not by the full source item. Previously `apply_projection` only
-    /// honoured --select/--exclude, so two items sharing `task_ref` but
-    /// differing in other fields yielded duplicate values in the output.
+    /// `--pluck <field> --distinct` must dedupe by the plucked field, not by
+    /// the full source item: `apply_projection` honours only
+    /// `--select`/`--exclude`, so deduping on its output would let two items
+    /// sharing `task_ref` but differing elsewhere both reach the output.
     #[test]
     fn pluck_distinct_dedupes_on_plucked_field_not_whole_item() {
         let src = r#"
@@ -2942,8 +2927,8 @@ task_ref = "beta"
         let q = Query {
             distinct: true,
             shape: OutputShape::Pluck("task_ref".into()),
-            // Sort keeps the assertion deterministic; the bug is present
-            // regardless of sort order.
+            // Sort keeps the assertion deterministic; the dedup key does
+            // not depend on sort order.
             sort_by: vec![("task_ref".into(), SortDir::Asc)],
             ..Default::default()
         };
@@ -2951,12 +2936,10 @@ task_ref = "beta"
         assert_eq!(out, serde_json::json!(["alpha", "beta"]));
     }
 
-    // -- Phase 6 / T6: error-message rewrite contracts ------------------
+    // -- error-message contracts ----------------------------------------
 
-    /// Phase 6 / T6: path-shape rewrites must quote the expected form so an
-    /// agent that hands the CLI a malformed `KEY=VAL` argument sees a
-    /// concrete example. `split_kv` on a string without `=` now embeds an
-    /// example.
+    /// Path-shape errors must quote the expected form so an agent that hands
+    /// the CLI a malformed `KEY=VAL` argument sees a concrete example.
     #[test]
     fn error_message_path_shape_quotes_expected_kv_form() {
         let err = split_kv("just-a-key").unwrap_err().to_string();
@@ -2966,9 +2949,9 @@ task_ref = "beta"
         );
     }
 
-    // -- R15: typed-RHS parse-error rewrite contracts -------------------
+    // -- typed-RHS parse-error contracts --------------------------------
 
-    /// R15: `@int:` with a non-integer RHS must surface an error that names
+    /// `@int:` with a non-integer RHS must surface an error that names
     /// the type prefix, the offending input, and the enumeration hint.
     #[test]
     fn error_message_typed_rhs_int_enumerates_format() {
@@ -2992,7 +2975,7 @@ task_ref = "beta"
         );
     }
 
-    /// R15: `@float:` with a non-float RHS must surface an error that names
+    /// `@float:` with a non-float RHS must surface an error that names
     /// the type prefix, the offending input, and the enumeration hint.
     #[test]
     fn error_message_typed_rhs_float_enumerates_format() {
@@ -3021,7 +3004,7 @@ score = 1.5
         );
     }
 
-    /// R15: `@bool:` with a non-boolean RHS must surface an error that names
+    /// `@bool:` with a non-boolean RHS must surface an error that names
     /// the type prefix, the offending input, and the enumeration hint.
     #[test]
     fn error_message_typed_rhs_bool_enumerates_format() {
@@ -3045,7 +3028,7 @@ score = 1.5
         );
     }
 
-    /// R15: `@date:` with an unparseable RHS must surface an error that names
+    /// `@date:` with an unparseable RHS must surface an error that names
     /// the type prefix, the offending input, and the enumeration hint.
     #[test]
     fn error_message_typed_rhs_date_enumerates_format() {
@@ -3069,7 +3052,7 @@ score = 1.5
         );
     }
 
-    /// R15: `@str:` used in an ordered comparison against a non-string field
+    /// `@str:` used in an ordered comparison against a non-string field
     /// must surface an error that names the type prefix, the offending input,
     /// and the enumeration hint.
     #[test]
