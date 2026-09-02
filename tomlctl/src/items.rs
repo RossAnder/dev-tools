@@ -75,24 +75,35 @@ fn apply_dedup_id_on_add(obj: &mut serde_json::Map<String, JsonValue>) {
 }
 
 /// Auto-populate `dedup_id` on a single-item update. Four branches
-/// (documented in the README Contracts section):
+/// (documented in the README Contracts section), where "touches a
+/// fingerprinted field" means either a non-empty patch value for one or an
+/// `unset` entry naming one the row actually carries:
 ///   1. Patch explicitly sets `dedup_id` (non-empty string): preserve — no recompute.
-///   2. Patch touches a fingerprinted field AND does not set `dedup_id`:
-///      recompute from the merged (patch-over-existing) post-patch state.
-///   3. Patch does NOT touch a fingerprinted field AND existing item lacks
+///   2. The update touches a fingerprinted field AND does not set `dedup_id`:
+///      recompute from the post-merge, post-unset state.
+///   3. The update does NOT touch a fingerprinted field AND existing item lacks
 ///      `dedup_id`: leave absent — `items backfill-dedup-id` is the
 ///      explicit upgrade path for legacy ledgers.
-///   4. Patch does NOT touch a fingerprinted field AND existing item HAS
-///      `dedup_id`: preserve existing — the patch can't have changed any
-///      input to the fingerprint, so the existing digest is still correct.
+///   4. The update does NOT touch a fingerprinted field AND existing item HAS
+///      `dedup_id`: preserve existing — nothing changed an input to the
+///      fingerprint, so the existing digest is still correct.
 ///
 /// Honours `TOMLCTL_NO_DEDUP_ID`.
 ///
-/// `existing_tbl` is the item as it looks BEFORE the merge runs; the patch
-/// is the post-merge delta. Branch 2 builds an in-memory view of "existing
-/// plus patch" restricted to the five fingerprinted fields, hashes that,
-/// and stashes the result back into the patch so the downstream merge
-/// loop writes it as a normal key-value.
+/// `existing_tbl` is the item as it looks BEFORE the merge runs; `patch_obj`
+/// is the merge delta and `unset` the key list the caller strips AFTER the
+/// merge. Branch 2 builds an in-memory view of "existing plus patch minus
+/// unset" restricted to the five fingerprinted fields, hashes that, and
+/// stashes the result back into the patch so the downstream merge loop
+/// writes it as a normal key-value. Computing before the unset removals
+/// would digest a row state that never lands on disk.
+///
+/// An `unset` naming `dedup_id` still wins: the recomputed digest goes into
+/// the patch, the merge writes it, and the caller's removal loop then drops
+/// it. That same two-step is the repair for any row whose digest no longer
+/// matches its fields — `items update --unset dedup_id` then
+/// `items backfill-dedup-id`, since backfill preserves any `dedup_id`
+/// already present rather than refreshing it.
 ///
 /// **`{"dedup_id": null}` case**: a JSON null on `dedup_id` is NOT "remove
 /// the existing digest" — it's "patch didn't meaningfully touch this
@@ -103,6 +114,7 @@ fn apply_dedup_id_on_add(obj: &mut serde_json::Map<String, JsonValue>) {
 fn apply_dedup_id_on_update(
     existing_tbl: &toml::Table,
     patch_obj: &mut serde_json::Map<String, JsonValue>,
+    unset: &[String],
 ) {
     if dedup_id_disabled() {
         return;
@@ -120,36 +132,44 @@ fn apply_dedup_id_on_update(
     if explicit_dedup_id {
         return;
     }
-    // Branch classification by "does the patch touch any fingerprinted field"?
+    // Branch classification by "does this update touch any fingerprinted field"?
     // `is_empty_json` would strip null/empty, so those don't count as
     // touches either — a patch with `{"file": null}` is semantically "don't
     // change file" and should not trigger a recompute.
-    let touches_fingerprinted = FINGERPRINTED_FIELDS.iter().any(|k| {
+    let patch_touches = FINGERPRINTED_FIELDS.iter().any(|k| {
         patch_obj
             .get(*k)
             .map(|v| !is_empty_json(v))
             .unwrap_or(false)
     });
-    if !touches_fingerprinted {
+    // An `unset` of a fingerprinted field the row does not carry removes
+    // nothing, so it leaves every fingerprint input as it was — treating it
+    // as a touch would churn digests on a no-op removal.
+    let unset_touches = unset.iter().any(|k| {
+        FINGERPRINTED_FIELDS.contains(&k.as_str()) && existing_tbl.contains_key(k.as_str())
+    });
+    if !patch_touches && !unset_touches {
         // Branches 3 and 4: no-op — existing value (absent or present)
         // stays untouched. Branch 3 intentionally does NOT silently
         // populate on an unrelated update; `items backfill-dedup-id` is
         // the canonical upgrade path for legacy ledgers.
         return;
     }
-    // Branch 2: recompute from the patch-over-existing merged view.
-    let fp = merged_fingerprint(existing_tbl, patch_obj);
+    // Branch 2: recompute from the post-merge, post-unset view.
+    let fp = merged_fingerprint(existing_tbl, patch_obj, unset);
     patch_obj.insert("dedup_id".to_string(), JsonValue::String(fp));
 }
 
-/// Build the fingerprint from the merged (patch-over-existing) view of
-/// the five fingerprinted fields. For each field: if the patch has it as a
-/// non-empty string, use that; otherwise fall back to `existing_tbl`'s
-/// value via `str_field` (empty string on missing / non-string). This is
-/// the recompute branch of `apply_dedup_id_on_update`.
+/// Build the fingerprint from the post-merge, post-unset view of the five
+/// fingerprinted fields. For each field: `unset` wins with the empty string
+/// (the caller's removal loop runs after the merge); otherwise a non-empty
+/// patch string wins; otherwise fall back to `existing_tbl`'s value via
+/// `str_field` (empty string on missing / non-string). This is the recompute
+/// branch of `apply_dedup_id_on_update`.
 fn merged_fingerprint(
     existing_tbl: &toml::Table,
     patch_obj: &serde_json::Map<String, JsonValue>,
+    unset: &[String],
 ) -> String {
     // Build a fresh JSON object holding just the five fingerprinted fields
     // with their post-merge values, then feed it to the canonical JSON-side
@@ -157,11 +177,15 @@ fn merged_fingerprint(
     // same helper, same field order, same truncation.
     let mut merged = serde_json::Map::with_capacity(FINGERPRINTED_FIELDS.len());
     for &key in &FINGERPRINTED_FIELDS {
-        let from_patch = patch_obj.get(key).and_then(|v| match v {
-            JsonValue::String(s) if !s.is_empty() => Some(s.as_str()),
-            _ => None,
-        });
-        let resolved = from_patch.unwrap_or_else(|| str_field(existing_tbl, key));
+        let resolved = if unset.iter().any(|k| k == key) {
+            ""
+        } else {
+            let from_patch = patch_obj.get(key).and_then(|v| match v {
+                JsonValue::String(s) if !s.is_empty() => Some(s.as_str()),
+                _ => None,
+            });
+            from_patch.unwrap_or_else(|| str_field(existing_tbl, key))
+        };
         merged.insert(key.to_string(), JsonValue::String(resolved.to_string()));
     }
     tier_b_fingerprint_json(&merged)
@@ -494,12 +518,13 @@ pub(crate) fn items_update_value_to(
             continue;
         }
         // Decide whether to recompute `dedup_id` before the merge loop
-        // runs. `apply_dedup_id_on_update` inspects the existing table +
-        // patch and, for branch 2 (fingerprinted-field patch, no explicit
-        // `dedup_id`), inserts the freshly-computed digest into `patch_obj`
-        // so the downstream merge loop writes it as a normal key. Other
-        // branches leave `patch_obj` untouched.
-        apply_dedup_id_on_update(tbl, &mut patch_obj);
+        // runs. `apply_dedup_id_on_update` inspects the existing table,
+        // the patch and the `unset` list and, for branch 2 (a fingerprinted
+        // field written or removed, no explicit `dedup_id`), inserts the
+        // freshly-computed digest into `patch_obj` so the downstream merge
+        // loop writes it as a normal key. Other branches leave `patch_obj`
+        // untouched.
+        apply_dedup_id_on_update(tbl, &mut patch_obj, unset);
         for (k, v) in patch_obj {
             if is_empty_json(&v) {
                 continue;
@@ -842,7 +867,7 @@ fn update_at_index(
     // classifier before the merge loop. The indexed and linear-scan paths
     // share this helper so `dedup_id` never diverges between the two
     // dispatch paths.
-    apply_dedup_id_on_update(tbl, &mut patch_obj);
+    apply_dedup_id_on_update(tbl, &mut patch_obj, unset);
     // Parity with `items_update_value_to` — skip empty-valued patch fields
     // so the indexed fast-path doesn't diverge from the linear-scan path.
     for (k, v) in patch_obj {
@@ -3179,7 +3204,7 @@ status = "open"
         let _guard = env_lock();
         let existing = existing_with_dedup_id();
         let mut patch = patch_obj(r#"{"summary":"new-summary","dedup_id":"caller_provided"}"#);
-        apply_dedup_id_on_update(&existing, &mut patch);
+        apply_dedup_id_on_update(&existing, &mut patch, &[]);
         assert_eq!(
             patch.get("dedup_id").and_then(|v| v.as_str()),
             Some("caller_provided"),
@@ -3196,7 +3221,7 @@ status = "open"
         let _guard = env_lock();
         let existing = existing_with_dedup_id();
         let mut patch = patch_obj(r#"{"summary":"new summary"}"#);
-        apply_dedup_id_on_update(&existing, &mut patch);
+        apply_dedup_id_on_update(&existing, &mut patch, &[]);
         let got = patch.get("dedup_id").and_then(|v| v.as_str()).unwrap();
         // Compute expected: merged view's fingerprint.
         let expected_merged: JsonValue = serde_json::json!({
@@ -3225,7 +3250,7 @@ status = "open"
         let _guard = env_lock();
         let existing = existing_without_dedup_id();
         let mut patch = patch_obj(r#"{"status":"fixed"}"#);
-        apply_dedup_id_on_update(&existing, &mut patch);
+        apply_dedup_id_on_update(&existing, &mut patch, &[]);
         assert!(
             !patch.contains_key("dedup_id"),
             "branch 3 must NOT auto-populate a legacy item on an unrelated patch"
@@ -3240,10 +3265,126 @@ status = "open"
         let _guard = env_lock();
         let existing = existing_with_dedup_id();
         let mut patch = patch_obj(r#"{"status":"fixed"}"#);
-        apply_dedup_id_on_update(&existing, &mut patch);
+        apply_dedup_id_on_update(&existing, &mut patch, &[]);
         assert!(
             !patch.contains_key("dedup_id"),
             "branch 4 must leave the patch alone so existing dedup_id stays untouched"
+        );
+    }
+
+    /// Branch 2 via `unset`: removing a fingerprinted field with an empty
+    /// patch — the `--unset`-only invocation shape — recomputes from the
+    /// post-unset row, so the removed field hashes as the empty string.
+    #[test]
+    fn dedup_id_update_unset_fingerprinted_field_recomputes_post_unset() {
+        let _guard = env_lock();
+        let existing = existing_with_dedup_id();
+        let mut patch = patch_obj(r#"{}"#);
+        apply_dedup_id_on_update(&existing, &mut patch, &["symbol".to_string()]);
+        let got = patch
+            .get("dedup_id")
+            .and_then(|v| v.as_str())
+            .expect("an unset of a fingerprinted field must recompute dedup_id");
+        let expected_merged: JsonValue = serde_json::json!({
+            "file": "src/a.rs",
+            "summary": "existing summary",
+            "severity": "minor",
+            "category": "quality",
+            "symbol": "",
+        });
+        let expected = crate::dedup::tier_b_fingerprint_json(expected_merged.as_object().unwrap());
+        assert_eq!(
+            got, expected,
+            "an unset of a fingerprinted field must hash the post-unset row"
+        );
+        assert_ne!(
+            got, "pre_existing_id",
+            "the digest that hashed the removed field must not survive the removal"
+        );
+    }
+
+    /// `unset` wins over a patch write of the same fingerprinted field —
+    /// the caller's removal loop runs after the merge, so the digest must
+    /// hash the removal, not the value that gets written and then dropped.
+    #[test]
+    fn dedup_id_update_unset_beats_patch_for_same_fingerprinted_field() {
+        let _guard = env_lock();
+        let existing = existing_with_dedup_id();
+        let mut patch = patch_obj(r#"{"summary":"written then dropped"}"#);
+        apply_dedup_id_on_update(&existing, &mut patch, &["summary".to_string()]);
+        let got = patch.get("dedup_id").and_then(|v| v.as_str()).unwrap();
+        let expected_merged: JsonValue = serde_json::json!({
+            "file": "src/a.rs",
+            "summary": "",
+            "severity": "minor",
+            "category": "quality",
+            "symbol": "foo::bar",
+        });
+        let expected = crate::dedup::tier_b_fingerprint_json(expected_merged.as_object().unwrap());
+        assert_eq!(
+            got, expected,
+            "the digest must reflect the row that lands, not the pre-unset merge"
+        );
+    }
+
+    /// The negative case: an `unset` naming only non-fingerprinted fields
+    /// must not touch the patch, leaving the existing digest byte-identical.
+    #[test]
+    fn dedup_id_update_unset_non_fingerprinted_field_preserves_digest() {
+        let _guard = env_lock();
+        let existing = existing_with_dedup_id();
+        let mut patch = patch_obj(r#"{}"#);
+        apply_dedup_id_on_update(&existing, &mut patch, &["status".to_string()]);
+        assert!(
+            !patch.contains_key("dedup_id"),
+            "an unset outside the fingerprinted set must not churn the digest"
+        );
+    }
+
+    /// An `unset` of a fingerprinted field the row does not carry removes
+    /// nothing, so every fingerprint input is unchanged and the digest must
+    /// stay put — otherwise a no-op removal rewrites a legacy digest.
+    #[test]
+    fn dedup_id_update_unset_absent_fingerprinted_field_preserves_digest() {
+        let _guard = env_lock();
+        let mut existing = existing_with_dedup_id();
+        existing.remove("symbol");
+        let mut patch = patch_obj(r#"{}"#);
+        apply_dedup_id_on_update(&existing, &mut patch, &["symbol".to_string()]);
+        assert!(
+            !patch.contains_key("dedup_id"),
+            "a removal that removes nothing must not trigger a recompute"
+        );
+    }
+
+    /// End-to-end through the live mutator: after an `--unset`-only update
+    /// the row's `dedup_id` must equal the fingerprint of the row as it
+    /// actually landed, which is what `items find-duplicates --tier B`
+    /// recomputes when it groups.
+    #[test]
+    fn items_update_unset_fingerprinted_field_leaves_row_self_consistent() {
+        let _guard = env_lock();
+        let src = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+file = "src/a.rs"
+summary = "existing summary"
+severity = "minor"
+category = "quality"
+symbol = "foo::bar"
+status = "open"
+dedup_id = "pre_existing_id"
+"#;
+        let mut doc: TomlValue = toml::from_str(src).unwrap();
+        items_update(&mut doc, "R1", r#"{}"#, &["symbol".to_string()]).unwrap();
+        let arr = doc.get("items").and_then(|v| v.as_array()).unwrap();
+        let tbl = arr[0].as_table().unwrap();
+        assert!(!tbl.contains_key("symbol"), "unset must remove the field");
+        assert_eq!(
+            tbl.get("dedup_id").and_then(|v| v.as_str()),
+            Some(tier_b_fingerprint_table(tbl).as_str()),
+            "the landed row must hash to its own dedup_id"
         );
     }
 
@@ -3259,7 +3400,7 @@ status = "open"
         // skip, and the patch should end up with null dedup_id that the
         // merge loop will strip.
         let mut patch = patch_obj(r#"{"status":"fixed","dedup_id":null}"#);
-        apply_dedup_id_on_update(&existing, &mut patch);
+        apply_dedup_id_on_update(&existing, &mut patch, &[]);
         assert!(
             matches!(patch.get("dedup_id"), Some(JsonValue::Null)),
             "null dedup_id must survive so the merge loop can skip it; got {:?}",
@@ -3302,7 +3443,7 @@ status = "open"
 
         let existing = existing_without_dedup_id();
         let mut patch = patch_obj(r#"{"summary":"new"}"#);
-        apply_dedup_id_on_update(&existing, &mut patch);
+        apply_dedup_id_on_update(&existing, &mut patch, &[]);
         assert!(
             !patch.contains_key("dedup_id"),
             "kill switch must suppress recompute on update"
