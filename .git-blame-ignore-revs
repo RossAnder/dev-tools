@@ -1,3 +1,6 @@
 # Commits that only reformat — skipped by `git blame` once a clone has run
 # `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 # One unabbreviated 40-hex SHA per line; a `#` line above each says what it was.
+
+# style(tomlctl): apply rustfmt across the crate — crate-wide rustfmt pass, no behaviour change
+ec689ba309b65dec6739cb0249dc484e2b2d2ff1
