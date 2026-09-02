@@ -1,7 +1,6 @@
-//! R63: `items_*` operations extracted from `main.rs` into a standalone
-//! module so the crate root can shrink to pure dispatch plumbing. Every
-//! function here operates on a parsed `TomlValue` doc (or a mutable one)
-//! and returns either JSON output or an `anyhow::Result` — the I/O layer
+//! `items_*` operations over the ledger's array-of-tables. Every function
+//! here operates on a parsed `TomlValue` doc (or a mutable one) and returns
+//! either JSON output or an `anyhow::Result` — the I/O layer
 //! (`mutate_doc`, `read_doc`, containment guards) stays in `io.rs`.
 //!
 //! The symmetric `items_*` / `items_*_to` pairs let the test-only wrappers
@@ -20,15 +19,15 @@ use crate::dedup::{FINGERPRINTED_FIELDS, tier_b_fingerprint_json, tier_b_fingerp
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{capture_row_id, item_id, item_id_json, items_array, items_array_mut};
 
-/// T6b: env-var kill switch for every `dedup_id` auto-populate path. Any
+/// Env-var kill switch for every `dedup_id` auto-populate path. Any
 /// value (even empty) disables the hook; the user opts out by simply
 /// exporting the variable. Documented in README as the rollback lever.
 const DEDUP_ID_KILL_SWITCH: &str = "TOMLCTL_NO_DEDUP_ID";
 
-/// T6b: return `true` iff auto-populate of `dedup_id` should be skipped on
+/// Return `true` iff auto-populate of `dedup_id` should be skipped on
 /// this invocation. Checked at every write-funnel hook site.
 ///
-/// T11: exposed to the CLI dispatch layer so `items backfill-dedup-id` can
+/// Exposed to the CLI dispatch layer so `items backfill-dedup-id` can
 /// short-circuit to the documented `disabled-by-env` output without touching
 /// the ledger. The backfill subcommand is the one explicit-intent write path
 /// whose no-op cue is cleaner at the dispatch boundary than inside a compute
@@ -39,7 +38,7 @@ pub(crate) fn dedup_id_disabled() -> bool {
     std::env::var(DEDUP_ID_KILL_SWITCH).is_ok()
 }
 
-/// T6b: auto-populate `dedup_id` on a single-item add. If the caller already
+/// Auto-populate `dedup_id` on a single-item add. If the caller already
 /// set `dedup_id` on the payload (any non-null JSON value), preserve the
 /// explicit value. Otherwise compute `tier_b_fingerprint_json` from the
 /// payload's fingerprinted fields and insert it.
@@ -52,14 +51,14 @@ pub(crate) fn dedup_id_disabled() -> bool {
 /// rendered output, so `dedup_id` never leaks into user-facing progress log
 /// lines despite being present on every new row.
 ///
-/// **Ordering vs T5 `--dedupe-by`**: callers go through
+/// **Ordering vs `--dedupe-by`**: callers go through
 /// `items_add_value_with_dedupe_to`, which runs the pre-scan BEFORE
 /// delegating to `items_add_value_to` (the single write funnel that hooks
 /// into this helper). On a dedupe-match there is no write and no
 /// fingerprint computation; on a miss the auto-populate runs as normal.
 /// The caller never sees an auto-populated `dedup_id` influence its own
 /// pre-scan — preserving `--dedupe-by`'s "raw-equality-on-named-fields"
-/// contract from T5.
+/// contract.
 fn apply_dedup_id_on_add(obj: &mut serde_json::Map<String, JsonValue>) {
     if dedup_id_disabled() {
         return;
@@ -75,13 +74,13 @@ fn apply_dedup_id_on_add(obj: &mut serde_json::Map<String, JsonValue>) {
     obj.insert("dedup_id".to_string(), JsonValue::String(fp));
 }
 
-/// T6b: auto-populate `dedup_id` on a single-item update. Four branches
+/// Auto-populate `dedup_id` on a single-item update. Four branches
 /// (documented in the README Contracts section):
 ///   1. Patch explicitly sets `dedup_id` (non-empty string): preserve — no recompute.
 ///   2. Patch touches a fingerprinted field AND does not set `dedup_id`:
 ///      recompute from the merged (patch-over-existing) post-patch state.
 ///   3. Patch does NOT touch a fingerprinted field AND existing item lacks
-///      `dedup_id`: leave absent — Task 11's `backfill-dedup-id` is the
+///      `dedup_id`: leave absent — `items backfill-dedup-id` is the
 ///      explicit upgrade path for legacy ledgers.
 ///   4. Patch does NOT touch a fingerprinted field AND existing item HAS
 ///      `dedup_id`: preserve existing — the patch can't have changed any
@@ -97,7 +96,7 @@ fn apply_dedup_id_on_add(obj: &mut serde_json::Map<String, JsonValue>) {
 ///
 /// **`{"dedup_id": null}` case**: a JSON null on `dedup_id` is NOT "remove
 /// the existing digest" — it's "patch didn't meaningfully touch this
-/// field". `is_empty_json` (O51) already filters null/empty values out of
+/// field". `is_empty_json` already filters null/empty values out of
 /// the merge loop, so the existing value survives untouched. This helper
 /// treats a null or empty-string `dedup_id` as "absent in patch" for
 /// branch-classification purposes, matching the downstream merge behaviour.
@@ -134,8 +133,8 @@ fn apply_dedup_id_on_update(
     if !touches_fingerprinted {
         // Branches 3 and 4: no-op — existing value (absent or present)
         // stays untouched. Branch 3 intentionally does NOT silently
-        // populate on an unrelated update; `items backfill-dedup-id`
-        // (Task 11) is the canonical upgrade path for legacy ledgers.
+        // populate on an unrelated update; `items backfill-dedup-id` is
+        // the canonical upgrade path for legacy ledgers.
         return;
     }
     // Branch 2: recompute from the patch-over-existing merged view.
@@ -143,7 +142,7 @@ fn apply_dedup_id_on_update(
     patch_obj.insert("dedup_id".to_string(), JsonValue::String(fp));
 }
 
-/// T6b: build the fingerprint from the merged (patch-over-existing) view of
+/// Build the fingerprint from the merged (patch-over-existing) view of
 /// the five fingerprinted fields. For each field: if the patch has it as a
 /// non-empty string, use that; otherwise fall back to `existing_tbl`'s
 /// value via `str_field` (empty string on missing / non-string). This is
@@ -168,20 +167,16 @@ fn merged_fingerprint(
     tier_b_fingerprint_json(&merged)
 }
 
-/// O18: minimum number of `update` ops in a batch before we pay to build
-/// an `id → array_index` HashMap. Below this, the per-op linear scan
-/// (`items_update_value_to` walks the array) is cheaper than the
-/// up-front map build + per-`remove` rebuild.
+/// Minimum number of `update` ops in a batch before we pay to build an
+/// `id → array_index` HashMap. Below this, the per-op linear scan
+/// (`items_update_value_to` walks the array) is cheaper than the up-front
+/// map build.
 ///
-/// O68: threshold tuned for typical 2-3 item apply batches. The original
-/// midpoint (5) was calibrated for a 50-row ledger crossover band, but
-/// typical review-apply / optimise-apply batches sit at 1-3 update ops,
-/// which left the indexed fast path dormant on the most common workload.
-/// Combined with the O(1)-per-entry `remove` invalidation below (replacing
-/// the prior whole-index drop), the dispatch comparison `update_count >
-/// ID_INDEX_BUILD_THRESHOLD` now activates the indexed path for any batch
-/// with 3+ update ops — covering the bulk of `items apply` traffic. The
-/// spec floor is 2 (no benefit at 1, and 0 always builds).
+/// Tuned for the 1-3 update ops a typical `items apply` batch carries. The
+/// dispatch comparison is `update_count > ID_INDEX_BUILD_THRESHOLD`, so 2
+/// activates the indexed path from 3 update ops upward; 1 would buy nothing
+/// because a single update never amortises the map build, and 0 always
+/// builds.
 const ID_INDEX_BUILD_THRESHOLD: usize = 2;
 
 #[cfg(test)]
@@ -189,7 +184,7 @@ pub(crate) fn items_get(doc: &TomlValue, id: &str) -> Result<JsonValue> {
     items_get_from(doc, "items", id)
 }
 
-/// R57: array-parametric `items get`. See `List --array`.
+/// Array-parametric `items get`. See `List --array`.
 pub(crate) fn items_get_from(doc: &TomlValue, array_name: &str, id: &str) -> Result<JsonValue> {
     for item in items_array(doc, array_name) {
         if item_id(item) == Some(id) {
@@ -202,7 +197,7 @@ pub(crate) fn items_get_from(doc: &TomlValue, array_name: &str, id: &str) -> Res
     )
 }
 
-/// O64: JSON-side sibling of `items_get_from`. Walks a `JsonValue` doc's
+/// JSON-side sibling of `items_get_from`. Walks a `JsonValue` doc's
 /// named items array and returns a clone of the first object whose `id`
 /// field equals `id`. Used by the borrowed-DeTable fast-path in
 /// `ItemsOp::Get`'s non-verify-integrity branch — the doc has already
@@ -236,7 +231,7 @@ pub(crate) fn items_add(doc: &mut TomlValue, json: &str) -> Result<()> {
     items_add_to(doc, "items", json)
 }
 
-/// R57: array-parametric `items add`. See `List --array`.
+/// Array-parametric `items add`. See `List --array`.
 pub(crate) fn items_add_to(doc: &mut TomlValue, array_name: &str, json: &str) -> Result<()> {
     let patch: JsonValue = serde_json::from_str(json).context(
         "parsing --json (expected JSON object, e.g. `{\"id\":\"R1\",\"status\":\"resolved\"}`)",
@@ -244,12 +239,12 @@ pub(crate) fn items_add_to(doc: &mut TomlValue, array_name: &str, json: &str) ->
     items_add_value_to(doc, patch, array_name)
 }
 
-/// O27: takes `patch` by value so we can destructure a `JsonValue::Object`
+/// Takes `patch` by value so we can destructure a `JsonValue::Object`
 /// into its owned `Map<String, JsonValue>` and iterate `(String, JsonValue)`
 /// without per-key `.clone()`. `maybe_date_coerce` still takes `&JsonValue`
 /// (to avoid a cascade through `convert.rs` callers); the borrow is fine.
 ///
-/// O51: fields whose value is "empty" (`JsonValue::Null`, `""`, or `[]`) are
+/// Fields whose value is "empty" (`JsonValue::Null`, `""`, or `[]`) are
 /// silently skipped on write. This keeps ledger rows clean when agents emit
 /// placeholder fields they never filled in. An explicit unset of a field
 /// should use the dedicated `--unset` flag on `update` (this helper is also
@@ -288,12 +283,12 @@ pub(crate) fn items_add_value_to(
              mint one with `tomlctl items next-id <file> --prefix <P>` and stamp it onto each row"
         );
     }
-    // T6b: auto-populate `dedup_id` from the payload BEFORE conversion to
+    // Auto-populate `dedup_id` from the payload BEFORE conversion to
     // TOML, unless the caller already set it or the env-var kill switch is
     // active. Hooking here covers every single-add path: direct `items add`,
     // `items add-many` (which feeds each merged row through this funnel),
     // `items apply` add-op (via `apply_single_op` / `apply_op_indexed`),
-    // and T5's `items_add_value_with_dedupe_to` (which delegates here on a
+    // and `items_add_value_with_dedupe_to` (which delegates here on a
     // dedupe-miss, so the pre-scan never sees an auto-populated `dedup_id`
     // on its own payload).
     apply_dedup_id_on_add(&mut obj);
@@ -310,7 +305,7 @@ pub(crate) fn items_add_value_to(
     Ok(())
 }
 
-/// O58: walk a candidate ledger item by dotted path and convert ONLY the
+/// Walk a candidate ledger item by dotted path and convert ONLY the
 /// leaf to JSON, mirroring the narrowing semantics of `walk_json_path`
 /// (object descent only — no array-index segments). Used by
 /// `find_dedupe_match` to compare a payload-side `walk_json_path` result
@@ -332,15 +327,14 @@ fn narrow_toml_field(item: &TomlValue, path: &str) -> Option<JsonValue> {
     Some(toml_to_json(cur))
 }
 
-/// T5 (plan `docs/plans/tomlctl-capability-gaps.md`): scan `doc[array_name]`
-/// for the first existing item whose values at every path in `fields` equal
-/// the corresponding values in `payload`. Returns the item's `id` on match,
-/// `None` if no match.
+/// Scan `doc[array_name]` for the first existing item whose values at every
+/// path in `fields` equal the corresponding values in `payload`. Returns the
+/// item's `id` on match, `None` if no match.
 ///
 /// Semantics:
 ///   - Each entry of `fields` is a dotted path interpreted by
 ///     `walk_json_path` (object descent only; no array-index segments).
-///   - O58: each candidate field is narrowed to a leaf-only JSON value via
+///   - Each candidate field is narrowed to a leaf-only JSON value via
 ///     `narrow_toml_field`, so the comparison happens in JSON space without
 ///     materialising the whole candidate item. This keeps "raw JSON
 ///     equality" stable regardless of TOML surface differences (e.g. a
@@ -358,10 +352,9 @@ fn narrow_toml_field(item: &TomlValue, path: &str) -> Option<JsonValue> {
 /// text on `--dedupe-by` documents this.
 ///
 /// **`--dedupe-by` does NOT implicitly include `dedup_id`**. Callers who
-/// want fingerprint-based dedup (once T6 auto-populates `dedup_id`) must
-/// pass `--dedupe-by dedup_id` explicitly. Keeping the flag orthogonal
-/// to the dedup-id auto-populate lets a caller opt into one without the
-/// other, and keeps T5 testable before T6 lands.
+/// want fingerprint-based dedup must pass `--dedupe-by dedup_id`
+/// explicitly. Keeping the flag orthogonal to the dedup-id auto-populate
+/// lets a caller opt into one without the other.
 pub(crate) fn find_dedupe_match(
     doc: &TomlValue,
     array_name: &str,
@@ -372,9 +365,9 @@ pub(crate) fn find_dedupe_match(
         return None;
     }
     for item in items_array(doc, array_name) {
-        // O58: narrow per-dedupe-field to a leaf JSON conversion instead of
+        // Narrow per-dedupe-field to a leaf JSON conversion instead of
         // materialising the whole candidate item via `toml_to_json`. Mirrors
-        // the `narrow_toml_to_json` fast-path pattern in `query.rs` (O21/O55):
+        // the `narrow_toml_to_json` fast-path pattern in `query.rs`:
         // walking the dotted path through `TomlValue::Table` arms and only
         // converting the LEAF to JSON keeps the per-row scan cost O(field
         // depth) rather than O(row size). For batch add-many on an N-item
@@ -401,7 +394,7 @@ pub(crate) fn find_dedupe_match(
     None
 }
 
-/// T5: outcome of a dedupe-aware `items add`. `Added` = appended a fresh
+/// Outcome of a dedupe-aware `items add`. `Added` = appended a fresh
 /// row. `Skipped { matched_id }` = pre-scan found an existing row whose
 /// dedupe-field values equal the payload's; the doc is left untouched.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -410,7 +403,7 @@ pub(crate) enum AddOutcome {
     Skipped { matched_id: String },
 }
 
-/// T5: dedupe-aware wrapper around `items_add_value_to`. Empty `fields`
+/// Dedupe-aware wrapper around `items_add_value_to`. Empty `fields`
 /// short-circuits to the current behaviour (append unconditionally,
 /// return `Added`). A non-empty slice runs the pre-scan under the
 /// caller-held lock; on match the outcome reports the matched id and
@@ -431,7 +424,7 @@ pub(crate) fn items_add_value_with_dedupe_to(
     Ok(AddOutcome::Added)
 }
 
-/// O51: "empty" predicate shared by `items_add_value_to` /
+/// "Empty" predicate shared by `items_add_value_to` /
 /// `items_update_value_to`. Returns `true` for `Null`, `""`, and `[]`.
 /// Non-empty arrays, numbers, booleans, and nested objects all pass through.
 fn is_empty_json(v: &JsonValue) -> bool {
@@ -453,7 +446,7 @@ pub(crate) fn items_update(
     items_update_to(doc, "items", id, json, unset)
 }
 
-/// R57: array-parametric `items update`. See `List --array`.
+/// Array-parametric `items update`. See `List --array`.
 pub(crate) fn items_update_to(
     doc: &mut TomlValue,
     array_name: &str,
@@ -466,12 +459,12 @@ pub(crate) fn items_update_to(
     items_update_value_to(doc, array_name, id, patch, unset)
 }
 
-/// O27: takes `patch` by value so we can destructure the `Object` into its
+/// Takes `patch` by value so we can destructure the `Object` into its
 /// owned `Map<String, JsonValue>` and consume each `(String, JsonValue)`
 /// without per-key `.clone()`. `maybe_date_coerce` still takes `&JsonValue`
 /// (avoids a `convert.rs` cascade); the borrow is fine.
 ///
-/// O51: mirrors `items_add_value_to` — patch fields whose value is "empty"
+/// Mirrors `items_add_value_to` — patch fields whose value is "empty"
 /// (`Null`, `""`, `[]`) are skipped rather than written. To explicitly clear
 /// a field on an existing row, use the `unset` array (same on the `apply`
 /// batch form). The skip applies only to the merge path; `unset` still
@@ -500,7 +493,7 @@ pub(crate) fn items_update_value_to(
         if !matches {
             continue;
         }
-        // T6b: decide whether to recompute `dedup_id` before the merge loop
+        // Decide whether to recompute `dedup_id` before the merge loop
         // runs. `apply_dedup_id_on_update` inspects the existing table +
         // patch and, for branch 2 (fingerprinted-field patch, no explicit
         // `dedup_id`), inserts the freshly-computed digest into `patch_obj`
@@ -535,22 +528,20 @@ pub(crate) fn items_apply_to(doc: &mut TomlValue, ops_json: &str, array_name: &s
     items_apply_to_opts(doc, ops_json, array_name, false)
 }
 
-/// Extended variant of `items_apply_to` honouring the `--no-remove` flag (R37).
+/// Extended variant of `items_apply_to` honouring the `--no-remove` flag.
 /// When `no_remove` is true, the batch is scanned up-front for any `remove` op;
 /// if present, the whole apply is refused — no partial mutation occurs because
 /// the check runs before the mutation loop.
 ///
-/// O27: consumes the parsed `ops` array by value (`.into_iter()`) so each
-/// op flows by ownership into `apply_single_op`, eliminating per-op patch
-/// clones the previous `arr.iter()` path forced.
+/// Consumes the parsed `ops` array by value (`.into_iter()`) so each op flows
+/// by ownership into `apply_single_op`, eliminating per-op patch clones.
 ///
-/// R45: string-parsing wrapper retained for tests that exercise the live
-/// mutator from a JSON literal. Production dispatch goes through
-/// `compute_apply_mutation` → `items_apply_parsed_to_opts` so the parse
-/// happens once at the CLI boundary; this wrapper is kept for the
-/// internal test surface only.
+/// String-parsing wrapper for tests that exercise the live mutator from a
+/// JSON literal. Production dispatch goes through `compute_apply_mutation` →
+/// `items_apply_parsed_to_opts` so the parse happens once at the CLI
+/// boundary; this wrapper is the internal test surface only.
 ///
-/// O18: for batches with `> ID_INDEX_BUILD_THRESHOLD` `update` ops the
+/// For batches with `> ID_INDEX_BUILD_THRESHOLD` `update` ops the
 /// post-parse path (`items_apply_parsed_to_opts`) builds an
 /// `id → array_index` `HashMap` once and uses it for O(1) lookups in
 /// `apply_op_indexed` (instead of the per-op linear scan inside
@@ -572,7 +563,7 @@ pub(crate) fn items_apply_to_opts(
     items_apply_parsed_to_opts(doc, ops, array_name, no_remove)
 }
 
-/// R45: post-parse sibling of `items_apply_to_opts`. Takes already-parsed
+/// Post-parse sibling of `items_apply_to_opts`. Takes already-parsed
 /// `ops` (consumed by-value to feed the existing `.into_iter()` loop) so
 /// callers that have already validated the JSON shape — `compute_apply_mutation`
 /// (after walking the array for per-op id capture) and the CLI dispatch layer
@@ -592,13 +583,11 @@ pub(crate) fn items_apply_parsed_to_opts(
             got_type
         );
     };
-    // O54: fail-before-mutate for `--no-remove` is a required property (the
-    // flag exists precisely so review-apply/optimise-apply never partially
-    // erase audit history before bailing). A separate pre-pass is therefore
-    // mandatory — "merge into the main loop" would leak mutations before the
-    // first remove op is discovered. We keep the pre-pass but collapse the
-    // explicit loop to `iter().position(...)` so the no-remove branch reads
-    // as a single short expression.
+    // Fail-before-mutate for `--no-remove` is a required property: the flag
+    // exists precisely so review-apply/optimise-apply never partially erase
+    // audit history before bailing. The scan must therefore stay a separate
+    // pre-pass — folded into the mutation loop it would leak writes before
+    // the first remove op is discovered.
     if no_remove
         && let Some(i) = arr
             .iter()
@@ -609,15 +598,15 @@ pub(crate) fn items_apply_parsed_to_opts(
             i
         );
     }
-    // The O18 threshold depends on `update` op count, so we still do one
-    // walk over the array regardless of the no-remove flag.
+    // `ID_INDEX_BUILD_THRESHOLD` is compared against the `update` op count,
+    // so we still do one walk over the array regardless of the no-remove flag.
     let update_count: usize = arr
         .iter()
         .filter(|op| op.get("op").and_then(|v| v.as_str()) == Some("update"))
         .count();
 
     if update_count > ID_INDEX_BUILD_THRESHOLD {
-        // O18 fast path: build the id→index map once, then dispatch each op
+        // Fast path: build the id→index map once, then dispatch each op
         // through `apply_op_indexed`, which performs O(1) lookups for
         // update/remove. The map is owned mutably across the loop and kept
         // in sync (or invalidated on remove) by the helper.
@@ -634,7 +623,7 @@ pub(crate) fn items_apply_parsed_to_opts(
     Ok(())
 }
 
-/// O18: build an `id → array_index` map for `array_name` inside `doc`.
+/// Build an `id → array_index` map for `array_name` inside `doc`.
 /// Returns an empty map if the array is missing or empty (consistent with
 /// how `items_array` returns an empty slice).
 fn build_id_index(doc: &TomlValue, array_name: &str) -> Result<HashMap<String, usize>> {
@@ -648,7 +637,7 @@ fn build_id_index(doc: &TomlValue, array_name: &str) -> Result<HashMap<String, u
     Ok(map)
 }
 
-/// O18: indexed sibling of `apply_single_op`. Same op-dispatch semantics
+/// Indexed sibling of `apply_single_op`. Same op-dispatch semantics
 /// (and same error messages) but routes `update` / `remove` through the
 /// id-index for O(1) target resolution. The `id_index` is `Option` so
 /// `remove` can drop it (`.take()`); the next op that needs it rebuilds
@@ -686,12 +675,12 @@ fn apply_op_indexed(
                 })?;
             // Capture the new entry's id (if present + a string) before the
             // value is consumed; on success append it to the index so a
-            // later update/remove in the same batch can find it. R21:
-            // route through `item_id_json` so the index-insert path shares
-            // the same id-extraction predicate as the three `MutationPlan`
-            // capture sites (which use `capture_row_id` for their `String`
-            // form); divergence here would silently miss the index-insert
-            // for ids that those sites would still report in the plan.
+            // later update/remove in the same batch can find it. Route
+            // through `item_id_json` so the index-insert path shares the
+            // same id-extraction predicate as the `MutationPlan` capture
+            // sites (which use `capture_row_id` for their `String` form);
+            // divergence here would silently miss the index-insert for ids
+            // that those sites would still report in the plan.
             let new_id: Option<String> = item_id_json(&json).map(str::to_string);
             // Capture the array length before the append so the inserted
             // index stays correct even if a future hook (dedupe-skip,
@@ -733,8 +722,8 @@ fn apply_op_indexed(
                     id
                 );
             };
-            // R57: update honours --array. Direct-index update bypasses
-            // the linear scan in `items_update_value_to`.
+            // Update honours --array. Direct-index update bypasses the
+            // linear scan in `items_update_value_to`.
             update_at_index(doc, array_name, idx, &id, json, &unset)
         }
         "remove" => {
@@ -746,21 +735,18 @@ fn apply_op_indexed(
                         "remove op missing `id` field; required shape is {{\"op\":\"remove\",\"id\":\"<id>\"}}"
                     )
                 })?;
-            // R57: remove also follows --array. Order-preserving `Vec::remove`
+            // Remove also follows --array. Order-preserving `Vec::remove`
             // (via `retain`) shifts later indexes by 1.
             //
-            // O68: keep the index alive across `remove` ops by patching it in
+            // Keep the index alive across `remove` ops by patching it in
             // place — drop the removed key and decrement every index that
-            // sat AFTER the removed slot. This is still O(map_size) per
-            // remove but skips the array walk + per-id `to_string` heap
-            // churn that `build_id_index` does on a fresh rebuild. For
-            // interleaved remove/update batches the saving compounds: every
-            // `update` after the first `remove` previously paid a full
-            // rebuild before its O(1) lookup; now it lands on a still-warm
-            // index. We capture the removed index BEFORE the call so a stale
-            // index entry (id-in-map but not-in-doc, which shouldn't happen
-            // post-O18 but defensively allowed) falls through to the legacy
-            // full-rebuild path on the next op that needs the map.
+            // sat AFTER the removed slot. Still O(map_size) per remove, but
+            // it skips the array walk + per-id `to_string` heap churn a
+            // fresh `build_id_index` would cost every `update` that follows
+            // a `remove` in the same batch. Capture the removed index BEFORE
+            // the call so a stale index entry (id-in-map but not-in-doc,
+            // which shouldn't happen but is defensively allowed) falls
+            // through to the full-rebuild path on the next op needing the map.
             let removed_idx = id_index.as_ref().and_then(|m| m.get(id).copied());
             items_remove_from(doc, array_name, id)?;
             match (id_index.as_mut(), removed_idx) {
@@ -788,9 +774,8 @@ fn apply_op_indexed(
     }
 }
 
-/// O18 helper: parse the optional `unset` field of an `update` op into a
-/// `Vec<String>`, with the same R36 type-only error messages as
-/// `apply_single_op`.
+/// Parse the optional `unset` field of an `update` op into a `Vec<String>`,
+/// with the same type-only error messages as `apply_single_op`.
 fn take_unset(unset: Option<JsonValue>) -> Result<Vec<String>> {
     match unset {
         None | Some(JsonValue::Null) => Ok(Vec::new()),
@@ -815,7 +800,7 @@ fn take_unset(unset: Option<JsonValue>) -> Result<Vec<String>> {
     }
 }
 
-/// O18 helper: O(1) sibling of `items_update_value_to` that takes the
+/// O(1) sibling of `items_update_value_to` that takes the
 /// already-resolved array index. The `expected_id` parameter is checked
 /// defensively against the indexed entry to surface stale-index bugs as a
 /// hard error (matches the legacy "no item with id = X" message).
@@ -853,12 +838,12 @@ fn update_at_index(
             expected_id
         );
     }
-    // T6b: parity with `items_update_value_to` — run the recompute-branch
+    // Parity with `items_update_value_to` — run the recompute-branch
     // classifier before the merge loop. The indexed and linear-scan paths
     // share this helper so `dedup_id` never diverges between the two
     // dispatch paths.
     apply_dedup_id_on_update(tbl, &mut patch_obj);
-    // O51: parity with `items_update_value_to` — skip empty-valued patch fields
+    // Parity with `items_update_value_to` — skip empty-valued patch fields
     // so the indexed fast-path doesn't diverge from the linear-scan path.
     for (k, v) in patch_obj {
         if is_empty_json(&v) {
@@ -873,11 +858,10 @@ fn update_at_index(
     Ok(())
 }
 
-/// O27: takes `op` by value so the `add`/`update` arms can hand the inner
+/// Takes `op` by value so the `add`/`update` arms can hand the inner
 /// `json` payload to `items_add_value_to` / `items_update_value_to` by
-/// value, eliminating the per-row patch clone the previous `&JsonValue`
-/// signature forced. Caller (`items_apply_to_opts`) iterates the parsed
-/// ops array via `.into_iter()` to feed owned values here.
+/// value, avoiding a per-row patch clone. Caller (`items_apply_to_opts`)
+/// iterates the parsed ops array via `.into_iter()` to feed owned values here.
 pub(crate) fn apply_single_op(doc: &mut TomlValue, op: JsonValue, array_name: &str) -> Result<()> {
     let got_type = crate::convert::json_type_name(&op);
     let JsonValue::Object(mut obj) = op else {
@@ -921,12 +905,12 @@ pub(crate) fn apply_single_op(doc: &mut TomlValue, op: JsonValue, array_name: &s
                         "update op missing `json` field; required shape is {{\"op\":\"update\",\"id\":\"<id>\",\"json\":{{<patch>}}}}"
                     )
                 })?;
-            // R2: share the `unset` parser with `apply_op_indexed` via the
+            // Share the `unset` parser with `apply_op_indexed` via the
             // `take_unset` helper so the two dispatch paths can't drift on
             // shape errors or `null` handling.
             let unset = take_unset(obj.remove("unset"))?;
-            // R57: update now honours the apply-op's --array parameter so a
-            // batch targeting e.g. `rollback_events` can update entries there,
+            // Update honours the apply-op's --array parameter so a batch
+            // targeting e.g. `rollback_events` can update entries there,
             // not just in `[[items]]`.
             items_update_value_to(doc, array_name, &id, json, &unset)
         }
@@ -939,7 +923,7 @@ pub(crate) fn apply_single_op(doc: &mut TomlValue, op: JsonValue, array_name: &s
                         "remove op missing `id` field; required shape is {{\"op\":\"remove\",\"id\":\"<id>\"}}"
                     )
                 })?;
-            // R57: remove also follows the --array parameter.
+            // Remove also follows the --array parameter.
             items_remove_from(doc, array_name, id)
         }
         other => bail!(
@@ -954,7 +938,7 @@ pub(crate) fn items_remove(doc: &mut TomlValue, id: &str) -> Result<()> {
     items_remove_from(doc, "items", id)
 }
 
-/// R57: array-parametric `items remove`. See `List --array`.
+/// Array-parametric `items remove`. See `List --array`.
 pub(crate) fn items_remove_from(doc: &mut TomlValue, array_name: &str, id: &str) -> Result<()> {
     let arr = items_array_mut(doc, array_name)?;
     let before = arr.len();
@@ -969,11 +953,11 @@ pub(crate) fn items_remove_from(doc: &mut TomlValue, array_name: &str, id: &str)
 }
 
 pub(crate) fn items_next_id(doc: &TomlValue, prefix: &str) -> Result<String> {
-    // T8: both prefix-shape rejections are CLI-surface validation failures —
+    // Both prefix-shape rejections are CLI-surface validation failures —
     // tag them `Validation` so `--error-format json` reports the same `kind`
-    // regardless of which rule fired. Text output is byte-identical to the
-    // pre-T8 `bail!(...)` form; `tagged_err`'s `TaggedError` renders its
-    // message verbatim under `{:#}` (see `errors.rs` Display note).
+    // regardless of which rule fired. Text output stays identical to a plain
+    // `bail!(...)`; `tagged_err`'s `TaggedError` renders its message verbatim
+    // under `{:#}` (see `errors.rs` Display note).
     if prefix.is_empty() {
         return Err(tagged_err(
             ErrorKind::Validation,
@@ -1001,7 +985,7 @@ pub(crate) fn items_next_id(doc: &TomlValue, prefix: &str) -> Result<String> {
     Ok(format!("{}{}", prefix, max_n + 1))
 }
 
-/// Task 4: sibling of `items_next_id` that scans the ledger's existing ids,
+/// Sibling of `items_next_id` that scans the ledger's existing ids,
 /// infers the (single) letter prefix in use, and delegates to `items_next_id`.
 /// Used by `items next-id --infer-from-file` when the caller doesn't want to
 /// hard-code the prefix in the invocation — the canonical case being an agent
@@ -1057,7 +1041,7 @@ pub(crate) fn items_infer_and_next_id(doc: &TomlValue) -> Result<String> {
 /// `Err`, so the caller may rely on receiving either a fully parsed batch or
 /// no rows at all. No side effects.
 pub(crate) fn parse_ndjson(s: &str) -> Result<Vec<JsonValue>> {
-    // O48: pre-size by newline count so the common case (one JSON row per
+    // Pre-size by newline count so the common case (one JSON row per
     // line, no blanks) fills the Vec without any reallocation. Blank lines
     // over-shoot by at most a handful, and a trailing-newline-absent final
     // row under-shoots by one — both are cheap compared with the geometric
@@ -1077,7 +1061,7 @@ pub(crate) fn parse_ndjson(s: &str) -> Result<Vec<JsonValue>> {
     Ok(rows)
 }
 
-/// R4: validate `defaults` as a JSON object (or return an empty map when
+/// Validate `defaults` as a JSON object (or return an empty map when
 /// `None`) and clone into an owned `Map` the caller can reuse per row.
 /// Shared by `items_add_many` and `items_add_many_with_dedupe` so the two
 /// batch funnels can't drift on the shape-error message or the "no
@@ -1097,21 +1081,18 @@ fn defaults_base(defaults: Option<&JsonValue>) -> Result<serde_json::Map<String,
     }
 }
 
-/// R4: build the per-row merged payload — defaults provide the base layer,
+/// Build the per-row merged payload — defaults provide the base layer,
 /// per-row keys shallow-overwrite on conflict. Pre-sizes the target map
 /// for the sum of both sources (over-allocates when the row shadows a
 /// default; cheaper than a re-grow inside `extend`).
 ///
-/// O60: walk `base` once and for each entry choose the row's value when
-/// the row shadows the default (cloning ONLY the chosen value, not both),
-/// then append row keys absent from base. The previous `extend(base.clone())`
-/// plus per-row insert pattern paid a wasted `clone` per shadowed default;
-/// for 100 rows times 10 default fields that was ~1000 transient String
-/// allocations per batch. Output ordering is preserved byte-identical to
-/// the legacy form: defaults appear in their `base.iter()` order (with
-/// row-supplied values at shadowed positions), and non-shadowed row keys
-/// trail in `row_obj.iter()` order, matching how `serde_json::Map`'s
-/// `IndexMap` backing handled the original `extend` plus `insert` sequence.
+/// Walks `base` once and for each entry clones ONLY the chosen value —
+/// the row's when it shadows the default, the default's otherwise — then
+/// appends row keys absent from base. Output ordering is load-bearing:
+/// defaults appear in `base.iter()` order (with row-supplied values at
+/// shadowed positions) and non-shadowed row keys trail in `row_obj.iter()`
+/// order, which is what `serde_json::Map`'s `IndexMap` backing yields for
+/// an `extend` followed by per-key `insert`.
 fn merge_row_over_base(
     base: &serde_json::Map<String, JsonValue>,
     row_obj: &serde_json::Map<String, JsonValue>,
@@ -1151,8 +1132,8 @@ pub(crate) fn items_add_many(
     rows: &[JsonValue],
     defaults: Option<&JsonValue>,
 ) -> Result<usize> {
-    // O26 / R4: pre-validate defaults once and share the `base` + per-row
-    // merge shape with `items_add_many_with_dedupe`.
+    // Pre-validate defaults once and share the `base` + per-row merge shape
+    // with `items_add_many_with_dedupe`.
     let base = defaults_base(defaults)?;
     for (i, row) in rows.iter().enumerate() {
         let row_obj = row.as_object().ok_or_else(|| {
@@ -1175,8 +1156,7 @@ pub(crate) fn items_add_many(
 }
 
 /// Append `rows` to `array_name` with no defaults. Thin wrapper over
-/// `items_add_many` so the `array-append` dispatch site (Task 5) stays a
-/// one-liner.
+/// `items_add_many` so the `array-append` dispatch site stays a one-liner.
 pub(crate) fn array_append(
     doc: &mut TomlValue,
     array_name: &str,
@@ -1185,40 +1165,38 @@ pub(crate) fn array_append(
     items_add_many(doc, array_name, rows, None)
 }
 
-/// T10: structural summary of what a mutation WOULD change, together with
+/// Structural summary of what a mutation WOULD change, together with
 /// the mutated `new_doc` ready for persistence. Produced by
 /// `compute_apply_mutation` / `compute_remove_mutation` (pure: no I/O, no
 /// lock, no sidecar), consumed by `apply_mutation` (I/O: lock + atomic
 /// tempfile + sidecar).
 ///
 /// `added`, `updated`, `removed` are the ids of items touched by the
-/// operation in **input order**. For `items apply` with a batch that
-/// sequentially adds R5, updates R1, removes R4, the vectors are
-/// `added=["R5"], updated=["R1"], removed=["R4"]`. This is the structural
-/// guarantee that underpins `--dry-run`'s `would_change` output — the
-/// CLI layer serialises these vectors verbatim.
+/// operation in **input order** — a batch that sequentially adds one row,
+/// updates a second and removes a third lands one id in each vector, at the
+/// position its op occupied. This is the structural guarantee that underpins
+/// `--dry-run`'s `would_change` output — the CLI layer serialises these
+/// vectors verbatim.
 ///
-/// `skipped` reuses T5's `SkippedRow` and stays empty for the `compute_*`
-/// paths in T10 (only the add-many-with-dedupe path populates it, and
-/// that path is not covered by `--dry-run` yet — the dedupe decision is
-/// inside the mutate closure rather than a pre-split plan).
+/// `skipped` reuses `SkippedRow` and stays empty on the `compute_*` paths
+/// (only the add-many-with-dedupe path populates it, and that path is not
+/// covered by `--dry-run` yet — the dedupe decision is inside the mutate
+/// closure rather than a pre-split plan).
 #[derive(Debug, Clone)]
 pub(crate) struct MutationPlan {
     pub(crate) new_doc: TomlValue,
     pub(crate) added: Vec<String>,
     pub(crate) updated: Vec<String>,
     pub(crate) removed: Vec<String>,
-    /// Reserved for a future dedupe-aware apply path (T5's
-    /// `items_add_many_with_dedupe` already populates a `Vec<SkippedRow>`
-    /// today, but that lives on its own `AddManyOutcome`). Keeping the
-    /// field here lets a later plan reuse the same `MutationPlan` shape
-    /// without an API break. `compute_apply_mutation` /
-    /// `compute_remove_mutation` leave it empty.
+    /// Reserved for a future dedupe-aware apply path:
+    /// `items_add_many_with_dedupe` already populates a `Vec<SkippedRow>`,
+    /// but that lives on its own `AddManyOutcome`. `compute_apply_mutation`
+    /// and `compute_remove_mutation` leave this empty.
     pub(crate) skipped: Vec<SkippedRow>,
 }
 
 impl MutationPlan {
-    /// T10: concatenation `[...added, ...updated, ...removed]` for the
+    /// Concatenation `[...added, ...updated, ...removed]` for the
     /// `--dry-run` summary's `ids` field. First-appearance order within
     /// each category is preserved because the three vectors are built
     /// in input-order by `compute_apply_mutation`.
@@ -1232,7 +1210,7 @@ impl MutationPlan {
     }
 }
 
-/// T10: pure sibling of `items_apply_to_opts`. Clones `doc` into
+/// Pure sibling of `items_apply_to_opts`. Clones `doc` into
 /// `plan.new_doc`, runs the existing apply pipeline on the clone, and
 /// records touched ids per op in input order. No lock, no sidecar, no
 /// tempfile — the result is a `MutationPlan` the caller either hands to
@@ -1254,7 +1232,7 @@ pub(crate) fn compute_apply_mutation(
     ops: &JsonValue,
     no_remove: bool,
 ) -> Result<MutationPlan> {
-    // R45: caller hands us an already-parsed `JsonValue`. The dispatch
+    // Caller hands us an already-parsed `JsonValue`. The dispatch
     // layer already parsed the `--ops` payload to enforce
     // `MAX_OPS_PER_APPLY`; threading the parsed value through here (and
     // into `items_apply_parsed_to_opts` below) avoids a second / third
@@ -1310,7 +1288,7 @@ pub(crate) fn compute_apply_mutation(
     // items_add_value_to → apply_dedup_id_on_add, etc.) all fire with
     // byte-identical error surfaces. On error, `added/updated/removed`
     // above are discarded — the live path likewise would not have persisted.
-    // R45: clone `ops` here (rather than at the call site) so the by-ref
+    // Clone `ops` here (rather than at the call site) so the by-ref
     // signature stays ergonomic for the dispatch layer; the clone is over
     // the parsed JSON tree, not a re-parse of the source bytes.
     let mut new_doc = doc.clone();
@@ -1324,7 +1302,7 @@ pub(crate) fn compute_apply_mutation(
     })
 }
 
-/// T10: pure sibling of `items_remove_from`. Clones `doc`, runs the
+/// Pure sibling of `items_remove_from`. Clones `doc`, runs the
 /// remove on the clone, and records the removed id. Errors identically
 /// to the live path (`no item with id = {id}`). `added` and `updated`
 /// stay empty.
@@ -1344,7 +1322,7 @@ pub(crate) fn compute_remove_mutation(
     })
 }
 
-/// T11: pure compute-phase helper for `items backfill-dedup-id`. Clones the
+/// Pure compute-phase helper for `items backfill-dedup-id`. Clones the
 /// doc, walks every item in `array_name`, and populates `dedup_id` on any
 /// item that lacks the field via `tier_b_fingerprint` over the same five
 /// fingerprinted fields (`file`, `summary`, `severity`, `category`,
@@ -1392,10 +1370,11 @@ pub(crate) fn compute_backfill_mutation(doc: &TomlValue, array_name: &str) -> Re
         };
         // Contract: preserve any existing `dedup_id` regardless of its value.
         // A present-but-empty-string `dedup_id` is still a deliberate caller
-        // choice (T6b treats empty-string as "absent in patch" for the
-        // RECOMPUTE decision, but not for backfill — backfill only ever
-        // FILLS IN a missing field, never overwrites). If a legacy empty
-        // value needs replacing, the caller uses `items update`.
+        // choice (`apply_dedup_id_on_update` treats empty-string as "absent
+        // in patch" for the RECOMPUTE decision, but not for backfill —
+        // backfill only ever FILLS IN a missing field, never overwrites).
+        // If a legacy empty value needs replacing, the caller uses
+        // `items update`.
         if tbl.contains_key("dedup_id") {
             continue;
         }
@@ -1405,10 +1384,8 @@ pub(crate) fn compute_backfill_mutation(doc: &TomlValue, array_name: &str) -> Re
         // `apply_dedup_id_on_add` is used at the add path because that path
         // starts from a JSON `Map` payload; here we have the parsed TOML
         // table directly, avoiding an intermediate `toml_to_json` clone.
-        // R46: `_table` variant takes `&Table` directly, eliminating the
-        // per-row `tbl.clone()` the previous `TomlValue::Table(...)` wrap
-        // forced — backfill walks every item in the array, so the clone
-        // scaled per-row.
+        // The `_table` variant takes `&Table` directly, so the walk over
+        // every item in the array costs no per-row `tbl.clone()`.
         let fp = tier_b_fingerprint_table(tbl);
         let id = tbl
             .get("id")
@@ -1427,7 +1404,7 @@ pub(crate) fn compute_backfill_mutation(doc: &TomlValue, array_name: &str) -> Re
     })
 }
 
-/// T5: aggregate result of a dedupe-aware `items add-many` batch. `added`
+/// Aggregate result of a dedupe-aware `items add-many` batch. `added`
 /// is the number of rows appended; `skipped_rows` is the per-row skip log
 /// in INPUT ORDER (ascending by 1-indexed row number to match
 /// `items_add_many`'s existing error-messages). `skipped_rows.len()` is
@@ -1439,7 +1416,7 @@ pub(crate) struct AddManyOutcome {
     pub skipped_rows: Vec<SkippedRow>,
 }
 
-/// T5: one entry per skipped row in the add-many batch. `row` is
+/// One entry per skipped row in the add-many batch. `row` is
 /// **1-indexed** to match the error-message convention elsewhere in
 /// `items_add_many` (`row N: must be a JSON object`). `matched_id` is the
 /// `id` of the existing item that caused the skip.
@@ -1449,7 +1426,7 @@ pub(crate) struct SkippedRow {
     pub matched_id: String,
 }
 
-/// T5: dedupe-aware sibling of `items_add_many`. Empty `dedupe_fields`
+/// Dedupe-aware sibling of `items_add_many`. Empty `dedupe_fields`
 /// replicates the existing semantics (append every row, return
 /// `added == rows.len()`). A non-empty slice runs `find_dedupe_match` on
 /// the current doc state before each row; rows that match an existing
@@ -1473,7 +1450,7 @@ pub(crate) fn items_add_many_with_dedupe(
     defaults: Option<&JsonValue>,
     dedupe_fields: &[String],
 ) -> Result<AddManyOutcome> {
-    // R4: share the defaults + row-merge shape with `items_add_many`.
+    // Share the defaults + row-merge shape with `items_add_many`.
     let base = defaults_base(defaults)?;
     let mut added: usize = 0;
     let mut skipped_rows: Vec<SkippedRow> = Vec::new();
@@ -1513,7 +1490,7 @@ pub(crate) fn items_add_many_with_dedupe(
     })
 }
 
-/// T10b: pure sibling of `items_add_to` / `items_add_value_to`. Clones the
+/// Pure sibling of `items_add_to` / `items_add_value_to`. Clones the
 /// doc, runs the existing add pipeline on the clone, and records the new
 /// item's `id` (or empty string if the payload omitted one) in
 /// `plan.added`. Errors are byte-identical to the live path
@@ -1524,11 +1501,8 @@ pub(crate) fn items_add_many_with_dedupe(
 /// dry-run preview is byte-equivalent to a live add even when dedup_id
 /// auto-population fires — both paths observe the same env state.
 ///
-/// R47: takes a parsed `&JsonValue` so the dispatch layer's dedupe / no-dedupe
-/// dry-run branches can share one parse path. Previously the no-dedupe arm
-/// fed `&str` here while the dedupe arm parsed independently for
-/// `compute_add_many_mutation` — the asymmetry forced stdin reads to differ
-/// in cost between branches and made it easy to drift on the
+/// Takes a parsed `&JsonValue` so the dispatch layer's dedupe / no-dedupe
+/// dry-run branches share one parse path and cannot drift on the
 /// `parsing --json` context message. Cloning the patch here (rather than
 /// forcing the caller to hand ownership in) keeps the compute helper a
 /// pure-by-ref function the tests can call multiple times on the same
@@ -1542,13 +1516,13 @@ pub(crate) fn compute_add_mutation(
     // the same id the live path would persist. An add with no `id` field
     // surfaces as an empty string, mirroring `compute_apply_mutation`'s
     // contract for ad-hoc add ops.
-    // R21: per-plan id capture funnels through `capture_row_id` so this
-    // site, the no-dedupe / dedupe arms of `compute_add_many_mutation`,
-    // and any future single-row capture share one `unwrap_or("")` rule.
+    // Per-plan id capture funnels through `capture_row_id` so this site,
+    // the no-dedupe / dedupe arms of `compute_add_many_mutation`, and any
+    // future single-row capture share one `unwrap_or("")` rule.
     let id = capture_row_id(patch);
     let mut new_doc = doc.clone();
-    // R47: clone here so the caller's borrow is preserved. `items_add_value_to`
-    // consumes the patch by-value (O27 — feeds owned `(String, JsonValue)`
+    // Clone here so the caller's borrow is preserved. `items_add_value_to`
+    // consumes the patch by-value (it feeds owned `(String, JsonValue)`
     // pairs into the merge loop without per-key clones); the price of a
     // single top-level Value clone here is dominated by the doc clone above.
     items_add_value_to(&mut new_doc, patch.clone(), array_name)?;
@@ -1561,7 +1535,7 @@ pub(crate) fn compute_add_mutation(
     })
 }
 
-/// T10b: pure sibling of `items_add_many` / `items_add_many_with_dedupe`.
+/// Pure sibling of `items_add_many` / `items_add_many_with_dedupe`.
 /// Empty `dedupe_fields` runs `items_add_many` on a cloned doc; non-empty
 /// runs `items_add_many_with_dedupe` and threads `AddManyOutcome.added`
 /// into `plan.added` (with per-row ids captured from the merged payloads
@@ -1592,7 +1566,7 @@ pub(crate) fn compute_add_many_mutation(
         // live path.
         let mut added: Vec<String> = Vec::with_capacity(rows.len());
         for row in rows {
-            // R21: shared `capture_row_id` keeps this no-dedupe arm in step
+            // Shared `capture_row_id` keeps this no-dedupe arm in step
             // with `compute_add_mutation` and the dedupe arm below.
             added.push(capture_row_id(row));
         }
@@ -1610,19 +1584,17 @@ pub(crate) fn compute_add_many_mutation(
     } else {
         // Capture per-row ids up front; we'll filter to only the rows
         // that actually appended after the dedupe outcome lands.
-        // R21: shared `capture_row_id` — the dedupe arm uses the same
+        // Shared `capture_row_id` — the dedupe arm uses the same
         // empty-on-missing convention as the no-dedupe arm above.
         let row_ids: Vec<String> = rows.iter().map(capture_row_id).collect();
         let outcome =
             items_add_many_with_dedupe(&mut new_doc, array_name, rows, defaults, dedupe_fields)?;
         // `outcome.skipped_rows` carries 1-indexed row numbers; the
         // remaining indices are the ones that appended in input order.
-        // R44: HashSet kept for clarity even though `outcome.skipped_rows`
-        // is sorted ascending (T5 contract above) and a two-pointer merge
-        // would be O(n) without the hash overhead. The per-row `contains`
-        // call below expresses the "did this index get skipped?" intent
-        // more directly than threading a pointer through the filter, and
-        // the typical batch size is < 1000 rows where the constant-factor
+        // `outcome.skipped_rows` is sorted ascending (see `AddManyOutcome`),
+        // so a two-pointer merge would avoid the hash — but the per-row
+        // `contains` below states the "did this index get skipped?" intent
+        // directly, and at the typical sub-1000-row batch size the
         // difference is dominated by the per-row TOML mutation cost.
         let skipped_set: std::collections::HashSet<usize> =
             outcome.skipped_rows.iter().map(|r| r.row).collect();
@@ -1649,7 +1621,7 @@ pub(crate) fn compute_add_many_mutation(
     }
 }
 
-/// T10b: pure sibling of `items_update_to` / `items_update_value_to`.
+/// Pure sibling of `items_update_to` / `items_update_value_to`.
 /// Clones the doc, runs the update pipeline on the clone, and records
 /// the touched id in `plan.updated`. Errors are byte-identical to the
 /// live path (`no item with id = {id}`, `--json must be a JSON object`,
@@ -1676,7 +1648,7 @@ pub(crate) fn compute_update_mutation(
     })
 }
 
-/// T10b: pure sibling of `array_append`. Thin forward to
+/// Pure sibling of `array_append`. Thin forward to
 /// `compute_add_many_mutation` with no defaults and no dedupe — the
 /// `array-append` subcommand deliberately does not expose either.
 pub(crate) fn compute_array_append_mutation(
@@ -1687,14 +1659,14 @@ pub(crate) fn compute_array_append_mutation(
     compute_add_many_mutation(doc, array_name, rows, None, &[])
 }
 
-/// R19: typed error for disposition-specific required-field validation.
+/// Typed error for disposition-specific required-field validation.
 ///
 /// The `[[items]]` ledger schema couples `status` to a small cluster of
 /// disposition-specific required fields (see `claude/commands/review.md`
 /// `## Ledger Schema → Disposition-specific fields`). Today every read/write
-/// path in this module reaches into `TomlValue::Table` directly, so a row
-/// with `status = "deferred"` but missing `defer_reason` parses as valid
-/// TOML and only surfaces as malformed at render time.
+/// path in this module reaches into `TomlValue::Table` directly, so without
+/// this check a row with `status = "deferred"` but missing `defer_reason`
+/// parses as valid TOML and only surfaces as malformed at render time.
 ///
 /// `Item::validate` (below) is the parse-time check that catches the
 /// missing-disposition-field case. It is intentionally additive — no
@@ -1734,7 +1706,7 @@ impl std::fmt::Display for DispositionError {
 
 impl std::error::Error for DispositionError {}
 
-/// R19: zero-sized typed wrapper that exposes the disposition-required-field
+/// Zero-sized typed wrapper that exposes the disposition-required-field
 /// check as `Item::validate`. The call sites in this module continue to
 /// operate on `TomlValue::Table` / `JsonValue` directly — `Item` is a
 /// namespace handle, not a parsed-row container — so adding this entry
@@ -1858,8 +1830,7 @@ optimise_findings = ".claude/flows/x/optimise-findings.toml"
 
     /// Small helper: run a filter-only query against `doc` and return the
     /// resulting items as a `Vec<JsonValue>`. Unwraps the Array-shape output
-    /// for the tests below (R70: migrated from the retired legacy
-    /// `items_list(...) / ListFilters` path so we can delete both).
+    /// for the tests below.
     fn run_filter_query(doc: &TomlValue, preds: Vec<Predicate>) -> Vec<JsonValue> {
         let q = Query {
             predicates: preds,
@@ -1887,7 +1858,7 @@ optimise_findings = ".claude/flows/x/optimise-findings.toml"
 
     #[test]
     fn navigate_indexes_into_array_with_integer_segment() {
-        // R49: `items.0.status` walks through the [[items]] array-of-tables,
+        // `items.0.status` walks through the [[items]] array-of-tables,
         // selects index 0, and reads its `status`. Out-of-bounds yields None.
         let doc = led();
         let first_status = navigate(&doc, "items.0.status").and_then(|v| v.as_str());
@@ -2060,7 +2031,7 @@ optimise_findings = ".claude/flows/x/optimise-findings.toml"
 
     #[test]
     fn date_keys_roundtrip_as_toml_datetime() {
-        // R45: exhaustive pin — every entry in DATE_KEYS must round-trip from
+        // Exhaustive pin — every entry in DATE_KEYS must round-trip from
         // an ISO-date JSON string through `maybe_date_coerce` into a TOML
         // `Datetime`. If a key is removed from DATE_KEYS or mistyped, this
         // test fails with the offending key named in the assertion message.
@@ -2276,7 +2247,7 @@ status = "fixed"
         assert!(!err.to_string().is_empty());
     }
 
-    // ----- R1: items list --count -----------------------------------------
+    // ----- items list --count ---------------------------------------------
 
     #[test]
     fn items_list_count_matches_filter() {
@@ -2318,7 +2289,7 @@ summary = "c"
         assert_eq!(fixed.len(), 1);
     }
 
-    // ----- R57: items add/update/remove/list/get --array ------------------
+    // ----- items add/update/remove/list/get --array -----------------------
 
     #[test]
     fn items_add_to_custom_array_appends_without_touching_items() {
@@ -2409,7 +2380,7 @@ detail = "two"
         assert_eq!(items.len(), 1);
     }
 
-    // ----- R14: items apply --array ---------------------------------------
+    // ----- items apply --array --------------------------------------------
 
     #[test]
     fn items_apply_to_custom_array_appends_without_touching_items() {
@@ -2442,7 +2413,7 @@ summary = "existing"
         );
     }
 
-    // ----- R37: items apply --no-remove -----------------------------------
+    // ----- items apply --no-remove ------------------------------------------
 
     #[test]
     fn items_apply_no_remove_rejects_remove_op() {
@@ -2468,17 +2439,18 @@ summary = "existing"
             "expected remove-op rejection, got: {msg}"
         );
         assert!(msg.contains("op[1]"), "expected index in error, got: {msg}");
-        // Confirm no partial mutation: R1 still `open`, R4 still present.
+        // Confirm no partial mutation: the update target is still `open` and
+        // the remove target is still present.
         assert_eq!(items_get(&doc2, "R1").unwrap()["status"], "open");
         assert!(items_get(&doc2, "R4").is_ok());
     }
 
-    // ----- O18: indexed apply fast-path -----------------------------------
+    // ----- indexed apply fast-path ----------------------------------------
 
-    /// Pin the O18 indexed-apply path's correctness: a batch with > 5
-    /// `update` ops triggers the HashMap-backed dispatch, and `add` /
-    /// `remove` interleaved with updates must still produce the same
-    /// final document as a batch the linear-scan path would produce.
+    /// Pin the indexed-apply path's correctness: a batch with more than
+    /// `ID_INDEX_BUILD_THRESHOLD` `update` ops triggers the HashMap-backed
+    /// dispatch, and `add` / `remove` interleaved with updates must still
+    /// produce the same final document as the linear-scan path would.
     #[test]
     fn items_apply_indexed_path_matches_linear_for_large_batch() {
         let src = r#"schema_version = 1
@@ -2511,7 +2483,7 @@ status = "open"
 id = "R7"
 status = "open"
 "#;
-        // 7 updates (> ID_INDEX_BUILD_THRESHOLD = 5) trigger the indexed
+        // 7 updates clear `ID_INDEX_BUILD_THRESHOLD` and trigger the indexed
         // path. Plus an add and a remove to exercise the post-add map
         // bump and post-remove map invalidation.
         let ops = r#"[
@@ -2548,7 +2520,7 @@ status = "open"
         );
     }
 
-    /// O18: an `update` op for an unknown id under the indexed path must
+    /// An `update` op for an unknown id under the indexed path must
     /// surface the same `no item with id = X` error as the linear-scan
     /// path does, so callers that rely on the error message keep working.
     #[test]
@@ -2563,7 +2535,7 @@ status = "open"
 id = "R2"
 status = "open"
 "#;
-        // 6 updates push us over the threshold. Last update targets a
+        // The updates push us over the threshold. Last update targets a
         // missing id; expect the same error message the linear path emits.
         let ops = r#"[
             {"op":"update","id":"R1","json":{"status":"fixed"}},
@@ -2582,13 +2554,11 @@ status = "open"
         );
     }
 
-    // ----- Audit-ledger error-message rewrites (Phase 2 T6c): enum-rejection
-    // and state-precondition coverage on the categories T5 couldn't cover
-    // from its 4 files. -----------------------------------------------------
+    // ----- error-message shape: enum-rejection and state-precondition ------
 
-    /// Audit-ledger row items.rs:688/815: an unknown op token must enumerate
-    /// the valid set in the message so an agent's malformed apply payload
-    /// gets a directed remediation instead of an opaque "unknown op" line.
+    /// An unknown op token must enumerate the valid set in the message so an
+    /// agent's malformed apply payload gets a directed remediation instead of
+    /// an opaque "unknown op" line.
     #[test]
     fn error_message_enum_rejection_lists_valid_ops() {
         let src = r#"schema_version = 1
@@ -2598,7 +2568,7 @@ status = "open"
 "#;
         let mut doc: TomlValue = toml::from_str(src).unwrap();
         // A single bad-op batch flows through `apply_single_op` (linear path)
-        // because the update_count is below the O18 threshold.
+        // because the update_count is below `ID_INDEX_BUILD_THRESHOLD`.
         let ops = r#"[{"op":"frobnicate","id":"R1","json":{"status":"fixed"}}]"#;
         let err = items_apply(&mut doc, ops).unwrap_err();
         let msg = format!("{err:#}");
@@ -2612,10 +2582,9 @@ status = "open"
         );
     }
 
-    /// Audit-ledger row items.rs:198/224/483/642/737/740/742/830: a missing
-    /// item id must include the `tomlctl items list ... --pluck id`
-    /// discovery hint so the caller can enumerate the available ids without
-    /// digging into the source file.
+    /// Every "no item with id" site must include the
+    /// `tomlctl items list ... --pluck id` discovery hint so the caller can
+    /// enumerate the available ids without digging into the source file.
     #[test]
     fn error_message_state_precondition_suggests_discovery_command() {
         let src = r#"schema_version = 1
@@ -2643,15 +2612,12 @@ status = "open"
         );
     }
 
-    /// R28: audit-ledger row items.rs:266 (and parallel sites at 142, 184,
-    /// 219, 261, 320 — every funnel that demands a JSON object payload):
-    /// when the caller hands a non-object JSON value (array, number, string,
-    /// bool, null) the error must enumerate the actual JSON type so the
-    /// caller can correct the shape mismatch without re-reading the source.
-    /// The Phase 2 T6c partial-enum class accounted for ~25 of ~70
-    /// audit-ledger rewrite rows yet had zero unit-level coverage; this
-    /// test pins the convention end-to-end through the `items_add_to`
-    /// funnel (which feeds `items_add_value_to` at the line cited).
+    /// Every funnel that demands a JSON object payload shares one
+    /// convention: when the caller hands a non-object JSON value (array,
+    /// number, string, bool, null) the error must enumerate the actual JSON
+    /// type so the caller can correct the shape mismatch without re-reading
+    /// the source. Pinned end-to-end through the `items_add_to` funnel,
+    /// which feeds `items_add_value_to`.
     #[test]
     fn error_message_partial_enum_rewrite_echoes_actual_json_type() {
         let src = r#"schema_version = 1
@@ -2694,12 +2660,12 @@ status = "open"
         );
     }
 
-    // ----- Task 4: items_infer_and_next_id --------------------------------
+    // ----- items_infer_and_next_id ----------------------------------------
 
     #[test]
     fn items_infer_and_next_id_single_prefix_returns_max_plus_one() {
-        // Led() carries two R-prefixed rows (R1, R4). Inference should pick
-        // `R` as the sole prefix and hand off to items_next_id → "R5".
+        // The shared ledger fixture carries two R-prefixed rows, so inference
+        // picks `R` as the sole prefix and hands off to `items_next_id`.
         let doc = led();
         assert_eq!(items_infer_and_next_id(&doc).unwrap(), "R5");
     }
@@ -2806,7 +2772,7 @@ summary = "design finding"
         assert_eq!(items_infer_and_next_id(&doc).unwrap(), "DF5");
     }
 
-    // ----- R19: items_next_id on empty doc --------------------------------
+    // ----- items_next_id on empty doc -------------------------------------
 
     #[test]
     fn items_next_id_on_empty_doc_returns_prefix_one() {
@@ -2818,7 +2784,7 @@ summary = "design finding"
         assert_eq!(items_next_id(&empty, "R").unwrap(), "R1");
     }
 
-    // ----- Task 2: items add-many + array-append helpers ------------------
+    // ----- items add-many + array-append helpers --------------------------
 
     #[test]
     fn items_add_many_merges_defaults() {
@@ -2950,7 +2916,7 @@ summary = "existing"
 
     #[test]
     fn array_append_matches_items_add_many_with_no_defaults() {
-        // T6b: both paths funnel through `items_add_value_to`, which
+        // Both paths funnel through `items_add_value_to`, which
         // reads the `TOMLCTL_NO_DEDUP_ID` env var. A parallel test that
         // toggles the kill switch would cause one of the two adds here to
         // observe a different env state and emit a divergent `dedup_id`
@@ -3000,13 +2966,13 @@ summary = "existing"
         assert_eq!(rows[1]["id"], "R2");
     }
 
-    // ----- T5: --dedupe-by (find_dedupe_match unit tests) ----------------
+    // ----- --dedupe-by (find_dedupe_match unit tests) --------------------
 
     /// Build a small ledger fixture for dedupe tests with two existing
     /// items. Re-used across the cases below so each test asserts one
-    /// branch of the `find_dedupe_match` logic in isolation. R1 carries
-    /// a nested `meta` object (via `[items.meta]`-style inline table) so
-    /// the dotted-path walker is exercised on an item with nested depth.
+    /// branch of the `find_dedupe_match` logic in isolation. The first item
+    /// carries a nested `meta` object (via `[items.meta]`-style inline table)
+    /// so the dotted-path walker is exercised on an item with nested depth.
     fn dedupe_fixture() -> TomlValue {
         let src = r#"schema_version = 1
 
@@ -3042,7 +3008,7 @@ status = "open"
     #[test]
     fn find_dedupe_match_multi_field_all_must_match() {
         let doc = dedupe_fixture();
-        // Both `file` and `summary` match R1 — hit.
+        // Both `file` and `summary` match the first item — hit.
         let hit: JsonValue =
             serde_json::from_str(r#"{"file":"src/a.rs","summary":"alpha","status":"new"}"#)
                 .unwrap();
@@ -3056,7 +3022,7 @@ status = "open"
             Some("R1".to_string())
         );
 
-        // `file` matches R1 but `summary` differs — miss.
+        // `file` matches the first item but `summary` differs — miss.
         let miss: JsonValue =
             serde_json::from_str(r#"{"file":"src/a.rs","summary":"different"}"#).unwrap();
         assert_eq!(
@@ -3073,7 +3039,7 @@ status = "open"
 
     #[test]
     fn find_dedupe_match_missing_on_both_sides_is_equal() {
-        // Neither R1/R2 nor the payload carries `nonexistent_field`, so
+        // Neither fixture item nor the payload carries `nonexistent_field`, so
         // both `walk_json_path` calls return `None` — equal by
         // definition. A `--dedupe-by nonexistent_field,file` predicate
         // therefore reduces to the `file` field alone in practice.
@@ -3090,9 +3056,9 @@ status = "open"
 
     #[test]
     fn find_dedupe_match_missing_on_one_side_is_unequal() {
-        // Payload has `file` = src/a.rs (matches R1) AND `extra_key` =
-        // "x" (R1 lacks it). `extra_key` is missing on the candidate
-        // side and present on the payload side → unequal → miss.
+        // Payload has `file` = src/a.rs (matching the first item) AND
+        // `extra_key` = "x", which that item lacks. `extra_key` is missing on
+        // the candidate side and present on the payload side → unequal → miss.
         let doc = dedupe_fixture();
         let payload: JsonValue =
             serde_json::from_str(r#"{"file":"src/a.rs","extra_key":"x"}"#).unwrap();
@@ -3119,9 +3085,9 @@ status = "open"
         )
         .unwrap();
         assert!(matches!(outcome, AddOutcome::Added));
-        // Second call with the same patch: R3 now exists → skip, report
-        // `matched_id=R3`. Doc unchanged relative to the post-first-call
-        // state.
+        // Second call with the same patch: the row now exists → skip, and
+        // report its id as `matched_id`. Doc unchanged relative to the
+        // post-first-call state.
         let outcome = items_add_value_with_dedupe_to(
             &mut doc,
             patch,
@@ -3133,7 +3099,7 @@ status = "open"
             AddOutcome::Skipped { matched_id } => assert_eq!(matched_id, "R3"),
             other => panic!("expected Skipped(R3), got {other:?}"),
         }
-        // Array length still 3 (original 2 + the single R3 add).
+        // Array length still 3 (the fixture's 2 plus the single add).
         let items = doc.get("items").and_then(|v| v.as_array()).unwrap();
         assert_eq!(items.len(), 3);
     }
@@ -3144,7 +3110,7 @@ status = "open"
         let rows: Vec<JsonValue> = vec![
             // Row 1: new → added.
             serde_json::from_str(r#"{"id":"R3","file":"src/c.rs","summary":"gamma"}"#).unwrap(),
-            // Row 2: duplicate of R1 → skipped.
+            // Row 2: duplicate of the fixture's first item → skipped.
             serde_json::from_str(r#"{"id":"R99","file":"src/a.rs","summary":"alpha"}"#).unwrap(),
             // Row 3: new → added.
             serde_json::from_str(r#"{"id":"R4","file":"src/d.rs","summary":"delta"}"#).unwrap(),
@@ -3166,7 +3132,7 @@ status = "open"
         assert_eq!(items.len(), 4);
     }
 
-    // ----- T6b: dedup_id auto-populate (helper-level, no I/O) ------------
+    // ----- dedup_id auto-populate (helper-level, no I/O) -----------------
 
     /// Helper: build a patch `Map<String, JsonValue>` from a JSON string for
     /// the dedup_id branch tests. Avoids `.unwrap()` sprawl on each case.
@@ -3205,7 +3171,7 @@ status = "open"
         }
     }
 
-    /// T6b branch 1: explicit `dedup_id` in the patch (non-empty string) is
+    /// Branch 1: explicit `dedup_id` in the patch (non-empty string) is
     /// preserved regardless of whether other fingerprinted fields are in
     /// the patch. This is the "caller knows best" override path.
     #[test]
@@ -3221,7 +3187,7 @@ status = "open"
         );
     }
 
-    /// T6b branch 2: a fingerprinted-field patch with no explicit
+    /// Branch 2: a fingerprinted-field patch with no explicit
     /// `dedup_id` triggers recompute from the merged (patch-over-existing)
     /// view. The resulting digest must equal `tier_b_fingerprint_json`
     /// on the merged view (that's the exact contract of this branch).
@@ -3251,9 +3217,9 @@ status = "open"
         );
     }
 
-    /// T6b branch 3: non-fingerprint patch on an item that LACKS
-    /// `dedup_id` must leave the patch alone — no silent auto-populate
-    /// (that's Task 11's `backfill-dedup-id`).
+    /// Branch 3: non-fingerprint patch on an item that LACKS `dedup_id`
+    /// must leave the patch alone — no silent auto-populate. Filling in a
+    /// legacy row is `items backfill-dedup-id`'s job.
     #[test]
     fn dedup_id_update_branch_3_non_fingerprint_patch_legacy_item_preserves_absence() {
         let _guard = env_lock();
@@ -3266,7 +3232,7 @@ status = "open"
         );
     }
 
-    /// T6b branch 4: non-fingerprint patch on an item that already has
+    /// Branch 4: non-fingerprint patch on an item that already has
     /// `dedup_id` must leave the existing digest intact (no recompute,
     /// no patch mutation — the merge loop skips absent keys).
     #[test]
@@ -3281,7 +3247,7 @@ status = "open"
         );
     }
 
-    /// T6b: `dedup_id: null` in the patch is treated as "patch didn't
+    /// `dedup_id: null` in the patch is treated as "patch didn't
     /// mention the field" (preservation path), NOT "remove the existing
     /// digest". Documented as the less-surprising semantics.
     #[test]
@@ -3301,7 +3267,7 @@ status = "open"
         );
     }
 
-    /// T6b: kill-switch env var short-circuits every hook.
+    /// The kill-switch env var short-circuits every hook.
     #[test]
     fn dedup_id_kill_switch_disables_auto_populate_on_add() {
         let _guard_lock = env_lock();
@@ -3343,7 +3309,7 @@ status = "open"
         );
     }
 
-    /// T6b: add with no `dedup_id` auto-populates from the payload's
+    /// An add with no `dedup_id` auto-populates from the payload's
     /// fingerprinted fields. Re-adding the same payload produces an
     /// identical digest (pure function of fields — idempotent).
     #[test]
@@ -3372,7 +3338,7 @@ status = "open"
         assert_eq!(fp1, fp2, "same payload must produce the same digest");
     }
 
-    /// T6b: explicit `dedup_id` on the add payload is preserved (no
+    /// Explicit `dedup_id` on the add payload is preserved (no
     /// fingerprint override). Mirrors branch 1 on the add side.
     #[test]
     fn dedup_id_add_preserves_explicit_value() {
@@ -3387,7 +3353,7 @@ status = "open"
         );
     }
 
-    /// T6b: `items_add_value_to` funnels through `apply_dedup_id_on_add`,
+    /// `items_add_value_to` funnels through `apply_dedup_id_on_add`,
     /// so a JSON payload without `dedup_id` lands on disk with one set.
     /// Integration-style coverage of the full single-add write path.
     #[test]
@@ -3405,9 +3371,9 @@ status = "open"
         assert_eq!(fp.len(), 16, "dedup_id must be 16 hex chars; got {fp:?}");
     }
 
-    // ----- T10: compute/apply split invariance ----------------------------
+    // ----- compute/apply split invariance ---------------------------------
 
-    /// T10 (e) INVARIANCE (unit-level): `compute_apply_mutation`'s
+    /// INVARIANCE (unit-level): `compute_apply_mutation`'s
     /// `plan.new_doc`, when serialised through the same
     /// `toml::to_string_pretty` emit path that `write_toml_with_sidecar`
     /// uses, must be byte-identical to the in-place mutated doc produced
@@ -3416,9 +3382,9 @@ status = "open"
     /// `--dry-run`: if these two bytes ever diverged, the dry-run preview
     /// would lie about what a real run would write.
     ///
-    /// Covered op set: mixed add + update + remove, hitting every branch
-    /// in `apply_single_op` and the indexed fast-path trigger (threshold
-    /// is 5 update ops today, so we exercise the linear-scan path only).
+    /// Covered op set: mixed add + update + remove, hitting every branch in
+    /// `apply_single_op`. The single `update` op keeps the batch below
+    /// `ID_INDEX_BUILD_THRESHOLD`, so this is the linear-scan path.
     #[test]
     fn compute_apply_mutation_new_doc_matches_live_apply_bytes() {
         let _guard = env_lock();
@@ -3473,7 +3439,7 @@ status = "open"
         );
     }
 
-    /// T10: `compute_remove_mutation` serialises byte-identically to a
+    /// `compute_remove_mutation` serialises byte-identically to a
     /// live `items_remove_from` on the same fixture. Mirrors the
     /// `compute_apply_mutation` invariance above for the single-item
     /// remove path.
@@ -3505,7 +3471,7 @@ status = "open"
         assert!(plan.updated.is_empty());
     }
 
-    /// T10: `compute_apply_mutation` with `--no-remove` AND a remove op
+    /// `compute_apply_mutation` with `--no-remove` AND a remove op
     /// errors with the canonical `--no-remove` message — the gate lives
     /// inside the compute phase, so dry-run and live apply surface it
     /// identically.
@@ -3527,9 +3493,9 @@ summary = "first"
         );
     }
 
-    // ----- T11: compute_backfill_mutation ----------------------------------
+    // ----- compute_backfill_mutation ---------------------------------------
 
-    /// T11 (unit): mixed-state ledger where some items already carry
+    /// Mixed-state ledger where some items already carry
     /// `dedup_id` and others don't. The backfill must touch ONLY the
     /// missing ones, preserving the pre-existing values exactly, and
     /// `plan.updated` must list the newly-populated items' ids in input
@@ -3572,9 +3538,9 @@ category = "quality"
         assert!(plan.added.is_empty());
         assert!(plan.removed.is_empty());
         // Inspect the new_doc to confirm:
-        //   - R1 now has a dedup_id matching `tier_b_fingerprint`,
-        //   - R2's preserved exactly,
-        //   - R3 now has a dedup_id matching `tier_b_fingerprint`.
+        //   - each item that lacked a dedup_id now has one matching
+        //     `tier_b_fingerprint`,
+        //   - the item that already carried one keeps it exactly.
         let items = plan
             .new_doc
             .get("items")
@@ -3602,7 +3568,7 @@ category = "quality"
         );
     }
 
-    /// T11 (unit): idempotence — a ledger where every item already has
+    /// Idempotence — a ledger where every item already has
     /// `dedup_id` produces an empty `plan.updated`. The CLI dispatch uses
     /// this signal to skip the write entirely (no sidecar churn).
     #[test]
@@ -3629,7 +3595,7 @@ dedup_id = "fedcba9876543210"
         );
     }
 
-    /// T11 (unit): empty-array ledger. `items_array_mut` auto-creates the
+    /// Empty-array ledger. `items_array_mut` auto-creates the
     /// array if missing, so the walk is a no-op and `plan.updated` is empty.
     #[test]
     fn compute_backfill_mutation_empty_ledger() {
@@ -3722,8 +3688,8 @@ status = "open"
         assert!(plan.skipped.is_empty());
 
         // --- Sub-case B: non-empty dedupe_fields → items_add_many_with_dedupe path ---
-        // Add a duplicate of R2 (by `summary`) to force a skip on the
-        // second pass; both rows would otherwise append.
+        // The first of these rows duplicates an existing `summary`, forcing
+        // a skip on the second pass; both rows would otherwise append.
         let dup_rows: Vec<JsonValue> = vec![
             serde_json::json!({"id":"R4","file":"src/d.rs","summary":"first","severity":"warning","category":"quality","status":"open"}),
             serde_json::json!({"id":"R5","file":"src/e.rs","summary":"fifth","severity":"warning","category":"quality","status":"open"}),
@@ -3742,7 +3708,7 @@ status = "open"
             live_bytes, plan_bytes,
             "compute_add_many_mutation (dedupe) must byte-match live items_add_many_with_dedupe"
         );
-        // R4 is the duplicate of R1 by `summary`; it should be skipped.
+        // The duplicate-by-`summary` row is skipped; only the other appends.
         assert_eq!(plan.added, vec!["R5".to_string()]);
         assert_eq!(plan.skipped.len(), 1);
         assert_eq!(plan.skipped[0].row, 1);
@@ -3858,7 +3824,7 @@ note = "baseline"
         );
     }
 
-    // R19: disposition-field validation tests for `Item::validate`.
+    // Disposition-field validation tests for `Item::validate`.
 
     #[test]
     fn item_validate_rejects_non_object_payload() {
