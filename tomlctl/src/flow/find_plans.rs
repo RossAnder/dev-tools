@@ -1,9 +1,8 @@
-//! T4: `tomlctl flow find-plans` — discover plan markdown files under
+//! `tomlctl flow find-plans` — discover plan markdown files under
 //! configured directories and cross-reference each plan with its flow's
 //! `context.toml` (when present).
 //!
-//! See `docs/plans/flow-tracking-overhaul.md` Task 4 for the spec. Resolution
-//! order for the plan directories:
+//! Resolution order for the plan directories:
 //!
 //! 1. `--dirs` argument (CLI; possibly multiple).
 //! 2. `tomlctl.plansDirectories` array in `.claude/settings.json` (the
@@ -312,7 +311,6 @@ fn pick_outline_md(dir: &Path) -> Result<Option<PathBuf>> {
 /// to `root` whenever possible (purely cosmetic — keeps output stable
 /// across machines whose absolute paths differ).
 fn build_plan_record(plan_path: &Path, slug: &str, root: &Path) -> JsonValue {
-    // R2: shared `(root, path)` form via `crate::io::relativise`.
     let display_path = relativise(root, plan_path);
 
     let mut obj = serde_json::Map::new();

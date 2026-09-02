@@ -1,4 +1,4 @@
-//! T5: `flow stale` — staleness verdict for a flow's `context.toml`.
+//! `flow stale` — staleness verdict for a flow's `context.toml`.
 //!
 //! Reads `<root>/.claude/flows/<slug>/context.toml`, locates its top-level
 //! `updated` field (a TOML date), compares the age in seconds against the
@@ -16,10 +16,10 @@
 //! `--strict-read` is set, in which case the missing file becomes a tagged
 //! error consistent with the rest of the read-side surface.
 //!
-//! `--threshold` accepts `<n>{s|m|h|d|w}` only; bare numbers are rejected per
-//! the plan's "require explicit suffix" rule. `w` expands to `7d`. The parser
-//! itself is `crate::time::parse_threshold` — `backlog compact --older-than`
-//! reads the same grammar.
+//! `--threshold` accepts `<n>{s|m|h|d|w}` only; the suffix is required and a
+//! bare number is rejected. `w` expands to `7d`. The parser itself is
+//! `crate::time::parse_threshold` — `backlog compact --older-than` reads the
+//! same grammar.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -135,7 +135,7 @@ fn verdict_from_iso_string(
     threshold_label: &str,
     threshold_dur: Duration,
 ) -> Result<JsonValue> {
-    // R6 / R39: parse + today-resolution route through `crate::time`,
+    // Parse + today-resolution route through `crate::time`,
     // sharing the injection seam with `flow::resolve::compute_staleness`.
     let updated_date = parse_iso_to_date(iso)
         .map_err(|_| anyhow::anyhow!("parsing `updated` as a date or timestamp: {iso}"))?;

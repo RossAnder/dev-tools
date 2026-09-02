@@ -1,8 +1,6 @@
-//! Flow-aware subcommand cluster (T1+ from `docs/plans/flow-tracking-overhaul.md`).
-//! Each leaf module is implemented in a dedicated task — this file exists in
-//! T1 as a structural skeleton so Phase A leaf tasks (T2–T5) and Phase B
-//! composite tasks (T7–T11) can each edit their own file without colliding on
-//! `flow/mod.rs` or `flow/dispatch.rs`.
+//! Flow-aware subcommand cluster. Each subcommand owns a leaf module; this
+//! file and `flow/dispatch.rs` hold only wiring, so edits to two subcommands
+//! never land in the same file.
 
 mod active;
 mod artifacts;
@@ -11,19 +9,14 @@ mod ensure_artifact;
 mod envelope;
 mod find_plans;
 mod init;
-// R5: re-export just the pure execution-record skeleton builder so the
-// dispatch-layer byte-identity test (`cli::dispatch`'s
-// `seed_doc_for_matches_bootstrap_bytes`) can name a REAL bootstrap code path
-// without widening the whole `init` module to `pub(crate)`. Mirrors the
-// minimal-surface `time` re-export below. Test-only: `bootstrap_execution_record`
-// calls `execution_record_skeleton` directly within `init`, so the re-export's
-// only out-of-module consumer is that `#[cfg(test)]` assertion.
+// Re-exported so the dispatch-layer byte-identity test
+// (`seed_doc_for_matches_bootstrap_bytes`) can name a real bootstrap code path
+// without widening the whole `init` module to `pub(crate)`. Test-only: `init`
+// calls `execution_record_skeleton` directly, so that assertion is the only
+// out-of-module consumer.
 #[cfg(test)]
 pub(crate) use init::execution_record_skeleton;
 mod list;
-// T3: `flow render-progress-log` — deterministic markdown render of a flow's
-// PROGRESS-LOG.md from its execution-record.toml. Owns its own leaf file so it
-// never collides with sibling leaf tasks on this or flow/dispatch.rs.
 pub(crate) mod render_progress_log;
 mod resolve;
 mod schema;
