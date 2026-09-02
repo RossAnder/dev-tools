@@ -36,6 +36,14 @@ Identify in-scope files from `$ARGUMENTS` (paths / globs / feature names) or —
 
 Invoke the `flow-contract-ledger-schema` skill to load the canonical ledger schema (field set, disposition vocabulary, dedup rules, read/write contract via `tomlctl items` / `array-append`, key-order convention, rollback / vet event logs). Resolve the ledger path: `envelope.resolved.artifacts.review_ledger` when a flow resolved, else `.claude/reviews/<scope>.toml` (derive `<scope>` from path arg / feature name / branch / `recent`). Load via `tomlctl items list <ledger> --status open --verify-integrity` (or treat as first review when the file is missing). Extract items whose `file` overlaps current scope as the **prior findings context** — agents use this to skip already-resolved items, flag regressions, and avoid re-reporting open items.
 
+Invoke the `backlog-capture` skill for the repo-scoped capture store's discipline, then load its open rows alongside the ledger's (drop `--area-prefix` when the scope is not a single directory):
+
+```bash
+tomlctl backlog list --open --area-prefix <scope-dir>
+```
+
+Hand each returned row's `summary` and `context` to the lens agents as prior context: a row is a known repo-scoped issue plus how to work around it, so an agent tripping over the same thing does not spend the round rediscovering it.
+
 Invoke the `flow-contract-ledger-disposition-sweep` skill to load the orphan-surfacing and deferred-reopen sweep contracts. Run both before the agent dispatch: orphan-surface read-only via `tomlctl items orphans <ledger>`; deferred-reopen is **a user-engagement gate — the autonomy directive does not apply** (every reopen passes through the per-item prompt; non-interactive invocations surface candidates only and never mutate).
 
 ## Step 2: Launch Parallel Review Agents
@@ -57,6 +65,20 @@ After Step 2.5 vetting, persist surviving items (plus any reopened items from th
 Cross-reference all agent results; apply the dedup, merge, and regression rules per the ledger-schema skill (same `file` AND (same non-empty `symbol` OR exact `summary` match)). Mint new `R{n}` IDs as `max(existing) + 1`; never renumber. Regressions against `fixed` items get a new ID with `related = ["<old id>"]`. Open-item matches reuse the existing ID and increment `rounds`. Chronic items (`rounds >= 3` post-merge) MUST be called out in a dedicated escalation callout; `rounds >= 5` items get a concrete defer-or-wontfix recommendation in the callout.
 
 Render the merged ledger state as severity-grouped markdown tables (Critical / Warnings / Suggestions) plus Still-Open / Resolved-Since / Regressions sub-groupings — **rendered inline in console output only, never persisted**. Persist the merged state via the parse-rewrite two-call pattern from the ledger-schema skill: one batched `tomlctl items add-many --ndjson -` (pure-add) or `tomlctl items apply --ops -` (mixed) for all mutations, followed by `tomlctl set <ledger> last_updated <YYYY-MM-DD>`. After the report, prompt the user with a concrete `/review-apply R{a},R{b}` invocation for the lowest-hanging quick wins, plus disposition syntax (`defer R{n} — reason — trigger`, `wontfix R{n} — rationale`).
+
+**Observations outside the ledger's scope.** An agent finding whose `file` lies outside the review scope, and a cross-cutting observation that is not a finding against an in-scope file, are neither: do not mint an `R{n}` for them, and do not force a terminal disposition onto an item the ledger never owned. Capture each in the backlog instead — probe first, passing `check` the same `--kind` and `--area` the mint will use:
+
+```bash
+tomlctl backlog check --summary "<summary>" --kind <kind> --area <repo-relative-path>
+```
+
+then mint the ones the verdict allows, with provenance and a workaround:
+
+```bash
+tomlctl backlog add --summary "<summary>" --kind <kind> --area <repo-relative-path> --context "<how to work around it, or what the next reader should do first>" --origin review --flow <slug>
+```
+
+Sub-agents never write the store; the orchestrator mints from their surfaced candidates and lists the resulting ids on a `Backlog` line in the console report.
 
 ## Step 4: Handle Dispositions (if user responds)
 

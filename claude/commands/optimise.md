@@ -38,6 +38,14 @@ The block above is complete and copy-pasteable as-is — do NOT look up `--help`
 
 Invoke the `flow-contract-ledger-schema` skill to load the canonical ledger schema (field set, category and disposition vocabularies, fail-soft rules, the `[[rollback_events]]` / `[[vet_events]]` event logs, the tomlctl parse-rewrite read/write contract, key-order convention, and the ID-assignment + dedup/regression rules). For `/optimise` the category vocabulary is `memory` | `serialization` | `query` | `algorithm` | `concurrency`, and the disposition vocabulary is `open` / `deferred` / `applied` / `wontapply` — there is no `verified-clean` counterpart. Resolve the ledger path from `envelope.resolved.artifacts.optimise_findings` when a flow resolved, else `.claude/optimise-findings/<scope>.toml` (derive `<scope>` per the flow-less slug rule in the flow-context skill: directory scope → `src-prime-api-endpoints.toml`, feature scope → `auth.toml`, git-derived → `{branch-name}.toml` or `recent.toml` on main). Load open items via `tomlctl items list <ledger> --status open --verify-integrity`; a missing file is a first run (`O`-numbering starts at `O1`) — do NOT hand-seed it, the first write auto-creates it with the schema skeleton.
 
+Invoke the `backlog-capture` skill for the repo-scoped capture store's discipline, then load its open rows alongside the ledger's (drop `--area-prefix` when the scope is not a single directory):
+
+```bash
+tomlctl backlog list --open --area-prefix <scope-dir>
+```
+
+Hand each returned row's `summary` and `context` to the lens agents as prior context: a row is a known repo-scoped issue plus how to work around it, so an agent tripping over the same thing does not spend the round rediscovering it.
+
 Invoke the `flow-contract-ledger-disposition-sweep` skill to load the orphan-surfacing and deferred-reopen sweep contracts. Run both after the ledger loads and before agent dispatch. Orphan-surface read-only via `tomlctl items orphans <ledger>`; on an older binary predating that subcommand, fall back to a one-off `Glob` sweep over each item's `file` plus a `Grep` sweep over each item's `symbol`, leaving `depends_on` dangling-refs unchecked until `cargo install --path tomlctl`. Deferred-reopen is **a user-engagement gate — the autonomy directive does not apply** (every reopen passes through the per-item prompt; non-interactive invocations surface candidates only and never mutate the ledger).
 
 ## Step 1.5: Determine Focal Points
@@ -87,3 +95,17 @@ Merge into the ledger per the dedup / merge / regression rules in the `flow-cont
 Persist via the skill's mandatory parse-rewrite two-call pattern: one batched `tomlctl items add-many --ndjson -` (pure-add — the common case for new findings, with `first_flagged` / `rounds` / `status` in `--defaults-json`) or `tomlctl items apply --ops -` (heterogeneous adds plus `rounds` / `line` / `description` / `evidence` updates), fed by heredoc — never loop per-item `items update` calls and never stage a tempfile — followed by `tomlctl set <ledger> last_updated <YYYY-MM-DD>`, which `items apply` does not touch. Preserve `schema_version` verbatim and follow the key-order convention. **Do NOT delete the ledger file** — stable `O`-IDs, `rounds`, and disposition history persist across runs, and `/optimise-apply` mutates statuses in place through this same contract rather than consuming the file.
 
 Render the merged ledger state as grouped markdown tables **inline in console output only, never persisted** (the TOML on disk is the authoritative artifact), with the resolved ledger path in the report header so `/optimise-apply` can locate it. Group as: **New this run**, severity-grouped Critical / Warnings / Suggestions, each row carrying ID, `file:line` (or `file:symbol` when the line has drifted), category, summary, effort; **Recurring** (`rounds >= 2`, still open) as a dedicated sub-group emphasising chronic items at `rounds >= 3`; **Regressions**, listing new ID, previously-applied ID, and summary; and one-liners for existing non-open matches ("matches existing `<status>` item `<id>`, not re-reporting"). Render an item's `description` below the table for anything the user is likely to act on (typically critical and warnings) rather than inlining the full body into every row. Then prompt: *"Run `/optimise-apply` to implement these findings, or select specific items by ID (e.g. `/optimise-apply O1,O3,O5`). Legacy positional selectors (`/optimise-apply 1,3,5`) still work and resolve against this run's report."*
+
+**Observations outside the ledger's scope.** An agent finding whose `file` lies outside the optimise scope, and a cross-cutting observation that is not a finding against an in-scope file, are neither: do not mint an `O{n}` for them, and do not force a terminal disposition onto an item the ledger never owned. Capture each in the backlog instead — probe first, passing `check` the same `--kind` and `--area` the mint will use:
+
+```bash
+tomlctl backlog check --summary "<summary>" --kind <kind> --area <repo-relative-path>
+```
+
+then mint the ones the verdict allows, with provenance and a workaround:
+
+```bash
+tomlctl backlog add --summary "<summary>" --kind <kind> --area <repo-relative-path> --context "<how to work around it, or what the next reader should do first>" --origin optimise --flow <slug>
+```
+
+Sub-agents never write the store; the orchestrator mints from their surfaced candidates and lists the resulting ids on a `Backlog` line in the console report.
