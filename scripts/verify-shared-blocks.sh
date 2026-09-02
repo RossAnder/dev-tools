@@ -29,14 +29,14 @@ else
   exit 2
 fi
 
-hash_block() {
+extract_block() {
   local file=$1 name=$2
   awk -v start="<!-- SHARED-BLOCK:${name} START -->" \
       -v end="<!-- SHARED-BLOCK:${name} END -->" '
     $0 == start { in_block=1; next }
     $0 == end   { in_block=0; next }
     in_block    { print }
-  ' "$file" | $HASHER | awk '{print $1}'
+  ' "$file"
 }
 
 pairs=$(awk '
@@ -82,7 +82,23 @@ while IFS=$'\t' read -r bname bfile; do
     continue
   fi
 
-  h=$(hash_block "$bfile" "$bname")
+  # Capture the block before hashing: the marker guards above use grep -qF, which
+  # substring-matches and so tolerates a trailing CR, while the extraction awk
+  # compares whole lines for equality. Under a CR-preserving awk every block
+  # extracts to zero lines, every side hashes to the empty-input digest, and the
+  # comparison below would report parity OK without having compared anything.
+  # The trailing 'x' preserves the block's own trailing newlines through the
+  # command substitution so the hashed bytes are unchanged.
+  block=$(extract_block "$bfile" "$bname"; printf 'x')
+  block=${block%x}
+
+  if [[ -z $block ]]; then
+    echo "error: block '$bname' in $bfile extracted to no content between its markers" >&2
+    fail=1
+    continue
+  fi
+
+  h=$(printf '%s' "$block" | $HASHER | awk '{print $1}')
 
   if [[ -z ${first_hash[$bname]:-} ]]; then
     first_hash[$bname]=$h
