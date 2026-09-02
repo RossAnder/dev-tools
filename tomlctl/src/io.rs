@@ -908,13 +908,7 @@ pub(crate) fn compute_set_json_mutation(
 pub(crate) fn recheck_claude_containment(file: &Path) -> Result<()> {
     let parent = file
         .parent()
-        .and_then(|p| {
-            if p.as_os_str().is_empty() {
-                None
-            } else {
-                Some(p)
-            }
-        })
+        .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let parent_canonical = parent.canonicalize().with_context(|| {
         format!(
@@ -962,13 +956,7 @@ fn lock_path_for(target: &Path) -> Result<PathBuf> {
             // file.
             let parent = target
                 .parent()
-                .and_then(|p| {
-                    if p.as_os_str().is_empty() {
-                        None
-                    } else {
-                        Some(p)
-                    }
-                })
+                .filter(|p| !p.as_os_str().is_empty())
                 .unwrap_or(Path::new("."));
             match parent.canonicalize() {
                 Ok(pc) => {
@@ -1252,13 +1240,7 @@ pub(crate) fn guard_write_path(file: &Path, allow_outside: bool) -> Result<()> {
 fn ensure_parent_under_claude(file: &Path) -> Result<()> {
     let parent = file
         .parent()
-        .and_then(|p| {
-            if p.as_os_str().is_empty() {
-                None
-            } else {
-                Some(p)
-            }
-        })
+        .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     if parent.exists() {
         return Ok(());
@@ -1320,13 +1302,7 @@ fn canonicalize_for_write(file: &Path) -> Result<PathBuf> {
     }
     let parent = file
         .parent()
-        .and_then(|p| {
-            if p.as_os_str().is_empty() {
-                None
-            } else {
-                Some(p)
-            }
-        })
+        .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let parent_canonical = parent
         .canonicalize()
@@ -1655,13 +1631,7 @@ pub(crate) fn write_toml_with_sidecar(
 pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let raw_parent = path
         .parent()
-        .and_then(|p| {
-            if p.as_os_str().is_empty() {
-                None
-            } else {
-                Some(p)
-            }
-        })
+        .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
     let parent_buf = raw_parent
         .canonicalize()

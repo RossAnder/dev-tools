@@ -56,7 +56,7 @@ fn walk_commands(cmd: &Command, parent_path: &str, out: &mut Map<String, JsonVal
         // `flags` being present iff non-empty. Leaves (set / get / list /
         // capabilities / …) still emit a populated `flags` map.
         let flags = describe_flags(sub);
-        if flags.as_object().map_or(false, |m| !m.is_empty()) {
+        if flags.as_object().is_some_and(|m| !m.is_empty()) {
             node.insert("flags".to_string(), flags);
         }
         node.insert(
