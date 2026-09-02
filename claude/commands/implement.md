@@ -80,7 +80,21 @@ tomlctl flow render-progress-log --slug <slug>
 
 ## Phase 4: Report
 
-**Reason thoroughly.** After successful verification, output the Implementation Summary:
+**Reason thoroughly.** After successful verification, harvest the backlog, then output the Implementation Summary.
+
+**Backlog harvest.** Invoke the `backlog-capture` skill to load the capture discipline (mint criteria, the verdict table, the fingerprint rule, the vocabularies). Collect every `TANGENTIAL:` line the Phase-2 agents returned, plus any out-of-scope discovery in the Failed / Skipped and Plan Deviations material — a plan deviation remains a `type=deviation` record; only what falls outside the plan's item set is a backlog candidate. Probe each candidate with the same `--kind` and `--area` the mint will use:
+
+```bash
+tomlctl backlog check --summary "<summary>" --kind <kind> --area <area>
+```
+
+Act on the verdict per the skill; on `novel` or `related`, mint (drop `--related` unless the verdict named a candidate):
+
+```bash
+tomlctl backlog add --summary "<summary>" --kind <kind> --area <area> --context "<how to work around it>" --origin implement --flow <slug> --related <candidate-id>
+```
+
+Sub-agents never write the store; the orchestrator is the only writer.
 
 ```
 ## Implementation Summary
@@ -93,6 +107,9 @@ tomlctl flow render-progress-log --slug <slug>
 
 ### Plan Deviations
 - [task] — plan assumption vs. what was found, how handled (adapted / deferred / reverted)
+
+### Backlog
+- [id] — verdict, summary; `(none)` when nothing was captured
 
 ### Verification
 - Build / Tests / Lint: pass/fail; fix attempts used: N/M

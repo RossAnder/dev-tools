@@ -62,9 +62,23 @@ tomlctl set <cycle-record> last_updated <today>
 
 `failure_reason` is an optional discriminator (the schema's required set does not proscribe extra keys); the resume FSM pivots on `status=failed` AND `failure_reason="fingerprint-mismatch"` together, and both fingerprint hashes are retained for audit. (3) Halt without REFACTOR; do NOT advance the cycle counter; do NOT copy up to the parent (REFACTOR does that). Surface a diagnostic naming offending files (diff `git ls-tree -r <green-sha> -- <test-glob>` vs the RED tree). Resume contract: a `status=failed` + `failure_reason="fingerprint-mismatch"` entry is a **re-RED trigger for the SAME cycle-NNN** (not a fresh NNN+1); counter does not advance until the re-RED yields a clean GREEN. Commit `green: <cycle-slug>` only once the test passes AND the fingerprint matches. **Anti-cheat rule 2** (no test mutation) is the fingerprint diff.
 
-**REFACTOR**: run the coverage tool; if changed-line coverage <90%, append a follow-up parent task and re-enter GREEN as the next cycle. Otherwise optionally do a production-only refactor (same fingerprint check; revert on regression). Append a `task-completion` to the **parent** record with `task_ref` prefixed `tdd-cycle-<NNN>-<original-slug>` and a re-minted `id` (`tomlctl items next-id <parent-record> --prefix E`). Copy up the cycle's `verification` entries with the same prefixing + re-mint.
+**REFACTOR**: run the coverage tool; if changed-line coverage <90%, append a follow-up parent task and re-enter GREEN as the next cycle (a follow-up outside the feature's plan scope goes to the backlog instead — see **Deferred follow-ups**). Otherwise optionally do a production-only refactor (same fingerprint check; revert on regression). Append a `task-completion` to the **parent** record with `task_ref` prefixed `tdd-cycle-<NNN>-<original-slug>` and a re-minted `id` (`tomlctl items next-id <parent-record> --prefix E`). Copy up the cycle's `verification` entries with the same prefixing + re-mint.
 
 **Cycle decision**: loop to RED for `<NNN+1>` if uncovered behaviour remains OR coverage gating appended a follow-up; stop when all feature behaviour is covered AND changed-line coverage ≥90% AND all tests pass. On stop, summarise cycles run, total commits, final coverage, and deferred follow-ups.
+
+**Deferred follow-ups.** A follow-up inside the feature's plan scope keeps its existing path — it appends a parent task, unchanged. One that falls outside that scope goes to the repo backlog: invoke the `backlog-capture` skill, then probe with the same `--kind` and `--area` the mint will use:
+
+```bash
+tomlctl backlog check --summary "<summary>" --kind <kind> --area <area>
+```
+
+Act on the verdict per the skill; on `novel` or `related`, mint:
+
+```bash
+tomlctl backlog add --summary "<summary>" --kind <kind> --area <area> --context "<how to work around it>" --origin tdd --flow <parent-slug>
+```
+
+Sub-agents never write the store; the orchestrator is the only writer. The stop summary lists the minted or bumped ids with their verdicts beside the deferred follow-ups (`(none)` when empty).
 
 ## Cycle sub-flow layout
 
