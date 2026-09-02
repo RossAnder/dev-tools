@@ -70,7 +70,7 @@ body
 
 #[test]
 fn scan_block_names_warn_emits_for_typo_but_keeps_canonical() {
-    // R53: a line that looks like a SHARED-BLOCK marker but is malformed
+    // A line that looks like a SHARED-BLOCK marker but is malformed
     // (missing hyphen, wrong case, trailing whitespace) must NOT be
     // picked up as a block name, AND must NOT break verification — it's
     // only advisory. We can't easily capture stderr from within a unit
@@ -104,19 +104,15 @@ body
 
 #[test]
 fn blocks_verify_reproduces_shell_hashes() {
-    // R87: pin the hash for every block enumerated in
-    // `scripts/shared-blocks.toml`. After the progressive-disclosure
-    // wave-2 migration (2026-05-20) every command-carried block was
-    // externalised to a flow-contract / apply-* skill and deleted from
-    // the manifest, leaving exactly one block: `forbidden-working-tree-ops`,
-    // which spans the two implement agent files. Pinning its hash
-    // here keeps the test guarding a real surviving block; a drift surfaces
-    // independently with a named hash rather than a confusing "missing"
-    // report.
+    // Pin the shell verifier's hash for `forbidden-working-tree-ops`, one of
+    // the blocks `scripts/shared-blocks.toml` enumerates, so this Rust mirror
+    // is held to the same bytes `scripts/verify-shared-blocks.sh` computes. A
+    // drift then surfaces as a named-hash mismatch rather than a confusing
+    // "missing" report.
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
 
-    // R87: derive each block's carrier file list from the single source of
+    // Derive each block's carrier file list from the single source of
     // truth — `scripts/shared-blocks.toml` — rather than duplicating the
     // lists here. The manifest's `files` entries are repo-relative; join
     // each onto `repo_root` to recover the absolute paths the verifier
@@ -162,7 +158,7 @@ fn blocks_verify_reproduces_shell_hashes() {
         return;
     }
 
-    // R53: on hash-drift the bare `assertion_failed` message is hard to
+    // On hash-drift the bare `assertion_failed` message is hard to
     // act on — the caller sees "block X hash drift" and has to reverse-
     // engineer both the actual hash and which file(s) moved. Emit a
     // structured multi-line message instead:
@@ -251,8 +247,7 @@ fn blocks_verify_reproduces_shell_hashes() {
         panic!("{msg}");
     };
 
-    // --- 2-file forbidden-working-tree-ops block (the sole surviving
-    //     block after the wave-2 migration; spans the two implement
+    // --- 2-file forbidden-working-tree-ops block (spans the two implement
     //     agent files) ---
     let report =
         blocks_verify(&forbidden_pair, &["forbidden-working-tree-ops".to_string()]).unwrap();
@@ -265,42 +260,6 @@ fn blocks_verify_reproduces_shell_hashes() {
         &report,
         "forbidden-working-tree-ops",
         "4701d2b8314c997366dfea83b6aa4e0bff5e275d2e1378517b67e5091d7fa026",
-    );
-}
-
-/// T4: skill-body↔carrier drift guard for any *hybrid* shared block — one
-/// that both carries a `skill` field in `scripts/shared-blocks.toml` AND
-/// still has a non-empty `files` list of embedded carrier copies. For every
-/// such block `verify_skills` must report `ok == true`; the engine
-/// normalises away the expected mechanical differences (frontmatter,
-/// contract cross-references), so any drift there is a genuine finding.
-///
-/// POST-WAVE-2 STATE: this guard is currently DORMANT. After the
-/// progressive-disclosure migration the manifest's sole surviving block
-/// (`forbidden-working-tree-ops`) has no `skill` field, and every
-/// externalised block was deleted from the manifest — so no block satisfies
-/// the `skill && files` predicate and `verify_skills` iterates ZERO blocks,
-/// returning `ok == true` unconditionally. The test therefore passes
-/// vacuously today and exists as a regression latch: it reactivates the
-/// moment a future wave reintroduces a hybrid block (a skill body whose
-/// contract is still embedded in some agent/carrier that lacks the Skill
-/// tool). The assertion logic is deliberately unchanged. Uses the same
-/// repo-root resolution + graceful-skip-on-absent-files pattern as
-/// `blocks_verify_reproduces_shell_hashes`.
-#[test]
-fn verify_skills_clean() {
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
-    let manifest_path = repo_root.join("scripts").join("shared-blocks.toml");
-    if !manifest_path.exists() {
-        eprintln!("verify_skills_clean: manifest not found, skipping");
-        return;
-    }
-    let report = blocks::verify_skills(&manifest_path).unwrap();
-    assert!(
-        report.ok,
-        "externalised skills must be in semantic sync with their carriers: {:?}",
-        report.report
     );
 }
 
@@ -706,11 +665,10 @@ fn invokes_skill(text: &str, skill: &str) -> bool {
     false
 }
 
-/// T6: progressive-disclosure invocation guard. A skeletonised carrier must
+/// Progressive-disclosure invocation guard. A skeletonised carrier must
 /// still INVOKE each `flow-contract-*` skill it delegates to — `command_lint`
-/// only catches CLI-flag drift, and `verify_skills_clean` is dormant
-/// post-wave-2, so without this test a carrier could silently drop an
-/// "Invoke the `flow-contract-X` skill" line and no check would fail. For
+/// only catches CLI-flag drift, so without this test a carrier could silently
+/// drop an "Invoke the `flow-contract-X` skill" line and no check would fail. For
 /// each migrated carrier we assert the file text carries an invocation phrase
 /// (see `invokes_skill`) for every expected skill. Same repo-root resolution +
 /// graceful-skip-on-absent-files pattern as `command_lint`.
@@ -909,8 +867,7 @@ fn carrier_invokes_required_skills() {
     // Asserting the invocation TEXT is only half the contract: a carrier can
     // faithfully name a skill that no longer exists, and nothing else catches
     // that — `command_lint` gates its scan on `skill.exists()`, so a deleted
-    // skill silently drops out of linting rather than failing, and
-    // `verify_skills_clean` is dormant post-wave-2.
+    // skill silently drops out of linting rather than failing.
     let mut required: Vec<&str> = expected
         .iter()
         .flat_map(|(_, skills)| skills.iter().copied())

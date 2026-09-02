@@ -1,4 +1,4 @@
-//! T8: typed error-kind taxonomy for `--error-format json`.
+//! Typed error-kind taxonomy for `--error-format json`.
 //!
 //! Scope: a tiny, closed taxonomy of error classes that downstream agents can
 //! branch on when `tomlctl` exits non-zero. The CLI's default text output is
@@ -11,7 +11,7 @@
 //! separate layer in anyhow's chain, and anyhow's `{:#}` formatter renders
 //! each non-empty `Display` as its own `": ..."` segment. Even an empty
 //! `Display` leaves a stray `": "` artifact. To keep text-mode output
-//! byte-identical to the pre-T8 `bail!("...")` form, the tag has to *be* the
+//! byte-identical to a bare `bail!("...")`, the tag has to *be* the
 //! inner error — so its `Display` emits the caller's prose verbatim, with no
 //! extra prefix, and `anyhow::Error::new(TaggedError { ... })` places it at
 //! the chain root. Subsequent `.with_context(...)` wrappers compose normally.
@@ -20,10 +20,8 @@
 //! is not currently a dependency, and adding one just for five tag sites is
 //! over-kill. The hand-rolled impl costs ~10 lines.
 //!
-//! **Tag sites are a closed list** — see `docs/plans/tomlctl-capability-gaps.md`
-//! Task 8 for the contract. Every other `bail!` / `anyhow!` call falls through
-//! to `kind = "other"` in JSON output. Do not extend this list without updating
-//! the plan's taxonomy section.
+//! **Tag sites are a closed list.** Every other `bail!` / `anyhow!` call falls
+//! through to `kind = "other"` in JSON output.
 
 use std::path::PathBuf;
 
@@ -88,7 +86,8 @@ pub(crate) struct TaggedError {
     /// The caller's human-readable prose. Placed here (rather than a
     /// separate `.context(msg)` layer) so the tag and the message share a
     /// single chain slot — otherwise anyhow's `{:#}` renders the tag as its
-    /// own colon-separated segment and text output drifts from pre-T8 bytes.
+    /// own colon-separated segment and text output drifts from the bytes a
+    /// bare `bail!` would emit.
     pub(crate) message: String,
 }
 

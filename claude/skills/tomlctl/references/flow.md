@@ -151,7 +151,7 @@ reach for them for an ad-hoc parity check without the bash+gawk dependency. The 
 `tomlctl blocks verify` checks that named shared blocks are byte-identical across a set of files, mirroring `scripts/verify-shared-blocks.sh` without the bash+awk dependency. Blocks are delimited by `<!-- SHARED-BLOCK:<name> START -->` … `<!-- SHARED-BLOCK:<name> END -->` markers (markers excluded from the hash; content between them joined by `\n`).
 
 Name only blocks the listed files actually carry — a `--block` naming an absent marker exits
-non-zero. The two implementer agents are the files carrying markers today:
+non-zero. `scripts/shared-blocks.toml` enumerates which files carry which markers:
 
 ```bash
 # Verify named blocks across the two implementer agents
@@ -162,19 +162,3 @@ tomlctl blocks verify claude/agents/implement-deep.md claude/agents/implement-li
 ```
 
 Output is JSON (`{"ok":true|false,"blocks":[...]}`); exit code 0 on success, non-zero on drift or missing markers. Does NOT accept `--verify-integrity` / `--allow-outside` / `--no-write-integrity` / `--strict-integrity` (markdown has no sidecar pair; `blocks verify` never writes).
-
-<details>
-<summary>Old patterns</summary>
-
-The verb below is vacuous today: no surviving block in `scripts/shared-blocks.toml` sets the
-`skill` field, so it iterates zero blocks and always succeeds.
-
-### Drift checks — `blocks verify-skills`
-
-`tomlctl blocks verify-skills` verifies that each externalised flow-contract skill body still matches the block copies embedded in non-migrated carriers, reading the `skill = "..."` field from `scripts/shared-blocks.toml` and exiting 1 on drift.
-
-```bash
-tomlctl blocks verify-skills
-```
-
-</details>

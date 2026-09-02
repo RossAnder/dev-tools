@@ -15,7 +15,7 @@ use anyhow::Result;
 use serde_json::json;
 use toml::Value as TomlValue;
 
-use super::schema;
+use super::schema::{self, FIELD_LAST_UPDATED};
 use crate::cli::{TriageMode, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
@@ -24,8 +24,6 @@ use crate::io::{
     repo_or_cwd_root, warn_if_created,
 };
 use crate::output::print_json_compact;
-
-const FIELD_LAST_UPDATED: &str = "last_updated";
 
 /// The chosen mode with its companion value already resolved, so the write
 /// path can no longer be handed a `--promote` without a `--to`.

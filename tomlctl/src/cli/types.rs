@@ -41,6 +41,8 @@ pub(crate) const FEATURES: &[&str] = &[
     "flow_envelope_build",
     "flow_stale",
     "flow_find_plans",
+    "flow_list",
+    "flow_render_progress_log",
     "json_ops",
     // Repo-scoped capture log: the `backlog` subcommand cluster.
     "backlog_capture", // the `add` verb
@@ -1471,14 +1473,29 @@ pub(crate) enum ItemsOp {
     },
 
     /// Merge fields into an existing item (matched by `id`). --json is a patch object.
+    ///
+    /// `--json` and `--unset` are independently optional but at least one is
+    /// required: either alone is valid and both together compose (the unset
+    /// runs after the merge). Omitting `--json` defaults the patch to `{}`,
+    /// whose merge loop runs zero times, so an unset-only update needs no
+    /// placeholder patch object. Naming neither is refused in dispatch —
+    /// it would otherwise be a no-op that still rewrote the file and its
+    /// integrity sidecar.
+    ///
+    /// The "at least one" check is hand-rolled at the dispatch site rather
+    /// than declared as a `required` `ArgGroup`, matching `array-append`'s
+    /// `--json` / `--ndjson` pair. The crate builds clap without
+    /// `error-context`, so a group's refusal renders as "one or more required
+    /// arguments were not provided" and names neither flag; the dispatch
+    /// `bail!` names both and shows the unset-only form.
     Update {
         file: PathBuf,
         id: String,
         #[arg(
             long,
-            help = "JSON patch object merged into the item; pass `-` to read from stdin"
+            help = "JSON patch object merged into the item; pass `-` to read from stdin. Optional when --unset is given."
         )]
-        json: String,
+        json: Option<String>,
         /// Remove a field from the matched item. Repeatable. Applied AFTER the
         /// `--json` patch, so an `--unset` trumps a same-key set from `--json`.
         /// A key that does not exist on the item is silently ignored.
@@ -1693,15 +1710,6 @@ pub(crate) enum BlocksOp {
         /// present in the first listed file is used.
         #[arg(long = "block")]
         block: Vec<String>,
-    },
-    /// Verify each externalised flow-contract skill body matches the copies
-    /// still embedded in non-migrated carriers (drift check). Reads the
-    /// `skill = "..."` field from the shared-blocks manifest; skips blocks
-    /// without a skill or with an empty file list. Exits 1 on drift.
-    VerifySkills {
-        /// Manifest path (defaults to scripts/shared-blocks.toml when omitted; resolved in dispatch).
-        #[arg(long)]
-        manifest: Option<PathBuf>,
     },
 }
 

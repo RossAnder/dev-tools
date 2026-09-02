@@ -224,9 +224,10 @@ downstream flow-command templates can feature-gate at boot without parsing
                "agent_context", "flow_resolve", "flow_active",
                "flow_doctor", "flow_init", "flow_ensure_artifact",
                "flow_envelope_build", "flow_stale", "flow_find_plans",
-               "json_ops", "backlog_capture", "backlog_check",
-               "backlog_cluster", "backlog_compact", "backlog_evidence",
-               "backlog_list", "backlog_show", "backlog_relate", "backlog_triage"],
+               "flow_list", "flow_render_progress_log", "json_ops",
+               "backlog_capture", "backlog_check", "backlog_cluster",
+               "backlog_compact", "backlog_evidence", "backlog_list",
+               "backlog_show", "backlog_relate", "backlog_triage"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog"],
@@ -290,6 +291,8 @@ Feature meanings:
 | `flow_envelope_build` | `flow envelope build --command <CARRIER>` — emit the canonical `flow-bootstrap` input envelope on stdout |
 | `flow_stale` | `flow stale --slug <SLUG> --threshold <DURATION>` — staleness verdict for a flow's `context.toml` |
 | `flow_find_plans` | `flow find-plans` — discover plan markdown under the configured plans directories or `--dirs` |
+| `flow_list` | `flow list` — enumerate every flow under `.claude/flows/`, filterable by `--status` / `--branch` / `--active-only` |
+| `flow_render_progress_log` | `flow render-progress-log --slug <SLUG>` — regenerate a flow's derived `PROGRESS-LOG.md` from its `execution-record.toml`; `--stdout` previews without writing |
 | `json_ops` | `json get` / `set` / `unset` — dotted-path read and write against JSON files such as `.claude/settings.json` |
 | `backlog_capture` | `backlog add` — capture a discovery into the repo-scoped backlog store |
 | `backlog_check` | `backlog check --summary <TEXT>` — read-only graded verdict on whether a discovery is already known, before minting it |

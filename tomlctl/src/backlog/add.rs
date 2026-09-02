@@ -19,8 +19,8 @@ use super::ids;
 use super::schema::{
     self, ARRAY_BACKLOG, ARRAY_COMPACTED, BacklogError, FIELD_AREA, FIELD_CONTEXT, FIELD_CREATED,
     FIELD_DEDUP_ID, FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID, FIELD_KIND, FIELD_LAST_SEEN,
-    FIELD_ORIGIN, FIELD_RELATED, FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS,
-    KIND_OTHER, STATUS_OPEN, TERMINAL_DATE_FIELDS,
+    FIELD_LAST_UPDATED, FIELD_ORIGIN, FIELD_RELATED, FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY,
+    FIELD_TAGS, KIND_OTHER, STATUS_OPEN, TERMINAL_DATE_FIELDS,
 };
 use crate::cli::{OnDuplicate, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::{is_date_key, json_to_toml, json_type_name, toml_to_json};
@@ -32,7 +32,6 @@ use crate::items::{MutationPlan, SkippedRow};
 use crate::output::{emit_dry_run_plan, print_json_compact};
 
 const FIELD_SCHEMA_VERSION: &str = "schema_version";
-const FIELD_LAST_UPDATED: &str = "last_updated";
 
 /// Payload fields the caller never gets to choose: they derive from the
 /// content or from the clock, so a `--json` payload replayed out of a `show`

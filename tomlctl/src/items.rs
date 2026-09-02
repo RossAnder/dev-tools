@@ -3607,9 +3607,9 @@ dedup_id = "fedcba9876543210"
         assert!(plan.removed.is_empty());
     }
 
-    // ----- T10b: compute_add / add_many / update / array_append -------------
+    // ----- compute_add / add_many / update / array_append ------------------
 
-    /// T10b: `compute_add_mutation` produces a `new_doc` whose serialised
+    /// `compute_add_mutation` produces a `new_doc` whose serialised
     /// bytes are byte-identical to a live `items_add_to` on the same
     /// fixture. Mirrors the byte-equivalence guarantee that underpins
     /// `--dry-run` for the apply path.
@@ -3646,7 +3646,7 @@ status = "open"
         assert!(plan.removed.is_empty());
     }
 
-    /// T10b: `compute_add_many_mutation` with empty `dedupe_fields`
+    /// `compute_add_many_mutation` with empty `dedupe_fields`
     /// (delegating to `items_add_many`) and with non-empty `dedupe_fields`
     /// (delegating to `items_add_many_with_dedupe`) both produce
     /// `new_doc` bytes equal to the corresponding live mutator on the
@@ -3716,7 +3716,7 @@ status = "open"
         assert_eq!(plan.added.len(), live_outcome.added);
     }
 
-    /// T10b: `compute_update_mutation` produces a `new_doc` whose
+    /// `compute_update_mutation` produces a `new_doc` whose
     /// serialised bytes are byte-identical to a live `items_update_to`
     /// on the same fixture, including the `unset` keys path.
     #[test]
@@ -3761,7 +3761,7 @@ status = "open"
         assert!(plan.removed.is_empty());
     }
 
-    /// T10b: `compute_array_append_mutation` threads the array name
+    /// `compute_array_append_mutation` threads the array name
     /// through to `array_append` faithfully — appending to a
     /// non-default array (`rollback_events`) produces a `new_doc` with
     /// bytes equal to a live `array_append` on the same target. This

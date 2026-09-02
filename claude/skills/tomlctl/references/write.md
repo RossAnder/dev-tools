@@ -164,7 +164,7 @@ EOF
 
 `dedup_id` is auto-populated by the write funnel if the payload doesn't set it — see [Dedup fingerprint contract](#dedup-fingerprint-contract). Rendered output (e.g. PROGRESS-LOG columns) is unaffected; the field only appears in the TOML.
 
-Date-shaped strings (`YYYY-MM-DD`) in the `DATE_KEYS` set (`created`, `updated`, `first_flagged`, `last_updated`, `resolved`, `date`) are automatically promoted to TOML date literals.
+Date-shaped strings (`YYYY-MM-DD`) in the `DATE_KEYS` set — `created`, `updated`, `first_flagged`, `last_updated`, `resolved`, `date`, `promoted`, `dismissed`, `last_seen` — are automatically promoted to TOML date literals. The `DATE_KEYS` constant in `tomlctl/src/convert.rs` owns the set; check it there when a field you expected to promote stayed a quoted string.
 
 Supports `--dry-run`; see [Dry-run](#dry-run).
 

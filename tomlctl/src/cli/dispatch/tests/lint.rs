@@ -242,12 +242,11 @@ fn command_lint_report(files: &[PathBuf], repo_root: &Path) -> CommandLintReport
     report
 }
 
-/// T5: carrier↔CLI flag-drift guard. Every `tomlctl …` invocation written
+/// Carrier↔CLI flag-drift guard. Every `tomlctl …` invocation written
 /// in the project's command/skill markdown is fed to the REAL clap `Cli`
 /// parser; an `UnknownArgument` / `InvalidSubcommand` error is a lint
-/// failure. This catches the class of bug that shipped in the pilot — a
-/// `--flow` vs `--flow-override` mismatch that no review lens caught because
-/// lenses read prose, they don't execute the parser.
+/// failure. This catches `--flow` vs `--flow-override`-shaped drift that no
+/// review lens sees, because lenses read prose and don't execute the parser.
 ///
 /// What is NOT a failure: missing-required-argument / value-validation
 /// errors. Doc snippets use placeholders (`<ledger>`, `<slug>`) for required
@@ -350,7 +349,7 @@ fn command_lint_scan_set_includes_skill_and_reference_files() {
     assert_eq!(set, sorted, "scan set must be returned sorted");
 }
 
-/// T1 (d): `--no-create` appears on a WRITE subcommand (`set`) and is
+/// `--no-create` appears on a WRITE subcommand (`set`) and is
 /// ABSENT from a READ-only subcommand (`get`). Driven through the real clap
 /// parser — a write arm accepts `--no-create`; a read arm rejects it with
 /// `UnknownArgument`. `Cli` is not `Debug`, so we inspect the `Result`

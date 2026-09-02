@@ -1,6 +1,7 @@
 //! Filesystem-I/O plumbing.
 //!
 //! Owns:
+//!   - `strict_read_check` — the crate-wide `--strict-read` existence gate
 //!   - `read_toml` — parse-only TOML reader
 //!   - `read_toml_str` / `read_doc_borrowed` — borrowed-lifetime fast-path
 //!   - `read_json_arg` / `read_json_value_from_arg` — `-` stdin sentinel
@@ -331,6 +332,33 @@ pub(crate) fn read_json_value_from_arg(arg: &str) -> Result<serde_json::Value> {
     } else {
         Ok(serde_json::from_str(arg)?)
     }
+}
+
+/// The crate's single `--strict-read` gate: a missing `file` becomes a
+/// `kind=not_found` error when `strict_read` is set, and is otherwise the
+/// caller's business.
+///
+/// Every read path calls it BEFORE parsing and before any sidecar check, so
+/// a missing file under `--strict-read --verify-integrity` surfaces
+/// `kind=not_found` rather than `kind=integrity` — the ordering guarantee
+/// documented in the README's "File state contract" subsection. Left to
+/// itself, `verify_integrity` would see only a missing sidecar and tag the
+/// failure wrongly.
+///
+/// The gate is deliberately existence-only. Callers whose default already
+/// errors on a missing file get a benign extra stat; callers with a
+/// "missing → silent default" fast path (`items next-id --prefix <P>`, and
+/// the backlog store's empty-table read) own that fallback themselves and
+/// place it after this call.
+pub(crate) fn strict_read_check(file: &Path, strict_read: bool) -> Result<()> {
+    if !strict_read || file.exists() {
+        return Ok(());
+    }
+    Err(tagged_err(
+        ErrorKind::NotFound,
+        Some(file.to_path_buf()),
+        format!("file does not exist: {}", file.display()),
+    ))
 }
 
 pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {

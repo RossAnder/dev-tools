@@ -11,9 +11,9 @@
 //!    Claude Code setting; schema is string-only).
 //! 4. Default `["docs/plans/"]`.
 //!
-//! At either settings key the literal string `"__DONT_ASK__"` is the P4
-//! sentinel for "explicitly unset"; it is treated as if the key were absent
-//! and resolution falls through to the next step.
+//! At either settings key the literal string `"__DONT_ASK__"` is the sentinel
+//! for "explicitly unset"; it is treated as if the key were absent and
+//! resolution falls through to the next step.
 //!
 //! Output is a JSON array (always, regardless of `--json` flag — read-side
 //! tomlctl idiom is JSON-by-default) of records:
@@ -43,8 +43,8 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{read_dir_sorted, relativise, repo_or_cwd_root};
 use crate::output::print_json;
 
-/// P4 sentinel: a settings value of this literal string is treated as
-/// "explicitly unset" and falls through to the next resolution step.
+/// A settings value of this literal string is treated as "explicitly unset"
+/// and falls through to the next resolution step.
 const SENTINEL_UNSET: &str = "__DONT_ASK__";
 
 pub(crate) fn dispatch(dirs: Vec<PathBuf>, integrity: ReadIntegrityArgs) -> Result<()> {

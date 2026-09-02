@@ -221,21 +221,25 @@ pub fn parse_json_error_envelope(stderr: &str) -> serde_json::Value {
     err
 }
 
-/// The repository's own rules, verbatim: every `tracked` verdict a backlog
-/// test makes is a claim about what this ignore set does, so a drifted
-/// fixture would assert against rules nobody ships.
+/*
+<!-- SHARED-BLOCK:shipped-gitignore START -->
+*/
+/// The repository's own rules, verbatim: a fixture that drifted from them
+/// would have every ignore-dependent verdict assert against rules nobody
+/// ships.
 const GITIGNORE: &str = "/.claude/backlog-evidence/**\n\
                          !/.claude/backlog-evidence/*/\n\
                          !/.claude/backlog-evidence/*/.evidence\n";
 
-/// What every evidence rule starts with once the `!` of a negation is stripped.
+/// What every evidence rule starts with once the `!` of a negation is
+/// stripped.
 const EVIDENCE_RULE_PREFIX: &str = "/.claude/backlog-evidence/";
 
 /// [`GITIGNORE`], checked against the evidence rules the repository's own
-/// `.gitignore` carries — hand-kept copies, and nothing else would notice them
-/// diverging. A checkout is not guaranteed (a vendored crate has no repo root
-/// to read), so the check is skipped there rather than failed.
-fn shipped_gitignore() -> &'static str {
+/// `.gitignore` carries — hand-kept copies, and nothing else would notice
+/// them diverging. A checkout is not guaranteed (a vendored crate has no
+/// repo root to read), so the check is skipped there rather than failed.
+pub(crate) fn shipped_gitignore() -> &'static str {
     let repo_gitignore = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(|repo| repo.join(".gitignore"))
@@ -256,6 +260,9 @@ fn shipped_gitignore() -> &'static str {
     }
     GITIGNORE
 }
+/*
+<!-- SHARED-BLOCK:shipped-gitignore END -->
+*/
 
 /// A throwaway repo root with `.claude/` and the evidence ignore rules in
 /// place. The `TempDir` is returned so the caller keeps it alive for the whole

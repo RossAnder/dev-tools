@@ -8,23 +8,15 @@
 //!   - In-lock pre-persist `recheck_claude_containment` for TOCTOU narrowing.
 //!   - Atomic-replace tempfile via `io::atomic_write`.
 //!   - Sidecar refresh via `integrity::refresh_sidecar`, **except**
-//!     for `**/settings.json` where Claude Code is a co-writer (P16) — its
+//!     for `**/settings.json` where Claude Code is a co-writer — its
 //!     `/config` writes bypass tomlctl, so a sidecar would drift after every
 //!     UI flip and downstream `--verify-integrity` reads would fail forever.
 //!     The skip is path-name-keyed so a project's own `settings.json`
 //!     under `.claude/flows/<slug>/...` is also exempt.
 //!
-//! P19 (both halves): JSON writers refuse a `.toml` target (`kind=validation`);
-//! the symmetric TOML-side refusal lives in
-//! `cli::dispatch::refuse_json_extension_for_toml_writers` (wired at
-//! dispatch.rs L425, L454, L502).
-//!
-//! Plan deviation: the plan referenced `io::resolve_target` as the
-//! containment helper. The actual containment guard in `io.rs` is
-//! `guard_write_path` (with `recheck_claude_containment` as the in-lock
-//! TOCTOU narrowing call). The two helpers compose to the same effect:
-//! pre-lock guard + canonicalise + in-lock re-check; we use them directly
-//! rather than introducing a new shim.
+//! JSON writers refuse a `.toml` target (`kind=validation`); the symmetric
+//! TOML-side refusal lives in
+//! `cli::dispatch::refuse_json_extension_for_toml_writers`.
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value as JsonValue;
@@ -36,8 +28,8 @@ use crate::cli::{JsonOp, ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::{maybe_verify_integrity, refresh_sidecar};
 use crate::io::{
-    atomic_write, guard_write_path, recheck_claude_containment, with_exclusive_lock,
-    with_shared_lock,
+    atomic_write, guard_write_path, recheck_claude_containment, strict_read_check,
+    with_exclusive_lock, with_shared_lock,
 };
 use crate::output::{print_json, print_json_compact};
 
@@ -66,9 +58,9 @@ pub(crate) fn dispatch(op: JsonOp) -> Result<()> {
     }
 }
 
-/// P19 (positive half): JSON writers refuse `.toml` targets. The negative
-/// half (TOML writers refuse `.json`) requires a touch on `cli/dispatch.rs`
-/// and is deferred — see module docstring.
+/// JSON writers refuse `.toml` targets. The symmetric half (TOML writers
+/// refuse `.json`) lives in
+/// `cli::dispatch::refuse_json_extension_for_toml_writers`.
 fn refuse_toml_extension(file: &Path) -> Result<()> {
     if file
         .extension()
@@ -86,29 +78,13 @@ fn refuse_toml_extension(file: &Path) -> Result<()> {
     Ok(())
 }
 
-/// P16: writes to any `**/settings.json` skip the sidecar refresh because
+/// Writes to any `**/settings.json` skip the sidecar refresh because
 /// Claude Code itself is a co-writer (its `/config` UI rewrites the file
 /// without going through tomlctl, so any sidecar we emit would be stale on
 /// the next read). The check is path-name-keyed rather than directory-keyed
 /// so a per-flow `settings.json` is also exempt.
 fn should_skip_sidecar(file: &Path) -> bool {
     file.file_name().is_some_and(|n| n == "settings.json")
-}
-
-/// Strict-read gate mirroring `cli::dispatch::strict_read_check` — fires
-/// BEFORE `--verify-integrity` so a missing file under
-/// `--strict-read --verify-integrity` surfaces `kind=not_found` rather than
-/// `kind=integrity`. (`integrity::verify_integrity` would only see a missing
-/// sidecar in that scenario, leading to the wrong tag.)
-fn strict_read_check(file: &Path, strict_read: bool) -> Result<()> {
-    if !strict_read || file.exists() {
-        return Ok(());
-    }
-    Err(tagged_err(
-        ErrorKind::NotFound,
-        Some(file.to_path_buf()),
-        format!("file does not exist: {}", file.display()),
-    ))
 }
 
 /// JSON-side dotted-path read. Mirrors `convert::navigate` for TOML, but
@@ -428,7 +404,7 @@ fn handle_set(
         }
         let bytes = format_json_for_disk(&doc)?;
         atomic_write(file, &bytes)?;
-        // P16: `settings.json` is co-written by Claude Code; suppress the
+        // `settings.json` is co-written by Claude Code; suppress the
         // sidecar refresh to prevent permanent verification drift.
         let skip = should_skip_sidecar(file);
         refresh_sidecar_after_write(file, skip, &integrity)?;
@@ -494,8 +470,8 @@ fn handle_unset(
     })
 }
 
-/// Refresh the sidecar after a successful JSON write, honouring P16
-/// (skip for `settings.json`) and the `--no-write-integrity` /
+/// Refresh the sidecar after a successful JSON write, honouring the
+/// co-writer skip (`settings.json`) and the `--no-write-integrity` /
 /// `--strict-integrity` flags. Mirrors `write_toml_with_sidecar`'s
 /// failure-handling shape (warn on stderr by default, fail-hard under
 /// `--strict-integrity`) so the JSON and TOML write paths surface
@@ -601,8 +577,8 @@ fn dry_run_unset(file: &Path, path: &str, integrity: WriteIntegrityArgs) -> Resu
 }
 
 /// Compact dry-run envelope. Includes `sidecar_skipped:"co-writer-protected"`
-/// when P16 applies (so the dry-run output rehearses the live write's
-/// envelope shape), `null` otherwise.
+/// when the co-writer skip applies (so the dry-run output rehearses the
+/// live write's envelope shape), `null` otherwise.
 fn emit_dry_run_envelope(
     file: &Path,
     path: &str,

@@ -20,8 +20,8 @@ use toml::Value as TomlValue;
 use toml::value::Datetime as TomlDatetime;
 
 use super::schema::{
-    self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_COMPACTED_ON, FIELD_ID, FIELD_STATUS,
-    FIELD_TERMINAL_DATE, FIELD_TERMINAL_REASON,
+    self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_COMPACTED_ON, FIELD_ID, FIELD_LAST_UPDATED,
+    FIELD_STATUS, FIELD_TERMINAL_DATE, FIELD_TERMINAL_REASON,
 };
 use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
 use crate::io::{
@@ -30,7 +30,6 @@ use crate::io::{
 };
 use crate::output::print_json_compact;
 
-const FIELD_LAST_UPDATED: &str = "last_updated";
 const SECONDS_PER_DAY: u64 = 86_400;
 
 pub(crate) fn dispatch(
@@ -143,8 +142,8 @@ fn due(item: &TomlValue, today: Date, threshold: Duration) -> Option<TomlDatetim
 }
 
 /// A date field in both the forms a store can hold it: native TOML, and the
-/// quoted string that `items add` leaves behind for `promoted` / `dismissed`
-/// (its ISO-string promotion covers `resolved` but not those two).
+/// quoted string carried by rows written before `promoted` / `dismissed` joined
+/// the `items add` ISO-string promotion set. Both shapes stay readable.
 fn read_date(item: &TomlValue, field: &str) -> Option<(TomlDatetime, Date)> {
     let stored = match item.get(field)? {
         TomlValue::Datetime(dt) => *dt,

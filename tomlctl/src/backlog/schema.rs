@@ -26,7 +26,7 @@ use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::convert::json_type_name;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::maybe_verify_integrity;
-use crate::io::{items_array, read_toml, repo_or_cwd_root};
+use crate::io::{items_array, read_toml, repo_or_cwd_root, strict_read_check};
 
 /// Array of live captures. Never `items`: an array named `items` under
 /// `.claude/` is the default target of `tomlctl items add|update|apply`,
@@ -35,6 +35,10 @@ pub(crate) const ARRAY_BACKLOG: &str = "backlog";
 /// Array of aged-out terminal captures, read by `check` so folding a row
 /// away never loses the "we already solved this" answer.
 pub(crate) const ARRAY_COMPACTED: &str = "compacted";
+
+/// Document-root stamp, rewritten by every mutating verb. Not a row
+/// field: it sits beside the two arrays rather than inside either.
+pub(crate) const FIELD_LAST_UPDATED: &str = "last_updated";
 
 pub(crate) const FIELD_ID: &str = "id";
 pub(crate) const FIELD_KIND: &str = "kind";
@@ -201,14 +205,8 @@ pub(crate) fn backlog_path() -> Result<PathBuf> {
 /// missing file is `not_found` rather than `integrity` even with both flags.
 pub(crate) fn read_store(integrity: &ReadIntegrityArgs) -> Result<TomlValue> {
     let file = backlog_path()?;
+    strict_read_check(&file, integrity.strict_read)?;
     if !file.exists() {
-        if integrity.strict_read {
-            return Err(tagged_err(
-                ErrorKind::NotFound,
-                Some(file.clone()),
-                format!("file does not exist: {}", file.display()),
-            ));
-        }
         return Ok(TomlValue::Table(toml::map::Map::new()));
     }
     maybe_verify_integrity(&file, read_integrity_opts(integrity))?;

@@ -1596,6 +1596,8 @@ fn capabilities_features_contains_every_plan_feature() {
         "flow_envelope_build",
         "flow_stale",
         "flow_find_plans",
+        "flow_list",
+        "flow_render_progress_log",
         "json_ops",
         // Repo-scoped capture log: the `backlog` subcommand cluster.
         "backlog_capture", // the `add` verb

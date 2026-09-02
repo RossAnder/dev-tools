@@ -28,7 +28,8 @@ use crate::io::{
     compute_set_json_mutation, compute_set_mutation, dry_run_read_opts, guard_write_path,
     mutate_doc, mutate_doc_conditional, mutate_doc_plan, on_missing_for, read_doc,
     read_doc_borrowed, read_doc_either, read_json_arg, read_json_value_from_arg, read_toml_str,
-    recheck_claude_containment, warn_if_created, warn_if_read_outside_claude, with_exclusive_lock,
+    recheck_claude_containment, strict_read_check, warn_if_created, warn_if_read_outside_claude,
+    with_exclusive_lock,
 };
 use crate::items::{
     AddManyOutcome, AddOutcome, array_append, compute_add_many_mutation, compute_add_mutation,
@@ -115,31 +116,6 @@ pub(crate) fn read_integrity_opts(args: &ReadIntegrityArgs) -> IntegrityOpts {
     }
 }
 
-/// Single gate applied at every read dispatch site so `--strict-read`
-/// fires BEFORE `read_doc` (and therefore before `maybe_verify_integrity`).
-/// This is the ordering guarantee documented in the README's "File state
-/// contract" subsection: a missing file under `--strict-read
-/// --verify-integrity` surfaces `kind=not_found`, not `kind=integrity`.
-///
-/// Called at every dispatch arm that flattens `ReadIntegrityArgs`. On
-/// paths whose default already errors on missing file (everything except
-/// `items next-id --prefix <P>`) the call is a defensive duplicate — a
-/// benign extra stat before the real read — and the downstream
-/// `read_toml` NotFound tag would fire regardless. Keeping it centralised
-/// means future read arms that add a "missing → silent default" fast path
-/// (e.g. an eventual `items list --or-default '[]'`) inherit the gate for
-/// free.
-fn strict_read_check(file: &std::path::Path, strict_read: bool) -> Result<()> {
-    if !strict_read || file.exists() {
-        return Ok(());
-    }
-    Err(crate::errors::tagged_err(
-        crate::errors::ErrorKind::NotFound,
-        Some(file.to_path_buf()),
-        format!("file does not exist: {}", file.display()),
-    ))
-}
-
 pub(crate) fn write_integrity_opts(args: &WriteIntegrityArgs) -> IntegrityOpts {
     IntegrityOpts {
         write_sidecar: !args.no_write_integrity,
@@ -165,10 +141,10 @@ fn write_envelope(file: &std::path::Path, created: bool) -> Result<()> {
     }))
 }
 
-/// P19 (symmetric half): TOML write subcommands (`set`, `set-json`,
-/// `array-append`) refuse `.json` targets and point the caller at
-/// `tomlctl json set`. The corresponding positive half (JSON writers
-/// refuse `.toml` targets) lives in `crate::json::refuse_toml_extension`.
+/// TOML write subcommands (`set`, `set-json`, `array-append`) refuse `.json`
+/// targets and point the caller at `tomlctl json set`. The symmetric half
+/// (JSON writers refuse `.toml` targets) lives in
+/// `crate::json::refuse_toml_extension`.
 /// Pairing the two prevents the silent-write hazard of e.g.
 /// `tomlctl set .claude/settings.json key val` parsing the JSON file as
 /// TOML and emitting unrelated bytes back into it.
@@ -793,12 +769,31 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             dry_run,
             integrity,
         } => {
+            // Enforce "at least one of --json / --unset" here rather than as a
+            // required ArgGroup: clap is built without `error-context`, so a
+            // group refusal names neither flag. Same shape as `array-append`'s
+            // --json / --ndjson pair. An update naming neither would rewrite
+            // the ledger and its sidecar for no field change.
+            if json.is_none() && unset.is_empty() {
+                bail!(
+                    "items update requires one of --json or --unset (e.g. `--json '{{\"status\":\"fixed\"}}'` to merge fields, `--unset notes` to remove one)"
+                );
+            }
             let opts = write_integrity_opts(&integrity);
             // The json arg parse sits above the dry-run/live split.
             // `compute_update_mutation` takes the raw &str and parses
             // internally (same surface as `items_update_to`), so both
             // branches share the resolved string.
-            let json = read_json_arg(&json)?;
+            //
+            // An absent `--json` defaults to an empty patch, which merges
+            // nothing (the merge loop has no keys, and the dedup_id recompute
+            // classifies it as "touches no fingerprinted field"), so the
+            // `--unset` removals are the whole mutation. The guard above is
+            // what keeps that default from degenerating into a no-op write.
+            let json = match json {
+                Some(arg) => read_json_arg(&arg)?,
+                None => "{}".to_string(),
+            };
             if dry_run {
                 // Advisory warn for dry-run reads outside `.claude/`.
                 // Same threat shape as the other dry-run arms — a caller
@@ -1202,15 +1197,6 @@ fn blocks_dispatch(op: BlocksOp) -> Result<()> {
     match op {
         BlocksOp::Verify { files, block } => {
             let report = blocks_verify(&files, &block)?;
-            print_json(&report.report)?;
-            if !report.ok {
-                std::process::exit(1);
-            }
-        }
-        BlocksOp::VerifySkills { manifest } => {
-            let manifest_path =
-                manifest.unwrap_or_else(|| std::path::PathBuf::from("scripts/shared-blocks.toml"));
-            let report = crate::blocks::verify_skills(&manifest_path)?;
             print_json(&report.report)?;
             if !report.ok {
                 std::process::exit(1);

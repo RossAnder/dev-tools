@@ -17,17 +17,9 @@
 #   ledger-disposition-sweep, apply-vet-implement-lite,
 #   vet-research, and plansdirectory-prompt.
 #
-#   The manifest carries two blocks — forbidden-working-tree-ops and
-#   backlog-candidates — each spanning the same two implement agent files
-#   (neither file is a command carrier, so both were untouched by the
-#   migration). Neither block is externalised to a skill, so neither
-#   carries a `skill = "..."` field.
-#
-#   The optional `skill = "..."` field (now unused, since no surviving block
-#   is externalised) records the externalised skill path for a block once it
-#   is moved to a flow-contract skill. It is consumed by the
-#   `tomlctl blocks verify-skills` drift check and is ignored by
-#   scripts/verify-shared-blocks.sh (it sits outside the `files` array).
+#   No command carrier survived that wave. Every `[[block]]` below spans
+#   files of another kind — implement agents, or Rust sources — which is why
+#   they were untouched by the migration.
 
 [[block]]
 name = "forbidden-working-tree-ops"
@@ -41,4 +33,15 @@ name = "backlog-candidates"
 files = [
   "claude/agents/implement-deep.md",
   "claude/agents/implement-lite.md",
+]
+
+# Rust carriers rather than markdown: the bin crate's `#[cfg(test)]` module and
+# the integration-test helper cannot import from each other, so the fixture is
+# duplicated and held byte-identical here instead. Markers sit inside `/* … */`
+# so each is a whole line the verifier can match.
+[[block]]
+name = "shipped-gitignore"
+files = [
+  "tomlctl/src/test_support.rs",
+  "tomlctl/tests/common/mod.rs",
 ]

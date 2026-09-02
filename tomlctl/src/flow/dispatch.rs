@@ -85,9 +85,8 @@ pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
             active_only,
             integrity,
         } => crate::flow::list::dispatch(status, branch, active_only, integrity),
-        // T3: render-from-log — regenerate PROGRESS-LOG.md from the execution
-        // record. `--stdout` previews instead of writing; `--verify-integrity`
-        // checks the record's sidecar before rendering.
+        // `--stdout` previews instead of writing; `--verify-integrity` checks
+        // the execution record's sidecar before rendering.
         FlowOp::RenderProgressLog {
             slug,
             stdout,

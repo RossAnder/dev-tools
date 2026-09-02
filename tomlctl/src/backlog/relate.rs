@@ -18,7 +18,8 @@ use toml::value::Datetime;
 
 use super::schema::{
     self, ARRAY_BACKLOG, FIELD_DISMISS_REASON, FIELD_DISMISSED, FIELD_DUPLICATE_OF, FIELD_ID,
-    FIELD_RELATED, FIELD_STATUS, FIELD_SUPERSEDES, MANAGED_FIELDS, STATUS_DISMISSED,
+    FIELD_LAST_UPDATED, FIELD_RELATED, FIELD_STATUS, FIELD_SUPERSEDES, MANAGED_FIELDS,
+    STATUS_DISMISSED,
 };
 use crate::cli::{RelationKind, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
@@ -28,8 +29,6 @@ use crate::io::{
     warn_if_created,
 };
 use crate::output::print_json_compact;
-
-const FIELD_LAST_UPDATED: &str = "last_updated";
 
 pub(crate) fn dispatch(
     a: String,
