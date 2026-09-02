@@ -12,7 +12,6 @@
 //! stays distinguishable from an empty one.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
@@ -20,25 +19,18 @@ use toml::Value as TomlValue;
 
 use super::evidence;
 use super::schema::{
-    self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_AREA, FIELD_DUPLICATE_OF, FIELD_ID, FIELD_KIND,
-    FIELD_RELATED, FIELD_STATUS, FIELD_SUMMARY, FIELD_SUPERSEDES, FIELD_TAGS, STATUS_OPEN,
+    self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_AREA, FIELD_ID, FIELD_KIND, FIELD_RELATED,
+    FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, RELATION_FIELDS, STATUS_OPEN,
 };
-use crate::cli::{
-    LegacyShortcuts, QueryArgs, ReadIntegrityArgs, query_input_from_cli, read_integrity_opts,
-};
+use crate::cli::{LegacyShortcuts, QueryArgs, ReadIntegrityArgs};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
-use crate::io::{items_array, read_toml, relativise, repo_or_cwd_root};
+use crate::io::{items_array, relativise, repo_or_cwd_root};
 use crate::output::{emit_list_raw, print_json};
 use crate::query::{Query, ShapeDispatch};
 
 const DIRECTION_OUT: &str = "out";
 const DIRECTION_IN: &str = "in";
-
-/// The typed edge fields `show` walks, in output-tie-break order.
-/// `related` holds an array; the other two hold a single id.
-const RELATIONS: &[&str] = &[FIELD_RELATED, FIELD_DUPLICATE_OF, FIELD_SUPERSEDES];
 
 // One parameter per `BacklogOp::List` field, so the dispatch fan-out stays a
 // mechanical destructure.
@@ -54,9 +46,7 @@ pub(crate) fn dispatch_list(
     query: QueryArgs,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
-    let file = schema::backlog_path()?;
-    strict_read_gate(&file, integrity.strict_read)?;
-    let doc = read_store(&file, read_integrity_opts(&integrity))?;
+    let doc = schema::read_store(&integrity)?;
 
     let filters = Filters {
         tags: &tag,
@@ -87,9 +77,7 @@ pub(crate) fn dispatch_list(
 }
 
 pub(crate) fn dispatch_show(id: String, integrity: ReadIntegrityArgs) -> Result<()> {
-    let file = schema::backlog_path()?;
-    strict_read_gate(&file, integrity.strict_read)?;
-    let doc = read_store(&file, read_integrity_opts(&integrity))?;
+    let doc = schema::read_store(&integrity)?;
     print_json(&build_show(&doc, &id)?)
 }
 
@@ -166,7 +154,7 @@ fn build_query(
         newer_than: &unset,
         count,
     };
-    let mut input = query_input_from_cli(&legacy, query);
+    let mut input = query.to_query_input(&legacy);
     if open {
         input.where_eq.push(format!("{FIELD_STATUS}={STATUS_OPEN}"));
     }
@@ -194,7 +182,7 @@ fn build_show(doc: &TomlValue, id: &str) -> Result<JsonValue> {
     };
 
     let mut edges: BTreeSet<(String, &'static str, &'static str)> = BTreeSet::new();
-    for &relation in RELATIONS {
+    for &relation in RELATION_FIELDS {
         for peer in relation_targets(row, relation) {
             if peer != resolved {
                 edges.insert((peer, relation, DIRECTION_OUT));
@@ -208,7 +196,7 @@ fn build_show(doc: &TomlValue, id: &str) -> Result<JsonValue> {
         if other_id == resolved {
             continue;
         }
-        for &relation in RELATIONS {
+        for &relation in RELATION_FIELDS {
             if relation_targets(other, relation).contains(&resolved) {
                 edges.insert((other_id.to_string(), relation, DIRECTION_IN));
             }
@@ -295,33 +283,13 @@ fn optional_str(s: Option<&str>) -> JsonValue {
     s.map_or(JsonValue::Null, |s| JsonValue::String(s.to_string()))
 }
 
-/// A missing store lists as empty. `--strict-read` is what turns that into
-/// `kind=not_found`; `show` errors either way, through `resolve_id`.
-fn read_store(file: &Path, integrity: IntegrityOpts) -> Result<TomlValue> {
-    if !file.exists() {
-        return Ok(TomlValue::Table(toml::map::Map::new()));
-    }
-    maybe_verify_integrity(file, integrity)?;
-    read_toml(file)
-}
-
-fn strict_read_gate(file: &Path, strict_read: bool) -> Result<()> {
-    if !strict_read || file.exists() {
-        return Ok(());
-    }
-    Err(tagged_err(
-        ErrorKind::NotFound,
-        Some(file.to_path_buf()),
-        format!("file does not exist: {}", file.display()),
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::with_root;
     use clap::Parser;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     /// `QueryArgs` is a flattened `Args` bundle, not a `Parser`, so a
     /// throwaway wrapper gives the tests the real clap surface instead of a
@@ -340,24 +308,6 @@ mod tests {
 
     fn doc(s: &str) -> TomlValue {
         toml::from_str(s).unwrap()
-    }
-
-    /// Drop the override before any assertion runs — a panic inside would
-    /// otherwise leak `TOMLCTL_ROOT` into every later test in the process.
-    fn under_root<T>(f: impl FnOnce(&Path) -> T) -> T {
-        let _guard = crate::test_support::env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        // SAFETY: set_var is unsafe in edition 2024; acceptable inside tests
-        // where we hold the env lock.
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", root.as_os_str());
-        }
-        let out = f(&root);
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-        out
     }
 
     fn evidence_dir(root: &Path, id: &str) -> PathBuf {
@@ -607,7 +557,7 @@ duplicate_of = "B-1"
 
     #[test]
     fn show_reports_both_edge_directions() {
-        let out = under_root(|_| build_show(&doc(RELATED), "B-1").unwrap());
+        let out = with_root(|_| build_show(&doc(RELATED), "B-1").unwrap());
         assert_eq!(out["item"][FIELD_ID], json!("B-1"));
         assert_eq!(
             neighbour_keys(&out),
@@ -625,7 +575,7 @@ duplicate_of = "B-1"
 
     #[test]
     fn show_resolves_a_compacted_row_and_its_reverse_edge() {
-        let out = under_root(|_| build_show(&doc(RELATED), "B-5").unwrap());
+        let out = with_root(|_| build_show(&doc(RELATED), "B-5").unwrap());
         assert_eq!(out["item"][FIELD_ID], json!("B-5"));
         assert_eq!(
             neighbour_keys(&out),
@@ -635,14 +585,14 @@ duplicate_of = "B-1"
 
     #[test]
     fn show_errors_not_found_on_an_unknown_id() {
-        let err = under_root(|_| build_show(&doc(RELATED), "B-deadbeef").unwrap_err());
+        let err = with_root(|_| build_show(&doc(RELATED), "B-deadbeef").unwrap_err());
         assert_eq!(kind_of(&err), "not_found");
         assert!(format!("{err:#}").contains("B-deadbeef"));
     }
 
     #[test]
     fn show_reads_the_three_evidence_shapes_from_the_directory() {
-        let out = under_root(|root| {
+        let out = with_root(|root| {
             evidence_dir(root, "B-2");
             let dir = evidence_dir(root, "B-3");
             fs::write(dir.join("trace.har"), b"12345").unwrap();
@@ -672,7 +622,7 @@ duplicate_of = "B-1"
 
     #[test]
     fn has_evidence_keeps_only_populated_directories() {
-        let kept = under_root(|root| {
+        let kept = with_root(|root| {
             evidence_dir(root, "B-2");
             let dir = evidence_dir(root, "B-3");
             fs::write(dir.join("shot.png"), b"1234").unwrap();
@@ -688,14 +638,13 @@ duplicate_of = "B-1"
     }
 
     #[test]
-    fn a_missing_store_lists_empty_and_gates_on_strict_read() {
-        under_root(|root| {
-            let file = root.join(".claude").join("backlog.toml");
-            assert!(strict_read_gate(&file, false).is_ok());
-            let err = strict_read_gate(&file, true).unwrap_err();
-            assert_eq!(kind_of(&err), "not_found");
-
-            let d = read_store(&file, read_integrity_opts_default()).unwrap();
+    fn a_missing_store_lists_empty() {
+        with_root(|_| {
+            let d = schema::read_store(&ReadIntegrityArgs {
+                verify_integrity: false,
+                strict_read: false,
+            })
+            .unwrap();
             assert!(items_array(&d, ARRAY_BACKLOG).is_empty());
             let q = build_query(&None, &None, true, false, &query_args(&[])).unwrap();
             assert_eq!(
@@ -703,13 +652,5 @@ duplicate_of = "B-1"
                 json!([])
             );
         });
-    }
-
-    fn read_integrity_opts_default() -> IntegrityOpts {
-        IntegrityOpts {
-            write_sidecar: true,
-            verify_on_read: false,
-            strict: false,
-        }
     }
 }

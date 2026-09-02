@@ -46,7 +46,7 @@ use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::{ActiveDoc, ActiveEntry, FlowProjection};
-use crate::flow::time::{parse_iso_to_date, today_utc_date};
+use crate::time::{parse_iso_to_date, today_utc_date};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
 use crate::io::{read_dir_sorted, read_toml, relativise, repo_or_cwd_root};
 use crate::output::print_json_compact;
@@ -887,7 +887,7 @@ fn compute_staleness(table: &toml::map::Map<String, TomlValue>) -> JsonValue {
         }
     };
 
-    // R6: route the parse + today resolution through `flow::time` so
+    // R6: route the parse + today resolution through `crate::time` so
     // R39's injection seam can pin the clock during tests, and the
     // identical-format error messages stay in lock-step with `stale.rs`.
     let updated_date = match parse_iso_to_date(&iso) {

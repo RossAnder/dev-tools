@@ -16,12 +16,12 @@ use serde_json::json;
 use toml::Value as TomlValue;
 
 use super::schema;
-use crate::cli::{
-    TriageMode, WriteIntegrityArgs, on_missing_for, warn_if_created, write_integrity_opts,
-};
+use crate::cli::{TriageMode, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{item_id, items_array, items_array_mut, mutate_doc};
+use crate::io::{
+    item_id, items_array, items_array_mut, mutate_doc, on_missing_for, warn_if_created,
+};
 use crate::output::print_json_compact;
 
 const FIELD_LAST_UPDATED: &str = "last_updated";
@@ -231,9 +231,9 @@ pub(crate) fn dispatch(
 ) -> Result<()> {
     let transition = Transition::from_cli(mode, to, reason, resolution, rationale)?;
     let path = schema::backlog_path()?;
-    let today = crate::flow::today_toml_date()?;
+    let today = crate::time::today_toml_date()?;
     let opts = write_integrity_opts(&integrity);
-    let on_missing = on_missing_for(&path, &integrity)?;
+    let on_missing = on_missing_for(&path, integrity.no_create)?;
     let created = mutate_doc(&path, integrity.allow_outside, opts, on_missing, |doc| {
         apply_transition(doc, &ids, &transition, today)
     })?;
@@ -249,6 +249,7 @@ pub(crate) fn dispatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::with_root;
     use std::path::{Path, PathBuf};
 
     const STORE: &str = r#"schema_version = 1
@@ -649,26 +650,11 @@ compacted_on = 2026-06-01
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
-    /// Seed the store under a throwaway root, dropping the override before
-    /// any assertion so a panic cannot leak `TOMLCTL_ROOT`. The `TempDir` is
-    /// handed back because dropping it deletes the tree the caller is about
-    /// to read.
-    fn under_root<T>(f: impl FnOnce(&Path) -> T) -> (tempfile::TempDir, PathBuf, T) {
-        let _guard = crate::test_support::env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        std::fs::create_dir_all(root.join(".claude")).unwrap();
-        std::fs::write(root.join(".claude").join("backlog.toml"), STORE).unwrap();
-        // SAFETY: set_var is unsafe in edition 2024; acceptable inside tests
-        // where we hold the env lock.
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", root.as_os_str());
-        }
-        let out = f(&root);
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-        (dir, root, out)
+    /// Seed the store under a throwaway sandbox root and hand back its path.
+    fn seed(root: &Path) -> PathBuf {
+        let file = root.join(".claude").join("backlog.toml");
+        std::fs::write(&file, STORE).unwrap();
+        file
     }
 
     fn write_args() -> WriteIntegrityArgs {
@@ -692,8 +678,9 @@ compacted_on = 2026-06-01
 
     #[test]
     fn a_missing_companion_leaves_the_file_byte_identical() {
-        let (_dir, root, err) = under_root(|_| {
-            dispatch(
+        let (err, bytes, sidecar) = with_root(|root| {
+            let file = seed(root);
+            let err = dispatch(
                 ids(&["B-aaaaaaaa"]),
                 mode("promote"),
                 None,
@@ -702,18 +689,23 @@ compacted_on = 2026-06-01
                 None,
                 write_args(),
             )
-            .unwrap_err()
+            .unwrap_err();
+            (
+                err,
+                std::fs::read(&file).unwrap(),
+                file.with_extension("toml.sha256").exists(),
+            )
         });
         assert_eq!(kind_of(&err), "validation", "{err:#}");
-        let file = root.join(".claude").join("backlog.toml");
-        assert_eq!(std::fs::read(&file).unwrap(), STORE.as_bytes());
-        assert!(!file.with_extension("toml.sha256").exists());
+        assert_eq!(bytes, STORE.as_bytes());
+        assert!(!sidecar);
     }
 
     #[test]
     fn an_unknown_id_leaves_the_file_byte_identical() {
-        let (_dir, root, err) = under_root(|_| {
-            dispatch(
+        let (err, bytes) = with_root(|root| {
+            let file = seed(root);
+            let err = dispatch(
                 ids(&["B-aaaaaaaa", "B-nosuchid"]),
                 mode("dismiss"),
                 None,
@@ -722,16 +714,17 @@ compacted_on = 2026-06-01
                 None,
                 write_args(),
             )
-            .unwrap_err()
+            .unwrap_err();
+            (err, std::fs::read(&file).unwrap())
         });
         assert_eq!(kind_of(&err), "not_found", "{err:#}");
-        let file = root.join(".claude").join("backlog.toml");
-        assert_eq!(std::fs::read(&file).unwrap(), STORE.as_bytes());
+        assert_eq!(bytes, STORE.as_bytes());
     }
 
     #[test]
     fn dispatch_persists_the_transition_through_the_store_path() {
-        let (_dir, root, ()) = under_root(|_| {
+        let (text, sidecar) = with_root(|root| {
+            let file = seed(root);
             dispatch(
                 ids(&["B-bbbbbbbb"]),
                 mode("resolve"),
@@ -742,9 +735,12 @@ compacted_on = 2026-06-01
                 write_args(),
             )
             .unwrap();
+            (
+                std::fs::read_to_string(&file).unwrap(),
+                file.with_file_name("backlog.toml.sha256").exists(),
+            )
         });
-        let file = root.join(".claude").join("backlog.toml");
-        let doc: TomlValue = toml::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        let doc: TomlValue = toml::from_str(&text).unwrap();
         assert_eq!(
             field(&doc, "B-bbbbbbbb", schema::FIELD_STATUS).as_deref(),
             Some("\"resolved\"")
@@ -754,6 +750,6 @@ compacted_on = 2026-06-01
             Some("\"fixed in 960677b\"")
         );
         assert_valid(&doc, "B-bbbbbbbb");
-        assert!(file.with_file_name("backlog.toml.sha256").exists());
+        assert!(sidecar);
     }
 }

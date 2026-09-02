@@ -42,7 +42,7 @@ use crate::cli::{
 };
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::schema::{ActiveDoc, ActiveEntry as SchemaEntry};
-use crate::flow::time::now_rfc3339;
+use crate::time::now_rfc3339;
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
 use crate::io::{
     guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root,

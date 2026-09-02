@@ -22,14 +22,12 @@ use super::schema::{
     FIELD_ORIGIN, FIELD_RELATED, FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS,
     KIND_OTHER, STATUS_OPEN, TERMINAL_DATE_FIELDS,
 };
-use crate::cli::{
-    OnDuplicate, WriteIntegrityArgs, on_missing_for, read_json_arg, warn_if_created,
-    write_integrity_opts,
-};
+use crate::cli::{OnDuplicate, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::{is_date_key, json_to_toml, json_type_name, toml_to_json};
 use crate::errors::{ErrorKind, TaggedError, tagged_err};
-use crate::integrity::IntegrityOpts;
-use crate::io::{self, OnMissing, items_array, items_array_mut};
+use crate::io::{
+    self, OnMissing, items_array, items_array_mut, on_missing_for, read_json_arg, warn_if_created,
+};
 use crate::items::{MutationPlan, SkippedRow};
 use crate::output::{emit_dry_run_plan, print_json_compact};
 
@@ -116,7 +114,7 @@ pub(crate) fn dispatch(
     }
 
     let opts = write_integrity_opts(&integrity);
-    let on_missing = on_missing_for(&file, &integrity)?;
+    let on_missing = on_missing_for(&file, integrity.no_create)?;
     let mut outcome: Option<AddOutcome> = None;
     let created = io::mutate_doc_conditional(
         &file,
@@ -422,7 +420,7 @@ fn build_request(
     on_duplicate: OnDuplicate,
     json: Option<String>,
 ) -> Result<AddRequest> {
-    let today = crate::flow::today_toml_date()?;
+    let today = crate::time::today_toml_date()?;
     let req = match json {
         Some(raw) => {
             // Not clap `conflicts_with`: the clash has to reach the caller as a
@@ -567,14 +565,10 @@ fn strings_of(map: &JsonMap<String, JsonValue>, field: &str) -> Vec<String> {
 /// run would have started from. No lock and no sidecar write, so the preview
 /// leaves an absent store absent.
 fn preview_doc(file: &Path, integrity: &WriteIntegrityArgs) -> Result<TomlValue> {
-    let opts = IntegrityOpts {
-        write_sidecar: false,
-        verify_on_read: integrity.verify_integrity,
-        strict: false,
-    };
+    let opts = io::dry_run_read_opts(integrity.verify_integrity);
     match io::read_doc(file, opts, |doc| Ok(doc.clone())) {
         Ok(doc) => Ok(doc),
-        Err(e) if is_not_found(&e) => match on_missing_for(file, integrity)? {
+        Err(e) if is_not_found(&e) => match on_missing_for(file, integrity.no_create)? {
             OnMissing::Create(seed) => Ok(seed),
             OnMissing::Error => Err(e),
         },
@@ -609,8 +603,8 @@ fn preview_plan(new_doc: TomlValue, outcome: &AddOutcome) -> MutationPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::with_root;
     use std::fs;
-    use std::panic::AssertUnwindSafe;
     use std::path::PathBuf;
 
     fn wargs() -> WriteIntegrityArgs {
@@ -620,29 +614,6 @@ mod tests {
             verify_integrity: false,
             strict_integrity: false,
             no_create: false,
-        }
-    }
-
-    /// Resolve the store under a throwaway root. The override is dropped even
-    /// when an assertion panics, so a failure cannot leak `TOMLCTL_ROOT` into
-    /// every later test in the process.
-    fn in_sandbox<T>(f: impl FnOnce(&Path) -> T) -> T {
-        let _guard = crate::test_support::env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        // SAFETY: set_var is unsafe in edition 2024; acceptable inside tests
-        // where we hold the env lock.
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", root.as_os_str());
-        }
-        fs::create_dir_all(root.join(".claude")).unwrap();
-        let out = std::panic::catch_unwind(AssertUnwindSafe(|| f(&root)));
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-        match out {
-            Ok(value) => value,
-            Err(panic) => std::panic::resume_unwind(panic),
         }
     }
 
@@ -727,7 +698,7 @@ mod tests {
 
     #[test]
     fn a_fresh_mint_writes_every_required_field() {
-        in_sandbox(|root| {
+        with_root(|root| {
             run(capture("PTY readiness probe flakes on slow CI")).unwrap();
             let doc = store(root);
             assert_eq!(doc.get(FIELD_SCHEMA_VERSION), Some(&TomlValue::Integer(1)));
@@ -755,7 +726,7 @@ mod tests {
 
     #[test]
     fn a_punctuation_variant_bumps_the_incumbent() {
-        in_sandbox(|root| {
+        with_root(|root| {
             run(Capture {
                 tags: &["ci"],
                 ..capture("PTY readiness probe flakes on slow CI")
@@ -788,7 +759,7 @@ mod tests {
 
     #[test]
     fn a_bump_unions_evidence_without_duplicating_it() {
-        in_sandbox(|root| {
+        with_root(|root| {
             let summary = "guard_write_path refuses a symlinked leaf";
             run(Capture {
                 evidence: &["tomlctl/src/io.rs:88"],
@@ -813,7 +784,7 @@ mod tests {
 
     #[test]
     fn on_duplicate_fail_names_the_incumbent() {
-        in_sandbox(|root| {
+        with_root(|root| {
             let summary = "sidecar rename loses to the indexer";
             run(capture(summary)).unwrap();
             let id = rows(root)[0][FIELD_ID].as_str().unwrap().to_string();
@@ -830,7 +801,7 @@ mod tests {
 
     #[test]
     fn on_duplicate_skip_leaves_the_store_and_sidecar_untouched() {
-        in_sandbox(|root| {
+        with_root(|root| {
             let summary = "compact drops the terminal reason";
             run(capture(summary)).unwrap();
             let file = store_path(root);
@@ -859,7 +830,7 @@ mod tests {
     /// uniqueness check would then reject under an id nobody chose.
     #[test]
     fn a_compacted_fingerprint_is_named_rather_than_re_minted() {
-        in_sandbox(|root| {
+        with_root(|root| {
             let summary = "aged out, then rediscovered";
             let dedup_id = ids::dedup_id_from_parts(
                 "flaky-test",
@@ -887,7 +858,7 @@ mod tests {
 
     #[test]
     fn a_related_id_that_resolves_to_nothing_is_rejected() {
-        in_sandbox(|root| {
+        with_root(|root| {
             run(capture("an item worth pointing at")).unwrap();
             let file = store_path(root);
             let before = fs::read(&file).unwrap();
@@ -905,7 +876,7 @@ mod tests {
 
     #[test]
     fn a_resolvable_related_id_is_stored() {
-        in_sandbox(|root| {
+        with_root(|root| {
             run(capture("the item being pointed at")).unwrap();
             let id = rows(root)[0][FIELD_ID].as_str().unwrap().to_string();
             run(Capture {
@@ -973,7 +944,7 @@ mod tests {
 
     #[test]
     fn dry_run_leaves_an_absent_store_absent() {
-        in_sandbox(|root| {
+        with_root(|root| {
             run(Capture {
                 dry_run: true,
                 ..capture("nothing should land")
@@ -987,7 +958,7 @@ mod tests {
 
     #[test]
     fn dry_run_leaves_an_existing_store_byte_identical() {
-        in_sandbox(|root| {
+        with_root(|root| {
             run(capture("first capture")).unwrap();
             let file = store_path(root);
             let sidecar = crate::integrity::sidecar_path(&file);
@@ -1012,7 +983,7 @@ mod tests {
 
     #[test]
     fn a_json_payload_mints_and_re_derives_identity() {
-        in_sandbox(|root| {
+        with_root(|root| {
             run(Capture {
                 json: Some(
                     r#"{"id":"B-deadbeef","dedup_id":"0000000000000000","seen_count":97,
@@ -1038,7 +1009,7 @@ mod tests {
 
     #[test]
     fn a_json_payload_carrying_a_terminal_status_keeps_its_date_typed() {
-        in_sandbox(|root| {
+        with_root(|root| {
             run(Capture {
                 json: Some(
                     r#"{"summary":"already resolved elsewhere","kind":"bug",
@@ -1056,7 +1027,7 @@ mod tests {
 
     #[test]
     fn json_and_the_field_flags_are_mutually_exclusive() {
-        in_sandbox(|_| {
+        with_root(|_| {
             let err = run(Capture {
                 summary: Some("both at once"),
                 json: Some(r#"{"summary":"payload"}"#),
@@ -1070,7 +1041,7 @@ mod tests {
 
     #[test]
     fn an_empty_or_blank_summary_is_rejected() {
-        in_sandbox(|root| {
+        with_root(|root| {
             // Whitespace-only is the case `schema::validate` alone lets
             // through: it reads `"   "` as present, so the guard has to run
             // before the row is built.
@@ -1091,7 +1062,7 @@ mod tests {
 
     #[test]
     fn an_unknown_kind_coerces_to_other() {
-        in_sandbox(|root| {
+        with_root(|root| {
             run(Capture {
                 kind: Some("regression"),
                 ..capture("kind falls back rather than failing")
@@ -1103,7 +1074,7 @@ mod tests {
 
     #[test]
     fn a_missing_kind_is_other_and_a_missing_area_is_empty() {
-        in_sandbox(|root| {
+        with_root(|root| {
             run(Capture {
                 summary: Some("bare capture"),
                 ..Capture::default()
@@ -1117,7 +1088,7 @@ mod tests {
 
     #[test]
     fn a_hand_written_store_without_root_scalars_still_round_trips() {
-        in_sandbox(|root| {
+        with_root(|root| {
             let file = store_path(root);
             fs::write(
                 &file,
@@ -1135,7 +1106,7 @@ mod tests {
 
     #[test]
     fn two_distinct_captures_get_distinct_ids() {
-        in_sandbox(|root| {
+        with_root(|root| {
             run(capture("first distinct discovery")).unwrap();
             run(capture("second distinct discovery")).unwrap();
             let rows = rows(root);

@@ -7,9 +7,6 @@
 //! id an incumbent holds; the caller re-derives the incumbent, and
 //! `schema::validate_ids_unique` is what refuses to write the pair otherwise.
 
-// Identity is consumed by the verb leaves, not by this file.
-#![allow(dead_code)]
-
 use std::collections::BTreeSet;
 
 use serde_json::Value as JsonValue;
@@ -42,6 +39,7 @@ const ID_WIDTHS: [usize; 3] = [8, 10, 12];
 /// Fingerprint of a whole item. A non-object, or an item missing any of the
 /// three fields, hashes those as the empty string, so the function is total
 /// and a half-built item still yields a stable id.
+#[allow(dead_code)]
 pub(crate) fn dedup_id(item: &JsonValue) -> String {
     let empty = serde_json::Map::new();
     let obj = item.as_object().unwrap_or(&empty);

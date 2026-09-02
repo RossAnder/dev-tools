@@ -16,7 +16,7 @@
 //! `mutate_active` / `now_rfc3339` / `entry_to_json` / `write_integrity_opts`
 //! helpers were duplicated verbatim here behind a "T3 doesn't expose
 //! pub(crate) helpers" rationale. R1 promoted those to `pub(crate)` on
-//! `active.rs` and `flow::time`, so this module now consumes them via
+//! `active.rs` and `crate::time`, so this module now consumes them via
 //! `use crate::flow::active::{build_entry, find_slug_index, mutate_active}`
 //! and `crate::cli::write_integrity_opts`.
 
@@ -33,7 +33,7 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::active::{build_entry as build_active_entry, find_slug_index, mutate_active};
 use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::ActiveEntry as SchemaEntry;
-use crate::flow::time::{now_rfc3339, today_toml_date};
+use crate::time::{now_rfc3339, today_toml_date};
 use crate::integrity::refresh_sidecar;
 use crate::io::{
     guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root,
@@ -270,24 +270,24 @@ fn upsert_active_entry(
 
 /// T1 / R5: the PURE skeleton-building step shared by every execution-record
 /// bootstrap path. Delegates straight to the single-source
-/// `cli::seed_doc_for` helper (keyed on the basename) so the skeleton has
+/// `io::seed_doc_for` helper (keyed on the basename) so the skeleton has
 /// exactly one definition crate-wide. No FS I/O — pure data — so the
-/// byte-identity test (`cli::dispatch::tests::seed_doc_for_matches_bootstrap_bytes`)
+/// byte-identity test (`io::tests::seed_doc_for_matches_bootstrap_bytes`)
 /// can exercise this REAL bootstrap code path without touching disk.
 pub(crate) fn execution_record_skeleton(file: &Path) -> Result<TomlValue> {
-    crate::cli::seed_doc_for(file)
+    crate::io::seed_doc_for(file)
 }
 
 /// Bootstrap `execution-record.toml` if missing — materialise the 2-line
 /// `schema_version = 1 / last_updated = <today>` skeleton plus its sidecar.
 ///
 /// T1: the skeleton is no longer a hand-rolled literal string. It is built by
-/// the single-source `cli::seed_doc_for` helper (via `execution_record_skeleton`,
+/// the single-source `io::seed_doc_for` helper (via `execution_record_skeleton`,
 /// the SAME helper the auto-create write path uses) and persisted through
 /// `write_toml_with_sidecar` — the same writer the rest of the pipeline uses.
 /// The on-disk bytes are byte-identical to the former literal
 /// `schema_version = 1\nlast_updated = <date>\n` (verified by
-/// `seed_doc_for_matches_bootstrap_bytes` in the dispatch tests): `toml`'s
+/// `seed_doc_for_matches_bootstrap_bytes` in the io tests): `toml`'s
 /// `preserve_order` serialiser emits the inserted `schema_version`→`last_updated`
 /// order, an integer `1`, and a bare date.
 ///
@@ -457,7 +457,7 @@ pub(crate) fn dispatch(
     // Bootstrap execution-record.toml (idempotent — the helper checks
     // existence and skips the write when present, but still ensures the
     // sidecar is materialised). T1: the skeleton now comes from
-    // `cli::seed_doc_for` (single source), so the helper computes its own
+    // `io::seed_doc_for` (single source), so the helper computes its own
     // date and no longer takes a `today_iso` argument.
     bootstrap_execution_record(&execution_record_path, &integrity)?;
 

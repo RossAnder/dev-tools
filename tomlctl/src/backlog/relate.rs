@@ -20,12 +20,10 @@ use super::schema::{
     self, ARRAY_BACKLOG, FIELD_DISMISS_REASON, FIELD_DISMISSED, FIELD_DUPLICATE_OF, FIELD_ID,
     FIELD_RELATED, FIELD_STATUS, FIELD_SUPERSEDES, MANAGED_FIELDS, STATUS_DISMISSED,
 };
-use crate::cli::{
-    RelationKind, WriteIntegrityArgs, on_missing_for, warn_if_created, write_integrity_opts,
-};
+use crate::cli::{RelationKind, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{items_array, items_array_mut, mutate_doc};
+use crate::io::{items_array, items_array_mut, mutate_doc, on_missing_for, warn_if_created};
 use crate::output::print_json_compact;
 
 const FIELD_LAST_UPDATED: &str = "last_updated";
@@ -37,9 +35,9 @@ pub(crate) fn dispatch(
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
     let path = schema::backlog_path()?;
-    let today = crate::flow::today_toml_date()?;
+    let today = crate::time::today_toml_date()?;
     let opts = write_integrity_opts(&integrity);
-    let on_missing = on_missing_for(&path, &integrity)?;
+    let on_missing = on_missing_for(&path, integrity.no_create)?;
 
     let mut changed = false;
     let created = mutate_doc(&path, integrity.allow_outside, opts, on_missing, |doc| {
@@ -194,8 +192,8 @@ fn dismiss(item: &mut TomlValue, today: Datetime, reason: String) -> Result<bool
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::with_root;
     use std::fs;
-    use std::path::{Path, PathBuf};
 
     const STORE: &str = r#"schema_version = 1
 last_updated = 2026-08-01
@@ -460,26 +458,6 @@ status = "open"
         }
     }
 
-    /// Resolve under a throwaway root, dropping the override before any
-    /// assertion runs so a panic cannot leak `TOMLCTL_ROOT` into later tests.
-    fn under_root<T>(f: impl FnOnce(&Path) -> T) -> (PathBuf, T) {
-        let _guard = crate::test_support::env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        // SAFETY: set_var is unsafe in edition 2024; acceptable inside tests
-        // where we hold the env lock.
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", root.as_os_str());
-        }
-        fs::create_dir_all(root.join(".claude")).unwrap();
-        fs::write(root.join(".claude").join("backlog.toml"), STORE).unwrap();
-        let out = f(&root);
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-        (root, out)
-    }
-
     fn args() -> WriteIntegrityArgs {
         WriteIntegrityArgs {
             allow_outside: false,
@@ -492,8 +470,9 @@ status = "open"
 
     #[test]
     fn dispatch_is_byte_stable_on_a_re_run_and_leaves_evidence_alone() {
-        let (_root, (first, second, evidence, err_bytes, before_err)) = under_root(|root| {
+        let (first, second, evidence, err_bytes, before_err) = with_root(|root| {
             let store = root.join(".claude").join("backlog.toml");
+            fs::write(&store, STORE).unwrap();
             let evidence_dir = root
                 .join(".claude")
                 .join("backlog-evidence")

@@ -108,9 +108,11 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             integrity,
         } => crate::backlog::compact::dispatch(older_than, dry_run, integrity),
         BacklogOp::Evidence { op } => match op {
-            EvidenceOp::Dir { id, no_create } => {
-                crate::backlog::evidence_ops::dispatch_dir(id, no_create)
-            }
+            EvidenceOp::Dir {
+                id,
+                no_create,
+                integrity,
+            } => crate::backlog::evidence_ops::dispatch_dir(id, no_create, integrity),
             EvidenceOp::Audit {
                 strict,
                 max_bytes,

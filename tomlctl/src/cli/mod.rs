@@ -9,7 +9,7 @@
 //!   legacy-shortcut adapter (`LegacyShortcuts`). Exports the
 //!   `FEATURES` / `SUBCOMMANDS` metadata consts used by `Cmd::Capabilities`.
 //! - [`dispatch`] (`cli/dispatch.rs`) — `fn run()`, `items_dispatch`,
-//!   `blocks_dispatch`, the stdin / NDJSON helpers, and the integrity-opts
+//!   `blocks_dispatch`, the NDJSON source resolver, and the integrity-opts
 //!   translators. Pure plumbing; delegates to `items::` / `blocks::` /
 //!   `io::` for real work.
 //! - Output helpers (`print_json`, `print_json_compact`, `print_raw_value`,
@@ -24,10 +24,13 @@
 mod dispatch;
 mod types;
 
-pub(crate) use dispatch::{
-    on_missing_for, query_input_from_cli, read_integrity_opts, read_json_arg, run, seed_doc_for,
-    warn_if_created, write_integrity_opts,
-};
+/// Only clap-derived TYPES cross this boundary outward, plus `run` (the
+/// entrypoint) and the two integrity-args translators that exist solely to
+/// read those types. Every other function in [`dispatch`] is private to the
+/// CLI layer: a verb group that needs one needs the helper moved down into
+/// infrastructure (`crate::io`) or onto the clap type it converts — never a
+/// new re-export here.
+pub(crate) use dispatch::{read_integrity_opts, run, write_integrity_opts};
 pub(crate) use types::{
     ActiveOp, ArtifactKind, BacklogOp, Cli, ClusterBy, EnvelopeOp, ErrorFormat, EvidenceOp, FlowOp,
     JsonOp, LegacyShortcuts, OnDuplicate, QueryArgs, ReadIntegrityArgs, RelationKind, TriageMode,

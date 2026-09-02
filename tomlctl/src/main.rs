@@ -30,6 +30,7 @@ mod output;
 mod query;
 #[cfg(test)]
 mod test_support;
+mod time;
 
 use std::io::Write;
 

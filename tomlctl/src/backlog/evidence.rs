@@ -8,10 +8,6 @@
 //! the only distinction that changes what a reader does, between "nothing was
 //! ever captured" and "the bytes are in another clone".
 
-// A policy module: its consumers are the sibling leaves, so most of what is
-// defined here has no call site in this file.
-#![allow(dead_code)]
-
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::io::ErrorKind as IoErrorKind;
@@ -255,26 +251,8 @@ fn classify(token: &str) -> std::result::Result<&str, Reject> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::with_root;
     use std::fs;
-
-    /// Resolve paths under a throwaway root, then drop the override before
-    /// any assertion runs — a panic inside would otherwise leak
-    /// `TOMLCTL_ROOT` into every later test in the process.
-    fn under_root<T>(f: impl FnOnce(&Path) -> T) -> (PathBuf, T) {
-        let _guard = crate::test_support::env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        // SAFETY: set_var is unsafe in edition 2024; acceptable inside tests
-        // where we hold the env lock.
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", root.as_os_str());
-        }
-        let out = f(&root);
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-        (root, out)
-    }
 
     fn kind_of(err: &anyhow::Error) -> &'static str {
         err.downcast_ref::<crate::errors::TaggedError>()
@@ -283,8 +261,13 @@ mod tests {
 
     #[test]
     fn dir_for_resolves_beside_the_store_with_forward_slashes() {
-        let (root, (evidence, dir)) =
-            under_root(|_| (evidence_root().unwrap(), dir_for("B-a1b2c3d4").unwrap()));
+        let (root, evidence, dir) = with_root(|root| {
+            (
+                root.to_path_buf(),
+                evidence_root().unwrap(),
+                dir_for("B-a1b2c3d4").unwrap(),
+            )
+        });
         assert_eq!(evidence, root.join(".claude").join(EVIDENCE_ROOT_NAME));
         assert!(
             dir.ends_with(Path::new(".claude/backlog-evidence/B-a1b2c3d4")),
@@ -303,7 +286,7 @@ mod tests {
 
     #[test]
     fn dir_for_refuses_an_id_that_is_not_one_component() {
-        let (_root, errs) = under_root(|_| {
+        let errs = with_root(|_| {
             [
                 dir_for("../../etc").unwrap_err(),
                 dir_for("B-a1b2/c3d4").unwrap_err(),

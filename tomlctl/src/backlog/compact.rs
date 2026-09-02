@@ -23,9 +23,11 @@ use super::schema::{
     self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_COMPACTED_ON, FIELD_ID, FIELD_STATUS,
     FIELD_TERMINAL_DATE, FIELD_TERMINAL_REASON,
 };
-use crate::cli::{WriteIntegrityArgs, on_missing_for, write_integrity_opts};
-use crate::integrity::IntegrityOpts;
-use crate::io::{items_array, items_array_mut, mutate_doc_conditional, read_doc};
+use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
+use crate::io::{
+    dry_run_read_opts, items_array, items_array_mut, mutate_doc_conditional, on_missing_for,
+    read_doc,
+};
 use crate::output::print_json_compact;
 
 const FIELD_LAST_UPDATED: &str = "last_updated";
@@ -36,8 +38,8 @@ pub(crate) fn dispatch(
     dry_run: bool,
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
-    let threshold = crate::flow::parse_threshold(&older_than)?;
-    let today = crate::flow::today_utc_date()?;
+    let threshold = crate::time::parse_threshold(&older_than)?;
+    let today = crate::time::today_utc_date()?;
     let path = schema::backlog_path()?;
 
     // Ahead of the auto-create policy: a sweep that finds no store must not
@@ -51,17 +53,13 @@ pub(crate) fn dispatch(
     }
 
     if dry_run {
-        let opts = IntegrityOpts {
-            write_sidecar: false,
-            verify_on_read: integrity.verify_integrity,
-            strict: false,
-        };
+        let opts = dry_run_read_opts(integrity.verify_integrity);
         let plan = read_doc(&path, opts, |doc| plan_compaction(doc, today, threshold))?;
         return emit_preview(&plan.compacted, plan.remaining);
     }
 
     let opts = write_integrity_opts(&integrity);
-    let on_missing = on_missing_for(&path, &integrity)?;
+    let on_missing = on_missing_for(&path, integrity.no_create)?;
     let mut counts: Option<(usize, usize)> = None;
     mutate_doc_conditional(&path, integrity.allow_outside, opts, on_missing, |doc| {
         let plan = plan_compaction(doc, today, threshold)?;
@@ -140,7 +138,7 @@ fn due(item: &TomlValue, today: Date, threshold: Duration) -> Option<TomlDatetim
         );
         return None;
     };
-    let age = age_days(civil, today).saturating_mul(SECONDS_PER_DAY);
+    let age = crate::time::age_days(civil, today).saturating_mul(SECONDS_PER_DAY);
     (age > threshold.as_secs()).then_some(stored)
 }
 
@@ -156,13 +154,6 @@ fn read_date(item: &TomlValue, field: &str) -> Option<(TomlDatetime, Date)> {
     let date = stored.date?;
     let civil = Date::new(date.year as i16, date.month as i8, date.day as i8).ok()?;
     Some((stored, civil))
-}
-
-/// Whole days from `from` to `today`, clamped at zero so a future-dated row
-/// reads as brand new rather than wrapping into the distant past.
-fn age_days(from: Date, today: Date) -> u64 {
-    from.until(today)
-        .map_or(0, |span| u64::try_from(span.get_days()).unwrap_or(0))
 }
 
 /// Project a live row onto `COMPACTED_FIELDS` — driven by that constant, so
@@ -233,29 +224,10 @@ fn emit_preview(compacted: &[String], remaining: usize) -> Result<()> {
 mod tests {
     use super::super::evidence;
     use super::*;
+    use crate::test_support::with_root;
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::PathBuf;
-
-    /// Resolve the store under a throwaway root, dropping the override before
-    /// any assertion runs — a panic inside would otherwise leak
-    /// `TOMLCTL_ROOT` into every later test in the process.
-    fn under_root<T>(f: impl FnOnce(&Path) -> T) -> T {
-        let _guard = crate::test_support::env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        fs::create_dir_all(root.join(".claude")).unwrap();
-        // SAFETY: set_var is unsafe in edition 2024; acceptable inside tests
-        // where we hold the env lock.
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", root.as_os_str());
-        }
-        let out = f(&root);
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-        out
-    }
 
     fn args() -> WriteIntegrityArgs {
         WriteIntegrityArgs {
@@ -513,7 +485,7 @@ seen_count = 3
 
     #[test]
     fn dry_run_leaves_the_store_and_its_sidecar_byte_identical() {
-        under_root(|root| {
+        with_root(|root| {
             let path = seed_store(root);
             let before = bytes_of(&path);
             dispatch("90d".to_string(), true, args()).unwrap();
@@ -523,7 +495,7 @@ seen_count = 3
 
     #[test]
     fn a_live_sweep_moves_the_terminal_row_and_bumps_last_updated() {
-        under_root(|root| {
+        with_root(|root| {
             let path = seed_store(root);
             dispatch("90d".to_string(), false, args()).unwrap();
             let after = crate::io::read_toml(&path).unwrap();
@@ -532,7 +504,7 @@ seen_count = 3
             assert_eq!(ids_in(&after, ARRAY_COMPACTED), ["B-7f0e2d91"]);
             assert_eq!(
                 after[FIELD_LAST_UPDATED].as_datetime().unwrap().to_string(),
-                crate::flow::today_utc_iso().unwrap()
+                crate::time::today_utc_iso().unwrap()
             );
             assert_eq!(schema::validate_ids_unique(&after), Ok(()));
         });
@@ -540,7 +512,7 @@ seen_count = 3
 
     #[test]
     fn a_sweep_with_nothing_to_fold_leaves_the_store_untouched() {
-        under_root(|root| {
+        with_root(|root| {
             let path = seed_store(root);
             let before = bytes_of(&path);
             dispatch("9999d".to_string(), false, args()).unwrap();
@@ -550,7 +522,7 @@ seen_count = 3
 
     #[test]
     fn a_missing_store_stays_missing() {
-        under_root(|root| {
+        with_root(|root| {
             let path = root.join(".claude").join("backlog.toml");
             dispatch("90d".to_string(), false, args()).unwrap();
             assert!(!path.exists());
@@ -561,7 +533,7 @@ seen_count = 3
 
     #[test]
     fn a_folded_rows_evidence_directory_survives_intact() {
-        under_root(|root| {
+        with_root(|root| {
             seed_store(root);
             let dir = root
                 .join(".claude")

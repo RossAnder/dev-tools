@@ -22,12 +22,10 @@ use super::evidence::{
     self, EVIDENCE_EXTENSIONS, EVIDENCE_MAX_BYTES, MARKER_NAME, SENSITIVE_EXTENSIONS,
 };
 use super::schema::{self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_ID, FIELD_SUMMARY};
-use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
+use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::integrity::maybe_verify_integrity;
 use crate::io::{
-    atomic_write, guard_write_path, items_array, read_dir_sorted, read_toml, relativise,
-    repo_or_cwd_root,
+    atomic_write, guard_write_path, items_array, read_dir_sorted, relativise, repo_or_cwd_root,
 };
 use crate::output::{print_json, print_json_compact};
 
@@ -144,9 +142,8 @@ pub(crate) fn ensure_dir(doc: &TomlValue, id: &str, no_create: bool) -> Result<D
     })
 }
 
-pub(crate) fn dispatch_dir(id: String, no_create: bool) -> Result<()> {
-    let store = schema::backlog_path()?;
-    let doc = read_toml(&store)?;
+pub(crate) fn dispatch_dir(id: String, no_create: bool, integrity: ReadIntegrityArgs) -> Result<()> {
+    let doc = schema::read_store(&integrity)?;
     let outcome = ensure_dir(&doc, &id, no_create)?;
     let root = repo_or_cwd_root()?;
     print_json_compact(&json!({
@@ -206,9 +203,9 @@ impl AuditReport {
     }
 }
 
-/// Walk the immediate subdirectories of `root`. `doc` is `None` when the
-/// store is absent, which makes every drop-box `unowned` — the honest answer,
-/// since nothing then claims any of them.
+/// Walk the immediate subdirectories of `root`. A `None` or empty `doc`
+/// claims nothing, so every drop-box reads as `unowned` — the honest answer
+/// when the store is absent.
 pub(crate) fn audit(doc: Option<&TomlValue>, root: &Path, max_bytes: u64) -> Result<AuditReport> {
     let repo = repo_or_cwd_root()?;
     let mut findings: Vec<Finding> = Vec::new();
@@ -376,21 +373,9 @@ pub(crate) fn dispatch_audit(
     max_bytes: Option<u64>,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
-    let store = schema::backlog_path()?;
-    let doc = if store.exists() {
-        maybe_verify_integrity(&store, read_integrity_opts(&integrity))?;
-        Some(read_toml(&store)?)
-    } else if integrity.strict_read {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            Some(store.clone()),
-            format!("file does not exist: {}", store.display()),
-        ));
-    } else {
-        None
-    };
+    let doc = schema::read_store(&integrity)?;
     let root = evidence::evidence_root()?;
-    let report = audit(doc.as_ref(), &root, max_bytes.unwrap_or(EVIDENCE_MAX_BYTES))?;
+    let report = audit(Some(&doc), &root, max_bytes.unwrap_or(EVIDENCE_MAX_BYTES))?;
     print_json(&report.to_json())?;
     let failures = report.strict_failures();
     if strict && failures > 0 {
@@ -514,49 +499,29 @@ mod tests {
                              !/.claude/backlog-evidence/*/\n\
                              !/.claude/backlog-evidence/*/.evidence\n";
 
-    /// Holds the env lock for the whole test and drops `TOMLCTL_ROOT` in
-    /// `Drop`, so a failed assertion cannot leak the override into whatever
-    /// test runs next on this thread.
+    /// The shared `RootGuard` plus the per-drop-box path helpers this module's
+    /// tests need. The guard has to outlive the test body rather than a
+    /// closure, so these tests hold it directly instead of calling
+    /// `test_support::with_root`.
     struct Sandbox {
-        _lock: std::sync::MutexGuard<'static, ()>,
-        _tmp: tempfile::TempDir,
-        root: PathBuf,
-    }
-
-    impl Drop for Sandbox {
-        fn drop(&mut self) {
-            // SAFETY: remove_var is unsafe in edition 2024; acceptable here
-            // because the env lock is still held by `_lock`, which is dropped
-            // after this body runs.
-            unsafe {
-                std::env::remove_var("TOMLCTL_ROOT");
-            }
-        }
+        guard: crate::test_support::RootGuard,
     }
 
     impl Sandbox {
         fn new(git: bool) -> Self {
-            let lock = crate::test_support::env_lock();
-            let tmp = tempfile::tempdir().unwrap();
-            let root = tmp.path().canonicalize().unwrap();
-            // SAFETY: set_var is unsafe in edition 2024; acceptable while the
-            // env lock above is held.
-            unsafe {
-                std::env::set_var("TOMLCTL_ROOT", root.as_os_str());
-            }
-            fs::create_dir_all(root.join(".claude")).unwrap();
+            let guard = crate::test_support::RootGuard::new();
             if git {
-                fs::write(root.join(".gitignore"), GITIGNORE).unwrap();
+                fs::write(guard.root().join(".gitignore"), GITIGNORE).unwrap();
                 let _ = Command::new("git")
                     .args(["init", "-q", "."])
-                    .current_dir(&root)
+                    .current_dir(guard.root())
                     .output();
             }
-            Self {
-                _lock: lock,
-                _tmp: tmp,
-                root,
-            }
+            Self { guard }
+        }
+
+        fn root(&self) -> &Path {
+            self.guard.root()
         }
 
         fn seed(&self, body: &str) -> TomlValue {
@@ -567,7 +532,7 @@ mod tests {
         }
 
         fn store(&self) -> PathBuf {
-            self.root.join(".claude").join("backlog.toml")
+            self.root().join(".claude").join("backlog.toml")
         }
 
         fn store_bytes(&self) -> (Vec<u8>, Vec<u8>) {
@@ -577,11 +542,11 @@ mod tests {
         }
 
         fn evidence(&self, id: &str) -> PathBuf {
-            self.root.join(".claude").join("backlog-evidence").join(id)
+            self.root().join(".claude").join("backlog-evidence").join(id)
         }
 
         fn root_dir(&self) -> PathBuf {
-            self.root.join(".claude").join("backlog-evidence")
+            self.root().join(".claude").join("backlog-evidence")
         }
 
         fn populate(&self, id: &str, marker: bool, files: &[(&str, usize)]) -> PathBuf {
@@ -603,7 +568,7 @@ mod tests {
         fn git(&self, args: &[&str]) {
             Command::new("git")
                 .args(args)
-                .current_dir(&self.root)
+                .current_dir(self.root())
                 .output()
                 .unwrap();
         }
@@ -984,7 +949,7 @@ context = "The overlap is visible in `shot.png` at 1280px."
         let sb = Sandbox::new(false);
         let doc = sb.seed(STORE);
         sb.populate("B-a1b2c3d4", true, &[("a.log", 1), ("b.log", 1)]);
-        assert_eq!(ignored_set(&sb.root, &[sb.evidence("B-a1b2c3d4")]), None);
+        assert_eq!(ignored_set(sb.root(), &[sb.evidence("B-a1b2c3d4")]), None);
 
         let report = audit(Some(&doc), &sb.root_dir(), EVIDENCE_MAX_BYTES).unwrap();
         assert_eq!(classes(&report, CLASS_GIT_UNAVAILABLE).len(), 1);

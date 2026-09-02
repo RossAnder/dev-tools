@@ -1,8 +1,9 @@
 //! Field-name constants, the `kind` and `status` vocabularies, the per-status
 //! required-field clusters, and the validator for `.claude/backlog.toml`.
 //!
-//! Owns `backlog_path()`; every other leaf resolves the store through it
-//! rather than rebuilding the path.
+//! Owns `backlog_path()` and `read_store()`; every other leaf resolves and
+//! reads the store through them rather than rebuilding the path or the
+//! exists/verify/strict ladder.
 //!
 //! Two validators, because the invariants sit at two scopes. `validate`
 //! takes one item and checks its status cluster; `validate_ids_unique` takes
@@ -14,10 +15,6 @@
 //! is the record and `show` lists it at read time, so a stored count, flag
 //! or path is wrong the moment a file is copied in.
 
-// A vocabulary module: the consumers are the sibling leaves, so most of what
-// is defined here has no call site in this file.
-#![allow(dead_code)]
-
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
@@ -25,9 +22,11 @@ use anyhow::Result;
 use serde_json::Value as JsonValue;
 use toml::Value as TomlValue;
 
+use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::convert::json_type_name;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{items_array, repo_or_cwd_root};
+use crate::integrity::maybe_verify_integrity;
+use crate::io::{items_array, read_toml, repo_or_cwd_root};
 
 /// Array of live captures. Never `items`: an array named `items` under
 /// `.claude/` is the default target of `tomlctl items add|update|apply`,
@@ -104,6 +103,11 @@ pub(crate) const STATUSES: &[&str] = &[
 pub(crate) const TERMINAL_DATE_FIELDS: &[&str] =
     &[FIELD_PROMOTED, FIELD_DISMISSED, FIELD_RESOLVED];
 
+/// The typed relation fields, in the order `show` reports them. `related`
+/// holds an array of ids; the other two hold a single id.
+pub(crate) const RELATION_FIELDS: &[&str] =
+    &[FIELD_RELATED, FIELD_DUPLICATE_OF, FIELD_SUPERSEDES];
+
 /// Fields a status transition owns outright. A transition clears every one
 /// it does not itself write, which is what lets a row move between two
 /// terminal states.
@@ -179,6 +183,30 @@ pub(crate) fn coerce_kind(raw: &str) -> &'static str {
 /// `.claude/` containment, so the store needs no `--allow-outside`.
 pub(crate) fn backlog_path() -> Result<PathBuf> {
     Ok(repo_or_cwd_root()?.join(".claude").join("backlog.toml"))
+}
+
+/// The single read seam over the store. Every read verb goes through it, so
+/// `--verify-integrity` and `--strict-read` cannot be honoured on one verb
+/// and dropped on the next.
+///
+/// A missing store reads as an empty table — the first capture in a repo
+/// runs `check` before anything exists — and `--strict-read` is what turns
+/// that into `kind=not_found`. The gate fires before the sidecar check, so a
+/// missing file is `not_found` rather than `integrity` even with both flags.
+pub(crate) fn read_store(integrity: &ReadIntegrityArgs) -> Result<TomlValue> {
+    let file = backlog_path()?;
+    if !file.exists() {
+        if integrity.strict_read {
+            return Err(tagged_err(
+                ErrorKind::NotFound,
+                Some(file.clone()),
+                format!("file does not exist: {}", file.display()),
+            ));
+        }
+        return Ok(TomlValue::Table(toml::map::Map::new()));
+    }
+    maybe_verify_integrity(&file, read_integrity_opts(integrity))?;
+    read_toml(&file)
 }
 
 /// Rejection reasons from the two validators. Every variant is a caller
@@ -701,6 +729,10 @@ status = "resolved"
             &["open", "promoted", "dismissed", "resolved"]
         );
         assert_eq!(TERMINAL_DATE_FIELDS, &["promoted", "dismissed", "resolved"]);
+        assert_eq!(
+            RELATION_FIELDS,
+            &["related", "duplicate_of", "supersedes"]
+        );
     }
 
     #[test]
@@ -723,19 +755,31 @@ status = "resolved"
 
     #[test]
     fn backlog_path_resolves_under_dot_claude() {
-        let _guard = crate::test_support::env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let canonical = dir.path().canonicalize().unwrap();
-        // SAFETY: set_var is unsafe in edition 2024; acceptable inside tests
-        // where we hold the env lock.
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", canonical.as_os_str());
-        }
-        let got = backlog_path().unwrap();
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-        assert_eq!(got, canonical.join(".claude").join("backlog.toml"));
+        let (root, got) = crate::test_support::with_root(|root| {
+            (root.to_path_buf(), backlog_path().unwrap())
+        });
+        assert_eq!(got, root.join(".claude").join("backlog.toml"));
         assert!(got.ends_with(std::path::Path::new(".claude/backlog.toml")));
+    }
+
+    fn read_args(strict_read: bool) -> ReadIntegrityArgs {
+        ReadIntegrityArgs {
+            verify_integrity: false,
+            strict_read,
+        }
+    }
+
+    #[test]
+    fn a_missing_store_reads_empty_and_gates_on_strict_read() {
+        let (lenient, strict) = crate::test_support::with_root(|_| {
+            (read_store(&read_args(false)), read_store(&read_args(true)))
+        });
+        assert!(items_array(&lenient.unwrap(), ARRAY_BACKLOG).is_empty());
+        let err = strict.unwrap_err();
+        assert_eq!(
+            err.downcast_ref::<crate::errors::TaggedError>()
+                .map_or("other", |tagged| tagged.kind.as_str()),
+            "not_found"
+        );
     }
 }

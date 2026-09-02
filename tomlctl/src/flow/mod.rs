@@ -28,18 +28,6 @@ pub(crate) mod render_progress_log;
 mod resolve;
 mod schema;
 mod stale;
-// R17: the `time` module stays PRIVATE — only sibling `flow::*` modules (its
-// descendants) reference the full helper set, and a private `mod` is visible
-// to them. The sole non-`flow` consumer is the dispatch layer, which needs
-// exactly ONE helper (`today_toml_date`, for `cli::seed_doc_for`'s
-// schema-aware seed). We re-export just that one symbol below rather than
-// widening the whole module to `pub(crate)`, keeping the cross-layer
-// visibility surface minimal.
-mod time;
-pub(crate) use stale::parse_threshold;
-pub(crate) use time::{today_toml_date, today_utc_date};
-#[cfg(test)]
-pub(crate) use time::today_utc_iso;
 
 mod dispatch;
 

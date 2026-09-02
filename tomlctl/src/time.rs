@@ -1,4 +1,8 @@
-//! R6/R39: consolidated time helpers for flow leaf modules.
+//! R6/R39: consolidated clock and duration helpers.
+//!
+//! Crate-level infrastructure, owned by no verb group: `flow` and `backlog`
+//! both resolve "today" and parse age thresholds, so neither may own the
+//! helpers the other needs.
 //!
 //! Five pre-consolidation sites (`flow::active::now_rfc3339`,
 //! `flow::init::now_rfc3339` / `today_toml_date`, `flow::stale`'s
@@ -19,9 +23,13 @@
 //! cannot accidentally observe each other's override. Reset with
 //! `set_now_for_test(None)` (or rely on `_FixedNowGuard`'s `Drop` impl).
 
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use jiff::Timestamp;
 use jiff::civil::Date;
+
+use crate::errors::{ErrorKind, tagged_err};
 
 #[cfg(test)]
 use std::cell::Cell;
@@ -99,6 +107,60 @@ pub(crate) fn parse_iso_to_date(iso: &str) -> Result<Date, ParseDateError> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParseDateError {
     Invalid,
+}
+
+/// Whole days from `from` to `today`, clamped at zero so a future date — or a
+/// span jiff refuses to compute — reads as age zero rather than wrapping.
+pub(crate) fn age_days(from: Date, today: Date) -> u64 {
+    from.until(today)
+        .map_or(0, |span| u64::try_from(span.get_days()).unwrap_or(0))
+}
+
+/// Minimal humantime-style threshold parser (no `humantime` dep). Accepts
+/// `<n>{s|m|h|d|w}` and returns a `Duration`; `w` expands to `7d`. Rejects
+/// bare numbers, unknown suffixes, empty inputs, and zero-length integer
+/// prefixes — every error is tagged `kind=validation`, which `flow stale`
+/// and `backlog compact` both surface verbatim.
+pub(crate) fn parse_threshold(input: &str) -> Result<Duration> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("invalid threshold: {input}"),
+        ));
+    }
+    let last = trimmed.as_bytes()[trimmed.len() - 1];
+    let (num_str, mult): (&str, u64) = match last {
+        b's' => (&trimmed[..trimmed.len() - 1], 1),
+        b'm' => (&trimmed[..trimmed.len() - 1], 60),
+        b'h' => (&trimmed[..trimmed.len() - 1], 3600),
+        b'd' => (&trimmed[..trimmed.len() - 1], 86_400),
+        b'w' => (&trimmed[..trimmed.len() - 1], 7 * 86_400),
+        _ => {
+            // Bare number / unknown suffix — both rejected.
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!("invalid threshold: {input}"),
+            ));
+        }
+    };
+    if num_str.is_empty() {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("invalid threshold: {input}"),
+        ));
+    }
+    let n: u64 = num_str.parse().map_err(|_| {
+        tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("invalid threshold: {input}"),
+        )
+    })?;
+    Ok(Duration::from_secs(n.saturating_mul(mult)))
 }
 
 #[cfg(test)]
@@ -191,5 +253,34 @@ mod tests {
         assert!(parse_iso_to_date("").is_err());
         assert!(parse_iso_to_date("garbage").is_err());
         assert!(parse_iso_to_date("2026-13-01").is_err());
+    }
+
+    #[test]
+    fn parse_threshold_accepts_known_suffixes() {
+        assert_eq!(parse_threshold("7d").unwrap(), Duration::from_secs(7 * 86_400));
+        assert_eq!(parse_threshold("48h").unwrap(), Duration::from_secs(48 * 3600));
+        assert_eq!(parse_threshold("1w").unwrap(), Duration::from_secs(7 * 86_400));
+        assert_eq!(parse_threshold("60m").unwrap(), Duration::from_secs(3600));
+        assert_eq!(parse_threshold("300s").unwrap(), Duration::from_secs(300));
+    }
+
+    #[test]
+    fn parse_threshold_rejects_bare_number() {
+        let err = parse_threshold("5").unwrap_err();
+        let tagged = err.downcast_ref::<crate::errors::TaggedError>().unwrap();
+        assert!(matches!(tagged.kind, ErrorKind::Validation));
+    }
+
+    #[test]
+    fn parse_threshold_rejects_unknown_suffix() {
+        let err = parse_threshold("5x").unwrap_err();
+        let tagged = err.downcast_ref::<crate::errors::TaggedError>().unwrap();
+        assert!(matches!(tagged.kind, ErrorKind::Validation));
+    }
+
+    #[test]
+    fn parse_threshold_rejects_empty() {
+        assert!(parse_threshold("").is_err());
+        assert!(parse_threshold("d").is_err()); // missing integer prefix
     }
 }

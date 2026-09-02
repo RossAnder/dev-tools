@@ -3,6 +3,7 @@
 //! Owns:
 //!   - `read_toml` — parse-only TOML reader
 //!   - `read_toml_str` / `read_doc_borrowed` — O10 borrowed-lifetime fast-path
+//!   - `read_json_arg` / `read_json_value_from_arg` — `-` stdin sentinel
 //!   - `write_toml_with_sidecar` — atomic write + SHA-256 sidecar refresh
 //!   - `atomic_write` — tempfile + fsync + rename
 //!   - `guard_write_path` / `canonicalize_for_write` — `.claude/` containment
@@ -10,12 +11,17 @@
 //!   - `with_exclusive_lock` — lock-file acquire/release (R25, O44)
 //!   - `repo_or_cwd_root` + `OnceLock` cache (R46)
 //!   - `mutate_doc` — guard→lock→read→mutate→write pipeline
+//!   - `on_missing_for` / `seed_doc_for` / `warn_if_created` — auto-create policy
 //!   - `LOCK_RETRY` / `DEFAULT_LOCK_TIMEOUT` constants
+//!
+//! Every item here is reachable from any verb group; nothing in it may
+//! reach back into `crate::cli`, so helpers take primitives rather than
+//! clap-derived argument bundles.
 
 use anyhow::{Context, Result, anyhow, bail};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Write;
+use std::io::{BufRead, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use toml::Value as TomlValue;
 
@@ -177,6 +183,128 @@ pub(crate) fn item_id_json(item: &serde_json::Value) -> Option<&str> {
 /// conditional on the id being present).
 pub(crate) fn capture_row_id(v: &serde_json::Value) -> String {
     item_id_json(v).unwrap_or("").to_string()
+}
+
+/// Maximum JSON payload accepted from stdin via the `-` sentinel. 32 MiB is
+/// well above any realistic review-ledger / flow-context apply-ops payload
+/// (typical is < 64 KiB) while being small enough to fail fast if a caller
+/// accidentally pipes a log or a binary into `--json -`.
+const MAX_STDIN_BYTES: u64 = 32 * 1024 * 1024;
+
+/// R32: guard against multiple `-` sentinels consuming stdin in a single
+/// invocation (e.g. `--json - --ops -`). The second `read_json_arg("-")` call
+/// errors out instead of silently returning an empty string (stdin already at
+/// EOF) and corrupting the apply.
+///
+/// R38: the flag is deliberately a process-global `AtomicBool`:
+///
+/// - A CLI invocation is exactly one OS process with exactly one stdin
+///   handle. "Multiple invocations" means multiple processes, each with
+///   their own flag — so the global is semantically scoped to the right
+///   thing at runtime.
+/// - Threading an `&mut bool` through `run()` → every dispatcher → every
+///   `read_json_arg` / `read_json_value_from_arg` call site would touch
+///   ~12 functions for no runtime benefit (the flag's "global" reach is
+///   already the whole process).
+///
+/// **Test contract**: unit tests that flip or rely on this flag (e.g.
+/// `read_json_arg_dash_second_call_errors_already_consumed`) MUST hold
+/// `env_lock()` for the duration of the test. `cargo test` parallelises
+/// within a process, so without the lock two tests touching stdin would
+/// race on the single flag. The lock is the test-side substitute for the
+/// per-invocation isolation the real CLI gets for free.
+static STDIN_CONSUMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Resolve a JSON argument: if it's literally "-", read stdin to a String.
+/// Otherwise return the argument as-is.
+///
+/// Stdin handling (R7):
+///
+/// - Refuses to block on an interactive TTY — a user piping nothing into
+///   `--json -` would otherwise hang forever with no prompt or feedback.
+/// - Caps the read at `MAX_STDIN_BYTES`; an oversize payload is truncated
+///   on the input side so a misrouted log doesn't balloon tomlctl's heap.
+pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
+    if arg == "-" {
+        // R32: a single invocation can only consume stdin once. A second `-`
+        // sentinel would read an already-drained handle and silently return an
+        // empty payload, which downstream would treat as a no-op or a parse
+        // error with a confusing message. `swap(true, SeqCst)` is both the
+        // check and the mark, so concurrent calls can't both see `false`.
+        if STDIN_CONSUMED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            bail!(
+                "stdin already consumed by another flag on this invocation; only one --json/--ops/--ndjson/--defaults-json flag can use the `-` sentinel per call"
+            );
+        }
+        if std::io::stdin().is_terminal() {
+            bail!(
+                "stdin is a TTY — pipe JSON (e.g. `cat payload.json | tomlctl … --json -`) or pass `--json '<literal>'`"
+            );
+        }
+        let mut buf = String::new();
+        std::io::stdin()
+            .lock()
+            .take(MAX_STDIN_BYTES)
+            .read_to_string(&mut buf)
+            .context("reading JSON from stdin")?;
+        if buf.trim().is_empty() {
+            bail!("stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)");
+        }
+        Ok(buf)
+    } else {
+        Ok(arg.to_string())
+    }
+}
+
+/// O35: parse a JSON `--json`/`--ops`/`--defaults-json` argument directly
+/// into a `JsonValue`, skipping the intermediate `String` allocation that
+/// the `read_json_arg` + `serde_json::from_str(&s)` two-step would incur.
+///
+/// Mirrors `read_json_arg`'s stdin discipline exactly:
+///
+/// - Honours STDIN_CONSUMED (R32): a second `-` sentinel on the same
+///   invocation bails with the identical "already consumed" message.
+/// - Refuses to block on a TTY (R7) with the identical guidance message.
+/// - Caps the read at `MAX_STDIN_BYTES` via the same `take(...)` wrapper.
+/// - Reports the same "stdin was empty — expected JSON payload" error when
+///   stdin closes immediately, rather than letting serde surface its own
+///   EOF message (which would silently change the public-facing error
+///   text).
+///
+/// Callers add their own per-flag `.with_context("parsing --json"|"parsing
+/// --ops"|"parsing --defaults-json")` so the user-visible error chain stays
+/// byte-identical to the pre-O35 behaviour where each call site wrapped
+/// `serde_json::from_str(&text).context("parsing --<flag>")`.
+pub(crate) fn read_json_value_from_arg(arg: &str) -> Result<serde_json::Value> {
+    if arg == "-" {
+        // R32: identical swap-and-mark check as `read_json_arg`.
+        if STDIN_CONSUMED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            bail!(
+                "stdin already consumed by another flag on this invocation; only one --json/--ops/--ndjson/--defaults-json flag can use the `-` sentinel per call"
+            );
+        }
+        if std::io::stdin().is_terminal() {
+            bail!(
+                "stdin is a TTY — pipe JSON (e.g. `cat payload.json | tomlctl … --json -`) or pass `--json '<literal>'`"
+            );
+        }
+        let stdin = std::io::stdin();
+        let lock = stdin.lock();
+        let mut r = std::io::BufReader::new(lock.take(MAX_STDIN_BYTES));
+        // Preserve the "stdin was empty" sentinel: peek the first buffered
+        // chunk; if it never arrives, stdin closed before sending anything
+        // and we want our own message rather than serde's EOF wording.
+        let initial = r.fill_buf().context("reading JSON from stdin")?;
+        if initial.is_empty() {
+            bail!("stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)");
+        }
+        // `from_reader` consumes the BufReader's internal buffer before
+        // refilling from the underlying `Take<StdinLock>`, so the peek
+        // above does not strand any bytes.
+        Ok(serde_json::from_reader(r)?)
+    } else {
+        Ok(serde_json::from_str(arg)?)
+    }
 }
 
 pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
@@ -341,14 +469,14 @@ where
 /// T1: decision the `mutate_doc*` family takes when `read_toml` reports the
 /// target file does not exist (a `NotFound`-tagged error). `Error` propagates
 /// that error unchanged — the strict, pre-T1 behaviour. `Create(seed)` seeds
-/// the in-memory doc from `seed` (a schema-conformant skeleton the caller
-/// computed at the dispatch layer via `seed_doc_for`) and lets the closure run
-/// against it, persisting only if the closure asks to (so a no-match
-/// `update`/`remove` against a freshly-seeded doc still leaves no stray file).
+/// the in-memory doc from `seed` (a schema-conformant skeleton, normally built
+/// by `seed_doc_for`) and lets the closure run against it, persisting only if
+/// the closure asks to (so a no-match `update`/`remove` against a freshly-seeded
+/// doc still leaves no stray file).
 ///
-/// `io.rs` stays schema-agnostic: it only learns "on missing, use this seed
-/// doc, or error" — it never computes the seed and never inspects what kind of
-/// flow file the target is. The schema-aware seed is data passed in.
+/// The `mutate_doc*` pipeline stays schema-agnostic: it only learns "on
+/// missing, use this seed doc, or error" — it never inspects what kind of flow
+/// file the target is. The schema-aware seed is opaque data passed in.
 pub(crate) enum OnMissing {
     /// Propagate `read_toml`'s `NotFound` error unchanged (strict mode).
     Error,
@@ -356,8 +484,103 @@ pub(crate) enum OnMissing {
     Create(TomlValue),
 }
 
+/// T1: single source of truth for the schema-aware seed skeleton. The
+/// recognised flow-file basenames (the four ledgers) all share the
+/// `schema_version = 1 / last_updated = <today>` 2-line skeleton; any other
+/// basename seeds an empty table. Defined once here so a future flow file
+/// joining the recognised set is a one-line edit. `flow::init`'s
+/// `bootstrap_execution_record` routes through the SAME helper so the
+/// execution-record skeleton has exactly one definition (byte-identical
+/// output to the former literal `schema_version = 1\nlast_updated = <date>\n`).
+const SCHEMA_SEEDED_FLOW_FILES: &[&str] = &[
+    "execution-record.toml",
+    "review-ledger.toml",
+    "optimise-findings.toml",
+    "plan-review-findings.toml",
+    "backlog.toml",
+];
+
+/// T1: compute the schema-conformant seed doc to use when a write target does
+/// not exist yet (the `OnMissing::Create` payload). Matches the file's
+/// BASENAME against the recognised flow files (`SCHEMA_SEEDED_FLOW_FILES`):
+/// each gets a `{schema_version = 1, last_updated = <today>}` table (that key
+/// order); any other basename gets an empty table `{}`.
+///
+/// Fallible because the recognised-file seed embeds today's date.
+pub(crate) fn seed_doc_for(path: &Path) -> Result<TomlValue> {
+    let basename = path.file_name().and_then(|n| n.to_str());
+    let recognised = basename.is_some_and(|b| SCHEMA_SEEDED_FLOW_FILES.contains(&b));
+    let mut table = toml::map::Map::new();
+    if recognised {
+        // Key order is load-bearing for byte-identity with the (former)
+        // literal `schema_version = 1\nlast_updated = <date>\n` skeleton that
+        // `flow::init::bootstrap_execution_record` wrote — `toml`'s
+        // `preserve_order` feature serialises in insertion order, so
+        // `schema_version` MUST be inserted before `last_updated`.
+        table.insert("schema_version".to_string(), TomlValue::Integer(1));
+        let today = crate::time::today_toml_date()?;
+        table.insert("last_updated".to_string(), TomlValue::Datetime(today));
+    }
+    Ok(TomlValue::Table(table))
+}
+
+/// T1: resolve the `OnMissing` policy for a write at `file` from the caller's
+/// `--no-create` flag. `no_create` restores the strict `kind=not_found` error;
+/// the default seeds a schema-aware skeleton via `seed_doc_for`. Fallible
+/// because the seed embeds today's date. Threaded into every `mutate_doc*`
+/// write site so the flag→policy mapping lives in one place.
+pub(crate) fn on_missing_for(file: &Path, no_create: bool) -> Result<OnMissing> {
+    if no_create {
+        Ok(OnMissing::Error)
+    } else {
+        Ok(OnMissing::Create(seed_doc_for(file)?))
+    }
+}
+
+/// Read options for a `--dry-run` preview: never writes a sidecar and never
+/// goes strict, and verifies on read only when the caller asked it to.
+pub(crate) fn dry_run_read_opts(verify_on_read: bool) -> IntegrityOpts {
+    IntegrityOpts {
+        write_sidecar: false,
+        verify_on_read,
+        strict: false,
+    }
+}
+
+/// T2: one-line stderr guidance emitted when a write newly created its target
+/// file. A no-op when `created == false`, so the 11 write sites can call it
+/// unconditionally with the `created` bool their `mutate_doc*` wrapper
+/// returned. Reuses the existing advisory-warn channel — a plain `eprintln!`
+/// on the writer's stderr, exactly as `guard_write_path`'s `--allow-outside`
+/// note and `warn_if_read_outside_claude` do — rather than inventing a new
+/// mechanism. The recognised-flow-file distinction
+/// (`SCHEMA_SEEDED_FLOW_FILES`, the four ledgers seeded with
+/// `schema_version = 1`) appends a `(schema_version=1)` suffix so a human
+/// watching the terminal can tell a schema-seeded ledger from an arbitrary
+/// `.toml` (seeded as an empty table, which gets the bare message). The path
+/// is rendered via `Path::display()` — the same convention every other stderr
+/// note in this layer (`guard_write_path`, `warn_if_read_outside_claude`,
+/// the lock-wait notes) uses for filesystem paths.
+pub(crate) fn warn_if_created(file: &Path, created: bool) {
+    if !created {
+        return;
+    }
+    let recognised = file
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|b| SCHEMA_SEEDED_FLOW_FILES.contains(&b));
+    if recognised {
+        eprintln!(
+            "tomlctl: created new file {} (schema_version=1)",
+            file.display()
+        );
+    } else {
+        eprintln!("tomlctl: created new file {}", file.display());
+    }
+}
+
 /// T1: classify a `read_toml` failure as "the file is missing" (the
-/// `NotFound`-tagged error from io.rs:194-200) vs anything else. Inspects the
+/// `NotFound`-tagged error `read_toml` raises) vs anything else. Inspects the
 /// attached `TaggedError` via anyhow's inherent `downcast_ref` (the same
 /// taxonomy `main.rs` reads for `--error-format json`), NOT the message text —
 /// a `Parse` error or any other I/O failure returns `false` so an
@@ -2046,6 +2269,165 @@ arr = [1, 2]
         assert_eq!(
             on_disk_after, "this is = = not valid toml [[[",
             "the unparseable file must be left byte-identical (never clobbered by the seed)"
+        );
+    }
+
+    // ----- R54: stdin sentinel ------
+
+    #[test]
+    fn read_json_arg_returns_literal_when_not_dash() {
+        let got = read_json_arg(r#"{"key":"value"}"#).unwrap();
+        assert_eq!(got, r#"{"key":"value"}"#);
+    }
+
+    #[test]
+    fn read_json_arg_literal_roundtrip() {
+        // R54 part 1 (stdin sentinel): the pure literal path is tested here;
+        // the `-` sentinel path is covered by a subprocess integration test
+        // in a future assert_cmd harness — exercising it in unit tests would
+        // require rewiring `std::io::stdin()`, which is invasive enough that
+        // we defer it rather than carry a test-only file descriptor seam.
+        let got = read_json_arg(r#"{"a":1}"#).unwrap();
+        assert_eq!(got, r#"{"a":1}"#);
+    }
+
+    // R32: a second `-` sentinel on the same invocation must bail rather than
+    // silently re-reading stdin (already at EOF) and returning empty. Hold the
+    // env lock so we serialise against any other test that might touch the
+    // shared STDIN_CONSUMED flag, then restore it for downstream tests.
+    #[test]
+    fn read_json_arg_dash_second_call_errors_already_consumed() {
+        let _guard = env_lock();
+        let prev = STDIN_CONSUMED.swap(false, std::sync::atomic::Ordering::SeqCst);
+        // First `-` call: either succeeds (stdin readable) or errors (TTY / empty).
+        // In both cases it should have set the consumed flag BEFORE returning.
+        let _ = read_json_arg("-");
+        let second = read_json_arg("-").unwrap_err();
+        let msg = format!("{second:#}");
+        assert!(
+            msg.contains("already consumed"),
+            "expected already-consumed error, got: {msg}"
+        );
+        // Restore for any other test that might run afterwards in this process.
+        STDIN_CONSUMED.store(prev, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    // ----- T1: seed_doc_for -----
+
+    /// T1 (c) / R5: the schema-aware seed for a recognised flow file
+    /// (`execution-record.toml`) serialises BYTE-IDENTICALLY to the skeleton a
+    /// REAL bootstrap path writes. Pre-R5 this test reconstructed the expected
+    /// bytes from a hand-retyped `format!(...)` of the seed's own date, so it
+    /// never referenced an actual bootstrap fn — a bootstrap that stopped
+    /// routing through `seed_doc_for` would have slipped past it. We now assert
+    /// against `flow::init::execution_record_skeleton`, the pure skeleton-build
+    /// step `flow::init::bootstrap_execution_record` actually runs, rendered
+    /// the SAME way the pipeline writer (`write_toml_with_sidecar` →
+    /// `toml::to_string_pretty`) serialises every write.
+    ///
+    /// This is the single-skeleton-source guarantee: if a future bootstrap
+    /// path stopped sourcing its skeleton from `seed_doc_for`, the two
+    /// renderings would diverge and this test would fail loudly. The skeleton
+    /// helper is FS-free (it delegates straight to `seed_doc_for`), so the test
+    /// touches no disk and stays clock-independent — both sides resolve "today"
+    /// from the same injected clock within the one call.
+    #[test]
+    fn seed_doc_for_matches_bootstrap_bytes() {
+        let path = std::path::Path::new(".claude/flows/x/execution-record.toml");
+
+        // The skeleton a REAL bootstrap path (`flow::init::bootstrap_execution_record`)
+        // builds — exercised here via its extracted pure step. This is the
+        // single source of truth for the assertion: rendering it the way the
+        // pipeline writer (`write_toml_with_sidecar` → `toml::to_string_pretty`)
+        // does and reading its OWN embedded date back out keeps the test
+        // clock-independent (one clock read inside one call) AND tied to a real
+        // bootstrap code path — not a hand-retyped literal.
+        let bootstrap_skeleton = crate::flow::execution_record_skeleton(path).unwrap();
+        let rendered = toml::to_string_pretty(&bootstrap_skeleton).unwrap();
+
+        // The historical execution-record skeleton: `schema_version = 1` (bare
+        // integer, first) then `last_updated = <bare date>` then a trailing
+        // newline. Reconstruct the date from the skeleton's OWN datetime so a
+        // future `seed_doc_for`/bootstrap divergence (key order, quoting,
+        // integer→string slip) fails here loudly.
+        let today_iso = bootstrap_skeleton
+            .as_table()
+            .and_then(|t| t.get("last_updated"))
+            .and_then(|v| v.as_datetime())
+            .expect("recognised skeleton carries a `last_updated` datetime")
+            .to_string();
+        let expected = format!("schema_version = 1\nlast_updated = {today_iso}\n");
+
+        assert_eq!(
+            rendered, expected,
+            "the real bootstrap skeleton must serialise byte-identically to the \
+             historical execution-record shape"
+        );
+        // Pin the structural shape too: integer `1`, bare date (no quotes),
+        // exactly two lines + trailing newline, schema_version first.
+        assert!(
+            rendered.starts_with("schema_version = 1\n"),
+            "schema_version must serialise as a bare integer first, got: {rendered:?}"
+        );
+        assert!(
+            !rendered.contains('"'),
+            "the date must be bare (unquoted), got: {rendered:?}"
+        );
+    }
+
+    /// T1: an UNRECOGNISED basename seeds an empty table `{}` (serialises to
+    /// the empty string — no `schema_version`/`last_updated`).
+    #[test]
+    fn seed_doc_for_unrecognised_basename_is_empty_table() {
+        let path = std::path::Path::new(".claude/flows/x/context.toml");
+        let seed = seed_doc_for(path).unwrap();
+        let table = seed.as_table().expect("seed is a table");
+        assert!(
+            table.is_empty(),
+            "an unrecognised flow file must seed an empty table, got: {table:?}"
+        );
+        assert_eq!(
+            toml::to_string_pretty(&seed).unwrap(),
+            "",
+            "an empty table serialises to the empty string"
+        );
+    }
+
+    /// T1: every recognised flow-file basename seeds the 2-key skeleton.
+    #[test]
+    fn seed_doc_for_recognised_files_all_seed_skeleton() {
+        for name in SCHEMA_SEEDED_FLOW_FILES {
+            let path = std::path::Path::new(name);
+            let seed = seed_doc_for(path).unwrap();
+            let table = seed.as_table().unwrap();
+            assert_eq!(
+                table.get("schema_version").and_then(|v| v.as_integer()),
+                Some(1),
+                "{name} must seed schema_version = 1"
+            );
+            assert!(
+                table.get("last_updated").is_some_and(|v| v.as_datetime().is_some()),
+                "{name} must seed a `last_updated` date"
+            );
+        }
+    }
+
+    /// The backlog store is auto-created by `backlog add` before any explicit
+    /// bootstrap, so its `schema_version` must serialise ahead of
+    /// `last_updated` the way every other recognised file's does.
+    #[test]
+    fn seed_doc_for_backlog_orders_schema_version_first() {
+        let path = std::path::Path::new(".claude/backlog.toml");
+        let rendered = toml::to_string_pretty(&seed_doc_for(path).unwrap()).unwrap();
+        let schema_at = rendered
+            .find("schema_version")
+            .expect("backlog.toml must seed schema_version");
+        let updated_at = rendered
+            .find("last_updated")
+            .expect("backlog.toml must seed last_updated");
+        assert!(
+            schema_at < updated_at,
+            "schema_version must precede last_updated, got: {rendered:?}"
         );
     }
 }

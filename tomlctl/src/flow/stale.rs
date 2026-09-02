@@ -16,22 +16,23 @@
 //! `--strict-read` is set, in which case the missing file becomes a tagged
 //! error consistent with the rest of the read-side surface.
 //!
-//! Threshold parser is deliberately local (no `humantime` dep) and accepts
-//! `<n>{s|m|h|d|w}` only; bare numbers are rejected per the plan's "require
-//! explicit suffix" rule. `w` expands to `7d`.
+//! `--threshold` accepts `<n>{s|m|h|d|w}` only; bare numbers are rejected per
+//! the plan's "require explicit suffix" rule. `w` expands to `7d`. The parser
+//! itself is `crate::time::parse_threshold` — `backlog compact --older-than`
+//! reads the same grammar.
 
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::flow::time::{parse_iso_to_date, today_utc_date};
 use crate::io::{read_toml, repo_or_cwd_root};
 use crate::output::{print_json, print_json_compact};
+use crate::time::{parse_iso_to_date, parse_threshold, today_utc_date};
 
 pub(crate) fn dispatch(
     slug: String,
@@ -130,24 +131,15 @@ fn verdict_from_iso_string(
     threshold_label: &str,
     threshold_dur: Duration,
 ) -> Result<JsonValue> {
-    // R6 / R39: parse + today-resolution route through `flow::time`,
+    // R6 / R39: parse + today-resolution route through `crate::time`,
     // sharing the injection seam with `flow::resolve::compute_staleness`.
     let updated_date = parse_iso_to_date(iso).map_err(|_| {
         anyhow::anyhow!("parsing `updated` as a date or timestamp: {iso}")
     })?;
     let today = today_utc_date()?;
 
-    // Compute age in days. `Date::until` against another `Date` defaults to
-    // a span in days. `updated_date.until(today)` yields a POSITIVE day count
-    // when `updated < today` (the normal "old flow" case) and a NEGATIVE one
-    // when `updated > today` (clock skew / hand-edited future date) — clamp
-    // the negative path to zero so a future-dated flow reads as fresh, not
-    // panickingly-stale.
-    let span = updated_date
-        .until(today)
-        .context("computing date span between updated and today")?;
-    let signed_days: i64 = span.get_days() as i64;
-    let age_days: u64 = if signed_days > 0 { signed_days as u64 } else { 0 };
+    // Date-only granularity: a flow updated earlier today is age zero.
+    let age_days = crate::time::age_days(updated_date, today);
     let age_seconds: u64 = age_days.saturating_mul(86_400);
 
     let stale = Duration::from_secs(age_seconds) > threshold_dur;
@@ -168,84 +160,4 @@ fn verdict_from_iso_string(
         "age_seconds": age_seconds,
         "reason": reason,
     }))
-}
-
-/// Minimal humantime-style threshold parser. Accepts `<n>{s|m|h|d|w}` and
-/// returns a `Duration`. Rejects bare numbers, unknown suffixes, empty
-/// inputs, and zero-length integer prefixes — every error is tagged
-/// `kind=validation` per the plan's contract.
-pub(crate) fn parse_threshold(input: &str) -> Result<Duration> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return Err(tagged_err(
-            ErrorKind::Validation,
-            None,
-            format!("invalid threshold: {input}"),
-        ));
-    }
-    let last = trimmed.as_bytes()[trimmed.len() - 1];
-    let (num_str, mult): (&str, u64) = match last {
-        b's' => (&trimmed[..trimmed.len() - 1], 1),
-        b'm' => (&trimmed[..trimmed.len() - 1], 60),
-        b'h' => (&trimmed[..trimmed.len() - 1], 3600),
-        b'd' => (&trimmed[..trimmed.len() - 1], 86_400),
-        b'w' => (&trimmed[..trimmed.len() - 1], 7 * 86_400),
-        _ => {
-            // Bare number / unknown suffix — both rejected.
-            return Err(tagged_err(
-                ErrorKind::Validation,
-                None,
-                format!("invalid threshold: {input}"),
-            ));
-        }
-    };
-    if num_str.is_empty() {
-        return Err(tagged_err(
-            ErrorKind::Validation,
-            None,
-            format!("invalid threshold: {input}"),
-        ));
-    }
-    let n: u64 = num_str.parse().map_err(|_| {
-        tagged_err(
-            ErrorKind::Validation,
-            None,
-            format!("invalid threshold: {input}"),
-        )
-    })?;
-    Ok(Duration::from_secs(n.saturating_mul(mult)))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_threshold_accepts_known_suffixes() {
-        assert_eq!(parse_threshold("7d").unwrap(), Duration::from_secs(7 * 86_400));
-        assert_eq!(parse_threshold("48h").unwrap(), Duration::from_secs(48 * 3600));
-        assert_eq!(parse_threshold("1w").unwrap(), Duration::from_secs(7 * 86_400));
-        assert_eq!(parse_threshold("60m").unwrap(), Duration::from_secs(3600));
-        assert_eq!(parse_threshold("300s").unwrap(), Duration::from_secs(300));
-    }
-
-    #[test]
-    fn parse_threshold_rejects_bare_number() {
-        let err = parse_threshold("5").unwrap_err();
-        let tagged = err.downcast_ref::<crate::errors::TaggedError>().unwrap();
-        assert!(matches!(tagged.kind, ErrorKind::Validation));
-    }
-
-    #[test]
-    fn parse_threshold_rejects_unknown_suffix() {
-        let err = parse_threshold("5x").unwrap_err();
-        let tagged = err.downcast_ref::<crate::errors::TaggedError>().unwrap();
-        assert!(matches!(tagged.kind, ErrorKind::Validation));
-    }
-
-    #[test]
-    fn parse_threshold_rejects_empty() {
-        assert!(parse_threshold("").is_err());
-        assert!(parse_threshold("d").is_err()); // missing integer prefix
-    }
 }

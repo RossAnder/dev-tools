@@ -19,8 +19,10 @@ use common::{parse_json_error_envelope, run_list_query, run_list_query_with, see
 /// must NOT expose the write-side integrity flags (`--allow-outside`,
 /// `--no-write-integrity`, `--strict-integrity`). They still accept
 /// `--verify-integrity` because that's the only read-side integrity
-/// concept. A test-per-flag per-subcommand would be noisy — inspect the
-/// rendered `--help` text and assert the write-side flags don't appear.
+/// concept, and each must list the whole read bundle — a read path that
+/// resolves its own file instead of going through the shared read seam
+/// would otherwise silently drop `--strict-read`. A test-per-flag
+/// per-subcommand would be noisy — inspect the rendered `--help` text.
 #[test]
 fn read_only_subcommands_hide_write_integrity_flags_in_help() {
     let read_subs: &[&[&str]] = &[
@@ -37,9 +39,10 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         &["backlog", "show", "--help"],
         &["backlog", "cluster", "--help"],
         &["backlog", "evidence", "audit", "--help"],
-        // `backlog evidence dir` writes one non-TOML marker file and takes
-        // neither integrity bundle, so the write-side flags must be absent
-        // here too — including `--allow-outside`, which repo policy denies.
+        // `backlog evidence dir` resolves its id against the store, so it
+        // carries the read bundle; the one file it writes is a non-TOML
+        // marker with no sidecar, so it carries none of the write bundle —
+        // including `--allow-outside`, which repo policy denies.
         &["backlog", "evidence", "dir", "--help"],
     ];
     for path in read_subs {
@@ -50,7 +53,15 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         let assert = cmd.write_stdin("").assert().success();
         let stdout =
             String::from_utf8_lossy(&assert.get_output().stdout).to_string();
-        // --verify-integrity is allowed on read paths; present is fine.
+        for required in ["--verify-integrity", "--strict-read"] {
+            assert!(
+                stdout.contains(required),
+                "read-only sub `{}` must list `{}` in --help; got:\n{}",
+                path.join(" "),
+                required,
+                stdout
+            );
+        }
         for banned in ["--allow-outside", "--no-write-integrity", "--strict-integrity"] {
             assert!(
                 !stdout.contains(banned),

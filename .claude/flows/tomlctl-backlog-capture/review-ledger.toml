@@ -214,7 +214,7 @@ resolution = "Candidates sort by Reason (already Ord in ladder order) then score
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R9"
 file = "tomlctl/src/backlog/add.rs"
@@ -227,11 +227,13 @@ summary = "Two dry-run paths hand-roll the IntegrityOpts literal dry_run_read_op
 description = "add.rs:476-480 and compact.rs:54-58 each build the same IntegrityOpts as cli::dispatch::dry_run_read_opts (dispatch.rs:409). Five sibling helpers were widened to pub(crate) for the backlog leaves; this one was not. Widen and re-export dry_run_read_opts and call it from both."
 dedup_id = "40d0dc03f47e2243"
 depends_on = ["R53"]
+resolved = 2026-09-02
+resolution = "io::dry_run_read_opts(verify_on_read: bool) owns the dry-run policy; dispatch.rs's private copy deleted and its nine call sites, add.rs and compact.rs call the shared one. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R10"
 file = "tomlctl/src/cli/dispatch.rs"
@@ -244,11 +246,13 @@ summary = "write_envelope widened to pub(crate) but not re-exported and never ca
 description = "cli/mod.rs:27-30 re-exports the other four widened helpers and omits this one, and mod dispatch is private, so nothing outside cli can reach it. Revert to private."
 dedup_id = "8d86f26927c7af95"
 depends_on = ["R53"]
+resolved = 2026-09-02
+resolution = "write_envelope narrowed back to a private fn. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R11"
 file = "tomlctl/src/backlog/check.rs"
@@ -264,12 +268,13 @@ related = [
     "R34",
 ]
 dedup_id = "e79442ab2ebb54dc"
-depends_on = ["R57"]
+resolved = 2026-09-02
+resolution = "test_support::with_root plus a RootGuard whose Drop unsets TOMLCTL_ROOT during unwind; all ten leaf helpers and both inline sites removed, evidence_ops::Sandbox built on the guard. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "verified-clean"
 flow = "tomlctl-backlog-capture"
 id = "R12"
 file = "tomlctl/src/backlog/compact.rs"
@@ -283,6 +288,7 @@ description = "compact.rs:242, query.rs:345, relate.rs:416, evidence.rs:238 and 
 related = ["R11"]
 dedup_id = "acd814f38e044f62"
 depends_on = ["R11"]
+verified_note = "The six helpers carrying the false panic-safety claims were deleted by R11; test_support.rs states the RootGuard Drop guarantee accurately and no surviving backlog doc comment overclaims — audited during /review-apply 2026-09-02"
 
 [[items]]
 first_flagged = 2026-09-02
@@ -324,7 +330,7 @@ resolution = "coerce_kind side-effect call removed from validate; the mint path 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R15"
 file = "tomlctl/src/backlog/schema.rs"
@@ -342,6 +348,8 @@ depends_on = [
     "R18",
     "R12",
 ]
+resolved = 2026-09-02
+resolution = "Module-level allows and their comments dropped from schema.rs, ids.rs and evidence.rs; clippy surfaced one test-only wrapper, ids::dedup_id, now behind a per-item allow and tracked for removal as R71. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
@@ -383,7 +391,7 @@ resolution = "backlog_list, backlog_show, backlog_relate, backlog_triage added t
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R18"
 file = "tomlctl/src/backlog/compact.rs"
@@ -396,6 +404,8 @@ summary = "Day-span arithmetic duplicated from flow::stale including the negativ
 description = "from.until(today) then get_days then clamp-at-zero matches flow/stale.rs:146-151 down to the comment. parse_threshold was widened for reuse; the age half was not. Expose a flow::time::age_days(from, today) and call it from both."
 dedup_id = "6d43293f23364d21"
 depends_on = ["R58"]
+resolved = 2026-09-02
+resolution = "time::age_days(from, today) -> u64 with the clamp documented once; compact.rs and flow/stale.rs call it. A third copy in flow/resolve.rs is tracked as R70. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
@@ -977,7 +987,7 @@ resolution = "partial: a compacted-only fingerprint is now refused by name befor
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R53"
 file = "tomlctl/src/cli/mod.rs"
@@ -994,11 +1004,13 @@ related = [
     "R59",
 ]
 dedup_id = "946dedd79909e144"
+resolved = 2026-09-02
+resolution = "on_missing_for, warn_if_created, read_json_arg, read_json_value_from_arg and seed_doc_for moved to io.rs (on_missing_for takes no_create: bool so io stays clap-free); query_input_from_cli became QueryArgs::to_query_input in cli/types.rs; cli/mod.rs re-exports only types, run and the two integrity translators, with the boundary rule documented. read_integrity_opts and write_integrity_opts remain exported, tracked as R68. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R54"
 file = "tomlctl/src/backlog/evidence_ops.rs"
@@ -1010,7 +1022,8 @@ category = "architecture"
 summary = "evidence dir is the one verb in the group that reads the store with no integrity check and no flag to ask for one"
 description = "Every other verb gates its read on maybe_verify_integrity plus --strict-read; dispatch_dir calls bare read_toml and EvidenceOp::Dir carries no integrity bundle, then writes a .evidence marker on the strength of a possibly corrupt store. references/backlog.md:34 argues only for dropping the write bundle. Fix: give Dir ReadIntegrityArgs, and hoist the four hand-rolled exists/verify/read/strict blocks into one schema::read_store(&integrity) beside backlog_path()."
 dedup_id = "64167fd74fe4bd3e"
-depends_on = ["R58"]
+resolved = 2026-09-02
+resolution = "schema::read_store(&ReadIntegrityArgs) is the single integrity-checked read seam (strict gate, sidecar verify, empty table when absent); check, list, show, cluster, evidence audit and evidence dir read through it; EvidenceOp::Dir flattens ReadIntegrityArgs; capabilities pin and references/backlog.md updated. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
@@ -1056,7 +1069,7 @@ resolution = "resolve_related() checks every --related id against both arrays be
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R57"
 file = "tomlctl/src/backlog/cluster.rs"
@@ -1068,12 +1081,13 @@ category = "architecture"
 summary = "The relation-field vocabulary is declared per consumer rather than in schema.rs, which claims to own the vocabulary"
 description = "cluster.rs:39 and query.rs:41 each declare the related, duplicate_of, supersedes triple under different names, and relate.rs:107-121 writes the same three through separate match arms; schema.rs has no RELATION_FIELDS beside its pinned KINDS, STATUSES and TERMINAL_DATE_FIELDS. Add pub(crate) const RELATION_FIELDS in schema.rs and consume it from all three."
 dedup_id = "92a182fbd4004e9a"
-depends_on = ["R54"]
+resolved = 2026-09-02
+resolution = "schema::RELATION_FIELDS declared once and pinned in vocabularies_are_pinned; cluster::EDGE_FIELDS and query::RELATIONS deleted. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "tomlctl-backlog-capture"
 id = "R58"
 file = "tomlctl/src/flow/mod.rs"
@@ -1089,7 +1103,8 @@ related = [
     "R53",
 ]
 dedup_id = "6b33b47fb1d321a1"
-depends_on = ["R53"]
+resolved = 2026-09-02
+resolution = "flow/time.rs moved to src/time.rs as a crate-level module via git mv; parse_threshold and its tests folded in from flow/stale.rs; the four flow/mod.rs re-exports dropped and every consumer points at crate::time. Uncommitted."
 
 [[items]]
 first_flagged = 2026-09-02
@@ -1255,3 +1270,74 @@ status = "open"
 related = ["R52"]
 flow = "tomlctl-backlog-capture"
 dedup_id = "e8c0d87071a36c36"
+
+[[items]]
+id = "R68"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 0
+symbol = "read_integrity_opts"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "read_integrity_opts and write_integrity_opts are still cli::dispatch functions imported by sixteen backlog and flow files"
+description = "After R53 these two are the last cli::dispatch exports crossing the boundary outward. They translate clap ReadIntegrityArgs and WriteIntegrityArgs into IntegrityOpts, and their doc records a deliberate choice to keep clap types out of integrity.rs. Give the arg types methods instead, mirroring QueryArgs::to_query_input: impl ReadIntegrityArgs { fn to_opts(&self) -> IntegrityOpts } and the write twin in cli/types.rs, then drop the two re-exports."
+first_flagged = 2026-09-02
+rounds = 1
+status = "open"
+related = ["R53"]
+flow = "tomlctl-backlog-capture"
+dedup_id = "f9128856bbd9232e"
+
+[[items]]
+id = "R69"
+file = "tomlctl/src/io.rs"
+line = 0
+symbol = "TOMLCTL_ROOT"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Ten inline TOMLCTL_ROOT set/remove blocks in io.rs and orphans.rs unit tests bypass test_support::with_root and leak the override on a panic"
+description = "io.rs has eight and orphans.rs two inline set_var/remove_var pairs around test bodies; an assertion that panics between them leaves TOMLCTL_ROOT set for every later test in the process. with_root now exists (R11) with a Drop guard, so each is a mechanical conversion."
+first_flagged = 2026-09-02
+rounds = 1
+status = "open"
+related = ["R11"]
+flow = "tomlctl-backlog-capture"
+dedup_id = "20428695be23b556"
+
+[[items]]
+id = "R70"
+file = "tomlctl/src/flow/resolve.rs"
+line = 920
+symbol = "signed_days"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "A third copy of the clamped day-span arithmetic survives in flow/resolve.rs after R18 shared it via time::age_days"
+description = "resolve.rs computes signed_days, age_days and age_seconds inline exactly as stale.rs did before R18. Replace the block with crate::time::age_days(updated, today) and the saturating multiply."
+first_flagged = 2026-09-02
+rounds = 1
+status = "open"
+related = ["R18"]
+flow = "tomlctl-backlog-capture"
+dedup_id = "2514a105ce48012c"
+
+[[items]]
+id = "R71"
+file = "tomlctl/src/backlog/ids.rs"
+line = 43
+symbol = "dedup_id"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "ids::dedup_id has no production caller and survives only behind a per-item dead_code allow to serve its own hash-pinning tests"
+description = "Every runtime path calls dedup_id_from_parts directly. Either move the pinned digest assertions onto dedup_id_from_parts and delete the wrapper, or give the wrapper a real call site by deriving from a row where add and check currently pass loose parts."
+first_flagged = 2026-09-02
+rounds = 1
+status = "open"
+related = [
+    "R15",
+    "R60",
+]
+flow = "tomlctl-backlog-capture"
+dedup_id = "a5403093dacf9365"

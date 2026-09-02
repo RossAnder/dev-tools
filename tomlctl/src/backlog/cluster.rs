@@ -19,13 +19,12 @@ use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
-use crate::cli::{ClusterBy, ReadIntegrityArgs, read_integrity_opts};
-use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{items_array, read_doc};
+use crate::cli::{ClusterBy, ReadIntegrityArgs};
+use crate::io::items_array;
 
 use super::schema::{
-    ARRAY_BACKLOG, FIELD_AREA, FIELD_DUPLICATE_OF, FIELD_ID, FIELD_KIND, FIELD_RELATED,
-    FIELD_STATUS, FIELD_SUPERSEDES, FIELD_TAGS, STATUS_OPEN, backlog_path, coerce_kind,
+    ARRAY_BACKLOG, FIELD_AREA, FIELD_ID, FIELD_KIND, FIELD_STATUS, FIELD_TAGS, RELATION_FIELDS,
+    STATUS_OPEN, coerce_kind, read_store,
 };
 
 const VIEW_AREA: &str = "area";
@@ -35,9 +34,6 @@ const VIEW_RELATIONS: &str = "relations";
 /// Key of the group holding every item with no `area`.
 const UNSCOPED_KEY: &str = "unscoped";
 
-/// The three fields whose values are read as undirected relation edges.
-const EDGE_FIELDS: &[&str] = &[FIELD_RELATED, FIELD_DUPLICATE_OF, FIELD_SUPERSEDES];
-
 pub(crate) fn dispatch(
     by: ClusterBy,
     min_size: usize,
@@ -45,20 +41,7 @@ pub(crate) fn dispatch(
     all_statuses: bool,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
-    let path = backlog_path()?;
-    let items = if path.exists() {
-        read_doc(&path, read_integrity_opts(&integrity), |doc| {
-            Ok(parse_items(doc, all_statuses))
-        })?
-    } else if integrity.strict_read {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            Some(path.clone()),
-            format!("file does not exist: {}", path.display()),
-        ));
-    } else {
-        Vec::new()
-    };
+    let items = parse_items(&read_store(&integrity)?, all_statuses);
     crate::output::print_json(&build_views(&items, by, min_size, min_shared_tags))
 }
 
@@ -92,7 +75,7 @@ fn parse_items(doc: &TomlValue, all_statuses: bool) -> Vec<Item> {
             .filter(|k| !k.is_empty())
             .map(coerce_kind);
         let mut edges = BTreeSet::new();
-        for field in EDGE_FIELDS {
+        for field in RELATION_FIELDS {
             collect_strings(row.get(*field), &mut edges);
         }
         edges.remove(&id);
@@ -574,19 +557,9 @@ duplicate_of = "B-01"
 
     #[test]
     fn a_missing_store_yields_empty_views() {
-        let _guard = crate::test_support::env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        // SAFETY: set_var is unsafe in edition 2024; acceptable inside tests
-        // where we hold the env lock.
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", root.as_os_str());
-        }
-        let path = backlog_path().unwrap();
-        let exists = path.exists();
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
+        let exists = crate::test_support::with_root(|_| {
+            crate::backlog::schema::backlog_path().unwrap().exists()
+        });
         assert!(!exists);
         let view = build_views(&[], ClusterBy::All, 2, 2);
         for view_key in [VIEW_AREA, VIEW_TAGS, VIEW_RELATIONS] {

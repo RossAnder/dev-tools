@@ -314,6 +314,59 @@ pub(crate) struct QueryArgs {
     pub(crate) raw: bool,
 }
 
+impl QueryArgs {
+    /// R15: trivial field-copy adapter from the two clap-derive types
+    /// (`QueryArgs` + `LegacyShortcuts`) into the POD `QueryInput` that
+    /// `query.rs` owns. A method on the clap type rather than a free
+    /// function elsewhere, so the conversion is reachable from every verb
+    /// group without any of them importing `cli::dispatch`, and `query.rs`
+    /// stays free of any `use crate::cli` import — the dependency runs
+    /// cli → query only.
+    ///
+    /// Pure plumbing: every field either `.clone()`s the owned value off
+    /// `self` (the clap-derive layer already holds the `String` /
+    /// `Vec<String>` / `Option<String>`) or clones out of the
+    /// `&Option<String>` references on `LegacyShortcuts`. Logic that would
+    /// creep in here belongs in `Query::from_query_input` instead — the POD
+    /// type's whole job is to keep this boundary a straight-line data
+    /// transfer.
+    pub(crate) fn to_query_input(&self, legacy: &LegacyShortcuts<'_>) -> crate::query::QueryInput {
+        crate::query::QueryInput {
+            status: legacy.status.clone(),
+            category: legacy.category.clone(),
+            file: legacy.file.clone(),
+            newer_than: legacy.newer_than.clone(),
+            count: legacy.count,
+            where_eq: self.where_eq.clone(),
+            where_not: self.where_not.clone(),
+            where_in: self.where_in.clone(),
+            where_has: self.where_has.clone(),
+            where_missing: self.where_missing.clone(),
+            where_gt: self.where_gt.clone(),
+            where_gte: self.where_gte.clone(),
+            where_lt: self.where_lt.clone(),
+            where_lte: self.where_lte.clone(),
+            where_contains: self.where_contains.clone(),
+            where_prefix: self.where_prefix.clone(),
+            where_suffix: self.where_suffix.clone(),
+            where_regex: self.where_regex.clone(),
+            select: self.select.clone(),
+            exclude: self.exclude.clone(),
+            pluck: self.pluck.clone(),
+            sort_by: self.sort_by.clone(),
+            limit: self.limit,
+            offset: self.offset,
+            distinct: self.distinct,
+            group_by: self.group_by.clone(),
+            count_by: self.count_by.clone(),
+            count_distinct: self.count_distinct.clone(),
+            ndjson: self.ndjson,
+            lines: self.lines,
+            raw: self.raw,
+        }
+    }
+}
+
 // The CLI subcommand enums carry a lot of `Vec<String>` / nested-struct
 // fields by design — that's how clap's derive surface encodes a rich flag
 // set. Clippy's `large_enum_variant` lint would have us `Box<…>` every
@@ -1012,9 +1065,10 @@ pub(crate) enum BacklogOp {
     },
 }
 
-/// `backlog evidence` leaves. Neither carries `WriteIntegrityArgs`: `dir`
-/// writes one non-TOML marker file and `audit` writes nothing, so there is
-/// no sidecar to refresh — and handing `dir` the write bundle would hand it
+/// `backlog evidence` leaves. Both read the store, so both carry
+/// `ReadIntegrityArgs`. Neither carries `WriteIntegrityArgs`: `dir` writes
+/// one non-TOML marker file and `audit` writes nothing, so there is no
+/// sidecar to refresh — and handing `dir` the write bundle would hand it
 /// `--allow-outside`.
 #[derive(Subcommand)]
 pub(crate) enum EvidenceOp {
@@ -1028,6 +1082,8 @@ pub(crate) enum EvidenceOp {
         id: String,
         #[arg(long = "no-create", help = "Report the directory without creating it; error if absent")]
         no_create: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
     },
     /// Walk `.claude/backlog-evidence/` and report every directory the
     /// store does not own, plus policy and stale-reference findings.

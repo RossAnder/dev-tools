@@ -29,10 +29,11 @@ row and when not to is the `backlog-capture` skill's job
 Every mutating op (`add`, `relate`, `triage`, `compact`) carries the shared write bundle —
 `--allow-outside`, `--no-create`, `--no-write-integrity`, `--strict-integrity`,
 `--verify-integrity` — and every read op (`check`, `list`, `show`, `cluster`,
-`evidence audit`) the read bundle, `--verify-integrity` and `--strict-read`. The store lives
-inside the `.claude/` containment guard, so none of these needs `--allow-outside`.
-`backlog evidence dir` carries neither bundle: it writes one non-TOML marker file, so there is
-no sidecar to refresh.
+`evidence audit`, `evidence dir`) the read bundle, `--verify-integrity` and `--strict-read`.
+The store lives inside the `.claude/` containment guard, so none of these needs
+`--allow-outside`. `backlog evidence dir` carries the read bundle but not the write one: it
+reads the store to resolve the id, and the one file it writes is a non-TOML marker, so there
+is no sidecar to refresh.
 
 ## `backlog add`
 

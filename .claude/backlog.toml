@@ -238,3 +238,35 @@ dedup_id = "2fa6e38481388a97"
 origin = "review"
 flow = "tomlctl-backlog-capture"
 context = "Commit 520db43 added the *.premerge.md ignore alongside the evidence rules, but the plan's Scope names .gitignore only for evidence. <plan>.premerge.md is the artifact /review-plan audits recall against, and ignoring it makes it unreviewable cross-clone. Confirm this was intended before treating it as settled."
+
+[[backlog]]
+id = "B-9ed1f411"
+kind = "annoyance"
+summary = "items update requires --json even when only --unset is given and a null or empty-array patch does not clear a field"
+area = "tomlctl/src/cli"
+tags = ["cli"]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "9ed1f4115b8b5dae"
+origin = "review-apply"
+flow = "tomlctl-backlog-capture"
+context = "Pass --json '{}' alongside --unset <field>. Setting a key to null or [] via --json is silently ignored rather than clearing it; only --unset removes it. Either make --json optional when --unset is present or treat null as unset."
+related = ["B-cc214a62"]
+
+[[backlog]]
+id = "B-90c6b8fe"
+kind = "debt"
+summary = "finding ids and review round refs appear in source comments across io.rs, cli/dispatch.rs and flow/stale.rs"
+area = "tomlctl/src"
+tags = ["docs"]
+status = "open"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "90c6b8fea8252a03"
+origin = "review-apply"
+flow = "tomlctl-backlog-capture"
+context = '''Comments such as R6 / R39 route through crate::time cite ledger ids that resolve to nothing once the ledger is reaped, which .claude/rules/documentation.md forbids. Sweep with grep -nE '\bR[0-9]+\b|\bO[0-9]+\b' over tomlctl/src and replace each with the invariant or delete it.'''
+related = ["B-98a1c2e6"]

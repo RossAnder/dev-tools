@@ -27,10 +27,9 @@ use super::schema::{
     self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_AREA, FIELD_CONTEXT, FIELD_DEDUP_ID, FIELD_ID,
     FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, KIND_OTHER, coerce_kind,
 };
-use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
+use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::integrity::maybe_verify_integrity;
-use crate::io::{items_array, read_toml};
+use crate::io::items_array;
 use crate::output::print_json;
 
 /// Number of shared leading `area` components, or shared tags, at which a
@@ -390,19 +389,7 @@ pub(crate) fn dispatch(
     };
     let probe = Probe::new(&summary, area.as_deref(), kind.as_deref(), &tag);
 
-    let file = schema::backlog_path()?;
-    let doc = if file.exists() {
-        maybe_verify_integrity(&file, read_integrity_opts(&integrity))?;
-        read_toml(&file)?
-    } else if integrity.strict_read {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            Some(file.clone()),
-            format!("file does not exist: {}", file.display()),
-        ));
-    } else {
-        TomlValue::Table(toml::Table::new())
-    };
+    let doc = schema::read_store(&integrity)?;
 
     let mut verdicts = evaluate(&doc, &probe, &thresholds);
     verdicts.cap(limit);
@@ -416,8 +403,8 @@ mod tests {
         COMPACTED_FIELDS, FIELD_COMPACTED_ON, FIELD_KIND, FIELD_TERMINAL_DATE,
         FIELD_TERMINAL_REASON, KIND_BUG, KIND_FLAKY_TEST, STATUS_OPEN, STATUS_RESOLVED,
     };
+    use crate::test_support::with_root;
     use std::fs;
-    use std::path::{Path, PathBuf};
 
     const FLAKE_AREA: &str = "lumina/server/tests/pty_readiness_probe.rs";
     const FLAKE_SUMMARY: &str = "PTY readiness probe flakes on slow CI";
@@ -534,24 +521,6 @@ mod tests {
                 .map(|c| (c.id.clone(), c.reason.as_str().to_owned(), c.score))
                 .collect(),
         )
-    }
-
-    /// Resolve store and evidence paths under a throwaway root, dropping the
-    /// override before any assertion runs.
-    fn under_root<T>(f: impl FnOnce(&Path) -> T) -> (PathBuf, T) {
-        let _guard = crate::test_support::env_lock();
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().canonicalize().unwrap();
-        // SAFETY: set_var is unsafe in edition 2024; acceptable inside tests
-        // where we hold the env lock.
-        unsafe {
-            std::env::set_var("TOMLCTL_ROOT", root.as_os_str());
-        }
-        let out = f(&root);
-        unsafe {
-            std::env::remove_var("TOMLCTL_ROOT");
-        }
-        (root, out)
     }
 
     fn kind_of(err: &anyhow::Error) -> &'static str {
@@ -761,8 +730,7 @@ mod tests {
 
     #[test]
     fn a_missing_store_reads_as_novel_unless_strict() {
-        let (_root, (lenient, strict)) = under_root(|root| {
-            fs::create_dir_all(root.join(".claude")).unwrap();
+        let (lenient, strict) = with_root(|_| {
             let lenient = dispatch(
                 FLAKE_SUMMARY.to_owned(),
                 Some(FLAKE_AREA.to_owned()),
@@ -797,7 +765,7 @@ mod tests {
         let probe = probe(FLAKE_SUMMARY, FLAKE_AREA, KIND_FLAKY_TEST);
         let verdicts = evaluate(&doc, &probe, &defaults());
 
-        let (_root, (absent, populated_dir)) = under_root(|root| {
+        let (absent, populated_dir) = with_root(|root| {
             let dir = root
                 .join(".claude")
                 .join(evidence::EVIDENCE_ROOT_NAME)
@@ -831,7 +799,7 @@ mod tests {
             verdict: VERDICT_NOVEL,
             candidates: vec![],
         };
-        let (_root, envelope) = under_root(|_| render(&probe, &thresholds, &verdicts).unwrap());
+        let envelope = with_root(|_| render(&probe, &thresholds, &verdicts).unwrap());
         assert_eq!(envelope["dedup_id"], probe.dedup_id);
         assert_eq!(envelope["thresholds"]["strong"], 0.9);
         assert_eq!(envelope["thresholds"]["related"], 0.1);

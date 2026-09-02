@@ -959,3 +959,49 @@ summary = "review-apply R29 R38: backlog-capture added to the expected-skill lis
 original_intent = "Task 17 latched the SKILL.md ceiling and registered backlog.md but did not extend the four carriers' expected lists or gate the reference files the split created"
 rationale = "A dropped backlog-capture invocation would have produced a run that captures nothing while every test passed, and the extraction moved the bulk of the prose into files the ceiling no longer watched"
 dedup_id = "c55db2184217b4e2"
+
+[[items]]
+id = "E74"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "widen-the-cli-module-re-exports-for-the-backlog-leaves"
+summary = "review-apply R53 R9 R10: the cli::dispatch helper re-exports are gone — on_missing_for, warn_if_created, read_json_arg, read_json_value_from_arg, seed_doc_for and dry_run_read_opts live in io.rs, query_input_from_cli became QueryArgs::to_query_input, write_envelope is private again; cli/mod.rs re-exports types only"
+original_intent = "Task 30 widened five cli::dispatch helpers to pub(crate) and re-exported them so the backlog leaves could reach them without a new module"
+rationale = "The widening made cli::dispatch a utility layer that domain modules import, a cli-to-domain inversion; the helpers were write and input policy that belong in io, and the one CLI-typed converter belongs on the CLI type. Supersedes E9. read_integrity_opts and write_integrity_opts remain and are tracked as R68."
+supersedes_entry = "E9"
+dedup_id = "0bcd36a3306a14e6"
+
+[[items]]
+id = "E75"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "orchestrator-seam-prep"
+summary = "review-apply R58 R18: flow/time.rs became the crate-level src/time.rs owning today_toml_date, today_utc_date, today_utc_iso, parse_threshold and a shared age_days; the flow/mod.rs re-exports the seam prep added are removed"
+original_intent = "The Milestone 2 seam prep widened parse_threshold and re-exported the today helpers from flow so backlog leaves could borrow them"
+rationale = "flow and backlog are sibling verb groups; a rename inside flow/stale.rs would have broken backlog compact. Time is crate infrastructure. Supersedes E22 for the flow half; the cli/mod.rs type re-exports that entry also added stay."
+supersedes_entry = "E22"
+dedup_id = "d7685e9e4bb55919"
+
+[[items]]
+id = "E76"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "implement-the-backlog-schema-vocabulary-and-validator"
+summary = "review-apply R54 R57: schema.rs owns the store read seam (read_store with the strict gate and sidecar verify, used by check, list, show, cluster, evidence audit and evidence dir, the last of which gained the read integrity bundle) and the RELATION_FIELDS vocabulary"
+original_intent = "Task 2 gave schema.rs the path resolver and the kind and status vocabularies; each read leaf opened and verified the store itself and two leaves declared the relation triple locally"
+rationale = "Four hand-rolled read blocks drifted into three shapes and evidence dir wrote a marker on the strength of an unverified store; the relation triple had three de-facto declaration sites"
+dedup_id = "34ec3d1636168db6"
+
+[[items]]
+id = "E77"
+type = "deviation"
+date = 2026-09-02
+agent = "plan-update"
+task_ref = "create-the-backlog-module-skeleton"
+summary = "review-apply R11 R12 R15: one panic-safe sandbox helper, test_support::with_root with a RootGuard, replaces ten per-leaf TOMLCTL_ROOT helpers; the three module-level dead_code allows from the skeleton are gone, with one per-item allow on the test-only ids::dedup_id"
+original_intent = "Task 1's skeleton carried blanket dead_code allows on the substrate modules and each leaf grew its own sandbox helper as it was implemented"
+rationale = "Six helpers claimed unwind safety they lacked and leaked the env override on a panicking assertion; the blanket allows hid any vocabulary entry that lost its last consumer. dedup_id's removal is tracked as R71."
+dedup_id = "29d16863931f6e7d"
