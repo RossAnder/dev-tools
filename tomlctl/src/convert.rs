@@ -27,15 +27,17 @@ pub(crate) enum ScalarType {
 /// Keys whose JSON-string values are automatically coerced to a TOML
 /// `Datetime` when they parse as an ISO-8601 date/date-time.
 ///
-/// This encodes ledger/flow schema knowledge (see the `## Ledger Schema`
-/// shared-block in `claude/commands/{optimise,review,optimise-apply,review-apply}.md`
-/// — the canonical description of every date-bearing field these CLIs know
-/// about). When the schema grows, extend this list and update the shared
-/// markdown in lockstep.
+/// This encodes ledger/flow and backlog schema knowledge — between them the
+/// `## Ledger Schema` block in the `flow-contract-ledger-schema` skill and
+/// the field vocabulary in `backlog::schema` name every date-bearing field
+/// these CLIs know about. A compacted row's `terminal_date` / `compacted_on`
+/// stay out: `backlog compact` builds them as native datetimes, so no JSON
+/// string for either reaches this funnel. When a schema grows, extend this
+/// list and the tomlctl skill's `write` reference in lockstep.
 ///
-/// The `maybe_date_coerce_*` and `items_add_promotes_iso_date_strings_to_datetime`
-/// tests pin the coercion behaviour so a silent regression (e.g. swapping one
-/// entry back to a raw TOML string) fails CI.
+/// `date_keys_roundtrip_as_toml_datetime`, `backlog_date_keys_coerce` and
+/// `items_add_promotes_iso_date_strings_to_datetime` pin the behaviour, so
+/// swapping an entry back to a raw TOML string fails CI.
 pub(crate) const DATE_KEYS: &[&str] = &[
     "created",
     "updated",
@@ -43,6 +45,9 @@ pub(crate) const DATE_KEYS: &[&str] = &[
     "last_updated",
     "resolved",
     "date",
+    "promoted",
+    "dismissed",
+    "last_seen",
 ];
 
 /// JSON-side dotted-path walker used by `items add --dedupe-by`.
@@ -347,7 +352,15 @@ pub(crate) fn json_to_toml(v: &JsonValue) -> Result<TomlValue> {
 pub(crate) fn is_date_key(key: &str) -> bool {
     matches!(
         key,
-        "created" | "updated" | "first_flagged" | "last_updated" | "resolved" | "date"
+        "created"
+            | "updated"
+            | "first_flagged"
+            | "last_updated"
+            | "resolved"
+            | "date"
+            | "promoted"
+            | "dismissed"
+            | "last_seen"
     )
 }
 
@@ -636,6 +649,38 @@ count = 3
             "detable_to_json must match toml_to_json byte-for-byte; \
              owned={owned_json}, borrowed={borrowed_json}"
         );
+    }
+
+    /// The live backlog row's date fields must serialise as bare TOML date
+    /// literals, not quoted strings — `backlog compact --older-than` filters
+    /// on `promoted` / `dismissed` and a string sorts as text. A compacted
+    /// row's own two dates are absent from `DATE_KEYS` by design; they are
+    /// pinned here as strings so re-adding them is a deliberate edit.
+    #[test]
+    fn backlog_date_keys_coerce() {
+        let mut row = toml::Table::new();
+        for key in ["promoted", "dismissed", "last_seen"] {
+            let v = JsonValue::String("2026-09-01".into());
+            row.insert(key.to_string(), maybe_date_coerce(key, &v).unwrap());
+        }
+        for key in ["terminal_date", "compacted_on"] {
+            let v = JsonValue::String("2026-09-01".into());
+            row.insert(key.to_string(), maybe_date_coerce(key, &v).unwrap());
+        }
+        let s = toml::to_string(&row).unwrap();
+        for key in ["promoted", "dismissed", "last_seen"] {
+            assert!(
+                s.contains(&format!("{key} = 2026-09-01\n")),
+                "{key} must serialise as a native TOML date; got:\n{s}"
+            );
+        }
+        for key in ["terminal_date", "compacted_on"] {
+            assert!(
+                s.contains(&format!("{key} = \"2026-09-01\"\n")),
+                "{key} is written natively by `backlog compact` and must not \
+                 be coerced here; got:\n{s}"
+            );
+        }
     }
 
     /// A type-coercion error must enumerate the acceptable types (or the
