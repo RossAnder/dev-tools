@@ -1585,10 +1585,8 @@ fn capabilities_features_contains_every_plan_feature() {
     );
 }
 
-/// T7-3: the `version` string equals `0.5.0`. Literal assertion rather
-/// than reading Cargo.toml — the whole point of this task is the semver
-/// bump, so pinning the exact release marker keeps the acceptance criterion
-/// honest. Bump both sides in lockstep on the next minor release.
+/// The expected `version` is a literal, not a read of Cargo.toml: the pin is
+/// what makes a semver bump a deliberate two-sided edit. Bump both in lockstep.
 #[test]
 fn capabilities_version_matches_cargo_toml() {
     let out = Command::cargo_bin("tomlctl")
@@ -1605,8 +1603,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.5.0",
-        "expected version `0.5.0` (the 0.4.0 → 0.5.0 bump for the new flow init/ensure-artifact/list/resolve/doctor composite subcommands); got `{version}`"
+        version, "0.6.0",
+        "expected version `0.6.0` (the minor bump for the new `backlog` verb group); got `{version}`"
     );
 }
 

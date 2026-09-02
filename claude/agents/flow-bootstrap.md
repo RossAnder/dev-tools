@@ -47,10 +47,10 @@ Run the steps below in order. Stop early on the first hard error and emit `{"ok"
 
 1. **Parse input envelope.** Read the JSON-encoded envelope from your prompt and bind: `command`, `flow_override`, `path_args` (array of strings), `branch`, `worktree`, `require_artifacts`, `staleness_threshold`. All fields except `command` may be null/empty. (Carriers may pass extra fields — e.g. a legacy `cwd` — which are tolerated and ignored.)
 
-2. **Pre-flight version check.** Run `tomlctl --version`. If stdout's version (matching regex `tomlctl (\d+)\.(\d+)`) is below 0.5 — i.e. major < 0 OR (major == 0 AND minor < 5) — halt and emit:
+2. **Pre-flight version check.** Run `tomlctl --version`. If stdout's version (matching regex `tomlctl (\d+)\.(\d+)`) is below 0.6 — i.e. major < 0 OR (major == 0 AND minor < 6) — halt and emit:
 
    ```json
-   {"ok":false,"errors":["tomlctl ≥0.5.0 required; run \"cargo install --path tomlctl\" to upgrade"],"warnings":[],"resolved":null,"doctor":null,"plans_directory":null}
+   {"ok":false,"errors":["tomlctl ≥0.6.0 required; run \"cargo install --path tomlctl\" to upgrade"],"warnings":[],"resolved":null,"doctor":null,"plans_directory":null}
    ```
 
    Do not proceed to step 3 on a version mismatch.
@@ -106,7 +106,7 @@ Success (resolved + doctor + plans_directory):
 Version mismatch (halt at step 2):
 
 ```json
-{"ok":false,"errors":["tomlctl ≥0.5.0 required; run \"cargo install --path tomlctl\" to upgrade"],"warnings":[],"resolved":null,"doctor":null,"plans_directory":null}
+{"ok":false,"errors":["tomlctl ≥0.6.0 required; run \"cargo install --path tomlctl\" to upgrade"],"warnings":[],"resolved":null,"doctor":null,"plans_directory":null}
 ```
 
 No flow resolves (step 3 succeeds with `resolved: false`; step 4 skipped):
