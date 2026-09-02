@@ -1,13 +1,12 @@
-//! Task 10 integration tests — `--dry-run` on `items remove` and `items apply`.
-//! Split out of the monolithic `integration.rs` by R23. Every test body is
-//! byte-identical to its pre-split form; helpers live in `tests/common/mod.rs`.
+//! Integration tests for `--dry-run` on `items remove` and `items apply`.
+//! Helpers live in `tests/common/mod.rs`.
 //!
 //! The compute/apply split factors the mutation path into a pure
 //! `compute_*_mutation(&TomlValue, ...)` phase (no lock, no sidecar, no
 //! tempfile) and the existing I/O tail (lock + guard + atomic write + sidecar).
 //! `--dry-run` stops after the compute phase and emits
 //! `{"ok":true,"dry_run":true,"would_change":{...}}` without touching the
-//! filesystem. The invariance test (e) pins the structural guarantee that
+//! filesystem. The invariance test pins the structural guarantee that
 //! drives the whole split: the doc `compute_remove_mutation` builds, when
 //! serialised through the same `toml::to_string_pretty` emit path the live
 //! apply uses, is byte-identical to the bytes a real apply lands on disk.
@@ -19,7 +18,7 @@ use std::path::PathBuf;
 mod common;
 use common::seed_ledger;
 
-/// T10 (a): `remove --dry-run <id>` leaves the ledger file byte-identical
+/// `remove --dry-run <id>` leaves the ledger file byte-identical
 /// AND the `.sha256` sidecar mtime unchanged. Stdout carries
 /// `would_change.removed=[<id>]` with added/updated counts at 0.
 #[test]
@@ -106,7 +105,7 @@ status = "open"
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["dry_run"], serde_json::json!(true));
     let wc = &v["would_change"];
-    // R10: items-shape envelopes carry kind:"items" as the discriminator.
+    // items-shape envelopes carry kind:"items" as the discriminator.
     assert_eq!(wc["kind"], serde_json::json!("items"));
     assert_eq!(wc["added"], serde_json::json!(0));
     assert_eq!(wc["updated"], serde_json::json!(0));
@@ -114,7 +113,7 @@ status = "open"
     assert_eq!(wc["ids"], serde_json::json!(["R1"]));
 }
 
-/// T10 (b): a real `remove <id>` (no `--dry-run`) actually removes the
+/// A real `remove <id>` (no `--dry-run`) actually removes the
 /// item and changes the file. Control case — confirms the dry-run path
 /// is a specific opt-in and the default write path still works after
 /// the compute/apply split.
@@ -161,7 +160,7 @@ status = "open"
     );
 }
 
-/// T10 (c): `apply --dry-run --ops [...]` with a mixed add/update/remove
+/// `apply --dry-run --ops [...]` with a mixed add/update/remove
 /// batch returns the right counts in `would_change`, leaves the ledger
 /// untouched, and leaves the sidecar untouched.
 #[test]
@@ -242,7 +241,7 @@ status = "open"
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["dry_run"], serde_json::json!(true));
     let wc = &v["would_change"];
-    // R10: items-shape envelopes carry kind:"items" as the discriminator.
+    // items-shape envelopes carry kind:"items" as the discriminator.
     assert_eq!(wc["kind"], serde_json::json!("items"));
     assert_eq!(wc["added"], serde_json::json!(1));
     assert_eq!(wc["updated"], serde_json::json!(1));
@@ -251,7 +250,7 @@ status = "open"
     assert_eq!(wc["ids"], serde_json::json!(["R3", "R1", "R2"]));
 }
 
-/// T10 (d): `apply --dry-run --no-remove --ops [{remove-op}]` errors
+/// `apply --dry-run --no-remove --ops [{remove-op}]` errors
 /// with the SAME `--no-remove` error message as a real apply. The gate
 /// lives in `compute_apply_mutation` (via `items_apply_to_opts`) so the
 /// dry-run and live paths surface the identical error.
@@ -313,7 +312,7 @@ status = "open"
     );
 }
 
-/// T10 (e) INVARIANCE: `compute_apply_mutation` on a fixture doc and
+/// INVARIANCE: `compute_apply_mutation` on a fixture doc and
 /// `write_toml_with_sidecar` of the resulting `plan.new_doc` land
 /// byte-identically with the on-disk file produced by a real live
 /// apply on the same fixture. This is the structural guarantee that
@@ -419,9 +418,9 @@ file = "src/b.rs"
 }
 
 // ---------------------------------------------------------------------------
-// T-glistening dispatch: dry-run path coverage for the six newly-supported
-// subcommands (`items add`, `items add-many`, `items update`, `set`,
-// `set-json`, `array-append`). Mirrors the T10 (a/c) pattern verbatim:
+// Dry-run path coverage for the dispatching subcommands (`items add`,
+// `items add-many`, `items update`, `set`, `set-json`, `array-append`).
+// Each mirrors the `items remove` / `items apply` pattern above:
 // prime a sidecar with a real write, snapshot file + sidecar bytes, run the
 // `--dry-run` invocation, assert the would_change envelope shape, then
 // assert byte-equality on file + sidecar.
@@ -432,9 +431,9 @@ file = "src/b.rs"
 // `{"ok":true,"dry_run":true,"would_change":{"kind":"scalar","path":"<p>","old":<json|null>,"new":<json>}}`
 // via `emit_dry_run_scalar`. The shape divergence is intentional — the
 // items envelope counts row-level changes; the scalar envelope describes a
-// single key-path mutation. R10 added the `kind` discriminator (additive)
-// so consumers can branch on `would_change.kind` rather than dispatching
-// on the subcommand they invoked.
+// single key-path mutation. The `kind` discriminator lets consumers branch
+// on `would_change.kind` rather than dispatching on the subcommand they
+// invoked.
 // ---------------------------------------------------------------------------
 
 /// Compute the `<file>.sha256` sidecar path the same way the live writers do
@@ -447,8 +446,7 @@ fn sidecar_for(ledger: &std::path::Path) -> PathBuf {
 }
 
 /// Drive a real `items update` on R1 to materialise the `.sha256` sidecar.
-/// Same priming pattern as the existing T10 (a) / T10 (c) tests above —
-/// keeps the post-prime ledger bytes deterministic across runs because the
+/// Keeps the post-prime ledger bytes deterministic across runs because the
 /// patch is a no-op (`status:"open"` already holds).
 fn prime_sidecar_via_update(dir: &tempfile::TempDir, ledger: &std::path::Path) {
     Command::cargo_bin("tomlctl")
@@ -514,7 +512,7 @@ fn run_dry_run_invariant(
         .unwrap_or_else(|e| panic!("dry-run stdout must be JSON: {e}; stdout:\n{stdout}"))
 }
 
-/// T-glistening (1): `items add --dry-run --json {...}` emits the
+/// `items add --dry-run --json {...}` emits the
 /// `would_change` envelope (added=1, ids=[<id>]) and leaves the ledger +
 /// sidecar byte-identical.
 #[test]
@@ -532,7 +530,7 @@ status = "open"
     let sidecar = sidecar_for(&ledger);
     assert!(sidecar.exists(), "sidecar must exist after priming write");
 
-    // R16: capture mtime before the dry-run to assert it is unchanged after.
+    // Capture mtime before the dry-run to assert it is unchanged after.
     let before_mtime = fs::metadata(&sidecar).unwrap().modified().unwrap();
 
     let v = run_dry_run_invariant(
@@ -557,7 +555,7 @@ status = "open"
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["dry_run"], serde_json::json!(true));
     let wc = &v["would_change"];
-    // R10: items-shape envelopes carry kind:"items" as the discriminator.
+    // items-shape envelopes carry kind:"items" as the discriminator.
     assert_eq!(wc["kind"], serde_json::json!("items"));
     assert_eq!(wc["added"], serde_json::json!(1));
     assert_eq!(wc["updated"], serde_json::json!(0));
@@ -565,7 +563,7 @@ status = "open"
     assert_eq!(wc["ids"], serde_json::json!(["R2"]));
 }
 
-/// T-glistening (2): `items add-many --dry-run --ndjson <path>` emits the
+/// `items add-many --dry-run --ndjson <path>` emits the
 /// `would_change` envelope (added=N, ids=[...]) and leaves file + sidecar
 /// byte-identical. Uses an NDJSON file source (stdin would also work, but
 /// a file source mirrors the existing add-many test pattern more closely).
@@ -609,7 +607,7 @@ status = "open"
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["dry_run"], serde_json::json!(true));
     let wc = &v["would_change"];
-    // R10: items-shape envelopes carry kind:"items" as the discriminator.
+    // items-shape envelopes carry kind:"items" as the discriminator.
     assert_eq!(wc["kind"], serde_json::json!("items"));
     assert_eq!(wc["added"], serde_json::json!(2));
     assert_eq!(wc["updated"], serde_json::json!(0));
@@ -617,7 +615,7 @@ status = "open"
     assert_eq!(wc["ids"], serde_json::json!(["R2", "R3"]));
 }
 
-/// T-glistening (3): `items update --dry-run --json {patch}` emits the
+/// `items update --dry-run --json {patch}` emits the
 /// `would_change` envelope (updated=1, ids=[<id>]) and leaves file +
 /// sidecar byte-identical.
 #[test]
@@ -653,7 +651,7 @@ status = "open"
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["dry_run"], serde_json::json!(true));
     let wc = &v["would_change"];
-    // R10: items-shape envelopes carry kind:"items" as the discriminator.
+    // items-shape envelopes carry kind:"items" as the discriminator.
     assert_eq!(wc["kind"], serde_json::json!("items"));
     assert_eq!(wc["added"], serde_json::json!(0));
     assert_eq!(wc["updated"], serde_json::json!(1));
@@ -661,7 +659,7 @@ status = "open"
     assert_eq!(wc["ids"], serde_json::json!(["R1"]));
 }
 
-/// T-glistening (4): `set <file> <path> <value> --dry-run` emits the scalar
+/// `set <file> <path> <value> --dry-run` emits the scalar
 /// envelope (`would_change.{path,old,new}`) and leaves file + sidecar
 /// byte-identical.
 #[test]
@@ -716,14 +714,14 @@ fn set_dry_run_emits_scalar_envelope_and_leaves_file_unchanged() {
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["dry_run"], serde_json::json!(true));
     let wc = &v["would_change"];
-    // R10: scalar-shape envelopes carry kind:"scalar" as the discriminator.
+    // scalar-shape envelopes carry kind:"scalar" as the discriminator.
     assert_eq!(wc["kind"], serde_json::json!("scalar"));
     assert_eq!(wc["path"], serde_json::json!("status"));
     assert_eq!(wc["old"], serde_json::json!("open"));
     assert_eq!(wc["new"], serde_json::json!("fixed"));
 }
 
-/// T-glistening (5): `set-json <file> <path> --json '{"k":"v"}' --dry-run`
+/// `set-json <file> <path> --json '{"k":"v"}' --dry-run`
 /// emits the scalar envelope and leaves file + sidecar byte-identical.
 /// `new` echoes the parsed JSON payload as-is (the live writer would
 /// `maybe_date_coerce` only on DATE_KEYS at the leaf — non-date payloads
@@ -780,14 +778,14 @@ fn set_json_dry_run_emits_scalar_envelope_and_leaves_file_unchanged() {
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["dry_run"], serde_json::json!(true));
     let wc = &v["would_change"];
-    // R10: scalar-shape envelopes carry kind:"scalar" as the discriminator.
+    // scalar-shape envelopes carry kind:"scalar" as the discriminator.
     assert_eq!(wc["kind"], serde_json::json!("scalar"));
     assert_eq!(wc["path"], serde_json::json!("meta"));
     assert_eq!(wc["old"], serde_json::json!({"phase":"one"}));
     assert_eq!(wc["new"], serde_json::json!({"phase":"two"}));
 }
 
-/// T-glistening (6): `array-append <file> <array> --json {...} --dry-run`
+/// `array-append <file> <array> --json {...} --dry-run`
 /// emits the items envelope (added=1, ids=[<id-or-empty>]) and leaves file +
 /// sidecar byte-identical. `array-append` reuses `compute_array_append_mutation`
 /// which is the same `MutationPlan` shape `items add` uses, so the envelope
@@ -825,7 +823,7 @@ fn array_append_dry_run_emits_envelope_and_leaves_file_unchanged() {
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["dry_run"], serde_json::json!(true));
     let wc = &v["would_change"];
-    // R10: items-shape envelopes carry kind:"items" as the discriminator —
+    // items-shape envelopes carry kind:"items" as the discriminator —
     // array-append uses the items envelope shape because it shares the
     // MutationPlan compute path with `items add`.
     assert_eq!(wc["kind"], serde_json::json!("items"));
@@ -841,17 +839,11 @@ fn array_append_dry_run_emits_envelope_and_leaves_file_unchanged() {
 // Edge-case coverage for the dry-run paths.
 // ---------------------------------------------------------------------------
 
-/// T-glistening (7) edge case: `items add --dry-run` against a missing file
-/// errors with `kind=not_found` AND does NOT bootstrap the file on disk.
-///
-/// Plan-deviation note: the orchestrator's spec sketch suggested that a
-/// non-strict dry-run against a missing file would bootstrap an empty doc
-/// and emit a positive envelope showing the row would be added. The actual
-/// dry-run dispatch (`Cmd::Items::Add { dry_run: true }`) goes through
-/// `read_doc` which surfaces `kind=not_found` from `read_toml` — there is
-/// no bootstrap branch on the dry-run path. The principle the spec was
-/// after — "dry-run never touches the filesystem" — is preserved either
-/// way; this test pins the actual behaviour (errors AND no file created).
+/// Edge case: `items add --dry-run` against a missing file errors with
+/// `kind=not_found` AND does NOT bootstrap the file on disk. The dry-run
+/// dispatch (`Cmd::Items::Add { dry_run: true }`) goes through `read_doc`,
+/// which surfaces `kind=not_found` from `read_toml`; there is no bootstrap
+/// branch on the dry-run path.
 #[test]
 fn items_add_dry_run_against_missing_file_errors_not_found() {
     let dir = tempfile::tempdir().unwrap();
@@ -895,10 +887,10 @@ fn items_add_dry_run_against_missing_file_errors_not_found() {
     assert_eq!(err["kind"], serde_json::json!("not_found"));
 }
 
-/// T-glistening (8) edge case: `items add --dedupe-by <field> --dry-run`
+/// Edge case: `items add --dedupe-by <field> --dry-run`
 /// against a fixture whose existing row matches the new row on the dedupe
 /// fields emits the envelope with `added=0, ids=[]` (the row would be
-/// skipped on a real run). `emit_dry_run_plan` now surfaces the skipped
+/// skipped on a real run). `emit_dry_run_plan` surfaces the skipped
 /// count in the envelope as `would_change.skipped`.
 #[test]
 fn items_add_dry_run_with_dedupe_by_matching_existing_row_emits_skipped() {
@@ -955,7 +947,7 @@ file = "src/a.rs"
     assert_eq!(v["ok"], serde_json::json!(true));
     assert_eq!(v["dry_run"], serde_json::json!(true));
     let wc = &v["would_change"];
-    // R10: items-shape envelopes carry kind:"items" as the discriminator.
+    // items-shape envelopes carry kind:"items" as the discriminator.
     assert_eq!(wc["kind"], serde_json::json!("items"));
     assert_eq!(wc["added"], serde_json::json!(0));
     assert_eq!(wc["updated"], serde_json::json!(0));
@@ -965,7 +957,7 @@ file = "src/a.rs"
     assert_eq!(wc["ids"], serde_json::json!([] as [&str; 0]));
 }
 
-/// T-glistening (10): `items backfill-dedup-id --dry-run` does not touch
+/// `items backfill-dedup-id --dry-run` does not touch
 /// the ledger or sidecar, and emits a dry-run envelope with `would_backfill`
 /// reflecting the count of items that would have their `dedup_id` populated.
 #[test]
@@ -1035,20 +1027,12 @@ status = "open"
     );
 }
 
-/// T-glistening (9) edge case: `items add --strict-read --dry-run` against
-/// a missing file errors with `kind=not_found`. `--strict-read` is a
-/// `ReadIntegrityArgs` flag and `items add` carries `WriteIntegrityArgs`
-/// (no `--strict-read`), so this combination is rejected at clap parse
-/// time rather than at the runtime layer. The test pins that behaviour:
-/// the dry-run path errors with a parse-level message, NOT a partial
-/// write or a successful would_change envelope.
-///
-/// Plan-deviation note: the spec sketch assumed `--strict-read` was
-/// available on `items add`. It is not (it lives on read subcommands —
-/// `parse`, `get`, `validate`, `items list`, `items get`, etc.). The
-/// spirit of the assertion — "a strict missing-file dry-run errors
-/// without touching disk" — is preserved by checking the clap-level
-/// rejection AND the file-not-created invariant.
+/// Edge case: `items add --strict-read --dry-run` against a missing file.
+/// `--strict-read` is a `ReadIntegrityArgs` flag and `items add` carries
+/// `WriteIntegrityArgs` (no `--strict-read`), so this combination is
+/// rejected at clap parse time rather than at the runtime layer. The test
+/// pins that behaviour: the dry-run path errors with a parse-level message,
+/// NOT a partial write or a successful would_change envelope.
 #[test]
 fn items_add_dry_run_with_strict_read_against_missing_file_errors() {
     let dir = tempfile::tempdir().unwrap();
@@ -1070,11 +1054,9 @@ fn items_add_dry_run_with_strict_read_against_missing_file_errors() {
         .write_stdin("")
         .assert()
         .failure()
-        // R26: pin clap usage-error exit code 2 explicitly. The previous
-        // `.failure()`-only check accepted any non-zero status, so a
-        // regression that errored with code 1 (runtime error) for an
-        // unrelated reason would have silently passed the OR-predicate
-        // on stderr. Code 2 is clap's parse-rejection signal.
+        // Code 2 is clap's parse-rejection signal. Pinning it stops a
+        // runtime error (code 1) from an unrelated cause satisfying the
+        // stderr OR-predicate below.
         .code(2);
 
     // `--strict-read` is not on `items add`'s WriteIntegrityArgs, so clap

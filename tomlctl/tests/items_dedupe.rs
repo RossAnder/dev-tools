@@ -1,7 +1,6 @@
-//! Task 5 + Task 6 + Task 11 integration tests — `--dedupe-by`, auto-populated
-//! `dedup_id`, `items find-duplicates --across`, and `items backfill-dedup-id`.
-//! Split out of the monolithic `integration.rs` by R23. Every test body is
-//! byte-identical to its pre-split form; helpers live in `tests/common/mod.rs`.
+//! Integration tests for `--dedupe-by`, auto-populated `dedup_id`,
+//! `items find-duplicates --across`, and `items backfill-dedup-id`.
+//! Helpers live in `tests/common/mod.rs`.
 
 use assert_cmd::Command;
 use std::fs;
@@ -11,15 +10,14 @@ mod common;
 use common::seed_ledger;
 
 // ---------------------------------------------------------------------------
-// Task 5 (plan `docs/plans/tomlctl-capability-gaps.md`): `items add` and
-// `items add-many` grow `--dedupe-by <F1,F2,...>`. Callers who pass
-// identical payloads twice get one insert on the first call and a skip
+// `--dedupe-by <F1,F2,...>` on `items add` and `items add-many`. Callers who
+// pass identical payloads twice get one insert on the first call and a skip
 // (with `matched_id`) on the second. Nested-field paths and explicit
 // `dedup_id` dedup both work via the shared JSON walker in convert.rs.
 // Absent `--dedupe-by` → legacy behaviour byte-identical.
 // ---------------------------------------------------------------------------
 
-/// T5 (a): double-add with `--dedupe-by summary,file` inserts once, then
+/// Double-add with `--dedupe-by summary,file` inserts once, then
 /// skips on the second call and reports the `matched_id` of the first-added
 /// row. Also asserts that `added:0` and the matched id appear in the JSON
 /// output so an agent can branch on the skip shape.
@@ -95,7 +93,7 @@ fn items_add_dedupe_by_double_add_dedupes_on_second_call() {
     );
 }
 
-/// T5 (b): changing one of the dedupe fields defeats the match — the
+/// Changing one of the dedupe fields defeats the match — the
 /// second call inserts a fresh row. Fixture pins the semantics the agent
 /// cares about: "re-using a summary with a different file is a different
 /// finding".
@@ -149,7 +147,7 @@ fn items_add_dedupe_by_different_field_value_adds_both() {
     assert_eq!(items.len(), 2);
 }
 
-/// T5 (c): `add-many` with a mixed NDJSON batch — one row duplicates an
+/// `add-many` with a mixed NDJSON batch — one row duplicates an
 /// existing item, two are novel. Output must enumerate both the counts
 /// and the per-row skip log in input order. Row indexing is 1-based to
 /// match the existing `items_add_many` error-message convention.
@@ -208,9 +206,9 @@ status = "open"
     assert_eq!(items.len(), 3);
 }
 
-/// T5 (d): `--dedupe-by` accepts dotted paths for nested-object fields
+/// `--dedupe-by` accepts dotted paths for nested-object fields
 /// (`meta.source_run`). Both sides walk via the JSON-side dotted-path
-/// walker introduced in `convert.rs::walk_json_path`. Pins that
+/// walker `convert.rs::walk_json_path`. Pins that
 /// descent-via-objects is honoured and that a nested miss on one row
 /// doesn't falsely hit a sibling row that lacks `meta` entirely.
 #[test]
@@ -281,18 +279,15 @@ summary = "beta"
     assert_eq!(items.len(), 3, "R1 + R2 + R4 — R3 was deduped");
 }
 
-/// T5 (e): explicit `--dedupe-by dedup_id` pins the forward-compatible
-/// contract for when T6 starts auto-populating `dedup_id`. Today this is
-/// entirely a user-supplied field (T6 ships the auto-populate later in
-/// the plan). The test seeds a ledger with a row carrying an explicit
-/// `dedup_id`, then:
+/// Explicit `--dedupe-by dedup_id` against a ledger row carrying an
+/// explicit `dedup_id`:
 ///
 ///   1. A payload with the same `dedup_id` is skipped (matches).
 ///   2. A payload with a distinct `dedup_id` is added.
 ///
-/// This proves `find_dedupe_match` handles the `dedup_id` field like any
-/// other, so the upgrade path for T6 is "set the field; the scan already
-/// works" — no change to this flag's semantics is required.
+/// Pins that `find_dedupe_match` handles `dedup_id` like any other field,
+/// so auto-population of the field changes nothing about this flag's
+/// semantics.
 #[test]
 fn items_add_dedupe_by_explicit_dedup_id_field() {
     let (dir, ledger) = seed_ledger(
@@ -353,11 +348,10 @@ dedup_id = "abc123def4567890"
     assert_eq!(items.len(), 2);
 }
 
-/// T5: empty-value `--dedupe-by ""` (or `","` or `" , "`) must error at
-/// the CLI boundary rather than silently disable dedupe. This is the
-/// fail-loud contract from the plan — a caller who typed the flag with no
-/// payload almost certainly didn't mean "no-op", so we surface a
-/// directed error instead of writing a duplicate row that would slip
+/// Empty-value `--dedupe-by ""` (or `","` or `" , "`) must error at the
+/// CLI boundary rather than silently disable dedupe: a caller who typed the
+/// flag with no payload almost certainly didn't mean "no-op", so we surface
+/// a directed error instead of writing a duplicate row that would slip
 /// past their intended guard. Covers the critical-decision branch in
 /// `parse_dedupe_fields`.
 #[test]
@@ -390,16 +384,13 @@ fn items_add_dedupe_by_empty_value_is_fail_loud() {
 }
 
 // ---------------------------------------------------------------------------
-// Task 6 (plan `docs/plans/tomlctl-capability-gaps.md`): `dedup_id`
-// auto-populate on every write funnel + `find-duplicates --across <other>`
-// for cross-ledger dedup. T6a is helper-level (covered by dedup.rs unit
-// tests); T6b and T6c need end-to-end CLI coverage — that's this block.
-//
-// Acceptance (a)-(h) from the plan are mapped 1:1 onto the tests below so
-// the plan audit trail stays readable.
+// `dedup_id` auto-populate on every write funnel + `find-duplicates
+// --across <other>` for cross-ledger dedup. The fingerprint helper itself
+// is covered by the dedup.rs unit tests; this block is the end-to-end CLI
+// coverage.
 // ---------------------------------------------------------------------------
 
-/// T6b acceptance (a): a freshly-added item carries `dedup_id` on disk,
+/// A freshly-added item carries `dedup_id` on disk,
 /// and the digest matches `tier_b_fingerprint` of the fingerprinted fields.
 #[test]
 fn items_add_auto_populates_dedup_id_on_disk() {
@@ -435,7 +426,7 @@ fn items_add_auto_populates_dedup_id_on_disk() {
     );
 }
 
-/// T6b acceptance (b): `items update` with a fingerprinted-field patch
+/// `items update` with a fingerprinted-field patch
 /// (`summary`) recomputes `dedup_id`. The new digest must differ from
 /// the original (summary changed → fingerprint input changed).
 #[test]
@@ -485,7 +476,7 @@ fn items_update_summary_recomputes_dedup_id() {
     );
 }
 
-/// T6b acceptance (c): `items update` with a non-fingerprint patch
+/// `items update` with a non-fingerprint patch
 /// (`status`) preserves `dedup_id` — status is NOT in FINGERPRINTED_FIELDS.
 #[test]
 fn items_update_non_fingerprint_field_preserves_dedup_id() {
@@ -534,7 +525,7 @@ fn items_update_non_fingerprint_field_preserves_dedup_id() {
     );
 }
 
-/// T6b acceptance (d): explicit `{"dedup_id":"explicit"}` in an update
+/// Explicit `{"dedup_id":"explicit"}` in an update
 /// patch is preserved regardless of other patch fields.
 #[test]
 fn items_update_explicit_dedup_id_preserved() {
@@ -571,7 +562,7 @@ fn items_update_explicit_dedup_id_preserved() {
     assert_eq!(got, "explicit", "explicit dedup_id must win");
 }
 
-/// T6b acceptance (e): explicit `dedup_id` AND a fingerprint-field patch
+/// Explicit `dedup_id` AND a fingerprint-field patch
 /// together — explicit still wins (the recompute must NOT overwrite it).
 #[test]
 fn items_update_explicit_dedup_id_wins_over_fingerprint_patch() {
@@ -611,7 +602,7 @@ fn items_update_explicit_dedup_id_wins_over_fingerprint_patch() {
     );
 }
 
-/// T6b acceptance (f): `TOMLCTL_NO_DEDUP_ID=1` suppresses auto-populate.
+/// `TOMLCTL_NO_DEDUP_ID=1` suppresses auto-populate.
 /// The resulting item must have NO `dedup_id` field on disk.
 #[test]
 fn items_add_with_kill_switch_produces_no_dedup_id() {
@@ -632,7 +623,7 @@ fn items_add_with_kill_switch_produces_no_dedup_id() {
     );
 }
 
-/// T6c acceptance (g): `find-duplicates --across` with tier B returns
+/// `find-duplicates --across` with tier B returns
 /// cross-ledger matches, each tagged with `source_file`.
 #[test]
 fn items_find_duplicates_across_tier_b_returns_cross_ledger_matches() {
@@ -700,7 +691,7 @@ category = "quality"
     assert!(source_files.contains(&"optimise.toml"));
 }
 
-/// T6c acceptance (h): `find-duplicates --across ... --tier C` errors
+/// `find-duplicates --across ... --tier C` errors
 /// with the exact documented message. Tier C's line-window grouping is
 /// meaningless across two distinct source files.
 #[test]
@@ -733,18 +724,15 @@ fn items_find_duplicates_across_tier_c_errors_with_exact_message() {
 }
 
 // ---------------------------------------------------------------------------
-// Task 11 (plan `docs/plans/tomlctl-capability-gaps.md`): `items
-// backfill-dedup-id <file>` — explicit, auditable upgrade path for pre-Task-6
-// ledgers. Walks every item, computes `tier_b_fingerprint` on any item
-// lacking `dedup_id`, writes atomically via T10's compute/apply split.
-// Idempotent: a re-run on a fully-populated ledger is a no-op (no write,
-// no sidecar bump). Honours `TOMLCTL_NO_DEDUP_ID`.
-//
-// Acceptance (a)-(d) from the plan map 1:1 onto the tests below so the
-// plan audit trail stays readable.
+// `items backfill-dedup-id <file>` — explicit, auditable upgrade path for
+// legacy ledgers whose items lack `dedup_id`. Walks every item, computes
+// `tier_b_fingerprint` on any item lacking `dedup_id`, writes atomically
+// via the compute/apply split. Idempotent: a re-run on a fully-populated
+// ledger is a no-op (no write, no sidecar bump). Honours
+// `TOMLCTL_NO_DEDUP_ID`.
 // ---------------------------------------------------------------------------
 
-/// T11 (a): ledger with N items, NONE with `dedup_id` → backfill adds the
+/// Ledger with N items, NONE with `dedup_id` → backfill adds the
 /// field to every item, and each digest matches `tier_b_fingerprint` of
 /// its on-disk fingerprinted fields.
 #[test]
@@ -842,7 +830,7 @@ fn items_backfill_dedup_id_populates_every_missing_item() {
     assert_ne!(fps[0], fps[2]);
 }
 
-/// T11 (b): mixed ledger — some items have `dedup_id`, some don't. The
+/// Mixed ledger — some items have `dedup_id`, some don't. The
 /// backfill must touch ONLY the missing ones, preserving the existing
 /// values byte-for-byte (even if the existing values are "wrong" for the
 /// current fingerprint algorithm — the CLI is explicit about this).
@@ -928,7 +916,7 @@ category = "quality"
     assert_ne!(r1_fp, r3_fp);
 }
 
-/// T11 (c): `TOMLCTL_NO_DEDUP_ID=1` short-circuits backfill to a no-op
+/// `TOMLCTL_NO_DEDUP_ID=1` short-circuits backfill to a no-op
 /// with the documented explanatory output. The ledger file and its
 /// sidecar must remain byte-identical — the kill switch leaves no I/O
 /// trace.
@@ -974,8 +962,8 @@ category = "quality"
     );
 }
 
-/// T11 (d): idempotent re-run — after (a) backfills everything, a second
-/// invocation emits `{"ok":true,"backfilled":0}` (no `reason` field,
+/// Idempotent re-run — against a ledger whose items all already carry
+/// `dedup_id`, backfill emits `{"ok":true,"backfilled":0}` (no `reason` field,
 /// since the kill switch isn't set) and skips the write entirely. The
 /// ledger bytes and the sidecar bytes must both be unchanged — the
 /// no-op fast path never takes the exclusive lock.
