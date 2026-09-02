@@ -48,6 +48,11 @@ tomlctl flow list [--status <s>] [--branch <b>] [--active-only]     # enumerate 
 tomlctl flow resolve [--flow <s>] [--path <p>]... [--branch <b>] [--worktree <w>] [--with-staleness]  # 5-step flow resolution; emits {resolved, slug, source, artifacts, ...}
 tomlctl flow stale --slug <s> [--threshold <duration>]              # check whether a flow is stale
 tomlctl blocks verify  <file>... [--block <marker-name>]...  # cross-file shared-block parity
+tomlctl backlog check  --summary <s> [--area PATH] [--kind K] [--tag T]...  # is it already known? read-only graded verdict
+tomlctl backlog add    --summary <s> [--kind K] [--area PATH] [--evidence path:line]... [--context <how-to-work-around>]
+tomlctl backlog show   <id>                            # one item + its one-hop relations + its evidence listing
+tomlctl backlog evidence dir <id>                      # per-item .claude/backlog-evidence/<id>/, created on demand
+tomlctl backlog cluster --by all                       # group open items into candidate work scopes
 
 # Integrity flags (accepted after the subcommand name on any TOML-touching command):
 #   --allow-outside           bypass the best-effort .claude/ containment guard (not a sandbox)
@@ -56,9 +61,9 @@ tomlctl blocks verify  <file>... [--block <marker-name>]...  # cross-file shared
 #   --strict-integrity        treat sidecar write failures as hard errors
 ```
 
-`items list` also offers a full query surface — `--where / --where-not / --where-in / --where-has / --where-missing / --where-gt[e] / --where-lt[e] / --where-contains / --where-prefix / --where-suffix / --where-regex`, projections (`--select`, `--exclude`, `--pluck`), shaping (`--sort-by`, `--limit`, `--offset`, `--distinct`), aggregation (`--count`, `--count-by`, `--group-by`), and `--ndjson` output. All `KEY=VAL` right-hand sides accept typed prefixes (`@date:`, `@datetime:`, `@int:`, `@float:`, `@bool:`, `@string:` / `@str:`). See [SKILL.md](../claude/skills/tomlctl/SKILL.md#query-items-full-query-surface) for the full reference.
+`items list` also offers a full query surface — `--where / --where-not / --where-in / --where-has / --where-missing / --where-gt[e] / --where-lt[e] / --where-contains / --where-prefix / --where-suffix / --where-regex`, projections (`--select`, `--exclude`, `--pluck`), shaping (`--sort-by`, `--limit`, `--offset`, `--distinct`), aggregation (`--count`, `--count-by`, `--group-by`), and `--ndjson` output. All `KEY=VAL` right-hand sides accept typed prefixes (`@date:`, `@datetime:`, `@int:`, `@float:`, `@bool:`, `@string:` / `@str:`). See [references/query.md](../claude/skills/tomlctl/references/query.md#query-items-full-query-surface) for the full reference.
 
-**Stdin input** (`-` sentinel on `--json` / `--ops` / `--ndjson` / `--defaults-json`): see [SKILL.md stdin section](../claude/skills/tomlctl/SKILL.md#stdin-input-for-large-json-payloads) for the full reference.
+**Stdin input** (`-` sentinel on `--json` / `--ops` / `--ndjson` / `--defaults-json`): see [references/write.md stdin section](../claude/skills/tomlctl/references/write.md#stdin-input-for-large-json-payloads) for the full reference.
 
 All commands print JSON on stdout, exit non-zero on failure.
 
@@ -206,7 +211,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.4.0",
+  "version": "0.6.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "capabilities", "error_format_json", "strict_read",

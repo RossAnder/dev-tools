@@ -99,3 +99,11 @@ Adopting the registry in a repo still on the legacy single-line `.claude/active-
 
 - **It is NOT a tamper-evident seal.** It detects accidental corruption — a torn write, a tool that mangles the TOML, an out-of-band manual edit. Anyone who can write to `.claude/` can update the TOML and the sidecar together and the check still passes. For adversarial integrity, review git history and sign commits.
 - **Mutating verbs auto-create a missing file** rather than erroring, so there is no need to hand-`Write` a skeleton before the first ledger write. `items backfill-dedup-id` is the deliberate exception — backfilling an absent ledger is a no-op, so it still errors. `--no-create` restores the strict error, worth pairing with `--allow-outside`, where auto-create plus a typo can leave a stray file anywhere.
+
+## Backlog capture
+
+Tangential discoveries land in `.claude/backlog.toml`, with per-item evidence under `.claude/backlog-evidence/<id>/` (contents git-ignored, the directory marker tracked — `git add -f` a file to publish it).
+
+- **The orchestrator is the only writer.** A sub-agent surfaces candidates in its `TANGENTIAL:` report line and never touches the store; the orchestrator runs `backlog check` on each candidate before `backlog add`, so a rephrased rediscovery does not mint a second item.
+- `/backlog` is the sweep command — triage, cluster, and compact what has accumulated.
+- The `backlog-capture` skill owns the capture discipline (what earns an item, the verdict ladder, evidence policy); `claude/skills/tomlctl/references/backlog.md` is the flag reference.
