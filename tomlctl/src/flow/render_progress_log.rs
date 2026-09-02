@@ -1,14 +1,12 @@
-//! T3: `tomlctl flow render-progress-log` — regenerate a flow's
+//! `tomlctl flow render-progress-log` — regenerate a flow's
 //! `PROGRESS-LOG.md` as a PURE function of `execution-record.toml` + the
 //! flow title.
 //!
-//! The render-from-log routine used to live only as prose in the flow
-//! commands. This module owns it in Rust so the output is deterministic and
-//! testable: the same record always renders the same bytes (render-then-render
-//! is byte-identical), and swapping two same-date entries in the source does
-//! NOT change the output (the Session Log pre-sorts by date, derives its
-//! `Changes` cell from per-type COUNTS rather than positions, and unions the
-//! `Commits` cell lexicographically).
+//! The render is deterministic: the same record always renders the same bytes
+//! (render-then-render is byte-identical), and swapping two same-date entries
+//! in the source does NOT change the output (the Session Log pre-sorts by
+//! date, derives its `Changes` cell from per-type COUNTS rather than
+//! positions, and unions the `Commits` cell lexicographically).
 //!
 //! ### Pure-render / dispatch split
 //!
@@ -55,13 +53,13 @@ struct RenderResult {
 }
 
 pub(crate) fn dispatch(slug: &str, stdout: bool, integrity: &ReadIntegrityArgs) -> Result<()> {
-    // R1 (security): validate the raw `--slug` BEFORE it flows into
+    // Security: validate the raw `--slug` BEFORE it flows into
     // `execution_record_path_for` (which joins `.claude/flows/<slug>/…`). The
     // strict regex (`^[a-z0-9][a-z0-9-]{0,63}$`, shared with `flow init`)
     // rejects `/`, `\`, `..`, absolute paths, and NUL, so the resolved record /
-    // PROGRESS-LOG paths cannot escape `.claude/flows/<slug>/` — closing the
-    // path-traversal hole where a slug like `../../tmp/x` turned the record read
-    // into a file-existence/parse-error oracle and the write into an
+    // PROGRESS-LOG paths cannot escape `.claude/flows/<slug>/`. Without it a
+    // slug like `../../tmp/x` turns the record read into a
+    // file-existence/parse-error oracle and the write into an
     // out-of-containment write with no `--allow-outside` opt-out.
     crate::flow::init::validate_slug(slug)?;
     let record_path = execution_record_path_for(slug)?;
@@ -78,7 +76,7 @@ pub(crate) fn dispatch(slug: &str, stdout: bool, integrity: &ReadIntegrityArgs) 
     // `maybe_verify_integrity` no-op when the flag is off).
     maybe_verify_integrity(&record_path, read_integrity_opts(integrity))?;
 
-    // R15: chain an actionable hint onto a record-read failure (missing flow,
+    // Chain an actionable hint onto a record-read failure (missing flow,
     // unparseable record) naming the slug and pointing at `flow init`. The
     // underlying not-found / parse error stays chained beneath this context.
     let record = read_toml(&record_path).with_context(|| {
@@ -99,7 +97,7 @@ pub(crate) fn dispatch(slug: &str, stdout: bool, integrity: &ReadIntegrityArgs) 
         return Ok(());
     }
 
-    // T3: PROGRESS-LOG.md is a DERIVED artifact regenerated wholesale from the
+    // PROGRESS-LOG.md is a DERIVED artifact regenerated wholesale from the
     // execution record on demand — it is NOT a tomlctl-authored source file, so
     // we deliberately do NOT write a `<file>.sha256` integrity sidecar for it
     // (the sidecar machinery guards hand-edited / torn TOML sources; a derived
@@ -130,7 +128,7 @@ fn resolve_title(slug: &str, context_path: &Path) -> String {
 
 /// Inner title resolver returning `None` on any miss (no context, no
 /// `plan_path`, unreadable plan, no `# Plan:` header, or a `plan_path` that
-/// escapes the repo root — R19) so `resolve_title` can apply the slug
+/// escapes the repo root) so `resolve_title` can apply the slug
 /// fallback. The repo-relative `plan_path` (the shape `context.toml` records)
 /// is resolved against `repo_or_cwd_root` and then containment-checked; an
 /// absolute or `..`-bearing `plan_path`, or one whose resolved target sits
@@ -139,7 +137,7 @@ fn title_from_context(context_path: &Path) -> Option<String> {
     let context = read_toml(context_path).ok()?;
     let plan_path = context.get("plan_path")?.as_str()?;
     let plan_candidate = PathBuf::from(plan_path);
-    // R19 (security/containment): the `plan_path` comes from `context.toml`,
+    // Security/containment: the `plan_path` comes from `context.toml`,
     // which a flow author (or a tampered file) controls. Resolve it against the
     // repo root, then assert the resolved path stays UNDER that root before
     // reading it — otherwise an absolute or `..`-laden `plan_path` would turn
@@ -162,7 +160,7 @@ fn title_from_context(context_path: &Path) -> Option<String> {
     plan_title_from_body(&body)
 }
 
-/// R19 helper: is `candidate` (which may not yet exist) contained under
+/// Containment check: is `candidate` (which may not yet exist) contained under
 /// `root`? We canonicalise both — `root` directly, and `candidate` via its
 /// nearest EXISTING ancestor (canonicalising a missing leaf errors) — then
 /// assert prefix-ancestry. A symlink under the flow tree pointing outside
@@ -228,7 +226,7 @@ fn render_to_string(record: &TomlValue, title: &str) -> Result<RenderResult> {
         .map(Vec::as_slice)
         .unwrap_or(&[]);
 
-    // O2: pre-size to skip the early reallocation growth (~160 bytes/row across
+    // Pre-size to skip the early reallocation growth (~160 bytes/row across
     // the four tables plus the fixed banner/title/rule scaffolding). Pure
     // capacity hint — no effect on the rendered bytes.
     let mut out = String::with_capacity(2048 + items.len() * 160);
@@ -238,7 +236,6 @@ fn render_to_string(record: &TomlValue, title: &str) -> Result<RenderResult> {
     out.push('\n');
 
     // 2. H1 title (EM DASH) + blank + rule + blank.
-    // O3: emit the H1 directly rather than via a throwaway `format!` String.
     out.push_str("# ");
     out.push_str(title);
     out.push(' ');
@@ -284,7 +281,7 @@ fn str_field<'a>(item: &'a TomlValue, key: &str) -> &'a str {
 
 /// Render a TOML value (string OR `Datetime`) as a cell string.
 ///
-/// R16: render and group by the DATE COMPONENT only. A `Datetime` carrying a
+/// Renders and groups by the DATE COMPONENT only. A `Datetime` carrying a
 /// time/offset (a full RFC3339 timestamp) would otherwise render the whole
 /// timestamp in the Date column AND fragment Session-Log grouping per-second;
 /// we extract `Datetime::date` and emit just `YYYY-MM-DD` (formatted directly
@@ -377,9 +374,8 @@ fn sorted_by_type<'a>(items: &'a [TomlValue], ty: &str) -> Vec<&'a TomlValue> {
         .iter()
         .filter(|it| str_field(it, "type") == ty)
         .collect();
-    // O1: cache the (String, IdOrder) key once per element rather than
-    // recomputing it (1–2 String allocs) on every comparison. Stable sort →
-    // identical ordering.
+    // Caching the key per element keeps the sort stable, so the ordering is
+    // identical to a comparator that recomputes it.
     rows.sort_by_cached_key(|it| entry_sort_key(it));
     rows
 }
@@ -403,7 +399,7 @@ fn emit_table(out: &mut String, header_cells: &[&str], rows: &[Vec<String>]) -> 
     // Deviations, and Session-Log tables exactly. (The real file's Deferrals
     // separator is off-by-one on its two widest columns — a hand-authored
     // quirk not derivable from any rule; the SPEC's generic `|---|…|` wins, so
-    // we emit the consistent width-matched form there. See the T3 report.)
+    // we emit the consistent width-matched form there.)
     out.push('|');
     for cell in header_cells {
         let run = (cell.len() + 2).max(3);
@@ -507,7 +503,7 @@ fn render_deviations(out: &mut String, items: &[TomlValue]) -> usize {
     )
 }
 
-/// R3: resolve the supersession graph over `entries` to the set of CHAIN TIPS
+/// Resolve the supersession graph over `entries` to the set of CHAIN TIPS
 /// to render, one per chain, latest-by-`(date, id)`. Returns the surviving
 /// entries in the same `(date asc, id asc)` order `entries` arrived in.
 ///
@@ -614,7 +610,6 @@ fn render_session_log(out: &mut String, items: &[TomlValue]) -> usize {
     // first-appearance type order; instead we walk the pre-sorted slice and
     // append buckets in encounter order (which IS chronological after the sort).
     let mut sorted: Vec<&TomlValue> = items.iter().collect();
-    // O1: cache the sort key once per element (see `sorted_by_type`).
     sorted.sort_by_cached_key(|it| entry_sort_key(it));
 
     // Buckets: Vec preserves chronological order; each bucket tracks its date,
@@ -623,11 +618,11 @@ fn render_session_log(out: &mut String, items: &[TomlValue]) -> usize {
     let mut buckets: Vec<SessionBucket> = Vec::new();
     for it in &sorted {
         let day = date_key(it);
-        // O6: `sorted` is date-primary-sorted, so all same-date rows are
-        // CONTIGUOUS — only the LAST bucket can ever match the current day. A
-        // `last()`/`last_mut()` check replaces the per-item linear `find` while
-        // preserving the exact chronological bucket order (and the per-bucket
-        // first-appearance type order, since runs are contiguous).
+        // `sorted` is date-primary-sorted, so all same-date rows are
+        // CONTIGUOUS — only the LAST bucket can ever match the current day.
+        // Matching on `last()` alone therefore preserves the exact
+        // chronological bucket order (and the per-bucket first-appearance type
+        // order, since runs are contiguous).
         if buckets.last().map(|b| b.date != day).unwrap_or(true) {
             buckets.push(SessionBucket::new(day.clone()));
         }
@@ -655,8 +650,6 @@ fn render_session_log(out: &mut String, items: &[TomlValue]) -> usize {
             let changes = format!("{} {}: {}", b.count, entry_word, changes_parts.join(", "));
             // BTreeSet iterates in sorted (lexicographic) order — exactly the
             // commit ordering the spec mandates.
-            // O5: join over &str (BTreeSet still iterates sorted) instead of
-            // cloning each SHA into an owned String first.
             let commits = b
                 .commits
                 .iter()
@@ -693,8 +686,6 @@ impl SessionBucket {
 
     /// Increment the count for `ty`, appending it in first-appearance order if
     /// not seen yet in this bucket.
-    // O6: take `&str` and only allocate the owned key on the not-seen branch
-    // (the already-seen path is the common case and now allocates nothing).
     fn bump_type(&mut self, ty: &str) {
         if let Some(entry) = self.type_counts.iter_mut().find(|(t, _)| t == ty) {
             entry.1 += 1;
@@ -734,7 +725,7 @@ mod tests {
         assert!(id_order("E99") < id_order("X1"));
     }
 
-    /// R16: a bare TOML date renders `YYYY-MM-DD`; a full RFC3339 TIMESTAMP
+    /// A bare TOML date renders `YYYY-MM-DD`; a full RFC3339 TIMESTAMP
     /// collapses to its DATE component only (no time leak, no per-second
     /// grouping fragmentation). A string-shaped date passes through verbatim.
     #[test]

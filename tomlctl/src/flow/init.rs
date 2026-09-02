@@ -1,4 +1,4 @@
-//! T7: `tomlctl flow init` — bootstrap a flow's `context.toml`,
+//! `tomlctl flow init` — bootstrap a flow's `context.toml`,
 //! `execution-record.toml`, and active-flow registry entry in one
 //! idempotent invocation.
 //!
@@ -10,15 +10,10 @@
 //! - active-flow registry is upserted regardless (so a re-init recovers a
 //!   missing entry without forcing the user through `flow active add`).
 //!
-//! ### R1 consolidation note
-//!
-//! Pre-R1, `active.rs`'s `build_entry` / `find_slug_index` / `empty_doc` /
-//! `mutate_active` / `now_rfc3339` / `entry_to_json` / `write_integrity_opts`
-//! helpers were duplicated verbatim here behind a "T3 doesn't expose
-//! pub(crate) helpers" rationale. R1 promoted those to `pub(crate)` on
-//! `active.rs` and `crate::time`, so this module now consumes them via
-//! `use crate::flow::active::{build_entry, find_slug_index, mutate_active}`
-//! and `crate::cli::write_integrity_opts`.
+//! The registry helpers (`build_entry` / `find_slug_index` / `mutate_active`,
+//! plus `now_rfc3339` and `write_integrity_opts`) are consumed from
+//! `flow::active`, `crate::time` and `crate::cli` rather than reimplemented —
+//! the two modules must agree byte-for-byte on the entry shape.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -54,9 +49,9 @@ fn slug_regex() -> &'static Regex {
 /// a `kind=validation` tagged error on rejection so downstream JSON
 /// callers can branch on the kind without regexing prose.
 ///
-/// Promoted to `pub(crate)` (enabling edit for R1): this is the STRICT-regex
-/// validator (`^[a-z0-9][a-z0-9-]{0,63}$`); the RENDER cluster reuses it to
-/// close a slug-traversal hole rather than re-deriving a second validator.
+/// This is the STRICT-regex validator (`^[a-z0-9][a-z0-9-]{0,63}$`), exposed
+/// as `pub(crate)` so the render path reuses it to close a slug-traversal
+/// hole rather than deriving a second validator that could drift.
 pub(crate) fn validate_slug(slug: &str) -> Result<()> {
     if slug_regex().is_match(slug) {
         return Ok(());
@@ -80,9 +75,8 @@ fn context_path_for(slug: &str) -> Result<PathBuf> {
 
 /// Resolve `<root>/.claude/flows/<slug>/execution-record.toml`.
 ///
-/// T1: promoted to `pub(crate)` so the upcoming render command (T3) can
-/// resolve the same path this module bootstraps, keeping the path-derivation
-/// single-source.
+/// `pub(crate)` so the render command resolves the same path this module
+/// bootstraps, keeping the path derivation single-source.
 pub(crate) fn execution_record_path_for(slug: &str) -> Result<PathBuf> {
     let root = repo_or_cwd_root()?;
     Ok(root
@@ -97,8 +91,6 @@ fn active_flow_path() -> Result<PathBuf> {
     let root = repo_or_cwd_root()?;
     Ok(root.join(".claude").join("active-flow.toml"))
 }
-
-// R9: artifact JSON shape is now built by `CanonicalArtifacts::to_json`.
 
 /// Build the seed `context.toml` document for a fresh init. Field order
 /// matches the schema documented in `claude/commands/implement.md` — the
@@ -183,10 +175,10 @@ fn try_load_existing_context(file: &Path) -> Result<Option<TomlValue>> {
     Ok(Some(doc))
 }
 
-/// R1 consolidation: render an active-flow entry as JSON. Defensive
-/// `null` fallback on non-table input mirrors the source. We project
-/// through the typed schema (`flow::schema`) for byte-identical shape
-/// with `flow::active::list`'s envelope.
+/// Render an active-flow entry as JSON. Defensive `null` fallback on
+/// non-table input mirrors the source. Projects through the typed schema
+/// (`flow::schema`) for byte-identical shape with `flow::active::list`'s
+/// envelope.
 fn active_entry_to_json(entry: &TomlValue) -> JsonValue {
     let Some(parsed) = SchemaEntry::from_toml_value(entry) else {
         return JsonValue::Null;
@@ -221,11 +213,9 @@ fn active_entry_to_json(entry: &TomlValue) -> JsonValue {
     JsonValue::Object(out)
 }
 
-/// R1 consolidation: upsert the active-flow registry entry for `slug`
-/// via the shared `flow::active::mutate_active` pipeline. Pre-R1 this
-/// reimplemented the lock + bootstrap + write sequence inline; the
-/// promoted `mutate_active` now owns that pipeline and this helper is a
-/// thin wrapper that builds the entry and forwards.
+/// Upsert the active-flow registry entry for `slug` via the shared
+/// `flow::active::mutate_active` pipeline, which owns the lock + bootstrap +
+/// write sequence. This helper only builds the entry and forwards.
 fn upsert_active_entry(
     slug: &str,
     branch: Option<&str>,
@@ -258,7 +248,7 @@ fn upsert_active_entry(
     Ok((entry_for_return, last_used))
 }
 
-/// T1 / R5: the PURE skeleton-building step shared by every execution-record
+/// The PURE skeleton-building step shared by every execution-record
 /// bootstrap path. Delegates straight to the single-source
 /// `io::seed_doc_for` helper (keyed on the basename) so the skeleton has
 /// exactly one definition crate-wide. No FS I/O — pure data — so the
@@ -271,12 +261,11 @@ pub(crate) fn execution_record_skeleton(file: &Path) -> Result<TomlValue> {
 /// Bootstrap `execution-record.toml` if missing — materialise the 2-line
 /// `schema_version = 1 / last_updated = <today>` skeleton plus its sidecar.
 ///
-/// T1: the skeleton is no longer a hand-rolled literal string. It is built by
-/// the single-source `io::seed_doc_for` helper (via `execution_record_skeleton`,
-/// the SAME helper the auto-create write path uses) and persisted through
-/// `write_toml_with_sidecar` — the same writer the rest of the pipeline uses.
-/// The on-disk bytes are byte-identical to the former literal
-/// `schema_version = 1\nlast_updated = <date>\n` (verified by
+/// The skeleton is built by the single-source `io::seed_doc_for` helper (via
+/// `execution_record_skeleton`, the SAME helper the auto-create write path
+/// uses) and persisted through `write_toml_with_sidecar` — the same writer the
+/// rest of the pipeline uses. The on-disk bytes are exactly
+/// `schema_version = 1\nlast_updated = <date>\n` (asserted by
 /// `seed_doc_for_matches_bootstrap_bytes` in the io tests): `toml`'s
 /// `preserve_order` serialiser emits the inserted `schema_version`→`last_updated`
 /// order, an integer `1`, and a bare date.
@@ -285,9 +274,9 @@ pub(crate) fn execution_record_skeleton(file: &Path) -> Result<TomlValue> {
 /// ensures the sidecar is present (re-deriving it from the on-disk bytes via
 /// `refresh_sidecar` is cheap and self-healing).
 ///
-/// R5: promoted to `pub(crate)` so the byte-identity test can name this real
-/// bootstrap entry point (it asserts on the extracted `execution_record_skeleton`
-/// to stay FS-free, but the path is now nameable from outside the module).
+/// `pub(crate)` so the byte-identity test can name this bootstrap entry point
+/// (the assertion itself runs against `execution_record_skeleton` to stay
+/// FS-free).
 pub(crate) fn bootstrap_execution_record(
     file: &Path,
     integrity_args: &WriteIntegrityArgs,
@@ -295,7 +284,7 @@ pub(crate) fn bootstrap_execution_record(
     let allow_outside = integrity_args.allow_outside;
     let write_sidecar = !integrity_args.no_write_integrity;
     let already_exists = file.exists();
-    // T1 / R5: single skeleton source via `execution_record_skeleton` →
+    // Single skeleton source via `execution_record_skeleton` →
     // `seed_doc_for` keyed on the basename (`execution-record.toml`) yields
     // `{schema_version = 1, last_updated = <today>}`. Built once outside the
     // lock; it's pure data.
@@ -316,8 +305,7 @@ pub(crate) fn bootstrap_execution_record(
                     recheck_claude_containment(file)?;
                 }
                 // `opts.write_sidecar` already honours `--no-write-integrity`,
-                // so the sidecar is suppressed there exactly as the pre-T1
-                // `if write_sidecar` gate did.
+                // so the sidecar is suppressed there without a second gate.
                 write_toml_with_sidecar(file, &seed, opts)?;
                 return Ok(());
             }
@@ -432,9 +420,8 @@ pub(crate) fn dispatch(
 
     // Bootstrap execution-record.toml (idempotent — the helper checks
     // existence and skips the write when present, but still ensures the
-    // sidecar is materialised). T1: the skeleton now comes from
-    // `io::seed_doc_for` (single source), so the helper computes its own
-    // date and no longer takes a `today_iso` argument.
+    // sidecar is materialised). The skeleton comes from `io::seed_doc_for`
+    // (single source), so the helper computes its own date.
     bootstrap_execution_record(&execution_record_path, &integrity)?;
 
     // Always upsert the active-flow registry entry. A re-init covers the

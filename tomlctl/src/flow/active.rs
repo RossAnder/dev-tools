@@ -1,4 +1,4 @@
-//! T3: `flow active {list,add,remove,touch}` — manage the
+//! `flow active {list,add,remove,touch}` — manage the
 //! `.claude/active-flow.toml` registry that supersedes the legacy
 //! single-line `.claude/active-flow` pointer. Schema:
 //!
@@ -67,11 +67,6 @@ fn legacy_pointer_path() -> Result<PathBuf> {
     Ok(root.join(".claude").join("active-flow"))
 }
 
-// R3: integrity-args translation is now sourced from `crate::cli`
-// (`read_integrity_opts` / `write_integrity_opts`) — the previously
-// duplicated leaf-local helpers were collapsed because the cli helpers
-// were promoted to `pub(crate)`.
-
 /// Read the on-disk active-flow doc, returning an empty default
 /// (`schema_version = 1`, no `[[active]]`) when the file does not exist.
 /// Honours `--verify-integrity` only if the file IS present — verification
@@ -91,9 +86,9 @@ fn read_doc_or_default(file: &Path, integrity: IntegrityOpts) -> Result<TomlValu
 }
 
 /// Build the empty default registry doc — used as the in-memory bootstrap
-/// when the registry file doesn't exist yet on disk. R1 promoted to
-/// `pub(crate)` so `flow::init`'s active-flow-registration path shares
-/// the same default rather than carrying a byte-equivalent copy.
+/// when the registry file doesn't exist yet on disk. `pub(crate)` so
+/// `flow::init`'s active-flow-registration path shares the same default
+/// rather than carrying a byte-equivalent copy.
 pub(crate) fn empty_doc() -> TomlValue {
     let mut tbl = toml::map::Map::new();
     tbl.insert("schema_version".to_string(), TomlValue::Integer(1));
@@ -126,11 +121,10 @@ fn active_array_mut(doc: &mut TomlValue) -> Result<&mut Vec<TomlValue>> {
 /// `slug` field (defensive — ill-formed input surfaces as `null` rather
 /// than panicking the dispatch).
 ///
-/// R17: routes through the canonical `flow::schema` projection so the
-/// JSON shape is built from the same typed view that `flow::resolve` and
-/// `flow::list` consume. Pre-consolidation, three sites independently
-/// walked the `TomlValue` tree; future schema additions now require a
-/// single edit in `schema.rs` plus opt-in JSON-shape extension here.
+/// Routes through the canonical `flow::schema` projection so the JSON shape
+/// is built from the same typed view that `flow::resolve` and `flow::list`
+/// consume: a schema addition is one edit in `schema.rs` plus an opt-in
+/// JSON-shape extension here, rather than three independent `TomlValue` walks.
 fn entry_to_json(entry: &TomlValue) -> JsonValue {
     let Some(parsed) = SchemaEntry::from_toml_value(entry) else {
         return JsonValue::Null;
@@ -208,8 +202,8 @@ fn validate_slug(slug: &str) -> Result<()> {
 }
 
 /// Find the index of an entry whose `slug` field equals `slug`. Returns
-/// `None` if no entry matches or the entries are not tables. R1: promoted
-/// to `pub(crate)` so `flow::init` shares the same lookup helper.
+/// `None` if no entry matches or the entries are not tables. `pub(crate)`
+/// so `flow::init` shares the same lookup helper.
 pub(crate) fn find_slug_index(arr: &[TomlValue], slug: &str) -> Option<usize> {
     arr.iter().position(|entry| {
         entry
@@ -225,9 +219,9 @@ pub(crate) fn find_slug_index(arr: &[TomlValue], slug: &str) -> Option<usize> {
 /// paths agree on the same value). Empty-string optionals are omitted; an
 /// absent binding (no branch / no worktree / no scope) yields a row with
 /// no `[active.binding]` table, matching the schema's "binding fields are
-/// all optional" contract. R1: promoted to `pub(crate)` so
-/// `flow::init`'s active-flow-registration path uses the same builder
-/// rather than a duplicate.
+/// all optional" contract. `pub(crate)` so `flow::init`'s
+/// active-flow-registration path uses the same builder rather than a
+/// duplicate.
 pub(crate) fn build_entry(
     slug: &str,
     last_used: &str,
@@ -282,8 +276,8 @@ where
     let opts = write_integrity_opts(integrity_args);
     let allow_outside = integrity_args.allow_outside;
     with_exclusive_lock(file, || {
-        // O17 parity: in-lock containment guard so a leaf-symlink swap
-        // between path-resolution and persist is still caught.
+        // In-lock containment guard so a leaf-symlink swap between
+        // path-resolution and persist is still caught.
         guard_write_path(file, allow_outside)?;
         let mut doc = if file.exists() {
             maybe_verify_integrity(file, opts)?;
@@ -304,12 +298,9 @@ where
 /// old single-line file is present. The warning goes to stderr (one line,
 /// plain prose) so structured stdout JSON stays machine-readable.
 ///
-/// R14: gated on a process-wide `OnceLock` flag so multiple
-/// `flow active list` calls in the same process emit the warning at
-/// most once — matching the docstring's "one-shot stderr warning"
-/// contract. Pre-R14 the body fired on every call; the new gate uses
-/// `OnceLock::set` so subsequent calls early-return without re-running
-/// the existence checks.
+/// Gated on a process-wide `OnceLock` flag so multiple `flow active list`
+/// calls in the same process emit the warning at most once; subsequent calls
+/// early-return without re-running the existence checks.
 fn maybe_warn_legacy(active_flow_toml: &Path) -> Result<()> {
     use std::sync::OnceLock;
     static WARNED: OnceLock<()> = OnceLock::new();
@@ -361,7 +352,7 @@ fn list(integrity: ReadIntegrityArgs) -> Result<()> {
     maybe_warn_legacy(&file)?;
     let opts = read_integrity_opts(&integrity);
     let doc = read_doc_or_default(&file, opts)?;
-    // R17: project through the canonical typed schema so the JSON
+    // Project through the canonical typed schema so the JSON
     // shape stays aligned with `flow::resolve`'s consumption path.
     let parsed = ActiveDoc::from_toml_value(&doc);
     let entries: Vec<JsonValue> = parsed.active.iter().map(schema_entry_to_json).collect();
@@ -431,7 +422,7 @@ fn remove(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<
             strict: false,
         };
         let doc = read_doc_or_default(&file, read_opts)?;
-        // R12: route the dry-run lookup through the shared `find_slug_index`
+        // Route the dry-run lookup through the shared `find_slug_index`
         // helper so the live and dry-run paths consult the same slug-key code.
         let removed_entry = doc
             .get("active")
@@ -479,7 +470,7 @@ fn touch(slug: String, dry_run: bool, integrity: WriteIntegrityArgs) -> Result<(
             strict: false,
         };
         let doc = read_doc_or_default(&file, read_opts)?;
-        // R12: route through shared `find_slug_index` (live path uses the
+        // Route through the shared `find_slug_index` (live path uses the
         // same helper inside `mutate_active`).
         let would_update = doc
             .get("active")
