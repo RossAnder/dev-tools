@@ -23,7 +23,7 @@ disk or touches a sidecar; the mutating verbs live in [write.md](write.md).
 
 All read commands print JSON on stdout by default.
 
-> **There is no `--format` / `--output` flag.** JSON is the only structured output; use `--raw` / `--lines` for bare scalars (see [Output shapes](#output-shapes---raw----lines----ndjson)). To verify a write — e.g. read back a ledger after `items add-many` — use `tomlctl items list <file>` (or `tomlctl items list <file> --count` for a tally). Do **not** invent `--format json`; it errors with `unexpected argument found`, and if the error is swallowed (`2>/dev/null`) the verification silently produces nothing.
+> **There is no `--format` / `--output` flag.** JSON is the only structured output; use `--raw` / `--lines` for bare scalars (see [Output shapes](#output-shapes---raw----lines----ndjson)). To verify a write — e.g. read back a ledger after `items add-many` — use `tomlctl items list <file>` (or `tomlctl items list <file> --count` for a tally). Do **not** invent `--format json`; it errors with `error: unexpected argument '--format' found` and a `Usage:` line for the subcommand, which names the flag to drop. Swallowing that (`2>/dev/null`) throws the diagnosis away and leaves the verification silently producing nothing.
 
 ```bash
 # Whole document (omit path to read the entire file) or a single value

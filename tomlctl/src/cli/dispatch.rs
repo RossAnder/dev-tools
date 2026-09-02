@@ -770,10 +770,10 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             integrity,
         } => {
             // Enforce "at least one of --json / --unset" here rather than as a
-            // required ArgGroup: clap is built without `error-context`, so a
-            // group refusal names neither flag. Same shape as `array-append`'s
-            // --json / --ndjson pair. An update naming neither would rewrite
-            // the ledger and its sidecar for no field change.
+            // required ArgGroup, matching `array-append`'s --json / --ndjson
+            // pair: this `bail!` surfaces as an `--error-format json` envelope,
+            // a clap refusal as exit-2 usage prose. An update naming neither
+            // would rewrite the ledger and its sidecar for no field change.
             if json.is_none() && unset.is_empty() {
                 bail!(
                     "items update requires one of --json or --unset (e.g. `--json '{{\"status\":\"fixed\"}}'` to merge fields, `--unset notes` to remove one)"
@@ -785,11 +785,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // internally (same surface as `items_update_to`), so both
             // branches share the resolved string.
             //
-            // An absent `--json` defaults to an empty patch, which merges
-            // nothing (the merge loop has no keys, and the dedup_id recompute
-            // classifies it as "touches no fingerprinted field"), so the
-            // `--unset` removals are the whole mutation. The guard above is
-            // what keeps that default from degenerating into a no-op write.
+            // An absent `--json` defaults to an empty patch, so the merge loop
+            // has no keys and the `--unset` removals are the whole field
+            // mutation — but not the whole write: an `--unset` naming a
+            // fingerprinted field the row carries still drives
+            // `apply_dedup_id_on_update`'s recompute over the post-unset row.
+            // The guard above is what keeps that default from degenerating
+            // into a no-op write.
             let json = match json {
                 Some(arg) => read_json_arg(&arg)?,
                 None => "{}".to_string(),

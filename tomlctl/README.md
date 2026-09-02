@@ -101,8 +101,9 @@ Every `items add`, `items update`, `items apply`, and `items add-many` auto-popu
 a `dedup_id` field when:
 
 - (add / add-many) the payload lacks `dedup_id`.
-- (update / apply) the patch touches any fingerprinted field (`file`, `summary`,
-  `severity`, `category`, `symbol`) AND does not set `dedup_id` explicitly.
+- (update / apply) the update touches any fingerprinted field (`file`, `summary`,
+  `severity`, `category`, `symbol`) AND does not set `dedup_id` explicitly — where
+  an `--unset` of such a field counts as a touch alongside a patch value for it.
 
 The fingerprint is sha256 of `file|summary|severity|category|symbol` (each field
 read as a string, empty-string for missing / non-string values; no additional
@@ -111,7 +112,7 @@ trimming or normalisation — field order is load-bearing and matches the tier-B
 Birthday-bound at ~4B items per scope; for adversarial inputs, set `dedup_id`
 explicitly on the payload.
 
-**Fingerprint diffs.** Two worked examples make the recompute vs preserve
+**Fingerprint diffs.** Three worked examples make the recompute vs preserve
 contract concrete:
 
 ```
@@ -130,30 +131,57 @@ contract concrete:
 # After:   {file:"a.rs", summary:"X", severity:"warning", category:"quality", symbol:"f",
 #           status:"fixed", rounds:2}
 #          dedup_id = "30f663027c03dbf3"   # preserved — patch touched no fingerprinted field
+
+# (c) Unset of a fingerprinted field the row carries → new digest.
+# Before:  {file:"a.rs", summary:"X", severity:"warning", category:"quality", symbol:"f"}
+#          dedup_id = "30f663027c03dbf3"
+# Patch:   items update <ledger> R1 --unset symbol
+# After:   {file:"a.rs", summary:"X", severity:"warning", category:"quality"}
+#          dedup_id = "7b21c0f4de9a5163"   # recomputed — symbol now hashes as empty
 ```
 
 (Digests above are illustrative shapes; the actual 16-hex value depends on the
 exact field bytes fed to SHA-256 — rerun `tomlctl items find-duplicates --tier B`
 against the payload to confirm.)
 
-On update, four branches run in order — the first to match wins:
+On update, four branches run in order — the first to match wins. Branches 2-4 turn
+on whether the update *touches* a fingerprinted field, which the patch and the
+`--unset` list decide jointly: a non-empty patch value for one counts, and so does
+an `--unset` naming one the row actually carries. An `--unset` of a field the row
+does not carry removes nothing and counts as no touch, as does an `--unset` of a
+non-fingerprinted field.
 
 1. **Patch explicitly sets `dedup_id` (non-empty string)**: preserve caller's value.
    Example: `items update <ledger> R1 --json '{"dedup_id":"explicit"}'` → the item
-   ends up with `dedup_id = "explicit"` regardless of other patch fields.
-2. **Patch touches a fingerprinted field AND does not set `dedup_id`**: recompute
-   from the merged (patch-over-existing) view of the five fingerprinted fields.
-3. **Patch does NOT touch any fingerprinted field AND the existing item lacks
+   ends up with `dedup_id = "explicit"` regardless of other patch fields or unsets.
+2. **The update touches a fingerprinted field AND does not set `dedup_id`**:
+   recompute from the post-merge, post-unset view of the five fingerprinted fields.
+   An `--unset` key beats a patch value for the same field — the removals run after
+   the merge, so the digest hashes the row that actually lands on disk.
+3. **The update touches no fingerprinted field AND the existing item lacks
    `dedup_id`**: leave absent. Unrelated updates on legacy ledgers do NOT silently
    populate; use `tomlctl items backfill-dedup-id <file>` for the explicit upgrade
    path (added in a later release).
-4. **Patch does NOT touch any fingerprinted field AND the existing item HAS
-   `dedup_id`**: preserve existing (the patch can't have changed any fingerprint
-   input, so the digest is still correct).
+4. **The update touches no fingerprinted field AND the existing item HAS
+   `dedup_id`**: preserve existing (nothing changed a fingerprint input, so the
+   digest is still correct).
 
 `items update --json '{"dedup_id":null}'` is treated as "patch didn't mention the
 field" (branch 3 or 4, depending on existing state) — the less-surprising
 semantics. Use an unset flag or an explicit non-empty value to force a change.
+
+**Stale digests.** A row whose `dedup_id` was written before this unset-aware
+recompute can carry a digest that hashes a field the row no longer has. `items backfill-dedup-id`
+does not repair it: backfill only fills in a *missing* `dedup_id` and preserves any
+value already present. Repair is two steps —
+
+```bash
+tomlctl items update <ledger> R1 --unset dedup_id
+tomlctl items backfill-dedup-id <ledger>
+```
+
+Re-deriving leaves a correct digest byte-identical, so no detection step is needed
+first; it does discard an explicitly-set `dedup_id`.
 
 PROGRESS-LOG rendering is safe: `plan-update.md` hard-codes which columns make
 it into rendered output, so `dedup_id` never leaks into user-facing progress

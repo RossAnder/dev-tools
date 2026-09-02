@@ -404,16 +404,18 @@ fn command_lint_checks_flags_written_after_a_placeholder() {
         "a bogus flag written after a placeholder must be reported: {:?}",
         report.failures
     );
-    // clap is built without `error-context`, so its rendering names the
-    // rejection but not the token — the reported line carries that.
+    // clap names the offending flag but not the invocation it came from, so
+    // the report carries the source line alongside the rejection.
     assert_eq!(
         report.failures[0].1, "tomlctl flow init --slug <slug> --bogus-flag",
         "the failure must quote the offending line: {:?}",
         report.failures[0]
     );
     assert!(
-        report.failures[0].2.contains("unexpected argument"),
-        "the failure must carry clap's rejection: {:?}",
+        report.failures[0]
+            .2
+            .contains("unexpected argument '--bogus-flag' found"),
+        "the failure must name the drifted flag, not just the rejection: {:?}",
         report.failures[0]
     );
 }

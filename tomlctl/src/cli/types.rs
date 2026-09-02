@@ -1484,10 +1484,8 @@ pub(crate) enum ItemsOp {
     ///
     /// The "at least one" check is hand-rolled at the dispatch site rather
     /// than declared as a `required` `ArgGroup`, matching `array-append`'s
-    /// `--json` / `--ndjson` pair. The crate builds clap without
-    /// `error-context`, so a group's refusal renders as "one or more required
-    /// arguments were not provided" and names neither flag; the dispatch
-    /// `bail!` names both and shows the unset-only form.
+    /// `--json` / `--ndjson` pair: the `bail!` surfaces as an
+    /// `--error-format json` envelope, a clap refusal as exit-2 usage prose.
     Update {
         file: PathBuf,
         id: String,
