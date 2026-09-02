@@ -1,15 +1,15 @@
-//! R62: filesystem-I/O plumbing split out of `main.rs`.
+//! Filesystem-I/O plumbing.
 //!
 //! Owns:
 //!   - `read_toml` — parse-only TOML reader
-//!   - `read_toml_str` / `read_doc_borrowed` — O10 borrowed-lifetime fast-path
+//!   - `read_toml_str` / `read_doc_borrowed` — borrowed-lifetime fast-path
 //!   - `read_json_arg` / `read_json_value_from_arg` — `-` stdin sentinel
 //!   - `write_toml_with_sidecar` — atomic write + SHA-256 sidecar refresh
 //!   - `atomic_write` — tempfile + fsync + rename
 //!   - `guard_write_path` / `canonicalize_for_write` — `.claude/` containment
-//!   - `recheck_claude_containment` — TOCTOU narrowing (R3)
-//!   - `with_exclusive_lock` — lock-file acquire/release (R25, O44)
-//!   - `repo_or_cwd_root` + `OnceLock` cache (R46)
+//!   - `recheck_claude_containment` — TOCTOU narrowing
+//!   - `with_exclusive_lock` — lock-file acquire/release
+//!   - `repo_or_cwd_root` + `OnceLock` cache
 //!   - `mutate_doc` — guard→lock→read→mutate→write pipeline
 //!   - `on_missing_for` / `seed_doc_for` / `warn_if_created` — auto-create policy
 //!   - `LOCK_RETRY` / `DEFAULT_LOCK_TIMEOUT` constants
@@ -28,31 +28,26 @@ use toml::Value as TomlValue;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::{IntegrityOpts, hex_lower, sidecar_path};
 
-/// R25 / O14: base retry delay between `try_lock_exclusive` attempts in
+/// Base retry delay between `try_lock_exclusive` attempts in
 /// `with_exclusive_lock`. Jittered ±20% at call time to avoid lockstep retries
-/// between competing writers. O14 reduced this from 500ms to 50ms so a writer
-/// queueing behind a fast competitor wakes up promptly instead of sitting
-/// idle for nearly half a second between checks. Going blocking-on-thread
-/// (the alternative recommendation) would require threading complexity for
-/// no measurable wall-clock benefit at this contention level — the simpler
-/// delay shrink suffices.
+/// between competing writers. Kept short so a writer queueing behind a fast
+/// competitor wakes up promptly instead of idling most of a second between
+/// checks.
 pub(crate) const LOCK_RETRY: std::time::Duration = std::time::Duration::from_millis(50);
 
-/// R25: default overall timeout for `with_exclusive_lock`. Overridable per
+/// Default overall timeout for `with_exclusive_lock`. Overridable per
 /// invocation via the `TOMLCTL_LOCK_TIMEOUT` env var (integer seconds).
 pub(crate) const DEFAULT_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// R85: hard upper bound on `TOMLCTL_LOCK_TIMEOUT` (in seconds). 24 hours.
+/// Hard upper bound on `TOMLCTL_LOCK_TIMEOUT` (in seconds). 24 hours.
 /// Any larger value the caller sets is clamped here, with a one-line stderr
 /// warning. Pathological env overrides can't wedge the process for longer
 /// than this.
 pub(crate) const MAX_LOCK_TIMEOUT_SECS: u64 = 24 * 60 * 60;
 
-/// R1: resolve the effective lock timeout from `TOMLCTL_LOCK_TIMEOUT` with
-/// R85's oversize clamp. Shared by `with_exclusive_lock` and `with_shared_lock`
-/// so a future tweak to the clamp policy lands in one place; prior to the
-/// extraction the two funnels carried byte-identical 16-line copies that had
-/// to be kept in sync by hand.
+/// Resolve the effective lock timeout from `TOMLCTL_LOCK_TIMEOUT`, clamped to
+/// `MAX_LOCK_TIMEOUT_SECS`. Shared by `with_exclusive_lock` and
+/// `with_shared_lock` so the clamp policy lives in exactly one place.
 fn resolve_lock_timeout() -> std::time::Duration {
     std::env::var("TOMLCTL_LOCK_TIMEOUT")
         .ok()
@@ -72,20 +67,18 @@ fn resolve_lock_timeout() -> std::time::Duration {
         .unwrap_or(DEFAULT_LOCK_TIMEOUT)
 }
 
-/// R1: compute the jittered retry delay for a given attempt counter.
+/// Compute the jittered retry delay for a given attempt counter.
 /// Deterministic counter-hash (no RNG) spread `±20%` around `base_ms`.
-/// Shared by the exclusive and shared lock retry loops; see `with_exclusive_lock`
-/// for the rationale.
+/// Shared by the exclusive and shared lock retry loops.
 ///
-/// O57: mix `std::process::id()` into the seed so concurrent tomlctl
+/// `std::process::id()` is mixed into the seed so concurrent tomlctl
 /// processes do not all compute the same delay sequence. Without the PID
-/// XOR, five contenders entering the loop simultaneously all produce
-/// identical `attempt=0` jitter, sleep ~50 ms, and wake in lockstep to
-/// collide on `try_lock` again — within a single 30 s timeout window
-/// four of five could hit the boundary within one `LOCK_RETRY` of each
-/// other. Folding the OS-supplied PID into the input decorrelates the
-/// retry schedules across processes while preserving the existing
-/// attempt-keyed variation within a single process.
+/// XOR, contenders entering the loop simultaneously all produce identical
+/// `attempt=0` jitter, sleep ~50 ms, and wake in lockstep to collide on
+/// `try_lock` again — several could then hit the timeout boundary within
+/// one `LOCK_RETRY` of each other. Folding the OS-supplied PID into the
+/// input decorrelates the retry schedules across processes while preserving
+/// the attempt-keyed variation within a single process.
 fn jittered_delay_ms(base_ms: u64, attempt: u64) -> u64 {
     let pid = std::process::id() as u64;
     let h = (attempt ^ pid)
@@ -98,14 +91,9 @@ fn jittered_delay_ms(base_ms: u64, attempt: u64) -> u64 {
 
 /// Read-side access to a named array-of-tables. Returns an empty slice when
 /// the array is missing or the value at that key isn't an array — symmetric
-/// with `items_array_mut`, which auto-creates on write. R44: the previous
-/// signature returned `Err(…)` on missing, which every caller had to
-/// immediately translate into an empty-list fallback; inlining that policy
-/// here removes five `match items_array { Err(_) => … }` tails.
-///
-/// R71: relocated from `main.rs` into `io.rs` so it sits next to the rest
-/// of the doc-shape plumbing (`read_toml` / `mutate_doc`). Dedup / orphans
-/// / query import it directly from here.
+/// with `items_array_mut`, which auto-creates on write. Folding the
+/// empty-list fallback in here keeps every caller from re-deriving it from
+/// an `Err(…)` on missing.
 pub(crate) fn items_array<'a>(doc: &'a TomlValue, name: &str) -> &'a [TomlValue] {
     static EMPTY: Vec<TomlValue> = Vec::new();
     doc.get(name)
@@ -115,8 +103,7 @@ pub(crate) fn items_array<'a>(doc: &'a TomlValue, name: &str) -> &'a [TomlValue]
 }
 
 /// Write-side sibling of `items_array`. Auto-creates the array when the
-/// key is missing, bails when the key exists but isn't an array. R71:
-/// relocated from `main.rs` (see that module's R71 note).
+/// key is missing, bails when the key exists but isn't an array.
 pub(crate) fn items_array_mut<'a>(
     doc: &'a mut TomlValue,
     name: &str,
@@ -139,13 +126,12 @@ pub(crate) fn items_array_mut<'a>(
 }
 
 /// Pull the `id` field of an item table as `&str`, returning `None` when
-/// the value isn't a table or lacks an `id` string. R71: relocated from
-/// `main.rs`.
+/// the value isn't a table or lacks an `id` string.
 pub(crate) fn item_id(item: &TomlValue) -> Option<&str> {
     item.as_table()?.get("id")?.as_str()
 }
 
-/// O64: JSON-side sibling of `items_array`. Used by the borrowed-DeTable
+/// JSON-side sibling of `items_array`. Used by the borrowed-DeTable
 /// fast-path in `ItemsOp::{Get, FindDuplicates}`: after `detable_to_json`
 /// converts the parsed doc to an owned `JsonValue` once at the read
 /// boundary, downstream item walks operate on `&[JsonValue]` without
@@ -165,7 +151,7 @@ pub(crate) fn items_array_json<'a>(
         .unwrap_or(EMPTY.as_slice())
 }
 
-/// O64: JSON-side sibling of `item_id`. Pull the `id` field of an item
+/// JSON-side sibling of `item_id`. Pull the `id` field of an item
 /// JSON object as `&str`, returning `None` when the value isn't an object
 /// or lacks an `id` string. Mirrors `item_id`'s semantics for the
 /// borrowed-fast-path consumers in `dedup.rs` and `items.rs`.
@@ -173,17 +159,14 @@ pub(crate) fn item_id_json(item: &serde_json::Value) -> Option<&str> {
     item.as_object()?.get("id")?.as_str()
 }
 
-/// R21: lossy String form of `item_id_json` for the `MutationPlan` id
+/// Lossy String form of `item_id_json` for the `MutationPlan` id
 /// capture path. Three sites in `items.rs` (`compute_add_mutation`,
 /// `compute_add_many_mutation` no-dedupe and dedupe row-id pre-capture)
 /// need an owned `String` per row — empty on missing/non-string id —
 /// matching `compute_apply_mutation`'s convention that an op without an
-/// id surfaces in the plan as `""`. Concentrating the `unwrap_or("").to_string()`
-/// chain here keeps the four call sites that all share this exact shape
-/// from drifting on edge-case handling. The fourth original duplication
-/// site (`apply_op_indexed` add capture) still uses `item_id_json`
-/// directly because it needs an `Option<String>` (the index insert is
-/// conditional on the id being present).
+/// id surfaces in the plan as `""`. `apply_op_indexed`'s add capture uses
+/// `item_id_json` directly instead, because it needs an `Option<String>`
+/// (the index insert is conditional on the id being present).
 pub(crate) fn capture_row_id(v: &serde_json::Value) -> String {
     item_id_json(v).unwrap_or("").to_string()
 }
@@ -194,12 +177,12 @@ pub(crate) fn capture_row_id(v: &serde_json::Value) -> String {
 /// accidentally pipes a log or a binary into `--json -`.
 const MAX_STDIN_BYTES: u64 = 32 * 1024 * 1024;
 
-/// R32: guard against multiple `-` sentinels consuming stdin in a single
+/// Guard against multiple `-` sentinels consuming stdin in a single
 /// invocation (e.g. `--json - --ops -`). The second `read_json_arg("-")` call
 /// errors out instead of silently returning an empty string (stdin already at
 /// EOF) and corrupting the apply.
 ///
-/// R38: the flag is deliberately a process-global `AtomicBool`:
+/// The flag is deliberately a process-global `AtomicBool`:
 ///
 /// - A CLI invocation is exactly one OS process with exactly one stdin
 ///   handle. "Multiple invocations" means multiple processes, each with
@@ -236,7 +219,7 @@ fn claim_stdin() -> Result<()> {
 /// Resolve a JSON argument: if it's literally "-", read stdin to a String.
 /// Otherwise return the argument as-is.
 ///
-/// Stdin handling (R7):
+/// Stdin handling:
 ///
 /// - Refuses to block on an interactive TTY — a user piping nothing into
 ///   `--json -` would otherwise hang forever with no prompt or feedback.
@@ -303,25 +286,24 @@ pub(crate) fn read_text_arg(arg: &str) -> Result<String> {
     Ok(buf)
 }
 
-/// O35: parse a JSON `--json`/`--ops`/`--defaults-json` argument directly
+/// Parse a JSON `--json`/`--ops`/`--defaults-json` argument directly
 /// into a `JsonValue`, skipping the intermediate `String` allocation that
 /// the `read_json_arg` + `serde_json::from_str(&s)` two-step would incur.
 ///
 /// Mirrors `read_json_arg`'s stdin discipline exactly:
 ///
-/// - Honours STDIN_CONSUMED (R32): a second `-` sentinel on the same
+/// - Honours STDIN_CONSUMED: a second `-` sentinel on the same
 ///   invocation bails with the identical "already consumed" message.
-/// - Refuses to block on a TTY (R7) with the identical guidance message.
+/// - Refuses to block on a TTY with the identical guidance message.
 /// - Caps the read at `MAX_STDIN_BYTES` via the same `take(...)` wrapper.
 /// - Reports the same "stdin was empty — expected JSON payload" error when
 ///   stdin closes immediately, rather than letting serde surface its own
 ///   EOF message (which would silently change the public-facing error
 ///   text).
 ///
-/// Callers add their own per-flag `.with_context("parsing --json"|"parsing
-/// --ops"|"parsing --defaults-json")` so the user-visible error chain stays
-/// byte-identical to the pre-O35 behaviour where each call site wrapped
-/// `serde_json::from_str(&text).context("parsing --<flag>")`.
+/// This helper adds no context of its own: callers attach their own
+/// per-flag `.with_context("parsing --json"|"parsing --ops"|"parsing
+/// --defaults-json")`, so the user-visible error chain is theirs to own.
 pub(crate) fn read_json_value_from_arg(arg: &str) -> Result<serde_json::Value> {
     if arg == "-" {
         claim_stdin()?;
@@ -352,15 +334,14 @@ pub(crate) fn read_json_value_from_arg(arg: &str) -> Result<serde_json::Value> {
 }
 
 pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
-    // T8: split the two failure modes so each gets the correct tag. A
+    // Split the two failure modes so each gets the correct tag. A
     // `fs::read_to_string` failure whose inner `io::Error` is `NotFound` is
     // tagged `NotFound`; any other I/O error is untagged and falls through
     // to `kind=other`. Once the bytes are in hand, a TOML syntax failure is
-    // tagged `Parse`. Text output is byte-identical to the pre-T8 chain —
-    // `tagged_err` builds an `anyhow::Error` whose inner `TaggedError`
-    // renders its message verbatim (no tag prefix), so `{:#}` sees exactly
-    // the same "reading <path>: <os error>" / "parsing <path>: <toml err>"
-    // as the pre-T8 `with_context(...)` path produced.
+    // tagged `Parse`. `tagged_err` builds an `anyhow::Error` whose inner
+    // `TaggedError` renders its message verbatim (no tag prefix), so `{:#}`
+    // must still read exactly "reading <path>: <os error>" / "parsing
+    // <path>: <toml err>" — the same text a `with_context(...)` chain gives.
     let s = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -385,12 +366,12 @@ pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
     }
 }
 
-/// O10: raw-bytes sibling of `read_toml`. Returns the on-disk TOML text as a
+/// Raw-bytes sibling of `read_toml`. Returns the on-disk TOML text as a
 /// `String` without parsing, so callers that want a borrowed-lifetime parse
 /// (`read_doc_borrowed`) can own the source buffer themselves — the borrowed
 /// `DeTable<'a>` must not outlive the string it references.
 pub(crate) fn read_toml_str(path: &Path) -> Result<String> {
-    // T8: mirror `read_toml`'s NotFound tagging so the borrowed path (used by
+    // Mirror `read_toml`'s NotFound tagging so the borrowed path (used by
     // `Cmd::Parse` when `--verify-integrity` is off) emits `kind=not_found`
     // rather than falling through to `other`. Any other read error stays
     // untagged.
@@ -405,7 +386,7 @@ pub(crate) fn read_toml_str(path: &Path) -> Result<String> {
     }
 }
 
-/// O10: borrowed-lifetime TOML read. Parses `source` via
+/// Borrowed-lifetime TOML read. Parses `source` via
 /// `toml::de::DeTable::parse` and hands the inner (unwrapped-from-`Spanned`)
 /// table to the closure. The `DeTable` ties its lifetime to the source buffer
 /// — strings, floats, and integers remain `Cow::Borrowed` into `source`
@@ -420,11 +401,9 @@ pub(crate) fn read_doc_borrowed<'a, R>(
     source: &'a str,
     f: impl FnOnce(&toml::de::DeTable<'a>) -> Result<R>,
 ) -> Result<R> {
-    // T8: tag the borrowed-parse error with `kind=parse` so the JSON envelope
+    // Tag the borrowed-parse error with `kind=parse` so the JSON envelope
     // matches the owned-parse tag from `read_toml`. No `file` hint — this helper
-    // receives a `&str`, so we don't know the source path at this layer. The
-    // message prose ("parsing borrowed TOML: <err>") is byte-identical to the
-    // pre-T8 `anyhow!(...)` form.
+    // receives a `&str`, so we don't know the source path at this layer.
     let spanned = toml::de::DeTable::parse(source).map_err(|e| {
         tagged_err(
             ErrorKind::Parse,
@@ -435,19 +414,19 @@ pub(crate) fn read_doc_borrowed<'a, R>(
     f(spanned.get_ref())
 }
 
-/// Read-side sibling of `mutate_doc` (R93): runs the standard pre-read
+/// Read-side sibling of `mutate_doc`: runs the standard pre-read
 /// ritual — `maybe_verify_integrity` first (so a stale / tampered sidecar
 /// fails fast before the caller works on bad bytes), then `read_toml` —
-/// and hands the parsed doc to the closure. Centralises what was previously
-/// open-coded at every `Cmd::{Parse,Get,Validate}` and `ItemsOp::{List,Get,
-/// FindDuplicates,Orphans}` dispatch arm. Writers still go through
-/// `mutate_doc`; this is strictly for read-only operations.
+/// and hands the parsed doc to the closure. Every `Cmd::{Parse,Get,Validate}`
+/// and `ItemsOp::{List,Get,FindDuplicates,Orphans}` dispatch arm routes
+/// through it. Writers go through `mutate_doc`; this is strictly for
+/// read-only operations.
 pub(crate) fn read_doc<R>(
     file: &Path,
     integrity: IntegrityOpts,
     f: impl FnOnce(&TomlValue) -> Result<R>,
 ) -> Result<R> {
-    // O13: when `verify_on_read` is set the reader is sensitive to the
+    // When `verify_on_read` is set the reader is sensitive to the
     // two-persist (sidecar + TOML) interleave window in `write_toml_with_sidecar`
     // — without a shared lock the reader can observe an inconsistent
     // (NEW sidecar / OLD TOML) pair while a writer is mid-swap, even though
@@ -468,7 +447,7 @@ pub(crate) fn read_doc<R>(
     }
 }
 
-/// O64: dual-closure read dispatcher that picks between the owned
+/// Dual-closure read dispatcher that picks between the owned
 /// `TomlValue` path and the borrowed-DeTable fast path based on
 /// `integrity.verify_on_read`.
 ///
@@ -510,9 +489,9 @@ where
     }
 }
 
-/// T1: decision the `mutate_doc*` family takes when `read_toml` reports the
+/// Decision the `mutate_doc*` family takes when `read_toml` reports the
 /// target file does not exist (a `NotFound`-tagged error). `Error` propagates
-/// that error unchanged — the strict, pre-T1 behaviour. `Create(seed)` seeds
+/// that error unchanged (strict mode). `Create(seed)` seeds
 /// the in-memory doc from `seed` (a schema-conformant skeleton, normally built
 /// by `seed_doc_for`) and lets the closure run against it, persisting only if
 /// the closure asks to (so a no-match `update`/`remove` against a freshly-seeded
@@ -528,14 +507,13 @@ pub(crate) enum OnMissing {
     Create(TomlValue),
 }
 
-/// T1: single source of truth for the schema-aware seed skeleton. The
-/// recognised flow-file basenames (the four ledgers) all share the
+/// Single source of truth for the schema-aware seed skeleton. The
+/// recognised flow-file basenames listed below all share the
 /// `schema_version = 1 / last_updated = <today>` 2-line skeleton; any other
 /// basename seeds an empty table. Defined once here so a future flow file
 /// joining the recognised set is a one-line edit. `flow::init`'s
 /// `bootstrap_execution_record` routes through the SAME helper so the
-/// execution-record skeleton has exactly one definition (byte-identical
-/// output to the former literal `schema_version = 1\nlast_updated = <date>\n`).
+/// execution-record skeleton has exactly one definition.
 const SCHEMA_SEEDED_FLOW_FILES: &[&str] = &[
     "execution-record.toml",
     "review-ledger.toml",
@@ -544,7 +522,7 @@ const SCHEMA_SEEDED_FLOW_FILES: &[&str] = &[
     "backlog.toml",
 ];
 
-/// T1: compute the schema-conformant seed doc to use when a write target does
+/// Compute the schema-conformant seed doc to use when a write target does
 /// not exist yet (the `OnMissing::Create` payload). Matches the file's
 /// BASENAME against the recognised flow files (`SCHEMA_SEEDED_FLOW_FILES`):
 /// each gets a `{schema_version = 1, last_updated = <today>}` table (that key
@@ -568,7 +546,7 @@ pub(crate) fn seed_doc_for(path: &Path) -> Result<TomlValue> {
     Ok(TomlValue::Table(table))
 }
 
-/// T1: resolve the `OnMissing` policy for a write at `file` from the caller's
+/// Resolve the `OnMissing` policy for a write at `file` from the caller's
 /// `--no-create` flag. `no_create` restores the strict `kind=not_found` error;
 /// the default seeds a schema-aware skeleton via `seed_doc_for`. Fallible
 /// because the seed embeds today's date. Threaded into every `mutate_doc*`
@@ -591,20 +569,16 @@ pub(crate) fn dry_run_read_opts(verify_on_read: bool) -> IntegrityOpts {
     }
 }
 
-/// T2: one-line stderr guidance emitted when a write newly created its target
-/// file. A no-op when `created == false`, so the 11 write sites can call it
-/// unconditionally with the `created` bool their `mutate_doc*` wrapper
-/// returned. Reuses the existing advisory-warn channel — a plain `eprintln!`
-/// on the writer's stderr, exactly as `guard_write_path`'s `--allow-outside`
-/// note and `warn_if_read_outside_claude` do — rather than inventing a new
-/// mechanism. The recognised-flow-file distinction
-/// (`SCHEMA_SEEDED_FLOW_FILES`, the four ledgers seeded with
-/// `schema_version = 1`) appends a `(schema_version=1)` suffix so a human
-/// watching the terminal can tell a schema-seeded ledger from an arbitrary
-/// `.toml` (seeded as an empty table, which gets the bare message). The path
-/// is rendered via `Path::display()` — the same convention every other stderr
-/// note in this layer (`guard_write_path`, `warn_if_read_outside_claude`,
-/// the lock-wait notes) uses for filesystem paths.
+/// One-line stderr guidance emitted when a write newly created its target
+/// file. A no-op when `created == false`, so every write site can call it
+/// unconditionally with the `created` bool its `mutate_doc*` wrapper
+/// returned. Uses the advisory-warn channel — a plain `eprintln!` on the
+/// writer's stderr, exactly as `guard_write_path`'s `--allow-outside` note
+/// and `warn_if_read_outside_claude` do. A recognised flow file
+/// (`SCHEMA_SEEDED_FLOW_FILES`, seeded with `schema_version = 1`) appends a
+/// `(schema_version=1)` suffix so a human watching the terminal can tell a
+/// schema-seeded ledger from an arbitrary `.toml` (seeded as an empty table,
+/// which gets the bare message).
 pub(crate) fn warn_if_created(file: &Path, created: bool) {
     if !created {
         return;
@@ -623,7 +597,7 @@ pub(crate) fn warn_if_created(file: &Path, created: bool) {
     }
 }
 
-/// T1: classify a `read_toml` failure as "the file is missing" (the
+/// Classify a `read_toml` failure as "the file is missing" (the
 /// `NotFound`-tagged error `read_toml` raises) vs anything else. Inspects the
 /// attached `TaggedError` via anyhow's inherent `downcast_ref` (the same
 /// taxonomy `main.rs` reads for `--error-format json`), NOT the message text —
@@ -636,11 +610,10 @@ fn is_not_found(err: &anyhow::Error) -> bool {
 
 /// Run a closure that mutates a TOML document at `file` under the standard
 /// write pipeline: `guard_write_path` → `with_exclusive_lock` → `read_toml` →
-/// `f(&mut doc)` → `write_toml_with_sidecar`. Centralises what was previously
-/// open-coded at each `Cmd::{Set,SetJson}` / `ItemsOp::{Add,Update,Remove,Apply}`
-/// dispatch site.
+/// `f(&mut doc)` → `write_toml_with_sidecar`. Every `Cmd::{Set,SetJson}` /
+/// `ItemsOp::{Add,Update,Remove,Apply}` dispatch site routes through it.
 ///
-/// T1: returns `created` (true ⟺ the target did not exist and was seeded from
+/// Returns `created` (true ⟺ the target did not exist and was seeded from
 /// `on_missing`). On a `NotFound`-tagged read failure with `OnMissing::Create`
 /// the mutation starts from the seed; with `OnMissing::Error` the original
 /// error propagates unchanged. Any non-`NotFound` read failure propagates
@@ -656,23 +629,24 @@ where
     F: FnOnce(&mut TomlValue) -> Result<()>,
 {
     with_exclusive_lock(file, || {
-        // O17: re-run `guard_write_path` AFTER acquiring the exclusive lock so
+        // Re-run `guard_write_path` AFTER acquiring the exclusive lock so
         // the canonical leaf-symlink and parent-containment checks observe the
-        // post-wait filesystem state. A pre-lock guard left a window where a
-        // process competing for the lock could swap a leaf symlink between the
-        // guard and `persist()`; running the guard inside the critical section
-        // closes that window for any actor that respects our lock.
+        // post-wait filesystem state. Guarding only before the lock leaves a
+        // window where a process competing for the lock could swap a leaf
+        // symlink between the guard and `persist()`; running the guard inside
+        // the critical section closes that window for any actor that respects
+        // our lock.
         guard_write_path(file, allow_outside)?;
-        // T1: read, or seed on a NotFound miss. `read_or_seed` resolves the
+        // Read, or seed on a NotFound miss. `read_or_seed` resolves the
         // `on_missing` policy and reports whether the doc was seeded.
         let (mut doc, created) = read_or_seed(file, on_missing)?;
         f(&mut doc)?;
-        // R3 TOCTOU narrowing: re-canonicalise target parent immediately before
+        // TOCTOU narrowing: re-canonicalise target parent immediately before
         // the atomic persist and re-check that it still lies under `.claude/`.
         // Only enforced when `--allow-outside` was NOT set, since an explicit
-        // opt-out was granted by the user in that case. With O17 the inside-lock
-        // `guard_write_path` already covers this case; this call is now a cheap
-        // belt-and-braces and stays to keep the diff narrow.
+        // opt-out was granted by the user in that case. The inside-lock
+        // `guard_write_path` above already covers this case; this call is cheap
+        // belt-and-braces.
         if !allow_outside {
             recheck_claude_containment(file)?;
         }
@@ -681,7 +655,7 @@ where
     })
 }
 
-/// T1: shared read-or-seed step for the `mutate_doc*` family. Attempts
+/// Shared read-or-seed step for the `mutate_doc*` family. Attempts
 /// `read_toml(file)`; on a `NotFound`-tagged miss it consults `on_missing`:
 /// `Create(seed)` returns `(seed, created=true)`, `Error` re-propagates the
 /// original error. A non-`NotFound` read error (e.g. a `Parse` failure on an
@@ -699,7 +673,7 @@ fn read_or_seed(file: &Path, on_missing: OnMissing) -> Result<(TomlValue, bool)>
     }
 }
 
-/// T5: sibling of `mutate_doc` whose closure returns `Result<bool>`. When
+/// Sibling of `mutate_doc` whose closure returns `Result<bool>`. When
 /// the closure returns `Ok(true)` the doc is persisted (sidecar + atomic
 /// rename) exactly as `mutate_doc` does. When it returns `Ok(false)` the
 /// write is skipped — no rewrite, no sidecar bump — because the closure
@@ -713,13 +687,13 @@ fn read_or_seed(file: &Path, on_missing: OnMissing) -> Result<(TomlValue, bool)>
 /// failing the guard up-front keeps the error surface identical to
 /// `mutate_doc`.
 ///
-/// T1: returns `created` (true ⟺ the target did not exist, was seeded from
+/// Returns `created` (true ⟺ the target did not exist, was seeded from
 /// `on_missing`, AND the closure asked to persist). Seed semantics for the
 /// no-op case: if the file was seeded (`created` from `read_or_seed` is true)
 /// but the closure returns `Ok(false)` (e.g. a dedupe hit found nothing to
 /// add), we skip the write entirely — a pure no-op against a freshly-seeded
-/// doc leaves NO stray file on disk, honouring the plan's "no stray file"
-/// invariant. We therefore report `created=false` on that path: nothing was
+/// doc must leave NO stray file on disk. We therefore report
+/// `created=false` on that path: nothing was
 /// persisted, so from the caller's perspective no file was created. `created`
 /// is only ever `true` when both the seed fired AND a write actually landed.
 pub(crate) fn mutate_doc_conditional<F>(
@@ -734,7 +708,7 @@ where
 {
     with_exclusive_lock(file, || {
         guard_write_path(file, allow_outside)?;
-        // T1: read, or seed on a NotFound miss. `seeded` tracks whether the
+        // Read, or seed on a NotFound miss. `seeded` tracks whether the
         // doc started from the seed; it only graduates to a reported
         // `created=true` if the closure also asks to persist (below).
         let (mut doc, seeded) = read_or_seed(file, on_missing)?;
@@ -742,8 +716,8 @@ where
         if !mutated {
             // Skip the write — the caller signalled no-op (e.g. dedupe hit).
             // Leaving the file + sidecar untouched is the whole point: a
-            // double-`add` with `--dedupe-by` must not bump the mtime. T1:
-            // this also covers the seeded-but-no-op case — a freshly-seeded
+            // double-`add` with `--dedupe-by` must not bump the mtime. This
+            // also covers the seeded-but-no-op case — a freshly-seeded
             // doc whose closure adds nothing must NOT materialise a stray
             // file, so we return `created=false` (nothing persisted).
             return Ok(false);
@@ -756,7 +730,7 @@ where
     })
 }
 
-/// T10: live-path wrapper over `compute_* + apply_mutation`. Runs the
+/// Live-path wrapper over `compute_* + apply_mutation`. Runs the
 /// standard exclusive-lock → read → compute-via-closure → in-lock
 /// `guard_write_path` / TOCTOU recheck → `write_toml_with_sidecar`
 /// pipeline. Shares the `--dry-run` compute path (`compute_apply_mutation`
@@ -766,10 +740,9 @@ where
 ///
 /// Equivalent structurally to `mutate_doc` with the closure returning a
 /// fresh `TomlValue` (inside a `MutationPlan`) instead of mutating in
-/// place — a mechanical change that keeps the rest of `mutate_doc`'s
-/// callers unaffected.
+/// place.
 ///
-/// T1: returns `created` (true ⟺ the target did not exist and was seeded from
+/// Returns `created` (true ⟺ the target did not exist and was seeded from
 /// `on_missing`). The closure receives the seeded doc on a miss; transactional
 /// safety is preserved because the closure failing (`Err`) short-circuits via
 /// `?` BEFORE `write_toml_with_sidecar` — so a compute step that finds no
@@ -787,16 +760,16 @@ where
     F: FnOnce(&TomlValue) -> Result<crate::items::MutationPlan>,
 {
     with_exclusive_lock(file, || {
-        // O17: in-lock guard, same as `mutate_doc`.
+        // In-lock guard, same as `mutate_doc`.
         guard_write_path(file, allow_outside)?;
-        // T1: read, or seed on a NotFound miss.
+        // Read, or seed on a NotFound miss.
         let (doc, created) = read_or_seed(file, on_missing)?;
         // The closure failing here short-circuits BEFORE the persist below
         // (`?`), so a no-match compute against a freshly-seeded doc writes
         // nothing — the transactional "write-only-on-closure-success" property
         // holds for the seeded path exactly as it does for the read path.
         let plan = f(&doc)?;
-        // R3 TOCTOU narrowing: re-check containment immediately before
+        // TOCTOU narrowing: re-check containment immediately before
         // the atomic persist. Mirrors `mutate_doc`'s post-mutation check.
         if !allow_outside {
             recheck_claude_containment(file)?;
@@ -804,8 +777,7 @@ where
         // Delegate the actual bytes-to-disk phase to `apply_mutation`'s
         // sibling implementation so the sidecar + tempfile semantics are
         // shared between the in-lock wrapper path and any future caller
-        // that holds the plan outside the lock (e.g. T11's explicit
-        // backfill might do compute + apply separately for reporting).
+        // that holds the plan outside the lock.
         write_toml_with_sidecar(file, &plan.new_doc, integrity)?;
         Ok(created)
     })
@@ -897,14 +869,12 @@ pub(crate) fn compute_set_json_mutation(
 }
 
 /// Re-canonicalise `file`'s parent and assert it still starts with the
-/// `.claude/` canonical root. Used by `mutate_doc` to narrow the TOCTOU window
-/// described in R3.
+/// `.claude/` canonical root. Narrows the TOCTOU window between the
+/// inside-lock `guard_write_path` and the subsequent `atomic_write`.
 ///
-/// R2: also invoked by `integrity_dispatch::IntegrityOp::Refresh` so the
-/// sidecar-write path gets the same belt-and-braces TOCTOU narrowing the
-/// mutate_doc family performs between the inside-lock `guard_write_path`
-/// and the subsequent `atomic_write` (inside `refresh_sidecar` →
-/// `write_sidecar_for`).
+/// Also invoked by `integrity_dispatch::IntegrityOp::Refresh` so the
+/// sidecar-write path (`refresh_sidecar` → `write_sidecar_for`) gets the
+/// same belt-and-braces check the `mutate_doc` family performs.
 pub(crate) fn recheck_claude_containment(file: &Path) -> Result<()> {
     let parent = file
         .parent()
@@ -929,7 +899,7 @@ pub(crate) fn recheck_claude_containment(file: &Path) -> Result<()> {
     )
 }
 
-/// O44: compute the lock-file path for `target` under
+/// Compute the lock-file path for `target` under
 /// `<repo-or-cwd-root>/.claude/.locks/<sha256-of-canonical-path>.lock`.
 ///
 /// Keying on the 64-char hex digest of the canonicalised target path
@@ -937,8 +907,7 @@ pub(crate) fn recheck_claude_containment(file: &Path) -> Result<()> {
 /// collision class where a user legitimately owns a file literally named
 /// `foo.toml.lock` — the sidecar scheme would then reuse a real file as
 /// the lock coordinate. Centralising the locks under one hidden directory
-/// also consolidates the stray-lockfile noise that previously scattered
-/// across every flow / ledger directory.
+/// also keeps stray lock files out of every flow / ledger directory.
 ///
 /// Canonicalisation strategy matches `canonicalize_for_write`: if the
 /// target exists we canonicalise directly; otherwise canonicalise the
@@ -983,7 +952,7 @@ fn lock_path_for(target: &Path) -> Result<PathBuf> {
 /// stranded lock (crashed tomlctl, OS-mandatory Windows lock, heavy
 /// contention) produces a clear error instead of hanging forever.
 ///
-/// O44: the lock file lives under `<root>/.claude/.locks/<sha>.lock`, keyed
+/// The lock file lives under `<root>/.claude/.locks/<sha>.lock`, keyed
 /// by the SHA-256 of the canonicalised target path. See `lock_path_for`.
 ///
 /// Timeout default is 30 seconds; override with the `TOMLCTL_LOCK_TIMEOUT`
@@ -996,7 +965,7 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
     use std::time::Instant;
 
     let lock_path = lock_path_for(path)?;
-    // R39: on unix, open the lock file with 0o600 so it's not world-readable.
+    // On unix, open the lock file with 0o600 so it's not world-readable.
     // The lock file is metadata about who holds the write mutex — no reason
     // for it to be group/other-readable. No-op on Windows (OpenOptionsExt is
     // unix-only).
@@ -1014,9 +983,8 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
         .open(&lock_path)
         .with_context(|| format!("opening lock file {}", lock_path.display()))?;
 
-    // R25 / R85: effective timeout (env override + 24h clamp) — see
-    // `resolve_lock_timeout`. R1 extracted this out of the previously
-    // duplicated 16-line inline block.
+    // Effective timeout (env override + 24h clamp) — see
+    // `resolve_lock_timeout`, shared with `with_shared_lock`.
     let timeout = resolve_lock_timeout();
     let base_delay_ms = LOCK_RETRY.as_millis() as u64;
     let start = Instant::now();
@@ -1052,7 +1020,7 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
                 attempt = attempt.wrapping_add(1);
             }
             Err(std::fs::TryLockError::Error(e)) => {
-                // O43: EINTR is a benign retry signal (the syscall was
+                // EINTR is a benign retry signal (the syscall was
                 // interrupted before it could decide; the lock state is
                 // unchanged). Loop back without sleeping and without spending
                 // a retry budget slot. WouldBlock is its own `TryLockError`
@@ -1071,12 +1039,12 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
         }
     }
 
-    // R23: the lock_file binding is alive through this point; drop releases
+    // The lock_file binding is alive through this point; drop releases
     // the lock after `f()` returns. No explicit `let _ = lock_file;` needed.
     f()
 }
 
-/// O13: shared sibling of `with_exclusive_lock`. Multiple readers can hold
+/// Shared sibling of `with_exclusive_lock`. Multiple readers can hold
 /// the shared lock concurrently; the shared lock conflicts only with the
 /// writer's exclusive lock, which is exactly the property `read_doc` needs
 /// to avoid observing the (NEW sidecar / OLD TOML) interleave window inside
@@ -1091,11 +1059,11 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
 pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) -> Result<R> {
     use std::time::Instant;
 
-    // O44: same lock-file path derivation as `with_exclusive_lock` so a
+    // Same lock-file path derivation as `with_exclusive_lock` so a
     // reader and writer on the same target rendezvous on the same
     // `<root>/.claude/.locks/<sha>.lock` file.
     let lock_path = lock_path_for(path)?;
-    // R39: same 0o600 open mode as the exclusive helper.
+    // Same 0o600 open mode as the exclusive helper.
     #[cfg(unix)]
     use std::os::unix::fs::OpenOptionsExt;
     let mut open_opts = std::fs::OpenOptions::new();
@@ -1110,7 +1078,7 @@ pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) ->
         .open(&lock_path)
         .with_context(|| format!("opening lock file {}", lock_path.display()))?;
 
-    // R1: shared with `with_exclusive_lock` — see `resolve_lock_timeout` /
+    // Shared with `with_exclusive_lock` — see `resolve_lock_timeout` /
     // `jittered_delay_ms`.
     let timeout = resolve_lock_timeout();
     let base_delay_ms = LOCK_RETRY.as_millis() as u64;
@@ -1147,7 +1115,7 @@ pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) ->
                 attempt = attempt.wrapping_add(1);
             }
             Err(std::fs::TryLockError::Error(e)) => {
-                // O43: EINTR is a benign retry signal (the syscall was
+                // EINTR is a benign retry signal (the syscall was
                 // interrupted before it could decide; the lock state is
                 // unchanged). Loop back without sleeping and without spending
                 // a retry budget slot. WouldBlock doesn't reach this arm in
@@ -1276,14 +1244,14 @@ fn ensure_parent_under_claude(file: &Path) -> Result<()> {
 /// parent directory and re-attach the final component. Bails if neither the
 /// file nor its parent directory exists.
 ///
-/// R4: additionally rejects any `..` (`Component::ParentDir`) component in the
+/// Additionally rejects any `..` (`Component::ParentDir`) component in the
 /// joined path. The parent canonicalises via `canonicalize()` which resolves
 /// any embedded `..`, so a `ParentDir` in the joined result can only come from
 /// the file-name component itself — a value like `../escape` is obviously
 /// malicious and gets refused here even though it didn't appear after the
 /// canonical parent prefix.
 ///
-/// R86: leaf-symlink follow-up — if the joined path exists and is itself a
+/// Leaf-symlink guard — if the joined path exists and is itself a
 /// symlink, resolve it once and assert the resolved target stays under the
 /// `.claude/` canonical root. Plain `file.canonicalize()` would follow the
 /// symlink transparently and succeed if the TARGET is reachable, regardless
@@ -1293,8 +1261,8 @@ fn ensure_parent_under_claude(file: &Path) -> Result<()> {
 /// a pre-existing leaf symlink.
 fn canonicalize_for_write(file: &Path) -> Result<PathBuf> {
     if let Ok(c) = file.canonicalize() {
-        // File exists and canonicalised. R86 check for leaf-symlink escape
-        // happens on the ORIGINAL path (before canonicalisation) so we can
+        // File exists and canonicalised. The leaf-symlink escape check runs
+        // on the ORIGINAL path (before canonicalisation) so we can
         // detect `.claude/escape -> /etc/passwd` even though `.canonicalize()`
         // follows through to `/etc/passwd`. Return `c` after the check below.
         refuse_outside_symlink_leaf(file)?;
@@ -1329,7 +1297,7 @@ fn canonicalize_for_write(file: &Path) -> Result<PathBuf> {
             _ => {}
         }
     }
-    // R86: the file-doesn't-exist branch still has to cope with the case where
+    // The file-doesn't-exist branch still has to cope with the case where
     // the leaf DOES exist (as a symlink pointing out of .claude/) — `canonicalize`
     // above failed because the symlink TARGET is missing, not because the
     // symlink itself is. Run the leaf-symlink check on the joined path.
@@ -1337,7 +1305,7 @@ fn canonicalize_for_write(file: &Path) -> Result<PathBuf> {
     Ok(joined)
 }
 
-/// R86: if `path` is itself a symlink, refuse the write whenever the symlink
+/// If `path` is itself a symlink, refuse the write whenever the symlink
 /// resolves outside `<repo-root>/.claude/`. Non-symlink (regular file,
 /// directory, missing) paths return `Ok(())` and let the existing containment
 /// logic handle the non-symlink cases. Windows: `symlink_metadata` works there
@@ -1391,7 +1359,7 @@ fn refuse_outside_symlink_leaf(path: &Path) -> Result<()> {
 ///      does not exist. Intended for tests, chroots, and unusual layouts where
 ///      neither the git top-level nor the CWD is the right anchor. Checked on
 ///      EVERY call so tests can swap it in/out under `env_lock()`.
-///   2. `git rev-parse --show-toplevel` output, canonicalised. R46: memoised
+///   2. `git rev-parse --show-toplevel` output, canonicalised. Memoised
 ///      in a process-lifetime `OnceLock` so repeated CLI dispatches don't fork
 ///      `git` more than once.
 ///   3. Current working directory, canonicalised. Also memoised (same cache
@@ -1407,7 +1375,7 @@ pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
             .canonicalize()
             .with_context(|| format!("canonicalising TOMLCTL_ROOT={}", env_root));
     }
-    // R46: cache git-or-cwd resolution per process. The first call resolves
+    // Cache git-or-cwd resolution per process. The first call resolves
     // it; every subsequent call hits the OnceLock fast path.
     static REPO_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     if let Some(cached) = REPO_ROOT.get() {
@@ -1434,13 +1402,11 @@ pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
     Ok(REPO_ROOT.get_or_init(|| resolved).clone())
 }
 
-/// R8: sorted directory listing — keeps test output deterministic across
+/// Sorted directory listing — keeps test output deterministic across
 /// platforms. `fs::read_dir` does not specify an order on POSIX or NTFS;
 /// sorting by `file_name` (OS-string-lexicographic) makes the listing
-/// stable. Pre-R8 this lived as a per-leaf private helper in
-/// `flow::list`, `flow::find_plans`, `flow::doctor`, and
-/// `flow::resolve::enumerate_flows`; consolidation lives next to the
-/// other filesystem primitives.
+/// stable. Shared by `flow::list`, `flow::find_plans`, `flow::doctor`, and
+/// `flow::resolve::enumerate_flows`.
 pub(crate) fn read_dir_sorted(dir: &Path) -> Result<Vec<fs::DirEntry>> {
     let mut entries: Vec<fs::DirEntry> = fs::read_dir(dir)
         .with_context(|| format!("reading directory {}", dir.display()))?
@@ -1450,18 +1416,16 @@ pub(crate) fn read_dir_sorted(dir: &Path) -> Result<Vec<fs::DirEntry>> {
     Ok(entries)
 }
 
-/// R2: render `path` relative to `root` using forward slashes. Falls
+/// Render `path` relative to `root` using forward slashes. Falls
 /// back to the path's lossy display form when it doesn't share `root`'s
-/// prefix. Pre-R2, `flow::find_plans` used a reversed `(path, root)`
-/// argument order; the canonical form here is `(root, path)` matching
-/// the majority of pre-existing leaf-local helpers
-/// (`flow::ensure_artifact`, `flow::doctor`, `flow::resolve`).
+/// prefix. Argument order is `(root, path)` — the reverse reads the same at
+/// a call site and silently returns the lossy fallback.
 pub(crate) fn relativise(root: &Path, path: &Path) -> String {
     let rel = path.strip_prefix(root).unwrap_or(path);
     rel.to_string_lossy().replace('\\', "/")
 }
 
-/// R38: stderr-warn when a read path resolves outside `<repo-or-cwd-root>/.claude/`.
+/// Stderr-warn when a read path resolves outside `<repo-or-cwd-root>/.claude/`.
 /// Used by `items find-duplicates --across` to flag the case where a caller
 /// points the secondary-ledger flag at an arbitrary filesystem path; a
 /// subsequent TOML parse error there would echo file contents through the
@@ -1488,25 +1452,22 @@ pub(crate) fn warn_if_read_outside_claude(file: &Path) {
     );
 }
 
-/// R6: shared sidecar-bytes helper. Computes the SHA-256 of `bytes`, derives
+/// Shared sidecar-bytes helper. Computes the SHA-256 of `bytes`, derives
 /// the basename of `file`, formats the standard `sha256sum`-style content
 /// (`<hex>  <basename>\n`), and atomically writes it to `sidecar_path(file)`.
 ///
 /// Taking the *source bytes* (rather than a pre-computed digest) keeps the
 /// hash-and-format contract in one place — every caller already has the
-/// bytes in hand. Used by both `write_toml_with_sidecar` (first persist +
-/// O16 recovery branch) and `integrity::refresh_sidecar`, so the three
-/// former open-coded sites now share one implementation.
+/// bytes in hand. Used by both `write_toml_with_sidecar` (first persist and
+/// its recovery branch) and `integrity::refresh_sidecar`.
 pub(crate) fn write_sidecar_for(file: &Path, bytes: &[u8]) -> Result<()> {
     let hex = hex_lower(&Sha256::digest(bytes));
-    // O63: keep the basename as the borrowed `Cow<str>` returned by
+    // Keep the basename as the borrowed `Cow<str>` returned by
     // `to_string_lossy()` rather than forcing an owned `String` via
     // `.into_owned()`. The only downstream use is the `format!` below,
     // which interpolates via `Display` and accepts `&str` (deref of
-    // `Cow<str>`) — the prior `.into_owned()` call materialised a
-    // String on every sidecar write even though no caller needed
-    // ownership. On the common ASCII-basename path `to_string_lossy`
-    // returns `Cow::Borrowed`, so this also drops the redundant clone.
+    // `Cow<str>`); on the common ASCII-basename path `to_string_lossy`
+    // returns `Cow::Borrowed`, so no allocation happens at all.
     let basename = file
         .file_name()
         .ok_or_else(|| {
@@ -1523,10 +1484,10 @@ pub(crate) fn write_sidecar_for(file: &Path, bytes: &[u8]) -> Result<()> {
 /// Write the TOML document and (unless suppressed) also write the `<file>.sha256`
 /// sidecar.
 ///
-/// R31 (torn-sidecar): the hash is computed in memory from the serialised
+/// Torn-sidecar safety: the hash is computed in memory from the serialised
 /// bytes BEFORE any rename, so both tempfiles (TOML + sidecar) are staged with
 /// byte-content that is guaranteed consistent. We then `persist()` the SIDECAR
-/// first and the TOML second (O12 — see below), both under the existing
+/// first and the TOML second (see below), both under the existing
 /// `<file>.lock` exclusive lock. A reader that interleaves between the two
 /// `persist()` calls either:
 ///   (a) sees the OLD TOML + OLD sidecar — hashes agree, passes integrity;
@@ -1536,17 +1497,17 @@ pub(crate) fn write_sidecar_for(file: &Path, bytes: &[u8]) -> Result<()> {
 ///       state recovers naturally (no permanent wedge);
 ///   (c) sees the NEW TOML + NEW sidecar — hashes agree, passes integrity.
 ///
-/// O12: the prior order (TOML first, sidecar second) is unsafe under SIGKILL —
-/// a kill between the two persists left NEW TOML + OLD sidecar, which the
-/// integrity check rejects FOREVER (every retry recomputes against the same
-/// stale sidecar). Reversing the order moves the failure into the recoverable
-/// window: OLD TOML + NEW sidecar still fails verification, but the next
-/// successful write regenerates the sidecar from the current on-disk bytes
-/// and clears the inconsistency.
+/// The sidecar-first order is load-bearing. TOML first, sidecar second is
+/// unsafe under SIGKILL — a kill between the two persists leaves NEW TOML +
+/// OLD sidecar, which the integrity check rejects FOREVER (every retry
+/// recomputes against the same stale sidecar). Sidecar first moves the
+/// failure into the recoverable window: OLD TOML + NEW sidecar still fails
+/// verification, but the next successful write regenerates the sidecar from
+/// the current on-disk bytes and clears the inconsistency.
 ///
-/// Failure to persist the TOML (the SECOND persist after O12) is reported as
+/// Failure to persist the TOML (the SECOND persist) is reported as
 /// a stderr warning but does not fail the outer write under `!strict` —
-/// O16 adds a single retry that recomputes the sidecar against the current
+/// a single retry recomputes the sidecar against the current
 /// on-disk TOML before warning, so a transient EIO doesn't leave the sidecar
 /// pointing at bytes the TOML never received. Set `--strict-integrity` to
 /// upgrade the warning to a hard error.
@@ -1562,14 +1523,11 @@ pub(crate) fn write_toml_with_sidecar(
         return atomic_write(path, bytes);
     }
 
-    // O12: persist SIDECAR first; if this fails, the TOML was never updated and
+    // Persist SIDECAR first; if this fails, the TOML was never updated and
     // the on-disk pair stays internally consistent (OLD + OLD). If sidecar
     // succeeds, persist the TOML — under the same exclusive lock there is no
     // concurrent writer, and any reader observing a mid-swap state lands on
     // the recoverable combinations documented above.
-    //
-    // R6: sidecar-bytes construction (hash + basename + format + atomic_write)
-    // is centralised in `write_sidecar_for`.
     write_sidecar_for(path, bytes)?;
     if let Err(e) = atomic_write(path, bytes) {
         if integrity.strict {
@@ -1580,18 +1538,16 @@ pub(crate) fn write_toml_with_sidecar(
                 )
             });
         }
-        // O16 (adapted for O12's reversed order): the second persist (TOML)
-        // failed under !strict. We hold the exclusive lock so the on-disk
-        // TOML cannot have been modified by another writer; the on-disk
-        // pair is now (OLD TOML + NEW sidecar), which fails verification.
-        // Recompute the sidecar against the current on-disk TOML and rewrite
-        // it once to restore an internally consistent (OLD TOML + OLD
-        // sidecar) pair before warning. This avoids leaving the file pair
-        // in a wedged state when the TOML failure is transient (e.g. EIO,
-        // ENOSPC clearing) — the next successful write still proceeds
-        // through the standard NEW-sidecar / NEW-TOML path.
-        // R6: recovery sidecar-bytes construction centralised in
-        // `write_sidecar_for`.
+        // The second persist (TOML) failed under !strict. We hold the
+        // exclusive lock so the on-disk TOML cannot have been modified by
+        // another writer; the on-disk pair is now (OLD TOML + NEW sidecar),
+        // which fails verification. Recompute the sidecar against the current
+        // on-disk TOML and rewrite it once to restore an internally
+        // consistent (OLD TOML + OLD sidecar) pair before warning. This
+        // avoids leaving the file pair in a wedged state when the TOML
+        // failure is transient (e.g. EIO, ENOSPC clearing) — the next
+        // successful write still proceeds through the standard
+        // NEW-sidecar / NEW-TOML path.
         let recovery: Result<()> = (|| {
             let on_disk = fs::read(path)
                 .with_context(|| format!("re-reading {} for sidecar recovery", path.display()))?;
@@ -1616,14 +1572,14 @@ pub(crate) fn write_toml_with_sidecar(
 }
 
 /// Atomic-replace pattern: write `bytes` to a tempfile in the same directory as
-/// `path`, `sync_data()` to flush content to disk (O59), then `persist()` to
+/// `path`, `sync_data()` to flush content to disk, then `persist()` to
 /// rename into place. The data fsync is load-bearing — without it, a crash
 /// between rename and fsync can leave the target empty on some filesystems.
 /// See the tempfile crate docs (`/stebalien/tempfile`) for the canonical
 /// pattern; the parent-directory `sync_all()` below covers the dirent update
 /// that makes the rename durable.
 ///
-/// O15: the tempfile is sited under the CANONICALISED parent so a symlinked
+/// The tempfile is sited under the CANONICALISED parent so a symlinked
 /// parent directory pointing to a different mount can't trigger EXDEV at
 /// `persist()` time. Falls back to the raw parent when canonicalisation fails
 /// (e.g. parent missing — `NamedTempFile::new_in` then surfaces the same
@@ -1642,7 +1598,7 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     tmp.as_file_mut()
         .write_all(bytes)
         .with_context(|| format!("writing temp file for {}", path.display()))?;
-    // O59: `sync_data()` (fdatasync) suffices on a freshly created
+    // `sync_data()` (fdatasync) suffices on a freshly created
     // tempfile — only the data needs to reach stable storage before
     // `persist()` renames it into place. Tempfile metadata (owner,
     // mode, mtime) is not load-bearing for the post-rename target,
@@ -1654,7 +1610,7 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         .with_context(|| format!("fsync temp file for {}", path.display()))?;
     tmp.persist(path)
         .map_err(|e| anyhow!("atomic rename to {} failed: {}", path.display(), e.error))?;
-    // O11: fsync the parent directory so the dirent update made by `persist()`
+    // Fsync the parent directory so the dirent update made by `persist()`
     // is durable across power loss. `tempfile::NamedTempFile::persist` performs
     // the rename but does NOT sync the parent — without this call a crash
     // between rename and the kernel's eventual writeback can leave the target
@@ -1841,7 +1797,7 @@ resolution = "fix in abc123"
 
         let dir = tempfile::tempdir().unwrap();
         let canonical = dir.path().canonicalize().unwrap();
-        // O44: the lock directory is resolved via `repo_or_cwd_root()`.
+        // The lock directory is resolved via `repo_or_cwd_root()`.
         // Anchor it under the tempdir so the test leaves no stray
         // `.claude/.locks/*.lock` files in the real repo tree.
         unsafe {
@@ -1892,13 +1848,12 @@ resolution = "fix in abc123"
         );
     }
 
-    /// R86: a pre-existing symlink at the target path that points OUTSIDE
-    /// `.claude/` must cause `guard_write_path` to refuse the write. The
-    /// prior behaviour was to `canonicalize()` through the symlink and
-    /// accept the write if the symlink target was otherwise reachable —
-    /// an atomic rename-replace then overwrote the file AT THE SYMLINK'S
-    /// DESTINATION, which could be any world-writable file the user's
-    /// `.claude/` filesystem happens to reach.
+    /// A pre-existing symlink at the target path that points OUTSIDE
+    /// `.claude/` must cause `guard_write_path` to refuse the write.
+    /// `canonicalize()`-ing through the symlink and accepting the write when
+    /// its target is otherwise reachable would let an atomic rename-replace
+    /// overwrite the file AT THE SYMLINK'S DESTINATION, which could be any
+    /// world-writable file the user's `.claude/` filesystem happens to reach.
     #[cfg(unix)]
     #[test]
     fn guard_write_path_refuses_symlink_leaf_outside_claude() {
@@ -1925,7 +1880,7 @@ resolution = "fix in abc123"
         );
     }
 
-    /// R85: an out-of-bounds `TOMLCTL_LOCK_TIMEOUT` (e.g. a user accidentally
+    /// An out-of-bounds `TOMLCTL_LOCK_TIMEOUT` (e.g. a user accidentally
     /// appending extra zeroes) must clamp at `MAX_LOCK_TIMEOUT_SECS` rather
     /// than be interpreted literally. The contention loop would otherwise
     /// run for billions of seconds, leaving the process effectively hung
@@ -1959,7 +1914,7 @@ resolution = "fix in abc123"
         }
     }
 
-    /// O44: lock files live under `<root>/.claude/.locks/<sha256>.lock`,
+    /// Lock files live under `<root>/.claude/.locks/<sha256>.lock`,
     /// NOT next to the target as `<file>.toml.lock`. Pin both properties so
     /// a silent regression (e.g. reverting to `path.with_extension("lock")`)
     /// trips a clear failure.
@@ -2097,7 +2052,7 @@ arr = [1, 2]
         assert_eq!(still_two, 2);
     }
 
-    /// T1 (a): `mutate_doc` against a MISSING path with `OnMissing::Create(seed)`
+    /// `mutate_doc` against a MISSING path with `OnMissing::Create(seed)`
     /// materialises a file containing the seed PLUS the closure's mutation, and
     /// reports `created == true`. Anchors `.claude/` at a tempdir so the
     /// write-path guard + lock resolve there and leave no stray repo artifacts.
@@ -2148,7 +2103,7 @@ arr = [1, 2]
         });
     }
 
-    /// T1 (b): `mutate_doc` against a missing path with `OnMissing::Error`
+    /// `mutate_doc` against a missing path with `OnMissing::Error`
     /// re-propagates the original `kind=not_found` error and creates NOTHING —
     /// no file, no sidecar.
     #[test]
@@ -2188,7 +2143,7 @@ arr = [1, 2]
         });
     }
 
-    /// T1: a non-`NotFound` read failure (a corrupt/unparseable existing file)
+    /// A non-`NotFound` read failure (a corrupt/unparseable existing file)
     /// must propagate UNCHANGED even with `OnMissing::Create` — a seed must
     /// never clobber a file that exists but won't parse.
     #[test]
@@ -2229,7 +2184,7 @@ arr = [1, 2]
         );
     }
 
-    // ----- R54: stdin sentinel ------
+    // ----- stdin sentinel ------
 
     #[test]
     fn read_json_arg_returns_literal_when_not_dash() {
@@ -2239,16 +2194,15 @@ arr = [1, 2]
 
     #[test]
     fn read_json_arg_literal_roundtrip() {
-        // R54 part 1 (stdin sentinel): the pure literal path is tested here;
-        // the `-` sentinel path is covered by a subprocess integration test
-        // in a future assert_cmd harness — exercising it in unit tests would
-        // require rewiring `std::io::stdin()`, which is invasive enough that
-        // we defer it rather than carry a test-only file descriptor seam.
+        // The pure literal path is tested here; the `-` sentinel path needs
+        // a subprocess integration test — exercising it in a unit test would
+        // require rewiring `std::io::stdin()`, i.e. a test-only file
+        // descriptor seam in production code.
         let got = read_json_arg(r#"{"a":1}"#).unwrap();
         assert_eq!(got, r#"{"a":1}"#);
     }
 
-    // R32: a second `-` sentinel on the same invocation must bail rather than
+    // A second `-` sentinel on the same invocation must bail rather than
     // silently re-reading stdin (already at EOF) and returning empty. Hold the
     // env lock so we serialise against any other test that might touch the
     // shared STDIN_CONSUMED flag, then restore it for downstream tests.
@@ -2269,18 +2223,17 @@ arr = [1, 2]
         STDIN_CONSUMED.store(prev, std::sync::atomic::Ordering::SeqCst);
     }
 
-    // ----- T1: seed_doc_for -----
+    // ----- seed_doc_for -----
 
-    /// T1 (c) / R5: the schema-aware seed for a recognised flow file
+    /// The schema-aware seed for a recognised flow file
     /// (`execution-record.toml`) serialises BYTE-IDENTICALLY to the skeleton a
-    /// REAL bootstrap path writes. Pre-R5 this test reconstructed the expected
-    /// bytes from a hand-retyped `format!(...)` of the seed's own date, so it
-    /// never referenced an actual bootstrap fn — a bootstrap that stopped
-    /// routing through `seed_doc_for` would have slipped past it. We now assert
-    /// against `flow::init::execution_record_skeleton`, the pure skeleton-build
-    /// step `flow::init::bootstrap_execution_record` actually runs, rendered
+    /// REAL bootstrap path writes. The expectation is taken from
+    /// `flow::init::execution_record_skeleton` — the pure skeleton-build
+    /// step `flow::init::bootstrap_execution_record` actually runs — rendered
     /// the SAME way the pipeline writer (`write_toml_with_sidecar` →
-    /// `toml::to_string_pretty`) serialises every write.
+    /// `toml::to_string_pretty`) serialises every write. A hand-retyped
+    /// expected literal would reference no bootstrap fn and so would not
+    /// fail when one stopped routing through `seed_doc_for`.
     ///
     /// This is the single-skeleton-source guarantee: if a future bootstrap
     /// path stopped sourcing its skeleton from `seed_doc_for`, the two
@@ -2332,7 +2285,7 @@ arr = [1, 2]
         );
     }
 
-    /// T1: an UNRECOGNISED basename seeds an empty table `{}` (serialises to
+    /// An UNRECOGNISED basename seeds an empty table `{}` (serialises to
     /// the empty string — no `schema_version`/`last_updated`).
     #[test]
     fn seed_doc_for_unrecognised_basename_is_empty_table() {
@@ -2350,7 +2303,7 @@ arr = [1, 2]
         );
     }
 
-    /// T1: every recognised flow-file basename seeds the 2-key skeleton.
+    /// Every recognised flow-file basename seeds the 2-key skeleton.
     #[test]
     fn seed_doc_for_recognised_files_all_seed_skeleton() {
         for name in SCHEMA_SEEDED_FLOW_FILES {
