@@ -5,3 +5,20 @@
 # moves under the lumina workspace carve (lumina/migrations -> later
 # lumina/core/migrations), so a fixed path would go stale.
 *.sql text eol=lf
+
+# Pin Rust sources to LF in the working tree as well. core.autocrlf is true, so
+# a checkout would otherwise write CRLF while rustfmt rewrites the files it
+# touches as LF -- leaving the tree mixed and making every later git command
+# over the crate print a line-ending warning per file. The index is already LF
+# throughout, so this changes no committed content; the CRLF files still on
+# disk convert on their next checkout.
+*.rs text eol=lf
+
+# Pin the flow agent definitions to LF. Two of them carry the shared blocks
+# scripts/verify-shared-blocks.sh holds byte-identical, and its awk matches the
+# markers by whole-line equality -- under a CR-preserving awk (the mandated
+# gawk strips it) both blocks extract empty and the empty-block guard fails
+# every commit. Directory-scoped so a later agent carrier is covered too.
+# Nothing committed changes: both extractors strip the CR before hashing, so
+# the block hashes are unaffected and the files convert on their next checkout.
+claude/agents/*.md text eol=lf
