@@ -2,10 +2,12 @@
 
 ## Developer setup
 
-Enable the repo-local hooks directory once per clone:
+Enable the repo-local hooks directory and the blame-ignore list once per clone. Both live in
+`.git/config`, which is never committed, so a fresh clone starts without them:
 
 ```bash
 git config core.hooksPath .githooks
+git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
 
 Enable the task tools once per machine, so the flow carriers' progress surface is not silently empty:
@@ -17,7 +19,7 @@ Enable the task tools once per machine, so the flow carriers' progress surface i
 
 This repo's `.claude/settings.json` already sets it for work inside the repo; the user-level copy covers worktrees and any clone elsewhere. Without it every carrier degrades to a silent no-op (see **Task visibility** below) — correct behaviour, but no progress is rendered anywhere.
 
-The hook runs `scripts/verify-shared-blocks.sh` (byte-identity of each block named in `scripts/shared-blocks.toml`, across every file carrying it) and `scripts/verify-plan-story-blocks.sh` (the lumina-story-blocks §l.4 `Skill()`-dispatch gate). Each verifier inspects only the files its manifest names, so most commits are untouched.
+The hook runs `scripts/verify-shared-blocks.sh` (byte-identity of each block named in `scripts/shared-blocks.toml`, across every file carrying it) and `scripts/verify-plan-story-blocks.sh` (the lumina-story-blocks §l.4 `Skill()`-dispatch gate). Each verifier inspects only the files its manifest names, so most commits are untouched. It then runs `cargo fmt --manifest-path tomlctl/Cargo.toml -- --check` whenever the staged set contains a `*.rs` path, and blocks the commit on any diff — that check is crate-wide and cannot be narrowed, so it can fail on a file the commit never touched (see **Build tuning** below).
 
 Gotchas:
 
@@ -46,6 +48,8 @@ During a flow (`/implement`, `/optimise-apply`, `/review-apply`, `/tdd`), sub-ag
 - **Config-file profiles OVERRIDE `Cargo.toml` profiles.** `~/.cargo/config.toml` sets `[profile.test] debug = "line-tables-only"` (panic backtraces keep `file:line` but skip full-PDB generation — the biggest codegen+link cost on MSVC), and that is the layer that takes effect; a `debug` in any `Cargo.toml` is shadowed. Corollary: `lumina/Cargo.toml`'s `[profile.dev.package."*"] opt-level = 2` is DEAD — the global config's `opt-level = 1` wins.
 - **One `cargo clippy` covers both typecheck and lint** — clippy is a strict superset of `cargo check`. Do NOT run both against the same target dir: they use different rustc wrappers, so artifacts have different fingerprints and alternating recompiles the whole crate.
 - **`--profile quick`** (`lumina/.config/nextest.toml`) excludes the e2e binaries that spawn a real nested `claude` (`pty_e2e`, `conpty_minimal_repro`, `pty_readiness_probe`). Sub-agent affordance only; full verification runs `--profile ci`, which runs everything.
+- **`cargo fmt` cannot be narrowed to a path.** Everything after `--` is forwarded to rustfmt as *options*; a positional path is taken as an *additional* target rather than a restriction, so `cargo fmt --manifest-path tomlctl/Cargo.toml -- --check src/items.rs` still checks the whole crate and reports `src/items.rs` twice. `-p` narrows nothing in a single-package workspace either. The pre-commit gate is crate-wide for that reason, not by choice.
+- **Bare `rustfmt` defaults to edition 2015 and recurses into `mod` children.** `--edition 2024` is mandatory — without it an `async fn` fails the parse with E0670. Even with it, only *leaf* modules are file-scoped: `rustfmt --edition 2024 --check tomlctl/src/main.rs` walks the whole module tree. `--skip-children` would confine it but is nightly-only.
 - **Prefix full verification with `CARGO_INCREMENTAL=0`** (PowerShell: `$env:CARGO_INCREMENTAL=0; cargo …`). sccache cannot cache incremental compilations, and a throwaway full build never reuses incremental state anyway. That caches tomlctl plus the crates.io dep graph across clean/branch-switch builds; lumina's own crate stays uncacheable regardless (its `sqlx::migrate!` / `static-serve` file-embedding macros trip sccache's missing-input guard). Keep incremental ON for the inner loop.
 
 ## Build & test
@@ -55,7 +59,7 @@ During a flow (`/implement`, `/optimise-apply`, `/review-apply`, `/tdd`), sub-ag
 - `cargo build --manifest-path tomlctl/Cargo.toml` — build tomlctl
 - `cargo install --path tomlctl` — put the `tomlctl` binary on PATH (once per clone; rerun on version bumps)
 - `tomlctl flow render-progress-log --slug <slug>` — regenerate `.claude/flows/<slug>/PROGRESS-LOG.md` from that flow's `execution-record.toml` (`--stdout` previews, `--verify-integrity` checks the source sidecar first). It is DERIVED and carries no `.sha256` sidecar.
-- `cargo test --manifest-path tomlctl/Cargo.toml` — gates carrier↔CLI flag drift (`command_lint`) and asserts every skeletonised carrier still invokes its required `flow-contract-*` skills (`carrier_invokes_required_skills`). CI only — the pre-commit hook does not run these.
+- `cargo test --manifest-path tomlctl/Cargo.toml` — gates carrier↔CLI flag drift (`command_lint`) and asserts every skeletonised carrier still invokes its required `flow-contract-*` skills (`carrier_invokes_required_skills`). Nothing runs these for you — there is no `.github/` in this repository and the pre-commit hook does not invoke them, so drift in either lands unnoticed unless someone runs the command by hand.
 - `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` — lint
 - `cargo audit --file tomlctl/Cargo.lock` — RUSTSEC check (`cargo install cargo-audit` once). Run weekly and before releases; a CI snapshot is not a substitute for cadence.
 - `bash scripts/verify-shared-blocks.sh` / `bash scripts/verify-plan-story-blocks.sh` — the two hook verifiers, runnable by hand

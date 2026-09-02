@@ -13,3 +13,9 @@ ROOT="$(git rev-parse --show-toplevel)"
 # Reports, does not block. Promote with DOC_GATE_MODE=block once its
 # false-positive rate is proven against real commits rather than specimens.
 "$ROOT/scripts/doc-diff-gate.sh"
+
+# Crate-wide by construction: cargo fmt cannot be narrowed to a path, so one
+# staged *.rs gates on the whole crate, including files this commit never touched.
+if printf '%s\n' "$STAGED" | grep -q '\.rs$'; then
+  cargo fmt --manifest-path "$ROOT/tomlctl/Cargo.toml" -- --check
+fi
