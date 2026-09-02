@@ -1,7 +1,7 @@
-//! R21: output helpers extracted from the former monolithic `cli.rs`.
-//! Every `{"ok":true,...}` / pretty-printed-JSON / bare-scalar emitter
-//! lives here so the dispatch module stays focused on routing and the
-//! render contract (pretty vs compact vs raw) is defined in one file.
+//! Output helpers. Every `{"ok":true,...}` / pretty-printed-JSON /
+//! bare-scalar emitter lives here so the dispatch module stays focused on
+//! routing and the render contract (pretty vs compact vs raw) is defined in
+//! one file.
 //!
 //! These helpers don't depend on any clap-derive type. They take `&JsonValue`
 //! plus an optional `OutputShape` and write to stdout. That's why they're a
@@ -25,10 +25,10 @@ pub(crate) fn print_json(v: &JsonValue) -> Result<()> {
     Ok(())
 }
 
-/// T10: build the `--dry-run` JSON envelope for `items remove --dry-run`
-/// and `items apply --dry-run`. Extracted from `emit_dry_run_plan` so the
+/// Build the `--dry-run` JSON envelope for `items remove --dry-run`
+/// and `items apply --dry-run`. Kept separate from `emit_dry_run_plan` so the
 /// envelope shape is testable without capturing stdout, mirroring the
-/// scalar-side `build_dry_run_scalar_envelope` split (R29). The shape is
+/// scalar-side `build_dry_run_scalar_envelope` split. The shape is
 /// a single compact JSON object:
 ///
 /// ```text
@@ -41,13 +41,13 @@ pub(crate) fn print_json(v: &JsonValue) -> Result<()> {
 /// across both dispatch arms. `skipped` surfaces the dedupe-skipped row
 /// count from `MutationPlan.skipped`.
 ///
-/// R10: the `kind` discriminator — placed first inside `would_change` —
-/// lets consumers branch on `would_change.kind` rather than on which
+/// The `kind` discriminator — placed first inside `would_change` — lets
+/// consumers branch on `would_change.kind` rather than on which
 /// subcommand they invoked. Items-shape envelopes carry `kind:"items"`;
 /// scalar-shape envelopes (built by `build_dry_run_scalar_envelope`)
-/// carry `kind:"scalar"`. The discriminator was added alongside the
-/// existing keys (additive, no version bump): existing consumers reading
-/// `added`/`updated`/`removed`/`skipped`/`ids` continue to work.
+/// carry `kind:"scalar"`. It is additive to the rest of the envelope:
+/// consumers reading `added`/`updated`/`removed`/`skipped`/`ids` are
+/// unaffected by it.
 pub(crate) fn build_dry_run_plan_envelope(plan: &MutationPlan) -> JsonValue {
     serde_json::json!({
         "ok": true,
@@ -63,7 +63,7 @@ pub(crate) fn build_dry_run_plan_envelope(plan: &MutationPlan) -> JsonValue {
     })
 }
 
-/// T10: emit the `--dry-run` summary for `items remove --dry-run` and
+/// Emit the `--dry-run` summary for `items remove --dry-run` and
 /// `items apply --dry-run`. Thin I/O wrapper over
 /// `build_dry_run_plan_envelope`; companion to `emit_dry_run_scalar`.
 /// Both dry-run dispatch arms funnel through `print_json_compact` so the
@@ -74,13 +74,13 @@ pub(crate) fn emit_dry_run_plan(plan: &MutationPlan) -> Result<()> {
 }
 
 /// Compact single-line sibling of `print_json`, used for the `{"ok":true,...}`
-/// terminal status lines emitted by write-path dispatch arms (R83). Keeping
+/// terminal status lines emitted by write-path dispatch arms. Keeping
 /// this separate from `print_json` preserves the pretty-printed contract that
 /// downstream consumers rely on for read-path output (tests + humans) while
 /// letting every OK-status emitter funnel through a single helper rather
-/// than hand-constructing JSON strings. Compact form also matches the
-/// pre-refactor byte-for-byte output so integration tests that do a
-/// `.contains(r#"{"ok":true,"added":N}"#)` continue to pass.
+/// than hand-constructing JSON strings. Integration tests assert on these
+/// compact bytes with `.contains(r#"{"ok":true,"added":N}"#)`, so the
+/// single-line form is load-bearing.
 pub(crate) fn print_json_compact(v: &JsonValue) -> Result<()> {
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
@@ -90,7 +90,7 @@ pub(crate) fn print_json_compact(v: &JsonValue) -> Result<()> {
     Ok(())
 }
 
-/// T2: emit one bare-scalar value to stdout, followed by exactly one
+/// Emit one bare-scalar value to stdout, followed by exactly one
 /// trailing newline. The trailing `\n` is deliberate — bash `read -r N`
 /// consumes up to a newline, so agents piping tomlctl output into
 /// variable-binding shell loops expect every bare-value emission to end
@@ -98,7 +98,7 @@ pub(crate) fn print_json_compact(v: &JsonValue) -> Result<()> {
 /// NOT called per line (that path uses `query::emit_raw` directly into a
 /// pre-locked writer for throughput); the semantics are the same.
 ///
-/// R14: the scalar-rendering rules live in `query::emit_raw` — this
+/// The scalar-rendering rules live in `query::emit_raw` — this
 /// helper is the I/O wrapper that adds stdout locking, buffering, and
 /// the trailing newline. Keeping `emit_raw` in `query` keeps the module
 /// layering honest (cli depends on query, not the reverse).
@@ -111,10 +111,10 @@ pub(crate) fn print_raw_value(v: &JsonValue) -> Result<()> {
     Ok(())
 }
 
-/// T2 / R16: `items list --raw` dispatch-side wrapper. The per-shape
+/// `items list --raw` dispatch-side wrapper. The per-shape
 /// render logic lives in `ShapeDispatch::raw_emit` on `OutputShape`, so
 /// adding a new shape variant forces one edit there rather than here PLUS
-/// a second match on `shape` in this file. This function's only job now
+/// a second match on `shape` in this file. This function's only job
 /// is the stdout lock + buffered write + trailing newline — the same
 /// I/O discipline `print_raw_value` applies to a single scalar, but
 /// called once with the shape-rendered bytes.
@@ -146,13 +146,12 @@ pub(crate) fn emit_list_raw(v: &JsonValue, shape: &OutputShape) -> Result<()> {
 ///
 /// `old_value: None` (auto-vivify case) renders as `"old": null`.
 ///
-/// R10: the `kind` discriminator — placed first inside `would_change` —
-/// lets consumers branch on `would_change.kind` rather than on which
+/// The `kind` discriminator — placed first inside `would_change` — lets
+/// consumers branch on `would_change.kind` rather than on which
 /// subcommand they invoked. Scalar-shape envelopes carry `kind:"scalar"`;
 /// items-shape envelopes (built by `emit_dry_run_plan`) carry
-/// `kind:"items"`. The discriminator was added alongside the existing
-/// keys (additive, no version bump): existing consumers reading
-/// `path`/`old`/`new` continue to work.
+/// `kind:"items"`. It is additive to the rest of the envelope: consumers
+/// reading `path`/`old`/`new` are unaffected by it.
 pub(crate) fn build_dry_run_scalar_envelope(plan: &ScalarMutationPlan) -> JsonValue {
     serde_json::json!({
         "ok": true,
@@ -166,7 +165,7 @@ pub(crate) fn build_dry_run_scalar_envelope(plan: &ScalarMutationPlan) -> JsonVa
     })
 }
 
-/// T6a: emit the `--dry-run` envelope for `set` / `set-json`. Companion to
+/// Emit the `--dry-run` envelope for `set` / `set-json`. Companion to
 /// `emit_dry_run_plan` (`items remove` / `items apply`); the two share
 /// `print_json_compact` so the compact-line format is byte-stable across
 /// every dry-run dispatch arm.
@@ -190,7 +189,7 @@ mod tests {
         // Compact-serialised form must match the documented envelope byte
         // for byte. `serde_json` is built with `preserve_order` (Cargo.toml),
         // so insertion order in the `json!` macro is the on-wire order.
-        // R10: `kind` is the first field inside `would_change`.
+        // `kind` is the first field inside `would_change`.
         let s = serde_json::to_string(&env).unwrap();
         assert_eq!(
             s,
@@ -217,7 +216,7 @@ mod tests {
         assert_eq!(env["would_change"]["kind"], serde_json::json!("scalar"));
     }
 
-    /// R29: shape test for the items-side dry-run envelope, mirroring the
+    /// Shape test for the items-side dry-run envelope, mirroring the
     /// scalar-side test above. Pins the on-wire byte order (insertion
     /// order is preserved by serde_json's `preserve_order` feature in
     /// Cargo.toml) and the `kind:"items"` discriminator.

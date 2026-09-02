@@ -1,4 +1,4 @@
-//! T11: `tomlctl flow doctor [--slug <s>] [--fix] [--json] [--dry-run]` —
+//! `tomlctl flow doctor [--slug <s>] [--fix] [--json] [--dry-run]` —
 //! invariant checks across the flow registry, with optional auto-repair
 //! via `--fix`.
 //!
@@ -47,14 +47,9 @@
 //! `--fix` is the only write path; it honours `WriteIntegrityArgs` +
 //! `--dry-run`. NEVER creates missing artifacts (that's `flow init`'s job).
 //!
-//! ## Plan deviation note
-//!
-//! T8 (`flow::ensure_artifact`) doesn't expose a `pub(crate)` per-artifact
-//! check. Per the plan-deviation protocol, this module replicates the
-//! necessary helpers (`sidecar_matches`, `sidecar_path`-equivalent) inline
-//! rather than promoting them across the module boundary. The cross-leaf
-//! coupling pattern matches what `flow::init` did with `flow::active`'s
-//! `mutate_active`.
+//! The per-artifact sidecar helpers are replicated here rather than reused
+//! from `flow::ensure_artifact`, which exposes no `pub(crate)` per-artifact
+//! check.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -72,12 +67,9 @@ use crate::io::{
 };
 use crate::output::print_json_compact;
 
-// R3 / R2: `write_integrity_opts` and `relativise` now sourced from
-// `crate::cli` and `crate::io` respectively.
-
 /// Outcome of a sidecar-state probe. `Mismatch` carries the expected and
 /// actual hex digests so the caller can format a directed failure detail
-/// matching the CLAUDE.md contract (R47).
+/// matching the CLAUDE.md contract.
 enum SidecarStatus {
     Ok,
     Mismatch { expected: String, actual: String },
@@ -118,8 +110,6 @@ fn sidecar_state(file: &Path) -> Result<Option<SidecarStatus>> {
     }
 }
 
-// R9: canonical-artifact map sourced from `crate::flow::artifacts::CanonicalArtifacts`.
-
 /// One check entry — accumulates into the `checks` array. `detail` is only
 /// surfaced when the check is failing (the success path stays terse).
 struct Check {
@@ -151,7 +141,7 @@ impl Check {
         obj.insert("name".to_string(), JsonValue::String(self.name.to_string()));
         obj.insert("scope".to_string(), JsonValue::String(self.scope.clone()));
         obj.insert("ok".to_string(), JsonValue::Bool(self.ok));
-        // R41: always emit `detail` key (null when absent) so orchestrators
+        // Always emit the `detail` key (null when absent) so orchestrators
         // iterating checks can read `.detail` uniformly without panicking on
         // key absence.
         obj.insert(
@@ -247,7 +237,7 @@ fn check_one_flow(
     }
 
     // 3. context.toml sidecar.
-    // R35: always emit the sidecar check. When the underlying TOML is
+    // Always emit the sidecar check. When the underlying TOML is
     // missing, the check passes trivially with a "skipped: …" detail —
     // structurally present, semantically not-applicable. This keeps the
     // per-flow check count stable at 6 (8 total once globals are added).
@@ -530,7 +520,7 @@ fn apply_sidecar_fixes(
     let allow_outside = integrity_args.allow_outside;
     for (file, scope) in stale {
         let result = with_exclusive_lock(file, || {
-            // O17 parity: re-run the in-lock guard so a leaf-symlink swap
+            // Re-run the in-lock guard so a leaf-symlink swap
             // between path-resolution and persist still fails closed.
             guard_write_path(file, allow_outside)?;
             if !allow_outside {
@@ -692,7 +682,7 @@ pub(crate) fn dispatch(
     // 4. .gitignore warning — surfaced as a warning, not a check failure.
     let mut warnings: Vec<JsonValue> = Vec::new();
 
-    // R48: `--dry-run` without `--fix` is silently a no-op — the envelope's
+    // `--dry-run` without `--fix` is silently a no-op — the envelope's
     // `dry_run` field is computed as `dry_run && fix`, so passing only
     // `--dry-run` produces `dry_run: false`. Surface a clear warning so
     // callers don't wonder why the preview is empty. Doctor is JSON-only
@@ -704,12 +694,11 @@ pub(crate) fn dispatch(
     }
     let gitignore_hit = detect_gitignored_claude(&root);
     if let Some(line) = gitignore_hit.as_ref() {
-        // R31: gitignore-claude is a warning, NOT a check failure. Per the
-        // plan spec, the check entry stays informational (`ok=true`) so the
-        // top-level envelope `ok` doesn't flip on this surface. The
-        // actionable detail lives on the warning string; the check entry
-        // pins coverage for docs/test contracts asserting on
-        // `name=gitignore-claude`.
+        // gitignore-claude is a warning, NOT a check failure: the check
+        // entry stays informational (`ok=true`) so the top-level envelope
+        // `ok` doesn't flip on this surface. The actionable detail lives on
+        // the warning string; the check entry pins coverage for docs/test
+        // contracts asserting on `name=gitignore-claude`.
         checks.push(Check::ok("gitignore-claude", "global"));
         warnings.push(JsonValue::String(format!(
             ".gitignore masks .claude/ (line: `{line}`)"

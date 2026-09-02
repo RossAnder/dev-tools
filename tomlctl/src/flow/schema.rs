@@ -1,4 +1,4 @@
-//! R17: canonical typed schema for `.claude/active-flow.toml`.
+//! Canonical typed schema for `.claude/active-flow.toml`.
 //!
 //! Single source of truth for the registry's wire shape. Consumers
 //! (`flow::active`, `flow::resolve`, `flow::list`) parse via
@@ -17,33 +17,25 @@
 //! scope = ["src/foo/**"]
 //! ```
 //!
-//! Behaviour intentionally mirrors the previous-per-site walks:
+//! Parsing is deliberately lenient, because every consumer reads a file a
+//! human may have hand-edited:
 //!
-//! - `schema_version` defaults to `1` when absent (R17 keeps the existing
-//!   `flow::active::list` defaulting convention so the JSON output shape
-//!   stays byte-identical).
-//! - Entries that are not tables are silently skipped (matches the
-//!   defensive `if let Some(tbl) = entry.as_table() else { continue }`
-//!   pattern used at every site previously).
-//! - Entries that lack a `slug` field are silently skipped (matches
-//!   `flow::resolve`'s `let Some(slug) = … else { continue }` chain).
+//! - `schema_version` defaults to `1` when absent, keeping
+//!   `flow::active::list`'s JSON output shape byte-identical for a file
+//!   that omits it.
+//! - Entries that are not tables are silently skipped.
+//! - Entries that lack a `slug` field are silently skipped.
 //! - Empty / missing optional fields (`last_used`, `binding.branch`,
 //!   `binding.worktree`, `binding.scope`) are preserved as
-//!   `String::new()` / `None` / `Vec::new()` exactly as the previous
-//!   walks emitted, so all three downstream consumers see the same
-//!   defaults they did before consolidation.
+//!   `String::new()` / `None` / `Vec::new()`, which is the shape all three
+//!   downstream consumers expect.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use toml::Value as TomlValue;
 
-// R13: shared projection of `<flow>/context.toml` for `flow::list` and
-// `flow::resolve::enumerate_flows`. Pre-R13 each consumer hand-walked
-// the same `TomlValue` chain; the consolidated struct + parse helper
-// below replaces both walks.
-
-/// R13: subset of `context.toml` fields surfaced by `flow list` and
+/// Subset of `context.toml` fields surfaced by `flow list` and
 /// consumed by `flow resolve`'s candidate enumeration. All fields are
 /// `Option`-typed so a hand-edited file with a missing key parses
 /// cleanly; consumers default to their own per-leaf shape (e.g.
@@ -64,8 +56,7 @@ impl FlowProjection {
     /// `[[items]]`-shaped TOML wouldn't be a context.toml but we won't
     /// panic on it). `updated` is rendered to its `Display` form
     /// (`YYYY-MM-DD` for a TOML date; the raw datetime string when
-    /// hand-edited as a quoted string), matching the pre-R13 behaviour
-    /// of both consumer sites.
+    /// hand-edited as a quoted string).
     pub(crate) fn from_toml_value(doc: &TomlValue) -> Option<Self> {
         let table = doc.as_table()?;
         let status = table
