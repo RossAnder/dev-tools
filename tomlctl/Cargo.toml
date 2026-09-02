@@ -16,11 +16,16 @@ toml = { version = "^1.1", features = ["preserve_order"] }
 # `preserve_order` keeps serde_json::Map insertion-ordered so count-by /
 # group-by output preserves first-seen key order.
 serde_json = { version = "^1", features = ["preserve_order"] }
+# `error-context` makes parse failures name the offending flag, token or value
+# instead of a bare "one or more required arguments were not provided". It pulls
+# in no extra crates (`clap_builder/error-context = []`); `suggestions` is the
+# adjacent feature left off, since it adds a `strsim` dependency for typo hints.
 clap = { version = "^4", default-features = false, features = [
     "std",
     "derive",
     "help",
     "usage",
+    "error-context",
 ] }
 anyhow = "^1"
 # globset: plan-discovery glob matching (`flow find-plans`). jiff: staleness

@@ -1,24 +1,24 @@
-//! R41 + R58: black-box integration harness for tomlctl. Exercises the built
-//! binary end-to-end via `assert_cmd`, covering behaviours that unit tests
-//! can't easily reach (stdin sentinel, concurrent lock contention, CLI
-//! argument parsing, etc.).
+//! Black-box integration harness for tomlctl. Exercises the built binary
+//! end-to-end via `assert_cmd`, covering behaviours that unit tests can't
+//! easily reach (stdin sentinel, concurrent lock contention, CLI argument
+//! parsing, etc.).
 //!
-//! R23 split this originally-monolithic 4700-line file by topic. Tests
-//! specifically about `--dry-run`, `--dedupe-by` / `dedup_id` / backfill,
-//! `blocks verify`, and the T7 capabilities surface (including
-//! `--count-distinct`, `--raw`, `--error-format`, `--strict-read`,
-//! `--lines`, and the `--help` snapshot suite) now live in their own test
-//! binaries: `tomlctl/tests/items_dry_run.rs`,
-//! `tomlctl/tests/items_dedupe.rs`, `tomlctl/tests/blocks.rs`, and
+//! Topic-scoped siblings own their own binaries, so a test about one of
+//! them belongs there and not here: `--dry-run` in
+//! `tomlctl/tests/items_dry_run.rs`, `--dedupe-by` / `dedup_id` / backfill
+//! in `tomlctl/tests/items_dedupe.rs`, `blocks verify` in
+//! `tomlctl/tests/blocks.rs`, and the capabilities surface
+//! (`--count-distinct`, `--raw`, `--error-format`, `--strict-read`,
+//! `--lines`, the `--help` snapshot suite) in
 //! `tomlctl/tests/capabilities.rs`.
 //!
-//! What remains here is the cross-cutting residue — `items next-id`
+//! What lives here is the cross-cutting residue — `items next-id`
 //! coverage, `items apply` non-dry-run paths, lock contention, `items
 //! add-many` happy paths, `array-append`, the query suite (`--where*`,
 //! `--sort-by`, `--group-by`, `--count-by`, `--pluck`, `--distinct`,
 //! `--select`, `--exclude`, `--offset`, `--limit`, `--ndjson`, typed-RHS,
-//! R80 sidecar coverage on the two new write paths), and the
-//! `.claude/settings.json` permissions-shape test.
+//! sidecar coverage on the `add-many` and `array-append` write paths), and
+//! the `.claude/settings.json` permissions-shape test.
 //!
 //! Shared helpers (tempdir + ledger bootstrap, JSON error-envelope parsing,
 //! list-query runners, sidecar assertion) live in `tests/common/mod.rs` and
@@ -35,23 +35,20 @@ use common::{
     assert_sidecar_matches, ids_from, parse_json_error_envelope, run_list_query, seed_ledger,
 };
 
-/// R9: parse a write-success envelope (`{"ok":true,"created":<bool>,"path":<file>,…}`)
-/// from `stdout` and return it as a typed `serde_json::Value`. Replaces the
-/// loose `stdout.contains(r#""created":true"#)` / `contains(r#""path":"#)`
-/// substring asserts on the T2 created/path tests — those pass even when
-/// `path` is empty or the shape has drifted. Mirrors the parsed-JSON pattern
-/// in `tomlctl/tests/render_progress_log.rs` (`serde_json::from_str` +
-/// `as_bool`/`as_u64`).
+/// Parse a write-success envelope (`{"ok":true,"created":<bool>,"path":<file>,…}`)
+/// from `stdout` and return it as a typed `serde_json::Value`. Prefer this to a
+/// `stdout.contains(r#""created":true"#)` substring assert, which passes even
+/// when `path` is empty or the envelope shape has drifted.
 fn parse_write_envelope(stdout: &str) -> serde_json::Value {
     serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
         panic!("write-success stdout must be a JSON envelope: {e}; got: {stdout}")
     })
 }
 
-/// R9: assert a write-success envelope reports the expected `created` bool and
+/// Assert a write-success envelope reports the expected `created` bool and
 /// carries a non-empty `path` string ending in `expected_filename`. The
-/// filename-suffix check is what the old `contains(r#""path":"#)` substring
-/// missed — it accepted an empty or malformed path.
+/// filename-suffix check is what a `contains(r#""path":"#)` substring assert
+/// misses — that form accepts an empty or malformed path.
 fn assert_write_envelope(stdout: &str, expected_created: bool, expected_filename: &str) {
     let v = parse_write_envelope(stdout);
     assert_eq!(
@@ -77,9 +74,8 @@ fn assert_write_envelope(stdout: &str, expected_created: bool, expected_filename
     );
 }
 
-/// R58 coverage: `tomlctl items next-id` on a missing ledger must return
-/// `<prefix>1` without parsing anything. This exercises the early-return path
-/// added in R19 when `file.exists()` is false.
+/// `tomlctl items next-id` on a missing ledger must return `<prefix>1` without
+/// parsing anything — the `file.exists()` early return.
 #[test]
 fn items_next_id_on_missing_file_prints_prefix_one() {
     let dir = tempfile::tempdir().unwrap();
@@ -89,11 +85,9 @@ fn items_next_id_on_missing_file_prints_prefix_one() {
     // `items next-id` doesn't consume stdin, but assert_cmd inherits the
     // parent's stdin by default — pipe an empty string in so nothing blocks
     // if the parent's stdin happens to be a TTY when tests run interactively.
-    // R74: `items next-id` is a read-only path (either `<prefix>1` on a
-    // missing ledger or read-only scan of existing ids), so it carries
-    // `ReadIntegrityArgs` — no `--allow-outside` needed (and no longer
-    // accepted on this subcommand). The test covers the missing-file fast
-    // path which never touches the filesystem past `exists()`.
+    // `items next-id` is a read-only path (`<prefix>1` on a missing ledger,
+    // otherwise a scan of existing ids), so it carries `ReadIntegrityArgs`
+    // and does NOT accept `--allow-outside`.
     Command::cargo_bin("tomlctl")
         .unwrap()
         .env("TOMLCTL_ROOT", dir.path())
@@ -108,22 +102,21 @@ fn items_next_id_on_missing_file_prints_prefix_one() {
         .stdout(predicate::str::contains("R1"));
 }
 
-/// R40: `items next-id` no longer defaults `--prefix` to `R`. With four
-/// ledger schemas in use (R review, O optimise, E execution-record, plus
-/// any future), a silent R-default would mis-mint three of four callers.
-/// Omitting `--prefix` now fails at the clap layer (exit 2, "required
-/// arguments were not provided"), and the `--help` usage line pins the
-/// flag as required.
+/// `items next-id` has NO default `--prefix`. Several ledger schemas are in
+/// use (`R` review, `O` optimise, `E` execution-record), so a silent `R`
+/// default would mis-mint every non-review caller. Omitting `--prefix` fails
+/// at the clap layer (exit 2, "required arguments were not provided"), and
+/// the `--help` usage line pins the flag as required.
 #[test]
 fn items_next_id_requires_prefix_flag() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("no-such-ledger.toml");
 
-    // 1. Omitting `--prefix` fails at parse time. clap's default terse
-    //    message is "error: one or more required arguments were not
-    //    provided" — we assert on `required` alone because the exact
-    //    wording can shift between clap minor versions, but "required"
-    //    is stable across them.
+    // 1. Omitting `--prefix` fails at parse time with exit 2. clap is built
+    //    with `error-context`, so the message NAMES the missing argument
+    //    rather than rendering the bare "one or more required arguments were
+    //    not provided" that names nothing. Asserting the name is what stops
+    //    the feature being dropped from Cargo.toml unnoticed.
     Command::cargo_bin("tomlctl")
         .unwrap()
         .env("TOMLCTL_ROOT", dir.path())
@@ -132,8 +125,9 @@ fn items_next_id_requires_prefix_flag() {
         .arg(&missing)
         .write_stdin("")
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("required"));
+        .code(2)
+        .stderr(predicate::str::contains("required"))
+        .stderr(predicate::str::contains("--prefix <PREFIX>"));
 
     // 2. `--help` usage line shows `--prefix <PREFIX>` without surrounding
     //    brackets (clap's notation for required flags is unadorned;
@@ -159,14 +153,13 @@ fn items_next_id_requires_prefix_flag() {
 }
 
 // ---------------------------------------------------------------------------
-// Task 4 (plan `docs/plans/tomlctl-capability-gaps.md`): `items next-id
-// --infer-from-file` — scan the ledger's existing ids, infer the prefix, and
-// mint the next monotonic one. Structurally mutually exclusive with
-// `--prefix` via a required clap ArgGroup (one of the two must be passed;
-// never both). R40 is preserved: zero-prefix invocations still fail.
+// `items next-id --infer-from-file` — scan the ledger's existing ids, infer
+// the prefix, and mint the next monotonic one. Structurally mutually
+// exclusive with `--prefix` via a required clap ArgGroup (one of the two must
+// be passed; never both), so zero-prefix invocations still fail.
 // ---------------------------------------------------------------------------
 
-/// T4 acceptance (a): ledger contains only E-prefixed ids. `--infer-from-file`
+/// Ledger contains only E-prefixed ids. `--infer-from-file`
 /// picks `E` (the single prefix in use) and emits `E{max_n+1}`. The fixture
 /// uses `E1, E2, E5` to pin that the helper picks `max+1 = 6`, not
 /// `len+1 = 4` — i.e. it walks the numeric suffixes, not the row count.
@@ -217,10 +210,9 @@ summary = "seed"
     );
 }
 
-/// T4 acceptance (b): ledger contains multiple distinct prefixes. Inference
-/// can't pick one without guessing, so the helper errors out with the exact
-/// plan-specified message, prefixes sorted alphabetically for determinism
-/// (`E, F, R` regardless of on-disk row order).
+/// Ledger contains multiple distinct prefixes. Inference can't pick one
+/// without guessing, so the helper errors out, listing the prefixes sorted
+/// alphabetically for determinism (`E, F, R` regardless of on-disk row order).
 #[test]
 fn items_next_id_infer_from_file_rejects_multiple_prefixes() {
     let dir = tempfile::tempdir().unwrap();
@@ -265,8 +257,8 @@ summary = "future schema"
     );
 }
 
-/// T4 acceptance (c): empty ledger (no `[[items]]` entries) + no explicit
-/// `--prefix`. Inference has nothing to work from; surface the "non-empty
+/// Empty ledger (no `[[items]]` entries) + no explicit `--prefix`.
+/// Inference has nothing to work from; surface the "non-empty
 /// ledger or explicit --prefix" guidance so the caller knows the remediation.
 /// We pass an existing-but-item-less file so the empty-inference branch is
 /// exercised (the missing-file branch raises the same message via the cli.rs
@@ -296,10 +288,11 @@ fn items_next_id_infer_from_file_rejects_empty_ledger() {
     );
 }
 
-/// T4 acceptance (d): passing BOTH `--prefix` AND `--infer-from-file` must
-/// fail at clap parse time (exit 2, not exit 1) because the flags live in a
+/// Passing BOTH `--prefix` AND `--infer-from-file` must fail at clap parse
+/// time (exit 2, not exit 1) because the flags live in a
 /// `multiple(false)` ArgGroup. The error comes from clap directly, so we
-/// assert on the group-conflict phrase rather than a tomlctl-authored string.
+/// assert on the group-conflict phrase rather than a tomlctl-authored string —
+/// and, because clap carries `error-context`, on both conflicting flag names.
 #[test]
 fn items_next_id_prefix_and_infer_from_file_are_mutually_exclusive() {
     let dir = tempfile::tempdir().unwrap();
@@ -316,15 +309,19 @@ fn items_next_id_prefix_and_infer_from_file_are_mutually_exclusive() {
         .arg("--infer-from-file")
         .write_stdin("")
         .assert()
-        .failure();
+        .code(2);
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
-        stderr.contains("cannot be used with") || stderr.contains("argument cannot be used"),
+        stderr.contains("cannot be used with"),
         "expected clap group-conflict error, got stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("--prefix <PREFIX>") && stderr.contains("--infer-from-file"),
+        "the conflict must name BOTH flags, not just the rejection; got stderr:\n{stderr}"
     );
 }
 
-/// R44: `items apply` rejects an ops array larger than `MAX_OPS_PER_APPLY`
+/// `items apply` rejects an ops array larger than `MAX_OPS_PER_APPLY`
 /// with a message that names the count, the cap, and directs the user to
 /// split the batch. The cap is a pre-write check, so the on-disk ledger is
 /// untouched when it fires.
@@ -378,7 +375,7 @@ status = "open"
     assert_eq!(after, seed, "ledger must be unmodified after cap rejection");
 }
 
-/// R41 part 2 — stdin sentinel: piping a JSON payload into `items apply --ops -`
+/// Stdin sentinel: piping a JSON payload into `items apply --ops -`
 /// on a seeded ledger must apply the add op and leave the expected item on
 /// disk.
 #[test]
@@ -426,7 +423,7 @@ status = "open"
     );
 }
 
-/// R41 part 3 — lock contention smoke test: spawn two `items add` processes
+/// Lock contention smoke test: spawn two `items add` processes
 /// on the same file with a short timeout. At least one must succeed; the
 /// other either succeeds (lock acquired after the first finishes) or errors
 /// cleanly with the documented "could not acquire" / "lock held" message —
@@ -981,12 +978,11 @@ fn items_list_preserves_legacy_filter_flags() {
     assert_eq!(count, 4, "expected 4 open items in the fixture");
 }
 
-// ---------------- R79: extended query-surface coverage ----------------
+// ---------------- extended query-surface coverage ----------------
 //
-// Each test below exercises one flag of the `items list` query surface that
-// was previously uncovered by the integration harness. They all share the
-// 6-row `QUERY_FIXTURE` plus the `run_list_query` helper defined in
-// `tests/common/mod.rs`, and stay under 25 lines so a CLI-surface break
+// Each test below exercises one flag of the `items list` query surface. They
+// all share the 6-row `QUERY_FIXTURE` plus the `run_list_query` helper defined
+// in `tests/common/mod.rs`, and stay under 25 lines so a CLI-surface break
 // points at a single culprit.
 
 #[test]
@@ -1155,10 +1151,10 @@ active = true
     assert_eq!(run("--where", r#"id=@string:A"#), vec!["A"]);
 }
 
-/// R73: a malformed typed-RHS must surface as a non-zero exit + a clear
-/// error that names both the bad RHS and the key under predicate. The
-/// old behaviour silently dropped every row, so the user saw an empty
-/// list and had no signal their filter was broken.
+/// A malformed typed-RHS must surface as a non-zero exit + a clear error that
+/// names both the bad RHS and the key under predicate. Silently dropping every
+/// row instead would hand the caller an empty list and no signal that the
+/// filter is broken.
 #[test]
 fn items_list_typed_rhs_parse_error_bails_with_clear_message() {
     let fixture = r#"schema_version = 1
@@ -1191,7 +1187,7 @@ first_flagged = 2026-04-18
     );
 }
 
-// ---------------- R80: sidecar coverage on new write paths ----------------
+// ------- sidecar coverage: `add-many` and `array-append` write paths -------
 
 #[test]
 fn items_add_many_writes_sidecar() {
@@ -1528,22 +1524,16 @@ fn integrity_refresh_missing_file_is_not_found() {
 
 /// `guard_write_path` auto-creates missing intermediate directories when
 /// the target lands under `.claude/`, matching the Write tool's `mkdir -p`
-/// semantics. This removes the confusing "parent directory ... not found
-/// (os error 2/3)" error class that agents hit when calling
-/// `tomlctl items add` against a not-yet-bootstrapped flow directory
-/// (e.g. `.claude/flows/<new-slug>/execution-record.toml`).
+/// semantics — so `tomlctl items add` against a not-yet-bootstrapped flow
+/// directory (e.g. `.claude/flows/<new-slug>/execution-record.toml`) never
+/// raises the "parent directory ... not found (os error 2/3)" error class.
 ///
-/// T2 (doc-comment refresh): POST-T1 the write itself now SUCCEEDS rather
-/// than failing at `read_toml` — auto-create seeds the missing target with
-/// the schema-aware skeleton (`execution-record.toml` is a recognised flow
-/// file, so it gets `schema_version = 1`), then applies the `set`. The
-/// directory-creation side-effect this test originally pinned is still
-/// exercised (the auto-`mkdir -p` runs before the seed), but the call no
-/// longer exits non-zero. We therefore tighten the assertions to the
-/// post-T1 contract: the command succeeds, the envelope reports
-/// `"created":true`, the flow dir was created, the seeded file exists on
-/// disk carrying `schema_version = 1`, and the pre-fix "parent directory"
-/// confusion is absent from stderr.
+/// The whole call SUCCEEDS: the auto-`mkdir -p` runs, auto-create seeds the
+/// missing target with the schema-aware skeleton (`execution-record.toml` is
+/// a recognised flow file, so it gets `schema_version = 1`), then the `set`
+/// lands on the seeded doc. Pinned here: the success exit, a `"created":true`
+/// envelope, the flow dir on disk, the seeded file carrying
+/// `schema_version = 1`, and no "parent directory" text on stderr.
 #[test]
 fn write_under_claude_auto_creates_missing_parent_dirs() {
     let dir = tempfile::tempdir().unwrap();
@@ -1556,10 +1546,6 @@ fn write_under_claude_auto_creates_missing_parent_dirs() {
         "precondition: flow dir must not exist yet"
     );
 
-    // POST-T1: the call now SUCCEEDS — the auto-`mkdir -p` creates the flow
-    // directory, the missing target is seeded with the schema skeleton, and
-    // the `set` lands on the seeded doc. Assert the success exit, the
-    // `created:true` envelope, and the absence of the pre-fix confusion.
     let out = Command::cargo_bin("tomlctl")
         .unwrap()
         .env("TOMLCTL_ROOT", dir.path())
@@ -1573,9 +1559,6 @@ fn write_under_claude_auto_creates_missing_parent_dirs() {
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
-    // R9: parsed-JSON typed assertion on the envelope (created bool + a
-    // non-empty path ending in the target filename) rather than a loose
-    // substring match that would accept an empty/malformed path.
     assert_write_envelope(&stdout, true, "execution-record.toml");
     assert!(
         !stderr.contains("parent directory") && !stderr.contains("canonicalising write target"),
@@ -1621,7 +1604,7 @@ fn write_outside_claude_does_not_auto_create_parent_dirs() {
         .arg(&outside_target)
         .arg("schema_version")
         .arg("1")
-        // R24: `--allow-outside` is a per-subcommand `WriteIntegrityArgs`
+        // `--allow-outside` is a per-subcommand `WriteIntegrityArgs`
         // flag, so it MUST follow the `set` positionals. Placed before the
         // subcommand it is rejected by clap (exit 2, "unexpected argument")
         // and the `.failure()` below would pass for the wrong reason —
@@ -1810,17 +1793,16 @@ fn integrity_refresh_handles_zero_byte_file() {
     );
 }
 
-// ===== T2: `created` envelope/stderr surfacing =====================
+// ===== `created` envelope/stderr surfacing =========================
 //
-// T1 auto-creates a missing write target (default) and computes a `created`
-// bool that it discarded. T2 surfaces that bool: every write success envelope
-// now carries `"created":<bool>` + `"path":<file>`, and a one-line stderr
-// guidance fires only when a file was newly seeded (with a
-// `(schema_version=1)` suffix for the four recognised flow files). These
-// black-box tests drive the built binary so they exercise the real dispatch +
-// stderr channel, mirroring the existing `assert_cmd` harness.
+// A missing write target is auto-created by default. Every write-success
+// envelope carries `"created":<bool>` + `"path":<file>`, and a one-line
+// stderr guidance fires only when a file was newly seeded — with a
+// `(schema_version=1)` suffix for the `SCHEMA_SEEDED_FLOW_FILES` basenames.
+// These tests drive the built binary so they exercise the real dispatch and
+// stderr channel.
 
-/// T2 (a): `items add` to a MISSING recognised flow file (`review-ledger.toml`
+/// `items add` to a MISSING recognised flow file (`review-ledger.toml`
 /// under `.claude/`) reports `"created":true` and lands the seeded file with
 /// `schema_version = 1` on disk.
 #[test]
@@ -1844,9 +1826,6 @@ fn items_add_to_missing_ledger_reports_created_true() {
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    // R9: parsed-JSON typed assertion — created:true AND a non-empty `path`
-    // ending in the ledger filename. The old `contains(r#""path":"#)` accepted
-    // an empty or malformed path; this pins the real shape.
     assert_write_envelope(&stdout, true, "review-ledger.toml");
 
     // The seeded file exists and carries the recognised-flow-file skeleton.
@@ -1863,7 +1842,7 @@ fn items_add_to_missing_ledger_reports_created_true() {
     assert_sidecar_matches(&ledger);
 }
 
-/// T2 (b): a SECOND `items add` to the now-existing ledger reports
+/// A SECOND `items add` to the now-existing ledger reports
 /// `"created":false` (the file already exists, so nothing was seeded).
 #[test]
 fn items_add_to_existing_ledger_reports_created_false() {
@@ -1890,8 +1869,6 @@ fn items_add_to_existing_ledger_reports_created_false() {
     // First add seeds the file.
     let first = run_add(r#"{"id":"R1","status":"open"}"#);
     let first_stdout = String::from_utf8_lossy(&first.get_output().stdout).to_string();
-    // R9: parsed-JSON typed assertion (created bool + path-suffix) instead of
-    // a loose substring match.
     assert_write_envelope(&first_stdout, true, "review-ledger.toml");
 
     // Second add to the now-existing file must report created:false.
@@ -1900,11 +1877,10 @@ fn items_add_to_existing_ledger_reports_created_false() {
     assert_write_envelope(&second_stdout, false, "review-ledger.toml");
 }
 
-/// T2 (c) REGRESSION: a write to a PRE-EXISTING ledger reports
-/// `"created":false` and leaves the file + its `.sha256` sidecar
-/// byte-identical to the pre-write baseline when the write is a no-op
-/// (a `--dedupe-by` add that matches an existing row). This pins the
-/// invariant that surfacing `created` did not perturb the no-write path.
+/// REGRESSION: a write to a PRE-EXISTING ledger reports `"created":false` and
+/// leaves the file + its `.sha256` sidecar byte-identical to the pre-write
+/// baseline when the write is a no-op (a `--dedupe-by` add that matches an
+/// existing row) — the no-write path must touch no bytes.
 #[test]
 fn write_to_existing_ledger_created_false_and_byte_identical_on_noop() {
     let (dir, ledger) = seed_ledger(
@@ -1947,9 +1923,9 @@ fn write_to_existing_ledger_created_false_and_byte_identical_on_noop() {
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    // R9: parsed-JSON typed assertion on the created/path envelope. The
-    // `added` field is dedupe-add-specific (not part of the created/path
-    // shape), so it stays a typed field assertion alongside.
+    // The `added` field is dedupe-add-specific and not part of the
+    // created/path shape, so assert the envelope fields directly here rather
+    // than through `assert_write_envelope`.
     let env = parse_write_envelope(&stdout);
     assert_eq!(
         env["ok"].as_bool(),
@@ -1979,7 +1955,7 @@ fn write_to_existing_ledger_created_false_and_byte_identical_on_noop() {
     );
 }
 
-/// T2 (d): an `items update` against a FRESHLY-MISSING ledger ERRORS (no
+/// An `items update` against a FRESHLY-MISSING ledger ERRORS (no
 /// matching id on the seeded skeleton) and creates NO stray file — the
 /// transactional "write-only-on-closure-success" property holds even when the
 /// seed fired in memory. `items remove` behaves the same way.
@@ -2013,7 +1989,7 @@ fn update_and_remove_against_missing_ledger_error_and_leave_no_file() {
     }
 }
 
-/// T2 (e): the stderr guidance line appears WHEN AND ONLY WHEN a file was
+/// The stderr guidance line appears WHEN AND ONLY WHEN a file was
 /// created, carrying the `(schema_version=1)` suffix for a recognised flow
 /// file and omitting it for an arbitrary `.toml`. A second write to the
 /// now-existing file emits NO guidance line.
@@ -2083,15 +2059,15 @@ fn created_stderr_guidance_fires_only_on_creation() {
     );
 }
 
-// ===== R10: `--no-create` end-to-end ===============================
+// ===== `--no-create` end-to-end ====================================
 //
-// T1 maps `--no-create` to `OnMissing::Error` (dispatch::on_missing_for). The
+// `dispatch::on_missing_for` maps `--no-create` to `OnMissing::Error`. The
 // clap-acceptance layer and the io.rs `read_or_seed`/`mutate_doc` primitive
 // are unit-tested in isolation; this drives the BUILT binary so the wiring
 // `--no-create → OnMissing::Error → kind=not_found, no file persisted` is
 // covered end-to-end through the real dispatch path.
 
-/// R10: `items add <missing-ledger> --json … --no-create` must FAIL with the
+/// `items add <missing-ledger> --json … --no-create` must FAIL with the
 /// NotFound error and leave NO stray file on disk. We assert the typed error
 /// kind (`kind=not_found`, the closed taxonomy `io::read_toml` tags a missing
 /// file with) via `--error-format json`, which is the most shape-stable
@@ -2145,18 +2121,17 @@ fn items_add_no_create_against_missing_ledger_errors_and_writes_nothing() {
     );
 }
 
-// ===== R11: `mutate_doc_plan` created-reporting ====================
+// ===== `mutate_doc_plan` created-reporting =========================
 //
 // The `items apply` / `items remove` write verbs route through
 // `io::mutate_doc_plan` (a distinct entrypoint from `items add`'s `mutate_doc`).
-// T2's `created` reporting must surface through THAT path too: an `apply` batch
+// `created` reporting must surface through THAT path too: an `apply` batch
 // carrying an `add` op against a MISSING recognised flow file seeds the file
 // (`created:true`) and lands `schema_version = 1` on disk.
 
-/// R11: `items apply --ops '[{"op":"add",…}]'` against a MISSING `review-ledger.toml`
+/// `items apply --ops '[{"op":"add",…}]'` against a MISSING `review-ledger.toml`
 /// reports `created:true` through `mutate_doc_plan` and seeds the file with
-/// `schema_version = 1` plus the added row. Parsed-JSON envelope assertions
-/// (per R9).
+/// `schema_version = 1` plus the added row.
 #[test]
 fn items_apply_add_op_to_missing_ledger_reports_created_true_via_mutate_doc_plan() {
     let dir = tempfile::tempdir().unwrap();
@@ -2178,8 +2153,8 @@ fn items_apply_add_op_to_missing_ledger_reports_created_true_via_mutate_doc_plan
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    // R9-style parsed-JSON envelope: created:true + a path ending in the ledger
-    // filename, proving the `created` signal surfaces through mutate_doc_plan.
+    // created:true plus a path ending in the ledger filename is what proves the
+    // `created` signal surfaces through `mutate_doc_plan`.
     assert_write_envelope(&stdout, true, "review-ledger.toml");
 
     // The seeded file carries the recognised-flow-file skeleton and the add.
@@ -2195,7 +2170,7 @@ fn items_apply_add_op_to_missing_ledger_reports_created_true_via_mutate_doc_plan
     assert_sidecar_matches(&ledger);
 }
 
-/// R11 (sibling): `items remove` against a MISSING ledger errors (no matching
+/// `items remove` against a MISSING ledger errors (no matching
 /// id on the freshly-seeded skeleton) and creates NO stray file — confirming
 /// the `mutate_doc_plan` remove arm's documented behaviour (the
 /// `compute_remove_mutation` `?` fires BEFORE the persist). This pins the
@@ -2229,11 +2204,11 @@ fn items_remove_against_missing_ledger_errors_via_mutate_doc_plan_and_leaves_no_
     );
 }
 
-// ===== R20: P8 `--allow-outside` + auto-create stray file ==========
+// ===== `--allow-outside` + auto-create stray file ==================
 //
 // INVARIANT: the `.claude/` containment guard is the safety boundary;
-// `--allow-outside` is a deliberate double-opt-out the plan (P8) documents as
-// permissive. `guard_write_path` SKIPS the auto-mkdir helper under
+// `--allow-outside` is a deliberate, documented-as-permissive
+// double-opt-out. `guard_write_path` SKIPS the auto-mkdir helper under
 // `--allow-outside`, so a target whose parent does NOT exist still bails (that
 // is `write_outside_claude_does_not_auto_create_parent_dirs`). This test
 // pins the COMPLEMENT: when the outside parent ALREADY EXISTS, the
@@ -2241,7 +2216,7 @@ fn items_remove_against_missing_ledger_errors_via_mutate_doc_plan_and_leaves_no_
 // lands a stray file. The "outside" path stays INSIDE the tempdir root so the
 // test never writes to a real filesystem location.
 
-/// R20: under `--allow-outside`, an auto-create whose target's parent dir
+/// Under `--allow-outside`, an auto-create whose target's parent dir
 /// already exists but is OUTSIDE `.claude/` DOES create the stray file — the
 /// guard warns rather than blocks. Complements
 /// `write_outside_claude_does_not_auto_create_parent_dirs` (mkdir refusal).
@@ -2277,7 +2252,7 @@ fn allow_outside_auto_create_with_existing_parent_writes_stray_file() {
         .assert()
         .success();
 
-    // The documented P8 behaviour: the stray file IS created (guard warns,
+    // The documented behaviour: the stray file IS created (guard warns,
     // doesn't block) and carries the written content.
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
