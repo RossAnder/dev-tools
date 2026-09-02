@@ -2,10 +2,13 @@
 //! derived from it.
 //!
 //! Collision widening is ordered by `dedup_id`, never by insertion order, so
-//! two worktrees resolve the same collision the same way. The consequence is
-//! that a later-minted, lexicographically smaller `dedup_id` claims the short
-//! id an incumbent holds; the caller re-derives the incumbent, and
-//! `schema::validate_ids_unique` is what refuses to write the pair otherwise.
+//! two worktrees resolve the same collision the same way. Only the row being
+//! minted is ever assigned an id: a stored row keeps the id it was written
+//! with, because `evidence::dir_for` keys its drop-box on that id and a
+//! reassignment would orphan the captured bytes. So a later-minted,
+//! lexicographically smaller `dedup_id` can claim the short id an incumbent
+//! holds, and `schema::validate_ids_unique` rejects the write rather than
+//! renaming either row.
 
 use std::collections::BTreeSet;
 
