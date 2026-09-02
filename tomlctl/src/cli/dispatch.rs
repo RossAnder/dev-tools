@@ -2101,7 +2101,6 @@ body
     /// no signal at all. Same graceful skip as `command_lint` for a checkout
     /// without the harness tree.
     #[test]
-    #[ignore = "claude/skills/tomlctl/SKILL.md is above the ceiling until its split lands"]
     fn skill_bodies_under_line_ceiling() {
         const CEILING: usize = 500;
 
