@@ -1,6 +1,9 @@
 //! Shared-block parity and skill-gating tests for the dispatch layer.
 
 use crate::blocks::{self, blocks_verify, scan_block_names_warn};
+use crate::integrity::hex_lower;
+use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -102,6 +105,183 @@ body
     );
 }
 
+/// Every `[[block]]` in `scripts/shared-blocks.toml` as (name, absolute carrier
+/// paths), in manifest order. `None` when the manifest is absent.
+fn shared_block_manifest(repo_root: &Path) -> Option<Vec<(String, Vec<PathBuf>)>> {
+    let manifest_path = repo_root.join("scripts").join("shared-blocks.toml");
+    let text = fs::read_to_string(&manifest_path).ok()?;
+    let manifest: toml::Table = toml::from_str(&text).expect("parse shared-blocks.toml");
+    Some(
+        manifest
+            .get("block")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|b| b.as_table())
+            .filter_map(|t| {
+                let name = t.get("name").and_then(|v| v.as_str())?.to_string();
+                let files = t
+                    .get("files")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(|f| repo_root.join(f))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                Some((name, files))
+            })
+            .collect(),
+    )
+}
+
+/// A block's digest as `scripts/verify-shared-blocks.sh` computes it: awk emits
+/// each line strictly between the two whole-line markers with `\n` as ORS, and
+/// sha256 runs over exactly those bytes.
+///
+/// Re-derived rather than delegating to `blocks::extract_block`, which is the
+/// thing under test — sharing the extractor would make the comparison in
+/// `blocks_verify_matches_shell_extraction` self-confirming. A trailing `\r` is
+/// dropped before the marker comparison because the gawk the hook requires reads
+/// in text mode, and some carriers are CRLF on disk. `None` covers the shell's
+/// two hard failures — a missing marker, and an empty span between present ones.
+fn shell_block_digest(text: &str, name: &str) -> Option<String> {
+    let start = format!("<!-- SHARED-BLOCK:{name} START -->");
+    let end = format!("<!-- SHARED-BLOCK:{name} END -->");
+    let mut inside = false;
+    let mut saw_start = false;
+    let mut saw_end = false;
+    let mut bytes: Vec<u8> = Vec::new();
+    for line in text.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line == start {
+            inside = true;
+            saw_start = true;
+            continue;
+        }
+        if line == end {
+            inside = false;
+            saw_end = true;
+            continue;
+        }
+        if inside {
+            bytes.extend_from_slice(line.as_bytes());
+            bytes.push(b'\n');
+        }
+    }
+    if !(saw_start && saw_end) || bytes.is_empty() {
+        return None;
+    }
+    Some(hex_lower(&Sha256::digest(&bytes)))
+}
+
+/// Parity for every block the manifest names, against a digest re-derived from
+/// the shell verifier's own extraction rules. Pinning one block's hash leaves
+/// the others enforced solely by the pre-commit hook, so a `--no-verify` commit
+/// lands drift in them with `cargo test` still green. Iterating the manifest
+/// rather than naming blocks means a block added later is covered from the
+/// moment it is listed.
+#[test]
+fn blocks_verify_matches_shell_extraction() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+    let Some(manifest) = shared_block_manifest(&repo_root) else {
+        eprintln!("blocks_verify_matches_shell_extraction: manifest not found, skipping");
+        return;
+    };
+    if !manifest.iter().flat_map(|(_, f)| f).all(|p| p.exists()) {
+        eprintln!("blocks_verify_matches_shell_extraction: carrier files not found, skipping");
+        return;
+    }
+    // The shell verifier exits 2 when the manifest yields no (block, file)
+    // pairs; an empty manifest here would otherwise be an unconditional pass.
+    assert!(
+        !manifest.is_empty(),
+        "scripts/shared-blocks.toml declares no `[[block]]` entries — \
+         this gate would check nothing"
+    );
+
+    let mut failures: Vec<String> = Vec::new();
+    for (name, carriers) in &manifest {
+        // A single-carrier block is trivially in parity with itself.
+        if carriers.len() < 2 {
+            failures.push(format!(
+                "{name}: {} carrier(s) listed — parity needs at least two",
+                carriers.len()
+            ));
+            continue;
+        }
+
+        let mut digests: Vec<(String, String)> = Vec::new();
+        for carrier in carriers {
+            let rel = repo_relative(carrier, &repo_root);
+            let text = fs::read_to_string(carrier).expect("read carrier");
+            match shell_block_digest(&text, name) {
+                Some(d) => digests.push((rel, d)),
+                None => failures.push(format!(
+                    "{name}: {rel} has no non-empty span between its markers"
+                )),
+            }
+        }
+        if digests.len() != carriers.len() {
+            continue;
+        }
+
+        let (ref first_file, ref expected) = digests[0];
+        if let Some((rel, d)) = digests.iter().find(|(_, d)| d != expected) {
+            failures.push(format!(
+                "{name}: carriers disagree — {first_file}: {expected} vs {rel}: {d}"
+            ));
+            continue;
+        }
+
+        let report = blocks_verify(carriers, std::slice::from_ref(name)).unwrap();
+        if !report.ok {
+            failures.push(format!(
+                "{name}: blocks_verify reports drift: {:?}",
+                report.report
+            ));
+            continue;
+        }
+        let hash = report
+            .report
+            .get("blocks")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| {
+                arr.iter()
+                    .find(|b| b.get("name").and_then(|v| v.as_str()) == Some(name.as_str()))
+            })
+            .and_then(|b| b.get("hash"))
+            .and_then(|v| v.as_str());
+        match hash {
+            Some(h) if h == expected => {}
+            Some(h) => failures.push(format!(
+                "{name}: blocks_verify hashed {h}, the shell's extraction hashes {expected}"
+            )),
+            None => failures.push(format!(
+                "{name}: blocks_verify reported no single hash: {:?}",
+                report.report
+            )),
+        }
+    }
+
+    if !failures.is_empty() {
+        let mut msg = String::from(
+            "blocks_verify_matches_shell_extraction: shared block(s) are not in \
+             shell-equivalent parity:\n",
+        );
+        for f in &failures {
+            msg.push_str(&format!("  {f}\n"));
+        }
+        msg.push_str(
+            "  fix: restore the block byte-identically across its carriers \
+             (`bash scripts/verify-shared-blocks.sh` reports the same set)",
+        );
+        panic!("{msg}");
+    }
+}
+
 #[test]
 fn blocks_verify_reproduces_shell_hashes() {
     // Pin the shell verifier's hash for `forbidden-working-tree-ops`, one of
@@ -117,34 +297,15 @@ fn blocks_verify_reproduces_shell_hashes() {
     // lists here. The manifest's `files` entries are repo-relative; join
     // each onto `repo_root` to recover the absolute paths the verifier
     // (and the graceful-skip guard) expect.
-    let manifest_path = repo_root.join("scripts").join("shared-blocks.toml");
-    let manifest_text = match fs::read_to_string(&manifest_path) {
-        Ok(t) => t,
-        Err(_) => {
-            eprintln!("blocks_verify_reproduces_shell_hashes: manifest not found, skipping");
-            return;
-        }
+    let Some(manifest) = shared_block_manifest(&repo_root) else {
+        eprintln!("blocks_verify_reproduces_shell_hashes: manifest not found, skipping");
+        return;
     };
-    let manifest: toml::Table = toml::from_str(&manifest_text).expect("parse shared-blocks.toml");
-    let carriers_for = |name: &str| -> Vec<std::path::PathBuf> {
+    let carriers_for = |name: &str| -> Vec<PathBuf> {
         manifest
-            .get("block")
-            .and_then(|v| v.as_array())
-            .into_iter()
-            .flatten()
-            .filter_map(|b| b.as_table())
-            .find(|t| t.get("name").and_then(|v| v.as_str()) == Some(name))
-            .map(|t| {
-                t.get("files")
-                    .and_then(|v| v.as_array())
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|v| v.as_str())
-                            .map(|f| repo_root.join(f))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            })
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, files)| files.clone())
             .unwrap_or_default()
     };
 
@@ -261,6 +422,136 @@ fn blocks_verify_reproduces_shell_hashes() {
         "forbidden-working-tree-ops",
         "4701d2b8314c997366dfea83b6aa4e0bff5e275d2e1378517b67e5091d7fa026",
     );
+}
+
+/// The date-key names enumerated in the prose of the tomlctl skill's `write`
+/// reference: the run of backtick-quoted names between the two em-dashes that
+/// follow the `` `DATE_KEYS` set `` anchor.
+///
+/// The search is clamped to the paragraph carrying the anchor, so a re-wrapped
+/// sentence still parses while a missing dash cannot reach forward and collect
+/// unrelated backticked prose. A rewrite that drops the anchor, either dash, or
+/// the backticks yields an empty set — which the caller must reject rather than
+/// read as agreement.
+fn enumerated_date_keys(text: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let Some(anchor) = text.find("`DATE_KEYS` set") else {
+        return out;
+    };
+    let tail = &text[anchor..];
+    let paragraph_end = tail
+        .find("\n\n")
+        .into_iter()
+        .chain(tail.find("\n\r\n"))
+        .min()
+        .unwrap_or(tail.len());
+    let rest = &tail[..paragraph_end];
+    let Some(open) = rest.find('—') else {
+        return out;
+    };
+    let after = &rest[open + '—'.len_utf8()..];
+    let Some(close) = after.find('—') else {
+        return out;
+    };
+
+    let segments: Vec<&str> = after[..close].split('`').collect();
+    let mut i = 1;
+    while i + 1 < segments.len() {
+        out.insert(segments[i].to_string());
+        i += 2;
+    }
+    out
+}
+
+/// `DATE_KEYS` is enumerated verbatim in the tomlctl skill's `write` reference,
+/// with nothing but a doc comment asking the next editor to widen both. That
+/// instruction has already been missed once. The crate gates the slice against
+/// its `is_date_key` jump table the same way.
+#[test]
+fn write_reference_enumerates_every_date_key() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+    let reference = repo_root
+        .join("claude")
+        .join("skills")
+        .join("tomlctl")
+        .join("references")
+        .join("write.md");
+    let Ok(text) = fs::read_to_string(&reference) else {
+        eprintln!("write_reference_enumerates_every_date_key: write.md not found, skipping");
+        return;
+    };
+    let rel = repo_relative(&reference, &repo_root);
+
+    let documented = enumerated_date_keys(&text);
+    assert!(
+        !documented.is_empty(),
+        "write_reference_enumerates_every_date_key: parsed zero names out of \
+         {rel} — the enumeration must stay a run of backtick-quoted names \
+         between the two em-dashes following the `DATE_KEYS` set anchor, or \
+         this gate compares an empty set against itself"
+    );
+
+    let declared: BTreeSet<String> = crate::convert::DATE_KEYS
+        .iter()
+        .map(|k| (*k).to_string())
+        .collect();
+    if documented != declared {
+        let mut msg = format!(
+            "write_reference_enumerates_every_date_key: {rel} and `DATE_KEYS` in \
+             tomlctl/src/convert.rs disagree:\n"
+        );
+        let undocumented: Vec<&String> = declared.difference(&documented).collect();
+        let stale: Vec<&String> = documented.difference(&declared).collect();
+        if !undocumented.is_empty() {
+            msg.push_str(&format!(
+                "  in DATE_KEYS, absent from the reference: {undocumented:?}\n"
+            ));
+        }
+        if !stale.is_empty() {
+            msg.push_str(&format!(
+                "  in the reference, absent from DATE_KEYS: {stale:?}\n"
+            ));
+        }
+        msg.push_str("  fix: widen the constant and the reference in lockstep");
+        panic!("{msg}");
+    }
+}
+
+/// The extractor behind `write_reference_enumerates_every_date_key`, over
+/// synthetic prose so the live reference cannot make it look right by accident.
+/// Every rejected shape returns the empty set, which is exactly the input the
+/// caller's non-empty assertion exists to catch.
+#[test]
+fn enumerated_date_keys_needs_the_documented_shape() {
+    let sentence = "Date-shaped strings (`YYYY-MM-DD`) in the `DATE_KEYS` set — \
+                    `created`, `updated`, `last_seen` — are promoted. The \
+                    `DATE_KEYS` constant in `tomlctl/src/convert.rs` owns the set.";
+    let keys = enumerated_date_keys(sentence);
+    assert_eq!(
+        keys,
+        ["created", "last_seen", "updated"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<BTreeSet<_>>(),
+        "names outside the em-dash span must not leak in"
+    );
+
+    for empty in [
+        // No anchor: the sentence was rewritten around the constant.
+        "the promoted keys are `created`, `updated`",
+        // Anchor, but the enumeration lost its dashes.
+        "keys in the `DATE_KEYS` set: `created`, `updated` are promoted",
+        // Only an opening dash — an unterminated span names nothing.
+        "the `DATE_KEYS` set — `created`, `updated` are promoted",
+        // Dashes, but the names lost their backticks.
+        "the `DATE_KEYS` set — created, updated — are promoted",
+    ] {
+        assert!(
+            enumerated_date_keys(empty).is_empty(),
+            "must parse to nothing rather than a partial set: {empty}"
+        );
+    }
 }
 
 /// Anthropic's skill-authoring guidance caps a SKILL.md body at 500 lines
