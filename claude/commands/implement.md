@@ -84,6 +84,14 @@ tomlctl flow render-progress-log --slug <slug>
 
 **Backlog harvest.** Invoke the `backlog-capture` skill to load the capture discipline (mint criteria, the verdict table, the fingerprint rule, the vocabularies, the check-then-add gate). Collect every `TANGENTIAL:` line the Phase-2 agents returned, plus any out-of-scope discovery in the Failed / Skipped and Plan Deviations material — a plan deviation remains a `type=deviation` record; only what falls outside the plan's item set is a backlog candidate. Run the skill's gate on each candidate, minting with `--origin implement --flow <slug>`, and list what it minted or bumped on the report's `Backlog` line.
 
+**Three dispositions, not two.** Every harvested discovery is exactly one of: a **plan deviation**, which stays a `type=deviation` record and is never a backlog candidate; a **same-run task**, minted per Phase 2 step 3c and scheduled through the normal frontier; or a **backlog item**, minted through the gate above. The disposition is the orchestrator's — a sub-agent surfaces a candidate on its `TANGENTIAL:` line and decides nothing. Deferral is the default for an out-of-plan discovery; a same-run task must clear all three of:
+
+1. **Cost to fix now** — cheap in the sense of needing no research or design pass of its own. Anything you would have to investigate before you could write its `Action` is a backlog item.
+2. **Blast radius** — the change stays inside a file this run already touched. A discovery reaching across files the run never opened is a backlog item however small each edit looks.
+3. **Verification coverage** — the `## Verification Commands` this run already runs must actually exercise the touched file. Where they do not, a same-run task ships an unverified change and buys nothing over a backlog item, which at least records that nothing was checked.
+
+Fewer than three ⇒ backlog item. Accepting one re-opens the run: mint it per step 3c (next unused task number, **Files** / **Depends on** / **Acceptance**, `type=deviation` entry recording the mint, plan-behind-the-flow note in Next Steps), dispatch it, and re-enter Phase 3 — work landing after the final pass is unverified by definition, and that cost is why the bar is three factors rather than judgement. An accepted candidate is now in scope, so it is fixed rather than captured; do not also mint it into the backlog.
+
 ```
 ## Implementation Summary
 
