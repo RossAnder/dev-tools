@@ -1,0 +1,332 @@
+schema_version = 1
+last_updated = 2026-09-03
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-09-03
+agent = "implement"
+summary = "Flow entered implementation: draft -> in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "b6496df471686e7e"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-09-03
+agent = "implement"
+task_ref = "sweep-the-five-finding-id-leaks-from-failure-messages"
+status = "done"
+summary = "Rewrote five assertion/panic messages to state their invariant instead of citing a finding id"
+files = [
+    "tomlctl/src/io.rs",
+    "tomlctl/tests/capabilities.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "8bdac21068e40b2c"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-09-03
+agent = "implement"
+task_ref = "tighten-the-two-loose-clap-stderr-assertions"
+status = "done"
+summary = "Both clap stderr assertions now require the quoted flag token, so they fail on the feature-off bare-kind rendering"
+files = [
+    "tomlctl/tests/items_dry_run.rs",
+    "tomlctl/tests/blocks.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "ad353873d5bc4b49"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-09-03
+agent = "implement"
+task_ref = "arm-the-sort-engaged-count_distinct-test-with-a-filter"
+status = "done"
+summary = "Armed the sort-engaged count_distinct test with a filtered fixture (3 filtered vs 5 unfiltered)"
+files = ["tomlctl/src/query.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "6311a8e80c96b358"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-a-per-tag-flag-to-the-backlog-tags-cluster-view"
+status = "done"
+summary = "Added --per-tag to backlog cluster; new cluster_per_tag bypasses union-find, items may appear in several groups"
+files = [
+    "tomlctl/src/backlog/cluster.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "274c5142f7399ec5"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-09-03
+agent = "implement"
+task_ref = "pin-line-endings-and-refresh-every-pinned-path"
+status = "done"
+summary = "Pinned .githooks/** and scripts/** to LF and refreshed all 8 CRLF worktree files; eol audit now returns empty"
+files = [
+    ".gitattributes",
+    ".githooks/pre-commit",
+    "scripts/verify-shared-blocks.sh",
+    "scripts/verify-plan-story-blocks.sh",
+    "scripts/shared-blocks.toml",
+    "scripts/templates/flow-context.md",
+    "claude/agents/implement-deep.md",
+    "claude/agents/implement-lite.md",
+    "claude/agents/verification.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "1e20ff813c38fde9"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-the-same-run-task-option-to-the-implement-harvest"
+status = "done"
+summary = "Phase-4 harvest now names three dispositions with a three-factor test routing into the step-3c mint machinery"
+files = ["claude/commands/implement.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "f61b00e8a340f0fd"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-09-03
+agent = "implement"
+task_ref = "document-the-per-tag-flag"
+status = "done"
+summary = "Documented --per-tag in the backlog cluster flag table, with the key-grammar shift and a command_lint-parsed example"
+files = ["claude/skills/tomlctl/references/backlog.md"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+dedup_id = "e058ae65bc2d324d"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-09-03
+agent = "implement"
+task_ref = "let-implementer-agents-signal-a-cheap-in-file-discovery"
+status = "done"
+summary = "TANGENTIAL grammar gained an optional cheap-in-file field, byte-identical across both implementer carriers"
+files = [
+    "claude/agents/implement-deep.md",
+    "claude/agents/implement-lite.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "75f994d22a39a7cf"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-09-03
+agent = "implement"
+task_ref = "tighten-the-doc-gate-with-a-wording-scoped-rule"
+status = "done"
+summary = "Added a wording-scoped ledger-id rule before the comment-only short-circuit, with an ISO pre-strip; MODE stays warn"
+files = ["scripts/doc-diff-gate.sh"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "ab076ed2fdd4ad93"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-the-items-fingerprint-verb-and-correct-the-readme"
+status = "done"
+summary = "Added items fingerprint <file> <id> reusing tier_b_fingerprint_table, plus the FEATURES entry and README correction"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/README.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "ec4cbbbb3a288384"
+
+[[items]]
+id = "E12"
+type = "deviation"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-the-items-fingerprint-verb-and-correct-the-readme"
+summary = "A second FEATURES gate the plan did not name forced T7 to absorb a one-line fix T6 could not make"
+original_intent = "Plan T6 assumed readme_feature_transcriptions_match_capabilities_features was the only gate spanning the FEATURES const, so adding a feature needed only types.rs plus README.md"
+rationale = "capabilities_features_contains_every_plan_feature (tomlctl/tests/capabilities.rs ~:1554-1599) also transcribes FEATURES into a literal expected array with an exact-length assertion, and failed with 'expected 34 entries, got 35'. That file is T7's under the file-claim rule, so T6 escalated rather than editing it and T7 was dispatched carrying the extra line. Checkpoint A was widened from T1-T6 to T1-T7 because the tree cannot be green at the declared T6 marker."
+dedup_id = "09c1657321b32102"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-black-box-coverage-for-the-fingerprint-verb"
+status = "done"
+summary = "Added the fingerprint black-box test and read_subs entry, and repaired the second FEATURES pin T6 escalated"
+files = ["tomlctl/tests/capabilities.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+dedup_id = "5740bbaf1a84b2fd"
+
+[[items]]
+type = "verification"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-black-box-coverage-for-the-fingerprint-verb"
+id = "E14"
+command = "CARGO_INCREMENTAL=0 cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "build clean"
+dedup_id = "ef1d6741f8525aab"
+
+[[items]]
+type = "verification"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-black-box-coverage-for-the-fingerprint-verb"
+id = "E15"
+command = "CARGO_INCREMENTAL=0 cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "769 tests across 19 binaries, 0 failed (capabilities 66, integration 59, main 440)"
+dedup_id = "40102b0021001429"
+
+[[items]]
+type = "verification"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-black-box-coverage-for-the-fingerprint-verb"
+id = "E16"
+command = "CARGO_INCREMENTAL=0 cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "no warnings"
+dedup_id = "a95baac55a8c4b1f"
+
+[[items]]
+type = "verification"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-black-box-coverage-for-the-fingerprint-verb"
+id = "E17"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "no formatting diff"
+dedup_id = "ff9173e24c5d93b1"
+
+[[items]]
+type = "verification"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-black-box-coverage-for-the-fingerprint-verb"
+id = "E18"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "shared-block parity OK after the T11 carrier edit"
+dedup_id = "fe47d698f36e1043"
+
+[[items]]
+type = "verification"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-black-box-coverage-for-the-fingerprint-verb"
+id = "E19"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+summary = "plan-story block gate OK"
+dedup_id = "97e8fec351a7c54a"
+
+[[items]]
+type = "verification"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-black-box-coverage-for-the-fingerprint-verb"
+id = "E20"
+command = "bash scripts/doc-diff-gate.sh"
+outcome = "pass"
+summary = "clean tree, no findings"
+dedup_id = "51f57b053deabbee"
+
+[[items]]
+type = "verification"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-black-box-coverage-for-the-fingerprint-verb"
+id = "E21"
+command = "bash scripts/doc-diff-gate.sh --self-test"
+outcome = "pass"
+summary = "11 patterns fire, 3 negative controls clean, including the new G4b message ledger id"
+dedup_id = "b6d66b3cb36edfab"
+
+[[items]]
+type = "verification"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-black-box-coverage-for-the-fingerprint-verb"
+id = "E22"
+command = "git ls-files --eol .githooks scripts claude/agents | grep -v 'w/lf'"
+outcome = "pass"
+summary = "empty output; every pinned path is w/lf, re-run directly by the orchestrator"
+dedup_id = "eb9cb3c6e90afb1c"
+
+[[items]]
+type = "verification"
+date = 2026-09-03
+agent = "implement"
+task_ref = "add-black-box-coverage-for-the-fingerprint-verb"
+id = "E23"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+summary = "87 crate dependencies scanned, no advisories; re-run directly by the orchestrator"
+dedup_id = "cbc975f44a46f6a7"
+
+[[items]]
+id = "E24"
+type = "checkpoint"
+kind = "commit-train"
+date = 2026-09-03
+agent = "implement"
+summary = "ae3978a=arm-the-sort-engaged-count_distinct-test-with-a-filter; 76bc972=tighten-the-two-loose-clap-stderr-assertions; c3f6833=sweep-the-five-finding-id-leaks + add-a-per-tag-flag + add-the-items-fingerprint-verb + add-black-box-coverage (merged: cli/types.rs and capabilities.rs each claimed twice); 3c3a2ff=document-the-per-tag-flag; dda6873=tighten-the-doc-gate-with-a-wording-scoped-rule; 206c8df=pin-line-endings-and-refresh-every-pinned-path; ec7fcaf=add-the-same-run-task-option-to-the-implement-harvest; 00d7e1c=let-implementer-agents-signal-a-cheap-in-file-discovery"
+commits = [
+    "ae3978a",
+    "76bc972",
+    "c3f6833",
+    "3c3a2ff",
+    "dda6873",
+    "206c8df",
+    "ec7fcaf",
+    "00d7e1c",
+]
+dedup_id = "65873e7de1d2c0d2"
+
+[[items]]
+id = "E25"
+type = "status-transition"
+date = 2026-09-03
+agent = "plan-update"
+summary = "All 11 plan tasks complete and the full verification pass green: in-progress -> review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "15ad66187d12090e"

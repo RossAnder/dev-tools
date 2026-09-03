@@ -1,0 +1,28 @@
+slug = "tomlctl-followups-round-2"
+plan_path = "docs/plans/tomlctl-followups-round-2.md"
+status = "review"
+created = 2026-09-03
+updated = 2026-09-03
+branch = "main"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/README.md",
+    "scripts/**",
+    ".githooks/**",
+    "claude/commands/**",
+    "claude/agents/**",
+    "claude/skills/tomlctl/references/**",
+    ".gitattributes",
+]
+
+[tasks]
+total = 11
+completed = 11
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/tomlctl-followups-round-2/review-ledger.toml"
+optimise_findings = ".claude/flows/tomlctl-followups-round-2/optimise-findings.toml"
+execution_record = ".claude/flows/tomlctl-followups-round-2/execution-record.toml"
+plan_review_findings = ".claude/flows/tomlctl-followups-round-2/plan-review-findings.toml"
