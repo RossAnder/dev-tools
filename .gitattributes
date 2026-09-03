@@ -22,3 +22,15 @@
 # Nothing committed changes: both extractors strip the CR before hashing, so
 # the block hashes are unaffected and the files convert on their next checkout.
 claude/agents/*.md text eol=lf
+
+# Pin the git hook and its scripts to LF. .githooks/pre-commit runs each
+# verifier directly (`"$ROOT/scripts/verify-shared-blocks.sh"`), not via
+# `bash <file>`, so on Linux a `#!/usr/bin/env bash\r` shebang fails the exec
+# with `env: 'bash\r': No such file or directory`; Git Bash tolerates CRLF in
+# shebang and body alike, which is why the breakage is invisible here. Globbed
+# by directory rather than `*.sh`: pre-commit has no extension, and
+# shared-blocks.toml and templates/flow-context.md feed the same gawk
+# whole-line matcher. `dir/` is a no-op here and a directory match does not
+# recurse, so `dir/**` is the required shape. The index is already LF.
+.githooks/** text eol=lf
+scripts/** text eol=lf
