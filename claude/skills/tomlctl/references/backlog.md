@@ -223,6 +223,7 @@ tomlctl backlog cluster --by area --min-size 2 --min-shared-tags 2
 | `--by` | `area` \| `tags` \| `relations` \| `all` | Which views to emit. | `all` |
 | `--min-size` | integer | Smallest group the area view will emit; a smaller group collapses upward to a shorter path prefix. | `2` |
 | `--min-shared-tags` | integer | Tags two items must share before the tags view groups them; groups then merge transitively. | `2` |
+| `--per-tag` | — | Emit one tags-view group per individual tag instead of merging shared-tag groups transitively; an item carrying two tags appears in both. Ignores `--min-shared-tags`. | off |
 | `--all-statuses` | — | Cluster every item rather than only `open` ones. | off |
 
 The `relations` view is connected components over the typed edge set and consults neither
@@ -235,6 +236,20 @@ empty:
           "kinds":["bug","flaky-test"],"areas":["lumina/server/src/pty"]}],
  "tags":[],"relations":[]}
 ```
+
+The default tags view cannot answer "which items carry `ci`": a transitive merge pulls in
+every item reachable through a shared middle, so asking for one tag collapses the store into
+a handful of sprawling groups. `--per-tag` answers it — one group per tag, still dropping
+groups of fewer than two members:
+
+```bash
+tomlctl backlog cluster --by tags --per-tag
+```
+
+Both forms emit under the same `tags` key; no fourth view appears. The keys differ in
+grammar, though: the default writes a `+`-joined tag *set* (`"ci+windows"`), `--per-tag` a
+single tag (`"ci"`). A consumer that splits `key` on `+` reads one group per tag under the
+flag and one per merged set without it.
 
 ## `backlog compact`
 
