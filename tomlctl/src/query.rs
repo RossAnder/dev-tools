@@ -2483,6 +2483,57 @@ category = "quality"
         let b = run(&doc, "items", &q_slow).unwrap();
         assert_eq!(a, b);
         assert_eq!(a["count_distinct"], 3);
+
+        // The shared fixture's open rows already cover every category it
+        // has, so a predicate over it cannot show whether the slow path
+        // filters before aggregating. This one has two non-open rows
+        // carrying categories that appear nowhere else (3 filtered vs 5
+        // unfiltered), so aggregating first would count 5.
+        let src = r#"
+[[items]]
+id = "R1"
+status = "open"
+category = "security"
+
+[[items]]
+id = "R2"
+status = "open"
+category = "quality"
+
+[[items]]
+id = "R3"
+status = "fixed"
+category = "docs"
+
+[[items]]
+id = "R4"
+status = "wontfix"
+category = "tooling"
+
+[[items]]
+id = "R5"
+status = "open"
+category = "performance"
+
+[[items]]
+id = "R6"
+status = "open"
+category = "quality"
+"#;
+        let narrow: TomlValue = toml::from_str(src).unwrap();
+        let q_slow_filtered = Query {
+            predicates: vec![Predicate::Where {
+                key: "status".into(),
+                rhs: "open".into(),
+            }],
+            sort_by: vec![("id".into(), SortDir::Asc)],
+            shape: OutputShape::CountDistinct("category".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            run(&narrow, "items", &q_slow_filtered).unwrap()["count_distinct"],
+            3
+        );
     }
 
     /// Structural assertion: the fast-path MUST NOT materialise
