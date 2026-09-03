@@ -15,6 +15,7 @@ use crate::io::{items_array, items_array_json};
 /// Tier selector for `items find-duplicates`. Each tier has its own grouping
 /// heuristic documented on the individual `find_duplicates_tier_*` functions.
 #[derive(Clone, Copy, ValueEnum, PartialEq, Eq)]
+#[value(rename_all = "verbatim")]
 pub(crate) enum DupTier {
     A,
     B,

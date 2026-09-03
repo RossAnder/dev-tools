@@ -175,7 +175,8 @@ pub(crate) fn capture_row_id(v: &serde_json::Value) -> String {
 /// Maximum JSON payload accepted from stdin via the `-` sentinel. 32 MiB is
 /// well above any realistic review-ledger / flow-context apply-ops payload
 /// (typical is < 64 KiB) while being small enough to fail fast if a caller
-/// accidentally pipes a log or a binary into `--json -`.
+/// accidentally pipes a log or a binary into `--json -`. Exceeding it is a
+/// hard error, never a silent truncation.
 const MAX_STDIN_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Guard against multiple `-` sentinels consuming stdin in a single
@@ -211,41 +212,76 @@ static STDIN_CONSUMED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 fn claim_stdin() -> Result<()> {
     if STDIN_CONSUMED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         bail!(
-            "stdin already consumed by another flag on this invocation; only one --json/--ops/--ndjson/--defaults-json flag can use the `-` sentinel per call"
+            "stdin already consumed by another flag on this invocation; only one --json/--ops/--ndjson/--defaults-json flag can use the `-` sentinel per call — pass the other payload as a literal or as `@<path>` (read from a file)"
         );
     }
     Ok(())
 }
 
-/// Resolve a JSON argument: if it's literally "-", read stdin to a String.
-/// Otherwise return the argument as-is.
+/// The `@<path>` file form shared by every JSON-accepting flag: a leading
+/// `@` names a file whose whole contents are the payload. A bare `@` is
+/// left alone (it is not a path), and the form is deliberately NOT offered
+/// to free-text arguments, where a value starting with `@` is plausible.
+fn at_file_path(arg: &str) -> Option<&str> {
+    arg.strip_prefix('@').filter(|p| !p.is_empty())
+}
+
+/// Read a `@<path>` payload file. Not subject to the `.claude/` containment
+/// guard — it is a read, and the path is the caller's own argument.
+fn read_at_file(path: &str) -> Result<String> {
+    fs::read_to_string(path).with_context(|| format!("reading payload file `@{path}`"))
+}
+
+/// Drain `reader` into a String, failing loud when it carries more than
+/// `MAX_STDIN_BYTES`. Reads one byte past the cap so an over-long payload
+/// is detected rather than silently truncated — for NDJSON a cut that
+/// landed on a line boundary would otherwise apply as a partial batch and
+/// report `ok`.
+fn read_capped_to_string(reader: impl Read, what: &str) -> Result<String> {
+    let mut buf = String::new();
+    reader
+        .take(MAX_STDIN_BYTES + 1)
+        .read_to_string(&mut buf)
+        .with_context(|| format!("reading {what} from stdin"))?;
+    if buf.len() as u64 > MAX_STDIN_BYTES {
+        bail!("{}", stdin_overflow_message());
+    }
+    Ok(buf)
+}
+
+fn stdin_overflow_message() -> String {
+    format!(
+        "stdin payload exceeds the {} MiB cap; split the batch, or check that a log or binary was not piped into the `-` sentinel",
+        MAX_STDIN_BYTES / (1024 * 1024)
+    )
+}
+
+/// Resolve a JSON argument: `-` reads stdin to a String, `@<path>` reads
+/// that file, anything else is returned as-is.
 ///
 /// Stdin handling:
 ///
 /// - Refuses to block on an interactive TTY — a user piping nothing into
 ///   `--json -` would otherwise hang forever with no prompt or feedback.
-/// - Caps the read at `MAX_STDIN_BYTES`; an oversize payload is truncated
-///   on the input side so a misrouted log doesn't balloon tomlctl's heap.
+/// - Caps the read at `MAX_STDIN_BYTES`; an oversize payload is an error,
+///   never a silent truncation.
 pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
     if arg == "-" {
         claim_stdin()?;
         if std::io::stdin().is_terminal() {
             bail!(
-                "stdin is a TTY — pipe JSON (e.g. `cat payload.json | tomlctl … --json -`) or pass `--json '<literal>'`"
+                "stdin is a TTY — pipe JSON (e.g. `cat payload.json | tomlctl … --json -`), pass `--json @payload.json`, or pass `--json '<literal>'`"
             );
         }
-        let mut buf = String::new();
-        std::io::stdin()
-            .lock()
-            .take(MAX_STDIN_BYTES)
-            .read_to_string(&mut buf)
-            .context("reading JSON from stdin")?;
+        let buf = read_capped_to_string(std::io::stdin().lock(), "JSON")?;
         if buf.trim().is_empty() {
             bail!(
                 "stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)"
             );
         }
         Ok(buf)
+    } else if let Some(path) = at_file_path(arg) {
+        read_at_file(path)
     } else {
         Ok(arg.to_string())
     }
@@ -271,12 +307,7 @@ pub(crate) fn read_text_arg(arg: &str) -> Result<String> {
                 .to_string(),
         ));
     }
-    let mut buf = String::new();
-    std::io::stdin()
-        .lock()
-        .take(MAX_STDIN_BYTES)
-        .read_to_string(&mut buf)
-        .context("reading text from stdin")?;
+    let buf = read_capped_to_string(std::io::stdin().lock(), "text")?;
     if buf.trim().is_empty() {
         return Err(tagged_err(
             ErrorKind::Validation,
@@ -296,11 +327,12 @@ pub(crate) fn read_text_arg(arg: &str) -> Result<String> {
 /// - Honours STDIN_CONSUMED: a second `-` sentinel on the same
 ///   invocation bails with the identical "already consumed" message.
 /// - Refuses to block on a TTY with the identical guidance message.
-/// - Caps the read at `MAX_STDIN_BYTES` via the same `take(...)` wrapper.
+/// - Caps the read at `MAX_STDIN_BYTES`, erroring (not truncating) past it.
 /// - Reports the same "stdin was empty — expected JSON payload" error when
 ///   stdin closes immediately, rather than letting serde surface its own
 ///   EOF message (which would silently change the public-facing error
 ///   text).
+/// - Accepts the same `@<path>` file form.
 ///
 /// This helper adds no context of its own: callers attach their own
 /// per-flag `.with_context("parsing --json"|"parsing --ops"|"parsing
@@ -310,28 +342,44 @@ pub(crate) fn read_json_value_from_arg(arg: &str) -> Result<serde_json::Value> {
         claim_stdin()?;
         if std::io::stdin().is_terminal() {
             bail!(
-                "stdin is a TTY — pipe JSON (e.g. `cat payload.json | tomlctl … --json -`) or pass `--json '<literal>'`"
+                "stdin is a TTY — pipe JSON (e.g. `cat payload.json | tomlctl … --json -`), pass `--json @payload.json`, or pass `--json '<literal>'`"
             );
         }
         let stdin = std::io::stdin();
-        let lock = stdin.lock();
-        let mut r = std::io::BufReader::new(lock.take(MAX_STDIN_BYTES));
-        // Preserve the "stdin was empty" sentinel: peek the first buffered
-        // chunk; if it never arrives, stdin closed before sending anything
-        // and we want our own message rather than serde's EOF wording.
-        let initial = r.fill_buf().context("reading JSON from stdin")?;
-        if initial.is_empty() {
-            bail!(
-                "stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)"
-            );
-        }
-        // `from_reader` consumes the BufReader's internal buffer before
-        // refilling from the underlying `Take<StdinLock>`, so the peek
-        // above does not strand any bytes.
-        Ok(serde_json::from_reader(r)?)
+        parse_json_capped(stdin.lock())
+    } else if let Some(path) = at_file_path(arg) {
+        Ok(serde_json::from_str(&read_at_file(path)?)?)
     } else {
         Ok(serde_json::from_str(arg)?)
     }
+}
+
+/// Streaming half of `read_json_value_from_arg`, split out so the cap and
+/// empty-input behaviour can be unit-tested against a `Cursor` — the real
+/// stdin handle cannot be rewired in-process.
+fn parse_json_capped(reader: impl Read) -> Result<serde_json::Value> {
+    // One byte past the cap, so hitting the limit means the payload was
+    // over it rather than exactly at it.
+    let mut r = std::io::BufReader::new(reader.take(MAX_STDIN_BYTES + 1));
+    // Preserve the "stdin was empty" sentinel: peek the first buffered
+    // chunk; if it never arrives, stdin closed before sending anything
+    // and we want our own message rather than serde's EOF wording.
+    let initial = r.fill_buf().context("reading JSON from stdin")?;
+    if initial.is_empty() {
+        bail!(
+            "stdin was empty — expected JSON payload (e.g. an object `{{...}}`, array `[...]`, or NDJSON depending on the flag)"
+        );
+    }
+    // `from_reader` consumes the BufReader's internal buffer before
+    // refilling from the underlying `Take<…>`, so the peek above does not
+    // strand any bytes. It also drains trailing whitespace to EOF, so a
+    // payload longer than the cap always exhausts the `Take` — whether the
+    // cut landed inside the value (parse error) or after it (clean parse).
+    let parsed = serde_json::from_reader(&mut r);
+    if r.get_ref().limit() == 0 {
+        bail!("{}", stdin_overflow_message());
+    }
+    Ok(parsed?)
 }
 
 /// The crate's single `--strict-read` gate: a missing `file` becomes a
@@ -2249,6 +2297,82 @@ arr = [1, 2]
         );
         // Restore for any other test that might run afterwards in this process.
         STDIN_CONSUMED.store(prev, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    #[test]
+    fn read_json_arg_at_path_reads_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("payload.json");
+        fs::write(&path, r#"{"from":"file"}"#).unwrap();
+        let arg = format!("@{}", path.display());
+        assert_eq!(read_json_arg(&arg).unwrap(), r#"{"from":"file"}"#);
+        let v = read_json_value_from_arg(&arg).unwrap();
+        assert_eq!(v["from"], "file");
+    }
+
+    #[test]
+    fn read_json_arg_at_path_missing_file_names_it() {
+        let err = read_json_arg("@/definitely/not/here.json").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("@/definitely/not/here.json"),
+            "error must name the payload file, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn read_json_arg_bare_at_is_a_literal() {
+        assert_eq!(read_json_arg("@").unwrap(), "@");
+    }
+
+    #[test]
+    fn read_text_arg_does_not_take_the_at_form() {
+        assert_eq!(read_text_arg("@handle mention").unwrap(), "@handle mention");
+    }
+
+    #[test]
+    fn read_capped_to_string_errors_past_the_cap_instead_of_truncating() {
+        let over = vec![b'x'; (MAX_STDIN_BYTES + 1) as usize];
+        let err = read_capped_to_string(std::io::Cursor::new(over), "JSON").unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("exceeds"),
+            "expected overflow error, got: {msg}"
+        );
+
+        let exact = vec![b'x'; MAX_STDIN_BYTES as usize];
+        let got = read_capped_to_string(std::io::Cursor::new(exact), "JSON").unwrap();
+        assert_eq!(got.len() as u64, MAX_STDIN_BYTES);
+    }
+
+    #[test]
+    fn parse_json_capped_errors_past_the_cap_on_both_cut_positions() {
+        // Cut inside the value: a single string longer than the cap.
+        let mut inside = Vec::with_capacity((MAX_STDIN_BYTES + 3) as usize);
+        inside.push(b'"');
+        inside.resize((MAX_STDIN_BYTES + 2) as usize, b'x');
+        inside.push(b'"');
+        let err = parse_json_capped(std::io::Cursor::new(inside)).unwrap_err();
+        assert!(format!("{err:#}").contains("exceeds"));
+
+        // Cut after the value: a small object padded past the cap with
+        // whitespace, which `from_reader` drains and would otherwise accept.
+        let mut after = br#"{"a":1}"#.to_vec();
+        after.resize((MAX_STDIN_BYTES + 1) as usize, b' ');
+        let err = parse_json_capped(std::io::Cursor::new(after)).unwrap_err();
+        assert!(format!("{err:#}").contains("exceeds"));
+
+        // At the cap exactly, parsing succeeds.
+        let mut exact = br#"{"a":1}"#.to_vec();
+        exact.resize(MAX_STDIN_BYTES as usize, b' ');
+        let v = parse_json_capped(std::io::Cursor::new(exact)).unwrap();
+        assert_eq!(v["a"], 1);
+    }
+
+    #[test]
+    fn parse_json_capped_reports_empty_input() {
+        let err = parse_json_capped(std::io::Cursor::new(Vec::new())).unwrap_err();
+        assert!(format!("{err:#}").contains("stdin was empty"));
     }
 
     // ----- seed_doc_for -----

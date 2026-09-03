@@ -508,7 +508,10 @@ pub(crate) enum Cmd {
     SetJson {
         file: PathBuf,
         path: String,
-        #[arg(long, help = "JSON-encoded value; pass `-` to read from stdin")]
+        #[arg(
+            long,
+            help = "JSON-encoded value; pass `-` to read from stdin or `@<path>` to read a file"
+        )]
         json: String,
         /// Preview the operation without writing. Emits a `would_change`
         /// summary on stdout and leaves the file + sidecar byte-identical.
@@ -557,13 +560,13 @@ pub(crate) enum Cmd {
         #[arg(
             long,
             conflicts_with = "ndjson",
-            help = "JSON object for a single record; pass `-` to read from stdin"
+            help = "JSON object for a single record; pass `-` to read from stdin or `@<path>` to read a file"
         )]
         json: Option<String>,
         #[arg(
             long = "ndjson",
             conflicts_with = "json",
-            help = "NDJSON source: `-` for stdin, otherwise a file path"
+            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
         )]
         ndjson: Option<String>,
         /// Preview the operation without writing. Emits a `would_change`
@@ -1003,7 +1006,7 @@ pub(crate) enum BacklogOp {
         on_duplicate: OnDuplicate,
         #[arg(
             long,
-            help = "Whole-item JSON payload instead of the field flags; pass `-` to read from stdin"
+            help = "Whole-item JSON payload instead of the field flags; pass `-` to read from stdin or `@<path>` to read a file"
         )]
         json: Option<String>,
         #[arg(
@@ -1410,7 +1413,7 @@ pub(crate) enum ItemsOp {
         file: PathBuf,
         #[arg(
             long,
-            help = "JSON object for the new item; pass `-` to read from stdin"
+            help = "JSON object for the new item; pass `-` to read from stdin or `@<path>` to read a file"
         )]
         json: String,
         /// Target array-of-tables name. See `List --array`.
@@ -1446,12 +1449,12 @@ pub(crate) enum ItemsOp {
         file: PathBuf,
         #[arg(
             long = "ndjson",
-            help = "NDJSON source: `-` for stdin, otherwise a file path"
+            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
         )]
         ndjson: String,
         #[arg(
             long = "defaults-json",
-            help = "JSON object of default field values; pass `-` to read from stdin"
+            help = "JSON object of default field values; pass `-` to read from stdin or `@<path>` to read a file"
         )]
         defaults_json: Option<String>,
         #[arg(long, default_value = "items")]
@@ -1497,7 +1500,7 @@ pub(crate) enum ItemsOp {
         id: String,
         #[arg(
             long,
-            help = "JSON patch object merged into the item; pass `-` to read from stdin. Optional when --unset is given."
+            help = "JSON patch object merged into the item; pass `-` to read from stdin or `@<path>` to read a file. Optional when --unset is given."
         )]
         json: Option<String>,
         /// Remove a field from the matched item. Repeatable. Applied AFTER the
@@ -1590,7 +1593,7 @@ pub(crate) enum ItemsOp {
         file: PathBuf,
         #[arg(
             long,
-            help = "JSON array of ops, each `{\"op\":\"add|update|remove\", ...}`; pass `-` to read from stdin"
+            help = "JSON array of ops, each `{\"op\":\"add|update|remove\", ...}`; pass `-` to read from stdin or `@<path>` to read a file"
         )]
         ops: String,
         /// Target array-of-tables name. Defaults to `items` (the ledger schema).
@@ -1628,7 +1631,7 @@ pub(crate) enum ItemsOp {
     /// tier B both work cross-ledger.
     FindDuplicates {
         file: PathBuf,
-        #[arg(long, value_enum, default_value_t = DupTier::A)]
+        #[arg(long, value_enum, ignore_case = true, default_value_t = DupTier::A)]
         tier: DupTier,
         /// Run cross-ledger — compare items from `<file>` against
         /// items from `<PATH>` and emit matches from the union. Output

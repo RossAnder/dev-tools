@@ -23,7 +23,7 @@ disk or touches a sidecar; the mutating verbs live in [write.md](write.md).
 
 All read commands print JSON on stdout by default.
 
-> **There is no `--format` / `--output` flag.** JSON is the only structured output; use `--raw` / `--lines` for bare scalars (see [Output shapes](#output-shapes---raw----lines----ndjson)). To verify a write — e.g. read back a ledger after `items add-many` — use `tomlctl items list <file>` (or `tomlctl items list <file> --count` for a tally). Do **not** invent `--format json`; it errors with `error: unexpected argument '--format' found` and a `Usage:` line for the subcommand, which names the flag to drop. Swallowing that (`2>/dev/null`) throws the diagnosis away and leaves the verification silently producing nothing.
+> **There is no `--format` / `--output` flag, by decision.** JSON is the only structured output; use `--raw` / `--lines` for bare scalars (see [Output shapes](#output-shapes---raw----lines----ndjson)). The compact table an agent reaches for is `--select <fields> --ndjson`: one self-describing object per line, immune to a `|` or tab inside a summary — which is exactly what a `--tsv` or a hand-rendered pipe table is not. `gh`/`kubectl`-style `--template` / `custom-columns` serve humans and shell scripts; tomlctl's reader is an agent, and NDJSON is strictly better for it. Do **not** invent `--format json`; it errors with `error: unexpected argument '--format' found` and a `Usage:` line for the subcommand, which names the flag to drop. Swallowing that (`2>/dev/null`) throws the diagnosis away and leaves the verification silently producing nothing.
 
 ```bash
 # Whole document (omit path to read the entire file) or a single value
@@ -142,14 +142,25 @@ tomlctl items list ledger.toml --group-by file
 
 - **`--raw`** — emit a single bare scalar (no JSON framing). Requires a shape that collapses to one value: `--count --raw`, `--count-distinct F --raw`, `--pluck F --raw` when exactly one item matches. Errors on multi-element pluck, `--count-by`, `--group-by`, or unfiltered list.
 - **`--lines`** — emit one JSON value per line instead of a JSON array. Available only on `--pluck`.
-- **`--ndjson`** — one full item per line. Pipes cleanly into `items add-many` / `items apply`.
+- **`--ndjson`** — one item per line instead of a JSON array. Composes with `--select` / `--exclude`, so a projected list is one compact object per line — the agent-facing table shape. Unprojected, each line is a full item and pipes cleanly into `items add-many` / `items apply`.
 
 ```bash
 tomlctl items list ledger.toml --status open --count --raw         # → 7
 tomlctl items list ledger.toml --where id=R22 --pluck symbol --raw # → old::fn
 tomlctl items list ledger.toml --status open --pluck id --lines    # R1\nR3\nR7
 tomlctl items list ledger.toml --status open --ndjson              # {...}\n{...}
+tomlctl items list ledger.toml --status open --select id,severity,summary --ndjson
+# {"id":"R1","severity":"major","summary":"…"}
+# {"id":"R3","severity":"minor","summary":"…"}
 ```
+
+Anti-patterns, each seen in a real run — the output is already the shape you want, so never
+post-process it:
+
+- **Never merge stderr into a JSON parser's input.** `tomlctl … 2>&1 | python -c 'json.load(…)'` turns one tomlctl warning into a parser traceback that hides tomlctl's actual message. Leave stderr alone (and never `2>/dev/null` it either — see the note above).
+- **Never re-render rows through a script.** `--select … --ndjson` already emits the projection; a hand-built pipe- or tab-delimited table breaks on the first summary containing that delimiter.
+- **Never `| head -N` a list.** tomlctl has serialised everything by then; `--limit N` (with `--sort-by`) filters inside.
+- **`items list` and `backlog list` return a bare array, not an envelope.** There is no `items` / `rows` / `backlog` key to guess at.
 
 ### Single-item fetch
 

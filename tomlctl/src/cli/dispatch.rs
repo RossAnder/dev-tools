@@ -65,7 +65,11 @@ fn read_ndjson_source(src: &str) -> Result<String> {
     if src == "-" {
         read_json_arg("-")
     } else {
-        std::fs::read_to_string(src).with_context(|| format!("reading NDJSON file `{}`", src))
+        let path = src
+            .strip_prefix('@')
+            .filter(|p| !p.is_empty())
+            .unwrap_or(src);
+        std::fs::read_to_string(path).with_context(|| format!("reading NDJSON file `{}`", src))
     }
 }
 

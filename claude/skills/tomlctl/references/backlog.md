@@ -122,6 +122,8 @@ the whole `items list` surface — `--where-*` predicates, `--select` / `--exclu
 
 ```bash
 tomlctl backlog list --open --area-prefix lumina/server --has-evidence --sort-by seen_count:desc
+# The compact survey shape — one projected object per line, a bare array otherwise:
+tomlctl backlog list --open --select id,kind,area,tags,summary --ndjson
 ```
 
 | Flag | Value | Meaning | Default |
@@ -231,11 +233,16 @@ threshold. Output carries one key per requested view; a view not requested is ab
 empty:
 
 ```json
-{"area":[{"key":"lumina/server/src/pty","reason":"area","size":3,
+{"area":[{"key":"lumina/server/src/pty","reason":"shared path prefix lumina/server/src/pty","size":3,
           "item_ids":["B-a1b2c3d4","B-1a2b3c4d","B-9f8e7d6c"],
           "kinds":["bug","flaky-test"],"areas":["lumina/server/src/pty"]}],
  "tags":[],"relations":[]}
 ```
+
+`reason` is prose for a reader, not an enum: `shared path prefix <key>` or `no area recorded`
+(area view), `share tags <key>` (tags view), `share tag <key>` (`--per-tag`), and
+`linked by relates-to/duplicates/supersedes edges` (relations view). Branch on the view key
+and `key`, never on `reason`.
 
 The default tags view cannot answer "which items carry `ci`": a transitive merge pulls in
 every item reachable through a shared middle, so asking for one tag collapses the store into

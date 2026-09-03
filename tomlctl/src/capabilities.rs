@@ -28,7 +28,7 @@ const MUTEX_GROUPS: &[(&str, &[&[&str]])] = &[(
 /// `str`/`int`/`float`/`bool`/`date`/`datetime`.
 const ENUM_VALUES: &[(&str, &[&str])] = &[
     ("ty", &["str", "int", "float", "bool", "date", "datetime"]), // ScalarType (clap id is "ty" — see Cmd::Set)
-    ("tier", &["a", "b", "c"]),                                   // DupTier
+    ("tier", &["A", "B", "C"]),                                   // DupTier
     ("error_format", &["text", "json"]),                          // ErrorFormat
 ];
 

@@ -524,3 +524,22 @@ scope = [
     "CLAUDE.md",
     ".git-blame-ignore-revs",
 ]
+
+[[active]]
+slug = "tomlctl-followups-round-2"
+last_used = "2026-09-03T09:24:49.4169323Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/README.md",
+    "scripts/**",
+    ".githooks/**",
+    "claude/commands/**",
+    "claude/agents/**",
+    "claude/skills/tomlctl/references/**",
+    ".gitattributes",
+]

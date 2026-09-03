@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-02
+last_updated = 2026-09-03
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -309,7 +309,7 @@ kind = "debt"
 summary = "six pre-existing clippy warnings in io.rs and capabilities.rs are treated as expected noise by every verification pass"
 area = "tomlctl/src/io.rs"
 tags = ["lint"]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -317,8 +317,8 @@ dedup_id = "80707fecea8843c2"
 origin = "review-apply"
 flow = "tomlctl-backlog-capture"
 context = "Five manual_filter in io.rs and one unnecessary_map_or in capabilities.rs, all auto-fixable with cargo clippy --fix --bin tomlctl. While they stand, a genuinely new warning in those two files reads as pre-existing. Fix them in one dedicated commit so verification can require zero warnings."
-promoted = 2026-09-02
-promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-03
+resolution = "Verified resolved 2026-09-03, not by this flow: cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets now emits zero warnings, so the six pre-existing manual_filter / unnecessary_map_or warnings in io.rs and capabilities.rs are gone and a genuinely new warning in those files would no longer read as pre-existing noise. Confirmed by a direct clippy run during the tomlctl-followups-round-2 verification pass."
 
 [[backlog]]
 id = "B-0b8dbd44"
@@ -326,7 +326,7 @@ kind = "bug"
 summary = "capabilities FEATURES omits flow list and flow render-progress-log, so two shipped verbs are unadvertised"
 area = "tomlctl/src/cli/types.rs"
 tags = []
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -334,8 +334,8 @@ dedup_id = "0b8dbd446d82bf28"
 origin = "review-apply"
 flow = "tomlctl-backlog-capture"
 context = "The README feature table was brought to 32 rows to match FEATURES, but FlowOp carries two variants with no FEATURES entry at all, so capabilities under-advertises them and no table row can exist. Add the two entries to FEATURES in cli/types.rs, then the README row follows."
-promoted = 2026-09-02
-promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-03
+resolution = "Verified resolved 2026-09-03, not by this flow: tomlctl capabilities now advertises both flow_list and flow_render_progress_log, so the two shipped verbs are no longer unadvertised. Confirmed by grepping the live capabilities output; the fix predates flow tomlctl-followups-round-2 and the row had simply not been triaged."
 
 [[backlog]]
 id = "B-65331044"
@@ -363,7 +363,7 @@ tags = [
     "backlog",
     "flow",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -374,6 +374,8 @@ evidence = [
     "claude/commands/implement.md:85",
     "claude/agents/implement-deep.md:74",
 ]
+resolved = 2026-09-03
+resolution = "Fixed by flow tomlctl-followups-round-2 tasks 10 and 11, commits ec7fcaf and 00d7e1c: the Phase-4 harvest now names three dispositions with a cost/blast-radius/verification-coverage test routing into the step-3c mint machinery, and the TANGENTIAL contract gained an optional cheap-in-file field byte-identically across both implementer carriers."
 
 [[backlog]]
 id = "B-f9802edc"
@@ -384,7 +386,7 @@ tags = [
     "capabilities",
     "drift",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -396,6 +398,8 @@ evidence = [
     "tomlctl/src/cli/types.rs:20",
     "tomlctl/tests/capabilities.rs:1575",
 ]
+resolved = 2026-09-02
+resolution = "readme_feature_transcriptions_match_capabilities_features gates both README copies against the binary's advertised set, with should_panic vacuity guards on each parser."
 
 [[backlog]]
 id = "B-6228cc53"
@@ -406,7 +410,7 @@ tags = [
     "drift",
     "docs",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -419,6 +423,8 @@ evidence = [
     "claude/skills/tomlctl/references/write.md:167",
 ]
 related = ["B-4aa2bbbf"]
+resolved = 2026-09-02
+resolution = "write_reference_enumerates_every_date_key asserts set equality between DATE_KEYS and the write reference's enumeration, with a non-zero-count guard plus a synthetic-prose extractor test."
 
 [[backlog]]
 id = "B-58ee7abc"
@@ -429,7 +435,7 @@ tags = [
     "gates",
     "shared-blocks",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -441,6 +447,8 @@ evidence = [
     "tomlctl/src/cli/dispatch/tests/skills.rs",
     "scripts/shared-blocks.toml",
 ]
+resolved = 2026-09-02
+resolution = "blocks_verify_matches_shell_extraction iterates the manifest so every block, including any future one, is covered; each digest is re-derived from the shell verifier's rules rather than transcribed."
 
 [[backlog]]
 id = "B-2c5ee8c0"
@@ -451,7 +459,7 @@ tags = [
     "docs",
     "sweep",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -460,6 +468,8 @@ origin = "implement"
 flow = "tomlctl-followups"
 context = "The 2026-09-02 sweep cleared tomlctl/src entirely but the plan put tomlctl/tests out of scope, so roughly 281 comment lines there still carry R, P and T prefixes. The crate is half-swept: a reader moving from src into tests meets the citations again. The same comment-lines-only discipline applies, and the test fixtures carry id-shaped literals that are data."
 evidence = ["tomlctl/tests"]
+resolved = 2026-09-02
+resolution = "Swept across all 17 files under tomlctl/tests. Fixture-row references naming ledger ids the surrounding assertion is about were deliberately kept as data."
 
 [[backlog]]
 id = "B-80085a82"
@@ -470,7 +480,7 @@ tags = [
     "vacuous-test",
     "gates",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -480,6 +490,8 @@ flow = "tomlctl-followups"
 context = "The test asserts count_distinct == 3 under a status=open filter, but the unfiltered fixture also yields 3 distinct categories, so the assertion holds either way and a regression moving filtering after aggregation would pass. Arm it with a fixture whose filtered and unfiltered cardinalities differ."
 evidence = ["tomlctl/src/query.rs"]
 related = ["B-0a34cd73"]
+resolved = 2026-09-02
+resolution = "Armed with a local fixture whose filtered and unfiltered distinct-category counts differ (3 vs 5), plus a control assertion pinning the difference. Proved by simulated regression that it now fails when aggregation precedes filtering, and that the old form passed under that same regression."
 
 [[backlog]]
 id = "B-2e11f43a"
@@ -490,7 +502,7 @@ tags = [
     "cli",
     "diagnostics",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -499,6 +511,8 @@ origin = "implement"
 flow = "tomlctl-followups"
 context = "default-features = false omits error-context, so a required-argument or ArgGroup failure renders as a bare one-or-more-required-arguments message with no token, and command_lint drift renders as unexpected-argument-found with no flag named. It already forced items update's at-least-one check to be hand-rolled in dispatch rather than declared as an ArgGroup. Enabling the feature would improve every such message at the cost of re-baselining stderr assertions in tests/integration.rs."
 evidence = ["tomlctl/Cargo.toml"]
+resolved = 2026-09-02
+resolution = "error-context enabled: no new crates, +17 KB release. Two integration assertions tightened to require the argument name, since the suite previously passed with the feature absent."
 
 [[backlog]]
 id = "B-c6ea1fac"
@@ -506,7 +520,7 @@ kind = "debt"
 summary = "unset of a fingerprinted field leaves dedup_id stale because the update classifier never sees the unset list"
 area = "tomlctl/src/items.rs"
 tags = ["dedupe"]
-status = "open"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -516,6 +530,8 @@ flow = "tomlctl-followups"
 context = "apply_dedup_id_on_update classifies branches from the patch only, so removing a fingerprinted field with --unset keeps the digest that hashed it. Pre-existing and identical with --json '{}' --unset, but making unset-only updates ergonomic makes the path more travelled."
 evidence = ["tomlctl/src/items.rs"]
 related = ["B-9ed1f411"]
+resolved = 2026-09-02
+resolution = "An unset now counts as a fingerprint touch when it removes a field the row carries, and beats a patch value for the same field. Recovery for older rows is an unset of dedup_id then backfill-dedup-id; backfill alone only populates absent values."
 
 [[backlog]]
 id = "B-300463a0"
@@ -526,7 +542,7 @@ tags = [
     "windows",
     "line-endings",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -535,6 +551,8 @@ origin = "implement"
 flow = "tomlctl-followups"
 context = "core.autocrlf is true and .gitattributes covers only *.sql, so rustfmt writes LF into a CRLF working tree and every later git command over the crate prints a replacement warning per file. Index content and commits are unaffected. A *.rs text eol=lf line in .gitattributes would settle it."
 evidence = [".gitattributes"]
+resolved = 2026-09-02
+resolution = "Pinned *.rs and claude/agents/*.md to eol=lf. The index was already LF so no committed content changed; the markdown pin also closes a trap where a CR-preserving awk would empty both shared blocks and block every commit."
 
 [[backlog]]
 id = "B-1e032bde"
@@ -546,7 +564,7 @@ tags = [
     "line-endings",
     "tooling",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -555,6 +573,8 @@ origin = "implement"
 flow = "tomlctl-followups"
 context = "Under Git Bash, sed and grep read and write in text mode, so a CR-stripping substitution, a piped od -c, and a grep for a carriage return all report a file as LF when it is CRLF. Any CRLF-sensitive verifier or fixture work debugged with them is debugged against a lie. Use gawk with an explicit BINMODE assignment, or od over the whole file."
 evidence = ["scripts/verify-shared-blocks.sh"]
+resolved = 2026-09-02
+resolution = "Documented in CLAUDE.md's Developer setup gotchas, with the awk -v BINMODE=3 workaround and the doubled-CR fixture detail. Verified empirically: sed strips one trailing CR, grep strips all."
 
 [[backlog]]
 id = "B-06053ce4"
@@ -565,7 +585,7 @@ tags = [
     "docs",
     "shared-blocks",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -577,3 +597,417 @@ evidence = [
     "tomlctl/src/blocks.rs",
     "scripts/shared-blocks.toml",
 ]
+resolved = 2026-09-02
+resolution = "Header rewritten to define what a shared block is and point at scripts/shared-blocks.toml as owner of the block and carrier lists; it now enumerates nothing and cannot rot the same way."
+
+[[backlog]]
+id = "B-d57bcdf9"
+kind = "debt"
+summary = "stderr assertions are written loose enough to pass whether or not clap names the offending argument"
+area = "tomlctl/tests"
+tags = [
+    "vacuous-test",
+    "cli",
+]
+status = "resolved"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "d57bcdf9dffecf2f"
+origin = "implement"
+flow = "tomlctl-followups"
+context = "Enabling clap's error-context changed every parse-failure rendering and the whole suite passed unchanged, because assertions match substrings the terse and rich forms share. Two in integration.rs were tightened to require the argument name; items_dry_run.rs still ORs the flag name against a bare unexpected-argument match, and blocks.rs asserts the bare form alone. Both would pass if error-context were removed again. Tighten each to assert the flag name, which the feature now guarantees."
+evidence = [
+    "tomlctl/tests/items_dry_run.rs",
+    "tomlctl/tests/blocks.rs",
+]
+related = ["B-0a34cd73"]
+resolved = 2026-09-03
+resolution = "Fixed by flow tomlctl-followups-round-2 task 2, commit 76bc972: both assertions in items_dry_run.rs and blocks.rs now require the full unexpected argument '<flag>' found shape, so they fail on the bare-kind rendering clap degrades to without error-context. Falsifier-verified against that bare form."
+
+[[backlog]]
+id = "B-87020d9e"
+kind = "debt"
+summary = "the slow sort-engaged count_distinct path is never exercised under a filter"
+area = "tomlctl/src/query.rs"
+tags = ["vacuous-test"]
+status = "resolved"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "87020d9e41df276f"
+origin = "implement"
+flow = "tomlctl-followups"
+context = "count_distinct_with_sort_is_valid_but_wasteful compares the fast and slow paths with no predicate, so a filter-ordering regression in the sort-engaged pipeline goes undetected. The fast path was just armed by giving it a fixture whose filtered and unfiltered cardinalities differ; the slow path needs the same treatment."
+evidence = ["tomlctl/src/query.rs"]
+related = ["B-80085a82"]
+resolved = 2026-09-03
+resolution = "Fixed by flow tomlctl-followups-round-2 task 3, commit ae3978a: count_distinct_with_sort_is_valid_but_wasteful gained a filtered fixture yielding 3 distinct against 5 unfiltered, so filter-ordering in the sort-engaged pipeline is now observable. Falsifier-verified by asserting 5, which fails."
+
+[[backlog]]
+id = "B-0b8e45d9"
+kind = "debt"
+summary = "finding ids survive in assertion and panic message strings because the sweep rule covers comment lines only"
+area = "tomlctl/src"
+tags = [
+    "docs",
+    "sweep",
+]
+status = "resolved"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "0b8e45d9eb150606"
+origin = "implement"
+flow = "tomlctl-followups"
+context = "The crate-wide sweep was scoped to comments by design, so string literals were protected as data. Several are user-visible failure text rather than data and still name ids: an O44 regression message in io.rs, and R82, R76, T8 and T9 in tests/capabilities.rs assertion messages. These reach CI failure output, so the documentation rule's intent is only half met. A follow-up pass over assertion strings specifically would close it, keeping genuine fixture-row references intact."
+evidence = [
+    "tomlctl/src/io.rs",
+    "tomlctl/tests/capabilities.rs",
+]
+related = ["B-90c6b8fe"]
+resolved = 2026-09-03
+resolution = "Fixed by flow tomlctl-followups-round-2 task 1, commit c3f6833: five assertion and panic messages in io.rs and tests/capabilities.rs now state the invariant instead of citing a finding id. Fixture rows, error-prose examples and ISO time separators were left as data under test."
+
+[[backlog]]
+id = "B-652608e4"
+kind = "debt"
+summary = "the pre-commit hook and its verifier scripts are CRLF and unpinned"
+area = "scripts"
+tags = [
+    "windows",
+    "line-endings",
+]
+status = "resolved"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "652608e4e44d5d03"
+origin = "implement"
+flow = "tomlctl-followups"
+context = "githooks/pre-commit, verify-shared-blocks.sh and verify-plan-story-blocks.sh are i/lf w/crlf with no gitattributes pin, while doc-diff-gate.sh is LF. The hook executes them on every commit. They work under the current Git Bash, but a sh or bash variant that will not tolerate a CR in the shebang or in set -euo pipefail would break every commit rather than one gate. Same family as the agent-carrier pin, one layer up. Nothing in this session activated it."
+evidence = [
+    ".githooks/pre-commit",
+    "scripts/verify-shared-blocks.sh",
+]
+related = ["B-300463a0"]
+resolved = 2026-09-03
+resolution = "Fixed by flow tomlctl-followups-round-2 task 9, commit 206c8df: .githooks/** and scripts/** pinned text eol=lf and all eight CRLF worktree files refreshed, including the three claude/agents/*.md the b8d7368 pin had left behind. git ls-files --eol over those trees now returns nothing. Note the original capture was inverted: the index was always LF, the working tree was CRLF."
+
+[[backlog]]
+id = "B-6e18ece1"
+kind = "debt"
+summary = "the fingerprint disclaimer tells readers to confirm a digest with a command that emits nothing for a unique row"
+area = "tomlctl/README.md"
+tags = [
+    "docs",
+    "dedupe",
+]
+status = "resolved"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "6e18ece1a3751ad5"
+origin = "implement"
+flow = "tomlctl-followups"
+context = "The Contracts section offers items find-duplicates --tier B as the way to confirm an illustrative digest, but find_duplicates_tier_b skips every group with fewer than two members, so a unique row produces no output. No CLI verb surfaces one row's tier-B digest. It is the only confirmation path the README offers and it silently returns nothing."
+evidence = [
+    "tomlctl/README.md",
+    "tomlctl/src/dedup.rs",
+]
+related = ["B-c6ea1fac"]
+resolved = 2026-09-03
+resolution = "Fixed by flow tomlctl-followups-round-2 task 6, commit c3f6833: new items fingerprint <file> <id> prints one stored row's tier-B digest via tier_b_fingerprint_table, and README:143-145 now names it instead of items find-duplicates --tier B, which skips every group of fewer than two members."
+
+[[backlog]]
+id = "B-b3799a01"
+kind = "direction"
+summary = "the finding-id sweep is specified by regex shape rather than by intent, so each new reference form escapes it"
+area = "tomlctl/src"
+tags = [
+    "docs",
+    "sweep",
+    "gates",
+]
+status = "resolved"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "b3799a018bc2b614"
+origin = "implement"
+flow = "tomlctl-followups"
+context = "Four classes escaped across two runs: P-prefixed ids, a trailing letter defeating the T-digit word boundary, files no task's partition named, and plan task NAMES such as T-glistening which no numeric pattern can match. Each was found by an agent noticing rather than by a gate. The documentation rule states an intent - no finding id, task ref, plan phase, review round or agent name in source - and a gate asserting that intent over comment lines, with an explicit allowlist for fixture-row references and ISO timestamps, would hold where enumerated shapes have not."
+evidence = [".claude/rules/documentation.md"]
+related = ["B-90c6b8fe"]
+resolved = 2026-09-03
+resolution = "Fixed by flow tomlctl-followups-round-2 task 8, commit dda6873: doc-diff-gate gained a wording-scoped rule placed before the comment-only short-circuit, matching a quoted string carrying both a LEDGER_DENY id and message-shaped wording, with ISO datetimes pre-stripped. MODE stays warn. Two blind spots are recorded in the source: R-prefixed ids stay out by design, and the rule is staged-diff-only."
+
+[[backlog]]
+id = "B-eddfc8f7"
+kind = "question"
+summary = "items update --unset without --json returned exit 1 against a file outside .claude and left the field present; cause unconfirmed"
+area = "tomlctl"
+tags = [
+    "cli",
+    "unverified",
+]
+status = "dismissed"
+created = 2026-09-02
+last_seen = 2026-09-02
+seen_count = 1
+dedup_id = "eddfc8f7ba413503"
+origin = "implement"
+flow = "tomlctl-followups"
+context = "Observed once while smoke-testing a freshly installed binary. Probe: a two-item TOML written to the session scratchpad (outside the repo and outside .claude), then `tomlctl items update <scratch>/v.toml R1 --unset notes` with no --json. Exit 1, and the notes key was still present afterwards. The follow-up command that would have shown stderr and retried with --allow-outside was not run, so the cause was never established. Two readings: the write-containment guard refusing a path outside .claude, which would make the probe wrong rather than the feature, or a genuine defect in the optional---json change. Evidence favours the first: the same run saw `blocks verify-skills` exit 2 and an update naming neither flag exit non-zero, both as designed; the full suite passes including items_dedupe and items_dry_run; and the change's own falsifier showed the unset succeeding with the field removed and the sidecar written, against a scratch ledger. To settle it, re-run with --allow-outside, or point the probe at a file under .claude and drop the flag. If it reproduces with --allow-outside, it is a real bug in the dispatch guard."
+evidence = [
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/io.rs",
+]
+related = ["B-c6ea1fac"]
+dismissed = 2026-09-03
+dismiss_reason = "probe error, not a defect: the re-run stderr names the write-containment guard refusing a path outside .claude, which is why exit was 1 and the field stayed present"
+
+[[backlog]]
+id = "B-108e130a"
+kind = "debt"
+summary = "the tags cluster view has no threshold that surfaces a single shared tag without transitively collapsing most of the store into one group"
+area = "tomlctl/src/backlog/cluster.rs"
+tags = [
+    "backlog",
+    "cluster",
+]
+status = "resolved"
+created = 2026-09-03
+last_seen = 2026-09-03
+seen_count = 1
+dedup_id = "108e130aea80ff06"
+origin = "backlog"
+context = "cluster_tags unions any PAIR whose tag intersection reaches --min-shared-tags, then merges components transitively. The flag defaults to 2, so two items sharing exactly one tag never group. Observed on a /backlog sweep: two items both tagged vacuous-test were reported in no common group and had to be grouped by hand. Dropping to --min-shared-tags 1 is not the escape hatch it looks like — transitive union then pulled 28 of 37 items into a single group keyed by 12 tags, because a few multi-tag items bridge every pair. So neither setting answers does anything else share this tag. Workaround: read the tags view at the default, then scan the open set's tag lists by eye for one-tag affinities. A per-tag view — one group per tag, an item free to appear in several — would answer that question, which a transitive connected component structurally cannot."
+evidence = [
+    "tomlctl/src/backlog/cluster.rs:195",
+    "tomlctl/src/backlog/cluster.rs:210",
+    "tomlctl/src/cli/types.rs:1132",
+]
+resolved = 2026-09-03
+resolution = "Fixed by flow tomlctl-followups-round-2 tasks 4 and 5, commits c3f6833 and 3c3a2ff: --per-tag bypasses union-find entirely, emitting one group per individual tag with items free to appear in several, under the existing tags view key so the exact-key assertions stay green. Documented with its key-grammar shift."
+
+[[backlog]]
+id = "B-69492ebe"
+kind = "bug"
+summary = "doc-diff-gate awk splits on tab so a source line containing a literal tab is truncated before every rule"
+area = "scripts/doc-diff-gate.sh"
+tags = [
+    "doc-gate",
+    "awk",
+]
+status = "open"
+created = 2026-09-03
+last_seen = 2026-09-03
+seen_count = 1
+dedup_id = "69492ebe5e54bb4e"
+origin = "implement"
+flow = "tomlctl-followups-round-2"
+context = '''added_lines emits path<TAB>lineno<TAB>content and the checking awk runs -F'\t', so a source line carrying its own literal tab is split further and every rule only ever sees the text before that tab. A leak on a tab-indented line is silently invisible and the gate reports OK. Affects all rules, not just the new wording-scoped one. Fix by encoding the content field or splitting on only the first two tabs.'''
+evidence = ["scripts/doc-diff-gate.sh:79"]
+
+[[backlog]]
+id = "B-e3f5da9c"
+kind = "bug"
+summary = "items find-duplicates --tier is case-sensitive so the documented uppercase --tier B is rejected by clap"
+area = "tomlctl/src/cli/types.rs"
+tags = [
+    "clap",
+    "docs",
+]
+status = "resolved"
+created = 2026-09-03
+last_seen = 2026-09-03
+seen_count = 1
+dedup_id = "e3f5da9c042ed862"
+origin = "implement"
+flow = "tomlctl-followups-round-2"
+context = "--tier is a clap ValueEnum with default case sensitivity, so `--tier B` fails with `invalid value 'B' ... [possible values: a, b, c]` and only `--tier b` parses. The uppercase form is still live inside bash fences at claude/skills/tomlctl/references/query.md:172,176,182 (which command_lint scans) and in prose at references/write.md:469, flow-contract-ledger-schema/SKILL.md:72 and tomlctl/README.md:37. Fix is either ignore_case = true on the arg or a doc sweep; the arg-side fix closes all sites at once."
+evidence = ["claude/skills/tomlctl/references/query.md:172"]
+related = ["B-c6ea1fac"]
+resolved = 2026-09-03
+resolution = "DupTier gets rename_all = verbatim (possible values A, B, C, matching the docs and the emitted tier field) and the --tier arg gets ignore_case = true, so both B and b parse; capabilities ENUM_VALUES updated; tests/agent_contract.rs pins both."
+
+[[backlog]]
+id = "B-12fa91d9"
+kind = "debt"
+summary = "gitattributes leaves claude/commands and its own file unpinned so both drift back to CRLF on checkout"
+area = ".gitattributes"
+tags = [
+    "line-endings",
+    "windows",
+]
+status = "open"
+created = 2026-09-03
+last_seen = 2026-09-03
+seen_count = 1
+dedup_id = "12fa91d92548d670"
+origin = "implement"
+flow = "tomlctl-followups-round-2"
+context = "With core.autocrlf=true, an unpinned tracked text file is written CRLF on checkout against an LF index. Two gaps survive the 2026-09-03 pin: claude/commands/*.md is unpinned while claude/agents/*.md is, and .gitattributes itself is currently w/mixed (its first paragraph CRLF, the rest LF). Both are the same half-done shape b8d7368 left behind. Closing needs a pin plus a worktree refresh - the pin alone provably does not rewrite already-checked-out files."
+evidence = [".gitattributes:1"]
+
+[[backlog]]
+id = "B-e74d4650"
+kind = "debt"
+summary = "the backlog cluster sample envelope shows a reason value that cluster_area has never emitted"
+area = "claude/skills/tomlctl/references/backlog.md"
+tags = ["docs"]
+status = "resolved"
+created = 2026-09-03
+last_seen = 2026-09-03
+seen_count = 1
+dedup_id = "e74d465079940035"
+origin = "implement"
+flow = "tomlctl-followups-round-2"
+context = """The documented output shape carries "reason":"area", but cluster_area emits format!("shared path prefix {key}"). A reader building against the documented reason string gets a value the CLI never produces, and no test compares the fence's JSON against real output. Same shape as the other checks-that-do-not-check in this flow."""
+evidence = ["claude/skills/tomlctl/references/backlog.md:237"]
+related = ["B-fb853ff8"]
+resolved = 2026-09-03
+resolution = "backlog.md cluster sample now shows the real value (shared path prefix <key>) and lists the reason vocabulary per view, with the rule to branch on view key and key, never on reason."
+
+[[backlog]]
+id = "B-debf1b01"
+kind = "debt"
+summary = "items_fingerprint holds row-lookup logic in dispatch.rs against the module's stated pure-plumbing invariant"
+area = "tomlctl/src/cli/dispatch.rs"
+tags = ["structure"]
+status = "open"
+created = 2026-09-03
+last_seen = 2026-09-03
+seen_count = 1
+dedup_id = "debf1b01da466aa9"
+origin = "implement"
+flow = "tomlctl-followups-round-2"
+context = "The module header states every arm delegates to items::/blocks::/io:: helpers with no business logic in dispatch.rs. items_fingerprint was placed there only because the implementing task did not own items.rs under the file-claim rule. It belongs beside items_get_from in src/items.rs; moving it is a pure relocation with no behaviour change."
+evidence = ["tomlctl/src/cli/dispatch.rs:1"]
+related = ["B-90c6b8fe"]
+
+[[backlog]]
+id = "B-7ccba7cc"
+kind = "annoyance"
+summary = "verify-shared-blocks aborts when Git Bash mawk precedes the installed gawk on PATH"
+area = "scripts/verify-shared-blocks.sh"
+tags = [
+    "windows",
+    "awk",
+]
+status = "open"
+created = 2026-09-03
+last_seen = 2026-09-03
+seen_count = 1
+dedup_id = "7ccba7cca0bf93c3"
+origin = "implement"
+flow = "tomlctl-followups-round-2"
+context = "The script hard-fails with `requires GNU awk (gawk)` even though gawk is present at /usr/bin/gawk; every invocation needs a manual PATH=/usr/bin:$PATH prefix. The pre-commit hook invokes the script directly, so whether a commit is gated at all depends on the caller's PATH ordering rather than on gawk being installed. Fix by probing for a gawk binary by name rather than trusting whichever awk resolves first."
+evidence = ["scripts/verify-shared-blocks.sh:1"]
+related = ["B-e69651d3"]
+
+[[backlog]]
+id = "B-34428ed3"
+kind = "debt"
+summary = "the read-only subcommand doc comment enumerates verbs in prose and has drifted from the read_subs array"
+area = "tomlctl/tests/capabilities.rs"
+tags = [
+    "docs",
+    "tests",
+]
+status = "open"
+created = 2026-09-03
+last_seen = 2026-09-03
+seen_count = 1
+dedup_id = "34428ed3afa8a8c2"
+origin = "implement"
+flow = "tomlctl-followups-round-2"
+context = "The doc comment on read_only_subcommands_hide_write_integrity_flags_in_help lists the read-only subcommands in prose. It already omitted all seven backlog entries before items fingerprint was added, and now omits that too. A prose enumeration silently drifting from the array directly below it is the same check-that-does-not-check shape this flow addressed elsewhere; no gate compares the two. Fix by deleting the enumeration and pointing at the array."
+evidence = ["tomlctl/tests/capabilities.rs:17"]
+related = ["B-2c5ee8c0"]
+
+[[backlog]]
+id = "B-cef33ceb"
+kind = "annoyance"
+summary = "backlog add has no batch form so minting N items costs N lock and rename cycles and one lost write reported ok"
+area = "tomlctl/src/backlog/dispatch.rs"
+tags = [
+    "batch-writes",
+    "windows",
+    "stdin",
+]
+status = "open"
+created = 2026-09-03
+last_seen = 2026-09-03
+seen_count = 1
+dedup_id = "cef33cebc34678df"
+origin = "implement"
+flow = "tomlctl-followups-round-2"
+context = 'Measured 2026-09-03 minting the 7-item harvest of flow tomlctl-followups-round-2. SHARPEST PART FIRST, and it is bug-shaped rather than merely ergonomic: item B-7ccba7cc printed {"ok":true,"action":"added"} on stdout and exited 0 while its row never reached disk. io.rs:1586 degrades a failed persist to a stderr warning, so the success envelope is emitted independently of whether the write landed. A second item lost its write too, exiting 1. Both were found only by grepping the store for each id afterwards; a single retry of each succeeded. Any caller that trusts the envelope silently drops rows on Windows. WHY THE LOOP EXISTS: backlog add takes exactly one --json payload and there is no backlog add-many, though items add-many --ndjson does exist. So N captures means N processes, each taking the exclusive lock and doing an atomic tempfile+rename of both the TOML and its .sha256 - 14 renames for 7 rows, which is what gives the transient AV/indexer rename lock so many chances to fire. WHY THE TEMP FILE: items add-many --ndjson accepts stdin, but multi-line heredocs are unreliable on Windows Git Bash above roughly 5 rows because CRLF mangles the terminator, so the practised path is staging a scratchpad .ndjson and passing it by path. That is why agents keep writing temp files for what should be one call. WORKAROUND TODAY: after any multi-item mint, grep the store for each expected id and retry the missing ones; do not trust the per-call envelope. WHAT A FIX LOOKS LIKE: give backlog its own add-many taking the same --ndjson source as items add-many so one lock and one rename covers the batch, and make a failed persist a non-zero exit with ok:false rather than a warning beside ok:true. A batch edit path for the same reason is worth considering alongside it.'
+evidence = [
+    "tomlctl/src/io.rs:1586",
+    "tomlctl/src/backlog/dispatch.rs:13",
+]
+related = ["B-4aa2bbbf"]
+
+[[backlog]]
+id = "B-bf2c40fb"
+kind = "annoyance"
+summary = "items add-many and items apply are practically driven from a temp ndjson file because only one stdin sentinel is allowed per call"
+area = "tomlctl/src/io.rs"
+tags = [
+    "batch-writes",
+    "stdin",
+    "windows",
+    "ergonomics",
+]
+status = "resolved"
+created = 2026-09-03
+last_seen = 2026-09-03
+seen_count = 1
+dedup_id = "bf2c40fb5ea6c1b1"
+origin = "implement"
+flow = "tomlctl-followups-round-2"
+context = '''Raised 2026-09-03 after the tomlctl-followups-round-2 harvest: every multi-row write in that run went through a staged scratchpad .ndjson rather than a pipe, and the ask is to find the efficient native path. Source reading corrects the folklore in both directions. NOT THE CAUSE: MAX_STDIN_BYTES is 32 MiB (io.rs:179), so payload size is not the constraint for any realistic batch; the earlier working assumption of a ~10 KB stdin ceiling is wrong. REAL CONSTRAINT 1, one sentinel per invocation: claim_stdin (io.rs:211) swaps a process-global flag, so exactly one of --json / --ops / --ndjson / --defaults-json may be `-` per call. A batch that wants both its rows and its shared defaults on stdin cannot have them, and the second flag must be inlined as a literal argument. That was hit directly in this run - --ndjson came from a file while --defaults-json was passed literally. REAL CONSTRAINT 2, silent truncation: both stdin readers use .take(MAX_STDIN_BYTES) (io.rs:240, :277, :318), which truncates rather than erroring. For NDJSON a cut landing on a line boundary is a silent partial add; only a cut mid-line surfaces, as a parse abort. Latent at 32 MiB but it is the failure mode that would bite a genuinely large batch. REAL CONSTRAINT 3, and the actual reason for the temp files: it is the shell, not tomlctl. Multi-line heredocs are unreliable on Windows Git Bash, and in this session the harness permission layer refused three separate multi-line-heredoc commands outright, so the heredoc idiom the tomlctl skill documents as the blessed path is not always available to an agent at all. UNTESTED CANDIDATE worth trying first in the deep dive: printf '%s\n' '<row1>' '<row2>' ... | tomlctl items add-many <file> --ndjson - is a single-line command with no heredoc and no temp file, and should carry arbitrarily many rows. It could not be measured here because the permission layer also declined it; confirm it before adopting. DEEP DIVE SHOULD ANSWER: whether the printf form is the sanctioned agent-native idiom and belongs in the tomlctl skill; whether claim_stdin's one-sentinel rule can be relaxed (for example --defaults-json accepting an @file form, or a single framed payload carrying both defaults and rows); whether .take should become a hard error on overflow; and whether items apply --ops - deserves the same treatment so batch EDITS get one lock and one rename too, which is the half of the ask that has no answer at all today. Related: B-cef33ceb covers the backlog-side gap, where no add-many exists.'''
+evidence = [
+    "tomlctl/src/io.rs:211",
+    "tomlctl/src/io.rs:179",
+    "tomlctl/src/io.rs:240",
+]
+related = [
+    "B-cef33ceb",
+    "B-9ed1f411",
+]
+resolved = 2026-09-03
+resolution = '''Verified on Windows: printf '%s\n' row row | tomlctl ... --ndjson - (Git Bash) and a PowerShell string array both carry any row count on one line with no heredoc or temp file; documented in write.md. Added @<path> file form to every JSON flag (--json/--ops/--defaults-json/--ndjson) so --ndjson - pairs with --defaults-json @file and items apply --ops @ops.json needs no pipe; one stdin per process stays a hard rule but its error now points at @<path>. Stdin past 32 MiB is now a hard error on all three readers, never a silent partial batch (io.rs read_capped_to_string / parse_json_capped, unit-tested at both cut positions).'''
+
+[[backlog]]
+id = "B-6d908b8f"
+kind = "direction"
+summary = "decide tomlctl output contract for agents because select plus ndjson already solves it but is undocumented and agents reach for python"
+area = "claude/skills/tomlctl/references/query.md"
+tags = [
+    "output-contract",
+    "ergonomics",
+    "docs",
+    "agent-native",
+]
+status = "resolved"
+created = 2026-09-03
+last_seen = 2026-09-03
+seen_count = 1
+dedup_id = "6d908b8f66fb7888"
+origin = "implement"
+flow = "tomlctl-followups-round-2"
+context = """OBSERVED 2026-09-03: an agent ran `tomlctl backlog list --open 2>&1 | python -c "...json.load..."` to print id/kind/area/tags/summary as a pipe-delimited table, guessing at the envelope key with d.get('items') or d.get('rows') or d.get('backlog'), then `head -60`. MEASURED ROOT CAUSE, and it is not a missing feature: `--select id,kind,area,tags,summary --ndjson` already emits exactly one compact projected object per line, which is what that python reconstructed by hand. On the 9 open rows it is 1963 bytes against 12731 for the unprojected list. The composition is real but UNDOCUMENTED - query.md's Output shapes section describes --ndjson as "one FULL item per line" and never shows it with --select, so a reader concludes ndjson means fat rows and --select means a JSON array, and that neither yields compact projected lines. That sentence is the defect. THREE FAULTS IN THE OBSERVED IDIOM: 2>&1 merges tomlctl's stderr into the stream the JSON parser reads, so one warning becomes a Python traceback instead of tomlctl's actual error - query.md:26 warns against swallowing stderr with 2>/dev/null but not against merging it into stdout, which is the more destructive variant; `head -60` truncates after tomlctl has already serialised everything, where --limit filters inside; and the envelope key-guessing is unnecessary since backlog list returns a bare array. RESEARCH, prior art: the mature pattern is two layers - a projection flag plus a formatting expression. gh has --json <fields> with --jq and --template; kubectl has -o custom-columns= and -o jsonpath=; docker and aws use --format / --output text|table|json. tomlctl already has the projection layer (--select/--exclude/--pluck) and deliberately lacks the second - query.md:26 states outright that there is no --format/--output flag. RECOMMENDATION, and the argument for it: DO NOT build the formatting layer. Those tools serve humans and shell scripts; tomlctl's consumer is an LLM agent, and for that consumer NDJSON already dominates a rendered table on every axis - it is self-describing where custom-columns discards field names, and it is immune to the delimiter-in-content problem that a --tsv or a pipe-delimited table walks straight into. That hazard is not theoretical here: B-69492ebe in this same store is doc-diff-gate truncating content on an embedded tab, and the observed python would have silently mangled any summary containing a pipe. A template mini-language is also one more thing an agent can get wrong. PROPOSED FIX, zero code: (1) rewrite the --ndjson bullet in query.md's Output shapes section to state that it composes with --select and --exclude, with the worked example `tomlctl items list ledger.toml --status open --select id,severity,summary --ndjson`; (2) add an anti-pattern block naming the three faults above, especially never piping 2>&1 into a JSON parser; (3) record in query.md:26 WHY there is no --format, so the decision stops being re-litigated by each agent that wants a table. If a formatting layer is ever wanted anyway, take gh's split - keep --select as projection and add a template for rendering - rather than a fixed --tsv/--csv, and require RFC-4180 quoting if a delimited form ships at all. VERIFY BEFORE ADOPTING: the --select + --ndjson composition was confirmed by running it against the live store on 2026-09-03; re-confirm after any query-pipeline change, since no test appears to pin the combination."""
+evidence = [
+    "claude/skills/tomlctl/references/query.md:26",
+    "tomlctl/src/query.rs:1",
+]
+related = [
+    "B-e74d4650",
+    "B-bf2c40fb",
+]
+resolved = 2026-09-03
+resolution = "Documented, zero code: query.md Output shapes now states --ndjson composes with --select/--exclude (worked example), adds the anti-pattern block (never 2>&1 into a JSON parser, never re-render rows, never head -N, list returns a bare array), and records why there is no --format flag. tests/agent_contract.rs pins --select+--ndjson and --exclude+--ndjson."

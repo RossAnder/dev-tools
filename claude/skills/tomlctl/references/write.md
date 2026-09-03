@@ -184,9 +184,21 @@ tomlctl items add ledger.toml --dedupe-by dedup_id --json '{...}'
 
 For runs that need to append many new items at once (e.g. a 50-finding review batch), assemble NDJSON line-by-line and pass it to `items add-many` — one parse, one lock, one rewrite, one sidecar refresh. Each line is one JSON object; blank lines are ignored; any malformed line aborts the whole batch pre-mutation and names the offending line number.
 
-**Always** default to the staging-file form. For any batch of **more than 5 items**, or any batch where a single row is wider than ~1 KB (typical for review/optimise findings with `summary` + `rationale` + `suggestion` prose), the staging file is the **only** supported path on Windows — the heredoc form is unreliable there (see [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads) for the failure mode and the measured threshold).
+Two agent-native forms, neither a heredoc and neither a temp file. Prefer the pipe for a handful of rows and the staging file past that (see [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads) for why the heredoc form is not on this list).
 
-Write the NDJSON with the `Write` tool, then point `--ndjson` at the path:
+**Pipe, one row per argument** — a single-line command; `printf '%s\n'` emits each argument on its own line, so the rows arrive as NDJSON without a heredoc:
+
+```bash
+printf '%s\n' '{"id":"R1","summary":"..."}' '{"id":"R2","summary":"..."}' | tomlctl items add-many ledger.toml --ndjson - --defaults-json '{"status":"open"}'
+```
+
+The PowerShell spelling pipes a string array; each element becomes one line:
+
+```powershell
+'{"id":"R1","summary":"..."}','{"id":"R2","summary":"..."}' | tomlctl items add-many ledger.toml --ndjson - --defaults-json '{"status":"open"}'
+```
+
+**Staging file** — write the NDJSON with the `Write` tool, then point `--ndjson` at the path:
 
 ```bash
 tomlctl items add-many .claude/flows/foo/review-ledger.toml \
@@ -195,7 +207,7 @@ tomlctl items add-many .claude/flows/foo/review-ledger.toml \
 # → {"ok":true,"added":N}
 ```
 
-`--array <name>` targets a non-default array-of-tables. `--defaults-json` is optional; omit it for rows that are already fully-formed. `--dedupe-by <FIELDS>` works the same as on `items add`.
+`--array <name>` targets a non-default array-of-tables. `--defaults-json` is optional; omit it for rows that are already fully-formed, or pass `--defaults-json @defaults.json` to read it from a file alongside `--ndjson -`. `--dedupe-by <FIELDS>` works the same as on `items add`.
 
 Supports `--dry-run`; see [Dry-run](#dry-run).
 
@@ -358,7 +370,9 @@ Acquires the same exclusive lock a write path would, so it serialises correctly 
 
 ### Stdin input for large JSON payloads
 
-All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) treat the literal `-` as "read from stdin". Caps the read at 32 MiB, refuses to block on an interactive TTY, and allows only one `-`-consuming flag per invocation (a second errors with `stdin already consumed by another flag on this invocation`).
+All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) take three spellings: a literal, `-` for stdin, or `@<path>` to read a file. Stdin is capped at 32 MiB and a payload past the cap is an error, never a silent partial batch; tomlctl refuses to block on an interactive TTY; and only one flag per invocation may be `-`, because a process has one stdin (a second errors with `stdin already consumed by another flag on this invocation`). `@<path>` is the release valve — `--ndjson - --defaults-json @defaults.json`, or `--ops @ops.json` for a batch of edits with no pipe at all. In PowerShell quote it (`'@ops.json'`); a bare `@name` is splatting syntax there.
+
+The single-line pipe (`printf '%s\n' '<row>' '<row>' | tomlctl … --ndjson -`, or a PowerShell string array) carries any number of rows without a heredoc or a file; see [`items add-many`](#batch-append-many-items--items-add-many) for both spellings.
 
 On Linux/macOS the heredoc form is fine for any size:
 
@@ -387,7 +401,7 @@ tomlctl items add-many .claude/flows/<slug>/ledger.toml \
 # 3. Optional: rm .claude/flows/<slug>/_batch.ndjson after the call.
 ```
 
-For `--json` / `--ops` / `--defaults-json` (which don't accept a file path directly), write the payload to a sibling file and pipe it in: `cat .claude/flows/<slug>/_patch.json | tomlctl … --json -`. A single-line heredoc (`<<'EOF'\n{"...":"..."}\nEOF`) is fine on Windows for one-line patches — only multi-line bodies are risky.
+For `--json` / `--ops` / `--defaults-json`, write the payload to a sibling file and pass it as `@.claude/flows/<slug>/_patch.json` — no pipe, no heredoc. A single-line heredoc (`<<'EOF'\n{"...":"..."}\nEOF`) is fine on Windows for one-line patches — only multi-line bodies are risky.
 
 ## Dry-run
 
