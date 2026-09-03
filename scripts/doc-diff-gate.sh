@@ -109,6 +109,25 @@ CHAT_RE="(your (breakdown|approach|implementation) is|you're effectively|let me 
 MEAS_RE='(measured|benchmark|benchmarked|profiled|regressed|speedup|[0-9]+x (faster|slower)|[0-9]+% (faster|slower))'
 DATE_RE='(19|20)[0-9]{2}-[0-9]{2}-[0-9]{2}'
 LEDGER_RE="^[[:space:]]*(//|[*]|#)[[:space:]]*$LEDGER_DENY[0-9]{1,3}([.][0-9]+)?[-:]"
+# LEDGER_RE requires the id to OPEN a comment, so it cannot see the other place a
+# ledger id leaks: a string literal, almost always an assertion message. Scoping
+# to the macro instead was measured at zero recall — the gate reads a -U0 diff one
+# physical line at a time, and in every real site the id is on the message
+# continuation line while `assert!(` is two or three lines above, outside the
+# hunk. So the rule is wording-shaped: one double-quoted string carrying BOTH a
+# denied id and message wording, in either order.
+#
+# Two blind spots, both deliberate, neither an oversight:
+#   - it catches four of the five leak classes. `R<n>` stays invisible because it
+#     is outside LEDGER_DENY above; widening to it costs 12 false positives.
+#   - it is staged-diff-only like every other rule here, so it prevents the next
+#     leak and finds none of today's. A clean run still means "the idiom did not
+#     appear", and a hand sweep of the existing corpus is still a separate job.
+MSG_WORD_RE='(regression|must|expected|got)'
+LEDGER_MSG_RE="\"[^\"]*($LEDGER_DENY[0-9]{1,3}[^\"]*$MSG_WORD_RE|$MSG_WORD_RE[^\"]*$LEDGER_DENY[0-9]{1,3})[^\"]*\""
+# Pre-stripped before that match: an ISO datetime's `T00:00:00Z` reads as a `T<n>`
+# id, and it is the rule's only measured false positive.
+ISO_RE="$DATE_RE|T[0-9]{2}:[0-9]{2}:[0-9]{2}Z"
 CAPS_RE='[A-Z]{2,}[[:space:]]+[A-Z]{2,}[[:space:]]+[A-Z]{2,}'
 BANNER_RE='(=|-){12,}'
 
@@ -137,6 +156,7 @@ if [ "$SELFTEST" -eq 1 ]; then
   st "G2 not-the-answer"     '// The top-level test.api is not the answer either.'            "$ARG_RE"
   st "G3 history"            '// O22: previously this ran synchronously at module import'     "$HIST_RE"
   st "G4 ledger id"          '// O22: coalesce the in-flight run'                             "$LEDGER_RE" cs
+  st "G4b message ledger id" 'assert!(x, "T7 regression: must hold");'                        "$LEDGER_MSG_RE" cs
   st "G5 plan phase"         '// (Phase 0.2 & 6.1 fix)'                                       "$PHASE_RE"
   st "G5 user decision"      '/// ADR-0015 d10, User Decision 3'                              "$PHASE_RE"
   st "G6 chat transcript"    "Your breakdown is already pointing in the right direction"       "$CHAT_RE"
@@ -154,7 +174,16 @@ if [ "$SELFTEST" -eq 1 ]; then
       st_fail=1
     fi
   done
-  [ "$st_fail" -eq 0 ] && printf 'doc-diff-gate self-test: OK (10 patterns fire, 2 negative controls clean)\n'
+  # G4b's pre-strip is a suppression, so it fails silently: without this control a
+  # deleted ISO_RE leaves the self-test green and the false positive back.
+  if printf '%s\n' '        "last_activity must be `<today>T00:00:00Z`, got: {last}"' |
+     "$AWK" -v pat="$LEDGER_MSG_RE" -v iso="$ISO_RE" \
+       '{ s = $0; gsub(iso, " ", s); if (s ~ pat) { found = 1 } }
+        END { exit(found ? 0 : 1) }'; then
+    printf 'selftest FAIL: G4b matched an ISO timestamp — the pre-strip is not firing\n' >&2
+    st_fail=1
+  fi
+  [ "$st_fail" -eq 0 ] && printf 'doc-diff-gate self-test: OK (11 patterns fire, 3 negative controls clean)\n'
   exit "$st_fail"
 fi
 
@@ -182,6 +211,7 @@ printf 'doc-diff-gate: %s added source lines, %s added markdown lines\n' \
   "$AWK" -F'\t' \
     -v arg_re="$ARG_RE" -v hist_re="$HIST_RE" -v phase_re="$PHASE_RE" \
     -v meas_re="$MEAS_RE" -v date_re="$DATE_RE" -v ledger_re="$LEDGER_RE" \
+    -v ledger_msg_re="$LEDGER_MSG_RE" -v iso_re="$ISO_RE" \
     -v caps_re="$CAPS_RE" -v banner_re="$BANNER_RE" '
     function emit(sev, f, n, msg) { printf "%s\t%s:%d\t%s\n", sev, f, n, msg }
     function flush() {
@@ -196,6 +226,13 @@ printf 'doc-diff-gate: %s added source lines, %s added markdown lines\n' \
       # G1 — contiguous added comment run
       if (is_c && $1 == pf && $2 == pline + 1) { run++; pline = $2 }
       else { flush(); if (is_c) { run = 1; pf = $1; pstart = $2; pline = $2 } else pf = "" }
+
+      # G4b — ledger id in a message string. Must sit BEFORE the comment
+      # short-circuit below: the leak lives in a string literal, which never
+      # opens a comment, so a branch placed after it could not fire at all.
+      s = c; gsub(iso_re, " ", s)
+      if (s ~ ledger_msg_re)
+        emit("BLOCK", $1, $2, "ledger id in a message string — it resolves to nothing once the ledger is reaped; name the invariant the assertion protects instead")
 
       if (!is_c) next
 
