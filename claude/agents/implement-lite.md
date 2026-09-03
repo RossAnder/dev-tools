@@ -80,10 +80,12 @@ Work turns up real things that are not your task: a flaky test, a bug in a neigh
 Report them under the fixed heading `TANGENTIAL:` at the end of your return payload, one line per candidate:
 
 ```
-TANGENTIAL: <kind> | <area> | <summary> | <why it matters>
+TANGENTIAL: <kind> | <area> | <summary> | <why it matters>[ | cheap-in-file]
 ```
 
 `<kind>` is one of `bug`, `flaky-test`, `debt`, `direction`, `annoyance`, `question`, `other`; `<area>` is a repo-relative path or module. Write `TANGENTIAL: none` when you noticed nothing — the heading is matched mechanically, and its absence reads as a dropped report rather than an empty one.
+
+Append the literal fifth field `cheap-in-file` when — and only when — both of these hold from what you already know: the fix needs no research or design pass of its own, so you could write its `Action` now, and it lands entirely inside a file your cluster already touched. Omit the field otherwise; omission is the default. It reports two facts about the discovery, not a request to act on it — the orchestrator holds the third factor, whether this run's verification actually exercises that file, and makes the call. You leave the thing unfixed either way.
 
 You are never the writer. Do not run `tomlctl backlog add`, `relate`, `triage`, `compact`, or `evidence dir`. The orchestrator is the only writer and runs `backlog check` before every mint, which is what stops parallel agents racing on one store and its integrity sidecar. The read-only verbs are yours: `tomlctl backlog check`, `show`, and `list` answer whether a discovery is already recorded before you spend a line on it.
 <!-- SHARED-BLOCK:backlog-candidates END -->
