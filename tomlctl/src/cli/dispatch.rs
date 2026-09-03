@@ -17,16 +17,17 @@ use super::types::{
 
 use crate::blocks::blocks_verify;
 use crate::convert::{
-    detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path, toml_to_json,
+    detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path, str_field,
+    toml_to_json,
 };
 use crate::dedup::{
-    items_find_duplicates, items_find_duplicates_across, items_find_duplicates_across_json,
-    items_find_duplicates_json,
+    FINGERPRINTED_FIELDS, items_find_duplicates, items_find_duplicates_across,
+    items_find_duplicates_across_json, items_find_duplicates_json, tier_b_fingerprint_table,
 };
 use crate::integrity::{IntegrityOpts, refresh_sidecar, sidecar_path, verify_integrity};
 use crate::io::{
-    compute_set_json_mutation, compute_set_mutation, dry_run_read_opts, guard_write_path,
-    mutate_doc, mutate_doc_conditional, mutate_doc_plan, on_missing_for, read_doc,
+    compute_set_json_mutation, compute_set_mutation, dry_run_read_opts, guard_write_path, item_id,
+    items_array, mutate_doc, mutate_doc_conditional, mutate_doc_plan, on_missing_for, read_doc,
     read_doc_borrowed, read_doc_either, read_json_arg, read_json_value_from_arg, read_toml_str,
     recheck_claude_containment, strict_read_check, warn_if_created, warn_if_read_outside_claude,
     with_exclusive_lock,
@@ -442,6 +443,35 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Tier-B digest of one stored row, with the field values it hashed.
+///
+/// The `fields` keys are read off `FINGERPRINTED_FIELDS` rather than
+/// transcribed, so the emitted object cannot name a set the hash does not
+/// use. The not-found wording is the one `items_get_from` bails with —
+/// duplicated verbatim, as `items_get_from_json` duplicates it.
+fn items_fingerprint(doc: &toml::Value, id: &str) -> Result<JsonValue> {
+    for item in items_array(doc, "items") {
+        if item_id(item) != Some(id) {
+            continue;
+        }
+        let Some(tbl) = item.as_table() else { continue };
+        let fields: serde_json::Map<String, JsonValue> = FINGERPRINTED_FIELDS
+            .iter()
+            .map(|f| ((*f).to_string(), JsonValue::from(str_field(tbl, f))))
+            .collect();
+        return Ok(serde_json::json!({
+            "id": id,
+            "tier": "B",
+            "dedup_id": tier_b_fingerprint_table(tbl),
+            "fields": fields,
+        }));
+    }
+    bail!(
+        "no item with id = {} (run `tomlctl items list <file> --pluck id` to enumerate available ids)",
+        id
+    )
 }
 
 fn items_dispatch(op: ItemsOp) -> Result<()> {
@@ -1083,6 +1113,16 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 }
             };
             print_json(&JsonValue::Array(groups))?;
+        }
+        ItemsOp::Fingerprint {
+            file,
+            id,
+            integrity,
+        } => {
+            strict_read_check(&file, integrity.strict_read)?;
+            let opts = read_integrity_opts(&integrity);
+            let out = read_doc(&file, opts, |doc| items_fingerprint(doc, &id))?;
+            print_json(&out)?;
         }
         ItemsOp::Orphans { file, integrity } => {
             strict_read_check(&file, integrity.strict_read)?;

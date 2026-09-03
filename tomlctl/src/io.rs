@@ -1979,7 +1979,7 @@ resolution = "fix in abc123"
             // The old sidecar location must not be what we return.
             assert!(
                 !lock.to_string_lossy().ends_with("ledger.toml.lock"),
-                "O44 regression: lock path must not be sidecar `<file>.toml.lock`"
+                "lock path must not be the sidecar `<file>.toml.lock`"
             );
             // Directory must actually exist on disk — lock_path_for creates it.
             assert!(expected_dir.is_dir(), "lock dir must be created on demand");

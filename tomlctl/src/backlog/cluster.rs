@@ -38,11 +38,12 @@ pub(crate) fn dispatch(
     by: ClusterBy,
     min_size: usize,
     min_shared_tags: usize,
+    per_tag: bool,
     all_statuses: bool,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
     let items = parse_items(&read_store(&integrity)?, all_statuses);
-    crate::output::print_json(&build_views(&items, by, min_size, min_shared_tags))
+    crate::output::print_json(&build_views(&items, by, min_size, min_shared_tags, per_tag))
 }
 
 /// One clusterable row. `kind` is absent rather than defaulted when the row
@@ -122,16 +123,19 @@ fn build_views(
     by: ClusterBy,
     min_size: usize,
     min_shared_tags: usize,
+    per_tag: bool,
 ) -> JsonValue {
     let mut out = serde_json::Map::new();
     if matches!(by, ClusterBy::Area | ClusterBy::All) {
         out.insert(VIEW_AREA.into(), cluster_area(items, min_size).into());
     }
     if matches!(by, ClusterBy::Tags | ClusterBy::All) {
-        out.insert(
-            VIEW_TAGS.into(),
-            cluster_tags(items, min_shared_tags).into(),
-        );
+        let tags = if per_tag {
+            cluster_per_tag(items)
+        } else {
+            cluster_tags(items, min_shared_tags)
+        };
+        out.insert(VIEW_TAGS.into(), tags.into());
     }
     if matches!(by, ClusterBy::Relations | ClusterBy::All) {
         out.insert(VIEW_RELATIONS.into(), cluster_relations(items).into());
@@ -229,6 +233,25 @@ fn cluster_tags(items: &[Item], min_shared: usize) -> Vec<JsonValue> {
             let reason = format!("share tags {key}");
             (key, reason, members)
         })
+        .collect();
+    finish(items, emitted)
+}
+
+/// One group per tag — an item lands in every group whose tag it carries, a
+/// shape no union-find partition can hold, so this path bypasses union-find
+/// and carries its own singleton drop. It keys a group on a single tag where
+/// `cluster_tags` keys one on a `+`-joined set, under that same view key.
+fn cluster_per_tag(items: &[Item]) -> Vec<JsonValue> {
+    let mut by_tag: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (index, item) in items.iter().enumerate() {
+        for tag in &item.tags {
+            by_tag.entry(tag.as_str()).or_default().push(index);
+        }
+    }
+    let emitted = by_tag
+        .into_iter()
+        .filter(|(_, members)| members.len() > 1)
+        .map(|(tag, members)| (tag.to_string(), format!("share tag {tag}"), members))
         .collect();
     finish(items, emitted)
 }
@@ -473,6 +496,31 @@ mod tests {
     }
 
     #[test]
+    fn per_tag_lands_one_item_in_two_groups() {
+        let items = [
+            tagged("B-01", &["ci", "windows"]),
+            tagged("B-02", &["ci"]),
+            tagged("B-03", &["windows"]),
+            tagged("B-04", &["solo"]),
+        ];
+        let groups = cluster_per_tag(&items);
+        assert_eq!(keys(&groups), ["ci", "windows"]);
+        assert_eq!(ids(&groups[0]), ["B-01", "B-02"]);
+        assert_eq!(ids(&groups[1]), ["B-01", "B-03"]);
+        assert_eq!(groups[0]["reason"], "share tag ci");
+        // The union-find view cannot express that overlap: B-01 bridges the
+        // two tags, so all three land in one component.
+        assert_eq!(cluster_tags(&items, 1).len(), 1);
+
+        // Overlapping or not, the groups stay under the one `tags` key.
+        let view = build_views(&items, ClusterBy::Tags, 2, 2, true);
+        assert_eq!(
+            view.as_object().unwrap().keys().collect::<Vec<_>>(),
+            [VIEW_TAGS]
+        );
+    }
+
+    #[test]
     fn relations_walk_a_chain_and_ignore_outsiders() {
         let items = [
             linked("B-01", &["B-02"]),
@@ -538,12 +586,12 @@ duplicate_of = "B-01"
     #[test]
     fn by_area_emits_only_the_area_key() {
         let items = parse_items(&doc(MIXED_STATUS), true);
-        let view = build_views(&items, ClusterBy::Area, 2, 2);
+        let view = build_views(&items, ClusterBy::Area, 2, 2, false);
         assert!(view.get(VIEW_AREA).is_some());
         assert!(view.get(VIEW_TAGS).is_none(), "{view}");
         assert!(view.get(VIEW_RELATIONS).is_none(), "{view}");
 
-        let all = build_views(&items, ClusterBy::All, 2, 2);
+        let all = build_views(&items, ClusterBy::All, 2, 2, false);
         for view_key in [VIEW_AREA, VIEW_TAGS, VIEW_RELATIONS] {
             assert!(all.get(view_key).is_some(), "{all}");
         }
@@ -568,12 +616,12 @@ duplicate_of = "B-01"
     #[test]
     fn a_missing_store_yields_empty_views_unless_strict() {
         let (lenient, views, strict) = crate::test_support::with_root(|_| {
-            let lenient = dispatch(ClusterBy::All, 2, 2, false, read_args());
+            let lenient = dispatch(ClusterBy::All, 2, 2, false, false, read_args());
             let views = read_store(&read_args())
-                .map(|doc| build_views(&parse_items(&doc, false), ClusterBy::All, 2, 2));
+                .map(|doc| build_views(&parse_items(&doc, false), ClusterBy::All, 2, 2, false));
             let mut args = read_args();
             args.strict_read = true;
-            let strict = dispatch(ClusterBy::All, 2, 2, false, args);
+            let strict = dispatch(ClusterBy::All, 2, 2, false, false, args);
             (lenient, views, strict)
         });
         assert!(lenient.is_ok(), "{:#}", lenient.unwrap_err());

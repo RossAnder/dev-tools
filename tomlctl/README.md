@@ -35,6 +35,7 @@ tomlctl items remove <file> <id>
 tomlctl items next-id <file> --prefix R|O|E             # prefix is required — no default
 tomlctl items apply  <file> --ops '[{"op":"add|update|remove", ...}, ...]' [--array NAME]
 tomlctl items find-duplicates <file> [--tier A|B|C] [--across <other>]   # dedup hygiene (read-only JSON array); --across runs tier A or B over the union of two ledgers
+tomlctl items fingerprint <file> <id>                  # tier-B dedup_id of one stored row + the five fields that produced it
 tomlctl items orphans  <file>                          # missing-file / symbol-missing / dangling-dep
 tomlctl array-append   <file> <array> --json '{...}'                # append one record
 tomlctl array-append   <file> <array> --ndjson -                    # batched append to e.g. rollback_events
@@ -141,8 +142,10 @@ contract concrete:
 ```
 
 (Digests above are illustrative shapes; the actual 16-hex value depends on the
-exact field bytes fed to SHA-256 — rerun `tomlctl items find-duplicates --tier B`
-against the payload to confirm.)
+exact field bytes fed to SHA-256 — run `tomlctl items fingerprint <ledger> R1` to
+print the row's real digest alongside the five field values it hashed.
+`items find-duplicates` does not answer this: every tier drops groups of fewer
+than two members, so a unique row like `R1` produces `[]`.)
 
 On update, four branches run in order — the first to match wins. Branches 2-4 turn
 on whether the update *touches* a fingerprinted field, which the patch and the
@@ -247,15 +250,16 @@ downstream flow-command templates can feature-gate at boot without parsing
   "version": "0.6.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
-               "capabilities", "error_format_json", "strict_read",
-               "dry_run", "backfill_dedup_id", "integrity_refresh",
-               "agent_context", "flow_resolve", "flow_active",
-               "flow_doctor", "flow_init", "flow_ensure_artifact",
-               "flow_envelope_build", "flow_stale", "flow_find_plans",
-               "flow_list", "flow_render_progress_log", "json_ops",
-               "backlog_capture", "backlog_check", "backlog_cluster",
-               "backlog_compact", "backlog_evidence", "backlog_list",
-               "backlog_show", "backlog_relate", "backlog_triage"],
+               "fingerprint", "capabilities", "error_format_json",
+               "strict_read", "dry_run", "backfill_dedup_id",
+               "integrity_refresh", "agent_context", "flow_resolve",
+               "flow_active", "flow_doctor", "flow_init",
+               "flow_ensure_artifact", "flow_envelope_build", "flow_stale",
+               "flow_find_plans", "flow_list", "flow_render_progress_log",
+               "json_ops", "backlog_capture", "backlog_check",
+               "backlog_cluster", "backlog_compact", "backlog_evidence",
+               "backlog_list", "backlog_show", "backlog_relate",
+               "backlog_triage"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog"],
@@ -304,6 +308,7 @@ Feature meanings:
 | `dedupe_by` | `--dedupe-by <FIELDS>` on `items add` / `items add-many` |
 | `dedup_id_auto` | auto-populate `dedup_id` in every write funnel |
 | `find_duplicates_across` | `items find-duplicates --across <other>` cross-ledger tier A/B |
+| `fingerprint` | `items fingerprint <file> <ID>` — one stored row's tier-B `dedup_id` plus the five fingerprinted field values it hashed, including for a unique row `find-duplicates` cannot report |
 | `capabilities` | this subcommand itself |
 | `error_format_json` | `--error-format json` global flag + `ErrorKind` taxonomy |
 | `strict_read` | `--strict-read` on every read subcommand |

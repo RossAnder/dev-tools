@@ -11,7 +11,7 @@ use std::fs;
 
 mod common;
 use common::{
-    QUERY_FIXTURE, parse_json_error_envelope, run_list_query, run_list_query_with, seed_ledger,
+    QUERY_FIXTURE, cli, parse_json_error_envelope, run_list_query, run_list_query_with, seed_ledger,
 };
 
 /// Read-only subcommands (`parse`, `get`, `validate`, `items list`,
@@ -32,6 +32,7 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         &["items", "list", "--help"],
         &["items", "get", "--help"],
         &["items", "find-duplicates", "--help"],
+        &["items", "fingerprint", "--help"],
         &["items", "orphans", "--help"],
         &["items", "next-id", "--help"],
         &["backlog", "check", "--help"],
@@ -168,7 +169,7 @@ fn items_list_shape_flags_are_mutually_exclusive_at_parse_time() {
     let stderr2 = String::from_utf8_lossy(&out2.get_output().stderr).to_string();
     assert!(
         !stderr2.contains("cannot be used with"),
-        "--ndjson must stay OUTSIDE the shape ArgGroup (R82 + R76); got stderr:\n{stderr2}"
+        "--ndjson must stay OUTSIDE the shape ArgGroup; got stderr:\n{stderr2}"
     );
 }
 
@@ -808,7 +809,7 @@ fn error_format_text_mode_byte_identical_across_tag_kinds() {
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
         stderr.starts_with("tomlctl: reading "),
-        "pre-T8 prefix must be unchanged, got: {stderr:?}"
+        "text-mode `tomlctl: reading ` prefix must be unchanged, got: {stderr:?}"
     );
     assert!(
         !stderr.contains("[not_found]") && !stderr.contains("{\"error\""),
@@ -981,7 +982,7 @@ fn strict_read_next_id_missing_file_errors_with_not_found_prose() {
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
         stderr.contains("file does not exist:"),
-        "stderr must carry the T9 not_found prose, got:\n{stderr}"
+        "stderr must carry the \"file does not exist\" not_found prose, got:\n{stderr}"
     );
     assert!(
         stderr.contains("no-such-ledger.toml"),
@@ -1022,7 +1023,7 @@ fn strict_read_items_list_missing_file_json_envelope_is_not_found() {
     let message = err["message"].as_str().unwrap();
     assert!(
         message.contains("file does not exist:"),
-        "message must be the T9 strict-read prose, got: {message}"
+        "message must be the strict-read \"file does not exist\" prose, got: {message}"
     );
     let file_field = err["file"].as_str().expect("file must be populated");
     assert!(
@@ -1560,6 +1561,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "dedupe_by",
         "dedup_id_auto",
         "find_duplicates_across",
+        "fingerprint",
         "capabilities",
         "error_format_json",
         "strict_read",
@@ -1937,6 +1939,75 @@ fn items_backfill_dedup_id_then_count_distinct_reports_n() {
     assert_eq!(
         stdout, "3\n",
         "after backfill, --count-distinct dedup_id --raw must report exactly N=3; got:\n{stdout}"
+    );
+}
+
+/// `items fingerprint` is the only path that observes a unique row's tier-B
+/// digest — `find-duplicates --tier B` drops every group of fewer than two
+/// members. The digest is pinned by shape rather than by value: a literal hex
+/// would make every fixture edit a two-sided change and catch no more.
+#[test]
+fn items_fingerprint_emits_the_digest_and_the_fields_that_fed_it() {
+    let (dir, ledger) = seed_ledger(
+        r#"schema_version = 1
+
+[[items]]
+id = "R2"
+status = "open"
+file = "src/auth.rs"
+summary = "token not refreshed"
+severity = "high"
+category = "correctness"
+symbol = "refresh_token"
+"#,
+    );
+    let out = cli(dir.path())
+        .arg("items")
+        .arg("fingerprint")
+        .arg(&ledger)
+        .arg("R2")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("fingerprint stdout must parse as JSON: {e}; got:\n{stdout}"));
+    let obj = v.as_object().expect("fingerprint output is a JSON object");
+
+    // `preserve_order` makes the emitted key order observable, so the whole
+    // top-level shape is one assertion rather than four presence checks.
+    let keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+    assert_eq!(
+        keys,
+        ["id", "tier", "dedup_id", "fields"],
+        "unexpected top-level shape; got:\n{stdout}"
+    );
+    assert_eq!(obj["id"], serde_json::json!("R2"));
+    assert_eq!(obj["tier"], serde_json::json!("B"));
+
+    let dedup_id = obj["dedup_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("dedup_id must be a string; got:\n{stdout}"));
+    assert_eq!(
+        dedup_id.len(),
+        16,
+        "tier-B digest is a 16-char hex string, got {dedup_id:?}"
+    );
+    assert!(
+        dedup_id.chars().all(|c| c.is_ascii_hexdigit()),
+        "tier-B digest must be hex, got {dedup_id:?}"
+    );
+
+    assert_eq!(
+        obj["fields"],
+        serde_json::json!({
+            "file": "src/auth.rs",
+            "summary": "token not refreshed",
+            "severity": "high",
+            "category": "correctness",
+            "symbol": "refresh_token",
+        }),
+        "`fields` must echo the five fingerprinted values the row carries; got:\n{stdout}"
     );
 }
 

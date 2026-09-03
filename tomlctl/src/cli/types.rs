@@ -25,6 +25,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "dedupe_by",
     "dedup_id_auto",
     "find_duplicates_across",
+    "fingerprint",
     "capabilities",
     "error_format_json",
     "strict_read",
@@ -1136,6 +1137,11 @@ pub(crate) enum BacklogOp {
         )]
         min_shared_tags: usize,
         #[arg(
+            long = "per-tag",
+            help = "Key the tags view on one tag per group instead of merging shared-tag groups transitively; an item may appear in several"
+        )]
+        per_tag: bool,
+        #[arg(
             long = "all-statuses",
             help = "Cluster every item, not just `open` ones"
         )]
@@ -1633,6 +1639,21 @@ pub(crate) enum ItemsOp {
             help = "Compare against a second ledger; output items carry a `source_file` tag (tier A or B only)"
         )]
         across: Option<PathBuf>,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// Print the tier-B `dedup_id` of one stored item, alongside the five
+    /// fingerprinted field values that fed it.
+    ///
+    /// `find-duplicates --tier B` drops every group of fewer than two
+    /// members, so it reports nothing for a unique row; this is the path
+    /// that observes such a row's digest. Read-only — the ledger is never
+    /// rewritten, so a stored `dedup_id` that has gone stale still shows
+    /// its recomputed value here.
+    Fingerprint {
+        file: PathBuf,
+        id: String,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
