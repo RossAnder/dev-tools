@@ -29,11 +29,13 @@ fn blocks_verify_rejects_integrity_flags() {
             .assert()
             .failure();
         let err = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+        // The quoted flag token is load-bearing: it is emitted only under clap's
+        // `error-context` feature, so requiring it here fails if that feature is
+        // ever dropped and the bare `unexpected argument found` kind takes over.
+        let expected = format!("unexpected argument '{flag}' found");
         assert!(
-            err.contains("unexpected argument")
-                || err.contains("argument '--")
-                || err.contains("found argument"),
-            "`blocks verify {flag}` must be rejected by clap as an unknown argument; got stderr:\n{err}"
+            err.contains(&expected),
+            "`blocks verify {flag}` must be rejected by clap as an unknown argument naming the flag; got stderr:\n{err}"
         );
     }
 }

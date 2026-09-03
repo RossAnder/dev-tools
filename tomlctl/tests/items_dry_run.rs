@@ -1060,13 +1060,13 @@ fn items_add_dry_run_with_strict_read_against_missing_file_errors() {
         .code(2);
 
     // `--strict-read` is not on `items add`'s WriteIntegrityArgs, so clap
-    // rejects with "unexpected argument" at parse time. The exit code is
-    // pinned at 2 (clap usage error) above; the stderr predicate below
-    // tightens the structural rejection by requiring clap to surface the
-    // offending flag name OR the canonical "unexpected argument" prose.
+    // rejects with "unexpected argument" at parse time. The quoted flag token
+    // is load-bearing: clap emits it only under the `error-context` feature, so
+    // requiring it fails if that feature is ever dropped and the bare
+    // `unexpected argument found` kind rendering takes over.
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(
-        stderr.contains("--strict-read") || stderr.contains("unexpected argument"),
+        stderr.contains("unexpected argument '--strict-read' found"),
         "expected clap usage error naming --strict-read; got stderr:\n{stderr}"
     );
     assert!(
