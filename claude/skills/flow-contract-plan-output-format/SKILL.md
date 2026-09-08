@@ -25,8 +25,9 @@ tomlctl tasks import-plan --plan docs/plans/<slug>.md --dry-run
 ```
 
 Fix every `error`-class finding before the plan ships. The warning classes are dispositioned,
-not carried silently: `checkpoint/orphan-task` and `checkpoint/marker-mismatch` both name
-defects this document's format rules forbid.
+not carried silently: `checkpoint/orphan-task`, `checkpoint/marker-mismatch` and
+`plan/effort-untagged` each name a defect this document's format rules forbid — the last one a
+task heading missing the `[{S|M|L}]` tag the template requires.
 
 Write the plan using this structure — keep the section names and ordering intact:
 

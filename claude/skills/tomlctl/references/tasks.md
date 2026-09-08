@@ -14,6 +14,7 @@ reaches for, and the rules binding `/plan-new`, `/implement`, `/review-plan` and
 - [`tasks add`](#tasks-add)
 - [`tasks add-many`](#tasks-add-many)
 - [`tasks update`](#tasks-update)
+- [`tasks remove`](#tasks-remove)
 - [`tasks show`](#tasks-show)
 - [`tasks list`](#tasks-list)
 - [`tasks edges`](#tasks-edges)
@@ -30,7 +31,7 @@ reaches for, and the rules binding `/plan-new`, `/implement`, `/review-plan` and
 - [The 256-node cap](#the-256-node-cap)
 - [Frozen contracts](#frozen-contracts)
 
-Every mutating verb (`import-plan`, `add`, `add-many`, `update`) carries the shared write
+Every mutating verb (`import-plan`, `add`, `add-many`, `update`, `remove`) carries the shared write
 bundle — `--allow-outside`, `--no-create`, `--no-write-integrity`, `--strict-integrity`,
 `--verify-integrity` — and every read verb (`show`, `list`, `edges`, `ready`, `batches`,
 `closure`, `check`, `render`) the read bundle, `--verify-integrity` and `--strict-read`.
@@ -57,14 +58,19 @@ tomlctl tasks import-plan --slug <slug> --reconcile-record
 |---|---|---|---|
 | `--slug` / `--file` | see [Store target](#store-target) | Store to upsert. Both may be omitted under `--dry-run` (plan mode). | — |
 | `--plan` | path | Plan markdown to read. Under `--slug`, defaults to the flow context's `plan_path`. A relative value resolves against the repo root when it does not resolve against the cwd. | context's `plan_path` |
-| `--reconcile-record` | — | Also read the flow's `execution-record.toml`, mark matched rows `done`, and adopt the record's spelling of a `ref` on a unique normalised match. Requires `--slug`. | off |
+| `--reconcile-record` | — | Also read the flow's execution record — the path `context.toml` records under `[artifacts].execution_record`, or `execution-record.toml` beside the store when it records none — mark matched rows `done`, and adopt the record's spelling of a `ref` on a unique normalised match. Requires `--slug`. | off |
 | `--dry-run` | — | Report the import without writing. File and sidecar stay byte-identical. | off |
 
 An error-class finding **refuses a real import** before the file is touched; under `--dry-run`
 the same finding is reported in the envelope and the exit code stays `0`. A `plan_path` read
-from `context.toml` that is absolute or carries a `..` component is refused with
-`kind=validation` — the verb is not an arbitrary-file oracle. An explicit `--plan` is a caller
-argument and passes through.
+from `context.toml` that is absolute, carries a `..` component, resolves outside the repo root,
+or does not name a `.md` document is refused with `kind=validation` — the verb is not an
+arbitrary-file oracle. An `[artifacts].execution_record` override is held to the same
+repo-relative containment; only `plan_path` also has to name a `.md` document. An explicit
+`--plan` still reads an absolute or subdirectory-relative argument, but the path the import
+**records** goes through that same check — the resolved document is relativised against the
+repo root and refused unless it lands under the root as a `.md` path, so what an import records
+and what a later render accepts cannot drift apart.
 
 ```json
 {"ok":true,"added":3,"updated":1,"unchanged":32,"removed_refs":[],"added_refs":["wire-the-render-verb"],
@@ -93,7 +99,7 @@ tomlctl tasks add --slug <slug> --title "Extract the token reader" --effort S --
 | `--needs` | comma-separated ids | Dependency edges. | empty |
 | `--coupling` | comma-separated ids | Acceptance-reachability edges. Counted in the in-degree exactly like `--needs`. | empty |
 | `--deps-note` | text | Prose remainder of the plan's `Depends on` line, stored verbatim. | empty |
-| `--checkpoint` | group id | Checkpoint group. Omit for a row only the final commit train commits. | empty |
+| `--checkpoint` | group id | Checkpoint group. A group id no `[[checkpoints]]` entry declares is refused, naming the ones it does. Omit for a row only the final commit train commits. | empty |
 | `--action` / `--action-file` | text / path | Action body, literal or from a file. Mutually exclusive. | empty |
 | `--detail` / `--detail-file` | text / path | Detail body. Mutually exclusive. | empty |
 | `--acceptance` / `--acceptance-file` | text / path | Acceptance body. Mutually exclusive. | empty |
@@ -147,15 +153,25 @@ tomlctl tasks update <id> --slug <slug> --status done --agent implement-deep --c
 | `--status` | text | `pending`, `in-progress`, `done`, `failed`, `deferred`. Case-sensitive; validated after parsing. | — |
 | `--agent` | text | Agent the row was dispatched to. | — |
 | `--commit` | SHA | Commit the row landed in. | — |
-| `--checkpoint` | group id | Checkpoint group; pass an empty value to clear it. | — |
+| `--checkpoint` | group id | Checkpoint group; pass an empty value to clear it. An undeclared group id is refused, through this flag and through `--set checkpoint=` alike. | — |
 | `--ref` | slug | Rewrite the `ref`. Never inferred from a retitle. | — |
 | `--set` | `KEY=VAL`, repeatable | Any other settable field. | — |
 
-`--set` reaches `acceptance`, `action`, `agent`, `checkpoint`, `commit`, `deps_note`, `detail`,
-`effort`, `status`, `title`. Three refusals carry their own hint instead of the generic list:
-`ref` is immutable through `--set` and must be rewritten with `--ref`; `id` is minted by the
-store; `files`, `needs` and `coupling` are owned by `tasks import-plan`. Passing the same field
-both as a named flag and as `--set` errors rather than picking one.
+`--set` reaches `acceptance`, `action`, `agent`, `checkpoint`, `commit`, `coupling`, `deps_note`,
+`detail`, `effort`, `status`, `title`. Three refusals carry their own hint instead of the generic
+list: `ref` is immutable through `--set` and must be rewritten with `--ref`; `id` is minted by
+the store; `files` and `needs` are owned by `tasks import-plan`. Passing the same field both as a
+named flag and as `--set` errors rather than picking one.
+
+`coupling` is the one settable field validated against the whole store rather than the row alone.
+It takes the same comma-separated id list `tasks add --coupling` takes, an empty value clears the
+edge set, and a dangling target or an edge that would close a cycle is refused before the row
+moves. `--set title=` is refused when the new title derives a different `ref` than the old one
+did, unless `--ref` rides along in the same invocation; the refusal names the ref the new title
+derives to. A retitle deriving the same ref lands on its own. The comparison is old derivation
+against new, deliberately not against the stored `ref` — a duplicate title is minted a suffixed
+ref and `import-plan --reconcile-record` adopts a record's ref, so a stored ref legitimately
+diverges from what its title derives.
 
 `--ref` refuses an empty slug and a slug another row already holds. It does **not** rewrite the
 execution record — a rename orphans the row's `task_ref` there until the next
@@ -163,6 +179,36 @@ execution record — a rename orphans the row's `task_ref` there until the next
 
 ```json
 {"ok":true,"id":12,"changed":["agent","status"]}
+```
+
+## `tasks remove`
+
+Hard-deletes one row — the only verb that does. `import-plan` keeps every row it stops
+producing, so a task deleted from the plan is retired here or not at all.
+
+```bash
+tomlctl tasks remove <id> --slug <slug>
+tomlctl tasks remove <id> --slug <slug> --force
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| *(positional)* | id | Task to remove. Required; an id no row carries is refused. | — |
+| `--force` | — | Remove a row past `pending`, or one other rows depend on. Re-points each dependent's edges at the removed row's own dependencies. | off |
+
+Without `--force` two removals are refused, each naming what stands in the way: a row whose
+status is not `pending`, named with its `ref` — the execution record's `task_ref` and the commit
+train's SHA both join on it — and a row other rows depend on, named with those dependents. A
+refusal writes nothing.
+
+Under `--force` the removed id is pruned from every dependent's `needs` and `coupling`, **and
+the removed row's own `needs` are spliced into each dependent's `needs`**: a dependent left one
+edge short would dispatch ahead of work it still waits on, and one left pointing at the removed
+id would make the store `dag/dangling-ref`. `rewired` names the rows whose edge sets moved,
+ascending. There is no `--dry-run`.
+
+```json
+{"ok":true,"id":21,"ref":"wire-the-render-verb","rewired":[24,25]}
 ```
 
 ## `tasks show`
@@ -248,16 +294,20 @@ tomlctl tasks ready --slug <slug> --in-flight 3,4
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--in-flight` | comma-separated ids | Tasks currently dispatched. A ready row sharing a file with one of them is reported as held. | empty |
+| `--in-flight` | comma-separated ids | Tasks currently dispatched. A ready row sharing a file with one of them is reported as held, and a row waiting on one stays in `next` rather than `blocked`. | empty |
 
 ```json
-{"ready":[4],"held":[{"id":3,"blocked_on_file":"engine.rs","holder":2}],"next":[5]}
+{"ready":[4],"held":[{"id":3,"blocked_on_file":"engine.rs","holder":2}],"next":[5],"blocked":[]}
 ```
 
 `ready` excludes what `held` names, so it is directly dispatchable. `next` is what becomes
-ready once the current round lands. Every id list is ascending. An `--in-flight` id no row
-carries is refused, as is a cyclic store: Kahn strands a cycle's members and a stranded task
-reads in a frontier exactly like one that is merely waiting.
+ready once the current round lands. `blocked` names the rows no later wave can reach — each
+with the nearest **ancestor** stranding it and that ancestor's status, which an ancestor that is
+neither `done`, nor `pending`, nor named in `--in-flight` produces. The walk climbs through
+intervening `pending` rows, so `blocker` is the stall itself rather than a pending row between
+it and the blocked row. Every id list is ascending.
+An `--in-flight` id no row carries is refused, as is a cyclic store: Kahn strands a cycle's
+members and a stranded task reads in a frontier exactly like one that is merely waiting.
 
 ## `tasks batches`
 
@@ -307,11 +357,13 @@ here", not "self-contained".
 ```bash
 tomlctl tasks check --slug <slug>
 tomlctl tasks check --slug <slug> --plan
+tomlctl tasks check --slug <slug> --in-flight 3,4
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--plan` | — | Also compare the plan markdown against the render output and report `render/drift`. | off |
+| `--in-flight` | comma-separated ids | Tasks currently dispatched. A row waiting on one of them is not reported as `dag/stalled-dependency`. Unlike [`ready`](#tasks-ready)'s, an id no row carries is dropped rather than refused — a typo must not empty a class. | empty |
 
 ```json
 {"ok":false,"findings":[{"class":"dag/cycle","severity":"error","ids":[2,3,4],
@@ -321,7 +373,9 @@ tomlctl tasks check --slug <slug> --plan
 Findings sort by `(class, ids)`. **Exit `1` when any finding is error-class, `0` otherwise** —
 warnings alone exit `0`. See [the check finding classes](#the-check-finding-classes) for the
 full list. Under `--plan` the plan is resolved exactly as `render` resolves it, and the same
-containment refusal applies.
+containment refusal applies. `render/drift` is a warning, so it is reported without moving the
+exit code: `check --plan` still exits `0` on a drifted plan, and
+[`tasks render --check`](#tasks-render) is the mode to gate on instead.
 
 ## `tasks render`
 
@@ -356,8 +410,9 @@ Output is a derived write like `PROGRESS-LOG.md` — **no `.sha256` sidecar**.
 
 `render` errors rather than writing on a cycle, a dangling edge, or a graph past the node cap.
 The target path comes from the flow context under `--slug` and from the store's `plan_path`
-under `--file`, never from an argument, and is refused if absolute, `..`-bearing, or outside
-the repo root.
+under `--file`, never from an argument, and is refused if absolute, `..`-bearing, outside the
+repo root, or not a `.md` document. Under `--slug` a store whose own `plan_path` resolves to a
+different document than the context's is refused too, until the plan is re-imported.
 
 ## Store target
 
@@ -392,16 +447,29 @@ is stable across writes, so a re-render is a clean diff.
 | `last_import_refs` | `import-plan` — the ref set the last import produced |
 
 `[policy]`: `checkpoints` (`single` \| `milestones` \| `per-batch`), `max_parallel` (1–8),
-`commit_granularity` (`per-task` \| `per-checkpoint` \| `single-commit`), `note`. The two
-vocabulary fields are stored as strings so `tasks check`, not the reader, decides what is out
-of vocabulary. An absent or partial table falls back to `milestones` / `6` / `per-task`.
+`commit_granularity` (`per-task` \| `per-checkpoint` \| `single-commit`), `origin`
+(`plan` \| `default`), `note`. The three vocabulary fields are stored as strings so
+`tasks check`, not the reader, decides what is out of vocabulary. An absent or partial table
+falls back to `milestones` / `6` / `per-task`.
+
+`origin` records whether the first three came from the plan's `## Execution Policy` section or
+from those fallbacks, which is the only thing distinguishing a pre-policy plan once the import
+has materialised the table. It was added without a `schema_version` bump: an absent `origin`
+reads as `plan`, except that a `note` of exactly `policy absent in source plan` — what
+pre-`origin` imports stamped there for the same condition — reads as `default` with the note
+cleared. `note` is otherwise authored prose the renderer writes back verbatim.
 
 `[[checkpoints]]`: `id` and `rationale`, in marker order. Group *membership* is not here — it
 is the `checkpoint` field on each row.
 
-`[[items]]`: `id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `files`, `needs`,
-`coupling`, `deps_note`, `action`, `detail`, `acceptance`, `agent`, `commit`. The plan owns
-every field but four: `status`, `agent`, `commit` and `coupling` survive every re-import.
+`[[items]]`: `id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `phase`, `phase_depth`,
+`heading_depth`, `files`, `needs`, `coupling`, `deps_note`, `action`, `detail`, `acceptance`,
+`agent`, `commit`. The plan owns every field but four: `status`, `agent`, `commit` and
+`coupling` survive every re-import.
+
+`phase` and `phase_depth` hold the heading standing over the row in `## Tasks` and its `#` run,
+`heading_depth` the row's own; absent, they read `""`, `0` and `3`. Neither `add-many` nor
+`--set` reaches them — they are the plan's shape, re-read at every import.
 
 Unknown keys are dropped — the store is tool-owned and every write re-emits it from this shape.
 Bodies are LF-normalised on both read and write, and a body containing a backslash serialises as
@@ -438,17 +506,27 @@ tasks.
 | `dag/cycle` | error | `check` — suppresses every class needing reachability |
 | `dag/dangling-ref` | error | `check` |
 | `dag/duplicate-number` | error | `check` |
+| `dag/unbuildable` | error | `check` — the graph engine refuses the store for a reason no row scan named; past the node cap is the live case |
 | `dag/unreachable-claim` | warning | `check` — shared file, no directed path either way |
-| `checkpoint/orphan-task` | warning | `check` — `checkpoint = ""` |
+| `dag/stalled-dependency` | warning | `check` — an `in-progress`, `failed` or `deferred` row with pending rows behind it; one finding per blocker, `ids` naming the blocker and `detail` its dependents. A blocker named in `--in-flight` raises nothing; never changes the exit code |
+| `checkpoint/orphan-task` | warning | `check` — `checkpoint = ""`, or a group id no `[[checkpoints]]` entry declares; one finding per case |
 | `checkpoint/invalid-cut` | error | `check` — prefix union not downward-closed; `ids` are the dependencies that must move earlier |
 | `checkpoint/marker-mismatch` | warning | `import-plan` only — the authored `Checkpoint after` bullet is never stored |
 | `policy/max-parallel-range` | error | `check` |
+| `policy/checkpoints-value` | error | `check` — `policy.checkpoints` outside its vocabulary |
+| `policy/commit-granularity-value` | error | `check` — `policy.commit_granularity` outside its vocabulary |
+| `policy/origin-value` | error | `check` — `policy.origin` neither `plan` nor `default`; only a hand-edited store reaches it |
+| `plan/effort-untagged` | warning | `import-plan` only — **one** finding whose `ids` name every heading authoring no effort; the `M` default lands only where neither the heading nor an existing row supplies one, so a re-import keeps the row's effort and still warns |
+| `plan/policy-absent` | warning | `import-plan` only — no `## Execution Policy` section, so `origin` is `default` and every policy field is a house default |
+| `plan/no-tasks` | error | `import-plan` only — the `## Tasks` section parses to no task, so the import would replace the checkpoint table and policy with the empty and default values such a plan yields |
 | `plan/orphan-row` | warning, or **error** when the row's status is not `pending` | `check` |
 | `render/drift` | warning | `check --plan` and `render --check` |
 
-Every finding is `{class, severity, ids, detail}`; `ids` is empty for the two whole-store
-classes. A duplicate id and an edge to an absent task are scanned for *before* any graph is
-built, which is what lets one run report every defect instead of dying on the first.
+Every finding is `{class, severity, ids, detail}`; `ids` is empty for the whole-store classes —
+`dag/unbuildable`, the four `policy/*`, `plan/policy-absent`, `plan/no-tasks` and
+`render/drift`. A duplicate id and an edge to an absent task are scanned for *before* any graph
+is built, which is what lets one run report every defect instead of dying on the first, and is
+why either of them suppresses `dag/unbuildable` rather than doubling it.
 
 `plan/orphan-row` fires only when `last_import_refs` is non-empty — an empty ref set means the
 store has never been imported, not that every row is orphaned.
@@ -474,10 +552,11 @@ The engine's reachability bitsets are fixed-width, so a store past **256 rows** 
 construction with `graph exceeds 256 tasks`. `ready`, `batches`, `closure`, `render`,
 `edges --kind overlap` and `add`'s cycle check all surface that as a refusal.
 
-`tasks check` is the exception: it reports its non-graph classes (`policy/*`,
+`tasks check` answers differently: it reports its non-graph classes (`policy/*`,
 `dag/duplicate-number`, `dag/dangling-ref`, `checkpoint/orphan-task`, `plan/orphan-row`) and
-silently omits the graph-derived ones. A clean `check` on a store above the cap is therefore
-not a clean bill of the DAG.
+raises `dag/unbuildable` in place of the graph-derived ones, so a store above the cap exits `1`
+instead of reading as a clean bill. A duplicate id or a dangling edge already accounts for a
+refusal, and those findings then stand on their own.
 
 ## Frozen contracts
 
@@ -487,7 +566,8 @@ four adopting commands, not a refactor.
 - **`ref` is the primary key and the upsert key.** Import matches on it, the execution record's
   `task_ref` joins on it, `last_import_refs` is a set of them.
 - **Import never deletes.** A row the plan stopped naming is kept and reported in
-  `removed_refs`; only `plan/orphan-row` speaks to it.
+  `removed_refs`, and `plan/orphan-row` keeps naming it until `tasks remove` retires it —
+  the one verb that deletes, and never implicitly.
 - **A renamed heading is a refusal, not a swap.** The old row keeps the task number, the
   renamed heading arrives with the same number and a new ref, and the import raises
   `dag/duplicate-number` at error severity and writes nothing. Recovery is

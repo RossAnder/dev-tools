@@ -27,6 +27,10 @@ tomlctl tasks update <id> --slug <slug> --ref <new-ref>
 
 The `flow-contract-task-store` skill owns both rules — §2 for how a heading title becomes a `ref`, §10 for the gate. Two consequences bind restructuring specifically: renumbering alone never moves a ref (the number is not part of it) while rephrasing always does, and the importer sees a task only in a `###`/`####` heading carrying an `N. ` number. A legacy plan whose task headings are `##`-level or unnumbered imports as zero tasks, and an empty ref set on both sides makes the gate vacuous — read the envelope's `added` + `updated` + `unchanged` (the plan's task count) before trusting a clean diff.
 
+**The import reads exactly one document — the one `plan_path` names** (`--plan` overrides that choice; nothing merges several). For a multi-file plan that document is the outline, so the three store-owned sections (`## Tasks`, `## Execution Policy`, `## Dependency Graph`) stay in the outline and `tasks render` writes them back into that same file. A rewrite that moves `## Tasks` out into a detail document leaves the import with a missing section to error on, or with a derived ref set of zero against a populated store — and then `removed_refs` names every existing row, so the abort rule above blocks the reformat of any flow that has settled tasks.
+
+**Where the source plan already has that shape** — task headings living in the detail documents, nothing importable in the outline — the rewrite consolidates those headings into the outline's `## Tasks`. The heading-preservation rule makes that a move rather than a rewording, so the ref set is unchanged and the gate runs normally. Where a plan cannot be consolidated, the gate has no file to run against: skip the whole store sequence, check heading preservation against the archive copy by hand, and **say which in the op's summary** — an unreported skip is indistinguishable from a clean diff.
+
 ### Archive before rewriting
 
 Before overwriting any file, copy the current plan files to `docs/plans/archive/{plan-name}-{YYYY-MM-DD}/`, creating the directory if it does not exist. This preserves the pre-restructure state for reference.
@@ -44,6 +48,8 @@ Multi-file plans:
 ├── PROGRESS-LOG.md            — Regenerated, never hand-authored
 └── RESEARCH-NOTES.md          — Extracted research findings, corrections, and technical notes
 ```
+
+The outline is the document `plan_path` names, so `## Tasks`, `## Execution Policy` and `## Dependency Graph` live there per the gate above; a detail document carries the expanded narrative a task body references, never a task heading.
 
 Single-file plans split into at minimum the plan itself (clean, actionable) plus a `PROGRESS-LOG.md` when there is any status-tracking content to extract.
 

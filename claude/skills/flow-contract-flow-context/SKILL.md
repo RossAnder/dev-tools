@@ -23,7 +23,15 @@ further slugification. **Canonical artifacts**:
 `context.toml` on next write when absent. `artifacts.tasks` is the fifth key and carries the
 task-DAG store: it may be computed from the slug when a legacy `context.toml` lacks the key,
 and `flow doctor` reports the missing key on its top-level `warnings` array rather than as a
-failed check, so `envelope.doctor.ok` stays `true`. A carrier names `"tasks"` in
+failed check, so `envelope.doctor.ok` stays `true`; `flow doctor --fix` backfills the key.
+Doctor's per-flow `tasks-exists` and `tasks-counters` checks are advisory the same way —
+`tasks-exists` is gated on the plan declaring a `## Tasks` section and reports an absent store
+as a warning, never a check failure, and `tasks-counters` backstops the `[tasks]` counter join
+entirely on `warnings`, always reporting `ok = true` (with a `skipped:` detail for a flow
+offering neither readable counters nor a populated store), so `envelope.doctor.ok` never flips
+on a stale ratio; that check's own semantics are the execution-record schema's.
+`tasks-sidecar` is `ok` with a `skipped:` detail when no store is on disk and fails only on a
+digest mismatch against one that is. A carrier names `"tasks"` in
 `require_artifacts` only when it needs the store to already exist — the bootstrap agent's
 existence gate tests the file on disk, and flows minted before the store existed carry no
 `tasks.toml`. **Completed-flow handling**: `status = "complete"`

@@ -174,7 +174,9 @@ Cross-reorder idempotency comes from three order-insensitive operations: the cou
 completed = tomlctl items list <record> --where type=task-completion --where status=done --count-distinct task_ref --raw --verify-integrity
 ```
 
-Distinct-slug count (not a raw entry count), so a failed attempt followed by a successful retry counts as one completion, not two. `total` remains plan-document-driven; `in_progress` is touched only by `/implement` during live execution (see the `## Flow Context` section for the full writer responsibilities).
+Distinct-slug count (not a raw entry count), so a failed attempt followed by a successful retry counts as one completion, not two. `in_progress` is touched only by `/implement` during live execution (see the `## Flow Context` section for the full writer responsibilities).
+
+**The two counters come from different artifacts and are joined on one string.** `completed` is derived above, `total` counts task-store rows, and nothing but the `task_ref` / `ref` spelling connects them — so the ratio means nothing until that join is known complete, and a writer that assumes it turns a rephrased heading into `completed > total`. Gating the join is the writer's job: `/plan-update`'s Task-store section owns the rule and the subtraction it implies. `flow doctor`'s `tasks-counters` check is the mechanical backstop — it warns on `completed > total`, and, where a populated store exists, on any record `task_ref` naming no row. Both are warnings rather than check failures, and `--fix` repairs neither: doctor creates no store, so it cannot recompute `total`, and the raw derived `completed` it could write back is the very number the gate exists to correct.
 
 `--count-distinct task_ref --raw` emits the bare integer directly (tomlctl 0.2.0+) — no jq post-processing, no pipe composition. The single-flag form subsumes both the earlier `--pluck | jq -r '.[]' | sort -u | wc -l` chain and the interim `--count-by | jq 'keys | length'` bridge.
 

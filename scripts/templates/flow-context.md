@@ -44,7 +44,10 @@ further slugification. **Canonical artifacts**:
 `context.toml` on next write when absent. `artifacts.tasks` is the fifth key and carries the
 task-DAG store: it may be computed from the slug when a legacy `context.toml` lacks the key,
 and `flow doctor` reports the missing key on its top-level `warnings` array rather than as a
-failed check, so `envelope.doctor.ok` stays `true`. A carrier names `"tasks"` in
+failed check, so `envelope.doctor.ok` stays `true`; `flow doctor --fix` backfills the key.
+Doctor's per-flow `tasks-exists` and `tasks-sidecar` checks are advisory the same way —
+`tasks-exists` is gated on the plan declaring a `## Tasks` section and reports an absent store
+as a warning, never a check failure. A carrier names `"tasks"` in
 `require_artifacts` only when it needs the store to already exist — the bootstrap agent's
 existence gate tests the file on disk, and flows minted before the store existed carry no
 `tasks.toml`. **Completed-flow handling**: `status = "complete"`
@@ -104,7 +107,8 @@ Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse
    `artifacts.tasks` is the fifth key and carries the task-DAG store: it may be computed
    from the slug when a legacy `context.toml` lacks the key, and `flow doctor` reports the
    missing key on its top-level `warnings` array rather than as a failed check, so
-   `envelope.doctor.ok` stays `true`.
+   `envelope.doctor.ok` stays `true`. Its `tasks-exists` and `tasks-sidecar` checks are
+   advisory the same way, and `flow doctor --fix` backfills the key.
 3. **No-flow fallback**: when `envelope.resolved.resolved == false`, the carrier follows
    its flow-less convention (`/review` → `.claude/reviews/<scope>.toml`; `/optimise` →
    `.claude/optimise-findings/<scope>.toml`; plan/implement/tdd carriers prompt the user
