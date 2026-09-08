@@ -79,6 +79,7 @@ fn artifact_filename(kind: ArtifactKind) -> &'static str {
         ArtifactKind::ReviewLedger => "review-ledger.toml",
         ArtifactKind::OptimiseFindings => "optimise-findings.toml",
         ArtifactKind::PlanReviewFindings => "plan-review-findings.toml",
+        ArtifactKind::Tasks => "tasks.toml",
     }
 }
 
@@ -91,6 +92,7 @@ fn artifact_kind_label(kind: ArtifactKind) -> &'static str {
         ArtifactKind::ReviewLedger => "review-ledger",
         ArtifactKind::OptimiseFindings => "optimise-findings",
         ArtifactKind::PlanReviewFindings => "plan-review-findings",
+        ArtifactKind::Tasks => "tasks",
     }
 }
 
@@ -373,5 +375,6 @@ mod tests {
             artifact_filename(ArtifactKind::PlanReviewFindings),
             "plan-review-findings.toml"
         );
+        assert_eq!(artifact_filename(ArtifactKind::Tasks), "tasks.toml");
     }
 }

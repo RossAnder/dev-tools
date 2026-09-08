@@ -523,12 +523,12 @@ fn build_resolved_envelope(
     let artifacts = read_or_compute_artifacts(table, slug);
 
     // Warn on artifact files that are referenced but absent from disk.
-    for (key, rel) in &[
-        ("review_ledger", &artifacts.review_ledger),
-        ("optimise_findings", &artifacts.optimise_findings),
-        ("execution_record", &artifacts.execution_record),
-        ("plan_review_findings", &artifacts.plan_review_findings),
-    ] {
+    // `tasks` is exempt: every flow predating the task store lacks the file,
+    // and these warnings surface in every carrier's bootstrap summary.
+    for (key, rel) in artifacts.to_pairs() {
+        if key == "tasks" {
+            continue;
+        }
         let abs = root.join(rel);
         if !abs.exists() {
             warnings.push(format!("artifact missing: {key} at {rel}"));
@@ -604,6 +604,7 @@ fn read_or_compute_artifacts(
         optimise_findings: pluck("optimise_findings", &canonical.optimise_findings),
         execution_record: pluck("execution_record", &canonical.execution_record),
         plan_review_findings: pluck("plan_review_findings", &canonical.plan_review_findings),
+        tasks: pluck("tasks", &canonical.tasks),
     }
 }
 
@@ -917,7 +918,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn canonical_artifacts_yields_four_canonical_paths() {
+    fn canonical_artifacts_yields_five_canonical_paths() {
         let a = CanonicalArtifacts::for_slug("feature-x");
         assert_eq!(
             a.review_ledger,
@@ -935,6 +936,7 @@ mod tests {
             a.plan_review_findings,
             ".claude/flows/feature-x/plan-review-findings.toml"
         );
+        assert_eq!(a.tasks, ".claude/flows/feature-x/tasks.toml");
     }
 
     #[test]

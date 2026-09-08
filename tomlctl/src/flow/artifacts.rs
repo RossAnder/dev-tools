@@ -1,18 +1,19 @@
-//! Canonical flow-artifact path map — single source of truth for the four
+//! Canonical flow-artifact path map — single source of truth for the
 //! well-known artifacts that a flow's `context.toml` references.
 //!
 //! `to_pairs` yields the iterable form `flow::doctor` needs for its per-key
 //! check; the named field accessors serve `flow::init` and `flow::resolve`.
 
-/// Four canonical artifact paths for a flow, repo-relative. The string
-/// values are exactly what `flow init` writes into `context.toml`'s
-/// `[artifacts]` table.
+/// Canonical artifact paths for a flow, repo-relative. The string values
+/// are exactly what `flow init` writes into `context.toml`'s `[artifacts]`
+/// table. `tasks` is last and is the only key legacy flows may lack.
 #[derive(Debug, Clone)]
 pub(crate) struct CanonicalArtifacts {
     pub(crate) review_ledger: String,
     pub(crate) optimise_findings: String,
     pub(crate) execution_record: String,
     pub(crate) plan_review_findings: String,
+    pub(crate) tasks: String,
 }
 
 impl CanonicalArtifacts {
@@ -24,16 +25,17 @@ impl CanonicalArtifacts {
             optimise_findings: format!(".claude/flows/{slug}/optimise-findings.toml"),
             execution_record: format!(".claude/flows/{slug}/execution-record.toml"),
             plan_review_findings: format!(".claude/flows/{slug}/plan-review-findings.toml"),
+            tasks: format!(".claude/flows/{slug}/tasks.toml"),
         }
     }
 
-    /// JSON projection: a 4-key object preserving the canonical order
-    /// (`review_ledger`, `optimise_findings`, `execution_record`,
-    /// `plan_review_findings`). `serde_json::Map` carries
-    /// `preserve_order` (set in Cargo.toml) so the field order in the
-    /// emitted JSON matches insertion order.
+    /// JSON projection preserving the canonical order (`review_ledger`,
+    /// `optimise_findings`, `execution_record`, `plan_review_findings`,
+    /// `tasks`). `serde_json::Map` carries `preserve_order` (set in
+    /// Cargo.toml) so the field order in the emitted JSON matches
+    /// insertion order.
     pub(crate) fn to_json(&self) -> serde_json::Value {
-        let mut m = serde_json::Map::with_capacity(4);
+        let mut m = serde_json::Map::with_capacity(5);
         m.insert(
             "review_ledger".to_string(),
             serde_json::Value::String(self.review_ledger.clone()),
@@ -50,6 +52,10 @@ impl CanonicalArtifacts {
             "plan_review_findings".to_string(),
             serde_json::Value::String(self.plan_review_findings.clone()),
         );
+        m.insert(
+            "tasks".to_string(),
+            serde_json::Value::String(self.tasks.clone()),
+        );
         serde_json::Value::Object(m)
     }
 
@@ -57,12 +63,13 @@ impl CanonicalArtifacts {
     /// `artifacts-canonical` invariant check. The element order matches
     /// the historical `doctor::canonical_artifacts` output so any future
     /// "first divergence found" check stays deterministic.
-    pub(crate) fn to_pairs(&self) -> [(&'static str, &str); 4] {
+    pub(crate) fn to_pairs(&self) -> [(&'static str, &str); 5] {
         [
             ("review_ledger", self.review_ledger.as_str()),
             ("optimise_findings", self.optimise_findings.as_str()),
             ("execution_record", self.execution_record.as_str()),
             ("plan_review_findings", self.plan_review_findings.as_str()),
+            ("tasks", self.tasks.as_str()),
         ]
     }
 }
@@ -72,7 +79,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn for_slug_yields_four_canonical_paths() {
+    fn for_slug_yields_five_canonical_paths() {
         let a = CanonicalArtifacts::for_slug("feature-x");
         assert_eq!(
             a.review_ledger,
@@ -90,6 +97,7 @@ mod tests {
             a.plan_review_findings,
             ".claude/flows/feature-x/plan-review-findings.toml"
         );
+        assert_eq!(a.tasks, ".claude/flows/feature-x/tasks.toml");
     }
 
     #[test]
@@ -103,7 +111,8 @@ mod tests {
                 "review_ledger",
                 "optimise_findings",
                 "execution_record",
-                "plan_review_findings"
+                "plan_review_findings",
+                "tasks"
             ]
         );
     }

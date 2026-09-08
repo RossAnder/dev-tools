@@ -11,7 +11,8 @@
 //!   recompute of the file's bytes.
 //! - The `[artifacts]` table inside `context.toml` lists paths that match
 //!   the canonical computation for the slug (the same map that
-//!   `flow init` writes).
+//!   `flow init` writes). A missing `tasks` key is advisory (a warning),
+//!   not a check failure.
 //! - `plan_path` (top-level field of `context.toml`) resolves to a file
 //!   that exists on disk, when treated as relative to the root.
 //!
@@ -206,6 +207,7 @@ fn check_one_flow(
     root: &Path,
     slug: &str,
     checks: &mut Vec<Check>,
+    warnings: &mut Vec<JsonValue>,
 ) -> Result<Vec<(PathBuf, String)>> {
     let flow_dir = root.join(".claude").join("flows").join(slug);
     let context_file = flow_dir.join("context.toml");
@@ -340,7 +342,7 @@ fn check_one_flow(
     if context_exists {
         match read_toml(&context_file) {
             Ok(doc) => {
-                check_artifacts_canonical(slug, &doc, checks);
+                check_artifacts_canonical(slug, &doc, checks, warnings);
                 check_plan_path_resolves(root, slug, &doc, checks);
             }
             Err(e) => {
@@ -362,11 +364,17 @@ fn check_one_flow(
 }
 
 /// Check that the `[artifacts]` table inside `context.toml` matches the
-/// canonical map for `slug`. A missing key, an extra key, or a value
-/// disagreement all surface as a single failing check whose `detail`
-/// names the first divergence found (deterministic — keys are checked in
-/// canonical order).
-fn check_artifacts_canonical(slug: &str, doc: &TomlValue, checks: &mut Vec<Check>) {
+/// canonical map for `slug`. A missing key or a value disagreement
+/// surfaces as a single failing check whose `detail` names the first
+/// divergence found (deterministic — keys are checked in canonical
+/// order); an absent `tasks` key is the one exception, reported on
+/// `warnings` so flows without a task store stay green.
+fn check_artifacts_canonical(
+    slug: &str,
+    doc: &TomlValue,
+    checks: &mut Vec<Check>,
+    warnings: &mut Vec<JsonValue>,
+) {
     let canon = CanonicalArtifacts::for_slug(slug);
     let arts = doc
         .as_table()
@@ -380,7 +388,11 @@ fn check_artifacts_canonical(slug: &str, doc: &TomlValue, checks: &mut Vec<Check
         ));
         return;
     };
-    for (key, want) in canon.to_pairs() {
+    let pairs = canon.to_pairs();
+    for (key, want) in pairs {
+        if key == "tasks" {
+            continue;
+        }
         match arts.get(key).and_then(|v| v.as_str()) {
             None => {
                 checks.push(Check::fail(
@@ -401,6 +413,29 @@ fn check_artifacts_canonical(slug: &str, doc: &TomlValue, checks: &mut Vec<Check
             Some(_) => {}
         }
     }
+
+    // Absence of `tasks` is advisory — a flow carrying no task store must
+    // still pass — while a present-but-divergent value fails like any
+    // other key.
+    let want_tasks = match pairs.iter().find(|(key, _)| *key == "tasks") {
+        Some((_, want)) => (*want).to_string(),
+        None => format!(".claude/flows/{slug}/tasks.toml"),
+    };
+    match arts.get("tasks").and_then(|v| v.as_str()) {
+        None => warnings.push(JsonValue::String(format!(
+            "[artifacts].tasks missing for `{slug}` (expected `{want_tasks}`) — advisory, not a failure"
+        ))),
+        Some(got) if got != want_tasks => {
+            checks.push(Check::fail(
+                "artifacts-canonical",
+                slug.to_string(),
+                format!("[artifacts].tasks = `{got}` (expected `{want_tasks}`)"),
+            ));
+            return;
+        }
+        Some(_) => {}
+    }
+
     checks.push(Check::ok("artifacts-canonical", slug.to_string()));
 }
 
@@ -655,9 +690,10 @@ pub(crate) fn dispatch(
     // 2. Per-slug checks, accumulating stale sidecars for the optional --fix
     //    pass.
     let mut checks: Vec<Check> = Vec::new();
+    let mut warnings: Vec<JsonValue> = Vec::new();
     let mut stale_sidecars: Vec<(PathBuf, String)> = Vec::new();
     for s in &slugs {
-        let mut local_stale = check_one_flow(&root, s, &mut checks)?;
+        let mut local_stale = check_one_flow(&root, s, &mut checks, &mut warnings)?;
         stale_sidecars.append(&mut local_stale);
     }
 
@@ -680,7 +716,6 @@ pub(crate) fn dispatch(
     }
 
     // 4. .gitignore warning — surfaced as a warning, not a check failure.
-    let mut warnings: Vec<JsonValue> = Vec::new();
 
     // `--dry-run` without `--fix` is silently a no-op — the envelope's
     // `dry_run` field is computed as `dry_run && fix`, so passing only
@@ -730,4 +765,83 @@ pub(crate) fn dispatch(
         "warnings": warnings,
     });
     print_json_compact(&envelope)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn artifacts_doc(pairs: &[(String, String)]) -> TomlValue {
+        let mut arts = toml::Table::new();
+        for (key, want) in pairs {
+            arts.insert(key.clone(), TomlValue::String(want.clone()));
+        }
+        let mut root = toml::Table::new();
+        root.insert("artifacts".to_string(), TomlValue::Table(arts));
+        TomlValue::Table(root)
+    }
+
+    /// The canonical pairs minus `tasks` — the shape every flow minted
+    /// without a task store carries on disk.
+    fn without_tasks(slug: &str) -> Vec<(String, String)> {
+        CanonicalArtifacts::for_slug(slug)
+            .to_pairs()
+            .iter()
+            .filter(|(key, _)| *key != "tasks")
+            .map(|(key, want)| ((*key).to_string(), (*want).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn missing_tasks_key_passes_with_an_advisory_warning() {
+        let doc = artifacts_doc(&without_tasks("feature-x"));
+        let mut checks = Vec::new();
+        let mut warnings = Vec::new();
+
+        check_artifacts_canonical("feature-x", &doc, &mut checks, &mut warnings);
+
+        assert_eq!(checks.len(), 1);
+        assert!(checks[0].ok, "detail: {:?}", checks[0].detail);
+        assert_eq!(warnings.len(), 1, "got: {warnings:?}");
+        let w = warnings[0].as_str().unwrap();
+        assert!(w.contains("tasks"), "warning must name tasks; got: {w}");
+    }
+
+    #[test]
+    fn divergent_tasks_value_still_fails() {
+        let mut pairs = without_tasks("feature-x");
+        pairs.push((
+            "tasks".to_string(),
+            ".claude/flows/other-flow/tasks.toml".to_string(),
+        ));
+        let doc = artifacts_doc(&pairs);
+        let mut checks = Vec::new();
+        let mut warnings = Vec::new();
+
+        check_artifacts_canonical("feature-x", &doc, &mut checks, &mut warnings);
+
+        assert_eq!(checks.len(), 1);
+        assert!(!checks[0].ok, "divergent tasks value must fail the check");
+        let detail = checks[0].detail.as_deref().unwrap_or_default();
+        assert!(detail.contains("tasks"), "detail must name tasks: {detail}");
+        assert!(warnings.is_empty(), "got: {warnings:?}");
+    }
+
+    #[test]
+    fn canonical_tasks_value_passes_without_a_warning() {
+        let mut pairs = without_tasks("feature-x");
+        pairs.push((
+            "tasks".to_string(),
+            ".claude/flows/feature-x/tasks.toml".to_string(),
+        ));
+        let doc = artifacts_doc(&pairs);
+        let mut checks = Vec::new();
+        let mut warnings = Vec::new();
+
+        check_artifacts_canonical("feature-x", &doc, &mut checks, &mut warnings);
+
+        assert_eq!(checks.len(), 1);
+        assert!(checks[0].ok, "detail: {:?}", checks[0].detail);
+        assert!(warnings.is_empty(), "got: {warnings:?}");
+    }
 }

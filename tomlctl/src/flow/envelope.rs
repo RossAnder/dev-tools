@@ -40,6 +40,7 @@ const VALID_ARTIFACTS: &[&str] = &[
     "optimise_findings",
     "execution_record",
     "plan_review_findings",
+    "tasks",
 ];
 
 #[allow(clippy::too_many_arguments)]

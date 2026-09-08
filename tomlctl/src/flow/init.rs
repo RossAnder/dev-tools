@@ -1,12 +1,12 @@
 //! `tomlctl flow init` — bootstrap a flow's `context.toml`,
-//! `execution-record.toml`, and active-flow registry entry in one
-//! idempotent invocation.
+//! `execution-record.toml`, `tasks.toml`, and active-flow registry entry in
+//! one idempotent invocation.
 //!
 //! Re-running on an existing slug is a no-op:
 //! - `context.toml` exists and is parseable → preserve `created` verbatim,
 //!   return its current shape as the response (`action="noop"`).
-//! - `execution-record.toml` is left untouched if already present (we still
-//!   refresh its sidecar only if missing).
+//! - `execution-record.toml` and `tasks.toml` are left untouched if already
+//!   present (we still refresh their sidecars only if missing).
 //! - active-flow registry is upserted regardless (so a re-init recovers a
 //!   missing entry without forcing the user through `flow active add`).
 //!
@@ -86,6 +86,16 @@ pub(crate) fn execution_record_path_for(slug: &str) -> Result<PathBuf> {
         .join("execution-record.toml"))
 }
 
+/// Resolve `<root>/.claude/flows/<slug>/tasks.toml`.
+fn tasks_path_for(slug: &str) -> Result<PathBuf> {
+    let root = repo_or_cwd_root()?;
+    Ok(root
+        .join(".claude")
+        .join("flows")
+        .join(slug)
+        .join("tasks.toml"))
+}
+
 /// Resolve `<root>/.claude/active-flow.toml` — the active-flow registry.
 fn active_flow_path() -> Result<PathBuf> {
     let root = repo_or_cwd_root()?;
@@ -148,6 +158,10 @@ fn build_seed_doc(
     arts.insert(
         "plan_review_findings".to_string(),
         TomlValue::String(artifacts.plan_review_findings.clone()),
+    );
+    arts.insert(
+        "tasks".to_string(),
+        TomlValue::String(artifacts.tasks.clone()),
     );
     root.insert("artifacts".to_string(), TomlValue::Table(arts));
 
@@ -258,55 +272,36 @@ pub(crate) fn execution_record_skeleton(file: &Path) -> Result<TomlValue> {
     crate::io::seed_doc_for(file)
 }
 
-/// Bootstrap `execution-record.toml` if missing — materialise the 2-line
-/// `schema_version = 1 / last_updated = <today>` skeleton plus its sidecar.
+/// Materialise `seed` at `file` if missing, plus its sidecar. Idempotent: an
+/// existing file keeps its bytes and only gains a missing sidecar.
 ///
-/// The skeleton is built by the single-source `io::seed_doc_for` helper (via
-/// `execution_record_skeleton`, the SAME helper the auto-create write path
-/// uses) and persisted through `write_toml_with_sidecar` — the same writer the
-/// rest of the pipeline uses. The on-disk bytes are exactly
-/// `schema_version = 1\nlast_updated = <date>\n` (asserted by
-/// `seed_doc_for_matches_bootstrap_bytes` in the io tests): `toml`'s
-/// `preserve_order` serialiser emits the inserted `schema_version`→`last_updated`
-/// order, an integer `1`, and a bare date.
-///
-/// Idempotent: if the file already exists, leaves the bytes alone but still
-/// ensures the sidecar is present (re-deriving it from the on-disk bytes via
-/// `refresh_sidecar` is cheap and self-healing).
-///
-/// `pub(crate)` so the byte-identity test can name this bootstrap entry point
-/// (the assertion itself runs against `execution_record_skeleton` to stay
-/// FS-free).
-pub(crate) fn bootstrap_execution_record(
+/// Persisted through `write_toml_with_sidecar`, the same writer the auto-create
+/// path uses, so the two-line on-disk shape stays pinned by
+/// `seed_doc_for_matches_bootstrap_bytes`.
+fn bootstrap_seeded_store(
     file: &Path,
+    seed: &TomlValue,
     integrity_args: &WriteIntegrityArgs,
 ) -> Result<()> {
     let allow_outside = integrity_args.allow_outside;
     let write_sidecar = !integrity_args.no_write_integrity;
     let already_exists = file.exists();
-    // Single skeleton source via `execution_record_skeleton` →
-    // `seed_doc_for` keyed on the basename (`execution-record.toml`) yields
-    // `{schema_version = 1, last_updated = <today>}`. Built once outside the
-    // lock; it's pure data.
-    let seed = execution_record_skeleton(file)?;
     let opts = write_integrity_opts(integrity_args);
 
     with_exclusive_lock(file, || {
         // Same in-lock guard the rest of the write paths run.
         guard_write_path(file, allow_outside)?;
         if !already_exists {
-            // Atomic bootstrap: `write_toml_with_sidecar` serialises the seed
-            // and persists TOML + sidecar in one shot (same writer the
-            // auto-create path uses). Skip if the file has re-appeared between
-            // the pre-lock check and now (unlikely, but the lock ensures we
-            // only ever take the write branch when truly needed).
+            // Skip if the file has re-appeared between the pre-lock check and
+            // now (unlikely, but the lock ensures we only ever take the write
+            // branch when truly needed).
             if !file.exists() {
                 if !allow_outside {
                     recheck_claude_containment(file)?;
                 }
                 // `opts.write_sidecar` already honours `--no-write-integrity`,
                 // so the sidecar is suppressed there without a second gate.
-                write_toml_with_sidecar(file, &seed, opts)?;
+                write_toml_with_sidecar(file, seed, opts)?;
                 return Ok(());
             }
         }
@@ -323,6 +318,25 @@ pub(crate) fn bootstrap_execution_record(
     })
 }
 
+/// Bootstrap `execution-record.toml` if missing.
+///
+/// `pub(crate)` so the byte-identity test can name this bootstrap entry point
+/// (the assertion itself runs against `execution_record_skeleton` to stay
+/// FS-free).
+pub(crate) fn bootstrap_execution_record(
+    file: &Path,
+    integrity_args: &WriteIntegrityArgs,
+) -> Result<()> {
+    bootstrap_seeded_store(file, &execution_record_skeleton(file)?, integrity_args)
+}
+
+/// Bootstrap the per-flow task store `tasks.toml` if missing. Its skeleton
+/// comes from the same basename-keyed `io::seed_doc_for` the auto-create write
+/// path uses, so a store created either way carries identical bytes.
+fn bootstrap_tasks_store(file: &Path, integrity_args: &WriteIntegrityArgs) -> Result<()> {
+    bootstrap_seeded_store(file, &crate::io::seed_doc_for(file)?, integrity_args)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn dispatch(
     slug: String,
@@ -337,6 +351,7 @@ pub(crate) fn dispatch(
 
     let context_path = context_path_for(&slug)?;
     let execution_record_path = execution_record_path_for(&slug)?;
+    let tasks_path = tasks_path_for(&slug)?;
     let artifacts = CanonicalArtifacts::for_slug(&slug);
 
     // Try to load an existing context — drives the idempotent branch.
@@ -418,11 +433,12 @@ pub(crate) fn dispatch(
         "init"
     };
 
-    // Bootstrap execution-record.toml (idempotent — the helper checks
-    // existence and skips the write when present, but still ensures the
+    // Bootstrap execution-record.toml and tasks.toml (idempotent — the helper
+    // checks existence and skips the write when present, but still ensures the
     // sidecar is materialised). The skeleton comes from `io::seed_doc_for`
     // (single source), so the helper computes its own date.
     bootstrap_execution_record(&execution_record_path, &integrity)?;
+    bootstrap_tasks_store(&tasks_path, &integrity)?;
 
     // Always upsert the active-flow registry entry. A re-init covers the
     // case where the registry got out of sync (file-level removal,
