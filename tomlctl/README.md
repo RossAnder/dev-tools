@@ -247,7 +247,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.6.0",
+  "version": "0.7.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -259,10 +259,13 @@ downstream flow-command templates can feature-gate at boot without parsing
                "json_ops", "backlog_capture", "backlog_check",
                "backlog_cluster", "backlog_compact", "backlog_evidence",
                "backlog_list", "backlog_show", "backlog_relate",
-               "backlog_triage"],
+               "backlog_triage", "tasks_import_plan", "tasks_add",
+               "tasks_add_many", "tasks_update", "tasks_show", "tasks_list",
+               "tasks_edges", "tasks_ready", "tasks_batches",
+               "tasks_closure", "tasks_check", "tasks_render"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
-                  "integrity", "flow", "json", "backlog"],
+                  "integrity", "flow", "json", "backlog", "tasks"],
   "commands": {
     "items": {
       "subcommands": {
@@ -312,7 +315,7 @@ Feature meanings:
 | `capabilities` | this subcommand itself |
 | `error_format_json` | `--error-format json` global flag + `ErrorKind` taxonomy |
 | `strict_read` | `--strict-read` on every read subcommand |
-| `dry_run` | `--dry-run` on all 9 write subcommands: `set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id` |
+| `dry_run` | `--dry-run` on all 20 write subcommands: `set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id`, `flow init`, `flow ensure-artifact`, `flow doctor`, `flow active add`, `flow active remove`, `flow active touch`, `json set`, `json unset`, `backlog add`, `backlog compact`, `tasks import-plan` |
 | `backfill_dedup_id` | `items backfill-dedup-id <file>` |
 | `integrity_refresh` | `tomlctl integrity refresh <file>` — sidecar bootstrap / recovery primitive |
 | `agent_context` | `tomlctl capabilities .commands` emits per-subcommand flag schema (type / required / default / values / repeatable + mutex_groups) for runtime introspection without parsing `--help` prose |
@@ -336,3 +339,15 @@ Feature meanings:
 | `backlog_show` | `backlog show <ID>` — one item with its one-hop relation neighbourhood and evidence listing |
 | `backlog_relate` | `backlog relate <A> --to <ID> --as <KIND>` — write a typed edge between two items |
 | `backlog_triage` | `backlog triage <ID>... --promote` / `--dismiss` / `--resolve` / `--reopen` — transition items out of (or back into) `open` |
+| `tasks_import_plan` | `tasks import-plan --slug <SLUG>` — upsert a plan's `## Tasks`, `## Execution Policy` and `## Dependency Graph` into the store, keyed on each row's `ref`; `--reconcile-record` adopts the execution record's completions |
+| `tasks_add` | `tasks add --title <TEXT> --effort <S\|M\|L>` — append one row, refusing a dangling dependency target or a cycle before writing |
+| `tasks_add_many` | `tasks add-many --ndjson <SRC>` — append a batch of rows all-or-nothing |
+| `tasks_update` | `tasks update <N> --status <STATUS>` — patch one row's mutable fields; `ref` moves only under an explicit `--ref` |
+| `tasks_show` | `tasks show <N> --with body,files,deps` — one row, the fetch-by-id form an orchestrator hands a dispatched agent in place of pasted prose |
+| `tasks_list` | `tasks list` — query rows with the full `items list` predicate, projection and aggregation surface |
+| `tasks_edges` | `tasks edges --kind needs\|coupling\|overlap` — the edge list, or Graphviz DOT under `--dot` |
+| `tasks_ready` | `tasks ready --in-flight <N1,N2,...>` — the dispatchable frontier, which rows a file claim holds, and what unblocks once the round lands |
+| `tasks_batches` | `tasks batches` — the graph's Kahn layers, each sorted ascending |
+| `tasks_closure` | `tasks closure --checkpoint <ID>` / `--task <N> --up` / `--down` — a checkpoint group's task set or one task's transitive closure, plus its maximal elements |
+| `tasks_check` | `tasks check` — the store's invariant checks; any `error`-class finding exits 1, and `--plan` also reports render drift |
+| `tasks_render` | `tasks render` — rewrite the plan's `## Execution Policy`, `## Tasks` and `## Dependency Graph` from the store; `--stdout` previews and `--check` reports drift without writing |
