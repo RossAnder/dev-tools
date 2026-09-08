@@ -1,6 +1,6 @@
 ---
 name: tomlctl
-description: "Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml, .claude/backlog.toml — and their per-row [[items]] arrays. Verbs: read/parse/get, query/filter/list/count/group-by/pluck, write/set/set-json, append/array-append, items add/add-many/update/remove/apply/backfill-dedup-id, flow resolve/active/doctor/init/ensure-artifact/envelope-build/stale/find-plans/render-progress-log, backlog add/check/list/show/relate/triage/cluster/compact/evidence, validate, integrity refresh/verify, dry-run preview, dedupe. Use this for any TOML mutation in a flow command — never line-edit ledger arrays-of-tables. Outputs JSON; supports stdin via `-` sentinel for ops/json/ndjson payloads. Single agent-native CLI for all flow-TOML I/O on Windows and Linux."
+description: "Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml, tasks.toml, .claude/backlog.toml — and their per-row [[items]] arrays. Verbs: read/parse/get, query/filter/list/count/group-by/pluck, write/set/set-json, append/array-append, items add/add-many/update/remove/apply/backfill-dedup-id, flow resolve/active/doctor/init/ensure-artifact/envelope-build/stale/find-plans/render-progress-log, tasks import-plan/add/add-many/update/show/list/edges/ready/batches/closure/check/render, backlog add/check/list/show/relate/triage/cluster/compact/evidence, validate, integrity refresh/verify, dry-run preview, dedupe. Use this for any TOML mutation in a flow command — never line-edit ledger arrays-of-tables. Outputs JSON; supports stdin via `-` sentinel for ops/json/ndjson payloads. Single agent-native CLI for all flow-TOML I/O on Windows and Linux."
 ---
 
 # tomlctl
@@ -43,18 +43,21 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Resolve the active flow (5-step algorithm, emits artifacts + scope) | `tomlctl flow resolve [--flow <s>] [--path <p>]... [--branch <b>] [--worktree <w>] [--with-staleness]` |
 | Check whether a flow is stale | `tomlctl flow stale --slug <s> [--threshold <duration>]` |
 | Regenerate PROGRESS-LOG.md from the execution record | `tomlctl flow render-progress-log --slug <s> [--stdout] [--verify-integrity]` |
+| Import a plan's tasks into the flow's task DAG | `tomlctl tasks import-plan --slug <s> [--plan <p>] [--reconcile-record] [--dry-run]` |
+| Query, mutate or gate that DAG (`.claude/flows/<slug>/tasks.toml`) | `tomlctl tasks add\|add-many\|update\|show\|list\|edges\|ready\|batches\|closure\|check\|render --slug <s>` |
 | Refresh integrity sidecar | `tomlctl integrity refresh <file>` |
 
 <a id="flow-bootstrap-agent-entrypoint"></a>**`flow-bootstrap` agent entrypoint**: per-command pre-flight is delegated to the `flow-bootstrap` sub-agent (`claude/agents/flow-bootstrap.md`), which composes `tomlctl flow resolve --with-staleness`, `tomlctl flow doctor`, and (for `plan-new` / `plan-update` / `review-plan`) `tomlctl json get .claude/settings.json plansDirectory` into a single JSON envelope. Each carrier's `## Step 0: Pre-flight (flow resolution + doctor)` section dispatches via `Task` with `subagent_type: "flow-bootstrap"` and a JSON-encoded input envelope; downstream phases consume `envelope.resolved.{slug,context_path,artifacts.*,status,plan_path,scope,stale}` plus `envelope.doctor.ok` instead of running the resolve / doctor primitives inline. The agent is read-only — never passes `--fix` to doctor — so auto-repair stays an orchestrator decision.
 
 ## References
 
-The per-verb flag tables, recipes, and contract prose live in four sibling files. Each is self-contained and opens with its own `## Contents` list.
+The per-verb flag tables, recipes, and contract prose live in five sibling files. Each is self-contained and opens with its own `## Contents` list.
 
 - [references/query.md](references/query.md) — the read-only verbs: `get` / `parse` / `validate`, the full `items list` query surface (filters, projection, shaping, aggregation, output shapes), `items get`, `items find-duplicates`, `items orphans`.
 - [references/write.md](references/write.md) — the mutating verbs: `set`, `set-json`, `array-append`, the `items` batch verbs, `integrity refresh`, plus auto-create, `--dry-run`, stdin payload handling, and the dedup fingerprint contract.
 - [references/flow.md](references/flow.md) — the cross-cutting surface: the `--verify-integrity` support matrix, what the `.sha256` sidecar does and does not promise, the `--error-format json` envelope, the two emitting `flow` verbs, and the infrastructure-only `blocks` verbs.
 - [references/backlog.md](references/backlog.md) — the `backlog` group's flag tables, the `.claude/backlog.toml` store shape, id derivation, the `check` verdict ladder, and the evidence drop-box. When to mint a row is the `backlog-capture` skill's call, not this one's.
+- [references/tasks.md](references/tasks.md) — the `tasks` group's flag tables, the `.claude/flows/<slug>/tasks.toml` store shape, the `--slug` / `--file` target group, `ref` derivation, the `check` finding classes, and the derived graph products. What the fields mean and which verb a carrier reaches for is the `flow-contract-task-store` skill's call, not this one's.
 
 To find a section without reading a whole file:
 

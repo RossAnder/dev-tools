@@ -135,7 +135,7 @@ tomlctl flow envelope build \
 
 `--command` is required and must be one of: `review`, `optimise`, `plan-new`, `plan-update`, `implement`, `review-plan`, `tdd`, `review-apply`, `optimise-apply`, `test-bootstrap`. Unknown values are rejected with `kind=validation`.
 
-`--path-arg` and `--require-artifact` are repeatable. `--require-artifact` values are validated against the canonical artifact set (`review_ledger`, `optimise_findings`, `execution_record`, `plan_review_findings`); a typo errors with `kind=validation`. `--staleness-threshold` defaults to `"7d"`; pass another duration (`"1d"`, `"48h"`, …) when the carrier needs a tighter or looser staleness gate.
+`--path-arg` and `--require-artifact` are repeatable. `--require-artifact` values are validated against the canonical artifact set (`review_ledger`, `optimise_findings`, `execution_record`, `plan_review_findings`, `tasks`); a typo errors with `kind=validation`. `--staleness-threshold` defaults to `"7d"`; pass another duration (`"1d"`, `"48h"`, …) when the carrier needs a tighter or looser staleness gate.
 
 `--flow-override`, `--branch`, `--worktree`, and `--cwd` are optional and round-trip as JSON `null` when omitted (rather than being dropped from the envelope — the bootstrap agent's contract expects every documented key to be present).
 
