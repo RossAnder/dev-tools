@@ -1,0 +1,1312 @@
+schema_version = 1
+last_updated = 2026-09-08
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-09-07
+agent = "implement"
+summary = "Flow entered implementation: draft -> in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "b6496df471686e7e"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "scaffold-the-tasks-module-tree"
+status = "done"
+files = [
+    "tomlctl/src/main.rs",
+    "tomlctl/src/tasks/mod.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/slug.rs",
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/tasks/store.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/tasks/list.rs",
+    "tomlctl/src/tasks/edges.rs",
+    "tomlctl/src/tasks/ready.rs",
+    "tomlctl/src/tasks/batches.rs",
+    "tomlctl/src/tasks/closure.rs",
+    "tomlctl/src/tasks/check.rs",
+    "tomlctl/src/tasks/markdown.rs",
+    "tomlctl/src/tasks/parse_tasks.rs",
+    "tomlctl/src/tasks/parse_policy.rs",
+    "tomlctl/src/tasks/import_plan.rs",
+    "tomlctl/src/tasks/render.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Scaffolded the tasks module tree: mod.rs with 18 private leaves plus pub(crate) mod dispatch, 19 doc-only placeholders, mod tasks; in main.rs"
+dedup_id = "b69d5c05f02f188e"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-ref-slug-rule-and-record-reconciliation-matcher"
+status = "done"
+files = ["tomlctl/src/tasks/slug.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "derive_ref, dedupe_refs and normalise_for_match with four inline tests; falsifier observed 1 failure on dropping the underscore keep-set arm"
+dedup_id = "bf8358533588ff24"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "declare-the-tasks-cli-surface"
+status = "done"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Cmd::Tasks plus the twelve-verb TasksOp enum, TasksTarget/ShowPart/EdgeKind, tasks in SUBCOMMANDS, twelve tasks_* FEATURES entries, temporary bail arm, cli/mod.rs re-exports"
+dedup_id = "518492c626c27637"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "declare-the-tasks-cli-surface"
+summary = "Task 5 ships one unused_imports warning on cli/mod.rs; its acceptance forbade any warning naming an edited file"
+original_intent = "Acceptance required cargo clippy to report no error and no warning naming a file task 5 edits, while the Action required re-exporting TasksOp from cli/mod.rs"
+rationale = "A pub(crate) re-export with no in-crate consumer emits unused_imports, and the only future consumer is task 11 crate::tasks::dispatch, which cannot reach crate::cli::types directly because mod types is private to cli. Task 11 Files line does not include cli/mod.rs, so dropping the re-export would hard-block task 11 on a cross-cut. The warning self-clears when task 11 lands."
+dedup_id = "3b3585c43572c8e5"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-markdown-section-scanner"
+status = "done"
+files = ["tomlctl/src/tasks/markdown.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "sections, replace_section, insert_section_after, dominant_line_ending with fence tracking and byte-preserving splices; falsifier observed 2 failures on removing the fence-open branch"
+dedup_id = "288a8b93f9a7fe2f"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "define-the-store-schema-types"
+status = "done"
+files = ["tomlctl/src/tasks/schema.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Store/Policy/Checkpoint/TaskRow/Status/Effort with canonical-order from_toml/to_toml and LF body normalisation both directions; three falsifier breaks each observed 1 failure"
+dedup_id = "40d176fd8eb69917"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "build-the-graph-engine"
+status = "done"
+files = ["tomlctl/src/tasks/graph.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Deterministic layered Kahn, minimal-cycle DFS, 256-bit reachability rows, frontier with file-claim holds, overlap pairs and checkpoint groups; 8 inline tests, falsifier observed 1 failure on flipping the tie-break"
+dedup_id = "ce3585f165388e59"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "register-the-verbs-in-capabilities-tests-readme-and-the-version"
+status = "done"
+files = [
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Twelve tasks_* FEATURES pins, tasks subcommand, read_subs entries, README capabilities block and Feature meanings rows, version 0.6.0 to 0.7.0; capabilities suite 66 passed, falsifier observed 3 failures"
+dedup_id = "072aefb064e7644b"
+
+[[items]]
+id = "E10"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "register-the-verbs-in-capabilities-tests-readme-and-the-version"
+summary = "Plan assumed a pinned SUBCOMMANDS literal to extend; no such pin exists anywhere"
+original_intent = "Task 13 Action 1 said to extend the pinned FEATURES and SUBCOMMANDS literals and their lengths in capabilities.rs"
+rationale = "Only FEATURES has a literal-plus-length pin. capabilities_subcommands_contains_capabilities_and_items asserts only that two names are members, and tests/integration.rs carries no subcommands assertion despite the SUBCOMMANDS doc comment claiming it does. Nothing was owed; only the README subcommands transcription was updated. The const remains ungated."
+dedup_id = "486ce9aa8ec1e334"
+
+[[items]]
+id = "E11"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "register-the-verbs-in-capabilities-tests-readme-and-the-version"
+summary = "tasks render INCLUDED in read_subs, opposite to the dispatch instruction, following the code"
+original_intent = "Orchestrator dispatch said render is deliberately not in read_subs because the plan verb table classes it a derived write, but instructed the agent to confirm against the code and follow it"
+rationale = "TasksOp::Render flattens ReadIntegrityArgs and none of the three write flags, and resolves its target from flow context rather than a free argument. The arrays real membership criterion is carrying the read bundle and none of the write bundle, not performing no write: backlog evidence dir is already a member and writes a marker file. Including render pins that a future refactor cannot quietly hand it --allow-outside."
+dedup_id = "5b653d859b457e93"
+
+[[items]]
+id = "E12"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "register-the-verbs-in-capabilities-tests-readme-and-the-version"
+summary = "README dry_run write-subcommand count was already stale before this task; measured 20, not the 9 documented nor the 10 the plan implied"
+original_intent = "Task 13 Action said to update the dry_run rows write-subcommand count on the premise that tasks adds four write verbs plus render to the --dry-run surface"
+rationale = "Only TasksOp::ImportPlan declares --dry-run; tasks add/add-many/update carry WriteIntegrityArgs but no --dry-run, and render carries --stdout/--check. Probing --help across every subcommand path measured 20 write subcommands: the prior 9 already omitted flow init/ensure-artifact/doctor, flow active add/remove/touch, json set/unset and backlog add/compact. Wrote 20 with the full list rather than shipping a number measured to be wrong."
+dedup_id = "25dc8f248b32bbdd"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "teach-doctor-ensure-artifact-and-the-envelope-about-tasks"
+status = "done"
+files = [
+    "tomlctl/src/flow/doctor.rs",
+    "tomlctl/src/flow/ensure_artifact.rs",
+    "tomlctl/src/flow/envelope.rs",
+    "tomlctl/src/cli/types.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Missing [artifacts].tasks key is now a passing check plus a top-level advisory while a divergent value still fails; ArtifactKind::Tasks mapped in both exhaustive matches; tasks in VALID_ARTIFACTS. Three inline doctor tests, two falsifiers each observing 1 failure. tests/flow_doctor.rs is red by construction until task 22."
+dedup_id = "9583814c28bf1a69"
+
+[[items]]
+id = "E14"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "teach-doctor-ensure-artifact-and-the-envelope-about-tasks"
+summary = "The doctor change cannot be wholly inert at four pairs as the plan specified; split into a live literal-key block plus an inert to_pairs guard"
+original_intent = "Plan Approach and task 21 Detail said to key the doctor tolerance on the literal key name so the code compiles and is inert while to_pairs() is still four-wide, becoming live when task 20 widens it"
+rationale = "Both acceptance cases must be observable immediately - a four-key table must warn and a wrong tasks value must fail - and neither can come from a to_pairs()-driven loop that has no tasks pair. The dedicated literal-key block is live today; the loops continue guard is the inert half that becomes load-bearing at task 20. Expected value reads from to_pairs() when canon publishes tasks and falls back to the canonical path otherwise, so doctor tracks CanonicalArtifacts after task 20 rather than permanently duplicating the path formula."
+dedup_id = "4257e450e089fc30"
+
+[[items]]
+id = "E15"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "teach-doctor-ensure-artifact-and-the-envelope-about-tasks"
+summary = "Deleted a false clause in check_artifacts_canonical doc comment claiming an extra key surfaces as a failing check"
+original_intent = "Task 21 scope was to add the tasks tolerance, not to correct neighbouring documentation"
+rationale = "The doc comment claimed an extra [artifacts] key fails the check, which the code has never done - the plans own Exploration Notes record the same observation. The sentence was being rewritten anyway to state the tasks exception, so leaving the false half in place was worse than deleting it."
+dedup_id = "59ea7b6bf33297c9"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-policy-and-marker-parser"
+status = "done"
+files = ["tomlctl/src/tasks/parse_policy.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "parse_policy with four bullets, separate checkpoint_after and absent-section defaults; parse_markers over six corpus shapes with range expansion, closure-annotation and INVALID CUT stripping, first-wins dedupe. 19 inline tests; falsifier observed 1 failure after strengthening the fixture so it bites."
+dedup_id = "137c58a9f877ec44"
+
+[[items]]
+id = "E17"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-policy-and-marker-parser"
+summary = "parse_policy returns a local ParsedPolicy carrying checkpoint_after inside it, not schema::Policy plus a tuple; task 17 must bridge"
+original_intent = "Plan task 16 Action specified parse_policy(section_body) -> Result<Policy + checkpoint_after: Vec<u32>>"
+rationale = "schema.rs was landing concurrently and the dispatch forbade depending on it, so the module defines its own ParsedPolicy{checkpoints,max_parallel,commit_granularity,note,checkpoint_after} and Marker{id,after,rationale}. Values are the canonical lowercase spellings, so the bridge in import_plan is a parse call. Signature also takes Option<&str> because an absent-section default cannot be expressed from a bare &str. Two spec gaps decided: note collects bullet remainders AND non-bullet prose so it survives render-import-render idempotently; an out-of-range max_parallel is accepted rather than erroring, because policy/max-parallel-range is a check finding that needs a stored value to flag."
+dedup_id = "d261890dcf92656d"
+
+[[items]]
+id = "E18"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-store-resolution-and-locked-io"
+status = "done"
+files = [
+    "tomlctl/src/tasks/store.rs",
+    "tomlctl/src/io.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "resolve_store_path/load/mutate over tasks.toml via io::mutate_doc, tasks.toml in SCHEMA_SEEDED_FLOW_FILES, bounded three-attempt retry around the atomic rename. 4 store tests plus 31 io tests green; falsifier observed 1 failure."
+dedup_id = "6fdbd96831febe26"
+
+[[items]]
+id = "E19"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-store-resolution-and-locked-io"
+summary = "validate_slug is unreachable from tasks::store, so its containment regex is duplicated rather than shared"
+original_intent = "Plan task 6 Detail said path resolution mirrors render_progress_log using validate_slug"
+rationale = "validate_slug is pub(crate) but lives in flow::init, and mod init is private inside flow/mod.rs (only render_progress_log and dispatch are re-exported), so the path only resolves from inside flow. flow/mod.rs was not on the task Files line. The validator was mirrored in store.rs with the identical anchored regex and pinned by a traversal-rejection test. A one-line pub(crate) use init::validate_slug in flow/mod.rs would let store.rs delegate; two copies of a containment check can drift."
+dedup_id = "2756c288e2675236"
+
+[[items]]
+id = "E20"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-store-resolution-and-locked-io"
+summary = "Plan-specified falsifier for the seed test does not bite; a direct seed_doc_for assertion was added to make it falsifiable"
+original_intent = "Plan task 6 Acceptance said removing the SCHEMA_SEEDED_FLOW_FILES entry makes the on-disk schema_version = 1 assertion red"
+rationale = "schema::from_toml defaults schema_version to SCHEMA_VERSION, so an unseeded empty table still round-trips to schema_version = 1 on disk and the named assertion passes with or without the seed entry. A direct io::seed_doc_for assertion covering schema_version and last_updated was added in the same test; that is the assertion observed to go red. The on-disk assertion is retained as the plan wrote it."
+dedup_id = "9d702f7502558b70"
+
+[[items]]
+id = "E21"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-store-resolution-and-locked-io"
+summary = "store::mutate returns Result<T> per the plan signature and therefore discards io::mutate_doc created flag"
+original_intent = "Plan task 6 Action fixed the signature as mutate(path, integrity, closure) -> Result<T>"
+rationale = "io::mutate_doc returns a created bool that the task 7 write verbs may want in their JSON envelope. Rather than widen the plan-fixed signature, mutate calls io::warn_if_created itself so the stderr create-note still fires at every task-store write site. If a write verb needs created in JSON the signature must widen to Result<(T, bool)> as a deliberate choice."
+dedup_id = "a155e1e41e7668a4"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "register-the-fifth-artifact-in-the-flow-context-contract-template-and-bootstrap-agent"
+status = "done"
+files = [
+    "claude/skills/flow-contract-flow-context/SKILL.md",
+    "scripts/templates/flow-context.md",
+    "claude/agents/flow-bootstrap.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "tasks registered as the fifth canonical artifact across the flow-context skill, bootstrap template and flow-bootstrap agent; both JSON envelope literals re-parsed with tasks last. Acceptance greps observed 0/0/0 before and 2/4/1 after."
+dedup_id = "1e6e8767ef6f4053"
+
+[[items]]
+id = "E23"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "register-the-fifth-artifact-in-the-flow-context-contract-template-and-bootstrap-agent"
+summary = "Task 29 documents artifacts.tasks as computed-when-absent, but that behaviour belongs to task 20 and its Depends-on names only 21"
+original_intent = "Plan task 29 depends only on task 21 and instructs the docs to state that envelope.resolved.artifacts.tasks may be computed when a legacy context lacks the key"
+rationale = "Task 21 landed VALID_ARTIFACTS, ArtifactKind::Tasks and the doctor advisory, but CanonicalArtifacts is still four-wide and read_or_compute_artifacts builds a four-field literal, so flow resolve emits no artifacts.tasks key yet. The end state the plan Approach specifies was written as instructed; task 20 closes the gap. If task 20 did not land, these three documents would describe a key the resolver never emits. A missing Depends-on edge from 29 to 20."
+dedup_id = "7a7e8a43364419ba"
+
+[[items]]
+id = "E24"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "register-the-fifth-artifact-in-the-flow-context-contract-template-and-bootstrap-agent"
+summary = "A fourth site was edited in scripts/templates/flow-context.md, not the three the Action enumerates"
+original_intent = "Plan task 29 Action names three sites in the template: the downstream-bind instruction, the require_artifacts enum, and the output-envelope example"
+rationale = "The templates Section 1 is a copy of the skills Flow Context body carrying the same canonical-artifacts brace path; updating the skill and leaving that copy at four artifacts would leave a self-declared mirror disagreeing with its source inside one file. Verified safe first: flow-context is absent from scripts/shared-blocks.toml since migration wave 2 and the template is the only file still carrying the marker, so no carrier byte-parity is at stake."
+dedup_id = "9f067ea53e59fc35"
+
+[[items]]
+id = "E25"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-tasks-parser"
+status = "done"
+files = ["tomlctl/src/tasks/parse_tasks.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "parse_tasks with numbered heading detection, phase-label skipping, two-space field continuation, Files/Depends-on normalisation and legacy synonyms; 15 inline tests. Three falsifier runs observing 1, 3 and a grep 0-to-1 transition."
+dedup_id = "e28dc02e6342af2c"
+
+[[items]]
+id = "E26"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-tasks-parser"
+summary = "The plans task-heading regex is wrong on em-dash titles and was replaced with a two-stage split"
+original_intent = "Plan Approach and task 15 Detail both specify a single heading regex whose title group is lazy and whose optional trailing branch matches an em dash followed by anything"
+rationale = "Em dashes in task titles are the corpus norm: of 375 numbered headings across 28 in-repo plans, dozens read like Repo part 1 - columns, acceptance criteria [L]. Under leftmost-first semantics the lazy title group stops at the dash, the effort group cannot match, and the trailing branch swallows the rest INCLUDING the bracket tag. Because derive_ref hashes the title into the stores primary key, every em-dash task would import under a truncated ref and render would rewrite its heading, breaking task_ref continuity for /implement. It also defeats the plans own M-leaning-L error requirement. Replaced with id-plus-rest, then locating the LAST bracket tag in rest: 364 of 375 headings carry exactly one bracket group and none carry two, so last-wins is unambiguous."
+dedup_id = "ccc4f470f192a143"
+
+[[items]]
+id = "E27"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-tasks-parser"
+summary = "Research note R9 is false: regex shorthand classes are accepted under cargo test, so the plans every_pattern_compiles falsifier is inert"
+original_intent = "Plan Approach and research note R9 state that with unicode features off the shorthand classes are compile errors, and that placing one in any pattern makes every_pattern_compiles red"
+rationale = "Verified by cargo tree -e features -i regex with and without no-dev: predicates, a dev-dependency via assert_cmd, pulls regex with its default feature, unifying unicode back on for every dev-dependency-needing target. Two consequences the plan misses: Regex::new is a RUNTIME api so a shorthand class is never a compile error in either configuration, and under cargo test and cargo clippy --all-targets unicode is ON so the shorthand is simply accepted. Measured directly: with a shorthand in the heading pattern and the plans prescribed test body, all 15 tests passed. every_pattern_compiles now also scans each patterns as_str() for the eight shorthands, restoring the intended guarantee. Task 16 landed the inert shape and needs the same repair; task 26 inherits the stale premise."
+dedup_id = "dc0148ebfd4bcd0c"
+
+[[items]]
+id = "E28"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-render"
+status = "done"
+files = ["tomlctl/src/tasks/render.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "render_sections, render_into_plan and check_render_drift; round-trip runs against the REAL sibling parsers (no test-local helper), which task 25 can build on. 6 tests; falsifier observed 1 failure on dropping coupling from Depends on."
+dedup_id = "ec4bff0c45d40ba8"
+
+[[items]]
+id = "E29"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-render"
+summary = "All three render entry points return Result, not the plain values the plan specified; task 19 must propagate"
+original_intent = "Plan task 18 Action specifies render_sections(&Store) -> Rendered, render_into_plan(..) -> String and check_render_drift(..) -> Option<Finding>"
+rationale = "Graph::build and Graph::groups are fallible (cycle, dangling edge, 256-node cap) and checkpoint closure is undefined through a cycle. A marker naming the wrong after or closure set written into a users plan file is worse than a refusal, so all three return anyhow::Result. Pinned by a test asserting a cyclic store refuses rather than rendering a wrong cut. Task 19 must apply the question-mark operator to all three calls."
+dedup_id = "a437b13b355af5af"
+
+[[items]]
+id = "E30"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-render"
+summary = "Finding type declared in render.rs because check.rs was still a placeholder; task 10 or 19 must reconcile the seam"
+original_intent = "Plan Approach implies a single shared Finding{class, severity, ids, detail} used by both check and the render drift check"
+rationale = "tasks/check.rs was an unwritten placeholder and not on task 18 Files line, so Finding was declared in render.rs with exactly the field set task 10 Action specifies, matching the house shape in backlog::evidence_ops. Task 10 was dispatched concurrently and may declare a second one; task 10 should import super::render::Finding or task 19 owns a conversion."
+dedup_id = "ddabd48c5cdabdd3"
+
+[[items]]
+id = "E31"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "arm-the-policy-pattern-guard-with-a-textual-shorthand-scan"
+summary = "Minted task 37: the plan carries no task to repair task 16s every_pattern_compiles, which task 15 proved is inert"
+original_intent = "Plan carries no task for repairing a landed guard whose premise research note R9 got wrong; task 16 implemented the guard exactly as specified"
+rationale = "Task 15 measured and this orchestrator verified via cargo tree that predicates unifies regex/unicode back on for dev-dependency-needing targets, so a shorthand class compiles under cargo test and panics only in the installed binary. Task 16s guard compiles and match-asserts its four patterns but performs no textual scan, so it would pass with a shorthand in place. Minting rather than widening a sibling task preserves the file-claim invariant. Assigned to checkpoint B, where task 16 sits."
+dedup_id = "5489de915fd5bd0e"
+
+[[items]]
+id = "E32"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "widen-the-canonical-artifact-set"
+status = "done"
+files = [
+    "tomlctl/src/flow/artifacts.rs",
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/src/flow/resolve.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "CanonicalArtifacts widened to five keys with tasks last, tasks.toml seeded in flow init via a delegating sibling helper, fifth key computed in resolve with the tasks exemption on the artifact-missing warning loop. Three falsifier breaks observing a compile error, 2 failures and 1 failure."
+dedup_id = "148cbab9ad262a7d"
+
+[[items]]
+id = "E33"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "widen-the-canonical-artifact-set"
+summary = "The artifact-missing warning loop now iterates to_pairs() with an exemption rather than carrying a fifth hardcoded entry"
+original_intent = "Plan task 20 Detail said to extend the second hardcoded four-key list in resolve.rs but exempt tasks from the missing-file warning"
+rationale = "A fifth hardcoded entry that is then unconditionally skipped is a list that can silently desync from the struct again on the next artifact. Iterating to_pairs() with a key equals tasks continue is the same idiom check_artifacts_canonical already uses and removes the desync class entirely. Behaviour is identical to the extend-and-exempt version."
+dedup_id = "a97c3f465b998e1a"
+
+[[items]]
+id = "E34"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "widen-the-canonical-artifact-set"
+summary = "bootstrap_execution_record body extracted to a shared private helper taking the seed as a parameter, to keep execution_record_skeleton referenced"
+original_intent = "Plan task 20 Action said to add a sibling helper alongside bootstrap_execution_record without renaming or re-signaturing it"
+rationale = "The name and signature are unchanged as required, but a first cut that called io::seed_doc_for directly from a shared body orphaned execution_record_skeleton, which flow/mod.rs re-exports only under cfg(test), producing a never-used warning. Passing the seed as a parameter keeps bootstrap_execution_record calling the skeleton helper. Caught and fixed before finishing."
+dedup_id = "397085b1e8ac5b8d"
+
+[[items]]
+id = "E35"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-check"
+status = "done"
+files = ["tomlctl/src/tasks/check.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Nine finding classes plus exit_code, infallible and never dying on the first defect; duplicate-number and dangling-ref pre-scanned before the graph exists, cycle short-circuits the closure-dependent classes. 6 tests green; falsifier observed 1 failure. Last two edits unverified by the compiler - a sibling add.rs break blocked the final run."
+dedup_id = "17e3ed807f16fe3b"
+
+[[items]]
+id = "E36"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-check"
+summary = "check imports Finding from render.rs rather than declaring it, because task 18 landed the identical struct first"
+original_intent = "Plan task 10 Action has check define Finding{class, severity, ids, detail}"
+rationale = "Task 18 landed before task 10 and declared that exact struct as pub(crate) in render.rs, because check_render_drift needed it while check.rs was still a placeholder. Declaring a second identical type would leave dispatch converting between them. check now does use super::render::Finding, giving one type crate-wide with no edit to render.rs. If the declaration should sit in check.rs or a shared module, that move touches render.rs and is outside task 10 Files line."
+dedup_id = "ad3c87206d305587"
+
+[[items]]
+id = "E37"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-check"
+summary = "An empty last_import_refs suppresses plan/orphan-row entirely rather than flagging every row"
+original_intent = "Plan defines plan/orphan-row as a row whose ref is absent from last_import_refs, warning when pending and error otherwise"
+rationale = "Taken literally, a store that has never been imported - seeded by flow init with rows added via tasks add - would flag every row. An empty ref set means no import has happened, not that every row is orphaned. Test fixtures always populate the set so the guard cannot mask the real cases."
+dedup_id = "53f8b9f35efa61dd"
+
+[[items]]
+id = "E38"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "arm-the-policy-pattern-guard-with-a-textual-shorthand-scan"
+status = "done"
+files = ["tomlctl/src/tasks/parse_policy.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "every_pattern_compiles now textually scans all four accessors for the eight shorthand tokens. Falsifier proved the mint necessary: 19 passed 0 failed BEFORE the change with a shorthand in place, 18 passed 1 failed after. In-tree run blocked by a sibling add.rs break; measured on a faithful out-of-tree copy, to be re-run at the gate."
+dedup_id = "cd0a42587f5719b5"
+
+[[items]]
+id = "E39"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-write-verbs-add-add-many-update"
+status = "done"
+files = [
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/update.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "add/add-many/update with pre-write dangling-target and cycle validation over a candidate Graph; cycle refusal asserted byte-identical via fs::read before and after. 16 tests green, whole tasks filter 105 passed; falsifier observed 2 failures on disabling the pre-check."
+dedup_id = "51b49cfdbc4de658"
+
+[[items]]
+id = "E40"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-write-verbs-add-add-many-update"
+summary = "slug::dedupe_refs cannot serve the append case; add.rs uses a first-free-suffix scan instead"
+original_intent = "Plan task 7 Detail says add derives ref via slug::derive_ref plus dedupe"
+rationale = "Replaying dedupe_refs over existing plus new re-derives suffixes from scratch: a store already holding x and x-2 plus a new x yields x, x-2, x-2, a collision. add.rs unique_ref scans for the first free suffix against the set of refs already taken, reproducing the -2/-3 spelling without the clash. Since ref is the stores primary key and the import upsert key, a collision here would merge two distinct tasks."
+dedup_id = "2278ba908c06b34e"
+
+[[items]]
+id = "E41"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-write-verbs-add-add-many-update"
+summary = "add-many NDJSON rejects unknown keys rather than dropping them, diverging from schema::from_toml policy"
+original_intent = "Plan task 7 Detail says add_many parses with items::parse_ndjson and validates the whole batch on one candidate store"
+rationale = "A mistyped key such as neds would otherwise silently discard a dependency edge. schema::from_toml deliberately drops unknown keys because it reads a tool-owned document, but that policy is wrong for caller-supplied input. The error names the row and lists the accepted key set. Also resolves the task 6 seam: store::mutate was NOT widened, because the add envelope carries no created key."
+dedup_id = "3784f72fc41c28cd"
+
+[[items]]
+id = "E42"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "update-flow-doctor-and-init-tests"
+status = "done"
+files = [
+    "tomlctl/tests/flow_doctor.rs",
+    "tomlctl/tests/flow_init.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Five tasks-artifact behaviours pinned across both test binaries; the red clean-flow test resolved by seeding the canonical five-key fixture rather than weakening its warnings.is_empty() guard. 23 tests green; six falsifier breaks observing 4 and 2 failures."
+dedup_id = "0f0716749cc14f34"
+
+[[items]]
+id = "E43"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-read-verbs-show-list-edges"
+status = "done"
+files = [
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/tasks/list.rs",
+    "tomlctl/src/tasks/edges.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "show with part projection, list reusing the items query surface verbatim plus --count, edges as JSON plus Graphviz DOT. 13 inline tests, whole tasks filter 115 passed; three falsifiers observing 3, 3 and 1 failures."
+dedup_id = "24285128b9a2aab8"
+
+[[items]]
+id = "E44"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-read-verbs-show-list-edges"
+summary = "ShowPart::Deps help text in cli/types.rs contradicts the shipped semantics; minted task 38 to correct it"
+original_intent = "Plan task 8 Detail specifies deps as each needs/coupling targets summary, i.e. DIRECT targets"
+rationale = "Task 5 landed a doc comment on ShowPart::Deps reading Transitive dependencies (ancestors) of the row. Task 8 implemented the plans direct-target semantics, because a dispatched agent wants what its own row waits on rather than full ancestry, and left the doc comment alone because cli/types.rs was not on its Files line. The text is capabilities-visible and now describes behaviour the binary does not have. Dependents matches both sources and is transitive as documented."
+dedup_id = "1f49c905c63336d3"
+
+[[items]]
+id = "E45"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "correct-the-showpart-deps-help-text-to-match-the-shipped-direct-target-semantics"
+summary = "Minted task 38: the plan carries no task for reconciling the ShowPart::Deps help text with the shipped behaviour"
+original_intent = "Plan carries no task for correcting a doc comment task 5 wrote and task 8 diverged from"
+rationale = "The contradiction was created by this run across two of its own tasks and is user-visible through capabilities. Minting rather than widening task 8 preserves the file-claim invariant: cli/types.rs was task 5s and task 21s file, both terminal. Assigned to checkpoint A, where cli/types.rs sits."
+dedup_id = "430943219aa8fc7c"
+
+[[items]]
+id = "E46"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-graph-verbs-ready-batches-closure"
+status = "done"
+files = [
+    "tomlctl/src/tasks/ready.rs",
+    "tomlctl/src/tasks/batches.rs",
+    "tomlctl/src/tasks/closure.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "ready/batches/closure as thin JSON adapters over the graph engine, each refusing a cyclic or unbuildable store with kind=validation and sorting every id list ascending. 10 tests green; three simultaneous falsifiers observing 4 failures."
+dedup_id = "75f697f6c15eb5fa"
+
+[[items]]
+id = "E47"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-the-graph-verbs-ready-batches-closure"
+summary = "Graph::frontier does NOT error on a cycle, contrary to the orchestrator briefing; ready.rs carries an explicit pre-check"
+original_intent = "The dispatch briefing stated Graph::frontier returns Err on a Kahn residue and that this alone satisfies the requirement that ready errors on a cycle rather than returning a partial frontier"
+rationale = "The landed frontier never calls reach(); its only Result comes from position() on an unknown in-flight id, so on a cyclic store it silently returns the acyclic remainder as ready. ready.rs therefore pre-checks cycle_members() before calling frontier, with a test asserting a cyclic fixture that would otherwise answer ready:[4] is refused. The briefing was correct for closure_up/closure_down/groups, which do go through reach(). batches also refuses a cycle, beyond the plans requirement, because kahn_rounds drops what a cycle strands and a caller scheduling off a silently-truncated layering gets no signal."
+dedup_id = "b5a0e7762151eec0"
+
+[[items]]
+id = "E48"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "correct-the-showpart-deps-help-text-to-match-the-shipped-direct-target-semantics"
+status = "done"
+files = ["tomlctl/src/cli/types.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "ShowPart::Deps doc comment now reads as a summary per direct needs/coupling target; Dependents left unchanged. Premise verified in show.rs first: deps chains needs and coupling into a BTreeSet with no graph walk, while dependents does build and walk the graph."
+dedup_id = "8cef91ac23ee7786"
+
+[[items]]
+id = "E49"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "update-envelope-ensure-artifact-and-resolve-tests"
+status = "done"
+files = [
+    "tomlctl/tests/flow_envelope.rs",
+    "tomlctl/tests/flow_ensure_artifact.rs",
+    "tomlctl/tests/flow_resolve.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "tasks pinned as the fifth artifact across the envelope whitelist, ensure-artifact kind map and resolves projection plus warning exemption. 8 new tests, 2 existing assertions strengthened, 45 green; three falsifier passes over 13 assertions, every one observed red."
+dedup_id = "85cc9c04992e50b9"
+
+[[items]]
+id = "E50"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "update-envelope-ensure-artifact-and-resolve-tests"
+summary = "flow ensure-artifact --kind tasks does NOT create a seeded file; the plans task-23 Action is stale, not the implementation"
+original_intent = "Plan task 23 Action assertion 2 says to assert that flow ensure-artifact --kind tasks creates the seeded file"
+rationale = "ensure_artifact::dispatch bootstraps ArtifactKind::ExecutionRecord only; every other kind including Tasks routes to emit_bootstrap_noop, which emits a read-only report plus a bootstrap_noop marker and writes nothing. That matches what task 21 was actually specified to do (only the two exhaustive matches, no bootstrap branch), the Approach section (which lists ensure-artifact --kind tasks as surface acceptance, not seeding), and task 20, which assigns seeding to flow inits bootstrap_tasks_store. The real contract was pinned instead: --kind tasks is accepted and reports the store, and --bootstrap --kind tasks is a marker-carrying no-op, following the existing review-ledger idiom. Making ensure-artifact a second seeding route for the same file would be new scope and is deliberately not done."
+dedup_id = "5222838e1ae9613a"
+
+[[items]]
+id = "E51"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "wire-tasks-dispatch-core-verbs"
+status = "done"
+files = [
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/cli/dispatch.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "All twelve TasksOp variants wired field-by-field with no rest pattern; cli/dispatch.rs placeholder replaced. Cleared the standing cli/mod.rs unused_imports warning and all dead_code on the nine wired leaves. Falsifier observed E0027 on dropping one destructured field."
+dedup_id = "04246167b7381bfa"
+
+[[items]]
+id = "E52"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "wire-tasks-dispatch-core-verbs"
+summary = "tasks/dispatch.rs carries THREE not-yet-wired placeholders, not two; task 19 must clear check --plan as well as import-plan and render"
+original_intent = "Plan task 11 Detail says the ImportPlan and Render arms return a not-yet-wired error and task 19 replaces them"
+rationale = "The plan assigns check --plan to check_render_drift in task 19s Action, and that call needs the resolved plan source, which is task 19s resolution work. So the Check arm destructures plan and returns the same phase-free not-yet-wired error. Task 19s Files line covers tasks/dispatch.rs, but any prompt scoping it to import and render arms only would leave this third placeholder shipped."
+dedup_id = "10bb259de5403a35"
+
+[[items]]
+id = "E53"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "wire-tasks-dispatch-core-verbs"
+summary = "add-many emission shape chosen; the plans output column described the NDJSON input rather than the envelope"
+original_intent = "Plan verb table gives add-many output as one row per line, same validation, all-or-nothing"
+rationale = "That describes the input format, not the emission. Chose ok/added/rows with per-row id, ref and batch, following the items add-many precedent widened with the outcomes a carrier needs to mark rows in-progress; a bare ok/added would discard ids add_many has already computed. Also: closure --checkpoint --up is refused with kind=validation rather than silently dropping the direction, because clap permits that cross-combination but closure::Target cannot represent it."
+dedup_id = "f97ea9beb97cd384"
+
+[[items]]
+id = "E54"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-import-plan"
+status = "done"
+files = ["tomlctl/src/tasks/import_plan.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Section cut through parsers to a ref-keyed upsert, marker-closure membership, record reconciliation, ref-set diff and a check pass carrying the import-only checkpoint/marker-mismatch class. 9 tests green; falsifier observed 1 failure proving the upsert preserves seeded execution state."
+dedup_id = "741975a701d82fbf"
+
+[[items]]
+id = "E55"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-import-plan"
+summary = "coupling is preserved on upsert and subtracted from the parsed needs, beyond the plans stated keep-set"
+original_intent = "Plan task 17 Detail says existing rows keep status, agent, commit and the record-adopted ref"
+rationale = "The ## Tasks markdown has no syntax for coupling - the renderer folds it into Depends on - so taking the parsed dependency list whole would migrate every acceptance-reachability edge into needs on the first re-import and lose the needs-versus-coupling distinction permanently. Preserving coupling and subtracting it from the parsed needs is round-trip stable, and the union that feeds the graphs in-degree and the renderers output is unchanged either way."
+dedup_id = "9f2f18d41d079204"
+
+[[items]]
+id = "E56"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-import-plan"
+summary = "A renamed heading cannot be imported non-dry-run; the ref-set diff must be taken as a dry-run first"
+original_intent = "Plan task 17 Acceptance says renaming one heading in the fixture reports one removed_refs and one added_refs"
+rationale = "A renamed heading leaves the old row holding the task number the renamed heading re-claims, so a real import produces dag/duplicate-number at error severity and refuses before writing. Nothing is deleted, per spec; recovery is tasks update <id> --ref <new-ref> then re-import. The acceptance is therefore satisfied as a dry-run, which is what /review-plan and /plan-update already specify for the ref-set gate. This constrains task 24s black-box rename test identically."
+dedup_id = "83980d0a68783047"
+
+[[items]]
+id = "E57"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "implement-import-plan"
+summary = "context.toml plan_path is containment-checked before being read"
+original_intent = "Plan task 17 Detail says the plan path comes from --plan or context.toml plan_path"
+rationale = "An absolute or dot-dot-bearing plan_path is refused with kind=validation rather than read, mirroring render_progress_log title_from_context. It is file-controlled input, and reading it unchecked would make the verb a file-existence and parse oracle for paths outside the repo. --plan is an explicit caller argument and passes through, resolved against the repo root when it does not resolve against the cwd."
+dedup_id = "618cf565e26fb27e"
+
+[[items]]
+id = "E58"
+type = "task-completion"
+date = 2026-09-07
+agent = "implement"
+task_ref = "wire-import-plan-and-render-dispatch"
+status = "done"
+files = ["tomlctl/src/tasks/dispatch.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "All three placeholders replaced including check --plan; containment runs before the plan is even read so the verb is not a read oracle; --check and --stdout both return before the sole atomic_write site. Three falsifiers, the first observing the rootless-path acceptance that revealed the import-side bug."
+dedup_id = "bf1a728cbf5d6d7d"
+
+[[items]]
+id = "E59"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "wire-import-plan-and-render-dispatch"
+summary = "The containment check is now a third private copy; no shared helper was reachable"
+original_intent = "Orchestrator dispatch said to reuse task 17 containment helper rather than write a second copy of a security check"
+rationale = "path_under_root is a private fn in flow/render_progress_log.rs and import_plan.rs equivalent lives inside its private resolve_plan_path; neither is reachable from tasks/dispatch.rs and both files were outside the Files line. Reimplemented locally as contained plus under_root and reported rather than duplicated silently. Promoting one copy into crate::io, which already owns guard_write_path, would need a coordinated edit to io.rs, flow/render_progress_log.rs, tasks/import_plan.rs and tasks/dispatch.rs."
+dedup_id = "e5370b675de92bb8"
+
+[[items]]
+id = "E60"
+type = "deviation"
+date = 2026-09-07
+agent = "implement"
+task_ref = "add-an-under-root-backstop-to-import-plan-plan-path-resolution"
+summary = "Minted task 39: import_plan resolve_plan_path lacks an under_root backstop, making import-plan --slug an arbitrary-file read on Windows"
+original_intent = "Plan carries no task for this; task 17 was specified to containment-check context.toml plan_path and did so lexically"
+rationale = "resolve_plan_path tests is_absolute() and ParentDir components only. On Windows Path::is_absolute() is FALSE for a rootless path such as /etc/passwd, so the lexical scan accepts it and root.join resolves it to C:etc-passwd outside the repo. Directly observed by task 19, whose falsifier 1 removed the same backstop from its own copy and accepted that exact path. Fix mirrors the under_root assertion task 19 already ships. Assigned to checkpoint B, where import_plan.rs sits."
+dedup_id = "5d0528f808871d4a"
+
+[[items]]
+id = "E61"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "add-an-under-root-backstop-to-import-plan-plan-path-resolution"
+status = "done"
+files = ["tomlctl/src/tasks/import_plan.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Post-join under_root containment backstop on resolve_plan_path context.toml branch, mirroring tasks/dispatch.rs; inline test pins the Windows rootless-absolute bypass as refused; falsifier observed 1 failure"
+dedup_id = "a4c4ff9fb7fdf57f"
+
+[[items]]
+id = "E62"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "corpus-smoke-test-over-this-repos-plans"
+status = "done"
+files = ["tomlctl/tests/tasks_corpus.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Runtime-derived corpus smoke test over 28 in-scope docs/plans/*.md via import-plan --dry-run, self-skipping when docs/plans is absent, with a 3-member EXPECTED_UNPARSEABLE allowlist asserted to still fail"
+dedup_id = "38639a1e5fa74f1a"
+
+[[items]]
+id = "E63"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "corpus-smoke-test-over-this-repos-plans"
+original_intent = "Task 26 Detail measured 28 of 51 in-scope files with exactly one EXPECTED_UNPARSEABLE member (tomlctl-capability-gaps.md for [M-leaning-L]) and stated that no in-repo plan carries a non-integer id"
+rationale = "Re-measured 2026-09-08: 69 plan files, 48 surviving the suffix skips, 28 in scope, and THREE allowlist members. lumina-story-planning-round-2.md line 90 carries heading 13a, a non-integer id the plan asserted did not exist. specialised-flow-agents.md is a third member of an unanticipated kind: it exits 0 but its tasks 11-17 use ##### headings below the #{3,4} grammar, so they are silently read as phase labels and task 18 Depends on 11..17 dangles into a dag/dangling-ref error finding."
+summary = "Allowlist is three members, not one; a non-integer plan id does exist in the corpus"
+dedup_id = "670955c3eb1964a8"
+
+[[items]]
+id = "E64"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "corpus-smoke-test-over-this-repos-plans"
+original_intent = "Task 26 Action framed the EXPECTED_UNPARSEABLE still-fails assertion around import-plan --dry-run exiting non-zero"
+rationale = "specialised-flow-agents.md fails only the second way: exit 0 with a dag/dangling-ref error-class finding. A pure exit-code predicate could not hold it. The predicate widened to non-zero exit OR an error-class finding, keeping one allowlist and one loop. The falsifier still bites, because a house-format plan added to the list exits 0 with no error findings. Rejected alternative: two allowlists keyed by failure mode, more precise but two constants and two loops for one member each."
+summary = "still-fails predicate widened from non-zero exit to non-zero exit OR an error-class finding"
+dedup_id = "c6c3f2cba0c5daa8"
+
+[[items]]
+id = "E65"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "black-box-tests-for-write-and-graph-verbs"
+status = "done"
+files = [
+    "tomlctl/tests/common/mod.rs",
+    "tomlctl/tests/tasks_write.rs",
+    "tomlctl/tests/tasks_graph.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "seed_tasks helper plus 16 black-box tests: tasks_write covers add/add-many/update envelopes, unknown-key and cycle and dangling refusals, empty-target validation and a four-process lock race; tasks_graph covers ready/batches/closure/check including the two-warning orphan+overlap fixture at exit 0 and the cyclic fixture at exit 1"
+dedup_id = "785257aee10b5956"
+
+[[items]]
+id = "E66"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "write-the-flow-contract-task-store-skill-and-the-tomlctl-tasks-reference"
+status = "done"
+files = [
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/tomlctl/references/tasks.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Authored the 14-section flow-contract-task-store skill and the 398-line tasks flag reference, every flag derived from the real clap surface and every semantic from tomlctl/src/tasks rather than plan prose; command_lint green with 20 new snippets"
+dedup_id = "9ec4be02338a5fde"
+
+[[items]]
+id = "E67"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "black-box-import-tests-with-a-house-format-fixture-plan"
+status = "done"
+files = [
+    "tomlctl/tests/tasks_import.rs",
+    "tomlctl/tests/fixtures/tasks/house-plan.md",
+    "tomlctl/tests/fixtures/tasks/house-plan.tasks.toml",
+    "tomlctl/.gitattributes",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "10-task house-format fixture plan covering every corpus variant, its hand-derived golden store, a 10-test import suite with a file-local stage helper, and the tests/fixtures/tasks LF pin; fresh import yields zero findings"
+dedup_id = "f78f5cd2126dbcf6"
+
+[[items]]
+id = "E68"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "black-box-import-tests-with-a-house-format-fixture-plan"
+original_intent = "Task 24 Action expected error-class abort tests to assert kind=validation from a JSON error envelope"
+rationale = "emit_error in tomlctl/src/main.rs defaults to ErrorFormat::Text and prints tomlctl: <message>, so the JSON envelope is opt-in. Both error-path tests now pass --error-format json before the subcommand to assert on kind rather than pinning prose. The plan text did not name the flag."
+summary = "JSON error envelope is opt-in via --error-format json; error-path tests pass it explicitly"
+dedup_id = "601f9c14bf841e1f"
+
+[[items]]
+id = "E69"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "black-box-import-tests-with-a-house-format-fixture-plan"
+original_intent = "Research note R2 as corrected predicted the golden TOML would carry the backslash-bearing body under triple-single-quote literal delimiters"
+rationale = "R2s substantive prediction held exactly: literal delimiters for the backslash body, basic triple-quote for the plain multi-line one. The unpredicted detail is that the toml writer emits a newline immediately after the opening delimiter, which TOML trims on read, so the goldens two multi-line bodies open on the following line. Golden authored to match the writer rather than the hand derivation."
+summary = "toml writer opens a multi-line body on the line after the delimiter; golden matches the writer"
+dedup_id = "6cc7ee086fbd6dcd"
+
+[[items]]
+id = "E70"
+type = "verification"
+date = 2026-09-08
+agent = "implement"
+task_ref = "black-box-tests-for-write-and-graph-verbs"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "Checkpoint A gate: crate builds clean"
+dedup_id = "ee9c5cfc252b0f47"
+
+[[items]]
+id = "E71"
+type = "verification"
+date = 2026-09-08
+agent = "implement"
+task_ref = "black-box-tests-for-write-and-graph-verbs"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "Checkpoint A gate: 24 test binaries, 938 tests, 0 failed"
+dedup_id = "4df80bb993491309"
+
+[[items]]
+id = "E72"
+type = "checkpoint"
+date = 2026-09-08
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "6a145ef",
+    "95cc3a8",
+    "bb1f973",
+    "ddf715b",
+    "dd21590",
+    "687e5d9",
+]
+summary = "Checkpoint A commit train (gate: build pass, 24 test binaries / 938 tests pass). 6a145ef = tasks 1,2,3,4,5,6,7,8,9,10,11,14,15,16,17,18,19 + minted under-root backstop and showpart-deps help correction; 95cc3a8 = tasks 20,21; bb1f973 = task 13; ddf715b = tasks 12,22,23,24,26; dd21590 = task 27; 687e5d9 = task 29"
+dedup_id = "903cce44af61f151"
+
+[[items]]
+id = "E73"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "pin-the-task_ref-rule-in-the-execution-record-contract"
+status = "done"
+files = ["claude/skills/flow-contract-execution-record-schema/SKILL.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Replaced the loose task_ref slug sentence with a pointer to flow-contract-task-store section 2, the MUST-equal-store-ref rule with its skip-list rationale, the plan-update migrate derivation route and the tdd exemption; one line changed, CRLF preserved"
+dedup_id = "e8a60d61fff6063b"
+
+[[items]]
+id = "E74"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "point-the-tomlctl-skill-its-flow-reference-and-repo-claudemd-at-the-verb-group"
+status = "done"
+files = [
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/flow.md",
+    "CLAUDE.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "tasks verb group added to the tomlctl skill description, Quick Reference and References list; tasks added as the fifth canonical artifact in references/flow.md; CLAUDE.md gains a tasks check bullet and a Task store section carrying only the four non-derivable facts"
+dedup_id = "188581d50fff8c43"
+
+[[items]]
+id = "E75"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "point-the-tomlctl-skill-its-flow-reference-and-repo-claudemd-at-the-verb-group"
+original_intent = "Task 28 Action scoped the CLAUDE.md edit to a Build and test bullet plus a new Task store heading and paragraph"
+rationale = "Placing a section named Task store directly above the task-visibility rule reading task entries are a VIEW, never a store, and The ledger or execution record owns durable per-item state, made that sentence read as excluding tasks.toml, which is now exactly such a store. Widened to The ledger, execution record or task store owns durable per-item state. Three words in an owned file, repairing an ambiguity the same edit introduced."
+summary = "Widened the task-visibility durable-state sentence to name the task store, repairing an ambiguity this task created"
+dedup_id = "c0016c78d081b825"
+
+[[items]]
+id = "E76"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "black-box-render-tests-with-a-golden-rendered-plan"
+status = "done"
+files = [
+    "tomlctl/tests/tasks_render.rs",
+    "tomlctl/tests/fixtures/tasks/house-plan.rendered.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Renderer-generated golden plus 6 black-box render tests covering the byte-compare, --stdout writing nothing, --check exiting 1 without repairing, --check on a CRLF copy, out-of-section byte preservation, and three escaping plan_path refusals; falsifier observed 3 failures"
+dedup_id = "a119b6d267089199"
+
+[[items]]
+id = "E77"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "black-box-render-tests-with-a-golden-rendered-plan"
+original_intent = "The task 24 handoff listed three legitimate differences between the rendered golden and the source fixture plan: Blocked-by rendering as Depends on, the three marker shapes collapsing to one, and Depends on rendering needs union coupling"
+rationale = "The list is incomplete. The renderer owns the whole ## Tasks section, so it also drops the Milestone A/B/C phase-label subheadings and the (new) suffixes on file paths, and normalises h4 task headings to h3; the policy note renders as a standalone paragraph after the four bullets. All four are enshrined in the golden as renderer behaviour and confirmed not to be round-trip defects: import-plan --dry-run against the rendered golden reports added=0 updated=0 unchanged=10 findings=[], so import-render-import is a closed fixed point."
+summary = "Renderer drops phase-label subheadings, (new) suffixes and normalises heading depth; round-trip verified as a fixed point"
+dedup_id = "702f1cfecb3b7547"
+
+[[items]]
+id = "E78"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "clear-the-standing-clippy-warnings-in-the-tasks-module-and-flow-tests"
+original_intent = "Plan carries no task for clearing the clippy warnings this run introduced"
+rationale = "Four separate agents independently reported the same standing warnings: Section::heading_line never read and a manual prefix strip in tasks/markdown.rs, and doc_lazy_continuation in tests/flow_doctor.rs. All were introduced by this runs own tasks 14 and 22. cargo clippy --all-targets is one of the plans Verification Commands, so the final pass reports them; a standing warning in new code either becomes noise or trips a future -D warnings gate. Passes all three same-run factors: no research needed, confined to files this run created, and covered by a verification command this run already runs. Minted rather than widening a sibling task, preserving the file-claim invariant. Assigned to checkpoint B, where markdown.rs sits."
+summary = "Minted task 38 to clear the three standing clippy warnings this run introduced"
+dedup_id = "89a70d27d571bb7c"
+
+[[items]]
+id = "E79"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "update-the-plan-output-format-and-plan-restructure-contracts"
+status = "done"
+files = [
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+    "claude/skills/flow-contract-plan-restructure/SKILL.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "plan-output-format now states the three sections are rendered, adds the Phase-7 import-plan --dry-run gate and the checkpoint antichain semantics, and replaces the hand closure walk with tasks check; plan-restructure replaces heading-equality with the ref-set diff gate and names tasks check for two of three merge-exit sub-checks, keeping Files-line closure as prose"
+dedup_id = "f065bfb86f4a17d7"
+
+[[items]]
+id = "E80"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "update-the-plan-output-format-and-plan-restructure-contracts"
+original_intent = "plan-restructures heading-extraction prose claimed that ##-level and unnumbered task headings are accepted by the same logic"
+rationale = "The importers heading regex in tomlctl/src/tasks/parse_tasks.rs anchors on three-or-four hashes followed by a numeric id and a dot, so a plan whose tasks sit at ## or carry no number imports as ZERO tasks and the ref-set diff gate would be vacuously clean over an empty set. Carrying the stale claim forward would have documented a gate that cannot fire. Documented the gap instead, with the added plus updated plus unchanged count to check against it."
+summary = "Heading-extraction prose claimed ##-level headings are accepted; the importer accepts only three-or-four-hash headings with a numeric id, making the ref-set gate vacuous on such a plan"
+dedup_id = "28065da6c37aa676"
+
+[[items]]
+id = "E81"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "clear-the-standing-clippy-warnings-in-the-tasks-module-and-flow-tests"
+status = "done"
+files = [
+    "tomlctl/src/tasks/markdown.rs",
+    "tomlctl/tests/flow_doctor.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Removed the dead Section::heading_line field with its sole test and the line_no counter, rewrote the manual prefix strip as strip_prefix, and indented the lazy doc continuation; clippy --all-targets went 3 warnings to 0"
+dedup_id = "2e7d12dd55564035"
+
+[[items]]
+id = "E82"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "clear-the-standing-clippy-warnings-in-the-tasks-module-and-flow-tests"
+original_intent = "Minted task 38 named the dead Section::heading_line field but not its inline unit test"
+rationale = "heading_line_is_one_based was the fields ONLY reader anywhere in the crate: a test that existed solely to assert the field it alone consumed, with no production counterpart. Removing the field required removing the test and the now-unused line_no counter in sections(). Deadness confirmed two ways: the crate compiles clean with the field gone, which a real consumer would turn into a hard compile error rather than a warning, and a whole-crate grep finds no residual reference."
+summary = "Removing the dead field also removed its sole reader, an inline test with no production counterpart"
+dedup_id = "0513e9cf87eaf6ce"
+
+[[items]]
+id = "E83"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "adopt-the-store-in-implement"
+status = "done"
+files = ["claude/commands/implement.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "New Step 0.5 store-ensure with the tdd exemption and degradation halt; Phase 1 binds total, skip-list, policy and checkpoint groups from the store behind a tasks check gate; Phase 2 frontier and file-claim via tasks ready --in-flight with fetch-by-id dispatch; Phase 4 renders --check first with the ref-set gate on drift; max_parallel aligned to 6/8"
+dedup_id = "7666b3c72ab12897"
+
+[[items]]
+id = "E84"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "adopt-the-store-in-implement"
+original_intent = "The plans Approach section on carrier adoption says Phase 1 binds the execution policy from tasks show or tasks list"
+rationale = "Neither verb emits the policy table: show returns one row and list returns rows. Bound it with tomlctl get <store> policy instead. Task 33s own Action names no verb for policy, so only the Approach parenthetical is affected."
+summary = "Policy binds via tomlctl get <store> policy; neither tasks show nor tasks list emits the policy table"
+dedup_id = "4908e34be2ac78fc"
+
+[[items]]
+id = "E85"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "adopt-the-store-in-implement"
+original_intent = "Step 3c stated unconditionally that after minting a task the plan document is behind the flow, so Next Steps MUST recommend /plan-update reformat"
+rationale = "Once Phase 4 renders the ## Tasks section from the store, a step-3c mint lands in the plan document at render time and the divergence closes itself. Reworded to behind the flow UNTIL Phase 4 renders it, still naming the divergence in Next Steps, with the /plan-update reformat recommendation now conditioned on a skipped or refused render."
+summary = "Step 3c plan-behind-the-flow rule conditioned on the render actually running"
+dedup_id = "56c34d47f5b2aeb8"
+
+[[items]]
+id = "E86"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "adopt-the-store-in-implement"
+original_intent = "The plan-path-validation rule opened by asserting that the plan is embedded verbatim into every Phase-2 agent prompt"
+rationale = "Under fetch-by-id dispatch only the narrative sections reach the shared preamble; each agent pulls its own task body via tasks show <id>. The premise clause was corrected. The validation rule itself, its dot-dot and absolute and symlink rejections and its binding scope, is untouched."
+summary = "Corrected the now-false premise that the whole plan is embedded in every agent prompt"
+dedup_id = "ce37a60e96d098e2"
+
+[[items]]
+id = "E87"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "adopt-the-store-in-plan-new"
+status = "done"
+files = ["claude/commands/plan-new.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Phase 7 gains the bare plan-mode import-plan --dry-run validation; Phase 9 step 6 gains import --reconcile-record then check --plan then render --check with the store-is-canonical statement; Phase-9 drift is a report not a rewrite trigger, because an unconditional render would delete authored phase-label headings"
+dedup_id = "84f77645c694c6db"
+
+[[items]]
+id = "E88"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "adopt-the-store-in-plan-new"
+original_intent = "Task 32 scoped the edit to two insertion points plus a skill invocation, keeping every other rule verbatim"
+rationale = "Three pre-existing sentences became factually wrong the moment the store landed: context.toml carries FIVE artifacts paths not four, flow init also seeds tasks.toml and its sidecar so the noop path leaves both stores untouched, and the plan-mode read-only allowlist had to name the Phase-7 dry-run while Phase 9 could no longer claim a single flow init Bash call. The keep-verbatim instruction covered rules NOT about the task store; leaving these would have shipped contradictions inside the owned file. Verified against tomlctl/src/flow/init.rs and artifacts.rs."
+summary = "Repaired three flow-init facts the store adoption made stale inside the owned file"
+dedup_id = "70ca3ab9f530b71d"
+
+[[items]]
+id = "E89"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "adopt-the-store-in-plan-update"
+status = "done"
+files = ["claude/commands/plan-update.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "New Task store section with the contract invocation, auto-import, tdd exemption and orchestrator-only status rule; reformat and catchup gain the post-rewrite dry-run then import then render sequence with stop-and-confirm on any ref-set delta; migrate adopts refs from a plan-mode dry run; [tasks].total reads tasks list --count in both places"
+dedup_id = "514b3691ec16f114"
+
+[[items]]
+id = "E90"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "adopt-the-store-in-plan-update"
+original_intent = "Task 35 scoped the edit to the four ops plus a skill invocation"
+rationale = "The carriers summary clause for flow-contract-plan-restructure still advertised the mandatory pre-write heading-equality assertion and checkpoint-marker renumbering, both of which task 30 replaced in that skill hours earlier. Left alone, the carrier and the skill it invokes would describe different contracts. Refreshed to name the import-plan --dry-run gate, the --ref rename recovery, markers re-rendered rather than re-mapped, and the merge-exit re-derivation."
+summary = "Refreshed the plan-restructure summary clause, which still described the pre-store gate task 30 replaced"
+dedup_id = "01218df9b4f21c1a"
+
+[[items]]
+id = "E91"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "adopt-the-store-in-review-plan"
+status = "done"
+files = ["claude/commands/review-plan.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "New Step 0.6 store-ensure; tasks check --plan JSON embedded verbatim in Agent 1s prompt inside a STORE CHECK fence; A3.5 restructured so the dry-run ref-set gate runs before the real import, keeping Files-line closure as prose; Path B splits the gate at B4 from the write at B8 Accept"
+dedup_id = "71abe486b60e2561"
+
+[[items]]
+id = "E92"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "adopt-the-store-in-review-plan"
+original_intent = "The task-store contract section 9 names only the /tdd sub-flow as exempt from the Step-0 auto-import"
+rationale = "Two further skip cases are real for this carrier: a no-flow run, where no slug owns a store, and a Step-1 plan that is not the resolved flows plan_path, where passing --slug would import a DIFFERENT document over every row. /review-plan is the only carrier that can be pointed at an arbitrary plan path via its arguments, so the second case is unhandled otherwise and would silently rewrite an unrelated flows store."
+summary = "Added no-flow and plan-is-not-the-flows-plan_path skip cases to the auto-import, beyond the contracts tdd exemption"
+dedup_id = "8677b5db068018e8"
+
+[[items]]
+id = "E93"
+type = "deviation"
+date = 2026-09-08
+agent = "implement"
+task_ref = "adopt-the-store-in-review-plan"
+original_intent = "Task 34 Action said to run the real import then tasks check after the merge write"
+rationale = "A real import REFUSES to write on an error-class finding, which leaves no store for check to read, so the sequence as written has no output in exactly the case a reviewer most needs one. The plan-mode form import-plan --plan <plan> --dry-run supplies findings[] instead, and an error-class finding is stated as review material rather than a halt: the deliberate inverse of the contracts /implement degradation rule, because surfacing a defect IS this commands job. Separately, the plans after the merge write is ambiguous on Path B, whose write lands on an unaccepted .revised.md sibling, so B4 runs the dry run and B8 Accept runs the real import, keeping the store mutating exactly when the plan file does."
+summary = "Plan-mode dry-run fallback because a refused import leaves nothing to check; Path B splits gate from write"
+dedup_id = "f3104a071c04bdda"
+
+[[items]]
+id = "E94"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement"
+task_ref = "require-the-new-contract-skill-in-the-carrier-map"
+status = "done"
+files = ["tomlctl/src/cli/dispatch/tests/skills.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Added flow-contract-task-store to the required-skill lists for plan-new, implement, review-plan and plan-update, turning the four invocations from incidental into required; orchestrator vet confirmed placement, carrier invocation counts and no falsifier residue"
+dedup_id = "761f543bb14a10cf"
+
+[[items]]
+id = "E95"
+type = "verification"
+date = 2026-09-08
+agent = "implement"
+task_ref = "require-the-new-contract-skill-in-the-carrier-map"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "Final pass: tomlctl 0.7.0 builds clean"
+dedup_id = "b5f5f5879e1cdbc5"
+
+[[items]]
+id = "E96"
+type = "verification"
+date = 2026-09-08
+agent = "implement"
+task_ref = "require-the-new-contract-skill-in-the-carrier-map"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+summary = "Final pass: 25 test binaries, 943 tests, 0 failed"
+dedup_id = "9119650644c27251"
+
+[[items]]
+id = "E97"
+type = "verification"
+date = 2026-09-08
+agent = "implement"
+task_ref = "require-the-new-contract-skill-in-the-carrier-map"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+summary = "Final pass: zero warnings"
+dedup_id = "cbbc65dead2888d2"
+
+[[items]]
+id = "E98"
+type = "verification"
+date = 2026-09-08
+agent = "implement"
+task_ref = "require-the-new-contract-skill-in-the-carrier-map"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+summary = "Final pass: zero diffs"
+dedup_id = "e7b2ed559ed336d6"
+
+[[items]]
+id = "E99"
+type = "verification"
+date = 2026-09-08
+agent = "implement"
+task_ref = "require-the-new-contract-skill-in-the-carrier-map"
+command = "cargo install --path tomlctl --force"
+outcome = "pass"
+summary = "Installed tomlctl 0.7.0 so the carriers reach the tasks group"
+dedup_id = "5f82b7230c42e9e3"
+
+[[items]]
+id = "E100"
+type = "verification"
+date = 2026-09-08
+agent = "implement"
+task_ref = "require-the-new-contract-skill-in-the-carrier-map"
+command = "tomlctl tasks --help"
+outcome = "pass"
+summary = "All twelve verbs listed: import-plan add add-many update show list edges ready batches closure check render"
+dedup_id = "a13460cbf576d965"
+
+[[items]]
+id = "E101"
+type = "verification"
+date = 2026-09-08
+agent = "implement"
+task_ref = "require-the-new-contract-skill-in-the-carrier-map"
+command = "tomlctl tasks import-plan --plan docs/plans/whimsical-hugging-puppy.md --dry-run"
+outcome = "pass"
+summary = "Self-import smoke: 36 refs derived, findings empty, and every derived ref matches the task_ref slugs recorded during the run"
+dedup_id = "00539e474cff4052"
+
+[[items]]
+id = "E102"
+type = "verification"
+date = 2026-09-08
+agent = "implement"
+task_ref = "require-the-new-contract-skill-in-the-carrier-map"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+summary = "shared-block parity: OK"
+dedup_id = "2e1ba4e54bd633db"
+
+[[items]]
+id = "E103"
+type = "verification"
+date = 2026-09-08
+agent = "implement"
+task_ref = "require-the-new-contract-skill-in-the-carrier-map"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+summary = "1242 advisories loaded, 87 crate dependencies scanned, exit 0"
+dedup_id = "fabfdf7336d01ae4"

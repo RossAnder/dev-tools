@@ -1,0 +1,521 @@
+schema_version = 1
+last_updated = 2026-09-07
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 2. Define the store schema types [M]"
+summary = "`cargo test --lib` cannot run: tomlctl has no library target (tasks 2, 4, 27, 36)"
+description = "tomlctl/Cargo.toml declares only a [[bin]] target and there is no src/lib.rs; `cargo test --lib` aborts with 'no library targets found' (exit 101), so the four acceptances/falsifiers using --lib (tasks 2, 4, 27, 36) are unreachable. Use `--bin tomlctl <filter>`."
+anchor_old = "`cargo test --manifest-path tomlctl/Cargo.toml --lib tasks::schema`"
+anchor_new = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::schema`"
+dedup_id = "00e66f527083935f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 5. Declare the `tasks` CLI surface [M]"
+summary = "Required `--slug|--file` mutex makes `import-plan --plan <path> --dry-run` unparseable (tasks 26, 32, Verification smoke)"
+description = "Task 5 declares TasksTarget as a required mutex group, but /plan-new Phase 7 has no flow and passes only --plan; task 26 and the smoke do the same. command_lint ignores missing-required errors (lint.rs:249-252), so this ships to runtime. Make the group non-required: import-plan accepts --plan alone; every other verb rejects an empty target post-parse with kind=validation."
+anchor_old = "Shared `#[derive(Args)] TasksTarget { --slug | --file }` as a required mutex group;"
+anchor_new = "Shared `#[derive(Args)] TasksTarget { --slug | --file }` as a NON-required mutex group — `import-plan` accepts `--plan <path>` alone (no store target) for `--dry-run` validation in plan mode, and every other verb rejects an empty target in post-parse validation with a `kind=validation` error (clap's missing-required error is invisible to `command_lint`);"
+dedup_id = "aecc2ae730a14bbc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "executability"
+plan_section = "### 5. Declare the `tasks` CLI surface [M]"
+summary = "Task 5 lands `Cmd::Tasks` and `ArtifactKind::Tasks` with exhaustive matches unmatched until tasks 11/21 — crate uncompilable from t=0"
+description = 'cli/dispatch.rs run() has no wildcard arm over Cmd; ensure_artifact.rs has two exhaustive matches (artifact_filename :75, artifact_kind_label :87) plus the pinned test artifact_filename_maps_every_variant (:358). Fix: task 5 adds a temporary `Cmd::Tasks { .. } => bail!("not yet wired")` arm in cli/dispatch.rs (add to Files; task 11 already depends on 5); move ArtifactKind::Tasks and the three ensure_artifact sites to task 21 (add types.rs to its Files — enum variant plus its exhaustive matches are inseparable).'
+dedup_id = "2337b62d1416ccc9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 20. Widen the canonical artifact set [M]"
+summary = "Task 20 is a t=0 root with no edge to task 6 (seed list) and reddens flow_doctor/flow_resolve until 21/22/23 land — breakage crosses checkpoint A"
+description = "flow init seeds via io::seed_doc_for keyed on SCHEMA_SEEDED_FLOW_FILES (io.rs:593), which task 6 edits — 20/22/23 assert a seeded tasks.toml with no path to 6. And once to_pairs() is five-wide, doctor::check_artifacts_canonical (doctor.rs:383) hard-fails every four-key context and tests/flow_resolve.rs:187/:574 assert empty / exactly-4 warnings, all repaired only in group B. Fix: (a) reorder — task 21 (doctor tolerance written key-name-based, ensure_artifact arms, envelope) depends on 5 only and compiles at four pairs; task 20 depends on 6 and 21; tasks 22 and 23 depend on 20 and 21; (b) move 20–23 into checkpoint A's closure (Checkpoint after: 12, 13, 22, 23) so A's gate covers the registry widening; B markers become 25, 26; (c) resolve.rs:526-536 artifact-missing warning loop gains tasks but exempts it from the warning (40 legacy flows lack the file; the warning surfaces in every bootstrap summary)."
+dedup_id = "2de700eb9226fc7d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "critical"
+category = "risk"
+plan_section = "### 19. Wire `import-plan` and `render` dispatch [S]"
+summary = "`tasks render` is an unguarded arbitrary-path write: `plan_path` is unvalidated by `flow init`, `atomic_write` has no containment, and the store's own `plan_path` field contradicts the context-only rule"
+description = "flow init writes --plan verbatim (init.rs:118); doctor permits absolute plan_path (doctor.rs:423); io::atomic_write (io.rs:1663) never calls guard_write_path; render_progress_log.rs only containment-checks a READ of plan_path. Also the store schema carries plan_path but task 19 says context.toml is the only source, and --file mode has no context. Fix: render resolves plan_path from context.toml under --slug and from the store's plan_path field (seeded at import from context.toml) under --file; before writing, reject absolute paths, any ParentDir component, and any canonicalised target not under repo_or_cwd_root() (mirror render_progress_log.rs title_from_context checks); refuse with kind=validation rather than fall back."
+dedup_id = "21c9fee65fd21dc4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "critical"
+category = "risk"
+plan_section = "## Verification Commands"
+summary = "Carriers invoke the installed `tomlctl` (0.6.0 on PATH); milestone C ships `tomlctl tasks` snippets before any reinstall, breaking every flow command"
+description = "`command -v tomlctl` → ~/.cargo/bin/tomlctl, version 0.6.0. command_lint parses against the SOURCE Cli and cannot catch a stale binary. The plan schedules `cargo install --path tomlctl` after the final pass, i.e. after checkpoint C commits tasks 32–35. Move the install before checkpoint C's commit and gate it with `tomlctl tasks --help` listing the verbs."
+anchor_old = "Smoke, after the final pass: `cargo install --path tomlctl`, then `tomlctl tasks import-plan --plan docs/plans/whimsical-hugging-puppy.md --dry-run` must return zero `error`-class findings on this plan itself;"
+anchor_new = "Before checkpoint C is committed (carriers 32–35 reference verbs that must exist in the binary on PATH): `cargo install --path tomlctl`, then `tomlctl tasks --help` must list the twelve verbs — `command_lint` compiles snippets against the source `Cli` and cannot catch a stale installed binary. Smoke, after the final pass: `tomlctl tasks import-plan --plan docs/plans/whimsical-hugging-puppy.md --dry-run` must return zero `error`-class findings on this plan itself;"
+dedup_id = "9b7011cd0026b88c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "critical"
+category = "risk"
+plan_section = "### 14. Implement the markdown section scanner [S]"
+summary = 'Every plan file is CRLF on disk (core.autocrlf=true, 68/68 in docs/plans); nothing in the scanner, parsers, renderer or drift check handles `\r`'
+description = '''Measured: all 68 docs/plans/*.md carry CRLF including the plan under review; root .gitattributes does not pin docs/plans. Consequences: task 15's $-anchored regexes capture a trailing \r into titles/effort/Files (corrupting ref); task 14 preserves outside bytes and LF-normalises the replacement → mixed endings; check_render_drift byte-compares LF output against CRLF source → permanent drift, so task 32's `render --check` gate never passes; task 26 hits it on the whole corpus. Fix: sections() strips a trailing \r per line before matching; parsers see LF-only input; render_into_plan detects the source's dominant ending and re-applies it to replaced sections; drift check compares after normalisation; unit-test one CRLF and one LF input through parse → render → drift.'''
+dedup_id = "c1b772f5c80fdb5a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "critical"
+category = "completeness"
+plan_section = "## Scope"
+summary = "`/tdd` dispatches `/implement --flow` against a mini-plan with a pinned `tdd-cycle-<NNN>-<name>` task_ref; the store-derived skip-list in task 33 breaks that idempotency contract"
+description = "tdd.md:52/58/65/93/99/106: /tdd pins task_ref by fiat and its resume FSM and REFACTOR copy-up depend on the literal. derive_ref (task 3) yields a heading-derived ref that will not equal it, and normalise_for_match will not bridge it. Fix in task 33: tdd sub-flows (slug matching `<parent>-tdd-<NNN>`) keep the record-derived skip-list and skip auto-import, OR task 3/17 accept a `ref:` override that /tdd writes into its mini-plan heading; state it in Scope."
+anchor_old = "`/tdd` (it does not read `## Tasks`)"
+anchor_new = "`/tdd`'s own carrier text (it does not read `## Tasks`) — but `/tdd` dispatches `/implement --flow <parent>-tdd-<NNN>` against a one-task mini-plan whose `task_ref` is pinned to `tdd-cycle-<NNN>-<short-name>` (`claude/commands/tdd.md:52,65,93,99`), so task 33 MUST exempt tdd sub-flows from the store skip-list (record-derived, no auto-import)"
+dedup_id = "95b2c8381d9c0fd1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "executability"
+plan_section = "### 5. Declare the `tasks` CLI surface [M]"
+summary = "`FEATURES` lists 11 names for 12 verbs — `tasks_add_many` missing; tasks 11/13 pin the count"
+description = "The backlog precedent is strictly one feature per verb. Add tasks_add_many so the FEATURES literal, capabilities.rs pin, README block and table all carry twelve."
+anchor_old = "the `FEATURES` entries `tasks_import_plan`, `tasks_add`, `tasks_update`,"
+anchor_new = "the `FEATURES` entries `tasks_import_plan`, `tasks_add`, `tasks_add_many`, `tasks_update`,"
+dedup_id = "65c26bf1095055a6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "completeness"
+plan_section = "### 13. Register the verbs in capabilities tests and README [S]"
+summary = "The read-only help-visibility test is a hand-enumerated `read_subs` array (capabilities.rs:29-48); new `tasks` read verbs are invisible to it"
+description = "Task 5 claims the test enforces the split automatically; it does not. Task 13 must append show/list/edges/ready/batches/closure/check to read_subs."
+anchor_old = "Extend the pinned `FEATURES`/`SUBCOMMANDS` literals and lengths in `capabilities.rs`, and add the `tasks_*` rows"
+anchor_new = "Extend the pinned `FEATURES`/`SUBCOMMANDS` literals and lengths in `capabilities.rs`, append each `tasks` read verb (`show`, `list`, `edges`, `ready`, `batches`, `closure`, `check`) to the literal `read_subs` array in `read_only_subcommands_hide_write_integrity_flags_in_help` (a hardcoded list, not reflection), and add the `tasks_*` rows"
+dedup_id = "73f90b62f7f154e2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "completeness"
+plan_section = "### 13. Register the verbs in capabilities tests and README [S]"
+summary = 'A new verb group is a minor version bump by precedent; `tomlctl/Cargo.toml` and the pinned `"0.6.0"` literal (capabilities.rs:1628) are on no Files line'
+description = "capabilities_version_matches_cargo_toml pins 0.6.0 'the minor bump for the new backlog verb group'. Bump to 0.7.0 in Cargo.toml and the test; add Cargo.toml to task 13's Files."
+anchor_old = "- **Files**: `tomlctl/tests/capabilities.rs`, `tomlctl/README.md`"
+anchor_new = "- **Files**: `tomlctl/tests/capabilities.rs`, `tomlctl/README.md`, `tomlctl/Cargo.toml`"
+dedup_id = "1b98b578425e83ca"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "completeness"
+plan_section = "### 33. Adopt the store in `/implement` [L]"
+summary = "`tasks list --count-by status` yields a per-status map, not a total; `--count` lives on `ItemsOp::List`, not in `QueryArgs`"
+description = "types.rs:1381 declares count on the List variant; QueryArgs (:214-400) has count_by/count_distinct only. Task 5 must declare --count on TasksOp::List; tasks 33/35 and Approach §Carrier adoption use `tasks list --count` for [tasks].total."
+dedup_id = "e1512242cdce988a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 21. Teach doctor, ensure-artifact and the envelope about `tasks` [M]"
+summary = "Doctor has no warning level and no context.toml-writing fix path; 'fixable divergence under the existing repair path' must be built and bounded"
+description = "Check is binary ok/fail with detail documented failure-only (doctor.rs:113-152); fixes_applied has only sidecar-refresh and active-prune producers (:514, :551); an unscoped --fix iterates all 40 flows. Specify: emit Check::ok and push the advisory onto the envelope's top-level warnings array (gitignore-claude idiom, :695-706); write NO context.toml bytes without --fix; if a fix producer is added it is a new class threaded root/fix/dry_run into check_artifacts_canonical; add an inline unit test over a four-key table (ok + one warning) and a wrong-value table (fail)."
+dedup_id = "7bcfa51424a3c0df"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "warning"
+category = "executability"
+plan_section = "### 29. Register the fifth artifact in the flow-context contract, template and bootstrap agent [S]"
+summary = "Acceptance greps `tasks.toml` but the three targets use key names; the template has three artifact-list sites, not one"
+description = "scripts/templates/flow-context.md transcribes the keys at :96, :155 and :175-178; flow-bootstrap.md:103 carries the envelope literal; flow-context SKILL.md uses a brace path. Enumerate the sites in the Action and grep the quoted key."
+anchor_old = "- **Acceptance**: `grep -c 'tasks.toml' claude/skills/flow-contract-flow-context/SKILL.md scripts/templates/flow-context.md claude/agents/flow-bootstrap.md` prints ≥1 for each file (today: 0, 0, 0). Falsifier: any file printing 0."
+anchor_new = """- **Acceptance**: `grep -c '"tasks"' claude/agents/flow-bootstrap.md scripts/templates/flow-context.md claude/skills/flow-contract-flow-context/SKILL.md` prints ≥1 for each file (today: 0, 0, 0 — probed, forward). Falsifier: any file printing 0."""
+dedup_id = "d6d9390e37f0285d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "warning"
+category = "executability"
+plan_section = "### 18. Implement `render` [M]"
+summary = "`(INVALID CUT)` suffix is absorbed into `rationale` by task 16's parser, breaking the round-trip invariant and accumulating on each cycle"
+description = "Task 16 captures the marker remainder as rationale; task 18 appends (INVALID CUT). Strip that suffix in task 16's capture (never persisted) and add rationale to task 18's round-trip comparison."
+anchor_old = "groups with `valid_cut == false` render with a trailing `(INVALID CUT)` so the defect is visible in the document."
+anchor_new = "groups with `valid_cut == false` render with a trailing `(INVALID CUT)` so the defect is visible in the document; task 16's rationale capture strips a trailing `(INVALID CUT)` so it is never persisted (otherwise render→import→render accumulates it and the round-trip invariant fails)."
+dedup_id = "52b21dcb245fe2f1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "warning"
+category = "executability"
+plan_section = "### 1. Scaffold the `tasks` module tree [M]"
+summary = "Five effort tags contradict the file-count bands and the lite gate reads them: 1 (21 files) and 24 (4 files) → L; 9, 23, 29 (3 files) → M"
+description = "implement.md:54 routes lite on effort tag + Files count; a 21-file [M] scaffold is exactly what gets routed lite. Retag now — heading bytes are the task_ref key and the plan is unexecuted."
+anchor_old = "### 1. Scaffold the `tasks` module tree [M]"
+anchor_new = "### 1. Scaffold the `tasks` module tree [L]"
+dedup_id = "7e5c9d993dd2d208"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "warning"
+category = "executability"
+plan_section = "### 15. Implement the `## Tasks` parser [M]"
+summary = "The `printf | grep -cE` acceptance is vacuous — it tests GNU grep against a here-string and passes forever"
+description = "Replace with a criterion that binds the produced artifact."
+anchor_old = '''`printf '### 3. Do a thing [S]\n### Phase 1: x\n#### 4. Other [M]\n' | grep -cE '^#{3,4} [0-9]+\. '` prints 2 (probed: the phase heading is excluded).'''
+anchor_new = "`grep -c 'fn every_pattern_compiles' tomlctl/src/tasks/parse_tasks.rs` prints 1 (today: 0 — placeholder only; forward)."
+dedup_id = "fb585022680f2842"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "warning"
+category = "executability"
+plan_section = "### 4. Build the graph engine [L]"
+summary = "`closure_up` / `closure_down` direction is never defined; tasks 8, 9, 17 inherit the guess"
+description = "Define: closure_up(id) = transitive dependencies (ancestors), inclusive; closure_down(id) = transitive dependents (successors), inclusive."
+anchor_old = "- **Detail**: In-degree edges = `needs ∪ coupling`. Deterministic Kahn per R13"
+anchor_new = "- **Detail**: In-degree edges = `needs ∪ coupling`. `closure_up(id)` = the transitive dependencies (ancestors) of `id`, inclusive; `closure_down(id)` = the transitive dependents (successors), inclusive. Deterministic Kahn per R13"
+dedup_id = "03fff2b8c72a1b67"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "warning"
+category = "executability"
+plan_section = "### 16. Implement the policy and marker parser [S]"
+summary = "Two authored sources of checkpoint membership (`Checkpoint after` bullet vs Dependency Graph markers) with no reconciliation rule, and the schema has no home for the bullet"
+description = "parse_markers must be fed the ## Dependency Graph section only and is authoritative; the Checkpoint after bullet is parsed but never feeds membership and is re-derived on render as the union of each group's maximal elements (never stored); a disagreement is reported as checkpoint/marker-mismatch (warning). Task 18 renders the four policy bullets with Checkpoint after derived and policy.note appended."
+dedup_id = "1e71855f5ee853eb"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "warning"
+category = "completeness"
+plan_section = "### 28. Point the tomlctl skill and repo CLAUDE.md at the verb group [S]"
+summary = "Two more four-key artifact transcriptions off every Files line: `claude/skills/tomlctl/references/flow.md:138` and the `--require-artifact` doc comment at `types.rs:907-908`"
+description = "Add references/flow.md to task 28's Files; task 5's Action updates the --require-artifact doc comment (reflected into capabilities .commands)."
+anchor_old = "- **Files**: `claude/skills/tomlctl/SKILL.md`, `CLAUDE.md`"
+anchor_new = "- **Files**: `claude/skills/tomlctl/SKILL.md`, `CLAUDE.md`, `claude/skills/tomlctl/references/flow.md`"
+dedup_id = "276b59bd3b42ad81"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P21"
+severity = "warning"
+category = "completeness"
+plan_section = "### 35. Adopt the store in `/plan-update` [M]"
+summary = "`/plan-update migrate` (plan-update.md:136-138) mints task_refs by its own heading-slug rule and is covered by neither task 35 nor 31"
+description = "After task 31 pins task_ref = store ref, migrate is the one writer with an independent derivation and it back-fills historical rows. Task 35: migrate derives refs via `tasks import-plan --dry-run` on the rewritten plan and adopts them."
+anchor_old = "`reconcile` unchanged"
+anchor_new = "`reconcile` unchanged; `migrate`: the `task_ref` it derives from Item-heading text MUST use the store's `ref` rule (`tasks import-plan --dry-run` on the rewritten plan, then adopt the derived refs) so back-filled completions match store rows"
+dedup_id = "3f0753882aea557b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P22"
+severity = "warning"
+category = "completeness"
+plan_section = "### 34. Adopt the store in `/review-plan` [M]"
+summary = "A3.5 bundles three sub-checks; `tasks check` replaces two and deliberately omits Files-line closure — the plan does not say the third survives"
+description = "review-plan.md:124-128 and plan-restructure SKILL.md:58 both transcribe the three-part re-derivation. Task 34 keeps the Files-line closure sub-check as prose; task 30 names plan-restructure :58 explicitly."
+anchor_old = "replacing the hand-derived A3.5 reachability pass with the verb and keeping the human-judgement parts"
+anchor_new = "replacing A3.5's file-claim-reachability and checkpoint-marker sub-checks with the verb, and keeping A3.5's **Files-line closure** sub-check as prose (`tasks check` deliberately ships no `files/closure` class) plus the human-judgement parts"
+dedup_id = "fc16c0747be9eb45"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P23"
+severity = "warning"
+category = "completeness"
+plan_section = "### 33. Adopt the store in `/implement` [L]"
+summary = "`implement.md:42` states the legacy-mode default a third way (`max_parallel 8`) that the acceptance grep cannot see"
+description = "Either align the legacy default to 6 (matching task 16's absent-policy default) or state that 8 is retained for legacy plans; add the probe."
+anchor_old = "`grep -c 'default 8, ceiling 16' claude/commands/implement.md` prints 0 (today: 2 — lines 42 and 126). Falsifier: either count unchanged."
+anchor_new = "`grep -c 'default 8, ceiling 16' claude/commands/implement.md` prints 0 (today: 2 — lines 42 and 126) and `grep -c 'max_parallel 8' claude/commands/implement.md` prints 0 (today: 1 — line 42's legacy-mode default, aligned to 6 to match the importer's absent-policy default). Falsifier: either count unchanged."
+dedup_id = "ce45655c2df68903"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P24"
+severity = "warning"
+category = "completeness"
+plan_section = "### 10. Implement `check` [M]"
+summary = "Tasks 3, 10, 11 instruct source comments that `.claude/rules/documentation.md` forbids (`file:NN` cites, research ids, plan phases in strings)"
+description = "Reword: task 10 states the 68%-false-flag measurement without a file:line cite; task 3 cites github-slugger without 'R15'; task 11's placeholder message is phase-free ('not yet wired')."
+anchor_old = "cite `docs/ideas/plan-flow-mechanical-verification.md:169-198` in the module doc"
+anchor_new = "state in the module doc that `files/closure` was measured as a 68%-false-flag check and deliberately not implemented — no `file:NN` citation, per `.claude/rules/documentation.md`"
+dedup_id = "3a9ac2a6295c1602"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P25"
+severity = "warning"
+category = "risk"
+plan_section = "### Agent 1 — toml / clap / regex behaviour (research-lite)"
+summary = "R2 is wrong: with a newline present `as_default` never reaches the single-line form; a backslash-bearing body becomes a `'''` multi-line LITERAL string"
+description = "Selection order is basic_pretty → literal → ml_basic_pretty → ml_literal → (newline ? ml_basic : basic); backslash sets `escape` only, so multi-line bodies with `\\` (this plan's own regexes) serialise as '''…'''; \\r lands on \"\"\" with the control char escaped (toml_writer-1.1.2/src/string.rs:35-46,88-96,355-372). LF-normalisation stays right; golden fixtures (tasks 24/25) must expect ''' for backslash bodies."
+dedup_id = "6b55c1d34a9bed95"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P26"
+severity = "warning"
+category = "risk"
+plan_section = "### 34. Adopt the store in `/review-plan` [M]"
+summary = "Post-merge re-import has no ref-set diff gate; a merge-rephrased heading orphans a `done` row and mints a duplicate `pending` row"
+description = "Run `tasks import-plan --slug <slug> --dry-run` first and apply task 35's ref-set gate: abort on any removed ref whose row is not pending; surface added/removed refs before the real import."
+anchor_old = "- **Detail**: The merge still writes markdown (the reviewed artifact); the store follows via upsert, preserving any execution state."
+anchor_new = "- **Detail**: The merge still writes markdown; the store follows via upsert. Because the merge can rephrase a heading and `ref` is the primary key, run `tasks import-plan --slug <slug> --dry-run` FIRST and apply the same ref-set diff gate task 35 specifies — abort on any removed ref whose row is not `pending`, surface added/removed refs for confirmation, then import."
+dedup_id = "0b48f3670e99f4c2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P27"
+severity = "warning"
+category = "risk"
+plan_section = "### 33. Adopt the store in `/implement` [L]"
+summary = "Unconditional `tasks render` at Phase 4 silently overwrites hand edits to `## Tasks`; Step 0 imports only when absent"
+description = "Phase 4 runs `tasks render --check` first; a drift finding means hand edits — surface and re-import (upsert, with the ref-set gate) before rendering, never overwrite silently."
+anchor_old = "Phase 4 ends with `tasks render`."
+anchor_new = "Phase 4 runs `tasks render --check` first — a drift finding means the markdown carries hand edits the store lacks, so surface it and re-import (upsert, ref-set gate) before rendering, never overwrite silently — and only then `tasks render`."
+dedup_id = "2dfb7f1cc8f14a9e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P28"
+severity = "warning"
+category = "risk"
+plan_section = "### Verb surface (`tomlctl tasks …`)"
+summary = "Upsert never deletes and no check class detects a store row whose ref is absent from the plan — orphaned rows inflate `[tasks].total` and `render` resurrects them"
+description = "Add check class plan/orphan-row: warning for a row whose ref is absent from the last import's ref set (import records the set); error when its status is not pending."
+anchor_old = "`policy/max-parallel-range` (error)."
+anchor_new = "`policy/max-parallel-range` (error), `plan/orphan-row` (warning: a store row whose `ref` is absent from the last import's ref set — a renamed or deleted task; `error` when its `status` is not `pending`, since `render` would otherwise resurrect it into `## Tasks` and it inflates `[tasks].total`)."
+dedup_id = "36b0386f941c239b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P29"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "Write amplification (~100 TOML+sidecar renames per 36-task run) against a recorded Windows `os error 5` rename flake; `atomic_write` and `write_toml_with_sidecar` never retry"
+description = "Add a Risks entry and a bounded retry (few attempts, short backoff) around tmp.persist in atomic_write (task 6 owns io.rs), or document `tomlctl integrity refresh` recovery in the task-store contract."
+dedup_id = "65118fa9a08b0e76"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P30"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "No way back from milestone C: carrier rewrites delete the prose frontier/file-claim/skip-list; a misbehaving store or stale binary leaves `/implement` with no fallback"
+description = "Task 33 states a degradation rule: if `tasks check` errors, the store is absent after import, or `tomlctl tasks` is unrecognised, `/implement` halts with a named diagnostic pointing at `cargo install --path tomlctl` and `git revert` of the four carriers, never proceeding on partial store output. Add to Risks."
+dedup_id = "dfae53069339a824"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P31"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 5. Declare the `tasks` CLI surface [M]"
+summary = "'clippy warning-free' is unreachable for tasks 5, 11, 19 under global scheduling — sibling leaf tasks emit `dead_code` until task 11 wires dispatch (measured)"
+description = "Reword the three acceptances: no error and no warning naming a file this task edits; the checkpoint tip clippy is the warning-free gate (already stated in Risks)."
+dedup_id = "bb59dfd39babdd22"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P32"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 20. Widen the canonical artifact set [M]"
+summary = "Generalising the init bootstrap helper reaches `src/flow/mod.rs:18` and `io.rs`'s `seed_doc_for_matches_bootstrap_bytes` (task 6's file)"
+description = "Add a sibling helper alongside bootstrap_execution_record; do not rename or re-signature execution_record_skeleton / bootstrap_execution_record."
+anchor_old = "seed `tasks.toml` in `flow init`'s `build_seed_doc`/bootstrap path"
+anchor_new = "seed `tasks.toml` in `flow init`'s `build_seed_doc`/bootstrap path by adding a sibling helper alongside `bootstrap_execution_record` — do NOT rename or re-signature `execution_record_skeleton` / `bootstrap_execution_record`, which `src/flow/mod.rs` and `io.rs`'s `seed_doc_for_matches_bootstrap_bytes` name (neither owned by this task)"
+dedup_id = "5797523d82706a92"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P33"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 10. Implement `check` [M]"
+summary = "`check_render_drift` seam names task 18 as the caller; the call site is task 19"
+anchor_old = "The `--plan` drift check is added by task 18 (renderer) through a hook `check_render_drift` this task leaves as a documented seam called by `dispatch`."
+anchor_new = "The `--plan` drift check is a documented seam here: task 18 defines `check_render_drift` in `render.rs` and task 19 wires the call in `tasks/dispatch.rs`."
+dedup_id = "2c80caf255ebeaaa"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P34"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 26. Corpus smoke test over this repo's plans [S]"
+summary = "Measured: 28 of 51 plans in scope; allowlist has exactly one member (`tomlctl-capability-gaps.md`, `[M-leaning-L]`); no in-repo `12a` ids"
+anchor_old = "Plans with non-integer ids or `M-leaning-L` tags are expected failures:"
+anchor_new = "Plans with non-integer ids or non-`S|M|L` effort tags are expected failures (measured 2026-09-07: 28 of 51 files in scope, one allowlist member — `docs/plans/tomlctl-capability-gaps.md` for `[M-leaning-L]`; no in-repo plan carries a non-integer id):"
+dedup_id = "2a73fc2ff37c76d1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P35"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 13. Register the verbs in capabilities tests and README [S]"
+summary = """README table is headed 'Feature meanings' (README.md:300), not 'Feature vocabulary'; the `dry_run` row transcribes '9 write subcommands' and the sample block's `subcommands` array needs `"tasks"`"""
+anchor_old = 'and add the `tasks_*` rows to the README capabilities stdout block and "Feature vocabulary" table'
+anchor_new = """and add the `tasks_*` rows to the README capabilities stdout block (including `"tasks"` in its `subcommands` array) and the "Feature meanings" table (header row `| Feature | What it enables |`), updating the `dry_run` row's write-subcommand count"""
+dedup_id = "467bf5c0c4134386"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P36"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Exploration Notes"
+summary = "Doctor does not fail on an EXTRA `[artifacts]` key (loop walks `to_pairs()` only) — the note and the Risks 'asymmetry' framing overstate it; also review-plan.md:51→53, :63→64 line drift"
+anchor_old = "(369 — fails on a missing or extra key)"
+anchor_new = "(369 — fails on a missing key or a value mismatch at the first divergence; an EXTRA key is not detected despite the doc-comment)"
+dedup_id = "fe4a004c56627c33"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P37"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Approach"
+summary = "`command_lint` scans only `claude/{commands,agents}/*.md` and `claude/skills/*/{SKILL.md,references/*.md}` — snippets in `CLAUDE.md` (task 28) and `scripts/templates/flow-context.md` (task 29) are unlinted"
+anchor_old = "`command_lint` gates every snippet automatically."
+anchor_new = "`command_lint` gates every snippet under `claude/{commands,agents}/` and `claude/skills/*/{SKILL.md,references/*.md}`; snippets in `CLAUDE.md` (task 28) and `scripts/templates/flow-context.md` (task 29) are outside its scan set and are copied verbatim from a linted file."
+dedup_id = "85c0e00f667cf3d2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P38"
+severity = "suggestion"
+category = "risk"
+plan_section = "### 6. Implement store resolution and locked I/O [M]"
+summary = "`SCHEMA_SEEDED_FLOW_FILES` matches by basename only (io.rs:607); any `tasks.toml` reached via `--file` gets the seed — state it in the entry's comment"
+dedup_id = "0f8fae48bbfc7486"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P39"
+severity = "suggestion"
+category = "risk"
+plan_section = "### Agent 1 — toml / clap / regex behaviour (research-lite)"
+summary = '''R9 refinement: `(?-u:\d|\s|\w)` compile fine, but negated `(?-u:\D|\S|\W)` fail with `InvalidUtf8` (regex-syntax translate.rs:1117-1125) — task 15's compile test should include a negated case'''
+dedup_id = "3f1f454c283caaa1"
+
+[[vet_events]]
+timestamp = "2026-09-07T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "verified no lib target (no src/lib.rs, [[bin]] only); lint.rs:249-252 ignores missing-required; doctor.rs:423 permits absolute plan_path; io.rs:1663 atomic_write calls no guard; resolve.rs:526-536 second 4-key loop"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-07T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 7
+dropped_count = 0
+downgraded_count = 0
+rationale = "verified tdd.md:52/58/106 dispatches /implement with pinned tdd-cycle ref; doctor.rs fix producers are sidecar+prune only; capabilities.rs:29-48 literal read_subs; Cargo.toml 0.6.0 + capabilities.rs:1628 pin; types.rs:1381 count on List variant; .claude/rules/documentation.md:26-27; references/flow.md:138"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-07T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "verified cli/dispatch.rs has no wildcard arm; ensure_artifact.rs three sites (:75,:87,:358); implement.md default 8, ceiling 16 count = 2; 51-file corpus count"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-07T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "verified core.autocrlf=true and 68/68 docs/plans CRLF via od; tomlctl on PATH is 0.6.0; flow_resolve.rs:187/:574 assertions; toml_writer string.rs escape flag; regex-syntax translate.rs InvalidUtf8; 40 flows"
+dedup_id = "45ca31c3315a5978"

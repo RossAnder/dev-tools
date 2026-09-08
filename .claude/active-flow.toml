@@ -543,3 +543,21 @@ scope = [
     "claude/skills/tomlctl/references/**",
     ".gitattributes",
 ]
+
+[[active]]
+slug = "whimsical-hugging-puppy"
+last_used = "2026-09-07T14:13:53.2056831Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/README.md",
+    "claude/skills/**",
+    "claude/commands/**",
+    "claude/agents/flow-bootstrap.md",
+    "scripts/templates/flow-context.md",
+    "CLAUDE.md",
+]
