@@ -28,6 +28,8 @@ Input: a single JSON-encoded envelope passed by the caller (read it from your pr
 
 `[]` is the common case for `/review`, `/optimise`, `/review-plan`, and `/plan-new` (those carriers lazily create their output artifacts); `/implement`, `/plan-update`, and `/tdd` pass `["execution_record"]` because they read the record before writing to it.
 
+`require_artifacts` accepts `"review_ledger"`, `"optimise_findings"`, `"execution_record"`, `"plan_review_findings"`, and `"tasks"`. `artifacts.tasks` is the fifth key and carries the task-DAG store: it may be computed from the slug when a legacy `context.toml` lacks the key, and `flow doctor` reports the missing key on its top-level `warnings` array rather than as a failed check, so `envelope.doctor.ok` stays `true`. A carrier names `"tasks"` in `require_artifacts` only when it needs the store to already exist — step 3.5 tests the file on disk, and flows minted before the store existed carry no `tasks.toml`.
+
 Output: a single JSON-encoded envelope as your final message. Shape:
 
 ```json
@@ -100,7 +102,7 @@ Run the steps below in order. Stop early on the first hard error and emit `{"ok"
 Success (resolved + doctor + plans_directory):
 
 ```json
-{"ok":true,"resolved":{"resolved":true,"slug":"feature-x","source":"active-binding","ties_broken":false,"tie_candidates":[],"context_path":".claude/flows/feature-x/context.toml","artifacts":{"review_ledger":"...","optimise_findings":"...","execution_record":"...","plan_review_findings":"..."},"plan_path":"docs/plans/feature-x.md","scope":["src/foo/**"],"branch":"feat/x","status":"in-progress","stale":{"stale":false,"age_seconds":12345,"reason":"updated within threshold"},"warnings":[]},"doctor":{"ok":true,"checks":[],"fixes_applied":[]},"plans_directory":"docs/plans/","warnings":[],"errors":[]}
+{"ok":true,"resolved":{"resolved":true,"slug":"feature-x","source":"active-binding","ties_broken":false,"tie_candidates":[],"context_path":".claude/flows/feature-x/context.toml","artifacts":{"review_ledger":"...","optimise_findings":"...","execution_record":"...","plan_review_findings":"...","tasks":"..."},"plan_path":"docs/plans/feature-x.md","scope":["src/foo/**"],"branch":"feat/x","status":"in-progress","stale":{"stale":false,"age_seconds":12345,"reason":"updated within threshold"},"warnings":[]},"doctor":{"ok":true,"checks":[],"fixes_applied":[]},"plans_directory":"docs/plans/","warnings":[],"errors":[]}
 ```
 
 Version mismatch (halt at step 2):

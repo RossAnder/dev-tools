@@ -39,9 +39,15 @@ complete}`; auto-transitions to `complete` from non-`plan-update-complete` ops a
 forbidden (route through `review`); unknown values fail-soft to `in-progress` on read.
 **Slug derivation**: filename minus `.md` (multi-file plan: parent directory name); no
 further slugification. **Canonical artifacts**:
-`.claude/flows/<slug>/{review-ledger,optimise-findings,execution-record,plan-review-findings}.toml`
+`.claude/flows/<slug>/{review-ledger,optimise-findings,execution-record,plan-review-findings,tasks}.toml`
 — read from `envelope.resolved.artifacts.*`, never recompute inline; persist back to
-`context.toml` on next write when absent. **Completed-flow handling**: `status = "complete"`
+`context.toml` on next write when absent. `artifacts.tasks` is the fifth key and carries the
+task-DAG store: it may be computed from the slug when a legacy `context.toml` lacks the key,
+and `flow doctor` reports the missing key on its top-level `warnings` array rather than as a
+failed check, so `envelope.doctor.ok` stays `true`. A carrier names `"tasks"` in
+`require_artifacts` only when it needs the store to already exist — the bootstrap agent's
+existence gate tests the file on disk, and flows minted before the store existed carry no
+`tasks.toml`. **Completed-flow handling**: `status = "complete"`
 flows are filtered out of scope-glob + branch-match resolution but remain targetable via
 explicit `--flow <slug>`. **Legacy `.claude/active-flow` ignore**: the pre-overhaul
 single-line slug file is no longer consulted; the registry lives at
@@ -93,8 +99,12 @@ Dispatch via the `Task` tool with `subagent_type: "flow-bootstrap"`. After parse
    and halt. Do not proceed to scope analysis or any downstream phase.
 2. **Bind for downstream**: `slug = envelope.resolved.slug`, `context_path =
    envelope.resolved.context_path`, `artifacts = envelope.resolved.artifacts` (object with
-   `review_ledger` / `optimise_findings` / `execution_record` / `plan_review_findings`),
-   `doctor_ok = envelope.doctor.ok` when `envelope.doctor` is non-null.
+   `review_ledger` / `optimise_findings` / `execution_record` / `plan_review_findings` /
+   `tasks`), `doctor_ok = envelope.doctor.ok` when `envelope.doctor` is non-null.
+   `artifacts.tasks` is the fifth key and carries the task-DAG store: it may be computed
+   from the slug when a legacy `context.toml` lacks the key, and `flow doctor` reports the
+   missing key on its top-level `warnings` array rather than as a failed check, so
+   `envelope.doctor.ok` stays `true`.
 3. **No-flow fallback**: when `envelope.resolved.resolved == false`, the carrier follows
    its flow-less convention (`/review` → `.claude/reviews/<scope>.toml`; `/optimise` →
    `.claude/optimise-findings/<scope>.toml`; plan/implement/tdd carriers prompt the user
@@ -152,9 +162,11 @@ Field semantics:
 - `cwd` — optional string or null. The carrier's current working directory; `null` when
   the carrier wants the agent to default to its own `cwd`.
 - `require_artifacts` — array of strings. Subset of `{"review_ledger",
-  "optimise_findings", "execution_record", "plan_review_findings"}` that the carrier needs
-  populated downstream. The bootstrap agent does NOT mutate; it surfaces missing artifacts
-  via `envelope.resolved.warnings`.
+  "optimise_findings", "execution_record", "plan_review_findings", "tasks"}` that the
+  carrier needs populated downstream. The bootstrap agent does NOT mutate; it surfaces
+  missing artifacts via `envelope.resolved.warnings`. A carrier names `"tasks"` only when it
+  needs the store to already exist — the bootstrap agent's existence gate tests the file on
+  disk, and flows minted before the store existed carry no `tasks.toml`.
 - `staleness_threshold` — string. Currently fixed at `"7d"` per plan; reserved for future
   per-carrier override.
 
@@ -174,7 +186,8 @@ Field semantics:
       "review_ledger": ".claude/flows/feature-x/review-ledger.toml",
       "optimise_findings": ".claude/flows/feature-x/optimise-findings.toml",
       "execution_record": ".claude/flows/feature-x/execution-record.toml",
-      "plan_review_findings": ".claude/flows/feature-x/plan-review-findings.toml"
+      "plan_review_findings": ".claude/flows/feature-x/plan-review-findings.toml",
+      "tasks": ".claude/flows/feature-x/tasks.toml"
     },
     "plan_path": "docs/plans/feature-x.md",
     "scope": ["src/foo/**"],

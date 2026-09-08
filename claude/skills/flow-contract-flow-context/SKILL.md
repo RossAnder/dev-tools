@@ -18,9 +18,15 @@ complete}`; auto-transitions to `complete` from non-`plan-update-complete` ops a
 forbidden (route through `review`); unknown values fail-soft to `in-progress` on read.
 **Slug derivation**: filename minus `.md` (multi-file plan: parent directory name); no
 further slugification. **Canonical artifacts**:
-`.claude/flows/<slug>/{review-ledger,optimise-findings,execution-record,plan-review-findings}.toml`
+`.claude/flows/<slug>/{review-ledger,optimise-findings,execution-record,plan-review-findings,tasks}.toml`
 — read from `envelope.resolved.artifacts.*`, never recompute inline; persist back to
-`context.toml` on next write when absent. **Completed-flow handling**: `status = "complete"`
+`context.toml` on next write when absent. `artifacts.tasks` is the fifth key and carries the
+task-DAG store: it may be computed from the slug when a legacy `context.toml` lacks the key,
+and `flow doctor` reports the missing key on its top-level `warnings` array rather than as a
+failed check, so `envelope.doctor.ok` stays `true`. A carrier names `"tasks"` in
+`require_artifacts` only when it needs the store to already exist — the bootstrap agent's
+existence gate tests the file on disk, and flows minted before the store existed carry no
+`tasks.toml`. **Completed-flow handling**: `status = "complete"`
 flows are filtered out of scope-glob + branch-match resolution but remain targetable via
 explicit `--flow <slug>`. **Bootstrap-summary line**: after `flow-bootstrap` returns the
 envelope, the carrier MUST emit one console line before any other action —
