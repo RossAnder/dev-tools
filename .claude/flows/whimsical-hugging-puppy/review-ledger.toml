@@ -1,0 +1,1398 @@
+schema_version = 1
+last_updated = 2026-09-08
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R1"
+file = "tomlctl/src/tasks/import_plan.rs"
+line = 601
+symbol = "under_root"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "three near-identical private copies of the path containment helper"
+description = "tasks/import_plan.rs:601 and tasks/dispatch.rs:361 each hold a private under_root, and flow/render_progress_log.rs:169 a private path_under_root. crate::io already owns guard_write_path and is the natural home. The three copies are byte-identical today (verified by the security and architecture lenses), so this is duplication rather than divergence -- but a fix to one copy's canonicalisation-failure policy will not reach the others, and a fourth caller will copy it again. Folded in from backlog B-6ff6dd3e."
+evidence = ["backlog B-6ff6dd3e"]
+related = [
+    "R17",
+    "R33",
+]
+dedup_id = "6155ec991b5dafcd"
+resolved = 2026-09-08
+resolution = "Folded the three private containment copies into crate::io::path_under_root; import_plan.rs, tasks/dispatch.rs and flow/render_progress_log.rs all route through it."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R2"
+file = "tomlctl/src/tasks/parse_tasks.rs"
+line = 0
+symbol = "open_heading"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "plans with five-hash task headings import as zero tasks with no dedicated finding"
+description = "The heading grammar accepts three or four hashes only, so deeper task headings are read as phase labels and dropped silently. Observed on docs/plans/specialised-flow-agents.md, where tasks 11-17 vanish and only task 18's dangling Depends-on betrays it. A silent seven-task loss is worse than a refusal: a tasks/heading-depth warning class, or widening the grammar, would name it directly. Folded in from backlog B-d2f9b0ee."
+evidence = ["backlog B-d2f9b0ee"]
+related = ["R52"]
+dedup_id = "dec1da36fa079ebc"
+resolved = 2026-09-08
+resolution = "partial: widened the numbered-task-heading grammar from three-or-four hashes to three-through-six, in heading_re and its diagnostic partner malformed_id_re, so a deeper numbered heading is a task rather than a silently dropped phase label; verified live, specialised-flow-agents.md goes from 11 tasks with a dangling ref to 18 clean / pending: the warning class for a numbered heading deeper than six hashes, which needs a findings channel threaded through parse_tasks and import_plan - tracked as R73."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R3"
+file = "tomlctl/tests/tasks_corpus.rs"
+line = 22
+symbol = "EXPECTED_UNPARSEABLE"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "a hand-inserted non-integer task id such as 13a cannot be imported"
+description = "docs/plans/lumina-story-planning-round-2.md line 90 carries heading 13a, inserted between 13 and 14. The importer requires an integer id, so the whole plan is unimportable and sits on the corpus test's EXPECTED_UNPARSEABLE allowlist. The corpus needs a documented renumber-dont-suffix rule, or 13a stays permanently unimportable. Folded in from backlog B-aa004c21."
+evidence = ["backlog B-aa004c21"]
+dedup_id = "de72c86e39a206f6"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R4"
+file = "tomlctl/src/tasks/check.rs"
+line = 172
+symbol = "graph_findings"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "the 256-node cap fails open: check certifies an over-cap store green and import-plan persists it"
+description = "graph_findings returns an empty Vec when Graph::build fails, which it does for any store above MAX_NODES = 256 (graph.rs:96). So the cap gates detection, not the write. The security lens verified the consequence end to end: a 300-task plan carrying a 1<->2 cycle imported as {ok:true,added:300}, tasks check then printed ok:true and exited 0 with only an orphan warning, while tasks ready on the same store hard-errors 'graph exceeds 256 tasks'. import_plan.rs:120's refuse_on_errors is the only write gate and it sees no error, so the store is persisted permanently unusable by every graph verb yet passing its own gate. Every milestone-C carrier gates on tasks check and reads that as a clean bill. Fix: raise an error-class dag/over-cap finding when Graph::build fails. Folded in from backlog B-5ccd0e38 and merged with the security lens's import-gate finding."
+evidence = ["backlog B-5ccd0e38"]
+related = ["R51"]
+dedup_id = "79b0181a891baff0"
+resolved = 2026-09-08
+resolution = "graph_findings now raises an error-class dag/unbuildable finding when the graph engine refuses for a reason the row scans did not already name, instead of swallowing the error into an empty Vec. import_plan's refuse_on_errors sees it, so an over-cap store no longer persists green. Pinned at the 256/257 boundary by a new integration test driven through real stores."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R5"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 86
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "the capabilities example output still shows version 0.6.0"
+description = "SKILL.md line 86 shows a capabilities envelope pinning 0.6.0 while Cargo.toml and the installed binary are 0.7.0. Task 13's README-to-capabilities parity test does not scan skill files, so nothing catches it. Confirmed live by two lenses: tomlctl capabilities emits version 0.7.0 with all twelve tasks_* features. Folded in from backlog B-54b2d71e."
+evidence = ["backlog B-54b2d71e"]
+dedup_id = "b3d699a1438c0b5f"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R6"
+file = "claude/skills/tomlctl/references/flow.md"
+line = 0
+symbol = "verify-integrity support matrix"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "the verify-integrity support matrix omits the seven tasks read verbs"
+description = "references/flow.md lists eight read subcommands and presents as exhaustive, so an agent reading it concludes tasks list --verify-integrity is rejected when it is accepted. The completeness lens confirmed by --help that show, list, edges, ready, batches, closure, check and render all take --verify-integrity and --strict-read, and that a corrupted sidecar makes tasks check --verify-integrity exit 1. The matrix omission is the whole defect. Folded in from backlog B-3c59ed80."
+evidence = ["backlog B-3c59ed80"]
+dedup_id = "561fe8f53fb2f7a8"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R7"
+file = "claude/commands/tdd.md"
+line = 65
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "tdd cycle task_ref is spelled two different ways"
+description = "REFACTOR copies cycle completions up to the parent record with task_ref prefixed tdd-cycle-NNN-original-slug, while RED and GREEN pin tdd-cycle-NNN-short-name. The copy-up lands in a record whose flow does own a store, so a reader checking the parent record against its store finds tdd-cycle refs no row carries. If the spellings ever differ the implement skip-list misses the copied-up entry. Folded in from backlog B-fe2a80ba."
+evidence = ["backlog B-fe2a80ba"]
+dedup_id = "aaa40d40f3e4842f"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R8"
+file = "tomlctl/src/tasks/parse_tasks.rs"
+line = 0
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "plan parse errors report a section-relative line number under the plan path"
+description = "parse_tasks reports failures as line N relative to the Tasks section body, and import_plan prefixes them with the plan path, so the number points at no line in the named file and a user cannot navigate to it. Section::heading_line was exactly the offset needed and was removed as dead during this run (commit 087d189); the fix is to reinstate it and add it to the reported numbers. Folded in from backlog B-36c11be9."
+evidence = ["backlog B-36c11be9"]
+dedup_id = "5804893fa4402a26"
+resolved = 2026-09-08
+resolution = "Reinstated markdown::Section::heading_line and threaded it through a new parse_tasks_at, so a parse failure reports a document line rather than one relative to the Tasks section body. Verified against a real plan rather than reasoned about: an id error now reports line 302, and grep -n puts that heading on line 302. parse_tasks carried the only section-relative number on the import path - parse_policy and parse_markers report none."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R9"
+file = "claude/commands/plan-update.md"
+line = 70
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "plan-update states the tasks total derivation in two places"
+description = "[tasks].total and the context.toml update rule appear in both Step 1 (line 70) and Step 3.4 (line 183) in identical wording, so every change to that derivation is a two-place edit. Pre-existing; the task-store adoption had to update both to keep them agreeing. Folded in from backlog B-432a1b0f."
+evidence = ["backlog B-432a1b0f"]
+related = ["R62"]
+dedup_id = "d92911c56e82da72"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R10"
+file = "tomlctl/src/tasks/graph.rs"
+line = 343
+symbol = "Graph::frontier"
+severity = "critical"
+effort = "small"
+category = "architecture"
+summary = "a non-pending predecessor empties the frontier with no channel to say why, so a stall is indistinguishable from completion"
+description = """A row enters ready only if every predecessor is done, and enters next only if it is pending and every non-done predecessor is in wave; wave holds only pending positions (is_pending, graph.rs:343, compares status == "pending" exactly). A predecessor left in-progress, failed or deferred is therefore in neither bucket, and its whole dependent subtree disappears from ready, held and next alike. Verified: a 2-task store with task 1 in-progress returns {"ready":[],"held":[],"next":[]} while tasks check exits 0 with no error-class finding -- byte-identical to the all-done answer. /implement writes in-progress at dispatch (implement.md:96) before the agent returns, so a crashed run leaves exactly this state, and /implement's rollback path marks a row failed and then continues the frontier. The degradation halt does not fire because check is clean, no check class covers a non-terminal row with pending dependents, and Step 0.5's reconcile import is skipped on a populated store -- so there is no recovery short of a hand tasks update. held exists precisely to explain an exclusion; permanent dependency blocking has no such field. Found independently by three lenses."""
+related = ["R35"]
+dedup_id = "63bb63bd6c9ffc9c"
+resolved = 2026-09-08
+resolution = "Frontier gained a blocked bucket naming each stranded row with its blocking predecessor and that predecessor's status, and tasks ready now emits it as a fourth key. A predecessor declared via --in-flight never blocks, so a row genuinely being worked keeps its dependents in next while one left behind by a crashed run strands them. implement.md gained the consumer rule the fix exists for: an exhausted frontier with a non-empty blocked bucket is a stall, not completion."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R11"
+file = "tomlctl/src/tasks/render.rs"
+line = 177
+symbol = "render_tasks"
+severity = "critical"
+effort = "medium"
+category = "architecture"
+summary = "render silently destroys phase headings and demotes task heading levels inside ## Tasks"
+description = "render_tasks replaces the whole ## Tasks body with a flat '### {id}. {title} [{effort}]' list in store order. parse_tasks classifies every non-numbered heading as a phase label to skip, so milestone groupings are parsed away and never stored. The committed golden pair proves the loss: house-plan.md carries '### Milestone A/B/C --' over '#### N.' task headings; house-plan.rendered.md has neither -- three headings deleted and every #### flattened to ###. The SKILL section-8 containment guarantee ('every other byte of the plan document is preserved') holds only at ##-section granularity. Not academic: flow-contract-plan-output-format recommends phase grouping above 8 tasks, docs/plans/whimsical-hugging-puppy.md:245 uses it, and /implement Phase 4's prescribed drift->re-import->render path ends in an unconditional tasks render. plan-new.md:165 calls the resulting permanent drift 'the benign case' -- benign only until something renders. The store carries checkpoints[].id/rationale, which is enough to re-emit group headings. Found independently by the architecture and quality lenses."
+related = [
+    "R13",
+    "R30",
+]
+dedup_id = "a5ccf93cc3975c81"
+resolved = 2026-09-08
+resolution = "phase, phase_depth and heading_depth are stored per row and re-emitted by render, both depths clamped to three-through-six as the containment guard. The rendered golden's Tasks section is now line-for-line identical to the source plan. store.checkpoints was evaluated first and disproved as a carrier: its spans disagree with the phase spans on the golden fixture, its rationale text is not the label, and it is derived from dependency closure rather than authored. Applied under an explicit user-authorised cross-file budget after an earlier pass correctly refused it at the default three-file cap."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R12"
+file = "tomlctl/src/tasks/graph.rs"
+line = 30
+symbol = "Node"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "the store-to-graph seam has no adapter: TaskRow to Node is written out nine times"
+description = "Byte-identical 'fn nodes(store: &Store) -> Vec<Node>' bodies live in batches.rs:40, check.rs:252, closure.rs:108, edges.rs:120, ready.rs:61, render.rs:115 and show.rs:123, plus import_plan.rs:459 over &[TaskRow] and add.rs:240 as node_of -- nine copies of the one conversion that defines what the graph engine can see. Adding a field to Node (a deferred flag, a weight, an owner) is a nine-file edit with eight chances to leave one stale, and a stale one compiles into a graph that silently disagrees with its siblings. The conversion belongs once as impl From<&TaskRow> for Node beside Node in graph.rs, with a graph::nodes_of(&[TaskRow]) next to it. Found independently by the architecture and quality lenses."
+related = ["R22"]
+dedup_id = "6350016ba43512cf"
+resolved = 2026-09-08
+resolution = "One impl From<&TaskRow> for Node plus graph::nodes_of replaces nine hand-written copies, and a tenth in update.rs's reject_broken_graph that the finding did not enumerate. Correction to the finding's stated harm: Rust struct literals are exhaustive, so a stale copy is a compile error, not a graph that silently disagrees - the real cost was ten mechanical edits instead of one."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R13"
+file = "tomlctl/src/tasks/render.rs"
+line = 73
+symbol = "render_into_plan"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "an absent ## Tasks anchor appends ## Execution Policy at EOF, breaking the documented canonical section order"
+description = """section_before(plan_src, "Tasks").unwrap_or_default() yields "" when ## Tasks is the document's first section or absent. That empty title reaches insert_section_after, whose find(|s| s.title == wanted).map_or(src.len(), ..) at markdown.rs:83-86 silently falls back to appending at EOF. Verified on a plan of ## Tasks then ## Risks: output order is Tasks -> Dependency Graph -> Risks -> Execution Policy. Both the contract (section 8) and references/tasks.md:352 state a missing section is inserted in canonical order, and the sibling test at render.rs:552 asserts that order. There is no markdown::insert_section_before to anchor the case. unwrap_or_default() on a title is the tell: an absent anchor is a distinct case from an anchor named "". Found independently by the completeness and quality lenses."""
+related = ["R11"]
+dedup_id = "b157a4496b859748"
+resolved = 2026-09-08
+resolution = "Added markdown::insert_section_before and anchored Execution Policy on the section it precedes rather than on that section's predecessor, so an absent or document-leading Tasks section no longer collapses to an empty title and appends at EOF."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R14"
+file = "tomlctl/src/tasks/dispatch.rs"
+line = 416
+symbol = "read_ndjson_source"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "read_ndjson_source is a verbatim copy of the CLI helper and its justifying comment is false"
+description = "Byte-equivalent to cli/dispatch.rs:64 (same - sentinel, same @-prefix strip, same with_context text) modulo inlined format args. The comment at tasks/dispatch.rs:412-415 justifies the copy with 'cli/mod.rs holds its dispatch helpers inside the CLI layer, so a verb group outside it carries its own' -- but cli/mod.rs:33 already re-exports read_integrity_opts / write_integrity_opts / run from dispatch, and tasks/store.rs:15-17 imports two of them. One added pub(crate) use shares it. A self-justifying comment that a two-line grep refutes is worse than no comment: it deters the next reader from doing the merge."
+dedup_id = "42ea78436d2c3347"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R15"
+file = "tomlctl/src/tasks/parse_tasks.rs"
+line = 45
+symbol = "parse_tasks"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "parse_tasks is not fence-aware, unlike the scanner feeding it, so a # line inside a code block truncates a task"
+description = "markdown::sections (markdown.rs:24-57) tracks backtick and tilde fences precisely so a '## ' inside a code block is not a heading. parse_tasks then treats any line starting with # as a heading: it closes the open field, flushes current, and calls open_heading, which returns Ok(None) for a non-numbered line. A fenced acceptance block at column 0 inside ## Tasks containing '#!/usr/bin/env bash' or '# builds clean' therefore ends the task there -- every field line after it is dropped by the 'if open.is_none() { continue }' guard, and no finding class reports the loss. Two scanners over the same bytes disagree on what a heading is. Thread the fence state sections already computes, or require heading_re / malformed_id_re to match before treating a # line as a boundary."
+related = ["R2"]
+dedup_id = "c8ccfcfe34a78c99"
+resolved = 2026-09-08
+resolution = "Extracted the fence tracker markdown::sections already computed as markdown::FenceState and threaded it through parse_tasks, so a hash-prefixed line inside a fenced block no longer closes the open task and drops every field after it. The two scanners now share one fence implementation rather than disagreeing about what a heading is."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R16"
+file = "tomlctl/src/tasks/update.rs"
+line = 36
+symbol = "IMPORTED"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "--set coupling= is refused with a wrong reason, leaving coupling unremovable through the CLI"
+description = "IMPORTED groups coupling with files and needs, and settable (update.rs:157) refuses it with '`coupling` is owned by `tasks import-plan`, not `--set`'. import-plan never sets coupling: merge_row (import_plan.rs:362) only reads it back off the existing row and narrows needs by it -- the sole writer is tasks add --coupling and the add-many row field. So a coupling edge added by hand can never be corrected or cleared through any verb; the only route is a hand-edit of the tool-owned store, which also staleness-breaks its .sha256. Either drop coupling from IMPORTED and let --set clear it, or give the message the true owner and a documented removal path."
+dedup_id = "b5b76b5a15cfd9e4"
+resolved = 2026-09-08
+resolution = "coupling moved from IMPORTED to SETTABLE with a store-wide graph gate: --set coupling= clears it and a non-empty value rewrites it, with a dangling target or a cycle refused before the row moves - the same guard tasks add runs. The old refusal named the wrong owner: import-plan never writes the field, it only reads it back to narrow needs."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R17"
+file = "tomlctl/src/tasks/dispatch.rs"
+line = 304
+symbol = "plan_target"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "plan-path resolution and containment are implemented twice with independently worded refusals"
+description = "plan_target + contained (dispatch.rs:304-356) and import_plan::resolve_plan_path (523-596) both open the flow's context.toml, pluck a non-empty plan_path, reject an absolute or ..-bearing value, join the repo root and re-check containment -- with independently worded refusals ('must be repo-relative and stay under the repo root' vs 'must be repo-relative'). This is a larger duplicate than the known under_root triple: it is the whole security-relevant resolution, so a hardening fix applied to one verb leaves the other admitting the input. One fn resolve_recorded_plan_path(slug) -> Result<PathBuf> should serve import-plan, render and check --plan."
+related = [
+    "R1",
+    "R25",
+    "R32",
+]
+dedup_id = "d38c2b77f58f07de"
+resolved = 2026-09-08
+resolution = "One resolve_recorded_plan_path / resolve_store_plan_path pair in import_plan.rs now owns recorded-plan-path resolution over a single private containment check, and dispatch.rs's plan_target is a two-arm delegation. R25's comparison and R32's extension requirement both land inside that resolver, so neither hardening can be present in only one of the two paths - which was the finding's whole point."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R18"
+file = "tomlctl/src/tasks/batches.rs"
+line = 19
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "the cycle-refusal preamble is triplicated verbatim across three read verbs"
+description = "batches.rs:19-30, ready.rs:19-30 and the refuse helper at batches.rs:36, closure.rs:104 and ready.rs:57 are identical down to the doc comment 'A graph the store cannot form is a tasks check finding, not a tool fault.' Only the verb noun in the message differs ('the layering' / 'the frontier'). One fn build_or_refuse(store: &Store, subject: &str) -> Result<Graph<'_>> collapses all six sites and guarantees the three verbs keep agreeing about what a cycle means."
+dedup_id = "b1d70a4c1e8e0e21"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R19"
+file = "tomlctl/src/flow/doctor.rs"
+line = 420
+symbol = "check_artifacts_canonical"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "dead fallback arm re-hardcodes the canonical tasks.toml path a fourth time"
+description = """pairs is CanonicalArtifacts::to_pairs(), a [(&str, &str); 5] whose 'tasks' entry is a struct field, not an option (verified at artifacts.rs:66-74) -- so the None => format!(".claude/flows/{slug}/tasks.toml") arm is unreachable, and it plants a fourth literal copy of a path that artifacts.rs:28 already owns (with init.rs::tasks_path_for and store.rs::resolve_store_path as the others). The whole match reduces to 'let want_tasks = &canon.tasks;', which also removes the 'if key == "tasks" { continue; }' skip's dependence on the array's shape."""
+dedup_id = "f957c30fe1f593af"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R20"
+file = "tomlctl/src/tasks/check.rs"
+line = 296
+symbol = "file_list"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "file_list exists twice with divergent empty-case behaviour"
+description = """check.rs:296 and render.rs:276 both format a &[String] of paths as backtick-quoted, comma-joined text for the same audience, but render.rs returns the em-dash empty marker and check.rs returns "" -- so an empty list renders as a plan's em-dash in one surface and as a truncated sentence ('tasks 2 and 3 both claim  with no dependency path either way') in the other. One shared helper removes the divergence; the same argument applies to the three id-formatters check::task_list, import_plan::id_list and render::join_ids."""
+dedup_id = "68f9e01f13e898fe"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R21"
+file = "tomlctl/src/flow/doctor.rs"
+line = 718
+symbol = "dispatch"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "orphaned section marker now labels unrelated code"
+description = "'// 4. .gitignore warning -- surfaced as a warning, not a check failure.' used to sit directly above 'let mut warnings: Vec<JsonValue> = Vec::new();'; that declaration moved to line 693 for the new check_one_flow parameter, leaving the marker immediately above the unrelated '--dry-run has no effect without --fix' block. In a function navigated by its numbered step comments, a marker pointing at the wrong step is worse than none -- move it down to the detect_gitignored_claude call."
+dedup_id = "fef21945e73b58c6"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R22"
+file = "tomlctl/src/tasks/graph.rs"
+line = 24
+symbol = "STATUS_PENDING"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "the graph engine re-encodes the typed Status as a string and compares it to literals"
+description = """schema::Status is a five-variant enum, but every conversion site writes status: row.status.as_str().to_string() and graph.rs compares against "pending" / "done" string constants (is_pending, and frontier's preds.all(status == STATUS_DONE)). Both types are pub(crate) in one crate, so the erasure buys no decoupling and costs exhaustiveness: adding a sixth Status variant compiles clean everywhere and the new state reads as neither pending nor done, so those rows vanish from ready, next and every frontier decision with no diagnostic. Node.checkpoint: String has the same shape but is genuinely opaque, so only status is at issue."""
+related = [
+    "R10",
+    "R12",
+]
+dedup_id = "f7f8890bfd0574e7"
+resolved = 2026-09-08
+resolution = "Node.status now carries schema::Status rather than a re-encoded string, and the two string constants are gone. Every bucket decision routes through one private three-way classifier matched exhaustively with no wildcard arm, so a sixth Status variant becomes a compile error at the single site that decides bucket membership rather than silently reading as neither pending nor done. The JSON wire shape is unchanged - blocker_status still emits the same spellings. schema.rs was deliberately not edited: the three-way reading is graph policy, and that module keeps vocabulary decisions out of the reader."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R23"
+file = "tomlctl/src/tasks/add.rs"
+line = 210
+symbol = "build_row"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "checkpoint accepts any string, so a typo makes a row invisible to every checkpoint product"
+description = """add copies --checkpoint through unvalidated, update.rs:194 assigns it through replace_str, and graph.rs:303 selects members by exact match against store.checkpoints. A row carrying "B" when no [[checkpoints]] id = "B" exists belongs to no group, appears in no closure --checkpoint, and is not reported by check.rs's orphan_task_findings, which fires only on checkpoint.is_empty() (verified). /implement mints same-run tasks with tasks add --checkpoint (implement.md:112) and gates its milestone drain on 'every member of a declared checkpoint group is terminal' -- a mistyped group means the task is never waited for and lands only in the Phase-3 train, silently. Either validate membership at write time or widen checkpoint/orphan-task to cover unknown group ids."""
+dedup_id = "ba594b03a094d1a1"
+resolved = 2026-09-08
+resolution = "tasks add and tasks update, flag and --set alike, refuse a checkpoint naming no declared group and name the declared ids; check's orphan-task class emits a second finding for a row whose key no entry declares. The detection class stays at warning deliberately: a re-import that drops a marker legitimately leaves undeclared keys on retained rows, so error severity would refuse an otherwise-valid import. The hard gate is at write time, where the finding asked for it."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R24"
+file = "tomlctl/src/tasks/update.rs"
+line = 189
+symbol = "assign"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "update --set title= desynchronises ref from its derivation source and bricks the next import"
+description = "ref = derive_ref(title) is the store's primary key, and slug::derive_ref is called only in add.rs:193 and import_plan.rs:257 -- never in update.rs (verified by grep). title is in SETTABLE; ref is deliberately locked behind --ref because 'rewriting it orphans the row in both directions' (SKILL section 2). But --set title=X rewrites the key's source: render then writes the new heading into ## Tasks, and the next import-plan derives a new ref for the same task number, hits dag/duplicate-number and refuses. The store's own re-import loop is then dead until someone runs tasks update --ref by hand. check has no ref == derive_ref(title) class, so nothing detects the divergence before the refusal."
+dedup_id = "f8512dbc33fa0d31"
+resolved = 2026-09-08
+resolution = "--set title= is refused when the new title derives a different ref, unless --ref accompanies it, and the refusal names the derived ref. The guard compares derivation against derivation rather than against the stored ref, because unique_ref suffixes a duplicate and import-plan --reconcile-record adopts a record's ref, so a stored ref legitimately diverges on real rows and a stored-ref comparison would have refused every retitle on them."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R25"
+file = "tomlctl/src/tasks/dispatch.rs"
+line = 304
+symbol = "plan_target / store.plan_path"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "two recorded plan paths, never compared: render --slug can rewrite a plan the store never read"
+description = "The store records plan_path (import_plan.rs:237) and context.toml records its own. Under --slug, plan_target reads the context's value and ignores store.plan_path entirely; under --file it reads the store's. Nothing compares them and check has no class for the divergence. After /plan-update reformat splits a plan and repoints context.plan_path, or after any hand edit to the context, tasks render --slug overwrites three ## sections of a document the store was never imported from -- and --check reports that as ordinary render/drift (a warning), which implement.md's recovery path resolves by re-importing and rendering. Compare the two at plan_target and refuse on mismatch."
+related = [
+    "R17",
+    "R61",
+]
+dedup_id = "9749bd9fc902cd8b"
+resolved = 2026-09-08
+resolution = "The consolidated resolver refuses when the store's recorded plan_path and the context's resolve to different documents. Paths are compared component-wise rather than as raw strings, so a Windows-authored context does not produce a spurious refusal. An empty store plan_path binds nothing and is not treated as a mismatch."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R26"
+file = "tomlctl/src/tasks/parse_policy.rs"
+line = 22
+symbol = "ABSENT_NOTE"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "policy.note is both authored content and the parser's diagnostic channel"
+description = """parse_policy with no section sets note = "policy absent in source plan" -- a tool diagnostic -- into the same field that carries an author's exception prose (verified at parse_policy.rs:22,57). render.rs:165 writes policy.note verbatim as trailing prose under ## Execution Policy, so importing a legacy plan and rendering it stamps that sentence into the document as if authored; the next import reads it back as a real note, and it is thereafter indistinguishable from one. The import test asserts this as expected behaviour (import_plan.rs:971). A missing policy section is a finding, not a value -- it belongs in the findings[] array check already returns, leaving note empty."""
+related = ["R53"]
+dedup_id = "40683ef5b00740f0"
+resolved = 2026-09-08
+resolution = "Policy absence moved out of note into an additive [policy].origin field, values plan and default, with note left as authored prose only and an absent section also raising a plan/policy-absent warning at import. A store whose note is exactly the old sentinel reads as origin=default with the note cleared, so no migration step is needed. A policy/origin-value error class gates the new field's vocabulary, matching its two siblings. Coordinated with R59, whose legacy-mode discriminator had been built on the sentinel this removes."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R27"
+file = "tomlctl/src/tasks/schema.rs"
+line = 238
+symbol = "from_toml"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "schema_version is written and preserved but never validated, so a future store downgrades silently"
+description = "from_toml reads schema_version with .unwrap_or(SCHEMA_VERSION) and keeps whatever it finds; to_toml:266 writes that value straight back. Meanwhile the module header states 'unknown keys are dropped -- every write re-emits it from this shape'. A schema_version = 2 store touched by a v1 binary therefore loses every v2 field and is rewritten still stamped 2, so the corruption is invisible to the v2 binary that reads it next. The field is the one mechanism that could refuse this and it is inert. Refuse (or warn) on schema_version > SCHEMA_VERSION in from_toml. Note this diverges from the ledger schema contract, which mandates halting on schema_version > 1."
+dedup_id = "0579897b9cf9b8ca"
+resolved = 2026-09-08
+resolution = "from_toml refuses a schema_version strictly greater than SCHEMA_VERSION, naming both the value found and the value supported, with the check placed ahead of any row parsing. Missing and lower values keep their existing behaviour. Halting rather than warning matches the project's ledger-schema contract."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R28"
+file = "tomlctl/src/flow/resolve.rs"
+line = 526
+symbol = "build_resolved_envelope"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "tasks is a canonical artifact exempted from every health surface, with no remediation path"
+description = """tasks joins CanonicalArtifacts as the fifth artifact, then is suppressed everywhere it would be observed: resolve.rs skips its missing-file warning outright (if key == "tasks" { continue; }), and doctor.rs's artifacts-canonical downgrades an absent key to an advisory warning. Verified live on this flow: flow doctor returns ok:true while tasks.toml does not exist and [artifacts].tasks is absent from context.toml. So a carrier reading envelope.resolved.artifacts.tasks gets a path with no existence signal at all, and /implement's 'store absent after an import that claimed to succeed' halt (SKILL section 13) has no bootstrap-level counterpart. The warning is also unclearable -- doctor --fix only refreshes stale sidecars -- so every pre-existing flow emits it forever, which is how doctor warnings get trained out of readers. Legacy compatibility is right; the exemption needs a discriminator (warn only when the flow's plan has a ## Tasks section) and a --fix that backfills the key."""
+related = ["R38"]
+dedup_id = "569bffd45884ff9d"
+resolved = 2026-09-08
+resolution = "The unconditional tasks skip in resolve is replaced by a plan_declares_tasks discriminator serving three sites, and flow doctor --fix gained a producer that backfills an absent [artifacts].tasks key so the advisory is clearable. Measured consequence: all 40 flows currently carry a Tasks section, so the discriminator narrows nothing on today's corpus and narrows per-flow over time as each store is imported."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R29"
+file = "claude/commands/plan-update.md"
+line = 70
+symbol = "context.toml [tasks]"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "[tasks].total and [tasks].completed now derive from different artifacts, with the join ungated"
+description = "The adoption repointed [tasks].total at the store (tasks list --count) but left [tasks].completed derived from execution-record.toml, joined only by the ref/task_ref string. Nothing gates the join. Verified live on this flow: the plan yields 36 rows on a dry-run import while the record holds 40 distinct task_refs -- four same-run tasks that no plan heading names -- so completed > total is both representable and currently true. import-plan --reconcile-record is the only thing that computes the discrepancy, reporting it in unmatched_refs, and no check class, no doctor check and no carrier gate consumes it: implement.md:46 and plan-new.md:163 say only 'surface those'. plan/orphan-row covers the store-row-the-plan-lost direction; the record-ref-no-row direction -- the one /implement's skip-list actually joins on -- has no class."
+related = ["R35"]
+dedup_id = "f2270654dc480b8b"
+resolved = 2026-09-08
+resolution = "partial: plan-update.md now specifies the carrier-level join gate, consuming unmatched_refs from import-plan --reconcile-record, subtracting on an incomplete join and surfacing the refs / pending: nothing mechanical enforces the gate - no check class and no doctor check detects a record ref naming no store row - and plan-new.md plus the execution-record contract carry the other halves. Tracked as R74."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R30"
+file = "tomlctl/src/tasks/import_plan.rs"
+line = 223
+symbol = "Import::apply"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "a plan-deleted task is resurrected at the tail of ## Tasks, and there is no delete verb"
+description = "Rows the plan no longer produces are rows.push(row.clone())-ed onto the end of the row vector, and render_tasks renders in store order -- so a task deleted from ## Tasks reappears at the bottom of the section on the next render, keeping its original number and now out of numeric order. While the row is pending this is a warning (check.rs:141) and render proceeds without a gate; only a settled orphan is error-class. The verb set offers no way out: add, add-many and update exist, remove does not, so the only recovery is hand-editing tasks.toml -- which the next import-plan and render do not undo but do re-append from. 'Nothing is ever deleted' is a defensible invariant; 'and there is no supported way to retire a row' is the gap."
+related = ["R11"]
+dedup_id = "41aa0af06ea1026d"
+resolved = 2026-09-08
+resolution = "Added tasks remove <ID> [--force], which hard-deletes the row. It refuses by default for a row past pending or one that other rows depend on, naming each; --force prunes the removed id from every dependent's needs and coupling and splices the removed row's own needs into them, so no dependent can dispatch ahead of work it still waits on. Hard delete rather than a retired status because render_tasks walks every row, so a retired row would keep rendering back into the Tasks section - the resurrection the finding is about."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R31"
+file = "tomlctl/src/tasks/render.rs"
+line = 41
+symbol = "Finding"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "the diagnostics vocabulary lives in render.rs, inverting the check/render layering"
+description = "Finding -- the type every finding class in the store is expressed as -- is declared in render.rs, the module that owns one warning class (verified: it is the sole declaration site). check.rs:19, import_plan.rs:25 and tasks/dispatch.rs:289 all import it from there, so the module documenting the finding-class table (check.rs:1-13) cannot own the type that table describes, and render is simultaneously a leaf verb and a foundation module for the diagnostics layer. Cheap now (move Finding plus the ERROR/WARNING constants, currently redeclared in both check.rs:22 and import_plan.rs:39, into check.rs or a finding.rs); harder as classes accrete."
+dedup_id = "55abd00df0aa728e"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R32"
+file = "tomlctl/src/tasks/dispatch.rs"
+line = 279
+symbol = "contained"
+severity = "warning"
+effort = "trivial"
+category = "security"
+summary = "tasks render overwrites any existing file under the repo root, not just a plan document"
+description = """contained() only checks that the store's or context's plan_path stays under the repo root; nothing requires it to be a markdown plan. render then atomic_writes render_into_plan output over that file, preserving its existing bytes and appending the rendered sections. Verified: with plan_path = ".githooks/pre-commit", tomlctl tasks render --file .. returned {"ok":true,"path":".githooks/pre-commit"} and the hook on disk kept its shebang and gained the three rendered sections. Since this repo sets core.hooksPath .githooks, the next commit executes the result -- and rendered task fields are attacker-influenceable content landing in that script (a '- **Files**: `a.rs`' line is backtick command substitution in sh). Reaching it needs a hostile repo-local context.toml or tasks.toml, i.e. a poisoned branch or PR, which is exactly what the existing plan_path guard already treats as untrusted. Fix: require the target to end in .md, or route through guard_write_path, before the write."""
+related = ["R17"]
+dedup_id = "6913b65a05859319"
+resolved = 2026-09-08
+resolution = "The single resolver refuses any recorded plan_path that does not end in .md, closing the path by which a hostile repo-local context.toml or tasks.toml could have render append attacker-influenceable content to an executable file. Verified live that a plan_path of .githooks/pre-commit now exits validation with the hook byte-identical on disk, while a real plan still renders. The finding's alternative suggestion of routing through guard_write_path was rejected on inspection: it confines writes to the repo's .claude directory and would have refused every legitimate render under docs/plans."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R33"
+file = "tomlctl/src/tasks/dispatch.rs"
+line = 344
+symbol = "under_root"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "a Windows drive-relative plan_path passes containment while discarding the repo-root anchor"
+description = """PathBuf::from("C:pre.md") is not is_absolute() on Windows and holds no ParentDir, so both lexical guards pass; root.join() then replaces the root entirely because the candidate carries a Prefix component. under_root still returns true, because canonicalising the missing leaf walks up to the bare drive C:, which canonicalises to the drive's current directory. Verified: with plan_path = "C:pre.md" the guard accepted it and the error was 'reading plan `C:pre.md`' (unanchored) versus a fully-anchored path for the plain relative form. The escape is narrow today (a same-drive per-drive cwd usually still sits under the root, and D:.. is refused), but the check certifies a path it never resolved, and under_root returning true for a bare drive root is the general hazard. The same shape exists in the import_plan.rs and render_progress_log.rs copies. Fix: reject any candidate whose components are not all Component::Normal."""
+related = ["R1"]
+dedup_id = "0e9acce5aaef31ed"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R34"
+file = "tomlctl/src/tasks/import_plan.rs"
+line = 529
+symbol = "resolve_plan_path"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "import-plan --plan <absolute> records an absolute plan_path that every later render and check refuses"
+description = "--plan is deliberately exempt from containment ('a caller argument rather than file-controlled input'), but the value survives into store.plan_path via relativise, which returns the path unchanged when it cannot strip the root prefix. The store is then written with an absolute plan_path, and dispatch::contained -- which does apply -- refuses it forever. Verified: importing with an absolute --plan wrote an absolute plan_path, after which tasks render --file .. --stdout failed with 'must be repo-relative and stay under the repo root'; re-importing with a relative --plan fixed it. The write-side and read-side policies disagree, so a single mistyped invocation wedges the store's render path with no diagnostic at import time. Fix: refuse, or relativise-or-refuse, at import when the resolved plan is not under the root."
+related = ["R17"]
+dedup_id = "9eeda2bb47bc2f17"
+resolved = 2026-09-08
+resolution = "The import now canonicalises the resolved --plan, relativises it against the root, and puts the result through the read side's own containment validator, so an out-of-root or non-.md plan is refused at import with a validation envelope and no bytes written, instead of being recorded and then refusing every later render. Canonicalising first is what keeps an absolute in-root --plan working on Windows, where the repo root carries a long-path prefix a user-typed path would never strip. The write side and the read side can no longer disagree about what a valid recorded path is, because they now run the same validator."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R35"
+file = "claude/commands/implement.md"
+line = 40
+symbol = "Step 0.5"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "no carrier ever re-reconciles a populated store against the execution record"
+description = "import-plan --reconcile-record runs only 'when the store is absent on disk or holds no rows' -- the same condition in review-plan.md:44 and plan-update.md:57. Phase 1's idempotency skip-list is now store-derived (--where status=done --pluck ref), so on the common resume path the store's statuses are authoritative and never re-checked against execution-record.toml. Phase 2 writes the row (step 4) and appends the record entry (step 5b) as two separate calls; a crash between them, or a /plan-update status or reconcile run (which derives [tasks].completed from the record but never writes a row status), leaves a done completion whose row still says pending -- and /implement re-dispatches that task. Section 9's stated purpose for --reconcile-record is defeated exactly where it matters. Step 5b's 'crash-safe -- the idempotency skip-list depends on it' rationale is also stale: the skip-list no longer reads the record."
+related = [
+    "R10",
+    "R29",
+]
+dedup_id = "80a3dccb0cc58613"
+resolved = 2026-09-08
+resolution = "The --reconcile-record import is now unconditional on the resume path in implement.md, review-plan.md and plan-update.md, rather than firing only when the store is absent or empty. implement.md's step 5b crash-safety rationale, which claimed the step was load-bearing because the idempotency skip-list depends on the record, is replaced - that skip-list is now store-derived. The reconcile promotes and never demotes, which is what makes the unconditional re-import safe."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R36"
+file = "tomlctl/src/tasks/check.rs"
+line = 45
+symbol = "policy_findings"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "tasks check emits no finding for an out-of-vocabulary policy.checkpoints or commit_granularity"
+description = """references/tasks.md:394-396 states the two vocabulary fields 'are stored as strings so tasks check, not the reader, decides what is out of vocabulary', but policy_findings validates only policy.max_parallel (verified). A store with checkpoints = "banana" and commit_granularity = "hourly" exits 0 with no finding. /implement Phase 1 gates on check and then binds checkpoint_policy from [policy], so a typo reaches the scheduler unflagged. The import path does validate (parse_policy::one_of), so only a hand-edited or externally-produced store escapes -- precisely the case the doc says check owns. status and effort are by contrast reader-validated (hard parse error), so the module is inconsistent with itself as well."""
+dedup_id = "e339f30dcaa5cf66"
+resolved = 2026-09-08
+resolution = "policy_findings validates checkpoints and commit_granularity against the import path's own vocabulary, lifted to shared constants in parse_policy.rs and consumed by check.rs rather than restated, raising error-class policy/checkpoints-value and policy/commit-granularity-value."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R37"
+file = "tomlctl/src/tasks/import_plan.rs"
+line = 371
+symbol = "DEFAULT_EFFORT"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "a task heading with no [S|M|L] tag imports as M silently, and render writes the invented tag back into the plan"
+description = """tasks add --effort is required and rejects anything outside S/M/L, and the plan-output-format contract mandates the tag on every heading -- but import-plan accepts a tagless '### 1. No effort tag' with no finding and stores effort = "M" (DEFAULT_EFFORT, import_plan.rs:46). tasks render --stdout then emits '### 1. No effort tag [M]', authoring an effort estimate nobody made into the plan document. /implement's lite-eligibility gate reads the tag as primary ('no/unknown tag => treat as M') -- a rule that can no longer fire, because the store never surfaces 'unknown'. Neither references/tasks.md nor the contract documents the default. A plan/missing-effort warning class, or preserving the absence, would close it."""
+dedup_id = "1b8340ce22d07961"
+resolved = 2026-09-08
+resolution = "import-plan raises a warning-class plan/effort-untagged finding - one per import, whose ids name every untagged heading - and the stored default is unchanged. The default applies only where neither the heading nor an existing store row supplies an effort, so a re-import of an untagged heading preserves the row's current value and still warns. effort was deliberately not made optional in the store, which would have rippled into render and schema."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R38"
+file = "tomlctl/src/flow/doctor.rs"
+line = 206
+symbol = "check_one_flow"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "flow doctor has no existence or sidecar check for the fifth artifact, and --fix never repairs a stale tasks.toml.sha256"
+description = "doctor emits context-exists, execution-record-exists, context-sidecar and execution-record-sidecar, plus an artifacts-canonical key-path check that treats a missing tasks key as advisory. There is no tasks-exists and no tasks-sidecar check (verified by grep), and stale_sidecars (what --fix repairs) never collects the store. Verified: with a deliberately corrupted tasks.toml.sha256, flow doctor reports ok:true while tomlctl tasks check --slug demo --verify-integrity fails. Carriers gate on envelope.doctor.ok, so a flow passes bootstrap and then fails every integrity-checked store read mid-run. The contract's section-14 recovery (integrity refresh) exists but nothing surfaces the condition -- and the sidecar-rename-vs-virus-scanner race the contract names as the live Windows failure is exactly this shape."
+related = ["R28"]
+dedup_id = "64c009ee1778eae0"
+resolved = 2026-09-08
+resolution = "Added tasks-exists and tasks-sidecar checks matching the existing context and execution-record pair's naming and JSON shape, gated on the same discriminator as R28 so legacy flows do not start failing, and routed the task store into the stale-sidecar set that --fix repairs. An absent store where one is expected is a warning with a --fix route, never a check failure."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R39"
+file = "tomlctl/src/tasks/import_plan.rs"
+line = 629
+symbol = "RECORD_FILE"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "--reconcile-record hardcodes the sibling filename and ignores [artifacts].execution_record"
+description = "The record path is flow_dir(slug)/execution-record.toml (verified at import_plan.rs:37,629), while every carrier resolves the record as [artifacts].execution_record with that path only as a fallback (implement.md:58), and flow resolve honours a recorded override (resolve.rs:607 plucks it). import-plan resolves plan_path from context.toml but the record path not at all, so a flow whose artifacts point the record elsewhere makes --reconcile-record hard-error (verified: deleting the sibling yields os error 2 and exit 1) rather than reading the recorded location. references/tasks.md:60 says only 'the flow's execution-record.toml', which does not disclose the divergence."
+dedup_id = "4e1cc6c007023725"
+resolved = 2026-09-08
+resolution = "--reconcile-record resolves the record from the flow context's [artifacts].execution_record, falling back to the sibling filename when the key is absent, empty or the context is unreadable - matching how every carrier resolves it. The recorded override is held to root containment, because honouring it turns a previously-hardcoded filename into file-controlled input; without that a context could point the record at any file on disk and a parse error would echo its contents back through the error chain. The reference document already described this resolution order, so the code caught up to the contract rather than the other way round."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R40"
+file = "tomlctl/src/cli/dispatch/tests/lint.rs"
+line = 181
+symbol = "command_lint_report"
+severity = "suggestion"
+effort = "medium"
+category = "completeness"
+summary = "command_lint covers only fenced invocations, so the tasks flag tables -- the actual doc surface -- are unlinted"
+description = "The scan set does include claude/skills/tomlctl/references/tasks.md and the four carriers, but command_lint_report walks only bash fences and lint_logical only lines beginning with tomlctl. tasks.md documents the group as twelve markdown tables with one or two example fences each, so a table row naming a flag that does not exist is invisible to the gate, and the CLI-to-doc direction (a flag that exists and is undocumented) is not checked at all -- capabilities.commands already emits the full per-subcommand flag schema that would make that assertion mechanical. The completeness lens diffed all 12 verbs' --help against the tables by hand and found no current drift, so this is a coverage gap, not a live defect."
+dedup_id = "9fab8b6e95c48d92"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R41"
+file = "tomlctl/README.md"
+line = 318
+symbol = "dry_run feature row"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "three of the four new write verbs carry no --dry-run while README claims the feature covers all 20 write subcommands"
+description = "tasks add, add-many and update are mutating verbs (confirmed by --help: they carry the write bundle and --no-create) and have no --dry-run; only tasks import-plan was added to the enumerated 20. The store's own doc leans on dry-run as the safety idiom -- the section-10 ref-set diff gate is import-plan --dry-run -- yet add-many, the all-or-nothing batch verb where a preview is most valuable, cannot preview. Either the three verbs gain --dry-run or the README row is rephrased so the enumeration stops reading as exhaustive over write verbs."
+dedup_id = "b116a4004d9d37aa"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R42"
+file = "tomlctl/src/flow/init.rs"
+line = 441
+symbol = "bootstrap_tasks_store"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "flow init reports action: noop on a run that materially creates tasks.toml"
+description = """action is derived from whether context.toml existed. Verified on a legacy flow carrying only context.toml: flow init returned {"action":"noop",..} while creating tasks.toml, tasks.toml.sha256, execution-record.toml and its sidecar. Since flow init is the contract's only sanctioned seeding route for the store (ensure-artifact --bootstrap --kind tasks is a deliberate no-op, section 6), a carrier or human gating on action == "created" cannot tell that a store was just minted. Adding the bootstrapped paths to the envelope, or a created[] array, would settle it."""
+dedup_id = "b08ded70cae93c62"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R43"
+file = "claude/skills/flow-contract-task-store/SKILL.md"
+line = 260
+symbol = "section 11"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "the orchestrator-only write rule has no enforcement point below the carrier"
+description = "implement.md:88 states 'A sub-agent gets the read verbs only', but the per-prompt MUST-include list immediately after it does not require the prohibition to be carried into the agent prompt, and no file under claude/agents/ mentions tomlctl tasks or the store at all (grep: only flow-bootstrap.md matches). implement-lite and implement-deep hold Bash, so nothing stops a delegate running tasks update. The shared forbidden-working-tree-ops block, which is parity-verified across both implementers and already enumerates orchestrator-only operations, would be the natural home."
+dedup_id = "b4224a4c66eb641b"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R44"
+file = "tomlctl/src/tasks/show.rs"
+line = 0
+symbol = "show::dispatch"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "tasks show has no black-box test -- the dispatch arm is unreached"
+description = """show::dispatch (target resolution, --with fan-out, integrity args, envelope printing) is exercised only by ["tasks","show","--help"] in capabilities.rs:48. show.rs's six unit tests call the pure functions directly. A regression in the dispatch arm -- wrong --with plumbing, a swapped id, an envelope key rename -- ships green."""
+dedup_id = "c29d9be998fff87f"
+resolved = 2026-09-08
+resolution = "Black-boxed in a new tasks_read.rs: the summary shape and its declared key order, the fetch-by-id form under --with, the deps-versus-dependents asymmetry, and the not_found envelope for an absent row. Key order is asserted independently of values, since the JSON map compares order-insensitively and a combined assertion would not have caught a reordering."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R45"
+file = "tomlctl/src/tasks/list.rs"
+line = 30
+symbol = "list::dispatch"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "tasks list has no black-box test, and its streaming and --raw branches are untested at any level"
+description = "The q.ndjson && q.shape.is_streamable() branch (read_doc + run_streaming + manual flush) and the q.raw => emit_list_raw branch have zero coverage; list.rs's unit tests build a Query and call query::run directly, skipping both. A dropped flush or an ARRAY_ITEMS typo would produce empty stdout with exit 0 -- and a false '0 results' from a tomlctl read has already misled once in this project."
+dedup_id = "af9db277227f9066"
+resolved = 2026-09-08
+resolution = "Black-boxed in a new tasks_read.rs, covering the query the resume path actually depends on: the carrier derives its idempotency skip-list from a done-status pluck, so that exact invocation is asserted byte-for-byte, alongside the --raw versus --lines distinction across all five cardinalities, the streaming encoding, both count shapes, filter composition, and the --file-is-the-target trap. The fixture carries two done rows deliberately - with one, --raw would have succeeded on the carrier query and hidden the distinction entirely."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R46"
+file = "tomlctl/src/tasks/edges.rs"
+line = 34
+symbol = "edges::dispatch"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "tasks edges --dot writes raw stdout with no test asserting the bytes"
+description = "--dot bypasses print_json and prints and flushes directly. dot_draws_every_task_and_styles_each_kind tests the string builder, not the CLI path, so a lost flush or an accidental JSON wrap is invisible. No integration test invokes tasks edges at all."
+dedup_id = "1fd64379b51a0a96"
+resolved = 2026-09-08
+resolution = "Black-boxed alongside the other two read verbs: kind grouping and edge direction as full JSON equality, --kind narrowing, and --dot as exact stdout bytes including both label escapes and the trailing newline. Covered in the same pass because it needed no staging beyond the fixture the other two already required."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R47"
+file = "tomlctl/src/tasks/dispatch.rs"
+line = 226
+symbol = "TasksOp::Check"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "tasks check --plan is entirely untested"
+description = "The plan arm calls plan_target (context.toml lookup plus path containment) then folds render::check_render_drift into the findings and re-derives the exit code. tasks_render.rs covers the same guard for render, never for check --plan; tasks_graph.rs::check_run never passes --plan (verified by grep). Removing the containment call from this one arm -- the traversal defence an_escaping_plan_path_is_refused_with_no_write exists for -- leaves every test green. CLAUDE.md documents tasks check --plan as the drift gate carriers run, so this is the untested half of a documented entry point."
+related = ["R32"]
+dedup_id = "77e7a9b4feb8b658"
+resolved = 2026-09-08
+resolution = "Four tests in tasks_render.rs cover the check --plan arm end-to-end: the folded-in drift finding, the re-derived exit code, the containment refusal, and the store-versus-context binding. Placed there rather than beside the other check tests because that file already stages a context, a plan and both byte-goldens, so the drifted and clean cases come for free and the containment coverage sits beside the render arm's equivalent - the split the finding was reporting. Falsified by replacing the Check arm's resolver with an unguarded one, arm-scoped: both refusal tests went red while the render arm's stayed green."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R48"
+file = "tomlctl/tests/fixtures/tasks/house-plan.rendered.md"
+line = 0
+severity = "warning"
+effort = "medium"
+category = "testability"
+summary = "the golden round-trip does not close: nothing re-imports house-plan.rendered.md"
+description = "The chain tested is plan -> store (byte-golden) and store -> rendered plan (byte-golden, plus render idempotence). The closing leg -- import the rendered plan and require the same store back -- is missing, so the renderer may emit a document its own importer reads differently. Concretely: the source's inline '- **Commit granularity**: per-task -- tasks 5 and 6 ..' renders as a bare paragraph after the bullet list (house-plan.rendered.md:20), reabsorbed on re-import only by parse_policy's trailing-prose sweep; the (new) file suffixes and the '### Milestone ..' phase labels are dropped outright. A one-line import(rendered) == GOLDEN_STORE test is what pins this, and it is the assertion that would have caught R11 as a test failure rather than a blessed fixture."
+related = ["R11"]
+dedup_id = "752e0c3d067def37"
+resolved = 2026-09-08
+resolution = "Closed the loop with a byte-golden re-import of the rendered plan, guarded so it cannot degenerate into a second copy of the fresh-import test. Falsified before acceptance: flattening the committed golden's task headings, the exact shape of the destruction R11 removed, makes it fail on heading_depth. It covers the phase labels and the inline commit-granularity clause; the dropped (new) file suffixes are structurally out of reach, since files stores bare paths and no store-equality assertion can observe that loss."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R49"
+file = "tomlctl/tests/tasks_render.rs"
+line = 253
+symbol = "check_passes_on_a_crlf_copy_of_the_render"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "no test renders (writes) into a CRLF plan, so the write path can emit mixed endings"
+description = '''The only CRLF render test uses --check, which writes nothing. bytes_outside_the_owned_sections_survive_the_write proves the head and tail are preserved byte-for-byte, and render_policy / render_tasks emit \n, so rendering into a CRLF plan produces CRLF head + LF owned sections + CRLF tail -- a mixed-ending file no test observes. Given this repo's documented CRLF/LF divergence history, a Windows carrier running tasks render is the likely first discoverer.'''
+dedup_id = "95542272e0767664"
+resolved = 2026-09-08
+resolution = "Covered by a test that renders into a CRLF plan and asserts a uniform-ending result across both the replace and the insert arm. The finding's hypothesis was disproved rather than confirmed: the section splice computes the document's dominant line ending and rewrites the section body to it, so the output is uniform rather than mixed. Measured on a real render - 116 CRLF in, 114 CRLF out, zero bare line feeds, byte-identical to the golden with the endings translated. The test therefore pins a real guarantee, and there is no renderer defect to file."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R50"
+file = "tomlctl/tests/common/mod.rs"
+line = 307
+symbol = "seed_tasks"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "--verify-integrity is never exercised against a task store"
+description = "seed_tasks always calls refresh_sidecar, so no test ever presents a store whose .sha256 disagrees with its bytes (verified: the only --verify-integrity mentions in the tasks tests are in doc comments). Every tasks read verb accepts ReadIntegrityArgs, and the project contract is that --verify-integrity errors and never auto-repairs -- untested here, unlike backlog_write.rs:194 which does cover it for the backlog store. A tasks verb silently ignoring the flag would pass the whole suite."
+related = ["R38"]
+dedup_id = "c8f7f24c3d01911f"
+resolved = 2026-09-08
+resolution = "Added tampered-sidecar --verify-integrity coverage across all seven pure tasks read verbs, each case paired with an unflagged control call that must succeed, so a verb failing for an unrelated reason cannot read as one honouring the flag. The threading audit found no verb ignoring it: six route through store::load and list threads the same opts through read_doc."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R51"
+file = "tomlctl/src/tasks/check.rs"
+line = 172
+symbol = "graph_findings"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "check above the 256-node cap exits 0 with no test pinning the behaviour"
+description = "The 'let Ok(graph) = Graph::build(&nodes) else { return Vec::new(); }' swallow means a 257-row store reports ok: true with zero findings while ready, batches and closure all refuse it. graph.rs:593 tests Graph::build at and above the cap but nothing tests check's reaction, so the current (known-bad) behaviour is not even pinned -- a fix cannot be TDD'd and a regression is undetectable."
+related = ["R4"]
+dedup_id = "4b8d0662b9dc535a"
+resolved = 2026-09-08
+resolution = "Pinned the new over-cap behaviour at the boundary - 256 rows clean and exit 0, 257 rows error-class with exit 1 - driven through two real stores rather than referencing the private MAX_NODES. The 256 control is what makes the 257 failure attributable to the cap rather than to row count, file claims or group membership."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R52"
+file = "tomlctl/tests/tasks_import.rs"
+line = 0
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "no test covers a plan whose task headings are all below the grammar"
+description = "tasks_corpus.rs:28 allowlists specialised-flow-agents.md, but that plan fails via a dangling edge from a surviving #### task -- it does not exercise the zero-task case. A plan whose headings are uniformly ##### parses to zero tasks, raises no finding (import_plan.rs has no empty-task guard), and on an existing store still executes store.checkpoints = markers and the policy assignment -- wiping the checkpoint table and policy while reporting ok: true, added: 0. No test asserts either the finding that should exist or the state left behind."
+related = ["R2"]
+dedup_id = "78cac0f53d9507c0"
+resolved = 2026-09-08
+resolution = "Source and test halves both landed. A plan parsing to zero tasks now raises an error-class plan/no-tasks finding that the existing write gate refuses on, so it can no longer clear the store's checkpoint table and policy while reporting success. The wipe was reachable whenever every orphaned row was still pending, which is the common case immediately after a first import; a non-pending orphan already raised an error-class finding. The test imports a taskless plan against a populated store and asserts the surviving checkpoints and max_parallel on disk, with the fixture deliberately stating different values so a returning wipe fails the assertion instead of passing vacuously."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "verified-clean"
+flow = "whimsical-hugging-puppy"
+id = "R53"
+file = "tomlctl/src/tasks/render.rs"
+line = 165
+symbol = "render_policy"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "the 'policy absent in source plan' marker can be rendered into a user's plan and no test looks"
+description = "parse_policy.rs:57 stores the literal 'policy absent in source plan' as policy.note when a plan has no ## Execution Policy; render_policy emits any non-empty note as prose. So import-then-render on a policy-less plan writes that internal diagnostic into the plan document as a paragraph. render.rs's unit tests only exercise an authored note (render.rs:389), and no test pairs the absent-policy import with a render."
+related = ["R26"]
+dedup_id = "6098666e6e2f03ee"
+verified_note = "Audited under review-apply on 2026-09-08 and confirmed no longer reachable. The finding asked for a test guarding against the absent-policy sentinel being rendered into a user plan; a sibling finding in the same round removed that sentinel from the parser entirely, moving policy absence to a dedicated [policy].origin field and leaving note as authored prose only. The string now exists solely as a read-side migration constant in schema.rs that CLEARS a legacy note rather than writing one, so render_policy cannot emit it and a test would pin nothing. Category left as first assigned."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R54"
+file = "tomlctl/tests/tasks_import.rs"
+line = 433
+symbol = "reconcile_record_adopts_a_separator_only_ref"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "the reconcile test counts status = done occurrences instead of naming the rows"
+description = '''assert_eq!(text.matches("status = \"done\"").count(), 2) over the whole store text, with the intent ('exactly tasks 1 and 4') stated only in the message string. An off-by-one in the ref-to-row join that marked tasks 2 and 3 done instead would satisfy this assertion exactly. Parse the store (toml::from_str, as tasks_write.rs does) and assert the id set.'''
+dedup_id = "168befeb744d7bb9"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R55"
+file = "tomlctl/tests/tasks_import.rs"
+line = 334
+symbol = "an_existing_coupling_edge_survives_a_re_import"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "the coupling test hand-edits store TOML in a shape the writer may not emit"
+description = '''The precondition is built with a text.replace over the serialiser's exact array wrapping and the outcome checked with after.contains("needs = [2]\ncoupling = [1]") -- both pinned to formatting rather than to values. Any change to array formatting fires the assert_ne! guard with 'the golden's task-3 edge shape moved', which names the symptom but not the cause. tasks add --coupling produces this state through the production path; using it removes the divergence and the brittleness together.'''
+related = ["R16"]
+dedup_id = "2f892bbb1ab2d174"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R56"
+file = "tomlctl/tests/tasks_write.rs"
+line = 384
+symbol = "every_write_verb_refuses_an_empty_target_as_validation"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "the empty-target refusal sweeps omit five of the twelve verbs"
+description = "The two 'every .. verb' sweeps (tasks_write.rs:384, tasks_graph.rs:445) cover add, add-many and update, and ready, batches, closure and check. show, list, edges, render and import-plan are not in either, yet each resolves its own target and must produce kind=validation on exit 1 rather than clap usage prose on exit 2 -- the distinction a carrier branches on. The test names claim a completeness they do not have."
+dedup_id = "4e66088fef4a1083"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R57"
+file = "tomlctl/tests/common/mod.rs"
+line = 307
+symbol = "seed_tasks"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "seed_tasks stages a store with no sibling context.toml, unlike any real flow"
+description = "Production stores always sit beside a context.toml written by flow init, and dispatch::plan_target reads exactly that sibling under --slug. seed_tasks writes only tasks.toml, so no test using it can reach the --slug plan-path branch -- which is structurally why R47 and R49 have no coverage. tasks_graph.rs's fixture instead carries a top-level plan_path the --slug path never consults, so the two task-test families disagree about how a store is staged."
+related = [
+    "R47",
+    "R49",
+]
+dedup_id = "3e19fb7e64aa8560"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R58"
+file = "claude/agents/flow-bootstrap.md"
+line = 52
+symbol = "Step 2 -- Pre-flight version check"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "the version gate still admits 0.6 but four carriers now require the 0.7 tasks group"
+description = "The gate halts only below 0.6 (major == 0 AND minor < 6) and the error string says 'tomlctl >=0.6.0 required'. CLAUDE.md states the tasks group landed in 0.7.0 and tomlctl tasks --help confirms it. A 0.6.x binary therefore passes pre-flight cleanly, and /plan-new Phase 9, /plan-update Step 2 and /review-plan Step 0.6 then fail on InvalidSubcommand with no named diagnostic -- only /implement carries a degradation halt for 'tomlctl tasks is unrecognised'. tomlctl capabilities already emits tasks_import_plan / tasks_check, so either the minor bump or a capability probe is a one-line fix."
+dedup_id = "f953ef559608b030"
+resolved = 2026-09-08
+resolution = "Raised the pre-flight version gate from 0.6 to 0.7 in the predicate and both error-string copies, since the tasks group four carriers depend on landed in 0.7.0. Chose the minor bump over a capabilities probe as the smaller change."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R59"
+file = "claude/commands/implement.md"
+line = 68
+symbol = "Phase 1 -- legacy mode"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "implement states the legacy-mode defaults as the store's [policy] fallback; two of the three disagree"
+description = "The line binds legacy mode as 'per-batch cadence, per-checkpoint granularity, max_parallel 6 -- the same defaults an absent or partial [policy] table falls back to'. schema.rs's impl Default for Policy seeds milestones / 6 / per-task (verified), which references/tasks.md:397 states correctly. Only max_parallel matches. An agent trusting the sentence reads [policy], sees milestones/per-task, and concludes the plan is pre-policy-equivalent -- so a legacy plan gets milestone drains and per-task commits instead of the promised cadence. Compounding it: because the store always materialises a [policy] table, 'a plan carrying no ## Execution Policy' is no longer distinguishable after import, so the carrier has no signal on which to branch to legacy mode at all."
+dedup_id = "146389bdeb028208"
+resolved = 2026-09-08
+resolution = "Corrected the legacy-mode defaults claim to the store's actual Policy::default of milestones / 6 / per-task, of which only max_parallel had matched, and named the discriminator the carrier branches on. That discriminator is [policy].origin == default, the dedicated field R26 introduced, rather than the note sentinel it replaced."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R60"
+file = "claude/commands/review-plan.md"
+line = 47
+symbol = "Step 0.6 -- Ensure the task store"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "review-plan Step 0.6's third skip case depends on a resolution Step 1 has not yet made"
+description = "The skip list must be taken 'before the import' at Step 0.6, but one of the three cases is 'a Step-1 plan that is not the resolved flow's plan_path'. Step 1 (line 56) is what resolves the plan from $ARGUMENTS, and it runs after Step 0.6. Two agents will diverge: one defers the import until after Step 1, one imports at 0.6 against plan_path -- and in the case the clause exists to prevent (a /review-plan docs/plans/other.md invocation inside a resolved flow), the eager reading writes a different document over every row of the flow's store. Either move Step 0.6 after Step 1 or state explicitly that plan resolution is pulled forward."
+dedup_id = "5e1e5b98ab57ad4a"
+resolved = 2026-09-08
+resolution = "Stated explicitly that plan resolution from the command arguments is pulled forward into Step 0.6, rather than renumbering the steps. Renumbering would have rippled into every cross-reference to Step 0.6 and Step 1 across the carriers; pulling the resolution forward is local, and it closes the reading under which an invocation naming another plan would write over every row of the resolved flow's store."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+id = "R61"
+file = "claude/skills/flow-contract-plan-restructure/SKILL.md"
+line = 14
+symbol = "Ref-set diff gate (mandatory)"
+severity = "warning"
+effort = "medium"
+category = "package-quality"
+summary = "the ref-set diff gate is undefined for the multi-file plan structure reformat itself produces"
+description = "The gate is tomlctl tasks import-plan --slug <slug> --dry-run, which reads exactly one file -- plan_path, i.e. <dir>/00-outline.md for a multi-file plan. The same contract's output-structure section (line 42) and /plan-update Step 1 both describe the reformat output as an outline plus numbered detail documents, where the task bodies live. Importing the outline alone yields zero or partial refs, so removed_refs names every existing row; the gate's own rule ('abort on any removed ref whose row is not pending') then hard-blocks every reformat or catchup of a flow with completed tasks. Nothing in the task-store skill, references/tasks.md, or the four carriers mentions multi-file plans at all. Either name the unsupported case and its fallback, or specify which file the import targets."
+related = ["R25"]
+dedup_id = "360cb5cfd05e1cc4"
+resolved = 2026-09-08
+resolution = "Named the single document the ref-set diff gate actually imports, plus the multi-file case and its fallbacks. This matches what resolve_plan_path and tasks render really do, so the contract stops describing an output shape the tooling cannot consume; the cost is that it constrains the reformat output structure, since task headings may not migrate into detail documents."
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R62"
+file = "claude/commands/plan-update.md"
+line = 60
+symbol = "Task store"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "plan-update's task-store section says five ops leave the store alone while Step 1 has all of them read it"
+description = "'[tasks].total is the store's row count on every context.toml write (Step 1). Beyond that, three ops touch it.. reconcile, complete, deviation, defer and snapshot leave it alone.' Step 1 and Step 3.4 both direct every state-changing op to write [tasks].total from tomlctl tasks list --slug <slug> --count, so those five ops do read the store. An agent reading 'leave it alone' as authoritative for reconcile falls back to the plan-document item count that the same commit removed -- a silently wrong [tasks].total. Rephrase to 'no further store call beyond the row count'."
+related = ["R9"]
+dedup_id = "c418859cc9ea67f0"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R63"
+file = "claude/skills/flow-contract-task-store/SKILL.md"
+line = 98
+symbol = "section 5 Verb semantics"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "the store contract's read/write flag rule contradicts render's actual flag surface"
+description = "Section 5 opens 'Read verbs take --verify-integrity; write verbs take the write-integrity bundle', and section 11 lists render among the orchestrator write verbs. tomlctl tasks render --help exposes only --verify-integrity and --strict-read -- no --allow-outside, --no-write-integrity, --strict-integrity or --no-create (verified; the CLI help itself explains the exception). references/tasks.md:39-41 documents it explicitly; the contract skill does not, so an agent working from the contract alone hits a clap usage error on render --no-write-integrity. One clause naming render as the derived-write exception closes it."
+dedup_id = "2e91f3a4e8db9586"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R64"
+file = "claude/skills/flow-contract-task-store/SKILL.md"
+line = 211
+symbol = "section 7 check classes and exit policy"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "the render/drift class row says --plan only, contradicting the exit policy two paragraphs below"
+description = "The class table gives render/drift as 'Under --plan only', but the exit-policy paragraph in the same section says 'tasks render --check exits 1 on any drift, even though render/drift is a warning class', and references/tasks.md:447 lists both check --plan and render --check as raisers. An agent reading the table concludes render --check cannot report the class it exits 1 on. Change the cell to name both modes."
+related = ["R65"]
+dedup_id = "40009c9111f327d1"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R65"
+file = "claude/commands/plan-new.md"
+line = 165
+symbol = "Phase 9 step 6 -- Populate the task store"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "plan-new Phase 9 runs two overlapping drift gates, the second of which exits 1 on the case the prose calls benign"
+description = "Step 6 runs tasks check --slug <slug> --plan and then tasks render --slug <slug> --check; both report render/drift over the same comparison, but check --plan exits 0 on it (warning class) while render --check exits 1 by design. The following sentence tells the agent drift here 'is a report, not a rewrite trigger' and names a benign instance (a phase-label heading inside ## Tasks). /plan-new carries no degradation rule, so an agent that treats a non-zero exit from the last command of a bootstrap step as fatal will halt a flow the prose says is healthy, while another proceeds. Drop the redundant render --check or state that its exit code is informational here."
+related = [
+    "R11",
+    "R64",
+]
+dedup_id = "ee0f8a285a8109c2"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R66"
+file = "scripts/templates/flow-context.md"
+line = 42
+symbol = "Canonical artifacts"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "the artifacts.tasks paragraph is triplicated across three files with no parity guard, and already differs"
+description = "The same contract paragraph was added to scripts/templates/flow-context.md, claude/skills/flow-contract-flow-context/SKILL.md and claude/agents/flow-bootstrap.md:31. The first two are byte-identical; the third already diverges ('step 3.5 tests the file on disk' vs 'the bootstrap agent's existence gate tests the file on disk'). scripts/shared-blocks.toml names no flow-context block -- the manifest comment records that every command-carrying flow-context block was emptied and deleted in the 2026-05-20 wave -- so verify-shared-blocks.sh is vacuous here (it ran clean) and the next edit to one copy drifts the other two silently. Either wrap the paragraph in a SHARED-BLOCK:flow-context-artifacts marker and register it, or make one file authoritative and have the others link."
+dedup_id = "5ad13d79fa989c96"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R67"
+file = "tomlctl/src/cli/types.rs"
+line = 0
+symbol = "flow ensure-artifact --kind"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "the ensure-artifact --kind doc string enumerates four kinds while clap's possible-values now includes tasks"
+description = "The --kind doc string enumerates '(context, execution-record, review-ledger, optimise-findings, plan-review-findings)' while clap's [possible values:] on the same flag now includes tasks. The prose half was not updated when the fifth kind landed, so tomlctl flow ensure-artifact --help contradicts itself in one screen. Delete the prose enumeration and let the possible-values list stand."
+related = ["R28"]
+dedup_id = "23f3409b7f56d446"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R68"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 88
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "the capabilities prose and its own example disagree about the document's key set"
+description = "The prose describes the capabilities document as {version, features, subcommands} while the example line immediately below shows a commands key. The binary emits all four keys, so each half describes a partial shape and neither is right on its own. Fix alongside R5, which is the stale version field in the same example."
+related = ["R5"]
+dedup_id = "920f33d08c0acbd6"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R69"
+file = "tomlctl/src/flow/resolve.rs"
+line = 607
+symbol = "read_or_compute_artifacts"
+severity = "suggestion"
+effort = "small"
+category = "security"
+summary = "artifacts.tasks is plucked from context.toml into the bootstrap envelope with no containment check"
+description = "read_or_compute_artifacts copies the recorded artifacts.tasks value verbatim into the envelope, so a carrier that feeds envelope.artifacts.tasks to --file takes its store path from a repo-supplied file. Only flow doctor's canonical-value check catches drift, and that check is advisory when the key is absent (R28). The store's own --file path is still held under .claude/ by the io write guard unless --allow-outside, so this is a defence-in-depth gap rather than a live escape -- but the envelope is the one place a path crosses from file-controlled data into a carrier's command line unchecked."
+related = ["R28"]
+dedup_id = "44434c3f69a3f1b0"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R70"
+file = "tomlctl/src/tasks/check.rs"
+line = 70
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "checkpoint/orphan-task and dag/duplicate-number report a deduplicated id list, so the second offending row is unnameable"
+description = "Both classes emit a sorted, deduplicated id list, so two rows both claiming task number 1 surface as ids:[1] -- the finding names the number but not the second row that carries it, and there is no other handle on it (ref is not in the finding). A user cannot act on the finding without grepping the store by hand. Report the row refs alongside the ids, or do not deduplicate for duplicate-number."
+dedup_id = "5d4789b29ed66697"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R71"
+file = "tomlctl/src/cli/types.rs"
+line = 0
+symbol = "tasks show --with / tasks edges --kind"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "two read verbs reject a bad enum value as clap usage prose while the sibling write verb returns a machine-readable envelope"
+description = "tasks show --with bogus and tasks edges --kind bogus fail as clap ValueEnum errors (exit 2, usage prose on stderr), while tasks add --effort deliberately validates post-parse to give a kind=validation envelope. The rationale for the split is documented for --effort but the two read verbs are not reachable under --error-format json, so a carrier branching on the error taxonomy gets nothing for them. Either document the split or move the two read verbs onto the post-parse path."
+dedup_id = "9534b1da2e1e6038"
+
+[[items]]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+id = "R72"
+file = "tomlctl/src/flow/init.rs"
+line = 272
+symbol = "execution_record_skeleton"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "execution_record_skeleton is a bare alias for io::seed_doc_for kept alive only so a test can name it"
+description = "execution_record_skeleton is now a pub(crate) alias for crate::io::seed_doc_for, while its sibling bootstrap_tasks_store calls seed_doc_for directly -- two spellings of one call in one module, the alias surviving only so a byte-identity test can name it. Point the test at seed_doc_for and delete the alias."
+dedup_id = "affea43d7aab314c"
+
+[[items]]
+id = "R73"
+file = "tomlctl/src/tasks/parse_tasks.rs"
+line = 0
+symbol = "open_heading"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "pending parts of R2: no warning finding for a numbered task heading deeper than six hashes"
+description = "The heading grammar was widened to accept three through six hashes, so the silent seven-task loss is closed. The remaining half is the diagnostic: a numbered heading at seven hashes or deeper is still dropped as a phase label with no finding. parse_tasks returns Result<Vec<ParsedTask>> and has no findings channel; the findings array is assembled in import_plan.rs, so closing this needs ParsedPlan to carry findings out of parse_tasks and Import::apply to extend with them. Two call sites move with the signature: import_plan.rs and the re-parse assertion in render.rs."
+related = ["R2"]
+first_flagged = 2026-09-08
+rounds = 1
+status = "open"
+flow = "whimsical-hugging-puppy"
+dedup_id = "3cb0aefaaa8c52b0"
+
+[[items]]
+id = "R74"
+file = "claude/commands/plan-update.md"
+line = 70
+symbol = "context.toml [tasks]"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "pending parts of R29: nothing mechanically enforces the tasks total-vs-completed join gate"
+description = "The carrier-level gate is specified in plan-update.md, which now consumes unmatched_refs, subtracts on an incomplete join and surfaces the refs. It is prose-enforced only: no tasks check class and no flow doctor check detects a record ref that names no store row, so a carrier that skips the gate still writes completed > total. Two surfaces remain outside the applied change: plan-new.md Phase 9 carries the other half of the surfacing rule, and flow-contract-execution-record-schema owns the completed derivation without mentioning the gate."
+related = ["R29"]
+first_flagged = 2026-09-08
+rounds = 1
+status = "fixed"
+flow = "whimsical-hugging-puppy"
+dedup_id = "e43d2c64654ac297"
+resolved = 2026-09-08
+resolution = "flow doctor gained a two-tier advisory tasks-counters check: tier one flags completed greater than total from the counters alone, tier two flags a record task_ref naming no store row and runs only against a populated store, so a seeded-but-unimported store does not report every completion as unmatched. Warning rather than failure, following the plan's own precedent that a hard fail here would break flow doctor repo-wide, and because doctor creates no artifacts so a failure would be unactionable. Deliberately no --fix: total is the store's row count and doctor never creates a store, while a store-free recompute of completed could only write the raw derived count, which is exactly the number the carrier's gate exists to correct - it would launder the defect into context.toml permanently. Scope note: this flow's own counters are equal, so its residual total-versus-plan-headings drift is plan-versus-context drift rather than a join violation, and is not closed by this fix."
+
+[[vet_events]]
+timestamp = "2026-09-08T00:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked the nine nodes/node_of copies (grep), the duplicated read_ndjson_source, parse_tasks treating any #-leading line as a heading while markdown::sections is fence-aware, IMPORTED blocking coupling with a wrong owner, section_before(..).unwrap_or_default() in render_into_plan, and the unreachable None arm in doctor.rs (to_pairs() is a fixed 5-tuple always carrying tasks). All six matched. Three findings were merged with peers rather than persisted separately: nodes duplication into R12, render phase-heading loss into R11, frontier into R10, and the render section-order finding into R13."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-08T00:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "All four findings re-read against source. contained() confirmed to check only is_absolute / ParentDir / under_root with no extension guard before atomic_write; import_plan's refuse_on_errors confirmed as the sole write gate with check::graph_findings returning empty above the cap; resolve_plan_path confirmed to pass an absolute --plan through relativise unchanged. The over-cap finding was merged into R4 rather than persisted separately, since a dag/over-cap error class is the same fix as the backlog item's."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-08T00:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified the golden heading diff directly (### Milestone A/B/C absent from house-plan.rendered.md, every #### flattened to ###), Node.status as String compared to STATUS_PENDING/STATUS_DONE, orphan_task_findings firing only on checkpoint.is_empty(), schema_version read with unwrap_or and rewritten unvalidated, derive_ref absent from update.rs, and the 36-row dry-run import against a 40-completion record. All matched. Two findings merged with peers (render phase headings into R11, Node conversion into R12, frontier into R10)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-08T00:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 7
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified is_pending's exact-pending comparison, policy_findings validating only max_parallel, DEFAULT_EFFORT = Effort::M with unwrap_or, doctor emitting no tasks-exists/tasks-sidecar check and stale_sidecars never collecting the store, RECORD_FILE joined from flow_dir(slug), implement.md's absent-or-empty reconcile condition, and the README dry_run row enumerating only tasks import-plan. All matched. The frontier finding was merged into R10 (its in-progress probe is the sharpest evidence and set that item's severity) and the section-order finding into R13."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-08T00:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Confirmed by grep that --verify-integrity appears in the tasks tests only inside doc comments, that house-plan.rendered.md is consumed only as GOLDEN_PLAN and never re-imported, that no test passes --plan to tasks check, and that show/list/edges have no integration invocation. Read and confirmed the occurrence-counting reconcile assertion, the string-replace coupling precondition, and ABSENT_NOTE flowing from parse_policy into render_policy. All matched."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-08T00:00:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified the flow-bootstrap gate halting only below 0.6 while tasks landed in 0.7.0, implement.md's per-batch/per-checkpoint claim against schema.rs's milestones/per-task Default, review-plan Step 0.6 forward-referencing Step 1's resolution, the render/drift table cell contradicting the exit policy in the same section, render --help exposing only read-integrity flags while section 11 groups render with write verbs, and the ref-set gate's single-file import. All matched. The agent ran verify-shared-blocks.sh clean, which contradicts the known mawk item only in the sense that the documented PATH workaround was applied."
+dedup_id = "45ca31c3315a5978"

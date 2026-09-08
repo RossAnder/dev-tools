@@ -1337,3 +1337,92 @@ summary = "All 40 tasks complete and the full verification pass green: in-progre
 from_status = "in-progress"
 to_status = "review"
 dedup_id = "d7b57e8eedb046cc"
+
+[[items]]
+id = "E106"
+type = "deviation"
+date = 2026-09-08
+agent = "review-apply"
+summary = "flow doctor --fix gained a producer that rewrites context.toml, which the plan had argued against"
+task_ref = "teach-doctor-ensure-artifact-and-the-envelope-about-tasks"
+original_intent = "The plan rejects a doctor --fix producer that writes context.toml on the grounds that an unscoped --fix walks 40 flows and the advisory suffices, and pins that decision with a byte-identity test asserting --fix leaves legacy context bytes untouched."
+rationale = "A review finding required the tasks artifact to have a clearable health signal: it was exempt from the missing-file warning in resolve and downgraded to advisory in doctor, so a carrier reading the artifact path got no existence signal and the warning had no route to being cleared. The producer is gated on a discriminator - the flow's plan document declaring a Tasks section - so a task-less flow's bytes stay untouched and the pinning test still passes on its own fixture. The plan's stated cost was then measured rather than assumed: all 40 flows currently carry a Tasks section, so the discriminator narrows nothing on today's corpus and narrows per-flow over time as each store is imported. The plan's objection is therefore accurate and this deviation accepts it knowingly."
+dedup_id = "df4131a73c63986f"
+
+[[items]]
+id = "E107"
+type = "deviation"
+date = 2026-09-08
+agent = "review-apply"
+summary = "tasks check ships four more finding classes and one widened class than the plan enumerates"
+task_ref = "implement-check"
+original_intent = "The plan enumerates the exact class list tasks check ships, described as exactly the measured-useful checks, and documents checkpoint/orphan-task as firing on an empty checkpoint key only."
+rationale = "Four review findings required detection the enumerated set did not cover. dag/unbuildable closes a fail-open hole where a store above the node cap certified green and was then persisted permanently unusable. policy/checkpoints-value and policy/commit-granularity-value implement what the reference document already claimed - that check, not the reader, decides what is out of vocabulary. policy/origin-value gates a field added in the same run, without which a hand-edited value silently flips a carrier into the wrong execution mode. checkpoint/orphan-task was widened to a row naming an undeclared group, kept at warning rather than error because a re-import that drops a marker legitimately leaves undeclared keys on retained rows. The additions come from the review ledger rather than the plan, so the plan's enumeration is stale rather than contradicted."
+dedup_id = "e9a8c3214eb73a8a"
+
+[[items]]
+id = "E108"
+type = "deviation"
+date = 2026-09-08
+agent = "review-apply"
+summary = "the absent-policy note sentinel the plan specifies was removed in favour of a dedicated field"
+task_ref = "implement-the-policy-and-marker-parser"
+original_intent = "The plan specifies that a plan with no Execution Policy section imports as the house defaults carrying the literal note policy absent in source plan."
+rationale = "A review finding identified that field as carrying both authored prose and a tool diagnostic: the renderer wrote the sentinel back into the author's own document as if authored, and the next import read it back as a real note, after which the two were indistinguishable. The condition moved to an additive policy.origin field with values plan and default, note became authored prose only, and an absent section now also raises a plan/policy-absent warning. The sentinel survives only as a read-side migration constant, so a store written before the field still reads with the correct mode and has its note cleared on the next write. This was coordinated with a carrier change made earlier in the same run that had briefly built the legacy-mode discriminator on the sentinel."
+dedup_id = "c94b00234464a9e1"
+
+[[items]]
+id = "E109"
+type = "deviation"
+date = 2026-09-08
+agent = "review-apply"
+summary = "a thirteenth tasks verb and FEATURES entry, tasks remove, which the plan anticipates nowhere"
+task_ref = "declare-the-tasks-cli-surface"
+original_intent = "The plan enumerates twelve tasks verbs and twelve corresponding FEATURES entries, and describes nothing anywhere as a row-retirement or deletion verb."
+rationale = "A review finding identified that a task deleted from a plan is re-appended at the tail of the Tasks section on the next render, keeping its original number and now out of numeric order, with no supported way to retire it - the only recovery was hand-editing the tool-owned store, which also breaks its integrity sidecar. Nothing is ever deleted is a defensible invariant; and there is no supported way to retire a row is the gap. The verb hard-deletes rather than marking a status, because the renderer walks every row and a retired row would keep rendering back. It refuses by default for a settled row or one with dependents, and under --force splices the removed row's own needs into each dependent rather than dropping the edge."
+dedup_id = "d0a883696e5c5349"
+
+[[items]]
+id = "E110"
+type = "deviation"
+date = 2026-09-08
+agent = "review-apply"
+summary = "tasks ready emits a fourth blocked bucket beyond the three-key shape the plan records"
+task_ref = "implement-the-graph-verbs-ready-batches-closure"
+original_intent = "The plan records the ready verb's output shape as three keys - ready, held and next - with held carrying the file-claim exclusion."
+rationale = "A critical review finding, raised independently by three lenses, showed that a predecessor left in-progress, failed or deferred falls into neither the done nor the pending bucket, so its whole dependent subtree disappears from all three keys at once and the answer becomes byte-identical to the all-done answer. The three-key shape structurally cannot express a stall, which is why the fix required a fourth key rather than a change within the existing three. Membership and shape of the original three are unchanged, so a consumer reading only those sees exactly what it saw before. A predecessor declared in-flight never blocks, which is what separates a row genuinely being worked from one left behind by a crashed run."
+dedup_id = "b752b7f0c7cdb8da"
+
+[[items]]
+id = "E111"
+type = "deviation"
+date = 2026-09-08
+agent = "review-apply"
+summary = "the task-heading grammar was widened from three-or-four hashes to three-through-six"
+task_ref = "implement-the-tasks-parser"
+original_intent = "The plan specifies the numbered task-heading grammar as three or four hashes, in the parser and in the corpus test's scope filter."
+rationale = "A review finding observed that a plan whose task headings sit deeper than four hashes imports as zero tasks with no dedicated finding, because the deeper headings are classified as phase labels and dropped silently. Measured on a real plan in this repository: seven tasks vanished and only a later task's dangling dependency reference betrayed the loss. Widening keeps non-numbered headings as phase labels at every depth, which is what makes it safe. The corpus test's scope filter was widened to match the parser, verified to admit no new plans today, so the filter cannot end up narrower than the importer it exercises."
+dedup_id = "c851b5c5b649b6c2"
+
+[[items]]
+id = "E112"
+type = "deviation"
+date = 2026-09-08
+agent = "review-apply"
+summary = "tasks check now ships six classes beyond the set the plan enumerates, not four"
+task_ref = "implement-check"
+original_intent = "The plan enumerates the exact class list tasks check ships, described as exactly the measured-useful checks."
+rationale = "Supersedes the earlier record of this same divergence, which named four additions. Two more landed in a follow-up round. dag/stalled-dependency reports a non-terminal row that still has pending dependents - a store stranded behind a row no wave can clear - and is deliberately a warning, because check takes no in-flight set and so cannot tell a live run's in-progress row from a crashed one; an error class would refuse valid imports and fire on every healthy run. plan/no-tasks is error-class and closes a data-loss path: a plan parsing to zero tasks previously cleared the store's checkpoint table and policy while reporting success. With policy/origin-value from the same round the total is six beyond the plan's list. The additions come from the review ledger and a backlog item rather than the plan, so the plan's enumerations are stale rather than contradicted."
+supersedes_entry = "E107"
+dedup_id = "e3a3203fb9cb8f85"
+
+[[items]]
+id = "E113"
+type = "deviation"
+date = 2026-09-08
+agent = "review-apply"
+summary = "--reconcile-record resolves the recorded execution-record artifact instead of a fixed sibling path"
+task_ref = "implement-import-plan"
+original_intent = "The plan specifies --reconcile-record as reading the flow's execution-record.toml at a fixed path beside the store."
+rationale = "Every carrier resolves the record as the context's [artifacts].execution_record with that path only as a fallback, and flow resolve already honoured a recorded override, so import-plan was the one reader that did not - a flow pointing its record elsewhere made the flag hard-error rather than read the recorded location. The reference document already described the resolution order the code now implements, so this aligns the code with the contract rather than changing the contract. The override is held to root containment, because honouring it turns a previously-hardcoded filename into file-controlled input. Elevated in importance by the same round's change making the reconcile import unconditional on the resume path, so this code now runs on every resume rather than only against a cold store."
+dedup_id = "51dda4c5afe9aa57"

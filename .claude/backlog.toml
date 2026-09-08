@@ -1021,7 +1021,7 @@ tags = [
     "security",
     "dry",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1034,6 +1034,8 @@ evidence = [
     "tomlctl/src/tasks/dispatch.rs:361",
 ]
 related = ["B-46de01dc"]
+promoted = 2026-09-08
+promoted_to = "whimsical-hugging-puppy"
 
 [[backlog]]
 id = "B-d2f9b0ee"
@@ -1044,7 +1046,7 @@ tags = [
     "import",
     "silent-loss",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1054,6 +1056,8 @@ flow = "whimsical-hugging-puppy"
 context = "The heading grammar accepts three or four hashes only, so deeper task headings are read as phase labels and dropped silently. Observed on docs/plans/specialised-flow-agents.md, where tasks 11-17 vanish and only task 18s dangling Depends-on betrays it. A silent seven-task loss is worse than a refusal: a tasks/heading-depth warning class, or widening the grammar, would name it directly."
 evidence = ["tomlctl/src/tasks/parse_tasks.rs"]
 related = ["B-e3f5da9c"]
+promoted = 2026-09-08
+promoted_to = "whimsical-hugging-puppy"
 
 [[backlog]]
 id = "B-aa004c21"
@@ -1064,7 +1068,7 @@ tags = [
     "import",
     "convention",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1073,6 +1077,8 @@ origin = "implement"
 flow = "whimsical-hugging-puppy"
 context = "docs/plans/lumina-story-planning-round-2.md line 90 carries heading 13a, inserted between 13 and 14. The importer requires an integer id, so the whole plan is unimportable and sits on the corpus tests EXPECTED_UNPARSEABLE allowlist. The corpus needs a documented renumber-dont-suffix rule, or 13a stays permanently unimportable."
 evidence = ["tomlctl/tests/tasks_corpus.rs"]
+promoted = 2026-09-08
+promoted_to = "whimsical-hugging-puppy"
 
 [[backlog]]
 id = "B-5ccd0e38"
@@ -1083,7 +1089,7 @@ tags = [
     "gate",
     "silent-pass",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1093,6 +1099,8 @@ flow = "whimsical-hugging-puppy"
 context = "Above the cap graph_findings returns empty, so check reports only its non-graph classes and can exit 0 on a store whose DAG was never examined. Every milestone-C carrier gates on tasks check and would read that as a clean bill. Documented as a caveat in references/tasks.md rather than fixed; the fix is a finding class saying the graph was not examined."
 evidence = ["tomlctl/src/tasks/check.rs"]
 related = ["B-108e130a"]
+promoted = 2026-09-08
+promoted_to = "whimsical-hugging-puppy"
 
 [[backlog]]
 id = "B-54b2d71e"
@@ -1100,7 +1108,7 @@ kind = "debt"
 summary = "the capabilities example output still shows version 0.6.0"
 area = "claude/skills/tomlctl"
 tags = ["stale-doc"]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1110,6 +1118,8 @@ flow = "whimsical-hugging-puppy"
 context = "SKILL.md line 86 shows a capabilities envelope pinning 0.6.0 while Cargo.toml is 0.7.0. Task 13s README-to-capabilities parity test does not scan skill files, so nothing catches it. Arrived cheap-in-file during the task-store run and was deferred because no verification command this run ran exercises that block."
 evidence = ["claude/skills/tomlctl/SKILL.md:86"]
 related = ["B-e74d4650"]
+promoted = 2026-09-08
+promoted_to = "whimsical-hugging-puppy"
 
 [[backlog]]
 id = "B-3c59ed80"
@@ -1117,7 +1127,7 @@ kind = "debt"
 summary = "the verify-integrity support matrix omits the seven tasks read verbs"
 area = "claude/skills/tomlctl"
 tags = ["stale-doc"]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1127,6 +1137,8 @@ flow = "whimsical-hugging-puppy"
 context = "references/flow.md lists eight read subcommands and presents as exhaustive, so an agent reading it concludes tasks list --verify-integrity is rejected when it is accepted. references/tasks.md documents show, list, edges, ready, batches, closure and check as carrying the read bundle. Arrived cheap-in-file and was deferred because no verification command this run ran exercises that matrix."
 evidence = ["claude/skills/tomlctl/references/flow.md"]
 related = ["B-4eaf4d34"]
+promoted = 2026-09-08
+promoted_to = "whimsical-hugging-puppy"
 
 [[backlog]]
 id = "B-fe2a80ba"
@@ -1137,7 +1149,7 @@ tags = [
     "task-ref",
     "tdd",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1147,6 +1159,8 @@ flow = "whimsical-hugging-puppy"
 context = "REFACTOR copies cycle completions up to the parent record with task_ref prefixed tdd-cycle-NNN-original-slug, while RED and GREEN pin tdd-cycle-NNN-short-name. The copy-up lands in a record whose flow does own a store, so a reader checking the parent record against its store finds tdd-cycle refs no row carries. If the spellings ever differ the implement skip-list misses the copied-up entry."
 evidence = ["claude/commands/tdd.md:65"]
 related = ["B-b7da5466"]
+promoted = 2026-09-08
+promoted_to = "whimsical-hugging-puppy"
 
 [[backlog]]
 id = "B-36c11be9"
@@ -1157,7 +1171,7 @@ tags = [
     "diagnostics",
     "import",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1167,6 +1181,8 @@ flow = "whimsical-hugging-puppy"
 context = "parse_tasks reports failures as line N relative to the Tasks section body, and import_plan prefixes them with the plan path, so the number points at no line in the named file and a user cannot navigate to it. Section::heading_line was exactly the offset needed and was removed as dead during this run; the fix is to reinstate it and add it to the reported numbers."
 evidence = ["tomlctl/src/tasks/parse_tasks.rs"]
 related = ["B-87020d9e"]
+promoted = 2026-09-08
+promoted_to = "whimsical-hugging-puppy"
 
 [[backlog]]
 id = "B-432a1b0f"
@@ -1174,7 +1190,7 @@ kind = "debt"
 summary = "plan-update states the tasks total derivation in two places"
 area = "claude/commands"
 tags = ["dry"]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1184,3 +1200,358 @@ flow = "whimsical-hugging-puppy"
 context = "[tasks].total and the context.toml update rule appear in both Step 1 and Step 3.4, so every change to that derivation is a two-place edit. Pre-existing; the task-store adoption had to update both to keep them agreeing."
 evidence = ["claude/commands/plan-update.md"]
 related = ["B-b7da5466"]
+promoted = 2026-09-08
+promoted_to = "whimsical-hugging-puppy"
+
+[[backlog]]
+id = "B-ef701081"
+kind = "debt"
+summary = "the flow that made the task store canonical never adopted it for itself"
+area = ".claude/flows/whimsical-hugging-puppy"
+tags = [
+    "flow-state",
+    "task-store",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "ef7010813eccb08e"
+origin = "review"
+flow = "whimsical-hugging-puppy"
+context = "whimsical-hugging-puppy shipped tasks as the fifth canonical artifact, but its own context.toml registers only four and no tasks.toml exists in the flow directory. flow doctor reports ok:true because the tasks key is advisory (ledger R28). Consequence: /review-apply and /plan-update complete on this flow run the pre-store paths, and its [tasks].total of 40 is the pre-store plan-item count rather than the 36 rows a dry-run import produces (ledger R29). Adopting it is one flow init plus one import-plan --reconcile-record, but the four same-run mints have no plan headings, so the import will report them as unmatched refs."
+evidence = [".claude/flows/whimsical-hugging-puppy/context.toml"]
+
+[[backlog]]
+id = "B-cccb98e0"
+kind = "annoyance"
+summary = "the tomlctl test suite fails on a docs/plans content change because tasks_corpus imports every plan"
+area = "tomlctl/tests"
+tags = [
+    "tests",
+    "corpus",
+    "coupling",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "cccb98e066abaeff"
+origin = "review"
+flow = "whimsical-hugging-puppy"
+context = "tasks_corpus.rs walks docs/plans/** and asserts every plan imports, so adding a plan that uses five-hash task headings or an off-vocabulary effort tag fails cargo test in a commit touching no Rust -- and the failure reads as a tomlctl regression. The self-skip covers a packaged checkout but not this repo. Related: the corpus asserts only that plans import; a corpus-wide render-idempotency pass (import -> render -> re-import) would have surfaced the phase-heading loss of ledger R11 as a corpus failure rather than as a blessed golden fixture."
+evidence = ["tomlctl/tests/tasks_corpus.rs"]
+
+[[backlog]]
+id = "B-2f9eead8"
+kind = "bug"
+summary = "flow doctor resolves a recorded plan_path with no containment check"
+area = "tomlctl/src/flow/doctor.rs"
+tags = [
+    "tasks",
+    "security",
+    "plan-path",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "2f9eead816c201f3"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "check_plan_path_resolves takes plan_path straight from context.toml, keeps it verbatim when absolute, and stats the result - so a hostile context turns flow doctor into an existence oracle for any path on the machine. The consolidated resolver added for the plan-path seam does containment, a .md requirement and a store-vs-context comparison, but doctor predates it and does not call it. Route this fourth caller through the same resolver; it is exactly the copy-again case the containment-helper item predicted."
+evidence = ["tomlctl/src/flow/doctor.rs:521"]
+related = ["B-6ff6dd3e"]
+
+[[backlog]]
+id = "B-4e370bb0"
+kind = "bug"
+summary = "a pending row whose blocker is itself blocked lands in no frontier bucket"
+area = "tomlctl/src/tasks/graph.rs"
+tags = [
+    "tasks",
+    "frontier",
+]
+status = "resolved"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "4e370bb035c7e4fa"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The blocked bucket names only direct predecessors. A row two hops behind a stall is skipped by first_stall because its own predecessor is pending, then fails the reachable test because that predecessor is not in the wave - so it appears in none of ready, held, next or blocked. The stall root is always reported, so the empty-frontier rule holds and implement.md's consumer rule is safe; what breaks is reconciling bucket counts against the pending row count. Do not add a count-based assertion until this is closed."
+evidence = ["tomlctl/src/tasks/graph.rs:286"]
+related = ["B-4aa2bbbf"]
+resolved = 2026-09-08
+resolution = "Fixed: the frontier's blocked bucket is now transitive - a pending row behind a stall lands in blocked naming the nearest actionable row, reached by climbing through intervening pending rows, with a cycle guard on the walk. Note the literal every-pending-row-in-exactly-one-bucket partition is NOT established and was found unsatisfiable: next is one wave deep by design, so healthy rows further out are enumerated by no bucket. Making the partition total would push healthy rows into blocked and destroy its meaning."
+
+[[backlog]]
+id = "B-5fe02fa1"
+kind = "bug"
+summary = "a re-import that drops a checkpoint marker leaves retained rows carrying an undeclared group id"
+area = "tomlctl/src/tasks/import_plan.rs"
+tags = [
+    "tasks",
+    "checkpoints",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "5fe02fa15dd67cee"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "Import retains rows the new plan no longer names, keeping their old checkpoint value, so a store can hold undeclared group ids with no write having been at fault. This is the one legitimate producer of that state and the reason checkpoint/orphan-task was kept at warning rather than error - at error severity these rows would trip refuse_on_errors and refuse an otherwise-valid import. Anyone raising that class to error must fix this first."
+evidence = ["tomlctl/src/tasks/import_plan.rs:220"]
+related = ["B-46de01dc"]
+
+[[backlog]]
+id = "B-b55bc561"
+kind = "debt"
+summary = "no finding class covers a non-terminal row with pending dependents"
+area = "tomlctl/src/tasks/check.rs"
+tags = [
+    "tasks",
+    "check",
+]
+status = "resolved"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "b55bc5618484e20b"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "A store stranded behind an in-progress, failed or deferred row exits check with 0 and no error-class finding, so a carrier gating on check reads a stalled store as healthy and its degradation halt never fires. The engine can now name the condition directly - Graph::frontier with an empty in-flight slice returns the blocked bucket - so a stalled warning class is a few lines over an existing call."
+evidence = ["tomlctl/src/tasks/check.rs:249"]
+related = ["B-0b8e45d9"]
+resolved = 2026-09-08
+resolution = "Fixed: new dag/stalled-dependency warning class over the frontier's blocked bucket, grouped per blocker - ids carries the blocker, detail names its stranded dependents. Warning not error deliberately: check takes no --in-flight set, so it cannot tell a live run's in-progress row from a crashed one, and error severity would refuse valid imports. Consequence: it fires routinely mid-run; the halt trigger for a real stall stays the frontier's blocked bucket, which does know the in-flight set."
+
+[[backlog]]
+id = "B-a6c92b55"
+kind = "debt"
+summary = "fence awareness guards only the heading branch, not field or continuation lines"
+area = "tomlctl/src/tasks/parse_tasks.rs"
+tags = [
+    "tasks",
+    "parser",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "a6c92b55b92b9732"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "FenceState now stops a hash line inside a fenced block from closing the open task, but a bolded field line inside a fence still opens a field, and an unclosed fence inside the Tasks section swallows every later heading. Same two-scanners-disagree class as the heading fix. Extending the guard to the field and continuation branches would change how existing plans with fenced acceptance blocks parse, so it needs a spec rather than a patch."
+evidence = ["tomlctl/src/tasks/parse_tasks.rs:43"]
+related = ["B-0b8e45d9"]
+
+[[backlog]]
+id = "B-5bb39cf9"
+kind = "debt"
+summary = "the fence-aware section scanner is private to the tasks module so flow resolve reimplements it"
+area = "tomlctl/src/tasks/markdown.rs"
+tags = [
+    "tasks",
+    "flow",
+    "markdown",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "5bb39cf9308b9065"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The plan-declares-tasks discriminator added to flow resolve needs a fence-aware scan for a Tasks heading, but tasks::markdown is a private module, so a minimal second scanner was written there. Two scanners over the same bytes can drift on fence and heading edge cases - which is the defect class the heading fix just closed one level down. Making the module pub(crate) in tasks/mod.rs would let the flow side reuse it."
+evidence = ["tomlctl/src/tasks/markdown.rs:24"]
+related = ["B-46de01dc"]
+
+[[backlog]]
+id = "B-152db71d"
+kind = "debt"
+summary = "SHARED-BLOCK markers survive with no matching manifest entry so the parity they advertise is unenforced"
+area = "scripts/templates/flow-context.md"
+tags = [
+    "shared-blocks",
+    "verifier",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "152db71d9f544792"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The template still carries SHARED-BLOCK flow-context START and END markers, but no block of that name survives in scripts/shared-blocks.toml after the wave-2 migration, so verify-shared-blocks.sh checks nothing between them. The template and the flow-context contract skill have already diverged - the skill carries a bootstrap-summary paragraph the template lacks. Either restore the manifest entry and reconcile the two files, or delete the markers so they stop implying a guarantee."
+evidence = ["scripts/shared-blocks.toml:1"]
+
+[[backlog]]
+id = "B-ada2f3a8"
+kind = "debt"
+summary = "render never moves a section that already exists out of canonical order"
+area = "tomlctl/src/tasks/render.rs"
+tags = [
+    "tasks",
+    "render",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "ada2f3a8efb3225a"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The insertion path now anchors Execution Policy on the section it precedes, but the correction path does not exist: a plan whose sections are already out of canonical order stays wrong forever, and render --check reports no drift because the render is a faithful no-op reorder. The ordering guarantee therefore holds only for absent sections, not misplaced ones."
+evidence = ["tomlctl/src/tasks/render.rs:278"]
+related = ["B-98a1c2e6"]
+
+[[backlog]]
+id = "B-44f80958"
+kind = "bug"
+summary = "an inline commit granularity clause re-renders as a detached paragraph"
+area = "tomlctl/src/tasks/render.rs"
+tags = [
+    "tasks",
+    "render",
+    "policy",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "44f80958a737a3ce"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "A hand-authored Commit granularity bullet carrying a trailing explanatory clause is split on first render: the clause is captured into policy.note and re-emitted as a bare dash-prefixed paragraph after the bullet list, reading as orphaned prose. It is round-trip stable, so it never shows as drift and no golden catches it, but it visibly reshapes an authored bullet inside a section the renderer owns."
+evidence = ["tomlctl/tests/fixtures/tasks/house-plan.rendered.md:18"]
+related = ["B-36c11be9"]
+
+[[backlog]]
+id = "B-fc2d4d05"
+kind = "debt"
+summary = "render drops new file suffixes and no store round-trip can observe the loss"
+area = "tomlctl/src/tasks/render.rs"
+tags = [
+    "tasks",
+    "render",
+    "testability",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "fc2d4d058f328b97"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "A Files line annotation marking a path as newly created is dropped on render, and because the store holds bare paths the annotation is unrepresentable - so the closed plan-store-plan-store round trip is structurally blind to it. A plan rendered in place quietly loses author annotations on every implement cycle. Catching it needs a plan-to-plan assertion, which is a different test from the store-equality one."
+evidence = ["tomlctl/tests/fixtures/tasks/house-plan.rendered.md:1"]
+related = ["B-108e130a"]
+
+[[backlog]]
+id = "B-0752278d"
+kind = "debt"
+summary = "the tasks finding-class table is hand-maintained across five documents with nothing gating it against the source"
+area = "claude/skills/tomlctl/references/tasks.md"
+tags = [
+    "docs",
+    "tasks",
+    "drift",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "0752278de0864ac4"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "Five markdown files enumerate the classes tasks check can emit, and no test compares any of them against check.rs. Six classes were added or widened in one run and every table had to be corrected by hand. This is how an undocumented default survives - the effort default went unrecorded in both contracts for exactly this reason. A test asserting the union of documented classes matches the source would gate it."
+evidence = ["tomlctl/src/tasks/check.rs:29"]
+related = ["B-6d908b8f"]
+
+[[backlog]]
+id = "B-6a671fa3"
+kind = "debt"
+summary = "a multi-file plan whose outline lacks a Tasks section fails with a parse-shaped message"
+area = "tomlctl/src/tasks/import_plan.rs"
+tags = [
+    "tasks",
+    "import",
+    "multi-file",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "6a671fa31e657c2f"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "ParsedPlan::read hard-errors when the resolved plan document has no Tasks section. The carriers now document that the ref-set diff gate imports exactly one document and that a multi-file plan must keep its task headings in the outline, but the tool gives an agent no signal that the multi-file shape is the cause - it reads as a malformed plan. A named diagnostic would save the next reader the deduction."
+evidence = ["tomlctl/src/tasks/import_plan.rs:126"]
+related = ["B-36c11be9"]
+
+[[backlog]]
+id = "B-a3c38307"
+kind = "debt"
+summary = "seven flows carry stale integrity sidecars so an unscoped flow doctor reports not ok"
+area = ".claude/flows"
+tags = [
+    "flow",
+    "doctor",
+    "integrity",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "a3c38307c0a06573"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "Seven flows have context.toml or execution-record.toml sidecars that disagree with their bytes, so bare tomlctl flow doctor exits not-ok today regardless of any code change. Pre-existing and unrelated to the task store. Consequence for anyone writing an acceptance command: a doctor-is-green check must be slug-scoped or run --fix first, or it is permanently red for reasons the change under test did not cause."
+evidence = ["tomlctl/src/flow/doctor.rs:206"]
+related = ["B-ef701081"]
+
+[[backlog]]
+id = "B-9b7257ec"
+kind = "question"
+summary = "tasks check --plan exits 0 on a render/drift finding while tasks render --check exits 1 on the identical finding"
+area = "tomlctl/src/tasks/dispatch.rs"
+tags = [
+    "tasks",
+    "check",
+    "render",
+    "drift",
+    "exit-code",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "9b7257ecc9e6f165"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "check derives its exit status from finding severity and render/drift is a warning, so check --plan exits 0; render --check derives its status from the finding's presence and exits 1. Each is internally consistent, and both are separately documented. The hazard is that CLAUDE.md presents check --plan as the drift gate carriers run, so a carrier gating on its exit code silently passes a drifted plan. Workaround until decided: gate drift on render --check, or read the findings array rather than the exit code. Resolving it properly is a design decision with cost either way - raising render/drift to error class would make it refuse imports through the existing write gate, and changing check's severity-derived exit rule alters a contract four carriers rely on."
+evidence = ["tomlctl/src/tasks/dispatch.rs:226"]
+
+[[backlog]]
+id = "B-a52ed19a"
+kind = "bug"
+summary = "--raw is silently ignored on the row-array shape when --lines or --ndjson is also set"
+area = "tomlctl/src/query.rs"
+tags = [
+    "query",
+    "raw",
+    "lines",
+    "engine-wide",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "a52ed19a4cc99867"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "validate_query rejects --raw only for the two map shapes, and raw_emit is never reached on the streaming path. So `list --raw --select id` refuses with a scalar-target error, while `list --raw --lines --select id` exits 0 and streams quoted JSON - honouring neither the refusal nor the flag. An agent that blanket-adds --lines to a --raw call silently loses the bare-scalar encoding it asked for, with no diagnostic. Engine-wide, not task-store-local: `items list` behaves identically, so a fix belongs in the shared query layer. Workaround: never pair --raw with --lines; use --lines alone for multi-value output and --raw alone for single-value."
+evidence = ["tomlctl/src/query.rs:1"]
+related = ["B-9ed1f411"]
