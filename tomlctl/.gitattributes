@@ -5,3 +5,10 @@
 # spuriously. The execution-record.toml / context.toml / fixture plan are also
 # pinned so the render is reproduced from identical source bytes everywhere.
 tests/fixtures/render/* text eol=lf
+
+# tasks import/render golden tests: same reason. The golden store is byte-
+# compared against what `tasks import-plan` writes, and the writer always emits
+# `\n`; the fixture plan is pinned alongside it because the CRLF case is
+# constructed in the test from the LF bytes, so a CRLF working-tree copy would
+# make that test compare a plan against itself.
+tests/fixtures/tasks/* text eol=lf

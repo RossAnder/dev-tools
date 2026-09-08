@@ -45,6 +45,18 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         // marker with no sidecar, so it carries none of the write bundle —
         // including `--allow-outside`, which repo policy denies.
         &["backlog", "evidence", "dir", "--help"],
+        &["tasks", "show", "--help"],
+        &["tasks", "list", "--help"],
+        &["tasks", "edges", "--help"],
+        &["tasks", "ready", "--help"],
+        &["tasks", "batches", "--help"],
+        &["tasks", "closure", "--help"],
+        &["tasks", "check", "--help"],
+        // `tasks render` writes derived plan markdown with no sidecar and
+        // resolves its target from the flow context rather than a free
+        // argument, so — like `backlog evidence dir` — it carries the read
+        // bundle and none of the write bundle.
+        &["tasks", "render", "--help"],
     ];
     for path in read_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();
@@ -1591,6 +1603,19 @@ fn capabilities_features_contains_every_plan_feature() {
         "backlog_show",
         "backlog_relate",
         "backlog_triage",
+        // Per-flow task DAG store: the `tasks` subcommand cluster.
+        "tasks_import_plan",
+        "tasks_add",
+        "tasks_add_many",
+        "tasks_update",
+        "tasks_show",
+        "tasks_list",
+        "tasks_edges",
+        "tasks_ready",
+        "tasks_batches",
+        "tasks_closure",
+        "tasks_check",
+        "tasks_render",
     ];
     for name in expected {
         assert!(
@@ -1625,8 +1650,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.6.0",
-        "expected version `0.6.0` (the minor bump for the new `backlog` verb group); got `{version}`"
+        version, "0.7.0",
+        "expected version `0.7.0` (the minor bump for the new `tasks` verb group); got `{version}`"
     );
 }
 

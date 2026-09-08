@@ -172,6 +172,69 @@ fn flow_envelope_build_all_fields_set_round_trip() {
     assert_eq!(v["staleness_threshold"], serde_json::json!("3d"));
 }
 
+/// `tasks` — the fifth canonical flow artifact — is accepted by
+/// `--require-artifact` and echoed verbatim, alongside a legacy key so the
+/// test also pins that widening the whitelist did not disturb the existing
+/// entries or their emission order.
+#[test]
+fn flow_envelope_build_accepts_tasks_require_artifact() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("flow")
+        .arg("envelope")
+        .arg("build")
+        .arg("--command")
+        .arg("implement")
+        .arg("--require-artifact")
+        .arg("execution_record")
+        .arg("--require-artifact")
+        .arg("tasks")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be parseable JSON");
+    assert_eq!(
+        v["require_artifacts"],
+        serde_json::json!(["execution_record", "tasks"]),
+        "`tasks` must be an accepted --require-artifact value; got:\n{stdout}"
+    );
+}
+
+/// Every canonical artifact key is accepted in one invocation. Pins the
+/// whole whitelist rather than one member, so dropping any key from
+/// `VALID_ARTIFACTS` trips here rather than only in the carrier that
+/// happens to require it.
+#[test]
+fn flow_envelope_build_accepts_every_canonical_artifact() {
+    let mut cmd = Command::cargo_bin("tomlctl").unwrap();
+    cmd.arg("flow")
+        .arg("envelope")
+        .arg("build")
+        .arg("--command")
+        .arg("implement");
+    let all = [
+        "review_ledger",
+        "optimise_findings",
+        "execution_record",
+        "plan_review_findings",
+        "tasks",
+    ];
+    for a in all {
+        cmd.arg("--require-artifact").arg(a);
+    }
+    let out = cmd.write_stdin("").assert().success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout must be parseable JSON");
+    assert_eq!(
+        v["require_artifacts"],
+        serde_json::json!(all),
+        "the full canonical artifact set must round-trip; got:\n{stdout}"
+    );
+}
+
 /// Acceptance: an unknown `--command` value is rejected with
 /// `kind=validation`; stderr surfaces the load-bearing whitelist prose so
 /// callers know which strings are accepted without having to read the
@@ -246,5 +309,9 @@ fn flow_envelope_build_rejects_unknown_require_artifact() {
     assert!(
         msg.contains("execution_record") && msg.contains("review_ledger"),
         "error.message must list the artifact whitelist; got: {msg}"
+    );
+    assert!(
+        msg.contains("tasks"),
+        "error.message must list `tasks` as an accepted artifact; got: {msg}"
     );
 }

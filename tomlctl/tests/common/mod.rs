@@ -295,6 +295,24 @@ pub fn store_path(root: &Path) -> PathBuf {
     root.join(".claude").join("backlog.toml")
 }
 
+/// Flow slug every task-store fixture is staged under. It satisfies the
+/// `--slug` regex, so `tasks … --slug TASKS_SLUG` resolves to the file
+/// [`seed_tasks`] writes.
+pub const TASKS_SLUG: &str = "whimsical-hugging-puppy";
+
+/// Stage `<root>/.claude/flows/<TASKS_SLUG>/tasks.toml` with `toml` and a
+/// digest over those bytes, and hand back the store path. The sidecar is
+/// written because a fixture without one reads as an integrity failure under
+/// `--verify-integrity`, which would look like a product bug.
+pub fn seed_tasks(root: &Path, toml: &str) -> PathBuf {
+    let flow = root.join(".claude").join("flows").join(TASKS_SLUG);
+    fs::create_dir_all(&flow).unwrap();
+    let store = flow.join("tasks.toml");
+    fs::write(&store, toml).unwrap();
+    refresh_sidecar(&store);
+    store
+}
+
 pub fn cli(root: &Path) -> Command {
     let mut cmd = Command::cargo_bin("tomlctl").unwrap();
     cmd.env("TOMLCTL_ROOT", root)

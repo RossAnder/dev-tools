@@ -47,10 +47,32 @@ fn write_artifact_with_sidecar(path: &Path, body: &str) {
     fs::write(sidecar_path(path), format!("{hex}  {basename}\n")).unwrap();
 }
 
-/// Seed a clean flow under `<root>/.claude/flows/<slug>/`:
-/// canonical `context.toml` + `execution-record.toml` + matching sidecars,
-/// and a plan file at `docs/plans/<slug>.md` so `plan-path-resolves` passes.
-fn seed_clean_flow(root: &Path, slug: &str) {
+/// The four `[artifacts]` keys every flow minted before the per-flow task
+/// store carries on disk — the corpus a hard fail on a missing `tasks` key
+/// would break repo-wide.
+fn legacy_artifacts_lines(slug: &str) -> String {
+    format!(
+        r#"review_ledger = ".claude/flows/{slug}/review-ledger.toml"
+optimise_findings = ".claude/flows/{slug}/optimise-findings.toml"
+execution_record = ".claude/flows/{slug}/execution-record.toml"
+plan_review_findings = ".claude/flows/{slug}/plan-review-findings.toml"
+"#
+    )
+}
+
+/// The full canonical `[artifacts]` body `flow init` writes today.
+fn canonical_artifacts_lines(slug: &str) -> String {
+    format!(
+        "{}tasks = \".claude/flows/{slug}/tasks.toml\"\n",
+        legacy_artifacts_lines(slug)
+    )
+}
+
+/// Seed a flow under `<root>/.claude/flows/<slug>/` whose `[artifacts]`
+/// table body is `artifacts_lines`: `context.toml` + `execution-record.toml`
+/// + matching sidecars, and a plan file at `docs/plans/<slug>.md` so
+/// `plan-path-resolves` passes.
+fn seed_flow_with_artifacts(root: &Path, slug: &str, artifacts_lines: &str) {
     let flow_dir = root.join(".claude").join("flows").join(slug);
     fs::create_dir_all(&flow_dir).unwrap();
 
@@ -60,7 +82,6 @@ fn seed_clean_flow(root: &Path, slug: &str) {
     let plan_file = plans_dir.join(format!("{slug}.md"));
     fs::write(&plan_file, "# plan\n").unwrap();
 
-    // Canonical context.toml — every key the doctor's checks inspect.
     let context_body = format!(
         r#"slug = "{slug}"
 plan_path = "docs/plans/{slug}.md"
@@ -75,17 +96,19 @@ completed = 0
 in_progress = 0
 
 [artifacts]
-review_ledger = ".claude/flows/{slug}/review-ledger.toml"
-optimise_findings = ".claude/flows/{slug}/optimise-findings.toml"
-execution_record = ".claude/flows/{slug}/execution-record.toml"
-plan_review_findings = ".claude/flows/{slug}/plan-review-findings.toml"
-"#
+{artifacts_lines}"#
     );
     write_artifact_with_sidecar(&flow_dir.join("context.toml"), &context_body);
 
     // execution-record.toml — minimal 2-line bootstrap shape.
     let er_body = "schema_version = 1\nlast_updated = 2026-05-08\n";
     write_artifact_with_sidecar(&flow_dir.join("execution-record.toml"), er_body);
+}
+
+/// Seed a clean, current flow — canonical five-key `[artifacts]` table, so
+/// the doctor reports neither a failure nor an advisory.
+fn seed_clean_flow(root: &Path, slug: &str) {
+    seed_flow_with_artifacts(root, slug, &canonical_artifacts_lines(slug));
 }
 
 /// Seed an `active-flow.toml` registry pointing at the listed slugs (in
@@ -183,6 +206,108 @@ fn clean_flow_returns_ok_true_with_all_checks_passing() {
     ] {
         find_check(&v, name, None);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Acceptance: legacy four-key [artifacts] table.
+// ---------------------------------------------------------------------------
+
+/// `<root>/.claude/flows/<slug>/context.toml`.
+fn context_path(root: &Path, slug: &str) -> PathBuf {
+    root.join(".claude")
+        .join("flows")
+        .join(slug)
+        .join("context.toml")
+}
+
+/// A flow whose `[artifacts]` table predates the task store still passes
+/// `artifacts-canonical`; the absent `tasks` key surfaces as a top-level
+/// advisory naming the key.
+#[test]
+fn legacy_four_key_artifacts_passes_with_tasks_warning() {
+    let (_g, root) = fresh_root();
+    seed_flow_with_artifacts(&root, "legacy", &legacy_artifacts_lines("legacy"));
+    seed_active_flow_registry(&root, &["legacy"]);
+
+    let v = run_doctor(&root, &["--slug", "legacy"]);
+    let chk = find_check(&v, "artifacts-canonical", Some("legacy"));
+    assert_eq!(
+        chk["ok"],
+        JsonValue::Bool(true),
+        "a missing [artifacts].tasks key must NOT fail the check; got: {chk}"
+    );
+    assert_eq!(
+        v["ok"],
+        JsonValue::Bool(true),
+        "an otherwise-clean legacy flow must still return ok=true; got: {v}"
+    );
+
+    let warnings = v["warnings"].as_array().expect("warnings must be array");
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.as_str().unwrap_or("").contains("tasks")),
+        "the absent key must surface as a warning naming `tasks`; got: {warnings:?}"
+    );
+}
+
+/// A `tasks` key that is PRESENT but points somewhere else still fails the
+/// check — the tolerance above is for absence only.
+#[test]
+fn divergent_tasks_artifact_value_fails_the_check() {
+    let (_g, root) = fresh_root();
+    let artifacts = format!(
+        "{}tasks = \".claude/flows/other-flow/tasks.toml\"\n",
+        legacy_artifacts_lines("wrong-tasks")
+    );
+    seed_flow_with_artifacts(&root, "wrong-tasks", &artifacts);
+    seed_active_flow_registry(&root, &["wrong-tasks"]);
+
+    let v = run_doctor(&root, &["--slug", "wrong-tasks"]);
+    assert_eq!(v["ok"], JsonValue::Bool(false));
+    let chk = find_check(&v, "artifacts-canonical", Some("wrong-tasks"));
+    assert_eq!(
+        chk["ok"],
+        JsonValue::Bool(false),
+        "a divergent [artifacts].tasks value must fail; got: {chk}"
+    );
+    let detail = chk["detail"].as_str().expect("detail must be present");
+    assert!(
+        detail.contains("tasks"),
+        "detail must name the divergent key; got: {detail}"
+    );
+}
+
+/// Doctor has no `context.toml`-rewriting fix producer: `--fix` over a
+/// legacy four-key table reports the advisory and leaves the file's bytes
+/// exactly as they were.
+#[test]
+fn fix_leaves_legacy_context_bytes_untouched() {
+    let (_g, root) = fresh_root();
+    seed_flow_with_artifacts(&root, "legacy", &legacy_artifacts_lines("legacy"));
+    seed_active_flow_registry(&root, &["legacy"]);
+
+    let context = context_path(&root, "legacy");
+    let before = fs::read(&context).unwrap();
+
+    let v = run_doctor(&root, &["--slug", "legacy", "--fix"]);
+    let warnings = v["warnings"].as_array().expect("warnings must be array");
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.as_str().unwrap_or("").contains("tasks")),
+        "precondition: --fix run must still reach the tasks advisory; got: {warnings:?}"
+    );
+
+    assert_eq!(
+        fs::read(&context).unwrap(),
+        before,
+        "doctor --fix must not write context.toml bytes"
+    );
+    assert!(
+        !String::from_utf8_lossy(&fs::read(&context).unwrap()).contains("tasks ="),
+        "doctor --fix must not backfill the [artifacts].tasks key"
+    );
 }
 
 // ---------------------------------------------------------------------------

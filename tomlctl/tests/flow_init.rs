@@ -75,6 +75,15 @@ fn sidecar_for(file: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
+/// `<root>/.claude/flows/<slug>/tasks.toml` — the per-flow task store.
+fn tasks_store_path(dir: &tempfile::TempDir, slug: &str) -> PathBuf {
+    dir.path()
+        .join(".claude")
+        .join("flows")
+        .join(slug)
+        .join("tasks.toml")
+}
+
 // ---------------------------------------------------------------------------
 // fresh init
 // ---------------------------------------------------------------------------
@@ -110,6 +119,10 @@ fn fresh_init_creates_context_record_sidecars_and_active_entry() {
         v["artifacts"]["plan_review_findings"],
         serde_json::json!(".claude/flows/feature-x/plan-review-findings.toml")
     );
+    assert_eq!(
+        v["artifacts"]["tasks"],
+        serde_json::json!(".claude/flows/feature-x/tasks.toml")
+    );
 
     // Files on disk.
     assert!(context.exists(), "context.toml must exist");
@@ -123,6 +136,10 @@ fn fresh_init_creates_context_record_sidecars_and_active_entry() {
         .join("execution-record.toml");
     assert!(exec_record.exists(), "execution-record.toml must exist");
     assert_sidecar_matches(&exec_record);
+
+    let tasks = tasks_store_path(&dir, "feature-x");
+    assert!(tasks.exists(), "tasks.toml must exist");
+    assert_sidecar_matches(&tasks);
 
     let active = dir.path().join(".claude").join("active-flow.toml");
     assert!(active.exists(), "active-flow.toml must exist");
@@ -152,6 +169,18 @@ fn fresh_init_creates_context_record_sidecars_and_active_entry() {
         "execution-record.toml must contain a last_updated field; got:\n{er_text}"
     );
 
+    // tasks.toml is SEEDED, not empty — same schema skeleton the
+    // auto-create write path produces.
+    let tasks_text = fs::read_to_string(&tasks).unwrap();
+    assert!(
+        tasks_text.starts_with("schema_version = 1\n"),
+        "tasks.toml must start with schema_version = 1; got:\n{tasks_text}"
+    );
+    assert!(
+        tasks_text.contains("last_updated ="),
+        "tasks.toml must contain a last_updated field; got:\n{tasks_text}"
+    );
+
     // context.toml carries the seed shape: status="draft", tasks counts
     // zero, artifacts populated.
     let ctx_text = fs::read_to_string(&context).unwrap();
@@ -165,6 +194,13 @@ fn fresh_init_creates_context_record_sidecars_and_active_entry() {
     );
     assert!(ctx.get("created").is_some(), "created must be present");
     assert!(ctx.get("updated").is_some(), "updated must be present");
+    assert_eq!(
+        ctx.get("artifacts")
+            .and_then(|a| a.get("tasks"))
+            .and_then(|v| v.as_str()),
+        Some(".claude/flows/feature-x/tasks.toml"),
+        "[artifacts].tasks must be stamped into context.toml; got:\n{ctx_text}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +242,34 @@ fn reinit_existing_slug_is_idempotent_and_preserves_created() {
         first_text, second_text,
         "context.toml bytes must be unchanged across re-inits"
     );
+}
+
+/// A re-init never clobbers an existing task store. The first init seeds an
+/// empty skeleton, so the store gets a recognisable row before the second
+/// run — an empty-vs-empty comparison would pass against a destructive
+/// re-seed.
+#[test]
+fn reinit_leaves_existing_tasks_store_byte_identical() {
+    let (dir, plan, _context) = fresh_root("feature-x");
+    let plan_str = plan.to_string_lossy().to_string();
+
+    run_init(&dir, &["--slug", "feature-x", "--plan", &plan_str]).success();
+
+    let tasks = tasks_store_path(&dir, "feature-x");
+    let mut seeded = fs::read_to_string(&tasks).unwrap();
+    seeded.push_str("\n[[items]]\nid = \"T1\"\ntitle = \"survives re-init\"\n");
+    fs::write(&tasks, &seeded).unwrap();
+
+    run_init(&dir, &["--slug", "feature-x", "--plan", &plan_str]).success();
+
+    assert_eq!(
+        fs::read_to_string(&tasks).unwrap(),
+        seeded,
+        "re-init must leave an existing tasks.toml byte-identical"
+    );
+    // The out-of-band write left the sidecar stale; the bootstrap path
+    // refreshes it rather than rewriting the store.
+    assert_sidecar_matches(&tasks);
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +328,9 @@ fn dry_run_does_not_mutate_anything() {
         "dry-run must not bootstrap execution-record.toml"
     );
     assert!(!sidecar_for(&exec_record).exists(), "no exec sidecar");
+    let tasks = tasks_store_path(&dir, "feature-x");
+    assert!(!tasks.exists(), "dry-run must not bootstrap tasks.toml");
+    assert!(!sidecar_for(&tasks).exists(), "no tasks sidecar");
     assert!(
         !active.exists(),
         "dry-run must not register in active-flow.toml"

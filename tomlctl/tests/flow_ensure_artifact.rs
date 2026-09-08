@@ -296,6 +296,75 @@ fn bootstrap_review_ledger_is_noop_with_marker() {
     );
 }
 
+/// `--kind tasks` resolves the per-flow task store and validates its
+/// sidecar exactly like the older kinds. The `path` is asserted in full
+/// (not by suffix) so a filename typo in the kind→basename map cannot hide
+/// behind a `.toml` suffix check.
+#[test]
+fn ensure_artifact_tasks_kind_reports_seeded_store() {
+    let (_g, root, flow_dir) = seed_flow_dir("tasked");
+    let artifact = flow_dir.join("tasks.toml");
+    write_artifact_with_sidecar(&artifact, "schema_version = 1\nlast_updated = 2026-05-08\n");
+
+    let v = run_ensure(&root, &["--slug", "tasked", "--kind", "tasks"]);
+    assert_eq!(v["exists"], JsonValue::Bool(true));
+    assert_eq!(v["sidecar_valid"], JsonValue::Bool(true));
+    assert_eq!(
+        v["path"],
+        JsonValue::String(".claude/flows/tasked/tasks.toml".to_string())
+    );
+    assert_eq!(
+        v["sidecar_path"],
+        JsonValue::String(".claude/flows/tasked/tasks.toml.sha256".to_string())
+    );
+}
+
+/// A flow predating the task store reports `exists:false` for `tasks`
+/// rather than erroring, and the read-only path writes nothing — the
+/// legacy-flow case the resolver's warning exemption exists for.
+#[test]
+fn ensure_artifact_tasks_missing_reports_false_without_writing() {
+    let (_g, root, flow_dir) = seed_flow_dir("legacy");
+    let artifact = flow_dir.join("tasks.toml");
+
+    let v = run_ensure(&root, &["--slug", "legacy", "--kind", "tasks"]);
+    assert_eq!(v["exists"], JsonValue::Bool(false));
+    assert!(v["sidecar_valid"].is_null());
+    assert_eq!(
+        v["path"],
+        JsonValue::String(".claude/flows/legacy/tasks.toml".to_string())
+    );
+    assert!(!artifact.exists(), "report path must not create the store");
+    assert!(!sidecar_path(&artifact).exists());
+}
+
+/// `--bootstrap --kind tasks` is a no-op carrying the marker, not a
+/// materialising write: `flow init` (and `tasks import-plan`) own seeding
+/// the store, so this path must leave a legacy flow's directory untouched.
+#[test]
+fn bootstrap_tasks_is_noop_with_marker() {
+    let (_g, root, flow_dir) = seed_flow_dir("bootless");
+    let artifact = flow_dir.join("tasks.toml");
+
+    let v = run_ensure(
+        &root,
+        &["--slug", "bootless", "--kind", "tasks", "--bootstrap"],
+    );
+    assert_eq!(v["exists"], JsonValue::Bool(false));
+    let marker = v["bootstrap_noop"]
+        .as_str()
+        .expect("bootstrap_noop must be a string");
+    assert!(
+        marker.contains("tasks") && marker.contains("owning command"),
+        "marker prose should identify the kind + responsibility, got: {marker}"
+    );
+    assert!(
+        !artifact.exists(),
+        "tasks bootstrap must not create the store"
+    );
+    assert!(!sidecar_path(&artifact).exists());
+}
+
 /// containment guard: targeting a slug that resolves outside `.claude/`
 /// errors `kind=validation`.
 #[test]

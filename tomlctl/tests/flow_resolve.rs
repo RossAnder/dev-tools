@@ -54,9 +54,10 @@ fn seed_artifact_blank(root: &Path, slug: &str, name: &str) -> PathBuf {
     p
 }
 
-/// Seed the four canonical artifacts (review-ledger, optimise-findings,
-/// execution-record, plan-review-findings) for a flow as empty doc files,
-/// so the resolver's "missing artifact" warning array stays empty.
+/// Seed the four warning-eligible artifacts as empty doc files, so the
+/// resolver's "missing artifact" warning array stays empty. `tasks.toml` is
+/// deliberately left absent — it is exempt from that warning, so every
+/// caller of this helper doubles as a check on the exemption.
 fn seed_all_canonical_artifacts(root: &Path, slug: &str) {
     seed_artifact_blank(root, slug, "review-ledger.toml");
     seed_artifact_blank(root, slug, "optimise-findings.toml");
@@ -109,7 +110,10 @@ fn run_resolve(dir: &tempfile::TempDir, args: &[&str]) -> serde_json::Value {
 }
 
 /// Standard `[scope]`-bearing context.toml body. Caller supplies branch +
-/// status + scope glob list so tests can pin the exact fixture.
+/// status + scope glob list so tests can pin the exact fixture. The
+/// `[artifacts]` block carries four keys and no `tasks` — the shape of every
+/// flow minted before the task store — so the resolver's canonical fallback
+/// for the fifth key is on the path of every test built from this fixture.
 fn make_context(slug: &str, status: &str, branch: Option<&str>, scope: &[&str]) -> String {
     let scope_arr = scope
         .iter()
@@ -141,6 +145,13 @@ plan_review_findings = ".claude/flows/{slug}/plan-review-findings.toml"
 "#,
         today = today_iso()
     )
+}
+
+/// `make_context` plus an explicit `[artifacts].tasks` entry carrying
+/// `tasks_rel`. In-progress, branch `feat/x`, empty scope.
+fn make_context_with_tasks(slug: &str, tasks_rel: &str) -> String {
+    let base = make_context(slug, "in-progress", Some("feat/x"), &[]);
+    format!("{base}tasks = \"{tasks_rel}\"\n")
 }
 
 // ---------------------------------------------------------------------------
@@ -572,6 +583,118 @@ fn missing_artifacts_populate_warnings_array() {
     assert_eq!(
         missing_count, 4,
         "expected 4 artifact-missing warnings, got: {warning_strs:?}"
+    );
+    // The count alone would still pass if `tasks` started warning while some
+    // other key silently stopped, so name the exempt key directly.
+    assert!(
+        !warning_strs.iter().any(|s| s.contains("tasks")),
+        "`tasks` is exempt from the artifact-missing warning, got: {warning_strs:?}"
+    );
+    // Exempt from the warning, but still reported as a path.
+    assert_eq!(
+        v["artifacts"]["tasks"],
+        serde_json::json!(".claude/flows/feature-x/tasks.toml")
+    );
+}
+
+/// The exemption is keyed on the artifact key, not on the key's absence
+/// from `[artifacts]`: a context that names `tasks` explicitly and points
+/// at a file that is not on disk still produces four warnings.
+#[test]
+fn explicit_tasks_key_pointing_at_a_missing_file_still_does_not_warn() {
+    let (dir, _claude) = fresh_root();
+    let body = make_context_with_tasks("feature-x", ".claude/flows/feature-x/tasks.toml");
+    seed_flow_context(dir.path(), "feature-x", &body);
+    // No artifact files at all — the four warning-eligible keys warn, tasks
+    // does not.
+
+    let v = run_resolve(&dir, &["--flow", "feature-x"]);
+    let warnings = v["warnings"].as_array().unwrap();
+    let warning_strs: Vec<&str> = warnings.iter().filter_map(|w| w.as_str()).collect();
+    let missing_count = warning_strs
+        .iter()
+        .filter(|s| s.starts_with("artifact missing:"))
+        .count();
+    assert_eq!(
+        missing_count, 4,
+        "expected 4 artifact-missing warnings, got: {warning_strs:?}"
+    );
+    assert!(
+        !warning_strs.iter().any(|s| s.contains("tasks")),
+        "`tasks` is exempt even when named explicitly, got: {warning_strs:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// artifacts projection — the fifth key
+// ---------------------------------------------------------------------------
+
+/// The five canonical artifact keys, in emission order. `serde_json` carries
+/// `preserve_order`, so parsing the resolver's stdout keeps the order the
+/// projection inserted — which makes `tasks`-last assertable.
+const ARTIFACT_KEYS: &[&str] = &[
+    "review_ledger",
+    "optimise_findings",
+    "execution_record",
+    "plan_review_findings",
+    "tasks",
+];
+
+fn artifact_keys_of(v: &serde_json::Value) -> Vec<String> {
+    v["artifacts"]
+        .as_object()
+        .expect("artifacts must be an object")
+        .keys()
+        .cloned()
+        .collect()
+}
+
+/// A legacy context whose `[artifacts]` block lacks `tasks` still resolves
+/// to five artifact paths — the fifth computed canonically. This is the
+/// path every pre-task-store flow takes, so a projection that only echoed
+/// the explicit block would break all of them.
+#[test]
+fn artifacts_projection_computes_tasks_when_context_lacks_the_key() {
+    let (dir, _claude) = fresh_root();
+    let body = make_context("feature-x", "in-progress", Some("feat/x"), &[]);
+    assert!(
+        !body.contains("tasks ="),
+        "fixture must model a pre-task-store context: {body}"
+    );
+    seed_flow_context(dir.path(), "feature-x", &body);
+    seed_all_canonical_artifacts(dir.path(), "feature-x");
+
+    let v = run_resolve(&dir, &["--flow", "feature-x"]);
+    assert_eq!(v["resolved"], serde_json::json!(true));
+    assert_eq!(artifact_keys_of(&v), ARTIFACT_KEYS);
+    assert_eq!(
+        v["artifacts"]["tasks"],
+        serde_json::json!(".claude/flows/feature-x/tasks.toml")
+    );
+    // The four explicit keys are untouched by the widening.
+    assert_eq!(
+        v["artifacts"]["plan_review_findings"],
+        serde_json::json!(".claude/flows/feature-x/plan-review-findings.toml")
+    );
+}
+
+/// A context that names `tasks` explicitly has that value reported verbatim
+/// rather than recomputed. The fixture uses a non-canonical filename so the
+/// assertion distinguishes an explicit read from the canonical fallback —
+/// with the canonical value both branches would look identical.
+#[test]
+fn artifacts_projection_reads_an_explicit_tasks_key_verbatim() {
+    let (dir, _claude) = fresh_root();
+    let body = make_context_with_tasks("feature-x", ".claude/flows/feature-x/relocated-tasks.toml");
+    seed_flow_context(dir.path(), "feature-x", &body);
+    seed_all_canonical_artifacts(dir.path(), "feature-x");
+
+    let v = run_resolve(&dir, &["--flow", "feature-x"]);
+    assert_eq!(v["resolved"], serde_json::json!(true));
+    assert_eq!(artifact_keys_of(&v), ARTIFACT_KEYS);
+    assert_eq!(
+        v["artifacts"]["tasks"],
+        serde_json::json!(".claude/flows/feature-x/relocated-tasks.toml")
     );
 }
 

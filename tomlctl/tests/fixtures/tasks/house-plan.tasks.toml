@@ -1,0 +1,221 @@
+schema_version = 1
+last_updated = 2026-09-08
+plan_path = "docs/plans/house-plan.md"
+last_import_refs = [
+    "scaffold-the-module-tree",
+    "land-the-schema-round-trip",
+    "parse-the-tasks-section",
+    "parse-the-policy-bullets-and-the-max_parallel-range",
+    "build-the-graph-engine-kahn-rounds-and-bitset-closures",
+    "fold-the-closures-into-checkpoint-groups",
+    "wire-the-import-verb",
+    "render-the-three-sections",
+    "document-the-store-contract",
+    "smoke-the-plan-corpus",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+note = "— tasks 5 and 6 land in one commit because they share a file"
+
+[[checkpoints]]
+id = "A"
+rationale = "The module tree and the schema round-trip."
+
+[[checkpoints]]
+id = "B"
+rationale = "both parsers and the graph engine land together"
+
+[[checkpoints]]
+id = "C"
+rationale = "the import verb, the renderer and the corpus smoke."
+
+[[items]]
+id = 1
+ref = "scaffold-the-module-tree"
+title = "Scaffold the module tree"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+files = ["src/tasks/mod.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create the module and its leaf-per-verb children."
+detail = "Every child stays `pub(crate)`."
+acceptance = "The crate compiles with no warning."
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "land-the-schema-round-trip"
+title = "Land the schema round-trip"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+files = [
+    "src/tasks/schema.rs",
+    "src/tasks/store.rs",
+    "src/tasks/mod.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Convert the store to and from TOML, preserving key order."
+detail = '''
+A body may carry a Windows path (`src\tasks\schema.rs`), so
+the writer must leave the separator unescaped.'''
+acceptance = "A fixture store round-trips."
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "parse-the-tasks-section"
+title = "Parse the `## Tasks` section"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+files = ["src/tasks/parse_tasks.rs"]
+needs = [
+    1,
+    2,
+]
+coupling = []
+deps_note = "the schema types are what the parser fills, so the two commits stay ordered"
+action = "Read numbered headings and their field lines."
+detail = "A field value continues onto lines indented two spaces."
+acceptance = "A wrapped field parses whole."
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "parse-the-policy-bullets-and-the-max_parallel-range"
+title = "Parse the policy bullets and the max_parallel range"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+files = ["src/tasks/parse_policy.rs"]
+needs = [3]
+coupling = []
+deps_note = ""
+action = "Read the four `## Execution Policy` bullets."
+detail = "An absent section takes the house defaults."
+acceptance = "The four bullets parse."
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "build-the-graph-engine-kahn-rounds-and-bitset-closures"
+title = "Build the graph engine — Kahn rounds and bitset closures"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+files = ["src/tasks/graph.rs"]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "Layer the DAG deterministically."
+detail = "Ascending id tie-breaks in every round."
+acceptance = "The rounds are stable across runs."
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "fold-the-closures-into-checkpoint-groups"
+title = "Fold the closures into checkpoint groups"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+files = [
+    "src/tasks/graph.rs",
+    "src/tasks/closure.rs",
+]
+needs = [5]
+coupling = []
+deps_note = ""
+action = "Derive each group's members and maximal elements."
+detail = "A group is valid when its prefix union is downward-closed."
+acceptance = "An invalid cut is reported."
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "wire-the-import-verb"
+title = "Wire the import verb"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+files = ["src/tasks/import_plan.rs"]
+needs = [
+    3,
+    4,
+    6,
+]
+coupling = []
+deps_note = ""
+action = "Upsert the store by `ref`."
+detail = "An existing row keeps its execution state."
+acceptance = "A second import changes nothing."
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "render-the-three-sections"
+title = "Render the three sections"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+files = ["src/tasks/render.rs"]
+needs = [7]
+coupling = []
+deps_note = ""
+action = "Rewrite the three derived sections in place."
+detail = """
+Every byte outside those sections survives the write, so a
+hand-authored preamble is not the renderer's to reflow."""
+acceptance = "The round-trip holds."
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "document-the-store-contract"
+title = "Document the store contract"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+files = ["docs/task-store.md"]
+needs = []
+coupling = []
+deps_note = ""
+action = "State the schema, the verb surface and the ref rule."
+detail = "No task depends on this one and it depends on none."
+acceptance = "The document exists."
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "smoke-the-plan-corpus"
+title = "Smoke the plan corpus"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+files = ["tests/tasks_corpus.rs"]
+needs = [8]
+coupling = []
+deps_note = ""
+action = "Dry-run every plan in the corpus."
+detail = "The file list is derived at runtime, never transcribed."
+acceptance = "Every in-format plan imports."
+agent = ""
+commit = ""
