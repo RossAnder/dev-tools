@@ -34,6 +34,24 @@ The block above is complete and copy-pasteable as-is — do NOT look up `--help`
 
 Invoke the `flow-contract-plansdirectory-prompt` skill to load the first-use prompt contract (gate on `envelope.plans_directory == null`, option-list construction, single-select AUQ ordering, headless empty-answer in-memory binding, `Don't ask again` sentinel arbitration, free-text follow-up, persist-via-`tomlctl json set`, and downstream binding). The wording is shared verbatim across `/plan-new`, `/plan-update`, and `/review-plan`.
 
+## Step 0.6: Ensure the task store
+
+Invoke the `flow-contract-task-store` skill to load the store contract (the schema and every row field, the `ref` rule, the status vocabulary, the semantics of each `tasks` verb, the `check` finding classes and exit policy, the ref-set diff gate and the renamed-heading trap it catches, and the orchestrator-only status-write rule).
+
+`.claude/flows/<slug>/tasks.toml` holds the plan's task DAG, execution policy and checkpoint groups, and this command reads two things from it: the invariant checks Agent 1 would otherwise re-derive by hand (Step 2), and the ref-set gate over the merge's own rewrite (Step 4). Bind `<store>` as `envelope.resolved.artifacts.tasks` (fallback `.claude/flows/<slug>/tasks.toml`); every `tasks` call below targets it with `--slug <slug>`. When the store is absent on disk or holds no rows, import it before anything reads it:
+
+```bash
+tomlctl tasks import-plan --slug <slug> --reconcile-record
+```
+
+**Three cases skip the store wholesale.** Take them before the import, and name the one that fired in the Step-3 report — a reader who sees no `STORE CHECK` fence must be able to tell a skip from a clean bill: a **no-flow run** (Step 0's fallback resolved no slug, so nothing owns a store); a **`<parent>-tdd-<NNN>` sub-flow slug**, exempt per the contract because the parent flow owns the plan and therefore the store; and a **Step-1 plan that is not the resolved flow's `plan_path`** (`--slug` would import a different document over every row). Everything else in this command runs unchanged in each case — the store is an input to the review, never a precondition for it.
+
+**An error-class finding is review material here, never a halt.** `/implement` halts on one because it schedules from the store; `/review-plan` exists to read plans that are wrong, and a cycle or an invalid cut is precisely the defect it is being asked to find. A real import refuses to write when it hits one, which leaves no store for `check` to read — so fall back to plan mode and carry that envelope's `findings[]` into Step 2 in place of the `check` output:
+
+```bash
+tomlctl tasks import-plan --plan <plan> --dry-run
+```
+
 # Plan Review
 
 ## Step 1: Load the Plan
@@ -50,8 +68,16 @@ Launch **all four** review agents in a single response message (concurrent execu
 
 **Format-contract embedding (orchestrator, before launch):** when the plan follows the house format (`## Tasks` / `## Dependency Graph` present), invoke the `flow-contract-plan-output-format` skill in the main conversation and embed its **Format rules** block plus the `## Execution Policy` template semantics verbatim into Agent 3's prompt inside a clearly-delimited `FORMAT CONTRACT` fence. `research-deep` agents cannot invoke skills, and a repo-relative path to the skill file resolves only inside the harness's own repo — the orchestrator carries the contract to the agent, which keeps `/review-plan` portable to any project. For plans not in the house format, omit the fence; Agent 3 critiques structure on general executability judgement only and never penalises a foreign format for missing house sections.
 
+**Store-check embedding (orchestrator, before launch):** run the store's own invariant checks and embed the JSON verbatim in **Agent 1's** prompt inside a clearly-delimited `STORE CHECK` fence:
+
+```bash
+tomlctl tasks check --slug <slug> --plan
+```
+
+Exit `1` means an error-class finding — a cycle, a dangling edge, a duplicate task number, an invalid checkpoint cut — which is a **critical** review finding, not a reason to stop (Step 0.6). `--plan` adds `render/drift`, a warning meaning the markdown carries wording the store's render does not reproduce; report it and never render over it, because outside the Step-4 merge this command does not rewrite the plan. When Step 0.6 skipped the store, omit the fence **and say so in the prompt** — an absent fence is otherwise indistinguishable from a clean one.
+
 The four lenses:
-- **Agent 1 — Feasibility, Dependencies & Execution Policy**: are changes feasible given current architecture, and APIs/versions current? Are task/phase dependencies correct, with no hidden ordering hazards — and no two tasks whose `Files` intersect while lacking a dependency path between them? (`/implement` frontier-schedules from the DAG edges: "parallel" means *no dependency path*, not "different batch" — an edge-less same-file task pair is a defect even when prose waves appear to separate them; /implement's dispatch-time file-claim check serialises such pairs defensively, but the missing edge is still a plan defect to flag.) When the plan declares an `## Execution Policy`, judge broken-state hazards against **checkpoint boundaries**, not dependency levels — transient intra-group breakage between checkpoints is by design; each checkpoint group must be a logically-coherent, buildable increment. Validate the policy structurally: checkpoint markers reference real task numbers and form valid topological cuts (no task in group k depends on a task in a later group). Absent the section, fall back to per-dependency-level broken-state judgement (legacy per-batch semantics). Also check **checkpoint coverage**: walk each marker's dependency closure and diff against the task list — a task inside no marker's closure is committed only by the final Phase-3 train, forfeiting the bisectability that chose `milestones` over `single`. Report the orphan set in one finding, enumerated.
+- **Agent 1 — Feasibility, Dependencies & Execution Policy**: are changes feasible given current architecture, and APIs/versions current? Are task/phase dependencies correct, with no hidden ordering hazards — and no two tasks whose `Files` intersect while lacking a dependency path between them? (`/implement` frontier-schedules from the DAG edges: "parallel" means *no dependency path*, not "different batch" — an edge-less same-file task pair is a defect even when prose waves appear to separate them; /implement's dispatch-time file-claim check serialises such pairs defensively, but the missing edge is still a plan defect to flag.) When the plan declares an `## Execution Policy`, judge broken-state hazards against **checkpoint boundaries**, not dependency levels — transient intra-group breakage between checkpoints is by design; each checkpoint group must be a logically-coherent, buildable increment. Validate the policy structurally: checkpoint markers reference real task numbers and form valid topological cuts (no task in group k depends on a task in a later group). Absent the section, fall back to per-dependency-level broken-state judgement (legacy per-batch semantics). Also check **checkpoint coverage**: walk each marker's dependency closure and diff against the task list — a task inside no marker's closure is committed only by the final Phase-3 train, forfeiting the bisectability that chose `milestones` over `single`. Report the orphan set in one finding, enumerated. The `STORE CHECK` fence in your prompt already carries the computed answer to the mechanical half of all three questions — `dag/unreachable-claim` for an edge-less same-file pair, `checkpoint/invalid-cut` for a prefix union that is not downward-closed, `checkpoint/orphan-task` for the coverage walk — so read those as ground truth instead of re-deriving them, and spend the lens on what a graph cannot answer: whether a present edge is the *right* edge, plus the feasibility and coherence judgements above. No fence means the store was skipped, not that the graph is clean — do the walks by hand and say which.
 - **Agent 2 — Completeness, Scope & Codebase Alignment**: affected-but-unmentioned files/components/consumers, missing tests, config/migration/build changes, cross-cutting concerns (logging, error handling, authz, cache invalidation), and same-pattern code elsewhere needing the same treatment. Also owns **alignment**: do referenced files/classes/methods/paths exist and look as the plan assumes, and do cited line numbers still point at the cited symbol (summarise drift in one enumerated finding — line drift is low-severity; a *non-existent filename* is not, because nothing downstream re-derives it). Run this as an explicit procedure, not an impression — the completeness lens is the one that historically returns *under* its budget while missing the most:
   1. For every symbol the plan renames or deletes, grep the whole tree — including **comments and docblocks in source files**, `.md`, and **user-visible string literals** — not only doc directories and not only with-paren spellings. A code change silently falsifies prose, and a copied literal of a deleted message keeps passing because it only ever fed a mock.
   2. For every new registration seam (provider, plugin, registry, hook), find the production entry point that would call it. No call site anywhere in the plan ⇒ the whole tier is dead code that passes every test.
@@ -121,25 +147,69 @@ A3. **Back up, then write over the original** — first copy the current plan to
 
 **Retention — one generation, and it is terminal.** If a `<plan>.premerge.md` already exists, **delete it** before writing the new one; never rename it to a `.prev` sibling, because the prior generation's plan text is already in git. The sibling then survives exactly until the flow closes: `/plan-update <slug> complete` deletes it unconditionally (step 6.5 there), as it does `.revised.md` and `.revised.prev.md`. Without a terminal owner a "one-cycle" rule never fires on the *last* run of a flow, which is how a repo accumulates dozens of immortal siblings — each a near-duplicate of a plan that is itself in git. Do not commit `.premerge.md`; add `*.premerge.md` to `.gitignore` where plans are tracked.
 
-A3.5. **Merge-exit consistency re-derivation (mandatory, against the written file).** A merge that edits **Files** lines, **Depends on** lines, or task numbering can *create* cross-task defects that did not exist in the reviewed plan — the merge is the least-reviewed text in the document, and nothing downstream re-reads it. This runs *after* A3 precisely so there is a file on disk to read and grep; `.premerge.md` is the rollback if the re-derivation goes wrong. Re-derive against the on-disk plan and fix in place with `Edit`:
-  - **File-claim reachability** — for every file appearing on ≥2 tasks' **Files** lines, confirm a directed `Depends on` path *between the two claimants*. A common **ancestor** is not a path between them. Add the edge or split the task. **Compute this, do not eyeball it**: extract every task's **Files** and **Depends on**, build the ancestor closure, and check each multi-claimed file pairwise. Report the number of pairs checked, not just the violations — an unreported denominator is how a sampled check passes for an exhaustive one.
-  - **Checkpoint-marker validity** — checkpoint markers still reference real task numbers and leave no task outside every marker's closure. Do NOT mirror `Depends on` edges into `## Dependency Graph`: that section carries checkpoint markers only, and the per-task edges are authoritative. A merge that renumbers tasks must fix the markers, not re-transcribe the graph.
-  - **Files-line closure** — per A2, for every task body the merge touched.
+A3.5. **Merge-exit consistency re-derivation (mandatory, against the written file).** A merge that edits **Files** lines, **Depends on** lines, or task numbering can *create* cross-task defects that did not exist in the reviewed plan — the merge is the least-reviewed text in the document, and nothing downstream re-reads it. This runs *after* A3 precisely so there is a file on disk to import and check; `.premerge.md` is the rollback if the re-derivation goes wrong.
+
+  **(a) Ref-set gate — first, before any real import.** A merge may rephrase a heading, and the heading's title is what derives the row's `ref`, the store's primary key and the import's upsert key. Read the dry run's `added_refs` / `removed_refs`:
+
+  ```bash
+  tomlctl tasks import-plan --slug <slug> --dry-run
+  ```
+
+  Abort for user intervention on any removed ref whose row is not `pending` — a settled task about to be orphaned — and surface the added/removed pair either way:
+
+  ```bash
+  tomlctl tasks list --slug <slug> --where-in ref=<removed-refs> --select id,ref,status
+  ```
+
+  Recovery for an intentional rename is to rename the row, not the store, then re-run the gate:
+
+  ```bash
+  tomlctl tasks update <id> --slug <slug> --ref <new-ref>
+  ```
+
+  **Never let the real import be what discovers a rename.** The old row is never deleted, so it still holds the task number the renamed heading re-claims: the import raises `dag/duplicate-number` at error severity and refuses — after the merge has already rewritten the plan. Left unresolved the other way, the orphaned `done` row and its duplicate `pending` twin make `/implement`'s idempotency skip-list re-execute a completed task.
+
+  **(b) Real import, then check.** Once the diff is clean or resolved, upsert and re-derive:
+
+  ```bash
+  tomlctl tasks import-plan --slug <slug>
+  tomlctl tasks check --slug <slug>
+  ```
+
+  `dag/unreachable-claim` is the file-claim reachability answer — a file on ≥2 rows' `files` with no directed path *between the two claimants*, computed pairwise, a shared **ancestor** not counting as a path. `checkpoint/invalid-cut` and `checkpoint/orphan-task` are the checkpoint-marker answer, the second naming a task a renumbering dropped outside every marker's closure. Fix what they name in the plan with `Edit`, then re-run both. Report the row count they were computed over, not only the violations — an unreported denominator is how a sampled check passes for an exhaustive one.
+
+  **(c) Files-line closure — prose, per A2**, for every task body the merge touched: every edit target named in **Action**/**Detail**/**Acceptance** appears on the **Files** line. `tasks check` ships no `files/closure` class, a deliberate omission, so there is nothing mechanical to lean on for this part.
+
+  Do NOT mirror `Depends on` edges into `## Dependency Graph`: that section carries checkpoint markers only, and the per-task edges are authoritative. A merge that renumbers tasks must fix the markers, not re-transcribe the graph. When Step 0.6 skipped the store, (a) and (b) have nothing to run against — walk the multi-claimed files pairwise and each marker's closure by hand instead, and say in A6 that they were hand-derived.
+
   Record what the re-derivation changed; it is reported in A6. Never emit a self-audit block (a "File-claim check" paragraph or similar) asserting the plan is clean — a transcribed assertion goes stale the moment a later edit lands, and the next reader inherits false confidence from it. State the edges; let the reader re-derive.
 A4. **Transition** every merged finding to `status = "merged"` in one batch via `tomlctl items apply <path> --ops -`.
 A5. `tomlctl set <path> last_updated <today>`.
-A6. **Console summary**: `N findings merged into <plan>`; list `plan_section → summary` per finding, then one line per A3.5 re-derivation fix (`[merge-exit: <task> — added edge N→M; pipelineApi.ts claimed by both]`) and the pairs-checked denominator (`merge-exit: 11 multi-claimed files checked, 1 violation fixed`). When the merge changed any **Files** line, **Depends on** line, or task count, close with `merged text is unreviewed — re-run /review-plan for round 2`. End the turn — no further prompt.
+A6. **Console summary**: `N findings merged into <plan>`; list `plan_section → summary` per finding, then one line per A3.5 re-derivation fix (`[merge-exit: <task> — added edge N→M; pipelineApi.ts claimed by both]`), the store line carrying the denominator (`store: 37 rows imported (2 added, 1 updated); tasks check clean`), and the ref-set diff whenever either side was non-empty (`refs: +wire-the-render-verb / -wire-the-renderer (id 21, pending)`). When the merge changed any **Files** line, **Depends on** line, or task count, close with `merged text is unreviewed — re-run /review-plan for round 2`. End the turn — no further prompt.
 
 ### Step 4B: Mechanical merge → review
 
 B1. **Filter selected-severity findings** to those with **both `anchor_old` AND `anchor_new`**; advisory-only findings are skipped silently.
 B2. **Conflict detection** — group filtered findings by `plan_section`; if >1 in a group has non-empty `anchor_old`, emit `[conflict: plan_section="..."; findings=P3, P7] — manual merge required` and skip that whole group (other groups still apply).
 B3. **Mechanical merge** — for each survivor, locate `anchor_old` as a substring under its `plan_section` heading; if found exactly once, replace with `anchor_new`, else log `[merge-failed: P{n} — anchor_old not found uniquely in section "..."]` and skip. Apply in P-id monotonic order. **Files-drift detection**: the mechanical path never rewrites a task's **Files** line itself — so when an applied `anchor_new` introduces an edit-target file path into a task body that the task's **Files** line omits, still apply the replacement but record the pair for a `[files-drift: P{n} — <path> required by merged body text but absent from **Files**]` warning in B6 (the user fixes it by hand, or re-runs with Manual merge which owns Files consistency).
-B4. **Materialise** via `Write` to a sibling: replace the plan's trailing `.md` with `.revised.md` (do not append). Then run the A3.5 merge-exit consistency re-derivation against that written file (file-claim reachability computed pairwise, checkpoint-marker validity, no self-audit block). The mechanical path may not rewrite **Files** lines, so it does not fix what it finds — record each violation for a `[merge-exit: …]` line in B6. For multi-file plans (`plan_path` → `<dir>/00-outline.md`), materialise only `<outline-dir>/00-outline.revised.md` — detail files are not rewritten by v1.
+B4. **Materialise** via `Write` to a sibling: replace the plan's trailing `.md` with `.revised.md` (do not append). Then run the A3.5 re-derivation against that written file as a **dry run only** — the revised sibling is a proposal the user has not accepted, and the store must not learn it before B8 does:
+
+```bash
+tomlctl tasks import-plan --slug <slug> --plan <plan>.revised.md --dry-run
+```
+
+One envelope carries both halves: `added_refs` / `removed_refs` for A3.5(a)'s ref-set gate, and `findings[]` for the classes A3.5(b)'s `check` would report. The mechanical path may not rewrite **Files** lines and may not write the store, so it does not fix what it finds — record each `dag/unreachable-claim`, `checkpoint/invalid-cut` and `checkpoint/orphan-task` for a `[merge-exit: …]` line in B6, and each removed ref whose row is not `pending` for a `[ref-orphan: …]` line. A3.5(c)'s Files-line closure stays prose here too, and the no-self-audit-block rule holds. For multi-file plans (`plan_path` → `<dir>/00-outline.md`), materialise only `<outline-dir>/00-outline.revised.md` — detail files are not rewritten by v1.
 B5. **Pre-existing sibling**: if `<plan>.revised.md` already exists, rename it to `<plan>.revised.prev.md` first (overwriting any older one). Cheap rollback.
-B6. **Console summary**: `N applied, K conflicts skipped, M merge-failures`; list `plan_section → summary` per applied finding, then one `[files-drift: …]` line per pair recorded in B3, then one `[merge-exit: <path> — claimed by tasks N and M with no dependency path between them]` line per violation recorded in B4. Keep the two tags distinct: files-drift is a body/**Files** mismatch inside one task, merge-exit is a missing dependency edge between two.
+B6. **Console summary**: `N applied, K conflicts skipped, M merge-failures`; list `plan_section → summary` per applied finding, then one `[files-drift: …]` line per pair recorded in B3, then one `[merge-exit: <path> — claimed by tasks N and M with no dependency path between them]` line per violation recorded in B4, then one `[ref-orphan: <ref> — id N is <status>, not pending; heading rephrased by the merge]` line per removed ref B4 flagged. Keep the three tags distinct: files-drift is a body/**Files** mismatch inside one task, merge-exit is a missing dependency edge between two, ref-orphan is a settled store row the revised heading would strand.
 B7. **`AskUserQuestion` (Q3)** — `[Accept, Keep both, Discard]`. **Default `Keep both`** (NOT `Accept` — `Accept` is irreversible, and default-Accept + auto-mode empty-answer = silent overwrite). **Empty-answer rule**: empty → treat as `Keep both`.
-B8. **Apply chosen action**: **Accept** → `Write` revised content over the original, keep `<plan>.revised.md` one cycle, transition matching findings to `status = "merged"` via `tomlctl items apply <path> --ops -`. **Keep both** → no mutation; findings stay `open`. **Discard** → delete `<plan>.revised.md`, transition findings to `discarded`. The prior run's `<plan>.revised.prev.md` is deleted on the NEXT run's B5 (one-cycle retention).
+B8. **Apply chosen action**: **Accept** → `Write` revised content over the original, keep `<plan>.revised.md` one cycle, transition matching findings to `status = "merged"` via `tomlctl items apply <path> --ops -`, then upsert the store from the now-accepted plan and re-check it — B4's dry run gated this write, and Accept is the point at which the markdown the store mirrors actually changed:
+
+```bash
+tomlctl tasks import-plan --slug <slug>
+tomlctl tasks check --slug <slug>
+```
+
+Abort the import instead, per A3.5(a), if B4 recorded a `[ref-orphan: …]` the user has not resolved with `tasks update <id> --slug <slug> --ref <new-ref>`. **Keep both** → no mutation; findings stay `open` and the store is untouched, matching a plan file that did not change. **Discard** → delete `<plan>.revised.md`, transition findings to `discarded`; the store is likewise untouched. The prior run's `<plan>.revised.prev.md` is deleted on the NEXT run's B5 (one-cycle retention).
 B9. `tomlctl set <path> last_updated <today>`.
 
 ### Re-run dedup (subsequent invocations)
