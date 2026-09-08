@@ -6,25 +6,31 @@
 //!
 //! `ref` is reachable only through `--ref`, never `--set ref=…`: it is the key
 //! the execution record's `task_ref` and the store's `last_import_refs` both
-//! join on, and a rename orphans a row in both.
+//! join on, and a rename orphans a row in both. `import-plan` derives that key
+//! back off the title, so a `--set title=` deriving a different ref would make
+//! the next import mint a second row for the same task: it is refused unless
+//! `--ref` moves the key in the same command.
 
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use anyhow::Result;
 
+use super::add::reject_undeclared_checkpoint;
+use super::graph::{Graph, Node};
 use super::schema::{Effort, Status, Store, TaskRow};
-use super::store;
+use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
 
 /// Row fields `--set` reaches, in the order the refusal message lists them.
-const SETTABLE: [&str; 10] = [
+const SETTABLE: [&str; 11] = [
     "acceptance",
     "action",
     "agent",
     "checkpoint",
     "commit",
+    "coupling",
     "deps_note",
     "detail",
     "effort",
@@ -32,8 +38,9 @@ const SETTABLE: [&str; 10] = [
     "title",
 ];
 
-/// Edge and file fields, which `tasks import-plan` owns.
-const IMPORTED: [&str; 3] = ["coupling", "files", "needs"];
+/// Fields `tasks import-plan` rewrites from the plan on every run, so a value
+/// set here would not survive the next import.
+const IMPORTED: [&str; 2] = ["files", "needs"];
 
 pub(crate) struct UpdateFields {
     pub(crate) status: Option<String>,
@@ -108,6 +115,21 @@ fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'stat
         assignments.push((field, value));
     }
 
+    // `coupling` is the one settable field validated against the whole store
+    // rather than the row alone, so it leaves the row-local assignment list.
+    let coupling = assignments
+        .iter()
+        .rev()
+        .find(|(field, _)| *field == "coupling")
+        .map(|(_, value)| *value);
+    assignments.retain(|(field, _)| *field != "coupling");
+
+    for (field, value) in &assignments {
+        if *field == "checkpoint" {
+            reject_undeclared_checkpoint(store, value, &format!("task {id}"))?;
+        }
+    }
+
     let mut changed: BTreeSet<&'static str> = BTreeSet::new();
 
     if let Some(new_ref) = task_ref {
@@ -135,10 +157,31 @@ fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'stat
         }
     }
 
+    if let Some(value) = coupling {
+        let parsed = parse_ids(value)?;
+        if store.items[index].coupling != parsed {
+            reject_broken_graph(store, index, &parsed)?;
+            store.items[index].coupling = parsed;
+            changed.insert("coupling");
+        }
+    }
+
+    let previous_derived = assignments
+        .iter()
+        .any(|(field, _)| *field == "title")
+        .then(|| slug::derive_ref(&store.items[index].title));
+
     let row = &mut store.items[index];
     for (field, value) in assignments {
         if assign(row, field, value)? {
             changed.insert(field);
+        }
+    }
+
+    if let (Some(previous), None) = (previous_derived, task_ref) {
+        let derived = slug::derive_ref(&store.items[index].title);
+        if derived != previous {
+            return Err(retitle_err(id, &derived));
         }
     }
 
@@ -163,6 +206,74 @@ fn settable(key: &str) -> Result<&'static str> {
         ),
     };
     Err(tagged_err(ErrorKind::Validation, None, hint))
+}
+
+/// An empty value clears the edge set; anything else is the comma-separated id
+/// list `tasks add --coupling` takes.
+fn parse_ids(value: &str) -> Result<Vec<u32>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(Vec::new());
+    }
+    value
+        .split(',')
+        .map(|part| {
+            part.trim().parse::<u32>().map_err(|_| {
+                tagged_err(
+                    ErrorKind::Validation,
+                    None,
+                    format!("`coupling` takes comma-separated task ids, got `{part}`"),
+                )
+            })
+        })
+        .collect()
+}
+
+/// Validates the store as it would be, so an edge naming an absent task or
+/// closing a cycle is refused before the row moves — the guard `tasks add`
+/// runs over its own edges.
+fn reject_broken_graph(store: &Store, index: usize, coupling: &[u32]) -> Result<()> {
+    let nodes: Vec<Node> = store
+        .items
+        .iter()
+        .enumerate()
+        .map(|(position, row)| {
+            let mut node = Node::from(row);
+            if position == index {
+                node.coupling = coupling.to_vec();
+            }
+            node
+        })
+        .collect();
+    let graph = Graph::build(&nodes)
+        .map_err(|err| tagged_err(ErrorKind::Validation, None, err.to_string()))?;
+
+    let cycle = graph.cycle_members();
+    if cycle.is_empty() {
+        return Ok(());
+    }
+    let members: Vec<String> = cycle.iter().map(u32::to_string).collect();
+    Err(tagged_err(
+        ErrorKind::Validation,
+        None,
+        format!(
+            "refusing to update: the dependency graph would contain a cycle through tasks {}",
+            members.join(", ")
+        ),
+    ))
+}
+
+fn retitle_err(id: u32, derived: &str) -> anyhow::Error {
+    let hint = if derived.is_empty() {
+        format!(
+            "task {id}: this title carries no slug characters, so it derives no ref — pass `--ref <SLUG>` alongside it"
+        )
+    } else {
+        format!(
+            "task {id}: this title derives ref `{derived}` — pass `--ref {derived}` alongside it to move the row's key deliberately"
+        )
+    };
+    tagged_err(ErrorKind::Validation, None, hint)
 }
 
 fn assign(row: &mut TaskRow, field: &'static str, value: &str) -> Result<bool> {
@@ -265,11 +376,16 @@ mod tests {
             .join("flows")
             .join("whimsical-hugging-puppy")
             .join("tasks.toml");
+        add_row(&path, "Seed the store");
+        path
+    }
+
+    fn add_row(path: &Path, title: &str) -> u32 {
         add::add(
-            &path,
+            path,
             &write_args(),
             NewTask {
-                title: "Seed the store".to_string(),
+                title: title.to_string(),
                 effort: "S".to_string(),
                 files: Vec::new(),
                 needs: Vec::new(),
@@ -281,8 +397,8 @@ mod tests {
                 acceptance: String::new(),
             },
         )
-        .expect("the seed row lands");
-        path
+        .expect("the row lands")
+        .id
     }
 
     fn reload(path: &Path) -> Store {
@@ -439,6 +555,178 @@ mod tests {
             assert!(message.contains("task 1"), "{message}");
             assert!(message.contains("in-progress"), "{message}");
             assert_eq!(reload(&path).items[0].status, Status::Pending);
+        });
+    }
+
+    #[test]
+    fn set_coupling_rewrites_the_edge_set_and_clears_it() {
+        with_root(|root| {
+            let path = seeded(root);
+            let second = add_row(&path, "Arm the acceptance");
+
+            let changed = update(
+                &path,
+                &write_args(),
+                second,
+                UpdateFields {
+                    set: vec!["coupling=1".to_string()],
+                    ..fields()
+                },
+            )
+            .expect("the edge lands");
+            assert_eq!(changed, vec!["coupling"]);
+            assert_eq!(reload(&path).items[1].coupling, vec![1]);
+
+            let changed = update(
+                &path,
+                &write_args(),
+                second,
+                UpdateFields {
+                    set: vec!["coupling=".to_string()],
+                    ..fields()
+                },
+            )
+            .expect("the edge clears");
+            assert_eq!(changed, vec!["coupling"]);
+            assert!(reload(&path).items[1].coupling.is_empty());
+        });
+    }
+
+    #[test]
+    fn a_coupling_edge_naming_an_absent_task_is_refused() {
+        with_root(|root| {
+            let path = seeded(root);
+            let message = update(
+                &path,
+                &write_args(),
+                1,
+                UpdateFields {
+                    set: vec!["coupling=99".to_string()],
+                    ..fields()
+                },
+            )
+            .expect_err("99 does not exist")
+            .to_string();
+            assert!(message.contains("99"), "{message}");
+            assert!(reload(&path).items[0].coupling.is_empty());
+        });
+    }
+
+    #[test]
+    fn a_coupling_edge_that_would_close_a_cycle_is_refused() {
+        with_root(|root| {
+            let path = seeded(root);
+            let second = add_row(&path, "Arm the acceptance");
+            update(
+                &path,
+                &write_args(),
+                second,
+                UpdateFields {
+                    set: vec!["coupling=1".to_string()],
+                    ..fields()
+                },
+            )
+            .expect("the first edge lands");
+
+            let message = update(
+                &path,
+                &write_args(),
+                1,
+                UpdateFields {
+                    set: vec![format!("coupling={second}")],
+                    ..fields()
+                },
+            )
+            .expect_err("the pair would cycle")
+            .to_string();
+            assert!(message.contains("cycle"), "{message}");
+            assert!(reload(&path).items[0].coupling.is_empty());
+        });
+    }
+
+    #[test]
+    fn a_retitle_that_moves_the_derived_ref_is_refused() {
+        with_root(|root| {
+            let path = seeded(root);
+            let message = update(
+                &path,
+                &write_args(),
+                1,
+                UpdateFields {
+                    set: vec!["title=Reseed the store".to_string()],
+                    ..fields()
+                },
+            )
+            .expect_err("the derived ref would move")
+            .to_string();
+            assert!(message.contains("reseed-the-store"), "{message}");
+            assert!(message.contains("--ref"), "{message}");
+
+            let row = reload(&path).items.remove(0);
+            assert_eq!(row.title, "Seed the store");
+            assert_eq!(row.r#ref, "seed-the-store");
+        });
+    }
+
+    #[test]
+    fn a_retitle_holding_the_derived_ref_still_lands() {
+        with_root(|root| {
+            let path = seeded(root);
+            let changed = update(
+                &path,
+                &write_args(),
+                1,
+                UpdateFields {
+                    set: vec!["title=Seed the (store)".to_string()],
+                    ..fields()
+                },
+            )
+            .expect("the derivation is unchanged");
+            assert_eq!(changed, vec!["title"]);
+            assert_eq!(reload(&path).items[0].title, "Seed the (store)");
+        });
+    }
+
+    #[test]
+    fn a_retitle_carrying_the_ref_flag_rewrites_both() {
+        with_root(|root| {
+            let path = seeded(root);
+            let changed = update(
+                &path,
+                &write_args(),
+                1,
+                UpdateFields {
+                    task_ref: Some("reseed-the-store".to_string()),
+                    set: vec!["title=Reseed the store".to_string()],
+                    ..fields()
+                },
+            )
+            .expect("the explicit ref wins");
+            assert_eq!(changed, vec!["ref", "title"]);
+
+            let row = reload(&path).items.remove(0);
+            assert_eq!(row.title, "Reseed the store");
+            assert_eq!(row.r#ref, "reseed-the-store");
+        });
+    }
+
+    #[test]
+    fn a_checkpoint_group_the_store_does_not_declare_is_refused() {
+        with_root(|root| {
+            let path = seeded(root);
+            let message = update(
+                &path,
+                &write_args(),
+                1,
+                UpdateFields {
+                    checkpoint: Some("Z".to_string()),
+                    ..fields()
+                },
+            )
+            .expect_err("`Z` is declared nowhere")
+            .to_string();
+            assert!(message.contains('Z'), "{message}");
+            assert_eq!(reload(&path).items[0].checkpoint, "");
         });
     }
 

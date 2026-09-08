@@ -60,6 +60,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "tasks_add",
     "tasks_add_many",
     "tasks_update",
+    "tasks_remove",
     "tasks_show",
     "tasks_list",
     "tasks_edges",
@@ -1967,6 +1968,23 @@ pub(crate) enum TasksOp {
         integrity: WriteIntegrityArgs,
     },
 
+    /// Delete one row. `import-plan` keeps a row the plan stopped producing,
+    /// so a plan-deleted task is retired here or not at all. A row past
+    /// `pending`, or one other rows depend on, is refused unless `--force`.
+    Remove {
+        /// Task id to remove.
+        id: u32,
+        #[command(flatten)]
+        target: TasksTarget,
+        /// Remove a settled row, or one other rows depend on. Each dependent's
+        /// edges are re-pointed at the removed row's own dependencies, so the
+        /// ordering it stood for survives it.
+        #[arg(long)]
+        force: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
     /// Print one row. Without `--with` the output is the summary shape;
     /// `--with body,files,deps` is the fetch-by-id form a dispatching
     /// orchestrator hands an implementing agent in place of pasted prose.
@@ -2025,8 +2043,10 @@ pub(crate) enum TasksOp {
     },
 
     /// Print the dispatchable frontier: rows whose dependencies are all
-    /// `done`, which of those are held by a file claim, and what becomes
-    /// ready once the current round lands.
+    /// `done`, which of those are held by a file claim, what becomes ready
+    /// once the current round lands, and which rows are blocked behind a
+    /// dependency no later wave can clear — each naming the predecessor
+    /// stranding it and that predecessor's status.
     Ready {
         #[command(flatten)]
         target: TasksTarget,
@@ -2077,6 +2097,10 @@ pub(crate) enum TasksOp {
         /// report a `render/drift` warning when they differ.
         #[arg(long = "plan")]
         plan: bool,
+        /// Ids currently dispatched. A row waiting on one of them is not
+        /// reported as a stalled dependency.
+        #[arg(long = "in-flight", value_delimiter = ',', value_name = "N1,N2,...")]
+        in_flight: Vec<u32>,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },

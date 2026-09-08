@@ -34,7 +34,7 @@ use toml::Value as TomlValue;
 use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::flow::init::execution_record_path_for;
 use crate::integrity::maybe_verify_integrity;
-use crate::io::{atomic_write, read_toml, relativise, repo_or_cwd_root};
+use crate::io::{atomic_write, path_under_root, read_toml, relativise, repo_or_cwd_root};
 use crate::output::print_json_compact;
 
 /// EM DASH (U+2014) — the H1 separator and the empty-`supersedes` placeholder.
@@ -158,29 +158,6 @@ fn title_from_context(context_path: &Path) -> Option<String> {
     }
     let body = std::fs::read_to_string(&plan_resolved).ok()?;
     plan_title_from_body(&body)
-}
-
-/// Containment check: is `candidate` (which may not yet exist) contained under
-/// `root`? We canonicalise both — `root` directly, and `candidate` via its
-/// nearest EXISTING ancestor (canonicalising a missing leaf errors) — then
-/// assert prefix-ancestry. A symlink under the flow tree pointing outside
-/// `root` therefore still fails here, not just lexical `..` traversal. On any
-/// canonicalisation failure we conservatively report "not contained".
-fn path_under_root(root: &Path, candidate: &Path) -> bool {
-    let Ok(root_canon) = root.canonicalize() else {
-        return false;
-    };
-    let mut anchor: &Path = candidate;
-    let anchor_canon = loop {
-        match anchor.canonicalize() {
-            Ok(c) => break c,
-            Err(_) => match anchor.parent() {
-                Some(p) if !p.as_os_str().is_empty() => anchor = p,
-                _ => return false,
-            },
-        }
-    };
-    anchor_canon.starts_with(&root_canon)
 }
 
 /// Extract the first `# Plan: <title>` H1 header from a plan-file body,

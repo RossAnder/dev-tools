@@ -9,6 +9,7 @@
 //!   - `atomic_write` — tempfile + fsync + rename
 //!   - `guard_write_path` / `canonicalize_for_write` — `.claude/` containment
 //!   - `recheck_claude_containment` — TOCTOU narrowing
+//!   - `path_under_root` — canonical prefix-ancestry containment check
 //!   - `with_exclusive_lock` — lock-file acquire/release
 //!   - `repo_or_cwd_root` + `OnceLock` cache
 //!   - `mutate_doc` — guard→lock→read→mutate→write pipeline
@@ -1482,6 +1483,28 @@ pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
     Ok(REPO_ROOT.get_or_init(|| resolved).clone())
 }
 
+/// Prefix-ancestry over canonical paths: is `candidate` — which need not
+/// exist — contained under `root`? `candidate` anchors on its nearest
+/// EXISTING ancestor, because canonicalising a missing leaf errors, so a
+/// symlink pointing out of `root` fails here and not merely lexical `..`
+/// traversal. Any canonicalisation failure reports "not contained".
+pub(crate) fn path_under_root(root: &Path, candidate: &Path) -> bool {
+    let Ok(root_canon) = root.canonicalize() else {
+        return false;
+    };
+    let mut anchor: &Path = candidate;
+    let anchor_canon = loop {
+        match anchor.canonicalize() {
+            Ok(canon) => break canon,
+            Err(_) => match anchor.parent() {
+                Some(parent) if !parent.as_os_str().is_empty() => anchor = parent,
+                _ => return false,
+            },
+        }
+    };
+    anchor_canon.starts_with(&root_canon)
+}
+
 /// Sorted directory listing — keeps test output deterministic across
 /// platforms. `fs::read_dir` does not specify an order on POSIX or NTFS;
 /// sorting by `file_name` (OS-string-lexicographic) makes the listing
@@ -2540,6 +2563,21 @@ arr = [1, 2]
             schema_at < updated_at,
             "schema_version must precede last_updated, got: {rendered:?}"
         );
+    }
+
+    /// A not-yet-created leaf is judged by its nearest existing ancestor, so
+    /// containment holds for a path the caller is about to write.
+    #[test]
+    fn containment_admits_a_missing_leaf_and_refuses_an_escape() {
+        with_root(|root| {
+            assert!(path_under_root(root, &root.join("docs").join("plans")));
+            assert!(path_under_root(
+                root,
+                &root.join("docs").join("plans").join("absent.md")
+            ));
+            assert!(!path_under_root(root, &root.join("..")));
+            assert!(!path_under_root(root, Path::new("/definitely/absent")));
+        });
     }
 
     /// The recorded Windows failure is `os error 5`, which decodes to

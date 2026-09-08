@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use anyhow::{Result, anyhow};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
-use super::graph::{Graph, Node};
+use super::graph::{Graph, nodes_of};
 use super::schema::{Store, TaskRow};
 use super::store;
 use crate::cli::{ReadIntegrityArgs, ShowPart, TasksTarget};
@@ -105,7 +105,7 @@ fn deps(store: &Store, row: &TaskRow) -> Result<Vec<JsonValue>> {
 }
 
 fn dependents(store: &Store, id: u32) -> Result<Vec<JsonValue>> {
-    let nodes = nodes(store);
+    let nodes = nodes_of(&store.items);
     let graph = Graph::build(&nodes)?;
     graph
         .closure_down(id)?
@@ -120,25 +120,10 @@ fn dependents(store: &Store, id: u32) -> Result<Vec<JsonValue>> {
         .collect()
 }
 
-fn nodes(store: &Store) -> Vec<Node> {
-    store
-        .items
-        .iter()
-        .map(|row| Node {
-            id: row.id,
-            files: row.files.clone(),
-            needs: row.needs.clone(),
-            coupling: row.coupling.clone(),
-            status: row.status.as_str().to_string(),
-            checkpoint: row.checkpoint.clone(),
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::schema::{Effort, Status};
+    use crate::tasks::schema::{DEFAULT_HEADING_DEPTH, Effort, Status};
 
     fn row(id: u32, title: &str, needs: &[u32], coupling: &[u32]) -> TaskRow {
         TaskRow {
@@ -148,6 +133,9 @@ mod tests {
             effort: Effort::M,
             status: Status::Pending,
             checkpoint: "A".to_string(),
+            phase: String::new(),
+            phase_depth: 0,
+            heading_depth: DEFAULT_HEADING_DEPTH,
             files: vec![format!("tomlctl/src/tasks/t{id}.rs")],
             needs: needs.to_vec(),
             coupling: coupling.to_vec(),

@@ -16,19 +16,30 @@ use std::sync::OnceLock;
 use anyhow::{Result, anyhow};
 use regex::Regex;
 
+use super::schema::{POLICY_ORIGIN_DEFAULT, POLICY_ORIGIN_PLAN};
+
 const DEFAULT_CHECKPOINTS: &str = "milestones";
 const DEFAULT_MAX_PARALLEL: u32 = 6;
 const DEFAULT_COMMIT_GRANULARITY: &str = "per-task";
-const ABSENT_NOTE: &str = "policy absent in source plan";
 
-const CHECKPOINTS_VALUES: [&str; 3] = ["single", "milestones", "per-batch"];
-const GRANULARITY_VALUES: [&str; 3] = ["per-task", "per-checkpoint", "single-commit"];
+/// The stored spellings of the vocabulary fields, shared with `check` so the
+/// import path and the store gate agree on what is in vocabulary.
+pub(crate) const CHECKPOINTS_VALUES: [&str; 3] = ["single", "milestones", "per-batch"];
+pub(crate) const GRANULARITY_VALUES: [&str; 3] = ["per-task", "per-checkpoint", "single-commit"];
+pub(crate) const ORIGIN_VALUES: [&str; 2] = [POLICY_ORIGIN_PLAN, POLICY_ORIGIN_DEFAULT];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ParsedPolicy {
     pub(crate) checkpoints: String,
     pub(crate) max_parallel: u32,
     pub(crate) commit_granularity: String,
+    /// The plan carried a `## Execution Policy` section. False leaves every
+    /// field above a default the plan never stated, which is a separate fact
+    /// from what any of them holds.
+    pub(crate) authored: bool,
+    /// Authored prose only. A parser diagnostic here would be indistinguishable
+    /// from an author's own exception once the renderer writes it back into the
+    /// document.
     pub(crate) note: String,
     /// The authored `Checkpoint after` bullet, for `checkpoint/marker-mismatch`
     /// only. Membership comes from the markers.
@@ -49,12 +60,12 @@ pub(crate) fn parse_policy(section_body: Option<&str>) -> Result<ParsedPolicy> {
         checkpoints: DEFAULT_CHECKPOINTS.to_string(),
         max_parallel: DEFAULT_MAX_PARALLEL,
         commit_granularity: DEFAULT_COMMIT_GRANULARITY.to_string(),
+        authored: section_body.is_some(),
         note: String::new(),
         checkpoint_after: Vec::new(),
     };
 
     let Some(body) = section_body else {
-        policy.note = ABSENT_NOTE.to_string();
         return Ok(policy);
     };
 
@@ -453,6 +464,7 @@ mod tests {
         assert_eq!(policy.commit_granularity, "per-task");
         assert_eq!(policy.checkpoint_after, vec![12, 13, 22]);
         assert_eq!(policy.note, "");
+        assert!(policy.authored);
     }
 
     #[test]
@@ -463,13 +475,17 @@ mod tests {
         assert_eq!(policy.note, "— one commit train per milestone group");
     }
 
+    /// The absence is carried by `authored`, and `note` stays empty: the
+    /// renderer writes a note back into the plan as the author's own prose,
+    /// so a diagnostic placed there returns as authored content.
     #[test]
-    fn an_absent_section_takes_the_defaults() {
+    fn an_absent_section_takes_the_defaults_and_authors_no_note() {
         let policy = parse_policy(None).expect("policy parses");
         assert_eq!(policy.checkpoints, "milestones");
         assert_eq!(policy.max_parallel, 6);
         assert_eq!(policy.commit_granularity, "per-task");
-        assert_eq!(policy.note, "policy absent in source plan");
+        assert!(!policy.authored);
+        assert_eq!(policy.note, "");
         assert!(policy.checkpoint_after.is_empty());
     }
 

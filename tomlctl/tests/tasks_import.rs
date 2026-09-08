@@ -8,6 +8,12 @@
 //! already orders, three checkpoint marker shapes, and one body carrying a
 //! backslash. `house-plan.tasks.toml` is what importing it must produce.
 //!
+//! `house-plan.rendered.md` is the renderer's output over that same store, and
+//! importing it must land on the same bytes again — the leg that closes plan →
+//! store → plan → store. Without it each half is byte-pinned on its own while
+//! the renderer stays free to emit a document its own importer reads
+//! differently.
+//!
 //! Both fixtures are pinned LF by `tomlctl/.gitattributes`: the store is
 //! byte-compared against a writer that always emits `\n`, and the CRLF case is
 //! built here from the plan's own bytes, so a CRLF working-tree copy would
@@ -19,6 +25,7 @@ use std::path::{Path, PathBuf};
 
 const FIXTURE_PLAN: &str = include_str!("fixtures/tasks/house-plan.md");
 const GOLDEN_STORE: &str = include_str!("fixtures/tasks/house-plan.tasks.toml");
+const RENDERED_PLAN: &str = include_str!("fixtures/tasks/house-plan.rendered.md");
 
 const SLUG: &str = "house-plan-fixture";
 const PLAN_REL: &str = "docs/plans/house-plan.md";
@@ -69,6 +76,22 @@ status = "done"
 summary = "Belongs to a different flow."
 "#;
 
+/// A record on the sibling filename accounting for a task this plan does not
+/// carry, so a resolver that ignored an `[artifacts]` override would land on a
+/// different adopted-and-unmatched pair rather than the same one.
+const DECOY_RECORD: &str = r#"schema_version = 1
+last_updated = 2026-09-08
+
+[[items]]
+id = "E1"
+type = "task-completion"
+date = 2026-09-08
+agent = "implement-lite"
+task_ref = "a-task-the-override-hides"
+status = "done"
+summary = "Only the sibling filename carries this."
+"#;
+
 /// Stage a flow tree under a fresh tempdir:
 ///   `<root>/.claude/flows/<SLUG>/{context.toml, execution-record.toml}`
 ///   `<root>/docs/plans/house-plan.md`   (the path `context.toml` records)
@@ -95,6 +118,20 @@ fn write_plan(root: &Path, body: &str) {
     let path = root.join("docs").join("plans").join("house-plan.md");
     fs::create_dir_all(path.parent().expect("plan has a parent")).expect("plans dir");
     fs::write(path, body).expect("plan written");
+}
+
+fn flow_dir(root: &Path) -> PathBuf {
+    root.join(".claude").join("flows").join(SLUG)
+}
+
+/// The staged context with `extra` appended, which is where an `[artifacts]`
+/// table has to go: a table header ends the top-level key run.
+fn write_context(root: &Path, extra: &str) {
+    fs::write(
+        flow_dir(root).join("context.toml"),
+        format!("{FIXTURE_CONTEXT}{extra}"),
+    )
+    .expect("context written");
 }
 
 fn store_path(root: &Path) -> PathBuf {
@@ -169,11 +206,28 @@ fn refs(envelope: &serde_json::Value, key: &str) -> Vec<String> {
 }
 
 fn finding_classes(envelope: &serde_json::Value) -> Vec<String> {
+    findings_of(envelope, |_| true)
+}
+
+/// Classes of the `error`-severity findings alone. Only these gate the write,
+/// so a run that must be judged on whether it was refused is judged on this
+/// rather than on the whole list.
+fn error_finding_classes(envelope: &serde_json::Value) -> Vec<String> {
+    findings_of(envelope, |finding| {
+        finding.get("severity").and_then(serde_json::Value::as_str) == Some("error")
+    })
+}
+
+fn findings_of(
+    envelope: &serde_json::Value,
+    keep: impl Fn(&serde_json::Value) -> bool,
+) -> Vec<String> {
     envelope
         .get("findings")
         .and_then(serde_json::Value::as_array)
         .unwrap_or_else(|| panic!("envelope must carry `findings`: {envelope}"))
         .iter()
+        .filter(|finding| keep(finding))
         .map(|finding| {
             finding
                 .get("class")
@@ -251,6 +305,29 @@ fn a_fresh_import_matches_the_golden_store() {
     assert_matches_golden(&root);
 }
 
+/// GOLDEN, closing leg: importing the renderer's own output reproduces the
+/// store it was rendered from, byte for byte. A task heading flattened back to
+/// one depth, a phase label the render stopped emitting, a `Files` line the
+/// parser now splits elsewhere — each leaves both byte-goldens internally
+/// consistent and only this comparison sees them stop describing one document.
+#[test]
+fn importing_the_rendered_plan_reproduces_the_golden_store() {
+    // Were the two documents identical this would restate the fresh-import
+    // test under another name and pin nothing about the renderer.
+    assert_ne!(
+        RENDERED_PLAN, FIXTURE_PLAN,
+        "the rendered golden is a copy of the source plan"
+    );
+
+    let (_dir, root) = stage(RENDERED_PLAN);
+    let envelope = import(&root, &["--slug", SLUG]);
+
+    assert_eq!(counts(&envelope), (10, 0, 0), "{envelope}");
+    assert!(finding_classes(&envelope).is_empty(), "{envelope}");
+
+    assert_matches_golden(&root);
+}
+
 /// The one line the golden cannot pin, pinned separately: a bare TOML date,
 /// unquoted, which is what `--verify-integrity` readers and `flow doctor`
 /// both expect of a seeded flow artefact.
@@ -285,6 +362,10 @@ fn the_written_store_stamps_a_bare_date() {
 
 /// A re-import is a no-op on content and keeps every field an execution
 /// wrote — the plan document can express none of `status`, `agent`, `commit`.
+/// Setting one row in flight is what the graph reads as a stall, so the clean
+/// bill this asserts is at error severity: a warning is a diagnostic about the
+/// run in progress, and gating a re-import on one would refuse every store
+/// with work under way.
 #[test]
 fn a_second_import_changes_no_content_and_keeps_execution_state() {
     let (_dir, root) = stage(FIXTURE_PLAN);
@@ -303,7 +384,7 @@ fn a_second_import_changes_no_content_and_keeps_execution_state() {
     assert_eq!(counts(&envelope), (0, 0, 10), "{envelope}");
     assert!(refs(&envelope, "added_refs").is_empty(), "{envelope}");
     assert!(refs(&envelope, "removed_refs").is_empty(), "{envelope}");
-    assert!(finding_classes(&envelope).is_empty(), "{envelope}");
+    assert!(error_finding_classes(&envelope).is_empty(), "{envelope}");
 
     assert_eq!(
         normalised_store(&root),
@@ -521,6 +602,183 @@ fn an_error_class_finding_aborts_the_write() {
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default();
     assert!(message.contains("policy/max-parallel-range"), "{message}");
+    assert_eq!(
+        fs::read(store_path(&root)).expect("the store is still on disk"),
+        before,
+        "a refused import must persist nothing"
+    );
+}
+
+/// The checkpoint table and the policy are assigned whole on every import, so
+/// a plan the grammar reads as taskless would replace both with what an empty
+/// parse yields while reporting an import of nothing. What the refusal
+/// protects is the state already on disk, so that is what is asserted: the
+/// plan states a `max_parallel` the store does not hold and names no
+/// checkpoint at all, and neither reaches the file.
+#[test]
+fn a_taskless_plan_is_refused_and_leaves_the_checkpoints_and_policy_alone() {
+    let (_dir, root) = stage(FIXTURE_PLAN);
+    import(&root, &["--slug", SLUG]);
+    let before = fs::read(store_path(&root)).expect("the store is on disk");
+
+    // Seven hashes is past the deepest heading the grammar reads as a task,
+    // so every numbered heading reads as a phase label instead. The `####`
+    // run goes first: `\n### ` requires the space the deeper heading spends
+    // on a fourth hash, so neither substitution can catch the other's run.
+    let graph_at = FIXTURE_PLAN
+        .find("## Dependency Graph")
+        .expect("the fixture carries a graph section");
+    let risks_at = FIXTURE_PLAN
+        .find("## Risks")
+        .expect("a section closes the fixture");
+    let taskless = format!("{}{}", &FIXTURE_PLAN[..graph_at], &FIXTURE_PLAN[risks_at..])
+        .replace("\n#### ", "\n####### ")
+        .replace("\n### ", "\n####### ")
+        .replace("Max parallel agents**: 6", "Max parallel agents**: 4");
+    assert!(
+        taskless.contains("Max parallel agents**: 4") && !taskless.contains("CHECKPOINT"),
+        "the taskless plan restates the store's own policy and checkpoints, so \
+         leaving them in place would prove nothing"
+    );
+    write_plan(&root, &taskless);
+
+    let preview = import(&root, &["--slug", SLUG, "--dry-run"]);
+    assert_eq!(
+        error_finding_classes(&preview),
+        vec!["plan/no-tasks".to_string()],
+        "{preview}"
+    );
+    assert_eq!(counts(&preview), (0, 0, 0), "{preview}");
+
+    let error = import_err(&root, &["--slug", SLUG]);
+    assert_eq!(
+        error.get("kind").and_then(serde_json::Value::as_str),
+        Some("validation"),
+        "{error}"
+    );
+    assert!(
+        error
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .contains("plan/no-tasks"),
+        "{error}"
+    );
+
+    assert_eq!(
+        fs::read(store_path(&root)).expect("the store is still on disk"),
+        before,
+        "a refused import must leave the store byte-identical"
+    );
+    let after = fs::read_to_string(store_path(&root)).expect("the store is still on disk");
+    assert!(after.contains("max_parallel = 6"), "{after}");
+    for checkpoint in ["A", "B", "C"] {
+        assert!(
+            after.contains(&format!("id = \"{checkpoint}\"")),
+            "checkpoint {checkpoint} did not survive:\n{after}"
+        );
+    }
+}
+
+/// `--plan` takes an absolute or subdirectory-relative argument, but the value
+/// the store records is one the read side has to accept back, so a plan whose
+/// recorded form that side would refuse is refused at the import rather than
+/// at every render afterwards. The absolute in-root case still imports: the
+/// argument is canonicalised and relativised, so the root's `\\?\` prefix —
+/// which a typed path never carries — does not decide containment.
+#[test]
+fn an_unrecordable_plan_argument_is_refused_and_an_absolute_one_records_a_relative_path() {
+    let (dir, root) = stage(FIXTURE_PLAN);
+
+    let outside = tempfile::tempdir().expect("a directory outside the root");
+    let elsewhere = outside.path().join("house-plan.md");
+    fs::write(&elsewhere, FIXTURE_PLAN).expect("plan written");
+    let not_markdown = root.join("docs").join("plans").join("house-plan.txt");
+    fs::write(&not_markdown, FIXTURE_PLAN).expect("plan written");
+
+    for refused in [elsewhere.as_path(), not_markdown.as_path()] {
+        let named = refused.to_string_lossy().to_string();
+        let error = import_err(&root, &["--slug", SLUG, "--plan", &named]);
+        assert_eq!(
+            error.get("kind").and_then(serde_json::Value::as_str),
+            Some("validation"),
+            "{named}: {error}"
+        );
+        assert!(
+            !store_path(&root).exists(),
+            "{named}: a refused import must persist nothing"
+        );
+    }
+
+    // The tempdir's own path rather than the canonical root: on Windows the
+    // two differ by exactly the prefix the resolver has to strip.
+    let typed = dir.path().join("docs").join("plans").join("house-plan.md");
+    assert!(typed.is_absolute(), "{}", typed.display());
+    let envelope = import(&root, &["--slug", SLUG, "--plan", &typed.to_string_lossy()]);
+    assert_eq!(counts(&envelope), (10, 0, 0), "{envelope}");
+
+    let text = fs::read_to_string(store_path(&root)).expect("the store is on disk");
+    assert!(
+        text.contains(&format!("plan_path = \"{PLAN_REL}\"")),
+        "the store must record the repo-relative form:\n{text}"
+    );
+}
+
+/// `--reconcile-record` reads the record the flow's `[artifacts]` names, so a
+/// flow that points its record off the sibling filename reconciles against the
+/// file it actually writes. The override is file-controlled input like every
+/// other recorded path, so one leaving the root is refused rather than read.
+#[test]
+fn reconcile_record_honours_the_artifacts_override_and_holds_it_under_the_root() {
+    let (_dir, root) = stage(FIXTURE_PLAN);
+    fs::rename(
+        flow_dir(&root).join("execution-record.toml"),
+        flow_dir(&root).join("record-2.toml"),
+    )
+    .expect("the record moves off the sibling name");
+    fs::write(flow_dir(&root).join("execution-record.toml"), DECOY_RECORD).expect("decoy written");
+    write_context(
+        &root,
+        &format!("\n[artifacts]\nexecution_record = \".claude/flows/{SLUG}/record-2.toml\"\n"),
+    );
+
+    let envelope = import(&root, &["--slug", SLUG, "--reconcile-record"]);
+    assert_eq!(
+        refs(&envelope, "adopted_refs"),
+        vec!["parse-the-policy-bullets-and-the-max-parallel-range".to_string()],
+        "{envelope}"
+    );
+    assert_eq!(
+        refs(&envelope, "unmatched_refs"),
+        vec!["a-task-from-another-plan".to_string()],
+        "the decoy on the sibling filename was read instead: {envelope}"
+    );
+    let text = fs::read_to_string(store_path(&root)).expect("the store is on disk");
+    assert_eq!(
+        text.matches("status = \"done\"").count(),
+        2,
+        "exactly tasks 1 and 4 are complete in the override's record:\n{text}"
+    );
+
+    let before = fs::read(store_path(&root)).expect("the store is on disk");
+    write_context(
+        &root,
+        "\n[artifacts]\nexecution_record = \"../escape.toml\"\n",
+    );
+    let error = import_err(&root, &["--slug", SLUG, "--reconcile-record"]);
+    assert_eq!(
+        error.get("kind").and_then(serde_json::Value::as_str),
+        Some("validation"),
+        "{error}"
+    );
+    assert!(
+        error
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .contains("execution_record"),
+        "{error}"
+    );
     assert_eq!(
         fs::read(store_path(&root)).expect("the store is still on disk"),
         before,

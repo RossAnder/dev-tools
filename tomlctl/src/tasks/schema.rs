@@ -24,6 +24,24 @@ use toml::value::Datetime;
 
 pub(crate) const SCHEMA_VERSION: i64 = 1;
 
+/// Depth a row's heading renders at when the store records none — the
+/// shallowest depth that still sits inside a `## ` section.
+pub(crate) const DEFAULT_HEADING_DEPTH: u32 = 3;
+
+/// `policy.origin`: the plan's `## Execution Policy` section is where the
+/// values came from.
+pub(crate) const POLICY_ORIGIN_PLAN: &str = "plan";
+
+/// `policy.origin`: the plan authored no policy section, so every value is a
+/// house default. The import always materialises a `[policy]` table, so this
+/// is the only thing distinguishing a pre-policy plan afterwards.
+pub(crate) const POLICY_ORIGIN_DEFAULT: &str = "default";
+
+/// The diagnostic a pre-`origin` import stamped into `note` to mark an absent
+/// policy section. Read back as `origin` and dropped, so the sentence stops
+/// reaching the plan the next render rewrites.
+const LEGACY_ABSENT_NOTE: &str = "policy absent in source plan";
+
 type Table = Map<String, TomlValue>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +65,14 @@ pub(crate) struct Policy {
     pub(crate) checkpoints: String,
     pub(crate) max_parallel: u32,
     pub(crate) commit_granularity: String,
+    /// `plan` or `default` — whether the three fields above were read from a
+    /// plan or fallen back to. A reader deciding between policy and pre-policy
+    /// semantics has nothing else to go on once the import has written the
+    /// table.
+    pub(crate) origin: String,
+    /// Authored prose, never a tool diagnostic: the renderer writes it back
+    /// under `## Execution Policy` and the next import reads it as the
+    /// author's.
     pub(crate) note: String,
 }
 
@@ -65,6 +91,13 @@ pub(crate) struct TaskRow {
     pub(crate) status: Status,
     /// `""` when the task belongs to no checkpoint group.
     pub(crate) checkpoint: String,
+    /// Plan-owned heading structure: the phase label standing over the row in
+    /// the document, that label's `#` run, and the row's own. A phase groups by
+    /// authored position; `checkpoint` groups by dependency closure, and the
+    /// two spans need not coincide.
+    pub(crate) phase: String,
+    pub(crate) phase_depth: u32,
+    pub(crate) heading_depth: u32,
     pub(crate) files: Vec<String>,
     pub(crate) needs: Vec<u32>,
     pub(crate) coupling: Vec<u32>,
@@ -116,6 +149,7 @@ impl Default for Policy {
             checkpoints: "milestones".to_string(),
             max_parallel: 6,
             commit_granularity: "per-task".to_string(),
+            origin: POLICY_ORIGIN_PLAN.to_string(),
             note: String::new(),
         }
     }
@@ -223,6 +257,20 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         .as_table()
         .ok_or_else(|| anyhow!("tasks store root is not a table"))?;
 
+    let schema_version = root
+        .get("schema_version")
+        .and_then(TomlValue::as_integer)
+        .unwrap_or(SCHEMA_VERSION);
+    // A newer store holds keys this shape drops, and the next write would
+    // re-emit it still stamped with its own version — the loss is invisible
+    // to the binary that wrote it.
+    if schema_version > SCHEMA_VERSION {
+        return Err(anyhow!(
+            "tasks store schema_version {schema_version} is newer than the supported \
+             {SCHEMA_VERSION} — upgrade tomlctl to read this store"
+        ));
+    }
+
     let checkpoints = table_array(root, "checkpoints")?
         .iter()
         .enumerate()
@@ -235,10 +283,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         .collect::<Result<Vec<_>>>()?;
 
     Ok(Store {
-        schema_version: root
-            .get("schema_version")
-            .and_then(TomlValue::as_integer)
-            .unwrap_or(SCHEMA_VERSION),
+        schema_version,
         last_updated: root.get("last_updated").and_then(as_date),
         plan_path: str_or(root, "plan_path", ""),
         last_import_refs: str_array(root, "last_import_refs"),
@@ -302,11 +347,24 @@ fn policy_from_toml(value: &TomlValue) -> Result<Policy> {
             .ok_or_else(|| anyhow!("`policy.max_parallel` is not a non-negative integer"))?,
         None => fallback.max_parallel,
     };
+    // An absent `origin` is a store written before the key existed, and such a
+    // store marked the same condition by the diagnostic it stamped into
+    // `note`: that sentence is the older spelling of `default`, and anything
+    // else — an authored note included — is a policy the plan stated.
+    let note = lf(&str_or(table, "note", ""));
+    let legacy_absent = note.trim() == LEGACY_ABSENT_NOTE;
     Ok(Policy {
         checkpoints: str_or(table, "checkpoints", &fallback.checkpoints),
         max_parallel,
         commit_granularity: str_or(table, "commit_granularity", &fallback.commit_granularity),
-        note: lf(&str_or(table, "note", "")),
+        origin: match legacy_absent {
+            true => POLICY_ORIGIN_DEFAULT.to_string(),
+            false => str_or(table, "origin", &fallback.origin),
+        },
+        note: match legacy_absent {
+            true => String::new(),
+            false => note,
+        },
     })
 }
 
@@ -315,6 +373,7 @@ fn policy_to_toml(policy: &Policy) -> TomlValue {
         checkpoints,
         max_parallel,
         commit_granularity,
+        origin,
         note,
     } = policy;
     let mut table = Table::new();
@@ -330,6 +389,7 @@ fn policy_to_toml(policy: &Policy) -> TomlValue {
         "commit_granularity".to_string(),
         TomlValue::String(commit_granularity.clone()),
     );
+    table.insert("origin".to_string(), TomlValue::String(origin.clone()));
     table.insert("note".to_string(), TomlValue::String(lf(note)));
     TomlValue::Table(table)
 }
@@ -398,6 +458,9 @@ fn row_from_toml(value: &TomlValue, index: usize) -> Result<TaskRow> {
         effort,
         status,
         checkpoint: str_or(table, "checkpoint", ""),
+        phase: str_or(table, "phase", ""),
+        phase_depth: u32_or(table, "phase_depth", 0),
+        heading_depth: u32_or(table, "heading_depth", DEFAULT_HEADING_DEPTH),
         files: str_array(table, "files"),
         needs: id_array(table, "needs", id)?,
         coupling: id_array(table, "coupling", id)?,
@@ -418,6 +481,9 @@ fn row_to_toml(row: &TaskRow) -> TomlValue {
         effort,
         status,
         checkpoint,
+        phase,
+        phase_depth,
+        heading_depth,
         files,
         needs,
         coupling,
@@ -444,6 +510,15 @@ fn row_to_toml(row: &TaskRow) -> TomlValue {
     table.insert(
         "checkpoint".to_string(),
         TomlValue::String(checkpoint.clone()),
+    );
+    table.insert("phase".to_string(), TomlValue::String(phase.clone()));
+    table.insert(
+        "phase_depth".to_string(),
+        TomlValue::Integer(i64::from(*phase_depth)),
+    );
+    table.insert(
+        "heading_depth".to_string(),
+        TomlValue::Integer(i64::from(*heading_depth)),
     );
     table.insert("files".to_string(), str_arr_value(files));
     table.insert("needs".to_string(), id_arr_value(needs));
@@ -482,6 +557,16 @@ fn str_or(table: &Table, key: &str, fallback: &str) -> String {
         .and_then(TomlValue::as_str)
         .unwrap_or(fallback)
         .to_string()
+}
+
+/// A non-integer here costs a heading level, never a task, so it reads as the
+/// fallback rather than refusing the whole store.
+fn u32_or(table: &Table, key: &str, fallback: u32) -> u32 {
+    table
+        .get(key)
+        .and_then(TomlValue::as_integer)
+        .and_then(|n| u32::try_from(n).ok())
+        .unwrap_or(fallback)
 }
 
 fn str_array(table: &Table, key: &str) -> Vec<String> {
@@ -562,6 +647,7 @@ mod tests {
                 checkpoints: "milestones".to_string(),
                 max_parallel: 6,
                 commit_granularity: "per-task".to_string(),
+                origin: POLICY_ORIGIN_PLAN.to_string(),
                 note: "tasks 6 and 7 land in one commit".to_string(),
             },
             checkpoints: vec![Checkpoint {
@@ -576,6 +662,9 @@ mod tests {
                     effort: Effort::S,
                     status: Status::Done,
                     checkpoint: "A".to_string(),
+                    phase: "Milestone A — the store".to_string(),
+                    phase_depth: 3,
+                    heading_depth: 4,
                     files: vec!["tomlctl/src/tasks/store.rs".to_string()],
                     needs: Vec::new(),
                     coupling: Vec::new(),
@@ -593,6 +682,9 @@ mod tests {
                     effort: Effort::L,
                     status: Status::InProgress,
                     checkpoint: String::new(),
+                    phase: String::new(),
+                    phase_depth: 0,
+                    heading_depth: DEFAULT_HEADING_DEPTH,
                     files: vec![
                         "tomlctl/src/tasks/render.rs".to_string(),
                         "tomlctl/src/tasks/markdown.rs".to_string(),
@@ -659,6 +751,67 @@ mod tests {
             .to_string();
         assert!(message.contains("12"), "{message}");
         assert!(message.contains("ready"), "{message}");
+    }
+
+    /// A store written before the heading keys existed must still render where
+    /// it always did, so their absence reads as "no phase, three hashes".
+    #[test]
+    fn a_row_without_the_heading_keys_takes_the_rendering_defaults() {
+        let mut raw = to_toml(&fixture());
+        for key in ["phase", "phase_depth", "heading_depth"] {
+            row_mut(&mut raw, 0).remove(key);
+        }
+        let row = &from_toml(&raw).expect("parses").items[0];
+        assert_eq!(row.phase, "");
+        assert_eq!(row.phase_depth, 0);
+        assert_eq!(row.heading_depth, DEFAULT_HEADING_DEPTH);
+    }
+
+    /// A store written before `origin` existed carries the absence in the one
+    /// place it had: the note the renderer would otherwise stamp back into the
+    /// plan as authored prose. Reading it into `origin` vacates the note, so
+    /// the next write drops the sentence.
+    #[test]
+    fn a_policy_without_origin_reads_plan_unless_it_carries_the_older_marker() {
+        fn policy(doc: &mut TomlValue) -> &mut Table {
+            doc.as_table_mut()
+                .expect("root table")
+                .get_mut("policy")
+                .expect("policy table")
+                .as_table_mut()
+                .expect("policy is a table")
+        }
+
+        let mut raw = to_toml(&fixture());
+        policy(&mut raw).remove("origin");
+        let read = from_toml(&raw).expect("parses").policy;
+        assert_eq!(read.origin, POLICY_ORIGIN_PLAN);
+        assert_eq!(read.note, "tasks 6 and 7 land in one commit");
+
+        policy(&mut raw).insert(
+            "note".to_string(),
+            TomlValue::String(LEGACY_ABSENT_NOTE.to_string()),
+        );
+        let read = from_toml(&raw).expect("parses").policy;
+        assert_eq!(read.origin, POLICY_ORIGIN_DEFAULT);
+        assert_eq!(read.note, "");
+    }
+
+    #[test]
+    fn newer_schema_version_is_refused() {
+        let mut raw = to_toml(&fixture());
+        raw.as_table_mut().expect("root table").insert(
+            "schema_version".to_string(),
+            TomlValue::Integer(SCHEMA_VERSION + 1),
+        );
+        let message = from_toml(&raw)
+            .expect_err("newer schema rejected")
+            .to_string();
+        assert!(
+            message.contains(&(SCHEMA_VERSION + 1).to_string()),
+            "{message}"
+        );
+        assert!(message.contains(&SCHEMA_VERSION.to_string()), "{message}");
     }
 
     #[test]

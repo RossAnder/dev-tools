@@ -1,5 +1,5 @@
 //! Black-box coverage for the `tomlctl tasks` write verbs — `add`,
-//! `add-many` and `update`.
+//! `add-many`, `update` and `remove`.
 //!
 //! Every case drives the built binary against a throwaway `TOMLCTL_ROOT`
 //! carrying a staged flow tree, so the store is reached exactly the way a
@@ -64,6 +64,99 @@ checkpoint = "A"
 files = ["tomlctl/src/tasks/graph.rs"]
 needs = [1]
 coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+"#;
+
+/// [`WRITE_FIXTURE`] plus the two rows that make a removal cost something: 3
+/// waits on 2 through `needs`, 4 through `coupling`. Removing 2 therefore has
+/// to answer both edge kinds, and 2's own `needs = [1]` is what a dependent
+/// inherits in its place.
+const REMOVE_FIXTURE: &str = r#"schema_version = 1
+last_updated = 2026-09-07
+plan_path = "docs/plans/whimsical-hugging-puppy.md"
+last_import_refs = [
+    "scaffold-the-module-tree",
+    "wire-the-graph-engine",
+    "write-the-importer",
+    "wire-the-renderer",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "the store and its engine"
+
+[[items]]
+id = 1
+ref = "scaffold-the-module-tree"
+title = "Scaffold the module tree"
+effort = "S"
+status = "done"
+checkpoint = "A"
+files = ["tomlctl/src/tasks/mod.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "wire-the-graph-engine"
+title = "Wire the graph engine"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+files = ["tomlctl/src/tasks/graph.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "write-the-importer"
+title = "Write the importer"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+files = ["tomlctl/src/tasks/import_plan.rs"]
+needs = [2]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "wire-the-renderer"
+title = "Wire the renderer"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+files = ["tomlctl/src/tasks/render.rs"]
+needs = [1]
+coupling = [2]
 deps_note = ""
 action = ""
 detail = ""
@@ -373,6 +466,97 @@ fn update_refuses_an_id_the_store_does_not_carry() {
 }
 
 // ---------------------------------------------------------------------------
+// remove
+// ---------------------------------------------------------------------------
+
+/// One edge list as plain ids, so a splice assertion reads as the edge set it
+/// names rather than as a `toml::Value` comparison.
+fn edge_ids(row: &toml::Value, key: &str) -> Vec<i64> {
+    row[key]
+        .as_array()
+        .unwrap_or_else(|| panic!("`{key}` must be an array; got {row}"))
+        .iter()
+        .map(|target| target.as_integer().expect("an integer edge target"))
+        .collect()
+}
+
+/// Both default refusals. A row past `pending` is what the execution record's
+/// `task_ref` and the commit train's SHA join on; a row other rows wait on
+/// carries an ordering they still need. Neither costs a byte on its way to
+/// being refused.
+#[test]
+fn remove_refuses_a_settled_row_and_a_depended_on_row_without_force() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, REMOVE_FIXTURE);
+    let before = snapshot(&store);
+
+    let settled = tasks_err(&root, &["remove", "1", "--slug", TASKS_SLUG], "");
+    assert_eq!(settled["kind"], json!("validation"));
+    let message = settled["message"].as_str().unwrap();
+    assert!(message.contains("scaffold-the-module-tree"), "{message}");
+    assert!(message.contains("--force"), "{message}");
+
+    // 3 waits on 2 through `needs` and 4 through `coupling`. Both are named,
+    // or the caller cannot tell which edges are in the way.
+    let claimed = tasks_err(&root, &["remove", "2", "--slug", TASKS_SLUG], "");
+    assert_eq!(claimed["kind"], json!("validation"));
+    let message = claimed["message"].as_str().unwrap();
+    assert!(message.contains("tasks 3, 4"), "{message}");
+
+    assert_eq!(
+        snapshot(&store),
+        before,
+        "a refused removal must leave the store and its sidecar untouched"
+    );
+}
+
+/// `--force` takes the row out and re-points every dependent at what that row
+/// itself waited on. Dropping the edges instead would make 3 dispatchable
+/// ahead of 1; leaving them pointing at 2 would make the store error-class.
+/// `rewired` names the rows that moved, so a caller need not re-read to find
+/// them.
+#[test]
+fn a_forced_removal_splices_its_dependencies_into_every_dependent() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, REMOVE_FIXTURE);
+
+    let envelope = tasks(&root, &["remove", "2", "--slug", TASKS_SLUG, "--force"], "");
+    assert_eq!(
+        envelope,
+        json!({"ok": true, "id": 2, "ref": "wire-the-graph-engine", "rewired": [3, 4]})
+    );
+
+    let doc = read_store(&store);
+    assert_eq!(
+        rows(&doc)
+            .iter()
+            .map(|row| row["id"].as_integer().unwrap())
+            .collect::<Vec<_>>(),
+        vec![1, 3, 4],
+        "{doc}"
+    );
+
+    // 3 inherits 2's own dependency; 4 loses the coupling edge and keeps the
+    // `needs = [1]` it already carried, so the splice adds no duplicate.
+    assert_eq!(edge_ids(&rows(&doc)[1], "needs"), vec![1], "{doc}");
+    assert_eq!(edge_ids(&rows(&doc)[2], "needs"), vec![1], "{doc}");
+    assert_eq!(
+        edge_ids(&rows(&doc)[2], "coupling"),
+        Vec::<i64>::new(),
+        "{doc}"
+    );
+
+    assert_sidecar_matches(&store);
+
+    // The store the removal leaves is still one the graph verbs will read: a
+    // dependent left pointing at the removed id is exactly the `dag/` finding
+    // the splice exists to avoid, and it would surface here.
+    let check = tasks(&root, &["check", "--slug", TASKS_SLUG], "");
+    assert_eq!(check["ok"], json!(true), "{check}");
+    assert_eq!(check["findings"], json!([]), "{check}");
+}
+
+// ---------------------------------------------------------------------------
 // target resolution
 // ---------------------------------------------------------------------------
 
@@ -385,10 +569,11 @@ fn every_write_verb_refuses_an_empty_target_as_validation() {
     let (_tmp, root) = sandbox();
     seed_tasks(&root, WRITE_FIXTURE);
 
-    let cases: [(&[&str], &str); 3] = [
+    let cases: [(&[&str], &str); 4] = [
         (&["add", "--title", "Untargeted", "--effort", "S"], "add"),
         (&["add-many", "--ndjson", "-"], "add-many"),
         (&["update", "1", "--status", "done"], "update"),
+        (&["remove", "1", "--force"], "remove"),
     ];
 
     for (args, verb) in cases {

@@ -17,7 +17,7 @@ use anyhow::{Context, Result};
 use serde_json::Value as JsonValue;
 
 use super::graph::{Graph, Node};
-use super::schema::{Effort, Status, Store, TaskRow};
+use super::schema::{DEFAULT_HEADING_DEPTH, Effort, Status, Store, TaskRow};
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
 use crate::convert::json_type_name;
@@ -107,6 +107,7 @@ fn append(store: &mut Store, tasks: Vec<NewTask>) -> Result<Vec<AddOutcome>> {
     let mut next = store.next_id();
     let mut minted = Vec::with_capacity(tasks.len());
     for task in tasks {
+        reject_undeclared_checkpoint(store, &task.checkpoint, &format!("task `{}`", task.title))?;
         let row = build_row(task, next, &mut taken)?;
         next = next.checked_add(1).ok_or_else(|| {
             tagged_err(
@@ -122,7 +123,7 @@ fn append(store: &mut Store, tasks: Vec<NewTask>) -> Result<Vec<AddOutcome>> {
         .items
         .iter()
         .chain(minted.iter())
-        .map(node_of)
+        .map(Node::from)
         .collect();
     // `Graph::build` is the dangling-target check: it names the referring task
     // and the absent one.
@@ -157,6 +158,40 @@ fn append(store: &mut Store, tasks: Vec<NewTask>) -> Result<Vec<AddOutcome>> {
 
     store.items.extend(minted);
     Ok(outcomes)
+}
+
+/// A grouping key must denote a group that exists. Every checkpoint product
+/// selects members by exact match, so a key no `[[checkpoints]]` entry declares
+/// puts the row in no closure and no drain, with nothing downstream reporting
+/// it missing. An empty key is the "no group" spelling and stays legal.
+pub(super) fn reject_undeclared_checkpoint(
+    store: &Store,
+    checkpoint: &str,
+    subject: &str,
+) -> Result<()> {
+    if checkpoint.is_empty()
+        || store
+            .checkpoints
+            .iter()
+            .any(|declared| declared.id == checkpoint)
+    {
+        return Ok(());
+    }
+    let declared: Vec<&str> = store
+        .checkpoints
+        .iter()
+        .map(|checkpoint| checkpoint.id.as_str())
+        .collect();
+    let known = if declared.is_empty() {
+        "the store declares no checkpoint group".to_string()
+    } else {
+        format!("declared groups are {}", declared.join(", "))
+    };
+    Err(tagged_err(
+        ErrorKind::Validation,
+        None,
+        format!("{subject}: unknown checkpoint group `{checkpoint}` — {known}"),
+    ))
 }
 
 fn build_row(task: NewTask, id: u32, taken: &mut BTreeSet<String>) -> Result<TaskRow> {
@@ -208,6 +243,11 @@ fn build_row(task: NewTask, id: u32, taken: &mut BTreeSet<String>) -> Result<Tas
         effort,
         status: Status::default(),
         checkpoint,
+        // Heading structure is authored in the plan and re-read by every
+        // import, so a value set here would not outlive the next one.
+        phase: String::new(),
+        phase_depth: 0,
+        heading_depth: DEFAULT_HEADING_DEPTH,
         files,
         needs,
         coupling,
@@ -235,17 +275,6 @@ fn unique_ref(derived: String, taken: &BTreeSet<String>) -> String {
         }
     }
     unreachable!("the suffix search is unbounded")
-}
-
-fn node_of(row: &TaskRow) -> Node {
-    Node {
-        id: row.id,
-        files: row.files.clone(),
-        needs: row.needs.clone(),
-        coupling: row.coupling.clone(),
-        status: row.status.as_str().to_string(),
-        checkpoint: row.checkpoint.clone(),
-    }
 }
 
 fn task_from_json(value: &JsonValue, row: usize) -> Result<NewTask> {
@@ -528,6 +557,20 @@ mod tests {
         );
         assert_eq!(body(None, None).expect("both absent"), "");
         assert!(body(None, Some(dir.path().join("absent.md"))).is_err());
+    }
+
+    #[test]
+    fn a_checkpoint_group_the_store_does_not_declare_is_refused() {
+        with_root(|root| {
+            let path = store_path(root);
+            let mut stray = task("Into a group that is not there", &[]);
+            stray.checkpoint = "Z".to_string();
+            let message = add(&path, &write_args(), stray)
+                .expect_err("`Z` is declared nowhere")
+                .to_string();
+            assert!(message.contains('Z'), "{message}");
+            assert!(!path.exists(), "a refused add must persist nothing");
+        });
     }
 
     #[test]

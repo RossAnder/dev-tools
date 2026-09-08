@@ -1608,6 +1608,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "tasks_add",
         "tasks_add_many",
         "tasks_update",
+        "tasks_remove",
         "tasks_show",
         "tasks_list",
         "tasks_edges",

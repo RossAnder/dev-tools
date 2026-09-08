@@ -68,11 +68,21 @@ fn canonical_artifacts_lines(slug: &str) -> String {
     )
 }
 
-/// Seed a flow under `<root>/.claude/flows/<slug>/` whose `[artifacts]`
-/// table body is `artifacts_lines`: `context.toml` + `execution-record.toml`
-/// + matching sidecars, and a plan file at `docs/plans/<slug>.md` so
-///   `plan-path-resolves` passes.
+/// The `[tasks]` counter block a seeded flow carries unless a test needs the
+/// join skewed or the block absent. `total` and `completed` derive from
+/// different artifacts, so only a pair that agrees is a clean starting point.
+const ZERO_COUNTERS: &str = "\n[tasks]\ntotal = 0\ncompleted = 0\nin_progress = 0\n\n";
+
+/// [`seed_flow`] with the agreeing counters every other test wants.
 fn seed_flow_with_artifacts(root: &Path, slug: &str, artifacts_lines: &str) {
+    seed_flow(root, slug, ZERO_COUNTERS, artifacts_lines);
+}
+
+/// Seed a flow under `<root>/.claude/flows/<slug>/` whose `[tasks]` block is
+/// `counters` and whose `[artifacts]` table body is `artifacts_lines`:
+/// `context.toml` + `execution-record.toml` + matching sidecars, and a plan
+/// file at `docs/plans/<slug>.md` so `plan-path-resolves` passes.
+fn seed_flow(root: &Path, slug: &str, counters: &str, artifacts_lines: &str) {
     let flow_dir = root.join(".claude").join("flows").join(slug);
     fs::create_dir_all(&flow_dir).unwrap();
 
@@ -89,20 +99,24 @@ status = "in-progress"
 created = 2026-05-08
 updated = 2026-05-08
 scope = []
-
-[tasks]
-total = 0
-completed = 0
-in_progress = 0
-
-[artifacts]
+{counters}[artifacts]
 {artifacts_lines}"#
     );
     write_artifact_with_sidecar(&flow_dir.join("context.toml"), &context_body);
 
     // execution-record.toml — minimal 2-line bootstrap shape.
-    let er_body = "schema_version = 1\nlast_updated = 2026-05-08\n";
-    write_artifact_with_sidecar(&flow_dir.join("execution-record.toml"), er_body);
+    write_artifact_with_sidecar(&execution_record_path(root, slug), EMPTY_RECORD);
+}
+
+/// The two-line bootstrap execution record every seeded flow starts with.
+const EMPTY_RECORD: &str = "schema_version = 1\nlast_updated = 2026-05-08\n";
+
+/// `<root>/.claude/flows/<slug>/execution-record.toml`.
+fn execution_record_path(root: &Path, slug: &str) -> PathBuf {
+    root.join(".claude")
+        .join("flows")
+        .join(slug)
+        .join("execution-record.toml")
 }
 
 /// Seed a clean, current flow — canonical five-key `[artifacts]` table, so
@@ -199,6 +213,9 @@ fn clean_flow_returns_ok_true_with_all_checks_passing() {
         "execution-record-exists",
         "context-sidecar",
         "execution-record-sidecar",
+        "tasks-exists",
+        "tasks-sidecar",
+        "tasks-counters",
         "artifacts-canonical",
         "plan-path-resolves",
         "active-flow-registry",
@@ -278,17 +295,24 @@ fn divergent_tasks_artifact_value_fails_the_check() {
     );
 }
 
-/// Doctor has no `context.toml`-rewriting fix producer: `--fix` over a
-/// legacy four-key table reports the advisory and leaves the file's bytes
-/// exactly as they were.
+/// A legacy four-key table whose plan declares NO `## Tasks` section: `--fix`
+/// reports the advisory and leaves the file's bytes exactly as they were. That
+/// gate is the whole scope of the guarantee — the backfill test below covers
+/// the other side of it.
 #[test]
-fn fix_leaves_legacy_context_bytes_untouched() {
+fn fix_leaves_a_task_less_flows_context_bytes_untouched() {
     let (_g, root) = fresh_root();
     seed_flow_with_artifacts(&root, "legacy", &legacy_artifacts_lines("legacy"));
     seed_active_flow_registry(&root, &["legacy"]);
 
     let context = context_path(&root, "legacy");
     let before = fs::read(&context).unwrap();
+    assert!(
+        !fs::read_to_string(plan_path(&root, "legacy"))
+            .unwrap()
+            .contains("## Tasks"),
+        "precondition: the gate this test scopes to is the plan declaring no task section"
+    );
 
     let v = run_doctor(&root, &["--slug", "legacy", "--fix"]);
     let warnings = v["warnings"].as_array().expect("warnings must be array");
@@ -306,7 +330,379 @@ fn fix_leaves_legacy_context_bytes_untouched() {
     );
     assert!(
         !String::from_utf8_lossy(&fs::read(&context).unwrap()).contains("tasks ="),
-        "doctor --fix must not backfill the [artifacts].tasks key"
+        "doctor --fix must not backfill the [artifacts].tasks key for a task-less plan"
+    );
+}
+
+/// `<root>/docs/plans/<slug>.md` — the plan `seed_flow_with_artifacts` writes
+/// and `context.toml` points at.
+fn plan_path(root: &Path, slug: &str) -> PathBuf {
+    root.join("docs").join("plans").join(format!("{slug}.md"))
+}
+
+/// Overwrite that plan with one carrying a `## Tasks` section — the single
+/// input the task-store checks and the `[artifacts].tasks` backfill are all
+/// gated on.
+fn declare_a_task_section(root: &Path, slug: &str) {
+    fs::write(
+        plan_path(root, slug),
+        "# plan\n\n## Tasks\n\n### 1. Do the thing [S]\n- **Files**: `src/lib.rs`\n",
+    )
+    .unwrap();
+}
+
+/// `<root>/.claude/flows/<slug>/tasks.toml`.
+fn tasks_store_path(root: &Path, slug: &str) -> PathBuf {
+    root.join(".claude")
+        .join("flows")
+        .join(slug)
+        .join("tasks.toml")
+}
+
+/// A plan that declares no task section legitimately carries no store, so both
+/// task-store checks report structurally — keeping the per-flow check count
+/// stable — and each carries the reason it did not look. An `ok=true` with no
+/// detail would be indistinguishable from a store that was actually there.
+#[test]
+fn task_store_checks_skip_a_flow_whose_plan_declares_no_task_section() {
+    let (_g, root) = fresh_root();
+    seed_clean_flow(&root, "prose-only");
+    seed_active_flow_registry(&root, &["prose-only"]);
+
+    let v = run_doctor(&root, &["--slug", "prose-only"]);
+    assert_eq!(v["ok"], JsonValue::Bool(true), "got: {v}");
+
+    let exists = find_check(&v, "tasks-exists", Some("prose-only"));
+    assert_eq!(exists["ok"], JsonValue::Bool(true), "got: {exists}");
+    assert!(
+        exists["detail"].as_str().unwrap_or("").contains("## Tasks"),
+        "tasks-exists must say why it did not look; got: {exists}"
+    );
+
+    let sidecar = find_check(&v, "tasks-sidecar", Some("prose-only"));
+    assert_eq!(sidecar["ok"], JsonValue::Bool(true), "got: {sidecar}");
+    assert!(
+        sidecar["detail"]
+            .as_str()
+            .unwrap_or("")
+            .contains("tasks.toml"),
+        "tasks-sidecar must name the artifact it skipped; got: {sidecar}"
+    );
+
+    assert!(v["warnings"].as_array().unwrap().is_empty(), "got: {v}");
+}
+
+/// A plan that DOES declare one, with no store on disk: doctor creates no
+/// artifacts, so a failing check would have no route out. The absence stays
+/// advisory and the run stays green — but the advisory has to name the flow
+/// and the verb that clears it, or it is a report nobody can act on.
+#[test]
+fn a_declared_task_section_with_no_store_warns_without_failing() {
+    let (_g, root) = fresh_root();
+    seed_clean_flow(&root, "planned");
+    declare_a_task_section(&root, "planned");
+    seed_active_flow_registry(&root, &["planned"]);
+
+    let v = run_doctor(&root, &["--slug", "planned", "--fix"]);
+    assert_eq!(v["ok"], JsonValue::Bool(true), "got: {v}");
+
+    let chk = find_check(&v, "tasks-exists", Some("planned"));
+    assert_eq!(chk["ok"], JsonValue::Bool(true), "got: {chk}");
+    assert!(
+        chk["detail"].as_str().unwrap_or("").contains("missing"),
+        "the check must report the absence, not the skip; got: {chk}"
+    );
+
+    let warnings = v["warnings"].as_array().expect("warnings must be array");
+    assert!(
+        warnings.iter().any(|w| {
+            let text = w.as_str().unwrap_or("");
+            text.contains("planned") && text.contains("import-plan")
+        }),
+        "got: {warnings:?}"
+    );
+
+    assert!(
+        !tasks_store_path(&root, "planned").exists(),
+        "doctor --fix must NOT create a missing task store"
+    );
+}
+
+/// A task store on disk carries a digest whatever the plan section says, so
+/// this check is gated on the file rather than on the plan. A mismatch fails
+/// the run, repairs nothing on a report-only pass, and is regenerated under
+/// `--fix` like any other artifact sidecar.
+#[test]
+fn a_tampered_task_store_sidecar_fails_and_is_regenerated_under_fix() {
+    let (_g, root) = fresh_root();
+    seed_clean_flow(&root, "stored");
+    declare_a_task_section(&root, "stored");
+    seed_active_flow_registry(&root, &["stored"]);
+
+    let store = tasks_store_path(&root, "stored");
+    write_artifact_with_sidecar(&store, "schema_version = 1\nlast_updated = 2026-05-08\n");
+    let bogus = format!(
+        "{}  {}\n",
+        "0".repeat(64),
+        store.file_name().unwrap().to_string_lossy()
+    );
+    fs::write(sidecar_path(&store), &bogus).unwrap();
+
+    let v = run_doctor(&root, &["--slug", "stored"]);
+    assert_eq!(v["ok"], JsonValue::Bool(false), "got: {v}");
+    let chk = find_check(&v, "tasks-sidecar", Some("stored"));
+    assert_eq!(chk["ok"], JsonValue::Bool(false), "got: {chk}");
+    assert!(
+        chk["detail"].as_str().unwrap_or("").contains("mismatch"),
+        "detail must surface the mismatch reason; got: {chk}"
+    );
+    // The store is present; only its digest disagrees.
+    assert_eq!(
+        find_check(&v, "tasks-exists", Some("stored"))["ok"],
+        JsonValue::Bool(true),
+        "got: {v}"
+    );
+    assert_eq!(
+        fs::read_to_string(sidecar_path(&store)).unwrap(),
+        bogus,
+        "a report-only run must repair nothing"
+    );
+
+    let fixed = run_doctor(&root, &["--slug", "stored", "--fix"]);
+    let fixes = fixed["fixes_applied"]
+        .as_array()
+        .expect("fixes_applied must be array");
+    assert!(
+        fixes.iter().any(
+            |f| f["name"] == JsonValue::String("sidecar-refresh".to_string())
+                && f["scope"] == JsonValue::String("stored".to_string())
+                && f["ok"] == JsonValue::Bool(true)
+        ),
+        "fixes_applied must include a sidecar-refresh for the task store; got: {fixed}"
+    );
+    assert_ne!(fs::read_to_string(sidecar_path(&store)).unwrap(), bogus);
+    assert_eq!(
+        run_doctor(&root, &["--slug", "stored"])["ok"],
+        JsonValue::Bool(true),
+        "the regenerated digest must clear the check"
+    );
+}
+
+/// The advisory an absent `[artifacts].tasks` key raises is clearable: for a
+/// flow whose plan declares a task section, `--fix` fills the key in place.
+/// Only an ABSENT key is ever filled — a present one, canonical or not, is
+/// `artifacts-canonical`'s to judge.
+#[test]
+fn fix_backfills_the_tasks_key_for_a_flow_whose_plan_declares_a_task_section() {
+    let (_g, root) = fresh_root();
+    seed_flow_with_artifacts(
+        &root,
+        "planned-legacy",
+        &legacy_artifacts_lines("planned-legacy"),
+    );
+    declare_a_task_section(&root, "planned-legacy");
+    seed_active_flow_registry(&root, &["planned-legacy"]);
+
+    let context = context_path(&root, "planned-legacy");
+    assert!(
+        !fs::read_to_string(&context).unwrap().contains("tasks ="),
+        "precondition: the key must start absent"
+    );
+
+    let v = run_doctor(&root, &["--slug", "planned-legacy", "--fix"]);
+    let fixes = v["fixes_applied"]
+        .as_array()
+        .expect("fixes_applied must be array");
+    assert!(
+        fixes.iter().any(|f| f["name"]
+            == JsonValue::String("artifacts-tasks-backfill".to_string())
+            && f["scope"] == JsonValue::String("planned-legacy".to_string())
+            && f["ok"] == JsonValue::Bool(true)),
+        "got: {v}"
+    );
+
+    let after = fs::read_to_string(&context).unwrap();
+    assert!(
+        after.contains(r#"tasks = ".claude/flows/planned-legacy/tasks.toml""#),
+        "the backfilled value must be the canonical one; got:\n{after}"
+    );
+
+    // Clearing the advisory is the point, and the rewrite has to leave a
+    // digest that still covers the bytes it produced.
+    let again = run_doctor(&root, &["--slug", "planned-legacy"]);
+    assert!(
+        !again["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w.as_str().unwrap_or("").contains("[artifacts].tasks")),
+        "the backfill must clear the advisory it answers; got: {again}"
+    );
+    assert_eq!(
+        find_check(&again, "context-sidecar", Some("planned-legacy"))["ok"],
+        JsonValue::Bool(true),
+        "got: {again}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Acceptance: the [tasks] counter join is advisory in both tiers.
+// ---------------------------------------------------------------------------
+
+/// A task store carrying two rows. The counter join reads the `ref` set and
+/// nothing else, so the rows carry what identifies them and stop there.
+const POPULATED_STORE: &str = r#"schema_version = 1
+last_updated = 2026-05-08
+plan_path = "docs/plans/joined.md"
+last_import_refs = ["do-the-thing", "check-the-thing"]
+
+[[items]]
+id = 1
+ref = "do-the-thing"
+title = "Do the thing"
+status = "done"
+
+[[items]]
+id = 2
+ref = "check-the-thing"
+title = "Check the thing"
+status = "pending"
+"#;
+
+/// An execution record whose `done` task-completions name `refs`, in order —
+/// the set `[tasks].completed` counts.
+fn record_completing(refs: &[&str]) -> String {
+    let mut body = String::from(EMPTY_RECORD);
+    for (index, task_ref) in refs.iter().enumerate() {
+        body.push_str(&format!(
+            "\n[[items]]\nid = \"E{id}\"\ntype = \"task-completion\"\ndate = 2026-05-08\n\
+             agent = \"implement-lite\"\ntask_ref = \"{task_ref}\"\nstatus = \"done\"\n\
+             summary = \"Completed.\"\n",
+            id = index + 1
+        ));
+    }
+    body
+}
+
+/// `[tasks].completed` is derived from the execution record and `total` counts
+/// store rows, so a `completed` past `total` is the join between them having
+/// gone stale. It stays advisory: doctor creates no store and cannot re-derive
+/// the record-side number, so there is no repair `--fix` could apply and the
+/// run stays green.
+#[test]
+fn counters_past_the_row_count_warn_without_failing_the_run() {
+    let (_g, root) = fresh_root();
+    seed_flow(
+        &root,
+        "skewed",
+        "\n[tasks]\ntotal = 2\ncompleted = 5\nin_progress = 0\n\n",
+        &canonical_artifacts_lines("skewed"),
+    );
+    seed_active_flow_registry(&root, &["skewed"]);
+
+    let v = run_doctor(&root, &["--slug", "skewed"]);
+    assert_eq!(v["ok"], JsonValue::Bool(true), "got: {v}");
+    assert_eq!(
+        find_check(&v, "tasks-counters", Some("skewed"))["ok"],
+        JsonValue::Bool(true),
+        "the advisory must not flip the envelope; got: {v}"
+    );
+
+    let warnings = v["warnings"].as_array().expect("warnings must be array");
+    assert!(
+        warnings.iter().any(|w| {
+            let text = w.as_str().unwrap_or("");
+            text.contains("skewed") && text.contains("completed = 5") && text.contains("total = 2")
+        }),
+        "the advisory must name the flow and both counters; got: {warnings:?}"
+    );
+
+    // Control: the same shape with counters that agree raises nothing, so what
+    // fired above is the skew and not the presence of a `[tasks]` block.
+    seed_clean_flow(&root, "agreed");
+    let agreed = run_doctor(&root, &["--slug", "agreed"]);
+    assert!(
+        agreed["warnings"].as_array().unwrap().is_empty(),
+        "got: {agreed}"
+    );
+}
+
+/// The second tier: `completed` counts a ref no store row carries, so the two
+/// counters are counting different sets. The join needs rows to compare
+/// against and is skipped without them — otherwise a flow whose record
+/// predates its store would report every completion it holds.
+#[test]
+fn a_record_completion_naming_no_store_row_warns_without_failing_the_run() {
+    let (_g, root) = fresh_root();
+    seed_clean_flow(&root, "joined");
+    declare_a_task_section(&root, "joined");
+    seed_active_flow_registry(&root, &["joined"]);
+    write_artifact_with_sidecar(
+        &execution_record_path(&root, "joined"),
+        &record_completing(&["do-the-thing", "a-ref-no-row-carries"]),
+    );
+
+    let names_the_orphan = |v: &JsonValue| {
+        v["warnings"]
+            .as_array()
+            .expect("warnings must be array")
+            .iter()
+            .filter_map(JsonValue::as_str)
+            .find(|w| w.contains("a-ref-no-row-carries"))
+            .map(str::to_string)
+    };
+
+    // No store on disk: the join has nothing to compare against and must stay
+    // quiet, or the warning below would be firing on the record alone.
+    let unimported = run_doctor(&root, &["--slug", "joined"]);
+    assert_eq!(names_the_orphan(&unimported), None, "got: {unimported}");
+
+    write_artifact_with_sidecar(&tasks_store_path(&root, "joined"), POPULATED_STORE);
+    let v = run_doctor(&root, &["--slug", "joined"]);
+    assert_eq!(v["ok"], JsonValue::Bool(true), "got: {v}");
+    assert_eq!(
+        find_check(&v, "tasks-counters", Some("joined"))["ok"],
+        JsonValue::Bool(true),
+        "the advisory must not flip the envelope; got: {v}"
+    );
+
+    let warning = names_the_orphan(&v).unwrap_or_else(|| panic!("got: {v}"));
+    assert!(warning.contains("joined"), "{warning}");
+    assert!(
+        !warning.contains("do-the-thing"),
+        "the completion the store DOES carry must not be named — the warning is \
+         the join, not a count of the record's entries: {warning}"
+    );
+}
+
+/// A flow offering neither counters nor a populated store has nothing to join,
+/// so the check reports structurally — keeping the per-flow check count stable
+/// the way the task-store checks do — and carries the reason it did not look.
+#[test]
+fn the_counter_join_skips_a_flow_offering_neither_counters_nor_a_store() {
+    let (_g, root) = fresh_root();
+    seed_flow(&root, "bare", "\n", &canonical_artifacts_lines("bare"));
+    seed_active_flow_registry(&root, &["bare"]);
+
+    let v = run_doctor(&root, &["--slug", "bare"]);
+    assert_eq!(v["ok"], JsonValue::Bool(true), "got: {v}");
+
+    let chk = find_check(&v, "tasks-counters", Some("bare"));
+    assert_eq!(chk["ok"], JsonValue::Bool(true), "got: {chk}");
+    assert!(
+        chk["detail"].as_str().unwrap_or("").starts_with("skipped:"),
+        "the check must say why it did not look; got: {chk}"
+    );
+    assert!(v["warnings"].as_array().unwrap().is_empty(), "got: {v}");
+
+    // Control: counters alone are enough to reach the join, so the skip above
+    // is the absent block rather than the absent store.
+    seed_clean_flow(&root, "counted");
+    let counted = run_doctor(&root, &["--slug", "counted"]);
+    assert_eq!(
+        find_check(&counted, "tasks-counters", Some("counted"))["detail"],
+        JsonValue::Null,
+        "a flow carrying counters must not report as skipped; got: {counted}"
     );
 }
 
@@ -442,13 +838,16 @@ fn missing_context_reports_without_creation_under_fix() {
         "doctor --fix must NOT create missing execution-record.toml"
     );
 
-    // The fixes_applied list never carries a "create" action — only
-    // sidecar-refresh / active-prune.
+    // The fixes_applied list never carries a "create" action. The allowlist is
+    // the whole fix vocabulary, so a name added later fails here.
     let fixes = v["fixes_applied"].as_array().unwrap();
     for f in fixes {
         let name = f["name"].as_str().unwrap_or("");
         assert!(
-            name == "sidecar-refresh" || name == "active-prune",
+            matches!(
+                name,
+                "sidecar-refresh" | "active-prune" | "artifacts-tasks-backfill"
+            ),
             "doctor must never emit a create-action fix; got: {f}"
         );
     }

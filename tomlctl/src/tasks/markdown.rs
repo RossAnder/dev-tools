@@ -10,6 +10,8 @@ use std::ops::Range;
 #[derive(Debug, Clone)]
 pub(crate) struct Section {
     pub(crate) title: String,
+    /// Offset of the `## ` heading line itself, ahead of `body_range`.
+    pub(crate) start: usize,
     /// Bytes after the heading line, up to the next `## ` heading or EOF.
     pub(crate) body_range: Range<usize>,
 }
@@ -19,35 +21,63 @@ impl Section {
     pub(crate) fn body_lf(&self, src: &str) -> String {
         src[self.body_range.clone()].replace("\r\n", "\n")
     }
+
+    /// 1-based line of the heading in `src`. The body opens on the next one,
+    /// so `heading_line + 1` is the document line a body-relative parser's
+    /// first line stands on.
+    pub(crate) fn heading_line(&self, src: &str) -> usize {
+        src[..self.start].matches('\n').count() + 1
+    }
+}
+
+/// Fenced-block tracker for a line-by-line scan, so every scanner over a plan
+/// agrees on which lines can be a heading.
+#[derive(Debug, Default)]
+pub(crate) struct FenceState {
+    open: Option<(char, usize)>,
+}
+
+impl FenceState {
+    /// Advances over one line and reports whether it is fenced — true for the
+    /// opening and closing markers too, neither of which is ever a heading.
+    pub(crate) fn consume(&mut self, line: &str) -> bool {
+        match self.open {
+            Some((marker, width)) => {
+                if closes_fence(line, marker, width) {
+                    self.open = None;
+                }
+                true
+            }
+            None => match opens_fence(line) {
+                Some(open) => {
+                    self.open = Some(open);
+                    true
+                }
+                None => false,
+            },
+        }
+    }
 }
 
 pub(crate) fn sections(src: &str) -> Vec<Section> {
     let mut found: Vec<Section> = Vec::new();
-    let mut fence: Option<(char, usize)> = None;
+    let mut fence = FenceState::default();
     let mut pos = 0usize;
 
     while pos < src.len() {
         let (content, next) = split_line(src, pos);
 
-        match fence {
-            Some((marker, width)) => {
-                if closes_fence(content, marker, width) {
-                    fence = None;
-                }
+        if !fence.consume(content)
+            && let Some(heading) = content.strip_prefix("## ")
+        {
+            if let Some(previous) = found.last_mut() {
+                previous.body_range.end = pos;
             }
-            None => {
-                if let Some(open) = opens_fence(content) {
-                    fence = Some(open);
-                } else if let Some(heading) = content.strip_prefix("## ") {
-                    if let Some(previous) = found.last_mut() {
-                        previous.body_range.end = pos;
-                    }
-                    found.push(Section {
-                        title: heading.trim().to_string(),
-                        body_range: next..src.len(),
-                    });
-                }
-            }
+            found.push(Section {
+                title: heading.trim().to_string(),
+                start: pos,
+                body_range: next..src.len(),
+            });
         }
 
         pos = next;
@@ -84,7 +114,27 @@ pub(crate) fn insert_section_after(
         .into_iter()
         .find(|s| s.title == wanted)
         .map_or(src.len(), |s| s.body_range.end);
+    splice_section(src, at, title, body)
+}
 
+/// The counterpart anchor, for a section whose canonical place is ahead of one
+/// that may itself open the document. Appends at EOF when `before_title` names
+/// no section.
+pub(crate) fn insert_section_before(
+    src: &str,
+    before_title: &str,
+    title: &str,
+    body: &str,
+) -> String {
+    let wanted = needle(before_title);
+    let at = sections(src)
+        .into_iter()
+        .find(|s| s.title == wanted)
+        .map_or(src.len(), |s| s.start);
+    splice_section(src, at, title, body)
+}
+
+fn splice_section(src: &str, at: usize, title: &str, body: &str) -> String {
     let eol = dominant_line_ending(src);
     let mut out = String::with_capacity(src.len() + body.len() + title.len() + 8);
     out.push_str(&src[..at]);
@@ -172,6 +222,23 @@ mod tests {
     }
 
     #[test]
+    fn a_heading_line_indexes_the_document_line_the_heading_stands_on() {
+        for src in [FENCED.to_string(), FENCED.replace('\n', "\r\n")] {
+            let beta = sections(&src)
+                .into_iter()
+                .find(|s| s.title == "Beta")
+                .expect("Beta section");
+            let line = beta.heading_line(&src);
+            assert_eq!(src.lines().nth(line - 1), Some("## Beta"), "{src:?}");
+            assert_eq!(
+                src.lines().nth(line),
+                Some(""),
+                "the body opens on the line after the heading: {src:?}"
+            );
+        }
+    }
+
+    #[test]
     fn tilde_fence_ignores_a_backtick_line() {
         let src = "## A\n\n~~~\n## X\n```\n~~~\n\n## B\n";
         assert_eq!(titles(src), vec!["A", "B"]);
@@ -246,6 +313,42 @@ mod tests {
     fn insert_appends_when_the_anchor_is_missing() {
         let src = "## Tasks\n\n### 1. One";
         let out = insert_section_after(src, "Nowhere", "Dependency Graph", "body");
+        assert_eq!(out, "## Tasks\n\n### 1. One\n## Dependency Graph\nbody\n");
+    }
+
+    #[test]
+    fn insert_before_places_the_section_ahead_of_an_opening_anchor() {
+        let src = "## Tasks\n\n### 1. One\n\n## Risks\n\nrisk\n";
+        let out = insert_section_before(src, "Tasks", "Execution Policy", "\npolicy\n\n");
+        assert_eq!(
+            titles(&out),
+            vec!["Execution Policy", "Tasks", "Risks"],
+            "{out}"
+        );
+        assert!(
+            out.starts_with("## Execution Policy\n\npolicy\n\n## Tasks\n"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn insert_before_keeps_the_bytes_ahead_of_the_anchor() {
+        let src = "# Plan\n\n## Approach\n\nprose\n\n## Tasks\n\n### 1. One\n";
+        let out = insert_section_before(src, "Tasks", "Execution Policy", "policy\n");
+        assert!(
+            out.starts_with("# Plan\n\n## Approach\n\nprose\n\n"),
+            "{out}"
+        );
+        assert!(
+            out.ends_with("## Execution Policy\npolicy\n## Tasks\n\n### 1. One\n"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn insert_before_appends_when_the_anchor_is_missing() {
+        let src = "## Tasks\n\n### 1. One";
+        let out = insert_section_before(src, "Nowhere", "Dependency Graph", "body");
         assert_eq!(out, "## Tasks\n\n### 1. One\n## Dependency Graph\nbody\n");
     }
 

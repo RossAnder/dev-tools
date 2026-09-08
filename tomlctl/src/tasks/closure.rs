@@ -6,7 +6,7 @@
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use super::graph::{Graph, Node};
+use super::graph::{Graph, nodes_of};
 use super::schema::Store;
 use crate::errors::{ErrorKind, tagged_err};
 
@@ -28,7 +28,7 @@ pub(crate) enum Direction {
 /// `{checkpoint, members[], maximal[], valid_cut}` for a group, or
 /// `{task, direction, ids[]}` for one task's walk. Every id list ascending.
 pub(crate) fn closure(store: &Store, target: Target) -> Result<JsonValue> {
-    let nodes = nodes(store);
+    let nodes = nodes_of(&store.items);
     let graph = Graph::build(&nodes).map_err(refuse)?;
 
     match target {
@@ -105,25 +105,10 @@ fn refuse(err: anyhow::Error) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, err.to_string())
 }
 
-fn nodes(store: &Store) -> Vec<Node> {
-    store
-        .items
-        .iter()
-        .map(|row| Node {
-            id: row.id,
-            files: row.files.clone(),
-            needs: row.needs.clone(),
-            coupling: row.coupling.clone(),
-            status: row.status.as_str().to_string(),
-            checkpoint: row.checkpoint.clone(),
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::schema::{Checkpoint, Effort, Status, TaskRow};
+    use crate::tasks::schema::{Checkpoint, DEFAULT_HEADING_DEPTH, Effort, Status, TaskRow};
 
     fn row(id: u32, needs: &[u32], checkpoint: &str) -> TaskRow {
         TaskRow {
@@ -133,6 +118,9 @@ mod tests {
             effort: Effort::S,
             status: Status::Pending,
             checkpoint: checkpoint.to_string(),
+            phase: String::new(),
+            phase_depth: 0,
+            heading_depth: DEFAULT_HEADING_DEPTH,
             files: vec![format!("t{id}.rs")],
             needs: needs.to_vec(),
             coupling: Vec::new(),

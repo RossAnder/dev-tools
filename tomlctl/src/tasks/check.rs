@@ -15,7 +15,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::RangeInclusive;
 
-use super::graph::{Graph, Node};
+use super::graph::{Graph, nodes_of};
+use super::parse_policy::{CHECKPOINTS_VALUES, GRANULARITY_VALUES, ORIGIN_VALUES};
 use super::render::Finding;
 use super::schema::{Status, Store};
 
@@ -26,13 +27,18 @@ const MAX_PARALLEL: RangeInclusive<u32> = 1..=8;
 
 /// Infallible: a store too broken to build a graph from still reports why,
 /// and a cycle only suppresses the classes that need reachability.
-pub(crate) fn check(store: &Store) -> Vec<Finding> {
+pub(crate) fn check(store: &Store, in_flight: &[u32]) -> Vec<Finding> {
     let mut findings = policy_findings(store);
-    findings.extend(duplicate_findings(store));
-    findings.extend(dangling_findings(store));
+    let scanned = {
+        let mut scanned = duplicate_findings(store);
+        scanned.extend(dangling_findings(store));
+        scanned
+    };
+    let build_error_named = !scanned.is_empty();
+    findings.extend(scanned);
     findings.extend(orphan_task_findings(store));
     findings.extend(orphan_row_findings(store));
-    findings.extend(graph_findings(store));
+    findings.extend(graph_findings(store, build_error_named, in_flight));
     findings.sort_by(|a, b| (a.class, &a.ids).cmp(&(b.class, &b.ids)));
     findings
 }
@@ -41,21 +47,63 @@ pub(crate) fn exit_code(findings: &[Finding]) -> i32 {
     i32::from(findings.iter().any(|finding| finding.severity == ERROR))
 }
 
+/// The vocabulary fields are stored as strings so that this — not the reader —
+/// decides what is out of vocabulary, which is why a hand-edited or
+/// externally-produced store is the only one that reaches here in error.
 fn policy_findings(store: &Store) -> Vec<Finding> {
+    let mut findings = Vec::new();
     let parallel = store.policy.max_parallel;
-    if MAX_PARALLEL.contains(&parallel) {
-        return Vec::new();
+    if !MAX_PARALLEL.contains(&parallel) {
+        findings.push(Finding {
+            class: "policy/max-parallel-range",
+            severity: ERROR,
+            ids: Vec::new(),
+            detail: format!(
+                "`policy.max_parallel` is {parallel}, outside the supported range {}–{}",
+                MAX_PARALLEL.start(),
+                MAX_PARALLEL.end()
+            ),
+        });
     }
-    vec![Finding {
-        class: "policy/max-parallel-range",
+    findings.extend(vocabulary_finding(
+        "policy/checkpoints-value",
+        "policy.checkpoints",
+        &store.policy.checkpoints,
+        &CHECKPOINTS_VALUES,
+    ));
+    findings.extend(vocabulary_finding(
+        "policy/commit-granularity-value",
+        "policy.commit_granularity",
+        &store.policy.commit_granularity,
+        &GRANULARITY_VALUES,
+    ));
+    findings.extend(vocabulary_finding(
+        "policy/origin-value",
+        "policy.origin",
+        &store.policy.origin,
+        &ORIGIN_VALUES,
+    ));
+    findings
+}
+
+fn vocabulary_finding(
+    class: &'static str,
+    field: &str,
+    value: &str,
+    allowed: &[&str],
+) -> Option<Finding> {
+    if allowed.contains(&value) {
+        return None;
+    }
+    Some(Finding {
+        class,
         severity: ERROR,
         ids: Vec::new(),
         detail: format!(
-            "`policy.max_parallel` is {parallel}, outside the supported range {}–{}",
-            MAX_PARALLEL.start(),
-            MAX_PARALLEL.end()
+            "`{field}` is `{value}`, outside the vocabulary {}",
+            allowed.join(", ")
         ),
-    }]
+    })
 }
 
 fn duplicate_findings(store: &Store) -> Vec<Finding> {
@@ -103,20 +151,57 @@ fn dangling_findings(store: &Store) -> Vec<Finding> {
         .collect()
 }
 
+/// A grouping key that no `[[checkpoints]]` entry declares holds its row no
+/// more firmly than an empty one does: the row is in no group's closure and in
+/// no milestone drain, so it lands in the same class.
 fn orphan_task_findings(store: &Store) -> Vec<Finding> {
-    let ids = sorted_ids(store.items.iter().filter(|row| row.checkpoint.is_empty()));
-    if ids.is_empty() {
-        return Vec::new();
+    let declared: BTreeSet<&str> = store
+        .checkpoints
+        .iter()
+        .map(|checkpoint| checkpoint.id.as_str())
+        .collect();
+    let undeclared = store
+        .items
+        .iter()
+        .filter(|row| !row.checkpoint.is_empty() && !declared.contains(row.checkpoint.as_str()))
+        .collect::<Vec<_>>();
+
+    let mut findings = Vec::new();
+    let ungrouped = sorted_ids(store.items.iter().filter(|row| row.checkpoint.is_empty()));
+    if !ungrouped.is_empty() {
+        findings.push(Finding {
+            class: "checkpoint/orphan-task",
+            severity: WARNING,
+            detail: format!(
+                "no checkpoint group holds {} — only the final commit train does",
+                task_list(&ungrouped)
+            ),
+            ids: ungrouped,
+        });
     }
-    vec![Finding {
-        class: "checkpoint/orphan-task",
-        severity: WARNING,
-        detail: format!(
-            "no checkpoint group holds {} — only the final commit train does",
-            task_list(&ids)
-        ),
-        ids,
-    }]
+
+    let ids = sorted_ids(undeclared.iter().copied());
+    if !ids.is_empty() {
+        let groups: BTreeSet<&str> = undeclared
+            .iter()
+            .map(|row| row.checkpoint.as_str())
+            .collect();
+        let named = groups
+            .iter()
+            .map(|group| format!("`{group}`"))
+            .collect::<Vec<String>>()
+            .join(", ");
+        findings.push(Finding {
+            class: "checkpoint/orphan-task",
+            severity: WARNING,
+            detail: format!(
+                "no `[[checkpoints]]` entry declares {named}, named by {} — only the final commit train holds them",
+                task_list(&ids)
+            ),
+            ids,
+        });
+    }
+    findings
 }
 
 /// An empty `last_import_refs` means no import has happened yet, not that
@@ -167,12 +252,23 @@ fn orphan_row_detail(ids: &[u32], suffix: &str) -> String {
     )
 }
 
-/// Skipped wholesale when the graph will not build: the scans above already
-/// name both causes, and a partial answer would read as a clean bill.
-fn graph_findings(store: &Store) -> Vec<Finding> {
-    let nodes = nodes(store);
-    let Ok(graph) = Graph::build(&nodes) else {
-        return Vec::new();
+/// Skipped wholesale when the graph will not build, since a partial answer
+/// would read as a clean bill — but a refusal the row scans did not name is
+/// raised as an error, or silence would certify as green a store every graph
+/// verb refuses to read.
+fn graph_findings(store: &Store, build_error_named: bool, in_flight: &[u32]) -> Vec<Finding> {
+    let nodes = nodes_of(&store.items);
+    let graph = match Graph::build(&nodes) {
+        Ok(graph) => graph,
+        Err(_) if build_error_named => return Vec::new(),
+        Err(err) => {
+            return vec![Finding {
+                class: "dag/unbuildable",
+                severity: ERROR,
+                ids: Vec::new(),
+                detail: format!("the task graph cannot be built: {err}"),
+            }];
+        }
     };
 
     let cycle = graph.cycle_members();
@@ -187,7 +283,54 @@ fn graph_findings(store: &Store) -> Vec<Finding> {
 
     let mut findings = overlap_findings(store, &graph);
     findings.extend(cut_findings(store, &graph));
+    findings.extend(stalled_findings(
+        &graph,
+        &declared_in_flight(store, in_flight),
+    ));
     findings
+}
+
+/// An id no row carries is dropped, where the frontier refuses it: `check`
+/// reports on the store it was handed, and a typo that emptied a class would
+/// read as a clean bill.
+fn declared_in_flight(store: &Store, in_flight: &[u32]) -> Vec<u32> {
+    let known: BTreeSet<u32> = store.items.iter().map(|row| row.id).collect();
+    in_flight
+        .iter()
+        .copied()
+        .filter(|id| known.contains(id))
+        .collect()
+}
+
+/// The frontier's `blocked` bucket, so a row the caller declares in flight is
+/// busy here exactly as it is there. Undeclared, a blocker a live run is
+/// working on and one a crashed run abandoned read alike from the store alone,
+/// so this is a diagnostic for a human rather than a refusal — the halt
+/// trigger for a real stall is the frontier itself.
+fn stalled_findings(graph: &Graph<'_>, in_flight: &[u32]) -> Vec<Finding> {
+    let Ok(frontier) = graph.frontier(in_flight) else {
+        return Vec::new();
+    };
+    let mut waiting: BTreeMap<u32, (Status, Vec<u32>)> = BTreeMap::new();
+    for blocked in &frontier.blocked {
+        waiting
+            .entry(blocked.blocker)
+            .or_insert_with(|| (blocked.blocker_status, Vec::new()))
+            .1
+            .push(blocked.id);
+    }
+    waiting
+        .into_iter()
+        .map(|(blocker, (status, dependents))| Finding {
+            class: "dag/stalled-dependency",
+            severity: WARNING,
+            ids: vec![blocker],
+            detail: format!(
+                "task {blocker} is `{status}`, so {} cannot be reached by any wave until it is done",
+                task_list(&dependents)
+            ),
+        })
+        .collect()
 }
 
 fn overlap_findings(store: &Store, graph: &Graph<'_>) -> Vec<Finding> {
@@ -249,21 +392,6 @@ fn cut_findings(store: &Store, graph: &Graph<'_>) -> Vec<Finding> {
     findings
 }
 
-fn nodes(store: &Store) -> Vec<Node> {
-    store
-        .items
-        .iter()
-        .map(|row| Node {
-            id: row.id,
-            files: row.files.clone(),
-            needs: row.needs.clone(),
-            coupling: row.coupling.clone(),
-            status: row.status.as_str().to_string(),
-            checkpoint: row.checkpoint.clone(),
-        })
-        .collect()
-}
-
 fn shared_files(store: &Store, a: u32, b: u32) -> Vec<String> {
     let files = |id: u32| -> BTreeSet<String> {
         store
@@ -304,7 +432,7 @@ fn file_list(files: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::schema::{Checkpoint, Effort, TaskRow};
+    use crate::tasks::schema::{Checkpoint, DEFAULT_HEADING_DEPTH, Effort, TaskRow};
 
     fn row(id: u32, needs: &[u32], files: &[&str], checkpoint: &str) -> TaskRow {
         TaskRow {
@@ -314,6 +442,9 @@ mod tests {
             effort: Effort::S,
             status: Status::Pending,
             checkpoint: checkpoint.to_string(),
+            phase: String::new(),
+            phase_depth: 0,
+            heading_depth: DEFAULT_HEADING_DEPTH,
             files: files.iter().map(|file| (*file).to_string()).collect(),
             needs: needs.to_vec(),
             coupling: Vec::new(),
@@ -358,7 +489,7 @@ mod tests {
             ],
             &["A"],
         );
-        let findings = check(&store);
+        let findings = check(&store, &[]);
 
         assert_eq!(
             classes(&findings),
@@ -385,7 +516,7 @@ mod tests {
             ],
             &["A", "B", "C"],
         );
-        let findings = check(&store);
+        let findings = check(&store, &[]);
 
         assert_eq!(classes(&findings), vec!["checkpoint/invalid-cut"]);
         assert_eq!(findings[0].severity, ERROR);
@@ -406,7 +537,7 @@ mod tests {
         );
         store.last_import_refs = vec!["task-1".to_string()];
         store.items[1].status = Status::Done;
-        let findings = check(&store);
+        let findings = check(&store, &[]);
 
         assert_eq!(
             classes(&findings),
@@ -431,7 +562,7 @@ mod tests {
             ],
             &["A"],
         );
-        let findings = check(&store);
+        let findings = check(&store, &[]);
 
         assert_eq!(
             classes(&findings),
@@ -453,10 +584,128 @@ mod tests {
             vec![row(1, &[2], &["a.rs"], "A"), row(2, &[1], &["a.rs"], "A")],
             &["A"],
         );
-        let findings = check(&store);
+        let findings = check(&store, &[]);
 
         assert_eq!(classes(&findings), vec!["dag/cycle"], "{findings:?}");
         assert_eq!(findings[0].ids, vec![1, 2]);
+        assert_eq!(exit_code(&findings), 1);
+    }
+
+    #[test]
+    fn a_checkpoint_that_no_entry_declares_orphans_its_task() {
+        let store = store(
+            vec![row(1, &[], &["a.rs"], "A"), row(2, &[], &["b.rs"], "Z")],
+            &["A"],
+        );
+        let findings = check(&store, &[]);
+
+        assert_eq!(
+            classes(&findings),
+            vec!["checkpoint/orphan-task"],
+            "{findings:?}"
+        );
+        assert_eq!(findings[0].ids, vec![2]);
+        assert_eq!(findings[0].severity, WARNING);
+        assert!(findings[0].detail.contains("`Z`"), "{findings:?}");
+        assert_eq!(exit_code(&findings), 0);
+    }
+
+    #[test]
+    fn a_store_the_engine_refuses_to_load_is_an_error_not_a_clean_bill() {
+        let items: Vec<TaskRow> = (1..=257).map(|id| row(id, &[], &[], "A")).collect();
+        let findings = check(&store(items, &["A"]), &[]);
+
+        assert_eq!(classes(&findings), vec!["dag/unbuildable"], "{findings:?}");
+        assert_eq!(exit_code(&findings), 1, "{findings:?}");
+    }
+
+    /// 3 sits two hops behind the stall, so a bucket naming only direct
+    /// predecessors would leave it out of the count entirely.
+    #[test]
+    fn a_stalled_row_with_dependents_is_a_warning_naming_the_row_and_its_wake() {
+        let mut store = store(
+            vec![
+                row(1, &[], &["a.rs"], "A"),
+                row(2, &[1], &["b.rs"], "A"),
+                row(3, &[2], &["c.rs"], "A"),
+            ],
+            &["A"],
+        );
+        store.items[0].status = Status::Failed;
+        let findings = check(&store, &[]);
+
+        assert_eq!(
+            classes(&findings),
+            vec!["dag/stalled-dependency"],
+            "{findings:?}"
+        );
+        assert_eq!(findings[0].severity, WARNING);
+        assert_eq!(findings[0].ids, vec![1]);
+        assert!(findings[0].detail.contains("`failed`"), "{findings:?}");
+        assert!(findings[0].detail.contains("tasks 2, 3"), "{findings:?}");
+        assert_eq!(exit_code(&findings), 0, "{findings:?}");
+
+        store.items[0].status = Status::Done;
+        assert_eq!(classes(&check(&store, &[])), Vec::<&str>::new());
+    }
+
+    /// The mid-run shape of a healthy dispatch, which is why the caller that
+    /// knows what it sent has to be able to say so.
+    #[test]
+    fn a_declared_in_flight_blocker_does_not_stall_the_rows_behind_it() {
+        let mut store = store(
+            vec![row(1, &[], &["a.rs"], "A"), row(2, &[1], &["b.rs"], "A")],
+            &["A"],
+        );
+        store.items[0].status = Status::InProgress;
+
+        assert_eq!(
+            classes(&check(&store, &[])),
+            vec!["dag/stalled-dependency"],
+            "undeclared, the same row still stalls its dependent"
+        );
+        assert_eq!(classes(&check(&store, &[1])), Vec::<&str>::new());
+        assert_eq!(
+            classes(&check(&store, &[99])),
+            vec!["dag/stalled-dependency"],
+            "an id no row carries is dropped, so it cannot empty the class"
+        );
+    }
+
+    #[test]
+    fn an_out_of_vocabulary_policy_value_names_the_field_and_the_vocabulary() {
+        let mut store = store(vec![row(1, &[], &["a.rs"], "A")], &["A"]);
+        store.policy.checkpoints = "hourly".to_string();
+        store.policy.commit_granularity = "per-hour".to_string();
+        let findings = check(&store, &[]);
+
+        assert_eq!(
+            classes(&findings),
+            vec![
+                "policy/checkpoints-value",
+                "policy/commit-granularity-value"
+            ],
+            "{findings:?}"
+        );
+        assert!(findings[0].detail.contains("hourly"), "{findings:?}");
+        assert!(findings[0].detail.contains("milestones"), "{findings:?}");
+        assert!(findings[1].detail.contains("per-task"), "{findings:?}");
+        assert_eq!(exit_code(&findings), 1);
+    }
+
+    #[test]
+    fn an_out_of_vocabulary_origin_is_an_error() {
+        let mut store = store(vec![row(1, &[], &["a.rs"], "A")], &["A"]);
+        store.policy.origin = "planned".to_string();
+        let findings = check(&store, &[]);
+
+        assert_eq!(
+            classes(&findings),
+            vec!["policy/origin-value"],
+            "{findings:?}"
+        );
+        assert!(findings[0].detail.contains("planned"), "{findings:?}");
+        assert!(findings[0].detail.contains("default"), "{findings:?}");
         assert_eq!(exit_code(&findings), 1);
     }
 
@@ -465,10 +714,13 @@ mod tests {
         let mut store = store(vec![row(1, &[], &["a.rs"], "A")], &["A"]);
         for (parallel, expected) in [(0, 1), (1, 0), (8, 0), (9, 1)] {
             store.policy.max_parallel = parallel;
-            let findings = check(&store);
+            let findings = check(&store, &[]);
             assert_eq!(exit_code(&findings), expected, "{parallel}: {findings:?}");
         }
         store.policy.max_parallel = 9;
-        assert_eq!(classes(&check(&store)), vec!["policy/max-parallel-range"]);
+        assert_eq!(
+            classes(&check(&store, &[])),
+            vec!["policy/max-parallel-range"]
+        );
     }
 }

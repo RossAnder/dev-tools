@@ -21,6 +21,7 @@ mod markdown;
 mod parse_policy;
 mod parse_tasks;
 mod ready;
+mod remove;
 mod render;
 mod schema;
 mod show;

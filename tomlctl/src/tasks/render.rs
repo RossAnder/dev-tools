@@ -14,8 +14,8 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 
-use super::graph::{Graph, Group, Node};
-use super::markdown::{insert_section_after, replace_section, sections};
+use super::graph::{Graph, Group, nodes_of};
+use super::markdown::{insert_section_after, insert_section_before, replace_section, sections};
 use super::schema::{Checkpoint, Policy, Store, TaskRow};
 
 /// The sections `render` owns; every other byte of the plan is preserved.
@@ -27,6 +27,9 @@ const PREAMBLE: &str =
 const INVALID_CUT: &str = "(INVALID CUT)";
 
 const EMPTY: &str = "—";
+
+const MIN_HEADING_DEPTH: u32 = 3;
+const MAX_HEADING_DEPTH: u32 = 6;
 
 /// Section bodies without their `## ` heading line, which is what
 /// `markdown::replace_section` and `insert_section_after` take.
@@ -48,7 +51,7 @@ pub(crate) struct Finding {
 /// Errors on a cycle or a dangling edge: checkpoint closures are undefined
 /// through one, and a marker naming the wrong tasks is worse than a refusal.
 pub(crate) fn render_sections(store: &Store) -> Result<Rendered> {
-    let nodes = nodes(store);
+    let nodes = nodes_of(&store.items);
     let graph = Graph::build(&nodes)?;
     let order: Vec<String> = store
         .checkpoints
@@ -70,14 +73,8 @@ pub(crate) fn render_sections(store: &Store) -> Result<Rendered> {
 
 pub(crate) fn render_into_plan(store: &Store, plan_src: &str) -> Result<String> {
     let rendered = render_sections(store)?;
-    let before_tasks = section_before(plan_src, "Tasks").unwrap_or_default();
 
-    let mut out = replace_or_insert(
-        plan_src,
-        "Execution Policy",
-        &before_tasks,
-        &rendered.policy,
-    );
+    let mut out = replace_or_insert_before(plan_src, "Execution Policy", "Tasks", &rendered.policy);
     out = replace_or_insert(&out, "Tasks", "Execution Policy", &rendered.tasks);
     out = replace_or_insert(&out, "Dependency Graph", "Tasks", &rendered.graph);
     Ok(out)
@@ -110,21 +107,6 @@ pub(crate) fn check_render_drift(store: &Store, plan_src: &str) -> Result<Option
         ids: Vec::new(),
         detail,
     }))
-}
-
-fn nodes(store: &Store) -> Vec<Node> {
-    store
-        .items
-        .iter()
-        .map(|row| Node {
-            id: row.id,
-            files: row.files.clone(),
-            needs: row.needs.clone(),
-            coupling: row.coupling.clone(),
-            status: row.status.as_str().to_string(),
-            checkpoint: row.checkpoint.clone(),
-        })
-        .collect()
 }
 
 /// Everything that must be complete at the group's cut.
@@ -174,11 +156,23 @@ fn render_policy(policy: &Policy, groups: &[Group]) -> String {
 
 /// Store order, not id order: it is the plan's own task order, and sorting
 /// would reshuffle a document whose numbering runs across phases.
+///
+/// A phase heading is re-emitted only where the label or its depth changes, so
+/// a run of rows under one label yields the one heading the author wrote.
 fn render_tasks(rows: &[TaskRow]) -> String {
     let mut body = String::from("\n");
+    let mut phase: Option<(&str, u32)> = None;
     for row in rows {
+        let current = (!row.phase.is_empty()).then(|| (row.phase.as_str(), depth(row.phase_depth)));
+        if current != phase {
+            if let Some((label, at)) = current {
+                body.push_str(&format!("{} {label}\n\n", hashes(at)));
+            }
+            phase = current;
+        }
         body.push_str(&format!(
-            "### {}. {} [{}]\n",
+            "{} {}. {} [{}]\n",
+            hashes(row.heading_depth),
             row.id,
             row.title,
             row.effort.as_str()
@@ -232,6 +226,16 @@ fn render_graph(checkpoints: &[Checkpoint], groups: &[Group], closures: &[Vec<u3
         body.push_str("\n\n");
     }
     body
+}
+
+/// The containment guard: two hashes would open a `## ` section and split the
+/// one being written, and past six is no heading at all.
+fn depth(stored: u32) -> u32 {
+    stored.clamp(MIN_HEADING_DEPTH, MAX_HEADING_DEPTH)
+}
+
+fn hashes(stored: u32) -> String {
+    "#".repeat(depth(stored) as usize)
 }
 
 fn field_line(label: &str, text: &str) -> Option<String> {
@@ -298,19 +302,25 @@ fn collapse(text: &str) -> String {
 }
 
 fn replace_or_insert(src: &str, title: &str, after: &str, body: &str) -> String {
-    if sections(src).iter().any(|section| section.title == title) {
+    if has_section(src, title) {
         replace_section(src, title, body)
     } else {
         insert_section_after(src, after, title, body)
     }
 }
 
-/// The anchor an absent section inserts after. `None` when `title` opens the
-/// document or is absent, which leaves `insert_section_after` appending.
-fn section_before(src: &str, title: &str) -> Option<String> {
-    let found = sections(src);
-    let at = found.iter().position(|section| section.title == title)?;
-    (at > 0).then(|| found[at - 1].title.clone())
+/// Anchored on the section it precedes rather than on that section's
+/// predecessor, which does not exist when the successor opens the document.
+fn replace_or_insert_before(src: &str, title: &str, before: &str, body: &str) -> String {
+    if has_section(src, title) {
+        replace_section(src, title, body)
+    } else {
+        insert_section_before(src, before, title, body)
+    }
+}
+
+fn has_section(src: &str, title: &str) -> bool {
+    sections(src).iter().any(|section| section.title == title)
 }
 
 fn body_of(src: &str, title: &str) -> Option<String> {
@@ -328,8 +338,8 @@ fn lf(src: &str) -> String {
 mod tests {
     use super::*;
     use crate::tasks::parse_policy::{Marker, parse_markers, parse_policy};
-    use crate::tasks::parse_tasks::parse_tasks;
-    use crate::tasks::schema::{Effort, Status};
+    use crate::tasks::parse_tasks::parse_tasks_at;
+    use crate::tasks::schema::{DEFAULT_HEADING_DEPTH, Effort, Status};
     use crate::tasks::slug::derive_ref;
 
     const PLAN: &str = "# Plan: Demo\n\n## Approach\n\nprose\n\n## Execution Policy\n\nstale\n\n\
@@ -350,6 +360,9 @@ mod tests {
             effort,
             status: Status::Pending,
             checkpoint: checkpoint.to_string(),
+            phase: String::new(),
+            phase_depth: 0,
+            heading_depth: DEFAULT_HEADING_DEPTH,
             files: vec![format!("tomlctl/src/tasks/t{id}.rs")],
             needs: needs.to_vec(),
             coupling: coupling.to_vec(),
@@ -387,6 +400,7 @@ mod tests {
                 max_parallel: 6,
                 commit_granularity: "per-task".to_string(),
                 note: "tasks 2 and 3 land in one commit".to_string(),
+                ..Policy::default()
             },
             checkpoints: vec![
                 Checkpoint {
@@ -420,7 +434,7 @@ mod tests {
         let store = fixture();
         let plan = render_into_plan(&store, PLAN).expect("renders");
 
-        let tasks = parse_tasks(&section(&plan, "Tasks")).expect("tasks parse");
+        let tasks = parse_tasks_at(&section(&plan, "Tasks"), 1).expect("tasks parse");
         assert_eq!(
             tasks.iter().map(|task| task.id).collect::<Vec<_>>(),
             store.items.iter().map(|row| row.id).collect::<Vec<_>>()
@@ -502,6 +516,53 @@ mod tests {
         assert_eq!(render_into_plan(&store, &plan).expect("re-renders"), plan);
     }
 
+    /// One heading per phase run at the authored depths, and a depth that would
+    /// otherwise open a `## ` section clamped back inside the one being written.
+    #[test]
+    fn phase_headings_survive_and_no_depth_can_split_the_section() {
+        let mut store = fixture();
+        for (row, (phase, phase_depth, heading_depth)) in store.items.iter_mut().zip([
+            ("Milestone A — the store", 3, 4),
+            ("Milestone A — the store", 3, 4),
+            ("Milestone A — the store", 3, 4),
+            ("Milestone B — the verbs", 2, 3),
+            ("Milestone B — the verbs", 2, 3),
+            ("", 0, 9),
+        ]) {
+            row.phase = phase.to_string();
+            row.phase_depth = phase_depth;
+            row.heading_depth = heading_depth;
+        }
+
+        let plan = render_into_plan(&store, PLAN).expect("renders");
+        let tasks = section(&plan, "Tasks");
+        for wanted in [
+            "\n### Milestone A — the store\n",
+            "\n### Milestone B — the verbs\n",
+            "\n#### 1. Scaffold the store [S]\n",
+            "\n### 4. Import the plan [S]\n",
+            "\n###### 6. Smoke the corpus [S]\n",
+        ] {
+            assert_eq!(tasks.matches(wanted).count(), 1, "{wanted:?} in {tasks}");
+        }
+
+        assert_eq!(
+            sections(&plan)
+                .into_iter()
+                .map(|section| section.title)
+                .collect::<Vec<_>>(),
+            vec![
+                "Approach",
+                "Execution Policy",
+                "Tasks",
+                "Dependency Graph",
+                "Risks"
+            ],
+            "a heading depth escaped the section it was written into"
+        );
+        assert_eq!(render_into_plan(&store, &plan).expect("re-renders"), plan);
+    }
+
     #[test]
     fn drift_is_none_on_a_fresh_render_and_some_after_one_byte_changes() {
         let store = fixture();
@@ -568,6 +629,22 @@ mod tests {
         );
         assert!(out.starts_with("# Plan: Demo\n\n## Approach\n\nprose\n"));
         assert!(out.ends_with("## Risks\n\nrisk\n"));
+    }
+
+    #[test]
+    fn canonical_order_holds_when_tasks_opens_the_document() {
+        let src = "## Tasks\n\nstale\n\n## Risks\n\nrisk\n";
+        let out = render_into_plan(&fixture(), src).expect("renders");
+
+        assert_eq!(
+            sections(&out)
+                .into_iter()
+                .map(|section| section.title)
+                .collect::<Vec<_>>(),
+            vec!["Execution Policy", "Tasks", "Dependency Graph", "Risks"]
+        );
+        assert!(out.starts_with("## Execution Policy\n"), "{out}");
+        assert!(out.ends_with("## Risks\n\nrisk\n"), "{out}");
     }
 
     #[test]

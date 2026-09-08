@@ -1,9 +1,11 @@
 //! Parser for a plan's `## Tasks` section.
 //!
-//! Input is LF-only: callers pass `Section::body_lf`. A numbered `###`/`####`
-//! heading opens a task and every other heading is a phase label to skip. A
-//! field line's value continues onto following lines indented two spaces or
-//! more, and may start on the first of them rather than after the colon.
+//! Input is LF-only: callers pass `Section::body_lf`. A numbered heading opens
+//! a task and every other heading is a phase label the tasks under it carry;
+//! a `#` line inside a fenced block is neither, so a fenced field value cannot
+//! end a task. A field line's value continues onto following lines indented
+//! two spaces or more, and may start on the first of them rather than after
+//! the colon.
 //!
 //! Patterns spell every class out in ASCII. The binary resolves `regex`
 //! without its unicode features, so a `\d`/`\s`/`\w` shorthand makes
@@ -16,6 +18,7 @@ use std::sync::OnceLock;
 use anyhow::{Result, bail};
 use regex::Regex;
 
+use super::markdown::FenceState;
 use super::schema::Effort;
 
 /// One task heading and its field lines. `effort` is `None` for a heading with
@@ -25,6 +28,12 @@ pub(crate) struct ParsedTask {
     pub(crate) id: u32,
     pub(crate) title: String,
     pub(crate) effort: Option<Effort>,
+    /// `#` run of this task's own heading.
+    pub(crate) depth: u32,
+    /// Nearest preceding non-numbered heading, and its `#` run. Empty for a
+    /// task under no phase label.
+    pub(crate) phase: String,
+    pub(crate) phase_depth: u32,
     pub(crate) files: Vec<String>,
     pub(crate) needs: Vec<u32>,
     pub(crate) deps_note: String,
@@ -33,20 +42,50 @@ pub(crate) struct ParsedTask {
     pub(crate) acceptance: String,
 }
 
+/// Line numbers relative to `section_body` itself, which is what a fixture
+/// standing in for a whole document wants. Every live caller holds the
+/// document and goes through `parse_tasks_at`.
+#[cfg(test)]
 pub(crate) fn parse_tasks(section_body: &str) -> Result<Vec<ParsedTask>> {
+    parse_tasks_at(section_body, 1)
+}
+
+/// `first_line` is the document line `section_body`'s first line stands on, so
+/// every reported number names a line of the plan rather than an offset into a
+/// section a reader cannot see.
+pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Vec<ParsedTask>> {
     let mut tasks: Vec<ParsedTask> = Vec::new();
     let mut current: Option<ParsedTask> = None;
     let mut open: Option<OpenField> = None;
     let mut pending_blank = false;
+    let mut fence = FenceState::default();
+    let mut phase = String::new();
+    let mut phase_depth = 0u32;
 
     for (index, line) in section_body.lines().enumerate() {
-        let line_no = index + 1;
+        let line_no = first_line + index;
+        let fenced = fence.consume(line);
 
-        if line.starts_with('#') {
+        if !fenced && line.starts_with('#') {
             close_field(current.as_mut(), open.take())?;
             pending_blank = false;
             tasks.extend(current.take());
-            current = open_heading(line, line_no)?;
+            match open_heading(line, line_no)? {
+                Some(task) => {
+                    current = Some(ParsedTask {
+                        phase: phase.clone(),
+                        phase_depth,
+                        ..task
+                    });
+                }
+                None => {
+                    current = None;
+                    if let Some(label) = phase_label(line) {
+                        phase = label.to_string();
+                        phase_depth = heading_depth(line);
+                    }
+                }
+            }
             continue;
         }
 
@@ -163,8 +202,24 @@ fn open_heading(line: &str, line_no: usize) -> Result<Option<ParsedTask>> {
         id,
         title: title.to_string(),
         effort,
+        depth: heading_depth(line),
         ..ParsedTask::default()
     }))
+}
+
+/// Length of the leading `#` run.
+fn heading_depth(line: &str) -> u32 {
+    let run = line.len() - line.trim_start_matches('#').len();
+    u32::try_from(run).unwrap_or(u32::MAX)
+}
+
+/// Text after the `#` run of a heading that opens no task. `None` when the run
+/// is not followed by a space or carries no text, neither of which is a
+/// heading — and so neither of which replaces the phase already in force.
+fn phase_label(line: &str) -> Option<&str> {
+    let run = line.len() - line.trim_start_matches('#').len();
+    let label = line[run..].strip_prefix(' ')?.trim();
+    (!label.is_empty()).then_some(label)
 }
 
 fn close_field(task: Option<&mut ParsedTask>, open: Option<OpenField>) -> Result<()> {
@@ -290,13 +345,13 @@ fn dedent(line: &str) -> Option<&str> {
 
 fn heading_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^#{3,4} ([0-9]+)\. (.+)$").expect("heading regex compiles"))
+    RE.get_or_init(|| Regex::new(r"^#{3,6} ([0-9]+)\. (.+)$").expect("heading regex compiles"))
 }
 
 fn malformed_id_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"^#{3,4} ([0-9][^ \t]*)\. ").expect("malformed-id regex compiles")
+        Regex::new(r"^#{3,6} ([0-9][^ \t]*)\. ").expect("malformed-id regex compiles")
     })
 }
 
@@ -352,6 +407,72 @@ mod tests {
             tasks.iter().map(|t| t.id).collect::<Vec<_>>(),
             vec![2, 4],
             "phase headings leaked in as tasks"
+        );
+    }
+
+    #[test]
+    fn a_task_carries_its_phase_label_and_both_heading_depths() {
+        let tasks = parse_tasks(PHASED).expect("parses");
+        assert_eq!(
+            tasks[0].phase,
+            "Milestone A — store, schema and the graph engine (tomlctl core)"
+        );
+        assert_eq!(tasks[1].phase, "Phase 2: carrier adoption");
+        for task in &tasks {
+            assert_eq!((task.phase_depth, task.depth), (3, 4), "task {}", task.id);
+        }
+    }
+
+    #[test]
+    fn a_task_ahead_of_every_phase_label_carries_none() {
+        let body = "### 1. Ship it [S]\n\n##### Wave 1\n\n###### 2. Follow up [S]\n";
+        let tasks = parse_tasks(body).expect("parses");
+        assert_eq!(tasks[0].phase, "");
+        assert_eq!((tasks[0].phase_depth, tasks[0].depth), (0, 3));
+        assert_eq!(tasks[1].phase, "Wave 1");
+        assert_eq!((tasks[1].phase_depth, tasks[1].depth), (5, 6));
+    }
+
+    #[test]
+    fn a_numbered_heading_five_or_six_hashes_deep_is_a_task() {
+        let body = "\
+##### Wave 1 (parallel, after task 10)
+
+##### 11. Migrate the review carrier [M]
+- **Depends on**: 10
+
+###### 12. Migrate the apply carrier [S]
+- **Files**: none
+";
+        let tasks = parse_tasks(body).expect("parses");
+        assert_eq!(
+            tasks.iter().map(|t| t.id).collect::<Vec<_>>(),
+            vec![11, 12],
+            "a deep numbered heading was read as a phase label"
+        );
+        assert_eq!(tasks[0].needs, vec![10]);
+    }
+
+    #[test]
+    fn a_fenced_hash_line_does_not_end_the_task() {
+        let body = "\
+### 1. Ship it [S]
+- **Acceptance**: the suite is green
+```sh
+# builds clean
+cargo build
+```
+- **Files**: `tomlctl/src/tasks/parse_tasks.rs`
+
+### 2. Follow up [S]
+- **Files**: none
+";
+        let tasks = parse_tasks(body).expect("parses");
+        assert_eq!(tasks.iter().map(|t| t.id).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            tasks[0].files,
+            vec!["tomlctl/src/tasks/parse_tasks.rs"],
+            "fields after a fenced block were dropped"
         );
     }
 
@@ -468,6 +589,16 @@ mod tests {
             .to_string();
         assert!(err.contains("M-leaning-L"), "{err}");
         assert!(err.contains("line 1"), "{err}");
+    }
+
+    /// The body opens at document line 12, so its second line is line 13 —
+    /// the line a reader navigates to, not an offset into the section.
+    #[test]
+    fn a_reported_line_counts_from_the_bodys_place_in_the_document() {
+        let err = parse_tasks_at("\n#### 7. Split the store [M-leaning-L]\n", 12)
+            .expect_err("non-vocabulary effort is an error")
+            .to_string();
+        assert!(err.contains("line 13"), "{err}");
     }
 
     #[test]

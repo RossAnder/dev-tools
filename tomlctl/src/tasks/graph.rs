@@ -1,7 +1,8 @@
 //! The task DAG engine — Kahn rounds, cycles, closures, frontier, file overlap and checkpoint groups.
 //!
-//! Self-contained over its own `Node`, so the schema layer converts rows in and
-//! every id handed back is a task id, never an internal position.
+//! Owns its own `Node` and the one conversion into it, so a stored row reaches
+//! the engine through a single seam and every id handed back is a task id,
+//! never an internal position.
 //!
 //! In-degree is `needs ∪ coupling`; a shared file is advisory and never an
 //! edge. Ascending task id breaks every tie — seeds, rounds, successor
@@ -14,6 +15,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Result, anyhow, bail};
 
+use super::schema::{Status, TaskRow};
+
 /// Reachability is `[u64; WORDS]` per node; widening the cap costs a word per
 /// 64 tasks and nothing else.
 const MAX_NODES: usize = 256;
@@ -21,19 +24,56 @@ const WORDS: usize = MAX_NODES / 64;
 
 type Bits = [u64; WORDS];
 
-const STATUS_PENDING: &str = "pending";
-const STATUS_DONE: &str = "done";
-
-/// One task as the engine sees it. `status` and `checkpoint` are the raw store
-/// spellings; the engine only ever compares them.
+/// One task as the engine sees it. `checkpoint` is the raw store spelling — an
+/// author-chosen group id the engine only ever compares.
 #[derive(Debug, Clone)]
 pub(crate) struct Node {
     pub(crate) id: u32,
     pub(crate) files: Vec<String>,
     pub(crate) needs: Vec<u32>,
     pub(crate) coupling: Vec<u32>,
-    pub(crate) status: String,
+    pub(crate) status: Status,
     pub(crate) checkpoint: String,
+}
+
+impl From<&TaskRow> for Node {
+    fn from(row: &TaskRow) -> Self {
+        Self {
+            id: row.id,
+            files: row.files.clone(),
+            needs: row.needs.clone(),
+            coupling: row.coupling.clone(),
+            status: row.status,
+            checkpoint: row.checkpoint.clone(),
+        }
+    }
+}
+
+/// What a stored state means to a wave: `Pending` can still enter one, `Done`
+/// is behind it, and `Stalled` is neither — no wave clears it, so a dependent
+/// behind one waits forever. The mapping is exhaustive, so a new `Status`
+/// variant is a compile error here rather than a silent third reading.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Standing {
+    Pending,
+    Done,
+    Stalled,
+}
+
+impl Standing {
+    fn of(status: Status) -> Self {
+        match status {
+            Status::Pending => Self::Pending,
+            Status::Done => Self::Done,
+            Status::InProgress | Status::Failed | Status::Deferred => Self::Stalled,
+        }
+    }
+}
+
+/// The only route from stored rows into the engine — a verb that builds `Node`
+/// itself can silently disagree with its siblings about what the graph sees.
+pub(crate) fn nodes_of(rows: &[TaskRow]) -> Vec<Node> {
+    rows.iter().map(Node::from).collect()
 }
 
 /// A ready task withheld because an in-flight task already claims one of its
@@ -45,13 +85,26 @@ pub(crate) struct Held {
     pub(crate) holder: u32,
 }
 
+/// A pending task no wave can ever reach. `blocker` is the nearest ancestor
+/// that is neither done, nor pending, nor declared in flight — the row a human
+/// has to move, which an intermediate pending row is not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Blocked {
+    pub(crate) id: u32,
+    pub(crate) blocker: u32,
+    pub(crate) blocker_status: Status,
+}
+
 /// `ready` excludes everything in `held` — it is the dispatchable set, not the
-/// unblocked set. `next` is the wave behind both.
+/// unblocked set. `next` is the wave behind both. `blocked` names what none of
+/// the three can ever hold, so an exhausted frontier still separates a finished
+/// graph from a stalled one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Frontier {
     pub(crate) ready: Vec<u32>,
     pub(crate) held: Vec<Held>,
     pub(crate) next: Vec<u32>,
+    pub(crate) blocked: Vec<Blocked>,
 }
 
 /// `maximal` is the group's antichain under reachability — the ids a
@@ -232,10 +285,7 @@ impl<'a> Graph<'a> {
             if claimed[p] || !self.is_pending(p) {
                 continue;
             }
-            if !self.preds[p]
-                .iter()
-                .all(|d| self.nodes[*d].status == STATUS_DONE)
-            {
+            if !self.preds[p].iter().all(|d| self.is_done(*d)) {
                 continue;
             }
             wave[p] = true;
@@ -250,20 +300,36 @@ impl<'a> Graph<'a> {
         }
 
         let mut next = Vec::new();
+        let mut blocked = Vec::new();
         for p in 0..n {
             if wave[p] || !self.is_pending(p) {
                 continue;
             }
+            // A stalled predecessor fails the `reachable` test below too, so
+            // this only names an exclusion the wave already made.
+            if let Some((blocker, blocker_status)) = self.first_stall(p, &wave) {
+                blocked.push(Blocked {
+                    id: self.nodes[p].id,
+                    blocker,
+                    blocker_status,
+                });
+                continue;
+            }
             let reachable = self.preds[p]
                 .iter()
-                .filter(|d| self.nodes[**d].status != STATUS_DONE)
+                .filter(|d| !self.is_done(**d))
                 .all(|d| wave[*d]);
             if reachable {
                 next.push(self.nodes[p].id);
             }
         }
 
-        Ok(Frontier { ready, held, next })
+        Ok(Frontier {
+            ready,
+            held,
+            next,
+            blocked,
+        })
     }
 
     /// Pairs sharing a file with no directed path either way — a claim two
@@ -341,7 +407,11 @@ impl<'a> Graph<'a> {
     }
 
     fn is_pending(&self, p: usize) -> bool {
-        self.nodes[p].status == STATUS_PENDING
+        Standing::of(self.nodes[p].status) == Standing::Pending
+    }
+
+    fn is_done(&self, p: usize) -> bool {
+        Standing::of(self.nodes[p].status) == Standing::Done
     }
 
     /// Lowest holder id first, then the lexicographically first shared file, so
@@ -352,6 +422,36 @@ impl<'a> Graph<'a> {
             let theirs: BTreeSet<&str> = self.nodes[*h].files.iter().map(String::as_str).collect();
             if let Some(file) = mine.intersection(&theirs).next() {
                 return Some((self.nodes[*h].id, (*file).to_string()));
+            }
+        }
+        None
+    }
+
+    /// Lowest predecessor id first at every level, so a task behind several
+    /// stalls always names the same one. A pending predecessor outside the wave
+    /// is followed rather than reported: it is waiting itself, so the row a
+    /// human has to move is the stall behind it.
+    fn first_stall(&self, p: usize, wave: &[bool]) -> Option<(u32, Status)> {
+        let mut seen = vec![false; self.nodes.len()];
+        self.stall_above(p, wave, &mut seen)
+    }
+
+    fn stall_above(&self, p: usize, wave: &[bool], seen: &mut [bool]) -> Option<(u32, Status)> {
+        if std::mem::replace(&mut seen[p], true) {
+            return None;
+        }
+        for d in &self.preds[p] {
+            if wave[*d] {
+                continue;
+            }
+            match Standing::of(self.nodes[*d].status) {
+                Standing::Done => continue,
+                Standing::Stalled => return Some((self.nodes[*d].id, self.nodes[*d].status)),
+                Standing::Pending => {
+                    if let Some(found) = self.stall_above(*d, wave, seen) {
+                        return Some(found);
+                    }
+                }
             }
         }
         None
@@ -461,7 +561,7 @@ mod tests {
             files: files.iter().map(|f| (*f).to_string()).collect(),
             needs: needs.to_vec(),
             coupling: Vec::new(),
-            status: STATUS_PENDING.to_string(),
+            status: Status::Pending,
             checkpoint: checkpoint.to_string(),
         }
     }
@@ -605,8 +705,8 @@ mod tests {
     #[test]
     fn a_file_claimed_by_an_in_flight_task_holds_a_ready_task() {
         let mut nodes = fixture();
-        find(&mut nodes, 1).status = STATUS_DONE.to_string();
-        find(&mut nodes, 2).status = "in-progress".to_string();
+        find(&mut nodes, 1).status = Status::Done;
+        find(&mut nodes, 2).status = Status::InProgress;
         let graph = Graph::build(&nodes).expect("acyclic fixture builds");
 
         let frontier = graph.frontier(&[2]).unwrap();
@@ -620,7 +720,124 @@ mod tests {
             }]
         );
         assert_eq!(frontier.next, vec![4, 5]);
+        assert!(frontier.blocked.is_empty());
         assert!(graph.frontier(&[99]).is_err());
+    }
+
+    /// Every bucket empties, yet nothing is finished — the answer a bare
+    /// `ready`/`held`/`next` triple cannot tell from completion.
+    #[test]
+    fn a_predecessor_outside_the_wave_reports_the_task_it_strands() {
+        let mut nodes = vec![
+            node(1, &[], &[], ""),
+            node(2, &[1], &[], ""),
+            node(3, &[], &[], ""),
+            node(4, &[3], &[], ""),
+        ];
+        find(&mut nodes, 1).status = Status::InProgress;
+        find(&mut nodes, 3).status = Status::Failed;
+        let graph = Graph::build(&nodes).expect("acyclic");
+
+        let frontier = graph.frontier(&[]).unwrap();
+        assert_eq!(frontier.ready, Vec::<u32>::new());
+        assert_eq!(frontier.held, Vec::new());
+        assert_eq!(frontier.next, Vec::<u32>::new());
+        assert_eq!(
+            frontier.blocked,
+            vec![
+                Blocked {
+                    id: 2,
+                    blocker: 1,
+                    blocker_status: Status::InProgress,
+                },
+                Blocked {
+                    id: 4,
+                    blocker: 3,
+                    blocker_status: Status::Failed,
+                }
+            ]
+        );
+
+        // Declaring 1 in flight makes 2 a task that is waiting rather than
+        // stranded; 4 has no such claim to rejoin.
+        let frontier = graph.frontier(&[1]).unwrap();
+        assert_eq!(frontier.next, vec![2]);
+        assert_eq!(
+            frontier.blocked.iter().map(|b| b.id).collect::<Vec<_>>(),
+            vec![4]
+        );
+    }
+
+    /// Every pending row here is either at the frontier or behind the stall at
+    /// the root, so the four buckets partition them — the count reconciliation
+    /// a reader does. A healthy row further out than `next` is in none of the
+    /// four: `next` is the wave behind `ready`, not the whole remainder.
+    #[test]
+    fn every_pending_row_behind_a_stall_names_the_row_a_human_must_move() {
+        let mut nodes = vec![
+            node(1, &[], &[], ""),
+            node(2, &[1], &[], ""),
+            node(3, &[2], &[], ""),
+            node(4, &[3], &[], ""),
+            node(5, &[], &[], ""),
+            node(6, &[5], &["a.rs"], ""),
+            node(7, &[6], &[], ""),
+            node(8, &[5], &["a.rs"], ""),
+        ];
+        find(&mut nodes, 1).status = Status::Failed;
+        find(&mut nodes, 5).status = Status::Done;
+        find(&mut nodes, 8).status = Status::InProgress;
+        let graph = Graph::build(&nodes).expect("acyclic");
+
+        let frontier = graph.frontier(&[8]).unwrap();
+        assert_eq!(frontier.ready, Vec::<u32>::new());
+        assert_eq!(
+            frontier.held,
+            vec![Held {
+                id: 6,
+                blocked_on_file: "a.rs".to_string(),
+                holder: 8,
+            }]
+        );
+        assert_eq!(frontier.next, vec![7]);
+        // 3 and 4 are two and three hops back; naming 2 or 3 as the blocker
+        // would point a reader at a row that is itself only waiting.
+        assert_eq!(
+            frontier.blocked,
+            vec![
+                Blocked {
+                    id: 2,
+                    blocker: 1,
+                    blocker_status: Status::Failed,
+                },
+                Blocked {
+                    id: 3,
+                    blocker: 1,
+                    blocker_status: Status::Failed,
+                },
+                Blocked {
+                    id: 4,
+                    blocker: 1,
+                    blocker_status: Status::Failed,
+                }
+            ]
+        );
+
+        let pending: Vec<u32> = nodes
+            .iter()
+            .filter(|n| n.status == Status::Pending)
+            .map(|n| n.id)
+            .collect();
+        let mut bucketed: Vec<u32> = frontier
+            .ready
+            .iter()
+            .copied()
+            .chain(frontier.held.iter().map(|held| held.id))
+            .chain(frontier.next.iter().copied())
+            .chain(frontier.blocked.iter().map(|blocked| blocked.id))
+            .collect();
+        bucketed.sort_unstable();
+        assert_eq!(bucketed, pending, "{frontier:?}");
     }
 
     #[test]

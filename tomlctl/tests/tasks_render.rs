@@ -1,12 +1,21 @@
-//! Integration tests for `tomlctl tasks render`.
+//! Integration tests for `tomlctl tasks render`, and for the plan arm of
+//! `tomlctl tasks check` — which resolves its document through the same
+//! recorded-path guard and compares it with the same drift check, so both
+//! sides read the fixtures staged here rather than a second copy of them.
 //!
 //! `house-plan.rendered.md` is what rendering `house-plan.tasks.toml` into
 //! `house-plan.md` must produce, byte for byte. It legitimately differs from
 //! the source plan inside the three owned sections — task 4's `Blocked-by`
 //! renders as `Depends on`, the three checkpoint marker shapes collapse to
 //! one, `Depends on` carries `needs ∪ coupling` with the note
-//! re-parenthesised, the phase-label subheadings and the `(new)` file suffixes
-//! are not store-backed — and must not differ by one byte outside them.
+//! re-parenthesised, the commit-granularity clause moves out of its bullet
+//! into a paragraph of its own, and the `(new)` file suffixes are not
+//! store-backed — and must not differ by one byte outside them.
+//!
+//! The phase-label subheadings and each task's own heading depth ARE
+//! store-backed, so the run of `## Tasks` headings comes back out at the depth
+//! it went in at. `tasks_import` closes that leg by importing this document
+//! and requiring the store it was rendered from.
 //!
 //! Both fixtures are pinned LF by `tomlctl/.gitattributes`: the golden is
 //! byte-compared against a stdout preview and an on-disk write, and the CRLF
@@ -51,10 +60,21 @@ fn stage(plan_body: &str) -> (tempfile::TempDir, PathBuf) {
     let flow_dir = root.join(".claude").join("flows").join(SLUG);
     fs::create_dir_all(&flow_dir).expect("flow dir");
     fs::write(flow_dir.join("context.toml"), context(PLAN_REL)).expect("context written");
-    fs::write(flow_dir.join("tasks.toml"), FIXTURE_STORE).expect("store written");
 
+    write_store(&root, FIXTURE_STORE);
     write_plan(&root, plan_body);
     (dir, root)
+}
+
+fn write_store(root: &Path, body: &str) {
+    fs::write(store_path(root), body).expect("store written");
+}
+
+fn store_path(root: &Path) -> PathBuf {
+    root.join(".claude")
+        .join("flows")
+        .join(SLUG)
+        .join("tasks.toml")
 }
 
 fn write_plan(root: &Path, body: &str) {
@@ -104,6 +124,42 @@ fn render(root: &Path, args: &[&str], code: i32) -> (String, String) {
     )
 }
 
+/// `tasks check <args…>` under `--slug`, with the caller's expected exit code,
+/// returning `(stdout, stderr)`.
+fn check(root: &Path, args: &[&str], code: i32) -> (String, String) {
+    let assert = cli(root)
+        .args(["--error-format", "json"])
+        .args(["tasks", "check", "--slug", SLUG])
+        .args(args)
+        .write_stdin("")
+        .assert()
+        .code(code);
+    let out = assert.get_output();
+    (
+        String::from_utf8_lossy(&out.stdout).to_string(),
+        String::from_utf8_lossy(&out.stderr).to_string(),
+    )
+}
+
+/// The `error` object of a refusal, with the accompanying stdout required to
+/// be empty: `check` spends exit 1 on an error-class finding too, so a
+/// refusal that printed an envelope would be indistinguishable from a store
+/// the verb actually read and judged.
+fn refusal(stdout: &str, stderr: &str) -> serde_json::Value {
+    assert!(
+        stdout.trim().is_empty(),
+        "a refused run must print no findings envelope: {stdout}"
+    );
+    json_of(stderr)
+        .get("error")
+        .cloned()
+        .unwrap_or_else(|| panic!("stderr must be an error envelope: {stderr}"))
+}
+
+fn error_kind(error: &serde_json::Value) -> Option<&str> {
+    error.get("kind").and_then(serde_json::Value::as_str)
+}
+
 fn json_of(text: &str) -> serde_json::Value {
     serde_json::from_str(text.trim())
         .unwrap_or_else(|e| panic!("expected one JSON line: {e}; got: {text}"))
@@ -128,6 +184,20 @@ fn first_line_diff(got: &str, want: &str) -> String {
 fn assert_matches_golden(got: &str) {
     if got != GOLDEN_PLAN {
         panic!("{}", first_line_diff(got, GOLDEN_PLAN));
+    }
+}
+
+/// Endings first, then content: an output that came back wholly LF, or mixed,
+/// fails on the census rather than on a line diff that strips the `\r` it is
+/// about.
+fn assert_crlf_golden(got: &str, want: &str) {
+    assert_eq!(
+        got.matches('\n').count(),
+        got.matches("\r\n").count(),
+        "the written plan carries a bare LF"
+    );
+    if got != want {
+        panic!("{}", first_line_diff(got, want));
     }
 }
 
@@ -270,6 +340,47 @@ fn check_passes_on_a_crlf_copy_of_the_render() {
     );
 }
 
+/// A write into a CRLF plan is uniformly CRLF. The section bodies are built
+/// with `\n` and rewritten to the document's own dominant ending as they are
+/// spliced, so the bytes the renderer preserves and the ones it emits cannot
+/// disagree — and the byte-compare against a CRLF-ised golden pins the
+/// endings and the content in one. The replace arm and the insert arm decide
+/// that ending separately, so a plan missing one of the three sections
+/// exercises the half the first pass does not.
+#[test]
+fn a_render_into_a_crlf_plan_writes_uniform_crlf() {
+    let source = FIXTURE_PLAN.replace('\n', "\r\n");
+    let golden = GOLDEN_PLAN.replace('\n', "\r\n");
+    assert!(
+        source.len() > FIXTURE_PLAN.len() && golden.len() > GOLDEN_PLAN.len(),
+        "a committed fixture is already CRLF — the `text eol=lf` pin is not holding"
+    );
+
+    let (_dir, root) = stage(&source);
+    render(&root, &[], 0);
+    assert_crlf_golden(
+        &fs::read_to_string(plan_path(&root)).expect("the plan is on disk"),
+        &golden,
+    );
+
+    let at = source
+        .find("## Dependency Graph")
+        .expect("the source plan carries the section to remove");
+    let resumes = source.find(AFTER_OWNED).expect("a section closes the plan");
+    let without_graph = format!("{}{}", &source[..at], &source[resumes..]);
+    assert!(
+        !without_graph.contains("## Dependency Graph"),
+        "the section the insert arm is meant to add is still in the source"
+    );
+
+    write_plan(&root, &without_graph);
+    render(&root, &[], 0);
+    assert_crlf_golden(
+        &fs::read_to_string(plan_path(&root)).expect("the plan is on disk"),
+        &golden,
+    );
+}
+
 /// The renderer owns three sections and nothing else, so the hand-authored
 /// header, `## Context` and `## Risks` survive the write byte for byte.
 #[test]
@@ -322,4 +433,161 @@ fn an_escaping_plan_path_is_refused_with_no_write() {
         assert_eq!(plan_bytes(&root), before, "{recorded}");
         assert!(!escape.exists(), "{recorded}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// check --plan
+// ---------------------------------------------------------------------------
+
+/// The plan arm folds the render comparison into the store's own findings.
+/// Drift is a warning, so the exit code stays 0 — `render --check` derives its
+/// status from the finding's presence, this verb from its severity, and a
+/// carrier gating on `check` is gating on error severity alone.
+#[test]
+fn check_plan_folds_the_drift_finding_in_at_exit_zero() {
+    let (_dir, root) = stage(FIXTURE_PLAN);
+
+    // Without the flag the same store reports clean, so what the flag adds is
+    // the plan comparison rather than a finding the row scans already made.
+    let (bare, _) = check(&root, &[], 0);
+    assert!(finding_classes(&json_of(&bare)).is_empty(), "{bare}");
+
+    let (stdout, _) = check(&root, &["--plan"], 0);
+    let envelope = json_of(&stdout);
+    assert_eq!(
+        envelope.get("ok"),
+        Some(&serde_json::Value::Bool(true)),
+        "{envelope}"
+    );
+    assert_eq!(
+        finding_classes(&envelope),
+        vec!["render/drift".to_string()],
+        "{envelope}"
+    );
+    assert_eq!(envelope["findings"][0]["severity"], "warning", "{envelope}");
+    let detail = envelope["findings"][0]["detail"]
+        .as_str()
+        .unwrap_or_default();
+    for section in ["Execution Policy", "Tasks", "Dependency Graph"] {
+        assert!(detail.contains(section), "{detail}");
+    }
+
+    // The same drift, same store, same document — and a non-zero status,
+    // which is the whole of what separates the two verbs here.
+    render(&root, &["--check"], 1);
+
+    // Against the document the store renders to there is nothing to report, so
+    // the finding above is the comparison and not the flag.
+    write_plan(&root, GOLDEN_PLAN);
+    let (clean, _) = check(&root, &["--plan"], 0);
+    assert!(finding_classes(&json_of(&clean)).is_empty(), "{clean}");
+}
+
+/// The exit code is re-derived over the union rather than carried from either
+/// half: an error-class store finding fails the run with the drift warning
+/// riding alongside it, and dropping the flag leaves the same code with the
+/// warning gone.
+#[test]
+fn check_plan_re_derives_the_exit_code_over_both_halves() {
+    let (_dir, root) = stage(FIXTURE_PLAN);
+    let out_of_range = FIXTURE_STORE.replace("max_parallel = 6", "max_parallel = 12");
+    assert_ne!(
+        out_of_range, FIXTURE_STORE,
+        "the fixture store's `max_parallel` line moved"
+    );
+    write_store(&root, &out_of_range);
+
+    let (stdout, _) = check(&root, &["--plan"], 1);
+    let envelope = json_of(&stdout);
+    assert_eq!(
+        envelope.get("ok"),
+        Some(&serde_json::Value::Bool(false)),
+        "{envelope}"
+    );
+    assert_eq!(
+        finding_classes(&envelope),
+        vec![
+            "policy/max-parallel-range".to_string(),
+            "render/drift".to_string()
+        ],
+        "{envelope}"
+    );
+
+    // The error half is the store's, so it survives the flag being dropped —
+    // without which the exit above would also be explained by the drift.
+    let (bare, _) = check(&root, &[], 1);
+    assert_eq!(
+        finding_classes(&json_of(&bare)),
+        vec!["policy/max-parallel-range".to_string()],
+        "{bare}"
+    );
+}
+
+/// The recorded `plan_path` reaches this arm as the same file-controlled input
+/// it reaches `render` as, so an escaping, absolute or non-markdown value is
+/// refused before the document is read.
+#[test]
+fn check_plan_refuses_an_escaping_or_non_markdown_plan_path() {
+    let (_dir, root) = stage(FIXTURE_PLAN);
+    let escape = root
+        .parent()
+        .expect("the tempdir has a parent")
+        .join("escape.md");
+
+    // `/etc/passwd` is the absolute case: `Path::is_absolute` is false for a
+    // rootless path on Windows, so containment rather than the lexical scan
+    // is what refuses it there. `.githooks/pre-commit` stays inside the root
+    // and is refused on its extension alone.
+    for recorded in [
+        "../escape.md",
+        "docs/../../escape.md",
+        "/etc/passwd",
+        ".githooks/pre-commit",
+    ] {
+        fs::write(context_path(&root), context(recorded)).expect("context rewritten");
+
+        let (stdout, stderr) = check(&root, &["--plan"], 1);
+        assert_eq!(
+            error_kind(&refusal(&stdout, &stderr)),
+            Some("validation"),
+            "{recorded}: {stderr}"
+        );
+        assert!(!escape.exists(), "{recorded}");
+
+        // Control: the flag is what consults the recorded path at all, so the
+        // same context still reports clean without it.
+        let (bare, _) = check(&root, &[], 0);
+        assert!(
+            finding_classes(&json_of(&bare)).is_empty(),
+            "{recorded}: {bare}"
+        );
+    }
+}
+
+/// The store records the document it was imported from, so a context naming a
+/// different one would have the arm comparing against a plan this store was
+/// never rendered into. The decoy IS the store's own render, so an arm that
+/// dropped the binding would report clean — the refusal is the only thing
+/// standing between the two answers.
+#[test]
+fn check_plan_refuses_a_context_naming_a_document_the_store_never_came_from() {
+    let (_dir, root) = stage(FIXTURE_PLAN);
+    fs::write(
+        root.join("docs").join("plans").join("decoy.md"),
+        GOLDEN_PLAN,
+    )
+    .expect("decoy written");
+    fs::write(context_path(&root), context("docs/plans/decoy.md")).expect("context rewritten");
+
+    let (stdout, stderr) = check(&root, &["--plan"], 1);
+    let error = refusal(&stdout, &stderr);
+    assert_eq!(error_kind(&error), Some("validation"), "{error}");
+    assert!(
+        error
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .contains(PLAN_REL),
+        "the message must name the document the store was imported from: {error}"
+    );
 }

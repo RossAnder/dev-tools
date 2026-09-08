@@ -5,32 +5,29 @@
 //! dropped on the way to its leaf.
 //!
 //! `store::resolve_store_path` raises the empty-target refusal, so no arm
-//! repeats it. Two validations clap cannot express stay here: `closure`'s
-//! mode paired with its direction, and the containment check `render` and
-//! `check --plan` run over the recorded `plan_path` before touching it —
-//! `atomic_write` carries no write guard, so nothing else would.
+//! repeats it. The one validation clap cannot express stays here: `closure`'s
+//! mode paired with its direction. `render` and `check --plan` reach their
+//! plan through `import_plan`, so the recorded `plan_path` — file-controlled
+//! input that `atomic_write` accepts unguarded — is validated in exactly one
+//! place.
 
 use std::fs;
 use std::io::Write;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde_json::json;
-use toml::Value as TomlValue;
 
 use super::closure::{Direction, Target};
 use super::schema::Store;
 use super::{
-    add, batches, check, closure, edges, import_plan, list, ready, render, show, store, update,
+    add, batches, check, closure, edges, import_plan, list, ready, remove, render, show, store,
+    update,
 };
 use crate::cli::TasksOp;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{atomic_write, read_json_arg, read_toml, relativise, repo_or_cwd_root};
+use crate::io::{atomic_write, read_json_arg, relativise, repo_or_cwd_root};
 use crate::output::{print_json, print_json_compact};
-
-/// Flow-local sibling of the store, and the only `plan_path` source under
-/// `--slug`.
-const CONTEXT_FILE: &str = "context.toml";
 
 pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
     match op {
@@ -164,6 +161,22 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             }))
         }
 
+        TasksOp::Remove {
+            id,
+            target,
+            force,
+            integrity,
+        } => {
+            let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
+            let outcome = remove::remove(&path, &integrity, id, force)?;
+            print_json_compact(&json!({
+                "ok": true,
+                "id": outcome.id,
+                "ref": outcome.r#ref,
+                "rewired": outcome.rewired,
+            }))
+        }
+
         TasksOp::Show {
             id,
             target,
@@ -218,11 +231,12 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         TasksOp::Check {
             target,
             plan,
+            in_flight,
             integrity,
         } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let store = store::load(&path, &integrity)?;
-            let mut findings = check::check(&store);
+            let mut findings = check::check(&store, &in_flight);
             if plan {
                 let plan_path = plan_target(target.slug.as_deref(), &store)?;
                 findings.extend(render::check_render_drift(&store, &read_plan(&plan_path)?)?);
@@ -302,77 +316,10 @@ fn read_plan(path: &Path) -> Result<String> {
 /// The plan `render` rewrites and `check --plan` compares against: the flow
 /// context's `plan_path` under `--slug`, the store's own under `--file`.
 fn plan_target(slug: Option<&str>, store: &Store) -> Result<PathBuf> {
-    let (source, recorded) = match slug {
-        Some(slug) => {
-            let context_path =
-                store::resolve_store_path(Some(slug), None)?.with_file_name(CONTEXT_FILE);
-            let context = read_toml(&context_path)
-                .with_context(|| format!("reading `{}`", context_path.display()))?;
-            let recorded = context
-                .get("plan_path")
-                .and_then(TomlValue::as_str)
-                .filter(|path| !path.is_empty())
-                .map(str::to_string)
-                .ok_or_else(|| {
-                    refuse(format!(
-                        "`{}` records no `plan_path`",
-                        context_path.display()
-                    ))
-                })?;
-            (format!("`{}`", context_path.display()), recorded)
-        }
-        None => {
-            if store.plan_path.is_empty() {
-                return Err(refuse(
-                    "the task store records no `plan_path`: import a plan first".to_string(),
-                ));
-            }
-            ("the task store".to_string(), store.plan_path.clone())
-        }
-    };
-    contained(&source, &recorded)
-}
-
-/// `plan_path` is file-controlled input and `atomic_write` runs no write
-/// guard, so an absolute or `..`-bearing value is refused rather than
-/// resolved. Canonicalising through the nearest existing ancestor closes the
-/// symlinked-leaf case a lexical scan alone leaves open.
-fn contained(source: &str, recorded: &str) -> Result<PathBuf> {
-    let candidate = PathBuf::from(recorded);
-    let root = repo_or_cwd_root()?;
-    let resolved = root.join(&candidate);
-    let escapes = candidate.is_absolute()
-        || candidate
-            .components()
-            .any(|part| matches!(part, Component::ParentDir))
-        || !under_root(&root, &resolved);
-    if escapes {
-        return Err(refuse(format!(
-            "`plan_path` in {source} must be repo-relative and stay under the repo root, \
-             got `{recorded}`"
-        )));
+    match slug {
+        Some(slug) => import_plan::resolve_recorded_plan_path(slug, store),
+        None => import_plan::resolve_store_plan_path(store),
     }
-    Ok(resolved)
-}
-
-/// Prefix-ancestry over canonical paths, anchoring `candidate` on its nearest
-/// EXISTING ancestor because canonicalising a missing leaf errors. Any
-/// canonicalisation failure reports "not contained".
-fn under_root(root: &Path, candidate: &Path) -> bool {
-    let Ok(root_canon) = root.canonicalize() else {
-        return false;
-    };
-    let mut anchor: &Path = candidate;
-    let anchor_canon = loop {
-        match anchor.canonicalize() {
-            Ok(canon) => break canon,
-            Err(_) => match anchor.parent() {
-                Some(parent) if !parent.as_os_str().is_empty() => anchor = parent,
-                _ => return false,
-            },
-        }
-    };
-    anchor_canon.starts_with(&root_canon)
 }
 
 /// The shapes `Target` cannot express and clap's pairwise `conflicts_with`
@@ -422,40 +369,4 @@ fn read_ndjson_source(src: &str) -> Result<String> {
         .filter(|p| !p.is_empty())
         .unwrap_or(src);
     fs::read_to_string(path).with_context(|| format!("reading NDJSON file `{src}`"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::errors::TaggedError;
-
-    fn kind_of(err: &anyhow::Error) -> &'static str {
-        err.downcast_ref::<TaggedError>()
-            .map_or("other", |tagged| tagged.kind.as_str())
-    }
-
-    /// `Path::is_absolute` is false on Windows for a rootless `/…`, so the
-    /// lexical scan alone would let one through — `under_root` is what closes
-    /// it. The accepted path need not exist.
-    #[test]
-    fn a_plan_path_leaving_the_root_is_refused_as_validation() {
-        assert!(contained("the store", "docs/plans/demo.md").is_ok());
-
-        // `docs/../plans/demo.md` resolves back inside the root: only the
-        // lexical `..` scan rejects it, and it stays rejected so containment
-        // never depends on what canonicalisation happens to fold away.
-        for recorded in [
-            "../escape.md",
-            "docs/../../escape.md",
-            "docs/../plans/demo.md",
-            "/etc/passwd",
-        ] {
-            let err = contained("the store", recorded).expect_err(recorded);
-            assert_eq!(kind_of(&err), "validation", "{recorded}");
-        }
-
-        let root = repo_or_cwd_root().expect("a repo or cwd root");
-        assert!(!under_root(&root, &root.join("..")));
-        assert!(under_root(&root, &root.join("docs").join("plans")));
-    }
 }

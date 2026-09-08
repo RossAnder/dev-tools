@@ -41,7 +41,7 @@ tomlctl array-append   <file> <array> --json '{...}'                # append one
 tomlctl array-append   <file> <array> --ndjson -                    # batched append to e.g. rollback_events
 tomlctl flow active list|add|remove [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...  # manage active-flow registry
 tomlctl flow active touch --slug <s> [--dry-run]                    # refresh last_used timestamp for a flow in the registry
-tomlctl flow doctor [--slug <s>] [--fix] [--dry-run]                # invariant checks across flows; always emits JSON; --fix regenerates sidecars / prunes stale registry entries
+tomlctl flow doctor [--slug <s>] [--fix] [--dry-run]                # invariant checks across flows; always emits JSON; --fix regenerates sidecars / prunes stale registry entries / backfills an absent [artifacts].tasks key
 tomlctl flow ensure-artifact --slug <s> --kind <k> [--bootstrap]    # report (or bootstrap execution-record) flow artifact + sidecar status
 tomlctl flow find-plans [--dirs <d>...] [--strict-read]             # locate plan files under given dirs
 tomlctl flow init --slug <s> --plan <path> [--branch <b>] [--scope <glob>]...   # seed context.toml + execution-record.toml + active-flow entry (idempotent)
@@ -260,9 +260,10 @@ downstream flow-command templates can feature-gate at boot without parsing
                "backlog_cluster", "backlog_compact", "backlog_evidence",
                "backlog_list", "backlog_show", "backlog_relate",
                "backlog_triage", "tasks_import_plan", "tasks_add",
-               "tasks_add_many", "tasks_update", "tasks_show", "tasks_list",
-               "tasks_edges", "tasks_ready", "tasks_batches",
-               "tasks_closure", "tasks_check", "tasks_render"],
+               "tasks_add_many", "tasks_update", "tasks_remove",
+               "tasks_show", "tasks_list", "tasks_edges", "tasks_ready",
+               "tasks_batches", "tasks_closure", "tasks_check",
+               "tasks_render"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks"],
@@ -321,7 +322,7 @@ Feature meanings:
 | `agent_context` | `tomlctl capabilities .commands` emits per-subcommand flag schema (type / required / default / values / repeatable + mutex_groups) for runtime introspection without parsing `--help` prose |
 | `flow_resolve` | `flow resolve` — the 6-step active-flow resolution, emitting the JSON flow envelope |
 | `flow_active` | `flow active list` / `add` / `remove` — the `.claude/active-flow.toml` registry |
-| `flow_doctor` | `flow doctor` — cross-flow invariant checks; `--fix` repairs sidecar mismatches and prunes stale registry entries |
+| `flow_doctor` | `flow doctor` — cross-flow invariant checks; `--fix` repairs sidecar mismatches, prunes stale registry entries, and backfills an absent `[artifacts].tasks` key |
 | `flow_init` | `flow init --slug <SLUG> --plan <PATH>` — idempotent bootstrap of a new flow |
 | `flow_ensure_artifact` | `flow ensure-artifact --kind <KIND>` — report a flow artifact, and with `--bootstrap` materialise it |
 | `flow_envelope_build` | `flow envelope build --command <CARRIER>` — emit the canonical `flow-bootstrap` input envelope on stdout |
@@ -343,11 +344,12 @@ Feature meanings:
 | `tasks_add` | `tasks add --title <TEXT> --effort <S\|M\|L>` — append one row, refusing a dangling dependency target or a cycle before writing |
 | `tasks_add_many` | `tasks add-many --ndjson <SRC>` — append a batch of rows all-or-nothing |
 | `tasks_update` | `tasks update <N> --status <STATUS>` — patch one row's mutable fields; `ref` moves only under an explicit `--ref` |
+| `tasks_remove` | `tasks remove <N>` — retire one row, the only verb that deletes; a settled row, or one other rows depend on, needs `--force`, which splices its dependencies into every dependent |
 | `tasks_show` | `tasks show <N> --with body,files,deps` — one row, the fetch-by-id form an orchestrator hands a dispatched agent in place of pasted prose |
 | `tasks_list` | `tasks list` — query rows with the full `items list` predicate, projection and aggregation surface |
 | `tasks_edges` | `tasks edges --kind needs\|coupling\|overlap` — the edge list, or Graphviz DOT under `--dot` |
 | `tasks_ready` | `tasks ready --in-flight <N1,N2,...>` — the dispatchable frontier, which rows a file claim holds, and what unblocks once the round lands |
 | `tasks_batches` | `tasks batches` — the graph's Kahn layers, each sorted ascending |
 | `tasks_closure` | `tasks closure --checkpoint <ID>` / `--task <N> --up` / `--down` — a checkpoint group's task set or one task's transitive closure, plus its maximal elements |
-| `tasks_check` | `tasks check` — the store's invariant checks; any `error`-class finding exits 1, and `--plan` also reports render drift |
+| `tasks_check` | `tasks check --in-flight <N1,N2,...>` — the store's invariant checks; any `error`-class finding exits 1, and `--plan` reports render drift as a warning, so gate drift on `tasks render --check` |
 | `tasks_render` | `tasks render` — rewrite the plan's `## Execution Policy`, `## Tasks` and `## Dependency Graph` from the store; `--stdout` previews and `--check` reports drift without writing |

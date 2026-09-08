@@ -12,7 +12,7 @@ use std::fmt::Write as _;
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use super::graph::{Graph, Node};
+use super::graph::{Graph, nodes_of};
 use super::schema::Store;
 use super::store;
 use crate::cli::{EdgeKind, ReadIntegrityArgs, TasksTarget};
@@ -95,7 +95,7 @@ fn collect(store: &Store, kind: Option<EdgeKind>) -> Result<Vec<EdgeGroup>> {
         out.push((KIND_COUPLING, stored(store, |row| &row.coupling)));
     }
     if matches!(kind, None | Some(EdgeKind::Overlap)) {
-        let nodes = nodes(store);
+        let nodes = nodes_of(&store.items);
         out.push((KIND_OVERLAP, Graph::build(&nodes)?.overlap_pairs()?));
     }
     Ok(out)
@@ -117,25 +117,10 @@ fn escape(title: &str) -> String {
     title.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn nodes(store: &Store) -> Vec<Node> {
-    store
-        .items
-        .iter()
-        .map(|row| Node {
-            id: row.id,
-            files: row.files.clone(),
-            needs: row.needs.clone(),
-            coupling: row.coupling.clone(),
-            status: row.status.as_str().to_string(),
-            checkpoint: row.checkpoint.clone(),
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::schema::{Effort, Status, TaskRow};
+    use crate::tasks::schema::{DEFAULT_HEADING_DEPTH, Effort, Status, TaskRow};
 
     fn row(id: u32, title: &str, needs: &[u32], coupling: &[u32], files: &[&str]) -> TaskRow {
         TaskRow {
@@ -145,6 +130,9 @@ mod tests {
             effort: Effort::S,
             status: Status::Pending,
             checkpoint: String::new(),
+            phase: String::new(),
+            phase_depth: 0,
+            heading_depth: DEFAULT_HEADING_DEPTH,
             files: files.iter().map(|f| (*f).to_string()).collect(),
             needs: needs.to_vec(),
             coupling: coupling.to_vec(),

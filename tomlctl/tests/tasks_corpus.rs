@@ -25,11 +25,6 @@ const EXPECTED_UNPARSEABLE: &[(&str, &str)] = &[
         "task id `13a` is not an integer (a hand-inserted task between 13 and 14)",
     ),
     (
-        "specialised-flow-agents.md",
-        "its Wave 1/2 tasks 11-17 are `#####` headings, below the `#{3,4}` task \
-         grammar, so they parse as phase labels and task 18's `Depends on` dangles",
-    ),
-    (
         "tomlctl-capability-gaps.md",
         "effort tag `[M-leaning-L]` is outside the S|M|L vocabulary",
     ),
@@ -49,11 +44,13 @@ const SKIP_SUFFIXES: &[&str] = &[
     "-FOLLOWUP.md",
 ];
 
-/// Every `docs/plans/*.md` that survives `SKIP_SUFFIXES` and carries both a
-/// `## Tasks` heading and, anywhere in the file, a numbered task heading. The
-/// second condition is what separates a house-format plan from the older
-/// `#### T1:` ad-hoc shape and from a design brief whose Tasks section is
-/// prose.
+/// Every `docs/plans/*.md` that survives `SKIP_SUFFIXES` and carries a
+/// numbered task heading INSIDE its `## Tasks` section. That is what separates
+/// a house-format plan from the older `#### T1:` ad-hoc shape and from a
+/// design brief whose Tasks section is prose. The section scoping is
+/// load-bearing: a brief numbering headings elsewhere imports to no task at
+/// all, which is an error-class finding over a document nobody meant to
+/// include.
 fn in_scope_plans(plans_dir: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
     for entry in fs::read_dir(plans_dir)
@@ -71,16 +68,7 @@ fn in_scope_plans(plans_dir: &Path) -> Vec<PathBuf> {
         let Ok(source) = fs::read_to_string(&path) else {
             continue;
         };
-        let mut has_section = false;
-        let mut has_task = false;
-        for line in source.lines() {
-            let line = line.strip_suffix('\r').unwrap_or(line);
-            has_section |= line
-                .strip_prefix("## ")
-                .is_some_and(|title| title.trim().eq_ignore_ascii_case("Tasks"));
-            has_task |= is_numbered_task_heading(line);
-        }
-        if has_section && has_task {
+        if has_task_in_tasks_section(&source) {
             found.push(path);
         }
     }
@@ -88,13 +76,33 @@ fn in_scope_plans(plans_dir: &Path) -> Vec<PathBuf> {
     found
 }
 
-/// `^#{3,4} [0-9]+\. `, spelled out. Hand-rolled rather than compiled: the
+/// Whether `source` carries a numbered task heading under its own `## Tasks`
+/// heading. A `## ` line other than that one closes the section, so a
+/// numbered heading anywhere else in the document counts for nothing.
+fn has_task_in_tasks_section(source: &str) -> bool {
+    let mut in_tasks = false;
+    let mut has_task = false;
+    for line in source.lines() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        match line.strip_prefix("## ") {
+            Some(title) => in_tasks = title.trim().eq_ignore_ascii_case("Tasks"),
+            None => has_task |= in_tasks && is_numbered_task_heading(line),
+        }
+    }
+    has_task
+}
+
+/// `^#{3,6} [0-9]+\. `, spelled out. Hand-rolled rather than compiled: the
 /// binary resolves `regex` without its unicode features and a test build
 /// unifies them back on, so a pattern here would be checked under settings the
 /// shipped binary does not use.
+///
+/// The depth run mirrors the importer's own heading grammar. A narrower run
+/// here would drop a plan out of scope that the importer accepts, and a plan
+/// out of scope is one this test never dry-runs.
 fn is_numbered_task_heading(line: &str) -> bool {
     let hashes = line.len() - line.trim_start_matches('#').len();
-    if !(3..=4).contains(&hashes) {
+    if !(3..=6).contains(&hashes) {
         return false;
     }
     let Some(rest) = line[hashes..].strip_prefix(' ') else {
@@ -188,8 +196,8 @@ fn corpus_plans_import_cleanly() {
     assert!(
         !plans.is_empty(),
         "docs/plans/ exists but no in-scope plan was found — the scope filter \
-         ({SKIP_SUFFIXES:?} + `## Tasks` + a numbered task heading) matches \
-         nothing, so this test would pass vacuously"
+         ({SKIP_SUFFIXES:?} + a numbered task heading inside `## Tasks`) \
+         matches nothing, so this test would pass vacuously"
     );
 
     let allowlist: BTreeSet<&str> = EXPECTED_UNPARSEABLE.iter().map(|(name, _)| *name).collect();
@@ -266,4 +274,38 @@ fn corpus_plans_import_cleanly() {
         }
     }
     assert!(msg.is_empty(), "{msg}");
+}
+
+/// The filter decides which documents the pass above dry-runs, and a design
+/// brief numbering headings outside a `## Tasks` section imports to no task at
+/// all — an error-class finding over a document nobody meant to include. The
+/// cases are staged rather than drawn from the corpus, so the distinction
+/// stays asserted whether or not a live plan happens to draw it.
+#[test]
+fn the_scope_filter_reads_only_the_tasks_section() {
+    const IN_SCOPE: &str = "## Tasks\n\n### 1. Do the thing [S]\n- **Action**: Do it.\n";
+    let staged = tempfile::tempdir().expect("tempdir");
+
+    for (name, body) in [
+        ("in-scope.md", IN_SCOPE),
+        // Numbered headings on both sides of the section and none inside it.
+        (
+            "brief.md",
+            "## Approach\n\n### 1. Ahead of the section [S]\n\n## Tasks\n\nProse.\n\n\
+             ## Risks\n\n### 2. Past the section [S]\n",
+        ),
+        ("sectionless.md", "## Approach\n\n### 1. Do the thing [S]\n"),
+        ("companion.premerge.md", IN_SCOPE),
+        ("notes.txt", IN_SCOPE),
+    ] {
+        fs::write(staged.path().join(name), body).expect("plan written");
+    }
+
+    assert_eq!(
+        in_scope_plans(staged.path())
+            .iter()
+            .map(|plan| file_name(plan))
+            .collect::<Vec<_>>(),
+        vec!["in-scope.md".to_string()]
+    );
 }

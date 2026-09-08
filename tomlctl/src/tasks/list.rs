@@ -63,7 +63,7 @@ fn build_query(count: bool, query_args: &QueryArgs) -> Result<Query> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::schema::{self, Effort, Status, Store, TaskRow};
+    use crate::tasks::schema::{self, DEFAULT_HEADING_DEPTH, Effort, Status, Store, TaskRow};
     use clap::Parser;
     use serde_json::Value as JsonValue;
     use toml::Value as TomlValue;
@@ -90,6 +90,9 @@ mod tests {
             effort: Effort::S,
             status,
             checkpoint: "A".to_string(),
+            phase: String::new(),
+            phase_depth: 0,
+            heading_depth: DEFAULT_HEADING_DEPTH,
             files: vec![format!("tomlctl/src/tasks/t{id}.rs")],
             needs: Vec::new(),
             coupling: Vec::new(),

@@ -523,10 +523,12 @@ fn build_resolved_envelope(
     let artifacts = read_or_compute_artifacts(table, slug);
 
     // Warn on artifact files that are referenced but absent from disk.
-    // `tasks` is exempt: every flow predating the task store lacks the file,
-    // and these warnings surface in every carrier's bootstrap summary.
+    // `tasks` warns only when the plan declares a task section: a plan with
+    // none legitimately has no store, and every flow predating the store
+    // would otherwise warn in every carrier's bootstrap summary.
+    let expects_tasks = plan_declares_tasks(root, plan_path_v.as_deref());
     for (key, rel) in artifacts.to_pairs() {
-        if key == "tasks" {
+        if key == "tasks" && !expects_tasks {
             continue;
         }
         let abs = root.join(rel);
@@ -606,6 +608,44 @@ fn read_or_compute_artifacts(
         plan_review_findings: pluck("plan_review_findings", &canonical.plan_review_findings),
         tasks: pluck("tasks", &canonical.tasks),
     }
+}
+
+/// True when the flow's plan document carries a `## Tasks` section, which is
+/// what separates a flow that legitimately has no task store from one whose
+/// store is absent where it is expected. A relative `plan_path` resolves
+/// against `root`; an absent or unreadable plan reads as "no task section",
+/// so the quiet answer is the default. Headings inside fenced code blocks
+/// don't count.
+pub(super) fn plan_declares_tasks(root: &Path, plan_path: Option<&str>) -> bool {
+    let Some(rel) = plan_path else {
+        return false;
+    };
+    let path = if Path::new(rel).is_absolute() {
+        PathBuf::from(rel)
+    } else {
+        root.join(rel)
+    };
+    let Ok(src) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let mut fence: Option<&str> = None;
+    for line in src.lines() {
+        let trimmed = line.trim_start();
+        let marker = ["```", "~~~"].into_iter().find(|m| trimmed.starts_with(m));
+        match (fence, marker) {
+            (None, Some(open)) => fence = Some(open),
+            (Some(open), Some(close)) if open == close => fence = None,
+            (None, None)
+                if trimmed
+                    .strip_prefix("## ")
+                    .is_some_and(|title| title.trim() == "Tasks") =>
+            {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -1012,6 +1052,35 @@ mod tests {
         ];
         let best = best_binding_match(&entries, Some("feat/x"), None);
         assert!(best.is_none(), "tie at top score must fall through");
+    }
+
+    fn plan_root_with(body: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let plans = dir.path().join("docs").join("plans");
+        std::fs::create_dir_all(&plans).unwrap();
+        std::fs::write(plans.join("p.md"), body).unwrap();
+        let root = dir.path().to_path_buf();
+        (dir, root)
+    }
+
+    #[test]
+    fn a_plan_with_a_tasks_section_expects_a_store() {
+        let (_g, root) = plan_root_with("# Plan\n\n## Tasks\n\n### 1. Do it\n");
+        assert!(plan_declares_tasks(&root, Some("docs/plans/p.md")));
+    }
+
+    #[test]
+    fn a_plan_without_one_and_an_absent_plan_both_stay_quiet() {
+        let (_g, root) = plan_root_with("# Plan\n\n## Approach\n\nprose\n");
+        assert!(!plan_declares_tasks(&root, Some("docs/plans/p.md")));
+        assert!(!plan_declares_tasks(&root, Some("docs/plans/gone.md")));
+        assert!(!plan_declares_tasks(&root, None));
+    }
+
+    #[test]
+    fn a_fenced_tasks_heading_is_not_a_tasks_section() {
+        let (_g, root) = plan_root_with("# Plan\n\n```md\n## Tasks\n```\n\n## Risks\n");
+        assert!(!plan_declares_tasks(&root, Some("docs/plans/p.md")));
     }
 
     #[test]

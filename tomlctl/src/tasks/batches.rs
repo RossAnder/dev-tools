@@ -6,14 +6,14 @@
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use super::graph::{Graph, Node};
+use super::graph::{Graph, nodes_of};
 use super::schema::Store;
 use crate::errors::{ErrorKind, tagged_err};
 
 /// `{batches[[…]]}` — dependency order, each layer ascending. In-degree is
 /// `needs ∪ coupling`, so a coupling edge pushes its dependent a layer back.
 pub(crate) fn batches(store: &Store) -> Result<JsonValue> {
-    let nodes = nodes(store);
+    let nodes = nodes_of(&store.items);
     let graph = Graph::build(&nodes).map_err(refuse)?;
 
     let cycle = graph.cycle_members();
@@ -37,25 +37,10 @@ fn refuse(err: anyhow::Error) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, err.to_string())
 }
 
-fn nodes(store: &Store) -> Vec<Node> {
-    store
-        .items
-        .iter()
-        .map(|row| Node {
-            id: row.id,
-            files: row.files.clone(),
-            needs: row.needs.clone(),
-            coupling: row.coupling.clone(),
-            status: row.status.as_str().to_string(),
-            checkpoint: row.checkpoint.clone(),
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::schema::{Effort, Status, TaskRow};
+    use crate::tasks::schema::{DEFAULT_HEADING_DEPTH, Effort, Status, TaskRow};
 
     fn row(id: u32, needs: &[u32], coupling: &[u32]) -> TaskRow {
         TaskRow {
@@ -65,6 +50,9 @@ mod tests {
             effort: Effort::S,
             status: Status::Pending,
             checkpoint: "A".to_string(),
+            phase: String::new(),
+            phase_depth: 0,
+            heading_depth: DEFAULT_HEADING_DEPTH,
             files: vec![format!("t{id}.rs")],
             needs: needs.to_vec(),
             coupling: coupling.to_vec(),
