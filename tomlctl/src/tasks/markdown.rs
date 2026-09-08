@@ -10,8 +10,6 @@ use std::ops::Range;
 #[derive(Debug, Clone)]
 pub(crate) struct Section {
     pub(crate) title: String,
-    /// 1-based line number of the `## ` heading.
-    pub(crate) heading_line: usize,
     /// Bytes after the heading line, up to the next `## ` heading or EOF.
     pub(crate) body_range: Range<usize>,
 }
@@ -27,11 +25,9 @@ pub(crate) fn sections(src: &str) -> Vec<Section> {
     let mut found: Vec<Section> = Vec::new();
     let mut fence: Option<(char, usize)> = None;
     let mut pos = 0usize;
-    let mut line_no = 0usize;
 
     while pos < src.len() {
         let (content, next) = split_line(src, pos);
-        line_no += 1;
 
         match fence {
             Some((marker, width)) => {
@@ -42,13 +38,12 @@ pub(crate) fn sections(src: &str) -> Vec<Section> {
             None => {
                 if let Some(open) = opens_fence(content) {
                     fence = Some(open);
-                } else if content.starts_with("## ") {
+                } else if let Some(heading) = content.strip_prefix("## ") {
                     if let Some(previous) = found.last_mut() {
                         previous.body_range.end = pos;
                     }
                     found.push(Section {
-                        title: content[3..].trim().to_string(),
-                        heading_line: line_no,
+                        title: heading.trim().to_string(),
                         body_range: next..src.len(),
                     });
                 }
@@ -180,12 +175,6 @@ mod tests {
     fn tilde_fence_ignores_a_backtick_line() {
         let src = "## A\n\n~~~\n## X\n```\n~~~\n\n## B\n";
         assert_eq!(titles(src), vec!["A", "B"]);
-    }
-
-    #[test]
-    fn heading_line_is_one_based() {
-        let alpha = &sections(FENCED)[0];
-        assert_eq!(alpha.heading_line, 3);
     }
 
     #[test]

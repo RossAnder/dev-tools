@@ -71,7 +71,7 @@ fn canonical_artifacts_lines(slug: &str) -> String {
 /// Seed a flow under `<root>/.claude/flows/<slug>/` whose `[artifacts]`
 /// table body is `artifacts_lines`: `context.toml` + `execution-record.toml`
 /// + matching sidecars, and a plan file at `docs/plans/<slug>.md` so
-/// `plan-path-resolves` passes.
+///   `plan-path-resolves` passes.
 fn seed_flow_with_artifacts(root: &Path, slug: &str, artifacts_lines: &str) {
     let flow_dir = root.join(".claude").join("flows").join(slug);
     fs::create_dir_all(&flow_dir).unwrap();
