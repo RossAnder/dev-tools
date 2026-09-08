@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-03
+last_updated = 2026-09-08
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -1011,3 +1011,176 @@ related = [
 ]
 resolved = 2026-09-03
 resolution = "Documented, zero code: query.md Output shapes now states --ndjson composes with --select/--exclude (worked example), adds the anti-pattern block (never 2>&1 into a JSON parser, never re-render rows, never head -N, list returns a bare array), and records why there is no --format flag. tests/agent_contract.rs pins --select+--ndjson and --exclude+--ndjson."
+
+[[backlog]]
+id = "B-6ff6dd3e"
+kind = "debt"
+summary = "three near-identical private copies of the path containment helper"
+area = "tomlctl/src/tasks"
+tags = [
+    "security",
+    "dry",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "6ff6dd3e56c0c75a"
+origin = "implement"
+flow = "whimsical-hugging-puppy"
+context = "tasks/import_plan.rs and tasks/dispatch.rs each hold a private under_root, and flow/render_progress_log.rs a private path_under_root. crate::io already owns guard_write_path and is the natural home. A fourth caller will copy it again, and a fix to one copys canonicalisation-failure policy will not reach the others. Unifying is a coordinated four-file edit."
+evidence = [
+    "tomlctl/src/tasks/import_plan.rs:562",
+    "tomlctl/src/tasks/dispatch.rs:361",
+]
+related = ["B-46de01dc"]
+
+[[backlog]]
+id = "B-d2f9b0ee"
+kind = "bug"
+summary = "plans with five-hash task headings import as zero tasks with no dedicated finding"
+area = "tomlctl/src/tasks"
+tags = [
+    "import",
+    "silent-loss",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "d2f9b0eeb03326e9"
+origin = "implement"
+flow = "whimsical-hugging-puppy"
+context = "The heading grammar accepts three or four hashes only, so deeper task headings are read as phase labels and dropped silently. Observed on docs/plans/specialised-flow-agents.md, where tasks 11-17 vanish and only task 18s dangling Depends-on betrays it. A silent seven-task loss is worse than a refusal: a tasks/heading-depth warning class, or widening the grammar, would name it directly."
+evidence = ["tomlctl/src/tasks/parse_tasks.rs"]
+related = ["B-e3f5da9c"]
+
+[[backlog]]
+id = "B-aa004c21"
+kind = "debt"
+summary = "a hand-inserted non-integer task id such as 13a cannot be imported"
+area = "docs/plans"
+tags = [
+    "import",
+    "convention",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "aa004c212ffaf1fe"
+origin = "implement"
+flow = "whimsical-hugging-puppy"
+context = "docs/plans/lumina-story-planning-round-2.md line 90 carries heading 13a, inserted between 13 and 14. The importer requires an integer id, so the whole plan is unimportable and sits on the corpus tests EXPECTED_UNPARSEABLE allowlist. The corpus needs a documented renumber-dont-suffix rule, or 13a stays permanently unimportable."
+evidence = ["tomlctl/tests/tasks_corpus.rs"]
+
+[[backlog]]
+id = "B-5ccd0e38"
+kind = "bug"
+summary = "tasks check exits 0 above the 256-node cap without examining the graph"
+area = "tomlctl/src/tasks"
+tags = [
+    "gate",
+    "silent-pass",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "5ccd0e38c27c3bec"
+origin = "implement"
+flow = "whimsical-hugging-puppy"
+context = "Above the cap graph_findings returns empty, so check reports only its non-graph classes and can exit 0 on a store whose DAG was never examined. Every milestone-C carrier gates on tasks check and would read that as a clean bill. Documented as a caveat in references/tasks.md rather than fixed; the fix is a finding class saying the graph was not examined."
+evidence = ["tomlctl/src/tasks/check.rs"]
+related = ["B-108e130a"]
+
+[[backlog]]
+id = "B-54b2d71e"
+kind = "debt"
+summary = "the capabilities example output still shows version 0.6.0"
+area = "claude/skills/tomlctl"
+tags = ["stale-doc"]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "54b2d71ec98d59c0"
+origin = "implement"
+flow = "whimsical-hugging-puppy"
+context = "SKILL.md line 86 shows a capabilities envelope pinning 0.6.0 while Cargo.toml is 0.7.0. Task 13s README-to-capabilities parity test does not scan skill files, so nothing catches it. Arrived cheap-in-file during the task-store run and was deferred because no verification command this run ran exercises that block."
+evidence = ["claude/skills/tomlctl/SKILL.md:86"]
+related = ["B-e74d4650"]
+
+[[backlog]]
+id = "B-3c59ed80"
+kind = "debt"
+summary = "the verify-integrity support matrix omits the seven tasks read verbs"
+area = "claude/skills/tomlctl"
+tags = ["stale-doc"]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "3c59ed80de529dc0"
+origin = "implement"
+flow = "whimsical-hugging-puppy"
+context = "references/flow.md lists eight read subcommands and presents as exhaustive, so an agent reading it concludes tasks list --verify-integrity is rejected when it is accepted. references/tasks.md documents show, list, edges, ready, batches, closure and check as carrying the read bundle. Arrived cheap-in-file and was deferred because no verification command this run ran exercises that matrix."
+evidence = ["claude/skills/tomlctl/references/flow.md"]
+related = ["B-4eaf4d34"]
+
+[[backlog]]
+id = "B-fe2a80ba"
+kind = "bug"
+summary = "tdd cycle task_ref is spelled two different ways"
+area = "claude/commands"
+tags = [
+    "task-ref",
+    "tdd",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "fe2a80bacda8c4eb"
+origin = "implement"
+flow = "whimsical-hugging-puppy"
+context = "REFACTOR copies cycle completions up to the parent record with task_ref prefixed tdd-cycle-NNN-original-slug, while RED and GREEN pin tdd-cycle-NNN-short-name. The copy-up lands in a record whose flow does own a store, so a reader checking the parent record against its store finds tdd-cycle refs no row carries. If the spellings ever differ the implement skip-list misses the copied-up entry."
+evidence = ["claude/commands/tdd.md:65"]
+related = ["B-b7da5466"]
+
+[[backlog]]
+id = "B-36c11be9"
+kind = "bug"
+summary = "plan parse errors report a section-relative line number under the plan path"
+area = "tomlctl/src/tasks"
+tags = [
+    "diagnostics",
+    "import",
+]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "36c11be98a069ca0"
+origin = "implement"
+flow = "whimsical-hugging-puppy"
+context = "parse_tasks reports failures as line N relative to the Tasks section body, and import_plan prefixes them with the plan path, so the number points at no line in the named file and a user cannot navigate to it. Section::heading_line was exactly the offset needed and was removed as dead during this run; the fix is to reinstate it and add it to the reported numbers."
+evidence = ["tomlctl/src/tasks/parse_tasks.rs"]
+related = ["B-87020d9e"]
+
+[[backlog]]
+id = "B-432a1b0f"
+kind = "debt"
+summary = "plan-update states the tasks total derivation in two places"
+area = "claude/commands"
+tags = ["dry"]
+status = "open"
+created = 2026-09-08
+last_seen = 2026-09-08
+seen_count = 1
+dedup_id = "432a1b0f8716289d"
+origin = "implement"
+flow = "whimsical-hugging-puppy"
+context = "[tasks].total and the context.toml update rule appear in both Step 1 and Step 3.4, so every change to that derivation is a two-place edit. Pre-existing; the task-store adoption had to update both to keep them agreeing."
+evidence = ["claude/commands/plan-update.md"]
+related = ["B-b7da5466"]
