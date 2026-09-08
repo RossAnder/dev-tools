@@ -1,13 +1,34 @@
 ---
 name: flow-contract-plan-output-format
-description: "On-disk plan-document structure for flow-carrying commands — the canonical section order and authoring contract for the markdown plan file written by /plan-new Phase 7. Defines the header block (`# Plan:` title, `**Plan path**`, `**Created**`, `**Status**`) and every section in order: `## Context`, `## Scope` (in/out/affected-areas), `## Research Notes` (extracted into RESEARCH-NOTES.md by /plan-update reformat), `## User Decisions`, `## Approach`, `## Verification Commands` (build/test/lint fenced block, machine-parsed by /implement, /tdd and test-author, plus any integration/smoke/manual steps in prose), `## Execution Policy` (checkpoint cadence, checkpoint markers, max parallel agents, commit granularity — consumed by /implement's frontier scheduler), `## Tasks` (numbered, with Files/Depends-on/Action/Detail/Acceptance and S/M/L effort tags), `## Dependency Graph` (checkpoint markers only — per-task Depends-on edges are authoritative and are never mirrored here), and `## Risks`. Covers task-effort sizing (S <30 min/1-2 files, M 30-120 min/2-3 files, L >120 min/4+ files or cross-cutting) and the format rules (repo-relative paths everywhere including prose and commands, Files-line closure — every edit target named in Action/Detail/Acceptance appears in Files, numeric dependency references, acceptance-reachability edges covering collection-time test coupling, mechanically-verifiable AND falsifiable acceptance, the two-control rule — every runnable acceptance command probed against a negative and a positive control before it ships, with forward/falsifier polarity labelled because the verdicts invert and an unlabelled falsifier certifies a permanently-green acceptance as healthy, test-delegating acceptances carrying a stated falsifier, regression guards declared and never alone, set-quantifying acceptances citing what fixes the set's shape — with the probe helper and verdict table both carriers run, registration seams requiring a named call site, derive-don't-transcribe for filenames and enumeration counts, no literal control bytes, sourced research notes, many-small-file-disjoint-task decomposition, frontier parallelism up to the declared max-parallel, checkpoint markers as valid topological cuts with no orphaned tasks, phase/wave grouping above 8 tasks). Consult when writing or reformatting a plan document — /plan-new Phase 7, /plan-update reformat, /review-plan."
+description: "On-disk plan-document structure for flow-carrying commands — the canonical section order and authoring contract for the markdown plan file written by /plan-new Phase 7. Defines the header block (`# Plan:` title, `**Plan path**`, `**Created**`, `**Status**`) and every section in order: `## Context`, `## Scope` (in/out/affected-areas), `## Research Notes` (extracted into RESEARCH-NOTES.md by /plan-update reformat), `## User Decisions`, `## Approach`, `## Verification Commands` (build/test/lint fenced block, machine-parsed by /implement, /tdd and test-author, plus any integration/smoke/manual steps in prose), `## Execution Policy` (checkpoint cadence, checkpoint markers, max parallel agents, commit granularity — consumed by /implement's frontier scheduler), `## Tasks` (numbered, with Files/Depends-on/Action/Detail/Acceptance and S/M/L effort tags), `## Dependency Graph` (checkpoint markers only — per-task Depends-on edges are authoritative and are never mirrored here, and the markers are where checkpoint membership is authored), and `## Risks`. Records which three of those sections (`## Execution Policy`, `## Tasks`, `## Dependency Graph`) are authored by hand at Phase 7 and rendered by `tomlctl tasks render` from the flow's task store from Phase 9 onward, with the `Checkpoint after` bullet and each marker's `after` list rendered as the group's maximal elements, and the Phase-7 plan-mode `tomlctl tasks import-plan --dry-run` validation step run before ExitPlanMode. Covers task-effort sizing (S <30 min/1-2 files, M 30-120 min/2-3 files, L >120 min/4+ files or cross-cutting) and the format rules (repo-relative paths everywhere including prose and commands, Files-line closure — every edit target named in Action/Detail/Acceptance appears in Files, numeric dependency references, acceptance-reachability edges covering collection-time test coupling, mechanically-verifiable AND falsifiable acceptance, the two-control rule — every runnable acceptance command probed against a negative and a positive control before it ships, with forward/falsifier polarity labelled because the verdicts invert and an unlabelled falsifier certifies a permanently-green acceptance as healthy, test-delegating acceptances carrying a stated falsifier, regression guards declared and never alone, set-quantifying acceptances citing what fixes the set's shape — with the probe helper and verdict table both carriers run, registration seams requiring a named call site, derive-don't-transcribe for filenames and enumeration counts, no literal control bytes, sourced research notes, many-small-file-disjoint-task decomposition, frontier parallelism up to the declared max-parallel, checkpoint markers as valid topological cuts with no orphaned tasks, phase/wave grouping above 8 tasks). Consult when writing or reformatting a plan document — /plan-new Phase 7, /plan-update reformat, /review-plan."
 ---
 
 ## Plan Output Format
 
 The on-disk plan document is a single markdown file (or, for large plans, a
-`00-outline.md` inside a per-feature subdirectory). Write the plan using this
-structure — keep the section names and ordering intact:
+`00-outline.md` inside a per-feature subdirectory).
+
+Three of its sections — `## Execution Policy`, `## Tasks` and `## Dependency Graph` — are
+**rendered** by `tomlctl tasks render` once the flow's task store exists, the same
+derive-don't-author pattern `PROGRESS-LOG.md` already follows. The template below is still the
+authoring contract: `/plan-new` Phase 7 writes all three by hand, because there is no flow and
+therefore no store until Phase 9. From the Phase-9 import onward the store is canonical, the
+three sections are derived from it, and a hand-edit to any of them is drift that
+`tomlctl tasks render --check` reports. The store's schema, its verbs, and the rules binding
+every carrier that reads it are the `flow-contract-task-store` skill's; nothing about them is
+restated here.
+
+Phase 7 validates the authored sections before `ExitPlanMode`, in plan mode — no store, no flow:
+
+```bash
+tomlctl tasks import-plan --plan docs/plans/<slug>.md --dry-run
+```
+
+Fix every `error`-class finding before the plan ships. The warning classes are dispositioned,
+not carried silently: `checkpoint/orphan-task` and `checkpoint/marker-mismatch` both name
+defects this document's format rules forbid.
+
+Write the plan using this structure — keep the section names and ordering intact:
 
 # Plan: {Descriptive Title}
 
@@ -70,7 +91,9 @@ after every dependency level) — existing plans execute unchanged.]
   checkpoint group: when it and everything it depends on are terminal, /implement drains
   in-flight agents, runs the build+test gate, and commits the accumulated work as a train.
   Markers MUST form valid topological cuts — no task in an earlier group may depend on a
-  task in a later one — and each group must be a logically-coherent, buildable increment.]
+  task in a later one — and each group must be a logically-coherent, buildable increment.
+  Authored by hand at Phase 7; rendered from the store thereafter, as the union of every
+  group's maximal elements.]
 - **Max parallel agents**: 6           [1–8. How many implementation agents may be in
   flight at once under frontier scheduling.]
 - **Commit granularity**: per-task     [one of: `per-task` | `per-checkpoint` | `single-commit`.
@@ -109,7 +132,16 @@ prose is presentational only.
 
 The heading itself is load-bearing: `/review-plan` detects the house format by the presence of
 `## Tasks` and `## Dependency Graph`, and omitting it silently downgrades every plan review to
-foreign-format critique. Keep the heading even when there is a single checkpoint.]
+foreign-format critique. Keep the heading even when there is a single checkpoint.
+
+This section is also where checkpoint **membership** is authored. `tasks import-plan` reads
+the markers here and nowhere else — a marker duplicated inside `## Tasks` is ignored — and
+stores each task's group as the dependency closure of its marker's task list minus everything
+an earlier group already claimed. Membership itself is never written here; only the marker is.
+Once the store exists, both the marker's `after` list and the `Checkpoint after` bullet above
+are rendered as each group's **maximal elements** — the tasks in the group with no dependents
+inside it. Naming that antichain is enough, because its closure *is* the group, which is the
+same reason this section carries markers only.]
 
 — CHECKPOINT A after tasks 1–4: foundational API + direct consumers (buildable increment) —
 — CHECKPOINT B after tasks 5–7: independent leaf work —
@@ -127,7 +159,7 @@ foreign-format critique. Keep the heading even when there is a single checkpoint
 - File paths must be repo-relative — never abbreviated. This applies **everywhere in the document**, including inside **Action**/**Detail**/**Acceptance** prose and acceptance commands, not just on the **Files** line. Where a command must run from a package directory, state that directory on the same line — a reader cannot infer the working directory, and a mis-rooted command frequently exits 0 without running anything.
 - Dependencies reference task numbers, not names
 - **Acceptance-reachability**: a task's **Depends on** lists what its **Action** needs to exist *and* every task producing a symbol, file, or state its **Acceptance** command transitively loads. Test files couple at **collection time** — a renamed export is an import error that fails the whole file, not one assertion, and a mounted component reaches every hook it calls. An acceptance that cannot be reached is a missing edge even when the two tasks share no file.
-- Checkpoint markers (`Checkpoint after:`) reference existing task numbers and must form valid topological cuts of the DAG; each checkpoint group must be a logically-coherent, buildable increment. **Every task should fall inside some marker's closure** — a task reachable from no marker is committed only by the final Phase-3 train, which forfeits the bisectability that chose `milestones` over `single` in the first place. Check this by walking each marker's dependency closure and diffing against the task list.
+- Checkpoint markers (`Checkpoint after:`) reference existing task numbers and must form valid topological cuts of the DAG; each checkpoint group must be a logically-coherent, buildable increment. **Every task should fall inside some marker's closure** — a task reachable from no marker is committed only by the final Phase-3 train, which forfeits the bisectability that chose `milestones` over `single` in the first place. Do not walk the closures by hand — `tomlctl tasks check` reports both defects, as `checkpoint/invalid-cut` (error) and `checkpoint/orphan-task` (warning), from the same import that reads the markers.
 - Acceptance criteria must be mechanically verifiable (a command that passes, a condition that holds) — not subjective ("looks good") — **and falsifiable: state what makes the criterion fail.** An assertion that cannot fail is not an acceptance. Watch for the vacuous forms: both sides of a comparison `undefined`, an optional key that the type system never requires, an empty match set, and a path filter matching nothing that exits 0.
 - **Two-control rule: an acceptance command ships only after it has been run twice.** Any criterion that is a read-only shell command (`grep`, `awk`, `sed`, `rg`, `wc`, `jq`, `git diff | …`) is probed before the plan is written — re-reading is no substitute, because its defects are *tool-semantics* defects that read as correct on the page. Carriers run both probes with the **Acceptance probe helper** below.
 

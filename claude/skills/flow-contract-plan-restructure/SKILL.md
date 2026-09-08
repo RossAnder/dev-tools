@@ -1,6 +1,6 @@
 ---
 name: flow-contract-plan-restructure
-description: Shared contract for the plan-rewriting ops `/plan-update reformat` and `/plan-update catchup` — the byte-for-byte heading-preservation rule and its mandatory pre-write heading-equality assertion (a rephrased heading changes the derived task_ref slug and makes `/implement`'s idempotency skip-list re-execute completed tasks), the heading-extraction normalisation used by that assertion, archive-before-rewriting, the multi-file and single-file output structures, the RESEARCH-NOTES.md format, and the faithful-preservation rules for User Decisions, Execution Policy (with checkpoint-marker renumbering), inferred deviations/deferrals, and PROGRESS-LOG.md regeneration. Consult before any op that rewrites plan documents in place.
+description: Shared contract for the plan-rewriting ops `/plan-update reformat` and `/plan-update catchup` — the byte-for-byte heading-preservation rule and its mandatory `tomlctl tasks import-plan --dry-run` ref-set diff gate (a rephrased heading changes the task's derived `ref`, which is the store's primary key and the import's upsert key, so a real import raises `dag/duplicate-number` and refuses, while `/implement`'s idempotency skip-list re-executes the orphaned task), the `tasks update --ref` rename recovery, archive-before-rewriting, the multi-file and single-file output structures, the RESEARCH-NOTES.md format, and the faithful-preservation rules for User Decisions, Execution Policy (checkpoint markers re-rendered by `tasks render`, never re-mapped by hand), the merge-exit consistency re-derivation (`tasks check` for file-claim reachability and checkpoint-marker validity, Files-line closure kept as prose), inferred deviations/deferrals, and PROGRESS-LOG.md regeneration. Consult before any op that rewrites plan documents in place.
 ---
 
 ## Plan restructure contract
@@ -11,9 +11,21 @@ Applies to `/plan-update reformat` and `/plan-update catchup` — the two ops th
 
 `task_ref` is an opaque title slug derived from each task's heading text. If a restructure rephrases a heading ("Add retry logic" → "Add retry with exponential backoff"), the derived slug changes, `/implement`'s idempotency skip-list misses the completed task, and the task re-executes. Restructure ops MUST therefore preserve each task's heading text **exactly as it appeared in the source plan, byte-for-byte**. Rephrasing is allowed ONLY as an explicit deviation recorded via the `deviation` op (which preserves `supersedes_entry` chains). Reordering, regrouping, and recategorizing tasks are all allowed — only heading text is immutable.
 
-**Heading-equality assertion (mandatory).** Before writing the restructured output, compare the *set* of pre-restructure task heading strings against the set of post-restructure ones. On any mismatch (added, removed, or rephrased), error and require user intervention rather than writing. Show the diff so the user can decide whether the change is intentional (record it as a `deviation`) or accidental (regenerate with stricter preservation).
+**Ref-set diff gate (mandatory).** The set comparison is a dry-run import against the restructured file, read for its `added_refs` / `removed_refs` — the store's own primary key diffed by the tool that owns it, not a string-set assertion re-implemented here:
 
-**Heading extraction** (for that assertion): from each `### N. Name [S|M|L]` line, take the `Name` substring — split once on `. ` from the left after the `### ` prefix, then strip any trailing ` [S]` / ` [M]` / ` [L]` effort tag. Normalise internal whitespace by collapsing runs of ` ` (U+0020) and `\t` (U+0009) to a single space. Renumbering alone does NOT fail the assertion (numbers are stripped before comparison); rephrasing DOES. Non-conforming heading styles (legacy plans without effort tags, `##` or `####` instead of `###`) are accepted by the same logic: strip the heading prefix, strip the `N. ` numbering if present, strip the trailing effort tag if present, normalise whitespace — what remains is the `Name`.
+```bash
+tomlctl tasks import-plan --slug <slug> --dry-run
+```
+
+The plan file is archived and in git, so the write this gates is the **store's**: run the dry-run before any real import, and never let the real import be what discovers a rename. A non-empty `removed_refs` is a rephrased or deleted heading. Abort for user intervention on any removed ref whose row is not `pending` — a settled task about to be orphaned — and surface the added/removed pair either way, so the user can decide whether the change is intentional (record it as a `deviation`, then rename the row) or accidental (restore the heading from the archive and re-run the gate).
+
+**A renamed heading does not present as a clean add/remove on a real import**, which is why the gate is a `--dry-run` step and why it runs first. The old row is never deleted, so it still holds the task number the renamed heading re-claims; the real import raises `dag/duplicate-number` at error severity and refuses before writing. The recovery is to rename the row rather than the store, then re-import:
+
+```bash
+tomlctl tasks update <id> --slug <slug> --ref <new-ref>
+```
+
+The `flow-contract-task-store` skill owns both rules — §2 for how a heading title becomes a `ref`, §10 for the gate. Two consequences bind restructuring specifically: renumbering alone never moves a ref (the number is not part of it) while rephrasing always does, and the importer sees a task only in a `###`/`####` heading carrying an `N. ` number. A legacy plan whose task headings are `##`-level or unnumbered imports as zero tasks, and an empty ref set on both sides makes the gate vacuous — read the envelope's `added` + `updated` + `unchanged` (the plan's task count) before trusting a clean diff.
 
 ### Archive before rewriting
 
@@ -53,9 +65,25 @@ Single-file plans split into at minimum the plan itself (clean, actionable) plus
 
 - **Faithful content preservation** — every fact, note, correction, finding, and status marker from the original must appear in the output. Verify against the original line count; nothing is silently dropped.
 - **`## User Decisions` survives verbatim** — copy the section intact into the reformatted outline (adjacent to `## Approach`). Do NOT redistribute entries into Research Notes, Context, or Approach: the question / answer / prompting-finding triple is meaningful as a unit, and downstream agents (`/implement`, later `/plan-new` runs on adjacent plans) reference it by section.
-- **`## Execution Policy` survives, with checkpoint markers re-mapped** — copy the section intact (`/implement` reads it to schedule dispatches and place commit checkpoints). The one exception to verbatim: `Checkpoint after:` references task NUMBERS, and unlike heading slugs the marker→task mapping is positional. When tasks are renumbered, update the marker numbers so each checkpoint still closes the same set of task headings, verify each updated marker still forms a valid topological cut against the reformatted `Depends on` edges, and error for user intervention on any mismatch (same posture as the heading-equality assertion).
+- **`## Execution Policy` survives, with checkpoint markers re-rendered** — copy the section intact (`/implement` reads it to schedule dispatches and place commit checkpoints). The one exception to verbatim: `Checkpoint after:` references task NUMBERS, and unlike refs the marker→task mapping is positional. Do not re-map those numbers by hand. Checkpoint membership is stored per row and keyed on `ref`, so renumbering does not move it: import the restructured plan through the gate above, then re-render, and the markers come back carrying the new numbers.
 
-- **Run the merge-exit consistency re-derivation after rewriting** (the same check `/review-plan` Step 4A3.5 runs — these are the two ops that rewrite a plan in place, and both can *create* cross-task defects the reviewed document never had). Against the written file: for every file on ≥2 tasks' **Files** lines confirm a directed `Depends on` path *between the claimants* (compute the ancestor closure pairwise — a shared ancestor is not a path); and confirm no task falls outside every checkpoint marker's closure, which renumbering can silently cause. Do NOT mirror `Depends on` edges into `## Dependency Graph` — that section carries checkpoint markers only, and the per-task edges are authoritative. Report the pairs checked, not only the violations.
+  ```bash
+  tomlctl tasks render --slug <slug>
+  ```
+
+  `render` refuses on a cycle, a dangling edge, or a graph past the node cap, and appends `(INVALID CUT)` to a group whose prefix union is no longer downward-closed — so a renumbering that broke a cut is visible in the output rather than silently valid-looking. `tomlctl tasks check --slug <slug>` names it as `checkpoint/invalid-cut` with the ids that must move earlier.
+
+- **Run the merge-exit consistency re-derivation after rewriting** (the same check `/review-plan` Step 4A3.5 runs — these are the two ops that rewrite a plan in place, and both can *create* cross-task defects the reviewed document never had). Its first two parts are `tasks check` against the store the rewritten plan was imported into, not a hand walk:
+
+  ```bash
+  tomlctl tasks check --slug <slug>
+  ```
+
+  **File-claim reachability** is `dag/unreachable-claim` — a file on ≥2 rows' `files` with no directed path between the claimants, computed pairwise, a shared ancestor not counting as a path. **Checkpoint-marker validity** is `checkpoint/invalid-cut` plus `checkpoint/orphan-task`, the second naming a task that renumbering silently dropped outside every marker's closure. Report what the findings named and the row count they were computed over, not only the violations — an unreported denominator is how a sampled check passes for an exhaustive one.
+
+  **Files-line closure stays prose**, checked by reading each task body the rewrite touched: every edit target named in **Action**/**Detail**/**Acceptance** appears on the **Files** line. `tasks check` ships no `files/closure` class — a deliberate omission, per the finding-class table in the `flow-contract-task-store` skill — so there is nothing mechanical to lean on for this part.
+
+  Do NOT mirror `Depends on` edges into `## Dependency Graph` — that section carries checkpoint markers only, and the per-task edges are authoritative.
 - **Clean the outline** — the outline carries the sequencing table, dependencies, constraints, and verification checklists. Research notes, verbose corrections, and progress tracking move to their own files, referenced from the outline where needed ("See RESEARCH-NOTES.md §{Topic}").
 - **Infer deferrals** — items described as "deferred", "future", "nice-to-have", or "not needed yet" become `type=deferral` E-entries (via the `defer` op pattern) with concrete re-evaluation triggers. A legacy `DF<n>` ID from the source row is copied into `legacy_id`.
 - **Infer deviations** — prose describing "we did X instead of Y" or "the plan said X but actually Y" becomes a `type=deviation` E-entry (via the `deviation` op pattern). A legacy `D<n>` ID is copied into `legacy_id`; supersession is by `supersedes_entry = "E<n>"`, never by re-using legacy numbers. No renumbering is needed because E-numbers are monotonic.
