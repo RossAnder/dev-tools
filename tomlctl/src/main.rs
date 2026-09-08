@@ -23,6 +23,7 @@ mod json;
 mod orphans;
 mod output;
 mod query;
+mod tasks;
 #[cfg(test)]
 mod test_support;
 mod time;

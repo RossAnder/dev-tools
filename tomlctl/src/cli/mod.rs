@@ -30,7 +30,7 @@ mod types;
 /// new re-export here.
 pub(crate) use dispatch::{read_integrity_opts, run, write_integrity_opts};
 pub(crate) use types::{
-    ActiveOp, ArtifactKind, BacklogOp, Cli, ClusterBy, EnvelopeOp, ErrorFormat, EvidenceOp, FlowOp,
-    JsonOp, LegacyShortcuts, OnDuplicate, QueryArgs, ReadIntegrityArgs, RelationKind, TriageMode,
-    WriteIntegrityArgs,
+    ActiveOp, ArtifactKind, BacklogOp, Cli, ClusterBy, EdgeKind, EnvelopeOp, ErrorFormat,
+    EvidenceOp, FlowOp, JsonOp, LegacyShortcuts, OnDuplicate, QueryArgs, ReadIntegrityArgs,
+    RelationKind, ShowPart, TasksOp, TasksTarget, TriageMode, WriteIntegrityArgs,
 };

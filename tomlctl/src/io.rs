@@ -596,6 +596,10 @@ const SCHEMA_SEEDED_FLOW_FILES: &[&str] = &[
     "optimise-findings.toml",
     "plan-review-findings.toml",
     "backlog.toml",
+    // Matching is on basename with no directory scoping, so a task store
+    // reached through `--file` from outside `.claude/flows/<slug>/` is seeded
+    // too.
+    "tasks.toml",
 ];
 
 /// Compute the schema-conformant seed doc to use when a write target does
@@ -1647,6 +1651,31 @@ pub(crate) fn write_toml_with_sidecar(
     Ok(())
 }
 
+/// Total attempts at the final rename, and the pause between them. Both
+/// `write_toml_with_sidecar` persists land here, so a run issuing hundreds of
+/// TOML+sidecar renames gets the retry on each.
+const PERSIST_ATTEMPTS: u32 = 3;
+const PERSIST_RETRY: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Whether a failed rename is worth another attempt: the target was held open
+/// by another process (antivirus, indexer, backup agent) rather than being
+/// permanently unavailable. Windows reports `ERROR_SHARING_VIOLATION` (32) and
+/// `ERROR_LOCK_VIOLATION` (33) with no `ErrorKind` of their own, so those two
+/// are matched on the raw code.
+fn is_transient_rename_error(err: &std::io::Error) -> bool {
+    if matches!(
+        err.kind(),
+        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::Interrupted
+    ) {
+        return true;
+    }
+    #[cfg(windows)]
+    if matches!(err.raw_os_error(), Some(32 | 33)) {
+        return true;
+    }
+    false
+}
+
 /// Atomic-replace pattern: write `bytes` to a tempfile in the same directory as
 /// `path`, `sync_data()` to flush content to disk, then `persist()` to
 /// rename into place. The data fsync is load-bearing — without it, a crash
@@ -1684,8 +1713,26 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     tmp.as_file()
         .sync_data()
         .with_context(|| format!("fsync temp file for {}", path.display()))?;
-    tmp.persist(path)
-        .map_err(|e| anyhow!("atomic rename to {} failed: {}", path.display(), e.error))?;
+    // `persist` hands the tempfile back inside its error, so a retry renames
+    // the same staged bytes rather than re-staging them.
+    let mut attempt: u32 = 1;
+    loop {
+        match tmp.persist(path) {
+            Ok(_) => break,
+            Err(e) if attempt < PERSIST_ATTEMPTS && is_transient_rename_error(&e.error) => {
+                tmp = e.file;
+                attempt += 1;
+                std::thread::sleep(PERSIST_RETRY);
+            }
+            Err(e) => {
+                return Err(anyhow!(
+                    "atomic rename to {} failed: {}",
+                    path.display(),
+                    e.error
+                ));
+            }
+        }
+    }
     // Fsync the parent directory so the dirent update made by `persist()`
     // is durable across power loss. `tempfile::NamedTempFile::persist` performs
     // the rename but does NOT sync the parent — without this call a crash
@@ -2493,5 +2540,39 @@ arr = [1, 2]
             schema_at < updated_at,
             "schema_version must precede last_updated, got: {rendered:?}"
         );
+    }
+
+    /// The recorded Windows failure is `os error 5`, which decodes to
+    /// `PermissionDenied`; a missing parent or a rejected path is permanent
+    /// and must surface on the first attempt.
+    #[test]
+    fn only_a_momentarily_held_target_earns_a_rename_retry() {
+        use std::io::{Error, ErrorKind};
+
+        assert!(is_transient_rename_error(&Error::from(
+            ErrorKind::PermissionDenied
+        )));
+        assert!(is_transient_rename_error(&Error::from(
+            ErrorKind::Interrupted
+        )));
+        assert!(!is_transient_rename_error(&Error::from(
+            ErrorKind::NotFound
+        )));
+        assert!(!is_transient_rename_error(&Error::from(
+            ErrorKind::InvalidInput
+        )));
+        assert!(!is_transient_rename_error(&Error::from(
+            ErrorKind::AlreadyExists
+        )));
+
+        // The raw sharing / lock violations carry no `ErrorKind`, so on
+        // Windows they are only reachable through the raw code.
+        #[cfg(windows)]
+        {
+            assert!(is_transient_rename_error(&Error::from_raw_os_error(5)));
+            assert!(is_transient_rename_error(&Error::from_raw_os_error(32)));
+            assert!(is_transient_rename_error(&Error::from_raw_os_error(33)));
+            assert!(!is_transient_rename_error(&Error::from_raw_os_error(2)));
+        }
     }
 }

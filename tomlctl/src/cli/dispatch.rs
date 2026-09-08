@@ -398,6 +398,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Cmd::Integrity { op } => integrity_dispatch(op)?,
         Cmd::Flow { op } => crate::flow::dispatch(op)?,
         Cmd::Backlog { op } => crate::backlog::dispatch::dispatch(op)?,
+        Cmd::Tasks { op } => crate::tasks::dispatch::dispatch(op)?,
         Cmd::Json { op } => {
             // Resolve `--json -` stdin sentinel for `json set` at the CLI
             // boundary, mirroring TOML `set-json` / `items add` behaviour.

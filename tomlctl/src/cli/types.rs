@@ -55,6 +55,19 @@ pub(crate) const FEATURES: &[&str] = &[
     "backlog_show",
     "backlog_relate",
     "backlog_triage",
+    // Per-flow task DAG store: the `tasks` subcommand cluster.
+    "tasks_import_plan",
+    "tasks_add",
+    "tasks_add_many",
+    "tasks_update",
+    "tasks_show",
+    "tasks_list",
+    "tasks_edges",
+    "tasks_ready",
+    "tasks_batches",
+    "tasks_closure",
+    "tasks_check",
+    "tasks_render",
 ];
 
 /// User-facing top-level subcommand names, as they appear in
@@ -77,6 +90,7 @@ pub(crate) const SUBCOMMANDS: &[&str] = &[
     "flow",
     "json",
     "backlog",
+    "tasks",
 ];
 
 #[derive(Parser)]
@@ -627,6 +641,15 @@ pub(crate) enum Cmd {
         #[command(subcommand)]
         op: BacklogOp,
     },
+
+    /// Per-flow task DAG over `.claude/flows/<slug>/tasks.toml` — import a
+    /// plan's `## Tasks` section, add and update rows, query them with the
+    /// shared `--where` surface, and compute ready-sets, Kahn batches and
+    /// checkpoint closures from the stored `needs` / `coupling` edges.
+    Tasks {
+        #[command(subcommand)]
+        op: TasksOp,
+    },
 }
 
 /// Flow subcommand cluster. Each leaf op maps onto a dedicated
@@ -905,7 +928,8 @@ pub(crate) enum EnvelopeOp {
         #[arg(long)]
         cwd: Option<String>,
         /// Repeatable artifact key that must exist (review_ledger,
-        /// optimise_findings, execution_record, plan_review_findings).
+        /// optimise_findings, execution_record, plan_review_findings,
+        /// tasks).
         #[arg(long = "require-artifact")]
         require_artifact: Vec<String>,
         /// Staleness threshold (default "7d").
@@ -1287,7 +1311,7 @@ pub(crate) enum ClusterBy {
 /// Flow-artifact kinds surfaced by `flow ensure-artifact`. Variants are
 /// rendered by clap's default `value_enum` casing as kebab-case
 /// (`context`, `execution-record`, `review-ledger`, `optimise-findings`,
-/// `plan-review-findings`).
+/// `plan-review-findings`, `tasks`).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ArtifactKind {
     Context,
@@ -1295,6 +1319,7 @@ pub(crate) enum ArtifactKind {
     ReviewLedger,
     OptimiseFindings,
     PlanReviewFindings,
+    Tasks,
 }
 
 #[derive(Subcommand)]
@@ -1732,6 +1757,348 @@ pub(crate) enum BlocksOp {
         /// present in the first listed file is used.
         #[arg(long = "block")]
         block: Vec<String>,
+    },
+}
+
+/// Store target shared by every `tasks` verb. Not a `required` group:
+/// `import-plan --plan <path> --dry-run` validates a plan with no store at
+/// all, and every other verb refuses an empty target in post-parse
+/// validation so the refusal is a `kind=validation` envelope, not usage prose.
+#[derive(Args, Clone)]
+#[command(next_help_heading = "Store target")]
+#[group(multiple = false)]
+pub(crate) struct TasksTarget {
+    /// Flow slug whose task store is targeted
+    /// (`<root>/.claude/flows/<slug>/tasks.toml`).
+    #[arg(long = "slug", value_name = "SLUG")]
+    pub(crate) slug: Option<String>,
+
+    /// Explicit `tasks.toml` path, bypassing slug resolution.
+    #[arg(long = "file", value_name = "PATH")]
+    pub(crate) file: Option<PathBuf>,
+}
+
+/// Projection selector for `tasks show --with`. Comma-delimited and
+/// repeatable; with the flag absent the output is `summary` alone.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ShowPart {
+    /// id, ref, title, effort, status, checkpoint, files, needs, coupling.
+    Summary,
+    /// The `action` / `detail` / `acceptance` prose an executing agent needs.
+    Body,
+    /// The row's declared `files` list on its own.
+    Files,
+    /// A summary per direct `needs` / `coupling` target of the row.
+    Deps,
+    /// Transitive dependents (successors) of the row.
+    Dependents,
+}
+
+/// Edge selector for `tasks edges --kind`. `needs` and `coupling` are the
+/// two stored edge sets; `overlap` is computed on read (a file shared by
+/// two rows with no directed path either way) and never persisted.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum EdgeKind {
+    /// Stored dependency edges.
+    Needs,
+    /// Stored acceptance-reachability edges.
+    Coupling,
+    /// Computed file-sharing pairs with no directed path either way.
+    Overlap,
+}
+
+/// `tasks` subcommand cluster. Every op resolves its store through the
+/// shared `TasksTarget` group and emits JSON. The comma-delimited list
+/// flags carry no `num_args(1..)` — a greedy multi-value arg swallows
+/// whitespace-separated tokens, including the next subcommand name.
+#[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum TasksOp {
+    /// Import a plan's `## Tasks`, `## Execution Policy` and
+    /// `## Dependency Graph` sections into the store. An upsert keyed on
+    /// each row's `ref`: existing rows keep `status`, `agent` and `commit`,
+    /// new rows arrive `pending`, and nothing is deleted.
+    ImportPlan {
+        #[command(flatten)]
+        target: TasksTarget,
+        /// Plan markdown to import. Under `--slug`, defaults to the flow's
+        /// recorded plan path; may be passed alone (no store target) to
+        /// validate a plan with `--dry-run` before a flow exists.
+        #[arg(long = "plan", value_name = "PATH")]
+        plan: Option<PathBuf>,
+        /// Also read the flow's `execution-record.toml` task-completions,
+        /// mark matched rows `done`, and adopt the record's `ref` on a
+        /// unique normalised match.
+        #[arg(long = "reconcile-record")]
+        reconcile_record: bool,
+        /// Preview the import without writing. Emits the same envelope plus
+        /// any findings and leaves the file + sidecar byte-identical.
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Append one task row. Its `ref` is derived from the title, and
+    /// dangling dependency targets or a cycle are refused before writing.
+    Add {
+        #[command(flatten)]
+        target: TasksTarget,
+        /// Row title; the `ref` slug is derived from it.
+        #[arg(long, value_name = "TEXT")]
+        title: String,
+        /// Effort tag: `S`, `M` or `L`. Validated against the store schema
+        /// after parsing, so an unrecognised value surfaces as a
+        /// `kind=validation` error rather than clap usage prose.
+        #[arg(long, value_name = "S|M|L")]
+        effort: String,
+        /// Repo-relative paths this task edits.
+        #[arg(long, value_delimiter = ',', value_name = "F1,F2,...")]
+        files: Vec<String>,
+        /// Task ids this row depends on.
+        #[arg(long, value_delimiter = ',', value_name = "N1,N2,...")]
+        needs: Vec<u32>,
+        /// Acceptance-reachability edges — ids whose work this row's
+        /// acceptance command exercises. Counted in the in-degree exactly
+        /// like `--needs`.
+        #[arg(long, value_delimiter = ',', value_name = "N1,N2,...")]
+        coupling: Vec<u32>,
+        /// Prose remainder of the plan's `Depends on` line, stored verbatim.
+        #[arg(long = "deps-note", value_name = "TEXT")]
+        deps_note: Option<String>,
+        /// Checkpoint group id this row belongs to. Omit for a row committed
+        /// only by the final train.
+        #[arg(long, value_name = "ID")]
+        checkpoint: Option<String>,
+        #[arg(
+            long,
+            conflicts_with = "action_file",
+            value_name = "TEXT",
+            help = "Action body as a literal string"
+        )]
+        action: Option<String>,
+        #[arg(
+            long = "action-file",
+            conflicts_with = "action",
+            value_name = "PATH",
+            help = "Read the action body from a file"
+        )]
+        action_file: Option<PathBuf>,
+        #[arg(
+            long,
+            conflicts_with = "detail_file",
+            value_name = "TEXT",
+            help = "Detail body as a literal string"
+        )]
+        detail: Option<String>,
+        #[arg(
+            long = "detail-file",
+            conflicts_with = "detail",
+            value_name = "PATH",
+            help = "Read the detail body from a file"
+        )]
+        detail_file: Option<PathBuf>,
+        #[arg(
+            long,
+            conflicts_with = "acceptance_file",
+            value_name = "TEXT",
+            help = "Acceptance body as a literal string"
+        )]
+        acceptance: Option<String>,
+        #[arg(
+            long = "acceptance-file",
+            conflicts_with = "acceptance",
+            value_name = "PATH",
+            help = "Read the acceptance body from a file"
+        )]
+        acceptance_file: Option<PathBuf>,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Append many rows in one batch from NDJSON, one row object per line.
+    /// Validation matches `add` and the batch is all-or-nothing: a
+    /// malformed line, a dangling target or a cycle aborts before the
+    /// file is mutated.
+    AddMany {
+        #[command(flatten)]
+        target: TasksTarget,
+        #[arg(
+            long = "ndjson",
+            value_name = "SRC",
+            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+        )]
+        ndjson: String,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Patch one row's mutable fields. `ref` is immutable unless `--ref` is
+    /// given explicitly — renaming it orphans the execution record's
+    /// `task_ref` and the last import's ref set.
+    Update {
+        /// Task id to patch.
+        id: u32,
+        #[command(flatten)]
+        target: TasksTarget,
+        /// Lifecycle status: `pending`, `in-progress`, `done`, `failed` or
+        /// `deferred`. Validated against the store schema after parsing.
+        #[arg(long, value_name = "STATUS")]
+        status: Option<String>,
+        /// Agent the row was dispatched to, recorded at dispatch time.
+        #[arg(long, value_name = "NAME")]
+        agent: Option<String>,
+        /// Commit SHA the row landed in, recorded by the commit train.
+        #[arg(long, value_name = "SHA")]
+        commit: Option<String>,
+        /// Checkpoint group id. Pass an empty value to clear it.
+        #[arg(long, value_name = "ID")]
+        checkpoint: Option<String>,
+        /// Rewrite the row's `ref`. Never inferred from a retitle.
+        #[arg(long = "ref", value_name = "SLUG")]
+        task_ref: Option<String>,
+        #[arg(
+            long = "set",
+            value_name = "KEY=VAL",
+            help = "Set any other row field (repeatable)"
+        )]
+        set: Vec<String>,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Print one row. Without `--with` the output is the summary shape;
+    /// `--with body,files,deps` is the fetch-by-id form a dispatching
+    /// orchestrator hands an implementing agent in place of pasted prose.
+    Show {
+        /// Task id to print.
+        id: u32,
+        #[command(flatten)]
+        target: TasksTarget,
+        #[arg(
+            long = "with",
+            value_enum,
+            value_delimiter = ',',
+            value_name = "PART,...",
+            help = "Sections to include (summary,body,files,deps,dependents)"
+        )]
+        with: Vec<ShowPart>,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// List rows as a JSON array. The full `items list` predicate,
+    /// projection and aggregation surface applies.
+    ///
+    /// `--count` joins `--count-by`, `--group-by`, `--pluck` and
+    /// `--count-distinct` in a mutually-exclusive `ArgGroup`, so a
+    /// mismatched pair is a parse-time error rather than a silent collapse
+    /// to one shape. `--count` is declared here because it lives on the
+    /// variant in `items list` too, not in `QueryArgs`.
+    #[command(group(clap::ArgGroup::new("shape").multiple(false).args(["count", "count_by", "group_by", "pluck", "count_distinct"])))]
+    List {
+        #[command(flatten)]
+        target: TasksTarget,
+        #[arg(
+            long,
+            help = "Print `{\"count\": N}` of matching rows instead of the array"
+        )]
+        count: bool,
+        #[command(flatten)]
+        query: QueryArgs,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// Print the graph's edge list.
+    Edges {
+        #[command(flatten)]
+        target: TasksTarget,
+        /// Restrict to one edge kind. Omit for all three.
+        #[arg(long = "kind", value_enum, value_name = "KIND")]
+        kind: Option<EdgeKind>,
+        /// Emit Graphviz DOT source instead of a JSON edge list.
+        #[arg(long = "dot")]
+        dot: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// Print the dispatchable frontier: rows whose dependencies are all
+    /// `done`, which of those are held by a file claim, and what becomes
+    /// ready once the current round lands.
+    Ready {
+        #[command(flatten)]
+        target: TasksTarget,
+        /// Ids currently dispatched. A ready row sharing a file with one of
+        /// them is reported as held, naming the file and the holder.
+        #[arg(long = "in-flight", value_delimiter = ',', value_name = "N1,N2,...")]
+        in_flight: Vec<u32>,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// Print the Kahn layers of the whole graph, each sorted ascending.
+    Batches {
+        #[command(flatten)]
+        target: TasksTarget,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// Print a checkpoint group's task set, or one task's transitive
+    /// dependencies (`--up`) or dependents (`--down`), plus the set's
+    /// maximal elements.
+    Closure {
+        #[command(flatten)]
+        target: TasksTarget,
+        /// Checkpoint group id whose closure is printed.
+        #[arg(long = "checkpoint", conflicts_with = "task", value_name = "ID")]
+        checkpoint: Option<String>,
+        /// Task id whose closure is printed.
+        #[arg(long = "task", conflicts_with = "checkpoint", value_name = "N")]
+        task: Option<u32>,
+        /// Walk to transitive dependencies (ancestors), inclusive.
+        #[arg(long = "up", conflicts_with = "down")]
+        up: bool,
+        /// Walk to transitive dependents (successors), inclusive.
+        #[arg(long = "down", conflicts_with = "up")]
+        down: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// Run the store's invariant checks. Each finding carries a `class`, a
+    /// `severity` and the ids it names; any `error`-class finding exits 1.
+    Check {
+        #[command(flatten)]
+        target: TasksTarget,
+        /// Also compare the plan markdown against the render output and
+        /// report a `render/drift` warning when they differ.
+        #[arg(long = "plan")]
+        plan: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// Rewrite the plan's `## Execution Policy`, `## Tasks` and
+    /// `## Dependency Graph` sections from the store.
+    ///
+    /// A derived write, like `flow render-progress-log`: the output carries
+    /// no integrity sidecar, and the target is resolved from the flow
+    /// context or the store's recorded plan path — never from a free
+    /// argument — so the write-side containment flags have no hook here.
+    Render {
+        #[command(flatten)]
+        target: TasksTarget,
+        /// Print the rendered plan to stdout instead of writing it.
+        #[arg(long = "stdout")]
+        stdout: bool,
+        /// Report drift and exit 1 without writing.
+        #[arg(long = "check")]
+        check: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
     },
 }
 
