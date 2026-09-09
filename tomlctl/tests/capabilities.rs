@@ -1651,8 +1651,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.7.0",
-        "expected version `0.7.0` (the minor bump for the new `tasks` verb group); got `{version}`"
+        version, "0.8.0",
+        "expected version `0.8.0` (the minor bump for the new `tasks` verb group); got `{version}`"
     );
 }
 
