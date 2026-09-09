@@ -318,9 +318,6 @@ fn depends_on(row: &TaskRow) -> String {
     }
 }
 
-/// Each path with whatever annotation the plan wrote against it. The parser
-/// cuts an entry at its first `(` or ` — `, so an annotation carrying a comma
-/// would re-import as a further path.
 fn file_list(store: &Store, row: &TaskRow) -> String {
     if row.files.is_empty() {
         return EMPTY.to_string();
