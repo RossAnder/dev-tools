@@ -17,10 +17,10 @@ use toml::Value as TomlValue;
 
 use super::ids;
 use super::schema::{
-    self, ARRAY_BACKLOG, ARRAY_COMPACTED, BacklogError, FIELD_AREA, FIELD_CONTEXT, FIELD_CREATED,
-    FIELD_DEDUP_ID, FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID, FIELD_KIND, FIELD_LAST_SEEN,
-    FIELD_LAST_UPDATED, FIELD_ORIGIN, FIELD_RELATED, FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY,
-    FIELD_TAGS, KIND_OTHER, STATUS_OPEN, TERMINAL_DATE_FIELDS,
+    self, ARRAY_BACKLOG, ARRAY_COMPACTED, BacklogError, FIELD_AREA, FIELD_BASE_SHA, FIELD_CONTEXT,
+    FIELD_CREATED, FIELD_DEDUP_ID, FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID, FIELD_KIND,
+    FIELD_LAST_SEEN, FIELD_LAST_UPDATED, FIELD_ORIGIN, FIELD_RELATED, FIELD_SEEN_COUNT,
+    FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, KIND_OTHER, STATUS_OPEN, TERMINAL_DATE_FIELDS,
 };
 use crate::cli::{OnDuplicate, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::{is_date_key, json_to_toml, json_type_name, toml_to_json};
@@ -45,6 +45,30 @@ const MINTED_FIELDS: [&str; 5] = [
     FIELD_SEEN_COUNT,
 ];
 
+/// Resolve the commit a capture is made against: an explicit `--base-sha` wins,
+/// `--auto-base-sha` asks git, and neither records nothing.
+///
+/// Auto-resolution is deliberately best-effort. Outside a repo, on an unborn
+/// HEAD, or with no git on PATH there is no answer, and a capture is worth more
+/// than its provenance — so the field is dropped rather than the add failing.
+fn resolve_base_sha(explicit: Option<String>, auto: bool) -> Option<String> {
+    if let Some(sha) = explicit {
+        return Some(sha);
+    }
+    if !auto {
+        return None;
+    }
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let sha = String::from_utf8(out.stdout).ok()?.trim().to_string();
+    (!sha.is_empty()).then_some(sha)
+}
+
 /// One capture, resolved from either the field flags or a `--json` payload.
 /// `kind` is already coerced and `today` already resolved, so `add_item` is a
 /// pure function of this plus the document.
@@ -61,6 +85,9 @@ struct AddRequest {
     origin: Option<String>,
     flow: Option<String>,
     context: Option<String>,
+    /// Commit the capture was made against, when the caller recorded one.
+    /// `None` writes no field, which is what every pre-existing row looks like.
+    base_sha: Option<String>,
     evidence: Vec<String>,
     related: Vec<String>,
     /// Fields a `--json` payload carried beyond the flag surface, in payload
@@ -87,6 +114,8 @@ pub(crate) fn dispatch(
     context: Option<String>,
     origin: Option<String>,
     flow: Option<String>,
+    base_sha: Option<String>,
+    auto_base_sha: bool,
     on_duplicate: OnDuplicate,
     json: Option<String>,
     dry_run: bool,
@@ -104,6 +133,8 @@ pub(crate) fn dispatch(
         context,
         origin,
         flow,
+        base_sha,
+        auto_base_sha,
         on_duplicate,
         json,
     )?;
@@ -339,6 +370,7 @@ fn build_row(req: &AddRequest, id: &str, dedup_id: &str) -> TomlValue {
         (FIELD_ORIGIN, &req.origin),
         (FIELD_FLOW, &req.flow),
         (FIELD_CONTEXT, &req.context),
+        (FIELD_BASE_SHA, &req.base_sha),
     ] {
         if let Some(value) = value {
             row.insert(field.to_string(), TomlValue::String(value.clone()));
@@ -439,6 +471,8 @@ fn build_request(
     context: Option<String>,
     origin: Option<String>,
     flow: Option<String>,
+    base_sha: Option<String>,
+    auto_base_sha: bool,
     on_duplicate: OnDuplicate,
     json: Option<String>,
 ) -> Result<AddRequest> {
@@ -458,6 +492,10 @@ fn build_request(
                 ("--context", context.is_some()),
                 ("--origin", origin.is_some()),
                 ("--flow", flow.is_some()),
+                // --auto-base-sha is deliberately absent: it supplies no content,
+                // it resolves provenance from the environment the way `today`
+                // does, so a staged payload can still pick up its base commit.
+                ("--base-sha", base_sha.is_some()),
             ]
             .into_iter()
             .filter_map(|(name, given)| given.then_some(name))
@@ -474,7 +512,14 @@ fn build_request(
             }
             let payload: JsonValue =
                 serde_json::from_str(&read_json_arg(&raw)?).context("parsing --json")?;
-            request_from_payload(payload, on_duplicate, today, file)?
+            {
+                let mut req = request_from_payload(payload, on_duplicate, today, file)?;
+                // A payload carrying its own base_sha keeps it: that row's `extra`
+                // is written after this field, so the recorded vintage wins over a
+                // re-resolution against whatever HEAD happens to be now.
+                req.base_sha = resolve_base_sha(None, auto_base_sha);
+                req
+            }
         }
         None => AddRequest {
             kind: schema::known_kind(kind.as_deref().unwrap_or(KIND_OTHER))
@@ -488,6 +533,7 @@ fn build_request(
             origin,
             flow,
             context,
+            base_sha: resolve_base_sha(base_sha, auto_base_sha),
             evidence,
             related,
             extra: toml::Table::new(),
@@ -539,6 +585,9 @@ fn request_from_payload(
         extra.insert(field.clone(), payload_value(field, value)?);
     }
     Ok(AddRequest {
+        // A --json payload's own base_sha rides in `extra`, written verbatim by
+        // build_row -- so replaying a `show` preserves the original vintage.
+        base_sha: None,
         kind: schema::known_kind(string_of(&map, FIELD_KIND).unwrap_or(KIND_OTHER))
             .unwrap_or(KIND_OTHER)
             .to_string(),
@@ -689,6 +738,8 @@ mod tests {
             c.context.map(str::to_string),
             None,
             None,
+            None,
+            false,
             c.on_duplicate,
             c.json.map(str::to_string),
             c.dry_run,
@@ -969,6 +1020,7 @@ mod tests {
                 status: STATUS_OPEN.to_string(),
                 origin: None,
                 flow: None,
+                base_sha: None,
                 context: context.map(str::to_string),
                 evidence: evidence.iter().map(|e| (*e).to_string()).collect(),
                 related: Vec::new(),

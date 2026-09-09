@@ -54,6 +54,8 @@ tomlctl backlog add --summary "conpty spawn intermittently fails with CreateProc
 | `--context` | text | How to work around the issue. The field that makes a later `check` hit actionable. | none |
 | `--origin` | text | Command or agent that minted the row — a bare command or agent name, no leading slash. | none |
 | `--flow` | slug | Flow in force at mint time. | none |
+| `--base-sha` | sha | Commit the capture was made against. Conflicts with `--json`, which should carry the value in its payload. | none |
+| `--auto-base-sha` | flag | Resolve `base_sha` from `git rev-parse HEAD`. Composes with `--json` — it supplies no content — and a payload's own `base_sha` wins. Silently records nothing outside a repo, on an unborn HEAD, or with no git on PATH: a capture is worth more than its provenance. | off |
 | `--on-duplicate` | `bump` \| `skip` \| `fail` \| `add` | Behaviour when the computed `dedup_id` is already stored. | `bump` |
 | `--json` | payload or `-` | Whole-item JSON instead of the field flags; `-` reads stdin. Mutually exclusive with every field flag above — passing both errors with `kind=validation`. | — |
 | `--dry-run` | — | Emit the mutation plan; touch neither file nor sidecar. | off |

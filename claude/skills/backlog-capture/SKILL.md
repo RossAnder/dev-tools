@@ -228,11 +228,30 @@ Mint with provenance and a workaround, staging the whole item as JSON — write
 {"summary":"conpty spawn intermittently fails with CreateProcessW error 5","kind":"flaky-test","area":"lumina/server/src/pty","tags":["pty"],"context":"Empty PATH entry in HKLM; set LUMINA_CLAUDE_BIN to an absolute path to work around it.","evidence":["lumina/server/src/pty/spawn.rs:214"],"related":["B-1a2b3c4d"],"origin":"implement","flow":"lumina-pty-hardening"}
 ```
 
-then pipe it in:
+then pipe it in, always with `--auto-base-sha`:
 
 ```bash
-cat .claude/_backlog-add.json | tomlctl backlog add --json -
+cat .claude/_backlog-add.json | tomlctl backlog add --json - --auto-base-sha
 ```
+
+## Always record the base commit
+
+`--auto-base-sha` stamps `base_sha` from `git rev-parse HEAD`, recording which tree
+the discovery was seen against. It composes with `--json` because it supplies no item
+content — it resolves provenance from the environment, the way the capture date does —
+and a payload carrying its own `base_sha` keeps it.
+
+Without it a consumer cannot tell "this was already fixed" from "this describes code
+newer than my checkout", and that ambiguity produces confidently wrong verdicts: an
+agent working a worktree reads absence as resolution. With it the check is decidable:
+
+```bash
+git merge-base --is-ancestor <base_sha> HEAD   # false => this tree predates the item
+```
+
+The field is optional and absent on every row minted before it existed, so absence
+means "unknown vintage" — never a claim about the tree. Pass `--base-sha <SHA>` instead
+when capturing against a commit other than HEAD.
 
 Ask for the drop-box, then copy into the path it prints:
 

@@ -1023,6 +1023,20 @@ pub(crate) enum BacklogOp {
         #[arg(long, help = "Flow slug in force at mint time")]
         flow: Option<String>,
         #[arg(
+            long = "base-sha",
+            value_name = "SHA",
+            help = "Commit this capture was made against"
+        )]
+        base_sha: Option<String>,
+        #[arg(
+            long = "auto-base-sha",
+            conflicts_with = "base_sha",
+            // Intentionally compatible with --json: it resolves provenance from
+            // the environment rather than supplying item content.
+            help = "Resolve the base commit from `git rev-parse HEAD`"
+        )]
+        auto_base_sha: bool,
+        #[arg(
             long = "on-duplicate",
             value_enum,
             default_value_t = OnDuplicate::Bump,

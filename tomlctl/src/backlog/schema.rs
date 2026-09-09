@@ -52,6 +52,12 @@ pub(crate) const FIELD_LAST_SEEN: &str = "last_seen";
 pub(crate) const FIELD_SEEN_COUNT: &str = "seen_count";
 pub(crate) const FIELD_DEDUP_ID: &str = "dedup_id";
 pub(crate) const FIELD_ORIGIN: &str = "origin";
+/// Commit the capture was made against. Optional and absent on every row minted
+/// before it existed, so a reader treats absence as "unknown vintage", never as a
+/// claim about the tree. A consumer working in a worktree compares it with
+/// `git merge-base --is-ancestor <base_sha> HEAD` to tell "already fixed" from
+/// "not in this checkout yet".
+pub(crate) const FIELD_BASE_SHA: &str = "base_sha";
 pub(crate) const FIELD_FLOW: &str = "flow";
 pub(crate) const FIELD_CONTEXT: &str = "context";
 pub(crate) const FIELD_EVIDENCE: &str = "evidence";
