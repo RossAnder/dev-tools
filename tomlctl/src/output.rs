@@ -48,6 +48,7 @@ pub(crate) fn print_json(v: &JsonValue) -> Result<()> {
 /// carry `kind:"scalar"`. It is additive to the rest of the envelope:
 /// consumers reading `added`/`updated`/`removed`/`skipped`/`ids` are
 /// unaffected by it.
+/// Commands may add their own top-level fields to this common envelope.
 pub(crate) fn build_dry_run_plan_envelope(plan: &MutationPlan) -> JsonValue {
     serde_json::json!({
         "ok": true,
