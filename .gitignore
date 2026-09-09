@@ -30,3 +30,9 @@
 /.claude/backlog-evidence/**
 !/.claude/backlog-evidence/*/
 !/.claude/backlog-evidence/*/.evidence
+
+# `/backlog-clear`'s run record. It lives at the root of the dedicated backlog
+# worktree, where it is both the run log and the skip list an interrupted run
+# resumes from — so it must survive the launcher's `reset --hard` resync, which
+# leaves untracked files alone. Committing it would put a diff on every batch.
+/BACKLOG-RUN.md
