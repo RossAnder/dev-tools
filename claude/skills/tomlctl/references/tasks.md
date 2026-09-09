@@ -1,7 +1,7 @@
 # tomlctl — tasks reference
 
-The flag surface of the `tomlctl tasks` group and the shape of the store it writes:
-`.claude/flows/<slug>/tasks.toml`, a per-flow task DAG with the plan's execution policy and
+The flag surface of the `tomlctl tasks` group, which reads and writes
+`.claude/flows/<slug>/tasks.toml`: a per-flow task DAG with the plan's execution policy and
 checkpoint groups beside it. Every verb resolves its store through one shared target group
 (`--slug` or `--file`) and emits JSON on stdout. What the fields *mean*, which verb a carrier
 reaches for, and the rules binding `/plan-new`, `/implement`, `/review-plan` and
@@ -24,12 +24,11 @@ reaches for, and the rules binding `/plan-new`, `/implement`, `/review-plan` and
 - [`tasks check`](#tasks-check)
 - [`tasks render`](#tasks-render)
 - [Store target](#store-target)
-- [Store shape](#store-shape)
-- [Ref derivation](#ref-derivation)
 - [The `check` finding classes](#the-check-finding-classes)
-- [Derived graph products](#derived-graph-products)
-- [The 256-node cap](#the-256-node-cap)
-- [Frozen contracts](#frozen-contracts)
+
+The store's own half — its keys and `[[items]]` fields, `ref` derivation, the graph products
+recomputed on every read, the 256-node cap and the frozen contracts — is
+[tasks-store.md](tasks-store.md).
 
 Every mutating verb (`import-plan`, `add`, `add-many`, `update`, `remove`) carries the shared write
 bundle — `--allow-outside`, `--no-create`, `--no-write-integrity`, `--strict-integrity`,
@@ -74,12 +73,22 @@ and what a later render accepts cannot drift apart.
 
 ```json
 {"ok":true,"added":3,"updated":1,"unchanged":32,"removed_refs":[],"added_refs":["wire-the-render-verb"],
- "adopted_refs":["arm_the_sort_engaged_test"],"unmatched_refs":[],"findings":[]}
+ "adopted_refs":["arm_the_sort_engaged_test"],"unmatched_refs":[],"cleared_checkpoint_refs":[],"findings":[]}
 ```
 
 `added` + `updated` + `unchanged` counts the *plan's* tasks. `adopted_refs` names refs whose
 spelling came from the execution record rather than the heading; `unmatched_refs` names record
-`task_ref`s no plan task claimed.
+`task_ref`s no plan task claimed. `cleared_checkpoint_refs` is the subset of `removed_refs`
+whose `checkpoint` named a group this plan no longer declares: membership is recomputed for
+every row the plan produces, so a retained row was the one way an undeclared group id stayed
+in the store. The row survives; the id is blanked.
+
+A row `tasks update --unlock-import-fields` hand-patched carries an `[[import_overrides]]`
+entry holding the plan values that patch replaced. The import keeps the row's `files` /
+`needs` while the plan still states that base — `plan/override-held` — and takes the plan's
+value back, dropping the entry, the moment the plan states anything else —
+`plan/override-released`. Membership, not order, is the comparison: reordering a `Files` line
+states no new value.
 
 ## `tasks add`
 
@@ -155,18 +164,31 @@ tomlctl tasks update <id> --slug <slug> --status done --agent implement-deep --c
 | `--commit` | SHA | Commit the row landed in. | — |
 | `--checkpoint` | group id | Checkpoint group; pass an empty value to clear it. An undeclared group id is refused, through this flag and through `--set checkpoint=` alike. | — |
 | `--ref` | slug | Rewrite the `ref`. Never inferred from a retitle. | — |
+| `--unlock-import-fields` | — | Permit `--set files=` and `--set needs=`, stamping the row with the plan values the patch replaces. Conflicts with `--relock-import-fields`. | off |
+| `--relock-import-fields` | — | Drop that stamp: the next import restores whatever the plan states. Values are left as they are. | off |
 | `--set` | `KEY=VAL`, repeatable | Any other settable field. | — |
 
 `--set` reaches `acceptance`, `action`, `agent`, `checkpoint`, `commit`, `coupling`, `deps_note`,
-`detail`, `effort`, `status`, `title`. Three refusals carry their own hint instead of the generic
-list: `ref` is immutable through `--set` and must be rewritten with `--ref`; `id` is minted by
-the store; `files` and `needs` are owned by `tasks import-plan`. Passing the same field both as a
-named flag and as `--set` errors rather than picking one.
+`detail`, `effort`, `status`, `title`, plus `files` and `needs` under `--unlock-import-fields`.
+Three refusals carry their own hint instead of the generic list: `ref` is immutable through
+`--set` and must be rewritten with `--ref`; `id` is minted by the store; `files` and `needs` are
+owned by `tasks import-plan`, and that hint names the unlock flag. Passing the same field both as
+a named flag and as `--set` errors rather than picking one.
 
-`coupling` is the one settable field validated against the whole store rather than the row alone.
-It takes the same comma-separated id list `tasks add --coupling` takes, an empty value clears the
-edge set, and a dangling target or an edge that would close a cycle is refused before the row
-moves. `--set title=` is refused when the new title derives a different `ref` than the old one
+`coupling`, `needs` and `files` take a comma-separated list — the same one `tasks add` takes —
+and an empty value clears it. A `--set files=` patch carries no per-path annotations; those are
+import-owned and are re-derived from the plan for the paths the row still claims. The two edge fields are validated against the whole store rather
+than the row alone: a dangling target or an edge that would close a cycle is refused before the
+row moves.
+
+An unlocked patch records the value it replaced as the stamp's *base*, and `changed` reports
+`import_override` alongside the field. The base is the plan's own value, so a second patch keeps
+the first one's base rather than overwriting it, and a patch back to the base drops the stamp —
+a row that agrees with the plan overrides nothing. `--ref` carries the stamp with the row.
+There are three ways out: publish the patch with `tasks render` and re-import, let the plan
+change the line, or `--relock-import-fields`. The unlock is not a pin: `tasks render --check`
+reports the divergence as `render/drift` from the moment of the patch, and every import that
+sees a changed line reports `plan/override-released` and takes the plan's value back. `--set title=` is refused when the new title derives a different `ref` than the old one
 did, unless `--ref` rides along in the same invocation; the refusal names the ref the new title
 derives to. A retitle deriving the same ref lands on its own. The comparison is old derivation
 against new, deliberately not against the stored `ref` — a duplicate title is minted a suffixed
@@ -207,9 +229,23 @@ edge short would dispatch ahead of work it still waits on, and one left pointing
 id would make the store `dag/dangling-ref`. `rewired` names the rows whose edge sets moved,
 ascending. There is no `--dry-run`.
 
+A successful removal also drops the row's `[[import_overrides]]` entry, so no stamp outlives the
+row it keys on. The prune runs on the success path only, and `pruned_override_fields` names the
+stamped fields it took — a subset of `files`, `needs`, in that order — so a caller can see which
+values the next import would take from the plan instead. Like `update`'s `changed` and
+`import-plan`'s `cleared_checkpoint_refs`, it is always present and empty when nothing was pruned.
+
 ```json
-{"ok":true,"id":21,"ref":"wire-the-render-verb","rewired":[24,25]}
+{"ok":true,"id":21,"ref":"wire-the-render-verb","rewired":[24,25],"pruned_override_fields":["files"]}
 ```
+
+| Key | Value | Meaning |
+|---|---|---|
+| `ok` | `true` | Success path only; a refusal arrives as a `kind=validation` error, never as `ok: false`. |
+| `id` | id | The removed row, echoing the positional argument. |
+| `ref` | slug | The removed row's `ref` — the join key the execution record and the commit train hold. |
+| `rewired` | ids, ascending | Rows whose `needs` / `coupling` the removal moved. Empty when nothing depended on the row. |
+| `pruned_override_fields` | subset of `files`, `needs` | Stamped fields the dropped `[[import_overrides]]` entry held. Empty when the row carried no stamp. |
 
 ## `tasks show`
 
@@ -232,8 +268,15 @@ still shows its rows under every other part.
 ```json
 {"id":12,"ref":"check-side-arm-width","title":"Check side-arm width","effort":"S",
  "status":"pending","checkpoint":"A","files":["src/overflow.tsx"],"needs":[10],"coupling":[],
- "action":"…","detail":"…","acceptance":"…","deps":[{"id":10,"ref":"…"}]}
+ "action":"…","detail":"…","acceptance":"…","deps":[{"id":10,"ref":"…"}],
+ "import_override":{"files":["src/legacy.tsx"],"needs":[9]}}
 ```
+
+`import_override` is emitted last and is not gated on `--with`. It holds the plan **base** each
+stamped field replaced — not the patched `files` / `needs` above it — with an unstamped field
+omitted and the whole key absent from an unstamped row, so output for a store nothing has
+hand-patched is unchanged. It carries no `ref` (the row has one), and the summaries nested under
+`deps` / `dependents` never carry it: the stamp belongs to the row that was asked for.
 
 An unknown id errors with `kind=not_found`.
 
@@ -345,12 +388,17 @@ direction, and a direction alongside `--checkpoint` — the last is refused rath
 An unknown checkpoint id errors and names the ids `[[checkpoints]]` does hold.
 
 ```json
-{"checkpoint":"A","members":[1,2,3,4],"maximal":[4],"valid_cut":true}
+{"checkpoint":"A","members":[1,2,3,4],"maximal":[4],"dependency_closure":[1,2,3,4],"valid_cut":true}
 {"task":12,"direction":"up","ids":[3,7,10,12]}
 ```
 
 `valid_cut` covers the union of the group with every earlier one, so it reads as "committable
 here", not "self-contained".
+
+`members` is the group; `dependency_closure` is everything the group reaches upward, which is
+the set the rendered `CHECKPOINT` marker prints under that same name. They coincide exactly when
+every dependency already sits in an earlier group, which is the case a reader cannot use to tell
+them apart — so both are reported.
 
 ## `tasks check`
 
@@ -433,72 +481,6 @@ store's own `plan_path` is the only plan the tool will find.
 The root is `TOMLCTL_ROOT` or the git top level, exactly as `flow render-progress-log` resolves
 it.
 
-## Store shape
-
-`.claude/flows/<slug>/tasks.toml` carries four top-level keys, a `[policy]` table, a
-`[[checkpoints]]` array and an `[[items]]` array. Keys are written in that order and the order
-is stable across writes, so a re-render is a clean diff.
-
-| Key | Set by |
-|---|---|
-| `schema_version` | seeded to `1` by `flow init` and by the auto-create write path |
-| `last_updated` | a bare TOML date, restamped on every mutation |
-| `plan_path` | `import-plan`, from the flow context under `--slug` or `--plan` under `--file` |
-| `last_import_refs` | `import-plan` — the ref set the last import produced |
-
-`[policy]`: `checkpoints` (`single` \| `milestones` \| `per-batch`), `max_parallel` (1–8),
-`commit_granularity` (`per-task` \| `per-checkpoint` \| `single-commit`), `origin`
-(`plan` \| `default`), `note`. The three vocabulary fields are stored as strings so
-`tasks check`, not the reader, decides what is out of vocabulary. An absent or partial table
-falls back to `milestones` / `6` / `per-task`.
-
-`origin` records whether the first three came from the plan's `## Execution Policy` section or
-from those fallbacks, which is the only thing distinguishing a pre-policy plan once the import
-has materialised the table. It was added without a `schema_version` bump: an absent `origin`
-reads as `plan`, except that a `note` of exactly `policy absent in source plan` — what
-pre-`origin` imports stamped there for the same condition — reads as `default` with the note
-cleared. `note` is otherwise authored prose the renderer writes back verbatim.
-
-`[[checkpoints]]`: `id` and `rationale`, in marker order. Group *membership* is not here — it
-is the `checkpoint` field on each row.
-
-`[[items]]`: `id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `phase`, `phase_depth`,
-`heading_depth`, `files`, `needs`, `coupling`, `deps_note`, `action`, `detail`, `acceptance`,
-`agent`, `commit`. The plan owns every field but four: `status`, `agent`, `commit` and
-`coupling` survive every re-import.
-
-`phase` and `phase_depth` hold the heading standing over the row in `## Tasks` and its `#` run,
-`heading_depth` the row's own; absent, they read `""`, `0` and `3`. Neither `add-many` nor
-`--set` reaches them — they are the plan's shape, re-read at every import.
-
-Unknown keys are dropped — the store is tool-owned and every write re-emits it from this shape.
-Bodies are LF-normalised on both read and write, and a body containing a backslash serialises as
-a `'''` literal string, which golden fixtures must expect.
-
-The array is named `items` so the generic `tomlctl items` query machinery applies. Two
-subcommands, `items orphans` and `items find-duplicates`, hardcode the review/optimise ledger
-schema and emit garbage against this one.
-
-## Ref derivation
-
-A row's `ref` is its plan heading's title — the text after the `N. ` number, before any
-trailing ` [S|M|L]` tag — lowercased, with runs of whitespace and hyphens collapsed to a single
-hyphen, underscores kept, and every other character dropped. The precedent is the GitHub
-heading-anchor rule; the two divergences (collapsing runs, keeping underscores) exist because
-`Setup & Config` must not slug to `setup--config` and because execution records already on disk
-carry `task_ref`s containing underscores.
-
-Repeats are suffixed in document order — first heading keeps the bare ref, later ones take
-`-2`, `-3`. `tasks add` instead scans for the first *free* suffix, because replaying the
-document-order numbering over `existing ++ new` would re-derive a suffix another row holds.
-
-A title carrying no slug characters is refused rather than keyed to an empty string.
-
-The matcher `--reconcile-record` compares on collapses a ref to `[a-z0-9]`, so `count_distinct`
-and `count-distinct` match. Adoption of a record's spelling demands a normalised form unique on
-both sides and free on the plan side — a rename onto a sibling's key would silently merge two
-tasks.
-
 ## The `check` finding classes
 
 | Class | Severity | Raised by |
@@ -506,21 +488,28 @@ tasks.
 | `dag/cycle` | error | `check` — suppresses every class needing reachability |
 | `dag/dangling-ref` | error | `check` |
 | `dag/duplicate-number` | error | `check` |
-| `dag/unbuildable` | error | `check` — the graph engine refuses the store for a reason no row scan named; past the node cap is the live case |
+| `dag/unbuildable` | error | `check` — the graph engine refuses the store for a reason no row scan named; past the [node cap](tasks-store.md#the-256-node-cap) is the live case |
 | `dag/unreachable-claim` | warning | `check` — shared file, no directed path either way |
 | `dag/stalled-dependency` | warning | `check` — an `in-progress`, `failed` or `deferred` row with pending rows behind it; one finding per blocker, `ids` naming the blocker and `detail` its dependents. A blocker named in `--in-flight` raises nothing; never changes the exit code |
-| `checkpoint/orphan-task` | warning | `check` — `checkpoint = ""`, or a group id no `[[checkpoints]]` entry declares; one finding per case |
+| `dag/symbol-without-edge` | warning | `check` — a symbol one row's `Action` introduces (`Add`/`Create`/`export` within three words of a backticked identifier) that another row's body names, with no directed path either way; one finding per pair, `ids` naming both. The edge `coupling` exists for and nothing populates. A markdown-only row introduces nothing, and a name two rows introduce raises nothing against a row already reaching one of them |
+| `checkpoint/orphan-task` | warning | `check` — `checkpoint = ""`, or a group id no `[[checkpoints]]` entry declares; one finding per case. The import no longer produces the second case: a retained row is blanked when the plan stops declaring its group |
 | `checkpoint/invalid-cut` | error | `check` — prefix union not downward-closed; `ids` are the dependencies that must move earlier |
 | `checkpoint/marker-mismatch` | warning | `import-plan` only — the authored `Checkpoint after` bullet is never stored |
+| `files/closure` | info | `check` — backticked paths under `packages/`, `apps/`, `docs/` or `scripts/` that a row's `Action` or `Detail` names and its `files` does not claim; one finding per row. A line carrying `read-only`, `model of`, `pattern` or `cite` is skipped. **Never moves the exit code** |
 | `policy/max-parallel-range` | error | `check` |
 | `policy/checkpoints-value` | error | `check` — `policy.checkpoints` outside its vocabulary |
 | `policy/commit-granularity-value` | error | `check` — `policy.commit_granularity` outside its vocabulary |
 | `policy/origin-value` | error | `check` — `policy.origin` neither `plan` nor `default`; only a hand-edited store reaches it |
 | `plan/effort-untagged` | warning | `import-plan` only — **one** finding whose `ids` name every heading authoring no effort; the `M` default lands only where neither the heading nor an existing row supplies one, so a re-import keeps the row's effort and still warns |
 | `plan/policy-absent` | warning | `import-plan` only — no `## Execution Policy` section, so `origin` is `default` and every policy field is a house default |
-| `plan/no-tasks` | error | `import-plan` only — the `## Tasks` section parses to no task, so the import would replace the checkpoint table and policy with the empty and default values such a plan yields |
+| `plan/no-tasks` | error | `import-plan` only — the `## Tasks` section parses to no task, so the import would replace the checkpoint table and policy with the empty and default values such a plan yields. A section holding only links to sibling documents that do carry task headings names that shape instead, the same diagnostic a plan with no section at all raises |
 | `plan/orphan-row` | warning, or **error** when the row's status is not `pending` | `check` |
+| `plan/override-held` | warning | `import-plan` only — a hand-patched `files` or `needs` the plan does not state; run `tasks render` to publish it |
+| `plan/override-released` | warning | `import-plan` only — the plan restated the line, so its value replaced the hand-patched one and the stamp is gone |
 | `render/drift` | warning | `check --plan` and `render --check` |
+
+Severity is `error`, `warning` or `info`. Only `error` moves the exit code; `info` is reserved
+for a list a reader judges, and `files/closure` is its one member.
 
 Every finding is `{class, severity, ids, detail}`; `ids` is empty for the whole-store classes —
 `dag/unbuildable`, the four `policy/*`, `plan/policy-absent`, `plan/no-tasks` and
@@ -531,53 +520,12 @@ why either of them suppresses `dag/unbuildable` rather than doubling it.
 `plan/orphan-row` fires only when `last_import_refs` is non-empty — an empty ref set means the
 store has never been imported, not that every row is orphaned.
 
-`files/closure` is deliberately absent: measured at a 68% false-flag rate.
-
-## Derived graph products
-
-Only `needs`, `coupling` and each row's `checkpoint` are stored. Everything else is recomputed
-on every read: the ready frontier and its file-claim holds, Kahn layers, `closure_up` /
-`closure_down`, `overlap` pairs, each group's maximal elements and `valid_cut`, and the
-`Checkpoint after` bullet the renderer writes. A checkpoint group is committable exactly when
-the union of it with every earlier group is a **lower set** under the dependency order; the
-`Checkpoint after` list is that set's **antichain of maximal elements**, which is why naming
-the antichain is enough to reconstruct the group.
-
-Determinism is total: ascending id tie-breaks everywhere, layers sorted ascending, groups in
-`[[checkpoints]]` order, edges grouped by kind in declaration order.
-
-## The 256-node cap
-
-The engine's reachability bitsets are fixed-width, so a store past **256 rows** fails graph
-construction with `graph exceeds 256 tasks`. `ready`, `batches`, `closure`, `render`,
-`edges --kind overlap` and `add`'s cycle check all surface that as a refusal.
-
-`tasks check` answers differently: it reports its non-graph classes (`policy/*`,
-`dag/duplicate-number`, `dag/dangling-ref`, `checkpoint/orphan-task`, `plan/orphan-row`) and
-raises `dag/unbuildable` in place of the graph-derived ones, so a store above the cap exits `1`
-instead of reading as a clean bill. A duplicate id or a dangling edge already accounts for a
-refusal, and those findings then stand on their own.
-
-## Frozen contracts
-
-Behaviours downstream carriers depend on. Changing any of these is a breaking change to the
-four adopting commands, not a refactor.
-
-- **`ref` is the primary key and the upsert key.** Import matches on it, the execution record's
-  `task_ref` joins on it, `last_import_refs` is a set of them.
-- **Import never deletes.** A row the plan stopped naming is kept and reported in
-  `removed_refs`, and `plan/orphan-row` keeps naming it until `tasks remove` retires it —
-  the one verb that deletes, and never implicitly.
-- **A renamed heading is a refusal, not a swap.** The old row keeps the task number, the
-  renamed heading arrives with the same number and a new ref, and the import raises
-  `dag/duplicate-number` at error severity and writes nothing. Recovery is
-  `tasks update <id> --ref <new-ref>`, then re-import — which is why the ref-set diff gate is
-  specified as a `--dry-run` step.
-- **`status`, `agent`, `commit` and `coupling` survive every import.** Everything else on a row
-  is plan-owned and overwritten.
-- **A cyclic store is refused, never partially answered**, by `ready`, `batches`, `closure` and
-  `render`.
-- **`render` owns three sections and preserves every other byte** of the plan document, and
-  writes no `.sha256` sidecar.
-- **`flow ensure-artifact --kind tasks` reports; it never seeds.** `--bootstrap --kind tasks` is
-  a no-op that writes nothing — seeding is `flow init`'s job.
+`files/closure` and `dag/symbol-without-edge` are heuristics over a row's prose, and both are
+scoped by what an earlier attempt measured. `files/closure` as a gate flagged 80 of 117 path
+tokens across 28 tasks — a 68% false-flag rate — because the plan format requires a read-only
+reference to stay off the `Files` line (`docs/ideas/plan-flow-mechanical-verification.md`,
+"Deferred: `tomlctl plan lint`"). What ships is that check narrowed to four path roots, skipping
+the lines whose prose marks a reference as read-only, and emitted at `info` so it can never
+gate; `/review-plan` keeps its own Files-line closure sub-check as prose regardless.
+`dag/symbol-without-edge` reads only spans an introducing verb covers, for the same reason — a
+bare path- or identifier-token scan is what measured unusable.

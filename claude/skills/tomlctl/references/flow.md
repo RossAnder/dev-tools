@@ -141,10 +141,12 @@ tomlctl flow envelope build \
 
 ## Advanced / maintenance
 
-Infrastructure-only primitives — no flow command invokes these directly. They are the Rust
-mirror of `scripts/verify-shared-blocks.sh`, which is what the pre-commit hook actually runs;
-reach for them for an ad-hoc parity check without the bash+gawk dependency. The in-crate
-`blocks_verify_reproduces_shell_hashes` test pins the mirror to the shell verifier's hashes.
+Infrastructure-only primitives — no flow command invokes these directly.
+`scripts/verify-shared-blocks.sh` is **canonical**: it is what the pre-commit hook runs, and
+these are a Rust mirror held no laxer than it, so a tree the shell verifier rejects must never
+verify here. Reach for them for an ad-hoc parity check without the bash+gawk dependency. The
+in-crate `blocks_verify_reproduces_shell_hashes` and `blocks_verify_agrees_with_shell_gate`
+tests pin the mirror to the shell verifier's hashes and to its verdicts.
 
 ### `blocks verify` — shared-block parity across markdown files
 
@@ -161,4 +163,14 @@ tomlctl blocks verify claude/agents/implement-deep.md claude/agents/implement-li
 tomlctl blocks verify claude/agents/implement-deep.md claude/agents/implement-lite.md
 ```
 
-Output is JSON (`{"ok":true|false,"blocks":[...]}`); exit code 0 on success, non-zero on drift or missing markers. Does NOT accept `--verify-integrity` / `--allow-outside` / `--no-write-integrity` / `--strict-integrity` (markdown has no sidecar pair; `blocks verify` never writes).
+Output is JSON (`{"ok":true|false,"blocks":[...]}`); exit code 0 on success, non-zero on drift, on a missing marker, and on a span that extracts empty between its markers — two carriers whose spans are both empty hash the same digest of nothing, so parity there reports having compared nothing.
+
+A block that lost a file to any of those three carries an optional `defects` array beside its `missing` list, one entry per file with no usable span:
+
+```json
+{"name":"backlog-candidates","defects":[{"file":"claude/agents/implement-lite.md","reason":"extracted-empty"}],
+ "hash":"<64-lower-hex>","files":["claude/agents/implement-deep.md"],
+ "missing":["claude/agents/implement-lite.md"]}
+```
+
+`reason` is `missing-marker`, `marker-trailing-cr` (both markers match only once a further trailing `\r` is stripped, so the extractor finds nothing between markers it never matched) or `extracted-empty`. The key is omitted entirely when every listed file yields a span, so it appears only in a failing report and the top-level `{"ok":…,"blocks":[…]}` shape is unchanged. Does NOT accept `--verify-integrity` / `--allow-outside` / `--no-write-integrity` / `--strict-integrity` (markdown has no sidecar pair; `blocks verify` never writes).
