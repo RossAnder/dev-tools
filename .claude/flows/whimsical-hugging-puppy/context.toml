@@ -2,7 +2,7 @@ slug = "whimsical-hugging-puppy"
 plan_path = "docs/plans/whimsical-hugging-puppy.md"
 status = "review"
 created = 2026-09-07
-updated = 2026-09-08
+updated = 2026-09-09
 branch = "main"
 scope = [
     "tomlctl/src/**",
@@ -16,8 +16,8 @@ scope = [
 ]
 
 [tasks]
-total = 40
-completed = 40
+total = 36
+completed = 36
 in_progress = 0
 
 [artifacts]
@@ -25,3 +25,4 @@ review_ledger = ".claude/flows/whimsical-hugging-puppy/review-ledger.toml"
 optimise_findings = ".claude/flows/whimsical-hugging-puppy/optimise-findings.toml"
 execution_record = ".claude/flows/whimsical-hugging-puppy/execution-record.toml"
 plan_review_findings = ".claude/flows/whimsical-hugging-puppy/plan-review-findings.toml"
+tasks = ".claude/flows/whimsical-hugging-puppy/tasks.toml"

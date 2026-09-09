@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-08
+last_updated = 2026-09-09
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -800,7 +800,7 @@ tags = [
     "doc-gate",
     "awk",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -809,6 +809,8 @@ origin = "implement"
 flow = "tomlctl-followups-round-2"
 context = '''added_lines emits path<TAB>lineno<TAB>content and the checking awk runs -F'\t', so a source line carrying its own literal tab is split further and every rule only ever sees the text before that tab. A leak on a tab-indented line is silently invisible and the gate reports OK. Affects all rules, not just the new wording-scoped one. Fix by encoding the content field or splitting on only the first two tabs.'''
 evidence = ["scripts/doc-diff-gate.sh:79"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
 
 [[backlog]]
 id = "B-e3f5da9c"
@@ -841,7 +843,7 @@ tags = [
     "line-endings",
     "windows",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -850,6 +852,8 @@ origin = "implement"
 flow = "tomlctl-followups-round-2"
 context = "With core.autocrlf=true, an unpinned tracked text file is written CRLF on checkout against an LF index. Two gaps survive the 2026-09-03 pin: claude/commands/*.md is unpinned while claude/agents/*.md is, and .gitattributes itself is currently w/mixed (its first paragraph CRLF, the rest LF). Both are the same half-done shape b8d7368 left behind. Closing needs a pin plus a worktree refresh - the pin alone provably does not rewrite already-checked-out files."
 evidence = [".gitattributes:1"]
+promoted = 2026-09-09
+promoted_to = "tomlctl-followups-round-2"
 
 [[backlog]]
 id = "B-e74d4650"
@@ -876,7 +880,7 @@ kind = "debt"
 summary = "items_fingerprint holds row-lookup logic in dispatch.rs against the module's stated pure-plumbing invariant"
 area = "tomlctl/src/cli/dispatch.rs"
 tags = ["structure"]
-status = "open"
+status = "promoted"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -886,6 +890,8 @@ flow = "tomlctl-followups-round-2"
 context = "The module header states every arm delegates to items::/blocks::/io:: helpers with no business logic in dispatch.rs. items_fingerprint was placed there only because the implementing task did not own items.rs under the file-claim rule. It belongs beside items_get_from in src/items.rs; moving it is a pure relocation with no behaviour change."
 evidence = ["tomlctl/src/cli/dispatch.rs:1"]
 related = ["B-90c6b8fe"]
+promoted = 2026-09-09
+promoted_to = "tomlctl-followups-round-2"
 
 [[backlog]]
 id = "B-7ccba7cc"
@@ -896,7 +902,7 @@ tags = [
     "windows",
     "awk",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -906,6 +912,8 @@ flow = "tomlctl-followups-round-2"
 context = "The script hard-fails with `requires GNU awk (gawk)` even though gawk is present at /usr/bin/gawk; every invocation needs a manual PATH=/usr/bin:$PATH prefix. The pre-commit hook invokes the script directly, so whether a commit is gated at all depends on the caller's PATH ordering rather than on gawk being installed. Fix by probing for a gawk binary by name rather than trusting whichever awk resolves first."
 evidence = ["scripts/verify-shared-blocks.sh:1"]
 related = ["B-e69651d3"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
 
 [[backlog]]
 id = "B-34428ed3"
@@ -916,7 +924,7 @@ tags = [
     "docs",
     "tests",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -926,6 +934,8 @@ flow = "tomlctl-followups-round-2"
 context = "The doc comment on read_only_subcommands_hide_write_integrity_flags_in_help lists the read-only subcommands in prose. It already omitted all seven backlog entries before items fingerprint was added, and now omits that too. A prose enumeration silently drifting from the array directly below it is the same check-that-does-not-check shape this flow addressed elsewhere; no gate compares the two. Fix by deleting the enumeration and pointing at the array."
 evidence = ["tomlctl/tests/capabilities.rs:17"]
 related = ["B-2c5ee8c0"]
+promoted = 2026-09-09
+promoted_to = "tomlctl-followups-round-2"
 
 [[backlog]]
 id = "B-cef33ceb"
@@ -937,7 +947,7 @@ tags = [
     "windows",
     "stdin",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -950,6 +960,8 @@ evidence = [
     "tomlctl/src/backlog/dispatch.rs:13",
 ]
 related = ["B-4aa2bbbf"]
+promoted = 2026-09-09
+promoted_to = "tomlctl-followups-round-2"
 
 [[backlog]]
 id = "B-bf2c40fb"
@@ -1212,7 +1224,7 @@ tags = [
     "flow-state",
     "task-store",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1221,6 +1233,8 @@ origin = "review"
 flow = "whimsical-hugging-puppy"
 context = "whimsical-hugging-puppy shipped tasks as the fifth canonical artifact, but its own context.toml registers only four and no tasks.toml exists in the flow directory. flow doctor reports ok:true because the tasks key is advisory (ledger R28). Consequence: /review-apply and /plan-update complete on this flow run the pre-store paths, and its [tasks].total of 40 is the pre-store plan-item count rather than the 36 rows a dry-run import produces (ledger R29). Adopting it is one flow init plus one import-plan --reconcile-record, but the four same-run mints have no plan headings, so the import will report them as unmatched refs."
 evidence = [".claude/flows/whimsical-hugging-puppy/context.toml"]
+resolved = 2026-09-09
+resolution = "adopted the store: import-plan --reconcile-record created tasks.toml with 36 rows all reconciled to done, artifacts.tasks registered, and [tasks] counters corrected 40->36; tasks check clean. The four same-run mints reported as unmatched refs as predicted, and the plan's Dependency Graph section still shows render/drift"
 
 [[backlog]]
 id = "B-cccb98e0"
@@ -1232,7 +1246,7 @@ tags = [
     "corpus",
     "coupling",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1241,6 +1255,8 @@ origin = "review"
 flow = "whimsical-hugging-puppy"
 context = "tasks_corpus.rs walks docs/plans/** and asserts every plan imports, so adding a plan that uses five-hash task headings or an off-vocabulary effort tag fails cargo test in a commit touching no Rust -- and the failure reads as a tomlctl regression. The self-skip covers a packaged checkout but not this repo. Related: the corpus asserts only that plans import; a corpus-wide render-idempotency pass (import -> render -> re-import) would have surfaced the phase-heading loss of ledger R11 as a corpus failure rather than as a blessed golden fixture."
 evidence = ["tomlctl/tests/tasks_corpus.rs"]
+promoted = 2026-09-09
+promoted_to = "tomlctl-followups-round-2"
 
 [[backlog]]
 id = "B-2f9eead8"
@@ -1252,7 +1268,7 @@ tags = [
     "security",
     "plan-path",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1262,6 +1278,8 @@ flow = "whimsical-hugging-puppy"
 context = "check_plan_path_resolves takes plan_path straight from context.toml, keeps it verbatim when absolute, and stats the result - so a hostile context turns flow doctor into an existence oracle for any path on the machine. The consolidated resolver added for the plan-path seam does containment, a .md requirement and a store-vs-context comparison, but doctor predates it and does not call it. Route this fourth caller through the same resolver; it is exactly the copy-again case the containment-helper item predicted."
 evidence = ["tomlctl/src/flow/doctor.rs:521"]
 related = ["B-6ff6dd3e"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
 
 [[backlog]]
 id = "B-4e370bb0"
@@ -1294,7 +1312,7 @@ tags = [
     "tasks",
     "checkpoints",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1304,6 +1322,8 @@ flow = "whimsical-hugging-puppy"
 context = "Import retains rows the new plan no longer names, keeping their old checkpoint value, so a store can hold undeclared group ids with no write having been at fault. This is the one legitimate producer of that state and the reason checkpoint/orphan-task was kept at warning rather than error - at error severity these rows would trip refuse_on_errors and refuse an otherwise-valid import. Anyone raising that class to error must fix this first."
 evidence = ["tomlctl/src/tasks/import_plan.rs:220"]
 related = ["B-46de01dc"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
 
 [[backlog]]
 id = "B-b55bc561"
@@ -1336,7 +1356,7 @@ tags = [
     "tasks",
     "parser",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1346,6 +1366,8 @@ flow = "whimsical-hugging-puppy"
 context = "FenceState now stops a hash line inside a fenced block from closing the open task, but a bolded field line inside a fence still opens a field, and an unclosed fence inside the Tasks section swallows every later heading. Same two-scanners-disagree class as the heading fix. Extending the guard to the field and continuation branches would change how existing plans with fenced acceptance blocks parse, so it needs a spec rather than a patch."
 evidence = ["tomlctl/src/tasks/parse_tasks.rs:43"]
 related = ["B-0b8e45d9"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
 
 [[backlog]]
 id = "B-5bb39cf9"
@@ -1357,7 +1379,7 @@ tags = [
     "flow",
     "markdown",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1367,6 +1389,8 @@ flow = "whimsical-hugging-puppy"
 context = "The plan-declares-tasks discriminator added to flow resolve needs a fence-aware scan for a Tasks heading, but tasks::markdown is a private module, so a minimal second scanner was written there. Two scanners over the same bytes can drift on fence and heading edge cases - which is the defect class the heading fix just closed one level down. Making the module pub(crate) in tasks/mod.rs would let the flow side reuse it."
 evidence = ["tomlctl/src/tasks/markdown.rs:24"]
 related = ["B-46de01dc"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
 
 [[backlog]]
 id = "B-152db71d"
@@ -1377,7 +1401,7 @@ tags = [
     "shared-blocks",
     "verifier",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1386,6 +1410,8 @@ origin = "review-apply"
 flow = "whimsical-hugging-puppy"
 context = "The template still carries SHARED-BLOCK flow-context START and END markers, but no block of that name survives in scripts/shared-blocks.toml after the wave-2 migration, so verify-shared-blocks.sh checks nothing between them. The template and the flow-context contract skill have already diverged - the skill carries a bootstrap-summary paragraph the template lacks. Either restore the manifest entry and reconcile the two files, or delete the markers so they stop implying a guarantee."
 evidence = ["scripts/shared-blocks.toml:1"]
+resolved = 2026-09-09
+resolution = "corrected the stale Parity invariant claim in scripts/templates/flow-context.md rather than deleting the markers: the file is not in any block's files list so verify-shared-blocks.sh never reads it, and the markers sit inside a fenced verbatim example of what wave-2 copied into the 9 carriers. The paragraph asserting the verifier MUST pass against a flow-context entry was the thing implying an unenforced guarantee; it now records the wave-2 retirement and points at shared-blocks.toml, which owns that fact"
 
 [[backlog]]
 id = "B-ada2f3a8"
@@ -1396,7 +1422,7 @@ tags = [
     "tasks",
     "render",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1406,6 +1432,8 @@ flow = "whimsical-hugging-puppy"
 context = "The insertion path now anchors Execution Policy on the section it precedes, but the correction path does not exist: a plan whose sections are already out of canonical order stays wrong forever, and render --check reports no drift because the render is a faithful no-op reorder. The ordering guarantee therefore holds only for absent sections, not misplaced ones."
 evidence = ["tomlctl/src/tasks/render.rs:278"]
 related = ["B-98a1c2e6"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
 
 [[backlog]]
 id = "B-44f80958"
@@ -1417,7 +1445,7 @@ tags = [
     "render",
     "policy",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1427,6 +1455,8 @@ flow = "whimsical-hugging-puppy"
 context = "A hand-authored Commit granularity bullet carrying a trailing explanatory clause is split on first render: the clause is captured into policy.note and re-emitted as a bare dash-prefixed paragraph after the bullet list, reading as orphaned prose. It is round-trip stable, so it never shows as drift and no golden catches it, but it visibly reshapes an authored bullet inside a section the renderer owns."
 evidence = ["tomlctl/tests/fixtures/tasks/house-plan.rendered.md:18"]
 related = ["B-36c11be9"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
 
 [[backlog]]
 id = "B-fc2d4d05"
@@ -1438,7 +1468,7 @@ tags = [
     "render",
     "testability",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1448,6 +1478,8 @@ flow = "whimsical-hugging-puppy"
 context = "A Files line annotation marking a path as newly created is dropped on render, and because the store holds bare paths the annotation is unrepresentable - so the closed plan-store-plan-store round trip is structurally blind to it. A plan rendered in place quietly loses author annotations on every implement cycle. Catching it needs a plan-to-plan assertion, which is a different test from the store-equality one."
 evidence = ["tomlctl/tests/fixtures/tasks/house-plan.rendered.md:1"]
 related = ["B-108e130a"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
 
 [[backlog]]
 id = "B-0752278d"
@@ -1459,7 +1491,7 @@ tags = [
     "tasks",
     "drift",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1469,6 +1501,8 @@ flow = "whimsical-hugging-puppy"
 context = "Five markdown files enumerate the classes tasks check can emit, and no test compares any of them against check.rs. Six classes were added or widened in one run and every table had to be corrected by hand. This is how an undocumented default survives - the effort default went unrecorded in both contracts for exactly this reason. A test asserting the union of documented classes matches the source would gate it."
 evidence = ["tomlctl/src/tasks/check.rs:29"]
 related = ["B-6d908b8f"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
 
 [[backlog]]
 id = "B-6a671fa3"
@@ -1480,7 +1514,7 @@ tags = [
     "import",
     "multi-file",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1490,6 +1524,8 @@ flow = "whimsical-hugging-puppy"
 context = "ParsedPlan::read hard-errors when the resolved plan document has no Tasks section. The carriers now document that the ref-set diff gate imports exactly one document and that a multi-file plan must keep its task headings in the outline, but the tool gives an agent no signal that the multi-file shape is the cause - it reads as a malformed plan. A named diagnostic would save the next reader the deduction."
 evidence = ["tomlctl/src/tasks/import_plan.rs:126"]
 related = ["B-36c11be9"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
 
 [[backlog]]
 id = "B-a3c38307"
@@ -1501,7 +1537,7 @@ tags = [
     "doctor",
     "integrity",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1511,6 +1547,8 @@ flow = "whimsical-hugging-puppy"
 context = "Seven flows have context.toml or execution-record.toml sidecars that disagree with their bytes, so bare tomlctl flow doctor exits not-ok today regardless of any code change. Pre-existing and unrelated to the task store. Consequence for anyone writing an acceptance command: a doctor-is-green check must be slug-scoped or run --fix first, or it is permanently red for reasons the change under test did not cause."
 evidence = ["tomlctl/src/flow/doctor.rs:206"]
 related = ["B-ef701081"]
+resolved = 2026-09-09
+resolution = "refreshed all 14 stale sidecars across the seven flows (binary-jumping-yao, flow-tracking-overhaul, full-slice-flow-dogfood, groovy-growing-yeti, lumina-story-planning-round-5, lumina-vertical-slice, snoopy-beaming-lecun); each file validated as parseable first and unscoped flow doctor now reports ok"
 
 [[backlog]]
 id = "B-9b7257ec"
@@ -1524,7 +1562,7 @@ tags = [
     "drift",
     "exit-code",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1533,6 +1571,8 @@ origin = "review-apply"
 flow = "whimsical-hugging-puppy"
 context = "check derives its exit status from finding severity and render/drift is a warning, so check --plan exits 0; render --check derives its status from the finding's presence and exits 1. Each is internally consistent, and both are separately documented. The hazard is that CLAUDE.md presents check --plan as the drift gate carriers run, so a carrier gating on its exit code silently passes a drifted plan. Workaround until decided: gate drift on render --check, or read the findings array rather than the exit code. Resolving it properly is a design decision with cost either way - raising render/drift to error class would make it refuse imports through the existing write gate, and changing check's severity-derived exit rule alters a contract four carriers rely on."
 evidence = ["tomlctl/src/tasks/dispatch.rs:226"]
+resolved = 2026-09-09
+resolution = "already satisfied: the decided fix was to leave the exit-code split and make the docs name render --check as the drift gate, and all three documents already carry that wording. CLAUDE.md line 64 says --plan does not gate on drift and to gate with render --check; flow-contract-task-store SKILL.md line 270 states the split explicitly and that a run gated on check --plan passes a drifted plan silently; tomlctl references/tasks.md lines 396-399 say the same. Verified by inspection 2026-09-09; no code or doc change needed"
 
 [[backlog]]
 id = "B-a52ed19a"
@@ -1545,7 +1585,7 @@ tags = [
     "lines",
     "engine-wide",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1555,3 +1595,1148 @@ flow = "whimsical-hugging-puppy"
 context = "validate_query rejects --raw only for the two map shapes, and raw_emit is never reached on the streaming path. So `list --raw --select id` refuses with a scalar-target error, while `list --raw --lines --select id` exits 0 and streams quoted JSON - honouring neither the refusal nor the flag. An agent that blanket-adds --lines to a --raw call silently loses the bare-scalar encoding it asked for, with no diagnostic. Engine-wide, not task-store-local: `items list` behaves identically, so a fix belongs in the shared query layer. Workaround: never pair --raw with --lines; use --lines alone for multi-value output and --raw alone for single-value."
 evidence = ["tomlctl/src/query.rs:1"]
 related = ["B-9ed1f411"]
+promoted = 2026-09-09
+promoted_to = "tomlctl-followups-round-2"
+
+[[backlog]]
+id = "B-da4e2b62"
+kind = "direction"
+summary = "tasks check cannot see a symbol used without an edge so four missing Depends-on edges passed a clean check"
+area = "tomlctl/src/tasks/check.rs"
+tags = [
+    "tasks",
+    "check",
+    "coupling",
+    "silent-pass",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "da4e2b627124816d"
+origin = "review-plan"
+context = "Observed on the reportdesignkit theme-package-graduation review (2026-09-09): check --plan returned no findings while tasks 14, 26 and 27 called symbols minted by tasks 13, 2, 22 and 6 with no path to any of them. The coupling edge kind exists for acceptance-reachability but nothing populates it. Proposed heuristic: index the backticked identifiers each row's Action introduces (Add `X`, Create `X`, export `X`) and raise a warning-class dag/symbol-without-edge when another row's body names one with no directed path between the two. It would have caught all four. Until then a carrier must not present the check output as ground truth for edges; see the review-plan prompt item related here."
+evidence = ["tomlctl/src/tasks/check.rs"]
+related = [
+    "B-5ccd0e38",
+    "B-0183d41f",
+    "B-d17eff50",
+]
+resolved = 2026-09-09
+resolution = "shipped as a warning class after corpus measurement over 42 plans and 352 rows: 3 findings, 0 judged false flags, narrowed from a 40 percent false-flag first cut by two rules stated about the plan format rather than the samples"
+
+[[backlog]]
+id = "B-28458de6"
+kind = "annoyance"
+summary = "closure means group members on the closure verb and the full transitive set on the rendered marker"
+area = "tomlctl/src/tasks/render.rs"
+tags = [
+    "tasks",
+    "render",
+    "closure",
+    "naming",
+]
+status = "promoted"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "28458de6bc3f9d0f"
+origin = "review-plan"
+context = "tasks closure --checkpoint F reports members {25,26,27,28}; the rendered CHECKPOINT F marker prints closure: with 17 ids, the full upward dependency closure. Same word, two sets. A review lens spent a finding deciding which was the artefact (2026-09-09, reportdesignkit). Workaround: read the closure verb for membership and treat the marker's list as the transitive walk. Fix: render the group delta after the marker (the set the commit train actually carries) or label both, e.g. members: and reaches:."
+evidence = [
+    "tomlctl/src/tasks/render.rs",
+    "tomlctl/src/tasks/closure.rs",
+]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
+
+[[backlog]]
+id = "B-d17eff50"
+kind = "direction"
+summary = "no info-class Files-line closure report although Files omissions were the commonest defect in a review"
+area = "tomlctl/src/tasks/check.rs"
+tags = [
+    "tasks",
+    "check",
+    "files-closure",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "d17eff50dabfcb48"
+origin = "review-plan"
+context = "files/closure was dropped at a 68 percent false-flag rate and review-plan keeps the walk as prose. On the 2026-09-09 reportdesignkit review three tasks each omitted three to six edit targets from Files, the most frequent defect class found. Proposal: an info-class (never warning) report of backticked paths under packages/ apps/ docs/ scripts/ named in a row's action or detail and absent from files, skipping lines that contain read-only, model of, pattern or cite. Not a gate; a list a lens reads. Keep the prose walk as the authority."
+evidence = ["tomlctl/src/tasks/check.rs"]
+related = ["B-da4e2b62"]
+resolved = 2026-09-09
+resolution = "shipped as an info class over four roots with a cue-line skip, 12 findings across 42 plans, exit code untouched and asserted so by a unit test. All three statements documenting the class as deliberately absent were rewritten, keeping the 68 percent measurement as the reason the retry is info-only"
+
+[[backlog]]
+id = "B-fab4798a"
+kind = "annoyance"
+summary = "items apply takes a JSON array with a json key while add-many takes NDJSON on the same file"
+area = "tomlctl/src/items.rs"
+tags = [
+    "items",
+    "batch-writes",
+    "ergonomics",
+]
+status = "promoted"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "fab4798aa5d56b91"
+origin = "review-plan"
+context = "Two round-trips lost on 2026-09-09: piping NDJSON to items apply --ops - fails with trailing characters at line 2, and the per-op patch key is json, not set (the error names the shape, which is the only reason it cost two calls and not more). add-many on the same file takes --ndjson. Proposal: let apply accept NDJSON ops too, and accept set as an alias for json, or document the asymmetry in one line at the top of the tomlctl skill's items section."
+evidence = ["tomlctl/src/items.rs"]
+related = ["B-bf2c40fb"]
+promoted = 2026-09-09
+promoted_to = "tomlctl-followups-round-2"
+
+[[backlog]]
+id = "B-9e7c7e4c"
+kind = "direction"
+summary = "tasks update cannot patch needs or files so a plan-review merge must edit markdown and re-import"
+area = "tomlctl/src/tasks/update.rs"
+tags = [
+    "tasks",
+    "update",
+    "token-cost",
+    "review-plan",
+]
+status = "promoted"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "9e7c7e4cf0fa0882"
+origin = "review-plan"
+context = "update refuses files, needs and coupling as import-owned. Every fix the 2026-09-09 reportdesignkit review-plan merge made touched an edge or a Files line, so the whole merge went through 40-odd markdown Edit calls, each carrying the old text as an anchor, then a re-import and render. Id-addressed row patches plus one render would roughly halve the output tokens of a manual merge and remove anchor-mismatch failures. Proposal: an explicit --unlock-import-fields flag on update (or a tasks patch verb) that writes needs and files and stamps the row so the next import does not silently overwrite it; render then owns the markdown. Store verbs themselves were cheap all session, under 2k tokens total."
+evidence = [
+    "tomlctl/src/tasks/update.rs",
+    "claude/commands/review-plan.md",
+]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
+
+[[backlog]]
+id = "B-d87efb6a"
+kind = "bug"
+summary = "flow resolve lets a scope-glob tie beat a path arg that exactly matches a flow's plan_path"
+area = "tomlctl/src/flow/resolve.rs"
+tags = [
+    "flow",
+    "resolve",
+    "path-args",
+]
+status = "promoted"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "d87efb6a7a35a353"
+origin = "review-plan"
+context = "review-plan docs/plans/theme-package-graduation.md on reportdesignkit (2026-09-09): the envelope carried the path arg, a flow with that exact plan_path existed, and resolve answered resolved=false with source=scope-glob and four tie candidates. The carrier had to re-dispatch bootstrap with --flow-override. A path_args entry equal to a flow's plan_path is the strongest signal available and should resolve before scope globs are consulted; a tie should only be reported when no path arg settles it."
+evidence = [
+    "tomlctl/src/flow/resolve.rs",
+    "claude/agents/flow-bootstrap.md",
+]
+related = ["B-2f9eead8"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
+
+[[backlog]]
+id = "B-0183d41f"
+kind = "annoyance"
+summary = "review-plan tells Agent 1 the STORE CHECK fence is ground truth for edges the store cannot see"
+area = "claude/commands/review-plan.md"
+tags = [
+    "review-plan",
+    "prompt",
+    "tasks",
+    "check",
+]
+status = "promoted"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "0183d41f25ef2e24"
+origin = "review-plan"
+context = "Step 2's Agent 1 brief says the fence already carries the computed answer to the mechanical half and to read it as ground truth instead of re-deriving. tasks check validates the DAG it is given; it cannot see a symbol used with no edge, and on 2026-09-09 a clean fence coexisted with four missing edges that two lenses then found by reading bodies. Reword: the fence settles cuts, orphans and same-file claims over the edges as written; whether the edge set is complete is still the lens's job."
+evidence = ["claude/commands/review-plan.md"]
+related = ["B-da4e2b62"]
+promoted = 2026-09-09
+promoted_to = "task-store-polish"
+
+[[backlog]]
+id = "B-4500b63e"
+kind = "debt"
+summary = "an outline keeping a stub Tasks section holding only links to detail documents falls to plan/no-tasks with no multi-file signal"
+area = "tomlctl/src/tasks/import_plan.rs"
+tags = [
+    "tasks",
+    "import",
+    "diagnostics",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "4500b63e2a089c3a"
+origin = "implement"
+context = "The named multi-file diagnostic added for B-6a671fa3 fires only when the outline has NO Tasks section at all. The adjacent shape - an outline that keeps a stub Tasks section holding only links to the detail documents - falls through to plan/no-tasks, whose detail talks about clearing the checkpoint table and says nothing about the multi-file cause. Same agent-facing confusion, one step along. detail_documents() is now in the file and could be reused by the no_tasks arm."
+evidence = ["tomlctl/src/tasks/import_plan.rs"]
+related = ["B-6a671fa3"]
+resolved = 2026-09-09
+resolution = "stub Tasks section linking to task-carrying siblings now gets the multi-file diagnostic; plan/no-tasks kept for the genuine empty case"
+
+[[backlog]]
+id = "B-d1896dba"
+kind = "bug"
+summary = "doc-diff-gate picks a fallback awk with no version check so it can silently run under a non-GNU awk its sibling verifier refuses"
+area = "scripts/doc-diff-gate.sh"
+tags = [
+    "scripts",
+    "awk",
+    "gate",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "d1896dbaff68cc09"
+origin = "implement"
+context = "Line 49 reads AWK=$(command -v gawk || command -v awk), taking the fallback awk with no --version validation - so this gate silently runs under a non-GNU awk that its sibling verify-shared-blocks.sh explicitly refuses. Its patterns use POSIX character classes plus gsub on matched anchors exactly as the sibling does, so under mawk the gate reports OK without matching: the precise failure the sibling's guard exists to prevent. Found while fixing B-7ccba7cc, which added a validated candidate probe to the sibling; the same probe should be applied here."
+evidence = ["scripts/doc-diff-gate.sh:49"]
+related = ["B-7ccba7cc"]
+resolved = 2026-09-09
+resolution = "doc-diff-gate now probes gawk candidates by name and validates with --version, hard-failing at exit 2; proved the old line bound a mawk stub and produced a blind pass"
+
+[[backlog]]
+id = "B-72d4075b"
+kind = "bug"
+summary = "plan_declares_tasks reads an absolute context.toml plan_path with no containment on flow resolve's hot path"
+area = "tomlctl/src/flow/resolve.rs"
+tags = [
+    "flow",
+    "resolve",
+    "containment",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "72d4075b0c3a9c51"
+origin = "implement"
+context = "Same file-controlled-input class as B-2f9eead8, one function below the one that fix closed, and it sits on flow resolve's hot path so every carrier bootstrap exercises it. It leaks whether an arbitrary file on the machine contains a Tasks heading. Routing it through crate::tasks::context_plan_path closes it, but that changes the artifact-missing warning for a legitimately absolute plan_path, so the fix needs a decision on that warning rather than a straight substitution."
+evidence = ["tomlctl/src/flow/resolve.rs"]
+related = ["B-2f9eead8"]
+resolved = 2026-09-09
+resolution = "plan_declares_tasks takes a slug and resolves through context_plan_path; an out-of-repo absolute plan_path is refused rather than scanned, pinned by unit and integration tests placing a real file outside the sandbox"
+
+[[backlog]]
+id = "B-4b893074"
+kind = "debt"
+summary = "relativise strips prefixes lexically so a non-canonical absolute path against the canonicalised root silently returns the absolute display form"
+area = "tomlctl/src/io.rs"
+tags = [
+    "io",
+    "paths",
+    "windows",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "4b893074bae4b0de"
+origin = "implement"
+context = "relativise compares lexically, so on Windows a caller passing a non-canonical absolute path against the canonicalised root gets the absolute display form back instead of a repo-relative one, with no error. Latent rather than observed: today's callers derive both sides from the same canonical root. But it is the exact trap that made the first comparable_path implementation in the B-d87efb6a fix fail, and a future caller threading an externally-supplied path will hit it."
+evidence = ["tomlctl/src/io.rs"]
+resolved = 2026-09-09
+resolution = "relativise retries the strip over both canonical forms so a non-canonical absolute path under the root relativises; all 25 call sites checked, advisory TTY-gated so it cannot precede a JSON envelope"
+
+[[backlog]]
+id = "B-c2f505b0"
+kind = "debt"
+summary = "three documents name tasks finding classes in prose with no gate so a renamed class leaves a dangling name in an agent brief"
+area = "claude/commands/review-plan.md"
+tags = [
+    "tasks",
+    "docs",
+    "drift",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "c2f505b019e6163d"
+origin = "implement"
+context = "The finding-class gate added for B-0752278d covers the two exhaustive tables only. review-plan.md, flow-contract-plan-restructure/SKILL.md and flow-contract-plan-output-format/SKILL.md each name classes in prose, non-exhaustively and correctly today, but nothing gates the names. A class renamed in check.rs leaves a dangling backticked name in an agent brief that the table gate cannot catch, because gating a partial mention would force those files to grow into further copies of the list."
+related = ["B-0752278d"]
+resolved = 2026-09-09
+resolution = "added prose_class_names_exist_in_the_source, a one-directional membership check over the three prose documents that never requires them to be exhaustive"
+
+[[backlog]]
+id = "B-948516b0"
+kind = "debt"
+summary = "the finding-class gate treats any group/name string literal under src/tasks as a class"
+area = "tomlctl/src/cli/dispatch/tests/finding_classes.rs"
+tags = [
+    "tasks",
+    "tests",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "948516b0cbade78e"
+origin = "implement"
+context = "The class-shape scan collects every group/name string literal under src/tasks outside cfg(test). A future path or key literal of that shape will fail the gate as an undocumented class. Narrowing it would need the scan tied to Finding construction sites rather than to literal shape."
+related = ["B-0752278d"]
+resolved = 2026-09-09
+resolution = "the scan is keyed to Finding construction sites (direct class: literals plus class-taking helpers, covering policy/* via vocabulary_finding) with an unresolved_sites guard that refuses an unrecognised shape rather than dropping it"
+
+[[backlog]]
+id = "B-2e0081a9"
+kind = "debt"
+summary = "a sub-agent narrow cargo test in a parallel batch inherits a red build from a sibling in-flight edit"
+area = "CLAUDE.md"
+tags = [
+    "flow",
+    "build",
+    "agents",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "2e0081a9dcc48bf2"
+origin = "implement"
+context = "Observed across this run: three agents editing src/tasks concurrently left the crate uncompilable for stretches, so each sub-agent narrow cargo test and clippy run failed on diagnostics pointing at another agent files. A sub-agent cannot distinguish its own breakage from a sibling. CLAUDE.md build discipline covers cargo lock contention and redundant rebuilds but says nothing about this. Guidance needed: tell dispatched agents which files are concurrently in flight, and how to judge a failure naming none of their own files."
+resolved = 2026-09-09
+resolution = "CLAUDE.md Build discipline now states that sub-agents share the working tree, widens the sub-agent disposition to a failure naming no file it owns, and obliges the orchestrator to publish each cluster's in-flight files"
+
+[[backlog]]
+id = "B-76efc4e8"
+kind = "debt"
+summary = "the GNU-awk resolver is duplicated across doc-diff-gate and verify-shared-blocks with no parity block"
+area = "scripts/verify-shared-blocks.sh"
+tags = [
+    "scripts",
+    "awk",
+    "parity",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "76efc4e854cc6c39"
+origin = "implement"
+context = "B-7ccba7cc and B-d1896dba each added a name-probed version-validated GNU awk resolver, leaving two near-identical copies that can drift. Neither is named in scripts/shared-blocks.toml, although the repo carries that byte-parity mechanism for exactly this case and the verify-shared-blocks copy is load-bearing for commits. Either add a shared block spanning both scripts or factor the probe into a sourced helper."
+related = ["B-d1896dba"]
+resolved = 2026-09-09
+resolution = "the resolver is now a gnu-awk-resolver shared block registered in scripts/shared-blocks.toml, so verify-shared-blocks gates itself; a sourced helper was rejected because it would give the commit-gating script a runtime file dependency"
+
+[[backlog]]
+id = "B-b102b844"
+kind = "bug"
+summary = "both awk guards validate candidates by piping version into grep so a PATH without grep hard-fails with a misleading message"
+area = "scripts/doc-diff-gate.sh"
+tags = [
+    "scripts",
+    "awk",
+    "diagnostics",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "b102b844e81ec760"
+origin = "implement"
+context = "doc-diff-gate.sh and verify-shared-blocks.sh both validate a gawk candidate by piping --version into grep. On a PATH without grep every candidate is rejected, including a valid gawk passed explicitly through the env var, and the script hard-fails claiming no GNU awk exists. Observed directly while proving the doc-diff-gate guard, before a grep shim was added to the stub PATH. A command -v grep precondition, or a case-based version match needing no external command, would name the real cause."
+related = ["B-d1896dba"]
+resolved = 2026-09-09
+resolution = "replaced the --version | grep validation with a shell case match, removing the external dependency entirely; proved with an empty PATH that the old form rejected a valid gawk"
+
+[[backlog]]
+id = "B-0ce95d23"
+kind = "annoyance"
+summary = "a recursive grep from the repo root exceeds a two minute timeout because it walks target node_modules and git"
+area = "CLAUDE.md"
+tags = [
+    "tooling",
+    "agents",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "0ce95d23555b278a"
+origin = "implement"
+context = "A plain recursive grep from the repo root exceeds a 120s tool timeout, walking target/, node_modules/ and .git/. Agents reaching for it stall and lose a turn; the Grep tool answered the same query in under a second. Worth a line in CLAUDE.md or a ripgrep ignore configuration."
+resolved = 2026-09-09
+resolution = "added a Searching bullet to CLAUDE.md; no ignore config, because GNU grep reads none and ripgrep already skips those trees via .gitignore"
+
+[[backlog]]
+id = "B-3c94be17"
+kind = "debt"
+summary = "a zero-byte mangled lock file sits at the repo root invisible to git status because gitignore matches all lock files"
+area = "repo root"
+tags = [
+    "hygiene",
+    "gitignore",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "3c94be178797ccf3"
+origin = "implement"
+context = "A zero-byte file named Usersrossa..lock sits at the repo root, created 2026-09-02, its name a Windows absolute path with drive and separators stripped. Root .gitignore line 9 matches all lock files, so git status never surfaces it and nothing will clean it. Ruled out as tomlctl: its lock scheme is deliberately root/.claude/.locks/sha256.lock rather than a sidecar, precisely to avoid colliding with a real file. Source unidentified; the malformed name points at a path-construction bug in whatever wrote it."
+resolved = 2026-09-09
+resolution = "removed the zero-byte Usersrossa..lock from the repo root (verified 0 bytes, dated 2026-09-02, matched by root .gitignore line 9 so git status never showed it). Ruled out tomlctl as the writer: its lock scheme is root/.claude/.locks/sha256.lock by design, not a sidecar. The writer remains unidentified, so a recurrence is the signal that something still constructs a Windows path with its separators stripped"
+
+[[backlog]]
+id = "B-617ff5de"
+kind = "debt"
+summary = "lumina dev database files live at the repo root rather than under the lumina subtree"
+area = "repo root"
+tags = [
+    "lumina",
+    "gitignore",
+    "hygiene",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "617ff5dec2921751"
+origin = "implement"
+context = "lumina.db, lumina.db-shm and lumina.db-wal sit at the repo root. lumina/.gitignore scopes its db rules to that subtree, so the root copies are covered only by the root gitignore catch-all. A dev database at the wrong altitude that no lumina/CLAUDE.md reader would expect to find there, and which a root-level clean would treat differently from the intended location."
+
+[[backlog]]
+id = "B-429da635"
+kind = "bug"
+summary = "plain-text stderr advisories can precede an error-format json envelope and break the contract that stderr is one JSON line"
+area = "tomlctl/src/io.rs"
+tags = [
+    "cli",
+    "json",
+    "stderr",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "429da635a8a8b08c"
+origin = "implement"
+context = "Several plain-text advisories write to stderr ahead of the error envelope: warn_if_created, warn_if_read_outside_claude and the lock-wait notices in io.rs and main.rs. Under --error-format json, stderr is contractually a single compact JSON line, so any of these breaks a caller parsing it. Observed as a concrete failure this run: a new relativise warning broke tasks_import an_unrecordable_plan_argument_is_refused_and_an_absolute_one_records_a_relative_path, fixed for that one line by gating it on stderr being a terminal. The other advisories carry the same defect and are ungated, so a test or agent parsing whole stderr fails intermittently depending on which advisory happens to fire. The TTY gate generalises if applied to all of them."
+evidence = ["tomlctl/src/io.rs"]
+related = ["B-4b893074"]
+resolved = 2026-09-09
+resolution = "all production stderr advisories now route through a single advise! channel gated on a cached stderr().is_terminal() check. Three signals that had no other route to a piped caller were given machine paths on stdout: advisories[] on backlog add, legacy_pointer on flow active, warnings[] on flow resolve. The last three sites outside the first agent's scope were converted after: json.rs and parse_policy.rs by the orchestrator, blocks.rs by the mirror agent, which kept the typo hint terminal-only because it is a hint rather than a verdict reason"
+
+[[backlog]]
+id = "B-4578ff97"
+kind = "debt"
+summary = "relativise returns a String so a caller cannot distinguish a relativised path from one left absolute"
+area = "tomlctl/src/io.rs"
+tags = [
+    "paths",
+    "api",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "4578ff978ce8bedf"
+origin = "implement"
+context = "relativise returns a bare String, so a caller that must know whether the path actually relativised has to re-derive it with path_under_root. evidence_ops::ignored_set feeds the result straight to git check-ignore --stdin, where an absolute fallback is a wrong verdict rather than a cosmetic blemish. Making the outcome part of the return type was considered and rejected during the B-4b893074 fix because roughly 25 call sites, several in files that agent could not edit, would need error threading."
+evidence = ["tomlctl/src/io.rs"]
+related = ["B-4b893074"]
+resolved = 2026-09-09
+resolution = "added io::relativise_under, an Option-returning sibling, rather than making relativise return Result; all 44 call sites read, and roughly 40 want the absolute fallback so a Result port would have been unwrap_or_else at each. evidence_ops::ignored_set now fails closed, rendering None as the existing git-unavailable class"
+
+[[backlog]]
+id = "B-54376dda"
+kind = "bug"
+summary = "parse_files splits a Files line on commas before an entry annotation is cut so a parenthetical yields a phantom file claim"
+area = "tomlctl/src/tasks/parse_tasks.rs"
+tags = [
+    "tasks",
+    "parser",
+    "files",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "54376dda7089b12d"
+origin = "implement"
+context = "parse_files splits the Files line on commas first and cuts each entry annotation afterwards, so an entry like a.rs (new, generated) yields a second bogus file entry -- generated) -- plus a truncated note. A plan author parenthetical therefore costs a phantom file claim, and dag/unreachable-claim, ready --in-flight and the overlap engine all then reason over it. Pre-existing, but newly visible now that per-path annotations are captured rather than discarded."
+evidence = ["tomlctl/src/tasks/parse_tasks.rs"]
+related = ["B-fc2d4d05"]
+resolved = 2026-09-09
+resolution = "split_entries walks the line tracking backtick spans and paren nesting, and push_file cuts at the same annotation definition the splitter reads, so the two can no longer disagree. Corpus: one row went from 8 invented claims to 1"
+
+[[backlog]]
+id = "B-e6f72bfe"
+kind = "question"
+summary = "a historical plan documents the superseded parser behaviour of dropping trailing parentheticals and folding remainders into one note"
+area = "docs/plans/whimsical-hugging-puppy.md"
+tags = [
+    "docs",
+    "stale",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "e6f72bfe5b45ca84"
+origin = "implement"
+context = "Line 206 describes the parser as dropping trailing parentheticals such as (new) and folding each bullet remainder into policy.note. Both behaviours were removed by B-fc2d4d05 and B-44f80958. The plan is a historical record of a completed flow, not a live contract, but an agent reading it as current would reimplement exactly the loss those two items just closed. Decide whether completed plans get a superseded marker or are left as-is and trusted to be read as history."
+evidence = ["docs/plans/whimsical-hugging-puppy.md"]
+related = ["B-fc2d4d05"]
+
+[[backlog]]
+id = "B-df666429"
+kind = "bug"
+summary = "the doc-diff-gate self-test negative controls use grep so with grep absent they die and the run still reports self-test OK"
+area = "scripts/doc-diff-gate.sh"
+tags = [
+    "scripts",
+    "awk",
+    "selftest",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "df666429999ebcd8"
+origin = "implement"
+context = "The self-test negative controls invoke grep -qE. With grep absent both invocations die with command not found, the if reads false, and the run still prints self-test OK naming three clean negative controls. It is the same class as the bug just fixed in the resolver: a checker reporting OK having checked nothing. The fix is to route the controls through the same resolved AWK matcher st() already uses."
+related = ["B-b102b844"]
+resolved = 2026-09-09
+resolution = "negative controls routed through st_neg(), the exact inverse of st() on the resolved AWK; falsifier proven with a mutated control that must fire, where pre-fix printed self-test OK exit 0 on a grep-less PATH"
+
+[[backlog]]
+id = "B-52b44d86"
+kind = "debt"
+summary = "the shared-block marker guards shell out to grep so a missing grep reports a missing START marker instead of naming grep"
+area = "scripts/verify-shared-blocks.sh"
+tags = [
+    "scripts",
+    "awk",
+    "diagnostics",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "52b44d86914b92bb"
+origin = "implement"
+context = "The marker presence guards still use grep -qF, so on a PATH without grep the script reports a missing START marker for every carrier file rather than naming the real cause. Same wrong-cause family as the resolver fix. The already-resolved AWK can do the whole-line marker test with no external command."
+related = ["B-b102b844"]
+resolved = 2026-09-09
+resolution = "marker guards moved from grep -qF to an awk whole-line has_marker() with an explicit trailing-CR relaxation, so a CR-surviving carrier still reaches the empty-extraction guard that names line endings instead of reporting a missing marker"
+
+[[backlog]]
+id = "B-8e4dfe46"
+kind = "debt"
+summary = "the prose class gate tolerance for a documented absent class rests entirely on one source comment line"
+area = "tomlctl/src/tasks/check.rs"
+tags = [
+    "tasks",
+    "tests",
+    "docs",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "8e4dfe465c062746"
+origin = "implement"
+context = "The prose membership gate treats every class-shaped token the non-test source states as known, comments included, so that two documents may legally say tasks check ships no files/closure class. That legality rests on the single module-doc line naming it. Deleting or rewording that line, a plausible tidy-up since it documents an absence, makes the gate fail against two documents that are correct, and the failure points at the documents rather than at the deleted comment."
+related = ["B-c2f505b0"]
+resolved = 2026-09-09
+resolution = "the gate now derives its known set from classes_in (Finding construction sites) rather than every class-shaped token in source, so no comment is load-bearing. The tolerance existed solely so prose could name files/closure as a documented omission; that class now ships at info severity, so the helper and its test were removed. 9 tests pass, clippy clean"
+
+[[backlog]]
+id = "B-2fa4cf64"
+kind = "debt"
+summary = "the three dispatch test gates run only when someone types cargo test by hand with no CI and no hook"
+area = "tomlctl/src/cli/dispatch"
+tags = [
+    "tests",
+    "ci",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "2fa4cf64cc573f1f"
+origin = "implement"
+context = "command_lint, carrier_invokes_required_skills and the new finding_classes gate all run only under a manual cargo test. There is no CI in this repository and the pre-commit hook does not invoke them, which CLAUDE.md states deliberately. Consequence: a finding class added with no doc row, a carrier that drops a required skill invocation, or CLI flag drift can all land and stay unnoticed. Deciding this needs a call on cost: the hook is currently fast because it runs no cargo, so gating it on these would change every commit."
+
+[[backlog]]
+id = "B-134c1b36"
+kind = "bug"
+summary = "reconcile-record adoption checks the candidate ref against plan refs but not store rows so a second import wedges on duplicate-number"
+area = "tomlctl/src/tasks/import_plan.rs"
+tags = [
+    "tasks",
+    "import",
+    "reconcile",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "134c1b3618ec0d62"
+origin = "implement"
+context = "Adoption under --reconcile-record checks the candidate ref against the plan refs but not against the store rows, so adopting a record spelling for a row already stored under its derived ref looks up no existing row. The row is treated as new and the old one is retained under the same task number, refusing the import with dag/duplicate-number. A flow that imports once without --reconcile-record and then with it can therefore wedge on a refusal whose message names neither the adoption nor the ref."
+related = ["B-9e7c7e4c"]
+resolved = 2026-09-09
+resolution = "reconcile now takes the store; adopt_refs renames the row held under the derived spelling, carrying its import_overrides and file_notes entries, before the merge. Where the store holds both spellings adoption is declined rather than resolved. Verified read-only against the live 36-row store: unchanged 36, no duplicate-number"
+
+[[backlog]]
+id = "B-b15cab45"
+kind = "debt"
+summary = "no read verb surfaces a row import_overrides stamp so an agent cannot tell a stamped row from an unstamped one"
+area = "tomlctl/src/tasks/show.rs"
+tags = [
+    "tasks",
+    "cli",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "b15cab459b10871d"
+origin = "implement"
+context = "show projects row fields and list queries the items array, so neither surfaces the store-level import_overrides entry a row carries. An author checks a stamp by opening the TOML or by waiting for an import to report plan/override-held. The CLI is the surface the task-store contract otherwise routes everything through, so a hand-patched row is invisible through it."
+related = ["B-9e7c7e4c"]
+resolved = 2026-09-09
+resolution = "tasks show emits a trailing import_override object holding the plan base each patch replaced, omitted when the row is unstamped so output against the real store is byte-identical, and never leaking into nested dep summaries"
+
+[[backlog]]
+id = "B-261df63a"
+kind = "debt"
+summary = "remove does not prune the removed row override entry so the store briefly holds an entry keyed on no row"
+area = "tomlctl/src/tasks/remove.rs"
+tags = [
+    "tasks",
+    "cli",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "261df63aa8f0bee2"
+origin = "implement"
+context = "remove leaves the removed row import_overrides entry behind; the next import prunes it. Between the two the store holds an entry keyed on no row. Harmless today because the import prunes before it reads, but it is an invariant the schema otherwise maintains, and a reader between the two operations sees an inconsistent store."
+related = ["B-9e7c7e4c"]
+resolved = 2026-09-09
+resolution = "remove prunes the row's entry in retire on the success path only, so a refused removal still writes nothing"
+
+[[backlog]]
+id = "B-e77ba495"
+kind = "debt"
+summary = "tasks remove output json does not report that an override stamp was pruned with the row"
+area = "tomlctl/src/tasks/dispatch.rs"
+tags = [
+    "tasks",
+    "cli",
+    "envelope",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "e77ba49573d4dea8"
+origin = "implement"
+context = "remove now prunes the removed row [[import_overrides]] entry, but its envelope reports only id, ref and rewired. From the caller view a pruned stamp is silent state loss, and the other write verbs report what moved -- update reports changed[] including import_override, and import reports cleared_checkpoint_refs. Adding it needs a RemoveOutcome field plus the dispatch envelope, which was off-limits to the agent that made the prune."
+evidence = ["tomlctl/src/tasks/dispatch.rs"]
+related = ["B-261df63a"]
+resolved = 2026-09-09
+resolution = "remove now reports pruned_override_fields[], the list of stamped fields the pruned entry held rather than a boolean, so a caller can see which values the next import would take from the plan. Always present and empty when nothing was pruned, matching update changed[] and import-plan cleared_checkpoint_refs"
+
+[[backlog]]
+id = "B-82d67202"
+kind = "bug"
+summary = "the doc-diff-gate collect stage filters staged paths through grep so with grep absent it reads no lines and exits OK"
+area = "scripts/doc-diff-gate.sh"
+tags = [
+    "scripts",
+    "awk",
+    "gate",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "82d6720262bfc915"
+origin = "implement"
+context = "Lines 270-271 filter the staged path list with git diff --cached --name-only piped through grep -E SRC_RE and grep -vE EXCLUDE_RE, terminated by || true. With grep absent both lists come back empty and the gate exits 0 having read no lines at all. This is the MAIN path, not the self-test: the gate reports a clean tree it never examined. Same silent-all-clear class as B-b102b844 and B-df666429, which fixed the resolver and the self-test controls but not this. Routing both filters through the resolved AWK with -v re= closes it."
+evidence = ["scripts/doc-diff-gate.sh"]
+related = ["B-df666429"]
+resolved = 2026-09-09
+resolution = "collect stage now filters staged paths through the resolved AWK with patterns passed via -v, and the || true is gone since awk exits 0 on no-match. Falsifier: pre-fix on a grep-less PATH exits 0 having read no lines; fixed collects 3 added source and 2 markdown lines and reports all three BLOCK findings, with exclusion controls holding"
+
+[[backlog]]
+id = "B-3d724e2c"
+kind = "bug"
+summary = "the doc-diff-gate verdict stage counts findings with grep so with grep absent it prints OK and fails to block despite holding findings"
+area = "scripts/doc-diff-gate.sh"
+tags = [
+    "scripts",
+    "awk",
+    "gate",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "3d724e2cf07fbc55"
+origin = "implement"
+context = "Lines 358-359 count findings with grep -c on the output file, suppressed by || true. With grep absent findings and blockers both fall through to 0, so the script prints doc-diff-gate OK with a check count even when the output file holds BLOCK findings it already produced, and under DOC_GATE_MODE=block it fails to block. Worse than the collect-stage case because the faults were actually found and are then discarded at the verdict. An awk END { print NR } over the two patterns removes the dependency."
+evidence = ["scripts/doc-diff-gate.sh"]
+related = ["B-df666429"]
+resolved = 2026-09-09
+resolution = "verdict counts findings and blockers in one awk pass over the output file, split into two integers so no default can masquerade as a real zero. Isolated with a MID build carrying only this defect: it printed all three BLOCK findings then exited 0 under DOC_GATE_MODE=block; fixed exits 1, and a zero-finding tree still exits 0"
+
+[[backlog]]
+id = "B-93927b42"
+kind = "debt"
+summary = "the doc-diff-gate self-test summary hardcodes its pattern and control counts while the assertions are hand-listed"
+area = "scripts/doc-diff-gate.sh"
+tags = [
+    "scripts",
+    "selftest",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "93927b422ea4aa69"
+origin = "implement"
+context = "The self-test summary printf hardcodes the pattern and negative-control counts while the assertions above it are hand-listed calls. Adding or removing an st or st_neg call leaves the summary silently overstating coverage, which is precisely the failure mode this script exists to prevent. Counting inside st and st_neg and printing the counters fixes it."
+evidence = ["scripts/doc-diff-gate.sh"]
+related = ["B-df666429"]
+resolved = 2026-09-09
+resolution = "st_count and st_neg_count increment inside st() and st_neg(), with a self-counting increment on the inline ISO pre-strip control that cannot route through st_neg. Summary now prints the real counters: adding an assertion moves the printed count, where pre-fix it stayed at 11"
+
+[[backlog]]
+id = "B-5ba6d0db"
+kind = "debt"
+summary = "the Rust block mirror strips a trailing carriage return before comparing and hashing while the shell extractor compares verbatim"
+area = "tomlctl/src/blocks.rs"
+tags = [
+    "blocks",
+    "parity",
+    "crlf",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "5ba6d0db2100624a"
+origin = "implement"
+context = "tomlctl/src/blocks.rs and the shell extractor in scripts/verify-shared-blocks.sh implement the same block extraction with different carriage-return handling: the Rust side strips a trailing CR before comparing markers and before hashing, the shell side compares verbatim. A CR-surviving carrier therefore passes tomlctl blocks verify and fails the shell verifier, so the two gates can disagree about the same tree. Needs a decision on which side is canonical rather than leaving it implicit; cli/dispatch/tests/skills.rs shell_block_digest re-derives the shell rules to cross-check, so it is the third place the semantics live."
+evidence = ["tomlctl/src/blocks.rs"]
+related = ["B-52b44d86"]
+resolved = 2026-09-09
+resolution = "shell verifier made canonical, Rust mirror hardened to be strictly no-laxer. The reported CR divergence proved to be diagnosis-only on the gating platform; the real verdict-level disagreement was an empty span, where both carriers hash SHA-256-of-nothing and blocks verify returned ok:true while the shell exited 1. extract_block now returns SpanDefect with a per-block defects array. Third extractor deleted: shell_block_digest modelled the mirror not the gate, so the cross-check now executes the real script"
+
+[[backlog]]
+id = "B-7b40308f"
+kind = "bug"
+summary = "a Depends on line whose prose precedes the ids parses to no edges and drops the stated ids into deps_note"
+area = "tomlctl/src/tasks/parse_tasks.rs"
+tags = [
+    "tasks",
+    "parser",
+    "dag",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "7b40308f371329aa"
+origin = "implement"
+context = "Verified on docs/plans/lumina-story-planning-round-3.md task 12, whose line reads: Depends on: round-2 task 18 (wire-task-deps creation), 4. It parses to needs = [] and the whole line, including the plainly stated 4, lands in deps_note. The store then holds no edge for a task that declares one, so /implement Kahn-schedules it into batch 0 alongside the work it depends on, and tasks check passes because it validates the DAG it is handed. Found by the new dag/symbol-without-edge heuristic, which caught the missing edge the parser had discarded. Dispatched in-flight to the agent holding parse_tasks.rs."
+evidence = ["docs/plans/lumina-story-planning-round-3.md"]
+related = ["B-da4e2b62"]
+resolved = 2026-09-09
+resolution = "parse_depends rewritten per entry, splitting on top-level comma and plus. A bare leading integer is an edge; anything else stays prose. Cross-plan references deliberately yield no edge, because reading 18 out of round-2 task 18 would point at whatever this plan numbers 18 — a wrong edge rather than a missing one"
+
+[[backlog]]
+id = "B-47118e1e"
+kind = "debt"
+summary = "a twelve task frontend plan declares no Depends on line on any task so every row imports into batch zero"
+area = "docs/plans/lumina-interactive-prompts.md"
+tags = [
+    "plans",
+    "dag",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "47118e1ed96dcd5e"
+origin = "implement"
+context = "The plan declares no Depends on line on any of its twelve tasks, so every row imports into Kahn batch 0 and /implement would dispatch the whole plan fully parallel. Two of the three findings the new dag/symbol-without-edge class raised across the corpus come from this one document, both genuine: a task binds a picker to composable methods another task adds, and a third unit-tests one of them. Either the plan predates the edge discipline or the edges were never written."
+evidence = ["docs/plans/lumina-interactive-prompts.md"]
+related = ["B-da4e2b62"]
+resolved = 2026-09-09
+resolution = "premise was wrong, and the parser was the cause. The plan does declare its dependencies, as Blocked by lines joined with plus; parse_depends could not read them, so every row imported with empty needs. The B-7b40308f fix recovers them: tasks 7, 9, 10, 11 and 12 now carry edges 4, 6+7, 8+9, 7+9 and 5+6+7. No plan edit needed"
+
+[[backlog]]
+id = "B-0fb99230"
+kind = "debt"
+summary = "the tasks remove section documents its envelope only as a bare JSON sample unlike neighbouring verbs which get a table"
+area = "claude/skills/tomlctl/references/tasks.md"
+tags = [
+    "docs",
+    "cli",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "0fb99230394ccac7"
+origin = "implement"
+context = "The tasks remove section shows its output as a bare JSON sample while neighbouring verbs get a flag or field table, so a newly added output key has no row to update and is easy to miss. When pruned_override_fields was added, an exact-envelope integration assertion was the only thing that caught the drift; a verb without such a test would have drifted undetected."
+evidence = ["claude/skills/tomlctl/references/tasks.md"]
+related = ["B-e77ba495"]
+resolved = 2026-09-09
+resolution = "added a Key/Value/Meaning table under the tasks remove JSON sample, with meanings read from RemoveOutcome and the dispatch arm rather than the sample. Header derived rather than matched: the file has no existing output-field table to copy, which the agent flagged as the finding's premise being narrower than reality. 531 lines, 69 under the ceiling"
+
+[[backlog]]
+id = "B-2701314e"
+kind = "debt"
+summary = "the doc-diff-gate OK line hardcodes its check count while the rule set is hand-listed in the awk pass"
+area = "scripts/doc-diff-gate.sh"
+tags = [
+    "scripts",
+    "selftest",
+    "gate",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "2701314e406510d1"
+origin = "implement"
+context = "The verdict OK line prints a hardcoded check count while the rules themselves are hand-listed in the awk pass, so adding or removing a rule leaves the line claiming a coverage figure nothing derives. Same overstate-your-own-coverage class as B-93927b42, which fixed the self-test summary, but this one is on the main path a reader actually sees. The self-test fix counted inside st and st_neg; the same shape applies here."
+evidence = ["scripts/doc-diff-gate.sh"]
+related = ["B-93927b42"]
+resolved = 2026-09-09
+resolution = "each rule declares itself once in a BEGIN registry and the OK line counts distinct ids across both passes, so the figure is the rule set size rather than the subset a diff reached. Falsifier: adding or deleting a rule moves the printed count 8 to 9 or 7, where pre-fix it stayed at 8. Pre and post output byte-identical on a tree firing every rule"
+
+[[backlog]]
+id = "B-2b3d34bb"
+kind = "debt"
+summary = "the doc-diff-gate added-line summary and report display still shell out to wc and cat so with both absent the findings are never shown"
+area = "scripts/doc-diff-gate.sh"
+tags = [
+    "scripts",
+    "awk",
+    "gate",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "2b3d34bb3a671937"
+origin = "implement"
+context = "The added-line summary uses wc and the report display uses cat. With both absent the run prints its summary with blank counts, never displays the output file, and dies 127 - measured. It fails safe rather than silently, unlike the collect and verdict defects, so the operator sees a hard error rather than a false all-clear; but they lose every finding the gate already computed. AWK END{print NR} and AWK {print} are drop-ins on the already-validated awk."
+evidence = ["scripts/doc-diff-gate.sh"]
+related = ["B-82d67202"]
+resolved = 2026-09-09
+resolution = "wc and cat replaced with awk on the resolver-validated binary. Falsifier on a PATH missing grep, wc, cat and sed: pre-fix prints blank counts, dies 127 at the display line and shows zero findings in both warn and block mode; fixed shows all 12 findings and exits 1 under block. Stub-PATH output byte-identical to normal-PATH apart from the verdict line"
+
+[[backlog]]
+id = "B-194cd19e"
+kind = "debt"
+summary = "three rust files are CRLF in the working tree against a gitattributes eol=lf pin with an LF index"
+area = "tomlctl"
+tags = [
+    "crlf",
+    "gitattributes",
+    "fmt",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "194cd19e020e525c"
+origin = "implement"
+context = "git ls-files --eol reports i/lf w/crlf for tomlctl/src/errors.rs, tomlctl/src/output.rs and tomlctl/tests/blocks.rs, while .gitattributes pins *.rs to eol=lf and every other .rs under tomlctl is w/lf. Latent rather than active: rustfmt preserves the existing style by default so cargo fmt --check passes today. The hazard is that a rustfmt or sed pass over any of the three produces a whole-file diff that buries the real change, and the pre-commit cargo fmt gate is crate-wide so it can fire on them from a commit that never touched them. Found while auditing one file; the other two were missed by that audit and surfaced by git ls-files over the whole crate."
+evidence = ["tomlctl/src/errors.rs"]
+
+[[backlog]]
+id = "B-15c11568"
+kind = "debt"
+summary = "flow list emits a bare JSON array so it has nowhere to report the flows it skipped"
+area = "tomlctl/src/flow/list.rs"
+tags = [
+    "flow",
+    "cli",
+    "envelope",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "15c11568f1ff7a93"
+origin = "implement"
+context = "flow list returns a bare JSON array rather than an envelope, so a malformed context.toml it skips can only be reported as a terminal advisory or escalated all-or-nothing through --strict-read. A caller wanting list everything and tell me what was unreadable has no option. Surfaced while gating stderr advisories: this was the one site where no envelope key could carry the fact. Wrapping the array in an object would give it a home but is a breaking output change for every carrier that parses it."
+evidence = ["tomlctl/src/flow/list.rs"]
+related = ["B-429da635"]
+
+[[backlog]]
+id = "B-2e172357"
+kind = "question"
+summary = "backlog add --dry-run returns a plan envelope that does not carry the advisories array"
+area = "tomlctl/src/backlog/add.rs"
+tags = [
+    "backlog",
+    "cli",
+    "security",
+]
+status = "resolved"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "2e1723579678f831"
+origin = "implement"
+context = "The new advisories array on the backlog add envelope surfaces the credential and machine-local capture scan to piped callers. The --dry-run path returns the dry-run plan envelope instead, which does not carry it, so a piped dry run of a capture holding a credential shows nothing. The gap is narrow because the real add that follows does surface it, but a caller using --dry-run as its review step sees strictly less than one that skips the review."
+evidence = ["tomlctl/src/backlog/add.rs"]
+related = ["B-429da635"]
+resolved = 2026-09-09
+resolution = "the dry-run arm now builds the same envelope via build_dry_run_plan_envelope and inserts the advisories already computed before the branch, so no scan logic is duplicated. Test asserts a ghp_ credential surfaces on the preview envelope with stderr captured and empty, and that the advisory never carries the matched value"
+
+[[backlog]]
+id = "B-e977ee2e"
+kind = "debt"
+summary = "the shared block verifier reaches different verdicts on the same tree under a CR preserving gawk than under the MSYS text mode read"
+area = "scripts/verify-shared-blocks.sh"
+tags = [
+    "scripts",
+    "crlf",
+    "parity",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "e977ee2eb3f919a5"
+origin = "implement"
+context = "The extractor inherits its CR handling from the platform text-mode read: MSYS gawk translates exactly one CRLF per line, matching Rust str::lines. Under a CR-preserving read, which is what a non-MSYS gawk does, the shell extracts zero bytes from a plain-CRLF carrier where the mirror passes. So the gate can reach different verdicts on the same tree on Linux and Windows, and nothing in the script says so. Normalising either side breaks the other: binary-mode reads plus an explicit strip would destroy the doubled-CR guard on Windows, where the hook actually runs."
+related = ["B-5ba6d0db"]
+
+[[backlog]]
+id = "B-14676dff"
+kind = "debt"
+summary = "the shell gate cross-check hardcodes an absolute Git bash path so a non-default install degrades it to a mirror-only assertion"
+area = "tomlctl/src/cli/dispatch/tests/skills.rs"
+tags = [
+    "tests",
+    "windows",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "14676dffed6730d9"
+origin = "implement"
+context = "run_shell_gate falls back to an absolute Git bash path because bare bash is not resolvable from a Windows-side cargo even with Git Bash installed. On a non-default Git install the fallback misses and the cross-check degrades to asserting the mirror against itself. It now returns a Result so a skip always prints why, which is the mitigation, but the path is still hardcoded."
+related = ["B-5ba6d0db"]
+
+[[backlog]]
+id = "B-4fdfea59"
+kind = "annoyance"
+summary = "cargo test intermittently fails to link with rust-lld permission denied on the output exe and passes on immediate retry"
+area = "tomlctl/target"
+tags = [
+    "build",
+    "windows",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "4fdfea59059ecabd"
+origin = "implement"
+context = "Observed during this run: cargo test --bin tomlctl failed once with rust-lld: failed to write output tomlctl-*.exe: permission denied, clean on immediate retry. Same transient-lock class as the known sidecar rename os error 5, most likely an AV or indexer holding the previous binary. A retry is the fix, but it reads as a real link error and costs a diagnosis."
+
+[[backlog]]
+id = "B-e129986c"
+kind = "debt"
+summary = "twelve of thirteen verb sections document their output envelope as a sample and prose with no table a new key could be added to"
+area = "claude/skills/tomlctl/references/tasks.md"
+tags = [
+    "docs",
+    "cli",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "e129986c18686a36"
+origin = "implement"
+context = "Only tasks remove now carries an output-field table. The other twelve verbs document their envelope as a JSON sample plus prose, so adding an output key has no row to update anywhere. tasks add-many is the worst case with no prose at all on added or the rows element keys. An exact-envelope integration assertion is currently the only drift detector for envelope keys, and it covers only the verbs that happen to have such a test. Making it a file-wide convention would need the prose folded into the tables rather than added alongside, to stay under the line ceiling."
+related = ["B-0fb99230"]
+
+[[backlog]]
+id = "B-52825802"
+kind = "debt"
+summary = "backlog compact dry-run preview omits the path field that the result envelope carries"
+area = "tomlctl/src/backlog/compact.rs"
+tags = [
+    "backlog",
+    "cli",
+    "envelope",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "52825802a08611ba"
+origin = "implement"
+context = "emit_result carries the relativised store path; emit_preview does not. A piped caller diffing a preview against the result sees a spurious field change and cannot tell which store the sweep would touch. Milder than the advisories asymmetry because it is informational rather than a safety signal, but it is still a field the real envelope carries and the dry run drops."
+related = ["B-2e172357"]
+
+[[backlog]]
+id = "B-1cb6596a"
+kind = "debt"
+summary = "the dry-run envelope builder doc comment enumerates its keys as closed although callers now add their own"
+area = "tomlctl/src/output.rs"
+tags = [
+    "cli",
+    "docs",
+    "envelope",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "1cb6596a3c16465d"
+origin = "implement"
+context = "build_dry_run_plan_envelope documents its envelope as ok, dry_run and would_change, written as a closed list. backlog add now inserts advisories alongside them. A reader treating the list as exhaustive would write a consumer that rejects the extra key."
+related = ["B-2e172357"]
+
+[[backlog]]
+id = "B-f075938e"
+kind = "bug"
+summary = "a Depends on line stating a range such as 1-15 parses to no edges at all"
+area = "tomlctl/src/tasks/parse_tasks.rs"
+tags = [
+    "tasks",
+    "parser",
+    "dag",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "f075938eb40f5a06"
+origin = "implement"
+context = "Observed on docs/plans/lumina-story-planning-round-3.md task 16. Same failure mode as B-7b40308f: the task declares fifteen edges and imports into Kahn batch 0, so /implement would dispatch it ahead of everything it depends on, and tasks check passes because it validates the DAG it is handed. Left unfixed by the B-7b40308f work deliberately: expanding a range means the next render rewrites the author 1-15 as fifteen comma-separated ids, which is a plan-document change someone should choose rather than a parser inferring it."
+evidence = ["docs/plans/lumina-story-planning-round-3.md"]
+related = ["B-7b40308f"]
+
+[[backlog]]
+id = "B-6b21fa60"
+kind = "debt"
+summary = "the file_list doc comment describes the pre-fix parser and is now false"
+area = "tomlctl/src/tasks/render.rs"
+tags = [
+    "tasks",
+    "docs",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "6b21fa60cc9f3b87"
+origin = "implement"
+context = "The file_list doc comment states that the parser cuts an entry at its first paren or em-dash so an annotation carrying a comma would re-import as a further path. B-54376dda removed exactly that behaviour, which is why the render round-trip golden held unchanged. A reader trusting the comment would re-introduce the split-then-cut ordering the fix removed. Two lines; render.rs was off-limits to the agent that made the change."
+evidence = ["tomlctl/src/tasks/render.rs"]
+related = ["B-54376dda"]
+
+[[backlog]]
+id = "B-c49565c6"
+kind = "annoyance"
+summary = "the duplicate-number remedy names a tasks update command without the slug or file target the caller used"
+area = "tomlctl/src/tasks/import_plan.rs"
+tags = [
+    "tasks",
+    "cli",
+    "diagnostics",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "c49565c6c10a6d1e"
+origin = "implement"
+context = "The new dag/duplicate-number refusal tells the caller to run tomlctl tasks update <id> --ref <ref>, but omits the --slug or --file target group the invocation used, so pasted verbatim it fails once with no task store target. Import::apply has no access to the request target spelling, so threading one through purely for a message was judged disproportionate at the time; the alternative is to name the target group generically in the message."
+evidence = ["tomlctl/src/tasks/import_plan.rs"]
+related = ["B-134c1b36"]
+
+[[backlog]]
+id = "B-a05687b4"
+kind = "question"
+summary = "the blocks verify block object omits ok when some carriers are defective but the survivors agree so a reader scanning per-block ok sees no false entry on a failing run"
+area = "tomlctl/src/blocks.rs"
+tags = [
+    "blocks",
+    "cli",
+    "envelope",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "a05687b4f91b0a4b"
+origin = "implement"
+context = "Verified by running the binary against a two-file fixture: when one carrier is defective and the rest still agree, the block object carries name, defects, hash, files and missing with NO ok key at all. Block-level ok:false appears only on drift, or when every listed file is defective. Top-level ok is false and the exit code is 1 either way, so a consumer reading top-level ok is correct — but one scanning blocks[].ok for the offending block finds nothing, on a run that exited 1. Decide whether the block object should always carry ok, or whether the reference should state plainly that per-block ok is not the failure indicator."
+evidence = ["tomlctl/src/blocks.rs"]
+related = ["B-5ba6d0db"]
+
+[[backlog]]
+id = "B-92c6e467"
+kind = "debt"
+summary = "mktemp rm and git remain external to the gate so the setup and teardown path keeps the dependency class the analysis path shed"
+area = "scripts/doc-diff-gate.sh"
+tags = [
+    "scripts",
+    "gate",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "92c6e467657d2a92"
+origin = "implement"
+context = "The analysis path is now awk-only: the resolver, the self-test assertions, the collect filters, the verdict counters and the report display all run on the validated gawk. Setup and teardown still shell out to mktemp, rm and git. Absent rm leaves temp files behind; absent mktemp kills the gate before it reads a line. Both fail loudly rather than silently, unlike the findings already fixed, so this is completeness rather than a false all-clear."
+related = ["B-2b3d34bb"]
+
+[[backlog]]
+id = "B-cf956199"
+kind = "debt"
+summary = "the gate source pattern covers no shell extension so the hook scripts are exempt from the comment discipline they enforce"
+area = "scripts/doc-diff-gate.sh"
+tags = [
+    "scripts",
+    "gate",
+    "coverage",
+]
+status = "open"
+created = 2026-09-09
+last_seen = 2026-09-09
+seen_count = 1
+dedup_id = "cf9561993ab56913"
+origin = "implement"
+context = "SRC_RE matches no shell extension, so doc-diff-gate.sh never inspects a .sh file. The three verifier scripts and .githooks/pre-commit are therefore outside the comment discipline they exist to enforce, and doc-diff-gate.sh itself carries some of the heaviest comment prose in the repo. The agent that found it notes G1 twenty-line cap would fire on several blocks in that file. Adding shell to SRC_RE would put the gate under its own rules, which is either the point or a large first run."

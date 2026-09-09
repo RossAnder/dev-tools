@@ -1,0 +1,928 @@
+schema_version = 1
+last_updated = 2026-09-09
+plan_path = "docs/plans/whimsical-hugging-puppy.md"
+last_import_refs = [
+    "scaffold-the-tasks-module-tree",
+    "define-the-store-schema-types",
+    "implement-the-ref-slug-rule-and-record-reconciliation-matcher",
+    "build-the-graph-engine",
+    "declare-the-tasks-cli-surface",
+    "implement-store-resolution-and-locked-io",
+    "implement-the-write-verbs-add-add-many-update",
+    "implement-the-read-verbs-show-list-edges",
+    "implement-the-graph-verbs-ready-batches-closure",
+    "implement-check",
+    "wire-tasks-dispatch-core-verbs",
+    "black-box-tests-for-write-and-graph-verbs",
+    "register-the-verbs-in-capabilities-tests-readme-and-the-version",
+    "widen-the-canonical-artifact-set",
+    "teach-doctor-ensure-artifact-and-the-envelope-about-tasks",
+    "update-flow-doctor-and-init-tests",
+    "update-envelope-ensure-artifact-and-resolve-tests",
+    "implement-the-markdown-section-scanner",
+    "implement-the-tasks-parser",
+    "implement-the-policy-and-marker-parser",
+    "implement-import-plan",
+    "implement-render",
+    "wire-import-plan-and-render-dispatch",
+    "black-box-import-tests-with-a-house-format-fixture-plan",
+    "black-box-render-tests-with-a-golden-rendered-plan",
+    "corpus-smoke-test-over-this-repos-plans",
+    "write-the-flow-contract-task-store-skill-and-the-tomlctl-tasks-reference",
+    "point-the-tomlctl-skill-its-flow-reference-and-repo-claudemd-at-the-verb-group",
+    "register-the-fifth-artifact-in-the-flow-context-contract-template-and-bootstrap-agent",
+    "update-the-plan-output-format-and-plan-restructure-contracts",
+    "pin-the-task_ref-rule-in-the-execution-record-contract",
+    "adopt-the-store-in-plan-new",
+    "adopt-the-store-in-implement",
+    "adopt-the-store-in-review-plan",
+    "adopt-the-store-in-plan-update",
+    "require-the-new-contract-skill-in-the-carrier-map",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = """The `tasks` module scaffold, schema, slug rule, graph engine, CLI declaration (with a temporary dispatch arm so the crate compiles from t=0), locked store I/O, the ten core verbs, dispatch wiring, black-box tests, the capabilities/README/version registry, and the five-artifact registry with doctor tolerance landing before the struct widening so no existing flow's `doctor` or `resolve` test goes red across the gate. Buildable: `import-plan`/`render` return a "not yet wired" error, and every registry and flow test passes because 13, 22 and 23 are in the group."""
+
+[[checkpoints]]
+id = "B"
+rationale = "The markdown scanner with CRLF handling, both parsers, `import-plan`, `render` with containment, the real dispatch arms, the golden import/render fixtures and the corpus smoke test. Buildable alone: no carrier or skill text changes yet, so `command_lint` and `carrier_invokes_required_skills` are untouched."
+
+[[checkpoints]]
+id = "C"
+rationale = "The contract skill and tomlctl references, the flow-context/template/bootstrap artifact list, the three contract updates, the four carrier adoptions, and the required-skills map. `cargo install --path tomlctl` runs before this checkpoint's commit train (see Verification Commands) because the carriers shell out to the installed binary. Buildable: `command_lint` parses every new snippet against the milestone-B CLI; `carrier_invokes_required_skills` is green only once all four carriers and the map agree, which is why 36 is the group's sink."
+
+[[items]]
+id = 1
+ref = "scaffold-the-tasks-module-tree"
+title = "Scaffold the `tasks` module tree"
+effort = "L"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/main.rs",
+    "tomlctl/src/tasks/mod.rs",
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/slug.rs",
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/tasks/store.rs",
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/tasks/list.rs",
+    "tomlctl/src/tasks/edges.rs",
+    "tomlctl/src/tasks/ready.rs",
+    "tomlctl/src/tasks/batches.rs",
+    "tomlctl/src/tasks/closure.rs",
+    "tomlctl/src/tasks/check.rs",
+    "tomlctl/src/tasks/markdown.rs",
+    "tomlctl/src/tasks/parse_tasks.rs",
+    "tomlctl/src/tasks/parse_policy.rs",
+    "tomlctl/src/tasks/import_plan.rs",
+    "tomlctl/src/tasks/render.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create `tomlctl/src/tasks/mod.rs` declaring every leaf module above (private) plus `pub(crate) mod dispatch;`, create each leaf as a one-line `//!` placeholder, and add `mod tasks;` to `tomlctl/src/main.rs`."
+detail = """Mirror `tomlctl/src/backlog/mod.rs` (module doc header stating scope and an "Owns:" list; leaf-per-verb layout so every later task owns exactly one file and never edits `mod.rs`). This is the one task far above the 3-file cap: a `mod x;` declaration needs the file to exist, so the scaffold must land as a unit (tagged L for that reason — the lite gate reads the tag). Placeholders contain only a doc comment naming the module's future responsibility — no items, so nothing is dead code (measured: an empty module emits no warning)."""
+acceptance = "`grep -c '^mod tasks;' tomlctl/src/main.rs` prints 1 (today: 0); `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error and no warning naming a file this task edits (predicted, unverified — build-emitting)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "define-the-store-schema-types"
+title = "Define the store schema types"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/schema.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Implement `Store`, `Policy`, `Checkpoint`, `TaskRow`, `Status`, `Effort` with `from_toml(&toml::Value) -> Result<Store>` and `to_toml(&Store) -> toml::Value`, preserving the field order shown in Approach §Store (including `plan_path` and `last_import_refs`)."
+detail = '`preserve_order` maps (R4) — build the row table by inserting keys in canonical order. Normalise every body string (`action`, `detail`, `acceptance`, `deps_note`, `policy.note`, `rationale`) to LF on both read and write (R2). `Status`/`Effort` parse case-sensitively and `Display` back to the canonical spelling; unknown values are `anyhow!` errors naming the row id. Missing optional fields (`agent`, `commit`, `checkpoint`, `deps_note`, `plan_path`) default to `""`; missing `coupling`/`last_import_refs` → `[]`. Provide `Store::next_id()` (max id + 1, ids are `u32`) and `Store::find(id)` / `find_ref(&str)`.'
+acceptance = 'inline unit tests: a fixture store round-trips `from_toml(to_toml(s)) == s`; a `"\r\n"` body reads back as `"\n"`; an unknown `status = "ready"` errors with the row id in the message. Falsifier: removing the LF normalisation makes the CRLF test red (predicted, unverified — `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::schema`).'
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "implement-the-ref-slug-rule-and-record-reconciliation-matcher"
+title = "Implement the `ref` slug rule and record reconciliation matcher"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/slug.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Implement `derive_ref(title: &str) -> String`, `dedupe_refs(&mut [String])`, and `normalise_for_match(&str) -> String`."
+detail = "Rule from User Decisions: lowercase; drop backticks and every char outside `[a-z0-9_ -]`; collapse runs of whitespace/hyphens to one hyphen; trim hyphens; duplicates get `-2`, `-3` in document order. `normalise_for_match` keeps only `[a-z0-9]` so `count_distinct` and `count-distinct` compare equal. The module doc names `github-slugger` as the precedent and states the two deliberate divergences (collapsing, underscore retention) — no research-note ids or `file:line` citations in source, per `.claude/rules/documentation.md`."
+acceptance = 'inline unit tests: `derive_ref("Arm the sort-engaged \`count_distinct\` test with a filter")` == `arm-the-sort-engaged-count_distinct-test-with-a-filter` (matches the live record in `.claude/flows/tomlctl-followups-round-2/execution-record.toml`); `"Setup & Config"` → `setup-config`; two identical titles yield `x` and `x-2`. Falsifier: dropping the underscore from the keep-set turns the first assertion red (predicted, unverified).'
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "build-the-graph-engine"
+title = "Build the graph engine"
+effort = "L"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/graph.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Implement a self-contained `Graph` over `&[Node]` (`id`, `files`, `needs`, `coupling`, `status`, `checkpoint`) with `kahn_rounds()`, `cycle_members()`, `closure_up(id)`, `closure_down(id)`, `frontier(in_flight: &[u32]) -> Frontier{ready, held, next}`, `overlap_pairs()`, and `groups(order: &[String]) -> Vec<Group{id, members, maximal, valid_cut}>`."
+detail = "In-degree edges = `needs ∪ coupling`. `closure_up(id)` = the transitive dependencies (ancestors) of `id`, inclusive; `closure_down(id)` = the transitive dependents (successors), inclusive. Deterministic Kahn per R13 (ascending seeds, sorted rounds, ascending successor decrement). Reachability via `Vec<[u64;4]>` bitsets OR-folded in reverse topological order; error `graph exceeds 256 tasks` above the cap (R12). `frontier`: `ready` = pending tasks whose in-degree set is all `done`; `held` = ready tasks sharing a file with an in-flight task (name the file and holder); `next` = pending tasks whose unsatisfied deps are all in `ready ∪ in_flight`. `groups`: for each checkpoint id in order, members = nodes with that `checkpoint`; `valid_cut` = the union of this and earlier groups is downward-closed under `closure_up` (R16); `maximal` = members with no successor inside the group. `overlap_pairs` = file-sharing pairs with no directed path either way. No `pub`; no new dependency."
+acceptance = "inline unit tests over a 12-node fixture: rounds are ascending within each layer and the concatenation is a valid topological order; a 3-cycle reports exactly its three members; `closure_down(1)` on the fixture equals the hand-listed set; a group whose earlier prefix omits a dependency reports `valid_cut == false`; a 257-node input errors. Falsifier: flipping the tie-break to descending makes the rounds test red (predicted, unverified — `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::graph`)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "declare-the-tasks-cli-surface"
+title = "Declare the `tasks` CLI surface"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/cli/dispatch.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = """Add `Cmd::Tasks { #[command(subcommand)] op: TasksOp }` plus a temporary `Cmd::Tasks { .. } => anyhow::bail!("not yet wired")` arm in `cli/dispatch.rs` (the `Cmd` match is exhaustive with no wildcard), the `TasksOp` enum (all twelve verbs from Approach §Verb surface with their flags), `"tasks"` in `SUBCOMMANDS`, and the twelve `FEATURES` entries `tasks_import_plan`, `tasks_add`, `tasks_add_many`, `tasks_update`, `tasks_show`, `tasks_list`, `tasks_edges`, `tasks_ready`, `tasks_batches`, `tasks_closure`, `tasks_check`, `tasks_render`; update the `--require-artifact` doc comment (types.rs:907-908) to list `tasks`; re-export `TasksOp` from `tomlctl/src/cli/mod.rs`. `ArtifactKind::Tasks` is NOT this task's — task 21 adds it together with its exhaustive matches."""
+detail = "Shared `#[derive(Args)] TasksTarget { --slug | --file }` as a NON-required mutex group — `import-plan` accepts `--plan <path>` alone (no store target) for `--dry-run` validation in plan mode, and every other verb rejects an empty target in post-parse validation with a `kind=validation` error (clap's missing-required error is invisible to `command_lint`); `list` flattens the existing `QueryArgs` (R6) AND declares its own `--count: bool` (it lives on `ItemsOp::List`, not in `QueryArgs`); `--needs`/`--coupling`/`--in-flight` use `value_delimiter = ','` without `num_args` (R8); read verbs flatten `ReadIntegrityArgs`, write verbs the write-integrity args (task 13 adds the read verbs to the hand-enumerated `read_subs` test list — nothing enforces the split automatically); `show --with` is a comma-delimited `Vec<ShowPart>` value-enum; `add` takes `--action/--detail/--acceptance` as strings or `--action-file` etc. paths. Doc-comment every flag — `capabilities` reflects them."
+acceptance = """`grep -c '"tasks_add_many"' tomlctl/src/cli/types.rs` prints 1 (today: 0); `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error and no warning naming a file this task edits — sibling tasks land unreferenced leaf items that emit `dead_code` until task 11 wires dispatch (predicted, unverified). Falsifier for the registry: `tomlctl/tests/capabilities.rs` `capabilities_features_contains_every_plan_feature` goes red until task 13 lands the matching list."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "implement-store-resolution-and-locked-io"
+title = "Implement store resolution and locked I/O"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/store.rs",
+    "tomlctl/src/io.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = 'Implement `resolve_store_path(slug: Option<&str>, file: Option<&Path>) -> Result<PathBuf>`, `load(path, &ReadIntegrityArgs) -> Result<Store>`, and `mutate(path, integrity, |&mut Store| -> Result<T>) -> Result<T>` on top of `io::mutate_doc`; add `"tasks.toml"` to `SCHEMA_SEEDED_FLOW_FILES`; add a bounded retry (three attempts, 50 ms backoff) around `tmp.persist` in `io::atomic_write` and `write_toml_with_sidecar`.'
+detail = "Path resolution mirrors `tomlctl/src/flow/render_progress_log.rs:55-90` (`validate_slug`, `repo_or_cwd_root`, `.claude/flows/<slug>/tasks.toml`). `load` uses `read_toml` + `verify_integrity` per the read-integrity flags. `mutate` converts through `schema::from_toml`/`to_toml` inside the `mutate_doc` closure so the exclusive lock, sidecar write and auto-create-with-seed are inherited unchanged; bump `last_updated` to today (`crate::time::today_toml_date()`) on every mutation. `seed_doc_for` matches on BASENAME with no directory scoping, so any `tasks.toml` reached via `--file` also gets the seed — say so in the entry's comment. The persist retry exists because `/implement` will now issue ~100 TOML+sidecar renames per run against a recorded transient `os error 5` under AV contention."
+acceptance = """`grep -c '"tasks.toml"' tomlctl/src/io.rs` prints 1 (today: 0); a unit test with `test_support::with_root` creates a store via `mutate` on a missing file and asserts the `schema_version = 1` seed plus a `.sha256` sidecar exist (predicted, unverified). Falsifier: removing the seed-list entry makes the seed assertion red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "implement-the-write-verbs-add-add-many-update"
+title = "Implement the write verbs `add`, `add-many`, `update`"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/add.rs",
+    "tomlctl/src/tasks/update.rs",
+]
+needs = [
+    3,
+    4,
+    6,
+]
+coupling = []
+deps_note = ""
+action = "Implement `add(path, integrity, NewTask) -> Result<AddOutcome{id, ref, batch}>`, `add_many(path, integrity, ndjson: &str) -> Result<Vec<AddOutcome>>`, and `update(path, integrity, id, UpdateFields) -> Result<Vec<&'static str>>`."
+detail = "`add` derives `ref` via `slug::derive_ref` + dedupe, validates every `needs`/`coupling` target exists and that the graph stays acyclic (build a `Graph` on the candidate store, call `cycle_members`) before writing, and reports the Kahn round the new task lands in. `add_many` parses with `items::parse_ndjson`, validates the whole batch on one candidate store, and writes once (all-or-nothing). `update` applies `--status` (validated vocabulary), `--agent`, `--commit`, `--checkpoint`, generic `--set k=v` for string fields, refuses to change `ref` without `--ref`, and returns the changed field names. All go through `store::mutate`."
+acceptance = 'unit tests: adding a task with `needs = [99]` errors naming 99; adding an edge that closes a cycle errors listing the members and leaves the file byte-identical; `update --status done` changes exactly `["status"]`. Falsifier: skipping the cycle pre-check makes the cycle test red (predicted, unverified).'
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "implement-the-read-verbs-show-list-edges"
+title = "Implement the read verbs `show`, `list`, `edges`"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/src/tasks/list.rs",
+    "tomlctl/src/tasks/edges.rs",
+]
+needs = [
+    4,
+    6,
+]
+coupling = []
+deps_note = ""
+action = "Implement `show(store, id, parts) -> serde_json::Value`, `list(doc, &QueryArgs, count: bool)` delegating to `query::run` over the `items` array, and `edges(store, kind, dot) -> String|Value`."
+detail = "`show` parts: `summary` (default), `body` (action/detail/acceptance), `files`, `deps` (each `needs`/`coupling` target's summary), `dependents` (`closure_down` summaries). `list` reuses `query::validate_query` + `run`/`run_streaming` and the `emit_raw`/`--lines` paths verbatim, plus the bare `--count` total — no new query semantics. `edges --dot` emits a `digraph` with `needs` solid, `coupling` dashed, `overlap` dotted, one node per task labelled `id: title`."
+acceptance = "unit tests: `show(12, [deps])` on the fixture returns the two dependency summaries; `list --where status=pending --pluck id` returns the pending ids in id order; `list --count` returns the row total; `edges --kind overlap` on a fixture with one shared-file pair and no path returns that pair. Falsifier: pointing `list` at a wrong array name returns nothing and the pluck test goes red (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "implement-the-graph-verbs-ready-batches-closure"
+title = "Implement the graph verbs `ready`, `batches`, `closure`"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/ready.rs",
+    "tomlctl/src/tasks/batches.rs",
+    "tomlctl/src/tasks/closure.rs",
+]
+needs = [
+    4,
+    6,
+]
+coupling = []
+deps_note = ""
+action = "Implement thin JSON adapters over `Graph::frontier`, `Graph::kahn_rounds`, and `Graph::closure_up/down` + `groups` (`--checkpoint A` → members, maximal, valid_cut; `--task N --up|--down`)."
+detail = "Output shapes per Approach §Verb surface; every id list sorted ascending; `ready` errors on a cycle (surface `cycle_members`) rather than returning a partial frontier."
+acceptance = "unit tests: fixture with tasks 1 done, 2 in flight sharing a file with ready task 3 → `held` contains `{3, file, holder: 2}`; `closure --checkpoint A` on the fixture returns the hand-listed members and `valid_cut: true`. Falsifier: removing the file-claim intersection empties `held` and the test goes red (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "implement-check"
+title = "Implement `check`"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/check.rs"]
+needs = [
+    4,
+    6,
+]
+coupling = []
+deps_note = ""
+action = "Implement `check(store) -> Vec<Finding{class, severity, ids, detail}>` with the classes in Approach §Verb surface, and `exit_code(&[Finding]) -> i32`."
+detail = '`dag/cycle`, `dag/dangling-ref`, `dag/duplicate-number`, `checkpoint/invalid-cut`, `policy/max-parallel-range` (1–8) are `error`; `dag/unreachable-claim` (from `overlap_pairs`), `checkpoint/orphan-task` (`checkpoint == ""`), `checkpoint/marker-mismatch` are `warning`; `plan/orphan-row` (a row whose `ref` is absent from `last_import_refs`) is `warning` when `pending` and `error` otherwise. Findings sorted by class then ids. `files/closure` is deliberately not implemented — the module doc states that it was measured as a 68%-false-flag check and left out, with no `file:NN` citation, per `.claude/rules/documentation.md`. The `--plan` drift check is a documented seam here: task 18 defines `check_render_drift` in `render.rs` and task 19 wires the call in `tasks/dispatch.rs`.'
+acceptance = "unit tests: a fixture with one orphan task and one shared-file pair yields exactly two warnings and exit 0; a fixture whose group B member depends on a group C task yields `checkpoint/invalid-cut` with exit 1; a `done` row absent from `last_import_refs` yields `plan/orphan-row` at `error`. Falsifier: treating orphan tasks as errors makes the exit-0 assertion red (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "wire-tasks-dispatch-core-verbs"
+title = "Wire `tasks` dispatch (core verbs)"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/cli/dispatch.rs",
+]
+needs = [
+    5,
+    7,
+    8,
+    9,
+    10,
+]
+coupling = []
+deps_note = ""
+action = "Implement `tasks::dispatch(op: TasksOp) -> Result<()>` with field-by-field destructuring for every variant, and replace task 5's temporary arm in `cli/dispatch.rs` with `Cmd::Tasks { op } => crate::tasks::dispatch(op)`."
+detail = 'Follow `tomlctl/src/backlog/dispatch.rs`. Post-parse target validation (empty `--slug|--file` → `kind=validation`) lives here for every verb except `import-plan`. Write verbs print `output::print_json_compact`; read verbs `print_json` (or the raw/lines emitters through `list`). `ImportPlan` and `Render` arms return `anyhow!("not yet wired")` in this task (phase-free wording); task 19 replaces them. `check` exits with `check::exit_code` via `std::process::exit` after printing (the emitters flush explicitly).'
+acceptance = "`tomlctl tasks --help` lists the twelve verbs (predicted, unverified); `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error and no warning naming a file this task edits. Falsifier: adding a flag to `TasksOp::Add` without destructuring it fails compilation — that is the guard."
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "black-box-tests-for-write-and-graph-verbs"
+title = "Black-box tests for write and graph verbs"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/tests/tasks_write.rs",
+    "tomlctl/tests/tasks_graph.rs",
+    "tomlctl/tests/common/mod.rs",
+]
+needs = [11]
+coupling = []
+deps_note = ""
+action = 'Add `seed_tasks(root, toml) -> PathBuf` to `tests/common/mod.rs` (sandbox + `.claude/flows/<slug>/tasks.toml`), then cover `add`/`add-many`/`update` (sidecar refreshed, lock honoured, cycle rejection envelope, empty-target validation error) and `ready`/`batches`/`closure`/`check` (JSON shapes, exit codes) through `Command::cargo_bin("tomlctl")`.'
+detail = "Use `TOMLCTL_ROOT` + `TOMLCTL_LOCK_TIMEOUT=5` like `tests/render_progress_log.rs`; `assert_sidecar_matches` after each write; assert error envelopes with `parse_json_error_envelope`. Include a `check` run over a seeded orphan + overlap fixture asserting exit 0 with two warnings and a cycle fixture asserting exit 1."
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test tasks_write --test tasks_graph` passes (predicted, unverified). Falsifier: changing the `check` exit policy so warnings exit 1 turns the orphan-fixture test red."
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "register-the-verbs-in-capabilities-tests-readme-and-the-version"
+title = "Register the verbs in capabilities tests, README and the version"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+]
+needs = [5]
+coupling = []
+deps_note = ""
+action = """Extend the pinned `FEATURES`/`SUBCOMMANDS` literals and lengths in `capabilities.rs`, append each `tasks` read verb (`show`, `list`, `edges`, `ready`, `batches`, `closure`, `check`) to the literal `read_subs` array in `read_only_subcommands_hide_write_integrity_flags_in_help` (a hardcoded list, not reflection), bump the version to `0.7.0` in `tomlctl/Cargo.toml` and the `capabilities_version_matches_cargo_toml` pin (a new verb group is a minor bump by the `backlog` precedent), and add the `tasks_*` rows to the README capabilities stdout block (including `"tasks"` in its `subcommands` array and the new version string) and the "Feature meanings" table (header row `| Feature | What it enables |`), updating the `dry_run` row's write-subcommand count."""
+detail = "The parity test at `capabilities.rs:2162-2224` compares README backticked names to `capabilities` output; `.claude/backlog.toml:326` records the failure shape. Keep table wording one line per feature in the existing style."
+acceptance = """`grep -c 'tasks_import_plan' tomlctl/README.md` prints ≥1 (today: 0); `grep -c '^version = "0.7.0"' tomlctl/Cargo.toml` prints 1 (today: 0); `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes (predicted, unverified). Falsifier: omitting one `tasks_*` row from the README makes the parity test red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 20
+ref = "widen-the-canonical-artifact-set"
+title = "Widen the canonical artifact set"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/flow/artifacts.rs",
+    "tomlctl/src/flow/init.rs",
+    "tomlctl/src/flow/resolve.rs",
+]
+needs = [
+    6,
+    21,
+]
+coupling = []
+deps_note = ""
+action = "Add `tasks: String` to `CanonicalArtifacts` (`for_slug`, `to_json`, `to_pairs() -> [(&str,&str);5]`), seed `tasks.toml` in `flow init`'s bootstrap path by adding a sibling helper alongside `bootstrap_execution_record`, and compute the fifth key in `resolve.rs read_or_compute_artifacts`."
+detail = "Keep canonical order with `tasks` last. Do NOT rename or re-signature `execution_record_skeleton` / `bootstrap_execution_record`, which `src/flow/mod.rs` and `io.rs`'s `seed_doc_for_matches_bootstrap_bytes` name (neither owned by this task). The seed comes from task 6's `SCHEMA_SEEDED_FLOW_FILES` entry (hence the edge); the idempotent re-run leaves an existing store untouched. `resolve.rs` carries a SECOND hardcoded four-key list — the artifact-missing warning loop (`resolve.rs:526-536`) — which a struct-field addition will not break: extend it but exempt `tasks` from the missing-file warning (every one of the 40 legacy flows lacks the file, and the warning surfaces in every carrier's bootstrap summary); state the exemption in a comment. Task 21 has already landed the key-name-based doctor tolerance, so widening `to_pairs()` here does not redden `flow doctor`. Update the inline unit tests in `artifacts.rs` (`for_slug_yields_four_canonical_paths` → five) and `resolve.rs`'s inline four-artifact assertion."
+acceptance = "`grep -c 'tasks.toml' tomlctl/src/flow/artifacts.rs` prints ≥1 (today: 0); inline test asserts five pairs in canonical order. Falsifier: leaving the field out of the `CanonicalArtifacts` struct literals (`artifacts.rs for_slug`, `resolve.rs:602`) fails compilation — that is the guard (`doctor.rs:383` iterates `to_pairs()` and compiles at either length, which is why task 21 precedes this one)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 21
+ref = "teach-doctor-ensure-artifact-and-the-envelope-about-tasks"
+title = "Teach doctor, ensure-artifact and the envelope about `tasks`"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/flow/doctor.rs",
+    "tomlctl/src/flow/ensure_artifact.rs",
+    "tomlctl/src/flow/envelope.rs",
+    "tomlctl/src/cli/types.rs",
+]
+needs = [5]
+coupling = []
+deps_note = ""
+action = """In `check_artifacts_canonical`, treat a **missing** `[artifacts].tasks` key (matched on the literal key name, so the code is inert while `to_pairs()` is still four-wide) as `Check::ok("artifacts-canonical", …)` plus an advisory string pushed onto the envelope's top-level `warnings` array — the `gitignore-claude` idiom at `doctor.rs:695-706` — while value mismatches and other missing keys still fail; add `ArtifactKind::Tasks` to `types.rs` and map it in both exhaustive matches in `ensure_artifact.rs` — `artifact_filename` (→ `tasks.toml`) and `artifact_kind_label` (→ `tasks`) — plus the pinned `artifact_filename_maps_every_variant` test; add `"tasks"` to `VALID_ARTIFACTS`."""
+detail = "Four files, inseparable: the enum variant and its exhaustive matches must land together to compile. Every existing flow has four keys — a hard fail would break `flow doctor` repo-wide (40 flows today). `Check` is binary `ok`/`fail` with `detail` documented as failure-only, so no `Check` severity is invented and `envelope.doctor.ok` keeps its shape. `fixes_applied` has no `context.toml`-rewriting producer today (only `apply_sidecar_fixes` / `apply_active_prune`) and this task adds none: `flow doctor`, with or without `--fix`, writes no `context.toml` bytes."
+acceptance = """`grep -c '"tasks"' tomlctl/src/flow/envelope.rs` prints 1 (today: 0); an inline unit test in `doctor.rs` runs `check_artifacts_canonical` over a four-key `[artifacts]` table and asserts one passing check plus one warning naming `tasks`, and over a table with a *wrong* `tasks` value and asserts a failure (task 22 adds the black-box equivalent and the no-bytes-written assertion). Falsifier: keeping the missing-key hard fail turns the four-key unit test red (predicted, unverified)."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 22
+ref = "update-flow-doctor-and-init-tests"
+title = "Update flow doctor and init tests"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/tests/flow_doctor.rs",
+    "tomlctl/tests/flow_init.rs",
+]
+needs = [
+    20,
+    21,
+]
+coupling = []
+deps_note = ""
+action = "Assert `flow init` creates and sidecars a seeded `tasks.toml`, re-init leaves an existing store byte-identical, doctor passes a legacy four-key `[artifacts]` table with a `tasks`-missing warning while still failing a wrong `tasks` value, and `flow doctor --fix` on that four-key context leaves `context.toml` byte-identical."
+detail = "Extend the existing fixtures rather than adding new files; reuse the tests' context builders."
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test flow_doctor --test flow_init` passes (predicted, unverified). Falsifier: the four-key context test is red on the current tree by construction (doctor hard-fails a missing key today)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 23
+ref = "update-envelope-ensure-artifact-and-resolve-tests"
+title = "Update envelope, ensure-artifact and resolve tests"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — store, schema, graph engine and the artifact registry (tomlctl core)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/tests/flow_envelope.rs",
+    "tomlctl/tests/flow_ensure_artifact.rs",
+    "tomlctl/tests/flow_resolve.rs",
+]
+needs = [
+    20,
+    21,
+]
+coupling = []
+deps_note = ""
+action = "Assert `--require-artifact tasks` is accepted, `flow ensure-artifact --kind tasks` creates the seeded file, `flow resolve` reports five artifact paths (computing `tasks` when the context lacks it), and the artifact-missing warnings for a legacy flow stay at four (`tasks` exempt)."
+detail = "Extend existing fixtures; assert the fifth key's exact path string; keep `flow_resolve.rs:187` (empty warnings on the happy path) and `:574` (exactly four missing-artifact warnings) green by construction."
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test flow_envelope --test flow_ensure_artifact --test flow_resolve` passes (predicted, unverified). Falsifier: `--require-artifact tasks` is a clap error on the current tree."
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "implement-the-markdown-section-scanner"
+title = "Implement the markdown section scanner"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — importer and renderer"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/markdown.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Implement `sections(src) -> Vec<Section{title, heading_line, body_range}>` for `^## ` headings, `replace_section(src, title, new_body) -> String`, `insert_section_after(src, after_title, title, body)`, and `dominant_line_ending(src) -> &'static str`."
+detail = '''A section runs from its heading to the byte before the next `^## ` (or EOF). Fenced code blocks are tracked so a `## ` inside a fence is not a heading. **Line endings**: `core.autocrlf` is `true` and `docs/plans/` is not pinned in `.gitattributes`, so the whole corpus is CRLF on disk — `sections()` strips one trailing `\r` from every line before matching, so the parsers (tasks 15/16) see LF-only input; `replace_section`/`insert_section_after` re-apply the source's dominant ending to the inserted body so a CRLF plan is not rewritten to mixed endings. Preserve every byte outside the replaced range.'''
+acceptance = "inline unit tests: a document with a `## X` inside a fence yields the right count; replacing `## Tasks` leaves the bytes before and after identical (assert by slicing); a CRLF and an LF input both round-trip through `sections` → `replace_section` with their own ending preserved. Falsifier: dropping fence tracking makes the count test red (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "implement-the-tasks-parser"
+title = "Implement the `## Tasks` parser"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — importer and renderer"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/parse_tasks.rs"]
+needs = [14]
+coupling = []
+deps_note = ""
+action = "Implement `parse_tasks(section_body) -> Result<Vec<ParsedTask>>` per Approach §Importer: headings, phase-label skipping, field lines with ≥2-space continuation, Files/Depends-on normalisation, `Blocked-by`/`Blocked by`/`Effort` synonyms."
+detail = 'Input is LF-only (task 14 strips `\r`). Regexes with ASCII classes only (R9): heading `^#{3,4} ([0-9]+)\. (.+?)( \[([A-Za-z-]+)\])?( — .*)?$`; effort outside `S|M|L` (e.g. `M-leaning-L`) is an error naming the line; a non-integer id (`12a`) is an error; a heading without `N.` is skipped. Depends-on integers before the first `(`; the parenthetical (possibly wrapped) becomes `deps_note` with newlines collapsed. Files: strip backticks, split on commas, trim, drop `(…)` suffixes, drop `none`, keep directory entries. Include `#[test] fn every_pattern_compiles()` covering every pattern plus one negated ASCII class written as an explicit character class (the `(?-u:\D)` form is a compile error).'
+acceptance = '''inline unit tests using literal excerpts from the corpus grammar in Exploration Notes (wrapped Depends-on with parenthetical; `#### N.` under a `### Phase` heading; `Blocked-by: 3`); `grep -c 'fn every_pattern_compiles' tomlctl/src/tasks/parse_tasks.rs` prints 1 (today: 0 — placeholder only; forward). Falsifier: a `\d` in any pattern makes `every_pattern_compiles` red under the crate's regex features (predicted, unverified).'''
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "implement-the-policy-and-marker-parser"
+title = "Implement the policy and marker parser"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — importer and renderer"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/parse_policy.rs"]
+needs = [14]
+coupling = []
+deps_note = ""
+action = "Implement `parse_policy(section_body) -> Result<Policy + checkpoint_after: Vec<u32>>` and `parse_markers(section_body) -> Result<Vec<Marker{id, after: Vec<u32>, rationale}>>`."
+detail = 'Policy bullets: first token of the value is the enum/number, remainder (including wrapped lines) → `note`; the `Checkpoint after` list is returned separately for the `checkpoint/marker-mismatch` check and never feeds membership; absent section → defaults `milestones`/6/`per-task` with `note = "policy absent in source plan"`. `parse_markers` is fed the `## Dependency Graph` section only and is authoritative for membership; strip `*`, leading `—`/`-` runs, match `CHECKPOINT ([A-Za-z0-9]+) after tasks? ([0-9][0-9, –-]*)`, expand `–` and `-` ranges, dedupe repeated marker blocks by id (first wins, warn on conflict), and strip a trailing `(INVALID CUT)` from the rationale capture so it is never persisted (otherwise render→import→render accumulates it). All six corpus shapes from Exploration Notes are unit fixtures.'
+acceptance = "inline unit tests: each of the six marker shapes yields the expected `(id, after)`; `Checkpoint after: tasks 2, 4, 5, 27, 28; task 14` yields the flat list; a marker paragraph ending `(INVALID CUT)` yields a rationale without it. Falsifier: removing en-dash range expansion makes the `1–12` fixture red (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "implement-import-plan"
+title = "Implement `import-plan`"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — importer and renderer"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/import_plan.rs"]
+needs = [
+    3,
+    6,
+    10,
+    15,
+    16,
+]
+coupling = []
+deps_note = ""
+action = "Implement `import_plan(target: Option<store>, plan_path, reconcile_record, dry_run, integrity) -> Result<ImportOutcome>` composing the parsers into an upsert by `ref`, checkpoint membership from marker closures, record reconciliation, ref-set diff reporting, and a `check` pass."
+detail = "Plan path from `--plan` or `context.toml`'s `plan_path` (read via the same root resolution as `store.rs`); with no store target (plan-mode `--dry-run`) the outcome is computed against an empty store. Membership on import: for markers in document order, members = `closure_up(after) ∖ earlier members`. Upsert: match rows by `ref`; keep `status`/`agent`/`commit`/adopted `ref` on existing rows; new rows `pending`; never delete; write `last_import_refs` and seed the store's `plan_path` from `context.toml` (or `--plan` under `--file`). Report `added_refs` / `removed_refs` (rows present but absent from the plan) so carriers can gate. `--reconcile-record`: read task-completion `task_ref`s from `.claude/flows/<slug>/execution-record.toml`; exact match → `done`; unique `normalise_for_match` match → adopt the record's ref and mark `done`, reported in `adopted_refs`; the rest → `unmatched_refs`. `--dry-run` skips the write and reports the would-be outcome plus `check` findings; error-class findings make a non-dry run fail before writing."
+acceptance = 'unit tests with `with_root`: importing a fixture plan twice yields `added: N` then `unchanged: N`; a record with `count-distinct` matched against title-derived `count_distinct` is adopted; a legacy plan whose marker closures leave two tasks uncovered imports them with `checkpoint = ""` and reports two `checkpoint/orphan-task` warnings; renaming one heading in the fixture reports one `removed_refs` and one `added_refs`. Falsifier: making the upsert a truncate-and-rewrite resets a seeded `done` status and the second-import test goes red (predicted, unverified).'
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "implement-render"
+title = "Implement `render`"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — importer and renderer"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/render.rs"]
+needs = [
+    2,
+    4,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "Implement `render_sections(&Store) -> Rendered{policy, tasks, graph}` and `render_into_plan(store, plan_src) -> String`, plus `check_render_drift(store, plan_src) -> Option<Finding>`."
+detail = "Formats per Approach §Renderer. `## Execution Policy` renders the four bullets, with `Checkpoint after` derived as the union of every group's maximal elements (never stored) and `policy.note` appended as trailing prose. Bodies re-indented two spaces after the label line; `Depends on` = `needs ∪ coupling` sorted, then ` (deps_note)` when non-empty, `—` when empty; markers `— CHECKPOINT A after tasks <maximal> — closure: <sorted ids>. <rationale>` preceded by the fixed preamble sentence stating that per-task edges are authoritative; groups with `valid_cut == false` render with a trailing `(INVALID CUT)` so the defect is visible in the document (task 16 strips it on re-import). `render_into_plan` applies the source's dominant line ending through `markdown.rs`; `check_render_drift` compares after normalising both sides to LF. Sections replaced/inserted via `markdown.rs` in canonical order. Pure functions — I/O and containment are in `dispatch` (task 19)."
+acceptance = "inline unit tests: rendering the schema fixture and re-parsing it with `parse_tasks`/`parse_policy`/`parse_markers` reproduces the same ids, refs, needs, coupling, checkpoints, rationale and policy (round-trip, including a group with an invalid cut); `check_render_drift` returns `None` on the freshly rendered document, `None` on the same document with CRLF endings, and `Some` after one byte of the Tasks body changes. Falsifier: rendering `needs` only (dropping coupling) makes the round-trip red (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "wire-import-plan-and-render-dispatch"
+title = "Wire `import-plan` and `render` dispatch"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — importer and renderer"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/dispatch.rs"]
+needs = [
+    11,
+    17,
+    18,
+]
+coupling = []
+deps_note = ""
+action = "Replace the two placeholder arms with the real calls: `import-plan` prints the `ImportOutcome` envelope; `render` resolves the plan path (from `context.toml` under `--slug`, from the store's `plan_path` under `--file`), containment-checks it, writes the plan through `io::atomic_write` (no sidecar) or `--stdout`, and `--check` prints the drift finding and exits 1 without writing; `check --plan` calls `check_render_drift`."
+detail = """The path never comes from a free CLI argument, and that is not containment on its own: `flow init` does not validate `--plan` and `atomic_write` runs no guard. Before writing, mirror `render_progress_log.rs`'s `title_from_context` checks on the resolved target — reject an absolute `plan_path`, reject any `ParentDir` component, and assert `path_under_root(repo_or_cwd_root(), resolved)` (canonicalising through the nearest existing ancestor so a symlinked leaf still fails closed); refuse with `kind=validation` rather than fall back. Envelope `{"ok":true,"path":…,"sections":["Execution Policy","Tasks","Dependency Graph"]}`."""
+acceptance = """`cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error and no warning naming a file this task edits; `tomlctl tasks render --slug x --check` on a drifted fixture exits 1 with no file change, and a context whose `plan_path` is absolute or contains `..` is refused with `kind=validation` (both covered by task 25). Falsifier: writing before the drift check turns task 25's "no bytes written" assertion red (predicted, unverified)."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 24
+ref = "black-box-import-tests-with-a-house-format-fixture-plan"
+title = "Black-box import tests with a house-format fixture plan"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — importer and renderer"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/tests/tasks_import.rs",
+    "tomlctl/tests/fixtures/tasks/house-plan.md",
+    "tomlctl/tests/fixtures/tasks/house-plan.tasks.toml",
+    "tomlctl/.gitattributes",
+]
+needs = [19]
+coupling = []
+deps_note = ""
+action = "Write a 10-task fixture plan exercising every corpus variant (h3 and h4 headings under a phase label, wrapped Files and Depends-on lines with parentheticals, `Blocked-by`, an orphan task, a shared-file pair with an edge, three checkpoint marker shapes, one body containing a backslash), the expected store as a golden TOML, and tests for `import-plan` (fresh, idempotent re-import, `--dry-run` with and without a store target, `--reconcile-record` adoption, ref-set diff on a renamed heading, error-class abort, and a CRLF copy of the fixture importing byte-identically to the LF one)."
+detail = "Stage with a `stage_flow`-style helper (context + execution record + plan under `docs/plans/`; the precedent helper is file-local in `tomlctl/tests/render_progress_log.rs:26-38`, so no `tests/common` edit); compare the written store to the golden file after normalising `last_updated`. The golden TOML expects `'''` literal delimiters for the backslash body (R2, corrected). `tomlctl/.gitattributes` pins only `tests/fixtures/render/*` today — add `tests/fixtures/tasks/* text eol=lf` in the same task (four files, inseparable: a golden byte-compare without the LF pin is red on any Windows checkout)."
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test tasks_import` passes (predicted, unverified). Falsifier: changing one `needs` value in the golden file makes the fresh-import comparison red."
+agent = ""
+commit = ""
+
+[[items]]
+id = 25
+ref = "black-box-render-tests-with-a-golden-rendered-plan"
+title = "Black-box render tests with a golden rendered plan"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — importer and renderer"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/tests/tasks_render.rs",
+    "tomlctl/tests/fixtures/tasks/house-plan.rendered.md",
+]
+needs = [24]
+coupling = []
+deps_note = ""
+action = "Render the store produced from `house-plan.tasks.toml` into a copy of `house-plan.md` and byte-compare to the golden; assert `--stdout` writes nothing, `--check` exits 1 on a drifted copy and leaves it byte-identical, `--check` exits 0 on a CRLF copy of the rendered golden, bytes outside the three sections are preserved, and a context whose `plan_path` is absolute or contains `..` is refused with `kind=validation` and no write."
+detail = "Reads the fixtures task 24 creates (read-only here — listed on that task's Files line, not this one). Golden separator/whitespace authority is the renderer, per the render-progress-log precedent."
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test tasks_render` passes (predicted, unverified). Falsifier: inserting a stray space in the golden's marker line makes the byte-compare red."
+agent = ""
+commit = ""
+
+[[items]]
+id = 26
+ref = "corpus-smoke-test-over-this-repos-plans"
+title = "Corpus smoke test over this repo's plans"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — importer and renderer"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/tests/tasks_corpus.rs"]
+needs = [19]
+coupling = []
+deps_note = ""
+action = 'For every `docs/plans/*.md` in the repo root (skipping `*.premerge.md`, `*.research.md`, `*.revised.md`, `*.preflight.md`, `*.stub.md`, `-CENSUS.md`, `-FOLLOWUP.md`) that contains `## Tasks` and at least one `^#{3,4} [0-9]+\. ` heading, run `import-plan --plan <file> --dry-run` and assert exit 0, collecting per-file `error`-class findings into one assertion message.'
+detail = "Self-skips when `docs/plans/` is absent (packaged checkout), like `command_lint`. Derive the file list at runtime — never transcribe it. The corpus is CRLF on disk, so this is also the CRLF regression guard. Plans with non-integer ids or non-`S|M|L` effort tags are expected failures (measured 2026-09-07: 28 of 51 files in scope, one allowlist member — `docs/plans/tomlctl-capability-gaps.md` for `[M-leaning-L]`; no in-repo plan carries a non-integer id): list them in an `EXPECTED_UNPARSEABLE` allowlist with the reason, asserted to still fail so the list cannot go stale silently."
+acceptance = '`cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus` passes (predicted, unverified). Falsifier: adding a house-format plan to the allowlist makes the "still fails" assertion red.'
+agent = ""
+commit = ""
+
+[[items]]
+id = 27
+ref = "write-the-flow-contract-task-store-skill-and-the-tomlctl-tasks-reference"
+title = "Write the `flow-contract-task-store` skill and the tomlctl `tasks` reference"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — contract and carrier adoption"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/tomlctl/references/tasks.md",
+]
+needs = [19]
+coupling = []
+deps_note = ""
+action = "Author the contract skill (frontmatter `name`/`description` in the house style; sections: store schema, `ref` rule, status vocabulary, edge kinds and what is derived, verb semantics with copy-pasteable ```` ```bash ```` snippets, the non-required target group and plan-mode `--plan` form, `check` classes and exit policy, render contract with section ownership and containment, the auto-import-at-Step-0 rule and the `/tdd` sub-flow exemption, the ref-set diff gate every re-import runs, the orchestrator-only status-write rule, fetch-by-id dispatch idiom, the `/implement` degradation rule, and `tomlctl integrity refresh` as the recovery step after a failed write) and the flag reference mirroring `claude/skills/tomlctl/references/backlog.md`."
+detail = "Invoke the `documentation-conventions` skill before writing. Every snippet is linted by `command_lint` against the real clap surface, so write them after task 19's CLI is final. Name the lower-set / antichain terminology (R16) for the cut rule. Do not name any reader/pane (task-visibility §6 applies by analogy)."
+acceptance = "`test -f claude/skills/flow-contract-task-store/SKILL.md` succeeds (today: absent); `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl command_lint` passes with the new snippets (predicted, unverified). Falsifier: a snippet using a non-existent flag (`--slugs`) makes `command_lint` red."
+agent = ""
+commit = ""
+
+[[items]]
+id = 28
+ref = "point-the-tomlctl-skill-its-flow-reference-and-repo-claudemd-at-the-verb-group"
+title = "Point the tomlctl skill, its flow reference and repo CLAUDE.md at the verb group"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — contract and carrier adoption"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/SKILL.md",
+    "CLAUDE.md",
+    "claude/skills/tomlctl/references/flow.md",
+]
+needs = [27]
+coupling = []
+deps_note = ""
+action = """Add the `tasks` verb group to the tomlctl skill's verb list and description; add `tasks` to the canonical artifact set named at `references/flow.md:138`; add a `tomlctl tasks` bullet to `CLAUDE.md`'s "Build & test" plus a one-paragraph note under a new "Task store" heading (store is canonical after `/plan-new` Phase 9; the three plan sections are rendered; `tasks check` is the gate; reinstall the binary after the version bump)."""
+detail = "Keep `CLAUDE.md` additions to what is not derivable from the code; link to the contract skill rather than restating it. `CLAUDE.md` is outside `command_lint`'s scan set — copy any snippet verbatim from the linted skill."
+acceptance = '''`grep -c 'tomlctl tasks' claude/skills/tomlctl/SKILL.md CLAUDE.md` prints ≥1 per file (today: 0 and 0); `grep -c '"tasks"\|`tasks`' claude/skills/tomlctl/references/flow.md` prints ≥1 (today: 0). Falsifier: the grep prints 0 for any file.'''
+agent = ""
+commit = ""
+
+[[items]]
+id = 29
+ref = "register-the-fifth-artifact-in-the-flow-context-contract-template-and-bootstrap-agent"
+title = "Register the fifth artifact in the flow-context contract, template and bootstrap agent"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — contract and carrier adoption"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-flow-context/SKILL.md",
+    "scripts/templates/flow-context.md",
+    "claude/agents/flow-bootstrap.md",
+]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Add `tasks` to the canonical artifact list (`SKILL.md:20-22`), to all three artifact-list sites in the template (the downstream-bind instruction `:96`, the `require_artifacts` enum `:155`, and the output-envelope example `:175-178`), and to the agent's Contract section and envelope literal (`flow-bootstrap.md:103`); state that `envelope.resolved.artifacts.tasks` may be computed when a legacy context lacks the key and that doctor reports the missing key as a top-level warning, not a failed check."
+detail = "Byte-parity is not enforced across these three (no shared block), but keep the wording identical by hand. The template is outside `command_lint`'s scan set — copy any snippet verbatim from a linted file."
+acceptance = """`grep -c '"tasks"' claude/agents/flow-bootstrap.md scripts/templates/flow-context.md claude/skills/flow-contract-flow-context/SKILL.md` prints ≥1 for each file (today: 0, 0, 0 — probed, forward); `grep -c 'tasks' scripts/templates/flow-context.md` prints ≥3. Falsifier: any file printing 0."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 30
+ref = "update-the-plan-output-format-and-plan-restructure-contracts"
+title = "Update the plan-output-format and plan-restructure contracts"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — contract and carrier adoption"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+    "claude/skills/flow-contract-plan-restructure/SKILL.md",
+]
+needs = [27]
+coupling = []
+deps_note = ""
+action = """In plan-output-format: state that `## Execution Policy`, `## Tasks` and `## Dependency Graph` are rendered by `tomlctl tasks render` once a flow exists, keep the authoring template for Phase 7, add the `tasks import-plan --plan <path> --dry-run` validation step and the `checkpoint` field semantics (membership authored via the Dependency Graph markers on import, `after` lists and the `Checkpoint after` bullet rendered as maximal elements), and replace the hand "walk each marker's closure" instruction with `tasks check`. In plan-restructure: the heading-equality assertion becomes the `import-plan --dry-run` ref-set diff; marker renumbering is handled by `render`; the three-part merge-exit re-derivation at `:58` names `tasks check` for its first two sub-checks and keeps the Files-line closure sub-check as prose; keep the never-mirror wording."""
+detail = "Do not remove the two-control rule or probe helper. Keep the `## Dependency Graph` heading load-bearing statement."
+acceptance = "`grep -c 'tasks import-plan' claude/skills/flow-contract-plan-output-format/SKILL.md claude/skills/flow-contract-plan-restructure/SKILL.md` prints ≥1 per file (today: 0 and 0). Falsifier: either file printing 0."
+agent = ""
+commit = ""
+
+[[items]]
+id = 31
+ref = "pin-the-task_ref-rule-in-the-execution-record-contract"
+title = "Pin the `task_ref` rule in the execution-record contract"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — contract and carrier adoption"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/skills/flow-contract-execution-record-schema/SKILL.md"]
+needs = [27]
+coupling = []
+deps_note = ""
+action = """Replace the loose "lowercased, hyphenated" sentence at `:65` with a pointer to the store's `ref` rule (`flow-contract-task-store`), state that `task_ref` in every new `task-completion` entry MUST equal the store row's `ref` (with `/plan-update migrate` deriving its back-filled refs through `tasks import-plan --dry-run`), and note the `/tdd` exemption (pinned `tdd-cycle-<NNN>-<short-name>` refs, no store)."""
+detail = "Keep every other rule verbatim; this is a one-paragraph edit."
+acceptance = "`grep -c 'tasks.toml' claude/skills/flow-contract-execution-record-schema/SKILL.md` prints ≥1 (today: 0). Falsifier: the grep prints 0."
+agent = ""
+commit = ""
+
+[[items]]
+id = 32
+ref = "adopt-the-store-in-plan-new"
+title = "Adopt the store in `/plan-new`"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — contract and carrier adoption"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/commands/plan-new.md"]
+needs = [
+    27,
+    30,
+]
+coupling = []
+deps_note = ""
+action = "Phase 7: after the probe sweep, run `tomlctl tasks import-plan --plan <plan> --dry-run` (no store target — none exists in plan mode) and resolve every `error`-class finding before Phase 8. Phase 9: after `flow init`, run `tomlctl tasks import-plan --slug <slug> --reconcile-record`, `tomlctl tasks check --slug <slug> --plan`, and `tomlctl tasks render --slug <slug> --check`; surface findings; state that the store is canonical from this point. Add the `flow-contract-task-store` skill invocation."
+detail = "Keep the plan-mode constraint explicit (no store write before Phase 9). Snippets are linted by `command_lint`."
+acceptance = "`grep -c 'tomlctl tasks import-plan' claude/commands/plan-new.md` prints ≥2 (today: 0). Falsifier: the grep prints <2."
+agent = ""
+commit = ""
+
+[[items]]
+id = 33
+ref = "adopt-the-store-in-implement"
+title = "Adopt the store in `/implement`"
+effort = "L"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — contract and carrier adoption"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/commands/implement.md"]
+needs = [
+    27,
+    31,
+]
+coupling = []
+deps_note = ""
+action = "Rewrite the task-surface parts of Phases 1–4 per Approach §Carrier adoption: Step 0 auto-import when the store is absent, **except `/tdd` sub-flows** (slug `<parent>-tdd-<NNN>`), which keep the record-derived skip-list and never touch a store; Phase 1 binds policy and the skip-list from the store (`tasks list --where status=done --pluck ref`) and gates on `tasks check`; Phase 2 frontier + file-claim via `tasks ready --in-flight`, `tasks update --status` at dispatch/return/failure, step 3c via `tasks add`, closure via `tasks closure --checkpoint`; the dispatch prompt carries the id and `tasks show <id> --with body,files,deps` after the byte-identical preamble; `[tasks].total` from `tasks list --count`; Phase 4 runs `tasks render --check` first — a drift finding means the markdown carries hand edits the store lacks, so surface it and re-import (upsert, ref-set gate) before rendering, never overwrite silently — and only then `tasks render`. Align `max_parallel` default/ceiling to 6/8 in all three places, including the legacy-mode clause. Add the degradation rule (halt with a named diagnostic pointing at `cargo install --path tomlctl` and a `git revert` of the four carriers when `tasks check` errors, the store is absent after import, or `tomlctl tasks` is unrecognised). Add the `flow-contract-task-store` invocation."
+detail = "Keep every rule that is not about the task surface (stash escalation, commit train, rollback, backlog dispositions) verbatim. The record's `task_ref` written at 5b is the store `ref`. Sub-agents are told the read verbs only — no write verbs in this plan."
+acceptance = "`grep -c 'tomlctl tasks ready' claude/commands/implement.md` prints ≥1 (today: 0); `grep -c 'default 8, ceiling 16' claude/commands/implement.md` prints 0 (today: 2 — lines 42 and 126) and `grep -c 'max_parallel 8' claude/commands/implement.md` prints 0 (today: 1 — line 42's legacy-mode default, aligned to 6 to match the importer's absent-policy default). Falsifier: any count unchanged."
+agent = ""
+commit = ""
+
+[[items]]
+id = 34
+ref = "adopt-the-store-in-review-plan"
+title = "Adopt the store in `/review-plan`"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — contract and carrier adoption"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/commands/review-plan.md"]
+needs = [
+    27,
+    30,
+]
+coupling = []
+deps_note = ""
+action = "Step 0 auto-import when absent; embed `tomlctl tasks check --slug <slug> --plan` output in Agent 1's prompt; after the merge write, run `tasks import-plan --slug <slug> --dry-run` and apply the ref-set gate (abort on any removed ref whose row is not `pending`; surface added/removed refs for confirmation), then the real import (upsert) and `tasks check`, replacing A3.5's file-claim-reachability and checkpoint-marker sub-checks with the verb and keeping A3.5's **Files-line closure** sub-check as prose (`tasks check` deliberately ships no `files/closure` class) plus the human-judgement parts. Add the `flow-contract-task-store` invocation."
+detail = "The merge still writes markdown; the store follows via upsert. Because the merge can rephrase a heading and `ref` is the primary key, the dry-run gate runs FIRST — without it a merge-authored title edit orphans a `done` row and mints a duplicate `pending` row, and `/implement`'s skip-list re-executes the completed task."
+acceptance = "`grep -c 'tomlctl tasks check' claude/commands/review-plan.md` prints ≥1 (today: 0). Falsifier: the grep prints 0."
+agent = ""
+commit = ""
+
+[[items]]
+id = 35
+ref = "adopt-the-store-in-plan-update"
+title = "Adopt the store in `/plan-update`"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — contract and carrier adoption"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/commands/plan-update.md"]
+needs = [
+    27,
+    30,
+]
+coupling = []
+deps_note = ""
+action = "`status`: `[tasks].total` from `tasks list --count`; `reformat`/`catchup`: after rewriting, `tasks import-plan --slug <slug> --dry-run` as the heading-equality assertion (error on any new/removed ref unless the user confirms), then the real import (upsert) and `tasks render`; `migrate`: the `task_ref` it derives from Item-heading text MUST use the store's `ref` rule (`tasks import-plan --dry-run` on the rewritten plan, then adopt the derived refs) so back-filled completions match store rows; `reconcile` unchanged. Add the `flow-contract-task-store` invocation."
+detail = "Keep the archive-before-rewriting rule and the `updated` date validation verbatim."
+acceptance = "`grep -c 'tomlctl tasks' claude/commands/plan-update.md` prints ≥3 (today: 0). Falsifier: the grep prints <3."
+agent = ""
+commit = ""
+
+[[items]]
+id = 36
+ref = "require-the-new-contract-skill-in-the-carrier-map"
+title = "Require the new contract skill in the carrier map"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — contract and carrier adoption"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/cli/dispatch/tests/skills.rs"]
+needs = [
+    32,
+    33,
+    34,
+    35,
+]
+coupling = []
+deps_note = ""
+action = 'Add `"flow-contract-task-store"` to the expected skill lists for `plan-new.md`, `implement.md`, `review-plan.md` and `plan-update.md` in `carrier_invokes_required_skills`.'
+detail = "The test also asserts the `SKILL.md` exists, which task 27 provides."
+acceptance = "`grep -c 'flow-contract-task-store' tomlctl/src/cli/dispatch/tests/skills.rs` prints ≥4 (today: 0); `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl carrier_invokes_required_skills` passes (predicted, unverified). Falsifier: removing the invocation line from any one carrier makes the test red."
+agent = ""
+commit = ""
