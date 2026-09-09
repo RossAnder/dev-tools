@@ -43,6 +43,7 @@ use crate::cli::{
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::schema::{ActiveDoc, ActiveEntry as SchemaEntry};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
+use crate::io::advise;
 use crate::io::{
     guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root, with_exclusive_lock,
     write_toml_with_sidecar,
@@ -298,29 +299,25 @@ where
 /// old single-line file is present. The warning goes to stderr (one line,
 /// plain prose) so structured stdout JSON stays machine-readable.
 ///
-/// Gated on a process-wide `OnceLock` flag so multiple `flow active list`
-/// calls in the same process emit the warning at most once; subsequent calls
-/// early-return without re-running the existence checks.
-fn maybe_warn_legacy(active_flow_toml: &Path) -> Result<()> {
+/// The returned bool is the fact, computed on every call so one invocation's
+/// envelope never depends on how many preceding calls this process made. Only
+/// the advisory is gated on the `OnceLock`, so a process making several
+/// `list` calls emits the line once.
+fn maybe_warn_legacy(active_flow_toml: &Path) -> Result<bool> {
     use std::sync::OnceLock;
     static WARNED: OnceLock<()> = OnceLock::new();
-    if WARNED.get().is_some() {
-        return Ok(());
-    }
     if active_flow_toml.exists() {
-        return Ok(());
+        return Ok(false);
     }
-    let legacy = legacy_pointer_path()?;
-    if legacy.exists() {
-        // Race-tolerant: two concurrent callers hitting `set` see one win
-        // and one Err — the second's Err is harmless (no second emit).
-        if WARNED.set(()).is_ok() {
-            eprintln!(
-                "tomlctl: legacy `.claude/active-flow` ignored; run cutover steps in CLAUDE.md"
-            );
-        }
+    if !legacy_pointer_path()?.exists() {
+        return Ok(false);
     }
-    Ok(())
+    // Race-tolerant: two concurrent callers hitting `set` see one win and one
+    // Err — the second's Err is harmless (no second emit).
+    if WARNED.set(()).is_ok() {
+        advise!("tomlctl: legacy `.claude/active-flow` ignored; run cutover steps in CLAUDE.md");
+    }
+    Ok(true)
 }
 
 pub(crate) fn dispatch(op: ActiveOp) -> Result<()> {
@@ -349,7 +346,7 @@ pub(crate) fn dispatch(op: ActiveOp) -> Result<()> {
 
 fn list(integrity: ReadIntegrityArgs) -> Result<()> {
     let file = active_flow_path()?;
-    maybe_warn_legacy(&file)?;
+    let legacy_pointer = maybe_warn_legacy(&file)?;
     let opts = read_integrity_opts(&integrity);
     let doc = read_doc_or_default(&file, opts)?;
     // Project through the canonical typed schema so the JSON
@@ -359,6 +356,9 @@ fn list(integrity: ReadIntegrityArgs) -> Result<()> {
     let envelope = json!({
         "schema_version": parsed.schema_version,
         "active": entries,
+        // The cutover advisory is terminal-only, so this is where a caller
+        // reading a pipe learns the legacy pointer is being ignored.
+        "legacy_pointer": legacy_pointer,
     });
     print_json_compact(&envelope)
 }

@@ -447,10 +447,12 @@ fn concurrent_add_invocations_serialise_no_entry_loss() {
 // ---------------------------------------------------------------------------
 
 /// When ONLY the legacy `.claude/active-flow` (no `.toml` suffix) exists,
-/// `list` returns the empty default AND emits the documented one-line
-/// stderr warning. The legacy file is NEVER auto-migrated or deleted.
+/// `list` returns the empty default AND flags the ignored pointer. The
+/// cutover advisory itself is terminal-only — a captured stderr carries the
+/// error envelope and nothing else — so the envelope is what a piped caller
+/// reads. The legacy file is NEVER auto-migrated or deleted.
 #[test]
-fn legacy_active_flow_file_emits_warning_and_returns_empty() {
+fn legacy_active_flow_file_is_flagged_in_the_envelope_and_returns_empty() {
     let dir = tempfile::tempdir().unwrap();
     let claude = dir.path().join(".claude");
     fs::create_dir_all(&claude).unwrap();
@@ -472,14 +474,11 @@ fn legacy_active_flow_file_emits_warning_and_returns_empty() {
     let v: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
     assert_eq!(v["active"], serde_json::json!([]), "list must be empty");
 
-    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
-    assert!(
-        stderr.contains("legacy `.claude/active-flow` ignored"),
-        "stderr must carry the documented legacy warning, got: {stderr:?}"
-    );
-    assert!(
-        stderr.contains("CLAUDE.md"),
-        "stderr must reference the cutover instructions, got: {stderr:?}"
+    assert_eq!(v["legacy_pointer"], serde_json::json!(true), "{v}");
+    assert_eq!(
+        String::from_utf8_lossy(&out.get_output().stderr),
+        "",
+        "the cutover advisory must not reach a captured stderr"
     );
 
     // Legacy file must still exist on disk — no auto-migration.
@@ -489,12 +488,13 @@ fn legacy_active_flow_file_emits_warning_and_returns_empty() {
     );
 }
 
-/// When the new registry IS present, the legacy warning is silent even
+/// When the new registry IS present, the legacy pointer is not flagged even
 /// if the legacy file lingers — this is the "after cutover" steady state.
-/// Pins the negative case so a future regression that fires the warning
-/// unconditionally would surface.
+/// Pins the negative case so a future regression that flags it
+/// unconditionally would surface. Asserted on the envelope rather than on
+/// stderr, which a captured run leaves empty either way.
 #[test]
-fn legacy_warning_silent_when_new_registry_exists() {
+fn legacy_pointer_unflagged_when_new_registry_exists() {
     let dir = tempfile::tempdir().unwrap();
     let claude = dir.path().join(".claude");
     fs::create_dir_all(&claude).unwrap();
@@ -524,9 +524,7 @@ fn legacy_warning_silent_when_new_registry_exists() {
         .write_stdin("")
         .assert()
         .success();
-    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
-    assert!(
-        !stderr.contains("legacy"),
-        "warning must be silent once new registry exists, got stderr: {stderr:?}"
-    );
+    let v: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&out.get_output().stdout).trim()).unwrap();
+    assert_eq!(v["legacy_pointer"], serde_json::json!(false), "{v}");
 }

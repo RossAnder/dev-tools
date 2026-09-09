@@ -10,15 +10,19 @@
 //! back off the title, so a `--set title=` deriving a different ref would make
 //! the next import mint a second row for the same task: it is refused unless
 //! `--ref` moves the key in the same command.
+//!
+//! `--unlock-import-fields` opens `files` and `needs` and records the value
+//! the plan stated as the patch's base. The import keeps the hand-patched
+//! value only while the plan still states that base.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use anyhow::Result;
 
 use super::add::reject_undeclared_checkpoint;
 use super::graph::{Graph, Node};
-use super::schema::{Effort, Status, Store, TaskRow};
+use super::schema::{Effort, ImportOverride, Status, Store, TaskRow};
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
@@ -39,8 +43,17 @@ const SETTABLE: [&str; 11] = [
 ];
 
 /// Fields `tasks import-plan` rewrites from the plan on every run, so a value
-/// set here would not survive the next import.
+/// set here does not survive the next import unless the row is stamped.
 const IMPORTED: [&str; 2] = ["files", "needs"];
+
+/// Fields taking a comma-separated list rather than a scalar. They leave the
+/// row-local assignment path: two are edges the whole store validates, and
+/// all three are compared against the row's value before anything moves.
+const LISTS: [&str; 3] = ["coupling", "files", "needs"];
+
+/// `changed[]` entry for a move of the row's import-override stamp. The
+/// values it guards are reported under their own names.
+const OVERRIDE: &str = "import_override";
 
 pub(crate) struct UpdateFields {
     pub(crate) status: Option<String>,
@@ -48,6 +61,12 @@ pub(crate) struct UpdateFields {
     pub(crate) commit: Option<String>,
     pub(crate) checkpoint: Option<String>,
     pub(crate) task_ref: Option<String>,
+    /// Permit `--set files=` / `--set needs=`, stamping the row with the plan
+    /// values the patch replaces.
+    pub(crate) unlock: bool,
+    /// Drop the stamp, handing both fields back to the plan: the next import
+    /// restores whatever the plan states.
+    pub(crate) relock: bool,
     pub(crate) set: Vec<String>,
 }
 
@@ -67,6 +86,8 @@ fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'stat
         commit,
         checkpoint,
         task_ref,
+        unlock,
+        relock,
         set,
     } = fields;
 
@@ -104,7 +125,7 @@ fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'stat
                 format!("--set expects `KEY=VALUE`, got `{pair}`"),
             )
         })?;
-        let field = settable(key)?;
+        let field = settable(key, *unlock)?;
         if flagged.contains(field) {
             return Err(tagged_err(
                 ErrorKind::Validation,
@@ -115,14 +136,15 @@ fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'stat
         assignments.push((field, value));
     }
 
-    // `coupling` is the one settable field validated against the whole store
-    // rather than the row alone, so it leaves the row-local assignment list.
-    let coupling = assignments
-        .iter()
-        .rev()
-        .find(|(field, _)| *field == "coupling")
-        .map(|(_, value)| *value);
-    assignments.retain(|(field, _)| *field != "coupling");
+    // Last assignment wins, matching the scalar path, where a repeated
+    // `--set` simply overwrites what the earlier one wrote.
+    let mut lists: BTreeMap<&'static str, &str> = BTreeMap::new();
+    for (field, value) in &assignments {
+        if LISTS.contains(field) {
+            lists.insert(field, value);
+        }
+    }
+    assignments.retain(|(field, _)| !LISTS.contains(field));
 
     for (field, value) in &assignments {
         if *field == "checkpoint" {
@@ -152,18 +174,62 @@ fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'stat
             ));
         }
         if store.items[index].r#ref != *new_ref {
+            let previous = store.items[index].r#ref.clone();
+            // The stamp is keyed on `ref` like `last_import_refs`, so it
+            // follows the row rather than being stranded under the old key.
+            if let Some(entry) = store
+                .import_overrides
+                .iter_mut()
+                .find(|entry| entry.r#ref == previous)
+            {
+                entry.r#ref.clone_from(new_ref);
+            }
             store.items[index].r#ref.clone_from(new_ref);
             changed.insert("ref");
         }
     }
 
-    if let Some(value) = coupling {
-        let parsed = parse_ids(value)?;
-        if store.items[index].coupling != parsed {
-            reject_broken_graph(store, index, &parsed)?;
-            store.items[index].coupling = parsed;
-            changed.insert("coupling");
-        }
+    let coupling = lists
+        .get("coupling")
+        .map(|value| parse_ids(value))
+        .transpose()?;
+    let needs = lists
+        .get("needs")
+        .map(|value| parse_ids(value))
+        .transpose()?;
+    let files = lists.get("files").map(|value| parse_paths(value));
+
+    let row = &store.items[index];
+    let coupling = coupling.filter(|parsed| *parsed != row.coupling);
+    let needs = needs.filter(|parsed| *parsed != row.needs);
+    let files = files.filter(|parsed| *parsed != row.files);
+    if coupling.is_some() || needs.is_some() {
+        reject_broken_graph(store, index, coupling.as_deref(), needs.as_deref())?;
+    }
+
+    // The plan's own values, which is what the stamp records: the row still
+    // holds them until the assignments below land.
+    let base_files = store.items[index].files.clone();
+    let base_needs = store.items[index].needs.clone();
+
+    if let Some(parsed) = coupling {
+        store.items[index].coupling = parsed;
+        changed.insert("coupling");
+    }
+    if let Some(parsed) = needs {
+        store.items[index].needs = parsed;
+        changed.insert("needs");
+    }
+    if let Some(parsed) = files {
+        store.items[index].files = parsed;
+        changed.insert("files");
+    }
+
+    if *unlock && stamp(store, index, &changed, base_files, base_needs) {
+        changed.insert(OVERRIDE);
+    }
+    if *relock && drop_stamp(store, index) {
+        changed.insert(OVERRIDE);
     }
 
     let previous_derived = assignments
@@ -188,8 +254,11 @@ fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'stat
     Ok(changed.into_iter().collect())
 }
 
-fn settable(key: &str) -> Result<&'static str> {
-    if let Some(field) = SETTABLE.iter().copied().find(|field| *field == key) {
+fn settable(key: &str, unlock: bool) -> Result<&'static str> {
+    let open = SETTABLE
+        .iter()
+        .chain(unlock.then_some(IMPORTED.iter()).into_iter().flatten());
+    if let Some(field) = open.copied().find(|field| *field == key) {
         return Ok(field);
     }
     let hint = match key {
@@ -197,15 +266,88 @@ fn settable(key: &str) -> Result<&'static str> {
             "`ref` is immutable here — pass `--ref <SLUG>` to rewrite it deliberately".to_string()
         }
         "id" => "`id` is minted by the store and cannot be reassigned".to_string(),
-        key if IMPORTED.contains(&key) => {
-            format!("`{key}` is owned by `tasks import-plan`, not `--set`")
-        }
+        key if IMPORTED.contains(&key) => format!(
+            "`{key}` is owned by `tasks import-plan` — pass `--unlock-import-fields` to patch \
+             it by hand and stamp the row against the plan value it replaces"
+        ),
         key => format!(
             "unknown field `{key}` — settable fields are {}",
             SETTABLE.join(", ")
         ),
     };
     Err(tagged_err(ErrorKind::Validation, None, hint))
+}
+
+/// Comma-separated repo-relative paths, matching `tasks add --files`. An
+/// empty value clears the list.
+fn parse_paths(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Records the plan values the patch replaced. An existing base is kept —
+/// overwriting it with a first patch's value would leave the import
+/// comparing the plan against something it never stated — and a field
+/// patched back to its base leaves the stamp.
+fn stamp(
+    store: &mut Store,
+    index: usize,
+    changed: &BTreeSet<&'static str>,
+    base_files: Vec<String>,
+    base_needs: Vec<u32>,
+) -> bool {
+    if !changed.contains("files") && !changed.contains("needs") {
+        return false;
+    }
+    let row = store.items[index].clone();
+    let position = store
+        .import_overrides
+        .iter()
+        .position(|entry| entry.r#ref == row.r#ref);
+    let mut entry = match position {
+        Some(position) => store.import_overrides[position].clone(),
+        None => ImportOverride::new(&row.r#ref),
+    };
+    let before = entry.clone();
+
+    if changed.contains("files") && entry.files.is_none() {
+        entry.files = Some(base_files);
+    }
+    if changed.contains("needs") && entry.needs.is_none() {
+        entry.needs = Some(base_needs);
+    }
+    if entry.files.as_ref() == Some(&row.files) {
+        entry.files = None;
+    }
+    if entry.needs.as_ref() == Some(&row.needs) {
+        entry.needs = None;
+    }
+
+    if entry == before {
+        return false;
+    }
+    match (position, entry.is_empty()) {
+        (Some(position), true) => {
+            store.import_overrides.remove(position);
+        }
+        (Some(position), false) => store.import_overrides[position] = entry,
+        (None, true) => return false,
+        (None, false) => store.import_overrides.push(entry),
+    }
+    true
+}
+
+/// Hands `files` and `needs` back to the plan. The values stay as they are
+/// until the next import restores whatever the plan states.
+fn drop_stamp(store: &mut Store, index: usize) -> bool {
+    let r#ref = store.items[index].r#ref.clone();
+    let before = store.import_overrides.len();
+    store.import_overrides.retain(|entry| entry.r#ref != r#ref);
+    store.import_overrides.len() != before
 }
 
 /// An empty value clears the edge set; anything else is the comma-separated id
@@ -232,7 +374,12 @@ fn parse_ids(value: &str) -> Result<Vec<u32>> {
 /// Validates the store as it would be, so an edge naming an absent task or
 /// closing a cycle is refused before the row moves — the guard `tasks add`
 /// runs over its own edges.
-fn reject_broken_graph(store: &Store, index: usize, coupling: &[u32]) -> Result<()> {
+fn reject_broken_graph(
+    store: &Store,
+    index: usize,
+    coupling: Option<&[u32]>,
+    needs: Option<&[u32]>,
+) -> Result<()> {
     let nodes: Vec<Node> = store
         .items
         .iter()
@@ -240,7 +387,12 @@ fn reject_broken_graph(store: &Store, index: usize, coupling: &[u32]) -> Result<
         .map(|(position, row)| {
             let mut node = Node::from(row);
             if position == index {
-                node.coupling = coupling.to_vec();
+                if let Some(coupling) = coupling {
+                    node.coupling = coupling.to_vec();
+                }
+                if let Some(needs) = needs {
+                    node.needs = needs.to_vec();
+                }
             }
             node
         })
@@ -366,29 +518,49 @@ mod tests {
             commit: None,
             checkpoint: None,
             task_ref: None,
+            unlock: false,
+            relock: false,
             set: Vec::new(),
         }
     }
 
+    fn unlocked(set: &[&str]) -> UpdateFields {
+        UpdateFields {
+            unlock: true,
+            set: set.iter().map(|pair| (*pair).to_string()).collect(),
+            ..fields()
+        }
+    }
+
     fn seeded(root: &Path) -> PathBuf {
+        seeded_with(root, &[])
+    }
+
+    fn seeded_with(root: &Path, files: &[&str]) -> PathBuf {
         let path = root
             .join(".claude")
             .join("flows")
             .join("whimsical-hugging-puppy")
             .join("tasks.toml");
-        add_row(&path, "Seed the store");
+        add_row_with(&path, "Seed the store", files, &[]);
         path
     }
 
     fn add_row(path: &Path, title: &str) -> u32 {
+        add_row_with(path, title, &[], &[])
+    }
+
+    /// A row carrying the values an import would have written, which is what
+    /// the unlock stamp records as its base.
+    fn add_row_with(path: &Path, title: &str, files: &[&str], needs: &[u32]) -> u32 {
         add::add(
             path,
             &write_args(),
             NewTask {
                 title: title.to_string(),
                 effort: "S".to_string(),
-                files: Vec::new(),
-                needs: Vec::new(),
+                files: files.iter().map(|file| (*file).to_string()).collect(),
+                needs: needs.to_vec(),
                 coupling: Vec::new(),
                 deps_note: String::new(),
                 checkpoint: String::new(),
@@ -746,6 +918,170 @@ mod tests {
             .expect_err("99 does not exist")
             .to_string();
             assert!(message.contains("99"), "{message}");
+        });
+    }
+
+    /// The refusal is the default, and it has to name the way out: a
+    /// plan-review merge that cannot find one goes back to editing the
+    /// markdown by hand.
+    #[test]
+    fn an_import_owned_field_is_refused_and_names_the_unlock() {
+        with_root(|root| {
+            let path = seeded(root);
+            for pair in ["files=src/a.rs", "needs=1"] {
+                let message = update(
+                    &path,
+                    &write_args(),
+                    1,
+                    UpdateFields {
+                        set: vec![pair.to_string()],
+                        ..fields()
+                    },
+                )
+                .expect_err("import-owned without the flag")
+                .to_string();
+                assert!(message.contains("--unlock-import-fields"), "{message}");
+            }
+            assert!(reload(&path).items[0].files.is_empty());
+        });
+    }
+
+    #[test]
+    fn an_unlocked_patch_stamps_the_row_with_the_value_it_replaced() {
+        with_root(|root| {
+            let path = seeded(root);
+            add_row_with(&path, "Wire the renderer", &["src/b.rs"], &[1]);
+
+            let changed = update(
+                &path,
+                &write_args(),
+                2,
+                unlocked(&["files=src/b.rs,src/c.rs"]),
+            )
+            .expect("the patch lands");
+            assert_eq!(changed, vec!["files", "import_override"]);
+
+            let store = reload(&path);
+            assert_eq!(store.items[1].files, vec!["src/b.rs", "src/c.rs"]);
+            let stamp = store
+                .find_override("wire-the-renderer")
+                .expect("the row is stamped");
+            assert_eq!(stamp.files.as_deref(), Some(&["src/b.rs".to_string()][..]));
+            assert_eq!(stamp.needs, None, "only the patched field is stamped");
+        });
+    }
+
+    /// The base is the plan's value, so a second hand patch must not move it
+    /// to the first patch's — the import would then compare the plan against
+    /// a value it never held and hold the override open for good.
+    #[test]
+    fn a_second_patch_keeps_the_first_base_and_a_patch_back_to_it_clears_the_stamp() {
+        with_root(|root| {
+            let path = seeded_with(root, &["src/a.rs"]);
+            update(
+                &path,
+                &write_args(),
+                1,
+                unlocked(&["files=src/a.rs,src/b.rs"]),
+            )
+            .expect("first patch");
+            update(
+                &path,
+                &write_args(),
+                1,
+                unlocked(&["files=src/a.rs,src/b.rs,src/c.rs"]),
+            )
+            .expect("second patch");
+            assert_eq!(
+                reload(&path)
+                    .find_override("seed-the-store")
+                    .and_then(|stamp| stamp.files.clone()),
+                Some(vec!["src/a.rs".to_string()])
+            );
+
+            let changed =
+                update(&path, &write_args(), 1, unlocked(&["files=src/a.rs"])).expect("reverted");
+            assert!(changed.contains(&"import_override"), "{changed:?}");
+            assert_eq!(reload(&path).import_overrides, vec![]);
+        });
+    }
+
+    #[test]
+    fn relocking_drops_the_stamp_and_leaves_the_values_alone() {
+        with_root(|root| {
+            let path = seeded_with(root, &["src/a.rs"]);
+            update(&path, &write_args(), 1, unlocked(&["files=src/z.rs"])).expect("the patch");
+
+            let changed = update(
+                &path,
+                &write_args(),
+                1,
+                UpdateFields {
+                    relock: true,
+                    ..fields()
+                },
+            )
+            .expect("the stamp drops");
+            assert_eq!(changed, vec!["import_override"]);
+
+            let store = reload(&path);
+            assert_eq!(store.import_overrides, vec![]);
+            assert_eq!(
+                store.items[0].files,
+                vec!["src/z.rs"],
+                "relocking hands the field back to the plan, it does not restore a value"
+            );
+        });
+    }
+
+    /// `needs` is an edge like `coupling`, so an unlocked patch is held to the
+    /// same whole-store validation rather than the row alone.
+    #[test]
+    fn an_unlocked_needs_patch_is_validated_against_the_graph() {
+        with_root(|root| {
+            let path = seeded(root);
+            add_row(&path, "Wire the renderer");
+            let message = update(&path, &write_args(), 2, unlocked(&["needs=99"]))
+                .expect_err("99 is not a task")
+                .to_string();
+            assert!(message.contains("99"), "{message}");
+
+            update(&path, &write_args(), 2, unlocked(&["needs=1"])).expect("1 exists");
+            let message = update(&path, &write_args(), 1, unlocked(&["needs=2"]))
+                .expect_err("1 → 2 → 1 is a cycle")
+                .to_string();
+            assert!(message.contains("cycle"), "{message}");
+            assert!(reload(&path).items[0].needs.is_empty());
+        });
+    }
+
+    /// The stamp is keyed on `ref`, so a rename has to carry it: an entry
+    /// left under the old key pins nothing and the row loses its patch at the
+    /// next import.
+    #[test]
+    fn renaming_the_ref_carries_the_stamp_with_the_row() {
+        with_root(|root| {
+            let path = seeded_with(root, &["src/a.rs"]);
+            update(&path, &write_args(), 1, unlocked(&["files=src/z.rs"])).expect("the patch");
+            update(
+                &path,
+                &write_args(),
+                1,
+                UpdateFields {
+                    task_ref: Some("reseed-the-store".to_string()),
+                    ..fields()
+                },
+            )
+            .expect("the rename lands");
+
+            let store = reload(&path);
+            assert!(store.find_override("seed-the-store").is_none());
+            assert_eq!(
+                store
+                    .find_override("reseed-the-store")
+                    .and_then(|stamp| stamp.files.clone()),
+                Some(vec!["src/a.rs".to_string()])
+            );
         });
     }
 }

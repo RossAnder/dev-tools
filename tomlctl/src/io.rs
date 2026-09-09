@@ -47,6 +47,38 @@ pub(crate) const DEFAULT_LOCK_TIMEOUT: std::time::Duration = std::time::Duration
 /// than this.
 pub(crate) const MAX_LOCK_TIMEOUT_SECS: u64 = 24 * 60 * 60;
 
+/// Emit a one-line advisory on stderr, and only when a human is watching it.
+///
+/// Under `--error-format json` stderr carries the error envelope and nothing
+/// else, so a prose line ahead of it breaks the parse. Every other capture of
+/// stderr — an NDJSON stream, a test harness, a logged agent run — has a
+/// parser or a diff on the far end that the same line breaks. A terminal is
+/// the one reader that wants it, so every advisory in the crate goes through
+/// here rather than calling `eprintln!` directly.
+macro_rules! advise {
+    ($($arg:tt)*) => {
+        $crate::io::advise_fmt(format_args!($($arg)*))
+    };
+}
+pub(crate) use advise;
+
+/// Backing call for `advise!`. Takes `Arguments` so a suppressed advisory
+/// never formats its message.
+pub(crate) fn advise_fmt(args: std::fmt::Arguments<'_>) {
+    if !advisories_visible() {
+        return;
+    }
+    let mut stderr = std::io::stderr().lock();
+    let _ = writeln!(stderr, "{args}");
+}
+
+/// Cached so every advisory in one invocation agrees on the answer, and a run
+/// emitting many pays one `isatty`.
+fn advisories_visible() -> bool {
+    static VISIBLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *VISIBLE.get_or_init(|| std::io::stderr().is_terminal())
+}
+
 /// Resolve the effective lock timeout from `TOMLCTL_LOCK_TIMEOUT`, clamped to
 /// `MAX_LOCK_TIMEOUT_SECS`. Shared by `with_exclusive_lock` and
 /// `with_shared_lock` so the clamp policy lives in exactly one place.
@@ -56,9 +88,10 @@ fn resolve_lock_timeout() -> std::time::Duration {
         .and_then(|s| s.parse::<u64>().ok())
         .map(|requested| {
             if requested > MAX_LOCK_TIMEOUT_SECS {
-                eprintln!(
+                advise!(
                     "tomlctl: TOMLCTL_LOCK_TIMEOUT clamped from {} to {} (24h max)",
-                    requested, MAX_LOCK_TIMEOUT_SECS
+                    requested,
+                    MAX_LOCK_TIMEOUT_SECS
                 );
                 MAX_LOCK_TIMEOUT_SECS
             } else {
@@ -653,9 +686,9 @@ pub(crate) fn dry_run_read_opts(verify_on_read: bool) -> IntegrityOpts {
 /// One-line stderr guidance emitted when a write newly created its target
 /// file. A no-op when `created == false`, so every write site can call it
 /// unconditionally with the `created` bool its `mutate_doc*` wrapper
-/// returned. Uses the advisory-warn channel — a plain `eprintln!` on the
-/// writer's stderr, exactly as `guard_write_path`'s `--allow-outside` note
-/// and `warn_if_read_outside_claude` do. A recognised flow file
+/// returned. Goes through `advise!`, so a caller parsing stderr never sees
+/// it; the write envelope on stdout carries the same fact as `created`. A
+/// recognised flow file
 /// (`SCHEMA_SEEDED_FLOW_FILES`, seeded with `schema_version = 1`) appends a
 /// `(schema_version=1)` suffix so a human watching the terminal can tell a
 /// schema-seeded ledger from an arbitrary `.toml` (seeded as an empty table,
@@ -669,12 +702,12 @@ pub(crate) fn warn_if_created(file: &Path, created: bool) {
         .and_then(|n| n.to_str())
         .is_some_and(|b| SCHEMA_SEEDED_FLOW_FILES.contains(&b));
     if recognised {
-        eprintln!(
+        advise!(
             "tomlctl: created new file {} (schema_version=1)",
             file.display()
         );
     } else {
-        eprintln!("tomlctl: created new file {}", file.display());
+        advise!("tomlctl: created new file {}", file.display());
     }
 }
 
@@ -1080,7 +1113,7 @@ pub(crate) fn with_exclusive_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>)
             Ok(()) => break,
             Err(std::fs::TryLockError::WouldBlock) => {
                 if !announced {
-                    eprintln!(
+                    advise!(
                         "tomlctl: waiting for exclusive lock on {} …",
                         lock_path.display()
                     );
@@ -1175,7 +1208,7 @@ pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) ->
             Ok(()) => break,
             Err(std::fs::TryLockError::WouldBlock) => {
                 if !announced {
-                    eprintln!(
+                    advise!(
                         "tomlctl: waiting for shared lock on {} …",
                         lock_path.display()
                     );
@@ -1257,7 +1290,7 @@ pub(crate) fn guard_write_path(file: &Path, allow_outside: bool) -> Result<()> {
     }
 
     if allow_outside {
-        eprintln!(
+        advise!(
             "tomlctl: warning: writing outside .claude/ (path resolves to {}) — proceeding because --allow-outside was set",
             canonical.display()
         );
@@ -1519,13 +1552,76 @@ pub(crate) fn read_dir_sorted(dir: &Path) -> Result<Vec<fs::DirEntry>> {
     Ok(entries)
 }
 
-/// Render `path` relative to `root` using forward slashes. Falls
-/// back to the path's lossy display form when it doesn't share `root`'s
-/// prefix. Argument order is `(root, path)` — the reverse reads the same at
-/// a call site and silently returns the lossy fallback.
+/// Render `path` relative to `root` using forward slashes, falling back to
+/// the absolute form when `path` is provably outside `root` — the fallback
+/// `find_plans` and `backlog add --allow-outside` want in a display field.
+///
+/// A caller for whom the fallback is a wrong answer rather than a wide one
+/// calls `relativise_under` and branches on the `None`.
+///
+/// Argument order is `(root, path)` — the reverse reads the same at a call
+/// site and returns the fallback.
 pub(crate) fn relativise(root: &Path, path: &Path) -> String {
-    let rel = path.strip_prefix(root).unwrap_or(path);
-    rel.to_string_lossy().replace('\\', "/")
+    relativise_under(root, path).unwrap_or_else(|| {
+        advise!(
+            "tomlctl: warning: {} does not resolve under {} — emitting it absolute",
+            path.display(),
+            root.display()
+        );
+        slashed_display(path)
+    })
+}
+
+/// `path` as a `/`-separated path under `root`, or `None` when it is
+/// provably outside.
+///
+/// An absolute `path` that does not strip lexically is retried against both
+/// sides' canonical forms: `root` reaches most call sites canonicalised —
+/// `\\?\C:\…` on Windows — while a caller's absolute path is spelled the way
+/// the caller typed it, so a purely lexical strip fails for a path that is in
+/// fact inside the repo.
+///
+/// A relative `path` is returned as-is: it is already relative to the
+/// caller's root, and canonicalising it against the process CWD would answer
+/// a different question.
+pub(crate) fn relativise_under(root: &Path, path: &Path) -> Option<String> {
+    if let Ok(rel) = path.strip_prefix(root) {
+        return Some(slashed_display(rel));
+    }
+    if path.is_relative() {
+        return Some(slashed_display(path));
+    }
+    canonical_strip(root, path)
+}
+
+fn slashed_display(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+/// `strip_prefix` over both sides' canonical forms. `None` when either side
+/// cannot be canonicalised at all, or when `path` really does lie outside
+/// `root`.
+fn canonical_strip(root: &Path, path: &Path) -> Option<String> {
+    let root = canonical_anchored(root)?;
+    let path = canonical_anchored(path)?;
+    path.strip_prefix(&root).ok().map(slashed_display)
+}
+
+/// Canonical form of `path`, anchored on its nearest EXISTING ancestor with
+/// the trailing components rejoined — canonicalising a missing leaf errors,
+/// and callers relativise paths they are about to create.
+fn canonical_anchored(path: &Path) -> Option<PathBuf> {
+    let mut trailing: Vec<std::ffi::OsString> = Vec::new();
+    let mut anchor = path;
+    loop {
+        if let Ok(canonical) = anchor.canonicalize() {
+            let mut resolved = canonical;
+            resolved.extend(trailing.iter().rev());
+            return Some(resolved);
+        }
+        trailing.push(anchor.file_name()?.to_os_string());
+        anchor = anchor.parent().filter(|p| !p.as_os_str().is_empty())?;
+    }
 }
 
 /// Stderr-warn when a read path resolves outside `<repo-or-cwd-root>/.claude/`.
@@ -1549,7 +1645,7 @@ pub(crate) fn warn_if_read_outside_claude(file: &Path) {
     if canonical.starts_with(&claude_canonical) {
         return;
     }
-    eprintln!(
+    advise!(
         "tomlctl: warning: reading outside .claude/ (path resolves to {})",
         canonical.display()
     );
@@ -1609,7 +1705,9 @@ pub(crate) fn write_sidecar_for(file: &Path, bytes: &[u8]) -> Result<()> {
 /// the current on-disk bytes and clears the inconsistency.
 ///
 /// Failure to persist the TOML (the SECOND persist) is reported as
-/// a stderr warning but does not fail the outer write under `!strict` —
+/// a terminal-only advisory but does not fail the outer write under
+/// `!strict`; `--strict-integrity` is the route for a caller that must see
+/// it on a pipe —
 /// a single retry recomputes the sidecar against the current
 /// on-disk TOML before warning, so a transient EIO doesn't leave the sidecar
 /// pointing at bytes the TOML never received. Set `--strict-integrity` to
@@ -1657,14 +1755,14 @@ pub(crate) fn write_toml_with_sidecar(
             write_sidecar_for(path, &on_disk)
         })();
         if let Err(re) = recovery {
-            eprintln!(
+            advise!(
                 "tomlctl: warning: failed to persist {}: {:#}; sidecar recovery also failed: {:#} (on-disk pair may now be inconsistent — verify-integrity will fail until the next successful write)",
                 path.display(),
                 e,
                 re
             );
         } else {
-            eprintln!(
+            advise!(
                 "tomlctl: warning: failed to persist {}: {:#}; sidecar rewritten against current on-disk bytes to restore consistency",
                 path.display(),
                 e
@@ -2612,5 +2710,80 @@ arr = [1, 2]
             assert!(is_transient_rename_error(&Error::from_raw_os_error(33)));
             assert!(!is_transient_rename_error(&Error::from_raw_os_error(2)));
         }
+    }
+
+    /// The spellings that already stripped lexically, pinned so the canonical
+    /// retry stays a fallback rather than a new answer for them.
+    #[test]
+    fn relativise_keeps_the_lexical_answer() {
+        let root = Path::new("/repo/root");
+        assert_eq!(relativise(root, &root.join("a").join("b.toml")), "a/b.toml");
+        assert_eq!(relativise(root, root), "");
+        assert_eq!(
+            relativise(root, Path::new("docs/plans/p.md")),
+            "docs/plans/p.md"
+        );
+    }
+
+    /// The trap: `root` arrives canonicalised (a `\\?\` verbatim path on
+    /// Windows) and the caller's absolute path is spelled as the caller has
+    /// it, so a lexical strip alone misses and hands back the absolute form.
+    /// The leaf is deliberately absent in the second case — callers
+    /// relativise paths they are about to create.
+    #[test]
+    fn a_non_canonical_absolute_path_relativises() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let dir = tmp.path().join("docs");
+        fs::create_dir_all(&dir).unwrap();
+        let present = dir.join("plan.md");
+        fs::write(&present, "# plan\n").unwrap();
+
+        assert_eq!(relativise(&root, &present), "docs/plan.md");
+        assert_eq!(relativise(&root, &dir.join("absent.md")), "docs/absent.md");
+    }
+
+    /// A path that really is outside keeps the documented fallback — the
+    /// canonical retry must not manufacture a relative answer for it.
+    #[test]
+    fn a_path_outside_the_root_keeps_its_absolute_form() {
+        let inside = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let root = inside.path().canonicalize().unwrap();
+        let target = outside.path().canonicalize().unwrap().join("secret.toml");
+
+        assert_eq!(relativise(&root, &target), slashed_display(&target));
+    }
+
+    /// The branch `relativise` folds into a string. Every answer the two
+    /// share must be the same answer, and the one they do not share is the
+    /// absolute fallback — which is what a caller reaches for this to refuse.
+    #[test]
+    fn relativise_under_reports_the_containment_relativise_hides() {
+        let inside = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let root = inside.path().canonicalize().unwrap();
+        let dir = inside.path().join("docs");
+        fs::create_dir_all(&dir).unwrap();
+
+        for path in [
+            dir.join("absent.md"),
+            root.join("a").join("b.toml"),
+            root.clone(),
+        ] {
+            assert_eq!(
+                relativise_under(&root, &path).as_deref(),
+                Some(relativise(&root, &path).as_str()),
+                "{}",
+                path.display()
+            );
+        }
+        assert_eq!(
+            relativise_under(&root, Path::new("docs/plans/p.md")).as_deref(),
+            Some("docs/plans/p.md")
+        );
+
+        let target = outside.path().canonicalize().unwrap().join("secret.toml");
+        assert_eq!(relativise_under(&root, &target), None);
     }
 }

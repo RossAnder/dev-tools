@@ -811,6 +811,155 @@ fn a_crlf_plan_imports_byte_identically() {
     assert_matches_golden(&crlf_root);
 }
 
+/// The leg neither byte-golden can carry: plan → store → plan, judged on the
+/// PLAN's own bytes. A `Files` annotation the store cannot hold is dropped by
+/// the import AND by the render, so both goldens stay internally consistent —
+/// import(plan) is stable, render(store) is stable, and each round trip closes
+/// over a document the author's annotation has already left. Only a comparison
+/// against the source plan sees it go.
+///
+/// The entries are compared rather than the bytes: the render legitimately
+/// re-flows a wrapped `Files` line onto one line.
+#[test]
+fn a_files_annotation_survives_the_plan_to_plan_round_trip() {
+    let (_dir, root) = stage(FIXTURE_PLAN);
+    import(&root, &["--slug", SLUG]);
+
+    let rendered = cli(&root)
+        .args(["tasks", "render", "--slug", SLUG, "--stdout"])
+        .write_stdin("")
+        .assert()
+        .success();
+    let rendered = String::from_utf8_lossy(&rendered.get_output().stdout).to_string();
+
+    let source = files_entries(FIXTURE_PLAN);
+    assert!(
+        source.iter().any(|entry| entry.contains("(new)")),
+        "the fixture plan carries no annotated `Files` entry, so this asserts nothing: {source:?}"
+    );
+    assert_eq!(source, files_entries(&rendered));
+}
+
+/// Every `Files` entry of every task, as `` `path` `` plus whatever trailed
+/// it, with wrapped lines folded first.
+fn files_entries(plan: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut open: Option<String> = None;
+    for line in plan.lines() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        match line.strip_prefix("- **Files**:") {
+            Some(rest) => {
+                out.extend(open.take());
+                open = Some(rest.trim().to_string());
+            }
+            None => match line.strip_prefix("  ").filter(|_| open.is_some()) {
+                Some(more) => {
+                    let open = open.as_mut().expect("the filter proved it open");
+                    open.push(' ');
+                    open.push_str(more.trim());
+                }
+                None => out.extend(open.take()),
+            },
+        }
+    }
+    out.extend(open);
+    out.iter()
+        .flat_map(|line| line.split(", ").map(str::to_string))
+        .collect()
+}
+
+/// A plan documenting the task grammar quotes it, and a quoted field line is
+/// not one. The example is spliced at the end of the `## Tasks` section, so
+/// every line it carries would land on task 10 and on the store's duplicate-id
+/// check — the golden compare is what says none of it did.
+const FENCED_EXAMPLE: &str = "```md
+### 9. A task no plan declares [L]
+- **Files**: `src/nowhere.rs`
+- **Depends on**: 4
+- **Action**: Nothing at all.
+- **Acceptance**: Nothing at all.
+```
+
+";
+
+/// Offset of the `## Dependency Graph` heading, which is where the Tasks
+/// section ends.
+fn end_of_tasks(plan: &str) -> usize {
+    plan.find("## Dependency Graph")
+        .expect("the fixture carries a graph section")
+}
+
+/// 1-based line of the spliced fence opener, which is what the refusal names.
+fn fence_line(plan: &str) -> usize {
+    plan.lines()
+        .position(|line| line == "```md")
+        .expect("the spliced example opens a fence")
+        + 1
+}
+
+#[test]
+fn a_fenced_example_inside_the_tasks_section_changes_nothing() {
+    let at = end_of_tasks(FIXTURE_PLAN);
+    let quoted = format!(
+        "{}{FENCED_EXAMPLE}{}",
+        &FIXTURE_PLAN[..at],
+        &FIXTURE_PLAN[at..]
+    );
+    let (_dir, root) = stage(&quoted);
+
+    let preview = import(&root, &["--slug", SLUG, "--dry-run"]);
+    assert!(finding_classes(&preview).is_empty(), "{preview}");
+    import(&root, &["--slug", SLUG]);
+    assert_matches_golden(&root);
+}
+
+/// An unclosed fence feeds `## Dependency Graph` and everything after it into
+/// the Tasks section, which parses as a plan that simply has fewer tasks. The
+/// refusal is what stops that from landing in a store.
+#[test]
+fn an_unclosed_fence_inside_the_tasks_section_is_refused() {
+    let (_dir, root) = stage(FIXTURE_PLAN);
+    import(&root, &["--slug", SLUG]);
+    let before = fs::read(store_path(&root)).expect("the store is on disk");
+
+    let at = end_of_tasks(FIXTURE_PLAN);
+    let unclosed = format!(
+        "{}{}{}",
+        &FIXTURE_PLAN[..at],
+        FENCED_EXAMPLE.replacen("```\n", "", 1),
+        &FIXTURE_PLAN[at..]
+    );
+    assert_eq!(
+        unclosed.matches("```").count(),
+        1,
+        "the staged plan must carry exactly the one unclosed marker:\n{unclosed}"
+    );
+    write_plan(&root, &unclosed);
+
+    let error = import_err(&root, &["--slug", SLUG, "--dry-run"]);
+    assert_eq!(
+        error.get("kind").and_then(serde_json::Value::as_str),
+        Some("validation"),
+        "{error}"
+    );
+    let message = error
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    assert!(
+        message.contains(&format!("line {}", fence_line(&unclosed))),
+        "{message}"
+    );
+    assert!(message.contains("never closed"), "{message}");
+
+    import_err(&root, &["--slug", SLUG]);
+    assert_eq!(
+        fs::read(store_path(&root)).expect("the store is still on disk"),
+        before,
+        "a refused import must persist nothing"
+    );
+}
+
 fn sidecar_of(file: &Path) -> PathBuf {
     let mut raw = file.as_os_str().to_os_string();
     raw.push(".sha256");

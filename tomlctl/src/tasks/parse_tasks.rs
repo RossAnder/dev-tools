@@ -1,11 +1,18 @@
 //! Parser for a plan's `## Tasks` section.
 //!
 //! Input is LF-only: callers pass `Section::body_lf`. A numbered heading opens
-//! a task and every other heading is a phase label the tasks under it carry;
-//! a `#` line inside a fenced block is neither, so a fenced field value cannot
-//! end a task. A field line's value continues onto following lines indented
-//! two spaces or more, and may start on the first of them rather than after
-//! the colon.
+//! a task and every other heading is a phase label the tasks under it carry.
+//! A field line's value continues onto following lines indented two spaces or
+//! more, and may start on the first of them rather than after the colon.
+//!
+//! Inside a fenced block the line grammar is off: no heading, no field, and
+//! nothing that ends one. Ownership is settled by the opening marker alone —
+//! indented, it continues the open field and the block is that field's value
+//! verbatim; at column 0 it ends the field the way any unindented line does,
+//! and the block belongs to no task. A fence still open at the end of the
+//! section is an error rather than a short task list: `markdown::sections`
+//! feeds every later `## ` heading into this body, so what parses is a
+//! fraction of the plan.
 //!
 //! Patterns spell every class out in ASCII. The binary resolves `regex`
 //! without its unicode features, so a `\d`/`\s`/`\w` shorthand makes
@@ -35,6 +42,9 @@ pub(crate) struct ParsedTask {
     pub(crate) phase: String,
     pub(crate) phase_depth: u32,
     pub(crate) files: Vec<String>,
+    /// The text trailing each path in the `Files` line — `(new)` and the like
+    /// — one entry per `files` entry and empty where the author wrote none.
+    pub(crate) file_notes: Vec<String>,
     pub(crate) needs: Vec<u32>,
     pub(crate) deps_note: String,
     pub(crate) action: String,
@@ -59,12 +69,18 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Ve
     let mut open: Option<OpenField> = None;
     let mut pending_blank = false;
     let mut fence = FenceState::default();
+    let mut fence_line = first_line;
     let mut phase = String::new();
     let mut phase_depth = 0u32;
 
     for (index, line) in section_body.lines().enumerate() {
         let line_no = first_line + index;
+        let was_fenced = fence.is_open();
         let fenced = fence.consume(line);
+        let opening = fenced && !was_fenced;
+        if opening {
+            fence_line = line_no;
+        }
 
         if !fenced && line.starts_with('#') {
             close_field(current.as_mut(), open.take())?;
@@ -89,7 +105,8 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Ve
             continue;
         }
 
-        if let Some(caps) = field_re().captures(line)
+        if !fenced
+            && let Some(caps) = field_re().captures(line)
             && current.is_some()
         {
             close_field(current.as_mut(), open.take())?;
@@ -112,9 +129,13 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Ve
             continue;
         }
 
+        // Anything reached from inside a fence belongs to the field whose
+        // continuation opened it, so its own indentation states nothing.
+        let continuation = dedent(line).or_else(|| (fenced && !opening).then_some(line));
+
         if line.trim().is_empty() {
             pending_blank = true;
-        } else if let Some(rest) = dedent(line) {
+        } else if let Some(rest) = continuation {
             let field = open.as_mut().expect("field is open");
             if pending_blank {
                 field.lines.push(String::new());
@@ -125,6 +146,14 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Ve
             close_field(current.as_mut(), open.take())?;
             pending_blank = false;
         }
+    }
+
+    if fence.is_open() {
+        bail!(
+            "line {fence_line}: fenced block opened here and never closed — every `## ` \
+             heading after it reads as part of the Tasks section, so the plan parses to a \
+             fraction of its tasks"
+        );
     }
 
     close_field(current.as_mut(), open.take())?;
@@ -233,7 +262,11 @@ fn close_field(task: Option<&mut ParsedTask>, open: Option<OpenField>) -> Result
     } = open;
 
     match kind {
-        Field::Files => task.files = parse_files(&lines),
+        Field::Files => {
+            let (files, notes) = parse_files(&lines);
+            task.files = files;
+            task.file_notes = notes;
+        }
         Field::DependsOn => {
             let (needs, note) = parse_depends(&lines);
             task.needs = needs;
@@ -258,72 +291,140 @@ fn close_field(task: Option<&mut ParsedTask>, open: Option<OpenField>) -> Result
     Ok(())
 }
 
-fn parse_files(lines: &[String]) -> Vec<String> {
+/// The paths, and the annotation trailing each of them — the store keeps the
+/// two apart, because every consumer of a file claim compares bare paths while
+/// the annotation is the author's and only the render puts it back.
+fn parse_files(lines: &[String]) -> (Vec<String>, Vec<String>) {
     let mut files = Vec::new();
+    let mut notes = Vec::new();
     for line in lines {
         let line = line.trim();
         // A bulleted line is one path plus prose; a bare line is a comma list.
         if bullet_re().is_match(line) {
-            push_file(&mut files, bullet_re().replace(line, "").as_ref());
+            push_file(
+                &mut files,
+                &mut notes,
+                bullet_re().replace(line, "").as_ref(),
+            );
         } else {
-            for raw in line.split(',') {
-                push_file(&mut files, raw);
+            for raw in split_entries(line, |ch| ch == ',') {
+                push_file(&mut files, &mut notes, raw);
             }
         }
     }
-    files
+    (files, notes)
 }
 
-fn push_file(files: &mut Vec<String>, raw: &str) {
-    let cut = raw.split('(').next().unwrap_or(raw);
-    let cut = cut.split(" — ").next().unwrap_or(cut);
-    let entry = cut.replace('`', "").trim().to_string();
+/// The em-dash annotation has no closing mark, so it runs to the end of the
+/// entry it trails.
+const NOTE_DASH: &str = " — ";
+
+/// One entry per item the line lists. A separator standing inside a
+/// backticked span or an annotation separates nothing: splitting on it and
+/// cutting the annotation afterwards reads `(new, generated)` as a second
+/// path, which every consumer of a file claim then treats as one.
+fn split_entries(line: &str, separates: impl Fn(char) -> bool) -> Vec<&str> {
+    let mut entries = Vec::new();
+    let mut start = 0;
+    let mut depth = 0u32;
+    let mut quoted = false;
+    let mut annotated = false;
+    for (at, ch) in line.char_indices() {
+        if ch == '`' {
+            quoted = !quoted;
+            continue;
+        }
+        if quoted || annotated {
+            continue;
+        }
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            _ if depth > 0 => {}
+            _ if separates(ch) => {
+                entries.push(&line[start..at]);
+                start = at + ch.len_utf8();
+            }
+            _ if line[at..].starts_with(NOTE_DASH) => annotated = true,
+            _ => {}
+        }
+    }
+    entries.push(&line[start..]);
+    entries
+}
+
+fn push_file(files: &mut Vec<String>, notes: &mut Vec<String>, raw: &str) {
+    let at = annotation_at(raw);
+    let entry = raw[..at].replace('`', "").trim().to_string();
     if entry.is_empty() || is_empty_marker(&entry) {
         return;
     }
     files.push(entry);
+    notes.push(raw[at..].trim().to_string());
 }
 
-/// Integers up to the first `(`; everything after them is the note, with the
-/// outer parentheses dropped so the renderer can re-add them.
+/// Where the annotation trailing a path starts — the first `(` or ` — `
+/// outside a backticked span — or the entry's length when it carries none.
+/// `split_entries` reads the same mark, so a comma the cut drops cannot have
+/// split the entry ahead of it.
+fn annotation_at(entry: &str) -> usize {
+    let mut quoted = false;
+    for (at, ch) in entry.char_indices() {
+        if ch == '`' {
+            quoted = !quoted;
+        } else if !quoted && (ch == '(' || entry[at..].starts_with(NOTE_DASH)) {
+            return at;
+        }
+    }
+    entry.len()
+}
+
+/// The ids the line states and the prose it carries, cut entry by entry
+/// rather than at the line's first `(` — an id stated after prose is still an
+/// id, and a line read to no id at all schedules the task as though it
+/// declared nothing.
+///
+/// An entry states an edge when it opens on a bare integer, and everything
+/// after that integer is the entry's note. An entry opening on anything else
+/// is prose whole: `round-2 task 18` names a task outside this plan, and
+/// reading its number as an edge would point it at whatever this plan numbers
+/// 18.
 fn parse_depends(lines: &[String]) -> (Vec<u32>, String) {
     let value = lines.join(" ");
-    let value = value.trim();
-    let (head, tail) = match value.find('(') {
-        Some(at) => (&value[..at], value[at..].trim()),
-        None => (value, ""),
-    };
-
     let mut needs = Vec::new();
-    let mut trailing: Vec<&str> = Vec::new();
-    let mut leading = true;
-    for token in head.split(',') {
-        let token = token.trim();
-        if token.is_empty() || is_empty_marker(token) {
+    let mut note: Vec<&str> = Vec::new();
+    // `4 + 7` is a conjunction wherever a plan writes one, and dropping the
+    // second id there loses an edge exactly as a comma would.
+    for entry in split_entries(value.trim(), |ch| ch == ',' || ch == '+') {
+        let entry = entry.trim();
+        if entry.is_empty() || is_empty_marker(entry) {
             continue;
         }
-        match token.parse::<u32>() {
-            Ok(id) if leading => needs.push(id),
-            _ => {
-                leading = false;
-                trailing.push(token);
+        let (head, rest) = entry
+            .split_once(|c: char| c.is_ascii_whitespace())
+            .unwrap_or((entry, ""));
+        match head.parse::<u32>() {
+            Ok(id) => {
+                needs.push(id);
+                note.push(unwrap_note(rest.trim()));
             }
+            // `none (rationale)` states no edge, and the rationale is a note
+            // like any other.
+            Err(_) if is_empty_marker(head) => note.push(unwrap_note(rest.trim())),
+            Err(_) => note.push(unwrap_note(entry)),
         }
     }
     needs.sort_unstable();
     needs.dedup();
+    note.retain(|part| !part.is_empty());
+    (needs, note.join(", "))
+}
 
-    let tail = tail
-        .strip_prefix('(')
-        .map_or(tail, |inner| inner.strip_suffix(')').unwrap_or(inner));
-    let mut note = trailing.join(", ");
-    if !tail.is_empty() {
-        if !note.is_empty() {
-            note.push(' ');
-        }
-        note.push_str(tail);
-    }
-    (needs, note)
+/// A note's own outer parentheses, dropped so the renderer can re-add them.
+fn unwrap_note(text: &str) -> &str {
+    text.strip_prefix('(')
+        .and_then(|inner| inner.strip_suffix(')'))
+        .unwrap_or(text)
 }
 
 fn is_empty_marker(token: &str) -> bool {
@@ -477,6 +578,70 @@ cargo build
     }
 
     #[test]
+    fn a_fenced_field_line_does_not_open_a_field() {
+        let body = "\
+### 1. Document the grammar [S]
+- **Files**: `docs/plans/README.md`
+- **Action**: show the shape a task takes:
+
+```md
+- **Files**: `src/lib.rs`
+- **Depends on**: 4
+- **Acceptance**: the suite is green
+```
+
+### 2. Follow up [S]
+- **Files**: none
+";
+        let tasks = parse_tasks(body).expect("parses");
+        assert_eq!(tasks.iter().map(|t| t.id).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            tasks[0].files,
+            vec!["docs/plans/README.md"],
+            "a fenced example overwrote the real Files line"
+        );
+        assert!(tasks[0].needs.is_empty(), "{:?}", tasks[0].needs);
+        assert_eq!(tasks[0].acceptance, "");
+        assert_eq!(tasks[0].action, "show the shape a task takes:");
+    }
+
+    #[test]
+    fn a_fenced_block_a_field_owns_keeps_its_column_zero_lines() {
+        let body = "\
+### 1. Ship it [S]
+- **Acceptance**: the command prints
+  ```json
+{\"ok\": true}
+  ```
+- **Files**: none
+";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(
+            task.acceptance, "the command prints\n```json\n{\"ok\": true}\n```",
+            "an unindented line inside the field's own fence was dropped"
+        );
+    }
+
+    #[test]
+    fn an_unclosed_fence_names_the_line_it_opened_on() {
+        let body = "\
+### 1. Ship it [S]
+- **Acceptance**: the suite is green
+
+```sh
+cargo test
+
+### 2. Follow up [S]
+- **Files**: none
+";
+        let err = parse_tasks(body)
+            .expect_err("an unclosed fence is an error")
+            .to_string();
+        assert!(err.contains("line 4"), "{err}");
+        assert!(err.contains("never closed"), "{err}");
+    }
+
+    #[test]
     fn an_em_dash_title_keeps_its_effort_tag() {
         let first = &parse_tasks(PHASED).expect("parses")[0];
         assert_eq!(
@@ -525,6 +690,36 @@ cargo build
     }
 
     #[test]
+    fn a_multi_word_parenthetical_stays_with_the_path_it_trails() {
+        let body = "### 1. Split the store [S]\n\
+                    - **Files**: `src/a.rs` (new stub file), `src/b.rs`\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(task.files, vec!["src/a.rs", "src/b.rs"]);
+        assert_eq!(task.file_notes, vec!["(new stub file)", ""]);
+    }
+
+    #[test]
+    fn a_comma_inside_an_annotation_does_not_split_the_entry() {
+        let body = "### 1. Split the store [S]\n\
+                    - **Files**: `src/a.rs` (new, generated), `src/b.rs` (moved, then renamed), \
+                    `src/c.rs` — extend `Row`, then the SELECT\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(
+            task.files,
+            vec!["src/a.rs", "src/b.rs", "src/c.rs"],
+            "an annotation's comma opened a claim on a path nobody wrote"
+        );
+        assert_eq!(
+            task.file_notes,
+            vec![
+                "(new, generated)",
+                "(moved, then renamed)",
+                "— extend `Row`, then the SELECT",
+            ]
+        );
+    }
+
+    #[test]
     fn files_none_yields_no_entries() {
         let second = &parse_tasks(PHASED).expect("parses")[1];
         assert!(second.files.is_empty(), "{:?}", second.files);
@@ -551,6 +746,56 @@ cargo build
     fn a_legacy_effort_line_sets_the_effort() {
         let second = &parse_tasks(PHASED).expect("parses")[1];
         assert_eq!(second.effort, Some(Effort::M));
+    }
+
+    /// A dropped id is not a parsing nicety: the store then holds no edge for
+    /// a task that declares one, and the scheduler dispatches it in the first
+    /// batch alongside the work it waits on.
+    #[test]
+    fn an_id_stated_after_prose_is_still_an_edge() {
+        let body = "### 12. Wire the deps [M]\n\
+                    - **Depends on**: round-2 task 18 (wire-task-deps creation), 4\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(task.needs, vec![4], "the plainly-stated `4` was dropped");
+        assert_eq!(
+            task.deps_note, "round-2 task 18 (wire-task-deps creation)",
+            "a reference to another plan's task is prose, not an edge"
+        );
+    }
+
+    /// `+` joins ids as a comma does, and an entry that is not an id is the
+    /// note whether it stands before or after one.
+    #[test]
+    fn a_plus_joined_line_yields_every_id_and_keeps_the_prose() {
+        let body = "### 5. Probe the keystrokes [M]\n\
+                    - **Blocked by**: 4 + pre-flight probe (the probe file must exist) + 7\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(task.needs, vec![4, 7]);
+        assert_eq!(
+            task.deps_note,
+            "pre-flight probe (the probe file must exist)"
+        );
+    }
+
+    #[test]
+    fn a_cross_plan_reference_alone_leaves_no_edge_behind() {
+        let body = "### 12. Wire the deps [M]\n- **Depends on**: round-2 task 18\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert!(
+            task.needs.is_empty(),
+            "a task this plan does not number became an edge: {:?}",
+            task.needs
+        );
+        assert_eq!(task.deps_note, "round-2 task 18");
+    }
+
+    #[test]
+    fn a_rationale_against_none_is_a_note_and_no_edge() {
+        let body = "### 1. Scaffold the module tree [L]\n\
+                    - **Depends on**: none (foundational)\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert!(task.needs.is_empty(), "{:?}", task.needs);
+        assert_eq!(task.deps_note, "foundational");
     }
 
     #[test]

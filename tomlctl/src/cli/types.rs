@@ -1958,6 +1958,15 @@ pub(crate) enum TasksOp {
         /// Rewrite the row's `ref`. Never inferred from a retitle.
         #[arg(long = "ref", value_name = "SLUG")]
         task_ref: Option<String>,
+        /// Permit `--set files=` and `--set needs=`, and stamp the row with
+        /// the plan values the patch replaces. The next import keeps the
+        /// hand-patched values while the plan still states that base.
+        #[arg(long = "unlock-import-fields", conflicts_with = "relock")]
+        unlock: bool,
+        /// Drop that stamp, handing `files` and `needs` back to the plan: the
+        /// next import restores whatever it states.
+        #[arg(long = "relock-import-fields")]
+        relock: bool,
         #[arg(
             long = "set",
             value_name = "KEY=VAL",

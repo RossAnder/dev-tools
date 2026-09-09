@@ -17,7 +17,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use super::schema::{Status, Store};
+use super::schema::{ImportOverride, Status, Store};
 use super::store;
 use crate::cli::WriteIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
@@ -29,6 +29,10 @@ pub(crate) struct RemoveOutcome {
     /// Rows whose `needs`/`coupling` were re-pointed at the removed row's own
     /// dependencies, ascending.
     pub(crate) rewired: Vec<u32>,
+    /// Fields the removed row's import-override stamp was holding against the
+    /// plan, named as `tasks update --unlock-import-fields` takes them. Empty
+    /// when the row carried no stamp.
+    pub(crate) pruned_override_fields: Vec<&'static str>,
 }
 
 pub(crate) fn remove(
@@ -93,11 +97,35 @@ fn retire(store: &mut Store, id: u32, force: bool) -> Result<RemoveOutcome> {
     }
 
     let row = store.items.remove(index);
+    // The next import would drop it anyway; leaving it until then holds an
+    // entry keyed on a `ref` no row carries.
+    let pruned = store
+        .import_overrides
+        .iter()
+        .position(|entry| entry.r#ref == row.r#ref)
+        .map(|position| store.import_overrides.remove(position));
     Ok(RemoveOutcome {
         id,
         r#ref: row.r#ref,
         rewired,
+        pruned_override_fields: stamped_fields(pruned.as_ref()),
     })
+}
+
+/// A stamped field is one the row held against the plan, so naming it tells a
+/// caller which value a re-imported row would take from the plan instead.
+fn stamped_fields(entry: Option<&ImportOverride>) -> Vec<&'static str> {
+    let Some(entry) = entry else {
+        return Vec::new();
+    };
+    let mut fields = Vec::new();
+    if entry.files.is_some() {
+        fields.push("files");
+    }
+    if entry.needs.is_some() {
+        fields.push("needs");
+    }
+    fields
 }
 
 fn refuse(message: String) -> anyhow::Error {
@@ -164,6 +192,7 @@ mod tests {
                 id: 2,
                 r#ref: "task-2".to_string(),
                 rewired: Vec::new(),
+                pruned_override_fields: Vec::new(),
             }
         );
         assert_eq!(
@@ -211,6 +240,86 @@ mod tests {
         assert!(store.find(3).expect("task 3 survives").coupling.is_empty());
         assert_eq!(store.find(4).expect("task 4 survives").needs, vec![1]);
         assert_eq!(store.find(2), None);
+    }
+
+    /// An entry keyed on a `ref` no row carries is an inconsistency the store
+    /// otherwise never holds, so the removal takes the stamp with it and
+    /// leaves every other row's alone. The pruned fields are reported, or the
+    /// hand-patch the stamp was holding open goes silently.
+    #[test]
+    fn a_removal_prunes_the_rows_own_import_override_and_names_its_fields() {
+        let mut store = store(vec![row(1, &[], &[]), row(2, &[], &[])]);
+        store.import_overrides = vec![
+            ImportOverride {
+                r#ref: "task-1".to_string(),
+                files: Some(vec!["src/a.rs".to_string()]),
+                needs: None,
+            },
+            ImportOverride {
+                r#ref: "task-2".to_string(),
+                files: None,
+                needs: Some(vec![1]),
+            },
+        ];
+
+        let outcome = retire(&mut store, 2, false).expect("the row retires");
+        assert_eq!(outcome.pruned_override_fields, vec!["needs"]);
+        assert_eq!(
+            store
+                .import_overrides
+                .iter()
+                .map(|entry| entry.r#ref.as_str())
+                .collect::<Vec<_>>(),
+            vec!["task-1"]
+        );
+    }
+
+    #[test]
+    fn a_stamp_holding_both_fields_reports_both() {
+        let mut store = store(vec![row(1, &[], &[]), row(2, &[1], &[])]);
+        store.import_overrides = vec![ImportOverride {
+            r#ref: "task-2".to_string(),
+            files: Some(vec!["src/b.rs".to_string()]),
+            needs: Some(Vec::new()),
+        }];
+
+        let outcome = retire(&mut store, 2, false).expect("the row retires");
+        assert_eq!(outcome.pruned_override_fields, vec!["files", "needs"]);
+        assert_eq!(store.import_overrides, vec![]);
+    }
+
+    /// The empty report is the common case, and it must not pick up a sibling
+    /// row's stamp: the key is `ref`, not position.
+    #[test]
+    fn a_removal_touching_no_stamp_reports_no_fields() {
+        let mut store = store(vec![row(1, &[], &[]), row(2, &[], &[])]);
+        store.import_overrides = vec![ImportOverride {
+            r#ref: "task-1".to_string(),
+            files: Some(vec!["src/a.rs".to_string()]),
+            needs: None,
+        }];
+
+        let outcome = retire(&mut store, 2, false).expect("the row retires");
+        assert!(
+            outcome.pruned_override_fields.is_empty(),
+            "{:?}",
+            outcome.pruned_override_fields
+        );
+        assert_eq!(store.import_overrides.len(), 1);
+    }
+
+    #[test]
+    fn a_refused_removal_leaves_the_stamp() {
+        let mut store = store(vec![row(1, &[], &[])]);
+        store.items[0].status = Status::Done;
+        store.import_overrides = vec![ImportOverride {
+            r#ref: "task-1".to_string(),
+            files: Some(Vec::new()),
+            needs: None,
+        }];
+
+        retire(&mut store, 1, false).expect_err("a done row is refused");
+        assert_eq!(store.import_overrides.len(), 1);
     }
 
     #[test]

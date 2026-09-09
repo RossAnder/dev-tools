@@ -19,7 +19,8 @@ checkpoints = "milestones"
 max_parallel = 6
 commit_granularity = "per-task"
 origin = "plan"
-note = "— tasks 5 and 6 land in one commit because they share a file"
+note = ""
+commit_granularity_note = "— tasks 5 and 6 land in one commit because they share a file"
 
 [[checkpoints]]
 id = "A"
@@ -32,6 +33,31 @@ rationale = "both parsers and the graph engine land together"
 [[checkpoints]]
 id = "C"
 rationale = "the import verb, the renderer and the corpus smoke."
+
+[[file_notes]]
+ref = "land-the-schema-round-trip"
+file = "src/tasks/schema.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "land-the-schema-round-trip"
+file = "src/tasks/store.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "fold-the-closures-into-checkpoint-groups"
+file = "src/tasks/closure.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "document-the-store-contract"
+file = "docs/task-store.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "smoke-the-plan-corpus"
+file = "tests/tasks_corpus.rs"
+note = "(new)"
 
 [[items]]
 id = 1

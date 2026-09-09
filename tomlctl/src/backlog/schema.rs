@@ -26,6 +26,7 @@ use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::convert::json_type_name;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::maybe_verify_integrity;
+use crate::io::advise;
 use crate::io::{items_array, read_toml, repo_or_cwd_root, strict_read_check};
 
 /// Array of live captures. Never `items`: an array named `items` under
@@ -175,16 +176,23 @@ pub(crate) fn terminal_pair(status: &str) -> Option<(&'static str, &'static str)
     cluster_of(status).map(|[date, companion]| (*date, *companion))
 }
 
+/// The vocabulary entry `raw` names, or `None` for one outside it. A caller
+/// that surfaces the coercion itself reaches for this rather than
+/// `coerce_kind`, whose advisory a captured stderr never carries.
+pub(crate) fn known_kind(raw: &str) -> Option<&'static str> {
+    KINDS.iter().copied().find(|k| *k == raw)
+}
+
 /// Resolve a stored `kind` against the vocabulary, coercing an unrecognised
-/// one to `other` with a stderr warning. Fail-soft, matching the ledger
-/// schema's rule for unknown enum values: `kind` only drives `--count-by`
-/// grouping, so a wrong bucket costs less than a rejected capture.
+/// one to `other`. Fail-soft, matching the ledger schema's rule for unknown
+/// enum values: `kind` only drives `--count-by` grouping, so a wrong bucket
+/// costs less than a rejected capture.
 pub(crate) fn coerce_kind(raw: &str) -> &'static str {
-    if let Some(known) = KINDS.iter().copied().find(|k| *k == raw) {
-        return known;
-    }
-    eprintln!("tomlctl: unknown backlog kind `{raw}` — reading it as `{KIND_OTHER}`");
-    KIND_OTHER
+    let Some(known) = known_kind(raw) else {
+        advise!("tomlctl: unknown backlog kind `{raw}` — reading it as `{KIND_OTHER}`");
+        return KIND_OTHER;
+    };
+    known
 }
 
 /// Resolve `<repo-or-cwd-root>/.claude/backlog.toml`, honouring

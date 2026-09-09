@@ -270,10 +270,11 @@ fn add_dry_run_leaves_the_store_and_sidecar_byte_identical() {
 }
 
 /// The coercion is fail-soft — the capture succeeds and the row stores
-/// `other` — so the warning on stderr is the only signal that the kind the
-/// caller typed was not understood. Nothing else would notice it going away.
+/// `other` — so the advisory is the only signal that the kind the caller
+/// typed was not understood. Nothing else would notice it going away, and a
+/// captured stderr never carries it, so the envelope is where it has to be.
 #[test]
-fn an_unknown_kind_warns_on_stderr() {
+fn an_unknown_kind_is_coerced_and_the_envelope_says_so() {
     let (_tmp, root) = sandbox();
 
     let out = cli(&root)
@@ -290,14 +291,31 @@ fn an_unknown_kind_warns_on_stderr() {
         .write_stdin("")
         .assert()
         .success();
+    let out = out.get_output();
+    assert_eq!(String::from_utf8_lossy(&out.stderr), "");
 
-    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let envelope: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&out.stdout).trim()).unwrap();
+    let advisory = envelope["advisories"][0]
+        .as_str()
+        .unwrap_or_else(|| panic!("the coercion must reach the envelope: {envelope}"));
     for fragment in ["unknown backlog kind", "`regression`", "`other`"] {
         assert!(
-            stderr.contains(fragment),
-            "the unknown-kind warning must carry {fragment}; got: {stderr:?}"
+            advisory.contains(fragment),
+            "the unknown-kind advisory must carry {fragment}; got: {advisory:?}"
         );
     }
+    assert_eq!(
+        field(
+            row(
+                &read_store(&root),
+                "backlog",
+                envelope["id"].as_str().unwrap()
+            ),
+            "kind"
+        ),
+        Some("other")
+    );
 }
 
 /// Each backlog read verb threads `--verify-integrity` through its own call
@@ -523,5 +541,115 @@ fn triage_with_two_mode_flags_is_a_parser_error() {
     assert!(
         stderr.contains("cannot be used with"),
         "the refusal must be a conflict, not an unrecognised flag; got: {stderr:?}"
+    );
+}
+
+/// stderr is a machine channel: under `--error-format json` it carries the
+/// error envelope and nothing else, and every other capture of it — an NDJSON
+/// stream, a test harness, a logged agent run — has a parser on the far end.
+/// Advisories are therefore terminal-only, and the credential scan reaches a
+/// piped caller through the success envelope instead of through stderr.
+#[test]
+fn advisories_stay_off_a_captured_stderr_and_ride_the_envelope() {
+    let (_dir, root) = sandbox();
+    let leaky = "auth fails once the ghp_deadbeefcafe token expires";
+    let capture = [
+        "backlog",
+        "add",
+        "--summary",
+        leaky,
+        "--kind",
+        "bug",
+        "--area",
+        "tomlctl/src/io.rs",
+    ];
+
+    let minted = cli(&root).args(capture).write_stdin("").assert().success();
+    let minted = minted.get_output();
+    assert_eq!(
+        String::from_utf8_lossy(&minted.stderr),
+        "",
+        "neither the credential note nor the created-file note may reach a captured stderr"
+    );
+
+    let envelope: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&minted.stdout).trim()).unwrap();
+    assert_eq!(envelope["created"], json!(true), "{envelope}");
+    let advisories = envelope["advisories"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the envelope must carry `advisories`: {envelope}"));
+    assert_eq!(advisories.len(), 1, "{envelope}");
+    let advisory = advisories[0].as_str().unwrap();
+    assert!(advisory.contains("a credential"), "{advisory}");
+    assert!(
+        !advisory.contains("ghp_"),
+        "the advisory names the field, never the value: {advisory}"
+    );
+
+    // The same advisory ahead of a failing run: stderr is the envelope alone.
+    let refused = cli(&root)
+        .args(["--error-format", "json"])
+        .args(capture)
+        .args(["--on-duplicate", "fail"])
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+    assert_eq!(
+        stderr.lines().count(),
+        1,
+        "stderr must be exactly the JSON error envelope: {stderr}"
+    );
+    assert_eq!(
+        parse_json_error_envelope(&stderr)["kind"],
+        json!("validation"),
+        "{stderr}"
+    );
+}
+
+/// A caller that reviews a capture with `--dry-run` before committing it must
+/// not see less than one that skips the review. The stderr line is
+/// terminal-gated, so on a pipe the preview envelope is the only place the
+/// credential scan can land.
+#[test]
+fn a_dry_run_surfaces_the_credential_advisory_on_the_preview_envelope() {
+    let (_dir, root) = sandbox();
+    let leaky = "auth fails once the ghp_deadbeefcafe token expires";
+
+    let preview = cli(&root)
+        .args([
+            "backlog",
+            "add",
+            "--summary",
+            leaky,
+            "--kind",
+            "bug",
+            "--area",
+            "tomlctl/src/io.rs",
+            "--dry-run",
+        ])
+        .write_stdin("")
+        .assert()
+        .success();
+    let preview = preview.get_output();
+    assert_eq!(
+        String::from_utf8_lossy(&preview.stderr),
+        "",
+        "a captured stderr carries no advisory, which is why the envelope must"
+    );
+
+    let envelope: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&preview.stdout).trim()).unwrap();
+    assert_eq!(envelope["dry_run"], json!(true), "{envelope}");
+    assert_eq!(envelope["would_change"]["added"], json!(1), "{envelope}");
+    let advisories = envelope["advisories"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the preview envelope must carry `advisories`: {envelope}"));
+    assert_eq!(advisories.len(), 1, "{envelope}");
+    let advisory = advisories[0].as_str().unwrap();
+    assert!(advisory.contains("a credential"), "{advisory}");
+    assert!(
+        !advisory.contains("ghp_"),
+        "the advisory names the field, never the value: {advisory}"
     );
 }

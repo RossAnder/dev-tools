@@ -55,6 +55,14 @@ pub(crate) struct Store {
     pub(crate) last_import_refs: Vec<String>,
     pub(crate) policy: Policy,
     pub(crate) checkpoints: Vec<Checkpoint>,
+    /// Hand-patched import-owned fields and the plan values they were taken
+    /// against, keyed by `ref` like `last_import_refs`.
+    pub(crate) import_overrides: Vec<ImportOverride>,
+    /// The annotation a `Files` entry carried in the plan, keyed by `ref` and
+    /// path. A row's `files` holds bare paths — every consumer of a file claim
+    /// compares them — so an annotation the author wrote has nowhere else to
+    /// live and the render would drop it.
+    pub(crate) file_notes: Vec<FileNote>,
     pub(crate) items: Vec<TaskRow>,
 }
 
@@ -70,16 +78,62 @@ pub(crate) struct Policy {
     /// semantics has nothing else to go on once the import has written the
     /// table.
     pub(crate) origin: String,
-    /// Authored prose, never a tool diagnostic: the renderer writes it back
-    /// under `## Execution Policy` and the next import reads it as the
-    /// author's.
+    /// Prose belonging to no bullet. Authored, never a tool diagnostic: the
+    /// renderer writes it back under `## Execution Policy` and the next import
+    /// reads it as the author's.
     pub(crate) note: String,
+    /// The clause trailing a bullet's value, kept against the bullet that
+    /// carried it so the render puts it back on that line.
+    pub(crate) checkpoints_note: String,
+    pub(crate) max_parallel_note: String,
+    pub(crate) commit_granularity_note: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Checkpoint {
     pub(crate) id: String,
     pub(crate) rationale: String,
+}
+
+/// One row's hand-patched import-owned fields. Each `Some` holds the value the
+/// plan stated when the patch was made, not the patch itself: `import-plan`
+/// keeps the row's own value while the plan still states that base, and drops
+/// the field the moment the plan states anything else. A row the plan and the
+/// store agree on carries no entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ImportOverride {
+    pub(crate) r#ref: String,
+    pub(crate) files: Option<Vec<String>>,
+    pub(crate) needs: Option<Vec<u32>>,
+}
+
+impl ImportOverride {
+    pub(crate) fn new(r#ref: &str) -> Self {
+        Self {
+            r#ref: r#ref.to_string(),
+            files: None,
+            needs: None,
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.files.is_none() && self.needs.is_none()
+    }
+}
+
+/// One `Files` entry's trailing annotation — `(new)` and the like — against
+/// the row that claims the path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FileNote {
+    pub(crate) r#ref: String,
+    pub(crate) file: String,
+    pub(crate) note: String,
+}
+
+impl FileNote {
+    fn is_empty(&self) -> bool {
+        self.r#ref.is_empty() || self.file.is_empty() || self.note.trim().is_empty()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +189,8 @@ impl Default for Store {
             last_import_refs: Vec::new(),
             policy: Policy::default(),
             checkpoints: Vec::new(),
+            import_overrides: Vec::new(),
+            file_notes: Vec::new(),
             items: Vec::new(),
         }
     }
@@ -151,6 +207,9 @@ impl Default for Policy {
             commit_granularity: "per-task".to_string(),
             origin: POLICY_ORIGIN_PLAN.to_string(),
             note: String::new(),
+            checkpoints_note: String::new(),
+            max_parallel_note: String::new(),
+            commit_granularity_note: String::new(),
         }
     }
 }
@@ -170,6 +229,19 @@ impl Store {
 
     pub(crate) fn find_ref(&self, r#ref: &str) -> Option<&TaskRow> {
         self.items.iter().find(|row| row.r#ref == r#ref)
+    }
+
+    pub(crate) fn find_override(&self, r#ref: &str) -> Option<&ImportOverride> {
+        self.import_overrides
+            .iter()
+            .find(|entry| entry.r#ref == r#ref)
+    }
+
+    pub(crate) fn file_note(&self, r#ref: &str, file: &str) -> Option<&str> {
+        self.file_notes
+            .iter()
+            .find(|entry| entry.r#ref == r#ref && entry.file == file)
+            .map(|entry| entry.note.as_str())
     }
 }
 
@@ -281,6 +353,18 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         .enumerate()
         .map(|(index, value)| row_from_toml(value, index))
         .collect::<Result<Vec<_>>>()?;
+    let mut import_overrides = table_array(root, "import_overrides")?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| override_from_toml(value, index))
+        .collect::<Result<Vec<_>>>()?;
+    import_overrides.retain(|entry| !entry.is_empty());
+    let mut file_notes = table_array(root, "file_notes")?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| file_note_from_toml(value, index))
+        .collect::<Result<Vec<_>>>()?;
+    file_notes.retain(|entry| !entry.is_empty());
 
     Ok(Store {
         schema_version,
@@ -292,6 +376,8 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
             None => Policy::default(),
         },
         checkpoints,
+        import_overrides,
+        file_notes,
         items,
     })
 }
@@ -304,6 +390,8 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         last_import_refs,
         policy,
         checkpoints,
+        import_overrides,
+        file_notes,
         items,
     } = store;
 
@@ -328,6 +416,27 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         "checkpoints".to_string(),
         TomlValue::Array(checkpoints.iter().map(checkpoint_to_toml).collect()),
     );
+    // Omitted rather than emitted empty: a store that has never been
+    // hand-patched writes back byte-identical to one written before the key
+    // existed.
+    let overrides: Vec<TomlValue> = import_overrides
+        .iter()
+        .filter(|entry| !entry.is_empty())
+        .map(override_to_toml)
+        .collect();
+    if !overrides.is_empty() {
+        root.insert("import_overrides".to_string(), TomlValue::Array(overrides));
+    }
+    // Omitted on the same terms: a plan whose `Files` lines carry no
+    // annotation writes back exactly as it did before the key existed.
+    let notes: Vec<TomlValue> = file_notes
+        .iter()
+        .filter(|entry| !entry.is_empty())
+        .map(file_note_to_toml)
+        .collect();
+    if !notes.is_empty() {
+        root.insert("file_notes".to_string(), TomlValue::Array(notes));
+    }
     root.insert(
         "items".to_string(),
         TomlValue::Array(items.iter().map(row_to_toml).collect()),
@@ -365,6 +474,9 @@ fn policy_from_toml(value: &TomlValue) -> Result<Policy> {
             true => String::new(),
             false => note,
         },
+        checkpoints_note: lf(&str_or(table, "checkpoints_note", "")),
+        max_parallel_note: lf(&str_or(table, "max_parallel_note", "")),
+        commit_granularity_note: lf(&str_or(table, "commit_granularity_note", "")),
     })
 }
 
@@ -375,6 +487,9 @@ fn policy_to_toml(policy: &Policy) -> TomlValue {
         commit_granularity,
         origin,
         note,
+        checkpoints_note,
+        max_parallel_note,
+        commit_granularity_note,
     } = policy;
     let mut table = Table::new();
     table.insert(
@@ -391,6 +506,17 @@ fn policy_to_toml(policy: &Policy) -> TomlValue {
     );
     table.insert("origin".to_string(), TomlValue::String(origin.clone()));
     table.insert("note".to_string(), TomlValue::String(lf(note)));
+    // Each omitted while empty, so a policy whose bullets carry no clause
+    // writes back exactly as it did before the keys existed.
+    for (key, value) in [
+        ("checkpoints_note", checkpoints_note),
+        ("max_parallel_note", max_parallel_note),
+        ("commit_granularity_note", commit_granularity_note),
+    ] {
+        if !value.trim().is_empty() {
+            table.insert(key.to_string(), TomlValue::String(lf(value)));
+        }
+    }
     TomlValue::Table(table)
 }
 
@@ -413,6 +539,64 @@ fn checkpoint_to_toml(checkpoint: &Checkpoint) -> TomlValue {
     let mut table = Table::new();
     table.insert("id".to_string(), TomlValue::String(id.clone()));
     table.insert("rationale".to_string(), TomlValue::String(lf(rationale)));
+    TomlValue::Table(table)
+}
+
+fn override_from_toml(value: &TomlValue, index: usize) -> Result<ImportOverride> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| anyhow!("import_overrides[{index}] is not a table"))?;
+    let r#ref = str_or(table, "ref", "");
+    if r#ref.is_empty() {
+        return Err(anyhow!("import_overrides[{index}] has no `ref`"));
+    }
+    let context = format!("import_overrides[{index}]");
+    Ok(ImportOverride {
+        files: table
+            .contains_key("files")
+            .then(|| str_array(table, "files")),
+        needs: match table.contains_key("needs") {
+            true => Some(id_array(table, "needs", &context)?),
+            false => None,
+        },
+        r#ref,
+    })
+}
+
+fn override_to_toml(entry: &ImportOverride) -> TomlValue {
+    let ImportOverride {
+        r#ref,
+        files,
+        needs,
+    } = entry;
+    let mut table = Table::new();
+    table.insert("ref".to_string(), TomlValue::String(r#ref.clone()));
+    if let Some(files) = files {
+        table.insert("files".to_string(), str_arr_value(files));
+    }
+    if let Some(needs) = needs {
+        table.insert("needs".to_string(), id_arr_value(needs));
+    }
+    TomlValue::Table(table)
+}
+
+fn file_note_from_toml(value: &TomlValue, index: usize) -> Result<FileNote> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| anyhow!("file_notes[{index}] is not a table"))?;
+    Ok(FileNote {
+        r#ref: str_or(table, "ref", ""),
+        file: str_or(table, "file", ""),
+        note: lf(&str_or(table, "note", "")),
+    })
+}
+
+fn file_note_to_toml(entry: &FileNote) -> TomlValue {
+    let FileNote { r#ref, file, note } = entry;
+    let mut table = Table::new();
+    table.insert("ref".to_string(), TomlValue::String(r#ref.clone()));
+    table.insert("file".to_string(), TomlValue::String(file.clone()));
+    table.insert("note".to_string(), TomlValue::String(lf(note)));
     TomlValue::Table(table)
 }
 
@@ -451,6 +635,7 @@ fn row_from_toml(value: &TomlValue, index: usize) -> Result<TaskRow> {
         None => Status::default(),
     };
 
+    let row_context = format!("task {id}");
     Ok(TaskRow {
         id,
         r#ref,
@@ -462,8 +647,8 @@ fn row_from_toml(value: &TomlValue, index: usize) -> Result<TaskRow> {
         phase_depth: u32_or(table, "phase_depth", 0),
         heading_depth: u32_or(table, "heading_depth", DEFAULT_HEADING_DEPTH),
         files: str_array(table, "files"),
-        needs: id_array(table, "needs", id)?,
-        coupling: id_array(table, "coupling", id)?,
+        needs: id_array(table, "needs", &row_context)?,
+        coupling: id_array(table, "coupling", &row_context)?,
         deps_note: lf(&str_or(table, "deps_note", "")),
         action: lf(&str_or(table, "action", "")),
         detail: lf(&str_or(table, "detail", "")),
@@ -582,19 +767,19 @@ fn str_array(table: &Table, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn id_array(table: &Table, key: &str, id: u32) -> Result<Vec<u32>> {
+fn id_array(table: &Table, key: &str, context: &str) -> Result<Vec<u32>> {
     let Some(raw) = table.get(key) else {
         return Ok(Vec::new());
     };
     let arr = raw
         .as_array()
-        .ok_or_else(|| anyhow!("task {id}: `{key}` is not an array"))?;
+        .ok_or_else(|| anyhow!("{context}: `{key}` is not an array"))?;
     arr.iter()
         .map(|entry| {
             entry
                 .as_integer()
                 .and_then(|n| u32::try_from(n).ok())
-                .ok_or_else(|| anyhow!("task {id}: `{key}` holds a non-id entry `{entry}`"))
+                .ok_or_else(|| anyhow!("{context}: `{key}` holds a non-id entry `{entry}`"))
         })
         .collect()
 }
@@ -648,11 +833,24 @@ mod tests {
                 max_parallel: 6,
                 commit_granularity: "per-task".to_string(),
                 origin: POLICY_ORIGIN_PLAN.to_string(),
-                note: "tasks 6 and 7 land in one commit".to_string(),
+                note: "The trains are cut by hand.".to_string(),
+                checkpoints_note: String::new(),
+                max_parallel_note: String::new(),
+                commit_granularity_note: "— tasks 6 and 7 land in one commit".to_string(),
             },
             checkpoints: vec![Checkpoint {
                 id: "A".to_string(),
                 rationale: "shared kit and the document panel — buildable alone".to_string(),
+            }],
+            import_overrides: vec![ImportOverride {
+                r#ref: "wire-the-renderer".to_string(),
+                files: Some(vec!["tomlctl/src/tasks/render.rs".to_string()]),
+                needs: None,
+            }],
+            file_notes: vec![FileNote {
+                r#ref: "wire-the-renderer".to_string(),
+                file: "tomlctl/src/tasks/markdown.rs".to_string(),
+                note: "(new)".to_string(),
             }],
             items: vec![
                 TaskRow {
@@ -786,7 +984,7 @@ mod tests {
         policy(&mut raw).remove("origin");
         let read = from_toml(&raw).expect("parses").policy;
         assert_eq!(read.origin, POLICY_ORIGIN_PLAN);
-        assert_eq!(read.note, "tasks 6 and 7 land in one commit");
+        assert_eq!(read.note, "The trains are cut by hand.");
 
         policy(&mut raw).insert(
             "note".to_string(),
@@ -795,6 +993,111 @@ mod tests {
         let read = from_toml(&raw).expect("parses").policy;
         assert_eq!(read.origin, POLICY_ORIGIN_DEFAULT);
         assert_eq!(read.note, "");
+    }
+
+    /// The key is absent from every store written before it existed, and a
+    /// store nothing has hand-patched must write back without it rather than
+    /// growing an empty array.
+    #[test]
+    fn an_override_free_store_neither_reads_nor_writes_the_key() {
+        let mut store = fixture();
+        store.import_overrides = Vec::new();
+        let doc = to_toml(&store);
+        assert!(
+            !doc.as_table()
+                .expect("root table")
+                .contains_key("import_overrides")
+        );
+        assert_eq!(from_toml(&doc).expect("parses").import_overrides, vec![]);
+    }
+
+    /// An entry naming no overridden field pins nothing, so it is dropped on
+    /// both sides rather than kept as a row nothing can clear.
+    #[test]
+    fn an_override_entry_with_no_field_is_dropped() {
+        let mut raw = to_toml(&fixture());
+        raw.as_table_mut()
+            .expect("root table")
+            .insert("import_overrides".to_string(), {
+                let mut table = Table::new();
+                table.insert("ref".to_string(), TomlValue::String("seed".to_string()));
+                TomlValue::Array(vec![TomlValue::Table(table)])
+            });
+        assert_eq!(from_toml(&raw).expect("parses").import_overrides, vec![]);
+    }
+
+    /// An empty base is not an absent one: a plan that stated no files at all
+    /// is what a `files = []` override was taken against.
+    #[test]
+    fn an_empty_override_base_survives_the_round_trip() {
+        let mut store = fixture();
+        store.import_overrides = vec![ImportOverride {
+            r#ref: "seed-the-store".to_string(),
+            files: Some(Vec::new()),
+            needs: Some(vec![1]),
+        }];
+        let read = from_toml(&to_toml(&store)).expect("parses");
+        assert_eq!(read.import_overrides, store.import_overrides);
+        assert_eq!(
+            read.find_override("seed-the-store")
+                .and_then(|entry| entry.files.as_ref()),
+            Some(&Vec::new())
+        );
+    }
+
+    /// Both keys are absent from every store written before they existed, and
+    /// a store carrying neither must write back without them rather than
+    /// growing an empty array and three empty strings.
+    #[test]
+    fn an_unannotated_store_neither_reads_nor_writes_the_note_keys() {
+        let mut store = fixture();
+        store.file_notes = Vec::new();
+        store.policy.commit_granularity_note = String::new();
+        let doc = to_toml(&store);
+        let root = doc.as_table().expect("root table");
+        assert!(!root.contains_key("file_notes"));
+        for key in [
+            "checkpoints_note",
+            "max_parallel_note",
+            "commit_granularity_note",
+        ] {
+            assert!(
+                !root
+                    .get("policy")
+                    .and_then(TomlValue::as_table)
+                    .expect("policy table")
+                    .contains_key(key),
+                "`{key}` was written empty"
+            );
+        }
+
+        let read = from_toml(&doc).expect("parses");
+        assert_eq!(read.file_notes, vec![]);
+        assert_eq!(read.policy, store.policy);
+    }
+
+    /// An entry naming no path or carrying no note annotates nothing, so it is
+    /// dropped on both sides rather than kept as a row nothing can clear.
+    #[test]
+    fn a_file_note_with_no_path_or_no_note_is_dropped() {
+        let mut store = fixture();
+        store.file_notes.push(FileNote {
+            r#ref: "seed-the-store".to_string(),
+            file: "tomlctl/src/tasks/store.rs".to_string(),
+            note: "  ".to_string(),
+        });
+        store.file_notes.push(FileNote {
+            r#ref: "seed-the-store".to_string(),
+            file: String::new(),
+            note: "(new)".to_string(),
+        });
+        let read = from_toml(&to_toml(&store)).expect("parses");
+        assert_eq!(read.file_notes, fixture().file_notes);
+        assert_eq!(
+            read.file_note("wire-the-renderer", "tomlctl/src/tasks/markdown.rs"),
+            Some("(new)")
+        );
+        assert_eq!(read.file_note("wire-the-renderer", "nothing.rs"), None);
     }
 
     #[test]

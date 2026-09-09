@@ -53,6 +53,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                 removed_refs,
                 adopted_refs,
                 unmatched_refs,
+                cleared_checkpoint_refs,
                 findings,
             } = import_plan::import_plan(&request, &integrity)?;
             // A write that got this far refused nothing, so only `--dry-run`
@@ -66,6 +67,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                 "added_refs": added_refs,
                 "adopted_refs": adopted_refs,
                 "unmatched_refs": unmatched_refs,
+                "cleared_checkpoint_refs": cleared_checkpoint_refs,
                 "findings": findings.iter().map(finding_json).collect::<Vec<_>>(),
             }))
         }
@@ -141,6 +143,8 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             commit,
             checkpoint,
             task_ref,
+            unlock,
+            relock,
             set,
             integrity,
         } => {
@@ -151,6 +155,8 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                 commit,
                 checkpoint,
                 task_ref,
+                unlock,
+                relock,
                 set,
             };
             let changed = update::update(&path, &integrity, id, fields)?;
@@ -174,6 +180,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                 "id": outcome.id,
                 "ref": outcome.r#ref,
                 "rewired": outcome.rewired,
+                "pruned_override_fields": outcome.pruned_override_fields,
             }))
         }
 

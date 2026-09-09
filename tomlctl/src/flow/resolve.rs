@@ -13,6 +13,11 @@
 //! each flow's `scope`. Test fixtures pin the `scope-glob` literal, so
 //! collapsing the two strings breaks the suite.
 //!
+//! `plan-path-arg` is scope-glob's precursor rather than a case of it: a
+//! `--path` equal to a flow's own `plan_path` names that flow outright,
+//! and it must settle the pick before a glob that several flows' scopes
+//! answer to can report a tie.
+//!
 //! Step-6 ("none") emits literal `source = "none"` with `resolved: false`.
 //! `prompt-required` is a reserved string this resolver never emits.
 //!
@@ -49,13 +54,14 @@ use crate::time::{parse_iso_to_date, today_utc_date};
 /// strings the JSON envelope carries — changing one changes the wire
 /// format.
 ///
-/// Variants correspond to the resolve algorithm's six emission paths:
-/// `explicit-flag`, `scope-glob`, `active-binding`, `active-latest`,
-/// `branch-match`, and the terminal `none`. The reserved
+/// Variants correspond to the resolve algorithm's seven emission paths:
+/// `explicit-flag`, `plan-path-arg`, `scope-glob`, `active-binding`,
+/// `active-latest`, `branch-match`, and the terminal `none`. The reserved
 /// `prompt-required` string has no variant because nothing emits it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ResolveSource {
     ExplicitFlag,
+    PlanPathArg,
     ScopeGlob,
     ActiveBinding,
     ActiveLatest,
@@ -67,6 +73,7 @@ impl ResolveSource {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             ResolveSource::ExplicitFlag => "explicit-flag",
+            ResolveSource::PlanPathArg => "plan-path-arg",
             ResolveSource::ScopeGlob => "scope-glob",
             ResolveSource::ActiveBinding => "active-binding",
             ResolveSource::ActiveLatest => "active-latest",
@@ -119,6 +126,9 @@ pub(crate) fn dispatch(
 /// 4. active-latest        → `source = "active-latest"` (registry non-empty).
 /// 5. branch-match         → `source = "branch-match"` (registry empty path).
 /// 6. none                 → `source = "none"`, `resolved: false`.
+///
+/// Step 1b sits between 1 and 2: a `--path` equal to a flow's `plan_path`
+/// emits `source = "plan-path-arg"`.
 #[allow(clippy::too_many_arguments)]
 fn resolve(
     root: &Path,
@@ -162,8 +172,53 @@ fn resolve(
         ));
     }
 
-    // Enumerate all on-disk flows once for steps 2 and 5.
+    // Enumerate all on-disk flows once for steps 1b, 2 and 5.
     let flows = enumerate_flows(root)?;
+
+    // Step 1b: a `--path` that IS a flow's plan document. Ahead of step 2
+    // because the two rules disagree on the case that motivated this one:
+    // several flows' scope globs cover `docs/plans/**`, so the glob sweep
+    // reports a tie over a path that names exactly one flow's plan.
+    if !paths.is_empty() {
+        let wanted: Vec<String> = paths.iter().map(|p| comparable_path(root, p)).collect();
+        let hits: Vec<&FlowSummary> = flows
+            .iter()
+            .filter(|f| !f.is_complete())
+            .filter(|f| match f.plan_path.as_deref().filter(|p| !p.is_empty()) {
+                Some(plan) => {
+                    let plan = comparable_path(root, Path::new(plan));
+                    wanted.contains(&plan)
+                }
+                None => false,
+            })
+            .collect();
+        match hits.len() {
+            0 => { /* fall through to the scope globs */ }
+            1 => {
+                let slug = hits[0].slug.clone();
+                return build_resolved_envelope(
+                    root,
+                    &slug,
+                    ResolveSource::PlanPathArg,
+                    false,
+                    Vec::new(),
+                    with_staleness,
+                    opts,
+                    &mut warnings,
+                );
+            }
+            _ => {
+                // Two flows recording the same plan document: no path arg
+                // settles it, so the tie is the honest answer.
+                let tie: Vec<String> = hits.iter().map(|f| f.slug.clone()).collect();
+                return build_unresolved_envelope_with_ties(
+                    ResolveSource::PlanPathArg,
+                    tie,
+                    warnings,
+                );
+            }
+        }
+    }
 
     // Step 2: scope-glob match.
     if !paths.is_empty() {
@@ -217,7 +272,7 @@ fn resolve(
             maybe_verify_integrity(&registry_path, opts)
                 .with_context(|| format!("verifying {}", registry_path.display()))?;
         }
-        load_active_entries(&registry_path)?
+        load_active_entries(&registry_path, &mut warnings)?
     } else {
         Vec::new()
     };
@@ -257,7 +312,7 @@ fn resolve(
         }
 
         // Step 4: active-latest by `last_used`.
-        if let Some(latest) = pick_active_latest(&registry_entries) {
+        if let Some(latest) = pick_active_latest(&registry_entries, &mut warnings) {
             let ctx = context_path_for(root, &latest.slug);
             if ctx.exists() {
                 return build_resolved_envelope(
@@ -304,11 +359,11 @@ fn resolve(
             };
             let ties_broken = tie_slugs.len() > 1;
             if ties_broken {
-                eprintln!(
-                    "warning: {n} flows tied on branch+updated — picked {chosen}; pass --flow to disambiguate",
+                warnings.push(format!(
+                    "{n} flows tied on branch+updated — picked {chosen}; pass --flow to disambiguate",
                     n = tie_slugs.len(),
                     chosen = chosen_slug,
-                );
+                ));
             }
             return build_resolved_envelope(
                 root,
@@ -526,7 +581,7 @@ fn build_resolved_envelope(
     // `tasks` warns only when the plan declares a task section: a plan with
     // none legitimately has no store, and every flow predating the store
     // would otherwise warn in every carrier's bootstrap summary.
-    let expects_tasks = plan_declares_tasks(root, plan_path_v.as_deref());
+    let expects_tasks = plan_declares_tasks(slug);
     for (key, rel) in artifacts.to_pairs() {
         if key == "tasks" && !expects_tasks {
             continue;
@@ -612,40 +667,23 @@ fn read_or_compute_artifacts(
 
 /// True when the flow's plan document carries a `## Tasks` section, which is
 /// what separates a flow that legitimately has no task store from one whose
-/// store is absent where it is expected. A relative `plan_path` resolves
-/// against `root`; an absent or unreadable plan reads as "no task section",
-/// so the quiet answer is the default. Headings inside fenced code blocks
-/// don't count.
-pub(super) fn plan_declares_tasks(root: &Path, plan_path: Option<&str>) -> bool {
-    let Some(rel) = plan_path else {
+/// store is absent where it is expected. The document is resolved through the
+/// plan-path seam `tasks` owns: a recorded value is file-controlled input, and
+/// scanning one verbatim answers "does this file hold a `## Tasks` heading"
+/// for any path on the machine. A refused, absent or unreadable plan reads as
+/// "no task section", so the quiet answer is the default. The scan is
+/// `tasks::markdown`'s, the one the store's own parsers run, so both agree on
+/// which lines can be a heading.
+pub(super) fn plan_declares_tasks(slug: &str) -> bool {
+    let Ok(path) = crate::tasks::context_plan_path(slug) else {
         return false;
-    };
-    let path = if Path::new(rel).is_absolute() {
-        PathBuf::from(rel)
-    } else {
-        root.join(rel)
     };
     let Ok(src) = std::fs::read_to_string(&path) else {
         return false;
     };
-    let mut fence: Option<&str> = None;
-    for line in src.lines() {
-        let trimmed = line.trim_start();
-        let marker = ["```", "~~~"].into_iter().find(|m| trimmed.starts_with(m));
-        match (fence, marker) {
-            (None, Some(open)) => fence = Some(open),
-            (Some(open), Some(close)) if open == close => fence = None,
-            (None, None)
-                if trimmed
-                    .strip_prefix("## ")
-                    .is_some_and(|title| title.trim() == "Tasks") =>
-            {
-                return true;
-            }
-            _ => {}
-        }
-    }
-    false
+    crate::tasks::markdown::sections(&src)
+        .iter()
+        .any(|section| section.title == "Tasks")
 }
 
 // ---------------------------------------------------------------------------
@@ -657,14 +695,16 @@ fn active_flow_path(root: &Path) -> PathBuf {
     root.join(".claude").join("active-flow.toml")
 }
 
-fn load_active_entries(file: &Path) -> Result<Vec<ActiveEntry>> {
+fn load_active_entries(file: &Path, warnings: &mut Vec<String>) -> Result<Vec<ActiveEntry>> {
     // Align with `flow::doctor`'s silent-zero behaviour on a malformed
-    // registry: surface zero entries (with a stderr breadcrumb) so resolve
-    // falls through to step-5 instead of hard-erroring on a corrupt file.
+    // registry: surface zero entries (as a breadcrumb) so resolve falls
+    // through to step-5 instead of hard-erroring on a corrupt file.
     let doc = match read_toml(file) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("warning: active-flow.toml unreadable — falling through to step-5; {e}");
+            warnings.push(format!(
+                "active-flow.toml unreadable — falling through to step-5; {e}"
+            ));
             return Ok(Vec::new());
         }
     };
@@ -724,10 +764,10 @@ fn best_binding_match(
 
 /// Step-4 fallback: most-recent `last_used` wins. Each `last_used` is
 /// parsed to `jiff::Timestamp` so a hand-edited entry with a TZ offset
-/// (which would lex-compare wrong against UTC-Z entries) surfaces as a
-/// stderr warning and is treated as ancient (sorts last). Empty
+/// (which would lex-compare wrong against UTC-Z entries) surfaces as an
+/// envelope warning and is treated as ancient (sorts last). Empty
 /// `last_used` strings also sort to the bottom.
-fn pick_active_latest(entries: &[ActiveEntry]) -> Option<ActiveEntry> {
+fn pick_active_latest(entries: &[ActiveEntry], warnings: &mut Vec<String>) -> Option<ActiveEntry> {
     use jiff::Timestamp;
 
     // Parse each entry's `last_used` once; warn-and-treat-as-ancient on
@@ -742,11 +782,11 @@ fn pick_active_latest(entries: &[ActiveEntry]) -> Option<ActiveEntry> {
             match e.last_used.parse::<Timestamp>() {
                 Ok(ts) => (Some(ts), e),
                 Err(_) => {
-                    eprintln!(
-                        "tomlctl: warning: active-flow entry `{slug}` has unparseable last_used `{lu}` — treated as ancient",
+                    warnings.push(format!(
+                        "active-flow entry `{slug}` has unparseable last_used `{lu}` — treated as ancient",
                         slug = e.slug,
                         lu = e.last_used,
-                    );
+                    ));
                     (None, e)
                 }
             }
@@ -767,6 +807,9 @@ struct FlowSummary {
     slug: String,
     status: Option<String>,
     branch: Option<String>,
+    /// The flow's plan document as `context.toml` spells it — step 1b
+    /// compares a `--path` argument against this.
+    plan_path: Option<String>,
     /// Raw scope-glob patterns from the flow's `context.toml`. Retained
     /// as the source-of-truth for diagnostics (e.g. logged on a
     /// scope-glob compile failure); the compiled `scope_set` below is
@@ -843,6 +886,7 @@ fn enumerate_flows(root: &Path) -> Result<Vec<FlowSummary>> {
             slug: slug.to_string(),
             status: proj.status,
             branch: proj.branch,
+            plan_path: proj.plan_path,
             scope: proj.scope,
             scope_set,
             updated: proj.updated.unwrap_or_default(),
@@ -854,6 +898,28 @@ fn enumerate_flows(root: &Path) -> Result<Vec<FlowSummary>> {
 // ---------------------------------------------------------------------------
 // Glob matching (step 2)
 // ---------------------------------------------------------------------------
+
+/// One spelling for a `--path` argument and a recorded `plan_path`, so
+/// step 1b compares the two forms a caller actually types: repo-relative
+/// and `/`-separated. An absolute argument under `root` relativises; one
+/// outside it keeps its own spelling and matches nothing.
+fn comparable_path(root: &Path, path: &Path) -> String {
+    let text = slashed(path);
+    let prefix = format!("{}/", slashed(root));
+    let relative = text.strip_prefix(&prefix).unwrap_or(&text);
+    relative.trim_start_matches("./").to_string()
+}
+
+/// `/`-separated, with the `\\?\` prefix off. `root` reaches this module
+/// canonicalised, and on Windows that carries a verbatim prefix no argument
+/// a caller types ever has — leaving it on makes every strip below miss.
+fn slashed(path: &Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    match text.strip_prefix("//?/") {
+        Some(rest) => rest.to_string(),
+        None => text,
+    }
+}
 
 /// Compile a `GlobSet` for the flow's scope. Returns `None` when every
 /// pattern fails to compile (defensive against hand-edited malformed
@@ -1054,33 +1120,119 @@ mod tests {
         assert!(best.is_none(), "tie at top score must fall through");
     }
 
-    fn plan_root_with(body: &str) -> (tempfile::TempDir, PathBuf) {
-        let dir = tempfile::tempdir().unwrap();
-        let plans = dir.path().join("docs").join("plans");
+    const SLUG: &str = "alpha";
+
+    /// Record `plan_path` for [`SLUG`] in a sandbox `context.toml`. An empty
+    /// value records the key as absent, which is what a flow predating the
+    /// field carries.
+    fn seed_context(root: &Path, plan_path: &str) {
+        let dir = root.join(".claude").join("flows").join(SLUG);
+        std::fs::create_dir_all(&dir).unwrap();
+        let recorded = if plan_path.is_empty() {
+            String::new()
+        } else {
+            format!("plan_path = '{plan_path}'\n")
+        };
+        std::fs::write(
+            dir.join("context.toml"),
+            format!("schema_version = 1\nslug = \"{SLUG}\"\n{recorded}"),
+        )
+        .unwrap();
+    }
+
+    /// Seed the context AND write the plan document it names, repo-relative.
+    fn seed_plan(root: &Path, body: &str) {
+        seed_context(root, "docs/plans/p.md");
+        let plans = root.join("docs").join("plans");
         std::fs::create_dir_all(&plans).unwrap();
         std::fs::write(plans.join("p.md"), body).unwrap();
-        let root = dir.path().to_path_buf();
-        (dir, root)
     }
 
     #[test]
     fn a_plan_with_a_tasks_section_expects_a_store() {
-        let (_g, root) = plan_root_with("# Plan\n\n## Tasks\n\n### 1. Do it\n");
-        assert!(plan_declares_tasks(&root, Some("docs/plans/p.md")));
+        crate::test_support::with_root(|root| {
+            seed_plan(root, "# Plan\n\n## Tasks\n\n### 1. Do it\n");
+            assert!(plan_declares_tasks(SLUG));
+        });
     }
 
     #[test]
     fn a_plan_without_one_and_an_absent_plan_both_stay_quiet() {
-        let (_g, root) = plan_root_with("# Plan\n\n## Approach\n\nprose\n");
-        assert!(!plan_declares_tasks(&root, Some("docs/plans/p.md")));
-        assert!(!plan_declares_tasks(&root, Some("docs/plans/gone.md")));
-        assert!(!plan_declares_tasks(&root, None));
+        crate::test_support::with_root(|root| {
+            seed_plan(root, "# Plan\n\n## Approach\n\nprose\n");
+            assert!(!plan_declares_tasks(SLUG));
+
+            seed_context(root, "docs/plans/gone.md");
+            assert!(!plan_declares_tasks(SLUG));
+
+            seed_context(root, "");
+            assert!(!plan_declares_tasks(SLUG));
+
+            assert!(!plan_declares_tasks("no-such-flow"));
+        });
     }
 
     #[test]
     fn a_fenced_tasks_heading_is_not_a_tasks_section() {
-        let (_g, root) = plan_root_with("# Plan\n\n```md\n## Tasks\n```\n\n## Risks\n");
-        assert!(!plan_declares_tasks(&root, Some("docs/plans/p.md")));
+        crate::test_support::with_root(|root| {
+            seed_plan(root, "# Plan\n\n```md\n## Tasks\n```\n\n## Risks\n");
+            assert!(!plan_declares_tasks(SLUG));
+        });
+    }
+
+    /// The width-tracking the shared `tasks::markdown` fence scanner brings:
+    /// a three-backtick line inside a four-backtick fence does not close it.
+    #[test]
+    fn a_wider_fence_survives_an_inner_marker() {
+        crate::test_support::with_root(|root| {
+            seed_plan(root, "# Plan\n\n````md\n```\n## Tasks\n````\n");
+            assert!(!plan_declares_tasks(SLUG));
+        });
+    }
+
+    /// The existence-oracle case. The outside document really does hold a
+    /// `## Tasks` heading, so a `true` here could only come from reading it.
+    #[test]
+    fn an_absolute_plan_path_outside_the_repo_is_not_read() {
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("secret.md");
+        std::fs::write(&target, "# not yours\n\n## Tasks\n\n### 1. Do it\n").unwrap();
+
+        crate::test_support::with_root(|root| {
+            seed_context(root, &target.display().to_string());
+            assert!(!plan_declares_tasks(SLUG));
+        });
+    }
+
+    /// The non-`.md` value the seam refuses alongside the escaping ones. The
+    /// document is contained and holds a `## Tasks` heading, so the refusal is
+    /// the only thing that can produce `false`. (The traversal spelling needs
+    /// a real file outside the sandbox root, so it is pinned in
+    /// `tests/flow_path_seam.rs`, where the root can be nested inside a
+    /// temporary directory the test owns.)
+    #[test]
+    fn a_non_markdown_plan_path_is_not_read() {
+        crate::test_support::with_root(|root| {
+            seed_context(root, "docs/plans/p.txt");
+            let plans = root.join("docs").join("plans");
+            std::fs::create_dir_all(&plans).unwrap();
+            std::fs::write(plans.join("p.txt"), "# Plan\n\n## Tasks\n").unwrap();
+            assert!(!plan_declares_tasks(SLUG));
+        });
+    }
+
+    #[test]
+    fn a_path_arg_and_a_recorded_plan_path_reach_one_spelling() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let want = "docs/plans/p.md";
+        assert_eq!(comparable_path(root, Path::new(want)), want);
+        assert_eq!(comparable_path(root, Path::new("./docs/plans/p.md")), want);
+        assert_eq!(comparable_path(root, Path::new("docs\\plans\\p.md")), want);
+        assert_eq!(
+            comparable_path(root, &root.join("docs").join("plans").join("p.md")),
+            want
+        );
     }
 
     #[test]
@@ -1097,7 +1249,7 @@ mod tests {
                 binding: Binding::default(),
             },
         ];
-        let latest = pick_active_latest(&entries);
+        let latest = pick_active_latest(&entries, &mut Vec::new());
         assert_eq!(latest.unwrap().slug, "b");
     }
 }

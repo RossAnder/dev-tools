@@ -17,7 +17,6 @@ mod edges;
 mod graph;
 mod import_plan;
 mod list;
-mod markdown;
 mod parse_policy;
 mod parse_tasks;
 mod ready;
@@ -32,3 +31,17 @@ mod update;
 // `pub(crate)` because the caller is `cli::dispatch::run`, which is not a
 // descendant of this module and so cannot see the private leaves above.
 pub(crate) mod dispatch;
+
+// `flow::resolve` discriminates a plan that declares tasks off the same
+// fence-aware scan the store's own parsers run on; a second scanner over the
+// same bytes drifts from this one on fence and heading edge cases.
+pub(crate) mod markdown;
+
+/// The plan document `context.toml` binds `slug` to, through the plan-path
+/// seam's containment and `.md` validation — a recorded value is
+/// file-controlled input, and resolving one verbatim makes a reader of it an
+/// oracle for any path on the machine. No store is bound here: whether store
+/// and context agree is `tasks check --plan`'s finding.
+pub(crate) fn context_plan_path(slug: &str) -> anyhow::Result<std::path::PathBuf> {
+    import_plan::resolve_recorded_plan_path(slug, &schema::Store::default())
+}

@@ -10,7 +10,8 @@
 //! so the rows are scanned for them before any graph exists — which is what
 //! lets one run report every defect instead of dying on the first.
 //!
-//! `files/closure` is deliberately absent: measured at a 68% false-flag rate.
+//! `files/closure` and `dag/symbol-without-edge` read a row's prose rather
+//! than its fields; what each is worth is stated at its own declaration.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::RangeInclusive;
@@ -22,8 +23,38 @@ use super::schema::{Status, Store};
 
 const ERROR: &str = "error";
 const WARNING: &str = "warning";
+/// Below `WARNING` and outside `exit_code`'s test, so a class raised here can
+/// never move an exit status.
+const INFO: &str = "info";
 
 const MAX_PARALLEL: RangeInclusive<u32> = 1..=8;
+
+/// The path roots a `files/closure` candidate must sit under.
+const CLOSURE_ROOTS: &[&str] = &["packages/", "apps/", "docs/", "scripts/"];
+
+/// A line carrying one of these describes a path the row reads rather than
+/// edits, which the plan format requires to stay off the `Files` line.
+const CLOSURE_SKIP_CUES: &[&str] = &["read-only", "model of", "pattern", "cite"];
+
+/// Verbs marking the backticked span after them as something the row brings
+/// into being rather than consumes.
+const INTRODUCERS: &[&str] = &[
+    "add",
+    "adds",
+    "adding",
+    "create",
+    "creates",
+    "creating",
+    "export",
+    "exports",
+    "exporting",
+];
+
+/// Words that may stand between an introducer and its span, or between two
+/// spans one introducer covers (`Add \`A\`, \`B\` and \`C\``).
+const FILLERS: &[&str] = &[
+    "a", "an", "the", "new", "and", "one", "two", "three", "its", "own",
+];
 
 /// Infallible: a store too broken to build a graph from still reports why,
 /// and a cycle only suppresses the classes that need reachability.
@@ -38,6 +69,7 @@ pub(crate) fn check(store: &Store, in_flight: &[u32]) -> Vec<Finding> {
     findings.extend(scanned);
     findings.extend(orphan_task_findings(store));
     findings.extend(orphan_row_findings(store));
+    findings.extend(closure_findings(store));
     findings.extend(graph_findings(store, build_error_named, in_flight));
     findings.sort_by(|a, b| (a.class, &a.ids).cmp(&(b.class, &b.ids)));
     findings
@@ -252,6 +284,52 @@ fn orphan_row_detail(ids: &[u32], suffix: &str) -> String {
     )
 }
 
+/// Info severity, never warning: as a gate this flagged 80 of 117 path tokens
+/// over 28 tasks (`docs/ideas/plan-flow-mechanical-verification.md`) — the
+/// plan format requires a read-only reference to stay off the `Files` line.
+/// Four roots and no gating leave a list a reader judges.
+fn closure_findings(store: &Store) -> Vec<Finding> {
+    store
+        .items
+        .iter()
+        .filter_map(|row| {
+            let claimed: BTreeSet<&str> = row.files.iter().map(String::as_str).collect();
+            let unclaimed: Vec<String> = row
+                .action
+                .lines()
+                .chain(row.detail.lines())
+                .filter(|line| !skipped_line(line))
+                .flat_map(backticked)
+                .filter(|span| {
+                    CLOSURE_ROOTS.iter().any(|root| span.starts_with(root))
+                        && !claimed.contains(span)
+                })
+                .map(str::to_string)
+                .collect::<BTreeSet<String>>()
+                .into_iter()
+                .collect();
+            if unclaimed.is_empty() {
+                return None;
+            }
+            Some(Finding {
+                class: "files/closure",
+                severity: INFO,
+                ids: vec![row.id],
+                detail: format!(
+                    "task {}'s prose names {}, which its `files` does not claim",
+                    row.id,
+                    quoted_list(&unclaimed)
+                ),
+            })
+        })
+        .collect()
+}
+
+fn skipped_line(line: &str) -> bool {
+    let lowered = line.to_ascii_lowercase();
+    CLOSURE_SKIP_CUES.iter().any(|cue| lowered.contains(cue))
+}
+
 /// Skipped wholesale when the graph will not build, since a partial answer
 /// would read as a clean bill — but a refusal the row scans did not name is
 /// raised as an error, or silence would certify as green a store every graph
@@ -282,6 +360,7 @@ fn graph_findings(store: &Store, build_error_named: bool, in_flight: &[u32]) -> 
     }
 
     let mut findings = overlap_findings(store, &graph);
+    findings.extend(symbol_findings(store, &graph));
     findings.extend(cut_findings(store, &graph));
     findings.extend(stalled_findings(
         &graph,
@@ -333,6 +412,177 @@ fn stalled_findings(graph: &Graph<'_>, in_flight: &[u32]) -> Vec<Finding> {
         .collect()
 }
 
+/// The edge `coupling` was meant to carry and nothing populates: a symbol one
+/// row's `Action` introduces, named by a row no path reaches. A heuristic over
+/// prose, so it warns rather than gates, and it reads only spans an introducing
+/// verb covers — an untargeted token scan is what measured unusable.
+///
+/// Two suppressions, each measured against `docs/plans/`: a row whose `files`
+/// are all markdown adds a catalogue entry, not a symbol; and a name more than
+/// one row introduces strands nobody who already reaches one of them.
+fn symbol_findings(store: &Store, graph: &Graph<'_>) -> Vec<Finding> {
+    let introducers: Vec<(u32, BTreeSet<String>)> = store
+        .items
+        .iter()
+        .filter(|row| !documents_only(row))
+        .map(|row| (row.id, introduced_symbols(&row.action)))
+        .filter(|(_, symbols)| !symbols.is_empty())
+        .collect();
+    if introducers.is_empty() {
+        return Vec::new();
+    }
+    let mut minted: BTreeMap<&str, BTreeSet<u32>> = BTreeMap::new();
+    for (id, symbols) in &introducers {
+        for symbol in symbols {
+            minted.entry(symbol).or_default().insert(*id);
+        }
+    }
+    let mut named: Vec<(u32, BTreeSet<String>, BTreeSet<u32>)> = Vec::new();
+    for row in &store.items {
+        let (Ok(up), Ok(down)) = (graph.closure_up(row.id), graph.closure_down(row.id)) else {
+            return Vec::new();
+        };
+        named.push((
+            row.id,
+            named_symbols(row),
+            up.into_iter().chain(down).collect(),
+        ));
+    }
+
+    let mut findings = Vec::new();
+    for (introducer, symbols) in &introducers {
+        for (user, uses, linked) in &named {
+            if linked.contains(introducer) {
+                continue;
+            }
+            let shared: Vec<String> = symbols
+                .intersection(uses)
+                .filter(|symbol| {
+                    !minted
+                        .get(symbol.as_str())
+                        .is_some_and(|ids| ids.iter().any(|other| linked.contains(other)))
+                })
+                .cloned()
+                .collect();
+            if shared.is_empty() {
+                continue;
+            }
+            let mut ids = vec![*introducer, *user];
+            ids.sort_unstable();
+            findings.push(Finding {
+                class: "dag/symbol-without-edge",
+                severity: WARNING,
+                ids,
+                detail: format!(
+                    "task {introducer} introduces {} and task {user} names it, with no \
+                     dependency path either way",
+                    quoted_list(&shared)
+                ),
+            });
+        }
+    }
+    findings
+}
+
+/// A row claiming only markdown edits documentation, where "add `X`" names an
+/// entry about `X` rather than `X` itself. A row claiming nothing is not one.
+fn documents_only(row: &super::schema::TaskRow) -> bool {
+    !row.files.is_empty() && row.files.iter().all(|file| file.ends_with(".md"))
+}
+
+/// Every backticked span an introducer covers, including the rest of a list
+/// one introducer opens.
+fn introduced_symbols(action: &str) -> BTreeSet<String> {
+    let mut symbols = BTreeSet::new();
+    let mut carried = false;
+    for (lead, span) in spans_with_lead(action) {
+        carried = introduces(lead) || (carried && all_fillers(lead));
+        if carried && let Some(symbol) = symbol_of(span) {
+            symbols.insert(symbol);
+        }
+    }
+    symbols
+}
+
+/// A row's whole body, since a symbol is as much used in an acceptance command
+/// as in an action.
+fn named_symbols(row: &super::schema::TaskRow) -> BTreeSet<String> {
+    [&row.action, &row.detail, &row.acceptance]
+        .into_iter()
+        .flat_map(|text| text.lines())
+        .flat_map(backticked)
+        .filter_map(symbol_of)
+        .collect()
+}
+
+/// Each backticked span with the text since the previous one, which is where
+/// the introducing verb sits.
+fn spans_with_lead(text: &str) -> Vec<(&str, &str)> {
+    let parts: Vec<&str> = text.split('`').collect();
+    parts
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|[lead, span]| (*lead, *span))
+        .collect()
+}
+
+fn words_of(lead: &str) -> Vec<String> {
+    lead.split_whitespace()
+        .map(|word| {
+            word.trim_matches(|c: char| !c.is_ascii_alphanumeric())
+                .to_ascii_lowercase()
+        })
+        .filter(|word| !word.is_empty())
+        .collect()
+}
+
+/// The verb has to be within three words of the span, so `Add typed X` and
+/// `Create the new X` introduce and `Create the guard that wraps X` does not.
+/// A wider window reads any verb in the sentence as the span's own.
+fn introduces(lead: &str) -> bool {
+    words_of(lead)
+        .iter()
+        .rev()
+        .take(3)
+        .any(|word| INTRODUCERS.contains(&word.as_str()))
+}
+
+fn all_fillers(lead: &str) -> bool {
+    !lead.contains(['.', ';', ':'])
+        && words_of(lead)
+            .iter()
+            .all(|word| FILLERS.contains(&word.as_str()))
+}
+
+/// Identifier-shaped and carrying a code marker — `_`, an upper-case letter or
+/// `::`. Without the marker every backticked English word in a plan is a
+/// candidate symbol, which is the shape that measured unusable.
+fn symbol_of(span: &str) -> Option<String> {
+    let token = span.trim().trim_end_matches("()").trim_end_matches('!');
+    if token.len() < 3 {
+        return None;
+    }
+    if !token
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ':')
+    {
+        return None;
+    }
+    let first = token.chars().next()?;
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return None;
+    }
+    let marked = token.contains('_')
+        || token.contains("::")
+        || token.chars().any(|c| c.is_ascii_uppercase());
+    marked.then(|| token.to_string())
+}
+
+fn backticked(line: &str) -> Vec<&str> {
+    line.split('`').skip(1).step_by(2).collect()
+}
+
 fn overlap_findings(store: &Store, graph: &Graph<'_>) -> Vec<Finding> {
     let Ok(pairs) = graph.overlap_pairs() else {
         return Vec::new();
@@ -345,7 +595,7 @@ fn overlap_findings(store: &Store, graph: &Graph<'_>) -> Vec<Finding> {
             ids: vec![a, b],
             detail: format!(
                 "tasks {a} and {b} both claim {} with no dependency path either way",
-                file_list(&shared_files(store, a, b))
+                quoted_list(&shared_files(store, a, b))
             ),
         })
         .collect()
@@ -421,10 +671,10 @@ fn task_list(ids: &[u32]) -> String {
     }
 }
 
-fn file_list(files: &[String]) -> String {
-    files
+fn quoted_list(values: &[String]) -> String {
+    values
         .iter()
-        .map(|file| format!("`{file}`"))
+        .map(|value| format!("`{value}`"))
         .collect::<Vec<String>>()
         .join(", ")
 }
@@ -670,6 +920,163 @@ mod tests {
             vec!["dag/stalled-dependency"],
             "an id no row carries is dropped, so it cannot empty the class"
         );
+    }
+
+    /// The pair the class exists for: 2 mints what 3 calls, and no edge runs
+    /// between them.
+    #[test]
+    fn a_symbol_named_across_an_absent_edge_is_a_warning_that_an_edge_silences() {
+        let mut store = store(
+            vec![
+                row(1, &[], &["a.rs"], "A"),
+                row(2, &[], &["b.rs"], "A"),
+                row(3, &[], &["c.rs"], "A"),
+            ],
+            &["A"],
+        );
+        store.items[1].action = "Add `read_token` beside the session reader.".to_string();
+        store.items[2].acceptance = "`read_token` returns the parsed claims.".to_string();
+        let findings = check(&store, &[]);
+
+        assert_eq!(
+            classes(&findings),
+            vec!["dag/symbol-without-edge"],
+            "{findings:?}"
+        );
+        assert_eq!(findings[0].severity, WARNING);
+        assert_eq!(findings[0].ids, vec![2, 3]);
+        assert!(findings[0].detail.contains("`read_token`"), "{findings:?}");
+        assert_eq!(exit_code(&findings), 0, "{findings:?}");
+
+        store.items[2].needs = vec![2];
+        assert_eq!(classes(&check(&store, &[])), Vec::<&str>::new());
+    }
+
+    /// The two narrowings that separate this from the check measured at a 68%
+    /// false-flag rate: only an introducing verb mints a symbol, and only a
+    /// marked identifier is one.
+    #[test]
+    fn a_symbol_needs_an_introducing_verb_and_a_code_marker() {
+        let mut store = store(
+            vec![row(1, &[], &["a.rs"], "A"), row(2, &[], &["b.rs"], "A")],
+            &["A"],
+        );
+        store.items[0].action = "Call `read_token` through the `session` module.".to_string();
+        store.items[1].detail = "`read_token` and `session` are already there.".to_string();
+        assert_eq!(
+            classes(&check(&store, &[])),
+            Vec::<&str>::new(),
+            "a consuming verb introduces nothing"
+        );
+
+        store.items[0].action = "Add the `session` module.".to_string();
+        assert_eq!(
+            classes(&check(&store, &[])),
+            Vec::<&str>::new(),
+            "an unmarked lower-case word is prose, not a symbol"
+        );
+
+        store.items[0].action = "Add `session_of` and `Session`.".to_string();
+        store.items[1].detail = "`session_of` builds a `Session`.".to_string();
+        let findings = check(&store, &[]);
+        assert_eq!(findings.len(), 1, "one finding per pair: {findings:?}");
+        assert!(findings[0].detail.contains("`Session`, `session_of`"));
+    }
+
+    /// Both suppressions, each measured against the plan corpus: a
+    /// documentation row's "add `X`" names an entry about `X`, and a name two
+    /// rows introduce strands nobody already ordered behind one of them.
+    #[test]
+    fn a_documentation_row_and_a_reached_second_minter_both_suppress() {
+        let mut documented = store(
+            vec![
+                row(1, &[], &["docs/catalogue.md"], "A"),
+                row(2, &[], &["b.rs"], "A"),
+            ],
+            &["A"],
+        );
+        documented.items[0].action = "Add `read_token` to the catalogue.".to_string();
+        documented.items[1].detail = "`read_token` is already there.".to_string();
+        assert_eq!(
+            classes(&check(&documented, &[])),
+            Vec::<&str>::new(),
+            "a markdown-only row introduces nothing"
+        );
+
+        let mut layered = store(
+            vec![
+                row(1, &[], &["a.rs"], "A"),
+                row(2, &[], &["b.rs"], "A"),
+                row(3, &[1], &["c.rs"], "A"),
+            ],
+            &["A"],
+        );
+        layered.items[0].action = "Add `set_status` in the repo layer.".to_string();
+        layered.items[1].action = "Add `set_status` to the tool router.".to_string();
+        layered.items[2].acceptance = "`set_status` rejects an illegal transition.".to_string();
+        assert_eq!(
+            classes(&check(&layered, &[])),
+            Vec::<&str>::new(),
+            "3 already waits on a row that introduces the name"
+        );
+
+        layered.items[2].needs = vec![];
+        assert_eq!(
+            check(&layered, &[])
+                .iter()
+                .map(|finding| finding.ids.clone())
+                .collect::<Vec<Vec<u32>>>(),
+            vec![vec![1, 3], vec![2, 3]],
+            "reaching neither minter leaves both pairs"
+        );
+    }
+
+    /// The severity is the contract: a lens reads the list, and no carrier can
+    /// gate on it.
+    #[test]
+    fn an_unclaimed_path_is_info_and_a_read_only_line_is_skipped() {
+        let mut store = store(vec![row(1, &[], &["docs/kept.md"], "A")], &["A"]);
+        store.items[0].action =
+            "Rewrite `docs/kept.md` from `scripts/gen.sh`.\nThe read-only source is `docs/spec.md`."
+                .to_string();
+        store.items[0].detail = "Mirrors the `packages/shell/README.md` pattern.".to_string();
+        let findings = check(&store, &[]);
+
+        assert_eq!(classes(&findings), vec!["files/closure"], "{findings:?}");
+        assert_eq!(findings[0].severity, INFO);
+        assert_eq!(findings[0].ids, vec![1]);
+        assert!(
+            findings[0].detail.contains("`scripts/gen.sh`"),
+            "{findings:?}"
+        );
+        assert!(
+            !findings[0].detail.contains("spec.md") && !findings[0].detail.contains("README"),
+            "a cue line names nothing: {findings:?}"
+        );
+        assert_eq!(exit_code(&findings), 0, "{findings:?}");
+    }
+
+    /// `src/` is out of scope by decision, so the roots are asserted rather
+    /// than assumed from one member.
+    #[test]
+    fn only_the_four_declared_roots_are_reported() {
+        let mut store = store(vec![row(1, &[], &[], "A")], &["A"]);
+        store.items[0].action =
+            "Touch `src/main.rs`, `apps/web/main.ts`, `packages/core/index.ts`, `docs/a.md` \
+             and `scripts/b.sh`."
+                .to_string();
+        let findings = check(&store, &[]);
+
+        assert_eq!(classes(&findings), vec!["files/closure"], "{findings:?}");
+        assert!(!findings[0].detail.contains("src/main.rs"), "{findings:?}");
+        for path in [
+            "apps/web/main.ts",
+            "packages/core/index.ts",
+            "docs/a.md",
+            "scripts/b.sh",
+        ] {
+            assert!(findings[0].detail.contains(path), "{path}: {findings:?}");
+        }
     }
 
     #[test]

@@ -8,6 +8,16 @@
 //! them is owned by `scripts/shared-blocks.toml`; both arrive as arguments, so
 //! this module holds no list of either and does not rot when the manifest
 //! changes.
+//!
+//! `scripts/verify-shared-blocks.sh` is canonical, not this module: it gates
+//! commits, so a tree it rejects must never verify here. A line is the bytes
+//! between newlines with at most ONE trailing `\r` removed — `str::lines()`,
+//! equally the text-mode read of the gawk that script requires — and a marker
+//! matches only by whole-line equality after that strip, so a line ending
+//! `\r\r\n` keeps a CR and fails on both sides. An empty span fails too: equal
+//! empty digests would report parity having compared nothing. `SpanDefect`
+//! carries the shell's diagnoses; its marker guard alone tolerates one further
+//! CR, which buys a better message for the same verdict.
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value as JsonValue;
@@ -17,6 +27,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::integrity::hex_lower;
+use crate::io::advise;
 
 #[derive(Debug)]
 pub(crate) struct BlocksReport {
@@ -26,24 +37,51 @@ pub(crate) struct BlocksReport {
     pub(crate) report: JsonValue,
 }
 
+/// Why a file yields no usable span for a block — one per hard failure
+/// `scripts/verify-shared-blocks.sh` reports for the same file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SpanDefect {
+    MissingMarker,
+    /// Both markers are there once a further trailing `\r` is stripped: the
+    /// shell's marker guard passes such a file and its extractor then finds
+    /// nothing between markers it never matched.
+    MarkerTrailingCr,
+    ExtractedEmpty,
+}
+
+impl SpanDefect {
+    /// Self-describing enough to act on from the JSON alone.
+    pub(crate) fn reason(self) -> &'static str {
+        match self {
+            SpanDefect::MissingMarker => "missing-marker",
+            SpanDefect::MarkerTrailingCr => "marker-trailing-cr",
+            SpanDefect::ExtractedEmpty => "extracted-empty",
+        }
+    }
+}
+
 /// Extract the byte-content between `<!-- SHARED-BLOCK:NAME START -->` and
 /// `<!-- SHARED-BLOCK:NAME END -->` markers. Markers themselves are NOT
 /// included in the hash input. Inner lines are joined by `\n` (matching awk's
 /// default ORS), with every content line — including the last — followed by
-/// `\n`. CRLF line endings in the source are normalised to `\n` in the hash
-/// input (via `str::lines()`, which strips both `\n` and `\r\n`). Returns
-/// None if either marker is missing.
-pub(crate) fn extract_block(contents: &str, name: &str) -> Option<Vec<u8>> {
+/// `\n`. See the module header for the line and marker semantics, which are the
+/// shell verifier's rather than this module's.
+pub(crate) fn extract_block(contents: &str, name: &str) -> Result<Vec<u8>, SpanDefect> {
     let start = format!("<!-- SHARED-BLOCK:{} START -->", name);
     let end = format!("<!-- SHARED-BLOCK:{} END -->", name);
     let mut in_block = false;
     let mut saw_start = false;
     let mut saw_end = false;
+    let mut relaxed_start = false;
+    let mut relaxed_end = false;
     // The extracted block is a subset of `contents`, so `contents.len()` is a
     // trivially correct upper bound that eliminates reallocations during the
     // per-line `extend_from_slice` + `push(b'\n')` loop below.
     let mut out = Vec::with_capacity(contents.len());
     for line in contents.lines() {
+        let relaxed = line.strip_suffix('\r').unwrap_or(line);
+        relaxed_start |= relaxed == start;
+        relaxed_end |= relaxed == end;
         if line == start {
             in_block = true;
             saw_start = true;
@@ -59,11 +97,17 @@ pub(crate) fn extract_block(contents: &str, name: &str) -> Option<Vec<u8>> {
             out.push(b'\n');
         }
     }
-    if saw_start && saw_end {
-        Some(out)
-    } else {
-        None
+    if !(saw_start && saw_end) {
+        return Err(if relaxed_start && relaxed_end {
+            SpanDefect::MarkerTrailingCr
+        } else {
+            SpanDefect::MissingMarker
+        });
     }
+    if out.is_empty() {
+        return Err(SpanDefect::ExtractedEmpty);
+    }
+    Ok(out)
 }
 
 pub(crate) fn scan_block_names(contents: &str) -> Vec<String> {
@@ -120,7 +164,7 @@ pub(crate) fn scan_block_names_warn(contents: &str, src_label: Option<&str>) -> 
         let path_prefix = src_label
             .map(|p| format!("file {} ", p))
             .unwrap_or_default();
-        eprintln!(
+        advise!(
             "tomlctl: warning: {}line {}: probable typo'd SHARED-BLOCK marker: {}",
             path_prefix,
             i + 1,
@@ -160,30 +204,40 @@ pub(crate) fn blocks_verify(files: &[PathBuf], blocks: &[String]) -> Result<Bloc
     let mut all_ok = true;
     let mut blocks_out = Vec::new();
     for name in &effective_blocks {
-        let mut per_file: Vec<(PathBuf, Option<String>)> = Vec::new();
+        let mut per_file: Vec<(PathBuf, Result<String, SpanDefect>)> = Vec::new();
         for f in files {
             let contents = &contents_by_file[f];
-            match extract_block(contents, name) {
-                Some(bytes) => {
-                    let digest = hex_lower(&Sha256::digest(&bytes));
-                    per_file.push((f.clone(), Some(digest)));
-                }
-                None => per_file.push((f.clone(), None)),
-            }
+            let outcome = extract_block(contents, name).map(|b| hex_lower(&Sha256::digest(&b)));
+            per_file.push((f.clone(), outcome));
         }
 
         let mut present: Vec<(&PathBuf, &String)> = per_file
             .iter()
-            .filter_map(|(p, h)| h.as_ref().map(|d| (p, d)))
+            .filter_map(|(p, h)| h.as_ref().ok().map(|d| (p, d)))
             .collect();
         let missing: Vec<JsonValue> = per_file
             .iter()
-            .filter(|(_, h)| h.is_none())
+            .filter(|(_, h)| h.is_err())
             .map(|(f, _)| JsonValue::String(path_to_string(f)))
+            .collect();
+        // Why each of those files has no usable span. Omitted entirely when
+        // none has, so a passing report keeps the shape its readers know.
+        let defects: Vec<JsonValue> = per_file
+            .iter()
+            .filter_map(|(f, h)| h.as_ref().err().map(|d| (f, d)))
+            .map(|(f, d)| {
+                let mut o = serde_json::Map::new();
+                o.insert("file".into(), JsonValue::String(path_to_string(f)));
+                o.insert("reason".into(), JsonValue::String(d.reason().to_string()));
+                JsonValue::Object(o)
+            })
             .collect();
 
         let mut block_obj = serde_json::Map::new();
         block_obj.insert("name".into(), JsonValue::String(name.clone()));
+        if !defects.is_empty() {
+            block_obj.insert("defects".into(), JsonValue::Array(defects));
+        }
 
         if present.is_empty() {
             all_ok = false;
@@ -283,6 +337,46 @@ body
             vec!["foo".to_string()],
             "END marker must be recognised as canonical and not alter the names list"
         );
+    }
+
+    /// A marker line that still ends in `\r` after the one strip a line gets
+    /// matches nothing — the verdict the shell verifier reaches by clearing its
+    /// relaxed marker guard and then extracting no content.
+    #[test]
+    fn extract_block_marker_keeping_a_cr_is_a_line_endings_defect() {
+        let carrier =
+            "<!-- SHARED-BLOCK:foo START -->\r\r\nline one\n<!-- SHARED-BLOCK:foo END -->\n";
+        assert_eq!(
+            extract_block(carrier, "foo"),
+            Err(SpanDefect::MarkerTrailingCr)
+        );
+        assert_eq!(
+            extract_block("nothing here\n", "foo"),
+            Err(SpanDefect::MissingMarker)
+        );
+    }
+
+    /// Both carriers hash the empty input and compare equal, so without this
+    /// the block reports parity having compared nothing.
+    #[test]
+    fn blocks_verify_empty_span_fails_on_every_carrier() {
+        let dir = tempfile::tempdir().unwrap();
+        let empty = "<!-- SHARED-BLOCK:foo START -->\n<!-- SHARED-BLOCK:foo END -->\n";
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        fs::write(&a, empty).unwrap();
+        fs::write(&b, empty).unwrap();
+
+        let report = blocks_verify(&[a, b], &["foo".to_string()]).unwrap();
+        assert!(!report.ok, "empty span must fail: {:?}", report.report);
+        let block = &report.report["blocks"][0];
+        let reasons: Vec<&str> = block["defects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["reason"].as_str().unwrap())
+            .collect();
+        assert_eq!(reasons, vec!["extracted-empty", "extracted-empty"]);
     }
 
     /// `blocks_verify`'s no-files error must embed an example invocation, so

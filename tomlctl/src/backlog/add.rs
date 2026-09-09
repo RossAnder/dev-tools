@@ -25,11 +25,12 @@ use super::schema::{
 use crate::cli::{OnDuplicate, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::{is_date_key, json_to_toml, json_type_name, toml_to_json};
 use crate::errors::{ErrorKind, TaggedError, tagged_err};
+use crate::io::advise;
 use crate::io::{
     self, OnMissing, items_array, items_array_mut, on_missing_for, read_json_arg, warn_if_created,
 };
 use crate::items::{MutationPlan, SkippedRow};
-use crate::output::{emit_dry_run_plan, print_json_compact};
+use crate::output::{build_dry_run_plan_envelope, print_json_compact};
 
 const FIELD_SCHEMA_VERSION: &str = "schema_version";
 
@@ -49,6 +50,10 @@ const MINTED_FIELDS: [&str; 5] = [
 /// pure function of this plus the document.
 struct AddRequest {
     kind: String,
+    /// The `kind` the caller supplied when the vocabulary does not know it.
+    /// Carried so `advisories` can name the coercion in the envelope, which
+    /// is where a caller reading a pipe sees it.
+    coerced_kind: Option<String>,
     summary: String,
     area: String,
     tags: Vec<String>,
@@ -102,14 +107,25 @@ pub(crate) fn dispatch(
         on_duplicate,
         json,
     )?;
-    for advisory in advisories(&req) {
-        eprintln!("tomlctl: {advisory}");
+    // Also carried in the success envelope below: a capture that ships a
+    // credential to every clone is the one advisory whose loss on a pipe is
+    // worse than the stderr line it would otherwise emit there.
+    let advisories = advisories(&req);
+    for advisory in &advisories {
+        advise!("tomlctl: {advisory}");
     }
 
     if dry_run {
         let mut doc = preview_doc(&file, &integrity)?;
         let outcome = add_item(&mut doc, &req, &file)?;
-        return emit_dry_run_plan(&preview_plan(doc, &outcome));
+        // The preview rides the same advisories as the write it previews: a
+        // caller using `--dry-run` as its review step would otherwise see
+        // strictly less than one that skipped the review.
+        let mut envelope = build_dry_run_plan_envelope(&preview_plan(doc, &outcome));
+        if let Some(map) = envelope.as_object_mut() {
+            map.insert("advisories".to_string(), serde_json::json!(advisories));
+        }
+        return print_json_compact(&envelope);
     }
 
     let opts = write_integrity_opts(&integrity);
@@ -136,6 +152,7 @@ pub(crate) fn dispatch(
                 "dedup_id": dedup_id,
                 "created": created,
                 "path": path,
+                "advisories": advisories,
             }))
         }
         AddOutcome::Bumped { id, seen_count } => print_json_compact(&serde_json::json!({
@@ -143,11 +160,13 @@ pub(crate) fn dispatch(
             "action": "bumped",
             "id": id,
             "seen_count": seen_count,
+            "advisories": advisories,
         })),
         AddOutcome::Skipped { id } => print_json_compact(&serde_json::json!({
             "ok": true,
             "action": "skipped",
             "id": id,
+            "advisories": advisories,
         })),
     }
 }
@@ -368,12 +387,21 @@ fn looks_machine_local(value: &str) -> bool {
             .any(|w| w[0].is_ascii_alphabetic() && w[1] == b':' && w[2] == b'\\')
 }
 
-/// One line per field value that reads as a credential or a machine-local
-/// path. Pure and advisory: the store is a tracked file in a public
+/// One line per coerced `kind` and per field value that reads as a credential
+/// or a machine-local path. Pure and advisory: the store is a tracked file in a public
 /// repository, so the caller is told what it is about to publish and the
 /// write proceeds regardless — the prose rule, not this scan, is the control.
+fn coerced_kind(raw: &str) -> Option<String> {
+    schema::known_kind(raw).is_none().then(|| raw.to_string())
+}
+
 fn advisories(req: &AddRequest) -> Vec<String> {
     let mut out = Vec::new();
+    if let Some(raw) = &req.coerced_kind {
+        out.push(format!(
+            "unknown backlog kind `{raw}` — recorded as `{KIND_OTHER}`"
+        ));
+    }
     let mut scan = |field: &str, value: &str| {
         let shape = if CREDENTIAL_MARKERS.iter().any(|m| carries_marker(value, m)) {
             "a credential"
@@ -449,7 +477,10 @@ fn build_request(
             request_from_payload(payload, on_duplicate, today, file)?
         }
         None => AddRequest {
-            kind: schema::coerce_kind(kind.as_deref().unwrap_or(KIND_OTHER)).to_string(),
+            kind: schema::known_kind(kind.as_deref().unwrap_or(KIND_OTHER))
+                .unwrap_or(KIND_OTHER)
+                .to_string(),
+            coerced_kind: coerced_kind(kind.as_deref().unwrap_or(KIND_OTHER)),
             summary: summary.unwrap_or_default(),
             area: area.unwrap_or_default(),
             tags: tag,
@@ -508,7 +539,10 @@ fn request_from_payload(
         extra.insert(field.clone(), payload_value(field, value)?);
     }
     Ok(AddRequest {
-        kind: schema::coerce_kind(string_of(&map, FIELD_KIND).unwrap_or(KIND_OTHER)).to_string(),
+        kind: schema::known_kind(string_of(&map, FIELD_KIND).unwrap_or(KIND_OTHER))
+            .unwrap_or(KIND_OTHER)
+            .to_string(),
+        coerced_kind: coerced_kind(string_of(&map, FIELD_KIND).unwrap_or(KIND_OTHER)),
         summary: string_of(&map, FIELD_SUMMARY)
             .unwrap_or_default()
             .to_string(),
@@ -928,6 +962,7 @@ mod tests {
         let req =
             |summary: &str, tags: &[&str], evidence: &[&str], context: Option<&str>| AddRequest {
                 kind: "bug".to_string(),
+                coerced_kind: None,
                 summary: summary.to_string(),
                 area: "C:\\Users\\someone\\repo".to_string(),
                 tags: tags.iter().map(|t| (*t).to_string()).collect(),

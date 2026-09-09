@@ -360,11 +360,12 @@ updated = 2026-04-02
 }
 
 /// A malformed `context.toml` in one flow does NOT abort the whole list —
-/// the other flows still surface, and a stderr warning of the documented
-/// shape (`tomlctl: flow <slug>: malformed context.toml — skipped`) is
-/// emitted naming the bad flow.
+/// the other flows still surface. The skip note is terminal-only: `flow
+/// list` emits a bare JSON array with nowhere to carry it, and a captured
+/// stderr is contractually the error envelope alone. `--strict-read` is the
+/// route that surfaces the bad flow to a machine.
 #[test]
-fn malformed_context_skips_flow_emits_stderr_warning() {
+fn a_malformed_context_is_skipped_quietly_and_strict_read_escalates_it() {
     let (_g, root) = make_root();
     // Good flow.
     seed_flow(
@@ -392,9 +393,29 @@ this is not valid toml
         vec!["good"],
         "good flow must still surface; bad flow must be skipped"
     );
+    assert_eq!(stderr, "", "the skip note must not reach a captured stderr");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", &root)
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .args(["--error-format", "json", "flow", "list", "--strict-read"])
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert_eq!(
+        stderr.lines().count(),
+        1,
+        "stderr must be exactly the JSON error envelope: {stderr}"
+    );
+    let err: JsonValue = serde_json::from_str(stderr.trim()).unwrap();
+    assert_eq!(err["error"]["kind"], serde_json::json!("parse"), "{err}");
     assert!(
-        stderr.contains("flow bad: malformed context.toml"),
-        "stderr must carry the documented warning naming the bad slug; got: {stderr}"
+        err["error"]["file"]
+            .as_str()
+            .is_some_and(|f| f.contains("bad")),
+        "the envelope must name the bad flow: {err}"
     );
 }
 

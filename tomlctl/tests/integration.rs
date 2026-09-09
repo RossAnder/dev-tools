@@ -1989,12 +1989,11 @@ fn update_and_remove_against_missing_ledger_error_and_leave_no_file() {
     }
 }
 
-/// The stderr guidance line appears WHEN AND ONLY WHEN a file was
-/// created, carrying the `(schema_version=1)` suffix for a recognised flow
-/// file and omitting it for an arbitrary `.toml`. A second write to the
-/// now-existing file emits NO guidance line.
+/// `created` is true WHEN AND ONLY WHEN the write brought the file into
+/// existence, and it reaches the caller through the envelope: the guidance
+/// line is a terminal-only advisory, so a captured stderr carries none of it.
 #[test]
-fn created_stderr_guidance_fires_only_on_creation() {
+fn created_rides_the_envelope_and_fires_only_on_creation() {
     let dir = tempfile::tempdir().unwrap();
     let claude = dir.path().join(".claude");
     fs::create_dir_all(&claude).unwrap();
@@ -2013,11 +2012,7 @@ fn created_stderr_guidance_fires_only_on_creation() {
         .write_stdin("")
         .assert()
         .success();
-    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
-    assert!(
-        stderr.contains("created new file") && stderr.contains("(schema_version=1)"),
-        "recognised flow file creation must emit the schema-suffixed guidance; got: {stderr}"
-    );
+    assert_eq!(created_of(out.get_output()), Some(true));
 
     // (ii) Second add to the existing ledger → NO guidance line.
     let out2 = Command::cargo_bin("tomlctl")
@@ -2032,11 +2027,7 @@ fn created_stderr_guidance_fires_only_on_creation() {
         .write_stdin("")
         .assert()
         .success();
-    let stderr2 = String::from_utf8_lossy(&out2.get_output().stderr).to_string();
-    assert!(
-        !stderr2.contains("created new file"),
-        "no guidance line may fire when the file already exists; got: {stderr2}"
-    );
+    assert_eq!(created_of(out2.get_output()), Some(false));
 
     // (iii) Arbitrary `.toml` (not a recognised flow file) → guidance WITHOUT
     // the schema suffix. `set` auto-creates an empty-table-seeded file.
@@ -2052,11 +2043,17 @@ fn created_stderr_guidance_fires_only_on_creation() {
         .write_stdin("")
         .assert()
         .success();
-    let stderr3 = String::from_utf8_lossy(&out3.get_output().stderr).to_string();
-    assert!(
-        stderr3.contains("created new file") && !stderr3.contains("(schema_version=1)"),
-        "arbitrary .toml creation must emit guidance WITHOUT the schema suffix; got: {stderr3}"
-    );
+    assert_eq!(created_of(out3.get_output()), Some(true));
+}
+
+/// The `created` flag out of a write envelope, plus the assertion that the
+/// run left a captured stderr empty — every write advisory in the crate is
+/// terminal-only, so a piped caller sees the fact here or nowhere.
+fn created_of(out: &std::process::Output) -> Option<bool> {
+    assert_eq!(String::from_utf8_lossy(&out.stderr), "");
+    let envelope: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&out.stdout).trim()).unwrap();
+    envelope.get("created").and_then(serde_json::Value::as_bool)
 }
 
 // ===== `--no-create` end-to-end ====================================
@@ -2253,12 +2250,10 @@ fn allow_outside_auto_create_with_existing_parent_writes_stray_file() {
         .success();
 
     // The documented behaviour: the stray file IS created (guard warns,
-    // doesn't block) and carries the written content.
-    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
-    assert!(
-        stderr.contains("writing outside .claude/") && stderr.contains("--allow-outside"),
-        "the guard must WARN (not block) when --allow-outside is set; got: {stderr}"
-    );
+    // doesn't block) and carries the written content. The warning itself is a
+    // terminal-only advisory — the caller passed `--allow-outside`, so the
+    // envelope's `created` + `path` is the whole machine-side signal.
+    assert_eq!(created_of(out.get_output()), Some(true));
     assert!(
         outside_target.exists(),
         "--allow-outside must let the auto-create land a stray file when the parent exists"

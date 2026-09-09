@@ -3,6 +3,8 @@
 //! Reachability is undefined through a cycle, so both modes surface the
 //! engine's refusal instead of returning a set that omits its members.
 
+use std::collections::BTreeSet;
+
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
@@ -25,8 +27,9 @@ pub(crate) enum Direction {
     Down,
 }
 
-/// `{checkpoint, members[], maximal[], valid_cut}` for a group, or
-/// `{task, direction, ids[]}` for one task's walk. Every id list ascending.
+/// `{checkpoint, members[], maximal[], dependency_closure[], valid_cut}` for a
+/// group, or `{task, direction, ids[]}` for one task's walk. Every id list
+/// ascending.
 pub(crate) fn closure(store: &Store, target: Target) -> Result<JsonValue> {
     let nodes = nodes_of(&store.items);
     let graph = Graph::build(&nodes).map_err(refuse)?;
@@ -39,6 +42,12 @@ pub(crate) fn closure(store: &Store, target: Target) -> Result<JsonValue> {
 
 /// `valid_cut` covers the union of this group with every earlier one, so it
 /// reads as "committable here", not "self-contained".
+///
+/// `members` and `dependency_closure` are different sets — the group, and
+/// everything the group reaches upward — and both are reported because the
+/// rendered `CHECKPOINT` marker prints the second under that same name. A
+/// group whose dependencies all sit in earlier groups is the case where they
+/// coincide, which is exactly the case a reader cannot use to tell them apart.
 fn checkpoint_closure(store: &Store, graph: &Graph<'_>, id: &str) -> Result<JsonValue> {
     let order: Vec<String> = store
         .checkpoints
@@ -68,10 +77,16 @@ fn checkpoint_closure(store: &Store, graph: &Graph<'_>, id: &str) -> Result<Json
     let mut maximal = group.maximal;
     maximal.sort_unstable();
 
+    let mut reaches: BTreeSet<u32> = BTreeSet::new();
+    for member in &members {
+        reaches.extend(graph.closure_up(*member).map_err(refuse)?);
+    }
+
     Ok(json!({
         "checkpoint": group.id,
         "members": members,
         "maximal": maximal,
+        "dependency_closure": reaches.into_iter().collect::<Vec<u32>>(),
         "valid_cut": group.valid_cut,
     }))
 }
@@ -167,6 +182,7 @@ mod tests {
                 "checkpoint": "A",
                 "members": [1, 2, 3],
                 "maximal": [2, 3],
+                "dependency_closure": [1, 2, 3],
                 "valid_cut": true,
             })
         );
@@ -187,6 +203,7 @@ mod tests {
                 "checkpoint": "A",
                 "members": [1, 2, 3, 5],
                 "maximal": [5],
+                "dependency_closure": [1, 2, 3, 4, 5],
                 "valid_cut": false,
             })
         );

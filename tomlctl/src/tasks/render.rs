@@ -1,8 +1,12 @@
 //! Rendering the store back into a plan's policy, tasks and dependency-graph sections.
 //!
 //! Every id list a section carries — the `Checkpoint after` bullet, a marker's
-//! `after` and its `closure` — is derived from the graph on each render and
-//! never stored, so a stale list cannot outlive the edges it summarises.
+//! `after` and its `dependency closure` — is derived from the graph on each
+//! render and never stored, so a stale list cannot outlive the edges it
+//! summarises. A marker's two lists are different sets and are labelled apart:
+//! `after tasks` is the group's antichain, which `tasks closure` reports as
+//! `maximal` alongside the `members` it closes over, and `dependency closure`
+//! is the upward walk the same verb reports as `dependency_closure`.
 //!
 //! Bodies re-indent two spaces under their label line, which is the
 //! continuation form the importer reads back. `(INVALID CUT)` is rendered
@@ -25,6 +29,12 @@ const PREAMBLE: &str =
     "Per-task `Depends on` lines are authoritative; this section states only the checkpoint cuts.";
 
 const INVALID_CUT: &str = "(INVALID CUT)";
+
+/// Names the upward walk rather than the group, so no reader can take it for
+/// the member set `tasks closure` reports under `members`. The importer's
+/// clause stripper accepts the `dependency ` prefix, so the label stays
+/// recomputed-and-discarded rather than accumulating into a rationale.
+const CLOSURE_LABEL: &str = "dependency closure";
 
 const EMPTY: &str = "—";
 
@@ -66,7 +76,7 @@ pub(crate) fn render_sections(store: &Store) -> Result<Rendered> {
 
     Ok(Rendered {
         policy: render_policy(&store.policy, &groups),
-        tasks: render_tasks(&store.items),
+        tasks: render_tasks(store),
         graph: render_graph(&store.checkpoints, &groups, &closures),
     })
 }
@@ -74,7 +84,8 @@ pub(crate) fn render_sections(store: &Store) -> Result<Rendered> {
 pub(crate) fn render_into_plan(store: &Store, plan_src: &str) -> Result<String> {
     let rendered = render_sections(store)?;
 
-    let mut out = replace_or_insert_before(plan_src, "Execution Policy", "Tasks", &rendered.policy);
+    let ordered = reorder_owned_sections(plan_src);
+    let mut out = replace_or_insert_before(&ordered, "Execution Policy", "Tasks", &rendered.policy);
     out = replace_or_insert(&out, "Tasks", "Execution Policy", &rendered.tasks);
     out = replace_or_insert(&out, "Dependency Graph", "Tasks", &rendered.graph);
     Ok(out)
@@ -92,14 +103,26 @@ pub(crate) fn check_render_drift(store: &Store, plan_src: &str) -> Result<Option
         .copied()
         .filter(|title| body_of(&got, title) != body_of(&want, title))
         .collect();
-    let detail = if drifted.is_empty() {
-        "the plan differs from the store's render".to_string()
-    } else {
-        format!(
+    let mut parts: Vec<String> = Vec::new();
+    if !drifted.is_empty() {
+        parts.push(format!(
             "plan sections out of date with the store: {}",
             drifted.join(", ")
-        )
-    };
+        ));
+    }
+    // A permutation leaves every body byte-identical, so without this the one
+    // defect the render corrects would report as an unnamed difference.
+    let order = owned_order(&got);
+    if order != canonical_order(&order) {
+        parts.push(format!(
+            "plan sections out of canonical order: {}",
+            order.join(", ")
+        ));
+    }
+    if parts.is_empty() {
+        parts.push("the plan differs from the store's render".to_string());
+    }
+    let detail = parts.join("; ");
 
     Ok(Some(Finding {
         class: "render/drift",
@@ -126,7 +149,11 @@ fn render_policy(policy: &Policy, groups: &[Group]) -> String {
     let after: Vec<u32> = after.into_iter().collect();
 
     let mut body = String::from("\n");
-    body.push_str(&format!("- **Checkpoints**: {}\n", policy.checkpoints));
+    body.push_str(&format!(
+        "- **Checkpoints**: {}{}\n",
+        policy.checkpoints,
+        clause(&policy.checkpoints_note)
+    ));
     body.push_str(&format!(
         "- **Checkpoint after**: {}\n",
         if after.is_empty() {
@@ -136,12 +163,14 @@ fn render_policy(policy: &Policy, groups: &[Group]) -> String {
         }
     ));
     body.push_str(&format!(
-        "- **Max parallel agents**: {}\n",
-        policy.max_parallel
+        "- **Max parallel agents**: {}{}\n",
+        policy.max_parallel,
+        clause(&policy.max_parallel_note)
     ));
     body.push_str(&format!(
-        "- **Commit granularity**: {}\n",
-        policy.commit_granularity
+        "- **Commit granularity**: {}{}\n",
+        policy.commit_granularity,
+        clause(&policy.commit_granularity_note)
     ));
 
     let note = policy.note.trim();
@@ -154,12 +183,24 @@ fn render_policy(policy: &Policy, groups: &[Group]) -> String {
     body
 }
 
+/// A bullet's trailing clause, on the line the author wrote it on. One line:
+/// a wrapped clause folds, and an embedded blank line would end the bullet
+/// list and re-import as prose belonging to no bullet.
+fn clause(note: &str) -> String {
+    let note = collapse(note);
+    match note.is_empty() {
+        true => String::new(),
+        false => format!(" {note}"),
+    }
+}
+
 /// Store order, not id order: it is the plan's own task order, and sorting
 /// would reshuffle a document whose numbering runs across phases.
 ///
 /// A phase heading is re-emitted only where the label or its depth changes, so
 /// a run of rows under one label yields the one heading the author wrote.
-fn render_tasks(rows: &[TaskRow]) -> String {
+fn render_tasks(store: &Store) -> String {
+    let rows = &store.items;
     let mut body = String::from("\n");
     let mut phase: Option<(&str, u32)> = None;
     for row in rows {
@@ -177,7 +218,7 @@ fn render_tasks(rows: &[TaskRow]) -> String {
             row.title,
             row.effort.as_str()
         ));
-        body.push_str(&format!("- **Files**: {}\n", file_list(&row.files)));
+        body.push_str(&format!("- **Files**: {}\n", file_list(store, row)));
         body.push_str(&format!("- **Depends on**: {}\n", depends_on(row)));
         for (label, text) in [
             ("Action", &row.action),
@@ -204,7 +245,7 @@ fn render_graph(checkpoints: &[Checkpoint], groups: &[Group], closures: &[Vec<u3
             continue;
         }
         let mut marker = format!(
-            "{EMPTY} CHECKPOINT {} after tasks {} {EMPTY} closure: {}.",
+            "{EMPTY} CHECKPOINT {} after tasks {} {EMPTY} {CLOSURE_LABEL}: {}.",
             group.id,
             join_ids(&group.maximal),
             join_ids(closure)
@@ -277,13 +318,25 @@ fn depends_on(row: &TaskRow) -> String {
     }
 }
 
-fn file_list(files: &[String]) -> String {
-    if files.is_empty() {
+/// Each path with whatever annotation the plan wrote against it. The parser
+/// cuts an entry at its first `(` or ` — `, so an annotation carrying a comma
+/// would re-import as a further path.
+fn file_list(store: &Store, row: &TaskRow) -> String {
+    if row.files.is_empty() {
         return EMPTY.to_string();
     }
-    files
+    row.files
         .iter()
-        .map(|file| format!("`{file}`"))
+        .map(|file| {
+            match store
+                .file_note(&row.r#ref, file)
+                .map(collapse)
+                .filter(|note| !note.is_empty())
+            {
+                Some(note) => format!("`{file}` {note}"),
+                None => format!("`{file}`"),
+            }
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -306,6 +359,76 @@ fn replace_or_insert(src: &str, title: &str, after: &str, body: &str) -> String 
         replace_section(src, title, body)
     } else {
         insert_section_after(src, after, title, body)
+    }
+}
+
+/// The insertion anchors above place a section that is ABSENT; a section
+/// already in the document at the wrong place is out of their reach, and a
+/// render that left it there would be a faithful no-op — drift `--check` has
+/// nothing to report on.
+///
+/// The slots the owned sections occupy are refilled in canonical order by
+/// rewriting the heading lines in place: every other section keeps its
+/// position, and the body left under a rewritten heading is replaced from the
+/// store in the same pass, so no stale body survives the move.
+fn reorder_owned_sections(src: &str) -> String {
+    let slots: Vec<_> = sections(src)
+        .into_iter()
+        .filter(|section| SECTION_TITLES.contains(&section.title.as_str()))
+        .collect();
+    let order: Vec<String> = slots.iter().map(|section| section.title.clone()).collect();
+    let canonical = canonical_order(&order);
+    if order == canonical {
+        return src.to_string();
+    }
+
+    let mut out = String::with_capacity(src.len());
+    let mut at = 0usize;
+    for (slot, title) in slots.iter().zip(&canonical) {
+        out.push_str(&src[at..slot.start]);
+        out.push_str("## ");
+        out.push_str(title);
+        out.push_str(heading_terminator(&src[slot.start..slot.body_range.start]));
+        at = slot.body_range.start;
+    }
+    out.push_str(&src[at..]);
+    out
+}
+
+fn owned_order(src: &str) -> Vec<String> {
+    sections(src)
+        .into_iter()
+        .map(|section| section.title)
+        .filter(|title| SECTION_TITLES.contains(&title.as_str()))
+        .collect()
+}
+
+/// The titles a document holds, sorted by their canonical rank: a plan
+/// carrying two of the three is judged on their relative order alone, and the
+/// sort's stability leaves a title the document holds twice in its own order
+/// rather than shuffling the pair.
+fn canonical_order(present: &[String]) -> Vec<String> {
+    let mut sorted = present.to_vec();
+    sorted.sort_by_key(|title| rank(title));
+    sorted
+}
+
+fn rank(title: &str) -> usize {
+    SECTION_TITLES
+        .iter()
+        .position(|owned| *owned == title)
+        .unwrap_or(SECTION_TITLES.len())
+}
+
+/// The heading line's own ending, which is empty for a heading standing at EOF
+/// with no terminator at all.
+fn heading_terminator(heading_line: &str) -> &'static str {
+    if heading_line.ends_with("\r\n") {
+        "\r\n"
+    } else if heading_line.ends_with('\n') {
+        "\n"
+    } else {
+        ""
     }
 }
 
@@ -339,7 +462,7 @@ mod tests {
     use super::*;
     use crate::tasks::parse_policy::{Marker, parse_markers, parse_policy};
     use crate::tasks::parse_tasks::parse_tasks_at;
-    use crate::tasks::schema::{DEFAULT_HEADING_DEPTH, Effort, Status};
+    use crate::tasks::schema::{DEFAULT_HEADING_DEPTH, Effort, FileNote, Status};
     use crate::tasks::slug::derive_ref;
 
     const PLAN: &str = "# Plan: Demo\n\n## Approach\n\nprose\n\n## Execution Policy\n\nstale\n\n\
@@ -399,9 +522,15 @@ mod tests {
                 checkpoints: "milestones".to_string(),
                 max_parallel: 6,
                 commit_granularity: "per-task".to_string(),
-                note: "tasks 2 and 3 land in one commit".to_string(),
+                note: "The cuts are reviewed by hand while the store is young.".to_string(),
+                commit_granularity_note: "— tasks 2 and 3 land in one commit".to_string(),
                 ..Policy::default()
             },
+            file_notes: vec![FileNote {
+                r#ref: derive_ref("Render the sections"),
+                file: "tomlctl/src/tasks/t3.rs".to_string(),
+                note: "(new)".to_string(),
+            }],
             checkpoints: vec![
                 Checkpoint {
                     id: "A".to_string(),
@@ -478,7 +607,7 @@ mod tests {
         assert_eq!(markers[2].after, vec![5]);
         assert!(
             plan.contains(&format!(
-                "CHECKPOINT A after tasks 3 {EMPTY} closure: 1, 2, 3."
+                "CHECKPOINT A after tasks 3 {EMPTY} {CLOSURE_LABEL}: 1, 2, 3."
             )),
             "{plan}"
         );
@@ -500,6 +629,69 @@ mod tests {
         assert_eq!(policy.checkpoint_after, from_markers);
     }
 
+    /// A bullet's clause goes back on its own bullet and prose belonging to no
+    /// bullet stays a paragraph. Rendering the clause as trailing prose reads
+    /// as an orphan, and attaching the paragraph to a bullet would state
+    /// something the author did not.
+    #[test]
+    fn a_bullet_clause_renders_on_its_bullet_and_free_prose_stays_a_paragraph() {
+        let mut store = fixture();
+        store.policy.checkpoints_note = "— one commit train per milestone group".to_string();
+        let plan = render_into_plan(&store, PLAN).expect("renders");
+        let policy = section(&plan, "Execution Policy");
+
+        assert!(
+            policy
+                .contains("- **Checkpoints**: milestones — one commit train per milestone group\n"),
+            "{policy}"
+        );
+        assert!(
+            policy.contains(
+                "- **Commit granularity**: per-task — tasks 2 and 3 land in one commit\n"
+            ),
+            "{policy}"
+        );
+        assert!(
+            policy.contains("\nThe cuts are reviewed by hand while the store is young.\n"),
+            "{policy}"
+        );
+
+        let parsed = parse_policy(Some(&policy)).expect("policy parses");
+        assert_eq!(parsed.checkpoints_note, store.policy.checkpoints_note);
+        assert_eq!(
+            parsed.commit_granularity_note,
+            store.policy.commit_granularity_note
+        );
+        assert_eq!(parsed.max_parallel_note, "");
+        assert_eq!(parsed.note, store.policy.note);
+    }
+
+    /// The annotation rides the path it was written against, and the row's
+    /// `files` stay the bare paths every file-claim comparison reads.
+    #[test]
+    fn a_file_annotation_renders_against_its_own_path() {
+        let mut store = fixture();
+        store.items[2].files = vec![
+            "tomlctl/src/tasks/t3.rs".to_string(),
+            "tomlctl/src/tasks/mod.rs".to_string(),
+        ];
+        let plan = render_into_plan(&store, PLAN).expect("renders");
+        assert!(
+            plan.contains(
+                "- **Files**: `tomlctl/src/tasks/t3.rs` (new), `tomlctl/src/tasks/mod.rs`\n"
+            ),
+            "{plan}"
+        );
+
+        let parsed = parse_tasks_at(&section(&plan, "Tasks"), 1).expect("tasks parse");
+        assert_eq!(parsed[2].files, store.items[2].files);
+        assert_eq!(
+            parsed[2].file_notes,
+            vec!["(new)".to_string(), String::new()]
+        );
+        assert_eq!(render_into_plan(&store, &plan).expect("re-renders"), plan);
+    }
+
     #[test]
     fn an_invalid_cut_is_marked_once_and_never_accumulates() {
         let store = fixture();
@@ -508,7 +700,7 @@ mod tests {
         assert_eq!(plan.matches(INVALID_CUT).count(), 1, "{plan}");
         assert!(
             plan.contains(&format!(
-                "CHECKPOINT B after tasks 4 {EMPTY} closure: 1, 4, 5. the importer {INVALID_CUT}"
+                "CHECKPOINT B after tasks 4 {EMPTY} {CLOSURE_LABEL}: 1, 4, 5. the importer {INVALID_CUT}"
             )),
             "{plan}"
         );
@@ -645,6 +837,92 @@ mod tests {
         );
         assert!(out.starts_with("## Execution Policy\n"), "{out}");
         assert!(out.ends_with("## Risks\n\nrisk\n"), "{out}");
+    }
+
+    /// Every owned section is present, so the insert path cannot fire: only
+    /// the correction path can put them back in canonical order, and the
+    /// unowned section standing between them must not travel with them.
+    #[test]
+    fn an_owned_section_present_in_the_wrong_place_is_moved_into_canonical_order() {
+        let src = "# Plan: Demo\n\n## Tasks\n\nstale\n\n## Notes\n\nkeep\n\n\
+            ## Execution Policy\n\nstale\n\n## Dependency Graph\n\nstale\n\n\
+            ## Risks\n\nrisk\n";
+        let out = render_into_plan(&fixture(), src).expect("renders");
+
+        assert_eq!(
+            sections(&out)
+                .into_iter()
+                .map(|section| section.title)
+                .collect::<Vec<_>>(),
+            vec![
+                "Execution Policy",
+                "Notes",
+                "Tasks",
+                "Dependency Graph",
+                "Risks"
+            ]
+        );
+        assert!(
+            out.starts_with("# Plan: Demo\n\n## Execution Policy\n"),
+            "{out}"
+        );
+        assert!(out.contains("## Notes\n\nkeep\n"), "{out}");
+        assert!(out.ends_with("## Risks\n\nrisk\n"), "{out}");
+        assert!(
+            !out.contains("stale"),
+            "a body left under a moved heading survived: {out}"
+        );
+        assert_eq!(render_into_plan(&fixture(), &out).expect("re-renders"), out);
+    }
+
+    /// A permutation of a current render leaves every section body identical,
+    /// which is the shape a body-only comparison reports as no drift at all.
+    #[test]
+    fn a_permuted_plan_reports_drift_and_renders_back_into_order() {
+        let store = fixture();
+        let plan = render_into_plan(&store, PLAN).expect("renders");
+
+        let tasks_at = plan.find("## Tasks").expect("the Tasks heading");
+        let graph_at = plan
+            .find("## Dependency Graph")
+            .expect("the Dependency Graph heading");
+        let risks_at = plan.find("## Risks").expect("the Risks heading");
+        let permuted = format!(
+            "{}{}{}{}",
+            &plan[..tasks_at],
+            &plan[graph_at..risks_at],
+            &plan[tasks_at..graph_at],
+            &plan[risks_at..]
+        );
+        assert_ne!(permuted, plan, "the permutation moved nothing");
+
+        let finding = check_render_drift(&store, &permuted)
+            .expect("checks")
+            .expect("a permuted plan is drift");
+        assert!(
+            finding
+                .detail
+                .contains("out of canonical order: Execution Policy, Dependency Graph, Tasks"),
+            "{}",
+            finding.detail
+        );
+        assert!(
+            !finding.detail.contains("out of date with the store"),
+            "the bodies are the store's own render: {}",
+            finding.detail
+        );
+
+        assert_eq!(render_into_plan(&store, &permuted).expect("renders"), plan);
+
+        // The correction rewrites heading lines, which is a second place a
+        // document's ending can be dropped on the floor.
+        let crlf = render_into_plan(&store, &permuted.replace('\n', "\r\n")).expect("renders");
+        assert_eq!(
+            crlf.matches('\n').count(),
+            crlf.matches("\r\n").count(),
+            "the correction mixed the line endings"
+        );
+        assert_eq!(lf(&crlf), plan);
     }
 
     #[test]

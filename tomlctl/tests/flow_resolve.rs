@@ -741,7 +741,7 @@ fn resolved_envelope_carries_canonical_keys() {
 /// registry parse error is TOLERATED (treated as empty registry) rather
 /// than escalated to a hard error. The implementation routes through
 /// `load_active_entries`, which catches `read_toml`'s parse error,
-/// emits a stderr breadcrumb, and returns `Vec::new()` so resolution
+/// pushes an envelope breadcrumb, and returns `Vec::new()` so resolution
 /// can fall through to step 5 / step 6.
 ///
 /// This test seeds a syntactically broken `[[active]]` block (unclosed
@@ -776,11 +776,20 @@ slug = "broken"
         serde_json::from_str(stdout.trim()).expect("stdout must parse as JSON");
     assert_eq!(v["resolved"], serde_json::json!(false));
     assert_eq!(v["source"], serde_json::json!("none"));
-    // The stderr breadcrumb should mention the unreadable registry.
-    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    // The breadcrumb rides `warnings`, where a piped caller reads it — a
+    // captured stderr carries the error envelope and nothing else.
+    let warnings = v["warnings"].as_array().expect("warnings must be present");
     assert!(
-        stderr.contains("active-flow.toml"),
-        "stderr must surface the registry-unreadable warning: {stderr}"
+        warnings
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .any(|w| w.contains("active-flow.toml unreadable")),
+        "the envelope must surface the registry-unreadable warning: {v}"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.get_output().stderr),
+        "",
+        "the breadcrumb must not reach a captured stderr"
     );
 }
 

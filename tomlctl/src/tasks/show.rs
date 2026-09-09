@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
 use super::graph::{Graph, nodes_of};
-use super::schema::{Store, TaskRow};
+use super::schema::{ImportOverride, Store, TaskRow};
 use super::store;
 use crate::cli::{ReadIntegrityArgs, ShowPart, TasksTarget};
 use crate::errors::{ErrorKind, tagged_err};
@@ -69,7 +69,28 @@ pub(crate) fn show(store: &Store, id: u32, parts: &[ShowPart]) -> Result<JsonVal
             JsonValue::Array(dependents(store, row.id)?),
         );
     }
+    if let Some(entry) = store
+        .find_override(&row.r#ref)
+        .filter(|stamped| !stamped.is_empty())
+    {
+        out.insert("import_override".to_string(), stamp(entry));
+    }
     Ok(JsonValue::Object(out))
+}
+
+/// The plan values a hand patch replaced, one key per stamped field — so the
+/// row's own `files`/`needs` above are the patch and these are what the import
+/// compares the plan against. Unstamped rows carry no key at all, and the
+/// summaries nested under `deps`/`dependents` never carry one.
+fn stamp(entry: &ImportOverride) -> JsonValue {
+    let mut map = JsonMap::new();
+    if let Some(files) = &entry.files {
+        map.insert("files".to_string(), json!(files));
+    }
+    if let Some(needs) = &entry.needs {
+        map.insert("needs".to_string(), json!(needs));
+    }
+    JsonValue::Object(map)
 }
 
 fn summary(row: &TaskRow) -> JsonMap<String, JsonValue> {
@@ -227,6 +248,76 @@ mod tests {
             "{out}"
         );
         assert!(out.get("action").is_none(), "{out}");
+    }
+
+    /// The stamp is the row's, not the projection's: it rides every `--with`
+    /// selection, and only the fields actually stamped appear under it.
+    #[test]
+    fn a_stamped_row_carries_the_plan_values_the_patch_replaced() {
+        let mut store = fixture();
+        store.import_overrides = vec![ImportOverride {
+            r#ref: "task-12".to_string(),
+            files: Some(vec!["tomlctl/src/tasks/old.rs".to_string()]),
+            needs: None,
+        }];
+
+        let out = show(&store, 12, &[]).expect("task 12 shows");
+        assert_eq!(
+            out["import_override"],
+            json!({"files": ["tomlctl/src/tasks/old.rs"]}),
+            "{out}"
+        );
+        assert_eq!(
+            out["files"],
+            json!(["tomlctl/src/tasks/t12.rs"]),
+            "the row keeps the patch, the stamp keeps the base: {out}"
+        );
+
+        let projected = show(&store, 12, &[ShowPart::Body]).expect("task 12 shows");
+        assert_eq!(
+            projected["import_override"], out["import_override"],
+            "{projected}"
+        );
+    }
+
+    #[test]
+    fn an_unstamped_row_carries_no_override_key() {
+        let mut store = fixture();
+        store.import_overrides = vec![ImportOverride {
+            r#ref: "task-13".to_string(),
+            files: None,
+            needs: Some(vec![10]),
+        }];
+
+        let out = show(&store, 12, &[]).expect("task 12 shows");
+        assert!(out.get("import_override").is_none(), "{out}");
+
+        let stamped = show(&store, 13, &[]).expect("task 13 shows");
+        assert_eq!(
+            stamped["import_override"],
+            json!({"needs": [10]}),
+            "{stamped}"
+        );
+        assert!(
+            stamped["import_override"].get("files").is_none(),
+            "an unstamped field is absent from the stamp: {stamped}"
+        );
+    }
+
+    /// A nested summary is a different row's, and the stamp belongs to the row
+    /// that was asked for.
+    #[test]
+    fn a_nested_dep_summary_carries_no_stamp() {
+        let mut store = fixture();
+        store.import_overrides = vec![ImportOverride {
+            r#ref: "task-10".to_string(),
+            files: Some(Vec::new()),
+            needs: None,
+        }];
+
+        let out = show(&store, 12, &[ShowPart::Deps]).expect("task 12 shows");
+        assert!(out["deps"][0].get("import_override").is_none(), "{out}");
+        assert!(out.get("import_override").is_none(), "{out}");
     }
 
     #[test]

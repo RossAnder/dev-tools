@@ -45,6 +45,7 @@ use toml::Value as TomlValue;
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::schema::{ActiveDoc, FlowProjection};
+use crate::io::advise;
 use crate::io::{read_dir_sorted, repo_or_cwd_root};
 use crate::output::print_json;
 
@@ -174,7 +175,7 @@ fn enumerate_flows(flows_dir: &Path, strict_read: bool) -> Result<Vec<FlowRecord
                         format!("parsing {}: {}", ctx_path.display(), e),
                     ));
                 }
-                eprintln!("tomlctl: flow {}: malformed context.toml — skipped", slug);
+                advise!("tomlctl: flow {}: malformed context.toml — skipped", slug);
             }
         }
     }

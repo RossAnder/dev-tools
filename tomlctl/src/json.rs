@@ -18,6 +18,7 @@
 //! TOML-side refusal lives in
 //! `cli::dispatch::refuse_json_extension_for_toml_writers`.
 
+use crate::io::advise;
 use anyhow::{Context, Result, bail};
 use serde_json::Value as JsonValue;
 use std::fs;
@@ -495,7 +496,7 @@ fn refresh_sidecar_after_write(
             )
         });
     }
-    eprintln!(
+    advise!(
         "tomlctl: warning: wrote {} but sidecar refresh failed: {:#}",
         file.display(),
         e

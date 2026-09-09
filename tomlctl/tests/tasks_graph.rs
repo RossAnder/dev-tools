@@ -371,7 +371,10 @@ fn batches_layers_the_graph_in_dependency_order() {
 }
 
 /// A group reports its members, its antichain (the ids a `CHECKPOINT … after`
-/// marker names) and whether the prefix up to it is downward-closed.
+/// marker names), the upward walk that marker prints as its `dependency
+/// closure`, and whether the prefix up to it is downward-closed. Group B is
+/// the pair that keeps `members` and `dependency_closure` apart: the marker
+/// names five ids where the group holds two.
 #[test]
 fn closure_reports_group_membership_and_walks_one_task_both_ways() {
     let (_tmp, root) = sandbox();
@@ -383,6 +386,7 @@ fn closure_reports_group_membership_and_walks_one_task_both_ways() {
             "checkpoint": "A",
             "members": [1, 2, 3],
             "maximal": [2, 3],
+            "dependency_closure": [1, 2, 3],
             "valid_cut": true,
         })
     );
@@ -392,6 +396,7 @@ fn closure_reports_group_membership_and_walks_one_task_both_ways() {
             "checkpoint": "B",
             "members": [4, 5],
             "maximal": [5],
+            "dependency_closure": [1, 2, 3, 4, 5],
             "valid_cut": true,
         })
     );

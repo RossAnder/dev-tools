@@ -523,7 +523,13 @@ fn a_forced_removal_splices_its_dependencies_into_every_dependent() {
     let envelope = tasks(&root, &["remove", "2", "--slug", TASKS_SLUG, "--force"], "");
     assert_eq!(
         envelope,
-        json!({"ok": true, "id": 2, "ref": "wire-the-graph-engine", "rewired": [3, 4]})
+        json!({
+            "ok": true,
+            "id": 2,
+            "ref": "wire-the-graph-engine",
+            "rewired": [3, 4],
+            "pruned_override_fields": []
+        })
     );
 
     let doc = read_store(&store);
@@ -554,6 +560,40 @@ fn a_forced_removal_splices_its_dependencies_into_every_dependent() {
     let check = tasks(&root, &["check", "--slug", TASKS_SLUG], "");
     assert_eq!(check["ok"], json!(true), "{check}");
     assert_eq!(check["findings"], json!([]), "{check}");
+}
+
+/// The stamp goes out with the row it is keyed on, so the envelope names the
+/// fields it was holding — a caller re-importing the plan gets the plan's
+/// `files` back with nothing in the output to say the hand patch existed.
+#[test]
+fn a_removal_reports_the_import_override_fields_it_pruned() {
+    let (_tmp, root) = sandbox();
+    let stamped = format!(
+        "{REMOVE_FIXTURE}\n\
+         [[import_overrides]]\n\
+         ref = \"wire-the-graph-engine\"\n\
+         files = [\"tomlctl/src/tasks/graph.rs\"]\n"
+    );
+    let store = seed_tasks(&root, &stamped);
+
+    let envelope = tasks(&root, &["remove", "2", "--slug", TASKS_SLUG, "--force"], "");
+    assert_eq!(
+        envelope,
+        json!({
+            "ok": true,
+            "id": 2,
+            "ref": "wire-the-graph-engine",
+            "rewired": [3, 4],
+            "pruned_override_fields": ["files"]
+        })
+    );
+
+    let doc = read_store(&store);
+    assert!(
+        doc.get("import_overrides").is_none(),
+        "the last stamp leaves no empty array behind: {doc}"
+    );
+    assert_sidecar_matches(&store);
 }
 
 // ---------------------------------------------------------------------------

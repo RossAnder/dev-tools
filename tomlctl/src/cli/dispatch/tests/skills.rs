@@ -1,11 +1,10 @@
 //! Shared-block parity and skill-gating tests for the dispatch layer.
 
 use crate::blocks::{self, blocks_verify, scan_block_names_warn};
-use crate::integrity::hex_lower;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 
 // ----- blocks verify ---------------------------------------------------
 
@@ -136,62 +135,72 @@ fn shared_block_manifest(repo_root: &Path) -> Option<Vec<(String, Vec<PathBuf>)>
     )
 }
 
-/// A block's digest as `scripts/verify-shared-blocks.sh` computes it: awk emits
-/// each line strictly between the two whole-line markers with `\n` as ORS, and
-/// sha256 runs over exactly those bytes.
+/// Run `scripts/verify-shared-blocks.sh` — the canonical gate — over `cwd`,
+/// returning whether it reported parity. `Err` carries why it could not run —
+/// a skip that cannot say why is indistinguishable from a cross-check that
+/// never happened.
 ///
-/// Re-derived rather than delegating to `blocks::extract_block`, which is the
-/// thing under test — sharing the extractor would make the comparison in
-/// `blocks_verify_matches_shell_extraction` self-confirming. A trailing `\r` is
-/// dropped before the marker comparison because the gawk the hook requires reads
-/// in text mode, and some carriers are CRLF on disk. `None` covers the shell's
-/// two hard failures — a missing marker, and an empty span between present ones.
-fn shell_block_digest(text: &str, name: &str) -> Option<String> {
-    let start = format!("<!-- SHARED-BLOCK:{name} START -->");
-    let end = format!("<!-- SHARED-BLOCK:{name} END -->");
-    let mut inside = false;
-    let mut saw_start = false;
-    let mut saw_end = false;
-    let mut bytes: Vec<u8> = Vec::new();
-    for line in text.split('\n') {
-        let line = line.strip_suffix('\r').unwrap_or(line);
-        if line == start {
-            inside = true;
-            saw_start = true;
-            continue;
+/// Shelling out rather than re-deriving the shell's extraction rules in Rust.
+/// A third implementation of those rules is a third thing that can drift, and
+/// the one it drifted from was the mirror it existed to cross-check.
+fn run_shell_gate(repo_root: &Path, cwd: &Path, manifest: Option<&str>) -> Result<bool, String> {
+    let script_path = repo_root.join("scripts").join("verify-shared-blocks.sh");
+    if !script_path.exists() {
+        return Err(format!("{} not found", script_path.display()));
+    }
+    // MSYS bash reads a backslash as an escape, so hand it the slash form.
+    let script = script_path.to_string_lossy().replace('\\', "/");
+    // `bash` is off PATH for a Windows-side cargo even where Git Bash is
+    // installed, so fall back to where Git for Windows puts it.
+    let candidates = ["bash", r"C:\Program Files\Git\bin\bash.exe"];
+    let mut last = String::new();
+    for exe in candidates {
+        let mut cmd = Command::new(exe);
+        cmd.arg(&script).current_dir(cwd);
+        if let Some(m) = manifest {
+            cmd.env("MANIFEST", m);
         }
-        if line == end {
-            inside = false;
-            saw_end = true;
-            continue;
-        }
-        if inside {
-            bytes.extend_from_slice(line.as_bytes());
-            bytes.push(b'\n');
+        match cmd.output() {
+            // Exit 2 is the script's own "could not run" (no gawk, no hasher,
+            // unreadable manifest) — never a verdict about the tree.
+            Ok(out) => match out.status.code() {
+                Some(0) => return Ok(true),
+                Some(1) => return Ok(false),
+                other => {
+                    last = format!(
+                        "{exe} exited {other:?}: {}",
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    )
+                }
+            },
+            Err(e) => last = format!("{exe}: {e}"),
         }
     }
-    if !(saw_start && saw_end) || bytes.is_empty() {
-        return None;
-    }
-    Some(hex_lower(&Sha256::digest(&bytes)))
+    Err(last)
 }
 
-/// Parity for every block the manifest names, against a digest re-derived from
-/// the shell verifier's own extraction rules. Pinning one block's hash leaves
-/// the others enforced solely by the pre-commit hook, so a `--no-verify` commit
-/// lands drift in them with `cargo test` still green. Iterating the manifest
-/// rather than naming blocks means a block added later is covered from the
-/// moment it is listed.
+/// Whether `blocks_verify` reports parity for every block the manifest names.
+fn mirror_verdict(manifest: &[(String, Vec<PathBuf>)]) -> bool {
+    manifest.iter().all(|(name, carriers)| {
+        blocks_verify(carriers, std::slice::from_ref(name))
+            .map(|r| r.ok)
+            .unwrap_or(false)
+    })
+}
+
+/// The two gates must reach the same verdict on the same tree. Iterating the
+/// manifest rather than naming blocks means a block added later is covered from
+/// the moment it is listed.
 #[test]
-fn blocks_verify_matches_shell_extraction() {
+fn blocks_verify_agrees_with_shell_gate() {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
     let Some(manifest) = shared_block_manifest(&repo_root) else {
-        eprintln!("blocks_verify_matches_shell_extraction: manifest not found, skipping");
+        eprintln!("blocks_verify_agrees_with_shell_gate: manifest not found, skipping");
         return;
     };
     if !manifest.iter().flat_map(|(_, f)| f).all(|p| p.exists()) {
-        eprintln!("blocks_verify_matches_shell_extraction: carrier files not found, skipping");
+        eprintln!("blocks_verify_agrees_with_shell_gate: carrier files not found, skipping");
         return;
     }
     // The shell verifier exits 2 when the manifest yields no (block, file)
@@ -201,84 +210,102 @@ fn blocks_verify_matches_shell_extraction() {
         "scripts/shared-blocks.toml declares no `[[block]]` entries — \
          this gate would check nothing"
     );
+    let thin: Vec<&str> = manifest
+        .iter()
+        .filter(|(_, c)| c.len() < 2)
+        .map(|(n, _)| n.as_str())
+        .collect();
+    assert!(
+        thin.is_empty(),
+        "block(s) listed with fewer than two carriers, so parity means nothing \
+         for them: {thin:?}"
+    );
 
-    let mut failures: Vec<String> = Vec::new();
-    for (name, carriers) in &manifest {
-        // A single-carrier block is trivially in parity with itself.
-        if carriers.len() < 2 {
-            failures.push(format!(
-                "{name}: {} carrier(s) listed — parity needs at least two",
-                carriers.len()
-            ));
-            continue;
+    let mirror = mirror_verdict(&manifest);
+    let shell = match run_shell_gate(&repo_root, &repo_root, None) {
+        Ok(v) => v,
+        Err(why) => {
+            eprintln!(
+                "blocks_verify_agrees_with_shell_gate: shell gate not runnable \
+                 ({why}), asserting the mirror alone"
+            );
+            assert!(mirror, "blocks_verify reports drift on the working tree");
+            return;
         }
+    };
+    assert_eq!(
+        mirror, shell,
+        "the two gates disagree about this tree: `tomlctl blocks verify` says \
+         ok={mirror}, `bash scripts/verify-shared-blocks.sh` says ok={shell} — \
+         the shell verifier is canonical (see the tomlctl::blocks module header)"
+    );
+}
 
-        let mut digests: Vec<(String, String)> = Vec::new();
-        for carrier in carriers {
-            let rel = repo_relative(carrier, &repo_root);
-            let text = fs::read_to_string(carrier).expect("read carrier");
-            match shell_block_digest(&text, name) {
-                Some(d) => digests.push((rel, d)),
-                None => failures.push(format!(
-                    "{name}: {rel} has no non-empty span between its markers"
-                )),
-            }
-        }
-        if digests.len() != carriers.len() {
-            continue;
-        }
+/// The divergence both gates are held to: a carrier whose marker line survives
+/// with a CR, and a carrier whose span is empty. Each is a failure on the shell
+/// side, so each must be a failure here.
+#[test]
+fn both_gates_reject_a_cr_marker_and_an_empty_span() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+    let dir = tempfile::tempdir().unwrap();
 
-        let (ref first_file, ref expected) = digests[0];
-        if let Some((rel, d)) = digests.iter().find(|(_, d)| d != expected) {
-            failures.push(format!(
-                "{name}: carriers disagree — {first_file}: {expected} vs {rel}: {d}"
-            ));
-            continue;
-        }
+    // A `\r\r\n` marker line, not `\r\n`: the gawk the hook requires reads in
+    // text mode and strips one CR, so only the second survives into the record
+    // its extractor compares.
+    let lf = "<!-- SHARED-BLOCK:foo START -->\nline one\n<!-- SHARED-BLOCK:foo END -->\n";
+    let cases: [(&str, &str); 2] = [
+        (
+            "cr-marker",
+            "<!-- SHARED-BLOCK:foo START -->\r\r\nline one\n<!-- SHARED-BLOCK:foo END -->\n",
+        ),
+        (
+            "empty-span",
+            "<!-- SHARED-BLOCK:foo START -->\n<!-- SHARED-BLOCK:foo END -->\n",
+        ),
+    ];
 
-        let report = blocks_verify(carriers, std::slice::from_ref(name)).unwrap();
-        if !report.ok {
-            failures.push(format!(
-                "{name}: blocks_verify reports drift: {:?}",
-                report.report
-            ));
-            continue;
-        }
-        let hash = report
-            .report
-            .get("blocks")
-            .and_then(|v| v.as_array())
-            .and_then(|arr| {
-                arr.iter()
-                    .find(|b| b.get("name").and_then(|v| v.as_str()) == Some(name.as_str()))
-            })
-            .and_then(|b| b.get("hash"))
-            .and_then(|v| v.as_str());
-        match hash {
-            Some(h) if h == expected => {}
-            Some(h) => failures.push(format!(
-                "{name}: blocks_verify hashed {h}, the shell's extraction hashes {expected}"
-            )),
-            None => failures.push(format!(
-                "{name}: blocks_verify reported no single hash: {:?}",
-                report.report
-            )),
-        }
-    }
+    for (label, defective) in cases {
+        let case_dir = dir.path().join(label);
+        fs::create_dir_all(&case_dir).unwrap();
+        let a = case_dir.join("a.md");
+        let b = case_dir.join("b.md");
+        // Matching carriers for the empty-span case, so the only thing that can
+        // fail it is the emptiness itself.
+        fs::write(&a, if label == "empty-span" { defective } else { lf }).unwrap();
+        fs::write(&b, defective).unwrap();
+        fs::write(
+            case_dir.join("manifest.toml"),
+            "[[block]]\nname = \"foo\"\nfiles = [\n  \"a.md\",\n  \"b.md\",\n]\n",
+        )
+        .unwrap();
 
-    if !failures.is_empty() {
-        let mut msg = String::from(
-            "blocks_verify_matches_shell_extraction: shared block(s) are not in \
-             shell-equivalent parity:\n",
+        let report = blocks_verify(&[a, b], &["foo".to_string()]).unwrap();
+        assert!(
+            !report.ok,
+            "{label}: the mirror must reject what the shell gate rejects: {:?}",
+            report.report
         );
-        for f in &failures {
-            msg.push_str(&format!("  {f}\n"));
+
+        // The shell verifier resolves its paths from the git top level, so the
+        // fixture needs to be one.
+        let inited = Command::new("git")
+            .args(["init", "-q", "."])
+            .current_dir(&case_dir)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !inited {
+            eprintln!("{label}: git init failed, skipping the shell half");
+            continue;
         }
-        msg.push_str(
-            "  fix: restore the block byte-identically across its carriers \
-             (`bash scripts/verify-shared-blocks.sh` reports the same set)",
-        );
-        panic!("{msg}");
+        match run_shell_gate(&repo_root, &case_dir, Some("manifest.toml")) {
+            Ok(shell_ok) => assert!(
+                !shell_ok,
+                "{label}: shell gate accepted a fixture the mirror rejects"
+            ),
+            Err(why) => eprintln!("{label}: shell gate not runnable ({why}), shell half skipped"),
+        }
     }
 }
 

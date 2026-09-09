@@ -8,9 +8,10 @@
 //! the source plan inside the three owned sections — task 4's `Blocked-by`
 //! renders as `Depends on`, the three checkpoint marker shapes collapse to
 //! one, `Depends on` carries `needs ∪ coupling` with the note
-//! re-parenthesised, the commit-granularity clause moves out of its bullet
-//! into a paragraph of its own, and the `(new)` file suffixes are not
-//! store-backed — and must not differ by one byte outside them.
+//! re-parenthesised, and a wrapped `Files` or policy line comes back on one
+//! line — and must not differ by one byte outside them. The `(new)` file
+//! suffixes and the commit-granularity clause ARE store-backed, so each comes
+//! back where its author wrote it.
 //!
 //! The phase-label subheadings and each task's own heading depth ARE
 //! store-backed, so the run of `## Tasks` headings comes back out at the depth
@@ -399,6 +400,64 @@ fn bytes_outside_the_owned_sections_survive_the_write() {
     // Without this the pair above would also pass on a renderer that wrote
     // the source back unchanged.
     assert_ne!(written, FIXTURE_PLAN, "the owned sections did not change");
+}
+
+/// `## Dependency Graph` moved ahead of `## Tasks` as whole blocks: every byte
+/// of the plan survives and only the order of the two sections changes.
+fn permute_owned(plan: &str) -> String {
+    let tasks_at = plan.find("## Tasks").expect("the Tasks heading");
+    let graph_at = plan
+        .find("## Dependency Graph")
+        .expect("the Dependency Graph heading");
+    let risks_at = plan.find(AFTER_OWNED).expect("a section closes the plan");
+    format!(
+        "{}{}{}{}",
+        &plan[..tasks_at],
+        &plan[graph_at..risks_at],
+        &plan[tasks_at..graph_at],
+        &plan[risks_at..]
+    )
+}
+
+/// The insert arm only ever places an ABSENT section, so a plan holding all
+/// three out of order is the case only the correction pass reaches: without
+/// it the render is a faithful no-op and `--check` has no difference to
+/// report. Permuting the golden isolates the order from the content — every
+/// section body is already the store's own render, so the finding cannot be
+/// explained by a stale body.
+#[test]
+fn an_out_of_order_plan_is_reported_as_drift_and_corrected_by_the_render() {
+    let permuted = permute_owned(GOLDEN_PLAN);
+    assert_ne!(permuted, GOLDEN_PLAN, "the permutation moved nothing");
+    let (_dir, root) = stage(&permuted);
+
+    let (stdout, _) = render(&root, &["--check"], 1);
+    let envelope = json_of(&stdout);
+    assert_eq!(
+        finding_classes(&envelope),
+        vec!["render/drift".to_string()],
+        "{envelope}"
+    );
+    let detail = envelope["findings"][0]["detail"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        detail.contains("out of canonical order: Execution Policy, Dependency Graph, Tasks"),
+        "{detail}"
+    );
+    assert!(
+        !detail.contains("out of date with the store"),
+        "the permuted bodies are the store's own render: {detail}"
+    );
+
+    // Control: unpermuted, the same document over the same store reports
+    // clean — so the finding above is the order and nothing else.
+    write_plan(&root, GOLDEN_PLAN);
+    render(&root, &["--check"], 0);
+
+    write_plan(&root, &permuted);
+    render(&root, &[], 0);
+    assert_matches_golden(&fs::read_to_string(plan_path(&root)).expect("the plan is on disk"));
 }
 
 /// `plan_path` is file-controlled input and the write runs no guard of its

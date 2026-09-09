@@ -5,7 +5,11 @@
 //! membership set, and `check` grades the result. The upsert is keyed on
 //! `ref`, so `status`, `agent`, `commit`, `coupling` and a record-adopted
 //! `ref` survive every re-import; a row the plan no longer names is kept and
-//! reported, never deleted.
+//! reported, never deleted — but stripped of a checkpoint id the plan has
+//! stopped declaring, which is otherwise the one way an undeclared group id
+//! reaches the store with no write at fault. A `[[import_overrides]]` entry
+//! holds a hand-patched `files` or `needs` open only while the plan still
+//! states the value it replaced.
 //!
 //! `checkpoint/marker-mismatch` and `plan/effort-untagged` are raised here
 //! rather than in `check`: the authored `Checkpoint after` bullet and the
@@ -28,7 +32,8 @@ use super::parse_policy::{Marker, ParsedPolicy, parse_markers, parse_policy};
 use super::parse_tasks::{ParsedTask, parse_tasks_at};
 use super::render::Finding;
 use super::schema::{
-    Checkpoint, Effort, POLICY_ORIGIN_DEFAULT, POLICY_ORIGIN_PLAN, Policy, Status, Store, TaskRow,
+    Checkpoint, Effort, FileNote, ImportOverride, POLICY_ORIGIN_DEFAULT, POLICY_ORIGIN_PLAN,
+    Policy, Status, Store, TaskRow,
 };
 use super::{check, slug, store};
 use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
@@ -73,6 +78,9 @@ pub(crate) struct ImportOutcome {
     pub(crate) removed_refs: Vec<String>,
     pub(crate) adopted_refs: Vec<String>,
     pub(crate) unmatched_refs: Vec<String>,
+    /// Retained rows whose `checkpoint` named a group this plan no longer
+    /// declares. A subset of `removed_refs`.
+    pub(crate) cleared_checkpoint_refs: Vec<String>,
     pub(crate) findings: Vec<Finding>,
 }
 
@@ -132,6 +140,10 @@ struct ParsedPlan {
     tasks: Vec<ParsedTask>,
     policy: ParsedPolicy,
     markers: Vec<Marker>,
+    /// Linked sibling documents that do carry task headings, resolved only
+    /// when this one yielded none — the two shapes a multi-file plan presents
+    /// as are both diagnosed from it.
+    detail: Vec<String>,
 }
 
 struct Import {
@@ -159,21 +171,19 @@ impl ParsedPlan {
         };
 
         let Some(tasks) = section(TASKS_SECTION) else {
-            return Err(tagged_err(
-                ErrorKind::Validation,
-                None,
-                format!(
-                    "`{}` has no `## {TASKS_SECTION}` section",
-                    plan_path.display()
-                ),
-            ));
+            return Err(no_tasks_section(source, plan_path));
         };
         // The body opens on the line after its heading, so a parse error names
         // a line of the plan rather than an offset into the section.
         let first_task_line = tasks.heading_line(source) + 1;
 
+        let tasks = parse_tasks_at(&tasks.body_lf(source), first_task_line).map_err(&named)?;
         Ok(Self {
-            tasks: parse_tasks_at(&tasks.body_lf(source), first_task_line).map_err(&named)?,
+            detail: match tasks.is_empty() {
+                true => detail_documents(source, plan_path),
+                false => Vec::new(),
+            },
+            tasks,
             policy: parse_policy(body(POLICY_SECTION).as_deref()).map_err(&named)?,
             markers: match body(GRAPH_SECTION) {
                 Some(graph) => parse_markers(&graph).map_err(&named)?,
@@ -189,15 +199,25 @@ impl Import {
             tasks,
             policy,
             markers,
+            detail,
         } = &self.parsed;
 
-        let reconciled = reconcile(&derive_refs(tasks)?, &self.completions);
-        let mut rows: Vec<TaskRow> = tasks
+        let reconciled = reconcile(&derive_refs(tasks)?, &self.completions, store);
+        adopt_refs(store, &reconciled);
+        let (mut rows, overridden): (Vec<TaskRow>, Vec<Overridden>) = tasks
             .iter()
             .zip(reconciled.refs.iter())
             .zip(reconciled.done.iter())
-            .map(|((task, r#ref), done)| merge_row(task, r#ref, store.find_ref(r#ref), *done))
-            .collect();
+            .map(|((task, r#ref), done)| {
+                merge_row(
+                    task,
+                    r#ref,
+                    store.find_ref(r#ref),
+                    store.find_override(r#ref),
+                    *done,
+                )
+            })
+            .unzip();
 
         let membership = membership(&rows, markers);
         for row in &mut rows {
@@ -212,27 +232,42 @@ impl Import {
             removed_refs: Vec::new(),
             adopted_refs: reconciled.adopted,
             unmatched_refs: reconciled.unmatched,
+            cleared_checkpoint_refs: Vec::new(),
             findings: Vec::new(),
         };
-        for row in &rows {
+        for (row, carried) in rows.iter().zip(reconciled.carried.iter()) {
             match store.find_ref(&row.r#ref) {
                 None => {
                     outcome.added += 1;
                     outcome.added_refs.push(row.r#ref.clone());
                 }
-                Some(before) if before == row => outcome.unchanged += 1,
+                // An adopted `ref` rewrote the row's own key, which the
+                // comparison against the renamed row can no longer see.
+                Some(before) if before == row && carried.is_none() => outcome.unchanged += 1,
                 Some(_) => outcome.updated += 1,
             }
         }
 
         let imported: BTreeSet<&str> = reconciled.refs.iter().map(String::as_str).collect();
+        let declared: BTreeSet<&str> = markers.iter().map(|marker| marker.id.as_str()).collect();
         for row in &store.items {
-            if !imported.contains(row.r#ref.as_str()) {
-                outcome.removed_refs.push(row.r#ref.clone());
-                rows.push(row.clone());
+            if imported.contains(row.r#ref.as_str()) {
+                continue;
             }
+            let mut retained = row.clone();
+            // Membership is recomputed for every row the plan names, so a
+            // retained row is the only way a group id the plan has stopped
+            // declaring stays in the store. The row survives; the id does not.
+            if !retained.checkpoint.is_empty() && !declared.contains(retained.checkpoint.as_str()) {
+                retained.checkpoint.clear();
+                outcome.cleared_checkpoint_refs.push(retained.r#ref.clone());
+            }
+            outcome.removed_refs.push(retained.r#ref.clone());
+            rows.push(retained);
         }
 
+        store.import_overrides = surviving_overrides(store, &rows, &reconciled.refs, &overridden);
+        store.file_notes = surviving_file_notes(store, &rows, tasks, &reconciled.refs);
         store.items = rows;
         store.checkpoints = markers
             .iter()
@@ -247,6 +282,7 @@ impl Import {
 
         // An import knows nothing about what a run has dispatched.
         outcome.findings = check::check(store, &[]);
+        name_duplicate_rows(&mut outcome.findings, &store.items, &store.last_import_refs);
         outcome.findings.extend(marker_mismatch(
             &policy.checkpoint_after,
             &store.items,
@@ -254,12 +290,117 @@ impl Import {
         ));
         outcome.findings.extend(effort_untagged(tasks));
         outcome.findings.extend(policy_absent(policy));
-        outcome.findings.extend(no_tasks(tasks));
+        outcome.findings.extend(no_tasks(tasks, detail));
+        outcome.findings.extend(override_findings(&overridden));
         outcome
             .findings
             .sort_by(|a, b| (a.class, &a.ids).cmp(&(b.class, &b.ids)));
         Ok(outcome)
     }
+}
+
+/// The import reads exactly one document, so a multi-file plan that moved its
+/// task headings into a detail document presents as a plan with no `## Tasks`
+/// section at all. Named separately from the malformed case: the fix is to
+/// move the headings back, which the generic message points at nothing.
+fn no_tasks_section(source: &str, plan_path: &Path) -> anyhow::Error {
+    let detail = detail_documents(source, plan_path);
+    let message = match multi_file_note(&detail) {
+        Some(note) => format!(
+            "`{}` has no `## {TASKS_SECTION}` section, {note}",
+            plan_path.display()
+        ),
+        None => format!(
+            "`{}` has no `## {TASKS_SECTION}` section",
+            plan_path.display()
+        ),
+    };
+    tagged_err(ErrorKind::Validation, None, message)
+}
+
+/// The shared half of the two multi-file diagnostics: the plan carrying no
+/// `## Tasks` section, and the plan whose section holds only links to the
+/// documents the headings moved into.
+fn multi_file_note(detail: &[String]) -> Option<String> {
+    if detail.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "and links to sibling plan documents that carry task headings ({}): the import reads \
+         exactly one document, so a multi-file plan keeps its task headings in the outline, \
+         alongside `## {POLICY_SECTION}` and `## {GRAPH_SECTION}`, with the detail documents \
+         carrying the prose",
+        detail.join(", ")
+    ))
+}
+
+/// Linked sibling `.md` documents the task grammar reads at least one task
+/// heading out of. An external, absolute or unreadable target is skipped: the
+/// question is only whether this plan's own tasks live next door.
+fn detail_documents(source: &str, plan_path: &Path) -> Vec<String> {
+    let dir = plan_path.parent().unwrap_or_else(|| Path::new("."));
+    let mut found: Vec<String> = Vec::new();
+    for target in link_targets(source) {
+        let candidate = Path::new(&target);
+        if candidate.is_absolute()
+            || target.contains("://")
+            || !candidate
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+        {
+            continue;
+        }
+        let path = dir.join(candidate);
+        if matches!((path.canonicalize(), plan_path.canonicalize()), (Ok(a), Ok(b)) if a == b) {
+            continue;
+        }
+        let Ok(body) = fs::read_to_string(&path) else {
+            continue;
+        };
+        if parse_tasks_at(&body.replace("\r\n", "\n"), 1).is_ok_and(|tasks| !tasks.is_empty()) {
+            found.push(format!("`{target}`"));
+        }
+    }
+    found
+}
+
+/// Inline and reference-style link targets, deduped, each stripped of its
+/// angle brackets, title and fragment.
+fn link_targets(source: &str) -> Vec<String> {
+    let mut targets: Vec<String> = Vec::new();
+    let mut push = |raw: &str| {
+        let target = raw
+            .trim()
+            .trim_start_matches('<')
+            .trim_end_matches('>')
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .split('#')
+            .next()
+            .unwrap_or_default()
+            .to_string();
+        if !target.is_empty() && !targets.contains(&target) {
+            targets.push(target);
+        }
+    };
+
+    for line in source.lines() {
+        let mut rest = line;
+        while let Some(at) = rest.find("](") {
+            rest = &rest[at + 2..];
+            let end = rest.find(')').unwrap_or(rest.len());
+            push(&rest[..end]);
+            rest = &rest[end..];
+        }
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[')
+            && let Some((_, target)) = trimmed.split_once("]: ")
+        {
+            push(target);
+        }
+    }
+    targets
 }
 
 /// Document order, deduped by `slug::dedupe_refs`, so two headings sharing a
@@ -288,6 +429,9 @@ struct Reconciled {
     refs: Vec<String>,
     /// Index-aligned with `refs`: the record reports this task complete.
     done: Vec<bool>,
+    /// Index-aligned with `refs`: the store row an adopted `ref` renames,
+    /// which is the row the store holds under the spelling the title derives.
+    carried: Vec<Option<String>>,
     adopted: Vec<String>,
     unmatched: Vec<String>,
 }
@@ -296,9 +440,16 @@ struct Reconciled {
 /// separator-only difference adopts the record's spelling instead. Adoption
 /// demands a normalised form unique on both sides and free on the plan side:
 /// a rename onto a sibling's key would silently merge two tasks.
-fn reconcile(derived: &[String], completions: &[String]) -> Reconciled {
+///
+/// The store is the other side of that test. A row it already holds under the
+/// derived spelling is this task's row, and adoption renames it; a store
+/// holding both spellings is a conflict adoption cannot resolve — keying the
+/// task on either strands the other under the same task number — so the
+/// derived spelling stands and the completion reports as unmatched.
+fn reconcile(derived: &[String], completions: &[String], store: &Store) -> Reconciled {
     let mut refs = derived.to_vec();
     let mut done = vec![false; derived.len()];
+    let mut carried: Vec<Option<String>> = vec![None; derived.len()];
     let mut adopted: Vec<String> = Vec::new();
     let mut used: BTreeSet<&str> = BTreeSet::new();
 
@@ -336,6 +487,11 @@ fn reconcile(derived: &[String], completions: &[String]) -> Reconciled {
         if refs.iter().any(|taken| taken == candidate) {
             continue;
         }
+        let held = store.find_ref(&derived[index]).is_some();
+        if held && store.find_ref(candidate).is_some() {
+            continue;
+        }
+        carried[index] = held.then(|| derived[index].clone());
         used.insert(candidate);
         adopted.push(candidate.to_string());
         refs[index] = candidate.to_string();
@@ -350,16 +506,108 @@ fn reconcile(derived: &[String], completions: &[String]) -> Reconciled {
     Reconciled {
         refs,
         done,
+        carried,
         adopted,
         unmatched,
     }
+}
+
+/// The upsert keys on `ref`, so a row the store holds under the spelling an
+/// adoption replaces has to be renamed before the merge reads it. Left alone
+/// it matches nothing, the plan's task keys a second row under the adopted
+/// spelling, and the two claim one task number.
+fn adopt_refs(store: &mut Store, reconciled: &Reconciled) {
+    for (adopted, previous) in reconciled.refs.iter().zip(reconciled.carried.iter()) {
+        let Some(previous) = previous else {
+            continue;
+        };
+        for row in store.items.iter_mut().filter(|row| row.r#ref == *previous) {
+            row.r#ref.clone_from(adopted);
+        }
+        // Both key on `ref` like `last_import_refs`, so each follows the row
+        // rather than being stranded under the spelling it left behind.
+        for entry in store
+            .import_overrides
+            .iter_mut()
+            .filter(|entry| entry.r#ref == *previous)
+        {
+            entry.r#ref.clone_from(adopted);
+        }
+        for note in store
+            .file_notes
+            .iter_mut()
+            .filter(|note| note.r#ref == *previous)
+        {
+            note.r#ref.clone_from(adopted);
+        }
+    }
+}
+
+/// `dag/duplicate-number` names a number and a count, and the count is the
+/// least of it. The cause is two rows keyed on different `ref`s — a heading
+/// renamed since the last import, most often — which the count alone leaves a
+/// reader to guess at.
+fn name_duplicate_rows(findings: &mut [Finding], rows: &[TaskRow], imported: &[String]) {
+    for finding in findings
+        .iter_mut()
+        .filter(|finding| finding.class == "dag/duplicate-number")
+    {
+        let Some(id) = finding.ids.first().copied() else {
+            continue;
+        };
+        let (produced, retained): (Vec<&str>, Vec<&str>) = rows
+            .iter()
+            .filter(|row| row.id == id)
+            .map(|row| row.r#ref.as_str())
+            .partition(|r#ref| imported.iter().any(|entry| entry == r#ref));
+
+        finding.detail = match (produced.as_slice(), retained.as_slice()) {
+            ([taken], [kept]) => format!(
+                "{} — the plan produces `{taken}` and the store still holds `{kept}`, which it \
+                 no longer produces: a renamed heading derives a new `ref` and leaves the old \
+                 row on the number. Rename the row with `tomlctl tasks update {id} --ref \
+                 {taken}`, or retire it with `tomlctl tasks remove {id}`, then re-import",
+                finding.detail
+            ),
+            (produced, []) => format!(
+                "{} — the plan produces {} under one number: renumber one of the headings",
+                finding.detail,
+                ref_list(produced)
+            ),
+            (produced, retained) => format!(
+                "{} — the plan produces {}; the store holds {}, which it no longer produces",
+                finding.detail,
+                ref_list(produced),
+                ref_list(retained)
+            ),
+        };
+    }
+}
+
+fn ref_list(refs: &[&str]) -> String {
+    if refs.is_empty() {
+        return "no row".to_string();
+    }
+    refs.iter()
+        .map(|entry| format!("`{entry}`"))
+        .collect::<Vec<String>>()
+        .join(" and ")
 }
 
 /// The plan owns every field but the four an execution carries: `status`,
 /// `agent`, `commit` and `coupling`. `coupling` has no plan syntax of its own
 /// — the renderer folds it into `Depends on` — so the parsed `needs` is
 /// narrowed by what the row already couples on rather than taken whole.
-fn merge_row(task: &ParsedTask, r#ref: &str, existing: Option<&TaskRow>, done: bool) -> TaskRow {
+///
+/// A stamped `files` or `needs` is the one exception, and it lasts only while
+/// the plan restates the base the stamp recorded.
+fn merge_row(
+    task: &ParsedTask,
+    r#ref: &str,
+    existing: Option<&TaskRow>,
+    stamp: Option<&ImportOverride>,
+    done: bool,
+) -> (TaskRow, Overridden) {
     let ParsedTask {
         id,
         title,
@@ -368,6 +616,7 @@ fn merge_row(task: &ParsedTask, r#ref: &str, existing: Option<&TaskRow>, done: b
         phase,
         phase_depth,
         files,
+        file_notes: _,
         needs,
         deps_note,
         action,
@@ -376,7 +625,31 @@ fn merge_row(task: &ParsedTask, r#ref: &str, existing: Option<&TaskRow>, done: b
     } = task;
 
     let coupling = existing.map(|row| row.coupling.clone()).unwrap_or_default();
-    TaskRow {
+    let mut overridden = Overridden {
+        id: *id,
+        held: Vec::new(),
+        released: Vec::new(),
+    };
+    let files = honour(
+        &mut overridden,
+        "files",
+        files.clone(),
+        existing.map(|row| &row.files),
+        stamp.and_then(|stamp| stamp.files.as_ref()),
+    );
+    let needs = honour(
+        &mut overridden,
+        "needs",
+        needs
+            .iter()
+            .copied()
+            .filter(|need| !coupling.contains(need))
+            .collect(),
+        existing.map(|row| &row.needs),
+        stamp.and_then(|stamp| stamp.needs.as_ref()),
+    );
+
+    let row = TaskRow {
         id: *id,
         r#ref: r#ref.to_string(),
         title: title.clone(),
@@ -394,12 +667,8 @@ fn merge_row(task: &ParsedTask, r#ref: &str, existing: Option<&TaskRow>, done: b
         phase: phase.clone(),
         phase_depth: *phase_depth,
         heading_depth: *depth,
-        files: files.clone(),
-        needs: needs
-            .iter()
-            .copied()
-            .filter(|need| !coupling.contains(need))
-            .collect(),
+        files,
+        needs,
         coupling,
         deps_note: deps_note.clone(),
         action: action.clone(),
@@ -407,7 +676,136 @@ fn merge_row(task: &ParsedTask, r#ref: &str, existing: Option<&TaskRow>, done: b
         acceptance: acceptance.clone(),
         agent: existing.map(|row| row.agent.clone()).unwrap_or_default(),
         commit: existing.map(|row| row.commit.clone()).unwrap_or_default(),
+    };
+    (row, overridden)
+}
+
+/// One row's stamped fields, split by whether the plan still states the base
+/// each was taken against.
+struct Overridden {
+    id: u32,
+    held: Vec<&'static str>,
+    released: Vec<&'static str>,
+}
+
+/// The value the import stores for a plan-owned list. A stamp holds the row's
+/// own value while the plan restates the base it was taken against, and is
+/// released — the plan's value wins — the moment it does not. Membership, not
+/// order, is the test: reordering a `Files` line states no new value.
+fn honour<T: Clone + Ord>(
+    overridden: &mut Overridden,
+    field: &'static str,
+    plan: Vec<T>,
+    current: Option<&Vec<T>>,
+    base: Option<&Vec<T>>,
+) -> Vec<T> {
+    let (Some(current), Some(base)) = (current, base) else {
+        return plan;
+    };
+    if !same_members(&plan, base) {
+        overridden.released.push(field);
+        return plan;
     }
+    overridden.held.push(field);
+    current.clone()
+}
+
+fn same_members<T: Clone + Ord>(left: &[T], right: &[T]) -> bool {
+    let mut left = left.to_vec();
+    let mut right = right.to_vec();
+    left.sort();
+    right.sort();
+    left == right
+}
+
+/// A plan row keeps only the fields the plan did not contradict; a retained
+/// row keeps its entry whole, nothing having rewritten its fields; an entry
+/// keying on no row is dropped, so a removed row's stamp cannot reattach to a
+/// later row that takes its `ref`.
+fn surviving_overrides(
+    store: &Store,
+    rows: &[TaskRow],
+    imported_refs: &[String],
+    overridden: &[Overridden],
+) -> Vec<ImportOverride> {
+    let held: BTreeMap<&str, &[&'static str]> = imported_refs
+        .iter()
+        .zip(overridden.iter())
+        .map(|(r#ref, entry)| (r#ref.as_str(), entry.held.as_slice()))
+        .collect();
+    store
+        .import_overrides
+        .iter()
+        .filter_map(|entry| match held.get(entry.r#ref.as_str()) {
+            Some(fields) => {
+                let kept = ImportOverride {
+                    r#ref: entry.r#ref.clone(),
+                    files: fields
+                        .contains(&"files")
+                        .then(|| entry.files.clone())
+                        .flatten(),
+                    needs: fields
+                        .contains(&"needs")
+                        .then(|| entry.needs.clone())
+                        .flatten(),
+                };
+                (!kept.is_empty()).then_some(kept)
+            }
+            None => rows
+                .iter()
+                .any(|row| row.r#ref == entry.r#ref)
+                .then(|| entry.clone()),
+        })
+        .collect()
+}
+
+/// The plan states every annotation of every row it names, so an imported
+/// row's entries are rebuilt from the plan and kept only for the paths the
+/// merged row still claims — a `files` stamp the import honoured leaves the
+/// plan's annotation for a path the row dropped with nothing to attach to. A
+/// row the plan no longer names keeps its entries, and a `ref` no row carries
+/// loses them.
+fn surviving_file_notes(
+    store: &Store,
+    rows: &[TaskRow],
+    tasks: &[ParsedTask],
+    imported_refs: &[String],
+) -> Vec<FileNote> {
+    let mut out: Vec<FileNote> = Vec::new();
+    for row in rows {
+        let Some(task) = imported_refs
+            .iter()
+            .position(|r#ref| *r#ref == row.r#ref)
+            .and_then(|index| tasks.get(index))
+        else {
+            out.extend(
+                store
+                    .file_notes
+                    .iter()
+                    .filter(|entry| entry.r#ref == row.r#ref)
+                    .cloned(),
+            );
+            continue;
+        };
+        for file in &row.files {
+            let note = task
+                .files
+                .iter()
+                .position(|claimed| claimed == file)
+                .and_then(|at| task.file_notes.get(at))
+                .map(String::as_str)
+                .unwrap_or_default();
+            if note.trim().is_empty() {
+                continue;
+            }
+            out.push(FileNote {
+                r#ref: row.r#ref.clone(),
+                file: file.clone(),
+                note: note.to_string(),
+            });
+        }
+    }
+    out
 }
 
 /// Markers in document order, each claiming the dependency closure of its
@@ -507,20 +905,83 @@ fn policy_absent(policy: &ParsedPolicy) -> Option<Finding> {
 /// yet the import assigns both — so a plan the grammar reads as empty would
 /// replace live store state with the empty and default values it yields.
 /// Error-class, so the write gate refuses it and only a dry run sees it.
-fn no_tasks(tasks: &[ParsedTask]) -> Option<Finding> {
+fn no_tasks(tasks: &[ParsedTask], detail: &[String]) -> Option<Finding> {
     if !tasks.is_empty() {
         return None;
     }
+    // A stub section holding only links to the detail documents is the same
+    // shape as a plan carrying no section at all: the checkpoint-table
+    // wording would name a consequence rather than the cause.
     Some(Finding {
         class: "plan/no-tasks",
         severity: ERROR,
         ids: Vec::new(),
-        detail: format!(
-            "the `## {TASKS_SECTION}` section holds no numbered task heading; importing it \
-             would replace the store's checkpoint table and policy with values the plan \
-             never states"
-        ),
+        detail: match multi_file_note(detail) {
+            Some(note) => {
+                format!("the `## {TASKS_SECTION}` section holds no numbered task heading, {note}")
+            }
+            None => format!(
+                "the `## {TASKS_SECTION}` section holds no numbered task heading; importing it \
+                 would replace the store's checkpoint table and policy with values the plan \
+                 never states"
+            ),
+        },
     })
+}
+
+/// One finding per outcome, each naming every row and field it covers.
+fn override_findings(overridden: &[Overridden]) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    let held: Vec<&Overridden> = overridden
+        .iter()
+        .filter(|entry| !entry.held.is_empty())
+        .collect();
+    if !held.is_empty() {
+        findings.push(Finding {
+            class: "plan/override-held",
+            severity: WARNING,
+            ids: held.iter().map(|entry| entry.id).collect(),
+            detail: format!(
+                "the plan still states the values {} was hand-patched against, so the \
+                 store's own stand: run `tomlctl tasks render` to publish them into the \
+                 plan, or `tomlctl tasks update <id> --relock-import-fields` to take the \
+                 plan's back",
+                field_list(&held, |entry| &entry.held)
+            ),
+        });
+    }
+
+    let released: Vec<&Overridden> = overridden
+        .iter()
+        .filter(|entry| !entry.released.is_empty())
+        .collect();
+    if !released.is_empty() {
+        findings.push(Finding {
+            class: "plan/override-released",
+            severity: WARNING,
+            ids: released.iter().map(|entry| entry.id).collect(),
+            detail: format!(
+                "the plan now states something else for {}, so the plan's values replaced \
+                 the hand-patched ones and the stamp is gone",
+                field_list(&released, |entry| &entry.released)
+            ),
+        });
+    }
+    findings
+}
+
+fn field_list(rows: &[&Overridden], fields: impl Fn(&Overridden) -> &Vec<&'static str>) -> String {
+    rows.iter()
+        .map(|entry| {
+            let named = fields(entry)
+                .iter()
+                .map(|field| format!("`{field}`"))
+                .collect::<Vec<String>>()
+                .join(" and ");
+            format!("{named} on task {}", entry.id)
+        })
+        .collect::<Vec<String>>()
+        .join(", ")
 }
 
 fn maximal_ids(rows: &[TaskRow], markers: &[Marker]) -> BTreeSet<u32> {
@@ -547,6 +1008,9 @@ fn policy_of(parsed: &ParsedPolicy) -> Policy {
         commit_granularity,
         authored,
         note,
+        checkpoints_note,
+        max_parallel_note,
+        commit_granularity_note,
         checkpoint_after: _,
     } = parsed;
     Policy {
@@ -558,6 +1022,9 @@ fn policy_of(parsed: &ParsedPolicy) -> Policy {
             false => POLICY_ORIGIN_DEFAULT.to_string(),
         },
         note: note.clone(),
+        checkpoints_note: checkpoints_note.clone(),
+        max_parallel_note: max_parallel_note.clone(),
+        commit_granularity_note: commit_granularity_note.clone(),
     }
 }
 
@@ -840,10 +1307,17 @@ fn id_list(ids: &BTreeSet<u32>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tasks::update;
     use crate::test_support::with_root;
 
     const SLUG: &str = "whimsical-hugging-puppy";
     const PLAN_REL: &str = "docs/plans/fixture.md";
+
+    /// Task 2's ref as the title derives it, and as a record that spelled the
+    /// underscore as a hyphen carries it — the pair only the normalised
+    /// matcher joins.
+    const DERIVED: &str = "arm-the-sort-engaged-count_distinct-test-with-a-filter";
+    const ADOPTED: &str = "arm-the-sort-engaged-count-distinct-test-with-a-filter";
 
     /// Three tasks: an untagged heading (2 defaults), an underscore in a
     /// title (the record matcher), and one marker covering the lot.
@@ -1097,6 +1571,127 @@ mod tests {
         });
     }
 
+    /// The live shape: a flow imported once without `--reconcile-record` and
+    /// then again with it. The store holds the row under the derived
+    /// spelling, so the adoption renames that row — keying a second one on
+    /// the adopted spelling would leave both claiming task 2.
+    #[test]
+    fn adopting_a_spelling_renames_the_row_the_store_already_holds() {
+        with_root(|root| {
+            let plan = write_plan(root, PLAN);
+            import(&request(&plan, true, false));
+            store::mutate(&store_path(root), &write_args(), |store| {
+                let row = &mut store.items[1];
+                row.status = Status::InProgress;
+                row.agent = "implement-deep".to_string();
+                row.commit = "0d1bf49".to_string();
+                Ok(())
+            })
+            .expect("the seed lands");
+            write_record(root, &[ADOPTED]);
+
+            let outcome = import(&ImportRequest {
+                reconcile_record: true,
+                ..request(&plan, true, false)
+            });
+            assert_eq!(
+                outcome.adopted_refs,
+                vec![ADOPTED.to_string()],
+                "{outcome:?}"
+            );
+            assert_eq!(
+                (outcome.added, outcome.updated),
+                (0, 1),
+                "the adopted row is the one the store held, not a new one: {outcome:?}"
+            );
+            assert!(outcome.removed_refs.is_empty(), "{outcome:?}");
+            assert!(
+                !classes(&outcome).contains(&"dag/duplicate-number"),
+                "{outcome:?}"
+            );
+
+            let store = loaded(root);
+            assert_eq!(store.items.len(), 3, "{store:?}");
+            let row = &store.items[1];
+            assert_eq!(row.r#ref, ADOPTED);
+            assert_eq!(row.status, Status::Done);
+            assert_eq!(
+                (row.agent.as_str(), row.commit.as_str()),
+                ("implement-deep", "0d1bf49"),
+                "the rename carried the row rather than replacing it"
+            );
+        });
+    }
+
+    /// A store holding both spellings is a conflict adoption cannot resolve,
+    /// so the derived spelling stands and the refusal names the pair rather
+    /// than a count.
+    #[test]
+    fn a_number_two_rows_really_claim_is_refused_and_names_both_refs() {
+        with_root(|root| {
+            let plan = write_plan(root, PLAN);
+            import(&request(&plan, true, false));
+            store::mutate(&store_path(root), &write_args(), |store| {
+                let mut twin = store.items[1].clone();
+                twin.r#ref = ADOPTED.to_string();
+                store.items.push(twin);
+                Ok(())
+            })
+            .expect("the twin lands");
+            write_record(root, &[ADOPTED]);
+
+            let request = ImportRequest {
+                reconcile_record: true,
+                ..request(&plan, true, false)
+            };
+            let preview = import(&ImportRequest {
+                dry_run: true,
+                ..request
+            });
+            assert!(
+                preview.adopted_refs.is_empty(),
+                "adoption would have merged two rows: {preview:?}"
+            );
+            assert_eq!(preview.unmatched_refs, vec![ADOPTED.to_string()]);
+
+            let message = import_plan(&request, &write_args())
+                .expect_err("two rows on one number is refused")
+                .to_string();
+            assert!(message.contains("dag/duplicate-number"), "{message}");
+            assert!(message.contains(DERIVED), "{message}");
+            assert!(message.contains(ADOPTED), "{message}");
+            assert!(
+                message.contains(&format!("tomlctl tasks update 2 --ref {DERIVED}")),
+                "{message}"
+            );
+        });
+    }
+
+    /// The other way one number ends up on two rows: a heading renamed since
+    /// the last import, whose old row the store keeps under the ref the old
+    /// title derived.
+    #[test]
+    fn a_renamed_heading_is_refused_by_the_ref_pair_it_leaves_behind() {
+        with_root(|root| {
+            let plan = write_plan(root, PLAN);
+            import(&request(&plan, true, false));
+
+            let renamed = write_plan(
+                root,
+                &PLAN.replace("Wire the renderer", "Wire the render pass"),
+            );
+            let message = import_plan(&request(&renamed, true, false), &write_args())
+                .expect_err("the retained row still claims task 3")
+                .to_string();
+            assert!(message.contains("dag/duplicate-number"), "{message}");
+            assert!(
+                message.contains("tomlctl tasks update 3 --ref wire-the-render-pass"),
+                "{message}"
+            );
+            assert!(message.contains("`wire-the-renderer`"), "{message}");
+        });
+    }
+
     #[test]
     fn a_legacy_plan_leaves_uncovered_tasks_grouped_by_nothing() {
         with_root(|root| {
@@ -1163,6 +1758,47 @@ mod tests {
                 .expect_err("a non-integer task id is a parse error")
                 .to_string();
             assert!(message.contains(&format!("line {expected}:")), "{message}");
+        });
+    }
+
+    /// A missing `## Tasks` section has two causes, and only one of them is a
+    /// malformed plan: an outline whose task headings moved into a linked
+    /// detail document is a shape the import cannot read at all.
+    #[test]
+    fn a_multi_file_plan_names_its_shape_rather_than_reading_as_malformed() {
+        with_root(|root| {
+            let tasks_at = PLAN.find("## Tasks").expect("the fixture has tasks");
+            let graph_at = PLAN
+                .find("## Dependency Graph")
+                .expect("the fixture has a graph");
+            let detail = &PLAN[tasks_at..graph_at];
+            let outline = format!(
+                "{}## Task documents\n\n- [Phase one](10-store.md)\n- [Notes](NOTES.md)\n\n{}",
+                &PLAN[..tasks_at],
+                &PLAN[graph_at..]
+            );
+
+            let plans = root.join("docs").join("plans");
+            fs::create_dir_all(&plans).expect("plans dir");
+            fs::write(plans.join("NOTES.md"), "# Notes\n\nNo task heading here.\n")
+                .expect("the notes are written");
+            let plan = write_plan(root, &outline);
+
+            let message = import_plan(&request(&plan, true, true), &write_args())
+                .expect_err("an outline holding no tasks is refused")
+                .to_string();
+            assert!(!message.contains("multi-file"), "{message}");
+
+            fs::write(plans.join("10-store.md"), detail).expect("the detail doc is written");
+            let message = import_plan(&request(&plan, true, true), &write_args())
+                .expect_err("an outline holding no tasks is still refused")
+                .to_string();
+            assert!(message.contains("multi-file"), "{message}");
+            assert!(message.contains("`10-store.md`"), "{message}");
+            assert!(
+                !message.contains("`NOTES.md`"),
+                "a link to a taskless sibling is not the shape: {message}"
+            );
         });
     }
 
@@ -1465,6 +2101,200 @@ mod tests {
                 assert_eq!(kind_of(&err), "validation", "{recorded}");
                 assert!(err.to_string().contains("`.md`"), "{recorded}");
             }
+        });
+    }
+
+    /// The plan with task 3's heading gone, so its row is retained rather
+    /// than produced, and the one marker spelled as `marker` declares it.
+    fn without_task_three(marker: &str) -> String {
+        let dropped = PLAN
+            .find("#### 3. Wire")
+            .expect("the fixture has a third task");
+        let graph_at = PLAN
+            .find("## Dependency Graph")
+            .expect("the fixture has a graph");
+        format!("{}{}", &PLAN[..dropped], &PLAN[graph_at..])
+            .replace(
+                "— CHECKPOINT A after tasks 2, 3 —",
+                &format!("— CHECKPOINT {marker} after task 2 —"),
+            )
+            .replace(
+                "Checkpoint after**: tasks 2, 3",
+                "Checkpoint after**: task 2",
+            )
+    }
+
+    fn checkpoints_of(root: &Path) -> Vec<String> {
+        loaded(root)
+            .items
+            .iter()
+            .map(|row| row.checkpoint.clone())
+            .collect()
+    }
+
+    /// A retained row is the one way a group id the plan has stopped
+    /// declaring survives in the store, which is what kept
+    /// `checkpoint/orphan-task` at warning severity. The row stays; the
+    /// undeclared id does not.
+    #[test]
+    fn a_retained_row_loses_a_checkpoint_the_plan_no_longer_declares() {
+        with_root(|root| {
+            let plan = write_plan(root, PLAN);
+            import(&request(&plan, true, false));
+
+            // Still declared: the retained row keeps the group it was in.
+            let kept = write_plan(root, &without_task_three("A"));
+            let outcome = import(&request(&kept, true, false));
+            assert_eq!(outcome.removed_refs, vec!["wire-the-renderer".to_string()]);
+            assert!(outcome.cleared_checkpoint_refs.is_empty(), "{outcome:?}");
+            assert_eq!(checkpoints_of(root), vec!["A", "A", "A"]);
+
+            let renamed = write_plan(root, &without_task_three("B"));
+            let outcome = import(&request(&renamed, true, false));
+            assert_eq!(
+                outcome.cleared_checkpoint_refs,
+                vec!["wire-the-renderer".to_string()],
+                "{outcome:?}"
+            );
+            assert_eq!(checkpoints_of(root), vec!["B", "B", ""]);
+            assert_eq!(
+                loaded(root).items[2].r#ref,
+                "wire-the-renderer",
+                "the row survives the id it carried"
+            );
+        });
+    }
+
+    fn unlock(root: &Path, id: u32, set: &str) {
+        update::update(
+            &store_path(root),
+            &write_args(),
+            id,
+            update::UpdateFields {
+                status: None,
+                agent: None,
+                commit: None,
+                checkpoint: None,
+                task_ref: None,
+                unlock: true,
+                relock: false,
+                set: vec![set.to_string()],
+            },
+        )
+        .expect("the unlocked patch lands");
+    }
+
+    /// The stamp holds only while the plan states the value the patch was
+    /// taken against: it survives a re-import of the same plan and is
+    /// released by the plan's own next word on the line.
+    #[test]
+    fn a_stamped_row_keeps_its_patch_until_the_plan_states_something_else() {
+        with_root(|root| {
+            let plan = write_plan(root, PLAN);
+            import(&request(&plan, true, false));
+            unlock(root, 1, "files=src/a.rs,src/z.rs");
+
+            let outcome = import(&request(&plan, true, false));
+            assert!(
+                classes(&outcome).contains(&"plan/override-held"),
+                "{outcome:?}"
+            );
+            assert_eq!(
+                loaded(root).items[0].files,
+                vec!["src/a.rs", "src/z.rs"],
+                "the plan has not moved, so the hand-patched value stands"
+            );
+
+            let moved = write_plan(
+                root,
+                &PLAN.replace("**Files**: `src/a.rs`", "**Files**: `src/a2.rs`"),
+            );
+            let outcome = import(&request(&moved, true, false));
+            let held = outcome
+                .findings
+                .iter()
+                .find(|finding| finding.class == "plan/override-released")
+                .expect("the plan restated the line");
+            assert_eq!(held.severity, WARNING);
+            assert_eq!(held.ids, vec![1], "{outcome:?}");
+
+            let store = loaded(root);
+            assert_eq!(store.items[0].files, vec!["src/a2.rs"]);
+            assert!(
+                store.import_overrides.is_empty(),
+                "a released stamp is gone, not held open"
+            );
+        });
+    }
+
+    /// The intended exit: `render` writes the patch into the plan, and the
+    /// next import reads it as the plan's own value.
+    #[test]
+    fn a_plan_restating_the_hand_patched_value_takes_the_stamp_with_it() {
+        with_root(|root| {
+            let plan = write_plan(root, PLAN);
+            import(&request(&plan, true, false));
+            unlock(root, 1, "files=src/a.rs,src/z.rs");
+
+            let published = write_plan(
+                root,
+                &PLAN.replace("**Files**: `src/a.rs`", "**Files**: `src/a.rs`, `src/z.rs`"),
+            );
+            let outcome = import(&request(&published, true, false));
+            assert!(
+                !classes(&outcome).contains(&"plan/override-held"),
+                "{outcome:?}"
+            );
+
+            let store = loaded(root);
+            assert_eq!(store.items[0].files, vec!["src/a.rs", "src/z.rs"]);
+            assert!(store.import_overrides.is_empty(), "{store:?}");
+        });
+    }
+
+    /// The other multi-file shape: a stub `## Tasks` section holding links to
+    /// the documents the headings moved into. Without the named diagnostic a
+    /// reader is told about the checkpoint table instead of the cause.
+    #[test]
+    fn a_stub_tasks_section_linking_to_the_detail_documents_names_the_shape() {
+        with_root(|root| {
+            let tasks_at = PLAN.find("## Tasks").expect("the fixture has tasks");
+            let graph_at = PLAN
+                .find("## Dependency Graph")
+                .expect("the fixture has a graph");
+            let outline = format!(
+                "{}## Tasks\n\n- [Phase one](10-store.md)\n\n{}",
+                &PLAN[..tasks_at],
+                &PLAN[graph_at..]
+            );
+            let plans = root.join("docs").join("plans");
+            fs::create_dir_all(&plans).expect("plans dir");
+            let plan = write_plan(root, &outline);
+
+            let bare = import(&request(&plan, true, true));
+            let finding = bare
+                .findings
+                .iter()
+                .find(|finding| finding.class == "plan/no-tasks")
+                .expect("an empty section is still refused");
+            assert!(!finding.detail.contains("multi-file"), "{finding:?}");
+
+            fs::write(plans.join("10-store.md"), &PLAN[tasks_at..graph_at])
+                .expect("the detail doc is written");
+            let preview = import(&request(&plan, true, true));
+            let finding = preview
+                .findings
+                .iter()
+                .find(|finding| finding.class == "plan/no-tasks")
+                .expect("the shape is still refused");
+            assert_eq!(finding.severity, ERROR);
+            assert!(finding.detail.contains("multi-file"), "{finding:?}");
+            assert!(finding.detail.contains("`10-store.md`"), "{finding:?}");
+
+            let message = import_plan(&request(&plan, true, false), &write_args())
+                .expect_err("an error-class finding refuses the write")
+                .to_string();
+            assert!(message.contains("multi-file"), "{message}");
         });
     }
 

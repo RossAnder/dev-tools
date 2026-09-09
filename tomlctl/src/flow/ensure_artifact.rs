@@ -32,6 +32,7 @@ use serde_json::{Value as JsonValue, json};
 use crate::cli::{ArtifactKind, WriteIntegrityArgs, write_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::{sha256_hex_of_file, sidecar_path};
+use crate::io::advise;
 use crate::io::{
     atomic_write, guard_write_path, recheck_claude_containment, relativise, repo_or_cwd_root,
     with_exclusive_lock,
@@ -295,7 +296,7 @@ fn bootstrap_execution_record(
                 if opts.strict {
                     return Err(e);
                 }
-                eprintln!(
+                advise!(
                     "tomlctl: warning: bootstrap wrote {} but sidecar refresh failed: {:#}",
                     artifact.display(),
                     e

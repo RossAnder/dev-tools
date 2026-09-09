@@ -38,6 +38,13 @@ pub(crate) struct FenceState {
 }
 
 impl FenceState {
+    /// Whether the line `consume` is about to read stands inside a block an
+    /// earlier line opened, which is what separates an opening marker from the
+    /// content and closing marker `consume` reports alike.
+    pub(crate) fn is_open(&self) -> bool {
+        self.open.is_some()
+    }
+
     /// Advances over one line and reports whether it is fenced — true for the
     /// opening and closing markers too, neither of which is ever a heading.
     pub(crate) fn consume(&mut self, line: &str) -> bool {

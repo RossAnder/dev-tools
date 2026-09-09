@@ -330,6 +330,49 @@ fn dependents_walk_forward_transitively_where_deps_name_only_direct_targets() {
     assert_eq!(ids(&deps_of_five["deps"]), vec![3], "{deps_of_five}");
 }
 
+/// The stamp `update --unlock-import-fields` leaves is otherwise readable only
+/// by opening the TOML or waiting for an import to report `plan/override-held`,
+/// so `show` carries it as a trailing key on the row that holds one — and on no
+/// other row, whatever the projection.
+#[test]
+fn a_stamped_row_shows_the_plan_values_its_patch_replaced() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(
+        &root,
+        &format!(
+            "{READ_FIXTURE}\n[[import_overrides]]\nref = \"write-the-read-verbs\"\nfiles = \
+             [\"tomlctl/src/tasks/read.rs\"]\n"
+        ),
+    );
+
+    let stdout = tasks_stdout(&root, &["show", "3"]);
+    let stamped: Value = serde_json::from_str(&stdout).expect("stdout must be JSON");
+    assert_eq!(
+        *top_level_keys(&stdout).last().expect("a last key"),
+        "import_override",
+        "the key is additive, appended after the summary: {stdout}"
+    );
+    assert_eq!(
+        stamped["import_override"],
+        json!({"files": ["tomlctl/src/tasks/read.rs"]}),
+        "{stamped}"
+    );
+    assert_eq!(
+        stamped["files"],
+        json!(["tomlctl/src/tasks/read.rs", "tomlctl/src/tasks/shared.rs"]),
+        "the row keeps the patch and the stamp keeps the base: {stamped}"
+    );
+
+    let projected = tasks(&root, &["show", "3", "--with", "body"]);
+    assert_eq!(
+        projected["import_override"], stamped["import_override"],
+        "{projected}"
+    );
+
+    let unstamped = tasks(&root, &["show", "1"]);
+    assert!(unstamped.get("import_override").is_none(), "{unstamped}");
+}
+
 /// A fetch for a row the store does not hold is a `not_found` envelope naming
 /// the id — an orchestrator distinguishes that from a store it could not read
 /// at all by the tag, not by the prose.

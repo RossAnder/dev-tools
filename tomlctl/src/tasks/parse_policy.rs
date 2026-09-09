@@ -11,6 +11,7 @@
 //! those features back on, so a test run accepts it. That asymmetry is what
 //! `every_pattern_compiles` scans the pattern text for.
 
+use crate::io::advise;
 use std::sync::OnceLock;
 
 use anyhow::{Result, anyhow};
@@ -37,9 +38,15 @@ pub(crate) struct ParsedPolicy {
     /// field above a default the plan never stated, which is a separate fact
     /// from what any of them holds.
     pub(crate) authored: bool,
-    /// Authored prose only. A parser diagnostic here would be indistinguishable
-    /// from an author's own exception once the renderer writes it back into the
-    /// document.
+    /// The clause trailing each bullet's value, kept against the bullet that
+    /// carried it: the renderer puts it back on that line, and a single flat
+    /// note would attach every one of them to whichever bullet renders last.
+    pub(crate) checkpoints_note: String,
+    pub(crate) max_parallel_note: String,
+    pub(crate) commit_granularity_note: String,
+    /// Prose belonging to no bullet, authored only. A parser diagnostic here
+    /// would be indistinguishable from an author's own exception once the
+    /// renderer writes it back into the document.
     pub(crate) note: String,
     /// The authored `Checkpoint after` bullet, for `checkpoint/marker-mismatch`
     /// only. Membership comes from the markers.
@@ -61,6 +68,9 @@ pub(crate) fn parse_policy(section_body: Option<&str>) -> Result<ParsedPolicy> {
         max_parallel: DEFAULT_MAX_PARALLEL,
         commit_granularity: DEFAULT_COMMIT_GRANULARITY.to_string(),
         authored: section_body.is_some(),
+        checkpoints_note: String::new(),
+        max_parallel_note: String::new(),
+        commit_granularity_note: String::new(),
         note: String::new(),
         checkpoint_after: Vec::new(),
     };
@@ -70,17 +80,21 @@ pub(crate) fn parse_policy(section_body: Option<&str>) -> Result<ParsedPolicy> {
     };
 
     let scanned = scan_bullets(body);
-    let mut notes: Vec<String> = Vec::new();
 
     for (label, value) in &scanned.entries {
         let key = label.trim().trim_end_matches(':').to_ascii_lowercase();
         let (token, rest) = split_first_token(value);
-        match key.as_str() {
+        // The remainder goes to the bullet that carried it, and a repeated
+        // bullet overwrites both halves together rather than accumulating a
+        // note against a value that no longer stands.
+        let note = match key.as_str() {
             "checkpoints" => {
                 policy.checkpoints = one_of(label, token, &CHECKPOINTS_VALUES)?;
+                &mut policy.checkpoints_note
             }
             "commit granularity" => {
                 policy.commit_granularity = one_of(label, token, &GRANULARITY_VALUES)?;
+                &mut policy.commit_granularity_note
             }
             "max parallel agents" => {
                 // Out-of-range is a `policy/max-parallel-range` finding, not a
@@ -89,20 +103,18 @@ pub(crate) fn parse_policy(section_body: Option<&str>) -> Result<ParsedPolicy> {
                 policy.max_parallel = digits.parse::<u32>().map_err(|_| {
                     anyhow!("execution policy `{label}`: `{token}` is not a whole number")
                 })?;
+                &mut policy.max_parallel_note
             }
             "checkpoint after" => {
                 policy.checkpoint_after = expand_ids(value)?;
                 continue;
             }
             _ => continue,
-        }
-        if !rest.is_empty() {
-            notes.push(rest.to_string());
-        }
+        };
+        *note = rest.to_string();
     }
 
-    notes.extend(scanned.prose);
-    policy.note = notes.join("\n").trim().to_string();
+    policy.note = scanned.prose.join("\n").trim().to_string();
     Ok(policy)
 }
 
@@ -126,7 +138,7 @@ pub(crate) fn parse_markers(section_body: &str) -> Result<Vec<Marker>> {
         match markers.iter().find(|m| m.id == marker.id) {
             Some(first) => {
                 if first.after != marker.after || first.rationale != marker.rationale {
-                    eprintln!(
+                    advise!(
                         "tomlctl: checkpoint `{}` is declared twice with different text — keeping the first",
                         marker.id
                     );
@@ -472,7 +484,46 @@ mod tests {
         let body = "- **Checkpoints**: milestones — one commit train per\n  milestone group\n- **Max parallel agents**: 6\n";
         let policy = parse_policy(Some(body)).expect("policy parses");
         assert_eq!(policy.checkpoints, "milestones");
-        assert_eq!(policy.note, "— one commit train per milestone group");
+        assert_eq!(
+            policy.checkpoints_note,
+            "— one commit train per milestone group"
+        );
+        assert_eq!(policy.note, "");
+    }
+
+    /// Two bullets each carrying a clause: a flat note could not say which
+    /// bullet either belongs to, and the renderer would put both on the last.
+    #[test]
+    fn each_bullet_keeps_its_own_remainder() {
+        let body = "- **Checkpoints**: milestones — one commit train per milestone group\n\
+            - **Max parallel agents**: 6 — 8 while the tree is quiet\n\
+            - **Commit granularity**: per-task — tasks 5 and 6 land in one commit\n";
+        let policy = parse_policy(Some(body)).expect("policy parses");
+        assert_eq!(
+            policy.checkpoints_note,
+            "— one commit train per milestone group"
+        );
+        assert_eq!(policy.max_parallel_note, "— 8 while the tree is quiet");
+        assert_eq!(
+            policy.commit_granularity_note,
+            "— tasks 5 and 6 land in one commit"
+        );
+        assert_eq!(policy.note, "");
+    }
+
+    /// Prose under the bullets belongs to no bullet, so it stays in the flat
+    /// note rather than being attached to whichever bullet came last.
+    #[test]
+    fn free_prose_stays_out_of_every_bullet_note() {
+        let body = "- **Checkpoints**: milestones\n- **Commit granularity**: per-task\n\n\
+            The trains are cut by hand while the store is young.\n";
+        let policy = parse_policy(Some(body)).expect("policy parses");
+        assert_eq!(policy.checkpoints_note, "");
+        assert_eq!(policy.commit_granularity_note, "");
+        assert_eq!(
+            policy.note,
+            "The trains are cut by hand while the store is young."
+        );
     }
 
     /// The absence is carried by `authored`, and `note` stays empty: the
@@ -486,6 +537,9 @@ mod tests {
         assert_eq!(policy.commit_granularity, "per-task");
         assert!(!policy.authored);
         assert_eq!(policy.note, "");
+        assert_eq!(policy.checkpoints_note, "");
+        assert_eq!(policy.max_parallel_note, "");
+        assert_eq!(policy.commit_granularity_note, "");
         assert!(policy.checkpoint_after.is_empty());
     }
 

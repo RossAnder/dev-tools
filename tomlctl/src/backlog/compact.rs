@@ -24,6 +24,7 @@ use super::schema::{
     FIELD_STATUS, FIELD_TERMINAL_DATE, FIELD_TERMINAL_REASON,
 };
 use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
+use crate::io::advise;
 use crate::io::{
     dry_run_read_opts, items_array, items_array_mut, mutate_doc_conditional, on_missing_for,
     read_doc, relativise, repo_or_cwd_root,
@@ -131,7 +132,7 @@ fn terminal_cluster(item: &TomlValue) -> Option<(&str, &'static str, &'static st
 fn due(item: &TomlValue, today: Date, threshold: Duration) -> Option<TomlDatetime> {
     let (status, date_field, _) = terminal_cluster(item)?;
     let Some((stored, civil)) = read_date(item, date_field) else {
-        eprintln!(
+        advise!(
             "tomlctl: backlog item {} is status=\"{status}\" with no readable `{date_field}` date — leaving it in place",
             id_of(item)
         );

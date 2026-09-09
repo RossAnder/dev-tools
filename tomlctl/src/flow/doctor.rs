@@ -17,8 +17,9 @@
 //!   the canonical computation for the slug (the same map that
 //!   `flow init` writes). A missing `tasks` key is advisory (a warning),
 //!   not a check failure.
-//! - `plan_path` (top-level field of `context.toml`) resolves to a file
-//!   that exists on disk, when treated as relative to the root.
+//! - `plan_path` (top-level field of `context.toml`) names a repo-relative
+//!   `.md` document under the root that exists on disk. A value failing the
+//!   containment or extension rule fails the check instead of being stat'd.
 //! - The `[tasks]` counters join: `completed` is derived from the execution
 //!   record and `total` counts task-store rows, so `completed > total` is
 //!   arithmetically impossible and a record `task_ref` naming no store row is
@@ -342,17 +343,7 @@ fn check_one_flow(
     // The context doc is read once here: the task-store checks below and the
     // artifacts / plan-path checks all project from it.
     let context_doc = context_exists.then(|| read_toml(&context_file));
-    let plan_declares_tasks = context_doc
-        .as_ref()
-        .and_then(|d| d.as_ref().ok())
-        .is_some_and(|doc| {
-            super::resolve::plan_declares_tasks(
-                root,
-                doc.as_table()
-                    .and_then(|t| t.get("plan_path"))
-                    .and_then(|v| v.as_str()),
-            )
-        });
+    let plan_declares_tasks = context_exists && super::resolve::plan_declares_tasks(slug);
 
     // 5. Task store existence, observable only for a plan that declares a
     //    task section — a plan with none legitimately carries no store. An
@@ -405,7 +396,7 @@ fn check_one_flow(
                     warnings,
                     tasks_backfills,
                 );
-                check_plan_path_resolves(root, slug, &doc, checks);
+                check_plan_path_resolves(slug, &doc, checks);
                 check_tasks_counters(slug, &doc, &tasks_file, &er_file, checks, warnings);
             }
             Err(e) => {
@@ -518,13 +509,16 @@ fn check_artifacts_canonical(
 }
 
 /// Check that `plan_path` (top-level string field of `context.toml`)
-/// resolves to a file on disk, treating a relative value as relative to
-/// the repo root. An absolute path is checked verbatim.
-fn check_plan_path_resolves(root: &Path, slug: &str, doc: &TomlValue, checks: &mut Vec<Check>) {
+/// resolves to a file on disk. Resolution goes through the plan-path seam
+/// `tasks` owns, so an absolute, escaping or non-`.md` value is refused
+/// rather than stat'd — a recorded path is file-controlled input, and
+/// stat'ing one verbatim answers "does this file exist" for any path.
+fn check_plan_path_resolves(slug: &str, doc: &TomlValue, checks: &mut Vec<Check>) {
     let plan_path = doc
         .as_table()
         .and_then(|t| t.get("plan_path"))
-        .and_then(|v| v.as_str());
+        .and_then(|v| v.as_str())
+        .filter(|value| !value.is_empty());
     let Some(plan_path) = plan_path else {
         checks.push(Check::fail(
             "plan-path-resolves",
@@ -533,19 +527,20 @@ fn check_plan_path_resolves(root: &Path, slug: &str, doc: &TomlValue, checks: &m
         ));
         return;
     };
-    let resolved = if Path::new(plan_path).is_absolute() {
-        PathBuf::from(plan_path)
-    } else {
-        root.join(plan_path)
-    };
-    if resolved.exists() {
-        checks.push(Check::ok("plan-path-resolves", slug.to_string()));
-    } else {
-        checks.push(Check::fail(
+    match crate::tasks::context_plan_path(slug) {
+        Ok(resolved) if resolved.exists() => {
+            checks.push(Check::ok("plan-path-resolves", slug.to_string()))
+        }
+        Ok(_) => checks.push(Check::fail(
             "plan-path-resolves",
             slug.to_string(),
             format!("plan_path `{plan_path}` does not resolve to an existing file"),
-        ));
+        )),
+        Err(e) => checks.push(Check::fail(
+            "plan-path-resolves",
+            slug.to_string(),
+            format!("plan_path `{plan_path}` is not usable: {e}"),
+        )),
     }
 }
 

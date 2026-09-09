@@ -15,9 +15,7 @@ derived sections exist so a render can prove it leaves them alone.
 - **Checkpoints**: milestones
 - **Checkpoint after**: tasks 3, 4, 6, 9, 10
 - **Max parallel agents**: 6
-- **Commit granularity**: per-task
-
-— tasks 5 and 6 land in one commit because they share a file
+- **Commit granularity**: per-task — tasks 5 and 6 land in one commit because they share a file
 
 ## Tasks
 
@@ -31,7 +29,7 @@ derived sections exist so a render can prove it leaves them alone.
 - **Acceptance**: The crate compiles with no warning.
 
 #### 2. Land the schema round-trip [M]
-- **Files**: `src/tasks/schema.rs`, `src/tasks/store.rs`, `src/tasks/mod.rs`
+- **Files**: `src/tasks/schema.rs` (new), `src/tasks/store.rs` (new), `src/tasks/mod.rs`
 - **Depends on**: 1
 - **Action**: Convert the store to and from TOML, preserving key order.
 - **Detail**: A body may carry a Windows path (`src\tasks\schema.rs`), so
@@ -62,7 +60,7 @@ derived sections exist so a render can prove it leaves them alone.
 - **Acceptance**: The rounds are stable across runs.
 
 #### 6. Fold the closures into checkpoint groups [M]
-- **Files**: `src/tasks/graph.rs`, `src/tasks/closure.rs`
+- **Files**: `src/tasks/graph.rs`, `src/tasks/closure.rs` (new)
 - **Depends on**: 5
 - **Action**: Derive each group's members and maximal elements.
 - **Detail**: A group is valid when its prefix union is downward-closed.
@@ -86,14 +84,14 @@ derived sections exist so a render can prove it leaves them alone.
 - **Acceptance**: The round-trip holds.
 
 ### 9. Document the store contract [S]
-- **Files**: `docs/task-store.md`
+- **Files**: `docs/task-store.md` (new)
 - **Depends on**: —
 - **Action**: State the schema, the verb surface and the ref rule.
 - **Detail**: No task depends on this one and it depends on none.
 - **Acceptance**: The document exists.
 
 ### 10. Smoke the plan corpus [S]
-- **Files**: `tests/tasks_corpus.rs`
+- **Files**: `tests/tasks_corpus.rs` (new)
 - **Depends on**: 8
 - **Action**: Dry-run every plan in the corpus.
 - **Detail**: The file list is derived at runtime, never transcribed.
@@ -103,11 +101,11 @@ derived sections exist so a render can prove it leaves them alone.
 
 Per-task `Depends on` lines are authoritative; this section states only the checkpoint cuts.
 
-— CHECKPOINT A after tasks 3 — closure: 1, 2, 3. The module tree and the schema round-trip.
+— CHECKPOINT A after tasks 3 — dependency closure: 1, 2, 3. The module tree and the schema round-trip.
 
-— CHECKPOINT B after tasks 4, 6 — closure: 1, 2, 3, 4, 5, 6. both parsers and the graph engine land together
+— CHECKPOINT B after tasks 4, 6 — dependency closure: 1, 2, 3, 4, 5, 6. both parsers and the graph engine land together
 
-— CHECKPOINT C after tasks 9, 10 — closure: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10. the import verb, the renderer and the corpus smoke.
+— CHECKPOINT C after tasks 9, 10 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10. the import verb, the renderer and the corpus smoke.
 
 ## Risks
 

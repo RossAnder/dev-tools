@@ -25,7 +25,8 @@ use super::schema::{self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_ID, FIELD_SUMMAR
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{
-    atomic_write, guard_write_path, items_array, read_dir_sorted, relativise, repo_or_cwd_root,
+    atomic_write, guard_write_path, items_array, read_dir_sorted, relativise, relativise_under,
+    repo_or_cwd_root,
 };
 use crate::output::{print_json, print_json_compact};
 
@@ -434,8 +435,9 @@ fn drop_box_ignored(dir: &Path) -> Option<bool> {
     ignored_set(&repo, std::slice::from_ref(&probe)).map(|ignored| ignored.contains(&probe))
 }
 
-/// Which of `paths` git considers ignored, or `None` when git could not
-/// answer. The index is deliberately consulted (no `--no-index`): that is
+/// Which of `paths` git considers ignored, or `None` when no verdict can be
+/// had — git could not answer, or a path does not resolve under `root`. The
+/// index is deliberately consulted (no `--no-index`): that is
 /// what makes a force-added file report as NOT ignored, which is the whole
 /// signal behind the `tracked` class.
 ///
@@ -452,7 +454,11 @@ fn ignored_set(root: &Path, paths: &[PathBuf]) -> Option<BTreeSet<PathBuf>> {
     let mut by_rel: BTreeMap<String, PathBuf> = BTreeMap::new();
     let mut payload: Vec<u8> = Vec::new();
     for path in paths {
-        let rel = relativise(root, path);
+        // A path that does not resolve under `root` would go to git as an
+        // absolute pathspec it resolves against a different tree, so the
+        // verdict would be about a different file. Refusing to answer is the
+        // one honest outcome, and the caller already renders it.
+        let rel = relativise_under(root, path)?;
         payload.extend_from_slice(rel.as_bytes());
         payload.push(0);
         by_rel.insert(rel, path.clone());
@@ -954,6 +960,27 @@ context = "The overlap is visible in `shot.png` at 1280px."
             "{:?}",
             report.findings
         );
+    }
+
+    /// An absolute path outside the repo reaches `git check-ignore` as a
+    /// pathspec it resolves against a different tree, so its verdict would be
+    /// about a different file. Refusing the whole answer routes the walk to
+    /// the class that says so instead.
+    #[test]
+    fn a_path_outside_the_root_gets_no_ignore_verdict() {
+        if !git_available() {
+            eprintln!("skipping: git is not on PATH");
+            return;
+        }
+        let sb = Sandbox::new(true);
+        let inside = sb
+            .populate("B-a1b2c3d4", true, &[("shot.png", 1)])
+            .join("shot.png");
+        let elsewhere = tempfile::tempdir().unwrap();
+        let outside = elsewhere.path().canonicalize().unwrap().join("secret.har");
+
+        assert!(ignored_set(sb.root(), std::slice::from_ref(&inside)).is_some());
+        assert_eq!(ignored_set(sb.root(), &[inside, outside]), None);
     }
 
     #[test]
