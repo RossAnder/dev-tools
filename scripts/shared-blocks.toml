@@ -18,8 +18,8 @@
 #   vet-research, and plansdirectory-prompt.
 #
 #   No command carrier survived that wave. Every `[[block]]` below spans
-#   files of another kind — implement agents, or Rust sources — which is why
-#   they were untouched by the migration.
+#   files of another kind — implement agents, Rust sources, or the hook
+#   verifiers themselves — which is why they were untouched by the migration.
 
 [[block]]
 name = "forbidden-working-tree-ops"
@@ -33,6 +33,20 @@ name = "backlog-candidates"
 files = [
   "claude/agents/implement-deep.md",
   "claude/agents/implement-lite.md",
+]
+
+# The GNU-awk resolver both hook verifiers run before they can trust their own
+# output. Shell rather than markdown or Rust, so the markers cannot be bare
+# lines: each sits alone inside a `: '…'` no-op string, and the quote lines that
+# close and reopen it are part of the hashed body. The three per-caller inputs
+# (AWK_ENV_NAME, AWK_ENV_VALUE, AWK_CALLER) are assigned just above the block in
+# each script — the override env var differs by script, so it cannot be named
+# inside a body that has to match byte for byte.
+[[block]]
+name = "gnu-awk-resolver"
+files = [
+  "scripts/doc-diff-gate.sh",
+  "scripts/verify-shared-blocks.sh",
 ]
 
 # Rust carriers rather than markdown: the bin crate's `#[cfg(test)]` module and

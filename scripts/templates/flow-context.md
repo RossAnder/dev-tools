@@ -14,9 +14,10 @@ the verbatim source consumed by Task 15 (the coordinated rewrite of all 9 carrie
   (carrier-specific `command` literal + `path_args` wiring; identical structure otherwise);
   Section 4 replaces `claude/commands/tdd.md`'s `## Bootstrap-missing fallback` step-1 prose.
 
-**Parity invariant**: Section 1 is the body of the `flow-context` block. After Task 15
-lands, `bash scripts/verify-shared-blocks.sh` MUST pass — the block content is identical
-across all 9 carriers in `scripts/shared-blocks.toml`'s `flow-context` entry.
+**Parity invariant** (retired in wave 2): the `flow-context` entry no longer exists in
+`scripts/shared-blocks.toml`, which records the retirement. Nothing verifies the delimiters
+quoted below, and this file is a record of the Task 15 rewrite rather than a source that
+still governs the carriers.
 
 ---
 
