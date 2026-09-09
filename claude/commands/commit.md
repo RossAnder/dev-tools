@@ -8,6 +8,11 @@ argument-hint: (no args — operates on the current staged tree)
 > Thin orchestrator. Convention rules, dialect resolution, atomicity test, and message
 > composition all live in the `commit-conventions` skill — this file dispatches the skill's
 > Step 1-4 procedure and handles user confirmation + the actual `git commit` call.
+>
+> **Portable to other harnesses.** Under Claude Code the skill reference below is a
+> `Skill()` dispatch; elsewhere, read `claude/skills/commit-conventions/SKILL.md`
+> directly. `AskUserQuestion` degrades to asking in prose — the options and their
+> meanings are unchanged, and so is every rule about what may be committed.
 
 ## Phase 1: Pre-flight
 
@@ -23,7 +28,7 @@ tomlctl flow resolve --branch "$(git branch --show-current)" 2>/dev/null
 
 Capture the resolved slug (if any) for the Phase 4 warning. Flow-less invocation is fine — `/commit` never writes to `execution-record.toml` and does not require a flow.
 
-## Phase 2: Invoke the `commit-conventions` skill
+## Phase 2: Invoke the `commit-conventions` skill (`claude/skills/commit-conventions/SKILL.md`)
 
 Dispatch the `commit-conventions` skill's Step 1-4 procedure against the staged tree. The skill owns the rules; this command only sequences the user-facing prompts.
 

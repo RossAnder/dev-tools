@@ -6,12 +6,19 @@ argument-hint: [no arguments — the store is repo-scoped, not flow-scoped]
 # /backlog — sweep the repo-scoped capture log
 
 > Skim-readable orchestrator. Full contract bodies load on demand via skill invocations.
+>
+> **Portable to other harnesses.** Under Claude Code the skill names below are
+> `Skill()` dispatches; under Codex or any harness without that tool, read each
+> named `SKILL.md` at the path given beside it. The two Claude-only affordances —
+> the `TaskCreate` / `TaskUpdate` progress surface and `AskUserQuestion` — both
+> degrade: skip the task entries entirely, and put the choices to the user as
+> ordinary prose. Neither changes what this command writes.
 
 Walks `.claude/backlog.toml` — the repo-scoped store of tangential discoveries — from an open set to a decided one: cluster what has accumulated into candidate work scopes, take a disposition per cluster or per item from the user, audit the evidence drop-box, and optionally age decided items out. It is a triage pass over captures that other commands minted; it does not review code and never mints an item on its own initiative.
 
-Invoke the `backlog-capture` skill for the capture discipline — the mint test, the `backlog check` gate and its verdict ladder, the `kind` and `status` vocabularies, the orchestrator-only writer rule, and the evidence-publication rules. That skill owns all of them and this carrier does not restate any. Consult it whenever the user dictates a new item mid-sweep, and mint through the same `check`-then-`add` gate every other carrier uses.
+Invoke the `backlog-capture` skill (`claude/skills/backlog-capture/SKILL.md`) for the capture discipline — the mint test, the `backlog check` gate and its verdict ladder, the `kind` and `status` vocabularies, the orchestrator-only writer rule, and the evidence-publication rules. That skill owns all of them and this carrier does not restate any. Consult it whenever the user dictates a new item mid-sweep, and mint through the same `check`-then-`add` gate every other carrier uses.
 
-Invoke the `flow-contract-task-visibility` skill for the run-scoped task-surface contract (view-not-store rule, subject prefix with lowercase `<ref>`, `activeForm`, lifecycle, granularity floor, silent degradation). This command is repo-scoped rather than flow-aware, so the slug slot is the literal `no-flow` per that contract's no-flow rule. Mint one task each for Steps 1-4 — `no-flow /backlog · cluster — group the open set`, `· dispositions — apply the user's verdicts`, `· evidence-audit — check the drop-boxes`, `· compact — fold aged terminal rows` — as a set before Step 1 opens; Step 0 and Step 5 sit below the granularity floor. `TaskUpdate` each `→ in_progress` as its step opens and `→ completed` when it closes, naming a skipped step's reason in its `description` rather than leaving the row `pending`. When the task tools are absent, continue the sweep unchanged.
+Invoke the `flow-contract-task-visibility` skill (`claude/skills/flow-contract-task-visibility/SKILL.md`) for the run-scoped task-surface contract (view-not-store rule, subject prefix with lowercase `<ref>`, `activeForm`, lifecycle, granularity floor, silent degradation). This command is repo-scoped rather than flow-aware, so the slug slot is the literal `no-flow` per that contract's no-flow rule. Mint one task each for Steps 1-4 — `no-flow /backlog · cluster — group the open set`, `· dispositions — apply the user's verdicts`, `· evidence-audit — check the drop-boxes`, `· compact — fold aged terminal rows` — as a set before Step 1 opens; Step 0 and Step 5 sit below the granularity floor. `TaskUpdate` each `→ in_progress` as its step opens and `→ completed` when it closes, naming a skipped step's reason in its `description` rather than leaving the row `pending`. When the task tools are absent, continue the sweep unchanged.
 
 ## Step 0: Pre-flight (binary, then open set)
 
@@ -49,7 +56,7 @@ tomlctl backlog list --open --select id,kind,area,summary
 
 **This is a user-engagement gate — the autonomy directive does not apply.** Never infer a disposition and never apply one the user did not give. An item they did not rule on stays `open`, and that is a valid outcome for the whole sweep.
 
-Offer, per cluster where the group holds together and per item otherwise, via `AskUserQuestion`: promote, dismiss, resolve, keep open, or relate to another item. Promote and relate need a follow-up value — the flow slug or repo-relative plan path for `--to`, the second id and the edge kind for a relation. Dismiss and resolve carry the user's own wording; do not draft a reason on their behalf.
+Offer, per cluster where the group holds together and per item otherwise, via `AskUserQuestion` (or plain prose on a harness without it): promote, dismiss, resolve, keep open, or relate to another item. Promote and relate need a follow-up value — the flow slug or repo-relative plan path for `--to`, the second id and the edge kind for a relation. Dismiss and resolve carry the user's own wording; do not draft a reason on their behalf.
 
 Apply each decision as it is taken:
 
