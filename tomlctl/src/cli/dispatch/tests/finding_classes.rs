@@ -31,6 +31,12 @@ type Classes = BTreeMap<String, BTreeSet<String>>;
 /// fixture is not a class the CLI can emit.
 type Bodies = Vec<(String, String)>;
 
+/// The cut point, and deliberately the module rather than the `#[cfg(test)]`
+/// attribute alone: a test-only helper gated mid-file would otherwise hide
+/// every class raised below it, reporting a real class as documented-but-never-
+/// emitted. `parse_tasks.rs` carries exactly that shape.
+const TEST_MODULE: &str = "mod tests {";
+
 fn source_bodies(tasks_dir: &Path) -> Bodies {
     let mut paths: Vec<PathBuf> = fs::read_dir(tasks_dir)
         .unwrap_or_else(|err| panic!("{}: {err}", tasks_dir.display()))
@@ -46,7 +52,7 @@ fn source_bodies(tasks_dir: &Path) -> Bodies {
         .map(|path| {
             let text =
                 fs::read_to_string(&path).unwrap_or_else(|err| panic!("{}: {err}", path.display()));
-            let body = text.split("#[cfg(test)]").next().unwrap_or_default();
+            let body = text.split(TEST_MODULE).next().unwrap_or_default();
             (path.display().to_string(), body.to_string())
         })
         .collect()

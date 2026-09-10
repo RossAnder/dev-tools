@@ -42,7 +42,7 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::{ActiveDoc, ActiveEntry, FlowProjection};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
-use crate::io::{read_dir_sorted, read_toml, relativise, repo_or_cwd_root};
+use crate::io::{read_dir_sorted, read_toml, recorded_under_root, relativise, repo_or_cwd_root};
 use crate::output::print_json_compact;
 use crate::time::{parse_iso_to_date, today_utc_date};
 
@@ -575,7 +575,7 @@ fn build_resolved_envelope(
 
     // Artifacts: prefer the explicit [artifacts] block; fall back to the
     // canonical computation when absent.
-    let artifacts = read_or_compute_artifacts(table, slug);
+    let artifacts = read_or_compute_artifacts(root, table, slug, warnings);
 
     // Warn on artifact files that are referenced but absent from disk.
     // `tasks` warns only when the plan declares a task section: a plan with
@@ -641,20 +641,40 @@ fn build_unresolved_envelope_with_ties(
 /// keys present, some absent) gets the missing keys filled from the
 /// canonical computation — that's the most defensible behaviour for a
 /// hand-edited file that left out a key.
+///
+/// A recorded value that does not resolve under `root` takes that same
+/// fallback, with a warning: a carrier binds `--file` flags from this
+/// envelope, so an escaping value would cross from file-controlled data onto
+/// a command line unchecked. The canonical fallback is contained by
+/// construction, so containment costs a well-formed context nothing.
 fn read_or_compute_artifacts(
+    root: &Path,
     table: &toml::map::Map<String, TomlValue>,
     slug: &str,
+    warnings: &mut Vec<String>,
 ) -> CanonicalArtifacts {
     let canonical = CanonicalArtifacts::for_slug(slug);
     let Some(arts_tbl) = table.get("artifacts").and_then(|v| v.as_table()) else {
         return canonical;
     };
-    let pluck = |key: &str, fallback: &str| -> String {
-        arts_tbl
-            .get(key)
-            .and_then(|v| v.as_str())
-            .map(str::to_string)
-            .unwrap_or_else(|| fallback.to_string())
+    let mut pluck = |key: &str, fallback: &str| -> String {
+        let Some(recorded) = arts_tbl.get(key).and_then(|v| v.as_str()) else {
+            return fallback.to_string();
+        };
+        // An empty value joins to the root itself, so containment admits it —
+        // but a carrier would bind it to `--file` as an empty argument. It
+        // records no path at all, which is the missing-key case spelled
+        // differently, so it takes the same silent fallback.
+        if recorded.is_empty() {
+            return fallback.to_string();
+        }
+        if !recorded_under_root(root, Path::new(recorded)) {
+            warnings.push(format!(
+                "artifact outside repo root: {key} at {recorded} — using {fallback}"
+            ));
+            return fallback.to_string();
+        }
+        recorded.to_string()
     };
     CanonicalArtifacts {
         review_ledger: pluck("review_ledger", &canonical.review_ledger),

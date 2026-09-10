@@ -21,16 +21,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use toml::Value as TomlValue;
 
+use super::finding::{ERROR, Finding, NO_TASK, WARNING, task_list};
 use super::graph::{Graph, nodes_of};
 use super::markdown::sections;
 use super::parse_policy::{Marker, ParsedPolicy, parse_markers, parse_policy};
 use super::parse_tasks::{ParsedTask, parse_tasks_at};
-use super::render::Finding;
 use super::schema::{
     Checkpoint, Effort, FileNote, ImportOverride, POLICY_ORIGIN_DEFAULT, POLICY_ORIGIN_PLAN,
     Policy, Status, Store, TaskRow,
@@ -38,7 +38,7 @@ use super::schema::{
 use super::{check, slug, store};
 use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{path_under_root, read_toml, relativise, repo_or_cwd_root};
+use crate::io::{read_toml, recorded_under_root, relativise, repo_or_cwd_root};
 
 const TASKS_SECTION: &str = "Tasks";
 const POLICY_SECTION: &str = "Execution Policy";
@@ -46,9 +46,6 @@ const GRAPH_SECTION: &str = "Dependency Graph";
 
 const CONTEXT_FILE: &str = "context.toml";
 const RECORD_FILE: &str = "execution-record.toml";
-
-const ERROR: &str = "error";
-const WARNING: &str = "warning";
 
 /// Effort for a heading carrying no `[S|M|L]` tag and no `- **Effort**:`
 /// line, and for which the store holds nothing to preserve. The
@@ -138,6 +135,9 @@ pub(crate) fn import_plan(
 
 struct ParsedPlan {
     tasks: Vec<ParsedTask>,
+    /// Raised by the task grammar rather than by the store scans, so they
+    /// ride out of the parse alongside the tasks that survived it.
+    findings: Vec<Finding>,
     policy: ParsedPolicy,
     markers: Vec<Marker>,
     /// Linked sibling documents that do carry task headings, resolved only
@@ -177,13 +177,14 @@ impl ParsedPlan {
         // a line of the plan rather than an offset into the section.
         let first_task_line = tasks.heading_line(source) + 1;
 
-        let tasks = parse_tasks_at(&tasks.body_lf(source), first_task_line).map_err(&named)?;
+        let parsed = parse_tasks_at(&tasks.body_lf(source), first_task_line).map_err(&named)?;
         Ok(Self {
-            detail: match tasks.is_empty() {
+            detail: match parsed.tasks.is_empty() {
                 true => detail_documents(source, plan_path),
                 false => Vec::new(),
             },
-            tasks,
+            tasks: parsed.tasks,
+            findings: parsed.findings,
             policy: parse_policy(body(POLICY_SECTION).as_deref()).map_err(&named)?,
             markers: match body(GRAPH_SECTION) {
                 Some(graph) => parse_markers(&graph).map_err(&named)?,
@@ -197,6 +198,7 @@ impl Import {
     fn apply(&self, store: &mut Store) -> Result<ImportOutcome> {
         let ParsedPlan {
             tasks,
+            findings,
             policy,
             markers,
             detail,
@@ -288,6 +290,7 @@ impl Import {
             &store.items,
             markers,
         ));
+        outcome.findings.extend(findings.iter().cloned());
         outcome.findings.extend(effort_untagged(tasks));
         outcome.findings.extend(policy_absent(policy));
         outcome.findings.extend(no_tasks(tasks, detail));
@@ -357,7 +360,9 @@ fn detail_documents(source: &str, plan_path: &Path) -> Vec<String> {
         let Ok(body) = fs::read_to_string(&path) else {
             continue;
         };
-        if parse_tasks_at(&body.replace("\r\n", "\n"), 1).is_ok_and(|tasks| !tasks.is_empty()) {
+        if parse_tasks_at(&body.replace("\r\n", "\n"), 1)
+            .is_ok_and(|parsed| !parsed.tasks.is_empty())
+        {
             found.push(format!("`{target}`"));
         }
     }
@@ -846,14 +851,16 @@ fn marker_mismatch(authored: &[u32], rows: &[TaskRow], markers: &[Marker]) -> Op
     }
 
     let ids: BTreeSet<u32> = authored.symmetric_difference(&derived).copied().collect();
+    let named =
+        |set: &BTreeSet<u32>| task_list(&set.iter().copied().collect::<Vec<u32>>(), NO_TASK);
     Some(Finding {
         class: "checkpoint/marker-mismatch",
         severity: WARNING,
         ids: ids.into_iter().collect(),
         detail: format!(
             "the `Checkpoint after` bullet names {} but the markers' maximal elements are {}",
-            id_list(&authored),
-            id_list(&derived)
+            named(&authored),
+            named(&derived)
         ),
     })
 }
@@ -1181,25 +1188,14 @@ fn contained(source: &str, recorded: &str) -> Result<PathBuf> {
     Ok(resolved)
 }
 
-/// A recorded path is file-controlled input, so an absolute, `..`-bearing or
-/// escaping value is refused rather than resolved — reading one turns the verb
-/// into an oracle for a file outside the repo, and writing one puts rendered
-/// text there. Canonicalising through the nearest existing ancestor closes the
-/// symlinked-leaf case a lexical scan alone leaves open.
+/// A recorded path is file-controlled input, so a value that does not anchor
+/// under the repo root is refused rather than resolved — reading one turns the
+/// verb into an oracle for a file outside the repo, and writing one puts
+/// rendered text there.
 fn under_root(field: &str, source: &str, recorded: &str) -> Result<PathBuf> {
     let candidate = PathBuf::from(recorded);
     let root = repo_or_cwd_root()?;
-    let resolved = root.join(&candidate);
-    // On Windows `is_absolute` is false for a rootless path such as
-    // `/etc/passwd`, and joining one keeps only the drive prefix, so the
-    // lexical scan and the containment check each refuse a case the other
-    // admits.
-    let escapes = candidate.is_absolute()
-        || candidate
-            .components()
-            .any(|part| matches!(part, Component::ParentDir))
-        || !path_under_root(&root, &resolved);
-    if escapes {
+    if !recorded_under_root(&root, &candidate) {
         return Err(tagged_err(
             ErrorKind::Validation,
             None,
@@ -1209,7 +1205,7 @@ fn under_root(field: &str, source: &str, recorded: &str) -> Result<PathBuf> {
             ),
         ));
     }
-    Ok(resolved)
+    Ok(root.join(&candidate))
 }
 
 /// The record the flow's `[artifacts].execution_record` names, falling back to
@@ -1286,22 +1282,6 @@ fn flow_dir(slug: &str) -> Result<PathBuf> {
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default())
-}
-
-fn id_list(ids: &BTreeSet<u32>) -> String {
-    if ids.is_empty() {
-        return "no task".to_string();
-    }
-    let joined = ids
-        .iter()
-        .map(u32::to_string)
-        .collect::<Vec<String>>()
-        .join(", ");
-    if ids.len() == 1 {
-        format!("task {joined}")
-    } else {
-        format!("tasks {joined}")
-    }
 }
 
 #[cfg(test)]

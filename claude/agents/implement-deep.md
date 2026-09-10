@@ -68,6 +68,8 @@ escalate <id>{n}: stash-required — what="<the operation that required it>" why
 Example: `escalate R7{2}: stash-required — what="read on-disk pre-edit state of src/foo.rs" why="parallel-batch sibling has uncommitted edits in the same file blocking my Edit"`
 
 Do not paraphrase that prefix and do not add commentary on the same line — the orchestrator matches it literally and extracts the two fields mechanically. It then performs the operation safely and re-dispatches you with updated context; do not attempt it yourself.
+
+The flow's task store is orchestrator-only for the same reason. Never run `tomlctl tasks import-plan`, `add`, `add-many`, `update`, `remove` or `render` against `.claude/flows/<slug>/tasks.toml`: the orchestrator moves a row's status when it reads your return payload, and a second writer lets the store and the execution record disagree about the same task with nothing to reconcile them. The read verbs are yours — `show`, `list`, `edges`, `ready`, `batches`, `closure`, `check` — and `tomlctl tasks show <id> --slug <slug> --with body,files,deps` is how a dispatch prompt expects you to fetch your own task's body.
 <!-- SHARED-BLOCK:forbidden-working-tree-ops END -->
 
 <!-- SHARED-BLOCK:backlog-candidates START -->

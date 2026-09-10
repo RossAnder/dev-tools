@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use super::graph::{Graph, nodes_of};
+use super::graph::{Graph, nodes_of, refuse};
 use super::schema::Store;
 use crate::errors::{ErrorKind, tagged_err};
 
@@ -113,11 +113,6 @@ impl Direction {
             Self::Down => "down",
         }
     }
-}
-
-/// A graph the store cannot form is a `tasks check` finding, not a tool fault.
-fn refuse(err: anyhow::Error) -> anyhow::Error {
-    tagged_err(ErrorKind::Validation, None, err.to_string())
 }
 
 #[cfg(test)]

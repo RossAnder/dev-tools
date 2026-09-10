@@ -1,8 +1,8 @@
 //! `tomlctl tasks` — the per-flow task DAG over `.claude/flows/<slug>/tasks.toml`.
 //!
-//! Leaf layout is one module per verb plus five shared substrates (`schema`,
-//! `slug`, `graph`, `store`, `markdown`), with `dispatch` fanning `TasksOp` out
-//! to them, so parallel tasks each own one file.
+//! Leaf layout is one module per verb plus six shared substrates (`schema`,
+//! `slug`, `graph`, `store`, `markdown`, `finding`), with `dispatch` fanning
+//! `TasksOp` out to them, so parallel tasks each own one file.
 //!
 //! The store's array is named `items` so the existing `[[items]]` machinery and
 //! `QueryArgs` apply unchanged. Only `needs` and `coupling` edges are stored:
@@ -14,6 +14,7 @@ mod batches;
 mod check;
 mod closure;
 mod edges;
+mod finding;
 mod graph;
 mod import_plan;
 mod list;

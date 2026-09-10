@@ -25,8 +25,22 @@ use std::sync::OnceLock;
 use anyhow::{Result, bail};
 use regex::Regex;
 
+use super::finding::{Finding, WARNING};
 use super::markdown::FenceState;
 use super::schema::Effort;
+
+/// The deepest heading the grammar reads as a task; `render` clamps to the
+/// same bound.
+const MAX_TASK_DEPTH: u32 = 6;
+
+/// One section's tasks and the findings its headings raised. A finding here is
+/// a plan-authoring slip rather than an unbuildable graph, so it never gates
+/// the parse.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ParsedTasks {
+    pub(crate) tasks: Vec<ParsedTask>,
+    pub(crate) findings: Vec<Finding>,
+}
 
 /// One task heading and its field lines. `effort` is `None` for a heading with
 /// no `[S|M|L]` tag and no `- **Effort**:` line.
@@ -57,14 +71,15 @@ pub(crate) struct ParsedTask {
 /// document and goes through `parse_tasks_at`.
 #[cfg(test)]
 pub(crate) fn parse_tasks(section_body: &str) -> Result<Vec<ParsedTask>> {
-    parse_tasks_at(section_body, 1)
+    parse_tasks_at(section_body, 1).map(|parsed| parsed.tasks)
 }
 
 /// `first_line` is the document line `section_body`'s first line stands on, so
 /// every reported number names a line of the plan rather than an offset into a
 /// section a reader cannot see.
-pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Vec<ParsedTask>> {
+pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<ParsedTasks> {
     let mut tasks: Vec<ParsedTask> = Vec::new();
+    let mut findings: Vec<Finding> = Vec::new();
     let mut current: Option<ParsedTask> = None;
     let mut open: Option<OpenField> = None;
     let mut pending_blank = false;
@@ -96,6 +111,7 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Ve
                 }
                 None => {
                     current = None;
+                    findings.extend(deep_heading(line, line_no));
                     if let Some(label) = phase_label(line) {
                         phase = label.to_string();
                         phase_depth = heading_depth(line);
@@ -158,7 +174,7 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Ve
 
     close_field(current.as_mut(), open.take())?;
     tasks.extend(current.take());
-    Ok(tasks)
+    Ok(ParsedTasks { tasks, findings })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -234,6 +250,26 @@ fn open_heading(line: &str, line_no: usize) -> Result<Option<ParsedTask>> {
         depth: heading_depth(line),
         ..ParsedTask::default()
     }))
+}
+
+/// A numbered heading past the deepest run the grammar reads as a task. It
+/// stands as a phase label instead, so without this the number, the fields
+/// under it and the task itself leave no trace of having been written.
+fn deep_heading(line: &str, line_no: usize) -> Option<Finding> {
+    let caps = deep_heading_re().captures(line)?;
+    let id: u32 = caps.get(1)?.as_str().parse().ok()?;
+    let title = caps.get(2).map_or("", |m| m.as_str()).trim();
+    Some(Finding {
+        class: "plan/heading-too-deep",
+        severity: WARNING,
+        ids: vec![id],
+        detail: format!(
+            "line {line_no}: task {id} \"{title}\" is {} hashes deep, past the \
+             {MAX_TASK_DEPTH} a task heading may carry, so it reads as a phase label \
+             and the task is dropped",
+            heading_depth(line)
+        ),
+    })
 }
 
 /// Length of the leading `#` run.
@@ -449,6 +485,11 @@ fn heading_re() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"^#{3,6} ([0-9]+)\. (.+)$").expect("heading regex compiles"))
 }
 
+fn deep_heading_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^#{7,} ([0-9]+)\. (.+)$").expect("deep-heading regex compiles"))
+}
+
 fn malformed_id_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -552,6 +593,38 @@ mod tests {
             "a deep numbered heading was read as a phase label"
         );
         assert_eq!(tasks[0].needs, vec![10]);
+    }
+
+    /// The heading still stands as a phase label, so the finding is the only
+    /// trace the task leaves — and it warns rather than errors, because a
+    /// heading one hash too deep is a slip an import must not refuse over.
+    #[test]
+    fn a_numbered_heading_past_six_hashes_warns_rather_than_vanishing() {
+        let body = "\
+### 1. Ship it [S]
+- **Files**: none
+
+####### 2. Follow up [S]
+- **Files**: none
+";
+        let parsed = parse_tasks_at(body, 10).expect("parses");
+        assert_eq!(
+            parsed.tasks.iter().map(|t| t.id).collect::<Vec<_>>(),
+            vec![1]
+        );
+        assert_eq!(parsed.findings.len(), 1, "{:?}", parsed.findings);
+
+        let finding = &parsed.findings[0];
+        assert_eq!(finding.class, "plan/heading-too-deep");
+        assert_eq!(finding.severity, WARNING);
+        assert_eq!(finding.ids, vec![2]);
+        assert!(finding.detail.contains("line 13"), "{finding:?}");
+        assert!(finding.detail.contains("Follow up"), "{finding:?}");
+
+        let kept = body.replace("####### 2.", "###### 2.");
+        let parsed = parse_tasks_at(&kept, 10).expect("parses");
+        assert_eq!(parsed.tasks.len(), 2);
+        assert!(parsed.findings.is_empty(), "{:?}", parsed.findings);
     }
 
     #[test]
@@ -858,6 +931,7 @@ cargo test
     fn every_pattern_compiles() {
         let patterns = [
             heading_re(),
+            deep_heading_re(),
             malformed_id_re(),
             effort_tag_re(),
             field_re(),

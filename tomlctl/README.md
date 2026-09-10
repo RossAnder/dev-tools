@@ -44,7 +44,7 @@ tomlctl flow active touch --slug <s> [--dry-run]                    # refresh la
 tomlctl flow doctor [--slug <s>] [--fix] [--dry-run]                # invariant checks across flows; always emits JSON; --fix regenerates sidecars / prunes stale registry entries / backfills an absent [artifacts].tasks key
 tomlctl flow ensure-artifact --slug <s> --kind <k> [--bootstrap]    # report (or bootstrap execution-record) flow artifact + sidecar status
 tomlctl flow find-plans [--dirs <d>...] [--strict-read]             # locate plan files under given dirs
-tomlctl flow init --slug <s> --plan <path> [--branch <b>] [--scope <glob>]...   # seed context.toml + execution-record.toml + active-flow entry (idempotent)
+tomlctl flow init --slug <s> --plan <path> [--branch <b>] [--scope <glob>]...   # seed context.toml + execution-record.toml + tasks.toml + active-flow entry (idempotent); emits {action, created, context_path, artifacts}
 tomlctl flow list [--status <s>] [--branch <b>] [--active-only]     # enumerate flows under .claude/flows/
 tomlctl flow resolve [--flow <s>] [--path <p>]... [--branch <b>] [--worktree <w>] [--with-staleness]  # 5-step flow resolution; emits {resolved, slug, source, artifacts, ...}
 tomlctl flow stale --slug <s> [--threshold <duration>]              # check whether a flow is stale
@@ -316,7 +316,7 @@ Feature meanings:
 | `capabilities` | this subcommand itself |
 | `error_format_json` | `--error-format json` global flag + `ErrorKind` taxonomy |
 | `strict_read` | `--strict-read` on every read subcommand |
-| `dry_run` | `--dry-run` on all 20 write subcommands: `set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id`, `flow init`, `flow ensure-artifact`, `flow doctor`, `flow active add`, `flow active remove`, `flow active touch`, `json set`, `json unset`, `backlog add`, `backlog compact`, `tasks import-plan` |
+| `dry_run` | `--dry-run` on the write subcommands that support previewing mutations, including `set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id`, `flow init`, `flow ensure-artifact`, `flow doctor`, `flow active add`, `flow active remove`, `flow active touch`, `json set`, `json unset`, `backlog add`, `backlog compact`, and `tasks import-plan` |
 | `backfill_dedup_id` | `items backfill-dedup-id <file>` |
 | `integrity_refresh` | `tomlctl integrity refresh <file>` — sidecar bootstrap / recovery primitive |
 | `agent_context` | `tomlctl capabilities .commands` emits per-subcommand flag schema (type / required / default / values / repeatable + mutex_groups) for runtime introspection without parsing `--help` prose |

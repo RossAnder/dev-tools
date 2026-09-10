@@ -19,6 +19,7 @@ use anyhow::{Context, Result};
 use serde_json::json;
 
 use super::closure::{Direction, Target};
+use super::finding::Finding;
 use super::schema::Store;
 use super::{
     add, batches, check, closure, edges, import_plan, list, ready, remove, render, show, store,
@@ -26,7 +27,7 @@ use super::{
 };
 use crate::cli::TasksOp;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{atomic_write, read_json_arg, relativise, repo_or_cwd_root};
+use crate::io::{atomic_write, read_ndjson_source, relativise, repo_or_cwd_root};
 use crate::output::{print_json, print_json_compact};
 
 pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
@@ -307,7 +308,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
     }
 }
 
-fn finding_json(finding: &render::Finding) -> serde_json::Value {
+fn finding_json(finding: &Finding) -> serde_json::Value {
     json!({
         "class": finding.class,
         "severity": finding.severity,
@@ -362,18 +363,4 @@ fn closure_target(
 
 fn refuse(message: String) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, message)
-}
-
-/// `-` is stdin, anything else a file path with an optional `@`. The `items`
-/// twin is not shared: `cli/mod.rs` holds its dispatch helpers inside the CLI
-/// layer, so a verb group outside it carries its own.
-fn read_ndjson_source(src: &str) -> Result<String> {
-    if src == "-" {
-        return read_json_arg("-");
-    }
-    let path = src
-        .strip_prefix('@')
-        .filter(|p| !p.is_empty())
-        .unwrap_or(src);
-    fs::read_to_string(path).with_context(|| format!("reading NDJSON file `{src}`"))
 }

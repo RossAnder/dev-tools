@@ -455,3 +455,349 @@ fn command_lint_still_truncates_at_shell_plumbing() {
         report.unbalanced
     );
 }
+
+/// One flag cell of a `| Flag | … |` table, carrying the subcommand path the
+/// nearest enclosing backticked heading attributes it to.
+struct DocumentedFlag {
+    file: String,
+    /// Heading path with any leading `tomlctl` dropped, e.g.
+    /// `["tasks", "import-plan"]`.
+    path: Vec<String>,
+    /// Long name without its leading dashes, as `Arg::get_long` spells it.
+    long: String,
+}
+
+/// A heading that is one backticked span and nothing else — the reference
+/// docs' spelling of "this section documents this verb". A heading carrying
+/// prose around the backticks (`## The `check` verdict ladder`) names no verb
+/// and must not lend its context to a table below it.
+fn subcommand_heading_path(line: &str) -> Option<Vec<String>> {
+    let rest = line.trim_start_matches('#');
+    let inner = rest.trim().strip_prefix('`')?.strip_suffix('`')?;
+    if inner.contains('`') {
+        return None;
+    }
+    let mut tokens: Vec<String> = inner.split_whitespace().map(str::to_string).collect();
+    if tokens.first().is_some_and(|t| t == "tomlctl") {
+        tokens.remove(0);
+    }
+    (!tokens.is_empty()).then_some(tokens)
+}
+
+/// The first cell of a table row. `\|` inside a cell is an escaped literal
+/// (`` `S` \| `M` ``), not a column break.
+fn first_table_cell(row: &str) -> &str {
+    let body = row.strip_prefix('|').unwrap_or(row);
+    let mut escaped = false;
+    for (i, c) in body.char_indices() {
+        match c {
+            '\\' => escaped = !escaped,
+            '|' if !escaped => return &body[..i],
+            _ => escaped = false,
+        }
+    }
+    body
+}
+
+/// Long names of the backticked spans in a cell. A cell naming two spellings
+/// of one option (`` `--action` / `--action-file` ``) documents both.
+fn cell_long_names(cell: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = cell;
+    while let Some(open) = rest.find('`') {
+        let after = &rest[open + 1..];
+        let Some(close) = after.find('`') else { break };
+        if let Some(name) = after[..close].strip_prefix("--")
+            && !name.is_empty()
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
+            out.push(name.to_string());
+        }
+        rest = &after[close + 1..];
+    }
+    out
+}
+
+/// Collect every flag-table cell in one document. Fenced blocks are skipped
+/// so a `# comment` in a bash example cannot displace the heading a table
+/// below the fence still belongs to.
+fn documented_flags(text: &str, rel: &str) -> Vec<DocumentedFlag> {
+    let mut out = Vec::new();
+    let mut in_fence = false;
+    let mut heading: Option<Vec<String>> = None;
+    // The open flag table's subcommand path; `None` also covers a flag table
+    // under a heading that names no verb, whose cells are unattributable.
+    let mut table: Option<Vec<String>> = None;
+
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_fence = !in_fence;
+            table = None;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        if trimmed.starts_with("# ")
+            || trimmed.starts_with("## ")
+            || trimmed.starts_with("### ")
+            || trimmed.starts_with("#### ")
+        {
+            heading = subcommand_heading_path(trimmed);
+            table = None;
+            continue;
+        }
+        if !trimmed.starts_with('|') {
+            table = None;
+            continue;
+        }
+        let cell = first_table_cell(trimmed).trim();
+        if cell == "Flag" {
+            table = heading.clone();
+            continue;
+        }
+        let Some(path) = table.as_ref() else {
+            continue;
+        };
+        // The `|---|---|` rule between header and body.
+        if !cell.is_empty() && cell.chars().all(|c| c == '-' || c == ':') {
+            continue;
+        }
+        for long in cell_long_names(cell) {
+            out.push(DocumentedFlag {
+                file: rel.to_string(),
+                path: path.clone(),
+                long,
+            });
+        }
+    }
+
+    out
+}
+
+/// Long names clap accepts for a subcommand path, or `None` when the path
+/// names no subcommand. Args are unioned along the path so a `global` flag
+/// declared at the root counts as accepted at every depth.
+fn accepted_long_names(root: &clap::Command, path: &[String]) -> Option<Vec<String>> {
+    let longs = |cmd: &clap::Command| -> Vec<String> {
+        cmd.get_arguments()
+            .filter_map(|a| a.get_long())
+            .map(str::to_string)
+            .collect()
+    };
+    let mut cmd = root;
+    let mut out = longs(cmd);
+    for token in path {
+        cmd = cmd.find_subcommand(token.as_str())?;
+        out.extend(longs(cmd));
+    }
+    Some(out)
+}
+
+/// Lint outcome over the flag tables of one file set.
+struct FlagTableReport {
+    /// Cells resolved and checked — zero over the live corpus would mean the
+    /// table parser stopped matching, not that the docs are clean.
+    checked: usize,
+    /// (file, subcommand path, message).
+    failures: Vec<(String, String, String)>,
+}
+
+fn flag_table_report(files: &[PathBuf], repo_root: &Path) -> FlagTableReport {
+    use clap::CommandFactory as _;
+
+    let mut root = Cli::command();
+    root.build();
+
+    let mut checked = 0usize;
+    let mut failures = Vec::new();
+
+    for file in files {
+        let Ok(text) = fs::read_to_string(file) else {
+            continue;
+        };
+        let rel = file
+            .strip_prefix(repo_root)
+            .unwrap_or(file)
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        for documented in documented_flags(&text, &rel) {
+            checked += 1;
+            let printed = documented.path.join(" ");
+            match accepted_long_names(&root, &documented.path) {
+                None => failures.push((
+                    documented.file,
+                    printed.clone(),
+                    format!("no `tomlctl {printed}` subcommand exists"),
+                )),
+                Some(accepted) => {
+                    if !accepted.contains(&documented.long) {
+                        failures.push((
+                            documented.file,
+                            printed.clone(),
+                            format!(
+                                "`--{}` is not an argument of `tomlctl {printed}`",
+                                documented.long
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    FlagTableReport { checked, failures }
+}
+
+/// Doc↔CLI flag-drift guard over the markdown flag TABLES, which carry the
+/// bulk of the documented flag surface while the fenced examples
+/// `command_lint` parses carry one or two invocations per verb. Every
+/// `| Flag | … |` row's flag cell is resolved against the real clap argument
+/// set of the subcommand its backticked heading names.
+///
+/// One direction only: a documented flag that does not exist. The reverse —
+/// an existing flag no table lists — is not assertable here, because the
+/// shared read/write bundles are deliberately documented once in prose
+/// rather than repeated in each verb's table.
+#[test]
+fn flag_table_lint() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+    let claude_dir = repo_root.join("claude");
+    if !claude_dir.exists() {
+        eprintln!("flag_table_lint: claude/ dir not found, skipping");
+        return;
+    }
+
+    let files = command_lint_scan_set(&claude_dir);
+    let report = flag_table_report(&files, &repo_root);
+
+    assert!(
+        report.checked > 0,
+        "flag_table_lint parsed no flag-table rows at all — the table parser \
+         has stopped matching the reference docs' shape"
+    );
+
+    if !report.failures.is_empty() {
+        let mut msg = String::new();
+        msg.push_str(&format!(
+            "flag_table_lint: {} doc↔CLI flag drift(s) found.\n",
+            report.failures.len()
+        ));
+        msg.push_str(
+            "Each line below is a markdown flag-table row whose flag the real \
+             clap parser does not define on the subcommand its heading \
+             names:\n",
+        );
+        for (f, path, e) in &report.failures {
+            msg.push_str(&format!(
+                "  {f}\n    verb:  tomlctl {path}\n    error: {e}\n"
+            ));
+        }
+        panic!("{msg}");
+    }
+}
+
+/// A table row naming a flag the verb does not define is drift, and a fenced
+/// `#` comment between the heading and the table does not break the
+/// attribution. Asserted over a temp tree so the live corpus cannot make it
+/// pass by accident.
+#[test]
+fn flag_table_lint_reports_a_row_naming_an_absent_flag() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let references = root.join("claude").join("skills").join("x");
+    fs::create_dir_all(&references).unwrap();
+
+    let doc = references.join("drifted.md");
+    fs::write(
+        &doc,
+        "## `tasks add`\n\
+         \n\
+         ```bash\n\
+         # not a heading\n\
+         tomlctl tasks add --slug <slug>\n\
+         ```\n\
+         \n\
+         | Flag | Value | Meaning | Default |\n\
+         |---|---|---|---|\n\
+         | `--title` | text | Row title. | — |\n\
+         | `--effort` | `S` \\| `M` \\| `L` | Sizing. | — |\n\
+         | `--action` / `--action-file` | text / path | Action body. | empty |\n\
+         | `--bogus-flag` | text | Drift. | — |\n",
+    )
+    .unwrap();
+
+    let report = flag_table_report(std::slice::from_ref(&doc), root);
+    assert_eq!(
+        report.checked, 5,
+        "every flag cell below the fence must still be attributed to the \
+         heading above it: {:?}",
+        report.failures
+    );
+    assert_eq!(
+        report.failures.len(),
+        1,
+        "exactly the absent flag must be reported: {:?}",
+        report.failures
+    );
+    assert_eq!(report.failures[0].1, "tasks add");
+    assert!(
+        report.failures[0].2.contains("--bogus-flag"),
+        "the failure must name the drifted flag: {:?}",
+        report.failures[0]
+    );
+}
+
+/// A flag table under a heading that names no verb is skipped rather than
+/// misattributed; a heading that LOOKS like a verb and is not is drift.
+#[test]
+fn flag_table_lint_attributes_only_backticked_verb_headings() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let references = root.join("claude").join("skills").join("x");
+    fs::create_dir_all(&references).unwrap();
+
+    let shared = references.join("shared.md");
+    fs::write(
+        &shared,
+        "## Store target\n\
+         \n\
+         | Flag | Value | Meaning |\n\
+         |---|---|---|\n\
+         | `--slug` / `--file` | text | Store to resolve. |\n",
+    )
+    .unwrap();
+    let report = flag_table_report(std::slice::from_ref(&shared), root);
+    assert_eq!(
+        report.checked, 0,
+        "a table under a prose heading is unattributable and must be skipped"
+    );
+    assert!(report.failures.is_empty(), "{:?}", report.failures);
+
+    let renamed = references.join("renamed.md");
+    fs::write(
+        &renamed,
+        "## `tasks bogus-verb`\n\
+         \n\
+         | Flag | Value | Meaning |\n\
+         |---|---|---|\n\
+         | `--title` | text | Row title. |\n",
+    )
+    .unwrap();
+    let report = flag_table_report(std::slice::from_ref(&renamed), root);
+    assert_eq!(
+        report.failures.len(),
+        1,
+        "a heading naming no subcommand must be reported, not silently \
+         disable the table below it: {:?}",
+        report.failures
+    );
+    assert!(
+        report.failures[0].2.contains("tasks bogus-verb"),
+        "{:?}",
+        report.failures[0]
+    );
+}

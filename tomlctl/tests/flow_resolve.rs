@@ -698,6 +698,80 @@ fn artifacts_projection_reads_an_explicit_tasks_key_verbatim() {
     );
 }
 
+fn warning_strs(v: &serde_json::Value) -> Vec<String> {
+    v["warnings"]
+        .as_array()
+        .expect("warnings must be an array")
+        .iter()
+        .filter_map(|w| w.as_str().map(str::to_string))
+        .collect()
+}
+
+/// A recorded artifact path that does not resolve under the repo root is
+/// dropped for the canonical one and reported on `warnings`. A carrier binds
+/// its `--file` flags from this envelope, so an escaping value must not reach
+/// it; the canonical fallback is contained by construction, which is what lets
+/// the resolve still succeed rather than failing every carrier's step 0.
+///
+/// Both spellings are refused on both platforms, by different limbs of the
+/// check. `/etc/passwd` is absolute on Unix, while on Windows it is rootless —
+/// `is_absolute` is false and joining it keeps only the drive prefix — so
+/// there the containment test is what refuses it.
+#[test]
+fn an_escaping_artifact_value_falls_back_to_the_canonical_path() {
+    for escaping in ["../../../../etc/passwd", "/etc/passwd"] {
+        let (dir, _claude) = fresh_root();
+        seed_flow_context(
+            dir.path(),
+            "feature-x",
+            &make_context_with_tasks("feature-x", escaping),
+        );
+        seed_all_canonical_artifacts(dir.path(), "feature-x");
+
+        let v = run_resolve(&dir, &["--flow", "feature-x"]);
+        assert_eq!(v["resolved"], serde_json::json!(true));
+        assert_eq!(
+            v["artifacts"]["tasks"],
+            serde_json::json!(".claude/flows/feature-x/tasks.toml"),
+            "`{escaping}` must not reach the envelope"
+        );
+        let warnings = warning_strs(&v);
+        assert!(
+            warnings
+                .iter()
+                .any(|s| s.starts_with("artifact outside repo root: tasks")),
+            "`{escaping}` must be reported, got: {warnings:?}"
+        );
+    }
+}
+
+/// Every artifact key is read from the same file-controlled table and every
+/// one of them reaches the envelope, so containment covers all five rather
+/// than only the key a carrier happens to bind most often.
+#[test]
+fn an_escaping_sibling_artifact_value_is_contained_too() {
+    let (dir, _claude) = fresh_root();
+    let body = make_context("feature-x", "in-progress", Some("feat/x"), &[]).replace(
+        ".claude/flows/feature-x/execution-record.toml",
+        "../../../../etc/passwd",
+    );
+    seed_flow_context(dir.path(), "feature-x", &body);
+    seed_all_canonical_artifacts(dir.path(), "feature-x");
+
+    let v = run_resolve(&dir, &["--flow", "feature-x"]);
+    assert_eq!(
+        v["artifacts"]["execution_record"],
+        serde_json::json!(".claude/flows/feature-x/execution-record.toml")
+    );
+    let warnings = warning_strs(&v);
+    assert!(
+        warnings
+            .iter()
+            .any(|s| s.starts_with("artifact outside repo root: execution_record")),
+        "expected a containment warning naming `execution_record`, got: {warnings:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // envelope shape stability
 // ---------------------------------------------------------------------------

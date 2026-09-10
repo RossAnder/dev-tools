@@ -256,7 +256,7 @@ tomlctl tasks show <id> --slug <slug> --with body,files,deps
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | *(positional)* | id | Task to print. Required. | — |
-| `--with` | comma-separated, repeatable | `summary`, `body`, `files`, `deps`, `dependents`. | `summary` |
+| `--with` | comma-separated, repeatable | `summary`, `body`, `files`, `deps`, `dependents`. A clap `value_enum`: an unknown part exits `2` with usage prose naming it and listing the valid set, **outside** the `--error-format json` envelope — not the exit-`1` `kind=validation` error `--effort` and `--status` raise. | `summary` |
 
 `id` is always emitted whatever `--with` selects, so a fetched row can be matched back to the
 id that was asked for. `summary` is `id`, `ref`, `title`, `effort`, `status`, `checkpoint`,
@@ -314,7 +314,7 @@ tomlctl tasks edges --slug <slug> --dot
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--kind` | `needs` \| `coupling` \| `overlap` | Restrict to one kind. Omit for all three. | all |
+| `--kind` | `needs` \| `coupling` \| `overlap` | Restrict to one kind. Omit for all three. A clap `value_enum`, failing exactly as `tasks show --with` does: an unknown kind exits `2` with usage prose, **outside** the `--error-format json` envelope. | all |
 | `--dot` | — | Emit Graphviz DOT source on stdout instead of the JSON edge list. | off |
 
 `from` is the prerequisite and `to` the row that waits on it, so a JSON edge and its DOT arrow
@@ -487,7 +487,7 @@ it.
 |---|---|---|
 | `dag/cycle` | error | `check` — suppresses every class needing reachability |
 | `dag/dangling-ref` | error | `check` |
-| `dag/duplicate-number` | error | `check` |
+| `dag/duplicate-number` | error | `check` — `ids` carries the number alone, so the `detail` names the `ref` of every row on it; `import-plan` splits those refs into the ones the plan produced and the ones the store still holds |
 | `dag/unbuildable` | error | `check` — the graph engine refuses the store for a reason no row scan named; past the [node cap](tasks-store.md#the-256-node-cap) is the live case |
 | `dag/unreachable-claim` | warning | `check` — shared file, no directed path either way |
 | `dag/stalled-dependency` | warning | `check` — an `in-progress`, `failed` or `deferred` row with pending rows behind it; one finding per blocker, `ids` naming the blocker and `detail` its dependents. A blocker named in `--in-flight` raises nothing; never changes the exit code |
@@ -503,7 +503,8 @@ it.
 | `plan/effort-untagged` | warning | `import-plan` only — **one** finding whose `ids` name every heading authoring no effort; the `M` default lands only where neither the heading nor an existing row supplies one, so a re-import keeps the row's effort and still warns |
 | `plan/policy-absent` | warning | `import-plan` only — no `## Execution Policy` section, so `origin` is `default` and every policy field is a house default |
 | `plan/no-tasks` | error | `import-plan` only — the `## Tasks` section parses to no task, so the import would replace the checkpoint table and policy with the empty and default values such a plan yields. A section holding only links to sibling documents that do carry task headings names that shape instead, the same diagnostic a plan with no section at all raises |
-| `plan/orphan-row` | warning, or **error** when the row's status is not `pending` | `check` |
+| `plan/heading-too-deep` | warning | `import-plan` only — a numbered task heading carrying seven or more hashes. The grammar reads three through six, so a deeper one stands as a phase label and its task is dropped with no other trace; **one** finding per heading, `ids` naming the number the author wrote and `detail` the plan line. Warning rather than error because refusing the import over one hash too many would block every other task in the plan |
+| `plan/orphan-row` | warning, or **error** when the row's status is not `pending` | `check` — the `detail` names every orphaned `ref`, which `ids` cannot: two orphaned rows sharing a task number collapse to one id |
 | `plan/override-held` | warning | `import-plan` only — a hand-patched `files` or `needs` the plan does not state; run `tasks render` to publish it |
 | `plan/override-released` | warning | `import-plan` only — the plan restated the line, so its value replaced the hand-patched one and the stamp is gone |
 | `render/drift` | warning | `check --plan` and `render --check` |

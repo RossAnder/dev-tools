@@ -290,6 +290,18 @@ fn a_contained_markdown_plan_still_passes() {
     assert_eq!(check["ok"], JsonValue::Bool(true), "{check}");
 }
 
+/// The leading `./` a `Components` walk preserves is a spelling of the same
+/// contained path, so containment must admit it on every platform.
+#[test]
+fn a_dot_prefixed_plan_path_still_passes() {
+    let (_g, root) = fresh_root();
+    seed_flow(&root, "alpha", "./docs/plans/alpha.md", &[]);
+    seed_plan(&root, "docs/plans/alpha.md", "# Plan\n");
+
+    let check = plan_path_check(&root, "alpha");
+    assert_eq!(check["ok"], JsonValue::Bool(true), "{check}");
+}
+
 /// The existence-oracle case: an absolute `plan_path` pointing at a file
 /// that really is on disk outside the repo must fail the check, not confirm
 /// the file exists.

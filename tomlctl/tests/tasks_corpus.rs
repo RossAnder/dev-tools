@@ -19,10 +19,17 @@ use std::path::{Path, PathBuf};
 /// Plans the importer is expected to reject, by file name, with the reason.
 /// Each is asserted to STILL fail, where failing is a non-zero exit or an
 /// error-class finding in the envelope — the two ways a plan does not import.
+///
+/// Membership says the document breaks an authoring rule and is left as it
+/// stands — not that a defect is outstanding. The rules are the task-store
+/// contract's (`claude/skills/flow-contract-task-store/SKILL.md`), and each
+/// reason below names the one that fired. A rejection no rule accounts for
+/// belongs in the importer or in the plan, never here.
 const EXPECTED_UNPARSEABLE: &[(&str, &str)] = &[
     (
         "lumina-story-planning-round-2.md",
-        "task id `13a` is not an integer (a hand-inserted task between 13 and 14)",
+        "task ids `13a` / `13b` are not integers — inserted between 13 and 14 \
+         instead of renumbering what followed, and the plan has since landed",
     ),
     (
         "tomlctl-capability-gaps.md",

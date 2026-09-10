@@ -34,7 +34,7 @@ use toml::Value as TomlValue;
 use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::flow::init::execution_record_path_for;
 use crate::integrity::maybe_verify_integrity;
-use crate::io::{atomic_write, path_under_root, read_toml, relativise, repo_or_cwd_root};
+use crate::io::{atomic_write, read_toml, recorded_under_root, relativise, repo_or_cwd_root};
 use crate::output::print_json_compact;
 
 /// EM DASH (U+2014) — the H1 separator and the empty-`supersedes` placeholder.
@@ -128,35 +128,19 @@ fn resolve_title(slug: &str, context_path: &Path) -> String {
 
 /// Inner title resolver returning `None` on any miss (no context, no
 /// `plan_path`, unreadable plan, no `# Plan:` header, or a `plan_path` that
-/// escapes the repo root) so `resolve_title` can apply the slug
-/// fallback. The repo-relative `plan_path` (the shape `context.toml` records)
-/// is resolved against `repo_or_cwd_root` and then containment-checked; an
-/// absolute or `..`-bearing `plan_path`, or one whose resolved target sits
-/// outside the root, is rejected (returns `None`) rather than read.
+/// escapes the repo root) so `resolve_title` can apply the slug fallback.
+///
+/// `plan_path` is whatever `context.toml` records, so reading one verbatim
+/// answers "does this file carry a `# Plan:` header" for any path on the
+/// machine — a refused value takes the slug fallback rather than the read.
 fn title_from_context(context_path: &Path) -> Option<String> {
     let context = read_toml(context_path).ok()?;
-    let plan_path = context.get("plan_path")?.as_str()?;
-    let plan_candidate = PathBuf::from(plan_path);
-    // Security/containment: the `plan_path` comes from `context.toml`,
-    // which a flow author (or a tampered file) controls. Resolve it against the
-    // repo root, then assert the resolved path stays UNDER that root before
-    // reading it — otherwise an absolute or `..`-laden `plan_path` would turn
-    // this title read into an arbitrary-file read (and a parse/IO oracle).
-    // Reject absolute or traversal-bearing `plan_path` outright; on any escape
-    // return `None` so `resolve_title` applies the slug-title fallback.
-    if plan_candidate.is_absolute()
-        || plan_candidate
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir))
-    {
-        return None;
-    }
+    let plan_candidate = PathBuf::from(context.get("plan_path")?.as_str()?);
     let root = repo_or_cwd_root().ok()?;
-    let plan_resolved = root.join(&plan_candidate);
-    if !path_under_root(&root, &plan_resolved) {
+    if !recorded_under_root(&root, &plan_candidate) {
         return None;
     }
-    let body = std::fs::read_to_string(&plan_resolved).ok()?;
+    let body = std::fs::read_to_string(root.join(&plan_candidate)).ok()?;
     plan_title_from_body(&body)
 }
 

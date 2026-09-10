@@ -300,13 +300,41 @@ pub fn store_path(root: &Path) -> PathBuf {
 /// [`seed_tasks`] writes.
 pub const TASKS_SLUG: &str = "whimsical-hugging-puppy";
 
-/// Stage `<root>/.claude/flows/<TASKS_SLUG>/tasks.toml` with `toml` and a
-/// digest over those bytes, and hand back the store path. The sidecar is
+/// The sibling `flow init` leaves beside a store, carrying the `plan_path`
+/// every task-store fixture records. Without it `--slug` refuses `import-plan`
+/// and `render` with `kind=not_found` on the absent context, before either
+/// reaches the plan path it was pointed at.
+fn tasks_context() -> String {
+    format!(
+        "slug = \"{TASKS_SLUG}\"\n\
+         plan_path = \"docs/plans/{TASKS_SLUG}.md\"\n\
+         status = \"in-progress\"\n\
+         created = 2026-09-07\n\
+         updated = 2026-09-07\n\
+         scope = []\n\
+         \n\
+         [tasks]\n\
+         total = 0\n\
+         completed = 0\n\
+         in_progress = 0\n\
+         \n\
+         [artifacts]\n\
+         review_ledger = \".claude/flows/{TASKS_SLUG}/review-ledger.toml\"\n\
+         optimise_findings = \".claude/flows/{TASKS_SLUG}/optimise-findings.toml\"\n\
+         execution_record = \".claude/flows/{TASKS_SLUG}/execution-record.toml\"\n\
+         plan_review_findings = \".claude/flows/{TASKS_SLUG}/plan-review-findings.toml\"\n\
+         tasks = \".claude/flows/{TASKS_SLUG}/tasks.toml\"\n"
+    )
+}
+
+/// Stage `<root>/.claude/flows/<TASKS_SLUG>/{tasks.toml, context.toml}` and a
+/// digest over the store bytes, and hand back the store path. The sidecar is
 /// written because a fixture without one reads as an integrity failure under
 /// `--verify-integrity`, which would look like a product bug.
 pub fn seed_tasks(root: &Path, toml: &str) -> PathBuf {
     let flow = root.join(".claude").join("flows").join(TASKS_SLUG);
     fs::create_dir_all(&flow).unwrap();
+    fs::write(flow.join("context.toml"), tasks_context()).unwrap();
     let store = flow.join("tasks.toml");
     fs::write(&store, toml).unwrap();
     refresh_sidecar(&store);

@@ -481,10 +481,7 @@ fn check_artifacts_canonical(
     // Absence of `tasks` is advisory — a flow carrying no task store must
     // still pass — while a present-but-divergent value fails like any
     // other key.
-    let want_tasks = match pairs.iter().find(|(key, _)| *key == "tasks") {
-        Some((_, want)) => (*want).to_string(),
-        None => format!(".claude/flows/{slug}/tasks.toml"),
-    };
+    let want_tasks = &canon.tasks;
     match arts.get("tasks").and_then(|v| v.as_str()) {
         None => {
             warnings.push(JsonValue::String(format!(
@@ -988,8 +985,6 @@ pub(crate) fn dispatch(
         ));
     }
 
-    // 4. .gitignore warning — surfaced as a warning, not a check failure.
-
     // `--dry-run` without `--fix` is silently a no-op — the envelope's
     // `dry_run` field is computed as `dry_run && fix`, so passing only
     // `--dry-run` produces `dry_run: false`. Surface a clear warning so
@@ -1000,6 +995,7 @@ pub(crate) fn dispatch(
             "--dry-run has no effect without --fix; add --fix to preview changes".to_string(),
         ));
     }
+    // 4. .gitignore warning — surfaced as a warning, not a check failure.
     let gitignore_hit = detect_gitignored_claude(&root);
     if let Some(line) = gitignore_hit.as_ref() {
         // gitignore-claude is a warning, NOT a check failure: the check

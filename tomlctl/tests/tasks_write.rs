@@ -1,5 +1,6 @@
 //! Black-box coverage for the `tomlctl tasks` write verbs — `add`,
-//! `add-many`, `update` and `remove`.
+//! `add-many`, `update` and `remove` — and, for target resolution alone, the
+//! two remaining verbs that write: `import-plan` and `render`.
 //!
 //! Every case drives the built binary against a throwaway `TOMLCTL_ROOT`
 //! carrying a staged flow tree, so the store is reached exactly the way a
@@ -604,16 +605,22 @@ fn a_removal_reports_the_import_override_fields_it_pruned() {
 /// refused in post-parse validation: clap's own missing-argument error would
 /// exit 2 with usage prose that `command_lint` cannot see and a carrier cannot
 /// branch on.
+///
+/// `import-plan` and `render` resolve that group for themselves and are reached
+/// by neither the read sweep nor the graph one, so they are swept here with the
+/// four verbs that write the store.
 #[test]
 fn every_write_verb_refuses_an_empty_target_as_validation() {
     let (_tmp, root) = sandbox();
     seed_tasks(&root, WRITE_FIXTURE);
 
-    let cases: [(&[&str], &str); 4] = [
+    let cases: [(&[&str], &str); 6] = [
         (&["add", "--title", "Untargeted", "--effort", "S"], "add"),
         (&["add-many", "--ndjson", "-"], "add-many"),
         (&["update", "1", "--status", "done"], "update"),
         (&["remove", "1", "--force"], "remove"),
+        (&["import-plan"], "import-plan"),
+        (&["render"], "render"),
     ];
 
     for (args, verb) in cases {

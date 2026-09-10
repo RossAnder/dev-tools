@@ -104,6 +104,14 @@ fn fresh_init_creates_context_record_sidecars_and_active_entry() {
     assert_eq!(v["slug"], serde_json::json!("feature-x"));
     assert_eq!(v["action"], serde_json::json!("init"));
     assert_eq!(
+        v["created"],
+        serde_json::json!([
+            ".claude/flows/feature-x/context.toml",
+            ".claude/flows/feature-x/execution-record.toml",
+            ".claude/flows/feature-x/tasks.toml",
+        ])
+    );
+    assert_eq!(
         v["artifacts"]["execution_record"],
         serde_json::json!(".claude/flows/feature-x/execution-record.toml")
     );
@@ -270,6 +278,42 @@ fn reinit_leaves_existing_tasks_store_byte_identical() {
     // The out-of-band write left the sidecar stale; the bootstrap path
     // refreshes it rather than rewriting the store.
     assert_sidecar_matches(&tasks);
+}
+
+/// `created` tracks what a run materialised, independently of `action`: a
+/// fully-bootstrapped re-init creates nothing, while a legacy flow carrying
+/// only `context.toml` reports the store it just minted even though `action`
+/// stays `"noop"`.
+#[test]
+fn created_names_the_stores_a_run_materialised() {
+    let (dir, plan, _context) = fresh_root("feature-x");
+    let plan_str = plan.to_string_lossy().to_string();
+
+    run_init(&dir, &["--slug", "feature-x", "--plan", &plan_str]).success();
+
+    let out = run_init(&dir, &["--slug", "feature-x", "--plan", &plan_str]).success();
+    let v = json_stdout(&out);
+    assert_eq!(v["action"], serde_json::json!("noop"));
+    assert_eq!(
+        v["created"],
+        serde_json::json!([]),
+        "a re-init over a complete flow must report no newly-created store"
+    );
+
+    // Regress to a legacy shape: context.toml only.
+    let tasks = tasks_store_path(&dir, "feature-x");
+    fs::remove_file(&tasks).unwrap();
+    fs::remove_file(sidecar_for(&tasks)).unwrap();
+
+    let out = run_init(&dir, &["--slug", "feature-x", "--plan", &plan_str]).success();
+    let v = json_stdout(&out);
+    assert_eq!(v["action"], serde_json::json!("noop"));
+    assert_eq!(
+        v["created"],
+        serde_json::json!([".claude/flows/feature-x/tasks.toml"]),
+        "a re-init that mints an absent task store must name it in `created`"
+    );
+    assert!(tasks.exists(), "tasks.toml must have been re-materialised");
 }
 
 // ---------------------------------------------------------------------------

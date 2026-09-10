@@ -409,22 +409,39 @@ fn an_existing_coupling_edge_survives_a_re_import() {
     let (_dir, root) = stage(FIXTURE_PLAN);
     import(&root, &["--slug", SLUG]);
 
-    // The shape `tasks add --coupling` leaves behind: task 3's edge to 1 is a
-    // coupling edge, so `needs` holds only the remainder.
-    let text = fs::read_to_string(store_path(&root)).expect("the store is on disk");
-    let coupled = text.replace(
-        "needs = [\n    1,\n    2,\n]\ncoupling = []",
-        "needs = [2]\ncoupling = [1]",
-    );
-    assert_ne!(coupled, text, "the golden's task-3 edge shape moved");
-    fs::write(store_path(&root), &coupled).expect("the store is rewritten");
+    cli(&root)
+        .args([
+            "tasks",
+            "update",
+            "3",
+            "--slug",
+            SLUG,
+            "--set",
+            "needs=2",
+            "--set",
+            "coupling=1",
+            "--unlock-import-fields",
+        ])
+        .assert()
+        .success();
 
     let envelope = import(&root, &["--slug", SLUG]);
     assert_eq!(counts(&envelope), (0, 0, 10), "{envelope}");
 
     let after = fs::read_to_string(store_path(&root)).expect("the store is on disk");
+    let store: toml::Value = toml::from_str(&after).expect("the store is valid TOML");
+    let task_3 = store
+        .get("items")
+        .and_then(toml::Value::as_array)
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item.get("id") == Some(&toml::Value::Integer(3)))
+        })
+        .expect("task 3 is in the store");
     assert!(
-        after.contains("needs = [2]\ncoupling = [1]"),
+        task_3.get("needs") == Some(&toml::Value::Array(vec![toml::Value::Integer(2)]))
+            && task_3.get("coupling") == Some(&toml::Value::Array(vec![toml::Value::Integer(1)])),
         "the coupling edge must not migrate back into `needs`:\n{after}"
     );
 }
@@ -511,9 +528,18 @@ fn reconcile_record_adopts_a_separator_only_ref() {
         text.contains("ref = \"parse-the-policy-bullets-and-the-max-parallel-range\""),
         "the record's spelling must win over the title's:\n{text}"
     );
+    let store: toml::Value = toml::from_str(&text).expect("the store is valid TOML");
+    let done_ids: Vec<i64> = store
+        .get("items")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flat_map(|items| items.iter())
+        .filter(|item| item.get("status").and_then(toml::Value::as_str) == Some("done"))
+        .filter_map(|item| item.get("id").and_then(toml::Value::as_integer))
+        .collect();
     assert_eq!(
-        text.matches("status = \"done\"").count(),
-        2,
+        done_ids,
+        vec![1, 4],
         "exactly tasks 1 and 4 are complete in the record:\n{text}"
     );
 

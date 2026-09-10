@@ -6,9 +6,8 @@
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use super::graph::{Graph, nodes_of};
+use super::graph::{build_or_refuse, nodes_of, refuse};
 use super::schema::Store;
-use crate::errors::{ErrorKind, tagged_err};
 
 /// `{ready[], held[{id, blocked_on_file, holder}], next[],
 /// blocked[{id, blocker, blocker_status}]}`, every id list ascending. `ready`
@@ -17,20 +16,7 @@ use crate::errors::{ErrorKind, tagged_err};
 /// one.
 pub(crate) fn ready(store: &Store, in_flight: &[u32]) -> Result<JsonValue> {
     let nodes = nodes_of(&store.items);
-    let graph = Graph::build(&nodes).map_err(refuse)?;
-
-    let cycle = graph.cycle_members();
-    if !cycle.is_empty() {
-        let members: Vec<String> = cycle.iter().map(u32::to_string).collect();
-        return Err(tagged_err(
-            ErrorKind::Validation,
-            None,
-            format!(
-                "refusing the frontier: the dependency graph contains a cycle through tasks {}",
-                members.join(", ")
-            ),
-        ));
-    }
+    let graph = build_or_refuse(&nodes, "the frontier")?;
 
     let mut frontier = graph.frontier(in_flight).map_err(refuse)?;
     frontier.ready.sort_unstable();
@@ -68,11 +54,6 @@ pub(crate) fn ready(store: &Store, in_flight: &[u32]) -> Result<JsonValue> {
         "next": frontier.next,
         "blocked": blocked,
     }))
-}
-
-/// A graph the store cannot form is a `tasks check` finding, not a tool fault.
-fn refuse(err: anyhow::Error) -> anyhow::Error {
-    tagged_err(ErrorKind::Validation, None, err.to_string())
 }
 
 #[cfg(test)]

@@ -18,6 +18,7 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 
+use super::finding::{Finding, WARNING, join_ids};
 use super::graph::{Graph, Group, nodes_of};
 use super::markdown::{insert_section_after, insert_section_before, replace_section, sections};
 use super::schema::{Checkpoint, Policy, Store, TaskRow};
@@ -48,14 +49,6 @@ pub(crate) struct Rendered {
     pub(crate) policy: String,
     pub(crate) tasks: String,
     pub(crate) graph: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Finding {
-    pub(crate) class: &'static str,
-    pub(crate) severity: &'static str,
-    pub(crate) ids: Vec<u32>,
-    pub(crate) detail: String,
 }
 
 /// Errors on a cycle or a dangling edge: checkpoint closures are undefined
@@ -126,7 +119,7 @@ pub(crate) fn check_render_drift(store: &Store, plan_src: &str) -> Result<Option
 
     Ok(Some(Finding {
         class: "render/drift",
-        severity: "warning",
+        severity: WARNING,
         ids: Vec::new(),
         detail,
     }))
@@ -159,7 +152,7 @@ fn render_policy(policy: &Policy, groups: &[Group]) -> String {
         if after.is_empty() {
             EMPTY.to_string()
         } else {
-            format!("tasks {}", join_ids(&after))
+            format!("tasks {}", join_ids(&after, EMPTY))
         }
     ));
     body.push_str(&format!(
@@ -247,8 +240,8 @@ fn render_graph(checkpoints: &[Checkpoint], groups: &[Group], closures: &[Vec<u3
         let mut marker = format!(
             "{EMPTY} CHECKPOINT {} after tasks {} {EMPTY} {CLOSURE_LABEL}: {}.",
             group.id,
-            join_ids(&group.maximal),
-            join_ids(closure)
+            join_ids(&group.maximal, EMPTY),
+            join_ids(closure, EMPTY)
         );
         let rationale = checkpoints
             .iter()
@@ -305,11 +298,7 @@ fn depends_on(row: &TaskRow) -> String {
         .copied()
         .collect();
     let ids: Vec<u32> = ids.into_iter().collect();
-    let list = if ids.is_empty() {
-        EMPTY.to_string()
-    } else {
-        join_ids(&ids)
-    };
+    let list = join_ids(&ids, EMPTY);
     let note = collapse(&row.deps_note);
     if note.is_empty() {
         list
@@ -334,13 +323,6 @@ fn file_list(store: &Store, row: &TaskRow) -> String {
                 None => format!("`{file}`"),
             }
         })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn join_ids(ids: &[u32]) -> String {
-    ids.iter()
-        .map(u32::to_string)
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -560,7 +542,9 @@ mod tests {
         let store = fixture();
         let plan = render_into_plan(&store, PLAN).expect("renders");
 
-        let tasks = parse_tasks_at(&section(&plan, "Tasks"), 1).expect("tasks parse");
+        let tasks = parse_tasks_at(&section(&plan, "Tasks"), 1)
+            .expect("tasks parse")
+            .tasks;
         assert_eq!(
             tasks.iter().map(|task| task.id).collect::<Vec<_>>(),
             store.items.iter().map(|row| row.id).collect::<Vec<_>>()
@@ -680,7 +664,9 @@ mod tests {
             "{plan}"
         );
 
-        let parsed = parse_tasks_at(&section(&plan, "Tasks"), 1).expect("tasks parse");
+        let parsed = parse_tasks_at(&section(&plan, "Tasks"), 1)
+            .expect("tasks parse")
+            .tasks;
         assert_eq!(parsed[2].files, store.items[2].files);
         assert_eq!(
             parsed[2].file_notes,

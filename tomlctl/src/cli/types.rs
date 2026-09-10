@@ -1324,9 +1324,7 @@ pub(crate) enum ClusterBy {
 }
 
 /// Flow-artifact kinds surfaced by `flow ensure-artifact`. Variants are
-/// rendered by clap's default `value_enum` casing as kebab-case
-/// (`context`, `execution-record`, `review-ledger`, `optimise-findings`,
-/// `plan-review-findings`, `tasks`).
+/// rendered by clap's default `value_enum` casing as kebab-case.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ArtifactKind {
     Context,
@@ -1794,7 +1792,9 @@ pub(crate) struct TasksTarget {
 }
 
 /// Projection selector for `tasks show --with`. Comma-delimited and
-/// repeatable; with the flag absent the output is `summary` alone.
+/// repeatable; with the flag absent the output is `summary` alone. An unknown
+/// part is a clap parse failure — exit 2, usage prose, no
+/// `--error-format json` envelope — where `--effort` exits 1 `kind=validation`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ShowPart {
     /// id, ref, title, effort, status, checkpoint, files, needs, coupling.
@@ -1811,7 +1811,8 @@ pub(crate) enum ShowPart {
 
 /// Edge selector for `tasks edges --kind`. `needs` and `coupling` are the
 /// two stored edge sets; `overlap` is computed on read (a file shared by
-/// two rows with no directed path either way) and never persisted.
+/// two rows with no directed path either way) and never persisted. An unknown
+/// kind fails as `--with` does: clap parse failure, exit 2, no JSON envelope.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum EdgeKind {
     /// Stored dependency edges.

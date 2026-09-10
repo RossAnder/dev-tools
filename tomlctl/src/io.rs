@@ -10,6 +10,7 @@
 //!   - `guard_write_path` / `canonicalize_for_write` — `.claude/` containment
 //!   - `recheck_claude_containment` — TOCTOU narrowing
 //!   - `path_under_root` — canonical prefix-ancestry containment check
+//!   - `recorded_under_root` — containment for a path a repo file records
 //!   - `with_exclusive_lock` — lock-file acquire/release
 //!   - `repo_or_cwd_root` + `OnceLock` cache
 //!   - `mutate_doc` — guard→lock→read→mutate→write pipeline
@@ -24,7 +25,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{BufRead, IsTerminal, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use toml::Value as TomlValue;
 
 use crate::errors::{ErrorKind, tagged_err};
@@ -318,6 +319,22 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
         read_at_file(path)
     } else {
         Ok(arg.to_string())
+    }
+}
+
+/// Resolve an NDJSON source argument. A literal dash reads stdin via
+/// `read_json_arg` (preserving its guard against a second `-` sentinel on
+/// the same invocation); any other value is a file path — an optional
+/// leading `@` stripped — read verbatim with `fs::read_to_string`.
+pub(crate) fn read_ndjson_source(src: &str) -> Result<String> {
+    if src == "-" {
+        read_json_arg("-")
+    } else {
+        let path = src
+            .strip_prefix('@')
+            .filter(|p| !p.is_empty())
+            .unwrap_or(src);
+        std::fs::read_to_string(path).with_context(|| format!("reading NDJSON file `{}`", src))
     }
 }
 
@@ -1538,6 +1555,27 @@ pub(crate) fn path_under_root(root: &Path, candidate: &Path) -> bool {
     anchor_canon.starts_with(&root_canon)
 }
 
+/// Is `recorded` — a path as a repo file spells it — proven to resolve inside
+/// `root`? Both limbs are load-bearing.
+///
+/// Admitting only `Normal` components (plus the leading `.` a `Components`
+/// walk preserves) is what keeps the join anchored. `is_absolute` is false on
+/// Windows for both a rootless `\etc\passwd` and a drive-relative `C:name`,
+/// yet `join` unanchors either — the first keeps only `root`'s drive letter,
+/// the second replaces `root` outright and leaves a remnant that
+/// canonicalises to that drive's current directory, so containment then
+/// answers about somewhere `root` never named. The same scan refuses `..`,
+/// and has to run before the join because a canonical root carrying a
+/// verbatim `\\?\C:\…` prefix makes `join` normalise `..` away. A leaf
+/// symlinked out of the tree is lexically clean, so `path_under_root` — which
+/// anchors on the nearest existing ancestor — is what refuses that.
+pub(crate) fn recorded_under_root(root: &Path, recorded: &Path) -> bool {
+    recorded
+        .components()
+        .all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
+        && path_under_root(root, &root.join(recorded))
+}
+
 /// Sorted directory listing — keeps test output deterministic across
 /// platforms. `fs::read_dir` does not specify an order on POSIX or NTFS;
 /// sorting by `file_name` (OS-string-lexicographic) makes the listing
@@ -2546,40 +2584,28 @@ arr = [1, 2]
     // ----- seed_doc_for -----
 
     /// The schema-aware seed for a recognised flow file
-    /// (`execution-record.toml`) serialises BYTE-IDENTICALLY to the skeleton a
-    /// REAL bootstrap path writes. The expectation is taken from
-    /// `flow::init::execution_record_skeleton` — the pure skeleton-build
-    /// step `flow::init::bootstrap_execution_record` actually runs — rendered
-    /// the SAME way the pipeline writer (`write_toml_with_sidecar` →
-    /// `toml::to_string_pretty`) serialises every write. A hand-retyped
-    /// expected literal would reference no bootstrap fn and so would not
-    /// fail when one stopped routing through `seed_doc_for`.
+    /// (`execution-record.toml`) serialises to the historical two-key shape:
+    /// a bare integer `schema_version` first, then an unquoted date, then a
+    /// trailing newline. Rendered the SAME way the pipeline writer
+    /// (`write_toml_with_sidecar` → `toml::to_string_pretty`) serialises every
+    /// write, so a quoting or key-order drift in the serialiser lands here.
     ///
-    /// This is the single-skeleton-source guarantee: if a future bootstrap
-    /// path stopped sourcing its skeleton from `seed_doc_for`, the two
-    /// renderings would diverge and this test would fail loudly. The skeleton
-    /// helper is FS-free (it delegates straight to `seed_doc_for`), so the test
-    /// touches no disk and stays clock-independent — both sides resolve "today"
-    /// from the same injected clock within the one call.
+    /// The expected date is read back out of the seed's own embedded value, so
+    /// the assertion is clock-independent and the test touches no disk.
     #[test]
     fn seed_doc_for_matches_bootstrap_bytes() {
         let path = std::path::Path::new(".claude/flows/x/execution-record.toml");
 
-        // The skeleton a REAL bootstrap path (`flow::init::bootstrap_execution_record`)
-        // builds — exercised here via its extracted pure step. This is the
-        // single source of truth for the assertion: rendering it the way the
-        // pipeline writer (`write_toml_with_sidecar` → `toml::to_string_pretty`)
-        // does and reading its OWN embedded date back out keeps the test
-        // clock-independent (one clock read inside one call) AND tied to a real
-        // bootstrap code path — not a hand-retyped literal.
-        let bootstrap_skeleton = crate::flow::execution_record_skeleton(path).unwrap();
+        // Render the same seed used by the bootstrap writer and read its own
+        // embedded date back out so the test stays clock-independent.
+        let bootstrap_skeleton = seed_doc_for(path).unwrap();
         let rendered = toml::to_string_pretty(&bootstrap_skeleton).unwrap();
 
         // The historical execution-record skeleton: `schema_version = 1` (bare
         // integer, first) then `last_updated = <bare date>` then a trailing
         // newline. Reconstruct the date from the skeleton's OWN datetime so a
-        // future `seed_doc_for`/bootstrap divergence (key order, quoting,
-        // integer→string slip) fails here loudly.
+        // future `seed_doc_for` drift (key order, quoting, integer→string
+        // slip) fails here loudly.
         let today_iso = bootstrap_skeleton
             .as_table()
             .and_then(|t| t.get("last_updated"))
@@ -2675,6 +2701,41 @@ arr = [1, 2]
             ));
             assert!(!path_under_root(root, &root.join("..")));
             assert!(!path_under_root(root, Path::new("/definitely/absent")));
+        });
+    }
+
+    /// A candidate `join` would not anchor has to be refused before
+    /// containment runs, since containment then answers about wherever the
+    /// unanchored remnant lands rather than about `root`. `C:name` is that
+    /// candidate on Windows — neither absolute nor traversing, yet it
+    /// replaces `root` outright and canonicalises to that drive's current
+    /// directory. Its Unix reading is an ordinary file name, so the
+    /// platforms disagree on the verdict and only Windows can assert it.
+    #[test]
+    fn recorded_containment_refuses_what_a_join_would_not_anchor() {
+        with_root(|root| {
+            assert!(recorded_under_root(root, Path::new("docs/plans/plan.md")));
+            assert!(recorded_under_root(root, Path::new("./docs/plans/plan.md")));
+            assert!(!recorded_under_root(root, Path::new("../escape.md")));
+            assert!(!recorded_under_root(root, Path::new("/definitely/absent")));
+            #[cfg(windows)]
+            {
+                assert!(!recorded_under_root(root, Path::new(r"C:\plan.md")));
+                assert!(!recorded_under_root(root, Path::new(r"\plan.md")));
+                // The drive-relative form, anchored on the working directory
+                // so that the remnant `join` leaves canonicalises back inside
+                // the root under test — otherwise a refusal here would be the
+                // machine's layout rather than the guard's.
+                let cwd = std::env::current_dir().unwrap();
+                let mut drive_relative = cwd
+                    .components()
+                    .next()
+                    .expect("a working directory has a prefix component")
+                    .as_os_str()
+                    .to_os_string();
+                drive_relative.push("plan.md");
+                assert!(!recorded_under_root(&cwd, Path::new(&drive_relative)));
+            }
         });
     }
 

@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Result, anyhow, bail};
 
 use super::schema::{Status, TaskRow};
+use crate::errors::{ErrorKind, tagged_err};
 
 /// Reachability is `[u64; WORDS]` per node; widening the cap costs a word per
 /// 64 tasks and nothing else.
@@ -74,6 +75,33 @@ impl Standing {
 /// itself can silently disagree with its siblings about what the graph sees.
 pub(crate) fn nodes_of(rows: &[TaskRow]) -> Vec<Node> {
     rows.iter().map(Node::from).collect()
+}
+
+/// A graph the store cannot form is a `tasks check` finding, not a tool fault.
+pub(crate) fn refuse(err: anyhow::Error) -> anyhow::Error {
+    tagged_err(ErrorKind::Validation, None, err.to_string())
+}
+
+/// The build a read verb runs when a cycle leaves it no answer to give,
+/// `subject` naming what is refused — shared so the verbs cannot drift apart on
+/// what a cycle means.
+pub(crate) fn build_or_refuse<'a>(nodes: &'a [Node], subject: &str) -> Result<Graph<'a>> {
+    let graph = Graph::build(nodes).map_err(refuse)?;
+
+    let cycle = graph.cycle_members();
+    if !cycle.is_empty() {
+        let members: Vec<String> = cycle.iter().map(u32::to_string).collect();
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!(
+                "refusing {subject}: the dependency graph contains a cycle through tasks {}",
+                members.join(", ")
+            ),
+        ));
+    }
+
+    Ok(graph)
 }
 
 /// A ready task withheld because an in-flight task already claims one of its

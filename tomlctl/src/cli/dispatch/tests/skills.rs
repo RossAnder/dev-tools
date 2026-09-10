@@ -447,7 +447,7 @@ fn blocks_verify_reproduces_shell_hashes() {
     expect_hash(
         &report,
         "forbidden-working-tree-ops",
-        "4701d2b8314c997366dfea83b6aa4e0bff5e275d2e1378517b67e5091d7fa026",
+        "ea762481f205b13fc1c9758c720add6bd0554de38b3e1bd80e4627bdd9e632b2",
     );
 }
 

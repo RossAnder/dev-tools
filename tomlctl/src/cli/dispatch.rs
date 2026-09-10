@@ -1,7 +1,7 @@
-//! dispatch — `fn run()`, the `items`/`blocks` sub-dispatchers, plus
-//! the NDJSON source resolver and the integrity-opts translators
-//! that glue clap types to `IntegrityOpts`. The clap surface lives in
-//! `super::types` and the output helpers in `crate::output`.
+//! dispatch — `fn run()`, the `items`/`blocks` sub-dispatchers, plus the
+//! integrity-opts translators that glue clap types to `IntegrityOpts`. The
+//! clap surface lives in `super::types` and the output helpers in
+//! `crate::output`.
 //!
 //! Pure plumbing; no business logic — every `Cmd` / `ItemsOp` / `BlocksOp`
 //! arm delegates to `items::` / `blocks::` / `io::` helpers that own the
@@ -28,9 +28,9 @@ use crate::integrity::{IntegrityOpts, refresh_sidecar, sidecar_path, verify_inte
 use crate::io::{
     compute_set_json_mutation, compute_set_mutation, dry_run_read_opts, guard_write_path, item_id,
     items_array, mutate_doc, mutate_doc_conditional, mutate_doc_plan, on_missing_for, read_doc,
-    read_doc_borrowed, read_doc_either, read_json_arg, read_json_value_from_arg, read_toml_str,
-    recheck_claude_containment, strict_read_check, warn_if_created, warn_if_read_outside_claude,
-    with_exclusive_lock,
+    read_doc_borrowed, read_doc_either, read_json_arg, read_json_value_from_arg,
+    read_ndjson_source, read_toml_str, recheck_claude_containment, strict_read_check,
+    warn_if_created, warn_if_read_outside_claude, with_exclusive_lock,
 };
 use crate::items::{
     AddManyOutcome, AddOutcome, array_append, compute_add_many_mutation, compute_add_mutation,
@@ -55,23 +55,6 @@ use crate::query::{self, Query, ShapeDispatch};
 /// accidental loop-generated mega-payload fails fast instead of timing out
 /// the wrapping shell.
 const MAX_OPS_PER_APPLY: usize = 10_000;
-
-/// Resolve an NDJSON source argument. A literal dash reads stdin via
-/// `io::read_json_arg` (preserving its guard against a second
-/// `-` sentinel on the same invocation); any other value is a file path
-/// read verbatim with `fs::read_to_string`. Shared by `Cmd::ArrayAppend`
-/// and `ItemsOp::AddMany`.
-fn read_ndjson_source(src: &str) -> Result<String> {
-    if src == "-" {
-        read_json_arg("-")
-    } else {
-        let path = src
-            .strip_prefix('@')
-            .filter(|p| !p.is_empty())
-            .unwrap_or(src);
-        std::fs::read_to_string(path).with_context(|| format!("reading NDJSON file `{}`", src))
-    }
-}
 
 /// Parse the `--dedupe-by` flag value into a `Vec<String>` of field
 /// paths. `None` (flag absent) returns an empty Vec — the caller treats

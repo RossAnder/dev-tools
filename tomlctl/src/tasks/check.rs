@@ -1,10 +1,13 @@
 //! The `check` verb — DAG, checkpoint, policy and plan findings.
 //!
-//! Every class raised here is decidable from the store alone. Two are not and
-//! live where their input does: `checkpoint/marker-mismatch` compares the
-//! authored `Checkpoint after` bullet against the derived maximal elements,
-//! and that bullet is never stored, so only the importer can raise it;
-//! `render/drift` needs the plan document and comes from the renderer.
+//! Every class raised here is decidable from the store alone. The rest live
+//! where their input does, and the input is always the plan document the store
+//! was imported from: the `plan/*` classes come from `import_plan` and from the
+//! task grammar in `parse_tasks`, `checkpoint/marker-mismatch` compares the
+//! authored `Checkpoint after` bullet against the derived maximal elements —
+//! and that bullet is never stored, so only the importer can raise it — and
+//! `render/drift` needs the document itself and comes from the renderer. The
+//! shared `Finding` type and the severity vocabulary are `finding.rs`'s.
 //!
 //! A duplicate id and an edge to an absent task are both graph-build errors,
 //! so the rows are scanned for them before any graph exists — which is what
@@ -16,16 +19,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::RangeInclusive;
 
+use super::finding::{ERROR, Finding, INFO, NO_TASK, WARNING, quoted_list, task_list};
 use super::graph::{Graph, nodes_of};
 use super::parse_policy::{CHECKPOINTS_VALUES, GRANULARITY_VALUES, ORIGIN_VALUES};
-use super::render::Finding;
 use super::schema::{Status, Store};
-
-const ERROR: &str = "error";
-const WARNING: &str = "warning";
-/// Below `WARNING` and outside `exit_code`'s test, so a class raised here can
-/// never move an exit status.
-const INFO: &str = "info";
 
 const MAX_PARALLEL: RangeInclusive<u32> = 1..=8;
 
@@ -138,19 +135,25 @@ fn vocabulary_finding(
     })
 }
 
+/// `ids` carries the number alone, so the `ref`s are what name which rows
+/// carry it — the store's own key, and the argument every write verb takes.
 fn duplicate_findings(store: &Store) -> Vec<Finding> {
-    let mut counts: BTreeMap<u32, usize> = BTreeMap::new();
+    let mut claimed: BTreeMap<u32, Vec<&str>> = BTreeMap::new();
     for row in &store.items {
-        *counts.entry(row.id).or_default() += 1;
+        claimed.entry(row.id).or_default().push(row.r#ref.as_str());
     }
-    counts
+    claimed
         .into_iter()
-        .filter(|(_, count)| *count > 1)
-        .map(|(id, count)| Finding {
+        .filter(|(_, refs)| refs.len() > 1)
+        .map(|(id, refs)| Finding {
             class: "dag/duplicate-number",
             severity: ERROR,
             ids: vec![id],
-            detail: format!("task number {id} is claimed by {count} rows"),
+            detail: format!(
+                "task number {id} is claimed by {} rows: {}",
+                refs.len(),
+                quoted_list(&refs, "no row")
+            ),
         })
         .collect()
 }
@@ -177,7 +180,11 @@ fn dangling_findings(store: &Store) -> Vec<Finding> {
                 class: "dag/dangling-ref",
                 severity: ERROR,
                 ids: vec![row.id],
-                detail: format!("task {} depends on absent {}", row.id, task_list(&absent)),
+                detail: format!(
+                    "task {} depends on absent {}",
+                    row.id,
+                    task_list(&absent, NO_TASK)
+                ),
             })
         })
         .collect()
@@ -206,7 +213,7 @@ fn orphan_task_findings(store: &Store) -> Vec<Finding> {
             severity: WARNING,
             detail: format!(
                 "no checkpoint group holds {} — only the final commit train does",
-                task_list(&ungrouped)
+                task_list(&ungrouped, NO_TASK)
             ),
             ids: ungrouped,
         });
@@ -228,7 +235,7 @@ fn orphan_task_findings(store: &Store) -> Vec<Finding> {
             severity: WARNING,
             detail: format!(
                 "no `[[checkpoints]]` entry declares {named}, named by {} — only the final commit train holds them",
-                task_list(&ids)
+                task_list(&ids, NO_TASK)
             ),
             ids,
         });
@@ -251,8 +258,13 @@ fn orphan_row_findings(store: &Store) -> Vec<Finding> {
         .items
         .iter()
         .filter(|row| !imported.contains(row.r#ref.as_str()));
-    let pending = sorted_ids(orphaned.clone().filter(|row| row.status == Status::Pending));
-    let settled = sorted_ids(orphaned.filter(|row| row.status != Status::Pending));
+    let pending: Vec<&super::schema::TaskRow> = orphaned
+        .clone()
+        .filter(|row| row.status == Status::Pending)
+        .collect();
+    let settled: Vec<&super::schema::TaskRow> = orphaned
+        .filter(|row| row.status != Status::Pending)
+        .collect();
 
     let mut findings = Vec::new();
     if !pending.is_empty() {
@@ -260,7 +272,7 @@ fn orphan_row_findings(store: &Store) -> Vec<Finding> {
             class: "plan/orphan-row",
             severity: WARNING,
             detail: orphan_row_detail(&pending, ""),
-            ids: pending,
+            ids: sorted_ids(pending.into_iter()),
         });
     }
     if !settled.is_empty() {
@@ -271,16 +283,21 @@ fn orphan_row_findings(store: &Store) -> Vec<Finding> {
                 &settled,
                 ", and its status is not pending — a render would resurrect it into `## Tasks`",
             ),
-            ids: settled,
+            ids: sorted_ids(settled.into_iter()),
         });
     }
     findings
 }
 
-fn orphan_row_detail(ids: &[u32], suffix: &str) -> String {
+/// `ids` deduplicates and the `ref`s do not, so two rows sharing a number are
+/// both named here even though the id list holds one entry.
+fn orphan_row_detail(rows: &[&super::schema::TaskRow], suffix: &str) -> String {
+    let refs: Vec<&str> = rows.iter().map(|row| row.r#ref.as_str()).collect();
     format!(
-        "the last import did not produce the `ref` of {} — renamed or deleted in the plan{suffix}",
-        task_list(ids)
+        "the last import did not produce {}, held by {} — renamed or deleted in the \
+         plan{suffix}",
+        quoted_list(&refs, "no `ref`"),
+        task_list(&sorted_ids(rows.iter().copied()), NO_TASK)
     )
 }
 
@@ -318,7 +335,7 @@ fn closure_findings(store: &Store) -> Vec<Finding> {
                 detail: format!(
                     "task {}'s prose names {}, which its `files` does not claim",
                     row.id,
-                    quoted_list(&unclaimed)
+                    quoted_list(&unclaimed, "no path")
                 ),
             })
         })
@@ -354,7 +371,7 @@ fn graph_findings(store: &Store, build_error_named: bool, in_flight: &[u32]) -> 
         return vec![Finding {
             class: "dag/cycle",
             severity: ERROR,
-            detail: format!("{} form a dependency cycle", task_list(&cycle)),
+            detail: format!("{} form a dependency cycle", task_list(&cycle, NO_TASK)),
             ids: cycle,
         }];
     }
@@ -406,7 +423,7 @@ fn stalled_findings(graph: &Graph<'_>, in_flight: &[u32]) -> Vec<Finding> {
             ids: vec![blocker],
             detail: format!(
                 "task {blocker} is `{status}`, so {} cannot be reached by any wave until it is done",
-                task_list(&dependents)
+                task_list(&dependents, NO_TASK)
             ),
         })
         .collect()
@@ -476,7 +493,7 @@ fn symbol_findings(store: &Store, graph: &Graph<'_>) -> Vec<Finding> {
                 detail: format!(
                     "task {introducer} introduces {} and task {user} names it, with no \
                      dependency path either way",
-                    quoted_list(&shared)
+                    quoted_list(&shared, "no symbol")
                 ),
             });
         }
@@ -595,7 +612,7 @@ fn overlap_findings(store: &Store, graph: &Graph<'_>) -> Vec<Finding> {
             ids: vec![a, b],
             detail: format!(
                 "tasks {a} and {b} both claim {} with no dependency path either way",
-                quoted_list(&shared_files(store, a, b))
+                quoted_list(&shared_files(store, a, b), "no file")
             ),
         })
         .collect()
@@ -634,7 +651,7 @@ fn cut_findings(store: &Store, graph: &Graph<'_>) -> Vec<Finding> {
             detail: format!(
                 "checkpoint `{}` is not downward-closed: it depends on {}, which no group up to it contains",
                 group.id,
-                task_list(&ids)
+                task_list(&ids, NO_TASK)
             ),
             ids,
         });
@@ -656,27 +673,6 @@ fn shared_files(store: &Store, a: u32, b: u32) -> Vec<String> {
 fn sorted_ids<'a>(rows: impl Iterator<Item = &'a super::schema::TaskRow>) -> Vec<u32> {
     let ids: BTreeSet<u32> = rows.map(|row| row.id).collect();
     ids.into_iter().collect()
-}
-
-fn task_list(ids: &[u32]) -> String {
-    let joined = ids
-        .iter()
-        .map(u32::to_string)
-        .collect::<Vec<String>>()
-        .join(", ");
-    if ids.len() == 1 {
-        format!("task {joined}")
-    } else {
-        format!("tasks {joined}")
-    }
-}
-
-fn quoted_list(values: &[String]) -> String {
-    values
-        .iter()
-        .map(|value| format!("`{value}`"))
-        .collect::<Vec<String>>()
-        .join(", ")
 }
 
 #[cfg(test)]
@@ -826,6 +822,37 @@ mod tests {
         );
         assert_eq!(findings[1].ids, vec![1]);
         assert_eq!(exit_code(&findings), 1);
+    }
+
+    /// The id list holds one entry for a number two rows claim, and a `ref` is
+    /// what every write verb takes, so the refs are the only part of either
+    /// finding a reader can act on.
+    #[test]
+    fn a_duplicate_number_and_an_orphaned_row_each_name_their_rows() {
+        let mut store = store(
+            vec![row(1, &[], &["a.rs"], "A"), row(1, &[], &["b.rs"], "A")],
+            &["A"],
+        );
+        store.items[1].r#ref = "task-1-again".to_string();
+        store.last_import_refs = vec!["task-1".to_string()];
+        let findings = check(&store, &[]);
+
+        let duplicate = findings
+            .iter()
+            .find(|finding| finding.class == "dag/duplicate-number")
+            .expect("two rows claim task 1");
+        assert_eq!(duplicate.ids, vec![1]);
+        assert!(
+            duplicate.detail.contains("`task-1`, `task-1-again`"),
+            "{duplicate:?}"
+        );
+
+        let orphan = findings
+            .iter()
+            .find(|finding| finding.class == "plan/orphan-row")
+            .expect("the second row's ref was not imported");
+        assert_eq!(orphan.ids, vec![1], "the id list deduplicates");
+        assert!(orphan.detail.contains("`task-1-again`"), "{orphan:?}");
     }
 
     #[test]

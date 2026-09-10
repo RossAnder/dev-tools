@@ -83,11 +83,11 @@ tomlctl --version
 
 ## Feature-gate with `tomlctl capabilities`
 
-`tomlctl capabilities` emits a stable JSON document (`{"version":"…","features":[…],"subcommands":[…]}`) so downstream templates can feature-gate at boot without parsing `--help` prose. Features are stable within a minor release; new flags add new feature entries rather than being version-qualified. Example invocation (truncated):
+`tomlctl capabilities` emits a stable JSON document with `version`, `features`, `subcommands`, and `commands` keys so downstream templates can feature-gate at boot without parsing `--help` prose. Features are stable within a minor release; new flags add new feature entries rather than being version-qualified. Example invocation (truncated):
 
 ```bash
 tomlctl capabilities
-# {"version":"0.7.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
+# {"version":"0.8.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
 ```
 
 Representative entries:

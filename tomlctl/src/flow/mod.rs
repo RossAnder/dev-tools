@@ -9,13 +9,6 @@ mod ensure_artifact;
 mod envelope;
 mod find_plans;
 mod init;
-// Re-exported so the dispatch-layer byte-identity test
-// (`seed_doc_for_matches_bootstrap_bytes`) can name a real bootstrap code path
-// without widening the whole `init` module to `pub(crate)`. Test-only: `init`
-// calls `execution_record_skeleton` directly, so that assertion is the only
-// out-of-module consumer.
-#[cfg(test)]
-pub(crate) use init::execution_record_skeleton;
 mod list;
 pub(crate) mod render_progress_log;
 mod resolve;

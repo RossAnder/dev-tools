@@ -3,7 +3,8 @@
 The cross-cutting half of the tomlctl surface: what `--verify-integrity` is accepted on and
 what the `.sha256` sidecar does and does not promise, the machine-readable error envelope,
 the two `flow` verbs that emit rather than mutate flow state (`render-progress-log` and
-`envelope build`), and the infrastructure-only `blocks` verbs. The read verbs live in
+`envelope build`), the bootstrap envelope `flow init` returns, and the infrastructure-only
+`blocks` verbs. The read verbs live in
 [query.md](query.md) and the mutating ones in [write.md](write.md); the flow registry's own
 verbs (`flow active|init|list|resolve|stale|doctor|find-plans|ensure-artifact`) are listed in
 the Quick Reference table of [../SKILL.md](../SKILL.md).
@@ -14,6 +15,7 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 - [Sidecar files](#sidecar-files)
 - [Error format (`--error-format json`)](#error-format---error-format-json)
 - [Flow verbs](#flow-verbs)
+  - [Bootstrap envelope — `flow init`](#bootstrap-envelope--flow-init)
   - [Render PROGRESS-LOG.md — `flow render-progress-log`](#render-progress-logmd--flow-render-progress-log)
   - [Verify shared-block parity across markdown files](#verify-shared-block-parity-across-markdown-files)
 - [Envelope construction — `flow envelope build`](#envelope-construction--flow-envelope-build)
@@ -34,6 +36,14 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 | `tomlctl items next-id` | yes |
 | `tomlctl items find-duplicates` | yes |
 | `tomlctl items orphans` | yes |
+| `tomlctl tasks show` | yes |
+| `tomlctl tasks list` | yes |
+| `tomlctl tasks edges` | yes |
+| `tomlctl tasks ready` | yes |
+| `tomlctl tasks batches` | yes |
+| `tomlctl tasks closure` | yes |
+| `tomlctl tasks check` | yes |
+| `tomlctl tasks render` | yes |
 
 `tomlctl blocks verify` intentionally does NOT accept `--verify-integrity` (it operates on markdown with no sidecar pair).
 
@@ -93,6 +103,22 @@ Closed taxonomy (every tag site is enumerated; all other `bail!` sites fall thro
 Prefer `--error-format json` + `.error.kind` switching over regex-matching stderr text when branching on error class (e.g. "bootstrap the ledger if missing, bubble up otherwise").
 
 ## Flow verbs
+
+### Bootstrap envelope — `flow init`
+
+`tomlctl flow init --slug <slug> --plan <path>` seeds `context.toml`, `execution-record.toml`, `tasks.toml` and the active-flow registry entry in one re-runnable call. Because it is idempotent, the envelope reports the `context.toml` verdict and the set of stores actually written as two separate keys:
+
+```bash
+tomlctl flow init --slug <slug> --plan docs/plans/<slug>.md
+# → {"ok":true,"slug":"<slug>","action":"init",
+#    "created":[".claude/flows/<slug>/context.toml",".claude/flows/<slug>/execution-record.toml",".claude/flows/<slug>/tasks.toml"],
+#    "context_path":"<abs>/.claude/flows/<slug>/context.toml","artifacts":{...}}
+```
+
+- **`action`** — `"init"` when this run wrote `context.toml`, `"noop"` when it was already present. It describes `context.toml` alone.
+- **`created`** — the repo-relative stores this run materialised, in creation order; `[]` when every store was already there. Sidecars are excluded: refreshing a `.sha256` beside an existing store is a repair, not a creation.
+
+Branch on `created`, not on `action`, to detect a freshly-seeded store. `flow init` is the only sanctioned route that seeds `tasks.toml` — `flow ensure-artifact --bootstrap --kind tasks` is deliberately a no-op — so a legacy flow carrying only `context.toml` returns `action: "noop"` with `created` naming the `execution-record.toml` and `tasks.toml` it just minted.
 
 ### Render PROGRESS-LOG.md — `flow render-progress-log`
 

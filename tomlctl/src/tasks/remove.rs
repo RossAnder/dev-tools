@@ -17,6 +17,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
+use super::finding::{NO_TASK, task_list};
 use super::schema::{ImportOverride, Status, Store};
 use super::store;
 use crate::cli::WriteIntegrityArgs;
@@ -71,7 +72,7 @@ fn retire(store: &mut Store, id: u32, force: bool) -> Result<RemoveOutcome> {
         return Err(refuse(format!(
             "task {id} is a dependency of {}: re-point them first, or pass --force to splice \
              its own dependencies into theirs",
-            task_list(&dependents)
+            task_list(&dependents, NO_TASK)
         )));
     }
 
@@ -130,19 +131,6 @@ fn stamped_fields(entry: Option<&ImportOverride>) -> Vec<&'static str> {
 
 fn refuse(message: String) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, message)
-}
-
-fn task_list(ids: &[u32]) -> String {
-    let joined = ids
-        .iter()
-        .map(u32::to_string)
-        .collect::<Vec<String>>()
-        .join(", ");
-    if ids.len() == 1 {
-        format!("task {joined}")
-    } else {
-        format!("tasks {joined}")
-    }
 }
 
 #[cfg(test)]

@@ -17,7 +17,11 @@ the verbatim source consumed by Task 15 (the coordinated rewrite of all 9 carrie
 **Parity invariant** (retired in wave 2): the `flow-context` entry no longer exists in
 `scripts/shared-blocks.toml`, which records the retirement. Nothing verifies the delimiters
 quoted below, and this file is a record of the Task 15 rewrite rather than a source that
-still governs the carriers.
+still governs the carriers. `claude/skills/flow-contract-flow-context/SKILL.md` is the one
+authoritative statement of the contract; every restatement below — Section 1's block, the
+Step-0 template's binding step, the `require_artifacts` field semantics — is the wording as
+it stood at the rewrite and has since drifted from it. Read the skill for current semantics,
+and leave this snapshot as it is.
 
 ---
 

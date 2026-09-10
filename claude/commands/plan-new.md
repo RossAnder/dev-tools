@@ -157,12 +157,11 @@ This phase writes the first execution-record bytes (via `tomlctl flow init`'s sk
    ```bash
    tomlctl tasks import-plan --slug <slug> --reconcile-record
    tomlctl tasks check --slug <slug> --plan
-   tomlctl tasks render --slug <slug> --check
    ```
 
    `--reconcile-record` reads the flow's `execution-record.toml` and adopts its `done` `task_ref`s onto the matching store rows, joining on a normalised form of the ref (case- and punctuation-insensitive), which is what lets a record written before the store existed still line up. On a first `/plan-new` the record is the skeleton `flow init` just wrote and nothing is adopted; on step 2's re-run path over an existing record it is what stops a re-created plan re-executing work `/implement` already completed. `unmatched_refs` names every record `task_ref` no plan task claimed — surface it rather than dropping it, since it is the signature of a heading the plan rephrased. It is also the input every later `[tasks]` write consumes: `/plan-update`'s Task-store section owns what the counters are written as while the set is non-empty, so a flow that leaves this import's refs unplaced hands that gate the same set on every subsequent write.
 
-   `check --plan` exits `1` on any `error`-class finding and `render --check` exits `1` on drift between the plan markdown and the store's render; neither writes a byte. Drift at this point is a report, not a rewrite trigger — the store was imported from this very plan moments ago, so drift names something the round-trip does not reproduce, of which a phase-label heading inside `## Tasks` is the benign case. Read `tomlctl tasks render --slug <slug> --stdout` against the authored sections before rewriting anything.
+   `check --plan` exits `1` on any `error`-class finding and reports render drift as a warning; it does not write a byte. Drift at this point is a report, not a rewrite trigger — the store was imported from this very plan moments ago, so drift names something the round-trip does not reproduce, of which a phase-label heading inside `## Tasks` is the benign case. Read `tomlctl tasks render --slug <slug> --stdout` against the authored sections before rewriting anything.
 
 **The store is canonical from this point.** `## Execution Policy`, `## Tasks` and `## Dependency Graph` are rendered from it, and a later hand edit to any of the three is drift that `tomlctl tasks render --check` reports. `/implement`, `/review-plan` and `/plan-update` all read the store rather than re-parsing the markdown.
 

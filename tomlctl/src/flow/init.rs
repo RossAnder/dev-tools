@@ -10,6 +10,11 @@
 //! - active-flow registry is upserted regardless (so a re-init recovers a
 //!   missing entry without forcing the user through `flow active add`).
 //!
+//! `action` answers only what happened to `context.toml`. The envelope's
+//! `created` array is what names the stores a run actually materialised, so a
+//! re-init that mints a legacy flow's absent `tasks.toml` stays visible to a
+//! caller even though `action` is still `"noop"`.
+//!
 //! The registry helpers (`build_entry` / `find_slug_index` / `mutate_active`,
 //! plus `now_rfc3339` and `write_integrity_opts`) are consumed from
 //! `flow::active`, `crate::time` and `crate::cli` rather than reimplemented —
@@ -262,18 +267,12 @@ fn upsert_active_entry(
     Ok((entry_for_return, last_used))
 }
 
-/// The PURE skeleton-building step shared by every execution-record
-/// bootstrap path. Delegates straight to the single-source
-/// `io::seed_doc_for` helper (keyed on the basename) so the skeleton has
-/// exactly one definition crate-wide. No FS I/O — pure data — so the
-/// byte-identity test (`io::tests::seed_doc_for_matches_bootstrap_bytes`)
-/// can exercise this REAL bootstrap code path without touching disk.
-pub(crate) fn execution_record_skeleton(file: &Path) -> Result<TomlValue> {
-    crate::io::seed_doc_for(file)
-}
-
 /// Materialise `seed` at `file` if missing, plus its sidecar. Idempotent: an
 /// existing file keeps its bytes and only gains a missing sidecar.
+///
+/// `Ok(true)` means this call wrote the file; a sidecar-only repair reports
+/// `false`, so the store — not the derived `.sha256` — is what a caller sees
+/// as newly materialised.
 ///
 /// Persisted through `write_toml_with_sidecar`, the same writer the auto-create
 /// path uses, so the two-line on-disk shape stays pinned by
@@ -282,7 +281,7 @@ fn bootstrap_seeded_store(
     file: &Path,
     seed: &TomlValue,
     integrity_args: &WriteIntegrityArgs,
-) -> Result<()> {
+) -> Result<bool> {
     let allow_outside = integrity_args.allow_outside;
     let write_sidecar = !integrity_args.no_write_integrity;
     let already_exists = file.exists();
@@ -302,7 +301,7 @@ fn bootstrap_seeded_store(
                 // `opts.write_sidecar` already honours `--no-write-integrity`,
                 // so the sidecar is suppressed there without a second gate.
                 write_toml_with_sidecar(file, seed, opts)?;
-                return Ok(());
+                return Ok(true);
             }
         }
         // File already present: leave the bytes alone but still ensure the
@@ -314,26 +313,24 @@ fn bootstrap_seeded_store(
         if write_sidecar {
             refresh_sidecar(file)?;
         }
-        Ok(())
+        Ok(false)
     })
 }
 
-/// Bootstrap `execution-record.toml` if missing.
-///
-/// `pub(crate)` so the byte-identity test can name this bootstrap entry point
-/// (the assertion itself runs against `execution_record_skeleton` to stay
-/// FS-free).
+/// Bootstrap `execution-record.toml` if missing; `Ok(true)` when this call
+/// wrote it.
 pub(crate) fn bootstrap_execution_record(
     file: &Path,
     integrity_args: &WriteIntegrityArgs,
-) -> Result<()> {
-    bootstrap_seeded_store(file, &execution_record_skeleton(file)?, integrity_args)
+) -> Result<bool> {
+    bootstrap_seeded_store(file, &crate::io::seed_doc_for(file)?, integrity_args)
 }
 
-/// Bootstrap the per-flow task store `tasks.toml` if missing. Its skeleton
-/// comes from the same basename-keyed `io::seed_doc_for` the auto-create write
-/// path uses, so a store created either way carries identical bytes.
-fn bootstrap_tasks_store(file: &Path, integrity_args: &WriteIntegrityArgs) -> Result<()> {
+/// Bootstrap the per-flow task store `tasks.toml` if missing; `Ok(true)` when
+/// this call wrote it. Its skeleton comes from the same basename-keyed
+/// `io::seed_doc_for` the auto-create write path uses, so a store created
+/// either way carries identical bytes.
+fn bootstrap_tasks_store(file: &Path, integrity_args: &WriteIntegrityArgs) -> Result<bool> {
     bootstrap_seeded_store(file, &crate::io::seed_doc_for(file)?, integrity_args)
 }
 
@@ -390,6 +387,7 @@ pub(crate) fn dispatch(
                 "slug": slug,
                 "seed": seed_json,
                 "execution_record_bootstrap": !execution_record_path.exists(),
+                "tasks_store_bootstrap": !tasks_path.exists(),
                 "active_registration": active_entry_to_json(&new_active),
             },
         });
@@ -433,12 +431,23 @@ pub(crate) fn dispatch(
         "init"
     };
 
+    // Repo-relative, forward-slashed to match the `artifacts` map, in the
+    // order this run materialises them.
+    let mut created: Vec<String> = Vec::new();
+    if action == "init" {
+        created.push(format!(".claude/flows/{slug}/context.toml"));
+    }
+
     // Bootstrap execution-record.toml and tasks.toml (idempotent — the helper
     // checks existence and skips the write when present, but still ensures the
     // sidecar is materialised). The skeleton comes from `io::seed_doc_for`
     // (single source), so the helper computes its own date.
-    bootstrap_execution_record(&execution_record_path, &integrity)?;
-    bootstrap_tasks_store(&tasks_path, &integrity)?;
+    if bootstrap_execution_record(&execution_record_path, &integrity)? {
+        created.push(artifacts.execution_record.clone());
+    }
+    if bootstrap_tasks_store(&tasks_path, &integrity)? {
+        created.push(artifacts.tasks.clone());
+    }
 
     // Always upsert the active-flow registry entry. A re-init covers the
     // case where the registry got out of sync (file-level removal,
@@ -456,6 +465,7 @@ pub(crate) fn dispatch(
         "ok": true,
         "slug": slug,
         "action": action,
+        "created": created,
         "context_path": context_path.display().to_string(),
         "artifacts": artifacts.to_json(),
     });
