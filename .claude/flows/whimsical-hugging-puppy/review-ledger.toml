@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-08
+last_updated = 2026-09-10
 
 [[items]]
 first_flagged = 2026-09-08
@@ -47,7 +47,7 @@ resolution = "partial: widened the numbered-task-heading grammar from three-or-f
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R3"
 file = "tomlctl/tests/tasks_corpus.rs"
@@ -60,6 +60,8 @@ summary = "a hand-inserted non-integer task id such as 13a cannot be imported"
 description = "docs/plans/lumina-story-planning-round-2.md line 90 carries heading 13a, inserted between 13 and 14. The importer requires an integer id, so the whole plan is unimportable and sits on the corpus test's EXPECTED_UNPARSEABLE allowlist. The corpus needs a documented renumber-dont-suffix rule, or 13a stays permanently unimportable. Folded in from backlog B-aa004c21."
 evidence = ["backlog B-aa004c21"]
 dedup_id = "de72c86e39a206f6"
+resolved = 2026-09-10
+resolution = "Documented the integer task-number rule and the renumber-not-suffix requirement in the task-store contract's ref-rule section, and made the corpus allowlist entry self-explaining. The offending plan was left as it stands: a second non-integer id (13b) makes the renumber blast radius larger than the finding assumed, and the plan has landed."
 
 [[items]]
 first_flagged = 2026-09-08
@@ -84,7 +86,7 @@ resolution = "graph_findings now raises an error-class dag/unbuildable finding w
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R5"
 file = "claude/skills/tomlctl/SKILL.md"
@@ -96,11 +98,13 @@ summary = "the capabilities example output still shows version 0.6.0"
 description = "SKILL.md line 86 shows a capabilities envelope pinning 0.6.0 while Cargo.toml and the installed binary are 0.7.0. Task 13's README-to-capabilities parity test does not scan skill files, so nothing catches it. Confirmed live by two lenses: tomlctl capabilities emits version 0.7.0 with all twelve tasks_* features. Folded in from backlog B-54b2d71e."
 evidence = ["backlog B-54b2d71e"]
 dedup_id = "b3d699a1438c0b5f"
+resolved = 2026-09-10
+resolution = "Updated the capabilities example to the current 0.8.0 version."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R6"
 file = "claude/skills/tomlctl/references/flow.md"
@@ -113,11 +117,13 @@ summary = "the verify-integrity support matrix omits the seven tasks read verbs"
 description = "references/flow.md lists eight read subcommands and presents as exhaustive, so an agent reading it concludes tasks list --verify-integrity is rejected when it is accepted. The completeness lens confirmed by --help that show, list, edges, ready, batches, closure, check and render all take --verify-integrity and --strict-read, and that a corrupted sidecar makes tasks check --verify-integrity exit 1. The matrix omission is the whole defect. Folded in from backlog B-3c59ed80."
 evidence = ["backlog B-3c59ed80"]
 dedup_id = "561fe8f53fb2f7a8"
+resolved = 2026-09-10
+resolution = "Added all tasks read verbs to the --verify-integrity support matrix."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R7"
 file = "claude/commands/tdd.md"
@@ -129,6 +135,8 @@ summary = "tdd cycle task_ref is spelled two different ways"
 description = "REFACTOR copies cycle completions up to the parent record with task_ref prefixed tdd-cycle-NNN-original-slug, while RED and GREEN pin tdd-cycle-NNN-short-name. The copy-up lands in a record whose flow does own a store, so a reader checking the parent record against its store finds tdd-cycle refs no row carries. If the spellings ever differ the implement skip-list misses the copied-up entry. Folded in from backlog B-fe2a80ba."
 evidence = ["backlog B-fe2a80ba"]
 dedup_id = "aaa40d40f3e4842f"
+resolved = 2026-09-10
+resolution = "Aligned REFACTOR task_ref copy-up wording with the canonical short-name form."
 
 [[items]]
 first_flagged = 2026-09-08
@@ -151,7 +159,7 @@ resolution = "Reinstated markdown::Section::heading_line and threaded it through
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R9"
 file = "claude/commands/plan-update.md"
@@ -164,6 +172,8 @@ description = "[tasks].total and the context.toml update rule appear in both Ste
 evidence = ["backlog B-432a1b0f"]
 related = ["R62"]
 dedup_id = "d92911c56e82da72"
+resolved = 2026-09-10
+resolution = "Made Step 3.4 the single authoritative location for the plan-update context write procedure."
 
 [[items]]
 first_flagged = 2026-09-08
@@ -247,7 +257,7 @@ resolution = "Added markdown::insert_section_before and anchored Execution Polic
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R14"
 file = "tomlctl/src/tasks/dispatch.rs"
@@ -259,6 +269,8 @@ category = "quality"
 summary = "read_ndjson_source is a verbatim copy of the CLI helper and its justifying comment is false"
 description = "Byte-equivalent to cli/dispatch.rs:64 (same - sentinel, same @-prefix strip, same with_context text) modulo inlined format args. The comment at tasks/dispatch.rs:412-415 justifies the copy with 'cli/mod.rs holds its dispatch helpers inside the CLI layer, so a verb group outside it carries its own' -- but cli/mod.rs:33 already re-exports read_integrity_opts / write_integrity_opts / run from dispatch, and tasks/store.rs:15-17 imports two of them. One added pub(crate) use shares it. A self-justifying comment that a two-line grep refutes is worse than no comment: it deters the next reader from doing the merge."
 dedup_id = "42ea78436d2c3347"
+resolved = 2026-09-10
+resolution = "Reused the CLI NDJSON source helper from tasks dispatch instead of maintaining a duplicate."
 
 [[items]]
 first_flagged = 2026-09-08
@@ -323,7 +335,7 @@ resolution = "One resolve_recorded_plan_path / resolve_store_plan_path pair in i
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R18"
 file = "tomlctl/src/tasks/batches.rs"
@@ -334,11 +346,13 @@ category = "quality"
 summary = "the cycle-refusal preamble is triplicated verbatim across three read verbs"
 description = "batches.rs:19-30, ready.rs:19-30 and the refuse helper at batches.rs:36, closure.rs:104 and ready.rs:57 are identical down to the doc comment 'A graph the store cannot form is a tasks check finding, not a tool fault.' Only the verb noun in the message differs ('the layering' / 'the frontier'). One fn build_or_refuse(store: &Store, subject: &str) -> Result<Graph<'_>> collapses all six sites and guarantees the three verbs keep agreeing about what a cycle means."
 dedup_id = "b1d70a4c1e8e0e21"
+resolved = 2026-09-10
+resolution = "Hoisted the cycle-refusal preamble and the refuse helper into graph::build_or_refuse and graph::refuse. batches and ready share the build; closure shares refuse only, because its refusal legitimately rides on Graph::build and a preamble would change its emitted message. Every emitted string is byte-preserved."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R19"
 file = "tomlctl/src/flow/doctor.rs"
@@ -350,11 +364,13 @@ category = "quality"
 summary = "dead fallback arm re-hardcodes the canonical tasks.toml path a fourth time"
 description = """pairs is CanonicalArtifacts::to_pairs(), a [(&str, &str); 5] whose 'tasks' entry is a struct field, not an option (verified at artifacts.rs:66-74) -- so the None => format!(".claude/flows/{slug}/tasks.toml") arm is unreachable, and it plants a fourth literal copy of a path that artifacts.rs:28 already owns (with init.rs::tasks_path_for and store.rs::resolve_store_path as the others). The whole match reduces to 'let want_tasks = &canon.tasks;', which also removes the 'if key == "tasks" { continue; }' skip's dependence on the array's shape."""
 dedup_id = "f957c30fe1f593af"
+resolved = 2026-09-10
+resolution = "Used CanonicalArtifacts.tasks directly and removed the unreachable fallback path construction."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R20"
 file = "tomlctl/src/tasks/check.rs"
@@ -366,11 +382,13 @@ category = "quality"
 summary = "file_list exists twice with divergent empty-case behaviour"
 description = """check.rs:296 and render.rs:276 both format a &[String] of paths as backtick-quoted, comma-joined text for the same audience, but render.rs returns the em-dash empty marker and check.rs returns "" -- so an empty list renders as a plan's em-dash in one surface and as a truncated sentence ('tasks 2 and 3 both claim  with no dependency path either way') in the other. One shared helper removes the divergence; the same argument applies to the three id-formatters check::task_list, import_plan::id_list and render::join_ids."""
 dedup_id = "68f9e01f13e898fe"
+resolved = 2026-09-10
+resolution = "Converged the five near-duplicate list formatters on three shared helpers in tasks/finding.rs, each taking its empty marker as an explicit parameter, so the plan surface keeps the em-dash while the diagnostic surfaces read correctly mid-sentence. Non-empty output is byte-identical everywhere."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R21"
 file = "tomlctl/src/flow/doctor.rs"
@@ -382,6 +400,8 @@ category = "quality"
 summary = "orphaned section marker now labels unrelated code"
 description = "'// 4. .gitignore warning -- surfaced as a warning, not a check failure.' used to sit directly above 'let mut warnings: Vec<JsonValue> = Vec::new();'; that declaration moved to line 693 for the new check_one_flow parameter, leaving the marker immediately above the unrelated '--dry-run has no effect without --fix' block. In a function navigated by its numbered step comments, a marker pointing at the wrong step is worse than none -- move it down to the detect_gitignored_claude call."
 dedup_id = "fef21945e73b58c6"
+resolved = 2026-09-10
+resolution = "Moved the doctor step-4 marker directly above the .gitignore warning check."
 
 [[items]]
 first_flagged = 2026-09-08
@@ -560,7 +580,7 @@ resolution = "Added tasks remove <ID> [--force], which hard-deletes the row. It 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R31"
 file = "tomlctl/src/tasks/render.rs"
@@ -572,6 +592,8 @@ category = "architecture"
 summary = "the diagnostics vocabulary lives in render.rs, inverting the check/render layering"
 description = "Finding -- the type every finding class in the store is expressed as -- is declared in render.rs, the module that owns one warning class (verified: it is the sole declaration site). check.rs:19, import_plan.rs:25 and tasks/dispatch.rs:289 all import it from there, so the module documenting the finding-class table (check.rs:1-13) cannot own the type that table describes, and render is simultaneously a leaf verb and a foundation module for the diagnostics layer. Cheap now (move Finding plus the ERROR/WARNING constants, currently redeclared in both check.rs:22 and import_plan.rs:39, into check.rs or a finding.rs); harder as classes accrete."
 dedup_id = "55abd00df0aa728e"
+resolved = 2026-09-10
+resolution = "Moved Finding and the severity vocabulary out of render.rs into a new tasks/finding.rs, registered in tasks/mod.rs, and repointed check.rs, import_plan.rs and tasks/dispatch.rs. A new leaf module rather than check.rs, so no verb becomes a foundation for the diagnostics layer. Pure move: no finding's JSON shape changed."
 
 [[items]]
 first_flagged = 2026-09-08
@@ -595,7 +617,7 @@ resolution = "The single resolver refuses any recorded plan_path that does not e
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R33"
 file = "tomlctl/src/tasks/dispatch.rs"
@@ -608,6 +630,8 @@ summary = "a Windows drive-relative plan_path passes containment while discardin
 description = """PathBuf::from("C:pre.md") is not is_absolute() on Windows and holds no ParentDir, so both lexical guards pass; root.join() then replaces the root entirely because the candidate carries a Prefix component. under_root still returns true, because canonicalising the missing leaf walks up to the bare drive C:, which canonicalises to the drive's current directory. Verified: with plan_path = "C:pre.md" the guard accepted it and the error was 'reading plan `C:pre.md`' (unanchored) versus a fully-anchored path for the plain relative form. The escape is narrow today (a same-drive per-drive cwd usually still sits under the root, and D:.. is refused), but the check certifies a path it never resolved, and under_root returning true for a bare drive root is the general hazard. The same shape exists in the import_plan.rs and render_progress_log.rs copies. Fix: reject any candidate whose components are not all Component::Normal."""
 related = ["R1"]
 dedup_id = "0e9acce5aaef31ed"
+resolved = 2026-09-10
+resolution = "Replaced the is_absolute plus ParentDir lexical pair with an all-components-Normal scan (CurDir tolerated, so a dot-prefixed relative path still passes) and consolidated it as io::recorded_under_root. All three containment guards route through it while each keeps its own failure handling. Regression test verified against the pre-fix predicate as a falsifier."
 
 [[items]]
 first_flagged = 2026-09-08
@@ -726,7 +750,7 @@ resolution = "--reconcile-record resolves the record from the flow context's [ar
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R40"
 file = "tomlctl/src/cli/dispatch/tests/lint.rs"
@@ -738,11 +762,13 @@ category = "completeness"
 summary = "command_lint covers only fenced invocations, so the tasks flag tables -- the actual doc surface -- are unlinted"
 description = "The scan set does include claude/skills/tomlctl/references/tasks.md and the four carriers, but command_lint_report walks only bash fences and lint_logical only lines beginning with tomlctl. tasks.md documents the group as twelve markdown tables with one or two example fences each, so a table row naming a flag that does not exist is invisible to the gate, and the CLI-to-doc direction (a flag that exists and is undocumented) is not checked at all -- capabilities.commands already emits the full per-subcommand flag schema that would make that assertion mechanical. The completeness lens diffed all 12 verbs' --help against the tables by hand and found no current drift, so this is a coverage gap, not a live defect."
 dedup_id = "9fab8b6e95c48d92"
+resolved = 2026-09-10
+resolution = "partial: added a markdown flag-table lint checking that every documented flag exists on its verb, attributing each table to the nearest backticked-verb heading, fence-aware, with a vacuity guard so a parser that stops matching fails loudly rather than passing empty; 89 cells across two reference docs, zero failures / pending: the reverse direction, a CLI flag no table documents, which is not assertable while the shared read and write bundles and the global error-format flag are documented once in prose rather than per verb -- tracked as R78."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R41"
 file = "tomlctl/README.md"
@@ -754,11 +780,13 @@ category = "completeness"
 summary = "three of the four new write verbs carry no --dry-run while README claims the feature covers all 20 write subcommands"
 description = "tasks add, add-many and update are mutating verbs (confirmed by --help: they carry the write bundle and --no-create) and have no --dry-run; only tasks import-plan was added to the enumerated 20. The store's own doc leans on dry-run as the safety idiom -- the section-10 ref-set diff gate is import-plan --dry-run -- yet add-many, the all-or-nothing batch verb where a preview is most valuable, cannot preview. Either the three verbs gain --dry-run or the README row is rephrased so the enumeration stops reading as exhaustive over write verbs."
 dedup_id = "b116a4004d9d37aa"
+resolved = 2026-09-10
+resolution = "Reworded the README dry-run capability to cover only write verbs that expose preview support."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R42"
 file = "tomlctl/src/flow/init.rs"
@@ -770,11 +798,13 @@ category = "completeness"
 summary = "flow init reports action: noop on a run that materially creates tasks.toml"
 description = """action is derived from whether context.toml existed. Verified on a legacy flow carrying only context.toml: flow init returned {"action":"noop",..} while creating tasks.toml, tasks.toml.sha256, execution-record.toml and its sidecar. Since flow init is the contract's only sanctioned seeding route for the store (ensure-artifact --bootstrap --kind tasks is a deliberate no-op, section 6), a carrier or human gating on action == "created" cannot tell that a store was just minted. Adding the bootstrapped paths to the envelope, or a created[] array, would settle it."""
 dedup_id = "b08ded70cae93c62"
+resolved = 2026-09-10
+resolution = "Added a created array to the flow init envelope naming the repo-relative stores a run actually materialised, threaded up from the bootstrap helpers. action kept its existing values, sidecars deliberately excluded (refreshing a sidecar beside a store the run did not write would make created non-empty on a materially empty run), and both doc surfaces updated."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R43"
 file = "claude/skills/flow-contract-task-store/SKILL.md"
@@ -786,6 +816,8 @@ category = "package-quality"
 summary = "the orchestrator-only write rule has no enforcement point below the carrier"
 description = "implement.md:88 states 'A sub-agent gets the read verbs only', but the per-prompt MUST-include list immediately after it does not require the prohibition to be carried into the agent prompt, and no file under claude/agents/ mentions tomlctl tasks or the store at all (grep: only flow-bootstrap.md matches). implement-lite and implement-deep hold Bash, so nothing stops a delegate running tasks update. The shared forbidden-working-tree-ops block, which is parity-verified across both implementers and already enumerates orchestrator-only operations, would be the natural home."
 dedup_id = "b4224a4c66eb641b"
+resolved = 2026-09-10
+resolution = "Added the task-store write prohibition and the delegate-allowed read verbs to the forbidden-working-tree-ops shared block in both implement agents, so the rule reaches every delegate by construction and the parity verifier keeps the two copies honest. The contract skill already stated the rule; the gap was below the carrier."
 
 [[items]]
 first_flagged = 2026-09-08
@@ -973,7 +1005,7 @@ verified_note = "Audited under review-apply on 2026-09-08 and confirmed no longe
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R54"
 file = "tomlctl/tests/tasks_import.rs"
@@ -985,11 +1017,13 @@ category = "testability"
 summary = "the reconcile test counts status = done occurrences instead of naming the rows"
 description = '''assert_eq!(text.matches("status = \"done\"").count(), 2) over the whole store text, with the intent ('exactly tasks 1 and 4') stated only in the message string. An off-by-one in the ref-to-row join that marked tasks 2 and 3 done instead would satisfy this assertion exactly. Parse the store (toml::from_str, as tasks_write.rs does) and assert the id set.'''
 dedup_id = "168befeb744d7bb9"
+resolved = 2026-09-10
+resolution = "Changed reconcile coverage assertion to parse and assert the completed task ID set."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R55"
 file = "tomlctl/tests/tasks_import.rs"
@@ -1002,11 +1036,13 @@ summary = "the coupling test hand-edits store TOML in a shape the writer may not
 description = '''The precondition is built with a text.replace over the serialiser's exact array wrapping and the outcome checked with after.contains("needs = [2]\ncoupling = [1]") -- both pinned to formatting rather than to values. Any change to array formatting fires the assert_ne! guard with 'the golden's task-3 edge shape moved', which names the symptom but not the cause. tasks add --coupling produces this state through the production path; using it removes the divergence and the brittleness together.'''
 related = ["R16"]
 dedup_id = "2f892bbb1ab2d174"
+resolved = 2026-09-10
+resolution = "Changed the coupling re-import test to create the edge through tasks update and assert parsed values instead of serialized formatting."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R56"
 file = "tomlctl/tests/tasks_write.rs"
@@ -1018,11 +1054,13 @@ category = "testability"
 summary = "the empty-target refusal sweeps omit five of the twelve verbs"
 description = "The two 'every .. verb' sweeps (tasks_write.rs:384, tasks_graph.rs:445) cover add, add-many and update, and ready, batches, closure and check. show, list, edges, render and import-plan are not in either, yet each resolves its own target and must produce kind=validation on exit 1 rather than clap usage prose on exit 2 -- the distinction a carrier branches on. The test names claim a completeness they do not have."
 dedup_id = "4e66088fef4a1083"
+resolved = 2026-09-10
+resolution = "Extended the write sweep to import-plan and render and widened its module header to claim exactly that. show, list and edges turned out to be covered already by a read sweep the finding did not account for, so the three sweeps now partition the twelve verbs with each name true."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R57"
 file = "tomlctl/tests/common/mod.rs"
@@ -1038,6 +1076,8 @@ related = [
     "R49",
 ]
 dedup_id = "3e19fb7e64aa8560"
+resolved = 2026-09-10
+resolution = "seed_tasks now stages the sibling context.toml that flow init writes, making the slug-resolved plan-path branch reachable for all three consumers. Modified in place rather than added as a variant, after verifying verb by verb that no existing consumer observes the difference."
 
 [[items]]
 first_flagged = 2026-09-08
@@ -1115,7 +1155,7 @@ resolution = "Named the single document the ref-set diff gate actually imports, 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R62"
 file = "claude/commands/plan-update.md"
@@ -1128,11 +1168,13 @@ summary = "plan-update's task-store section says five ops leave the store alone 
 description = "'[tasks].total is the store's row count on every context.toml write (Step 1). Beyond that, three ops touch it.. reconcile, complete, deviation, defer and snapshot leave it alone.' Step 1 and Step 3.4 both direct every state-changing op to write [tasks].total from tomlctl tasks list --slug <slug> --count, so those five ops do read the store. An agent reading 'leave it alone' as authoritative for reconcile falls back to the plan-document item count that the same commit removed -- a silently wrong [tasks].total. Rephrase to 'no further store call beyond the row count'."
 related = ["R9"]
 dedup_id = "c418859cc9ea67f0"
+resolved = 2026-09-10
+resolution = "Clarified that listed plan-update operations still perform the standard task-store row-count refresh."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R63"
 file = "claude/skills/flow-contract-task-store/SKILL.md"
@@ -1144,11 +1186,13 @@ category = "package-quality"
 summary = "the store contract's read/write flag rule contradicts render's actual flag surface"
 description = "Section 5 opens 'Read verbs take --verify-integrity; write verbs take the write-integrity bundle', and section 11 lists render among the orchestrator write verbs. tomlctl tasks render --help exposes only --verify-integrity and --strict-read -- no --allow-outside, --no-write-integrity, --strict-integrity or --no-create (verified; the CLI help itself explains the exception). references/tasks.md:39-41 documents it explicitly; the contract skill does not, so an agent working from the contract alone hits a clap usage error on render --no-write-integrity. One clause naming render as the derived-write exception closes it."
 dedup_id = "2e91f3a4e8db9586"
+resolved = 2026-09-10
+resolution = "Documented tasks render as the derived-write exception using read-integrity flags."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R64"
 file = "claude/skills/flow-contract-task-store/SKILL.md"
@@ -1161,11 +1205,13 @@ summary = "the render/drift class row says --plan only, contradicting the exit p
 description = "The class table gives render/drift as 'Under --plan only', but the exit-policy paragraph in the same section says 'tasks render --check exits 1 on any drift, even though render/drift is a warning class', and references/tasks.md:447 lists both check --plan and render --check as raisers. An agent reading the table concludes render --check cannot report the class it exits 1 on. Change the cell to name both modes."
 related = ["R65"]
 dedup_id = "40009c9111f327d1"
+resolved = 2026-09-10
+resolution = "Corrected the render/drift finding table to identify both report modes and render --check's exit behavior."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R65"
 file = "claude/commands/plan-new.md"
@@ -1181,11 +1227,13 @@ related = [
     "R64",
 ]
 dedup_id = "ee0f8a285a8109c2"
+resolved = 2026-09-10
+resolution = "Removed the redundant render --check invocation from plan-new bootstrap and documented check --plan drift as a warning report."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R66"
 file = "scripts/templates/flow-context.md"
@@ -1197,11 +1245,13 @@ category = "package-quality"
 summary = "the artifacts.tasks paragraph is triplicated across three files with no parity guard, and already differs"
 description = "The same contract paragraph was added to scripts/templates/flow-context.md, claude/skills/flow-contract-flow-context/SKILL.md and claude/agents/flow-bootstrap.md:31. The first two are byte-identical; the third already diverges ('step 3.5 tests the file on disk' vs 'the bootstrap agent's existence gate tests the file on disk'). scripts/shared-blocks.toml names no flow-context block -- the manifest comment records that every command-carrying flow-context block was emptied and deleted in the 2026-05-20 wave -- so verify-shared-blocks.sh is vacuous here (it ran clean) and the next edit to one copy drifts the other two silently. Either wrap the paragraph in a SHARED-BLOCK:flow-context-artifacts marker and register it, or make one file authoritative and have the others link."
 dedup_id = "5ad13d79fa989c96"
+resolved = 2026-09-10
+resolution = "Made the flow-context contract skill the single authority: flow-bootstrap.md now points at it instead of restating the doctor semantics, and the template's retirement note names the authority and marks its own restatements as rewrite-time snapshots. The two copies the finding called byte-identical had already drifted in two places, so registering a parity block would have frozen the divergence rather than removing it."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R67"
 file = "tomlctl/src/cli/types.rs"
@@ -1214,11 +1264,13 @@ summary = "the ensure-artifact --kind doc string enumerates four kinds while cla
 description = "The --kind doc string enumerates '(context, execution-record, review-ledger, optimise-findings, plan-review-findings)' while clap's [possible values:] on the same flag now includes tasks. The prose half was not updated when the fifth kind landed, so tomlctl flow ensure-artifact --help contradicts itself in one screen. Delete the prose enumeration and let the possible-values list stand."
 related = ["R28"]
 dedup_id = "23f3409b7f56d446"
+resolved = 2026-09-10
+resolution = "Removed the stale ensure-artifact kind enumeration from the Rust help comment."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R68"
 file = "claude/skills/tomlctl/SKILL.md"
@@ -1230,11 +1282,13 @@ summary = "the capabilities prose and its own example disagree about the documen
 description = "The prose describes the capabilities document as {version, features, subcommands} while the example line immediately below shows a commands key. The binary emits all four keys, so each half describes a partial shape and neither is right on its own. Fix alongside R5, which is the stale version field in the same example."
 related = ["R5"]
 dedup_id = "920f33d08c0acbd6"
+resolved = 2026-09-10
+resolution = "Aligned capabilities documentation with the emitted version, features, subcommands, and commands keys."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R69"
 file = "tomlctl/src/flow/resolve.rs"
@@ -1247,11 +1301,13 @@ summary = "artifacts.tasks is plucked from context.toml into the bootstrap envel
 description = "read_or_compute_artifacts copies the recorded artifacts.tasks value verbatim into the envelope, so a carrier that feeds envelope.artifacts.tasks to --file takes its store path from a repo-supplied file. Only flow doctor's canonical-value check catches drift, and that check is advisory when the key is absent (R28). The store's own --file path is still held under .claude/ by the io write guard unless --allow-outside, so this is a defence-in-depth gap rather than a live escape -- but the envelope is the one place a path crosses from file-controlled data into a carrier's command line unchecked."
 related = ["R28"]
 dedup_id = "44434c3f69a3f1b0"
+resolved = 2026-09-10
+resolution = "Contained all five recorded [artifacts] values in flow resolve, not only tasks: an escaping value is dropped for the slug-canonical path and reported on the envelope's warnings array. Warning-plus-fallback rather than a hard refusal, because the canonical substitute is safe by construction and a validation error at resolve would make one bad key un-bootstrappable for every carrier. Measured 161 recorded values across the repo, none outside .claude/flows/, so no existing flow changes behaviour."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R70"
 file = "tomlctl/src/tasks/check.rs"
@@ -1262,11 +1318,13 @@ category = "completeness"
 summary = "checkpoint/orphan-task and dag/duplicate-number report a deduplicated id list, so the second offending row is unnameable"
 description = "Both classes emit a sorted, deduplicated id list, so two rows both claiming task number 1 surface as ids:[1] -- the finding names the number but not the second row that carries it, and there is no other handle on it (ref is not in the finding). A user cannot act on the finding without grepping the store by hand. Report the row refs alongside the ids, or do not deduplicate for duplicate-number."
 dedup_id = "5d4789b29ed66697"
+resolved = 2026-09-10
+resolution = "dag/duplicate-number and plan/orphan-row now name the offending rows' refs in detail while ids keeps its deduplicated contract. ref rather than a row index, because ref is the argument the write verbs take and a positional index shifts the moment a row is added. Both finding-class tables updated."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R71"
 file = "tomlctl/src/cli/types.rs"
@@ -1278,11 +1336,13 @@ category = "completeness"
 summary = "two read verbs reject a bad enum value as clap usage prose while the sibling write verb returns a machine-readable envelope"
 description = "tasks show --with bogus and tasks edges --kind bogus fail as clap ValueEnum errors (exit 2, usage prose on stderr), while tasks add --effort deliberately validates post-parse to give a kind=validation envelope. The rationale for the split is documented for --effort but the two read verbs are not reachable under --error-format json, so a carrier branching on the error taxonomy gets nothing for them. Either document the split or move the two read verbs onto the post-parse path."
 dedup_id = "9534b1da2e1e6038"
+resolved = 2026-09-10
+resolution = "Documented the parse-time versus post-parse split at both read-verb flag sites and their reference-doc rows, stating the exit code and error kind each produces. Moving the two verbs onto the post-parse path was rejected on evidence: it would degrade tomlctl capabilities from a typed values array to a bare string, split --kind from its flow ensure-artifact sibling, and the two cited precedents rest on a store fail-soft rule and store-schema ownership that neither read verb has."
 
 [[items]]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 id = "R72"
 file = "tomlctl/src/flow/init.rs"
@@ -1294,6 +1354,8 @@ category = "quality"
 summary = "execution_record_skeleton is a bare alias for io::seed_doc_for kept alive only so a test can name it"
 description = "execution_record_skeleton is now a pub(crate) alias for crate::io::seed_doc_for, while its sibling bootstrap_tasks_store calls seed_doc_for directly -- two spellings of one call in one module, the alias surviving only so a byte-identity test can name it. Point the test at seed_doc_for and delete the alias."
 dedup_id = "affea43d7aab314c"
+resolved = 2026-09-10
+resolution = "Removed the execution-record skeleton alias and made the bootstrap test use the shared seed_doc_for helper directly."
 
 [[items]]
 id = "R73"
@@ -1308,9 +1370,11 @@ description = "The heading grammar was widened to accept three through six hashe
 related = ["R2"]
 first_flagged = 2026-09-08
 rounds = 1
-status = "open"
+status = "fixed"
 flow = "whimsical-hugging-puppy"
 dedup_id = "3cb0aefaaa8c52b0"
+resolved = 2026-09-10
+resolution = "parse_tasks_at now returns findings alongside tasks and raises a warning-class plan/heading-too-deep for a numbered heading of seven or more hashes; Import::apply folds them into the import's array. Warning rather than error so one hash too many cannot block every other task in the plan. Both finding-class tables carry the new row."
 
 [[items]]
 id = "R74"
@@ -1330,6 +1394,99 @@ flow = "whimsical-hugging-puppy"
 dedup_id = "e43d2c64654ac297"
 resolved = 2026-09-08
 resolution = "flow doctor gained a two-tier advisory tasks-counters check: tier one flags completed greater than total from the counters alone, tier two flags a record task_ref naming no store row and runs only against a populated store, so a seeded-but-unimported store does not report every completion as unmatched. Warning rather than failure, following the plan's own precedent that a hard fail here would break flow doctor repo-wide, and because doctor creates no artifacts so a failure would be unactionable. Deliberately no --fix: total is the store's row count and doctor never creates a store, while a store-free recompute of completed could only write the raw derived count, which is exactly the number the carrier's gate exists to correct - it would launder the defect into context.toml permanently. Scope note: this flow's own counters are equal, so its residual total-versus-plan-headings drift is plan-versus-context drift rather than a join violation, and is not closed by this fix."
+
+[[items]]
+id = "R75"
+flow = "whimsical-hugging-puppy"
+first_flagged = 2026-09-10
+rounds = 1
+status = "fixed"
+file = "tomlctl/src/cli/mod.rs"
+line = 31
+symbol = "read_ndjson_source"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "the R14 de-duplication added the one re-export the boundary comment three lines above it forbids"
+description = "cli/mod.rs:26-30 reads 'Only clap-derived TYPES cross this boundary outward, plus run (the entrypoint) and the two integrity-args translators that exist solely to read those types. Every other function in dispatch is private to the CLI layer: a verb group that needs one needs the helper moved down into infrastructure (crate::io) or onto the clap type it converts -- never a new re-export here.' R14's fix added read_ndjson_source to exactly that pub(crate) use line, so the module's stated policy and its code now disagree at three lines' distance -- the same self-refuting-comment shape R14 itself was raised for. The comment names the sanctioned remedy: move the helper into crate::io next to read_json_arg, which is where its stdin path already delegates, and have both cli/dispatch.rs and tasks/dispatch.rs call it there. Two stale doc lines ride along: the module header still lists 'the NDJSON source resolver' among cli/dispatch's concerns, and the helper's own doc says 'Shared by Cmd::ArrayAppend and ItemsOp::AddMany', which no longer names TasksOp::AddMany."
+evidence = [
+    "cli/mod.rs:26-31",
+    "cli/dispatch.rs:59-74",
+    "tasks/dispatch.rs:27",
+]
+related = ["R14"]
+dedup_id = "31c75311b522b56e"
+resolved = 2026-09-10
+resolution = "Moved read_ndjson_source out of the CLI layer into crate::io beside read_json_arg, whose stdin branch it already delegates to, and dropped it from the re-export line, so cli/mod.rs's boundary comment is true again. Body moved verbatim; two stale module-header claims about the NDJSON resolver fixed alongside, and the helper's stale caller enumeration dropped rather than re-listed."
+
+[[items]]
+id = "R76"
+flow = "whimsical-hugging-puppy"
+first_flagged = 2026-09-10
+rounds = 1
+status = "fixed"
+file = "claude/commands/plan-update.md"
+line = 72
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "the R9 de-duplication points Step 1 at a Step 3.4 the document does not contain"
+description = "R9's fix replaced Step 1's inlined context.toml write rule with 'update the resolved flow's context.toml per the write procedure in Step 3.4'. plan-update.md has no Step 3.4 heading: Step 3 is '## Step 3: Apply Updates' followed by a five-item numbered list whose item 4 is the context.toml write. Every other dotted step reference in the repo names a real heading -- Step 0.5 in plan-new.md and plan-update.md, Step 1.5 and Step 2.5 in optimise.md, Step 4.5 and Step 5.5 in review-apply.md and optimise-apply.md -- so an agent following the pointer searches for a heading, finds none, and is left without the procedure the sentence deferred to. The dedup itself is sound and loses no content: Step 3 item 4 already covers updated, status, [tasks].total, the completed derivation, created preservation, key order and [artifacts]. Only the label needs to name what it points at."
+evidence = [
+    "plan-update.md:72",
+    "plan-update.md:180-186",
+]
+related = [
+    "R9",
+    "R62",
+]
+dedup_id = "c4ab821540e4c5bd"
+resolved = 2026-09-10
+resolution = "Retargeted the Step 1 pointer from the non-existent Step 3.4 heading to Step 3, item 4 -- the numbered context.toml write item that does exist. The de-duplication itself was preserved: no write rule was re-inlined."
+
+[[items]]
+id = "R77"
+flow = "whimsical-hugging-puppy"
+first_flagged = 2026-09-10
+rounds = 1
+status = "fixed"
+file = "tomlctl/src/io.rs"
+line = 2547
+symbol = "seed_doc_for_matches_bootstrap_bytes"
+severity = "warning"
+effort = "trivial"
+category = "testability"
+summary = "the R72 fix repointed the byte-identity test at seed_doc_for but left the comment claiming a bootstrap guarantee the test no longer provides"
+description = "R72 deleted flow::init::execution_record_skeleton and repointed the test at seed_doc_for directly, which is the sanctioned fix. The doc comment above it was not repointed: it still asserts 'This is the single-skeleton-source guarantee: if a future bootstrap path stopped sourcing its skeleton from seed_doc_for, the two renderings would diverge and this test would fail loudly', and still describes 'The skeleton helper is FS-free (it delegates straight to seed_doc_for)' -- a helper that no longer exists. The test now renders seed_doc_for and compares it to a literal derived in the same function, so it names no bootstrap code path at all and cannot detect a bootstrap that stopped routing through seed_doc_for. The paragraph above it makes the point against itself: 'A hand-retyped expected literal would not fail when a bootstrap path stopped routing through seed_doc_for.' Rewrite the comment to state what the test actually pins -- the recognised-basename seed's serialised shape, clock-independently -- and either drop the guarantee claim or restore it by asserting against bootstrap_execution_record's written bytes. flow/init.rs:312-313 carries the same fix's other leftover: bootstrap_execution_record's doc comment now ends on a bare '///' line where the deleted pub(crate) rationale used to sit."
+evidence = [
+    "io.rs:2547-2561",
+    "io.rs:2563-2570",
+    "flow/init.rs:311-313",
+]
+related = [
+    "R72",
+    "R14",
+]
+dedup_id = "d5eeddcc94ebe505"
+resolved = 2026-09-10
+resolution = "Rewrote the seed byte-identity test's doc comment to state what the test actually pins -- the historical two-key serialisation, clock-independent because the expected date is read back out of the seed's own value -- and dropped the single-skeleton-source guarantee it no longer provides. Restoring the guarantee was rejected as it would need disk I/O in an FS-free unit test. Removed the stray empty doc line above bootstrap_execution_record."
+
+[[items]]
+id = "R78"
+flow = "whimsical-hugging-puppy"
+first_flagged = 2026-09-10
+rounds = 1
+status = "open"
+file = "tomlctl/src/cli/dispatch/tests/lint.rs"
+line = 0
+symbol = "flag_table_report"
+severity = "suggestion"
+effort = "medium"
+category = "completeness"
+summary = "pending parts of R40: nothing asserts a CLI flag is documented anywhere"
+description = "R40 added the documented-flag-must-exist direction of the doc-vs-CLI lint. The reverse -- a flag the CLI accepts that no reference table names -- stays unchecked, so a flag can ship entirely undocumented and nothing notices. tomlctl capabilities already emits the per-subcommand flag schema that would make the assertion mechanical, but the shared read and write bundles and the global --error-format are documented once in prose rather than per verb, so a naive 'every CLI flag appears in some table' assertion fires on roughly every verb today. Closing it needs an exemption concept for the prose-documented bundles first, which is a design call rather than a lint addition. Related: the new table lint reads only tables headed 'Flag', so the reference docs that document their flag surface as prose or differently-headed tables stay unlinted in both directions."
+related = ["R40"]
+dedup_id = "6952044e6c5f981b"
 
 [[vet_events]]
 timestamp = "2026-09-08T00:00:00Z"

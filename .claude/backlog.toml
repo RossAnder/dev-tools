@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-09
+last_updated = 2026-09-10
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -2740,3 +2740,300 @@ seen_count = 1
 dedup_id = "cf9561993ab56913"
 origin = "implement"
 context = "SRC_RE matches no shell extension, so doc-diff-gate.sh never inspects a .sh file. The three verifier scripts and .githooks/pre-commit are therefore outside the comment discipline they exist to enforce, and doc-diff-gate.sh itself carries some of the heaviest comment prose in the repo. The agent that found it notes G1 twenty-line cap would fire on several blocks in that file. Adding shell to SRC_RE would put the gate under its own rules, which is either the point or a large first run."
+
+[[backlog]]
+id = "B-8282b67d"
+kind = "debt"
+summary = "the pre-write cycle refusal in add and update duplicates the shared read-verb helper with would-contain wording"
+area = "tomlctl/src/tasks"
+tags = [
+    "dedup",
+    "graph",
+]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "8282b67ddced4769"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The read verbs now share graph::build_or_refuse. add.rs and update.rs keep their own copies because they validate a CANDIDATE row set before writing and say 'would contain a cycle' rather than 'contains'. Unifying needs the verb tense parameterised as well as the subject noun, which is a design call, not a mechanical hoist. Start from graph::build_or_refuse and read both call sites before deciding whether one helper can carry both tenses."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = [
+    "tomlctl/src/tasks/add.rs:128",
+    "tomlctl/src/tasks/update.rs:398",
+    "tomlctl/src/tasks/graph.rs:88",
+]
+related = ["B-6ff6dd3e"]
+
+[[backlog]]
+id = "B-1c66bf40"
+kind = "debt"
+summary = "read_ndjson_source hand-rolls the at-prefix strip instead of reusing the adjacent at-file helpers"
+area = "tomlctl/src/io.rs"
+tags = ["dedup"]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "1c66bf40280a6e31"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The helper moved into io.rs beside read_json_arg, which made the duplication visible: read_json_arg routes its at-prefixed path through the at_file_path / read_at_file pair while read_ndjson_source strips the prefix and reads the file itself. Consolidating changes the error context string from 'reading NDJSON file' to whatever the shared helper says, so check for tests asserting on that text before treating it as a pure lift."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = ["tomlctl/src/io.rs:325"]
+related = ["B-4b893074"]
+
+[[backlog]]
+id = "B-d03997d9"
+kind = "annoyance"
+summary = "the user-level agent copies fall behind the repo silently after a repo-side agent edit"
+area = "claude/agents"
+tags = [
+    "harness",
+    "sync",
+]
+status = "resolved"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "d03997d9a750d8fa"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "Agent definitions are read at spawn time from the user-level copy, not from the repo, so an edit to claude/agents/*.md does not reach any flow until the file is copied across and the session restarted. Nothing in the repo verifies the two are in sync and no check reports the drift. After editing an agent definition, copy it to the user-level agents directory and restart the session; the same trap applies to the plugin cache snapshot."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = [
+    "claude/agents/implement-deep.md",
+    "claude/agents/implement-lite.md",
+]
+resolved = 2026-09-10
+resolution = "Wrong for this machine as written: the user-level agents, skills and commands are symlinks and junctions into the repo, so a repo-side agent edit is live immediately. The real instance was narrower and is fixed - two command carriers and one skill existed as COPIES rather than links and two of the copies had gone stale, and two entries the repo had gained were absent at the user level entirely. All are now linked, so the whole tree verifies byte-identical. The residual risk the item was reaching for is the lumina plugin cache, which is a genuine snapshot copy and is tracked separately."
+
+[[backlog]]
+id = "B-f6fdcef6"
+kind = "annoyance"
+summary = "flow envelopes emit a Windows extended-length context_path a consumer cannot match against the repo-relative artifacts"
+area = "tomlctl/src/flow"
+tags = [
+    "windows",
+    "envelope",
+]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "f6fdcef6b7c72ed8"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "Observed on flow init: context_path comes back as a verbatim extended-length path while every artifacts value is forward-slashed and repo-relative, so a consumer comparing or joining the two gets a form it cannot match. Likely shared with every envelope that emits an absolute path, so it wants one canonicalisation decision rather than a local patch. Relativise against the repo root at the point of comparison as a workaround."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = ["tomlctl/src/flow/init.rs:466"]
+related = ["B-d87efb6a"]
+
+[[backlog]]
+id = "B-588dd37b"
+kind = "bug"
+summary = "duplicate_findings cannot separate two rows sharing both a task number and a ref"
+area = "tomlctl/src/tasks/check.rs"
+tags = ["diagnostics"]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "588dd37b5c620b1f"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The class now names the offending rows' refs in detail, which resolves the ordinary case where two rows share a number. Two rows sharing BOTH the number and the ref still collapse: the refs list names the same key twice and no verb argument separates them. The store has no other guard against that state, so it can only be reached by a hand edit or a merge artefact. Reading the raw items array is the only recovery today."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = ["tomlctl/src/tasks/check.rs:141"]
+related = ["B-134c1b36"]
+
+[[backlog]]
+id = "B-545a384c"
+kind = "debt"
+summary = "nothing pins the progress-log title fallback when plan_path escapes the repo root"
+area = "tomlctl/tests"
+tags = [
+    "coverage",
+    "security",
+]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "545a384c6e3f9253"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The three containment guards now share one predicate, so a loosening would be caught in one place — but the progress-log caller's own behaviour, returning None into the slug-derived title rather than reading the escaping path, is unpinned. The doctor plan-path check is the only integration seam covering containment and it exercises the import path only. A regression here would become an arbitrary-file read with no test failing."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = [
+    "tomlctl/src/flow/render_progress_log.rs:147",
+    "tomlctl/src/io.rs:1524",
+]
+related = ["B-d57bcdf9"]
+
+[[backlog]]
+id = "B-a0d884ec"
+kind = "debt"
+summary = "post-parse-validated vocabulary flags publish no values array in capabilities"
+area = "tomlctl/src/capabilities.rs"
+tags = ["agent-surface"]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "a0d884ec8a3c226a"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "describe_values reads only clap's possible_values, and the ENUM_VALUES fallback is ValueEnum-only — its invariant test panics on an id with no ValueEnum source. So the flags validated after parsing surface as bare string type with no values array, and that JSON is exactly what an agent introspects to author an invocation. The three flags whose valid set is hardest to guess are the ones it does not publish. Read the flag's doc comment or the reference table instead."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = ["tomlctl/src/capabilities.rs"]
+related = ["B-80707fec"]
+
+[[backlog]]
+id = "B-b5895c72"
+kind = "debt"
+summary = "two task-store staging families disagree about how a store is set up"
+area = "tomlctl/tests"
+tags = ["fixtures"]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "b5895c72dc3fe2c1"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The shared task fixture now stages a real sibling context.toml, so the slug-resolved plan-path branch is reachable. The other family still stages a top-level plan_path that the slug path never consults, so a test written against it silently bypasses the branch it means to exercise. A shared helper would stop the next fixture picking the arm that skips the code under test."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = ["tomlctl/tests/common/mod.rs:307"]
+related = ["B-2c5ee8c0"]
+
+[[backlog]]
+id = "B-2b4b7470"
+kind = "debt"
+summary = "the sidecar sweep and a copied doc comment both overstate what they cover"
+area = "tomlctl/tests/tasks_graph.rs"
+tags = [
+    "coverage",
+    "naming",
+]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "2b4b7470ea86f044"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The tampered-sidecar sweep names seven verbs but not render or import-plan under dry-run, the same name-accuracy gap just closed for the empty-target sweeps; and the graph sweep's doc comment opens 'Every read verb refuses', copied from the read suite, contradicting the symbol it documents. With the shared fixture now staging a sibling context, render under verify-integrity is reachable for the first time, so the coverage half is newly closable."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = ["tomlctl/tests/tasks_graph.rs:646"]
+related = ["B-34428ed3"]
+
+[[backlog]]
+id = "B-684379b8"
+kind = "debt"
+summary = "the plan-update complete op numbers a step 6.5 inside an ordered list"
+area = "claude/commands"
+tags = ["docs"]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "684379b869203dab"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The complete op's ordered list runs 1 to 7 with an interpolated 6.5 between 6 and 7. Some markdown renderers restart numbering at a non-integer marker, and the gate-ordering note below it refers to steps by number, so the odd numeral is load-bearing prose a future renumber could silently break. Renumber the list and the references together, or convert the step to a named sub-heading."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = ["claude/commands/plan-update.md"]
+related = ["B-432a1b0f"]
+
+[[backlog]]
+id = "B-a8c44c31"
+kind = "debt"
+summary = "flow-context.md is a retired rewrite record living under a directory named templates"
+area = "scripts/templates"
+tags = ["docs"]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "a8c44c31d0faa44d"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The file's own header declares it a record of a past rewrite rather than a source governing the carriers, and it has since drifted from the contract skill in at least two places. It now carries a note naming the skill as the one authority, but it still sits under a directory whose name reads as live. Relocating it under docs, or deleting it, would remove the stale copy rather than annotating it — a call for whoever owns the rewrite history."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = ["scripts/templates/flow-context.md:17"]
+related = ["B-152db71d"]
+
+[[backlog]]
+id = "B-17c7528c"
+kind = "question"
+summary = "an untracked .github directory contradicts the project note that the repo has none"
+area = ".github"
+tags = ["harness"]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "17c7528c8aa0fdb0"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The working tree carries an untracked .github holding symlinks back into the repo's own agents and skills directories — harness-portability scaffolding, not CI. The project notes state there is no .github here and lean on that to explain why nothing runs the test and verifier commands automatically. If CI is being introduced, that reasoning and the drift-lands-unnoticed argument around the doc lint and the carrier-skill assertion both need revisiting; if it is local-only scaffolding, it wants ignoring so it stops showing as untracked."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+
+[[backlog]]
+id = "B-d82a7a83"
+kind = "debt"
+summary = "round-2 plan dependency references to non-integer ids parse as prose rather than edges"
+area = "docs/plans"
+tags = ["plan"]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "d82a7a83a44cccf1"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The plan carries two non-integer task ids, so it is unimportable and sits on the corpus allowlist by design. Beyond the heading refusal there is a quieter half: a Depends on entry that does not open on a bare integer is read as a prose note, so the tasks depending on those two record no edge at all. Costs nothing while the plan cannot import, but any future renumbering must fix the reference sites too or the DAG comes out silently under-constrained."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = ["tomlctl/tests/tasks_corpus.rs:19"]
+related = ["B-aa004c21"]
+
+[[backlog]]
+id = "B-a756606c"
+kind = "debt"
+summary = "half the reference corpus documents flags outside the Flag-headed table convention the new lint reads"
+area = "claude/skills/tomlctl/references"
+tags = [
+    "docs",
+    "lint",
+]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "a756606c71f35e80"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The new documented-flag lint keys on a table header cell reading Flag and on a heading that is one backticked span, which the tasks and backlog references follow. The remaining references document their flag surface as prose and differently-headed tables, so they stay unlinted in both directions. Normalising those docs onto the flag-table shape would extend coverage with no lint change — the cheaper move than widening the parser."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = ["tomlctl/src/cli/dispatch/tests/lint.rs:460"]
+related = ["B-e129986c"]
+
+[[backlog]]
+id = "B-85fecf44"
+kind = "debt"
+summary = "the shared task fixture hardcodes a live flow slug as its test constant"
+area = "tomlctl/tests"
+tags = ["fixtures"]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-10
+seen_count = 1
+dedup_id = "85fecf441bcea98a"
+origin = "review-apply"
+flow = "whimsical-hugging-puppy"
+context = "The fixture's slug constant is the name of a real flow in this repository, and the context it now stages derives a plan_path from it too. Nothing breaks, but a test constant naming live flow state is the provenance-in-the-tree smell the apply constraints prohibit elsewhere, and it reads as a coincidence rather than a choice. A neutral fixture slug would remove the ambiguity."
+base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
+evidence = ["tomlctl/tests/common/mod.rs:301"]
+related = ["B-2c5ee8c0"]
