@@ -1000,20 +1000,11 @@ fn carrier_invokes_required_skills() {
         return;
     }
 
-    // Expected carrier → required flow-contract skills mapping (verified
-    // during the wave-2 review, extended when `flow-contract-task-visibility`
-    // landed across every multi-step carrier). A miss means a skeletonised
-    // carrier dropped its delegation to a skill it must still invoke.
-    //
-    // `flow-contract-task-visibility` is listed for every carrier on
-    // purpose. Its whole failure mode is silence: the Task tools sit behind
-    // a model-version gate that has caught this project before, so a carrier
-    // that quietly loses the invocation produces a run that looks completely
-    // normal and simply renders no progress anywhere. There is no runtime
-    // signal to catch that, which makes this the main guard against a
-    // dropped line — but not a complete one: the test self-skips when
-    // `claude/commands/` is absent (a packaged or partial checkout), so it
-    // is a guard for this repo's own tree rather than an absolute one.
+    // Expected carrier → required flow-contract skills mapping. A miss means
+    // a skeletonised carrier dropped its delegation to a skill it must still
+    // invoke. The test self-skips when `claude/commands/` is absent (a
+    // packaged or partial checkout), so it guards this repo's own tree
+    // rather than every checkout.
     let expected: &[(&str, &[&str])] = &[
         (
             "implement.md",
@@ -1021,7 +1012,6 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-flow-context",
                 "flow-contract-execution-record-schema",
                 "flow-contract-task-store",
-                "flow-contract-task-visibility",
                 "backlog-capture",
             ],
         ),
@@ -1032,7 +1022,6 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-ledger-schema",
                 "flow-contract-ledger-disposition-sweep",
                 "flow-contract-vet-research",
-                "flow-contract-task-visibility",
                 "backlog-capture",
             ],
         ),
@@ -1045,7 +1034,6 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-execution-record-schema",
                 "flow-contract-task-store",
                 "flow-contract-vet-research",
-                "flow-contract-task-visibility",
             ],
         ),
         (
@@ -1056,7 +1044,6 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-plan-output-format",
                 "flow-contract-task-store",
                 "flow-contract-vet-research",
-                "flow-contract-task-visibility",
             ],
         ),
         (
@@ -1064,7 +1051,6 @@ fn carrier_invokes_required_skills() {
             &[
                 "flow-contract-flow-context",
                 "flow-contract-execution-record-schema",
-                "flow-contract-task-visibility",
                 "backlog-capture",
             ],
         ),
@@ -1075,7 +1061,6 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-ledger-schema",
                 "flow-contract-ledger-disposition-sweep",
                 "flow-contract-vet-research",
-                "flow-contract-task-visibility",
                 "backlog-capture",
             ],
         ),
@@ -1089,7 +1074,6 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-apply-vet-implement-lite",
                 "flow-contract-apply-rollback-protocol",
                 "flow-contract-apply-constraints",
-                "flow-contract-task-visibility",
             ],
         ),
         (
@@ -1102,7 +1086,6 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-apply-vet-implement-lite",
                 "flow-contract-apply-rollback-protocol",
                 "flow-contract-apply-constraints",
-                "flow-contract-task-visibility",
             ],
         ),
         (
@@ -1115,7 +1098,6 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-plan-restructure",
                 "flow-contract-reconciler",
                 "flow-contract-vet-research",
-                "flow-contract-task-visibility",
             ],
         ),
         (
@@ -1123,27 +1105,9 @@ fn carrier_invokes_required_skills() {
             &[
                 "flow-contract-showcase-bundle",
                 "flow-contract-vet-research",
-                "flow-contract-task-visibility",
             ],
         ),
-        (
-            "backlog.md",
-            &["flow-contract-task-visibility", "backlog-capture"],
-        ),
-    ];
-
-    // Plugin orchestrators live outside `claude/commands/` but are carriers
-    // in every sense that matters here: `run-sprint` drives an agent team for
-    // hours, `plan-story` drives a six-stage machine with research fan-out.
-    // Scanning only the commands tree is what let them sit uncovered.
-    let plugin_skills_dir = repo_root
-        .join("claude")
-        .join("plugins")
-        .join("lumina-story-blocks")
-        .join("skills");
-    let expected_plugins: &[(&str, &[&str])] = &[
-        ("run-sprint", &["flow-contract-task-visibility"]),
-        ("plan-story", &["flow-contract-task-visibility"]),
+        ("backlog.md", &["backlog-capture"]),
     ];
 
     let mut missing: Vec<String> = Vec::new();
@@ -1164,28 +1128,6 @@ fn carrier_invokes_required_skills() {
         }
     }
 
-    // Plugin carriers are scanned only when the plugin tree is present, so a
-    // checkout without it degrades the same way the commands scan does.
-    if plugin_skills_dir.exists() {
-        for (carrier, skills) in expected_plugins {
-            let path = plugin_skills_dir.join(carrier).join("SKILL.md");
-            let text = match fs::read_to_string(&path) {
-                Ok(t) => t,
-                Err(_) => {
-                    missing.push(format!("plugins/{carrier}: SKILL.md not readable"));
-                    continue;
-                }
-            };
-            for skill in *skills {
-                if !invokes_skill(&text, skill) {
-                    missing.push(format!(
-                        "plugins/{carrier}: missing invocation of `{skill}`"
-                    ));
-                }
-            }
-        }
-    }
-
     // Asserting the invocation TEXT is only half the contract: a carrier can
     // faithfully name a skill that no longer exists, and nothing else catches
     // that — `command_lint` gates its scan on `skill.exists()`, so a deleted
@@ -1193,11 +1135,6 @@ fn carrier_invokes_required_skills() {
     let mut required: Vec<&str> = expected
         .iter()
         .flat_map(|(_, skills)| skills.iter().copied())
-        .chain(
-            expected_plugins
-                .iter()
-                .flat_map(|(_, skills)| skills.iter().copied()),
-        )
         .collect();
     required.sort_unstable();
     required.dedup();
@@ -1228,8 +1165,8 @@ fn carrier_invokes_required_skills() {
 #[test]
 fn invokes_skill_requires_an_invocation_phrase() {
     let accepted = [
-        "Invoke the `flow-contract-task-visibility` skill to load the surface.",
-        "5. **Task surface** — invoke the `flow-contract-task-visibility` skill for the run.",
+        "Invoke the `flow-contract-vet-research` skill to load the vet pass.",
+        "5. **Vet pass** — invoke the `flow-contract-vet-research` skill for the run.",
         "run the `backlog-capture` skill's check-then-add gate before minting",
         "honour the contract — **invoke the `flow-contract-plan-restructure` skill** to load it",
         "see the\n`flow-contract-showcase-bundle` skill.",
@@ -1245,11 +1182,11 @@ fn invokes_skill_requires_an_invocation_phrase() {
     let negative_only = "\
 # /demo
 
-Do NOT invoke the `flow-contract-task-visibility` skill here; this carrier is
-single-step and mints no task entries.
+Do NOT invoke the `flow-contract-vet-research` skill here; this carrier is
+single-step and dispatches no research agent.
 ";
     assert!(
-        !invokes_skill(negative_only, "flow-contract-task-visibility"),
+        !invokes_skill(negative_only, "flow-contract-vet-research"),
         "a negative sentence must not satisfy the invocation guard"
     );
 

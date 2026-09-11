@@ -91,8 +91,6 @@ tomlctl tasks update <id> --slug <slug> --ref <new-ref>
 
 Without the rename the real import raises `dag/duplicate-number` and writes nothing, because the old row still holds the number the renamed heading re-claims — the dry run is what turns that refusal into a decision taken before the rewrite reaches the store. The render is what brings renumbered checkpoint markers back correct.
 
-**Task surface (agent-dispatching and user-gated ops).** Invoke the `flow-contract-task-visibility` skill for the run-scoped task-surface contract (view-not-store rule, subject prefix with lowercase `<ref>`, `activeForm`, lifecycle, granularity floor, silent degradation). Mint here, at the head of Step 2 — `reformat`, `catchup` and `reconcile` all dispatch their agents inside this step, so a Step-3 mint would land after the expensive window and be completed in the same turn. One task per major stage, subject-prefixed `<slug> /plan-update · <op>-<stage>`. `reconcile` (two agents) and `complete` (blocks on `AskUserQuestion`) are above the granularity floor and mint; `status`, `deviation` and `defer` complete within a response and mint nothing.
-
 #### `status` — Update completion markers
 
 Scan plan items against the codebase and git history: for each item, check whether the referenced files exist, the described changes are present, and the relevant tests pass. Apply the reconciler contract before any append — this op is auto-invoked by `/implement` Phase 4.5 immediately after `/implement` wrote its own completions, so the skip-set is what stops a double-write. Then re-render `PROGRESS-LOG.md` and update `context.toml` per Step 1. Writes `status ∈ {in-progress, review}` only — MUST NOT write `complete`.

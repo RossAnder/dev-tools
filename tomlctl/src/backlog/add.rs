@@ -1049,7 +1049,7 @@ mod tests {
         // Prose that merely embeds a marker mid-token is not a credential.
         assert!(
             advisories(&req(
-                "task-visibility carrier renders no rows",
+                "task-store carrier renders no rows",
                 &["risk-low"],
                 &["tomlctl/src/io.rs:88"],
                 Some("disk-full on the runner"),

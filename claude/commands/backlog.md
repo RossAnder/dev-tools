@@ -9,16 +9,13 @@ argument-hint: [no arguments — the store is repo-scoped, not flow-scoped]
 >
 > **Portable to other harnesses.** Under Claude Code the skill names below are
 > `Skill()` dispatches; under Codex or any harness without that tool, read each
-> named `SKILL.md` at the path given beside it. The two Claude-only affordances —
-> the `TaskCreate` / `TaskUpdate` progress surface and `AskUserQuestion` — both
-> degrade: skip the task entries entirely, and put the choices to the user as
-> ordinary prose. Neither changes what this command writes.
+> named `SKILL.md` at the path given beside it. The one Claude-only affordance,
+> `AskUserQuestion`, degrades: put the choices to the user as ordinary prose.
+> That changes nothing about what this command writes.
 
 Walks `.claude/backlog.toml` — the repo-scoped store of tangential discoveries — from an open set to a decided one: cluster what has accumulated into candidate work scopes, take a disposition per cluster or per item from the user, audit the evidence drop-box, and optionally age decided items out. It is a triage pass over captures that other commands minted; it does not review code and never mints an item on its own initiative.
 
 Invoke the `backlog-capture` skill (`claude/skills/backlog-capture/SKILL.md`) for the capture discipline — the mint test, the `backlog check` gate and its verdict ladder, the `kind` and `status` vocabularies, the orchestrator-only writer rule, and the evidence-publication rules. That skill owns all of them and this carrier does not restate any. Consult it whenever the user dictates a new item mid-sweep, and mint through the same `check`-then-`add` gate every other carrier uses.
-
-Invoke the `flow-contract-task-visibility` skill (`claude/skills/flow-contract-task-visibility/SKILL.md`) for the run-scoped task-surface contract (view-not-store rule, subject prefix with lowercase `<ref>`, `activeForm`, lifecycle, granularity floor, silent degradation). This command is repo-scoped rather than flow-aware, so the slug slot is the literal `no-flow` per that contract's no-flow rule. Mint one task each for Steps 1-4 — `no-flow /backlog · cluster — group the open set`, `· dispositions — apply the user's verdicts`, `· evidence-audit — check the drop-boxes`, `· compact — fold aged terminal rows` — as a set before Step 1 opens; Step 0 and Step 5 sit below the granularity floor. `TaskUpdate` each `→ in_progress` as its step opens and `→ completed` when it closes, naming a skipped step's reason in its `description` rather than leaving the row `pending`. When the task tools are absent, continue the sweep unchanged.
 
 ## Step 0: Pre-flight (binary, then open set)
 
@@ -36,7 +33,7 @@ The `backlog` group landed in 0.6. Below that the verbs do not exist and every s
 tomlctl backlog list --open --count
 ```
 
-A missing store reads as zero rather than erroring, so a fresh clone reaches this gate cleanly. On a count of 0, say the backlog is empty and stop — nothing to triage, and no tasks are minted.
+A missing store reads as zero rather than erroring, so a fresh clone reaches this gate cleanly. On a count of 0, say the backlog is empty and stop — nothing to triage.
 
 ## Step 1: Cluster the open set
 
