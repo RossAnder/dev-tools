@@ -27,7 +27,7 @@ reaches for, and the rules binding `/plan-new`, `/implement`, `/review-plan` and
 - [The `check` finding classes](#the-check-finding-classes)
 
 The store's own half — its keys and `[[items]]` fields, `ref` derivation, the graph products
-recomputed on every read, the 256-node cap and the frozen contracts — is
+recomputed on every read, the 512-node cap and the frozen contracts — is
 [tasks-store.md](tasks-store.md).
 
 Every mutating verb (`import-plan`, `add`, `add-many`, `update`, `remove`) carries the shared write
@@ -488,7 +488,7 @@ it.
 | `dag/cycle` | error | `check` — suppresses every class needing reachability |
 | `dag/dangling-ref` | error | `check` |
 | `dag/duplicate-number` | error | `check` — `ids` carries the number alone, so the `detail` names the `ref` of every row on it; `import-plan` splits those refs into the ones the plan produced and the ones the store still holds |
-| `dag/unbuildable` | error | `check` — the graph engine refuses the store for a reason no row scan named; past the [node cap](tasks-store.md#the-256-node-cap) is the live case |
+| `dag/unbuildable` | error | `check` — the graph engine refuses the store for a reason no row scan named; past the [node cap](tasks-store.md#the-512-node-cap) is the live case |
 | `dag/unreachable-claim` | warning | `check` — shared file, no directed path either way |
 | `dag/stalled-dependency` | warning | `check` — an `in-progress`, `failed` or `deferred` row with pending rows behind it; one finding per blocker, `ids` naming the blocker and `detail` its dependents. A blocker named in `--in-flight` raises nothing; never changes the exit code |
 | `dag/symbol-without-edge` | warning | `check` — a symbol one row's `Action` introduces (`Add`/`Create`/`export` within three words of a backticked identifier) that another row's body names, with no directed path either way; one finding per pair, `ids` naming both. The edge `coupling` exists for and nothing populates. A markdown-only row introduces nothing, and a name two rows introduce raises nothing against a row already reaching one of them |

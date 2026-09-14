@@ -20,7 +20,7 @@ use crate::errors::{ErrorKind, tagged_err};
 
 /// Reachability is `[u64; WORDS]` per node; widening the cap costs a word per
 /// 64 tasks and nothing else.
-const MAX_NODES: usize = 256;
+const MAX_NODES: usize = 512;
 const WORDS: usize = MAX_NODES / 64;
 
 type Bits = [u64; WORDS];
@@ -719,14 +719,14 @@ mod tests {
 
     #[test]
     fn a_graph_above_the_node_cap_errors() {
-        let over: Vec<Node> = (1..=257).map(|id| node(id, &[], &[], "")).collect();
-        let err = Graph::build(&over).expect_err("257 nodes exceed the cap");
+        let over: Vec<Node> = (1..=513).map(|id| node(id, &[], &[], "")).collect();
+        let err = Graph::build(&over).expect_err("513 nodes exceed the cap");
         assert!(
-            err.to_string().contains("exceeds 256 tasks"),
+            err.to_string().contains("exceeds 512 tasks"),
             "unexpected message: {err}"
         );
 
-        let at_cap: Vec<Node> = (1..=256).map(|id| node(id, &[], &[], "")).collect();
+        let at_cap: Vec<Node> = (1..=512).map(|id| node(id, &[], &[], "")).collect();
         assert!(Graph::build(&at_cap).is_ok());
     }
 

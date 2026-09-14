@@ -11,7 +11,7 @@ is [tasks.md](tasks.md); what the fields *mean* and which verb a carrier reaches
 - [Store shape](#store-shape)
 - [Ref derivation](#ref-derivation)
 - [Derived graph products](#derived-graph-products)
-- [The 256-node cap](#the-256-node-cap)
+- [The 512-node cap](#the-512-node-cap)
 - [Frozen contracts](#frozen-contracts)
 
 ## Store shape
@@ -112,10 +112,10 @@ the antichain is enough to reconstruct the group.
 Determinism is total: ascending id tie-breaks everywhere, layers sorted ascending, groups in
 `[[checkpoints]]` order, edges grouped by kind in declaration order.
 
-## The 256-node cap
+## The 512-node cap
 
-The engine's reachability bitsets are fixed-width, so a store past **256 rows** fails graph
-construction with `graph exceeds 256 tasks`. `ready`, `batches`, `closure`, `render`,
+The engine's reachability bitsets are fixed-width, so a store past **512 rows** fails graph
+construction with `graph exceeds 512 tasks`. `ready`, `batches`, `closure`, `render`,
 `edges --kind overlap` and `add`'s cycle check all surface that as a refusal.
 
 `tasks check` answers differently: it reports its non-graph classes (`policy/*`,

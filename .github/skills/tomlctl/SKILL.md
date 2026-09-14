@@ -58,7 +58,7 @@ The per-verb flag tables, recipes, and contract prose live in six sibling files.
 - [references/flow.md](references/flow.md) — the cross-cutting surface: the `--verify-integrity` support matrix, what the `.sha256` sidecar does and does not promise, the `--error-format json` envelope, the two emitting `flow` verbs, and the infrastructure-only `blocks` verbs.
 - [references/backlog.md](references/backlog.md) — the `backlog` group's flag tables, the `.claude/backlog.toml` store shape, id derivation, the `check` verdict ladder, and the evidence drop-box. When to mint a row is the `backlog-capture` skill's call, not this one's.
 - [references/tasks.md](references/tasks.md) — the `tasks` group's per-verb flag tables, the `--slug` / `--file` target group, and the `check` finding classes. What the fields mean and which verb a carrier reaches for is the `flow-contract-task-store` skill's call, not this one's.
-- [references/tasks-store.md](references/tasks-store.md) — the `.claude/flows/<slug>/tasks.toml` store shape, `ref` derivation, the derived graph products, the 256-node cap, and the frozen contracts.
+- [references/tasks-store.md](references/tasks-store.md) — the `.claude/flows/<slug>/tasks.toml` store shape, `ref` derivation, the derived graph products, the 512-node cap, and the frozen contracts.
 
 To find a section without reading a whole file:
 
