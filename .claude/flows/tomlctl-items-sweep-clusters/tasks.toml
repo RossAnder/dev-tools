@@ -1,0 +1,515 @@
+schema_version = 1
+last_updated = 2026-09-17
+plan_path = "docs/plans/tomlctl-items-sweep-clusters.md"
+last_import_refs = [
+    "scaffold-the-new-modules",
+    "parse-fileline-and-filesymbol-anchors",
+    "enumerate-tracked-files-through-git",
+    "extract-union-find-into-a-shared-module",
+    "expose-the-positional-kahn-core",
+    "add-the-bytes-regex-compile-helper",
+    "build-the-sweep-engine",
+    "bind-the-engine-to-ledger-items",
+    "compute-file-disjoint-clusters-and-dependency-batches",
+    "report-unresolvable-instances-as-orphans",
+    "wire-the-verbs-into-clap-and-dispatch",
+    "register-the-verbs-in-the-capability-surface-readme-and-version",
+    "integration-test-the-sweep-verbs",
+    "integration-test-clusters-and-instance-orphans",
+    "document-the-verbs-in-the-tomlctl-skill",
+    "document-the-write-path-and-integrity-matrix",
+    "rewire-the-apply-flow-skills-to-the-verbs",
+    "rewire-the-vet-disposition-sweep-and-ledger-schema-skills",
+    "point-the-research-method-at-the-standalone-sweep",
+    "update-the-schema-hardcoding-callouts",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "the scaffold plus five independent foundations (anchor parser, git enumeration, union-find extraction, public Kahn core, bytes-regex helper); the crate builds and every existing test still passes, with no verb yet exposed; tasks 2, 3 and 6 carry `#[allow(dead_code)]` (with a one-line reason, per `tomlctl/src/items.rs:1699`) on the items nothing calls until tasks 7 and 8, which remove it, so `cargo clippy --all-targets -- -D warnings` stays green at this cut"
+
+[[checkpoints]]
+id = "B"
+rationale = "the engine, the three verbs, the orphans class, clap wiring, capability registry, version 0.9.0 and both integration binaries; the installed binary is usable by the carriers"
+
+[[checkpoints]]
+id = "C"
+rationale = "the skill and reference prose names the verbs with older-binary fallbacks and the schema callouts name the two new ledger-specific verbs; the lint tests that parse those docs against clap pass"
+
+[[items]]
+id = 1
+ref = "scaffold-the-new-modules"
+title = "Scaffold the new modules"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/main.rs",
+    "tomlctl/src/repo_files.rs",
+    "tomlctl/src/anchor.rs",
+    "tomlctl/src/union_find.rs",
+    "tomlctl/src/sweep.rs",
+    "tomlctl/src/items_sweep.rs",
+    "tomlctl/src/clusters.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Declare `mod repo_files; mod anchor; mod union_find; mod sweep; mod items_sweep; mod clusters;` in `tomlctl/src/main.rs` in alphabetical position within the existing `mod` block (`mod anchor;` before `mod backlog;`, `mod clusters;` after `mod cli;`, and so on), which is what rustfmt's default `reorder_modules = true` produces and the pre-commit `cargo fmt --check` requires, and create each file as an empty module carrying only a one-line `//!` purpose comment, so the six downstream tasks edit disjoint files without touching `main.rs`."
+detail = "Match the existing declaration style. No items, no `#[allow]`; an empty module compiles clean. This task exists so that tasks 2–9 never share `main.rs`."
+acceptance = '''`cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings` exits 0 (falsifier: removing any one `mod` line makes the later tasks' code fail to resolve); `cargo fmt --manifest-path tomlctl/Cargo.toml -- --check` exits 0 (falsifier: a `mod` line out of alphabetical order is a diff); `grep -c '^mod \(repo_files\|anchor\|union_find\|sweep\|items_sweep\|clusters\);' tomlctl/src/main.rs` prints `6` (today: 0).'''
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "parse-fileline-and-filesymbol-anchors"
+title = "Parse `file:line` and `file:symbol` anchors"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — foundations"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/anchor.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Implement `pub(crate) struct Anchor { pub(crate) file: String, pub(crate) at: AnchorAt }`, `pub(crate) enum AnchorAt { Line(u64), Symbol(String) }`, `pub(crate) fn parse(s: &str) -> Option<Anchor>`, `impl Display` producing the canonical `file:line` / `file:symbol` spelling, and `pub(crate) fn files_of<'a>(anchors: impl Iterator<Item = &'a Anchor>) -> BTreeSet<&'a str>`."
+detail = 'Split at the first `:` after the last `/` or `\`; an empty tail or empty file returns `None`; an all-ASCII-digit tail parses as `Line`; everything else is `Symbol` verbatim (so `Foo::bar` survives). Store `file` verbatim and have `Display` re-emit it unchanged — no separator normalisation, since the anchors this parses come from `git ls-files` (forward slashes on Windows) and `files_of` borrows the stored string. Nothing outside `#[cfg(test)]` calls these items until task 8, so mark each `pub(crate)` item `#[allow(dead_code)]` with a one-line reason in the form `tomlctl/src/items.rs:1699` uses; task 8 removes the attributes. Unit tests in-module: `src/a.rs:42`, `src/a.rs:Foo::bar`, `C:\x\y.rs:foo`, `a.rs`, `:foo`, `a.rs:`.'
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl anchor::` runs the in-module tests and passes (falsifier: swapping the split rule to `rsplit_once(':')` makes the `Foo::bar` case fail) — predicted, unverified until the module exists; `grep -c 'fn parse' tomlctl/src/anchor.rs` prints at least `1` (today: file absent)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "enumerate-tracked-files-through-git"
+title = "Enumerate tracked files through git"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — foundations"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/repo_files.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Implement `pub(crate) struct Enumeration { pub(crate) files: Vec<PathBuf>, pub(crate) skipped_outside: usize, pub(crate) warnings: Vec<String> }` and `pub(crate) fn tracked_files(root: &Path, exclude: &[String]) -> Result<Enumeration>` that runs `git -C <root> ls-files --full-name -z --cached --others --exclude-standard`, splits stdout on NUL, drops empty entries, drops any path matching an `exclude` glob (compiled with `globset` as `flow/resolve.rs:948` does; the default list `.claude/**`, `docs/plans/**` is the caller's), drops any path that fails `io::path_under_root` (`tomlctl/src/io.rs:1541`) counting it under `skipped_outside`, deduplicates, sorts, and returns repo-relative paths plus every non-empty stderr line git emitted at exit 0."
+detail = 'Follow the `Command::new("git")` shape at `tomlctl/src/io.rs:1516`. Non-zero exit → `errors::tagged_err(ErrorKind::Other, Some(root.into()), "git ls-files failed: <first stderr line>")`; a missing `git` binary is the same kind. A warning at exit 0 (`warning: could not open directory` for a dangling symlink) is not an error: git skipped a subtree, so the caller must clear `coverage_complete`. Do not filter directories here; callers decide at read time. Nothing outside `#[cfg(test)]` calls `tracked_files` until task 7, so mark it `#[allow(dead_code)]` with a one-line reason in the form `tomlctl/src/items.rs:1699` uses; task 7 removes it. Unit tests use `test_support::with_root` plus a `git init -q` temp repo with one committed and one untracked file, guarded by the `git_available()` idiom from `tomlctl/tests/common/mod.rs` (mirror it locally in the test module), one test asserting the tagged error kind in a non-git temp dir, and one asserting an excluded glob is absent from `files`.'
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl repo_files::` passes (falsifier: dropping `--others` makes the untracked-file assertion fail) — predicted, unverified until the module exists; `grep -c 'exclude-standard' tomlctl/src/repo_files.rs` prints at least `1` (today: file absent)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "extract-union-find-into-a-shared-module"
+title = "Extract union-find into a shared module"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/union_find.rs",
+    "tomlctl/src/backlog/cluster.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Move `root`, `union` and `components` from `tomlctl/src/backlog/cluster.rs:295-326` into `tomlctl/src/union_find.rs` as `pub(crate)` functions, add a `keep_singletons: bool` parameter to `components`, and re-point `backlog/cluster.rs` at the new module passing `false`."
+detail = """Preserve the "lowest index wins" representative rule and the doc comments verbatim; the backlog verb's output must not change. Move the existing union-find unit tests (if any) alongside, and add one test for `keep_singletons = true` returning every index. `backlog/cluster.rs` keeps `collect_strings` and `group_json`."""
+acceptance = '''`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl backlog::cluster` still passes (regression guard) and `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl union_find::` passes (falsifier: passing `keep_singletons = true` from backlog would add singleton groups and fail its existing size assertions) — predicted, unverified; `grep -c '^fn root\|^fn union\|^fn components' tomlctl/src/backlog/cluster.rs` prints `0` (today: 3).'''
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "expose-the-positional-kahn-core"
+title = "Expose the positional Kahn core"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — foundations"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/tasks/mod.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Change `fn layered_kahn` at `tomlctl/src/tasks/graph.rs:506` to `pub(crate) fn layered_kahn` and add a doc line stating it is shared with `clusters`; change `mod graph;` at `tomlctl/src/tasks/mod.rs:18` to `pub(crate) mod graph;`, matching the `dispatch` / `markdown` precedent below it, because `clusters.rs` is a child of the crate root and cannot see a private leaf of `tasks`."
+detail = "No behavioural change; existing callers unchanged. Do not lift `Graph` or `Node`. The function keeps its caller at `tomlctl/src/tasks/graph.rs:207`, so no `#[allow(dead_code)]` is needed."
+acceptance = "`grep -c 'pub(crate) fn layered_kahn' tomlctl/src/tasks/graph.rs` prints `1` (today: 0); `grep -c 'pub(crate) mod graph' tomlctl/src/tasks/mod.rs` prints `1` (today: 0); `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::graph` passes (regression guard)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "add-the-bytes-regex-compile-helper"
+title = "Add the bytes-regex compile helper"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — foundations"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/query.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Make `compile_user_regex` at `tomlctl/src/query.rs:90` `pub(crate)`, add `pub(crate) fn compile_user_bytes_regex(pattern: &str) -> Result<regex::bytes::Regex>` using `regex::bytes::RegexBuilder` with the same two limits plus `.multi_line(true).crlf(true)`, enforce `pub(crate) const MAX_USER_PATTERN_LEN: usize = 512` in both — a deliberate tightening of `items list --where-regex`, which `compile_user_regex` also serves, stated in `## Scope` — and correct the `dfa_size_limit` comment."
+detail = 'Note beside the new helper that `.multi_line(true).crlf(true)` gives the sweep line-oriented semantics its sibling lacks — `^`/`$` per line and `.` excluding `\r` as well as `\n` — so a pattern is not portable between `tomlctl sweep` and `items list --where-regex`. The comment currently calls `dfa_size_limit` a memory cap for adversarial patterns; per `regex 1.13.1 src/builders.rs:189-192` it sets the lazy-DFA cache capacity, and `size_limit` is the compile-size bound. Say so in one sentence (the prose appears twice, on the const doc at `query.rs:80-84` and the fn doc at `:86-89`; correct both). The error message for a build failure must include the hint `Unicode classes are unavailable in this build; write ASCII forms such as (?-u:\w)`, because `cargo test` unifies `regex/default` through a dev-dependency while the installed binary does not. Nothing outside `#[cfg(test)]` calls `compile_user_bytes_regex` until task 7, so mark it `#[allow(dead_code)]` with a one-line reason in the form `tomlctl/src/items.rs:1699` uses; task 7 removes it. Add two unit tests named `compile_user_bytes_regex_accepts_non_unicode_word_class` (`\w` in a `(?-u:…)` wrapper compiles) and `compile_user_bytes_regex_rejects_an_oversize_pattern` (a 513-byte pattern is rejected).'
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl query::tests::compile_user_bytes_regex` runs exactly two tests, `compile_user_bytes_regex_accepts_non_unicode_word_class` and `compile_user_bytes_regex_rejects_an_oversize_pattern`, and passes (falsifier: removing the length check makes the 513-byte case pass compilation and the test fail) — predicted, unverified; `grep -c 'compile_user_bytes_regex' tomlctl/src/query.rs` prints at least `2` (today: 0)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "build-the-sweep-engine"
+title = "Build the sweep engine"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — verbs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/sweep.rs",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/src/repo_files.rs",
+    "tomlctl/src/query.rs",
+]
+needs = [
+    3,
+    6,
+]
+coupling = []
+deps_note = ""
+action = 'Add `memchr = "^2"` to `[dependencies]` in `tomlctl/Cargo.toml` (the crate is already in the lock graph through `regex`; the lockfile gains a direct edge, no new crate). Implement `pub(crate) struct SweepOptions { pub(crate) max_file_bytes: u64, pub(crate) max_hits: usize, pub(crate) exclude: Vec<String> }` with `impl Default` (4 MiB / 5000 / `[".claude/**", "docs/plans/**"]`), `pub(crate) struct Hit { pub(crate) file: String, pub(crate) line: u64, pub(crate) pattern: usize }`, `pub(crate) struct SweepReport { pub(crate) hits: Vec<Hit>, pub(crate) files_scanned: usize, pub(crate) skipped_binary: usize, pub(crate) skipped_oversize: usize, pub(crate) skipped_unreadable: usize, pub(crate) skipped_unenumerated: usize, pub(crate) truncated: bool }` with `pub(crate) fn coverage_complete(&self) -> bool` (true only when every `skipped_*` is zero and `truncated` is false), `pub(crate) fn run(root: &Path, patterns: &[String], opts: &SweepOptions) -> Result<SweepReport>`, and `pub(crate) fn report_json(&SweepReport) -> JsonValue`. Remove the `#[allow(dead_code)]` attributes tasks 3 and 6 placed on `repo_files::tracked_files` and `query::compile_user_bytes_regex`, now that this module calls them.'
+detail = '''Compile every pattern first through `query::compile_user_bytes_regex` so a bad pattern fails before any IO. Enumerate through `repo_files::tracked_files(root, &opts.exclude)`; the number of stderr warnings it returns is `skipped_unenumerated`. Per file: `fs::metadata` length check against `max_file_bytes` (skip + count); `fs::read` errors and directories count as unreadable; `memchr::memchr(0, &buf[..buf.len().min(8192)])` marks binary. Key each file by its canonicalised path relativised under the root (`io::relativise_under`, `tomlctl/src/io.rs:1625`) and scan a canonical target once, so a file reachable through the `.github/` directory symlinks is reported once under its `claude/` path. Build the newline offset table once per file with `memchr::memchr_iter(b'\n', &buf)`; for each pattern's `find_iter`, map `m.start()` to line via `partition_point`. Collapse repeated matches on one line and matches from several patterns on one line to one hit per `file:line` (keep the lowest pattern index). Stop collecting when `max_hits` distinct sites is reached and set `truncated`. Sort hits by `(file, line, pattern)` before returning. Unit tests over a temp git repo: LF file, CRLF file where `foo$` must match a line ending in `foo\r\n`, a NUL-bearing file skipped and `coverage_complete()` false, an oversize file skipped, a truncated run, two patterns hitting one line yielding one hit, a file under an excluded glob absent from the hits.'''
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl sweep::` passes (falsifier: dropping `.crlf(true)` from the compile helper makes the CRLF `foo$` case report zero hits) — predicted, unverified; `grep -c 'memchr_iter' tomlctl/src/sweep.rs` prints at least `1` (today: file absent); `grep -c '^memchr' tomlctl/Cargo.toml` prints `1` (today: 0)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "bind-the-engine-to-ledger-items"
+title = "Bind the engine to ledger items"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — verbs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/items_sweep.rs",
+    "tomlctl/src/anchor.rs",
+]
+needs = [
+    2,
+    7,
+]
+coupling = []
+deps_note = ""
+action = """Implement `pub(crate) fn items_sweep(doc: &TomlValue, ledger: &Path, root: &Path, ids: &[String], opts: &SweepOptions) -> Result<JsonValue>` producing per-item `{id, recorded, found, new: [file:line], gone: [{anchor, reason}], unverified: [anchor], kept, coverage_complete, truncated}` plus `skipped_items: [{id, reason: "no-sweep" | "unknown-id"}]`, and `pub(crate) fn update_plan(doc: &TomlValue, results: &JsonValue) -> Result<MutationPlan>` that rewrites each swept item's `instances` to kept anchors followed by new `file:line` anchors and refuses with `ErrorKind::Validation` when any item's `truncated` is true or `unverified` is non-empty. Remove the `#[allow(dead_code)]` attributes task 2 placed in `tomlctl/src/anchor.rs`, now that this module calls them."""
+detail = '''Read `sweep` and `instances` with an inline `as_array` walk like `tomlctl/src/orphans.rs:149`; parse anchors with `anchor::parse`, treating `file` itself as an implicit anchor. Run the engine **once** over the union of every selected item's `sweep` strings, with the ledger's own relative path appended to `opts.exclude`, and attribute hits back to items by pattern index. Compare at anchor granularity: a hit in a recorded file whose line matches no recorded `file:line` anchor and lies outside every recorded `file:symbol` anchor's line is `new`; a recorded anchor whose file was scanned and has no hit is `gone` with `reason: no-hit`; a recorded anchor whose file was skipped (binary, oversize, unreadable, outside, unenumerated) or whose scan was cut by `max_hits` is `unverified`. Symbol anchors in files that still hit are probed with the orphans word-boundary pattern `(?-u:\b)<escaped>(?-u:\b)` against the file bytes; a miss is `gone` with `reason: symbol-missing`. Empty `ids` means every item carrying a `sweep` array. `update_plan` builds one ops list — one `{"op":"update","id":…,"json":{"instances":[…]}}` entry per swept item — and calls `items::compute_apply_mutation` (`tomlctl/src/items.rs:1254`) once, which returns a single `MutationPlan` with every touched id in `updated`; `compute_update_mutation` clones the source document per call and cannot be folded. It never touches `enumeration`. Unit tests seed an inline ledger with two items (one with `sweep`, one without) over a temp repo and assert the `new`/`gone`/`kept` partition, that a second site added inside an already-recorded file appears under `new`, that a skipped file yields `unverified` and `update_plan` refuses, and the plan's `updated` set plus the rewritten `instances` array in `new_doc`.'''
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl items_sweep::` passes (falsifier: omitting the `file` implicit anchor makes the item's own file appear under `new`) — predicted, unverified; `grep -c 'fn update_plan' tomlctl/src/items_sweep.rs` prints `1` (today: file absent)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "compute-file-disjoint-clusters-and-dependency-batches"
+title = "Compute file-disjoint clusters and dependency batches"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — verbs"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/clusters.rs"]
+needs = [
+    2,
+    4,
+    5,
+]
+coupling = []
+deps_note = ""
+action = 'Implement `pub(crate) fn items_clusters(doc: &TomlValue, root: &Path, ids: &[String]) -> Result<JsonValue>` returning `{"clusters": [{id, item_ids, files, depends_on, lite_file_scope}], "batches": [[cluster ids]], "dropped_deps": [{id, missing}]}`.'
+detail = """Selection: the given ids, or every `status = "open"` item when `ids` is empty; an unknown id is `ErrorKind::NotFound`. File set per item = `file` ∪ `anchor::files_of(instances)`, each keyed by its canonicalised path relativised under `root` (`io::relativise_under`) so the `.github/` mirror and `claude/` original are one file. Item edges from `depends_on` restricted to the selection (others → `dropped_deps`), self-edges ignored. **Sort items first**: run `tasks::graph::layered_kahn` over items; a non-empty residual refuses with `ErrorKind::Validation` and the message `refusing items clusters: the dependency graph contains a cycle through items <ids>`. Then union items sharing any file via `union_find` with `keep_singletons = true`, **only within one topo level**, so dependent same-file items stay in separate clusters and separate batches, as the dependency-sort contract requires. Cluster ids `c1..cN` in order of first member's ledger position; `item_ids` and `files` sorted; cluster edges are the item edges lifted to clusters; batches are the item levels lifted to clusters (a cluster's batch is its members' shared level). `lite_file_scope` = `files.len() <= 2 || (item_ids.len() == 1 && that item's enumeration == "complete")` — a missing `enumeration` key counts as not complete, and a multi-item cluster is never lite on the pattern limb because the gate's "one edit shape across all of them" conjunct is not machine-decidable; `## Approach` and task 17 say the same. Unit tests: two same-level items sharing a file cluster together; a chain `R1 → R2` yields two batches; a chain `R1 → R2` sharing a file yields two clusters in two batches; a cycle refuses; an out-of-selection dependency lands in `dropped_deps`; a single complete item with three instance files is lite, one with `enumeration = "incomplete"` or no key is not, and two complete items sharing a file are not."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl clusters::` passes (falsifier: removing the residual check lets the cycle test return batches instead of an error) — predicted, unverified; `grep -c 'layered_kahn' tomlctl/src/clusters.rs` prints at least `1` (today: file absent)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "report-unresolvable-instances-as-orphans"
+title = "Report unresolvable instances as orphans"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — verbs"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/orphans.rs"]
+needs = [2]
+coupling = []
+deps_note = ""
+action = """In `items_orphans`, after the existing `file`/`symbol` checks, walk each item's `instances` array through `anchor::parse` and emit `{id, class: "instance-missing", instance, reason}` with `reason` one of `missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `unparseable` (the same five values `## Approach` states and tasks 15 and 18 document verbatim), reusing the path and read caches."""
+detail = """Line anchors check existence only. Keep the existing classes' behaviour and ordering; the new class appends after `dangling-dep` for the same item. Update the module docblock at `tomlctl/src/orphans.rs:4` ("Reports five orphan classes") to six with the new bullet; tasks 11, 12 and 18 update the class lists at `tomlctl/src/cli/types.rs:1702`, `tomlctl/README.md:39` and `claude/skills/flow-contract-ledger-schema/SKILL.md:74`. An instance file that exists but cannot be read is `io-error`, as the file-level check already distinguishes (`orphans.rs:103-105`). Extend the existing unit test `items_orphans_reports_missing_file_symbol_and_dangling_dep` with one item carrying three instances (one valid, one missing file, one missing symbol) and assert two `instance-missing` rows."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl orphans::` passes (falsifier: skipping the symbol probe leaves one `instance-missing` row instead of two) — predicted, unverified; `grep -c 'instance-missing' tomlctl/src/orphans.rs` prints at least `1` (today: 0)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "wire-the-verbs-into-clap-and-dispatch"
+title = "Wire the verbs into clap and dispatch"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — verbs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+]
+needs = [
+    7,
+    8,
+    9,
+    10,
+]
+coupling = []
+deps_note = ""
+action = """Add `Cmd::Sweep { #[arg(short = 'e', long = "pattern", required = true, value_name = "REGEX")] pattern: Vec<String>, #[arg(long, default_value_t = 4194304)] max_file_bytes: u64, #[arg(long, default_value_t = 5000)] max_hits: usize, #[arg(long, value_name = "GLOB")] exclude: Vec<String> }`, `ItemsOp::Sweep { file, #[arg(long, value_delimiter = ',', value_name = "R1,R7,...")] ids: Vec<String>, #[arg(long)] update: bool, #[arg(long)] dry_run: bool, #[arg(long, default_value_t = 4194304)] max_file_bytes: u64, #[arg(long, default_value_t = 5000)] max_hits: usize, #[command(flatten)] integrity: WriteIntegrityArgs }`, `ItemsOp::Clusters { file, #[arg(long, value_delimiter = ',')] ids: Vec<String>, #[command(flatten)] integrity: ReadIntegrityArgs }`; add the three dispatch arms; extend the `ItemsOp::Orphans` doc comment at `tomlctl/src/cli/types.rs:1702` (the `--help` text) with the `instance-missing` class. (The `SUBCOMMANDS` and `FEATURES` registrations belong to task 12, which owns their three gated mirrors — splitting them leaves the capability parity tests red at this task's commit.)"""
+detail = "Follow the `ItemsOp::Orphans` arm at `tomlctl/src/cli/dispatch.rs:1115` for `items clusters` (`strict_read_check`, `read_integrity_opts`, `read_doc`, `print_json`). `items sweep` without `--update` is a read path through `read_doc` with `verify_integrity` taken from the write bundle — `WriteIntegrityArgs` carries no `--strict-read`, so `strict_read_check` does not apply; test the ledger's existence first and return `ErrorKind::NotFound`, so the write bundle's auto-create never mints a ledger on a read-only run. With `--update` it goes through `io::mutate_doc_plan` with `write_integrity_opts`, and `--dry-run` routes through `io::dry_run_read_opts` + `output::emit_dry_run_plan` exactly as the `ItemsOp::Update` arm does (the bundle has no `dry_run` field, so the explicit flag does not clash). Root comes from `io::repo_or_cwd_root`; `--exclude` extends `SweepOptions::default().exclude`. Every field carries an `#[arg]` attribute — a bare field is a clap positional. Doc comments on every variant, since `--help` text is the reference the lint tests read."
+acceptance = "`cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings` exits 0 (falsifier: an `ItemsOp` variant added without its dispatch arm fails the non-exhaustive match in `items_dispatch`); `grep -c 'Clusters {' tomlctl/src/cli/types.rs` prints `1` (today: 0). The `items clusters --help` smoke run belongs to the orchestrator's checkpoint-B verification, not to this task."
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "register-the-verbs-in-the-capability-surface-readme-and-version"
+title = "Register the verbs in the capability surface, README and version"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — verbs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+needs = [11]
+coupling = []
+deps_note = ""
+action = 'Register `"sweep"` in `SUBCOMMANDS` and `"sweep"`, `"items_sweep"`, `"items_clusters"`, `"orphans_instances"` in `FEATURES` (`tomlctl/src/cli/types.rs:20`); bump `version` to `0.9.0` in `tomlctl/Cargo.toml` (and let `cargo` rewrite `tomlctl/Cargo.lock:706-707`) and the literal in `capabilities_version_matches_cargo_toml`; add the four feature strings to the `FEATURES` copy and both README transcriptions; add `["items","clusters","--help"]` to the read-only help array and `["items","sweep","--help"]` to the write array; leave the standalone `sweep` out of both, since it reads no TOML file and carries neither integrity bundle; add `["items","clusters",""]` to `strict_read_uniform_across_read_subcommands`; add `sweep`, `items sweep`, `items clusters` lines to the README `## Usage` synopsis, extend the `items orphans` synopsis line at `tomlctl/README.md:39` with `instance-missing`, and add rows to `Feature meanings`.'
+detail = "`items sweep` carries write flags (`--update`), so it belongs in the array the existing `items update` sits in (`write_subcommands_expose_all_integrity_flags_in_help`, which requires the four write flags and not `--strict-read`); `items clusters` is read-only (`read_subs` requires both `--verify-integrity` and `--strict-read`); the standalone `sweep` has neither bundle, like `capabilities` and `integrity` today, and has no valid shape for the strict-read array (no file argument). Keep the exact-count assertion in `capabilities_features_contains_every_plan_feature` consistent with the new entries."
+acceptance = """`cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes (falsifier: the version literal left at `0.8.0` fails `capabilities_version_matches_cargo_toml`) — predicted, unverified; `grep -c '^version = "0.9.0"' tomlctl/Cargo.toml` prints `1` (today: 0)."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "integration-test-the-sweep-verbs"
+title = "Integration-test the sweep verbs"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — verbs"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/tests/sweep.rs",
+    "tomlctl/tests/common/mod.rs",
+]
+needs = [11]
+coupling = []
+deps_note = ""
+action = '''Add an integration binary using `common::sandbox()` and `common::cli()`, plus a new root-relative `common::seed_ledger_in(root, name, toml)` helper in `tomlctl/tests/common/mod.rs` (`seed_ledger` mints its own tempdir and cannot share the sandbox root, which write containment requires), that writes two files into the sandbox repo (no commit needed — `--others` lists them), runs `tomlctl sweep -e '(?-u:\bneedle\b)'` and asserts the JSON hits; seeds a ledger with one pattern item (`sweep`, `instances`) into the sandbox's `.claude/`, runs `items sweep <ledger>` and asserts `new`/`gone`, then runs `items sweep --update --dry-run` (no bytes written, plan printed) and `items sweep --update` (instances rewritten, sidecar matches via `assert_sidecar_matches`).'''
+detail = "Guard every test with `git_available()`. Assert the non-git failure by running `tomlctl sweep` with `TOMLCTL_ROOT` pointing at a plain temp dir and parsing the error envelope with `parse_json_error_envelope`. Assert that the seeded ledger itself never appears in `new` (the ledger path is excluded from its own sweep). Task 14 depends on this task for the helper; do not add a second seeder there."
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test sweep` passes (falsifier: the `--update` case fails if `instances` is not rewritten, since it re-reads the ledger) — predicted, unverified; `test -f tomlctl/tests/sweep.rs && grep -c 'mod common' tomlctl/tests/sweep.rs` prints `1` (today: file absent)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "integration-test-clusters-and-instance-orphans"
+title = "Integration-test clusters and instance orphans"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — verbs"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/tests/clusters.rs"]
+needs = [
+    11,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Add an integration binary that seeds a ledger via `common::seed_ledger_in` into a `common::sandbox()` root with four items (two sharing a file through `instances`, one depending on another, one with an unresolvable instance), runs `items clusters --ids …` and asserts cluster membership, `batches` order and `lite_file_scope`; runs `items clusters` on a cyclic pair and asserts the validation error envelope; runs `items orphans` and asserts one `instance-missing` row."
+detail = "Use `cli(root)`; parse output with `serde_json`. Keep fixtures inline in the test file rather than extending `QUERY_FIXTURE`."
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test clusters` passes (falsifier: reversing the dependency edge changes the batch order and fails the assertion) — predicted, unverified; `test -f tomlctl/tests/clusters.rs && grep -c 'instance-missing' tomlctl/tests/clusters.rs` prints at least `1` (today: file absent)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "document-the-verbs-in-the-tomlctl-skill"
+title = "Document the verbs in the tomlctl skill"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — documentation"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/query.md",
+]
+needs = [11]
+coupling = []
+deps_note = ""
+action = "Add Quick Reference rows for `sweep`, `items sweep` and `items clusters` and Feature rows for the four new features to `claude/skills/tomlctl/SKILL.md`; add `### Sweep the tree for patterns`, `### Re-sweep a pattern item` and `### Cluster items for apply` sections to `claude/skills/tomlctl/references/query.md`, each holding a fenced invocation, sample JSON, and a flag table beneath a `#### `<verb>`` sub-heading (`#### `sweep``, `#### `items sweep``, `#### `items clusters`` — a bare backticked span with no `tomlctl` prefix, the form `flag_table_lint` attributes rows to), and extend the orphans section's class list with `instance-missing` and its five `reason` values (`missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `unparseable`) and the previously undocumented `io-error`, `outside-repo` classes."
+detail = "Every fenced `tomlctl` invocation is parsed by `command_lint` against the real clap surface and every flag-table row by `flag_table_lint`, so spell flags exactly as task 11 declares them. Document the `git ls-files` limits (staged deletes, gitlinks, `core.longpaths`, submodules) and the default `--exclude` list. Keep `query.md` under the 600-line reference ceiling (today 218); note the `--update` write path lives in `references/write.md` (task 16). Add the three anchors to the `## Contents` list."
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- command_lint flag_table_lint skill_references_under_line_ceiling` passes (falsifier: a misspelled flag in a table row fails `flag_table_lint`) — predicted, unverified; `grep -c '^#### `items clusters`$' claude/skills/tomlctl/references/query.md` prints `1` (today: 0)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "document-the-write-path-and-integrity-matrix"
+title = "Document the write path and integrity matrix"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — documentation"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/references/write.md",
+]
+needs = [11]
+coupling = []
+deps_note = ""
+action = "Add `items sweep`, `items clusters` and `sweep` rows to the `--verify-integrity` support matrix in `claude/skills/tomlctl/references/flow.md`; in `claude/skills/tomlctl/references/write.md` add an `### Re-sweep and rewrite instances (items sweep --update)` entry describing the `MutationPlan` shape, `--dry-run`, sidecar refresh, that `enumeration` is never rewritten, and that `--update` refuses on a truncated or partially-covered sweep, and extend the no-`--array` note at L293 with the two new verbs."
+detail = 'Same lint constraints as task 15. `sweep` (standalone) takes no ledger, so its matrix row reads "n/a".'
+acceptance = "`grep -c 'items sweep' claude/skills/tomlctl/references/flow.md` prints at least `1` (today: 0); `grep -c 'items sweep --update' claude/skills/tomlctl/references/write.md` prints at least `1` (today: 0); `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl lint::command_lint` passes (falsifier: a fenced invocation with a misspelled flag is red)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "rewire-the-apply-flow-skills-to-the-verbs"
+title = "Rewire the apply-flow skills to the verbs"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — documentation"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md",
+    "claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md",
+    "claude/skills/flow-contract-apply-dependency-sort/SKILL.md",
+]
+needs = [11]
+coupling = []
+deps_note = ""
+action = 'Rewrite apply-pipeline Step 3 to run `tomlctl items clusters <ledger> --ids <selected>` and consume `clusters`, `batches`, `dropped_deps` and `lite_file_scope`, which satisfies only the *mechanical half* of criterion 1 — the orchestrator still judges "one edit shape across all of them" itself, and a `lite_file_scope: true` cluster spanning items with different edit shapes still fails criterion 1; rewrite the pre-analysis "Re-sweep pattern items" bullet to run `tomlctl items sweep <ledger> --ids <pattern ids>` and read `new`/`gone`/`unverified` into the `instances: 14 recorded, 16 now — 2 new: …` line it already specifies; reframe the dependency-sort skill as the specification of what `items clusters` computes (sort first, union within a level, sequential batches across levels) with its pseudocode retained as the fallback for a binary older than 0.9.'
+detail = 'Keep the fallback in the form `claude/commands/optimise.md:51` uses for `items orphans` ("on an older binary predating that subcommand, …"). Do not change the coupling-isolation rule, the "sequential batches even when they share a file" rule, or the other three gate criteria. Fenced invocations are lint-parsed.'
+acceptance = "`grep -c 'tomlctl items clusters' claude/skills/flow-contract-apply-pipeline/SKILL.md` prints at least `1` (today: 0); `grep -c 'tomlctl items sweep' claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md` prints at least `1` (today: 0); `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl lint::command_lint` passes (falsifier: a fenced `tomlctl items clusters --id R1` with the wrong flag name makes it red)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "rewire-the-vet-disposition-sweep-and-ledger-schema-skills"
+title = "Rewire the vet, disposition-sweep and ledger-schema skills"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — documentation"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-vet-research/SKILL.md",
+    "claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md",
+    "claude/skills/flow-contract-ledger-schema/SKILL.md",
+]
+needs = [11]
+coupling = []
+deps_note = ""
+action = """In vet step 4, replace the "re-run its `sweep` strings" sentence with the `tomlctl items sweep <ledger> --ids <id>` call and its `new`/`gone`/`unverified` reading, keeping the hand re-run as the older-binary fallback; add `instance-missing` with its five `reason` values (`missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `unparseable`) to the orphan class list in the disposition-sweep skill; in the ledger-schema skill's `instances` / `sweep` bullets (`:69-71`), name `items sweep` as the re-runner and `items clusters` as the consumer of the declared file set, and extend the `depends_on` bullet's class list at `:74` with `instance-missing`."""
+detail = "Note in the vet skill that a vet-time sweep is read-only (no `--update`) because findings are not yet accepted."
+acceptance = "`grep -c 'items sweep' claude/skills/flow-contract-vet-research/SKILL.md` prints at least `1` (today: 0); `grep -c 'instance-missing' claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md` prints at least `1` (today: 0); `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl lint::command_lint` passes (falsifier: a fenced invocation with a misspelled flag is red)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "point-the-research-method-at-the-standalone-sweep"
+title = "Point the research method at the standalone sweep"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — documentation"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/skills/research-methods/references/codebase-review.md"]
+needs = [11]
+coupling = []
+deps_note = ""
+action = 'In the "Sweep for every instance" section, add that `tomlctl sweep -e <regex> [-e …]` run from the repo root is the preferred enumerator when the binary is available, that its `hits` map directly onto the `Instances` line and its patterns onto `sweep`, that patterns must use ASCII forms such as `(?-u:\w)`, and that `coverage_complete: false` or `truncated: true` means the enumeration is `incomplete`.'
+detail = "Two short paragraphs; keep the existing form-coverage guidance intact. The fenced invocation is lint-parsed."
+acceptance = "`grep -c 'tomlctl sweep' claude/skills/research-methods/references/codebase-review.md` prints at least `1` (today: 0); `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl lint::command_lint` passes (falsifier: a fenced invocation with a misspelled flag is red)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 20
+ref = "update-the-schema-hardcoding-callouts"
+title = "Update the schema-hardcoding callouts"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — documentation"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/commands/review-plan.md",
+]
+needs = [11]
+coupling = []
+deps_note = ""
+action = "Extend the three callouts that name `items orphans` and `items find-duplicates` as the closed pair of verbs that hardcode the review/optimise `[[items]]` schema — `claude/skills/flow-contract-execution-record-schema/SKILL.md:88`, `claude/skills/tomlctl/references/tasks-store.md:79-80`, `claude/commands/review-plan.md:127` — so each names `items sweep` and `items clusters` as well and no longer claims every other `items` subcommand is schema-agnostic."
+detail = "One sentence per site; keep each callout's surrounding wording. These are the only three sites (co-occurrence sweep of `orphans` and `find-duplicates` across `claude/**` and `tomlctl/**`; historical plan documents excluded)."
+acceptance = "`grep -c 'items sweep' claude/skills/flow-contract-execution-record-schema/SKILL.md claude/skills/tomlctl/references/tasks-store.md claude/commands/review-plan.md | grep -vc ':0$'` prints `3` (today: 0)."
+agent = ""
+commit = ""

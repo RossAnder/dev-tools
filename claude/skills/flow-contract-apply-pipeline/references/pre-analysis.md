@@ -61,6 +61,12 @@ reclaiming orchestrator budget for Step 4 launch and Step 5 verification.
   or symbol; a verbatim match lets the orchestrator pre-transition to `<NO-CHANGE>` without
   dispatching. Semantic-judgement cases (refactor equivalence, moved code, paraphrased
   recommendations) route to an agent, not the orchestrator.
+- **Re-sweep pattern items.** For every item carrying `sweep`, re-run its search strings
+  against the current tree before clustering. Sites grow between rounds. Union any new site
+  into the item's file set for this run, note the growth in the agent prompt
+  (`instances: 14 recorded, 16 now — 2 new: <file:symbol>, <file:symbol>`), and leave the
+  ledger's `instances` for the ledger write at Step 6. A site that has disappeared is not
+  an error; the agent read-verifies it like any other already-applied case.
 - Reason through the implementation approach NOW for findings involving novel APIs or
   cross-cutting patterns, and carry that reasoning into the agent's prompt.
 - Verify target files still match the finding — cited code that has shifted or been rewritten

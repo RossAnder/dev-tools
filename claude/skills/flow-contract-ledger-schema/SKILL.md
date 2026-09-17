@@ -66,6 +66,9 @@ related = []
 - `symbol` — function / struct / trait method name. **Strongly recommended** for line-drift resilience; omit if no natural anchor applies.
 - `description` — longer explanation when `summary` is insufficient.
 - `evidence` — array of strings: doc URLs, Context7 query citations, benchmark links.
+- `instances` — array of `file:symbol` (or `file:line`) anchors for a pattern finding: every site that takes the same fix, the canonical `file` / `line` included. The apply flow's file budget for the item is the set of files named here plus `file` plus any named in `description`; an item without `instances` budgets on `file` and `description` alone.
+- `sweep` — array of the search strings that produced `instances`, verbatim, so the vet pass and the apply flow's pre-analysis can re-run them.
+- `enumeration` — `complete` | `incomplete`. `incomplete` means the sweep could not bound the set (a form that cannot be searched for); `description` states the floor and the unsearchable form.
 - `related` — array of peer IDs (e.g. `["R5", "R8"]`).
 - `flow` — slug of the flow that contains or resolved this item. Empty/omitted for flow-less ledgers.
 - `depends_on` — array of ledger IDs (e.g. `["O7", "R12"]`) this item must apply AFTER. Consumed by the topological sort in `/review-apply` and `/optimise-apply` Step 3. Forward references to non-existent IDs are harmless — the topo sort restricts the DAG to the selected set — but `tomlctl items orphans <ledger>` surfaces dangling refs for hygiene (emits `{"id":...,"class":"dangling-dep","dangling_deps":[...]}` records alongside `missing-file` and `symbol-missing` classes).

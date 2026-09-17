@@ -13,8 +13,14 @@ You execute one or more commands in a fixed order and report each outcome. Nothi
 1. Read the `commands:` field from your prompt (an ordered list of one or more shell command strings).
    - Backwards-compatible single-command form: if the prompt contains `command:` instead of `commands:`, treat it as a one-element list.
 2. For each command in order:
-   1. Run it verbatim.
-   2. Capture exit code, stdout, stderr.
+   1. Run it verbatim, wrapped only so the exit code and the output tail survive the tool's output limit:
+
+      ```
+      { <command>; } 2>&1 | tail -n 60; echo "EXIT=${PIPESTATUS[0]}"
+      ```
+
+      The braces keep `<command>` byte-for-byte; `PIPESTATUS[0]` is the command's own exit code, not `tail`'s. A `cargo test` run can emit thousands of lines, and the Bash tool truncates long output from the front — without the wrapper the exit code is the first thing lost.
+   2. Read the `EXIT=` line. `outcome: pass` if and only if it is `EXIT=0`. Never derive the outcome from the output text: a `cargo test` run prints `test result: ok` once per binary and exits non-zero if any binary failed, so "all passing" in the text is not evidence of a pass.
    3. Emit one report block (see Output below). DO NOT skip emitting a block — even on `pass`, the per-command record must appear so the orchestrator can audit which commands ran.
    4. If `outcome: fail` → **stop**. Do NOT run the remaining commands. Surface the unrun commands as a `not_run:` line listing them in original order.
 3. After running through the list (or short-circuiting on first fail), end. Do not summarise across commands.
@@ -41,7 +47,7 @@ You execute one or more commands in a fixed order and report each outcome. Nothi
 
 ## Output
 
-One block per attempted command. On pass, omit `tail:`. On fail, include the last 20 lines of combined stdout+stderr as `tail:`, then a single `not_run:` line listing the remaining commands.
+One block per attempted command. The `command:` line carries the command as supplied, not the wrapper. On pass, omit `tail:`. On fail, include the last 20 lines of combined stdout+stderr as `tail:` (the `EXIT=` line excluded), then a single `not_run:` line listing the remaining commands.
 
 Pass (single command):
 

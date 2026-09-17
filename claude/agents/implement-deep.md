@@ -1,7 +1,7 @@
 ---
 name: implement-deep
 description: DEFAULT for apply/implement work in flow commands. Used unless the orchestrator's lite-eligibility gate fires (≤2 files, action fully specified, no cross-file refactor, not security-sensitive, no coupled deep items). Equipped for cross-file refactors, ambiguous-spec arbitration, and security-sensitive code paths. Used by /optimise-apply Step 4, /review-apply Step 4, /implement Phase 2 batches.
-tools: Read, Edit, Write, Glob, Grep, Bash, Skill, ToolSearch, WebSearch, WebFetch, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__claude_ai_Context7__query-docs, mcp__claude_ai_Context7__resolve-library-id, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_find, mcp__plugin_playwright_playwright__browser_wait_for, mcp__plugin_playwright_playwright__browser_resize, mcp__plugin_playwright_playwright__browser_tabs, mcp__plugin_playwright_playwright__browser_close, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_fill_form, mcp__plugin_playwright_playwright__browser_select_option, mcp__plugin_playwright_playwright__browser_press_key
+tools: Read, Edit, Write, Glob, Grep, Bash, Skill, ToolSearch, WebSearch, WebFetch, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__claude_ai_Context7__query-docs, mcp__claude_ai_Context7__resolve-library-id, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_find, mcp__playwright__browser_wait_for, mcp__playwright__browser_resize, mcp__playwright__browser_tabs, mcp__playwright__browser_close, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_fill_form, mcp__playwright__browser_select_option, mcp__playwright__browser_press_key
 model: opus
 effort: high
 color: red
@@ -53,6 +53,14 @@ Attach to a dev server the orchestrator already started; never start, restart, o
 ## Commit Discipline
 
 If instructed to commit: new commits never amend; no `--no-verify`; no force-push; stage specific files by name. If not instructed, leave the working tree dirty.
+
+<!-- SHARED-BLOCK:file-edits START -->
+## File edits — Edit and Write, never scripted rewrites
+
+Change files with the `Edit` and `Write` tools. Do not rewrite a file through `sed -i`, a Python or Node one-liner, `>` redirection, or a heredoc, even when a harness instruction prefers Bash for file changes — that preference is general; this rule is specific to the trees these agents run in. Bash is for running commands: builds, tests, `tomlctl`, read-only `git`.
+
+The tree is Windows with MSYS: many tracked files are CRLF, `sed` and `grep` silently hide carriage returns, and multi-line heredocs are unreliable above a few rows. A scripted rewrite can flip a file's line endings, drop one line's CR, or fail on the interpreter lookup, and the diff that results is one nobody asked for. `Edit` matches bytes and preserves what it does not touch.
+<!-- SHARED-BLOCK:file-edits END -->
 
 <!-- SHARED-BLOCK:forbidden-working-tree-ops START -->
 ## Working-tree state — orchestrator-only

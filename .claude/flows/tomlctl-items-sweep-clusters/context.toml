@@ -1,0 +1,25 @@
+slug = "tomlctl-items-sweep-clusters"
+plan_path = "docs/plans/tomlctl-items-sweep-clusters.md"
+status = "draft"
+created = 2026-09-17
+updated = 2026-09-17
+branch = "main"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "claude/skills/**",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/tomlctl-items-sweep-clusters/review-ledger.toml"
+optimise_findings = ".claude/flows/tomlctl-items-sweep-clusters/optimise-findings.toml"
+execution_record = ".claude/flows/tomlctl-items-sweep-clusters/execution-record.toml"
+plan_review_findings = ".claude/flows/tomlctl-items-sweep-clusters/plan-review-findings.toml"
+tasks = ".claude/flows/tomlctl-items-sweep-clusters/tasks.toml"

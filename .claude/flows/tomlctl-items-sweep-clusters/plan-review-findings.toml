@@ -1,0 +1,515 @@
+schema_version = 1
+last_updated = 2026-09-17
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 7. Build the sweep engine [L]"
+summary = "memchr is not a declared dependency; task 7 cannot compile"
+description = "Task 7's Detail calls memchr::memchr and memchr::memchr_iter, but tomlctl/Cargo.toml [dependencies] (L14-46) lists no memchr; Cargo.lock:384 holds 2.8.3 only transitively via regex/aho-corasick, and regex does not re-export it. Only task 12 touches Cargo.toml and it runs after 7 (7 -> 11 -> 12). Three statements also need correcting: Research Notes 'via the already-locked memchr 2.8.3', Scope's 'no new crates', and Verification Commands' 'no new dependencies' (cargo audit is genuinely unchanged; the manifest and lockfile are not)."
+anchor_old = "- **Files**: `tomlctl/src/sweep.rs`"
+anchor_new = "- **Files**: `tomlctl/src/sweep.rs`, `tomlctl/Cargo.toml`, `tomlctl/Cargo.lock`"
+dedup_id = "11a0eb6df42a51e0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Dependency Graph"
+summary = "Checkpoint A fails the plan's own clippy -D warnings gate on dead_code"
+description = "tomlctl is a bin-only crate with no crate-level allow (main.rs:1-36; Cargo.toml [lints.clippy] sets only manual_filter and unnecessary_map_or), so unused pub(crate) items are dead_code and -D warnings promotes them. At checkpoint A nothing outside cfg(test) calls task 2's Anchor/AnchorAt/parse/files_of/Display (first consumer tasks 8-10), task 3's tracked_files (task 7) or task 6's compile_user_bytes_regex (task 7); --all-targets still compiles the plain bin target. Tasks 4 and 5 keep live callers and are safe; task 1's empty modules are safe. The crate's precedent is per-item #[allow(dead_code)] with a one-line reason (items.rs:1699-1702, errors.rs:34, backlog/ids.rs:44). Fix: tasks 2, 3, 6 add the attribute on the items nothing calls yet; task 7 removes it from repo_files.rs and query.rs and task 8 from anchor.rs (adding those files to their Files lines; edges 3->7, 6->7, 2->8 already exist)."
+anchor_old = "the crate builds and every existing test still passes, with no verb yet exposed"
+anchor_new = "the crate builds and every existing test still passes, with no verb yet exposed; tasks 2, 3 and 6 carry `#[allow(dead_code)]` (with a one-line reason, per `tomlctl/src/items.rs:1699`) on the items nothing calls until tasks 7 and 8, which remove it, so `cargo clippy --all-targets -- -D warnings` stays green at this cut"
+dedup_id = "c168e08db4e5d420"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 5. Expose the positional Kahn core [S]"
+summary = "mod graph; stays private, so task 9 hits E0603 despite pub(crate) fn"
+description = "tomlctl/src/tasks/mod.rs:18 declares `mod graph;` with no visibility; only dispatch and markdown are pub(crate) mod (mod.rs:31-39, which documents this exact trap). clusters.rs sits at the crate root (task 1, Scope), so crate::tasks::graph::layered_kahn is unreachable from it. Task 5's acceptance passes without the mod.rs edit, so the failure lands on task 9 in checkpoint B as a compile error in a file it does not own. Add `pub(crate) mod graph;` to task 5's Action and a second acceptance: `grep -c 'pub(crate) mod graph' tomlctl/src/tasks/mod.rs` prints `1` (today: 0)."
+anchor_old = "- **Files**: `tomlctl/src/tasks/graph.rs`"
+anchor_new = "- **Files**: `tomlctl/src/tasks/graph.rs`, `tomlctl/src/tasks/mod.rs`"
+dedup_id = "4a6f8143ee8649de"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "critical"
+category = "executability"
+plan_section = "### 15. Document the verbs in the tomlctl skill [M]"
+summary = "Task 15's cargo test command is rejected by cargo (one positional filter)"
+description = "Probe: `cargo test --manifest-path /nonexistent/Cargo.toml a b` -> `error: unexpected argument 'b' found`; cargo takes a single [TESTNAME] and further filters must follow `--`. The three tests exist (dispatch/tests/lint.rs:261, :665; tests/skills.rs:639) as unit tests in the bin. This is the only Phase-C criterion that runs the doc lints at all (see P23)."
+anchor_old = "`cargo test --manifest-path tomlctl/Cargo.toml command_lint flag_table_lint skill_references_under_line_ceiling` passes"
+anchor_new = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- command_lint flag_table_lint skill_references_under_line_ceiling` passes"
+dedup_id = "00f82ff10b7fb841"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "critical"
+category = "executability"
+plan_section = "### 15. Document the verbs in the tomlctl skill [M]"
+summary = "Task 15's heading grep fails its positive control under the Action's own headings"
+description = '''Two-control probe: `printf '### Cluster items for apply\n#### \`tomlctl items clusters\`\n' | grep -c '^### .*tomlctl items clusters'` prints 0; only a level-3 heading literally containing 'tomlctl items clusters' passes. The Action names three prose headings (### Sweep the tree for patterns / ### Re-sweep a pattern item / ### Cluster items for apply) and flag_table_lint (dispatch/tests/lint.rs:474 subcommand_heading_path) attributes a table only to a heading that is one bare backticked span, with a leading `tomlctl` token stripped; every existing backticked verb heading omits the prefix (tasks.md:93 `## \`tasks add\``, backlog.md:216). A convention-following executor writes `#### \`items clusters\`` and the acceptance prints 0. Make the Action state the sub-heading form and align the grep.'''
+anchor_old = "`grep -c '^### .*tomlctl items clusters' claude/skills/tomlctl/references/query.md` prints `1` (today: 0)"
+anchor_new = "`grep -c '^#### `items clusters`$' claude/skills/tomlctl/references/query.md` prints `1` (today: 0) — each flag table sits under a `#### `<verb>`` sub-heading (bare backticked span, no `tomlctl` prefix, the form `flag_table_lint` attributes rows to) beneath its prose `###` section"
+dedup_id = "ebdd5806ef4deacf"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "critical"
+category = "risk"
+plan_section = "## Approach"
+summary = "Sweep enumerates ledgers, plans and backlog, so every pattern item self-matches"
+description = '''instances and sweep are stored verbatim in the ledger (ledger-schema SKILL.md:69-70), and git ls-files lists 38 review-ledger.toml files, .claude/backlog.toml (161 KB) and, via --others, the untracked plan and .claude/flows/<slug>/ artefacts. A pattern like (?-u:\bhandle_foo\b) matches its own instances line, so the ledger lands in `new`; --update (or the pre-analysis 'union any new site' step) writes it into instances; items clusters then keys every pattern item on the ledger path and union-find merges them all into one cluster, destroying the file-disjoint parallelism the verb exists for and handing an implementer the ledger it is audited against. docs/plans/*.md quote symbol names the same way. Exclude the ledger being swept, .claude/**, and docs/plans/** from enumeration (or expose --exclude globs with those defaults).'''
+anchor_old = 'split on `\0`, sorted, deduplicated'
+anchor_new = '''split on `\0`, sorted, deduplicated, then filtered: the ledger being swept, everything under `.claude/`, and `docs/plans/**` are dropped, because an item's `instances` and `sweep` arrays are stored verbatim there and every pattern would otherwise match its own record'''
+dedup_id = "38202a013926a1ca"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "critical"
+category = "risk"
+plan_section = "## Approach"
+summary = "items sweep --update deletes anchors in files the engine never searched"
+description = "`gone` is 'recorded anchors whose file has no hit', but a file yields zero hits when it was skipped as binary, oversize or unreadable, or when --max-hits truncation stopped collection before reaching it (one literal pattern 'tomlctl' yields 3083 hits in this repo, so 5000 is one broad -e away). coverage_complete excludes binary skips by construction, and --update has no gate on truncated or coverage_complete, so a still-valid anchor is dropped from instances, which is the apply flow's file budget. Two repairs: refuse --update when truncated or any recorded file was skipped, reporting those anchors under `unverified`; and fold skipped_binary into coverage_complete."
+anchor_old = "Report `new` (hits in files not recorded, as `file:line`), `gone` (recorded anchors whose file has no hit), `kept`."
+anchor_new = "Report `new` (hits in files not recorded, as `file:line`), `gone` (recorded anchors whose file was searched and has no hit), `kept`, and `unverified` (recorded anchors whose file was skipped or lies past a `--max-hits` cut). `--update` refuses when `truncated` is true or `unverified` is non-empty, since absence of a hit is not evidence there."
+dedup_id = "ddfc2fd166e5dab8"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "critical"
+category = "completeness"
+plan_section = "### 9. Compute file-disjoint clusters and dependency batches [L]"
+summary = "lite_file_scope drops the 'one edit shape' conjunct of gate criterion 1 and is specified two ways"
+description = "apply-pipeline SKILL.md:202-204 criterion 1 is '<= 2 files, OR every file comes from a pattern item's instances with enumeration = complete AND one edit shape across all of them; three sites of three different fixes are not [lite]'. Task 9's formula has no edit-shape conjunct, so two complete pattern items unioned by a shared file (the gate's own counter-example) return true, and task 17 wires the flag as 'satisfying the gate's file-scope criterion' while the coupling-isolation rule sends the whole cluster to implement-lite. Two further defects: ## Approach L91 says 'every file traces to an item whose enumeration is complete' (exists) while task 9 says 'contributed only by items whose enumeration == complete' (forall), and neither says how an item with no enumeration key counts. Fix: flag lite on the pattern limb only for a single-item cluster whose one item is complete; treat a missing key as not complete; align Approach and task 17 ('mechanical half of criterion 1; the orchestrator still judges edit shape')."
+anchor_old = '`lite_file_scope` = `files.len() <= 2 || every file is contributed only by items whose enumeration == "complete"`'
+anchor_new = """`lite_file_scope` = `files.len() <= 2 || (item_ids.len() == 1 && that item's enumeration == "complete")` — a missing `enumeration` key counts as not complete, and a multi-item cluster is never lite on the pattern limb because the gate's "one edit shape across all of them" conjunct is not machine-decidable; `## Approach` and task 17 must say the same"""
+dedup_id = "c63921abc9324968"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 11. Wire the verbs into clap and dispatch [M]"
+summary = "ItemsOp::Sweep flattens WriteIntegrityArgs, which has no strict_read; the read path as specified does not compile"
+description = "types.rs:176-219 WriteIntegrityArgs carries allow_outside, no_write_integrity, verify_integrity, strict_integrity, no_create; strict_read lives only on ReadIntegrityArgs (:150-171) and flattening both collides on --verify-integrity. Task 11's Detail says to follow the Orphans arm's strict_read_check, which cannot be called. Two consequences: a missing ledger returns an empty report instead of kind=not_found, and --no-create defaults off so a typo'd path seeds a ledger skeleton on a read-only run. Decide in the plan: keep the write bundle, drop strict_read_check from the Detail, and guard a missing ledger explicitly with ErrorKind::NotFound before read_doc. (No --dry-run clash: the bundle has no dry_run field.)"
+anchor_old = "`items sweep` without `--update` is a read path through `read_doc`"
+anchor_new = "`items sweep` without `--update` is a read path through `read_doc` with `verify_integrity` taken from the write bundle — `WriteIntegrityArgs` carries no `--strict-read`, so `strict_read_check` does not apply; test the ledger's existence first and return `ErrorKind::NotFound`, so the write bundle's auto-create never mints a ledger on a read-only run"
+dedup_id = "b73179d0a1b405c2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "completeness"
+plan_section = "### 12. Register the verbs in the capability surface, README and version [M]"
+summary = '["sweep","--help"] in the read-only help array is a guaranteed red test; Action and Detail disagree on items sweep'
+description = "tests/capabilities.rs:68-74 asserts every read_subs entry prints both --verify-integrity and --strict-read; task 11's Cmd::Sweep flattens no integrity bundle, so it fails on the first assert. The Action puts items sweep in the read-only array 'where applicable' while the Detail says it belongs beside items update; write_subcommands_expose_all_integrity_flags_in_help (:95) needs only the four write flags, so the Detail is right. Standalone sweep belongs in neither array (like capabilities and integrity today) and has no valid shape for strict_read_uniform_across_read_subcommands (no file argument)."
+anchor_old = 'add `["sweep","--help"]`, `["items","sweep","--help"]`, `["items","clusters","--help"]` to the read-only help array where applicable'
+anchor_new = 'add `["items","clusters","--help"]` to the read-only help array and `["items","sweep","--help"]` to the write array; leave the standalone `sweep` out of both, since it reads no TOML file and carries neither integrity bundle'
+dedup_id = "d158c05ebadf1cf0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "completeness"
+plan_section = "### 12. Register the verbs in the capability surface, README and version [M]"
+summary = "tomlctl/Cargo.lock changes on the version bump and is on no Files line"
+description = "Cargo.lock:706-707 records tomlctl 0.8.0; the first cargo invocation after the bump rewrites it (and P1's memchr addition changes it again). The declared file set is the apply flow's budget and the commit's staging list, so an undeclared regenerated lockfile is either an escalation or a dirty file at the checkpoint. Add it to task 12's Files and to ## Scope affected areas."
+anchor_old = "- **Files**: `tomlctl/Cargo.toml`, `tomlctl/tests/capabilities.rs`, `tomlctl/README.md`"
+anchor_new = "- **Files**: `tomlctl/Cargo.toml`, `tomlctl/Cargo.lock`, `tomlctl/tests/capabilities.rs`, `tomlctl/README.md`"
+dedup_id = "373102c7405674b1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 13. Integration-test the sweep verbs [M]"
+summary = "seed_ledger and sandbox() create two unrelated tempdirs, so --update is refused by write containment"
+description = "tests/common/mod.rs:20-27 seed_ledger mints its own tempfile::tempdir() and writes <that dir>/.claude/ledger.toml; :263-291 sandbox() creates a different canonicalised, git-init'd root that cli() (:344) exports as TOMLCTL_ROOT. The write path refuses a target outside <root>/.claude/ without --allow-outside, and a ledger outside the root cannot reference the swept files anyway. Both tasks 13 and 14 name seed_ledger. Fix: write the ledger into the sandbox's own .claude/ (a new root-relative helper such as seed_ledger_in(root, name, toml) in tests/common/mod.rs, which then belongs on task 13's Files line and in ## Scope, and must not also be added by task 14 in parallel). Secondary: sandbox() sets no git identity, and --others lists uncommitted files, so 'commits two files' is unnecessary — write them."
+anchor_old = "Add an integration binary using `common::sandbox()` and `common::cli()` that commits two files into the sandbox repo"
+anchor_new = "Add an integration binary using `common::sandbox()` and `common::cli()`, plus a new root-relative `common::seed_ledger_in(root, name, toml)` helper in `tomlctl/tests/common/mod.rs` (`seed_ledger` mints its own tempdir and cannot share the sandbox root, which write containment requires), that writes two files into the sandbox repo (no commit needed — `--others` lists them)"
+dedup_id = "400dfa935acc56ef"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "executability"
+plan_section = "### 8. Bind the engine to ledger items [M]"
+summary = "update_plan cannot compose compute_update_mutation per item into one MutationPlan"
+description = "items.rs:1658-1675 compute_update_mutation clones the input doc per call and returns updated: vec![id]; MutationPlan (:1211) has one new_doc and no merge. N calls against the same doc yield N independent documents, and the named unit test checks only the updated id set, so a last-item-wins bug passes. The batch primitive compute_apply_mutation (items.rs:1254, already cited in Exploration Notes) returns one plan for an ops list. Also unstated: the per-item instances payload must be JSON-serialised."
+anchor_old = "`update_plan` composes through `items::compute_update_mutation` per item into one `MutationPlan`; it never touches `enumeration`."
+anchor_new = '`update_plan` builds one ops list — one `{"op":"update","id":…,"json":{"instances":[…]}}` entry per swept item — and calls `items::compute_apply_mutation` (`tomlctl/src/items.rs:1254`) once, which returns a single `MutationPlan` with every touched id in `updated`; `compute_update_mutation` clones the source document per call and cannot be folded. It never touches `enumeration`.'
+dedup_id = "cebdf02a6ecbdde7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "warning"
+category = "risk"
+plan_section = "## Approach"
+summary = "Clustering before sorting inverts the dependency-sort contract and can manufacture a false cycle"
+description = "apply-dependency-sort SKILL.md:30: the topo order feeds clustering; items at different topo levels run in sequential batches even when they share a file. The plan unions on files first, then sorts clusters. Three divergences: (1) A->B, C->D with A,D sharing a file and B,C sharing a file gives clusters X={A,D}, Y={B,C} with X->Y and Y->X — the item DAG is acyclic but the verb refuses, naming items with no cycle; (2) dependent same-file items collapse into one cluster with no commit between them; (3) a genuine A<->B cycle on a shared file becomes an ignored self-edge and the mandated abort never fires. Task 17 then 'reframes' the skill as the spec of what the verb computes, asserting an equivalence that does not hold. Fix: sort items first and union only within a topo level (or split a cluster whose induced graph is cyclic); task 9's 'self-edges ignored' and task 17's untouched-rules list change accordingly."
+anchor_old = "Batches come from `tasks::graph::layered_kahn`"
+anchor_new = "Items are topologically sorted first and unioned only within one topo level, matching the contract this verb replaces (dependent same-file items stay in sequential batches, and an item-level cycle is refused before clustering); batches then come from `tasks::graph::layered_kahn`"
+dedup_id = "389c64e0a59ac96f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "warning"
+category = "risk"
+plan_section = "## Approach"
+summary = ".github symlink mirror doubles every hit and can put one inode in two clusters"
+description = "`ls -la .github` shows agents and every skills/<name> as directory symlinks into claude/, while `git ls-files -s .github` holds 32 entries at mode 100644 (no 120000), so the sweep reads each mirrored file twice under two paths; items orphans already reports 9 hits under claude/ and 9 under .github/. Consequences: (a) Instances and enumeration counts are inflated 2x for harness prose — the miscount the plan exists to remove; (b) --update writes both anchors, doubling the file budget; (c) items clusters treats the two paths as distinct files, so two items can land in different clusters that edit the same inode, breaking the no-shared-file dispatch invariant. Canonicalise (fs::canonicalize, relativised) before hit dedupe and before union-find keying."
+anchor_old = "Hits are `{file, line, pattern}` sorted by file then line then pattern index"
+anchor_new = "Hits are `{file, line, pattern}` keyed by canonicalised path (this repo mirrors `claude/agents` and every `claude/skills/<name>` under `.github/` through directory symlinks that git holds as ordinary blobs), so one file reachable by two paths is reported once, then sorted by file then line then pattern index"
+dedup_id = "a5cd8119fb4093ae"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "warning"
+category = "risk"
+plan_section = "## Approach"
+summary = "File-granularity diffing cannot see new sites inside an already-recorded file"
+description = "references/pre-analysis.md:64-69 specifies the consumed form as `instances: 14 recorded, 16 now — 2 new: <file:symbol>, <file:symbol>` — per-site counts with symbol anchors. The plan's `new` is 'hits in files not recorded', so an item recorded as src/a.rs:foo that has grown two call sites in src/a.rs reports new: [] and --update leaves instances at one anchor — the exact miscount ## Context cites as the motivation. Task 17's rewrite then cannot produce the line it replaces. Compare at anchor granularity: a hit whose line (or enclosing symbol) matches no recorded anchor in that file is new even when the file is recorded."
+anchor_old = "then compare at file granularity"
+anchor_new = "then compare at anchor granularity: a hit in a recorded file whose line matches no recorded `file:line` anchor and lies outside every recorded `file:symbol` anchor's line is `new`, so growth inside an already-recorded file is visible; file-level `recorded`/`found` sets are reported alongside for the apply flow's file budget"
+dedup_id = "0e2bb4876082c84e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "warning"
+category = "risk"
+plan_section = "### 11. Wire the verbs into clap and dispatch [M]"
+summary = "FEATURES/SUBCOMMANDS registration in task 11 leaves its per-task commit red on three parity tests"
+description = "tests/capabilities.rs:1626 asserts features.len() == the hand-copied array's length, and readme_feature_transcriptions_match_capabilities_features (:2255ff) asserts set equality against both README transcriptions; all three copies are task 12's files. With per-task commits, task 11's commit is red and a checkpoint after 11 is impossible rather than optional. Move the two const edits into task 12 (which already owns capabilities.rs and README.md), leaving task 11 the clap variants and dispatch arms."
+anchor_old = 'register `"sweep"` in `SUBCOMMANDS` and `"sweep"`, `"items_sweep"`, `"items_clusters"`, `"orphans_instances"` in `FEATURES`; add the three dispatch arms.'
+anchor_new = "add the three dispatch arms. (The `SUBCOMMANDS` and `FEATURES` registrations move to task 12, which owns their three gated mirrors — splitting them leaves the capability parity tests red at this task's commit.)"
+dedup_id = "38ff112299265efb"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "warning"
+category = "completeness"
+plan_section = "## Scope"
+summary = "Three 'only orphans and find-duplicates hardcode the ledger schema' callouts are falsified and on no Files line"
+description = "items sweep and items clusters read review-ledger fields (sweep, instances, depends_on, status), joining the closed pair named at flow-contract-execution-record-schema/SKILL.md:88 ('Two tomlctl items subcommands ... all other subcommands work correctly against this schema'), claude/skills/tomlctl/references/tasks-store.md:79-80 ('Two subcommands ... emit garbage against this one') and claude/commands/review-plan.md:127 ('find-duplicates / orphans hardcode the review/optimise schema and MUST NOT run against this file'). Enumeration complete (co-occurrence sweep over claude/** and tomlctl/**, historical plan docs excluded). Extend task 18 (or add an S task) to cover the three; the review-plan.md edit also needs Scope's out-of-scope carrier line narrowed."
+anchor_old = "`claude/skills/flow-contract-ledger-schema/SKILL.md`, `claude/skills/research-methods/references/codebase-review.md`."
+anchor_new = "`claude/skills/flow-contract-ledger-schema/SKILL.md`, `claude/skills/flow-contract-execution-record-schema/SKILL.md`, `claude/skills/tomlctl/references/tasks-store.md`, `claude/commands/review-plan.md` (the three schema-hardcoding callouts that name `orphans` and `find-duplicates` as a closed pair), `claude/skills/research-methods/references/codebase-review.md`, `tomlctl/Cargo.lock`, `tomlctl/tests/common/mod.rs`."
+dedup_id = "31a7890d849d2fe3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "warning"
+category = "executability"
+plan_section = "### 7. Build the sweep engine [L]"
+summary = "SweepOptions, Hit and SweepReport fields are private by default, blocking tasks 8 and 11"
+description = "Rust struct fields are module-private unless marked; task 7 spells pub(crate) on the structs and on nothing inside them, and coverage_complete() has no visibility marker. Task 8 must read hits/truncated/coverage_complete from items_sweep.rs and task 11 must construct SweepOptions from --max-file-bytes/--max-hits in cli/dispatch.rs; neither compiles as specified, and under fetch-by-id dispatch task 7's executor cannot see the consumers. Also needed: impl Default for SweepOptions."
+anchor_old = "`pub(crate) struct SweepReport { hits: Vec<Hit>, files_scanned: usize, skipped_binary: usize, skipped_oversize: usize, skipped_unreadable: usize, truncated: bool }` with `coverage_complete()`"
+anchor_new = "`pub(crate) struct SweepReport { pub(crate) hits: Vec<Hit>, pub(crate) files_scanned: usize, pub(crate) skipped_binary: usize, pub(crate) skipped_oversize: usize, pub(crate) skipped_unreadable: usize, pub(crate) truncated: bool }` with `pub(crate) fn coverage_complete(&self) -> bool` (every field of `SweepOptions` and `Hit` likewise `pub(crate)`, plus `impl Default for SweepOptions`)"
+dedup_id = "b1a6901ec505b170"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "warning"
+category = "executability"
+plan_section = "### 1. Scaffold the new modules [S]"
+summary = "'beside mod orphans;' contradicts the alphabetical mod block and rustfmt reorder_modules"
+description = "main.rs:11-29 is a strictly alphabetical mod block; no rustfmt.toml exists, so reorder_modules defaults to true and the pre-commit crate-wide cargo fmt --check (CLAUDE.md) blocks the commit on a mod placed beside orphans. The Detail's 'match the existing ordering' resolves it but the Action's literal instruction is what an executor follows, and the acceptance grep passes either way."
+anchor_old = "in `tomlctl/src/main.rs` beside the existing `mod orphans;` line"
+anchor_new = "in `tomlctl/src/main.rs` in alphabetical position within the existing `mod` block (`mod anchor;` before `mod backlog;`, `mod clusters;` after `mod cli;`, and so on), which is what rustfmt's default `reorder_modules = true` produces and the pre-commit `cargo fmt --check` requires"
+dedup_id = "b97647461f19bd1c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P21"
+severity = "warning"
+category = "executability"
+plan_section = "### 6. Add the bytes-regex compile helper [S]"
+summary = "Task 6's function-level test filter can match zero tests and pass vacuously"
+description = "query.rs:1905 has mod tests, so the filter is a name prefix over query::tests::*, but the Detail never names the two test functions; an executor naming them compile_bytes_regex_* runs nothing and cargo test exits 0. Every other task uses a module-prefix filter over a module that must contain tests. Name the tests in the Detail and the acceptance."
+anchor_old = "`cargo test --manifest-path tomlctl/Cargo.toml query::tests::compile_user_bytes_regex` passes"
+anchor_new = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl query::tests::compile_user_bytes_regex` runs exactly two tests, `compile_user_bytes_regex_accepts_non_unicode_word_class` and `compile_user_bytes_regex_rejects_an_oversize_pattern`, and passes"
+dedup_id = "1c83170dc1bd4422"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P22"
+severity = "warning"
+category = "executability"
+plan_section = "### 11. Wire the verbs into clap and dispatch [M]"
+summary = "Task 11's acceptance runs clippy then cargo run against one target dir"
+description = "CLAUDE.md Build tuning: clippy and a plain build use different rustc wrappers, so alternating them recompiles the whole crate; sub-agents must not run builds. cargo run after clippy is a full rebuild on the task that sits at the confluence of four dependencies while siblings are still editing. command_lint (dispatch/tests/lint.rs:261) parses every fenced tomlctl invocation against the real clap Cli and is red while items clusters is unknown, so it is the discriminating narrow test."
+anchor_old = "`cargo run --manifest-path tomlctl/Cargo.toml -q -- items clusters --help` prints a usage line containing `--ids` (falsifier: today the subcommand is unknown and the command exits 2) — predicted, unverified."
+anchor_new = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl lint::command_lint` passes (falsifier: with the `ItemsOp::Clusters` variant absent, every fenced `tomlctl items clusters` invocation in the docs fails to parse and the test is red; today `tomlctl items clusters --help` exits 2) — the `--help` smoke run belongs to the orchestrator's checkpoint-B verification."
+dedup_id = "330030f5ab881ef6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P23"
+severity = "warning"
+category = "executability"
+plan_section = "### 17. Rewire the apply-flow skills to the verbs [M]"
+summary = "No Phase-C task runs command_lint, though every one says its fences are lint-parsed"
+description = "Tasks 16, 17, 18 and 19 each state 'fenced invocations are lint-parsed' / 'same lint constraints as task 15' in Detail, yet their acceptances are grep -c for the string they were told to write — the vacuous form. Task 15's lint command is unrunnable (P4). With per-task commits, five doc commits land before anything parses them. Add `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl lint::command_lint` (falsifier: a fenced invocation with a misspelled flag is red) to tasks 16, 17, 18 and 19."
+anchor_old = "`grep -c 'tomlctl items clusters' claude/skills/flow-contract-apply-pipeline/SKILL.md` prints at least `1` (today: 0)"
+anchor_new = "`grep -c 'tomlctl items clusters' claude/skills/flow-contract-apply-pipeline/SKILL.md` prints at least `1` (today: 0); `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl lint::command_lint` passes (falsifier: a fenced `tomlctl items clusters --id R1` with the wrong flag name makes it red)"
+dedup_id = "af247eb947aed613"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P24"
+severity = "warning"
+category = "executability"
+plan_section = "### 2. Parse `file:line` and `file:symbol` anchors [S]"
+summary = "Three exact-count greps fail under a correct implementation"
+description = "Positive controls: task 2 `grep -c 'fn parse'` prints 2 as soon as one in-module test is named fn parse_*; task 3 `grep -c 'exclude-standard'` prints 2 if a doc comment names the flag; task 7 `grep -c 'memchr_iter'` prints 2 with a `use memchr::memchr_iter;` import plus the call. Each says 'prints 1'. Change all three to 'prints at least 1' (tasks 2, 3, 7)."
+anchor_old = "`grep -c 'fn parse' tomlctl/src/anchor.rs` prints `1` (today: file absent)"
+anchor_new = "`grep -c 'fn parse' tomlctl/src/anchor.rs` prints at least `1` (today: file absent)"
+dedup_id = "bf85323ad6fac9e7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P25"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "## Approach"
+summary = "items sweep re-walks and re-reads the whole tree once per item"
+description = "run(root, patterns, opts) already takes a pattern slice and Hit carries a pattern index, so a single pass over the union of every selected item's sweep strings needs no API change; the per-item loop re-runs git ls-files and re-reads every tracked file N times for the empty --ids form. It also makes --max-hits one well-defined budget instead of a per-item one."
+anchor_old = "for each selected item with a non-empty `sweep` array, run the engine"
+anchor_new = "run the engine once over the union of every selected item's `sweep` strings, attributing each hit back to its item by pattern index"
+dedup_id = "7cac5922dd3b935b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P26"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 10. Report unresolvable instances as orphans [S]"
+summary = "Four orphan-class enumerations no task updates"
+description = "(1) tomlctl/src/orphans.rs:4-9 'Reports five orphan classes' + list (task 10 owns the file); (2) tomlctl/README.md:39 `# missing-file / symbol-missing / dangling-dep` (task 12 owns README, outside the parity-tested regions); (3) flow-contract-ledger-schema/SKILL.md:74 'alongside missing-file and symbol-missing classes' (task 18 owns the file); (4) tomlctl/src/cli/types.rs:1702 the ItemsOp::Orphans doc comment, which is the --help text (task 11 owns the file). Enumeration complete for live files. Name each one-line edit in the owning task's Action."
+anchor_old = "Keep the existing classes' behaviour and ordering; the new class appends after `dangling-dep` for the same item."
+anchor_new = """Keep the existing classes' behaviour and ordering; the new class appends after `dangling-dep` for the same item. Update the module docblock at `tomlctl/src/orphans.rs:4` ("Reports five orphan classes") to six with the new bullet; tasks 11, 12 and 18 update the class lists at `tomlctl/src/cli/types.rs:1702`, `tomlctl/README.md:39` and `claude/skills/flow-contract-ledger-schema/SKILL.md:74`."""
+dedup_id = "8f451e497c22c42e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P27"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## User Decisions"
+summary = "Output key spelled both file_scope_lite and lite_file_scope"
+description = "file_scope_lite at L73 (User Decisions); lite_file_scope at L91 (Approach JSON), L182 (task 9) and L239 (task 17). Task 17's prose consumer reads the key by name, so a mismatch is a silently-absent field. Pick lite_file_scope."
+anchor_old = "and a per-cluster `file_scope_lite` flag"
+anchor_new = "and a per-cluster `lite_file_scope` flag"
+dedup_id = "cb1f9a2b6e2f2a5e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P28"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 6. Add the bytes-regex compile helper [S]"
+summary = "MAX_USER_PATTERN_LEN on compile_user_regex tightens items list --where-regex unannounced"
+description = "query.rs:858 is compile_user_regex's only caller, reached from Predicate::WhereRegex; applying the 512-byte cap 'in both' newly rejects long --where-regex patterns on a shipped read verb, which Scope never states. Either scope the cap to the bytes helper or state the tightening in Scope. Secondary: the Research Note's 'find_iter is worst-case O(m·n²)' contradicts the regex crate's linear-time guarantee; the real unbounded resource is lazy-DFA cache thrash under dfa_size_limit, which the corrected comment should say instead."
+anchor_old = "enforce `pub(crate) const MAX_USER_PATTERN_LEN: usize = 512` in both"
+anchor_new = "enforce `pub(crate) const MAX_USER_PATTERN_LEN: usize = 512` in both — a deliberate tightening of `items list --where-regex`, which `compile_user_regex` also serves, stated in `## Scope`"
+dedup_id = "4d9c2c796ce8c4e1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P29"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Documentation and test surface"
+summary = "ledger-schema SKILL.md:74 is the depends_on bullet, not the instances/sweep bullets"
+description = "flow-contract-ledger-schema/SKILL.md:69 instances, :70 sweep, :71 enumeration, :74 depends_on (whose orphan-class list P26 separately edits). Task 18 targets the right bullets by name; only this Exploration Note anchor is wrong. The only anchoring defect among 32 cited file:line references, all of which were re-read individually — no line drift anywhere in the plan."
+anchor_old = "`flow-contract-ledger-schema/SKILL.md:74`"
+anchor_new = "`flow-contract-ledger-schema/SKILL.md:69-71` (the `instances` / `sweep` / `enumeration` bullets) and `:74` (the `depends_on` bullet's orphan-class list)"
+dedup_id = "c7ed53ea8bb1b0d6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P30"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 2. Parse `file:line` and `file:symbol` anchors [S]"
+summary = "Separator-normalisation rule is unreachable from the task's own fixtures and interacts unspecified with Display"
+description = ''''Normalise \ to / on output only when the input used / elsewhere' triggers for none of the six listed fixtures (C:\x\y.rs:foo has no /, src/a.rs:42 has no \), no test covers a mixed input, and it is unspecified whether parse stores normalised or Display normalises — files_of returns &str borrowed from the stored field, so the two are not interchangeable. The anchors come from git ls-files, which emits forward slashes on Windows. Store verbatim, re-emit unchanged.'''
+anchor_old = 'Normalise `\` to `/` in `file` on output only when the input used `/` elsewhere — do not rewrite drive-letter paths.'
+anchor_new = "Store `file` verbatim and have `Display` re-emit it unchanged — no separator normalisation, since the anchors this parses come from `git ls-files` (forward slashes on Windows) and `files_of` borrows the stored string."
+dedup_id = "d20a1d27a85a48a4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P31"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 10. Report unresolvable instances as orphans [S]"
+summary = "instance-missing reason vocabulary: three values in Approach, four in task 10, unnamed in tasks 15/18"
+description = "## Approach L93 lists missing-file | symbol-missing | outside-repo; task 10 L188 adds unparseable; task 15 says only 'extend with instance-missing' and task 18 'with its reason values' without listing them, and neither executor can see task 10's Detail. Also: the existing io-error class (orphans.rs:139) has no instance-level counterpart, so an unreadable-but-existing instance file is reported as symbol-missing. Pin one list (five values including io-error) in Approach and name it in tasks 15 and 18."
+anchor_old = "with `reason` one of `missing-file`, `symbol-missing`, `outside-repo`, `unparseable`"
+anchor_new = "with `reason` one of `missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `unparseable` (the same five values `## Approach` states and tasks 15 and 18 document verbatim)"
+dedup_id = "8a3c32a2c71b52a1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P32"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 2. Parse `file:line` and `file:symbol` anchors [S]"
+summary = "Every unit-test acceptance builds all 27 integration binaries; add --bin tomlctl"
+description = "tomlctl/tests/ holds 27 integration targets; a bare cargo test <filter> builds and runs all of them under the filter, recompiling siblings' in-flight edits in parallel batches of up to 6. CLAUDE.md allows a sub-agent its own narrow target. Tasks 2, 3, 4 (both criteria), 5, 6, 7, 8, 9 and 10 use the bare form; tasks 12-14 already use --test <name>."
+anchor_old = "`cargo test --manifest-path tomlctl/Cargo.toml anchor::` runs the in-module tests and passes"
+anchor_new = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl anchor::` runs the in-module tests and passes"
+dedup_id = "a02f3fc8367a2ee6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P33"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Approach"
+summary = "Hits are never deduplicated per file:line, so instances accumulates repeats"
+description = "find_iter yields every non-overlapping match, and the engine runs one find_iter per pattern keyed {file, line, pattern}, so K overlapping -e forms of one defect (the normal research sweep) give K hits per line and repeated matches on one line give more; --update writes them all into instances and pre-analysis counts entries to report growth. Collapse to one hit per file:line before output; --max-hits then budgets distinct sites."
+anchor_old = "a `--max-hits` cap (default 5000) sets `truncated: true` rather than erroring"
+anchor_new = "hits collapsing to the same `file:line` across patterns and repeated matches on one line are emitted once; a `--max-hits` cap (default 5000) over distinct sites sets `truncated: true` rather than erroring"
+dedup_id = "18ee5a8800bbb4d2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P34"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Approach"
+summary = "No containment check on enumerated paths, and git's exit-0 warnings are discarded"
+description = "orphans.rs:173 and io.rs:1541 path_under_root exist so a symlink out of root fails containment; the sweep applies no equivalent, so a symlinked directory pointing outside the repo is read and echoed. Probe: `git ls-files --others --exclude-standard` emits `warning: could not open directory '.github/skills/flow-contract-task-visibility/'` (a dangling symlink) and exits 0, so the non-zero-exit branch never sees the under-enumeration and coverage_complete stays true. Check each path through path_under_root before reading and fold a non-empty stderr into skipped accounting."
+anchor_old = "Entries that are directories or unreadable at scan time (staged deletes, gitlinks) are counted under `skipped.unreadable`, never fatal."
+anchor_new = "Entries that are directories or unreadable at scan time (staged deletes, gitlinks) are counted under `skipped.unreadable`, never fatal. Each path is checked through `io::path_under_root` (`tomlctl/src/io.rs:1541`) before it is read, so a symlink resolving outside the root is skipped rather than read and echoed; a non-empty git stderr at exit 0 (a dangling directory symlink makes git warn and continue) is surfaced as `skipped.unenumerated` and clears `coverage_complete`."
+dedup_id = "1738d7408086354e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P35"
+severity = "suggestion"
+category = "risk"
+plan_section = "### 6. Add the bytes-regex compile helper [S]"
+summary = "crlf(true) changes . as well as $, diverging the two helpers with no note"
+description = 'regex 1.13.1 bytes::RegexBuilder::crlf: $ matches before \n or \r, ^/$ never match between \r and \n, and . stops matching \r as well as \n (with multi_line the EndCRLF translation applies). compile_user_regex sets neither flag, so the same pattern is not portable between tomlctl sweep and items list --where-regex, and the two helpers sit side by side with no marker. One sentence beside the new helper settles it.'
+anchor_old = "The comment currently calls `dfa_size_limit` a memory cap for adversarial patterns"
+anchor_new = 'Note beside the new helper that `.multi_line(true).crlf(true)` gives the sweep line-oriented semantics its sibling lacks — `^`/`$` per line and `.` excluding `\r` as well as `\n` — so a pattern is not portable between `tomlctl sweep` and `items list --where-regex`. The comment currently calls `dfa_size_limit` a memory cap for adversarial patterns'
+dedup_id = "d68e872b63c6b4b5"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P36"
+severity = "suggestion"
+category = "risk"
+plan_section = "### 11. Wire the verbs into clap and dispatch [M]"
+summary = "Bare max_file_bytes, max_hits in ItemsOp::Sweep become clap positionals"
+description = "In clap 4.6 derive a field with no #[arg] attribute is a positional (this is how file and id become positionals throughout types.rs, e.g. Remove at :1564). The Cmd::Sweep spelling two lines earlier carries the attributes; the ItemsOp::Sweep spelling drops them, and `tomlctl items sweep <ledger> 4194304 5000` would parse and pass clippy. Spell the two fields out; this paragraph is also the only spec tasks 15/16's flag tables have."
+anchor_old = "#[arg(long)] dry_run: bool, max_file_bytes, max_hits, #[command(flatten)] integrity: WriteIntegrityArgs"
+anchor_new = "#[arg(long)] dry_run: bool, #[arg(long, default_value_t = 4194304)] max_file_bytes: u64, #[arg(long, default_value_t = 5000)] max_hits: usize, #[command(flatten)] integrity: WriteIntegrityArgs"
+dedup_id = "90ad5251e63779fa"
+
+[[vet_events]]
+timestamp = "2026-09-17T16:30:00+02:00"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 7
+dropped_count = 0
+downgraded_count = 0
+rationale = "F1 memchr absent from Cargo.toml [dependencies] (grep rc=1); F3 tasks/mod.rs:18 `mod graph;` private; F4 WriteIntegrityArgs fields lack strict_read and dry_run; F5 capabilities.rs:68 asserts --strict-read in read_subs; F6 cargo rejects a second positional (probe); F7 apply-pipeline SKILL.md:202 carries the edit-shape conjunct; F8 seed_ledger mints its own tempdir (common/mod.rs:20-27)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-17T16:31:00+02:00"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "F3 dependency-sort SKILL.md:30 sequential-batches rule; F6 Cargo.lock:706-707 tomlctl 0.8.0; F9 three schema-hardcode callouts at execution-record-schema:88, tasks-store.md:79-80, review-plan.md:127; F10 orphans.rs:4 five classes, README.md:39, types.rs:1702; F12 query.rs:858 sole caller; F13 ledger-schema:69-74 bullets. Its smoke-run ruling (leading \b excludes the plan line) verified by grep -P."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-17T16:32:00+02:00"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "Dropped F11 (smoke run expects one hit): grep -P with word boundaries matches only tomlctl/src/orphans.rs:22; the plan line is excluded because the `b` of `\b` precedes `fn`. Verified F8 main.rs alphabetical mod block + no rustfmt.toml; F9 query.rs:1905 mod tests with unnamed test fns; F13 Approach L93 three reasons vs task 10 L188 four; F1 multi-positional cargo test probe. Not persisted, so no P id to drop."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-17T16:33:00+02:00"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "F3 38 review-ledger.toml + .claude/backlog.toml tracked (git ls-files); F4 .github: 32 index entries at 100644, directory symlinks on disk (ls -la); F7 pre-analysis.md:64-69 per-site count form; F11 git ls-files --others emits a dangling-symlink warning at rc=0."
+dedup_id = "45ca31c3315a5978"

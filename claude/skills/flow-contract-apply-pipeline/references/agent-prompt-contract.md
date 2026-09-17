@@ -11,7 +11,7 @@ runs on a partial apply.
 already-applied protocol, the no-overlapping-edits rule, and plan-deviation reporting in their
 system prompts. The per-call prompt restates only the carrier-specific vocabulary, and MUST include:
 
-- The exact files to read and modify.
+- The exact files to read and modify: the cluster's `files[]`, which is the union of each item's `file`, its `instances` files and the files its `description` names, plus any growth the pre-analysis re-sweep found. For a pattern item, list every site as `file:symbol` so the agent works the set rather than rediscovering it.
 - Each finding's ledger `id` alongside its `file`, `line`, `symbol`, `category`, `severity`, and
   `summary`, plus an instruction that the agent MUST include the `id` in every result tag.
 - The Step-2 pre-analysed reasoning, including the carrier's narration for the categories that

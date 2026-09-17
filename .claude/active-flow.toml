@@ -561,3 +561,18 @@ scope = [
     "scripts/templates/flow-context.md",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "tomlctl-items-sweep-clusters"
+last_used = "2026-09-17T13:09:31.1799036Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/README.md",
+    "claude/skills/**",
+]

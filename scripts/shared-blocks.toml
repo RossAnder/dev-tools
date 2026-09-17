@@ -29,10 +29,47 @@ files = [
 ]
 
 [[block]]
+name = "file-edits"
+files = [
+  "claude/agents/implement-deep.md",
+  "claude/agents/implement-lite.md",
+]
+
+[[block]]
 name = "backlog-candidates"
 files = [
   "claude/agents/implement-deep.md",
   "claude/agents/implement-lite.md",
+]
+
+# The research agents share their method-load, read-only contract, finding
+# record and delivery block; the lite/deep split lives in the sections between.
+[[block]]
+name = "research-method"
+files = [
+  "claude/agents/research-deep.md",
+  "claude/agents/research-lite.md",
+]
+
+[[block]]
+name = "research-read-only"
+files = [
+  "claude/agents/research-deep.md",
+  "claude/agents/research-lite.md",
+]
+
+[[block]]
+name = "research-finding-record"
+files = [
+  "claude/agents/research-deep.md",
+  "claude/agents/research-lite.md",
+]
+
+[[block]]
+name = "research-delivering"
+files = [
+  "claude/agents/research-deep.md",
+  "claude/agents/research-lite.md",
 ]
 
 # The GNU-awk resolver both hook verifiers run before they can trust their own

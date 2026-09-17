@@ -1,0 +1,24 @@
+schema_version = 1
+last_updated = 2026-09-17
+
+[[vet_events]]
+timestamp = "2026-09-17T16:00:00"
+command = "plan-new"
+agent_index = 1
+lens = "file-enumeration"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "git ls-files --full-name path shape, non-git exit 128 and core.autocrlf=true all reproduced by probe"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-17T16:00:00"
+command = "plan-new"
+agent_index = 2
+lens = "regex-clap"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "unicode-off confirmed for the normal build via cargo tree -e normal,features; dev-dep unification through predicates noted as an addendum; dfa_size_limit forwarding and RegexBuilder::crlf confirmed in vendored source; value_delimiter precedent at types.rs:1872"
+dedup_id = "45ca31c3315a5978"

@@ -91,8 +91,10 @@ the reply as `envelope`.
      users working from a stale or guessed ID list; partial success with clear reporting is
      the principle of least surprise (Google AIP-234, AWS partial-batch guidance).
    - **Override flags** (position-independent): `--file-budget <N>` (N ≥ 3) or
-     `--allow-cross-file` override the default 3-file-per-item cap from the apply-constraints
-     contract. Per-invocation only — no ledger mutation, no persistent state.
+     `--allow-cross-file` raise the 3-file allowance that the apply-constraints contract
+     keeps for **undeclared** items only, those whose file set is the single `file`. An item
+     carrying `instances` or naming its files in `description` budgets on that declared set
+     and needs no flag. Per-invocation only — no ledger mutation, no persistent state.
      - **Bare** (`--file-budget 8`, `--allow-cross-file`) applies to every item this
        invocation selects.
      - **Scoped** (`--allow-cross-file <ID>,<ID>`, `--file-budget 8 <ID>`) — the trailing id
@@ -199,7 +201,9 @@ topo-level → sequential-batch rule.
 
 Evaluate each cluster as a whole against ALL of:
 
-1. **File scope**: ≤ 2 files.
+1. **File scope**: ≤ 2 files, OR every file comes from a pattern item's `instances` with
+   `enumeration = "complete"` and one edit shape across all of them. Twelve sites of the same
+   mechanical fix are lite work; three sites of three different fixes are not.
 2. **Action fully specified**: every item's `summary` + `description` names the exact change.
    No design decisions left to the implementer for ANY item in the cluster.
 3. **No cross-file refactor**: no item needs coordinated edits to call sites, type definitions,
@@ -377,10 +381,12 @@ For each, check whether the cited file matches any `scope` glob in the resolved 
 Runs independently of the deviation gate above — whenever a capped-skip tag came back, including
 runs where no `deviation:` line did.
 
-The apply-constraints contract makes an agent emit `skipped <ID>: cross-file refactor exceeds 3-file
-cap` and `skipped <ID>: requires deliberate refactor` when an item is real but too large for its
-dispatch. Unless the orchestrator writes a `<REJECTED>` transition carrying that reason, the work
-disappears with the run's prose. Route each such tag into the backlog after the ledger mutation,
+The apply-constraints contract makes an agent emit `skipped <ID>: requires deliberate refactor` when
+an item is real but needs a design pass its dispatch cannot give it, and `escalate <ID>: cross-cut`
+when the fix reached a file outside the declared set. The escalate is answered in-run: re-sweep,
+widen the cluster to the files it names, re-dispatch. The skip has no in-run answer, and unless the
+orchestrator writes a `<REJECTED>` transition carrying that reason, the work disappears with the
+run's prose. Route each such tag into the backlog after the ledger mutation,
 through the same check-then-add gate — the ledger item's summary and file as the candidate, the skip
 reason as the item's context.
 
