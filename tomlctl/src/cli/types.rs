@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use crate::convert::ScalarType;
 use crate::dedup::DupTier;
+use crate::sweep::{DEFAULT_MAX_FILE_BYTES, DEFAULT_MAX_HITS};
 
 /// Capabilities advertised by `tomlctl capabilities`. Each entry is
 /// stable across patch versions within a minor release — removing an entry
@@ -218,6 +219,8 @@ pub(crate) struct WriteIntegrityArgs {
     /// `execution-record.toml` / `review-ledger.toml` / `optimise-findings.toml`
     /// / `plan-review-findings.toml` — and an empty table otherwise). Affects
     /// only TOML write paths (set / set-json / items * / array-append).
+    /// `items sweep --update` is the exception: it never creates a ledger,
+    /// and a missing file is reported as `kind=not_found` either way.
     #[arg(long = "no-create")]
     pub(crate) no_create: bool,
 }
@@ -672,11 +675,11 @@ pub(crate) enum Cmd {
         pattern: Vec<String>,
         /// Files larger than this are skipped and counted under
         /// `skipped.oversize`.
-        #[arg(long, default_value_t = 4194304, value_name = "BYTES")]
+        #[arg(long, default_value_t = DEFAULT_MAX_FILE_BYTES, value_name = "BYTES")]
         max_file_bytes: u64,
         /// Stop after this many distinct `file:line` sites and set
         /// `truncated: true` rather than erroring.
-        #[arg(long, default_value_t = 5000, value_name = "N")]
+        #[arg(long, default_value_t = DEFAULT_MAX_HITS, value_name = "N")]
         max_hits: usize,
         /// Extra glob to exclude, on top of the defaults; repeatable.
         #[arg(long, value_name = "GLOB")]
@@ -1745,12 +1748,16 @@ pub(crate) enum ItemsOp {
     /// Re-run each item's stored `sweep` patterns over the tracked files
     /// and diff the hits against its `instances`. Per item: `new` sites
     /// (`file:line`), `gone` anchors with a `reason`, `kept`, `unverified`
-    /// (skipped file or past `--max-hits`), plus `recorded` / `found` file
+    /// anchors with a `reason` (`unparseable`, `outside-repo`, `truncated`,
+    /// `missing`, `skipped` or `excluded`), plus `recorded` / `found` file
     /// sets. Items without a `sweep` array land in `skipped_items`. The
     /// ledger itself is excluded from its own sweep. Read-only unless
-    /// `--update` rewrites `instances` as kept anchors followed by the new
-    /// sites; `enumeration` is never touched. `--update` refuses while any
-    /// item is `truncated` or has `unverified` anchors.
+    /// `--update` rewrites each `open` item's `instances`: entries keep
+    /// their listed order, with `kept` and `excluded` anchors retained in
+    /// place, then the `new` sites are appended as `file:line`;
+    /// `enumeration` is never touched. `--update` refuses for a
+    /// `truncated` run or an `unverified` anchor whose reason is not
+    /// `excluded`.
     Sweep {
         file: PathBuf,
         /// Item ids to sweep. Omit for every item.
@@ -1766,11 +1773,11 @@ pub(crate) enum ItemsOp {
         dry_run: bool,
         /// Files larger than this are skipped, which leaves their anchors
         /// `unverified`.
-        #[arg(long, default_value_t = 4194304, value_name = "BYTES")]
+        #[arg(long, default_value_t = DEFAULT_MAX_FILE_BYTES, value_name = "BYTES")]
         max_file_bytes: u64,
         /// Distinct `file:line` sites after which the sweep stops and every
         /// item reports `truncated: true`.
-        #[arg(long, default_value_t = 5000, value_name = "N")]
+        #[arg(long, default_value_t = DEFAULT_MAX_HITS, value_name = "N")]
         max_hits: usize,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,

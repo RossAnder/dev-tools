@@ -57,6 +57,18 @@ fn run_json(root: &Path, args: &[&str]) -> Value {
     })
 }
 
+fn run_error(root: &Path, args: &[&str]) -> Value {
+    let out = cli(root)
+        .args(["--error-format", "json"])
+        .args(args)
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr);
+    parse_json_error_envelope(&stderr)
+}
+
 fn instances_of(ledger: &Path, id: &str) -> Vec<String> {
     let doc: toml::Value = toml::from_str(&fs::read_to_string(ledger).unwrap()).unwrap();
     let item = doc["items"]
@@ -248,4 +260,28 @@ fn items_sweep_update_rewrites_instances_and_is_idempotent() {
         sidecar_bytes,
         "no-change run rewrote the sidecar"
     );
+}
+
+/// The read fails before any enumeration, so no path needs git — and the
+/// `--update` path must not seed the ledger it failed to read.
+#[test]
+fn a_missing_ledger_is_not_found_on_every_path() {
+    let (_dir, root) = sandbox();
+    seed_sources(&root);
+    let ledger = root.join(".claude").join(LEDGER);
+    let ledger_arg = ledger.to_str().unwrap();
+
+    for args in [
+        vec!["items", "sweep", ledger_arg],
+        vec!["items", "sweep", ledger_arg, "--update", "--dry-run"],
+        vec!["items", "sweep", ledger_arg, "--update"],
+        vec!["items", "clusters", ledger_arg],
+    ] {
+        let err = run_error(&root, &args);
+        let invocation = args.join(" ");
+        assert_eq!(err["kind"], json!("not_found"), "`{invocation}`: {err}");
+        assert_eq!(err["file"], json!(ledger_arg), "`{invocation}`: {err}");
+    }
+    assert!(!ledger.exists(), "a sweep minted the ledger");
+    assert!(!sidecar_of(&ledger).exists(), "a sweep minted a sidecar");
 }

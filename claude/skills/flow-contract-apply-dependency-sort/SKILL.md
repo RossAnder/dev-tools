@@ -16,7 +16,11 @@ What the verb computes, in order:
 
 1. **Restrict the DAG to the selection.** `deps[i] = { id ∈ i.depends_on : id ∈ selected }`.
    An edge to an item outside the selected set is out of scope for this run: it is dropped and
-   listed under `dropped_deps` as `{"id": "R5", "missing": ["R9"]}`.
+   listed under `dropped_deps` as
+   `{"id": "R5", "unselected": [{"id": "R2", "status": "fixed"}], "unknown": ["R9"]}` —
+   `unselected` holds the targets the ledger has but the selection does not, each with its
+   `status` (absent reads as `open`); `unknown` holds the targets the ledger does not have.
+   Both keys are always present.
 2. **Layer by Kahn's algorithm.** Items with no remaining in-selection dependency form the first
    level; removing them exposes the next. A cycle is refused before any clustering — an error of
    `kind=validation` naming the items on the cycle — and the run aborts with that path; do not

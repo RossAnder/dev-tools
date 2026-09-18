@@ -57,6 +57,15 @@ pub(crate) fn files_of<'a>(anchors: impl Iterator<Item = &'a Anchor>) -> BTreeSe
     anchors.map(|a| a.file.as_str()).collect()
 }
 
+/// Whole-word presence of `symbol` in a file's bytes: a bare substring test
+/// reports a renamed `id` as still present wherever `valid` or `paid`
+/// survives. `(?-u:\b)` pins ASCII boundaries regardless of crate feature
+/// flags. `None` only when the escaped pattern fails to compile.
+pub(crate) fn symbol_regex(symbol: &str) -> Option<regex::bytes::Regex> {
+    let pattern = format!(r"(?-u:\b){}(?-u:\b)", regex::escape(symbol));
+    regex::bytes::Regex::new(&pattern).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +124,17 @@ mod tests {
         for input in ["src/a.rs:42", "src/a.rs:Foo::bar", r"C:\x\y.rs:foo"] {
             assert_eq!(parse(input).unwrap().to_string(), input);
         }
+    }
+
+    #[test]
+    fn symbol_regex_matches_whole_words_in_any_bytes() {
+        let re = symbol_regex("id").unwrap();
+        assert!(re.is_match(b"let id = 1;"));
+        assert!(re.is_match(b"\xE9 id \xE9"));
+        assert!(!re.is_match(b"valid paid lived"));
+        let re = symbol_regex("Foo::bar").unwrap();
+        assert!(re.is_match(b"Foo::bar();"));
+        assert!(!re.is_match(b"Foo::barn();"));
     }
 
     #[test]

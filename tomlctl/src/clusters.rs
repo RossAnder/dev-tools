@@ -1,9 +1,8 @@
 //! `items clusters`: file-disjoint clusters and dependency batches over ledger items.
 
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::path::Path;
 
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
@@ -12,17 +11,27 @@ use toml::Value as TomlValue;
 use crate::anchor;
 use crate::convert::str_field;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{item_id, items_array, relativise_under};
-use crate::tasks::graph::layered_kahn;
+use crate::io::{canonical_key, item_id, items_array};
+use crate::tasks::{cycle_within, layered_kahn};
 use crate::union_find::{components, union};
 
 /// Items are layered over `depends_on` before anything is unioned, and a
 /// shared file joins two items only within one layer, so a dependent editing
 /// its dependency's file lands in a later batch rather than the same cluster.
 /// `item_ids` and cluster numbering follow ledger order; `files` sort lexically.
+///
+/// A `depends_on` target outside the selection is dropped and reported under
+/// `dropped_deps`, split by whether the ledger holds it: `unselected` carries
+/// each such id with its status (absent reads as `open`), `unknown` the ids
+/// the ledger does not hold at all.
 pub(crate) fn items_clusters(doc: &TomlValue, root: &Path, ids: &[String]) -> Result<JsonValue> {
-    let selected = select(items_array(doc, "items"), ids)?;
+    let items = items_array(doc, "items");
+    let selected = select(items, ids)?;
     let n = selected.len();
+    let in_ledger: HashMap<&str, &toml::Table> = items
+        .iter()
+        .filter_map(|item| Some((item_id(item)?, item.as_table()?)))
+        .collect();
     let position: HashMap<&str, usize> = selected
         .iter()
         .enumerate()
@@ -63,7 +72,8 @@ pub(crate) fn items_clusters(doc: &TomlValue, root: &Path, ids: &[String]) -> Re
     let mut succs: Vec<Vec<usize>> = vec![Vec::new(); n];
     let mut dropped_deps: Vec<JsonValue> = Vec::new();
     for (i, (id, tbl)) in selected.iter().enumerate() {
-        let mut missing: BTreeSet<&str> = BTreeSet::new();
+        let mut unselected: BTreeMap<&str, &str> = BTreeMap::new();
+        let mut unknown: BTreeSet<&str> = BTreeSet::new();
         let deps = tbl
             .get("depends_on")
             .and_then(|v| v.as_array())
@@ -79,19 +89,32 @@ pub(crate) fn items_clusters(doc: &TomlValue, root: &Path, ids: &[String]) -> Re
                         succs[j].push(i);
                     }
                 }
-                None => {
-                    missing.insert(dep);
-                }
+                None => match in_ledger.get(dep) {
+                    Some(row) => {
+                        let status = str_field(row, "status");
+                        unselected.insert(dep, if status.is_empty() { "open" } else { status });
+                    }
+                    None => {
+                        unknown.insert(dep);
+                    }
+                },
             }
         }
-        if !missing.is_empty() {
-            dropped_deps.push(json!({ "id": id, "missing": missing }));
+        if !unselected.is_empty() || !unknown.is_empty() {
+            let unselected: Vec<JsonValue> = unselected
+                .iter()
+                .map(|(dep, status)| json!({ "id": dep, "status": status }))
+                .collect();
+            dropped_deps.push(json!({ "id": id, "unselected": unselected, "unknown": unknown }));
         }
     }
 
     let (rounds, residual) = layered_kahn(n, &preds, &succs);
     if !residual.is_empty() {
-        let cycle: Vec<&str> = residual.iter().map(|p| selected[*p].0).collect();
+        let cycle: Vec<&str> = cycle_within(&residual, &succs)
+            .iter()
+            .map(|p| selected[*p].0)
+            .collect();
         return Err(tagged_err(
             ErrorKind::Validation,
             None,
@@ -195,23 +218,11 @@ fn select<'a>(items: &'a [TomlValue], ids: &[String]) -> Result<Vec<(&'a str, &'
 }
 
 /// `file` resolved on disk and relativised under `root`, so the `.github/`
-/// mirror of a `claude/` file is one key. A path that does not resolve keeps
-/// its verbatim spelling; whether it should have is `items orphans`' answer.
+/// mirror of a `claude/` file is one key. A path that does not lie under the
+/// root keeps its verbatim spelling; whether it should have is `items
+/// orphans`' answer.
 fn file_key(root: &Path, file: &str) -> String {
-    let given = Path::new(file);
-    let joined: PathBuf = if given.is_absolute() {
-        given.to_path_buf()
-    } else {
-        // Pushed a component at a time: under a canonical root's `\\?\`
-        // prefix `/` is not a separator, so `root.join("a/b.rs")` has no leaf.
-        let mut p = root.to_path_buf();
-        p.extend(file.split(['/', '\\']).filter(|part| !part.is_empty()));
-        p
-    };
-    fs::canonicalize(&joined)
-        .ok()
-        .and_then(|canon| relativise_under(root, &canon))
-        .unwrap_or_else(|| file.to_string())
+    canonical_key(root, file).unwrap_or_else(|| file.to_string())
 }
 
 #[cfg(test)]
@@ -351,6 +362,8 @@ depends_on = ["R1"]
         assert_eq!(batches(&out), [["c1"], ["c2"]]);
     }
 
+    /// `R3` hangs off the cycle without being on it, so it is stranded in
+    /// the Kahn residue but must not be named.
     #[test]
     fn a_cycle_is_refused_before_clustering() {
         let err = run(
@@ -371,6 +384,7 @@ depends_on = ["R1"]
 id = "R3"
 status = "open"
 file = "src/c.rs"
+depends_on = ["R2"]
 "#,
             &[],
         )
@@ -391,12 +405,16 @@ file = "src/c.rs"
 id = "R1"
 status = "open"
 file = "src/a.rs"
-depends_on = ["R9", "R1", "R2", "R9"]
+depends_on = ["R9", "R1", "R2", "R9", "R3"]
 
 [[items]]
 id = "R2"
 status = "fixed"
 file = "src/b.rs"
+
+[[items]]
+id = "R3"
+file = "src/c.rs"
 "#,
             &[],
         )
@@ -405,7 +423,14 @@ file = "src/b.rs"
         assert_eq!(batches(&out), [["c1"]]);
         assert_eq!(
             out["dropped_deps"],
-            json!([{ "id": "R1", "missing": ["R2", "R9"] }])
+            json!([{
+                "id": "R1",
+                "unselected": [
+                    { "id": "R2", "status": "fixed" },
+                    { "id": "R3", "status": "open" },
+                ],
+                "unknown": ["R9"],
+            }])
         );
     }
 
@@ -491,12 +516,14 @@ instances = ["src/m.rs:foo", "src/n.rs:foo"]
         assert_eq!(lite(&out), [true, false, false, false, true]);
     }
 
+    /// A `..` spelling is refused lexically even when it would resolve to an
+    /// existing file, so it never shares a cluster with the plain spelling.
     #[test]
-    fn file_keys_are_canonical_when_the_file_exists_and_verbatim_otherwise() {
+    fn file_keys_are_canonical_under_the_root_and_verbatim_otherwise() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        fs::create_dir_all(root.join("src")).unwrap();
-        fs::write(root.join("src").join("a.rs"), "fn foo() {}\n").unwrap();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src").join("a.rs"), "fn foo() {}\n").unwrap();
         let absolute = root.canonicalize().unwrap().join("src").join("a.rs");
         let out = run_in(
             root,
@@ -510,7 +537,7 @@ file = "src/a.rs"
 [[items]]
 id = "R2"
 status = "open"
-file = "src/../src/a.rs"
+file = './src\a.rs'
 
 [[items]]
 id = "R3"
@@ -520,7 +547,7 @@ file = '{}'
 [[items]]
 id = "R4"
 status = "open"
-file = "src/../src/missing.rs"
+file = "src/../src/a.rs"
 
 [[items]]
 id = "R5"
@@ -539,7 +566,8 @@ file = "src/missing.rs"
         assert_eq!(strings(cluster_field(&out, "files")[0]), ["src/a.rs"]);
         assert_eq!(
             strings(cluster_field(&out, "files")[1]),
-            ["src/../src/missing.rs"]
+            ["src/../src/a.rs"]
         );
+        assert_eq!(strings(cluster_field(&out, "files")[2]), ["src/missing.rs"]);
     }
 }

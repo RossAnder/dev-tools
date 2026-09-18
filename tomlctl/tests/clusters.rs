@@ -30,7 +30,7 @@ instances = ["src/a.rs:alpha", "src/b.rs:beta"]
 [[items]]
 id = "R2"
 status = "open"
-file = "src/../src/b.rs"
+file = "./src/b.rs"
 
 [[items]]
 id = "R3"
@@ -145,7 +145,7 @@ fn clusters_join_shared_files_within_a_layer_and_batch_dependents_later() {
     assert_eq!(out["batches"], json!([["c1", "c3"], ["c2"]]), "{out}");
     assert_eq!(
         out["dropped_deps"],
-        json!([{ "id": "R4", "missing": ["R9"] }]),
+        json!([{ "id": "R4", "unselected": [], "unknown": ["R9"] }]),
         "{out}"
     );
 }

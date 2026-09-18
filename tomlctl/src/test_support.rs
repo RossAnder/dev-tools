@@ -84,6 +84,42 @@ pub(crate) fn with_root<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
     f(guard.root())
 }
 
+/// Tests that shell out to git return early when this is false, rather than
+/// failing on a machine without it.
+#[cfg(test)]
+pub(crate) fn git_available() -> bool {
+    std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+/// Run `git -C <root> <args>`, failing the test on a non-zero exit.
+#[cfg(test)]
+pub(crate) fn git(root: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {} failed: {}",
+        args.join(" "),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[cfg(test)]
+pub(crate) fn write(root: &Path, rel: &str, bytes: &[u8]) {
+    let path = root.join(rel);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).unwrap();
+    }
+    fs::write(path, bytes).unwrap();
+}
+
 /*
 <!-- SHARED-BLOCK:shipped-gitignore START -->
 */

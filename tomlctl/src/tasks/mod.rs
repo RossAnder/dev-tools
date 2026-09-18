@@ -15,7 +15,7 @@ mod check;
 mod closure;
 mod edges;
 mod finding;
-pub(crate) mod graph;
+mod graph;
 mod import_plan;
 mod list;
 mod parse_policy;
@@ -37,6 +37,10 @@ pub(crate) mod dispatch;
 // fence-aware scan the store's own parsers run on; a second scanner over the
 // same bytes drifts from this one on fence and heading edge cases.
 pub(crate) mod markdown;
+
+// `items clusters` layers ledger items and names a cycle through the same
+// positional passes the task graph runs; the graph itself stays private.
+pub(crate) use graph::{cycle_within, layered_kahn};
 
 /// The plan document `context.toml` binds `slug` to, through the plan-path
 /// seam's containment and `.md` validation — a recorded value is

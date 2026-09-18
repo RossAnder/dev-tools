@@ -1,8 +1,8 @@
 slug = "tomlctl-items-sweep-clusters"
 plan_path = "docs/plans/tomlctl-items-sweep-clusters.md"
-status = "draft"
+status = "review"
 created = 2026-09-17
-updated = 2026-09-17
+updated = 2026-09-18
 branch = "main"
 scope = [
     "tomlctl/src/**",
@@ -13,8 +13,8 @@ scope = [
 ]
 
 [tasks]
-total = 0
-completed = 0
+total = 22
+completed = 22
 in_progress = 0
 
 [artifacts]

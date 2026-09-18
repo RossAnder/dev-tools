@@ -202,14 +202,19 @@ Consume the output as follows:
   launch together (Step 4's single-message rule); round k+1 launches only after round k is
   applied and committed, even when its clusters share a file with round k.
 - `dropped_deps` — `depends_on` targets outside the selection, dropped as out of scope for this
-  run. Name each in the pre-dispatch summary so the ordering assumption is auditable.
+  run. Name each in the pre-dispatch summary so the ordering assumption is auditable: an
+  `unselected` entry whose `status` is `open` is the ordering hazard to call out (the item
+  applies before its dependency lands), a terminal one is safe to drop, and an `unknown` id is
+  a dangling reference the ledger never held.
 - A `depends_on` cycle inside the selection is refused with `kind=validation` naming the items:
   abort and report the cycle path; do not cluster by hand around it.
 
-Then union the `new` sites from Step 2's re-sweep into their items' clusters (the verb reads the
-ledger's recorded `instances`; the read-only sweep does not update them until Step 6). If that
-union makes two clusters in one round share a file, merge them. Re-derive the two-file limb of
-`lite_file_scope` from the widened set.
+Then widen each cluster to its items' apply budget. The verb's `files` is `file` plus `instances`
+only, so first union in the files each item's `description` names (the apply-constraints contract
+budgets them; the verb cannot extract them from prose), then the `new` sites from Step 2's
+re-sweep (the verb reads the ledger's recorded `instances`; the read-only sweep does not update
+them until Step 5's ledger mutation). If either union makes two clusters in one round share a
+file, merge them. Re-derive the two-file limb of `lite_file_scope` from the widened set.
 
 **Clusters are mixed-category by design.** One agent handles all findings for its cluster
 across every category. Do not split by category — that violates "no two agents edit the same

@@ -8,12 +8,15 @@ use anyhow::Result;
 use regex::bytes::Regex;
 use serde_json::{Value as JsonValue, json};
 
-use crate::io::relativise_under;
+use crate::io::{join_under, relativise_under};
 use crate::query::compile_user_bytes_regex;
 use crate::repo_files::tracked_files;
 
 /// A NUL this early marks the file binary, as ripgrep decides it.
 const BINARY_SNIFF_BYTES: usize = 8192;
+
+pub(crate) const DEFAULT_MAX_FILE_BYTES: u64 = 4 << 20;
+pub(crate) const DEFAULT_MAX_HITS: usize = 5000;
 
 pub(crate) struct SweepOptions {
     pub(crate) max_file_bytes: u64,
@@ -25,8 +28,8 @@ pub(crate) struct SweepOptions {
 impl Default for SweepOptions {
     fn default() -> Self {
         Self {
-            max_file_bytes: 4 << 20,
-            max_hits: 5000,
+            max_file_bytes: DEFAULT_MAX_FILE_BYTES,
+            max_hits: DEFAULT_MAX_HITS,
             // Ledgers, the backlog and plan documents quote sweep strings
             // verbatim, so every pattern would match its own record there.
             exclude: vec![".claude/**".to_string(), "docs/plans/**".to_string()],
@@ -46,7 +49,14 @@ pub(crate) struct Hit {
 #[derive(Debug, Default)]
 pub(crate) struct SweepReport {
     pub(crate) hits: Vec<Hit>,
-    pub(crate) files_scanned: usize,
+    /// Canonical keys of the files whose bytes were searched. A key absent
+    /// here was skipped or cut by `max_hits`, so its silence is not evidence.
+    pub(crate) scanned: BTreeSet<String>,
+    /// Canonical keys of the enumerated files the engine opened and refused
+    /// to search: binary, oversize or unreadable. A file that never reached
+    /// the enumeration, or whose path could not be canonicalised (a staged
+    /// delete, a dangling symlink), is in neither set.
+    pub(crate) skipped: BTreeSet<String>,
     pub(crate) skipped_binary: usize,
     pub(crate) skipped_oversize: usize,
     /// Read failures, directories, and entries resolving outside the root.
@@ -57,6 +67,10 @@ pub(crate) struct SweepReport {
 }
 
 impl SweepReport {
+    pub(crate) fn files_scanned(&self) -> usize {
+        self.scanned.len()
+    }
+
     /// A skipped file can hide a site, so any skip at all — binary included —
     /// clears this.
     pub(crate) fn coverage_complete(&self) -> bool {
@@ -68,24 +82,91 @@ impl SweepReport {
     }
 }
 
-pub(crate) fn run(root: &Path, patterns: &[String], opts: &SweepOptions) -> Result<SweepReport> {
-    let regexes = patterns
+/// Why a listed file contributed no hits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Skip {
+    /// Read failure or a directory.
+    Unreadable,
+    Oversize,
+    Binary,
+}
+
+pub(crate) struct ScannedFile {
+    pub(crate) bytes: Vec<u8>,
+    /// Offset of every `\n`, for `line_of`.
+    pub(crate) newlines: Vec<usize>,
+}
+
+impl ScannedFile {
+    /// Bytes of a one-based line without its `\n`; `None` past the last
+    /// line, so a trailing newline does not open an empty extra line.
+    pub(crate) fn line(&self, line: u64) -> Option<&[u8]> {
+        let index = usize::try_from(line).ok()?.checked_sub(1)?;
+        let start = match index.checked_sub(1) {
+            None => 0,
+            Some(prev) => self.newlines.get(prev)? + 1,
+        };
+        let end = self
+            .newlines
+            .get(index)
+            .copied()
+            .unwrap_or(self.bytes.len());
+        (start < self.bytes.len()).then(|| &self.bytes[start..end])
+    }
+}
+
+/// Read one file under the predicates every listed file passes before it is
+/// searched, so a caller re-reading a file sees the bytes the sweep saw.
+pub(crate) fn scan_file(path: &Path, max_file_bytes: u64) -> Result<ScannedFile, Skip> {
+    let meta = fs::metadata(path).map_err(|_| Skip::Unreadable)?;
+    if meta.is_dir() {
+        return Err(Skip::Unreadable);
+    }
+    if meta.len() > max_file_bytes {
+        return Err(Skip::Oversize);
+    }
+    let bytes = fs::read(path).map_err(|_| Skip::Unreadable)?;
+    if memchr::memchr(0, &bytes[..bytes.len().min(BINARY_SNIFF_BYTES)]).is_some() {
+        return Err(Skip::Binary);
+    }
+    let newlines = memchr::memchr_iter(b'\n', &bytes).collect();
+    Ok(ScannedFile { bytes, newlines })
+}
+
+/// One-based line of a byte offset, from a file's newline table.
+pub(crate) fn line_of(newlines: &[usize], offset: usize) -> u64 {
+    newlines.partition_point(|&nl| nl < offset) as u64 + 1
+}
+
+pub(crate) fn compile(patterns: &[String]) -> Result<Vec<Regex>> {
+    patterns
         .iter()
         .map(|p| compile_user_bytes_regex(p))
-        .collect::<Result<Vec<Regex>>>()?;
+        .collect()
+}
+
+pub(crate) fn run(root: &Path, patterns: &[String], opts: &SweepOptions) -> Result<SweepReport> {
+    run_compiled(root, &compile(patterns)?, opts)
+}
+
+pub(crate) fn run_compiled(
+    root: &Path,
+    regexes: &[Regex],
+    opts: &SweepOptions,
+) -> Result<SweepReport> {
     let enumeration = tracked_files(root, &opts.exclude)?;
     let mut report = SweepReport {
         skipped_unreadable: enumeration.skipped_outside,
         skipped_unenumerated: enumeration.warnings.len(),
         ..SweepReport::default()
     };
-    let mut scanned: BTreeSet<String> = BTreeSet::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
 
     'files: for entry in &enumeration.files {
-        // Joined component-wise: a canonical root carries a verbatim
-        // `\\?\` prefix on Windows, under which a `/` is not a separator.
-        let mut absolute = root.to_path_buf();
-        absolute.extend(entry.to_string_lossy().split('/'));
+        let Some(absolute) = join_under(root, entry) else {
+            report.skipped_unreadable += 1;
+            continue;
+        };
         let Ok(canonical) = fs::canonicalize(&absolute) else {
             report.skipped_unreadable += 1;
             continue;
@@ -94,37 +175,29 @@ pub(crate) fn run(root: &Path, patterns: &[String], opts: &SweepOptions) -> Resu
             report.skipped_unreadable += 1;
             continue;
         };
-        if !scanned.insert(key.clone()) {
+        if !seen.insert(key.clone()) {
             continue;
         }
-        let Ok(meta) = fs::metadata(&canonical) else {
-            report.skipped_unreadable += 1;
-            continue;
+        let file = match scan_file(&canonical, opts.max_file_bytes) {
+            Ok(file) => file,
+            Err(skip) => {
+                match skip {
+                    Skip::Unreadable => report.skipped_unreadable += 1,
+                    Skip::Oversize => report.skipped_oversize += 1,
+                    Skip::Binary => report.skipped_binary += 1,
+                }
+                report.skipped.insert(key);
+                continue;
+            }
         };
-        if meta.is_dir() {
-            report.skipped_unreadable += 1;
-            continue;
-        }
-        if meta.len() > opts.max_file_bytes {
-            report.skipped_oversize += 1;
-            continue;
-        }
-        let Ok(buf) = fs::read(&canonical) else {
-            report.skipped_unreadable += 1;
-            continue;
-        };
-        if memchr::memchr(0, &buf[..buf.len().min(BINARY_SNIFF_BYTES)]).is_some() {
-            report.skipped_binary += 1;
-            continue;
-        }
-        report.files_scanned += 1;
+        report.scanned.insert(key.clone());
 
-        let newlines: Vec<usize> = memchr::memchr_iter(b'\n', &buf).collect();
         let mut sites: BTreeMap<u64, usize> = BTreeMap::new();
         for (index, re) in regexes.iter().enumerate() {
-            for m in re.find_iter(&buf) {
-                let line = newlines.partition_point(|&nl| nl < m.start()) as u64 + 1;
-                sites.entry(line).or_insert(index);
+            for m in re.find_iter(&file.bytes) {
+                sites
+                    .entry(line_of(&file.newlines, m.start()))
+                    .or_insert(index);
             }
         }
         for (line, pattern) in sites {
@@ -152,7 +225,7 @@ pub(crate) fn report_json(report: &SweepReport) -> JsonValue {
         .collect();
     json!({
         "hits": hits,
-        "files_scanned": report.files_scanned,
+        "files_scanned": report.files_scanned(),
         "skipped": {
             "binary": report.skipped_binary,
             "oversize": report.skipped_oversize,
@@ -167,38 +240,7 @@ pub(crate) fn report_json(report: &SweepReport) -> JsonValue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::with_root;
-    use std::process::Command;
-
-    fn git_available() -> bool {
-        Command::new("git")
-            .arg("--version")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
-
-    fn git(root: &Path, args: &[&str]) {
-        let out = Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-
-    fn write(root: &Path, rel: &str, bytes: &[u8]) {
-        let path = root.join(rel);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).unwrap();
-        }
-        fs::write(path, bytes).unwrap();
-    }
+    use crate::test_support::{git, git_available, with_root, write};
 
     fn patterns(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
@@ -226,7 +268,7 @@ mod tests {
             write(root, "a.rs", b"fn a() {}\nfn foo() {}\nfoo();\n");
             let report = sweep(root, &["(?-u:\\bfoo\\b)"], &SweepOptions::default());
             assert_eq!(report.hits, [hit("a.rs", 2, 0), hit("a.rs", 3, 0)]);
-            assert_eq!(report.files_scanned, 1);
+            assert_eq!(report.files_scanned(), 1);
             assert!(report.coverage_complete());
         });
     }
@@ -253,7 +295,8 @@ mod tests {
             let report = sweep(root, &["foo"], &SweepOptions::default());
             assert!(report.hits.is_empty(), "{:?}", report.hits);
             assert_eq!(report.skipped_binary, 1);
-            assert_eq!(report.files_scanned, 0);
+            assert_eq!(report.skipped, ["blob.bin".to_string()].into());
+            assert_eq!(report.files_scanned(), 0);
             assert!(!report.coverage_complete());
         });
     }
@@ -273,8 +316,28 @@ mod tests {
             let report = sweep(root, &["foo"], &opts);
             assert_eq!(report.hits, [hit("small.txt", 1, 0)]);
             assert_eq!(report.skipped_oversize, 1);
+            assert_eq!(report.skipped, ["big.txt".to_string()].into());
             assert!(!report.coverage_complete());
         });
+    }
+
+    #[test]
+    fn a_line_is_addressed_one_based_without_its_newline() {
+        let bytes = b"a\n\nbc\n".to_vec();
+        let newlines = memchr::memchr_iter(b'\n', &bytes).collect();
+        let file = ScannedFile { bytes, newlines };
+        assert_eq!(file.line(0), None);
+        assert_eq!(file.line(1), Some(&b"a"[..]));
+        assert_eq!(file.line(2), Some(&b""[..]));
+        assert_eq!(file.line(3), Some(&b"bc"[..]));
+        assert_eq!(file.line(4), None);
+
+        let unterminated = ScannedFile {
+            bytes: b"a\nb".to_vec(),
+            newlines: vec![1],
+        };
+        assert_eq!(unterminated.line(2), Some(&b"b"[..]));
+        assert_eq!(unterminated.line(3), None);
     }
 
     #[test]
@@ -348,14 +411,14 @@ mod tests {
             write(root, "src/a.rs", b"foo\n");
             let report = sweep(root, &["foo"], &SweepOptions::default());
             assert_eq!(report.hits, [hit("src/a.rs", 1, 0)]);
-            assert_eq!(report.files_scanned, 1);
+            assert_eq!(report.files_scanned(), 1);
 
             let opts = SweepOptions {
                 exclude: Vec::new(),
                 ..SweepOptions::default()
             };
             let report = run(root, &patterns(&["foo"]), &opts).unwrap();
-            assert_eq!(report.files_scanned, 3);
+            assert_eq!(report.files_scanned(), 3);
         });
     }
 
@@ -376,6 +439,51 @@ mod tests {
         });
     }
 
+    /// The `.github/` mirror of `claude/` is a symlink, so a site reached
+    /// through two listings must count once. A link out of the tree or to
+    /// nothing is never read, and git lists both without a warning.
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_dedupe_by_target_and_never_reach_outside_the_root() {
+        use std::os::unix::fs::symlink;
+        if !git_available() {
+            return;
+        }
+        with_root(|root| {
+            git(root, &["init", "-q"]);
+            write(root, "a.txt", b"foo\n");
+            symlink("a.txt", root.join("link.txt")).unwrap();
+            git(root, &["add", "-A"]);
+            let report = run(root, &patterns(&["foo"]), &SweepOptions::default()).unwrap();
+            assert_eq!(report.hits, [hit("a.txt", 1, 0)]);
+            assert_eq!(report.files_scanned(), 1);
+            assert!(report.coverage_complete());
+        });
+        with_root(|root| {
+            git(root, &["init", "-q"]);
+            let outside = tempfile::tempdir().unwrap();
+            let target = outside.path().join("secret.txt");
+            fs::write(&target, b"foo\n").unwrap();
+            symlink(&target, root.join("escape.txt")).unwrap();
+            git(root, &["add", "-A"]);
+            let report = run(root, &patterns(&["foo"]), &SweepOptions::default()).unwrap();
+            assert!(report.hits.is_empty(), "{:?}", report.hits);
+            assert_eq!(report.files_scanned(), 0);
+            assert_eq!(report.skipped_unreadable, 1);
+            assert!(!report.coverage_complete());
+        });
+        with_root(|root| {
+            git(root, &["init", "-q"]);
+            symlink("nowhere", root.join("dangling")).unwrap();
+            git(root, &["add", "-A"]);
+            let report = run(root, &patterns(&["foo"]), &SweepOptions::default()).unwrap();
+            assert!(report.hits.is_empty(), "{:?}", report.hits);
+            assert_eq!(report.skipped_unreadable, 1);
+            assert_eq!(report.skipped_unenumerated, 0);
+            assert!(!report.coverage_complete());
+        });
+    }
+
     #[test]
     fn a_bad_pattern_fails_before_any_enumeration() {
         with_root(|root| {
@@ -388,7 +496,7 @@ mod tests {
     fn report_json_keeps_the_documented_key_order() {
         let report = SweepReport {
             hits: vec![hit("a.rs", 3, 1)],
-            files_scanned: 2,
+            scanned: ["a.rs", "b.rs"].map(String::from).into(),
             skipped_binary: 1,
             ..SweepReport::default()
         };

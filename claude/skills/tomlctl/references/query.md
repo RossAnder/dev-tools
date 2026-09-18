@@ -213,9 +213,9 @@ tier C is file-scoped; use --tier A or --tier B with --across
 `tomlctl items orphans <ledger>` walks every item and emits a JSON array of orphan records, one per detected class:
 
 - `missing-file` — the item's `file` path does not exist under the repo root.
-- `symbol-missing` — `file` exists but `symbol` is no longer a substring of its contents.
+- `symbol-missing` — `file` exists but `symbol` is no longer present in it as a whole word (ASCII word-boundary match).
 - `io-error` — `file` exists but cannot be read.
-- `outside-repo` — `file` (absolute, or relative through `..`) escapes the repo root. Checked before the path is touched, so nothing outside the root is read.
+- `outside-repo` — `file` escapes the repo root: an absolute path not under it (another drive, a UNC share or a device path included), a rootless (`\foo`) or drive-relative (`C:foo`) spelling, or any `..` component — refused even where it would resolve back inside the root. Decided lexically before the path is touched, so nothing outside the root is read and every other class names an in-root path.
 - `dangling-dep` — one or more `depends_on = [...]` ids are not present in the ledger; the record lists them under `dangling_deps`.
 - `instance-missing` — one `instances` anchor (`file:line` or `file:symbol`) does not resolve. The record carries the anchor verbatim under `instance` and a `reason`: `missing-file`, `symbol-missing`, `io-error` or `outside-repo`, meaning the same as the classes above but applied to the anchor's own file, or `unparseable` when the entry has no `:` tail after its last path separator. One record per failing anchor, in array order; a line anchor is checked for file existence only.
 
@@ -348,27 +348,43 @@ tomlctl items sweep <ledger>
 Per item, `recorded` and `found` are file sets — the apply flow's file budget reads them —
 and the four anchor lists partition every recorded anchor plus every hit:
 
-- `new` — a `file:line` hit that no recorded `file:line` anchor names and that lies on no
-  recorded `file:symbol` anchor's line, so growth inside an already-recorded file is visible.
+- `new` — a `file:line` hit that no kept `file:line` anchor names and that lies inside no
+  kept `file:symbol` anchor's block, so growth inside an already-recorded file is visible. A
+  symbol anchor's block runs from the symbol's line to the line before the next non-blank
+  line indented no deeper that is not a bare closing bracket (`}` / `)` / `]`, optionally
+  followed by `;` or `,`), else to the end of the file — a hit inside a Rust fn or method
+  body is covered, while a Markdown heading or a TOML table covers its first line only.
 - `gone` — a recorded anchor whose file was searched and has no hit at it (`reason: no-hit`),
   or a `file:symbol` anchor whose file has hits but no longer contains the symbol
   (`reason: symbol-missing`).
 - `kept` — a recorded anchor the sweep confirmed.
-- `unverified` — a recorded anchor the sweep could not judge: its file was skipped, lies
-  past a `--max-hits` cut, or the entry did not parse as an anchor. Absence of a hit is not
-  evidence there.
+- `unverified` — a recorded anchor the sweep could not judge, as `{"anchor", "reason"}` with
+  `reason` one of `unparseable` (the entry is not a `file:line` / `file:symbol` anchor),
+  `outside-repo` (path refused before any read), `truncated` (the run hit `--max-hits`
+  before reaching it), `missing` (in-root path not on disk), `skipped` (enumerated but
+  skipped as oversize, binary or unreadable) or `excluded` (on disk but outside the
+  enumeration: a default-excluded path, the ledger itself, or a gitignored file). Absence
+  of a hit is not evidence there. An item's `coverage_complete` is the run-level flag and an
+  empty `unverified`.
 
 The item's `file` + `symbol` pair counts as an implicit anchor, so `instances` that repeat it
 are not doubled. `skipped_items` names selections that swept nothing, with `reason` `no-sweep`
 (the item has no `sweep` array) or `unknown-id` (the `--ids` value matches no item).
 
-Read-only by default. `--update` rewrites each swept item's `instances` as its `kept` anchors
-followed by its `new` sites and prints `{"ok":true,"updated":["R5"],"created":false,"path":…}`;
-a run that changes nothing prints `"updated": []` and writes neither file nor sidecar.
-`enumeration` is never rewritten — completeness is the agent's judgement about forms a regex
-cannot reach — and `--update` refuses while any item is `truncated` or has `unverified`
-anchors. The write path, its `--dry-run` preview and the anchor-spelling consequence (new
-sites land as `file:line`, never as symbols) are documented in [write.md](write.md).
+Read-only by default. `--update` rewrites each swept item's `instances` in their listed order
+— the `kept` anchors and any `excluded` ones retained in place, then the `new` sites appended
+as `file:line` — and prints `{"ok":true,"updated":["R5"],"created":false,"path":…}`; a run
+that changes nothing prints `"updated": []` and writes neither file nor sidecar. Only
+an item whose `status` is `open` (absent or unrecognised reads as `open`) is rewritten: a
+terminal item (`fixed` / `wontfix` / `verified-clean` / `deferred` / `applied` / `wontapply`)
+is reported but never rewritten, even when named in `--ids` — `items update` is the way to
+edit its `instances`. `enumeration` is never rewritten — completeness is the agent's
+judgement about forms a regex cannot reach — and `--update` refuses (`kind=validation`)
+while any open item is `truncated` or has an `unverified` anchor whose reason is not
+`excluded`, naming up to five anchors per id with their reason plus the total and advising
+`--max-hits` for a truncated run or re-anchoring / hand resolution otherwise. The write
+path, its `--dry-run` preview and the anchor-spelling consequence (new sites land as
+`file:line`, never as symbols) are documented in [write.md](write.md).
 
 #### `items sweep`
 
@@ -377,7 +393,7 @@ sites land as `file:line`, never as symbols) are documented in [write.md](write.
 | `--ids` | comma-separated ids | Items to sweep. Omit for every item. | all |
 | `--update` | — | Rewrite each swept item's `instances` from the results. Without it nothing is written and a missing ledger is `kind=not_found`, never created. | off |
 | `--dry-run` | — | Preview the `--update` rewrite as a `would_change` summary; no file or sidecar touch. Requires `--update`. | off |
-| `--max-file-bytes` | bytes | Files larger than this are skipped, which leaves their anchors `unverified`. | `4194304` |
+| `--max-file-bytes` | bytes | Files larger than this are skipped, which leaves their anchors `unverified` (`reason: skipped`) and blocks `--update`. | `4194304` |
 | `--max-hits` | count | Distinct `file:line` sites after which the sweep stops and every item reports `truncated: true`. | `5000` |
 
 The verb carries the write bundle (`--allow-outside`, `--no-create`, `--no-write-integrity`,
@@ -393,8 +409,11 @@ its `file` plus the files of its `instances`, keyed by canonical path so a mirro
 counts once. Items are layered over `depends_on` first, then unioned on shared files only
 within one layer, so two dependent items that touch the same file stay in sequential batches
 with a commit between them. `depends_on` targets outside the selection are dropped and
-listed under `dropped_deps`; a cycle inside the selection is refused with `kind=validation`
-naming the items on it, and an `--ids` value matching no item is `kind=not_found`.
+listed under `dropped_deps`, split by whether the ledger holds them: `unselected` carries
+each such id with its `status` (absent reads as `open`), `unknown` the ids the ledger does
+not hold; both keys are always present. A cycle inside the selection is refused with
+`kind=validation` naming the items on it, and an `--ids` value matching no item is
+`kind=not_found`.
 
 ```bash
 tomlctl items clusters <ledger> --ids R5,R12,R14
@@ -413,7 +432,9 @@ tomlctl items clusters <ledger>
     }
   ],
   "batches": [["c1"]],
-  "dropped_deps": []
+  "dropped_deps": [
+    { "id": "R78", "unselected": [{ "id": "R41", "status": "fixed" }], "unknown": ["R9"] }
+  ]
 }
 ```
 

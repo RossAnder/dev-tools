@@ -11,6 +11,8 @@
 //!   - `recheck_claude_containment` — TOCTOU narrowing
 //!   - `path_under_root` — canonical prefix-ancestry containment check
 //!   - `recorded_under_root` — containment for a path a repo file records
+//!   - `join_under` / `canonical_key` — lexical join and canonical key for a
+//!     path a ledger or listing spells
 //!   - `with_exclusive_lock` — lock-file acquire/release
 //!   - `repo_or_cwd_root` + `OnceLock` cache
 //!   - `mutate_doc` — guard→lock→read→mutate→write pipeline
@@ -25,7 +27,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{BufRead, IsTerminal, Read, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path, PathBuf, Prefix};
 use toml::Value as TomlValue;
 
 use crate::errors::{ErrorKind, tagged_err};
@@ -1570,10 +1572,13 @@ pub(crate) fn path_under_root(root: &Path, candidate: &Path) -> bool {
 /// symlinked out of the tree is lexically clean, so `path_under_root` — which
 /// anchors on the nearest existing ancestor — is what refuses that.
 pub(crate) fn recorded_under_root(root: &Path, recorded: &Path) -> bool {
-    recorded
-        .components()
+    lexically_anchored(recorded) && path_under_root(root, &root.join(recorded))
+}
+
+/// Would `root.join(path)` stay under `root` without consulting the disk?
+fn lexically_anchored(path: &Path) -> bool {
+    path.components()
         .all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
-        && path_under_root(root, &root.join(recorded))
 }
 
 /// Sorted directory listing — keeps test output deterministic across
@@ -1660,6 +1665,96 @@ fn canonical_anchored(path: &Path) -> Option<PathBuf> {
         trailing.push(anchor.file_name()?.to_os_string());
         anchor = anchor.parent().filter(|p| !p.as_os_str().is_empty())?;
     }
+}
+
+/// `rel`, as a ledger row or a git listing spells it, joined under `root` —
+/// or `None` when it is not lexically under `root`: a `..` component, a
+/// rootless or drive-relative spelling, a prefix `root` does not carry (UNC,
+/// device, another drive), or an absolute path outside the tree. Nothing
+/// here touches the disk, so a ledger naming an arbitrary host path is
+/// refused before any `exists` or read could answer about it. Either
+/// separator splits, `.` drops, and an absolute `rel` is re-anchored on
+/// `root` with the verbatim `\\?\` marker ignored on the prefix.
+pub(crate) fn join_under(root: &Path, rel: &str) -> Option<PathBuf> {
+    let given = Path::new(rel);
+    if matches!(
+        given.components().next(),
+        Some(Component::Prefix(_) | Component::RootDir)
+    ) {
+        return absolute_under(root, rel);
+    }
+    // Pushed a component at a time: under a canonical root's verbatim
+    // `\\?\` prefix `/` is not a separator, so `root.join("a/b.rs")` has no leaf.
+    let mut joined = root.to_path_buf();
+    for part in rel
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty() && *part != ".")
+    {
+        if !lexically_anchored(Path::new(part)) {
+            return None;
+        }
+        joined.push(part);
+    }
+    Some(joined)
+}
+
+fn absolute_under(root: &Path, given: &str) -> Option<PathBuf> {
+    // Under a verbatim prefix std reads `/` as a name character, yet no
+    // Windows file name can contain one, so `\` is the lossless reading.
+    let slashed;
+    let given = if cfg!(windows) {
+        slashed = given.replace('/', "\\");
+        Path::new(&slashed)
+    } else {
+        Path::new(given)
+    };
+    let mut tail = given.components();
+    for part in root.components() {
+        if !same_component(part, tail.next()?) {
+            return None;
+        }
+    }
+    let mut joined = root.to_path_buf();
+    for part in tail {
+        match part {
+            Component::Normal(name) => joined.push(name),
+            Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    Some(joined)
+}
+
+/// Windows resolves names case-insensitively and spells a canonical
+/// prefix `\\?\C:` where a hand-written path has `C:`; neither difference
+/// makes a path a different file.
+fn same_component(a: Component<'_>, b: Component<'_>) -> bool {
+    match (a, b) {
+        (Component::Prefix(a), Component::Prefix(b)) => {
+            unverbatim(a.kind()) == unverbatim(b.kind())
+        }
+        (Component::Normal(a), Component::Normal(b)) if cfg!(windows) => a.eq_ignore_ascii_case(b),
+        _ => a == b,
+    }
+}
+
+fn unverbatim(prefix: Prefix<'_>) -> Prefix<'_> {
+    match prefix {
+        Prefix::VerbatimDisk(drive) => Prefix::Disk(drive),
+        Prefix::VerbatimUNC(server, share) => Prefix::UNC(server, share),
+        other => other,
+    }
+}
+
+/// The `/`-spelled path under `root` that `rel` names on disk — the key a
+/// sweep hit, a cluster file and an orphan probe agree on, so the `.github/`
+/// mirror of a `claude/` file is one key. A leaf that does not exist keeps
+/// its lexical spelling; `None` is `join_under`'s refusal, or a resolved
+/// symlink that leaves the tree.
+pub(crate) fn canonical_key(root: &Path, rel: &str) -> Option<String> {
+    let joined = join_under(root, rel)?;
+    let resolved = joined.canonicalize().unwrap_or(joined);
+    relativise_under(root, &resolved)
 }
 
 /// Stderr-warn when a read path resolves outside `<repo-or-cwd-root>/.claude/`.
@@ -2736,6 +2831,88 @@ arr = [1, 2]
                 drive_relative.push("plan.md");
                 assert!(!recorded_under_root(&cwd, Path::new(&drive_relative)));
             }
+        });
+    }
+
+    /// Every in-root spelling joins to the one path a `root.join` of its
+    /// components gives, and every refusal happens without the leaf — or the
+    /// escape target — needing to exist. The outside target is a real file
+    /// in a second tempdir, which is what a disk-consulting check would leak.
+    #[test]
+    fn join_under_admits_in_root_spellings_and_refuses_escapes_lexically() {
+        with_root(|root| {
+            let expected = root.join("src").join("a.rs");
+            let absolute = expected.display().to_string();
+            for rel in [
+                "src/a.rs",
+                "./src/a.rs",
+                r"src\a.rs",
+                "src//a.rs",
+                absolute.as_str(),
+            ] {
+                assert_eq!(
+                    join_under(root, rel).as_deref(),
+                    Some(expected.as_path()),
+                    "{rel}"
+                );
+            }
+            let outside = tempfile::tempdir().unwrap();
+            let target = outside.path().canonicalize().unwrap().join("secret.rs");
+            fs::write(&target, "").unwrap();
+            let target = target.to_string_lossy().into_owned();
+            for rel in [
+                "../escape.rs",
+                "src/../a.rs",
+                "/definitely/absent",
+                target.as_str(),
+            ] {
+                assert_eq!(join_under(root, rel), None, "{rel}");
+            }
+            #[cfg(windows)]
+            {
+                // A hand-spelled absolute path carries no verbatim prefix
+                // and may differ in case from the canonical root; a
+                // `{root}/leaf` format mixes `/` into a verbatim path.
+                let plain = absolute.trim_start_matches(r"\\?\").to_ascii_lowercase();
+                let mixed = format!("{}/src/a.rs", root.display());
+                for rel in [plain.as_str(), mixed.as_str()] {
+                    assert_eq!(
+                        join_under(root, rel).as_deref(),
+                        Some(expected.as_path()),
+                        "{rel}"
+                    );
+                }
+                for rel in [
+                    r"C:\plan.md",
+                    r"\plan.md",
+                    "C:plan.md",
+                    r"src\C:plan.md",
+                    r"\\server\share\a.rs",
+                    r"\\?\UNC\server\share\a.rs",
+                    r"\\.\PhysicalDrive0",
+                ] {
+                    assert_eq!(join_under(root, rel), None, "{rel}");
+                }
+            }
+        });
+    }
+
+    /// The key is the same string whether or not the leaf exists, and a
+    /// refused spelling stays refused rather than falling back to a guess.
+    #[test]
+    fn canonical_key_relativises_present_and_absent_leaves_alike() {
+        with_root(|root| {
+            fs::create_dir_all(root.join("src")).unwrap();
+            fs::write(root.join("src").join("a.rs"), "").unwrap();
+            assert_eq!(
+                canonical_key(root, r".\src\a.rs").as_deref(),
+                Some("src/a.rs")
+            );
+            assert_eq!(
+                canonical_key(root, "src/absent.rs").as_deref(),
+                Some("src/absent.rs")
+            );
+            assert_eq!(canonical_key(root, "../a.rs"), None);
         });
     }
 

@@ -40,7 +40,7 @@ use crate::items::{
     items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to, items_get_from,
     items_get_from_json, items_infer_and_next_id, items_next_id, items_update_to, parse_ndjson,
 };
-use crate::items_sweep::{items_sweep, update_plan};
+use crate::items_sweep::{items_sweep, outcome_json, update_plan};
 use crate::orphans::items_orphans;
 use crate::output::{
     emit_dry_run_plan, emit_dry_run_scalar, emit_list_raw, print_json, print_json_compact,
@@ -1164,7 +1164,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 let results = read_doc(&file, read_opts, |doc| {
                     items_sweep(doc, &file, &root, &ids, &sweep_opts)
                 })?;
-                print_json(&results)?;
+                print_json(&outcome_json(&results))?;
                 return Ok(());
             }
             if dry_run {
@@ -1178,7 +1178,9 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 return Ok(());
             }
             let opts = write_integrity_opts(&integrity);
-            let on_missing = on_missing_for(&file, integrity.no_create)?;
+            // A seeded ledger has no items to sweep, so a missing file is
+            // `not_found` here as on the read-only run; `--no-create` is moot.
+            let on_missing = crate::io::OnMissing::Error;
             // The sweep walks every tracked file, so it runs once, in-lock;
             // an unchanged ledger skips the write and the sidecar bump.
             let mut updated: Vec<String> = Vec::new();

@@ -1,0 +1,711 @@
+schema_version = 1
+last_updated = 2026-09-18
+
+[[vet_events]]
+timestamp = "2026-09-18T08:45:28Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = 'Spot-checked F2 (orphans read_to_string vs items_sweep bytes + duplicated (?-u:\b) regex), F5 (Enumeration.files Vec<PathBuf> undone by to_string_lossy in both consumers), F7 (4194304/5000 literals in Cmd::Sweep, ItemsOp::Sweep and SweepOptions::default). All three match the cited lines. F1 merged with Agent-3 F4 and Agent-5 F3 (R2); F2 observation merged with Agent-3 F3 (R3); F3 merged with Agent-3 F3 path half (R4); F4 merged with Agent-3 F8 (R12); F6 merged with Agent-5 F9 (R14).'
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-18T08:45:28Z"
+command = "review"
+agent_index = 2
+lens = "security"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "Read orphans.rs:60-95: comment claims outside-repo surfaces with no exists() call, but canonicalize() and resolved.exists() both run before the containment verdict and a canonicalise failure maps to contained=true, so an outside-root missing path reports missing-file. io::recorded_under_root (io.rs:1572) already has the lexical pre-check the fix proposes. Confirmed at the agent's stated grade."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-18T08:45:28Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked F1 (items_sweep::select takes every sweep-carrying item regardless of status while clusters.rs:179 scopes bare selection to open), F5 (clusters.rs files = file + instances; apply-constraints SKILL.md:16 defines the budget as file + instances + description-named files; apply-pipeline Step 3 unions only re-sweep sites), F7 (tasks/mod.rs:18 pub(crate) mod graph; flow/mod.rs:20 shows the pub(crate) use idiom). All confirmed. F3 split across R3/R4 with Agent-1; F4 merged into R2; F8 merged into R12; F2 merged with Agent-5 F4 (R6)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-18T08:45:28Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked F1 (write.md:372 refusal advice; module doc lists excluded as an unverified cause), F2 (pre-analysis.md:71 and apply-pipeline SKILL.md:210 both defer the instances rewrite to Step 6, whose heading is Plan-deviation follow-up; verification.md#ledger-mutation has zero hits for instances/items sweep/--update), F3 (README:227-232 read-verb list omits items sweep; --strict-read on items sweep exits 2 unexpected argument), F5 (optimise-apply.md:61 — out of review scope, routed to backlog), F6 (README:39 lists four of six classes). All confirmed. F4 merged with Agent-6 F3 (R19); F1 merged with Agent-5 F7 (R8). Both TANGENTIAL lines verified in-scope (query.md:216, types.rs:218) and minted as R28/R29."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-18T08:45:28Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+sampled_count = 6
+dropped_count = 1
+downgraded_count = 1
+dropped_ids = ["F6-dry-run-requires-update"]
+rationale = """Spot-checked F1 (clusters.rs:94 formats the whole Kahn residue; graph.rs:88-102 narrows through cycle_members first), F2 (probed: items sweep <missing> --update exits 0 with ok:true/created:false), F6, F8 (check_user_pattern_len emits byte count only; regex_build_error quotes the pattern), F9 (three new git_available copies + evidence_ops + tests/common), F11 (orphans.rs:195 unparseable arm). DROPPED F6 (clap requires="update" for --dry-run): write.md:372 documents the kind=other JSON envelope as the contract and the crate's agent-facing error surface is the JSON envelope, which a clap parse error would bypass; Agent-3 independently ruled the same item out on that ground. DOWNGRADED F2 warning→suggestion (R21): write.md:375 documents that --update never mints a missing ledger and created stays false, so it is a documented choice; the exit-0/ok:true trap on a typo'd path remains real for the apply pre-analysis, hence kept as a suggestion. F3 merged into R2; F4 merged into R6; F7 merged into R8; F9 merged into R14."""
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-18T08:45:28Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Spot-checked all four: F1 (query.md:357-359 lists skipped/max-hits/unparsed; items_sweep.rs:7-11 lists excluded/ignored/skipped/missing/outside-root/max_hits; pre-analysis.md:75 budgets unverified as incomplete), F2 (SKILL.md:3 verb list has no sweep), F3 (SKILL.md:105 says all 9; :145 write list omits items sweep --update; README:324 includes it), F4 (pre-analysis.md:79 recorded is kept.len()). All confirmed. F3 merged with Agent-4 F4 (R19). TANGENTIAL on dropped_deps.missing naming folded into R16."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R1"
+file = "tomlctl/src/orphans.rs"
+line = 77
+symbol = "FileProbe"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "FileProbe::check touches a ledger-supplied path (canonicalize + exists) before deciding containment, so items orphans is a missing-file vs outside-repo existence oracle over any host path a ledger row names"
+description = 'The comment at orphans.rs:65-73 and query.md:218 both claim an outside-root path surfaces as `outside-repo` with no `exists()` call, but `resolved.canonicalize()` and `resolved.exists()` run unconditionally and a canonicalise failure maps to `contained = true`, so an outside-root path that exists reports `outside-repo` and one that does not reports `missing-file` (probed: `C:/Windows/System32/drivers/etc/hosts:1` → outside-repo, `.../nope_zz:1` → missing-file, `../../outside_missing.txt:1` → missing-file). The new instance-missing walk repeats the probe per `instances` entry. `items_sweep::Probe::key` and `clusters::file_key` canonicalise the same way but collapse to unverified/verbatim so they leak nothing; on Windows a ledger-written `\\host\share\x` still opens SMB before containment. Fix: one shared lexical pre-check before any canonicalize — refuse UNC/`\\?\`, `..`, drive-relative and absolute-not-under-root anchors as `outside-repo`/`None` — reusing the component scan in `io::recorded_under_root` (io.rs:1572) with an absolute-under-root limb; then `missing-file` can only name an in-root path, and correct the comment and query.md:218.'
+instances = [
+    "tomlctl/src/orphans.rs:FileProbe",
+    "tomlctl/src/items_sweep.rs:Probe",
+    "tomlctl/src/clusters.rs:file_key",
+    "claude/skills/tomlctl/references/query.md:218",
+]
+sweep = [
+    'canonicalize\(',
+    'is_absolute\(\)',
+]
+enumeration = "complete"
+related = ["R4"]
+dedup_id = "b44dccc67147962e"
+resolved = 2026-09-18
+resolution = "io::join_under refuses UNC/verbatim, drive-relative, rootless, absolute-not-under-root and any `..` anchor lexically before any filesystem touch; FileProbe::check takes outside-repo from it, so missing-file/io-error/symbol-missing only name in-root paths; comment rewritten; unit test covers present/absent outside targets; query.md outside-repo bullet names the refused forms; tests/clusters.rs fixture repointed from src/../src/b.rs to ./src/b.rs (the .. spelling is now refused by design)"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R2"
+file = "tomlctl/src/items_sweep.rs"
+line = 92
+symbol = "BINARY_SNIFF_BYTES"
+severity = "warning"
+effort = "medium"
+category = "quality"
+summary = "items_sweep re-implements the engine's scanned-file predicate, re-runs git ls-files and recompiles the patterns instead of consuming sweep::run's verdicts, and the gone-vs-unverified split that --update deletes on depends on the two copies staying equal"
+description = "`sweep::run` (sweep.rs:100-129) decides what a scanned file is — metadata, is_dir, len > max_file_bytes, fs::read, NUL in the first BINARY_SNIFF_BYTES, memchr newline table + partition_point line mapping. `Probe::read` (items_sweep.rs:92-121) repeats every step with its own `BINARY_SNIFF_BYTES` (:33-34, comment: mirrors the engine's sniff, which is not exported) and its own `line_of` (:141-143 vs sweep.rs:126); `Probed { scanned: bool, bytes, newlines }` encodes not-scanned as a bool beside an empty buffer. `Probed.scanned` (:339) is what turns a no-hit anchor into `gone` (which `--update` drops) rather than `unverified` (which blocks it), so any edit to one copy silently misclassifies anchors with no test binding the two; it also forces a second `tracked_files` (:241) and a second regex compile (:237-240). Three lenses flagged it independently. Fix: extract `pub(crate) fn scan_file(path, max_file_bytes) -> Result<ScannedFile, Skip>` and `pub(crate) fn line_of` in sweep.rs, expose `SweepReport.scanned: BTreeSet<String>` (or return the Enumeration), and gate `Probe::files` on `report.scanned.contains(key)` — deleting the mirrored constant, the second enumeration and the bool-plus-empty-buffer state; that also gives `sweep::run` its one injection seam."
+instances = [
+    "tomlctl/src/sweep.rs:BINARY_SNIFF_BYTES",
+    "tomlctl/src/sweep.rs:run",
+    "tomlctl/src/items_sweep.rs:BINARY_SNIFF_BYTES",
+    "tomlctl/src/items_sweep.rs:Probed",
+    "tomlctl/src/items_sweep.rs:line_of",
+]
+sweep = [
+    "BINARY_SNIFF_BYTES: usize",
+    'memchr::memchr\(0,',
+    'partition_point\(',
+]
+enumeration = "complete"
+related = [
+    "R12",
+    "R13",
+]
+dedup_id = "b7d344dad83ebf5e"
+resolved = 2026-09-18
+resolution = "sweep::scan_file + line_of extracted and shared; SweepReport.scanned set exposed; items_sweep gates gone-vs-unverified on it, dropping its BINARY_SNIFF_BYTES copy, Probed, the second tracked_files enumeration and the second regex compile (run split into compile + run_compiled); wire JSON unchanged; unit test pins gone only on an engine-scanned file"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R3"
+file = "tomlctl/src/items_sweep.rs"
+line = 124
+symbol = "symbol_line"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "The symbol word-boundary probe is duplicated between orphans::FileProbe and items_sweep::Probe, and the two already judge the same file:symbol anchor differently on a non-UTF-8 file (io-error vs kept)"
+description = 'orphans.rs:109-119 and items_sweep.rs:124-137 each build `(?-u:\b){escaped}(?-u:\b)`, cache it as `HashMap<String, Option<Regex>>` keyed on the raw symbol, and carry a substring fallback that orphans.rs:106-107 itself calls unreachable; the plan (task 8) asked items sweep to reuse the orphans pattern, not copy it. They have diverged in the read they probe: `FileProbe` reads via `fs::read_to_string` (orphans.rs:100), so a Latin-1 source file yields `io-error`; `Probe` reads bytes (items_sweep.rs:109) and reports the same anchor `kept` (probed with a file containing byte 0xE9: `items orphans` → io-error twice, `items sweep` → kept). Fix: add `pub(crate) fn symbol_regex(symbol: &str) -> Option<regex::bytes::Regex>` to anchor.rs (one builder, one cache-value type), switch `FileProbe.read_cache` to `Vec<u8>` via `fs::read`, and drop both substring fallbacks.'
+instances = [
+    "tomlctl/src/orphans.rs:symbol_cache",
+    "tomlctl/src/items_sweep.rs:symbol_line",
+]
+sweep = ['regex::escape\(symbol\)']
+enumeration = "complete"
+related = ["R4"]
+dedup_id = "4cc299b88512f88e"
+resolved = 2026-09-18
+resolution = "anchor::symbol_regex is the single word-boundary builder; FileProbe reads bytes via fs::read (non-UTF-8 no longer io-error); both substring fallbacks deleted"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R4"
+file = "tomlctl/src/clusters.rs"
+line = 200
+symbol = "file_key"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = 'Three modules each own a private ledger-path → canonical-key resolver (orphans::resolve_relative_to_root, items_sweep::Probe::key, clusters::file_key), and the component-wise root join they rest on is pasted five times with the same \\?\-prefix comment'
+description = '''`items_sweep::Probe::key` (items_sweep.rs:62-82) and `clusters::file_key` (clusters.rs:200-215) are the same function — absolute passthrough, component-wise `extend(split(['/', '\\']))`, canonicalize, relativise_under — differing only in the `.`-component filter and the None-vs-verbatim fallback, while `orphans::resolve_relative_to_root` (orphans.rs:215-222) answers the same question with a plain `root.join`. The bare join idiom recurs at repo_files.rs:83-84, sweep.rs:87-88 and items_sweep.rs:101-102, three carrying a verbatim copy of the `/` is not a separator comment. B-06990435 is already a clusters-only divergence and R1/R3 are the containment and symbol halves of the same split; `anchor.rs:1` names all three consumers, so the shared home exists. Decisions to plan: keep orphans' no-touch-outside-root containment order (R1), switch orphans to bytes (R3, changes the io-error verdict for non-UTF-8), and whether the `\\?\`-safe join becomes `io::join_under` + `io::canonical_key` beside `relativise_under`. A probe of `./`, `src/../src/` and backslash spellings showed all three resolve identically today, so consolidation is behaviour-preserving for existing files.'''
+instances = [
+    "tomlctl/src/items_sweep.rs:Probe",
+    "tomlctl/src/items_sweep.rs:Probed",
+    "tomlctl/src/clusters.rs:file_key",
+    "tomlctl/src/repo_files.rs:tracked_files",
+    "tomlctl/src/sweep.rs:run",
+    "tomlctl/src/orphans.rs:resolve_relative_to_root",
+]
+sweep = [
+    'absolute\.extend\(|p\.extend\(file\.split|joined\.extend\(',
+    "is not a separator",
+    'regex::escape\(symbol\)',
+]
+enumeration = "complete"
+related = [
+    "R1",
+    "R3",
+]
+needs_plan = true
+dedup_id = "3802d36bd33d5737"
+resolved = 2026-09-18
+resolution = "io::join_under + io::canonical_key beside relativise_under; Probe::key, clusters::file_key, FileProbe::check and the three bare-join sites route through them; orphans::resolve_relative_to_root deleted; recorded_under_root's component scan reused as lexically_anchored"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R5"
+file = "tomlctl/src/items_sweep.rs"
+line = 170
+symbol = "select"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "items sweep --update with no --ids rewrites (and unsets) instances on fixed/wontfix items, erasing the record of what was fixed; items clusters scopes its bare form to open"
+description = """`select` (items_sweep.rs:170-178) takes every item carrying `sweep` regardless of `status`, and `update_plan` (:414-434) emits an op for each; a `fixed`/`wontfix` item whose patterns now (correctly) hit nothing gets `unset: ["instances"]`. Probed: R1 open + R2 fixed with no hits → `--update --dry-run` reports `updated: 2, ids: [R1, R2]`. The sibling verb `items clusters` scopes its bare selection to `open` (clusters.rs:178-179), so the two verbs disagree on what no `--ids` means and the disagreeing one is the writer. The plan specified the read selection (empty ids = every sweep-carrying item) but nothing says a terminal item's instances may be rewritten. Fix: skip terminal-status items on the `--update` path (or require `--ids` with `--update`), and state it at query.md:378 and ledger-schema SKILL.md:68."""
+related = ["R8"]
+dedup_id = "641ade16592b6f49"
+resolved = 2026-09-18
+resolution = "update_plan emits ops only for open items (absent/unknown status reads as open); terminal items are reported but never rewritten, even under --ids; documented in query.md, write.md, ledger-schema SKILL.md and the items sweep help"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R6"
+file = "tomlctl/src/items_sweep.rs"
+line = 328
+symbol = "items_sweep"
+severity = "warning"
+effort = "medium"
+category = "db"
+summary = "A file:symbol anchor covers only the symbol's first line, so a hit inside the symbol's body is new and every --update appends a drift-fragile file:line twin of an already-recorded site"
+description = '''`covered` gets the line `symbol_line` returns (items_sweep.rs:328-331) — the first occurrence of the symbol — and a hit on any other line of that function is emitted under `new` (:346-351), which `--update` writes as `file:line` beside the kept `file:symbol`. Probed: `fn alpha() {\n needle();\n}` with `instances = ["src/a.rs:alpha"]` → kept `src/a.rs:alpha`, new `src/a.rs:2`. For the common case (a call inside a function anchored by its name) the site is recorded twice under two spellings, the pre-analysis count line overcounts by one per symbol anchor, and the twin is exactly the drift-fragile form ledger-schema SKILL.md:66 recommends `symbol` to avoid. query.md:351-352 and the plan specify this rule verbatim, so it is spec-conformant; it is raised because the spec's stated purpose for symbol anchors is defeated by its own `--update` and no doc states the trade-off. Needs a decision: a span heuristic (brace-matching or next-item boundary), suppressing line twins in a file with a kept symbol anchor, or accepting duplicates and deduping on read. Whichever lands, add a unit case with the hit on the line after the symbol — today both fixtures put the site on the symbol's own line so the rule is unpinned in either direction.'''
+related = ["R27"]
+needs_plan = true
+dedup_id = "9e172814bdc01ca1"
+resolved = 2026-09-18
+resolution = "symbol anchors cover their indentation span (to the line before the next non-blank line at <= indentation that is not a bare closing bracket, else EOF) via ScannedFile::line + block_end; hits inside the span are covered, not new; unit tests for body hit, next-function hit, nested method, markdown/tab cases; rule stated in query.md and the items sweep help"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R7"
+file = "claude/skills/flow-contract-apply-pipeline/SKILL.md"
+line = 209
+symbol = "Step 3"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "items clusters' files is file ∪ instances, but the apply budget is file ∪ instances ∪ description-named files, and Step 3 hands files to the agent without adding the third set"
+description = "clusters.rs:40-60 and :143-146 build a cluster's `files` from `file` and `instances` only, matching the dependency-sort skill and query.md:391-392. `flow-contract-apply-constraints/SKILL.md:16`, `references/agent-prompt-contract.md:14` and ledger-schema SKILL.md:69 define the cluster's `files[]` as also including every file the `description` names. Step 3 (SKILL.md:198-212) consumes the verb's `files` as the assignment and merges only for `new` re-sweep sites, so two same-round clusters whose descriptions name one file are dispatched in parallel against it, violating the no-two-agents-one-file rule the merge paragraph exists to protect. Fix: extend the Step 3 merge paragraph (:209-212) to union each item's description-named files into its cluster before the collision merge and the `lite_file_scope` re-derivation — description text is not machine-extractable, so this stays orchestrator prose rather than a verb change."
+dedup_id = "c9d66ee0c6977677"
+resolved = 2026-09-18
+resolution = "Step 3 merge paragraph now unions description-named files into each cluster before the re-sweep new sites and the same-round collision merge, then re-derives lite_file_scope"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R8"
+file = "tomlctl/src/items_sweep.rs"
+line = 403
+symbol = "update_plan"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "The --update refusal reports how many anchors are unverified but not which or why, and its advice (raise --max-hits) cannot apply to an anchor under a default-excluded path, which is permanently unverified"
+description = "`Probe::read` (items_sweep.rs:98) marks any recorded file absent from the exclude-filtered enumeration as unscanned, so an anchor under `docs/plans/**` or `.claude/**` lands in `unverified` forever; ledgers do anchor such files (`.claude/flows/harness-progressive-disclosure/review-ledger.toml:98,259`). `--update` then refuses with `refusing --update: absence of a hit is not evidence for R1 (1 unverified); raise --max-hits or resolve the unverified anchors first` (:385-407) — the per-item JSON is not printed on the `--update` path, `items sweep` has no `--exclude` override, and dropping the anchor by hand loses an instance the sweep can never re-add. Fix: carry a `reason` on each `unverified` entry (excluded | skipped | truncated | missing | outside-repo | unparseable), name the anchors with their reason in the refusal (cap at a handful per id), and either let `--update` treat excluded-path anchors as `kept` or say in the message that they must be re-anchored or the item swept with the standalone verb; extend `an_unscanned_file_is_unverified_and_blocks_update` (:674) to assert one anchor name."
+related = [
+    "R5",
+    "R9",
+]
+dedup_id = "9a4ac431ca9e5184"
+resolved = 2026-09-18
+resolution = "unverified entries are {anchor, reason} with reasons unparseable/outside-repo/truncated/missing/skipped/excluded (SweepReport.skipped seam added); --update retains excluded anchors in listed order and refuses only for truncation or a non-excluded unverified anchor, naming up to five anchors per id with reason; tests added; documented in query.md, write.md, README row and the items sweep help"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R9"
+file = "claude/skills/tomlctl/references/query.md"
+line = 357
+symbol = "unverified"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "unverified is documented as file skipped or past --max-hits, but the binary also sends missing-file, excluded, ignored and outside-root anchors there — and pre-analysis tells the orchestrator to budget every unverified item as enumeration incomplete"
+description = 'items_sweep.rs:7-11 (module doc) and the test `an_unscanned_file_is_unverified_and_blocks_update` (:643-676) define `unverified` as any anchor whose file was not scanned — excluded, ignored, skipped, missing, outside the root, or cut by max_hits (probed: an anchor on a nonexistent file → unverified, blocks --update). query.md:357-359 lists only skipped / past --max-hits / did not parse; pre-analysis.md:75-77 says an unverified anchor is a coverage gap, so budget the item as `enumeration = "incomplete"`; vet-research/SKILL.md:11 says whose file was skipped or lay past --max-hits. A reader looking for a deleted file reads `gone` and never finds it; an orchestrator following pre-analysis marks a pattern item incomplete because one of its files was deleted. Fix: extend the `unverified` sentence in all three files to name missing / excluded / outside-root files, note that per-item `coverage_complete` is the top-level flag AND `unverified` empty, and in pre-analysis say a missing-file unverified anchor is resolved by hand (or via `items orphans` instance-missing) rather than budgeted as incomplete.'
+instances = [
+    "claude/skills/tomlctl/references/query.md:357",
+    "claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md:75",
+    "claude/skills/flow-contract-vet-research/SKILL.md:11",
+]
+sweep = ["unverified"]
+enumeration = "complete"
+related = ["R8"]
+dedup_id = "82ee51b8d260058b"
+resolved = 2026-09-18
+resolution = "unverified redefined with the six reasons in query.md, pre-analysis.md (only truncated/skipped budget enumeration=incomplete; missing is hand-resolved, excluded retained) and vet-research SKILL.md"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R10"
+file = "claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md"
+line = 71
+symbol = "Re-sweep pattern items"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "The instances rewrite deferred to Step 6 has no owner — Step 6 is plan-deviation follow-up, and the Step 5 ledger-mutation reference never runs items sweep --update or re-anchors gone"
+description = "pre-analysis.md:71 says the ledger's `instances` rewrite stays with the ledger write at Step 6, :75 says re-anchor or drop `gone` at Step 6, and apply-pipeline SKILL.md:210 says the read-only sweep does not update them until Step 6. In the pipeline the ledger write is Step 5's Ledger mutation (SKILL.md:336 → references/verification.md:50) and Step 6 is Plan-deviation follow-up (:384). verification.md's ledger-mutation section has zero hits for instances / items sweep / --update, and no carrier (review-apply.md, optimise-apply.md) states the step as a delta, so the growth the re-sweep found is applied by the agent but never persisted and `gone` anchors are never dropped. Fix: change all three step references to Step 5 / Ledger mutation and add a bullet to verification.md#ledger-mutation: for applied pattern items run `tomlctl items sweep <ledger> --ids <ids> --update` (or `items update` to drop `gone` anchors when `--update` refuses)."
+instances = [
+    "claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md:71",
+    "claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md:75",
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md:210",
+    "claude/skills/flow-contract-apply-pipeline/references/verification.md:50",
+]
+sweep = ["Step 6"]
+enumeration = "complete"
+dedup_id = "fffba6182d26613a"
+resolved = 2026-09-18
+resolution = "pre-analysis.md:71/:75 and apply-pipeline SKILL.md now point at Step 5's ledger mutation; verification.md ledger-mutation gained the applied-pattern-item bullet running items sweep --update (items update fallback when it refuses)"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R11"
+file = "tomlctl/src/clusters.rs"
+line = 93
+symbol = "items_clusters"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "Cycle refusal names every stranded item as on the cycle, diverging from the build_or_refuse wording it was meant to mirror"
+description = "`items_clusters` formats the whole Kahn residue as `a cycle through items …` (clusters.rs:92-102), but the residue also holds items merely downstream of the cycle. `tasks::graph::build_or_refuse` (graph.rs:88-102) narrows the residue through `cycle_members()` (:232-234, doc: not the whole residue, which also holds the tasks stranded downstream) before printing the same sentence. Probed: R1<->R2 plus R3 depending on R2 prints `cycle through items R1, R2, R3`, so a user chasing the message edits R3's depends_on for nothing. Both tests (`a_cycle_is_refused_before_clustering`, tests/clusters.rs `a_cycle_is_a_validation_error`) use a pure 2-cycle with an independent third item. Fix: lift the grey/white DFS out of `Graph::cycle_members` into a free `pub(crate) fn cycle_within(residual, succs)` in graph.rs, call it from clusters.rs:94, and add a stranded-dependent case to the unit test."
+related = ["R17"]
+dedup_id = "d836da7fc6340815"
+resolved = 2026-09-18
+resolution = "tasks::graph::cycle_within lifted from Graph::cycle_members; items_clusters narrows the Kahn residue through it so the refusal names only cycle members; unit test fixture gains a stranded dependent"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R12"
+file = "tomlctl/src/items_sweep.rs"
+line = 219
+symbol = "items_sweep"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "items_sweep returns JsonValue and update_plan parses that wire JSON back with missing-key-means-empty semantics, where the sibling engine in the same flow uses a typed SweepReport plus report_json"
+description = "`items_sweep` builds per-item `json!` objects (items_sweep.rs:352-362) and `update_plan(doc, results: &JsonValue)` re-reads `id`, `truncated`, `unverified`, `kept` and `new` through `strings` / `strings_objects` (:374-378, :383-442), silently skipping an item with no `id` (:415-417), dropping non-object entries, and defaulting a missing `truncated` to false. The write path therefore has no compile-time link to the read path: renaming `kept` in the envelope makes `instances = new` only, and renaming `unverified` disables the refusal gate, with no error — the unit tests pin behaviour, not the type link. `sweep.rs:46-57` (`SweepReport`) + `report_json` (:147) is the typed shape the same flow chose for the engine. Fix: return `SweepOutcome { items: Vec<ItemSweep>, skipped_items, files_scanned, coverage_complete, truncated }` with `outcome_json()`, take `&SweepOutcome` in `update_plan`; dispatch.rs:1160-1198 changes only at the two call sites."
+related = ["R2"]
+dedup_id = "438412527092002a"
+resolved = 2026-09-18
+resolution = "items_sweep returns typed SweepOutcome/ItemSweep with outcome_json emitting today's wire shape; update_plan takes &SweepOutcome; strings/strings_objects deleted; dispatch.rs changed at the two call sites"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R13"
+file = "tomlctl/src/repo_files.rs"
+line = 17
+symbol = "Enumeration"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Enumeration.files is Vec<PathBuf> for values that are git's /-spelled relative strings, and every consumer converts back to a string to split on /"
+description = "`tracked_files` maps git's NUL-separated entries through `PathBuf::from` (repo_files.rs:91), and both consumers immediately undo it: sweep.rs:88 `entry.to_string_lossy().split('/')`, items_sweep.rs:244 `p.to_string_lossy().into_owned()`. The doc comment (:12-14) already says the values are repo-relative paths spelled the way git emits them, and sweep.rs:85-86 warns that treating one as an OS path via `root.join` is wrong under a verbatim root — so `PathBuf` advertises exactly the operation callers must not use. `tasks::TaskRow.files: Vec<String>` (tasks/check.rs:313) is the precedent. Fix: `files: Vec<String>`, drop the `.map(PathBuf::from)` and the two `to_string_lossy` calls (test helper `names()` at :177-182 collapses to a clone). Hits are re-sorted at sweep.rs:143 so enumeration order does not change behaviour."
+related = ["R2"]
+dedup_id = "e58dbd6f4989e470"
+resolved = 2026-09-18
+resolution = "Enumeration.files is Vec<String>; PathBuf round-trips in sweep.rs and items_sweep.rs removed; names() test helper deleted"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R14"
+file = "tomlctl/src/test_support.rs"
+line = 82
+symbol = "with_root"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Three new copies of git_available (four crate-wide) plus two of git() and two of write() sit in per-module unit-test blocks when test_support is the crate's home for shared unit-test helpers"
+description = "This flow added `git_available` at sweep.rs:173-178, items_sweep.rs:451-456 and repo_files.rs:134-139 (evidence_ops.rs:608-613 is a pre-existing fourth), an identical `git(root, args)` at sweep.rs:180-193 and repo_files.rs:141-154, and `write(root, rel, bytes)` at sweep.rs:195-201 and items_sweep.rs:458-464; items_sweep's tests also inline the six-line `git -C <root> init -q` four times (:473-478, :598-603, :648-653, :744-749). `test_support.rs` exists to hold helpers shared across modules (`env_lock`, `with_root`, `shipped_gitignore`), and `git_available` gates whole tests, so one definition is the place to change the gate. Fix: move `git_available`, `git` and `write` into `test_support.rs` behind `#[cfg(test)]` and import them in the four modules; the integration-side `tests/common/mod.rs:383` copy is a separate crate boundary and stays."
+instances = [
+    "tomlctl/src/sweep.rs:git_available",
+    "tomlctl/src/sweep.rs:git",
+    "tomlctl/src/sweep.rs:write",
+    "tomlctl/src/items_sweep.rs:git_available",
+    "tomlctl/src/items_sweep.rs:write",
+    "tomlctl/src/repo_files.rs:git_available",
+    "tomlctl/src/repo_files.rs:git",
+    "tomlctl/src/backlog/evidence_ops.rs:git_available",
+]
+sweep = [
+    '(?-u:fn git_available\b)',
+    '(?-u:fn git\(root: &Path, args)',
+    '(?-u:fn write\(root: &Path, rel: &str)',
+]
+enumeration = "complete"
+dedup_id = "1d11f90b622bf6c0"
+resolved = 2026-09-18
+resolution = "git_available, git and write live once in test_support.rs; sweep.rs, items_sweep.rs, repo_files.rs and evidence_ops.rs import them; four inline git init sequences replaced"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R15"
+file = "tomlctl/src/cli/types.rs"
+line = 675
+symbol = "max_file_bytes"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The sweep caps are spelled in three places — two clap literals (4194304 / 5000) and SweepOptions::default() (4 << 20 / 5000) — and the Default values never reach a CLI run"
+description = "`Cmd::Sweep` (types.rs:675-680) and `ItemsOp::Sweep` (:1769-1774) each carry `default_value_t = 4194304` and `default_value_t = 5000`; `SweepOptions::default()` (sweep.rs:25-35) restates them. Both dispatch arms build `SweepOptions { max_file_bytes, max_hits, ..SweepOptions::default() }` (dispatch.rs:395-399, 1155-1159), so the struct defaults only apply in unit tests and a bump to one clap literal leaves the other verb and the tests on the old cap. Fix: `pub(crate) const DEFAULT_MAX_FILE_BYTES: u64 = 4 << 20;` and `DEFAULT_MAX_HITS: usize = 5000` in sweep.rs, referenced from `default_value_t = crate::sweep::DEFAULT_MAX_FILE_BYTES` in both variants and from `Default` (types.rs:119 `default_value_t = ErrorFormat::Text` shows non-literal expressions are accepted)."
+instances = [
+    "tomlctl/src/cli/types.rs:675",
+    "tomlctl/src/cli/types.rs:1769",
+    "tomlctl/src/sweep.rs:28",
+]
+sweep = [
+    "default_value_t = 4194304",
+    "default_value_t = 5000",
+    "max_file_bytes: 4 << 20",
+]
+enumeration = "complete"
+dedup_id = "fe948a7a12a6ca6d"
+resolved = 2026-09-18
+resolution = "sweep::DEFAULT_MAX_FILE_BYTES / DEFAULT_MAX_HITS consts referenced from both clap default_value_t sites and SweepOptions::default(); --help rendering unchanged"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R16"
+file = "tomlctl/src/clusters.rs"
+line = 82
+symbol = "items_clusters"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "dropped_deps[].missing flattens dependency-is-a-terminal-item (safe to drop), open-item-outside-the-selection (ordering hazard) and unknown-id into one list whose key name reads as absent from the ledger"
+description = """`position.get(dep)` failing is the only condition (clusters.rs:82-84), so the test's `R2` (`fixed`, in the ledger) and `R9` (absent) both land under `missing` (:406-409); a probe with R2 present and fixed also listed it under `missing`. The pipeline asks the orchestrator to name each dropped edge so the ordering assumption is auditable (apply-pipeline SKILL.md:205-206), which requires knowing whether the dependency already landed or was merely left out of `--ids`; today that needs an `items get` per id, and the key name invites reporting a satisfied edge as a dangling ref. The `{id, missing: [...]}` shape is specified verbatim in the dependency-sort skill, so this is spec-conformant; the spec's own auditability requirement is what the shape does not serve. Fix: look the id up in the full `items` array and emit its status alongside (e.g. `"missing": [{"id":"R2","status":"fixed"},{"id":"R9","status":null}]` or a sibling unselected/unknown split), updating dependency-sort SKILL.md:19 and query.md:396."""
+dedup_id = "a09ee2973ae55333"
+resolved = 2026-09-18
+resolution = "dropped_deps entries are {id, unselected: [{id, status}], unknown: [ids]} (missing key removed, user-confirmed); unit + integration tests, dependency-sort SKILL.md, query.md and the apply-pipeline bullet updated"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R17"
+file = "tomlctl/src/tasks/mod.rs"
+line = 18
+symbol = "graph"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Making the whole tasks::graph module pub(crate) exposes Graph, Node, Frontier and build_or_refuse crate-wide when the plan shared only layered_kahn"
+description = "The only external consumer is clusters.rs:16 (`crate::tasks::graph::layered_kahn`), but `pub(crate) mod graph` (tasks/mod.rs:18) lets any module reach every `pub(crate)` item in graph.rs — the plan's rejected alternative (reusing `tasks::graph::Graph` for clusters) is now one `use` away with nothing signalling the boundary. The crate already uses the narrow idiom: `flow/mod.rs:20` and `cli/mod.rs:30` re-export selected items with `pub(crate) use`. Fix: revert to `mod graph;` and add `pub(crate) use graph::layered_kahn;` in tasks/mod.rs; clusters.rs imports `crate::tasks::layered_kahn`. R11's `cycle_within` would be re-exported the same way."
+related = ["R11"]
+dedup_id = "eda169035fa83670"
+resolved = 2026-09-18
+resolution = "tasks/mod.rs: mod graph; + pub(crate) use graph::{cycle_within, layered_kahn}; clusters.rs imports through crate::tasks"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R18"
+file = "tomlctl/README.md"
+line = 229
+symbol = "strict-read"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "README still claims --strict-read is accepted on every read subcommand and lists the missing-file read verbs without items sweep"
+description = "README.md:227-232 says every read subcommand other than `items next-id` errors `kind=not_found` (the list was updated to include `items clusters` but not read-only `items sweep`, which does error `not_found`) and that `--strict-read` is accepted on every read subcommand so a caller can pass it uniformly without branching on subcommand name. `items sweep --strict-read` now exits 2 (`unexpected argument`), and `tomlctl sweep` takes no integrity flag; flow.md:51 documents the exception, the README paragraph and its feature row (:323) do not. Fix: add `items sweep` (read-only mode) to the `not_found` list and qualify both `--strict-read` sentences with the `items sweep` / `sweep` exceptions."
+dedup_id = "f1c6a36a5ec2e820"
+resolved = 2026-09-18
+resolution = "README not_found list names items sweep (read-only); both --strict-read sentences carry the items sweep and standalone sweep exceptions"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R19"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 105
+symbol = "dry_run"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "SKILL.md's two closed lists of write subcommands (--dry-run on all 9, and the .claude/ containment guard) were not extended for items sweep --update while README and write.md were"
+description = "`SKILL.md:105` says `--dry-run` is on all 9 write subcommands and enumerates nine; `SKILL.md:145` enumerates the write operations the `.claude/` containment guard covers. This flow updated the parallel lists in `README.md:324` (dry_run row now ends `and items sweep --update`) and `write.md:427-430` but left both SKILL.md lists at nine. `items sweep --update` supports `--dry-run` and carries `--allow-outside` / `--no-create` (capabilities `items.subcommands.sweep.flags`), so it is under the same guard. Fix: add `items sweep --update` to both lists and drop the 9."
+instances = [
+    "claude/skills/tomlctl/SKILL.md:105",
+    "claude/skills/tomlctl/SKILL.md:145",
+]
+sweep = [
+    "all 9 write",
+    'backfill-dedup-id`\)',
+]
+enumeration = "complete"
+dedup_id = "4381147542ff0397"
+resolved = 2026-09-18
+resolution = "tomlctl SKILL.md dry_run row and .claude/ containment-guard list include items sweep --update; the literal count dropped"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R20"
+file = "tomlctl/README.md"
+line = 39
+symbol = "items orphans"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The items orphans synopsis comment lists four of the six classes"
+description = "README.md:39 (edited in this flow to append `instance-missing`) reads `# missing-file / symbol-missing / dangling-dep / instance-missing`, omitting `io-error` and `outside-repo`, which types.rs:1734-1738, orphans.rs:4-11 and README.md:364 all list — and the two omitted are the security-relevant ones. Fix: complete the list or replace it with six orphan classes, see Feature meanings."
+dedup_id = "1149a607dc8eb985"
+resolved = 2026-09-18
+resolution = "README items orphans synopsis lists all six classes"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R21"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 1181
+symbol = "items_dispatch"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "items sweep --update on a missing ledger exits 0 with ok:true / updated:[] / created:false while the read-only run, --update --dry-run, items clusters and items orphans all report kind=not_found"
+description = """The real `--update` goes through `mutate_doc_conditional` with `on_missing_for`; the seeded empty doc sweeps nothing, the closure returns `Ok(false)`, and the verb prints success (probed on a nonexistent path: exit 0, `{"ok":true,"updated":[],"created":false,...}`, no file minted). write.md:375 documents this — `--update` never mints a missing ledger and `created` stays false — so it is a documented choice, downgraded from warning on that ground; the trap remains that an orchestrator with a typo'd ledger path (the apply pre-analysis calls this verb) reads instances refreshed and proceeds, and auto-create buys nothing here since a seeded ledger has no items. Fix: before `on_missing_for`, return `tagged_err(ErrorKind::NotFound, Some(file), ...)` when `!file.exists()`, update write.md:375, and add a `tests/sweep.rs` case asserting the four paths agree; no test covers the missing-ledger case on any of them today."""
+dedup_id = "594f460021c9455d"
+resolved = 2026-09-18
+resolution = "items sweep --update reads with OnMissing::Error so a missing ledger is kind=not_found on every items sweep path; write.md verb section and auto-create exception paragraph updated; tests/sweep.rs asserts the four paths agree"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R22"
+file = "tomlctl/src/sweep.rs"
+line = 89
+symbol = "run"
+severity = "suggestion"
+effort = "medium"
+category = "testability"
+summary = "The three symlink-driven behaviours (canonical-key dedupe, skipped_outside, skipped_unenumerated) have no test at all"
+description = "Keying hits by `fs::canonicalize` (sweep.rs:89-99) exists only to dedupe the `.github/` mirror of `claude/`; `Enumeration::skipped_outside` (repo_files.rs:80-90) and `warnings` (:57-63; B-1b6c99ee shows it firing in this repo) are the only sources of `unreadable`/`unenumerated` besides staged deletes. None of the three has a test in sweep.rs, repo_files.rs or tests/sweep.rs (Grep `symlink|junction` over tomlctl `*.rs`: only io.rs and backlog hits). io.rs:2139 already carries a `#[cfg(unix)]` symlink test as precedent; one such test with a file symlink (expect one hit, `files_scanned 1`), an out-of-tree symlink (`skipped_unreadable 1`) and a dangling directory symlink (`skipped_unenumerated 1`, `coverage_complete false`) would cover all three. It never runs on the Windows dev box, but it is the repo's established shape for symlink coverage."
+dedup_id = "adb1c76b3b8afe0b"
+resolved = 2026-09-18
+resolution = "cfg(unix) symlink test in sweep.rs (file symlink dedupes to one scanned file; out-of-root and dangling symlinks land in skipped_unreadable); executed under WSL, gated out on Windows"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R23"
+file = "tomlctl/src/query.rs"
+line = 91
+symbol = "check_user_pattern_len"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The 512-byte cap error identifies neither which -e pattern nor any of its text"
+description = "`invalid regex: pattern is 513 bytes, over the 512-byte cap` is emitted for `sweep -e A -e B` and for every `sweep` string of an `items sweep` item, with no index, id or prefix; the sibling `regex_build_error` (query.rs:102) quotes the pattern. Include the first ~40 bytes (`invalid regex `aaaa…`: 513 bytes, over the 512-byte cap`) so a multi-pattern call and an `items sweep` over many items name the offender; `compile_user_bytes_regex_rejects_an_oversize_pattern` (:2884) can assert the prefix. A bounded prefix does not reintroduce the log-flooding the cap exists to avoid."
+dedup_id = "6abb4fb82795d350"
+resolved = 2026-09-18
+resolution = "over-cap regex error quotes a 40-byte char-boundary-safe prefix; test asserts the prefix and the boundary back-off"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R24"
+file = "tomlctl/src/query.rs"
+line = 88
+symbol = "REGEX_UNICODE_HINT"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The (?-u:…) hint appended to every regex compile error has no test"
+description = 'The hint is the only in-band signal that `\b`/`\w` fail in the shipped binary but pass under `cargo test` (Unicode via the `predicates` dev-dep), so it is the one string a future refactor of `regex_build_error` must not drop, and no test names it (Grep `Unicode classes|REGEX_UNICODE_HINT`: source only; `a_bad_pattern_fails_before_any_enumeration` at sweep.rs:380 asserts only the `invalid regex` prefix). Assert it on an always-failing pattern such as `(` in the existing `compile_user_bytes_regex_*` group; do not use `\w` as the trigger since it compiles in test builds.'
+dedup_id = "dee596979701c5a1"
+resolved = 2026-09-18
+resolution = "new test asserts REGEX_UNICODE_HINT on the error for `(` through both compile paths"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R25"
+file = "tomlctl/src/orphans.rs"
+line = 195
+symbol = "items_orphans"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "unparseable is the only instance-missing reason with its own branch and it has no test"
+description = '`missing-file`, `symbol-missing`, `io-error` and `outside-repo` for instances reuse `FileProbe::check`, which the `file`-axis tests already cover; `unparseable` (anchor::parse → None at orphans.rs:195) is instance-only and neither `items_orphans_reports_missing_file_symbol_and_dangling_dep` (R5 at :266 has three anchors, none unparseable) nor tests/clusters.rs `orphans_report_the_one_unresolvable_instance` reaches it. `anchor::parse` returning None is unit-tested in anchor.rs:98; the untested part is the orphans mapping of that None to the documented reason string. Add a bare `"src/a.rs"` entry to R5 and assert `reason: "unparseable"`.'
+dedup_id = "7673a8dcee0b3f17"
+resolved = 2026-09-18
+resolution = "orphans unit fixture gains a bare src/a.rs instance and asserts reason unparseable"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R26"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 3
+symbol = "description"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The skill description — the trigger an agent reads to decide whether to load it — still enumerates verbs from 0.8.0 and never mentions sweep, items sweep or items clusters"
+description = "`SKILL.md:3` lists every verb group and frames the tool as TOML I/O only; `SKILL.md:10` has the same gap. This flow added a top-level `sweep` verb that reads no TOML at all and is now the preferred enumerator named in `research-methods/references/codebase-review.md:32-36`; a research agent deciding from the description whether the tomlctl skill covers regex sites over tracked files gets no signal. The two carriers that need the verbs reference `tomlctl sweep` by name, so they load it explicitly, but an ad hoc look-into-X agent choosing skills from descriptions does not. Fix: add `sweep` and `items sweep/clusters` to the verb list and one clause for the tree-walking role."
+dedup_id = "11102a8737323d4d"
+resolved = 2026-09-18
+resolution = "tomlctl SKILL.md description and intro name sweep, items sweep and items clusters plus the tree-walking role"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R27"
+file = "claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md"
+line = 79
+symbol = "Re-sweep pattern items"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The prompt line's recorded count is defined as kept.len(), which undercounts the ledger's recorded anchors whenever any are gone or unverified"
+description = "`pre-analysis.md:79-80` defines `instances: N recorded, M now — k new` with recorded = `kept.len()`, now = `kept.len() + new.len()`. `kept` is only the confirmed subset; the four lists partition recorded anchors plus hits (query.md:349-350), so recorded = `kept + gone + unverified`. With 14 recorded of which 2 are gone the line reads `12 recorded, 14 now — 2 new`, telling the implementer the set grew when it merely moved. Fix: define recorded as `kept.len() + gone.len() + unverified.len()` (or name the field confirmed), and keep now as `kept + new`. R6's line-twin behaviour inflates the same count by one per symbol anchor."
+related = ["R6"]
+dedup_id = "c52c877db7877212"
+resolved = 2026-09-18
+resolution = "pre-analysis.md defines recorded as kept + gone + unverified and now as kept + new"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R28"
+file = "claude/skills/tomlctl/references/query.md"
+line = 216
+symbol = "symbol-missing"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = 'symbol-missing is described as symbol no longer a substring of its contents, but orphans matches on (?-u:\b) word boundaries, and the new instance-missing bullet inherits the wording by reference'
+description = 'query.md:216 says `symbol-missing` — `file` exists but `symbol` is no longer a substring of its contents; orphans.rs:104-115 has matched on `(?-u:\b)` word boundaries since 59f1af4 (a bare `contains` reports a renamed `id` as still present in any file containing `valid`), and the substring branch is a documented-unreachable fallback. The line predates the flow, but the `instance-missing` bullet added here (:220) says the reasons mean the same as the classes above, so the wrong definition now covers two classes. An agent expecting substring semantics will misjudge a renamed-identifier orphan. Fix: no longer present as a whole word (ASCII word-boundary match).'
+dedup_id = "af466cd4aa620a66"
+resolved = 2026-09-18
+resolution = "query.md symbol-missing bullet says whole-word (ASCII word-boundary) match"
+
+[[items]]
+first_flagged = 2026-09-18
+rounds = 1
+status = "fixed"
+flow = "tomlctl-items-sweep-clusters"
+id = "R29"
+file = "tomlctl/src/cli/types.rs"
+line = 218
+symbol = "WriteIntegrityArgs"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The shared --no-create help says a missing file is created for every items * write, but items sweep --update never creates one"
+description = "types.rs:216-220 (`WriteIntegrityArgs.no_create` doc comment) states the default — a missing file is created with the schema-aware skeleton — and scopes it to `set / set-json / items * / array-append`. `items sweep --update` flattens the same args, so its `--help` shows the sentence, yet write.md:375 (and the probe behind R21) confirm it never mints a ledger. Fix: add an except `items sweep --update`, which never creates a ledger clause (or, if R21 lands as NotFound, say so) so the shared help stays true for every carrier."
+related = ["R21"]
+dedup_id = "d93cbb1ac4cc772f"
+resolved = 2026-09-18
+resolution = "--no-create help carries the items sweep --update exception (never creates; missing file is not_found)"

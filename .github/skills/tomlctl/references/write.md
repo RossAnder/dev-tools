@@ -83,7 +83,7 @@ Every mutating verb routed through the write chokepoint — `set`, `set-json`, `
 
 The seed is only the *starting* doc — the verb's mutation must still succeed against it. A no-match `update` / `remove` (or an all-update `apply`) against a freshly-seeded doc still ERRORS and leaves NO file behind: an empty seed has nothing to match, so the operation fails before the file is persisted.
 
-**Exception — `items backfill-dedup-id` does NOT auto-create.** It pre-reads the ledger to find items lacking a `dedup_id`, so a missing target errors with `kind=not_found` regardless of `--no-create`. This is by design, not a bug: backfilling an absent ledger is a no-op, so the strict missing-file error is the correct behaviour. Every other mutating verb listed above auto-creates.
+**Exceptions — `items backfill-dedup-id` and `items sweep --update` do NOT auto-create.** Each pre-reads the ledger — the first for items lacking a `dedup_id`, the second for the `sweep` arrays it re-runs — so a missing target errors with `kind=not_found` on both regardless of `--no-create`, and `items sweep` reports `created` as `false` on every path. This is by design, not a bug: backfilling or re-sweeping an absent ledger is a no-op, so the strict missing-file error is the correct behaviour. Every other mutating verb listed above auto-creates.
 
 **Envelope.** Write-success envelopes now carry `"created": <bool>` and `"path": "<file>"` alongside any existing keys (e.g. `added`/`updated`/`removed`):
 
@@ -357,7 +357,7 @@ Supports `--dry-run`; see [Dry-run](#dry-run).
 
 ### Re-sweep and rewrite instances (`items sweep --update`)
 
-`items sweep <ledger>` is read-only by default — it re-runs each item's stored `sweep` patterns and reports `new` / `gone` / `kept` / `unverified` against `instances` (the read side is in [query.md](query.md)). `--update` turns that same run into one write: a single `MutationPlan` carrying one `update` op per swept item whose `instances` actually changes, applied in one parse + one rewrite. The rewritten `instances` is the kept anchors, spelled as recorded (a `file:symbol` anchor keeps its symbol), followed by the new sites as `file:line`; an item whose rewritten list equals what is stored gets no op. `enumeration` is never rewritten — whether the patterns can reach every form is the agent's judgement, and the read output reports `coverage_complete` instead.
+`items sweep <ledger>` is read-only by default — it re-runs each item's stored `sweep` patterns and reports `new` / `gone` / `kept` / `unverified` against `instances` (the read side is in [query.md](query.md)). `--update` turns that same run into one write: a single `MutationPlan` carrying one `update` op per swept item whose `instances` actually changes, applied in one parse + one rewrite. The rewritten `instances` keeps the listed order: the kept anchors and any `excluded` ones stay in place, spelled as recorded (a `file:symbol` anchor keeps its symbol), and the new sites follow as `file:line`; an item whose rewritten list equals what is stored gets no op. Only an item whose `status` is `open` (absent or unrecognised reads as `open`) gets an op: a terminal item (`fixed` / `wontfix` / `verified-clean` / `deferred` / `applied` / `wontapply`) is reported but never rewritten, even when named in `--ids` — edit its `instances` with `items update`. `enumeration` is never rewritten — whether the patterns can reach every form is the agent's judgement, and the read output reports `coverage_complete` instead.
 
 ```bash
 # Rewrite instances for two items; a run that changes nothing writes nothing and leaves the sidecar alone
@@ -369,9 +369,9 @@ tomlctl items sweep .claude/flows/foo/review-ledger.toml --ids R5,R9 --update --
 # → {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":0,"updated":1,"removed":0,"skipped":0,"ids":["R5"]}}
 ```
 
-`--update` refuses with `kind=validation` when any swept item is `truncated` or has a non-empty `unverified` list, naming the ids — absence of a hit in a file the sweep skipped is not evidence the anchor is gone. Raise `--max-hits` or `--max-file-bytes`, or resolve those anchors by hand, then re-run. `--dry-run` without `--update` is refused (`kind=other`): the read-only sweep has nothing to preview.
+`--update` refuses with `kind=validation` when any open swept item is `truncated` or has an `unverified` anchor whose reason is not `excluded` — absence of a hit in a file the sweep did not search is not evidence the anchor is gone. The refusal names up to five anchors per id with their reason plus the total, and advises raising `--max-hits` for a truncated run or re-anchoring / resolving the named anchors by hand otherwise (`--max-file-bytes` for a `skipped` oversize file); then re-run. `--dry-run` without `--update` is refused (`kind=other`): the read-only sweep has nothing to preview.
 
-A changed run refreshes the `.sha256` sidecar like every other write; a no-change run reports `updated: []` and touches neither. `--update` never mints a missing ledger — the read-only sweep errors `kind=not_found`, and an empty seed has no items to rewrite, so nothing is persisted and `created` stays `false`.
+A changed run refreshes the `.sha256` sidecar like every other write; a no-change run reports `updated: []` and touches neither. A missing ledger is `kind=not_found` on every `items sweep` path — read-only, `--update` and `--update --dry-run` alike — because an empty seed would have no items to rewrite; `--update` never mints one, `--no-create` changes nothing here, and `created` is always `false`.
 
 ### Regenerate a missing sidecar — `integrity refresh`
 

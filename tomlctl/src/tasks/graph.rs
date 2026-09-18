@@ -232,53 +232,10 @@ impl<'a> Graph<'a> {
     /// One simple cycle, sorted ascending — not the whole residue, which also
     /// holds the tasks stranded downstream of it. Empty when acyclic.
     pub(crate) fn cycle_members(&self) -> Vec<u32> {
-        if self.residual.is_empty() {
-            return Vec::new();
-        }
-        let n = self.nodes.len();
-        let mut stranded = vec![false; n];
-        for p in &self.residual {
-            stranded[*p] = true;
-        }
-        let mut mark = vec![Mark::White; n];
-
-        for start in &self.residual {
-            if mark[*start] != Mark::White {
-                continue;
-            }
-            mark[*start] = Mark::Grey;
-            let mut stack: Vec<(usize, usize)> = vec![(*start, 0)];
-            while let Some(&(p, i)) = stack.last() {
-                if i >= self.succs[p].len() {
-                    mark[p] = Mark::Black;
-                    stack.pop();
-                    continue;
-                }
-                stack.last_mut().expect("frame present").1 = i + 1;
-                let s = self.succs[p][i];
-                if !stranded[s] {
-                    continue;
-                }
-                match mark[s] {
-                    Mark::White => {
-                        mark[s] = Mark::Grey;
-                        stack.push((s, 0));
-                    }
-                    Mark::Grey => {
-                        let at = stack
-                            .iter()
-                            .position(|(q, _)| *q == s)
-                            .expect("grey node is on the stack");
-                        let mut members: Vec<u32> =
-                            stack[at..].iter().map(|(q, _)| self.nodes[*q].id).collect();
-                        members.sort_unstable();
-                        return members;
-                    }
-                    Mark::Black => {}
-                }
-            }
-        }
-        Vec::new()
+        cycle_within(&self.residual, &self.succs)
+            .iter()
+            .map(|p| self.nodes[*p].id)
+            .collect()
     }
 
     /// Transitive dependencies of `id`, inclusive of `id`.
@@ -531,6 +488,55 @@ pub(crate) fn layered_kahn(
     }
 
     (rounds, (0..n).filter(|p| !emitted[*p]).collect())
+}
+
+/// One simple cycle inside `residual` — the positions Kahn left unemitted —
+/// as positions sorted ascending, never the whole residue, which also holds
+/// whatever the cycle strands downstream. Empty when `residual` is.
+pub(crate) fn cycle_within(residual: &[usize], succs: &[Vec<usize>]) -> Vec<usize> {
+    let n = succs.len();
+    let mut stranded = vec![false; n];
+    for p in residual {
+        stranded[*p] = true;
+    }
+    let mut mark = vec![Mark::White; n];
+
+    for start in residual {
+        if mark[*start] != Mark::White {
+            continue;
+        }
+        mark[*start] = Mark::Grey;
+        let mut stack: Vec<(usize, usize)> = vec![(*start, 0)];
+        while let Some(&(p, i)) = stack.last() {
+            if i >= succs[p].len() {
+                mark[p] = Mark::Black;
+                stack.pop();
+                continue;
+            }
+            stack.last_mut().expect("frame present").1 = i + 1;
+            let s = succs[p][i];
+            if !stranded[s] {
+                continue;
+            }
+            match mark[s] {
+                Mark::White => {
+                    mark[s] = Mark::Grey;
+                    stack.push((s, 0));
+                }
+                Mark::Grey => {
+                    let at = stack
+                        .iter()
+                        .position(|(q, _)| *q == s)
+                        .expect("grey node is on the stack");
+                    let mut members: Vec<usize> = stack[at..].iter().map(|(q, _)| *q).collect();
+                    members.sort_unstable();
+                    return members;
+                }
+                Mark::Black => {}
+            }
+        }
+    }
+    Vec::new()
 }
 
 fn reachability(

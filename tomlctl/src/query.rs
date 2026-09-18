@@ -84,14 +84,19 @@ fn full_item_toml_to_json(v: &TomlValue) -> JsonValue {
 pub(crate) const REGEX_COMPILE_SIZE_LIMIT: usize = 1 << 20;
 pub(crate) const REGEX_DFA_SIZE_LIMIT: usize = 1 << 20;
 pub(crate) const MAX_USER_PATTERN_LEN: usize = 512;
+/// Bytes of an over-cap pattern echoed in its error: enough to tell one
+/// `-e` from another without reproducing the flood the cap prevents.
+const OVERSIZE_PATTERN_PREFIX_LEN: usize = 40;
 
 const REGEX_UNICODE_HINT: &str =
     "Unicode classes are unavailable in this build; write ASCII forms such as (?-u:\\w)";
 
 fn check_user_pattern_len(pattern: &str) -> Result<()> {
     if pattern.len() > MAX_USER_PATTERN_LEN {
+        let cut = pattern.floor_char_boundary(OVERSIZE_PATTERN_PREFIX_LEN);
         bail!(
-            "invalid regex: pattern is {} bytes, over the {}-byte cap",
+            "invalid regex `{}…`: pattern is {} bytes, over the {}-byte cap",
+            &pattern[..cut],
             pattern.len(),
             MAX_USER_PATTERN_LEN
         );
@@ -2889,8 +2894,36 @@ category = "quality"
             err.contains("513") && err.contains("512"),
             "error must name the length and the cap; got: {err}"
         );
+        let prefix = "a".repeat(OVERSIZE_PATTERN_PREFIX_LEN);
+        assert!(
+            err.contains(&format!("`{prefix}…`")) && !err.contains(&format!("{prefix}a")),
+            "error must quote a bounded prefix of the pattern; got: {err}"
+        );
+        // 40 bytes lands mid-char for a 3-byte scalar: the cut must back up
+        // to the boundary rather than slice through it.
+        let err = compile_user_bytes_regex(&"€".repeat(200))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("`{}…`", "€".repeat(13))),
+            "prefix must be cut on a char boundary; got: {err}"
+        );
         assert!(compile_user_regex(&"a".repeat(513)).is_err());
         assert!(compile_user_regex(&"a".repeat(512)).is_ok());
+    }
+
+    /// `\w`-style classes compile under `cargo test` (a dev-dep enables the
+    /// crate's Unicode feature) but not in the shipped binary, so the hint
+    /// is pinned via a pattern that fails in every build.
+    #[test]
+    fn compile_user_bytes_regex_error_carries_the_unicode_hint() {
+        let err = compile_user_bytes_regex("(").unwrap_err().to_string();
+        assert!(
+            err.contains(REGEX_UNICODE_HINT),
+            "build error must carry the Unicode hint; got: {err}"
+        );
+        let err = compile_user_regex("(").unwrap_err().to_string();
+        assert!(err.contains(REGEX_UNICODE_HINT));
     }
 
     /// A malformed typed RHS on `--where` must propagate as a

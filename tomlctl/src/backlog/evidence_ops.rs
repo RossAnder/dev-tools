@@ -499,7 +499,7 @@ fn ignored_set(root: &Path, paths: &[PathBuf]) -> Option<BTreeSet<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::shipped_gitignore;
+    use crate::test_support::{git_available, shipped_gitignore};
     use std::fs;
     use std::process::Command;
 
@@ -584,11 +584,12 @@ mod tests {
         }
 
         fn git(&self, args: &[&str]) {
-            Command::new("git")
+            let out = Command::new("git")
                 .args(args)
                 .current_dir(self.root())
                 .output()
                 .unwrap();
+            assert!(out.status.success(), "git {args:?} failed: {out:?}");
         }
     }
 
@@ -604,13 +605,6 @@ id = "B-7f0e2d91"
 summary = "aged-out row"
 status = "resolved"
 "#;
-
-    fn git_available() -> bool {
-        Command::new("git")
-            .arg("--version")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
 
     fn kind_of(err: &anyhow::Error) -> &'static str {
         err.downcast_ref::<crate::errors::TaggedError>()

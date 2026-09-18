@@ -36,7 +36,7 @@ tomlctl items next-id <file> --prefix R|O|E             # prefix is required —
 tomlctl items apply  <file> --ops '[{"op":"add|update|remove", ...}, ...]' [--array NAME]
 tomlctl items find-duplicates <file> [--tier A|B|C] [--across <other>]   # dedup hygiene (read-only JSON array); --across runs tier A or B over the union of two ledgers
 tomlctl items fingerprint <file> <id>                  # tier-B dedup_id of one stored row + the five fields that produced it
-tomlctl items orphans  <file>                          # missing-file / symbol-missing / dangling-dep / instance-missing
+tomlctl items orphans  <file>                          # missing-file / symbol-missing / io-error / outside-repo / dangling-dep / instance-missing
 tomlctl items sweep    <file> [--ids R1,R7] [--update] [--dry-run]  # re-run each item's `sweep` patterns, diff against `instances`; --update rewrites them
 tomlctl items clusters <file> [--ids R1,R7]            # file-disjoint clusters + dependency batches + per-cluster lite_file_scope
 tomlctl sweep -e <regex> [-e ...] [--exclude <glob>]... [--max-file-bytes N] [--max-hits N]  # regex hits over tracked files as file:line, with coverage + skip counts
@@ -227,10 +227,13 @@ Today the only read subcommand with a "missing file → silent default" branch
 is `items next-id --prefix <P>`, which returns `"<P>1"` as a bootstrapping fast
 path for flows that mint the first id before the ledger file exists. Every
 other read subcommand (`parse`, `get`, `validate`, `items list`, `items get`,
-`items find-duplicates`, `items orphans`, `items clusters`) already errors on a missing file with
+`items find-duplicates`, `items orphans`, `items sweep` without `--update`,
+`items clusters`) already errors on a missing file with
 `kind=not_found` — `--strict-read` is a no-op there, but the flag is accepted
 on every read subcommand so a caller can pass it uniformly without branching
-on subcommand name.
+on subcommand name. Two exceptions: `items sweep` carries the write-side
+integrity bundle (it can `--update` the ledger) and rejects `--strict-read`,
+and the standalone `sweep` reads no TOML and takes no integrity flag at all.
 
 Pass `--strict-read` when an agent needs to distinguish "no matches in an
 existing ledger" from "ledger does not exist" — e.g. when a flow expects a
@@ -320,7 +323,7 @@ Feature meanings:
 | `fingerprint` | `items fingerprint <file> <ID>` — one stored row's tier-B `dedup_id` plus the five fingerprinted field values it hashed, including for a unique row `find-duplicates` cannot report |
 | `capabilities` | this subcommand itself |
 | `error_format_json` | `--error-format json` global flag + `ErrorKind` taxonomy |
-| `strict_read` | `--strict-read` on every read subcommand |
+| `strict_read` | `--strict-read` on every read subcommand except `items sweep` (write-side integrity bundle) and the standalone `sweep` (no integrity flags) |
 | `dry_run` | `--dry-run` on the write subcommands that support previewing mutations, including `set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id`, `flow init`, `flow ensure-artifact`, `flow doctor`, `flow active add`, `flow active remove`, `flow active touch`, `json set`, `json unset`, `backlog add`, `backlog compact`, `tasks import-plan`, and `items sweep --update` |
 | `backfill_dedup_id` | `items backfill-dedup-id <file>` |
 | `integrity_refresh` | `tomlctl integrity refresh <file>` — sidecar bootstrap / recovery primitive |
@@ -359,6 +362,6 @@ Feature meanings:
 | `tasks_check` | `tasks check --in-flight <N1,N2,...>` — the store's invariant checks; any `error`-class finding exits 1, and `--plan` reports render drift as a warning, so gate drift on `tasks render --check` |
 | `tasks_render` | `tasks render` — rewrite the plan's `## Execution Policy`, `## Tasks` and `## Dependency Graph` from the store; `--stdout` previews and `--check` reports drift without writing |
 | `sweep` | `sweep -e <REGEX>...` — regex hits over the repo's tracked files as sorted `file:line` sites, with `skipped` counts, `truncated` and `coverage_complete`; `.claude/**` and `docs/plans/**` are excluded by default |
-| `items_sweep` | `items sweep <file>` — re-run each item's stored `sweep` patterns and diff the hits against its `instances` (`new` / `gone` / `kept` / `unverified`); `--update` rewrites `instances`, refusing while any item is truncated or unverified |
+| `items_sweep` | `items sweep <file>` — re-run each item's stored `sweep` patterns and diff the hits against its `instances` (`new` / `gone` / `kept` / `unverified`); `--update` rewrites an open item's `instances` in listed order, appending new sites, and refuses while the run is truncated or an anchor is unverified for any reason but `excluded` |
 | `items_clusters` | `items clusters <file> --ids <R1,R7,...>` — file-disjoint clusters over `file` plus `instances`, layered by `depends_on` into batches, each cluster carrying `lite_file_scope`; out-of-selection dependencies land in `dropped_deps` and a cycle is refused |
 | `orphans_instances` | `items orphans` reports an `instance-missing` class for every `instances` anchor that does not resolve, with `reason` one of `missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `unparseable` |

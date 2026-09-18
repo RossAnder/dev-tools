@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-10
+last_updated = 2026-09-18
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -3037,3 +3037,268 @@ context = "The fixture's slug constant is the name of a real flow in this reposi
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["tomlctl/tests/common/mod.rs:301"]
 related = ["B-2c5ee8c0"]
+
+[[backlog]]
+id = "B-bae678a7"
+kind = "debt"
+summary = "ErrorKind::Other doc says the variant is never constructed directly and it carries an allow(dead_code), but repo_files::tracked_files now constructs it"
+area = "tomlctl/src/errors.rs"
+tags = [
+    "docs",
+    "dead-code",
+]
+status = "open"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "bae678a70c091f79"
+origin = "implement"
+flow = "tomlctl-items-sweep-clusters"
+context = "Drop the allow(dead_code) on ErrorKind::Other and rewrite its doc line: the git ls-files shell-out in repo_files tags a non-zero exit and a missing git binary as Other. A reader trusting the comment would look for the JSON-fallback path instead of the shell-out when triaging an error kind other."
+base_sha = "c95ff3663301e92c26192a509c4e91c8e5232880"
+evidence = [
+    "tomlctl/src/errors.rs:52",
+    "tomlctl/src/repo_files.rs:1",
+]
+related = ["B-5ba6d0db"]
+
+[[backlog]]
+id = "B-0477e2bf"
+kind = "question"
+summary = "tomlctl/Cargo.lock is git-ignored while CLAUDE.md, plan file lists and cargo audit --file all treat it as tracked"
+area = "tomlctl/.gitignore"
+tags = [
+    "build",
+    "reproducibility",
+]
+status = "open"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "0477e2bfa4554810"
+origin = "implement"
+flow = "tomlctl-items-sweep-clusters"
+context = "tomlctl/.gitignore line 2 ignores /Cargo.lock. A bin crate normally commits its lock; ignoring it makes cargo install --path and cargo audit non-reproducible across clones, and every plan task that names Cargo.lock in its files list is vacuous. Decide: track the lock (git add -f, remove the ignore line) or drop the lock from CLAUDE.md and plan file lists."
+base_sha = "c95ff3663301e92c26192a509c4e91c8e5232880"
+evidence = ["tomlctl/.gitignore:2"]
+
+[[backlog]]
+id = "B-1b6c99ee"
+kind = "annoyance"
+summary = "dangling directory symlink .github/skills/flow-contract-task-visibility makes git ls-files warn at exit 0 so every tomlctl sweep reports skipped.unenumerated 1 and coverage_complete false"
+area = ".github/skills"
+tags = [
+    "symlink",
+    "sweep",
+]
+status = "open"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "1b6c99eee5a89d6e"
+origin = "implement"
+flow = "tomlctl-items-sweep-clusters"
+context = "The link points at a claude/skills directory that no longer exists. git status and git ls-files print warning: could not open directory for it; the sweep engine surfaces that as skipped.unenumerated and clears coverage_complete, so no sweep in this repo can report complete coverage until the link is removed (git rm the mirror entry) or its target restored. Ignore that one unenumerated count when reading sweep output meanwhile."
+base_sha = "c95ff3663301e92c26192a509c4e91c8e5232880"
+
+[[backlog]]
+id = "B-06990435"
+kind = "question"
+summary = "items clusters keys a missing file by its verbatim spelling so src/../src/x.rs and src/x.rs do not cluster together"
+area = "tomlctl/src/clusters.rs"
+tags = [
+    "sweep",
+    "clusters",
+]
+status = "resolved"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "069904354a65f3c2"
+origin = "implement"
+flow = "tomlctl-items-sweep-clusters"
+context = "Arrived cheap-in-file from the implementing agent and was deferred: the verbatim fallback was the spec choice and a unit test pins it, so changing it needs a decision rather than an edit. If it ever matters, a lexical ./.. normalisation before the fallback would unify the two spellings for files that do not exist on disk; files that exist are already keyed canonically."
+base_sha = "c95ff3663301e92c26192a509c4e91c8e5232880"
+evidence = ["tomlctl/src/clusters.rs:23"]
+related = ["B-1cb6596a"]
+resolved = 2026-09-18
+resolution = "Superseded by the lexical containment pre-check: a ledger anchor containing a .. component is now refused as outside-repo / verbatim before any filesystem touch, so src/../src/x.rs never keys with src/x.rs whether or not the file exists — by design, documented in query.md's outside-repo bullet."
+
+[[backlog]]
+id = "B-f002268c"
+kind = "question"
+summary = "recorded_under_root and other root.join(forward-slash rel) containment checks may misjudge an out-of-tree leaf symlink on Windows because a canonical root carries a verbatim prefix under which / is not a separator"
+area = "tomlctl/src/io.rs"
+tags = [
+    "windows",
+    "path-safety",
+]
+status = "open"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "f002268c44bc5239"
+origin = "implement"
+flow = "tomlctl-items-sweep-clusters"
+context = '''Probe before relying on it: under a verbatim-prefixed root (the \\?\ form canonicalize returns on Windows), root.join("a/b.rs") does not canonicalise at the leaf, so path_under_root falls back to the parent and an out-of-tree leaf symlink can read as inside. repo_files, sweep, items_sweep and clusters already join component-wise (extend the PathBuf with rel.split('/')); recorded_under_root and any other root.join caller have not been checked.'''
+base_sha = "c95ff3663301e92c26192a509c4e91c8e5232880"
+evidence = [
+    "tomlctl/src/io.rs:1571",
+    "tomlctl/src/repo_files.rs:1",
+]
+related = ["B-2f9eead8"]
+
+[[backlog]]
+id = "B-f7aa94d6"
+kind = "debt"
+summary = "the optimise-apply clustering delta tells the orchestrator to place consumer findings in the same cluster as a primitive change but names no mechanism now that items clusters computes clusters"
+area = "claude/commands/optimise-apply.md"
+tags = [
+    "docs",
+    "apply-flow",
+]
+status = "open"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "f7aa94d6c7c5f8cc"
+origin = "review"
+flow = "tomlctl-items-sweep-clusters"
+context = "optimise-apply.md Step 3 delta says findings touching a shared primitive's consumers belong in the same cluster as the primitive change or in a strictly later batch. Under the rewired apply-pipeline Step 3 clusters and batches come from tomlctl items clusters over file/instances/depends_on, and the only sanctioned hand edit is merging clusters that share a file after the re-sweep union, so the delta cannot be honoured without silently overriding the verb's output. State the mechanism: record the ordering as depends_on on the consumer items before Step 3 so the verb batches them, or explicitly merge the two clusters and re-derive lite_file_scope, mirroring the pipeline's merge rule. Surfaced by /review of tomlctl-items-sweep-clusters; out of that review's scope."
+base_sha = "c4a2322e47f09a69fdc9dfdb6f22df742a610f66"
+evidence = [
+    "claude/commands/optimise-apply.md:61",
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md:209",
+]
+related = ["B-c2f505b0"]
+
+[[backlog]]
+id = "B-8c1c1ecd"
+kind = "question"
+summary = "the component-wise root join idiom and its copied not-a-separator comment may be defending a case Rust std already normalises under a verbatim prefix"
+area = "tomlctl/src/io.rs"
+tags = [
+    "windows",
+    "paths",
+]
+status = "open"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "8c1c1ecdcf929862"
+origin = "review"
+flow = "tomlctl-items-sweep-clusters"
+context = '''During /review of tomlctl-items-sweep-clusters the quality lens probed the installed binary: orphans' plain root.join("tomlctl/src/../src/anchor.rs") and root.join("./x") resolved correctly under the canonical \\?\ root, while a Python os.path.exists on the same verbatim string failed, which suggests Rust std normalises somewhere along canonicalize. If a Rust-level probe confirms it, the component-wise extend(split('/')) idiom in sweep.rs, repo_files.rs, items_sweep.rs and clusters.rs and its three copied comments can be dropped rather than consolidated (review item R4 in that flow's ledger proposes the consolidation), and B-f002268c's premise narrows to the leaf-symlink case only. Do not act on either row until the probe is written.'''
+base_sha = "c4a2322e47f09a69fdc9dfdb6f22df742a610f66"
+evidence = [
+    "tomlctl/src/sweep.rs:87",
+    "tomlctl/src/orphans.rs:215",
+]
+related = ["B-f002268c"]
+
+[[backlog]]
+id = "B-a58aa1bb"
+kind = "bug"
+summary = "anchor::symbol_regex never matches a symbol whose last character is not a word character"
+area = "tomlctl/src/anchor.rs"
+tags = [
+    "sweep",
+    "orphans",
+    "anchor",
+]
+status = "open"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "a58aa1bb3d60543c"
+origin = "review-apply"
+flow = "tomlctl-items-sweep-clusters"
+context = "The builder wraps the escaped symbol in (?-u:\b) on both sides, so file:bar() needs a word character after the ) and always reads symbol-missing in items orphans and items sweep. Pre-existing in both callers before the builder was shared. Fix is a boundary-semantics decision (drop the trailing \b when the symbol ends in a non-word byte, or document that symbols must be bare identifiers), not a point edit. Workaround: anchor on the bare identifier."
+base_sha = "c4a2322e47f09a69fdc9dfdb6f22df742a610f66"
+evidence = ["tomlctl/src/anchor.rs:60"]
+
+[[backlog]]
+id = "B-55232ca5"
+kind = "debt"
+summary = "verification.md applied-pattern-item bullet rewrites instances just before the item goes fixed, dropping the gone anchors that record what was fixed"
+area = "claude/skills/flow-contract-apply-pipeline/references/verification.md"
+tags = [
+    "apply-pipeline",
+    "items-sweep",
+]
+status = "open"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "55232ca58c1656ad"
+origin = "review-apply"
+flow = "tomlctl-items-sweep-clusters"
+context = "The Ledger mutation section tells the orchestrator to run items sweep --update on applied pattern items ahead of the two-call write; items sweep --update now skips terminal items precisely because a fixed item's gone anchors are its record. Running it while the item is still open erases that record one step earlier. Decide whether the bullet should persist only new sites (items update with kept+gone+new) or be dropped. The section heading Two-call write pattern also reads as if exactly two writes occur now that this third conditional write sits beside it."
+base_sha = "c4a2322e47f09a69fdc9dfdb6f22df742a610f66"
+evidence = ["claude/skills/flow-contract-apply-pipeline/references/verification.md:59"]
+
+[[backlog]]
+id = "B-392676e9"
+kind = "question"
+summary = "items clusters and items sweep read an absent item status differently: strict open filter vs fail-soft open"
+area = "tomlctl/src/clusters.rs"
+tags = [
+    "items-clusters",
+    "items-sweep",
+    "ledger-schema",
+]
+status = "open"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "392676e970b761dc"
+origin = "review-apply"
+flow = "tomlctl-items-sweep-clusters"
+context = """items clusters' bare selection keeps only status == "open", so a status-less item is never selected there, yet the same verb reports an unselected dependency with an absent status as open (ledger-schema fail-soft), and items sweep --update treats absent as open too. An orchestrator reading unselected...open as an ordering hazard is pointed at an item the default selection silently skipped. Decide whether select should honour the fail-soft rule (absent only, or any unknown status) and align the two verbs."""
+base_sha = "c4a2322e47f09a69fdc9dfdb6f22df742a610f66"
+evidence = [
+    "tomlctl/src/clusters.rs:202",
+    "tomlctl/src/items_sweep.rs:126",
+]
+related = ["B-06990435"]
+
+[[backlog]]
+id = "B-1698a286"
+kind = "direction"
+summary = "symbol-anchor span ends early at a combined closer such as }) or ]);"
+area = "tomlctl/src/items_sweep.rs"
+tags = [
+    "items-sweep",
+    "anchor",
+]
+status = "open"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "1698a28696cac2ea"
+origin = "review-apply"
+flow = "tomlctl-items-sweep-clusters"
+context = "block_end treats only a bare }, ) or ] (optionally followed by ; or ,) as a closer, so a JS/TS/Vue block ending in }) or ]); ends the symbol's span at that line and hits after it fall to new. Fail-safe (never silent) but not covered by the indentation-span rule as decided. Worth a decision if ledgers start anchoring symbols in the lumina SPA; a generalised closer test (a line of only closing brackets plus ; or ,) is the likely shape."
+base_sha = "c4a2322e47f09a69fdc9dfdb6f22df742a610f66"
+evidence = ["tomlctl/src/items_sweep.rs:1"]
+
+[[backlog]]
+id = "B-69b63082"
+kind = "debt"
+summary = "Enumeration::warnings doc cites a dangling directory symlink as the skip example, but git never opens symlinks so that case never warns; skipped_unenumerated has no test"
+area = "tomlctl/src/repo_files.rs"
+tags = [
+    "sweep",
+    "repo-files",
+    "testability",
+]
+status = "open"
+created = 2026-09-18
+last_seen = 2026-09-18
+seen_count = 1
+dedup_id = "69b63082550619ca"
+origin = "review-apply"
+flow = "tomlctl-items-sweep-clusters"
+context = "git ls-files lists a symlink as a leaf entry without opening it, so a dangling directory symlink lands in skipped_unreadable (fs::canonicalize fails), not in warnings/skipped_unenumerated. The real trigger for warnings is an unopenable directory (mode 000), which a root-run CI cannot reproduce. Correct the doc example and find a reproducible fixture before writing the missing test."
+base_sha = "c4a2322e47f09a69fdc9dfdb6f22df742a610f66"
+evidence = ["tomlctl/src/repo_files.rs:57"]

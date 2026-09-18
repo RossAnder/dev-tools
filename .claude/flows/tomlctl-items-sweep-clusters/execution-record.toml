@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-17
+last_updated = 2026-09-18
 
 [[vet_events]]
 timestamp = "2026-09-17T16:00:00"
@@ -22,3 +22,769 @@ dropped_count = 0
 downgraded_count = 0
 rationale = "unicode-off confirmed for the normal build via cargo tree -e normal,features; dev-dep unification through predicates noted as an addendum; dfa_size_limit forwarding and RegexBuilder::crlf confirmed in vendored source; value_delimiter precedent at types.rs:1872"
 dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-09-18
+agent = "implement"
+summary = "flow status draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "d63ff385da225bbc"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "scaffold-the-new-modules"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Six empty header-only modules created and declared alphabetically in main.rs; clippy -D warnings, fmt --check and the grep count (6) all pass."
+files = [
+    "tomlctl/src/main.rs",
+    "tomlctl/src/anchor.rs",
+    "tomlctl/src/clusters.rs",
+    "tomlctl/src/items_sweep.rs",
+    "tomlctl/src/repo_files.rs",
+    "tomlctl/src/sweep.rs",
+    "tomlctl/src/union_find.rs",
+]
+status = "done"
+dedup_id = "5e726d2da78c7f4d"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "parse-fileline-and-filesymbol-anchors"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "anchor module with parse/Display/files_of, dead_code-allowed pending the items verbs, 7 passing unit tests; falsifier rsplit_once broke 1/7"
+files = ["tomlctl/src/anchor.rs"]
+status = "done"
+dedup_id = "7633ac5ed5739bc9"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "expose-the-positional-kahn-core"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Exposed tasks::graph::layered_kahn as pub(crate) (function + module) so clusters.rs can reuse the positional Kahn core; no behavioural change"
+files = [
+    "tomlctl/src/tasks/graph.rs",
+    "tomlctl/src/tasks/mod.rs",
+]
+status = "done"
+dedup_id = "a069b108801de2a3"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "extract-union-find-into-a-shared-module"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Extracted union-find (root/union/components) into union_find.rs as pub(crate) with a keep_singletons flag on components; backlog cluster passes false and its output is unchanged; falsifier flipped 4/12 backlog tests"
+files = [
+    "tomlctl/src/union_find.rs",
+    "tomlctl/src/backlog/cluster.rs",
+]
+status = "done"
+dedup_id = "e2779b6602988bcc"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "add-the-bytes-regex-compile-helper"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "pub(crate) regex helpers with a 512-byte pattern cap, a bytes/CRLF sibling for the sweep, Unicode-hint errors, corrected dfa_size_limit docs, three unit tests; falsifiers flipped 1/3 each"
+files = ["tomlctl/src/query.rs"]
+status = "done"
+dedup_id = "72af7a42911d6e9a"
+
+[[items]]
+id = "E7"
+type = "deviation"
+date = 2026-09-18
+agent = "implement"
+task_ref = "add-the-bytes-regex-compile-helper"
+summary = "Added a third unit test (compile_user_bytes_regex_matches_line_end_before_crlf) beyond the two the acceptance names"
+original_intent = "Acceptance filter query::tests::compile_user_bytes_regex runs exactly two tests"
+rationale = "The CRLF line-end property is what the sweep engine depends on and had no other guard; the filter now runs three tests, all passing"
+dedup_id = "a108448a145ba3f0"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "enumerate-tracked-files-through-git"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Implemented Enumeration + tracked_files over git ls-files --cached --others --exclude-standard with globset excludes (bad glob = Validation error), containment via io::path_under_root, non-zero exit = Other, exit-0 stderr surfaced as warnings; 4 tests; falsifier (drop --others) flipped 2/4"
+files = ["tomlctl/src/repo_files.rs"]
+status = "done"
+dedup_id = "f6212d61f0afb199"
+
+[[items]]
+id = "E9"
+type = "deviation"
+date = 2026-09-18
+agent = "implement"
+task_ref = "enumerate-tracked-files-through-git"
+summary = "A malformed --exclude glob is a Validation error rather than silently dropped; containment joins root and entry component-wise"
+original_intent = "Compile exclude globs with globset as flow/resolve.rs compile_scope_globset does (which silently drops a bad pattern) and check root.join(rel) through io::path_under_root"
+rationale = "Exclusions are what stop a sweep matching its own ledger record, so losing one silently would make every pattern hit itself; a canonical Windows root carries a verbatim prefix under which / is not a separator, so a plain join fails to canonicalise at the leaf and the containment check would fall back to the parent"
+dedup_id = "6e57903c4115bd7d"
+
+[[items]]
+id = "E10"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "scaffold-the-new-modules"
+summary = "checkpoint A gate: cargo build passed"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "fba359a714ea1223"
+
+[[items]]
+id = "E11"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "scaffold-the-new-modules"
+summary = "checkpoint A gate: cargo test failed on tasks::check::tests::a_store_the_engine_refuses_to_load_is_an_error_not_a_clean_bill (719 passed, 1 failed) - pre-existing breakage from 7a751f4"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "fail"
+dedup_id = "f28a14aedc043b68"
+
+[[items]]
+id = "E12"
+type = "deviation"
+date = 2026-09-18
+agent = "implement"
+task_ref = "scaffold-the-new-modules"
+summary = "Fixed a pre-existing red test on main (check.rs cap probe at 257 rows after the 512 cap bump) directly, committed standalone ahead of the checkpoint A train"
+original_intent = "Checkpoint A gate assumed a green suite on main; the plan owns no task for tasks/check.rs"
+rationale = "Commit 7a751f4 raised MAX_NODES to 512 and updated graph.rs tests but not the check.rs probe; the gate cannot go green without it, the fix is one constant, and committing it separately keeps it unattributed to any plan task"
+commits = ["434bc3c"]
+dedup_id = "2c1a97b4614112c4"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "scaffold-the-new-modules"
+summary = "checkpoint A gate re-run: cargo test failed on tests/tasks_graph.rs a_store_past_the_node_cap_fails_check_with_an_error_class_finding (NODE_CAP mirror still 256) - second site of the 7a751f4 breakage; fixed in 87a87d7"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "fail"
+supersedes_entry = "E11"
+dedup_id = "1e02243abe06b475"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "scaffold-the-new-modules"
+summary = "checkpoint A gate: cargo test passed (all binaries)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+supersedes_entry = "E13"
+dedup_id = "6130d52d919ab1a2"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "scaffold-the-new-modules"
+summary = "checkpoint A gate: clippy -D warnings passed"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "b7176a6d84efcbf5"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "scaffold-the-new-modules"
+summary = "checkpoint A gate: fmt --check passed (corroborated directly)"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+dedup_id = "282ced5b512bdca3"
+
+[[items]]
+id = "E17"
+type = "checkpoint"
+date = 2026-09-18
+agent = "implement"
+kind = "commit-train"
+task_ref = "scaffold-the-new-modules"
+summary = "checkpoint A train: d465972 = scaffold-the-new-modules + parse-fileline-and-filesymbol-anchors + enumerate-tracked-files-through-git + extract-union-find-into-a-shared-module (merged on the stub files task 1 created); 81b9bb1 = expose-the-positional-kahn-core; 44fcbc4 = add-the-bytes-regex-compile-helper. Preceded by 434bc3c and 87a87d7, out-of-plan fixes for the pre-existing 512-cap test breakage."
+commits = [
+    "d465972",
+    "81b9bb1",
+    "44fcbc4",
+]
+dedup_id = "6b0a3714a1113f12"
+
+[[items]]
+id = "E18"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "report-unresolvable-instances-as-orphans"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Added the instance-missing orphan class over instances anchors via a shared private FileProbe that the existing file/symbol check also uses; docblock and unit test extended; falsifier (existence-only symbol probe) flipped the row count 2->1"
+files = ["tomlctl/src/orphans.rs"]
+status = "done"
+dedup_id = "8bce0c583a34e42e"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "build-the-sweep-engine"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Sweep engine landed with canonical-path dedup, CRLF-aware line mapping via memchr, distinct-site truncation, 12 unit tests; memchr added as a direct dependency; dead-code allows removed from the two foundations it now calls; falsifiers (drop crlf, flip truncation bound) each broke 1/12"
+files = [
+    "tomlctl/src/sweep.rs",
+    "tomlctl/Cargo.toml",
+    "tomlctl/src/repo_files.rs",
+    "tomlctl/src/query.rs",
+]
+status = "done"
+dedup_id = "79dc4f1723def279"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "compute-file-disjoint-clusters-and-dependency-batches"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "items_clusters lands with topo-first, within-level union-find clustering, cycle refusal, dropped-dep reporting, canonical file keys and the lite flag; 8 unit tests; falsifiers (disable residual check, hoist union to whole selection) each broke 1/8"
+files = ["tomlctl/src/clusters.rs"]
+status = "done"
+dedup_id = "36fe187eaed780e1"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "bind-the-engine-to-ledger-items"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "items_sweep diffs re-run sweep hits against file/instances anchors into new/gone/kept/unverified with the ledger excluded; update_plan refuses on truncated/unverified and rewrites instances via one compute_apply_mutation; 6 unit tests; falsifiers (drop implicit anchor, drop ledger exclusion) each broke 1/6"
+files = [
+    "tomlctl/src/items_sweep.rs",
+    "tomlctl/src/anchor.rs",
+]
+status = "done"
+dedup_id = "6f1e59d3ed59ffe4"
+
+[[items]]
+id = "E22"
+type = "deviation"
+date = 2026-09-18
+agent = "implement"
+task_ref = "bind-the-engine-to-ledger-items"
+summary = "items_sweep re-enumerates through tracked_files and re-scans hit files per pattern instead of reading everything off one engine pass"
+original_intent = "Run the engine once over the union of every selected item sweep strings and attribute hits back to items by pattern index"
+rationale = "SweepReport exposes neither the scanned-file set (needed to tell gone from unverified) nor per-pattern hits (the engine keeps the lowest pattern index per line, so a line two items patterns share would be attributed to one); sweep.rs is task 7 file, so the binding duplicates the dir/oversize/NUL predicates and re-runs each pattern over hit files rather than widening the engine"
+dedup_id = "08686a3c2f028bcc"
+
+[[items]]
+id = "E23"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Registered sweep, items sweep and items clusters in the clap surface and dispatch, extended the items orphans help with instance-missing; clippy -D warnings clean, fmt clean, all smoke runs match the plan predictions (one hit at orphans.rs:128, unenumerated=1 from the dangling .github symlink)"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+]
+status = "done"
+dedup_id = "afa15890dae3de17"
+
+[[items]]
+id = "E24"
+type = "deviation"
+date = 2026-09-18
+agent = "implement"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+summary = "Live items sweep --update goes through mutate_doc_conditional rather than mutate_doc_plan, and the read-only path relies on read_doc not-found tagging instead of an explicit exists() guard"
+original_intent = "With --update it goes through io::mutate_doc_plan with write_integrity_opts; test the ledger existence first and return ErrorKind::NotFound so the write bundle auto-create never mints a ledger"
+rationale = "mutate_doc_plan always persists after closure success, so a no-change sweep would rewrite the ledger and bump the sidecar; mutate_doc_conditional returns Ok(false) on an empty plan.updated and is the helper items add --dedupe-by already uses; read_doc tags kind=not_found itself and never seeds, confirmed by smoke"
+dedup_id = "0db4249960825dec"
+
+[[items]]
+id = "E25"
+type = "deviation"
+date = 2026-09-18
+agent = "implement"
+task_ref = "dedupe-the-implicit-anchor-in-the-items-sweep-kept-set"
+summary = "Minted task 21 to dedupe the implicit file:symbol anchor in items sweep kept output"
+original_intent = "plan carries no task for a repair to the items sweep binding after task 8 landed"
+rationale = "Task 11 smoke found kept lists the implicit anchor twice when instances already names it, so every --update appends a duplicate and the no-op path never fires; the fix is one file the run already touched and the existing suite exercises it"
+dedup_id = "855104a0eec6a5ed"
+
+[[items]]
+id = "E26"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "register-the-verbs-in-the-capability-surface-readme-and-version"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Registered sweep/items_sweep/items_clusters/orphans_instances + sweep subcommand, bumped to 0.9.0, extended the three gated help/strict-read arrays and both README transcriptions; capabilities suite 66/66; falsifiers (stale version pin, stripped README cell) broke 2/66"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/Cargo.toml",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+status = "done"
+dedup_id = "ef0bd8eb3eb19a3f"
+
+[[items]]
+id = "E27"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "dedupe-the-implicit-anchor-in-the-items-sweep-kept-set"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Dedup the per-item anchor list at collection time so items sweep --update is idempotent; two-run idempotency unit test added; falsifier (remove the contains guard) broke 1/7"
+files = ["tomlctl/src/items_sweep.rs"]
+status = "done"
+dedup_id = "431711f005dc150b"
+
+[[items]]
+id = "E28"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "integration-test-the-sweep-verbs"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Integration binary for sweep / items sweep (hits, non-git error, new/gone partition, dry-run no-write, update + idempotency) plus the root-relative seed_ledger_in seeder; 5/5 green; falsifiers (pre-update instances, dropped gone anchor) broke 2/5"
+files = [
+    "tomlctl/tests/sweep.rs",
+    "tomlctl/tests/common/mod.rs",
+]
+status = "done"
+dedup_id = "5af05893166cbf13"
+
+[[items]]
+id = "E29"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "document-the-write-path-and-integrity-matrix"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Documented items sweep / items clusters / sweep in the integrity matrix and added the items sweep --update write-path entry plus the --array and dry-run list extensions; falsifier (--updat in a fence) broke command_lint 1/8"
+files = [
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/references/write.md",
+]
+status = "done"
+dedup_id = "d2908f092e48709b"
+
+[[items]]
+id = "E30"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "document-the-verbs-in-the-tomlctl-skill"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Documented the three sweep/cluster verbs with lint-clean flag tables and samples in query.md, extended the orphans class list to all six classes, and added Quick Reference + Feature rows to SKILL.md; falsifier (--max-hit in a flag table) broke flag_table_lint 1/8"
+files = [
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/query.md",
+]
+status = "done"
+dedup_id = "c002991b903938b4"
+
+[[items]]
+id = "E31"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "point-the-research-method-at-the-standalone-sweep"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Documented tomlctl sweep as the preferred instance enumerator in the research-methods codebase-review reference, with hits->Instances / patterns->sweep mapping, ASCII-regex and 512-byte constraints, default exclusions, and the coverage_complete/truncated -> incomplete rule; Grep sweep retained as fallback; falsifier (--regex) broke command_lint 1/4"
+files = ["claude/skills/research-methods/references/codebase-review.md"]
+status = "done"
+dedup_id = "00ff15025cb68a1f"
+
+[[items]]
+id = "E32"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "rewire-the-vet-disposition-sweep-and-ledger-schema-skills"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Rewired the vet, disposition-sweep and ledger-schema skills onto tomlctl sweep / items sweep / items clusters / instance-missing, with the vet tool call placed pre-append (standalone sweep) and post-append (items sweep) per the carriers ordering; falsifier (--id fence) broke command_lint 1/4"
+files = [
+    "claude/skills/flow-contract-vet-research/SKILL.md",
+    "claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md",
+    "claude/skills/flow-contract-ledger-schema/SKILL.md",
+]
+status = "done"
+dedup_id = "ed045eb30074a478"
+
+[[items]]
+id = "E33"
+type = "deviation"
+date = 2026-09-18
+agent = "implement"
+task_ref = "rewire-the-vet-disposition-sweep-and-ledger-schema-skills"
+summary = "Vet step 4 names the standalone tomlctl sweep as its primary and items sweep as the post-append re-check"
+original_intent = "In vet step 4, replace the re-run-its-sweep-strings sentence with the tomlctl items sweep <ledger> --ids <id> call"
+rationale = "Both carriers vet before the ledger append (review Step 2.5 interim checkpoint; optimise vet-first-persist-second; plan-new has no ledger), so at vet time no ledger row exists for items sweep to read; the standalone verb takes the sweep strings directly and is read-only by construction"
+dedup_id = "c3bcff007032ad45"
+
+[[items]]
+id = "E34"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "rewire-the-apply-flow-skills-to-the-verbs"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Step 3 runs tomlctl items clusters and consumes clusters/batches/dropped_deps/lite_file_scope (criterion 1 mechanical half only); pre-analysis re-sweep runs read-only tomlctl items sweep and reads kept/new/gone/unverified into the growth line; dependency-sort skill reframed as the verb specification with the Kahn pseudocode kept as the pre-0.9 fallback; falsifier (--id fence) broke command_lint 1/4"
+files = [
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md",
+    "claude/skills/flow-contract-apply-pipeline/references/pre-analysis.md",
+    "claude/skills/flow-contract-apply-dependency-sort/SKILL.md",
+]
+status = "done"
+dedup_id = "f1308ba7d2b9161e"
+
+[[items]]
+id = "E35"
+type = "deviation"
+date = 2026-09-18
+agent = "implement"
+task_ref = "rewire-the-apply-flow-skills-to-the-verbs"
+summary = "Apply Step 3 gains an orchestrator rule that unions the pre-analysis new sites into the verb clusters"
+original_intent = "Rewrite apply-pipeline Step 3 to run tomlctl items clusters and consume clusters, batches, dropped_deps and lite_file_scope"
+rationale = "items clusters reads only the ledger recorded instances and the pre-analysis re-sweep is read-only with the write deferred to Step 6, so without a union of the new sites two parallel agents could land in one file; the rule merges same-round clusters that come to share a file and re-derives the two-file limb"
+dedup_id = "2f50bd2cb411f87d"
+
+[[items]]
+id = "E36"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "update-the-schema-hardcoding-callouts"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "The three schema-hardcoding callouts now name items sweep and items clusters (with the fields each reads) beside orphans/find-duplicates and list the generic items subcommand set instead of claiming all others are schema-agnostic; acceptance grep 0 -> 3"
+files = [
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/commands/review-plan.md",
+]
+status = "done"
+dedup_id = "c6d61ffe64467557"
+
+[[items]]
+id = "E37"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "integration-test-clusters-and-instance-orphans"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "New integration binary covering items clusters (membership, canonical files, depends_on, lite_file_scope, batches, dropped_deps, --ids narrowing, not_found, cycle refusal) and the instance-missing orphan class; 5/5; falsifiers (reversed edge, dropped missing instance) broke 2/5 each"
+files = ["tomlctl/tests/clusters.rs"]
+status = "done"
+dedup_id = "7a65b933aa427fe6"
+
+[[items]]
+id = "E38"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+summary = "checkpoint B+C / final gate: build passed"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "2b4a2692c68919f5"
+
+[[items]]
+id = "E39"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+summary = "checkpoint B+C / final gate: 747 bin + 454 integration tests passed across 29 binaries (corroborated directly)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "c0fb20b0099b1104"
+
+[[items]]
+id = "E40"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+summary = "checkpoint B+C / final gate: clippy -D warnings clean"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+dedup_id = "b402f0138d991cc3"
+
+[[items]]
+id = "E41"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+summary = "checkpoint B+C / final gate: fmt --check clean"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+dedup_id = "28b1ee9fc9d95484"
+
+[[items]]
+id = "E42"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+summary = "checkpoint B+C / final gate: 87 crate dependencies, no vulnerabilities (corroborated directly)"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+dedup_id = "d0dbde1bbfc95586"
+
+[[items]]
+id = "E43"
+type = "checkpoint"
+date = 2026-09-18
+agent = "implement"
+kind = "commit-train"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+summary = "checkpoint B+C train (final): f84446e = compute-file-disjoint-clusters-and-dependency-batches; 037f595 = report-unresolvable-instances-as-orphans; d551559 = build-the-sweep-engine + bind-the-engine-to-ledger-items + dedupe-the-implicit-anchor-in-the-items-sweep-kept-set + wire-the-verbs-into-clap-and-dispatch + register-the-verbs-in-the-capability-surface-readme-and-version (merged through Cargo.toml, cli/types.rs and items_sweep.rs, and dispatch needing all three modules); 56a1a01 = integration-test-the-sweep-verbs; 2b43620 = integration-test-clusters-and-instance-orphans; b16ece2 = document-the-verbs-in-the-tomlctl-skill; 9ccb182 = document-the-write-path-and-integrity-matrix; baf9f37 = rewire-the-apply-flow-skills-to-the-verbs; 6c44c56 = rewire-the-vet-disposition-sweep-and-ledger-schema-skills; 987a414 = point-the-research-method-at-the-standalone-sweep; c95ff36 = update-the-schema-hardcoding-callouts"
+commits = [
+    "f84446e",
+    "037f595",
+    "d551559",
+    "56a1a01",
+    "2b43620",
+    "b16ece2",
+    "9ccb182",
+    "baf9f37",
+    "6c44c56",
+    "987a414",
+    "c95ff36",
+]
+dedup_id = "4b5dc5809964cd63"
+
+[[items]]
+id = "E44"
+type = "deviation"
+date = 2026-09-18
+agent = "implement"
+task_ref = "gate-the-readme-capabilities-sample-version-against-cargotoml"
+summary = "Minted task 22 to gate the README capabilities sample version literal"
+original_intent = "plan carries no task for gating the README sample version; task 12 found it two releases stale (0.7.0) while nothing parity-tests it"
+rationale = "Cheap (one assertion), inside a file the run touched, and covered by the capabilities suite the run already runs - all three same-run factors hold"
+dedup_id = "72da1b8b89267e7b"
+
+[[items]]
+id = "E45"
+type = "task-completion"
+date = 2026-09-18
+agent = "implement"
+task_ref = "gate-the-readme-capabilities-sample-version-against-cargotoml"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Added readme_sample_version_matches_cargo_toml (plus version_in_readme_sample helper) asserting the README capabilities sample version equals CARGO_PKG_VERSION; suite 67 passing; falsifier (README 0.8.0) broke exactly that test"
+files = ["tomlctl/tests/capabilities.rs"]
+status = "done"
+dedup_id = "051bbd42c43e467c"
+
+[[items]]
+id = "E46"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+summary = "Phase 3 re-entry after task 22: build passed"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+supersedes_entry = "E38"
+dedup_id = "b870611136d8c84d"
+
+[[items]]
+id = "E47"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+summary = "Phase 3 re-entry after task 22: 1185 tests passed across 29 binaries, 0 failed (run directly)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+supersedes_entry = "E39"
+dedup_id = "aff03f58615e6a80"
+
+[[items]]
+id = "E48"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+summary = "Phase 3 re-entry after task 22: clippy -D warnings clean"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+supersedes_entry = "E40"
+dedup_id = "10e193421a89006c"
+
+[[items]]
+id = "E49"
+type = "verification"
+date = 2026-09-18
+agent = "implement"
+task_ref = "wire-the-verbs-into-clap-and-dispatch"
+summary = "Phase 3 re-entry after task 22: fmt --check clean"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+supersedes_entry = "E41"
+dedup_id = "2b202772ca3ee8ad"
+
+[[items]]
+id = "E50"
+type = "checkpoint"
+date = 2026-09-18
+agent = "implement"
+kind = "commit-train"
+task_ref = "gate-the-readme-capabilities-sample-version-against-cargotoml"
+summary = "post-harvest train: c4a2322 = gate-the-readme-capabilities-sample-version-against-cargotoml"
+commits = ["c4a2322"]
+dedup_id = "07a87f14ccd1cde0"
+
+[[items]]
+id = "E51"
+type = "status-transition"
+date = 2026-09-18
+agent = "plan-update"
+summary = "flow status in-progress -> review: all 22 tasks done (20 planned + 2 minted), final verification green, plan rendered from the store"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "7aad0be77bf58425"
+
+[[items]]
+type = "deviation"
+date = 2026-09-18
+agent = "plan-update"
+id = "E52"
+task_ref = "compute-file-disjoint-clusters-and-dependency-batches"
+summary = "items clusters dropped_deps entries are {id, unselected: [{id, status}], unknown: [ids]} instead of {id, missing} (review R16, user-confirmed shape)"
+original_intent = "dropped_deps entries shaped {id, missing: [ids]} per the task Action text"
+rationale = "missing flattened a terminal dependency (safe to drop), an open item outside --ids (an ordering hazard) and an unknown id into one list whose name reads as absent from the ledger; the split with status lets the apply orchestrator audit each dropped edge without an items get per id"
+dedup_id = "127943c52a996c7d"
+
+[[items]]
+type = "deviation"
+date = 2026-09-18
+agent = "plan-update"
+id = "E53"
+task_ref = "enumerate-tracked-files-through-git"
+summary = "Enumeration.files is Vec<String> rather than Vec<PathBuf> (review R13)"
+original_intent = "Enumeration { files: Vec<PathBuf>, ... } per the task Action text"
+rationale = "the values are git's /-spelled repo-relative strings and every consumer converted back to a string; PathBuf advertised the root.join operation the module itself warns against under a verbatim root"
+dedup_id = "b85ef8f1507d0aca"
+
+[[items]]
+type = "deviation"
+date = 2026-09-18
+agent = "plan-update"
+id = "E54"
+task_ref = "bind-the-engine-to-ledger-items"
+supersedes_entry = "E22"
+summary = "items sweep consumes the engine's scanned/skipped sets and shared scan_file/line_of instead of re-enumerating and re-scanning; run split into compile + run_compiled (review R2)"
+original_intent = "items_sweep owns its own file predicate, enumeration and regex compile, mirroring the engine's sniff"
+rationale = "the duplicated predicate decided gone-vs-unverified, so any drift between the two copies silently misclassified anchors; SweepReport.scanned and .skipped plus sweep::scan_file give one source of truth and one injection seam"
+dedup_id = "31845885b0d40aee"
+
+[[items]]
+type = "deviation"
+date = 2026-09-18
+agent = "plan-update"
+id = "E55"
+task_ref = "bind-the-engine-to-ledger-items"
+summary = "items_sweep returns a typed SweepOutcome and update_plan takes &SweepOutcome; outcome_json emits the wire shape (review R12)"
+original_intent = "items_sweep -> Result<JsonValue> and update_plan(doc, &JsonValue) per the task Action text"
+rationale = "the write path re-parsed the wire JSON with missing-key-means-empty semantics, so a renamed envelope key disabled the refusal gate with no compile error; the typed shape mirrors SweepReport + report_json"
+dedup_id = "ba83ce7eccfd404f"
+
+[[items]]
+type = "deviation"
+date = 2026-09-18
+agent = "plan-update"
+id = "E56"
+task_ref = "build-the-sweep-engine"
+summary = "git_available, git and write test helpers live once in test_support.rs (review R14)"
+original_intent = "each unit-test module mirrors the tests/common helpers locally"
+rationale = "four copies of git_available and two each of git and write had accumulated; test_support.rs is the crate's home for helpers shared across unit-test modules"
+dedup_id = "bc86d2e22a7041bc"
+
+[[items]]
+type = "deviation"
+date = 2026-09-18
+agent = "plan-update"
+id = "E57"
+task_ref = "bind-the-engine-to-ledger-items"
+summary = "a file:symbol anchor covers every hit in its indentation span, not only the symbol's line (review R6, user-confirmed rule)"
+original_intent = "a hit is new when it lies outside every recorded file:symbol anchor's line"
+rationale = "the first-line rule made --update write a drift-fragile file:line twin for every hit inside an anchored function body, defeating the purpose of symbol anchors; the span ends at the next non-blank line at <= indentation that is not a bare closing bracket, degrading to first-line-only for Markdown and TOML"
+dedup_id = "047ce27d43d4410f"
+
+[[items]]
+type = "deviation"
+date = 2026-09-18
+agent = "plan-update"
+id = "E58"
+task_ref = "bind-the-engine-to-ledger-items"
+summary = "unverified entries carry {anchor, reason}; --update retains excluded anchors in listed order and refuses only for truncation or a non-excluded unverified anchor (review R8, user-confirmed)"
+original_intent = "unverified is a bare anchor list for files skipped or past --max-hits; --update refuses whenever truncated or unverified is non-empty and rewrites as kept anchors followed by new sites"
+rationale = "an anchor under a default-excluded path was permanently unverified and blocked --update forever with a count-only message; reasons (unparseable, outside-repo, truncated, missing, skipped, excluded) make the refusal actionable and let excluded anchors survive a rewrite"
+dedup_id = "4657008cd0b51b9f"
+
+[[items]]
+type = "deviation"
+date = 2026-09-18
+agent = "plan-update"
+id = "E59"
+task_ref = "bind-the-engine-to-ledger-items"
+summary = "items sweep --update rewrites only open items; terminal items are reported but never rewritten, even under --ids (review R5)"
+original_intent = "--update rewrites each swept item's instances"
+rationale = "a fixed or wontfix item whose patterns now hit nothing was having its instances unset, erasing the record of what was fixed; items clusters already scopes its bare selection to open, and items update remains the way to edit a terminal item's instances"
+dedup_id = "99e17b4d7aaa31fa"

@@ -56,6 +56,12 @@ For each item:
   `resolved = <today, ISO 8601>`, `resolution = "<short description + commit SHA if it landed>"`.
   Partial applies write `resolution = "partial: <done> / pending: <not done>"` so the ledger captures
   the split explicitly.
+- **Applied pattern item** (carries `sweep`): persist the Step 2 re-sweep's growth and drop its
+  `gone` anchors with `tomlctl items sweep <ledger> --ids <ids> --update`, ahead of the two-call
+  write below. `--update` refuses while any swept item is `truncated` or holds an `unverified`
+  anchor; then drop the `gone` anchors by hand with
+  `tomlctl items update <ledger> <id> --json '{"instances": [...]}'`, listing the `kept` anchors
+  and `new` sites.
 - **No-change** (agent reported the code already matches, or the orchestrator pre-transitioned in
   Step 2): `status = <NO-CHANGE>` with the audit note suffixed `— audited during <CMD> <today>`.
   **Preserve the item's original `category`** — never reassign `category` to a disposition value.

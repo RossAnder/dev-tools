@@ -1,20 +1,20 @@
 //! Tracked-file enumeration through `git ls-files`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use anyhow::Result;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::path_under_root;
+use crate::io::{join_under, path_under_root};
 
 /// The files git knows about under a root: tracked plus untracked-but-not-
 /// ignored, as repo-relative paths spelled the way git emits them (forward
 /// slashes), sorted and deduplicated.
 #[derive(Debug)]
 pub(crate) struct Enumeration {
-    pub(crate) files: Vec<PathBuf>,
+    pub(crate) files: Vec<String>,
     /// Entries whose resolved location lies outside the root — a symlink
     /// pointing out of the tree.
     pub(crate) skipped_outside: usize,
@@ -73,22 +73,19 @@ pub(crate) fn tracked_files(root: &Path, exclude: &[String]) -> Result<Enumerati
     }
 
     let mut skipped_outside = 0usize;
-    let mut files: Vec<PathBuf> = String::from_utf8_lossy(&output.stdout)
+    let mut files: Vec<String> = String::from_utf8_lossy(&output.stdout)
         .split('\0')
         .filter(|entry| !entry.is_empty())
         .filter(|entry| !excluded.as_ref().is_some_and(|set| set.is_match(entry)))
         .filter(|entry| {
-            // Joined component-wise: a canonical root carries a verbatim
-            // `\\?\` prefix on Windows, under which a `/` is not a separator.
-            let mut absolute = root.to_path_buf();
-            absolute.extend(entry.split('/'));
-            let inside = path_under_root(root, &absolute);
+            let inside =
+                join_under(root, entry).is_some_and(|absolute| path_under_root(root, &absolute));
             if !inside {
                 skipped_outside += 1;
             }
             inside
         })
-        .map(PathBuf::from)
+        .map(str::to_string)
         .collect();
     files.sort();
     files.dedup();
@@ -128,30 +125,8 @@ fn compile_excludes(exclude: &[String]) -> Result<Option<GlobSet>> {
 mod tests {
     use super::*;
     use crate::errors::TaggedError;
-    use crate::test_support::with_root;
+    use crate::test_support::{git, git_available, with_root};
     use std::fs;
-
-    fn git_available() -> bool {
-        Command::new("git")
-            .arg("--version")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
-
-    fn git(root: &Path, args: &[&str]) {
-        let out = Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
 
     /// One committed file, one untracked file, one committed file under a
     /// directory the caller excludes, and one ignored file.
@@ -174,13 +149,6 @@ mod tests {
             .map_or("other", |tagged| tagged.kind.as_str())
     }
 
-    fn names(e: &Enumeration) -> Vec<String> {
-        e.files
-            .iter()
-            .map(|p| p.to_string_lossy().into_owned())
-            .collect()
-    }
-
     #[test]
     fn lists_tracked_and_untracked_but_not_ignored() {
         if !git_available() {
@@ -190,7 +158,7 @@ mod tests {
             seed_repo(root);
             let e = tracked_files(root, &[]).unwrap();
             assert_eq!(
-                names(&e),
+                e.files,
                 [
                     ".gitignore",
                     "docs/plans/plan.md",
@@ -211,7 +179,7 @@ mod tests {
         with_root(|root| {
             seed_repo(root);
             let e = tracked_files(root, &["docs/plans/**".to_string()]).unwrap();
-            assert_eq!(names(&e), [".gitignore", "tracked.rs", "untracked.rs"]);
+            assert_eq!(e.files, [".gitignore", "tracked.rs", "untracked.rs"]);
         });
     }
 

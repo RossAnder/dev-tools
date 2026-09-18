@@ -2,7 +2,7 @@
 
 **Plan path**: `docs/plans/tomlctl-items-sweep-clusters.md`
 **Created**: 2026-09-17
-**Status**: Draft
+**Status**: Review
 
 ## Context
 
@@ -112,7 +112,7 @@ After the final checkpoint: `cargo install --path tomlctl` so the carriers pick 
 ## Execution Policy
 
 - **Checkpoints**: milestones
-- **Checkpoint after**: tasks 2, 3, 4, 5, 6, 12, 14, 15, 16, 17, 18, 19, 20
+- **Checkpoint after**: tasks 2, 3, 4, 5, 6, 14, 15, 16, 17, 18, 19, 20, 21, 22
 - **Max parallel agents**: 6
 - **Commit granularity**: per-task
 
@@ -264,13 +264,25 @@ After the final checkpoint: `cargo install --path tomlctl` so the carriers pick 
 - **Detail**: One sentence per site; keep each callout's surrounding wording. These are the only three sites (co-occurrence sweep of `orphans` and `find-duplicates` across `claude/**` and `tomlctl/**`; historical plan documents excluded).
 - **Acceptance**: `grep -c 'items sweep' claude/skills/flow-contract-execution-record-schema/SKILL.md claude/skills/tomlctl/references/tasks-store.md claude/commands/review-plan.md | grep -vc ':0$'` prints `3` (today: 0).
 
+### 21. Dedupe the implicit anchor in the items sweep kept set [S]
+- **Files**: `tomlctl/src/items_sweep.rs`
+- **Depends on**: 8
+- **Action**: In tomlctl/src/items_sweep.rs, stop the implicit file:symbol anchor from being pushed into the per-item anchor list when the item instances array already lists the identical anchor string, so kept never carries one anchor twice and update_plan rewrites instances to a set equal to the listed anchors on a no-change run. Add a unit test that runs items_sweep then update_plan twice over the same ledger and asserts the second plan.updated is empty and instances length is unchanged.
+- **Acceptance**: cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl items_sweep:: passes including the new idempotency test (falsifier: restoring the unconditional implicit push makes the second-run instances grow by one)
+
+### 22. Gate the README capabilities sample version against Cargo.toml [S]
+- **Files**: `tomlctl/tests/capabilities.rs`
+- **Depends on**: 12
+- **Action**: In tomlctl/tests/capabilities.rs add one test that parses the README capabilities sample block (the fenced JSON under the Capabilities section that readme_markdown already loads) and asserts its version string equals the version in tomlctl/Cargo.toml, so the literal cannot silently rot at the next bump.
+- **Acceptance**: cargo test --manifest-path tomlctl/Cargo.toml --test capabilities passes including the new test (falsifier: editing the README sample version to 0.8.0 makes it fail)
+
 ## Dependency Graph
 
 Per-task `Depends on` lines are authoritative; this section states only the checkpoint cuts.
 
 — CHECKPOINT A after tasks 2, 3, 4, 5, 6 — dependency closure: 1, 2, 3, 4, 5, 6. the scaffold plus five independent foundations (anchor parser, git enumeration, union-find extraction, public Kahn core, bytes-regex helper); the crate builds and every existing test still passes, with no verb yet exposed; tasks 2, 3 and 6 carry `#[allow(dead_code)]` (with a one-line reason, per `tomlctl/src/items.rs:1699`) on the items nothing calls until tasks 7 and 8, which remove it, so `cargo clippy --all-targets -- -D warnings` stays green at this cut
 
-— CHECKPOINT B after tasks 12, 14 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14. the engine, the three verbs, the orphans class, clap wiring, capability registry, version 0.9.0 and both integration binaries; the installed binary is usable by the carriers
+— CHECKPOINT B after tasks 14, 21, 22 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 21, 22. the engine, the three verbs, the orphans class, clap wiring, capability registry, version 0.9.0 and both integration binaries; the installed binary is usable by the carriers
 
 — CHECKPOINT C after tasks 15, 16, 17, 18, 19, 20 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20. the skill and reference prose names the verbs with older-binary fallbacks and the schema callouts name the two new ledger-specific verbs; the lint tests that parse those docs against clap pass
 

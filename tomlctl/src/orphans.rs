@@ -11,47 +11,38 @@
 //!     `missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `unparseable`
 
 use anyhow::Result;
-use regex::Regex;
+use regex::bytes::Regex;
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use toml::Value as TomlValue;
 
 use crate::anchor::{self, AnchorAt};
 use crate::convert::str_field;
-use crate::io::{item_id, items_array, repo_or_cwd_root};
+use crate::io::{item_id, items_array, join_under, repo_or_cwd_root};
 
 /// Resolves a ledger path against the repo root and answers, in order,
 /// whether it is contained, exists, is readable and holds `symbol`. Every
 /// filesystem touch is cached per resolved path, so the `file` check and the
-/// `instances` walk naming one file share one `canonicalize`, `exists` and read.
+/// `instances` walk naming one file share one `exists` and read.
 struct FileProbe {
     root: PathBuf,
-    // The root is process-invariant, so `canonicalize` is hoisted out of the
-    // per-item loop. Falling back to the un-canonicalised root when it fails
-    // keeps containment checked against something.
-    canonical_root: Option<PathBuf>,
-    // `(exists, contained)` per unique resolved path.
-    path_cache: HashMap<PathBuf, (bool, bool)>,
-    // Holds `Result<String, io::ErrorKind>` rather than
-    // `Result<String, io::Error>` because `io::Error` is not `Clone`; the
-    // caller only inspects success/failure to choose between `symbol-missing`
-    // and `io-error`, so kind-only round-tripping preserves behaviour.
-    read_cache: HashMap<PathBuf, Result<String, std::io::ErrorKind>>,
-    // Compiled word-boundary regexes keyed on the raw symbol string. `None` is
-    // cached for symbols whose regex fails to compile, so the substring
-    // fallback reuses it without re-attempting compilation.
+    exists_cache: HashMap<PathBuf, bool>,
+    // Holds `Result<_, io::ErrorKind>` rather than `Result<_, io::Error>`
+    // because `io::Error` is not `Clone`; the caller only inspects
+    // success/failure to choose between `symbol-missing` and `io-error`.
+    read_cache: HashMap<PathBuf, Result<Vec<u8>, std::io::ErrorKind>>,
+    // Keyed on the raw symbol string; `None` is cached for a symbol whose
+    // regex fails to compile, so compilation is not re-attempted.
     symbol_cache: HashMap<String, Option<Regex>>,
 }
 
 impl FileProbe {
     fn new(root: PathBuf) -> Self {
-        let canonical_root = root.canonicalize().ok();
         Self {
             root,
-            canonical_root,
-            path_cache: HashMap::new(),
+            exists_cache: HashMap::new(),
             read_cache: HashMap::new(),
             symbol_cache: HashMap::new(),
         }
@@ -61,32 +52,22 @@ impl FileProbe {
     /// `io-error`, then `symbol-missing`. `None` when everything resolves; a
     /// `None` symbol stops after the existence check.
     fn check(&mut self, file: &str, symbol: Option<&str>) -> Option<&'static str> {
-        let resolved = resolve_relative_to_root(&self.root, file);
         // A ledger-item path is attacker-controllable: the ledger author is
         // not always the tool operator, and a crafted ledger can arrive by
         // any supply-chain path. Unchecked, a relative path escaping the root
-        // via `..` (`../../etc/passwd`) or an absolute one (`/etc/shadow`,
-        // `~/.ssh/id_rsa`) turns `fs::read_to_string` into an
-        // existence/symbol-presence oracle over arbitrary host files. Both
-        // forms are canonicalised and must satisfy
-        // `starts_with(canonical_root)`; anything else surfaces as
-        // `outside-repo` with no `exists()` or `read_to_string` call.
-        let (exists, contained) = if let Some(hit) = self.path_cache.get(&resolved) {
-            *hit
-        } else {
-            let contained = match (resolved.canonicalize().ok(), self.canonical_root.as_ref()) {
-                (Some(c), Some(r)) => c.starts_with(r),
-                (Some(c), None) => c.starts_with(&self.root),
-                (None, _) => true, // missing target falls through to `missing-file`.
-            };
-            let exists = resolved.exists();
-            self.path_cache
-                .insert(resolved.clone(), (exists, contained));
-            (exists, contained)
-        };
-        if !contained {
+        // via `..` (`../../etc/passwd`), an absolute one (`/etc/shadow`,
+        // `~/.ssh/id_rsa`) or a UNC one (`\\host\share\x`, which opens SMB)
+        // turns `exists` and the read into an existence/symbol-presence
+        // oracle over arbitrary host files. `join_under` decides containment
+        // lexically, so `outside-repo` is reported before the disk is
+        // consulted and every later verdict names a path under the root.
+        let Some(resolved) = join_under(&self.root, file) else {
             return Some("outside-repo");
-        }
+        };
+        let exists = *self
+            .exists_cache
+            .entry(resolved.clone())
+            .or_insert_with(|| resolved.exists());
         if !exists {
             return Some("missing-file");
         }
@@ -97,30 +78,17 @@ impl FileProbe {
         let cached = self
             .read_cache
             .entry(resolved.clone())
-            .or_insert_with(|| fs::read_to_string(&resolved).map_err(|e| e.kind()));
+            .or_insert_with(|| fs::read(&resolved).map_err(|e| e.kind()));
         let Ok(contents) = cached else {
             return Some("io-error");
         };
-        // Word-boundary match: a bare `contents.contains` reports a renamed
-        // `id` symbol as still present in any file containing `valid`,
-        // `paid`, or `lived`. The substring fallback is defensive only —
-        // `regex::escape` should make it unreachable. `(?-u:\b)` pins ASCII
-        // semantics regardless of crate feature flags.
         let compiled = self
             .symbol_cache
             .entry(symbol.to_string())
-            .or_insert_with(|| {
-                let pat = format!(r"(?-u:\b){}(?-u:\b)", regex::escape(symbol));
-                Regex::new(&pat).ok()
-            });
-        let present = match compiled {
-            Some(re) => re.is_match(contents),
-            None => contents.contains(symbol),
-        };
-        if present {
-            None
-        } else {
-            Some("symbol-missing")
+            .or_insert_with(|| anchor::symbol_regex(symbol));
+        match compiled {
+            Some(re) if re.is_match(contents) => None,
+            _ => Some("symbol-missing"),
         }
     }
 }
@@ -212,15 +180,6 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
     Ok(out)
 }
 
-fn resolve_relative_to_root(root: &Path, file: &str) -> PathBuf {
-    let p = Path::new(file);
-    if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        root.join(p)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,7 +222,7 @@ summary = "dangling dep"
 
 [[items]]
 id = "R5"
-instances = ['{real}:present_symbol', '{root}/missing/x.rs:12', '{real}:no_such_symbol']
+instances = ['{real}:present_symbol', '{root}/missing/x.rs:12', '{real}:no_such_symbol', 'src/a.rs']
 summary = "instances"
 "#,
                 real_file.display(),
@@ -314,53 +273,79 @@ summary = "instances"
                 )
             })
             .collect();
-        assert_eq!(r5.len(), 2, "{r5:?}");
+        assert_eq!(r5.len(), 3, "{r5:?}");
         assert!(r5[0].0.ends_with("missing/x.rs:12"), "{r5:?}");
         assert_eq!(r5[0].1, "missing-file");
         assert!(r5[1].0.ends_with("real.rs:no_such_symbol"), "{r5:?}");
         assert_eq!(r5[1].1, "symbol-missing");
+        assert_eq!(r5[2], ("src/a.rs", "unparseable"));
     }
 
-    /// Absolute-path ledger rows pointing OUTSIDE the repo root must surface
-    /// as `outside-repo` rather than triggering an
-    /// existence/symbol-presence oracle against arbitrary host files. Pins
-    /// the root to one tempdir, then feeds a ledger row whose `file` points
-    /// at a sibling tempdir (known-to-exist, outside the pinned root).
+    /// Ledger rows pointing OUTSIDE the repo root must surface as
+    /// `outside-repo` rather than triggering an existence/symbol-presence
+    /// oracle against arbitrary host files: the verdict has to be the same
+    /// whether the target exists or not, and the same for the `file` field
+    /// and an `instances` anchor. Pins the root to one tempdir, then feeds
+    /// rows whose paths point at a sibling tempdir — one file there exists,
+    /// one does not — and a `..` escape.
     #[test]
-    fn items_orphans_absolute_path_outside_root_is_outside_repo() {
+    fn items_orphans_path_outside_root_is_outside_repo_whether_or_not_it_exists() {
         let orphans = with_root(|_root| {
-            // The "oracle target" lives in a separate tempdir so it exists on
-            // disk but sits outside the pinned root.
             let oracle_dir = tempfile::tempdir().unwrap();
-            let oracle_file = oracle_dir.path().canonicalize().unwrap().join("secret.rs");
-            fs::write(&oracle_file, "pub fn leak_me() {}\n").unwrap();
+            let oracle_dir = oracle_dir.path().canonicalize().unwrap();
+            let present = oracle_dir.join("secret.rs");
+            fs::write(&present, "pub fn leak_me() {}\n").unwrap();
+            let absent = oracle_dir.join("absent.rs");
             let ledger = format!(
                 r#"
 [[items]]
-id = "R28-probe"
-file = '{}'
+id = "present"
+file = '{present}'
 symbol = "leak_me"
+instances = ['{present}:leak_me', '{absent}:1']
+summary = "oracle attempt"
+
+[[items]]
+id = "absent"
+file = '{absent}'
+summary = "oracle attempt"
+
+[[items]]
+id = "climb"
+file = '../escape.rs'
 summary = "oracle attempt"
 "#,
-                oracle_file.display()
+                present = present.display(),
+                absent = absent.display(),
             );
             let doc: TomlValue = toml::from_str(&ledger).unwrap();
             items_orphans(&doc).unwrap()
         });
-        // The file DOES exist and the symbol IS present, so an implementation
-        // without the containment check emits zero orphans and silently reads
-        // the file. The row must instead surface as `outside-repo`, with
-        // neither `exists()` nor `read_to_string` able to leak information
-        // about the target.
-        assert_eq!(orphans.len(), 1, "{orphans:?}");
+        // A disk-consulting check answers differently for the present and
+        // the absent target (no orphan, or `missing-file`), which is the
+        // leak. Every row must instead read `outside-repo`.
+        let verdicts: Vec<(&str, &str)> = orphans
+            .iter()
+            .map(|o| {
+                let id = o.get("id").and_then(|v| v.as_str()).unwrap();
+                let class = o.get("class").and_then(|v| v.as_str()).unwrap();
+                let verdict = match class {
+                    "instance-missing" => o.get("reason").and_then(|v| v.as_str()).unwrap(),
+                    _ => class,
+                };
+                (id, verdict)
+            })
+            .collect();
         assert_eq!(
-            orphans[0].get("class").and_then(|v| v.as_str()),
-            Some("outside-repo"),
+            verdicts,
+            [
+                ("present", "outside-repo"),
+                ("present", "outside-repo"),
+                ("present", "outside-repo"),
+                ("absent", "outside-repo"),
+                ("climb", "outside-repo"),
+            ],
             "{orphans:?}"
-        );
-        assert_eq!(
-            orphans[0].get("id").and_then(|v| v.as_str()),
-            Some("R28-probe"),
         );
     }
 }
