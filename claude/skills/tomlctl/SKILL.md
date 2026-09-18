@@ -26,6 +26,9 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Filter items | `tomlctl items list <file> --where status=open` |
 | Count / bucket items | `tomlctl items list <file> --count` / `--count-by status` / `--group-by file` |
 | Next monotonic id | `tomlctl items next-id <file> --prefix R\|O\|E\|P` |
+| Regex sites over the tracked files (`file:line`, for an `Instances` line) | `tomlctl sweep -e <regex> [-e <regex>]... [--exclude <glob>]... [--max-hits <n>]` |
+| Re-run items' stored `sweep` strings and diff against `instances` | `tomlctl items sweep <file> [--ids R5,R12] [--update [--dry-run]]` |
+| File-disjoint clusters + dependency batches for the apply flow | `tomlctl items clusters <file> [--ids R5,R12]` |
 | Bump scalar field | `tomlctl set <file> <key.path> <value>` |
 | Set array / sub-table | `tomlctl set-json <file> <key.path> --json '<json>'` |
 | Read value via json subcommand | `tomlctl json get <file> <path>` |
@@ -53,7 +56,7 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 
 The per-verb flag tables, recipes, and contract prose live in six sibling files. Each is self-contained and opens with its own `## Contents` list.
 
-- [references/query.md](references/query.md) — the read-only verbs: `get` / `parse` / `validate`, the full `items list` query surface (filters, projection, shaping, aggregation, output shapes), `items get`, `items find-duplicates`, `items orphans`.
+- [references/query.md](references/query.md) — the read-only verbs: `get` / `parse` / `validate`, the full `items list` query surface (filters, projection, shaping, aggregation, output shapes), `items get`, `items find-duplicates`, `items orphans`, and the tree-walking `sweep`, `items sweep`, `items clusters`.
 - [references/write.md](references/write.md) — the mutating verbs: `set`, `set-json`, `array-append`, the `items` batch verbs, `integrity refresh`, plus auto-create, `--dry-run`, stdin payload handling, and the dedup fingerprint contract.
 - [references/flow.md](references/flow.md) — the cross-cutting surface: the `--verify-integrity` support matrix, what the `.sha256` sidecar does and does not promise, the `--error-format json` envelope, the two emitting `flow` verbs, and the infrastructure-only `blocks` verbs.
 - [references/backlog.md](references/backlog.md) — the `backlog` group's flag tables, the `.claude/backlog.toml` store shape, id derivation, the `check` verdict ladder, and the evidence drop-box. When to mint a row is the `backlog-capture` skill's call, not this one's.
@@ -87,7 +90,7 @@ tomlctl --version
 
 ```bash
 tomlctl capabilities
-# {"version":"0.8.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
+# {"version":"0.9.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
 ```
 
 Representative entries:
@@ -101,6 +104,10 @@ Representative entries:
 | `error_format_json` | `--error-format json` + `ErrorKind` taxonomy |
 | `strict_read` / `dry_run` | `--strict-read` on reads / `--dry-run` on all 9 write subcommands (`set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id`) |
 | `backfill_dedup_id` / `integrity_refresh` | legacy upgrade + sidecar regen |
+| `sweep` | `tomlctl sweep -e <regex>` — sorted `file:line` hits over `git ls-files` with `skipped` counts and `coverage_complete` |
+| `items_sweep` | `items sweep` — per-item `new` / `gone` / `kept` / `unverified` diff of stored `sweep` strings against `instances`, plus `--update` |
+| `items_clusters` | `items clusters` — file-disjoint clusters, `depends_on` batches, per-cluster `lite_file_scope` |
+| `orphans_instances` | `items orphans` reports the `instance-missing` class (one row per unresolvable `instances` anchor, with `reason`) |
 | `agent_context` | `tomlctl capabilities` (the `.commands` field of the JSON output) emits a per-subcommand flag schema (type/required/default/values/repeatable + mutex_groups) for runtime introspection without parsing --help prose. |
 
 ### Agent-context schema (`tomlctl capabilities` — `.commands` field)
