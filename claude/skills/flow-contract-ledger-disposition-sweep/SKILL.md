@@ -1,6 +1,6 @@
 ---
 name: flow-contract-ledger-disposition-sweep
-description: Ledger disposition sweep procedure for /review and /optimise — read-only orphan surfacing (file orphans, symbol orphans), duplicate-finding detection, and the disposition-sweep workflow that surfaces stale or no-longer-applicable items without auto-transitioning them. Defines how the sweep walks open `[[items]]`, batches Glob/Grep lookups for efficiency, and reports findings to the console for user disposition. Consult during the disposition-sweep phase of /review or /optimise, or any time a ledger needs orphan/duplicate triage.
+description: Ledger disposition sweep procedure for /review and /optimise — read-only orphan surfacing (file orphans, symbol orphans, instance orphans), duplicate-finding detection, and the disposition-sweep workflow that surfaces stale or no-longer-applicable items without auto-transitioning them. Defines how the sweep walks open `[[items]]`, batches Glob/Grep lookups for efficiency, and reports findings to the console for user disposition. Consult during the disposition-sweep phase of /review or /optimise, or any time a ledger needs orphan/duplicate triage.
 ---
 
 ### Orphan surfacing (read-only)
@@ -9,15 +9,17 @@ After the ledger loads and before the dispatch section, walk every `[[items]]` e
 
 - **File orphan**: the item's `file` path no longer exists. Detect via a single `Glob` call per unique path, or — for small ledgers — a batched `Test-Path` / `[ -e <path> ]` check.
 - **Symbol orphan**: the item has a non-empty `symbol` field and a `Grep` for that symbol (name-only, not exact-match) against the current file tree returns no results. Use one `Grep` call with `output_mode: "files_with_matches"` over the repo to avoid per-item lookups.
+- **Instance orphan**: the item has an `instances` array and one of its `file:symbol` / `file:line` anchors no longer resolves. `tomlctl items orphans` reports each such anchor as class `instance-missing` with a `reason` of `missing-file`, `symbol-missing`, `io-error`, `outside-repo`, or `unparseable`; by hand, apply the file and symbol checks above to each anchor.
 
 For each orphan, emit a one-line console note in Step 3's report:
 
 ```
 orphan <id>7 — file `src/old-module.rs` no longer present (check for rename; run the active flow command if the work has moved)
 orphan <id>12 — symbol `foo_bar` not found anywhere in the repo (likely renamed; re-run the active flow command at the new location)
+orphan <id>15 — instance `src/pipeline.rs:run_stage` unresolved: symbol-missing (re-anchor or drop the instance; `tomlctl items sweep <ledger> --ids <id>15` re-enumerates the sites)
 ```
 
-Orphans surface, they do NOT auto-transition. The ledger ID is preserved — symbol renames and file moves do not invalidate disposition history. Prefer `tomlctl items orphans <ledger>` over a hand-rolled Glob/Grep walk — the subcommand emits a JSON array of `{id, class, file, symbol?, dangling_deps?}` records (classes: `missing-file`, `symbol-missing`, `dangling-dep`) in one call, keeping the orchestrator's Read budget free for Step 2. Render the returned records as console one-liners per the format above.
+Orphans surface, they do NOT auto-transition. The ledger ID is preserved — symbol renames and file moves do not invalidate disposition history. Prefer `tomlctl items orphans <ledger>` over a hand-rolled Glob/Grep walk — the subcommand emits a JSON array of `{id, class, file?, symbol?, dangling_deps?, instance?, reason?}` records (classes: `missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `dangling-dep`, `instance-missing`) in one call, keeping the orchestrator's Read budget free for Step 2. Render the returned records as console one-liners per the format above.
 
 ### Deferred-item reopen sweep
 
