@@ -178,21 +178,43 @@ the authoritative tiebreaker whenever the code already matches the recommendatio
 
 ## Step 3: Group by file cluster
 
-Group selected findings by file or closely-related file cluster — one implementation agent per
-cluster. Files that share findings, or whose changes are interdependent, belong in the same
-cluster. Note explicit dependencies (adding an interface before consuming it, a schema change
-that flows through several files) so agents sequence correctly.
+Cluster the selected findings with the ledger's own clusterer — one implementation agent per
+cluster:
+
+```bash
+tomlctl items clusters <ledger> --ids <selected>
+```
+
+`<selected>` is the comma-delimited id list that survived Step 2 (the resolved selector minus
+the ids pre-transitioned there). Always pass `--ids`: the bare verb selects every `open` item,
+not the resolved selector. The verb sorts the selection over `depends_on` first, then unions
+items that share a file (an item's files are its `file` plus the files of its `instances`)
+within one topological level, so dependent same-file items stay in separate batches. The
+carrier invokes `flow-contract-apply-dependency-sort` for the specification of that computation
+and for the hand algorithm to run on an older binary predating the subcommand.
+
+Consume the output as follows:
+
+- `clusters[]` — each entry is one agent's assignment: `item_ids` its findings, `files` its
+  file set, `depends_on` the cluster ids that must land first, `lite_file_scope` the mechanical
+  half of gate criterion 1 below.
+- `batches` — sequential rounds of cluster ids. Clusters within a round are file-disjoint and
+  launch together (Step 4's single-message rule); round k+1 launches only after round k is
+  applied and committed, even when its clusters share a file with round k.
+- `dropped_deps` — `depends_on` targets outside the selection, dropped as out of scope for this
+  run. Name each in the pre-dispatch summary so the ordering assumption is auditable.
+- A `depends_on` cycle inside the selection is refused with `kind=validation` naming the items:
+  abort and report the cycle path; do not cluster by hand around it.
+
+Then union the `new` sites from Step 2's re-sweep into their items' clusters (the verb reads the
+ledger's recorded `instances`; the read-only sweep does not update them until Step 6). If that
+union makes two clusters in one round share a file, merge them. Re-derive the two-file limb of
+`lite_file_scope` from the widened set.
 
 **Clusters are mixed-category by design.** One agent handles all findings for its cluster
 across every category. Do not split by category — that violates "no two agents edit the same
 file" whenever a file carries findings in more than one category. Agent prompts list each
 finding's `category` so the agent applies the right judgement per item.
-
-When any selected item carries a populated `depends_on`, topologically sort the selected set
-before clustering so dependent items land in later sequential batches; absent `depends_on`
-everywhere, this degrades to flat clustering (fully backward compatible). The carrier invokes
-`flow-contract-apply-dependency-sort` for the algorithm, cycle-detection abort, and the
-topo-level → sequential-batch rule.
 
 ## Step 4: Launch implementation agents
 
@@ -201,9 +223,12 @@ topo-level → sequential-batch rule.
 
 Evaluate each cluster as a whole against ALL of:
 
-1. **File scope**: ≤ 2 files, OR every file comes from a pattern item's `instances` with
-   `enumeration = "complete"` and one edit shape across all of them. Twelve sites of the same
-   mechanical fix are lite work; three sites of three different fixes are not.
+1. **File scope**: the cluster's `lite_file_scope` from Step 3 is `true` (≤ 2 files, OR a
+   single item whose `instances` carry `enumeration = "complete"`) AND one edit shape across
+   all of its sites. The flag settles only the mechanical half; the orchestrator judges the
+   edit shape itself, and a `lite_file_scope: true` cluster whose items call for different
+   edits still fails this criterion. Twelve sites of the same mechanical fix are lite work;
+   three sites of three different fixes are not.
 2. **Action fully specified**: every item's `summary` + `description` names the exact change.
    No design decisions left to the implementer for ANY item in the cluster.
 3. **No cross-file refactor**: no item needs coordinated edits to call sites, type definitions,
@@ -225,11 +250,12 @@ override names any item in the cluster; omit it entirely otherwise.
 This gate is **separate from** the critical-finding user-confirmation gate in Step 5 — that gate
 suppresses silent automated `<REJECTED>` transitions, not lite/deep selection.
 
-**Pre-dispatch summary** (console, before any Agent call): one line per cluster naming its items,
-the four criteria results, and the verdict — e.g. `dispatch plan: cluster <files> (<ID>, <ID>) —
-criterion 1 (≤2 files): pass; criterion 2 (fully-specified): pass; criterion 3 (no cross-file
-refactor): pass; criterion 4 (not security-sensitive): pass → implement-lite`. This makes the
-gate auditable from console output alone.
+**Pre-dispatch summary** (console, before any Agent call): one line per cluster naming its id,
+batch, items, the four criteria results, and the verdict — e.g. `dispatch plan: c1 batch 1
+<files> (<ID>, <ID>) — criterion 1 (lite_file_scope, one edit shape): pass; criterion 2
+(fully-specified): pass; criterion 3 (no cross-file refactor): pass; criterion 4 (not
+security-sensitive): pass → implement-lite` — followed by one line per `dropped_deps` entry.
+This makes the gate auditable from console output alone.
 
 ### Dispatch discipline
 

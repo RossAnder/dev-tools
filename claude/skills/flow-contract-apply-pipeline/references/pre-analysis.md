@@ -61,12 +61,29 @@ reclaiming orchestrator budget for Step 4 launch and Step 5 verification.
   or symbol; a verbatim match lets the orchestrator pre-transition to `<NO-CHANGE>` without
   dispatching. Semantic-judgement cases (refactor equivalence, moved code, paraphrased
   recommendations) route to an agent, not the orchestrator.
-- **Re-sweep pattern items.** For every item carrying `sweep`, re-run its search strings
-  against the current tree before clustering. Sites grow between rounds. Union any new site
-  into the item's file set for this run, note the growth in the agent prompt
-  (`instances: 14 recorded, 16 now — 2 new: <file:symbol>, <file:symbol>`), and leave the
-  ledger's `instances` for the ledger write at Step 6. A site that has disappeared is not
-  an error; the agent read-verifies it like any other already-applied case.
+- **Re-sweep pattern items.** Sites grow between rounds, so before clustering re-run every
+  `sweep`-carrying item's search strings against the current tree, read-only:
+
+  ```bash
+  tomlctl items sweep <ledger> --ids <pattern-ids>
+  ```
+
+  No `--update` here — the ledger's `instances` rewrite stays with the ledger write at Step 6.
+  Per item, read the result as: `kept` — recorded anchors still hit; `new` — unrecorded sites,
+  as `file:line` (never `file:symbol`); `gone` — recorded anchors with no hit
+  (`reason: no-hit`) or whose symbol is absent (`symbol-missing`), meaning the site was fixed
+  or moved, so re-anchor or drop it at Step 6; `unverified` — anchors whose file was skipped
+  or lies past `--max-hits`, a coverage gap, so budget the item as
+  `enumeration = "incomplete"`. Union each `new` site's file into the item's file set for
+  this run and note the growth in the agent prompt as
+  `instances: 14 recorded, 16 now — 2 new: <file:line>, <file:line>` — recorded is
+  `kept.len()`, now is `kept.len() + new.len()`. A `gone` site is not an error; the agent
+  read-verifies it like any other already-applied case. An item under `skipped_items` with
+  `reason: no-sweep` has no search strings and keeps its recorded file set. When the top-level
+  `coverage_complete` is `false` or `truncated` is `true`, say so in the agent prompt: absence
+  of a hit is not evidence there. On an older binary predating that subcommand, fall back to
+  re-running each item's `sweep` strings with `Grep` and diffing the hits against `instances`
+  by hand.
 - Reason through the implementation approach NOW for findings involving novel APIs or
   cross-cutting patterns, and carry that reasoning into the agent's prompt.
 - Verify target files still match the finding — cited code that has shifted or been rewritten
