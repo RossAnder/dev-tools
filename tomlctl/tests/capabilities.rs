@@ -2227,6 +2227,17 @@ fn features_in_readme_sample(markdown: &str) -> Vec<String> {
         .collect()
 }
 
+/// The version string transcribed in the sample `capabilities` stdout block:
+/// the quoted value of its `"version": "..."` entry.
+fn version_in_readme_sample(markdown: &str) -> String {
+    const KEY: &str = "\"version\": \"";
+    let Some(open) = markdown.find(KEY) else {
+        return String::new();
+    };
+    let body = &markdown[open + KEY.len()..];
+    body.split('"').next().unwrap_or("").to_string()
+}
+
 /// Feature names transcribed in the "Feature meanings" table: the backticked
 /// first cell of every data row. The `|---|---|` separator has no backticks,
 /// so it drops out without a special case.
@@ -2316,6 +2327,22 @@ fn readme_feature_transcriptions_match_capabilities_features() {
              in the README but not advertised: {unadvertised:?}"
         );
     }
+}
+
+/// The README sample block's `version` tracks Cargo.toml directly, so a semver
+/// bump that forgets the README fails here rather than shipping a stale sample.
+#[test]
+fn readme_sample_version_matches_cargo_toml() {
+    let expected = env!("CARGO_PKG_VERSION");
+    let transcribed = version_in_readme_sample(&readme_markdown());
+    assert!(
+        !transcribed.is_empty(),
+        "the README `capabilities` sample-output block yielded no `version` string — the parse matched nothing"
+    );
+    assert_eq!(
+        transcribed, expected,
+        "the README `capabilities` sample-output block says version `{transcribed}` but Cargo.toml says `{expected}`"
+    );
 }
 
 #[test]
