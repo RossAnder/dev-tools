@@ -8,10 +8,12 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+mod anchor;
 mod backlog;
 mod blocks;
 mod capabilities;
 mod cli;
+mod clusters;
 mod convert;
 mod dedup;
 mod errors;
@@ -19,14 +21,18 @@ mod flow;
 mod integrity;
 mod io;
 mod items;
+mod items_sweep;
 mod json;
 mod orphans;
 mod output;
 mod query;
+mod repo_files;
+mod sweep;
 mod tasks;
 #[cfg(test)]
 mod test_support;
 mod time;
+mod union_find;
 
 use std::io::Write;
 

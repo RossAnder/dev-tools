@@ -21,6 +21,7 @@ use toml::Value as TomlValue;
 
 use crate::cli::{ClusterBy, ReadIntegrityArgs};
 use crate::io::items_array;
+use crate::union_find::{components, root, union};
 
 use super::schema::{
     ARRAY_BACKLOG, FIELD_AREA, FIELD_ID, FIELD_KIND, FIELD_STATUS, FIELD_TAGS, RELATION_FIELDS,
@@ -223,7 +224,7 @@ fn cluster_tags(items: &[Item], min_shared: usize) -> Vec<JsonValue> {
             .extend(shared.iter().copied());
     }
 
-    let emitted = components(&mut parent, items.len())
+    let emitted = components(&mut parent, items.len(), false)
         .into_iter()
         .map(|(component_root, members)| {
             let key = keys
@@ -273,7 +274,7 @@ fn cluster_relations(items: &[Item]) -> Vec<JsonValue> {
         }
     }
 
-    let emitted = components(&mut parent, items.len())
+    let emitted = components(&mut parent, items.len(), false)
         .into_values()
         .map(|members| {
             let key = members
@@ -290,39 +291,6 @@ fn cluster_relations(items: &[Item]) -> Vec<JsonValue> {
         })
         .collect();
     finish(items, emitted)
-}
-
-fn root(parent: &mut [usize], mut x: usize) -> usize {
-    while parent[x] != x {
-        parent[x] = parent[parent[x]];
-        x = parent[x];
-    }
-    x
-}
-
-fn union(parent: &mut [usize], a: usize, b: usize) {
-    let (ra, rb) = (root(parent, a), root(parent, b));
-    if ra == rb {
-        return;
-    }
-    // Lowest index wins, so a component's representative does not depend on
-    // the order the edges were discovered in.
-    if ra < rb {
-        parent[rb] = ra
-    } else {
-        parent[ra] = rb
-    }
-}
-
-/// Components of two or more members, keyed by representative. Singletons
-/// are dropped: one item linked to nothing is not a cluster.
-fn components(parent: &mut [usize], len: usize) -> BTreeMap<usize, Vec<usize>> {
-    let mut out: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    for index in 0..len {
-        out.entry(root(parent, index)).or_default().push(index);
-    }
-    out.retain(|_, members| members.len() > 1);
-    out
 }
 
 fn finish(items: &[Item], mut groups: Vec<(String, String, Vec<usize>)>) -> Vec<JsonValue> {
