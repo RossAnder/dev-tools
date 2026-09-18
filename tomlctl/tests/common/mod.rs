@@ -26,6 +26,16 @@ pub fn seed_ledger(initial: &str) -> (tempfile::TempDir, PathBuf) {
     (dir, ledger)
 }
 
+/// Seed `<root>/.claude/<name>` with `toml` inside an existing sandbox, so a
+/// verb that walks the root sees the ledger under the root it is confined to.
+pub fn seed_ledger_in(root: &Path, name: &str, toml: &str) -> PathBuf {
+    let claude = root.join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let ledger = claude.join(name);
+    fs::write(&ledger, toml).unwrap();
+    ledger
+}
+
 /// Six-item fixture spanning status ∈ {open, fixed}, severity ∈ {minor,
 /// major, critical}, file ∈ {src/a.rs, src/b.rs}, first_flagged in
 /// 2026-03 and 2026-04, plus one row carrying `symbol = "old::fn"` for the
