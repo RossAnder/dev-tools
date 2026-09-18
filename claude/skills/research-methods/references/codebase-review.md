@@ -29,6 +29,16 @@ A defect with the same fix at more than one site is reported once, with every si
 - **Search the whole tree.** The dispatch scope bounds where findings anchor; the sweep does not stop at its edge. A site outside scope is an instance of this finding, never a backlog item.
 - **Report the set, the search and the state.** Every site as `file:symbol`, the search strings verbatim so the orchestrator can re-run them at apply time, and `complete` or `incomplete (≥N)`. The set is the apply flow's file budget, so an instance you leave out is a file the implementer is not allowed to touch.
 
+When the installed `tomlctl` is 0.9.0 or newer, the preferred enumerator is `tomlctl sweep`, run from the repo root with one `-e` per variant search:
+
+```bash
+tomlctl sweep -e <regex> [-e <regex>]... [--exclude <glob>] [--max-file-bytes <bytes>] [--max-hits <n>]
+```
+
+Its `hits` map one-to-one onto the `Instances` line — each as `file:line`, re-anchored to `file:symbol` where a symbol exists — and the `-e` patterns go verbatim onto `sweep`, so the orchestrator re-runs exactly what you ran. The shipped binary has no Unicode tables, so every pattern uses the ASCII forms `(?-u:\b)` / `(?-u:\w)` / `(?-u:\d)`, and a pattern is capped at 512 bytes. `.claude/**` and `docs/plans/**` are excluded by default, so a pattern never matches its own ledger or plan record. Without the verb, the Grep sweep above is the fallback.
+
+The output also decides the state: `coverage_complete: false` or `truncated: true` means the enumeration is `incomplete`. The first says a skipped file (binary, oversize or unreadable, counted under `skipped`) or a git warning at exit 0 may hide a site; the second says the `--max-hits` cap cut the scan short. In either case state the floor as `incomplete (≥N)`, exactly as for a form the search cannot reach.
+
 ## Idiom questions are history questions
 
 Whether a pattern is the project's converged idiom or one module's drift is decided by `git log --oneline -S'<pattern>' -- <path>` and `git blame`, not by which file you read first. A finding that canonises the outlier is a finding the user reverses. When the history shows a deliberate move away from a pattern, that is a deliberate-choice drop under the skill's bar.
