@@ -203,6 +203,7 @@ fn mint_bump_relate_triage_and_compact_walk() {
     assert_eq!(preview["would_change"]["compacted"], json!(1));
     assert_eq!(preview["would_change"]["remaining"], json!(1));
     assert_eq!(preview["would_change"]["ids"], json!([id_a]));
+    assert_eq!(preview["path"], json!(".claude/backlog.toml"));
     assert_eq!(
         snapshot(&root),
         before,

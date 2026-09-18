@@ -1,14 +1,15 @@
 //! `tomlctl flow list [--status <s>] [--branch <b>] [--active-only] [--json]`.
 //!
 //! Read-only enumeration of every `<root>/.claude/flows/<slug>/context.toml`
-//! record. Output is a JSON array of records:
+//! record. Output is an envelope containing `flows` and skipped-flow
+//! diagnostics:
 //!
 //! ```json
-//! [
+//! {"flows": [
 //!   {"slug": "feature-x", "status": "in-progress", "updated": "2026-05-08",
 //!    "plan_path": "docs/plans/feature-x.md", "branch": "feat/x",
 //!    "scope": ["src/foo/**"]}
-//! ]
+//! ], "skipped": []}
 //! ```
 //!
 //! Field contract:
@@ -30,7 +31,7 @@
 //!   legacy-pointer warning at its own call site.
 //!
 //! Error tolerance: a malformed `context.toml` in one flow does NOT abort
-//! the whole list; we emit a stderr warning of the form
+//! the whole list; its slug is added to `skipped` and we emit a stderr warning of the form
 //! `tomlctl: flow <slug>: malformed context.toml — skipped` and continue.
 //! Under `--strict-read` a parse error escalates to a tagged `kind=parse`
 //! error per the plan's strict-mode contract.
@@ -67,7 +68,7 @@ pub(crate) fn dispatch(
         None
     };
 
-    let records = enumerate_flows(&flows_dir, integrity.strict_read)?;
+    let (records, skipped) = enumerate_flows(&flows_dir, integrity.strict_read)?;
 
     let mut out: Vec<JsonValue> = Vec::with_capacity(records.len());
     for rec in records {
@@ -89,7 +90,7 @@ pub(crate) fn dispatch(
         out.push(rec.to_json());
     }
 
-    print_json(&JsonValue::Array(out))
+    print_json(&serde_json::json!({"flows": out, "skipped": skipped}))
 }
 
 /// One flow's listed projection — not a full `context.toml` deserialisation,
@@ -140,11 +141,12 @@ impl FlowRecord {
 /// parse failures emit a stderr warning and skip the flow, unless
 /// `strict_read` is set in which case the failure escalates to a tagged
 /// `kind=parse` error.
-fn enumerate_flows(flows_dir: &Path, strict_read: bool) -> Result<Vec<FlowRecord>> {
+fn enumerate_flows(flows_dir: &Path, strict_read: bool) -> Result<(Vec<FlowRecord>, Vec<String>)> {
     if !flows_dir.exists() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let mut records: Vec<FlowRecord> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
     let entries = read_dir_sorted(flows_dir)?;
     for entry in entries {
         let path = entry.path();
@@ -176,10 +178,11 @@ fn enumerate_flows(flows_dir: &Path, strict_read: bool) -> Result<Vec<FlowRecord
                     ));
                 }
                 advise!("tomlctl: flow {}: malformed context.toml — skipped", slug);
+                skipped.push(slug);
             }
         }
     }
-    Ok(records)
+    Ok((records, skipped))
 }
 
 /// Read and project a single flow's `context.toml`. Returns the typed

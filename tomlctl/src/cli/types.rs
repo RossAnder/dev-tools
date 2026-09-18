@@ -1793,7 +1793,8 @@ pub(crate) enum ItemsOp {
     /// item whose `enumeration` is `complete`.
     Clusters {
         file: PathBuf,
-        /// Item ids to cluster. Omit for every `open` item.
+        /// Item ids to cluster. Omit for every item not at a terminal
+        /// status (an absent status reads as `open`).
         #[arg(long, value_delimiter = ',', value_name = "R1,R7,...")]
         ids: Vec<String>,
         #[command(flatten)]

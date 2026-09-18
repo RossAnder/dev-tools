@@ -30,6 +30,31 @@ const ENUM_VALUES: &[(&str, &[&str])] = &[
     ("ty", &["str", "int", "float", "bool", "date", "datetime"]), // ScalarType (clap id is "ty" — see Cmd::Set)
     ("tier", &["A", "B", "C"]),                                   // DupTier
     ("error_format", &["text", "json"]),                          // ErrorFormat
+    (
+        "command",
+        &[
+            "review",
+            "optimise",
+            "plan-new",
+            "plan-update",
+            "implement",
+            "review-plan",
+            "tdd",
+            "review-apply",
+            "optimise-apply",
+            "test-bootstrap",
+        ],
+    ),
+    (
+        "require_artifact",
+        &[
+            "review_ledger",
+            "optimise_findings",
+            "execution_record",
+            "plan_review_findings",
+            "tasks",
+        ],
+    ),
 ];
 
 pub(crate) fn build_agent_context() -> JsonValue {

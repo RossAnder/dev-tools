@@ -213,7 +213,7 @@ tier C is file-scoped; use --tier A or --tier B with --across
 `tomlctl items orphans <ledger>` walks every item and emits a JSON array of orphan records, one per detected class:
 
 - `missing-file` — the item's `file` path does not exist under the repo root.
-- `symbol-missing` — `file` exists but `symbol` is no longer present in it as a whole word (ASCII word-boundary match).
+- `symbol-missing` — `file` exists but `symbol` is no longer present in it as a whole word (ASCII word-boundary match; a boundary is demanded only at an end of the symbol that is itself a word character, so `bar()` matches a bare call site).
 - `io-error` — `file` exists but cannot be read.
 - `outside-repo` — `file` escapes the repo root: an absolute path not under it (another drive, a UNC share or a device path included), a rootless (`\foo`) or drive-relative (`C:foo`) spelling, or any `..` component — refused even where it would resolve back inside the root. Decided lexically before the path is touched, so nothing outside the root is read and every other class names an in-root path.
 - `dangling-dep` — one or more `depends_on = [...]` ids are not present in the ledger; the record lists them under `dangling_deps`.
@@ -270,10 +270,10 @@ tomlctl sweep -e '(?-u:\bold_name\b)' -e 'OldName::' --exclude 'vendor/**' --max
 the line, and a line matching several patterns or several times is one hit. `truncated` flips
 to `true` at `--max-hits` distinct sites rather than erroring. `coverage_complete` is `true`
 only when every `skipped` count is zero — a skipped file can hide a site, so a binary skip
-counts. The `unenumerated: 1` above is real: a dangling directory symlink
-(`.github/skills/flow-contract-task-visibility` today) makes `git ls-files` warn and continue
-at exit 0, and that warning is surfaced as one unenumerated entry and clears
-`coverage_complete`.
+counts. The `unenumerated: 1` above is a directory git could not open — on Windows a
+junction whose target is gone, on Unix a directory without read permission (a dangling
+symlink is a leaf there and never warns) — which makes `git ls-files` warn and continue at
+exit 0; that warning is surfaced as one unenumerated entry and clears `coverage_complete`.
 
 What the `git ls-files` basis does and does not cover:
 
@@ -449,6 +449,6 @@ cluster shares one edit shape stays the orchestrator's judgement.
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--ids` | comma-separated ids | Items to cluster. Omit for every `open` item. | every `open` item |
+| `--ids` | comma-separated ids | Items to cluster. Omit for every item not at a terminal status — an absent or unrecognised status reads as `open`, as `items sweep --update` reads it. | every open item |
 
 Read-only: carries `--verify-integrity` and `--strict-read` and no write flag.

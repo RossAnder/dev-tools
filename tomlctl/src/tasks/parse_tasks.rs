@@ -444,6 +444,12 @@ fn parse_depends(lines: &[String]) -> (Vec<u32>, String) {
                 needs.push(id);
                 note.push(unwrap_note(rest.trim()));
             }
+            // `1-15` declares fifteen edges; reading it as prose would drop
+            // every one and hand Kahn a task with no dependencies.
+            Err(_) if let Some((lo, hi)) = parse_range(head) => {
+                needs.extend(lo..=hi);
+                note.push(unwrap_note(rest.trim()));
+            }
             // `none (rationale)` states no edge, and the rationale is a note
             // like any other.
             Err(_) if is_empty_marker(head) => note.push(unwrap_note(rest.trim())),
@@ -454,6 +460,16 @@ fn parse_depends(lines: &[String]) -> (Vec<u32>, String) {
     needs.dedup();
     note.retain(|part| !part.is_empty());
     (needs, note.join(", "))
+}
+
+/// `lo-hi` (hyphen or en dash) with `lo <= hi`; anything else is not a range.
+fn parse_range(token: &str) -> Option<(u32, u32)> {
+    let (lo, hi) = token.split_once(['-', '–'])?;
+    let (lo, hi) = (
+        lo.trim().parse::<u32>().ok()?,
+        hi.trim().parse::<u32>().ok()?,
+    );
+    (lo <= hi).then_some((lo, hi))
 }
 
 /// A note's own outer parentheses, dropped so the renderer can re-add them.
@@ -848,6 +864,19 @@ cargo test
             task.deps_note,
             "pre-flight probe (the probe file must exist)"
         );
+    }
+
+    #[test]
+    fn a_range_is_every_id_it_spans() {
+        let body = "### 16. Wire the whole round [L]\n\
+                    - **Depends on**: 1-3 (the foundations), 7–8, 12\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(task.needs, vec![1, 2, 3, 7, 8, 12]);
+        assert_eq!(task.deps_note, "the foundations");
+        let body = "### 2. Inverted [S]\n- **Depends on**: 5-3\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert!(task.needs.is_empty(), "{:?}", task.needs);
+        assert_eq!(task.deps_note, "5-3");
     }
 
     #[test]

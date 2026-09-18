@@ -4,6 +4,10 @@
 **Created**: 2026-09-07
 **Status**: Draft
 
+> **Historical note:** This completed plan records parser design decisions at the
+> time it was written. Later parser fixes changed parenthetical and remainder
+> handling; consult the current parser and tests for live behavior.
+
 ## Context
 
 A plan's `## Tasks` section is the largest single thing an orchestrator loads: 50–86 KB (roughly 12–22k tokens) for the 23–68-task plans in the reportdesignkit corpus, and 60 KB for the largest dev-tools plan. Only ~2 KB of that is the DAG (ids, titles, files, edges); the rest is per-task prose that only the agent executing that task needs. Today `/implement` re-derives the frontier, file-claim intersections and checkpoint closures in prose every run, `/review-plan` re-checks them by hand, and planners hand-widen marker edges so that "closure of marker = milestone group" (`studio-polish.md` widens 12→3,8,9,11 and 27→19,23,24,25,26 purely to make the cut rule hold). `docs/ideas/plan-flow-mechanical-verification.md` measured that 36% of one executed plan's tasks sat in no marker's closure and were committed only by the final train.

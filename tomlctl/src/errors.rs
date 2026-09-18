@@ -45,11 +45,7 @@ pub(crate) enum ErrorKind {
     Validation,
     /// The target file does not exist on disk at the path the caller passed.
     NotFound,
-    /// Fallback for any untagged error. `--error-format json` emits this when
-    /// no `TaggedError` is found in the `anyhow` cause chain. The variant is
-    /// never constructed directly — the JSON formatter defaults to the
-    /// `"other"` string when the downcast returns `None`.
-    #[allow(dead_code)]
+    /// An external command or other unclassified operation failed.
     Other,
 }
 

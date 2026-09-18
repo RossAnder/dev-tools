@@ -46,7 +46,7 @@ pub(crate) fn dispatch(
     // leave one behind.
     if !path.exists() {
         return if dry_run {
-            emit_preview(&[], 0)
+            emit_preview(&[], 0, &path)
         } else {
             emit_result(&path, 0, 0)
         };
@@ -55,7 +55,7 @@ pub(crate) fn dispatch(
     if dry_run {
         let opts = dry_run_read_opts(integrity.verify_integrity);
         let plan = read_doc(&path, opts, |doc| plan_compaction(doc, today, threshold))?;
-        return emit_preview(&plan.compacted, plan.remaining);
+        return emit_preview(&plan.compacted, plan.remaining, &path);
     }
 
     let opts = write_integrity_opts(&integrity);
@@ -207,10 +207,12 @@ fn emit_result(path: &Path, compacted: usize, remaining: usize) -> Result<()> {
     }))
 }
 
-fn emit_preview(compacted: &[String], remaining: usize) -> Result<()> {
+fn emit_preview(compacted: &[String], remaining: usize, path: &Path) -> Result<()> {
+    let repo = repo_or_cwd_root()?;
     print_json_compact(&json!({
         "ok": true,
         "dry_run": true,
+        "path": relativise(&repo, path),
         "would_change": {
             "kind": "compact",
             "compacted": compacted.len(),

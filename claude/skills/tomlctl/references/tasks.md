@@ -42,6 +42,13 @@ carries the read bundle and no write flag has a hook on it. Every verb also take
 `--error-format text|json`; see [flow.md](flow.md#error-format---error-format-json) for the
 JSON envelope and its `kind` taxonomy.
 
+## Output fields
+
+The JSON examples below are representative envelopes, not closed schemas. New
+fields may be added without changing existing fields; callers should select
+the fields they need and use `ok` or the command's documented count/status
+fields for control flow.
+
 ## `tasks import-plan`
 
 Parses a plan's `## Tasks`, `## Execution Policy` and `## Dependency Graph` sections and

@@ -308,7 +308,7 @@ pub fn store_path(root: &Path) -> PathBuf {
 /// Flow slug every task-store fixture is staged under. It satisfies the
 /// `--slug` regex, so `tasks … --slug TASKS_SLUG` resolves to the file
 /// [`seed_tasks`] writes.
-pub const TASKS_SLUG: &str = "whimsical-hugging-puppy";
+pub const TASKS_SLUG: &str = "fixture-tasks-flow";
 
 /// The sibling `flow init` leaves beside a store, carrying the `plan_path`
 /// every task-store fixture records. Without it `--slug` refuses `import-plan`

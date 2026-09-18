@@ -29,7 +29,7 @@ use crate::anchor::{self, Anchor, AnchorAt};
 use crate::convert::str_field;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{canonical_key, item_id, items_array, join_under, relativise_under};
-use crate::items::{MutationPlan, compute_apply_mutation};
+use crate::items::{MutationPlan, compute_apply_mutation, is_terminal_status};
 use crate::sweep::{self, ScannedFile, SweepOptions, SweepReport};
 
 struct Selected<'a> {
@@ -112,10 +112,11 @@ fn indentation(line: &[u8]) -> usize {
 
 /// `}`, `)` or `]`, optionally followed by `;` or `,`.
 fn is_closer(trimmed: &[u8]) -> bool {
-    matches!(
-        trimmed,
-        [b'}' | b')' | b']'] | [b'}' | b')' | b']', b';' | b',']
-    )
+    let brackets = trimmed
+        .iter()
+        .take_while(|b| matches!(b, b'}' | b')' | b']'))
+        .count();
+    brackets > 0 && matches!(&trimmed[brackets..], [] | [b';'] | [b','])
 }
 
 fn string_array<'a>(tbl: &'a toml::Table, key: &str) -> Vec<&'a str> {
@@ -174,15 +175,6 @@ fn reasoned(anchor: &str, reason: &'static str) -> AnchorReason {
         anchor: anchor.to_string(),
         reason,
     }
-}
-
-/// A disposition `--update` never rewrites; anything else, an absent status
-/// included, reads as `open`.
-fn is_terminal(status: &str) -> bool {
-    matches!(
-        status,
-        "fixed" | "wontfix" | "verified-clean" | "deferred" | "applied" | "wontapply"
-    )
 }
 
 /// Why an anchor's file gave the engine no say on it. A scanned file only
@@ -477,7 +469,7 @@ pub(crate) fn update_plan(doc: &TomlValue, outcome: &SweepOutcome) -> Result<Mut
         .iter()
         .filter(|item| {
             let status = current.get(item.id.as_str()).map_or("", |(s, _)| s);
-            !is_terminal(status)
+            !is_terminal_status(status)
         })
         .collect();
 
@@ -1045,6 +1037,10 @@ sweep = ["needle"]
         assert_eq!(block_end(&scanned(b"x\n\n  a\n  b"), 1), 4);
         assert_eq!(block_end(&scanned(b"# H\ntext\n"), 1), 1);
         assert_eq!(block_end(&scanned(b"\tx\n\t\ty\n\tz\n"), 1), 2);
+        // A run of closers with an optional terminator is still a closer.
+        assert_eq!(block_end(&scanned(b"f({\n  a\n});\ng\n"), 1), 3);
+        assert_eq!(block_end(&scanned(b"f([\n  a\n]),\ng\n"), 1), 3);
+        assert_eq!(block_end(&scanned(b"f({\n  a\n}) + 1\ng\n"), 1), 2);
     }
 
     #[test]

@@ -582,7 +582,7 @@ fn a_store_past_the_node_cap_fails_check_with_an_error_class_finding() {
 // integrity
 // ---------------------------------------------------------------------------
 
-/// Every read verb threads `--verify-integrity` through its own load, so a
+/// Every graph read verb threads `--verify-integrity` through its own load, so a
 /// passing verified read cannot tell a plumbed verb from one that drops the
 /// flag on the floor. Only a sidecar that no longer covers the store separates
 /// them — and the contract is that such a read errors, never repairs.

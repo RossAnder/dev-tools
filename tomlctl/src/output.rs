@@ -32,7 +32,7 @@ pub(crate) fn print_json(v: &JsonValue) -> Result<()> {
 /// a single compact JSON object:
 ///
 /// ```text
-/// {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":N,"updated":N,"removed":N,"skipped":N,"ids":[...]}}
+/// {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":N,"updated":N,"removed":N,"skipped":N,"ids":[...]},"...": "..."}
 /// ```
 ///
 /// `ids` is the concatenation `[...added, ...updated, ...removed]` in
@@ -48,7 +48,7 @@ pub(crate) fn print_json(v: &JsonValue) -> Result<()> {
 /// carry `kind:"scalar"`. It is additive to the rest of the envelope:
 /// consumers reading `added`/`updated`/`removed`/`skipped`/`ids` are
 /// unaffected by it.
-/// Commands may add their own top-level fields to this common envelope.
+/// The common keys above are stable; commands may add further top-level fields.
 pub(crate) fn build_dry_run_plan_envelope(plan: &MutationPlan) -> JsonValue {
     serde_json::json!({
         "ok": true,

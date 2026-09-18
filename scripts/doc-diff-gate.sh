@@ -107,7 +107,7 @@ fi
 # through -v: gawk processes escapes in a -v value, so `\.` arrives as a plain
 # `.` — it warns on stderr and then matches ANY character, which would sweep
 # `xyrs` into the gated set. The bracket form survives both -v and grep -E.
-SRC_RE='[.](rs|ts|tsx|vue|cs|js|mjs|cjs|svelte|astro)$'
+SRC_RE='[.](rs|ts|tsx|vue|cs|js|mjs|cjs|svelte|astro|sh)$'
 MD_RE='[.]md$'
 
 # Paths exempt from every check. A reviewed constant: adding a line here is a

@@ -82,7 +82,23 @@ pub(crate) fn refuse(err: anyhow::Error) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, err.to_string())
 }
 
-/// The build a read verb runs when a cycle leaves it no answer to give,
+pub(crate) fn cycle_error(graph: &Graph<'_>, subject: &str) -> Option<anyhow::Error> {
+    let cycle = graph.cycle_members();
+    if cycle.is_empty() {
+        return None;
+    }
+    let members: Vec<String> = cycle.iter().map(u32::to_string).collect();
+    Some(tagged_err(
+        ErrorKind::Validation,
+        None,
+        format!(
+            "refusing {subject}: the dependency graph would contain a cycle through tasks {}",
+            members.join(", ")
+        ),
+    ))
+}
+
+/// The builder a read verb runs when a cycle leaves it no answer to give,
 /// `subject` naming what is refused — shared so the verbs cannot drift apart on
 /// what a cycle means.
 pub(crate) fn build_or_refuse<'a>(nodes: &'a [Node], subject: &str) -> Result<Graph<'a>> {

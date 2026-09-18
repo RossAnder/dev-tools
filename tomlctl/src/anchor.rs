@@ -60,9 +60,24 @@ pub(crate) fn files_of<'a>(anchors: impl Iterator<Item = &'a Anchor>) -> BTreeSe
 /// Whole-word presence of `symbol` in a file's bytes: a bare substring test
 /// reports a renamed `id` as still present wherever `valid` or `paid`
 /// survives. `(?-u:\b)` pins ASCII boundaries regardless of crate feature
-/// flags. `None` only when the escaped pattern fails to compile.
+/// flags, and is asked for only at an end that has a word character to
+/// bound — `bar()` ends in `)`, and a boundary after it would demand a word
+/// character next, which nothing at a call site supplies. `None` only when
+/// the escaped pattern fails to compile.
 pub(crate) fn symbol_regex(symbol: &str) -> Option<regex::bytes::Regex> {
-    let pattern = format!(r"(?-u:\b){}(?-u:\b)", regex::escape(symbol));
+    let bytes = symbol.as_bytes();
+    let is_word = |b: &u8| b.is_ascii_alphanumeric() || *b == b'_';
+    let lead = if bytes.first().is_some_and(is_word) {
+        r"(?-u:\b)"
+    } else {
+        ""
+    };
+    let trail = if bytes.last().is_some_and(is_word) {
+        r"(?-u:\b)"
+    } else {
+        ""
+    };
+    let pattern = format!("{lead}{}{trail}", regex::escape(symbol));
     regex::bytes::Regex::new(&pattern).ok()
 }
 
@@ -135,6 +150,23 @@ mod tests {
         let re = symbol_regex("Foo::bar").unwrap();
         assert!(re.is_match(b"Foo::bar();"));
         assert!(!re.is_match(b"Foo::barn();"));
+    }
+
+    /// A boundary is demanded only where the symbol has a word character to
+    /// bound: `bar()` ends in `)` and must still match a bare call site, while
+    /// its leading `b` keeps `foobar()` out.
+    #[test]
+    fn symbol_regex_bounds_only_word_character_ends() {
+        let re = symbol_regex("bar()").unwrap();
+        assert!(re.is_match(b"bar()\n"));
+        assert!(re.is_match(b"x = bar();"));
+        assert!(!re.is_match(b"foobar();"));
+        let re = symbol_regex("#[test]").unwrap();
+        assert!(re.is_match(b"#[test]\nfn x() {}"));
+        assert!(re.is_match(b"    #[test]"));
+        let re = symbol_regex("$x").unwrap();
+        assert!(re.is_match(b"let y = $x;"));
+        assert!(!re.is_match(b"$xy"));
     }
 
     #[test]

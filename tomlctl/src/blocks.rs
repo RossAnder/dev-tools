@@ -82,18 +82,18 @@ pub(crate) fn extract_block(contents: &str, name: &str) -> Result<Vec<u8>, SpanD
         let relaxed = line.strip_suffix('\r').unwrap_or(line);
         relaxed_start |= relaxed == start;
         relaxed_end |= relaxed == end;
-        if line == start {
+        if relaxed == start && !line.ends_with('\r') {
             in_block = true;
             saw_start = true;
             continue;
         }
-        if line == end {
+        if relaxed == end && !line.ends_with('\r') {
             in_block = false;
             saw_end = true;
             continue;
         }
         if in_block {
-            out.extend_from_slice(line.as_bytes());
+            out.extend_from_slice(relaxed.as_bytes());
             out.push(b'\n');
         }
     }
@@ -256,8 +256,8 @@ pub(crate) fn blocks_verify(files: &[PathBuf], blocks: &[String]) -> Result<Bloc
             all_ok = false;
         }
 
+        block_obj.insert("ok".into(), JsonValue::Bool(!drift && missing.is_empty()));
         if drift {
-            block_obj.insert("ok".into(), JsonValue::Bool(false));
             let drift_arr: Vec<JsonValue> = present
                 .iter()
                 .map(|(f, h)| {

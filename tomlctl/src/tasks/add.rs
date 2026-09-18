@@ -130,17 +130,8 @@ fn append(store: &mut Store, tasks: Vec<NewTask>) -> Result<Vec<AddOutcome>> {
     let graph = Graph::build(&nodes)
         .map_err(|err| tagged_err(ErrorKind::Validation, None, err.to_string()))?;
 
-    let cycle = graph.cycle_members();
-    if !cycle.is_empty() {
-        let members: Vec<String> = cycle.iter().map(u32::to_string).collect();
-        return Err(tagged_err(
-            ErrorKind::Validation,
-            None,
-            format!(
-                "refusing to add: the dependency graph would contain a cycle through tasks {}",
-                members.join(", ")
-            ),
-        ));
+    if let Some(err) = super::graph::cycle_error(&graph, "to add") {
+        return Err(err);
     }
 
     let rounds = graph.kahn_rounds();

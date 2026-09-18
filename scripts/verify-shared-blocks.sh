@@ -80,6 +80,7 @@ extract_block() {
   local file=$1 name=$2
   "$AWK" -v start="<!-- SHARED-BLOCK:${name} START -->" \
       -v end="<!-- SHARED-BLOCK:${name} END -->" '
+    { sub(/\r$/, "", $0) }
     $0 == start { in_block=1; next }
     $0 == end   { in_block=0; next }
     in_block    { print }
@@ -91,8 +92,8 @@ extract_block() {
 # invocation dies 127 and every carrier is reported as missing its START marker,
 # blaming the files for an absent binary. The test is whole-line equality, the
 # extractor's own semantics, with a single deliberate relaxation — a trailing CR
-# is stripped here and NOT in extract_block, so a CRLF carrier clears this guard
-# and trips the empty-extraction guard below, which names line endings instead.
+# is stripped here and in extract_block, so CRLF carriers use the same marker
+# and content bytes as LF carriers.
 has_marker() {
   local file=$1 marker=$2
   "$AWK" -v m="$marker" '
@@ -145,10 +146,7 @@ while IFS=$'\t' read -r bname bfile; do
   fi
 
   # Capture the block before hashing: the marker guards above tolerate a trailing
-  # CR, which the extraction awk does not — it compares whole lines for equality
-  # against the marker verbatim. Under a CR-preserving awk every block
-  # extracts to zero lines, every side hashes to the empty-input digest, and the
-  # comparison below would report parity OK without having compared anything.
+  # CR, which the extraction awk removes before comparing and hashing.
   # The trailing 'x' preserves the block's own trailing newlines through the
   # command substitution so the hashed bytes are unchanged.
   block=$(extract_block "$bfile" "$bname"; printf 'x')

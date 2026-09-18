@@ -19,8 +19,10 @@ pub(crate) struct Enumeration {
     /// pointing out of the tree.
     pub(crate) skipped_outside: usize,
     /// Non-empty stderr lines git emitted while still exiting 0. Git warns and
-    /// continues past a subtree it cannot open (a dangling directory symlink),
-    /// so the listing is silently short whenever this is non-empty.
+    /// continues past a subtree it cannot open — a directory without read
+    /// permission, or on Windows a junction whose target is gone — so the
+    /// listing is silently short whenever this is non-empty. A dangling
+    /// symlink is a leaf to git and never warns.
     pub(crate) warnings: Vec<String>,
 }
 
@@ -168,6 +170,42 @@ mod tests {
             );
             assert_eq!(e.skipped_outside, 0);
             assert!(e.warnings.is_empty(), "{:?}", e.warnings);
+        });
+    }
+
+    /// Git walks untracked directories itself, so one it cannot open is a
+    /// warning at exit 0 and a silently shorter listing. Root can open
+    /// anything, so the case is skipped where the permission bits do not bite.
+    #[cfg(unix)]
+    #[test]
+    fn an_unopenable_directory_is_a_warning_not_an_error() {
+        use std::os::unix::fs::PermissionsExt;
+        if !git_available() {
+            return;
+        }
+        with_root(|root| {
+            seed_repo(root);
+            let sealed = root.join("sealed");
+            fs::create_dir(&sealed).unwrap();
+            fs::write(sealed.join("hidden.rs"), "fn c() {}\n").unwrap();
+            fs::set_permissions(&sealed, fs::Permissions::from_mode(0o000)).unwrap();
+            let enumerated = if fs::read_dir(&sealed).is_ok() {
+                None
+            } else {
+                Some(tracked_files(root, &[]))
+            };
+            fs::set_permissions(&sealed, fs::Permissions::from_mode(0o755)).unwrap();
+            let Some(e) = enumerated else {
+                return;
+            };
+            let e = e.unwrap();
+            assert_eq!(e.warnings.len(), 1, "{:?}", e.warnings);
+            assert!(e.warnings[0].contains("sealed"), "{:?}", e.warnings);
+            assert!(
+                !e.files.iter().any(|f| f.starts_with("sealed/")),
+                "{:?}",
+                e.files
+            );
         });
     }
 

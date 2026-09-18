@@ -1697,6 +1697,16 @@ pub(crate) fn compute_array_append_mutation(
 /// missing-disposition-field case. It is intentionally additive — no
 /// existing call site is wired through it yet; callers opt in. The
 /// `#[allow(dead_code)]` annotations match the pattern in `errors.rs`
+/// A status that closes an item: the schema's dispositions other than `open`.
+/// Anything else — an absent status included — reads as `open`, which is the
+/// schema's fail-soft rule and the one selection every ledger verb shares.
+pub(crate) fn is_terminal_status(status: &str) -> bool {
+    matches!(
+        status,
+        "fixed" | "wontfix" | "verified-clean" | "deferred" | "applied" | "wontapply"
+    )
+}
+
 /// for `ErrorKind` variants reserved for future wiring.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]

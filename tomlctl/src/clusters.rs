@@ -12,6 +12,7 @@ use crate::anchor;
 use crate::convert::str_field;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{canonical_key, item_id, items_array};
+use crate::items::is_terminal_status;
 use crate::tasks::{cycle_within, layered_kahn};
 use crate::union_find::{components, union};
 
@@ -188,9 +189,10 @@ pub(crate) fn items_clusters(doc: &TomlValue, root: &Path, ids: &[String]) -> Re
     }))
 }
 
-/// The named ids, or every `open` row when none are named — in ledger order
-/// either way. A row without an id cannot be selected or reported, so it is
-/// skipped.
+/// The named ids, or every row that is not closed when none are named — in
+/// ledger order either way; an absent status reads as `open`, as it does for
+/// `items sweep --update`. A row without an id cannot be selected or
+/// reported, so it is skipped.
 fn select<'a>(items: &'a [TomlValue], ids: &[String]) -> Result<Vec<(&'a str, &'a toml::Table)>> {
     let mut wanted: HashSet<&str> = ids.iter().map(String::as_str).collect();
     let mut selected = Vec::new();
@@ -199,7 +201,7 @@ fn select<'a>(items: &'a [TomlValue], ids: &[String]) -> Result<Vec<(&'a str, &'
             continue;
         };
         let take = if ids.is_empty() {
-            str_field(tbl, "status") == "open"
+            !is_terminal_status(str_field(tbl, "status"))
         } else {
             wanted.remove(id)
         };
@@ -414,6 +416,7 @@ file = "src/b.rs"
 
 [[items]]
 id = "R3"
+status = "deferred"
 file = "src/c.rs"
 "#,
             &[],
@@ -427,11 +430,38 @@ file = "src/c.rs"
                 "id": "R1",
                 "unselected": [
                     { "id": "R2", "status": "fixed" },
-                    { "id": "R3", "status": "open" },
+                    { "id": "R3", "status": "deferred" },
                 ],
                 "unknown": ["R9"],
             }])
         );
+    }
+
+    /// The bare selection follows the schema's fail-soft rule — an absent or
+    /// unrecognised status is `open` — so it agrees with the status it reports
+    /// for an unselected dependency and with `items sweep --update`.
+    #[test]
+    fn the_bare_selection_reads_an_absent_or_unknown_status_as_open() {
+        let out = run(
+            r#"
+[[items]]
+id = "R1"
+file = "src/a.rs"
+
+[[items]]
+id = "R2"
+status = "triaged"
+file = "src/b.rs"
+
+[[items]]
+id = "R3"
+status = "wontfix"
+file = "src/c.rs"
+"#,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(item_ids(&out), [["R1"], ["R2"]]);
     }
 
     #[test]

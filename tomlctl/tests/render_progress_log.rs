@@ -363,6 +363,28 @@ fn render_falls_back_to_titlecased_slug_when_plan_absent() {
     );
 }
 
+#[test]
+fn render_falls_back_to_titlecased_slug_when_plan_path_escapes_root() {
+    let (_dir, root) = stage_flow(FIXTURE_RECORD);
+    fs::write(
+        root.join(".claude")
+            .join("flows")
+            .join(SLUG)
+            .join("context.toml"),
+        FIXTURE_CONTEXT.replace(
+            "plan_path = \"docs/plans/render-fixture-plan.md\"",
+            "plan_path = \"../outside.md\"",
+        ),
+    )
+    .unwrap();
+
+    let got = String::from_utf8(render_stdout(&root, &[])).unwrap();
+    assert!(
+        got.contains("# Harness Progressive Disclosure Wave 2 \u{2014} Progress Log\n"),
+        "an escaped plan path must use the title-cased slug fallback, got:\n{got}"
+    );
+}
+
 /// A FORKED supersession chain — two deviation entries that re-point at the
 /// SAME predecessor — collapses to a SINGLE rendered head (the latest by
 /// `(date, id)`), not both. Drives `--stdout` against a hand-built record so the

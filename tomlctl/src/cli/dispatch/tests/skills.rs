@@ -150,12 +150,29 @@ fn run_shell_gate(repo_root: &Path, cwd: &Path, manifest: Option<&str>) -> Resul
     }
     // MSYS bash reads a backslash as an escape, so hand it the slash form.
     let script = script_path.to_string_lossy().replace('\\', "/");
-    // `bash` is off PATH for a Windows-side cargo even where Git Bash is
-    // installed, so fall back to where Git for Windows puts it.
-    let candidates = ["bash", r"C:\Program Files\Git\bin\bash.exe"];
+    // `bash` is often off PATH for Windows-side cargo. Prefer an explicit
+    // override, then discover Git for Windows from the `git` executable rather
+    // than assuming its default installation directory.
+    let mut candidates = vec!["bash".to_string()];
+    if let Ok(output) = Command::new("git").arg("--exec-path").output()
+        && output.status.success()
+    {
+        let exec = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+        if let Some(root) = exec
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::parent)
+            .and_then(Path::parent)
+        {
+            candidates.push(root.join("bin").join("bash.exe").display().to_string());
+        }
+    }
+    if let Ok(bash) = std::env::var("BASH") {
+        candidates.insert(0, bash);
+    }
     let mut last = String::new();
     for exe in candidates {
-        let mut cmd = Command::new(exe);
+        let mut cmd = Command::new(&exe);
         cmd.arg(&script).current_dir(cwd);
         if let Some(m) = manifest {
             cmd.env("MANIFEST", m);

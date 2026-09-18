@@ -56,12 +56,12 @@ For each item:
   `resolved = <today, ISO 8601>`, `resolution = "<short description + commit SHA if it landed>"`.
   Partial applies write `resolution = "partial: <done> / pending: <not done>"` so the ledger captures
   the split explicitly.
-- **Applied pattern item** (carries `sweep`): persist the Step 2 re-sweep's growth and drop its
-  `gone` anchors with `tomlctl items sweep <ledger> --ids <ids> --update`, ahead of the two-call
-  write below. `--update` refuses while any swept item is `truncated` or holds an `unverified`
-  anchor; then drop the `gone` anchors by hand with
-  `tomlctl items update <ledger> <id> --json '{"instances": [...]}'`, listing the `kept` anchors
-  and `new` sites.
+- **Applied pattern item** (carries `sweep`): when the Step 2 re-sweep found `new` sites, append
+  them to `instances` with `tomlctl items update <ledger> <id> --json '{"instances": [...]}'`
+  (the recorded anchors followed by the `new` sites) ahead of the two-call write below, so the
+  fixed record names every site the fix touched. Never `items sweep --update` here: it drops
+  `gone` anchors, and on an item about to close those are the record of what was fixed — the same
+  reason `--update` skips terminal items.
 - **No-change** (agent reported the code already matches, or the orchestrator pre-transitioned in
   Step 2): `status = <NO-CHANGE>` with the audit note suffixed `— audited during <CMD> <today>`.
   **Preserve the item's original `category`** — never reassign `category` to a disposition value.
@@ -81,7 +81,7 @@ BEFORE invoking `tomlctl items apply`, grep the serialised payload for `AKIA`, `
 manual inspection — the ledger is a committed artefact and must not carry credentials. This is
 distinct from any source-diff secret scan: that scans code, this scans the ledger-write payload.
 
-**Two-call write pattern** (both required; omitting either leaves the ledger inconsistent):
+**Two-call write pattern** (both required; omitting either leaves the ledger inconsistent — the pattern-item `instances` append above is a third, conditional call that precedes them):
 
 ```bash
 printf '%s' "$OPS_JSON" | tomlctl items apply <ledger> --ops -

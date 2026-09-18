@@ -26,7 +26,7 @@ fn make_root() -> (tempfile::TempDir, PathBuf) {
 }
 
 /// Run `tomlctl flow list <args...>` against the given tempdir root and
-/// parse the stdout as JSON. Asserts success. Returns the parsed array.
+/// parse the stdout as JSON. Asserts success. Returns the `flows` array.
 fn run_list(root: &Path, args: &[&str]) -> Vec<JsonValue> {
     let mut cmd = Command::cargo_bin("tomlctl").unwrap();
     cmd.env("TOMLCTL_ROOT", root)
@@ -40,8 +40,9 @@ fn run_list(root: &Path, args: &[&str]) -> Vec<JsonValue> {
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
     let v: JsonValue = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("stdout must be JSON; err={e}; stdout:\n{stdout}"));
-    v.as_array()
-        .unwrap_or_else(|| panic!("stdout must be a JSON array; got: {stdout}"))
+    v["flows"]
+        .as_array()
+        .unwrap_or_else(|| panic!("stdout must carry a `flows` array; got: {stdout}"))
         .clone()
 }
 
@@ -62,9 +63,9 @@ fn run_list_capture(root: &Path, args: &[&str]) -> (Vec<JsonValue>, String) {
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     let v: JsonValue = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("stdout must be JSON; err={e}; stdout:\n{stdout}"));
-    let arr = v
+    let arr = v["flows"]
         .as_array()
-        .unwrap_or_else(|| panic!("stdout must be a JSON array; got: {stdout}"))
+        .unwrap_or_else(|| panic!("stdout must carry a `flows` array; got: {stdout}"))
         .clone();
     (arr, stderr)
 }

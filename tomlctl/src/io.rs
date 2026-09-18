@@ -332,11 +332,12 @@ pub(crate) fn read_ndjson_source(src: &str) -> Result<String> {
     if src == "-" {
         read_json_arg("-")
     } else {
-        let path = src
-            .strip_prefix('@')
-            .filter(|p| !p.is_empty())
-            .unwrap_or(src);
-        std::fs::read_to_string(path).with_context(|| format!("reading NDJSON file `{}`", src))
+        let path = at_file_path(src).unwrap_or(src);
+        if src.starts_with('@') {
+            read_at_file(path)
+        } else {
+            std::fs::read_to_string(path).with_context(|| format!("reading NDJSON file `{}`", src))
+        }
     }
 }
 
@@ -1683,8 +1684,8 @@ pub(crate) fn join_under(root: &Path, rel: &str) -> Option<PathBuf> {
     ) {
         return absolute_under(root, rel);
     }
-    // Pushed a component at a time: under a canonical root's verbatim
-    // `\\?\` prefix `/` is not a separator, so `root.join("a/b.rs")` has no leaf.
+    // Pushed a component at a time so `.` drops and a `..` or prefix part is
+    // refused before it can reach a join that would normalise it away.
     let mut joined = root.to_path_buf();
     for part in rel
         .split(['/', '\\'])

@@ -202,4 +202,9 @@ A block that lost a file to any of those three carries an optional `defects` arr
  "missing":["claude/agents/implement-lite.md"]}
 ```
 
-`reason` is `missing-marker`, `marker-trailing-cr` (both markers match only once a further trailing `\r` is stripped, so the extractor finds nothing between markers it never matched) or `extracted-empty`. The key is omitted entirely when every listed file yields a span, so it appears only in a failing report and the top-level `{"ok":…,"blocks":[…]}` shape is unchanged. Does NOT accept `--verify-integrity` / `--allow-outside` / `--no-write-integrity` / `--strict-integrity` (markdown has no sidecar pair; `blocks verify` never writes).
+`reason` is `missing-marker`, `marker-trailing-cr` (a marker still has a
+trailing `\r` after CRLF normalisation) or `extracted-empty`. Each block result
+has an `ok` boolean: it is true only when every listed carrier has a non-empty
+span and all surviving hashes agree. The key is omitted from neither success nor
+failure results, so callers can inspect one block without inferring its status
+from the top-level `ok`. Does NOT accept `--verify-integrity` / `--allow-outside` / `--no-write-integrity` / `--strict-integrity` (markdown has no sidecar pair; `blocks verify` never writes).

@@ -400,19 +400,7 @@ fn reject_broken_graph(
     let graph = Graph::build(&nodes)
         .map_err(|err| tagged_err(ErrorKind::Validation, None, err.to_string()))?;
 
-    let cycle = graph.cycle_members();
-    if cycle.is_empty() {
-        return Ok(());
-    }
-    let members: Vec<String> = cycle.iter().map(u32::to_string).collect();
-    Err(tagged_err(
-        ErrorKind::Validation,
-        None,
-        format!(
-            "refusing to update: the dependency graph would contain a cycle through tasks {}",
-            members.join(", ")
-        ),
-    ))
+    super::graph::cycle_error(&graph, "to update").map_or(Ok(()), Err)
 }
 
 fn retitle_err(id: u32, derived: &str) -> anyhow::Error {
