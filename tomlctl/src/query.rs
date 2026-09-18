@@ -77,30 +77,66 @@ fn full_item_toml_to_json(v: &TomlValue) -> JsonValue {
     toml_to_json(v)
 }
 
-/// Per-compile memory cap for user-supplied regex patterns. Chosen to
-/// bound a pathological pattern's NFA compile / DFA cache at ~1 MiB each,
-/// well above anything a ledger field regex would realistically need.
-const REGEX_COMPILE_SIZE_LIMIT: usize = 1 << 20;
-const REGEX_DFA_SIZE_LIMIT: usize = 1 << 20;
+/// Limits for user-supplied regex patterns. `size_limit` bounds the
+/// compiled NFA and is the real safety cap; `dfa_size_limit` is the
+/// lazy-DFA cache capacity, which a long pattern can thrash but not
+/// exceed, so pattern length is capped separately.
+pub(crate) const REGEX_COMPILE_SIZE_LIMIT: usize = 1 << 20;
+pub(crate) const REGEX_DFA_SIZE_LIMIT: usize = 1 << 20;
+pub(crate) const MAX_USER_PATTERN_LEN: usize = 512;
 
-/// Compile a user-supplied regex pattern with memory caps applied so an
-/// adversarial pattern can't consume unbounded memory during compilation
-/// or DFA construction. Factored out so both the per-predicate hoist and
-/// tests can share one configuration.
-fn compile_user_regex(pattern: &str) -> Result<Regex> {
+const REGEX_UNICODE_HINT: &str =
+    "Unicode classes are unavailable in this build; write ASCII forms such as (?-u:\\w)";
+
+fn check_user_pattern_len(pattern: &str) -> Result<()> {
+    if pattern.len() > MAX_USER_PATTERN_LEN {
+        bail!(
+            "invalid regex: pattern is {} bytes, over the {}-byte cap",
+            pattern.len(),
+            MAX_USER_PATTERN_LEN
+        );
+    }
+    Ok(())
+}
+
+fn regex_build_error(pattern: &str, e: impl std::fmt::Display) -> anyhow::Error {
+    anyhow::anyhow!(
+        "invalid regex `{}`: {} (regex must compile under size_limit={}/dfa_size_limit={}; {})",
+        pattern,
+        e,
+        REGEX_COMPILE_SIZE_LIMIT,
+        REGEX_DFA_SIZE_LIMIT,
+        REGEX_UNICODE_HINT
+    )
+}
+
+/// Compile a user-supplied regex pattern under the NFA size limit, so an
+/// adversarial pattern fails at compile time instead of expanding
+/// in-process. Factored out so both the per-predicate hoist and tests
+/// can share one configuration.
+pub(crate) fn compile_user_regex(pattern: &str) -> Result<Regex> {
+    check_user_pattern_len(pattern)?;
     RegexBuilder::new(pattern)
         .size_limit(REGEX_COMPILE_SIZE_LIMIT)
         .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
         .build()
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "invalid regex `{}`: {} (regex must compile under size_limit={}/dfa_size_limit={})",
-                pattern,
-                e,
-                REGEX_COMPILE_SIZE_LIMIT,
-                REGEX_DFA_SIZE_LIMIT
-            )
-        })
+        .map_err(|e| regex_build_error(pattern, e))
+}
+
+// `.multi_line(true).crlf(true)` gives line-oriented semantics its sibling
+// lacks (`^`/`$` per line, `.` excluding `\r` as well as `\n`), so a
+// pattern is not portable between `tomlctl sweep` and
+// `items list --where-regex`.
+#[allow(dead_code)] // the sweep engine is its caller
+pub(crate) fn compile_user_bytes_regex(pattern: &str) -> Result<regex::bytes::Regex> {
+    check_user_pattern_len(pattern)?;
+    regex::bytes::RegexBuilder::new(pattern)
+        .size_limit(REGEX_COMPILE_SIZE_LIMIT)
+        .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
+        .multi_line(true)
+        .crlf(true)
+        .build()
+        .map_err(|e| regex_build_error(pattern, e))
 }
 
 /// Sort direction for a single `--sort-by` key.
@@ -2828,6 +2864,34 @@ category = "quality"
             err.contains("invalid regex"),
             "error must name the rejection cause; got: {err}"
         );
+    }
+
+    #[test]
+    fn compile_user_bytes_regex_accepts_non_unicode_word_class() {
+        let re = compile_user_bytes_regex(r"(?-u:\w+)").unwrap();
+        assert!(re.is_match(b"abc"));
+    }
+
+    #[test]
+    fn compile_user_bytes_regex_matches_line_end_before_crlf() {
+        let re = compile_user_bytes_regex("foo$").unwrap();
+        let m = re
+            .find(b"foo\r\nbar")
+            .expect("`$` must match before `\\r\\n`");
+        assert_eq!((m.start(), m.end()), (0, 3));
+    }
+
+    #[test]
+    fn compile_user_bytes_regex_rejects_an_oversize_pattern() {
+        let err = compile_user_bytes_regex(&"a".repeat(513))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("513") && err.contains("512"),
+            "error must name the length and the cap; got: {err}"
+        );
+        assert!(compile_user_regex(&"a".repeat(513)).is_err());
+        assert!(compile_user_regex(&"a".repeat(512)).is_ok());
     }
 
     /// A malformed typed RHS on `--where` must propagate as a
