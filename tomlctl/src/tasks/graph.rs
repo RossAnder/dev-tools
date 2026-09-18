@@ -503,7 +503,8 @@ enum Mark {
 /// Seeds ascending, emits each round sorted, decrements successors ascending —
 /// one O(V+E) pass giving both a stable total order and a stable batch
 /// structure. Positions left unemitted are the cycles and whatever they strand.
-fn layered_kahn(
+/// Positional so `items clusters` can share it over ledger-item indices.
+pub(crate) fn layered_kahn(
     n: usize,
     preds: &[Vec<usize>],
     succs: &[Vec<usize>],

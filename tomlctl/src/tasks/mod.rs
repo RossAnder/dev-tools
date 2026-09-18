@@ -15,7 +15,7 @@ mod check;
 mod closure;
 mod edges;
 mod finding;
-mod graph;
+pub(crate) mod graph;
 mod import_plan;
 mod list;
 mod parse_policy;
