@@ -206,7 +206,7 @@ commit = ""
 
 /// The engine's node cap, mirrored — it is private to the graph module, so
 /// widening it there has to move this line with it.
-const NODE_CAP: u32 = 256;
+const NODE_CAP: u32 = 512;
 
 /// `count` independent rows: every `ref` imported, every row inside the one
 /// declared group, and a file per row so no pair can overlap. Nothing but the
