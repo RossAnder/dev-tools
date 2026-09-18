@@ -889,7 +889,7 @@ mod tests {
 
     #[test]
     fn a_store_the_engine_refuses_to_load_is_an_error_not_a_clean_bill() {
-        let items: Vec<TaskRow> = (1..=257).map(|id| row(id, &[], &[], "A")).collect();
+        let items: Vec<TaskRow> = (1..=513).map(|id| row(id, &[], &[], "A")).collect();
         let findings = check(&store(items, &["A"]), &[]);
 
         assert_eq!(classes(&findings), vec!["dag/unbuildable"], "{findings:?}");
