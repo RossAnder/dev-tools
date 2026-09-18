@@ -36,6 +36,9 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 | `tomlctl items next-id` | yes |
 | `tomlctl items find-duplicates` | yes |
 | `tomlctl items orphans` | yes |
+| `tomlctl items sweep` | yes |
+| `tomlctl items clusters` | yes |
+| `tomlctl sweep` | n/a |
 | `tomlctl tasks show` | yes |
 | `tomlctl tasks list` | yes |
 | `tomlctl tasks edges` | yes |
@@ -45,7 +48,7 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 | `tomlctl tasks check` | yes |
 | `tomlctl tasks render` | yes |
 
-`tomlctl blocks verify` intentionally does NOT accept `--verify-integrity` (it operates on markdown with no sidecar pair).
+`tomlctl blocks verify` intentionally does NOT accept `--verify-integrity` (it operates on markdown with no sidecar pair), and neither does the standalone `tomlctl sweep` — it searches tracked files and reads no TOML at all. `tomlctl items sweep` accepts the flag through its write bundle (it can `--update` the ledger), so it takes no `--strict-read`; `tomlctl items clusters` is a plain read verb and takes both.
 
 ## Sidecar files
 

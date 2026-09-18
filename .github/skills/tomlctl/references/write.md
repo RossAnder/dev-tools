@@ -1,8 +1,8 @@
 # tomlctl — write reference
 
 The mutating half of the tomlctl surface: `set`, `set-json`, `array-append`, the `items`
-batch verbs (`add`, `add-many`, `update`, `remove`, `apply`, `backfill-dedup-id`) and
-`integrity refresh`, together with the cross-cutting behaviours every one of them inherits
+batch verbs (`add`, `add-many`, `update`, `remove`, `apply`, `backfill-dedup-id`,
+`sweep --update`) and `integrity refresh`, together with the cross-cutting behaviours every one of them inherits
 — auto-create on first write, `--dry-run` preview, stdin payload handling, and the dedup
 fingerprint contract. The read-only verbs live in [query.md](query.md).
 
@@ -24,6 +24,7 @@ fingerprint contract. The read-only verbs live in [query.md](query.md).
   - [Compute the next id](#compute-the-next-id)
   - [Append to an array-of-tables — `array-append`](#append-to-an-array-of-tables--array-append)
   - [Migrate legacy ledgers — `items backfill-dedup-id`](#migrate-legacy-ledgers--items-backfill-dedup-id)
+  - [Re-sweep and rewrite instances (`items sweep --update`)](#re-sweep-and-rewrite-instances-items-sweep---update)
   - [Regenerate a missing sidecar — `integrity refresh`](#regenerate-a-missing-sidecar--integrity-refresh)
   - [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads)
 - [Dry-run](#dry-run)
@@ -290,7 +291,7 @@ Supports `--dry-run`; see [Dry-run](#dry-run).
 
 #### Targeting a non-default array-of-tables (`--array`)
 
-`items apply` defaults to mutating the `[[items]]` array at the ledger root. Pass `--array <name>` to redirect the batch at a different array-of-tables (e.g. `rollback_events`). `--array` is accepted on `items list`, `items get`, `items add`, `items add-many`, `items update`, `items remove`, and `items apply` — so any of these can target a non-default array such as `rollback_events`. `items next-id`, `items find-duplicates`, and `items orphans` do not take `--array` (they are ledger-schema specific and only reason about `[[items]]`).
+`items apply` defaults to mutating the `[[items]]` array at the ledger root. Pass `--array <name>` to redirect the batch at a different array-of-tables (e.g. `rollback_events`). `--array` is accepted on `items list`, `items get`, `items add`, `items add-many`, `items update`, `items remove`, and `items apply` — so any of these can target a non-default array such as `rollback_events`. `items next-id`, `items find-duplicates`, `items orphans`, `items sweep`, and `items clusters` do not take `--array` (they are ledger-schema specific and only reason about `[[items]]`).
 
 ### Compute the next id
 
@@ -354,6 +355,24 @@ TOMLCTL_NO_DEDUP_ID=1 tomlctl items backfill-dedup-id <ledger>
 
 Supports `--dry-run`; see [Dry-run](#dry-run).
 
+### Re-sweep and rewrite instances (`items sweep --update`)
+
+`items sweep <ledger>` is read-only by default — it re-runs each item's stored `sweep` patterns and reports `new` / `gone` / `kept` / `unverified` against `instances` (the read side is in [query.md](query.md)). `--update` turns that same run into one write: a single `MutationPlan` carrying one `update` op per swept item whose `instances` actually changes, applied in one parse + one rewrite. The rewritten `instances` is the kept anchors, spelled as recorded (a `file:symbol` anchor keeps its symbol), followed by the new sites as `file:line`; an item whose rewritten list equals what is stored gets no op. `enumeration` is never rewritten — whether the patterns can reach every form is the agent's judgement, and the read output reports `coverage_complete` instead.
+
+```bash
+# Rewrite instances for two items; a run that changes nothing writes nothing and leaves the sidecar alone
+tomlctl items sweep .claude/flows/foo/review-ledger.toml --ids R5,R9 --update
+# → {"ok":true,"updated":["R5"],"created":false,"path":".claude/flows/foo/review-ledger.toml"}
+
+# Preview the rewrite — the standard would_change envelope; no file or sidecar touch
+tomlctl items sweep .claude/flows/foo/review-ledger.toml --ids R5,R9 --update --dry-run
+# → {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":0,"updated":1,"removed":0,"skipped":0,"ids":["R5"]}}
+```
+
+`--update` refuses with `kind=validation` when any swept item is `truncated` or has a non-empty `unverified` list, naming the ids — absence of a hit in a file the sweep skipped is not evidence the anchor is gone. Raise `--max-hits` or `--max-file-bytes`, or resolve those anchors by hand, then re-run. `--dry-run` without `--update` is refused (`kind=other`): the read-only sweep has nothing to preview.
+
+A changed run refreshes the `.sha256` sidecar like every other write; a no-change run reports `updated: []` and touches neither. `--update` never mints a missing ledger — the read-only sweep errors `kind=not_found`, and an empty seed has no items to rewrite, so nothing is persisted and `created` stays `false`.
+
 ### Regenerate a missing sidecar — `integrity refresh`
 
 Materialises (or regenerates) the `<file>.sha256` sidecar from the file's current on-disk bytes. Does NOT modify the TOML — use this when the sidecar is absent or lost but the TOML is authoritative as-is.
@@ -406,9 +425,10 @@ For `--json` / `--ops` / `--defaults-json`, write the payload to a sibling file 
 ## Dry-run
 
 `--dry-run` is accepted on every write subcommand — `set`, `set-json`, `array-append`,
-`items add`, `items add-many`, `items update`, `items remove`, `items apply`, and
-`items backfill-dedup-id`. It reports the computed mutation as a `would_change` envelope
-and touches no file. The dry-run path runs the same compute stage as the real path —
+`items add`, `items add-many`, `items update`, `items remove`, `items apply`,
+`items backfill-dedup-id`, and `items sweep --update` (there it requires `--update`, since
+the read-only sweep has nothing to preview). It reports the computed mutation as a
+`would_change` envelope and touches no file. The dry-run path runs the same compute stage as the real path —
 mutation logic cannot drift between preview and apply.
 
 ```bash
