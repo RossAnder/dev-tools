@@ -85,7 +85,7 @@ Append order is preserved by tomlctl's exclusive `.lock` sidecar + atomic tempfi
 
 ### `[[items]]` naming rationale + restricted subcommands
 
-The log uses `[[items]]` as its table-array name so generic `tomlctl items` ops (`list`, `get`, `add`, `add-many`, `update`, `remove`, `apply`, `next-id --prefix E`) work as-is. Two `tomlctl items` subcommands, `orphans` and `find-duplicates`, hardcode the review/optimise ledger schema (they expect `file`, `symbol`, `summary`, `severity`, `category`) and must not be invoked against `execution-record.toml` — they will emit garbage. All other `tomlctl items` subcommands work correctly against this schema.
+The log uses `[[items]]` as its table-array name so generic `tomlctl items` ops (`list`, `get`, `add`, `add-many`, `update`, `remove`, `apply`, `next-id --prefix E`) work as-is. Four `tomlctl items` subcommands hardcode the review/optimise ledger schema and must not be invoked against `execution-record.toml` — they will emit garbage: `items orphans` and `items find-duplicates` (they expect `file`, `symbol`, `summary`, `severity`, `category`), `items sweep` (reads `sweep`, `instances`, `file`, `symbol`) and `items clusters` (reads `file`, `instances`, `depends_on`, `enumeration`, `status`). The generic set — `list`, `get`, `add`, `add-many`, `update`, `remove`, `apply`, `next-id`, `backfill-dedup-id` — works correctly against this schema.
 
 ### Append-only + supersession
 

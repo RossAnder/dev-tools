@@ -75,9 +75,11 @@ Unknown keys are dropped — the store is tool-owned and every write re-emits it
 Bodies are LF-normalised on both read and write, and a body containing a backslash serialises as
 a `'''` literal string, which golden fixtures must expect.
 
-The array is named `items` so the generic `tomlctl items` query machinery applies. Two
-subcommands, `items orphans` and `items find-duplicates`, hardcode the review/optimise ledger
-schema and emit garbage against this one.
+The array is named `items` so the generic `tomlctl items` machinery (`list`, `get`, `add`,
+`add-many`, `update`, `remove`, `apply`, `next-id`, `backfill-dedup-id`) applies. Four
+subcommands hardcode the review/optimise ledger schema and emit garbage against this one:
+`items orphans` and `items find-duplicates`, `items sweep` (reads `sweep`, `instances`, `file`,
+`symbol`) and `items clusters` (reads `file`, `instances`, `depends_on`, `enumeration`, `status`).
 
 ## Ref derivation
 
