@@ -36,7 +36,10 @@ tomlctl items next-id <file> --prefix R|O|E             # prefix is required —
 tomlctl items apply  <file> --ops '[{"op":"add|update|remove", ...}, ...]' [--array NAME]
 tomlctl items find-duplicates <file> [--tier A|B|C] [--across <other>]   # dedup hygiene (read-only JSON array); --across runs tier A or B over the union of two ledgers
 tomlctl items fingerprint <file> <id>                  # tier-B dedup_id of one stored row + the five fields that produced it
-tomlctl items orphans  <file>                          # missing-file / symbol-missing / dangling-dep
+tomlctl items orphans  <file>                          # missing-file / symbol-missing / dangling-dep / instance-missing
+tomlctl items sweep    <file> [--ids R1,R7] [--update] [--dry-run]  # re-run each item's `sweep` patterns, diff against `instances`; --update rewrites them
+tomlctl items clusters <file> [--ids R1,R7]            # file-disjoint clusters + dependency batches + per-cluster lite_file_scope
+tomlctl sweep -e <regex> [-e ...] [--exclude <glob>]... [--max-file-bytes N] [--max-hits N]  # regex hits over tracked files as file:line, with coverage + skip counts
 tomlctl array-append   <file> <array> --json '{...}'                # append one record
 tomlctl array-append   <file> <array> --ndjson -                    # batched append to e.g. rollback_events
 tomlctl flow active list|add|remove [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...  # manage active-flow registry
@@ -224,7 +227,7 @@ Today the only read subcommand with a "missing file → silent default" branch
 is `items next-id --prefix <P>`, which returns `"<P>1"` as a bootstrapping fast
 path for flows that mint the first id before the ledger file exists. Every
 other read subcommand (`parse`, `get`, `validate`, `items list`, `items get`,
-`items find-duplicates`, `items orphans`) already errors on a missing file with
+`items find-duplicates`, `items orphans`, `items clusters`) already errors on a missing file with
 `kind=not_found` — `--strict-read` is a no-op there, but the flag is accepted
 on every read subcommand so a caller can pass it uniformly without branching
 on subcommand name.
@@ -247,7 +250,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.7.0",
+  "version": "0.9.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -263,10 +266,12 @@ downstream flow-command templates can feature-gate at boot without parsing
                "tasks_add_many", "tasks_update", "tasks_remove",
                "tasks_show", "tasks_list", "tasks_edges", "tasks_ready",
                "tasks_batches", "tasks_closure", "tasks_check",
-               "tasks_render"],
+               "tasks_render", "sweep", "items_sweep", "items_clusters",
+               "orphans_instances"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
-                  "integrity", "flow", "json", "backlog", "tasks"],
+                  "integrity", "flow", "json", "backlog", "tasks",
+                  "sweep"],
   "commands": {
     "items": {
       "subcommands": {
@@ -316,7 +321,7 @@ Feature meanings:
 | `capabilities` | this subcommand itself |
 | `error_format_json` | `--error-format json` global flag + `ErrorKind` taxonomy |
 | `strict_read` | `--strict-read` on every read subcommand |
-| `dry_run` | `--dry-run` on the write subcommands that support previewing mutations, including `set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id`, `flow init`, `flow ensure-artifact`, `flow doctor`, `flow active add`, `flow active remove`, `flow active touch`, `json set`, `json unset`, `backlog add`, `backlog compact`, and `tasks import-plan` |
+| `dry_run` | `--dry-run` on the write subcommands that support previewing mutations, including `set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id`, `flow init`, `flow ensure-artifact`, `flow doctor`, `flow active add`, `flow active remove`, `flow active touch`, `json set`, `json unset`, `backlog add`, `backlog compact`, `tasks import-plan`, and `items sweep --update` |
 | `backfill_dedup_id` | `items backfill-dedup-id <file>` |
 | `integrity_refresh` | `tomlctl integrity refresh <file>` — sidecar bootstrap / recovery primitive |
 | `agent_context` | `tomlctl capabilities .commands` emits per-subcommand flag schema (type / required / default / values / repeatable + mutex_groups) for runtime introspection without parsing `--help` prose |
@@ -353,3 +358,7 @@ Feature meanings:
 | `tasks_closure` | `tasks closure --checkpoint <ID>` / `--task <N> --up` / `--down` — a checkpoint group's task set or one task's transitive closure, plus its maximal elements |
 | `tasks_check` | `tasks check --in-flight <N1,N2,...>` — the store's invariant checks; any `error`-class finding exits 1, and `--plan` reports render drift as a warning, so gate drift on `tasks render --check` |
 | `tasks_render` | `tasks render` — rewrite the plan's `## Execution Policy`, `## Tasks` and `## Dependency Graph` from the store; `--stdout` previews and `--check` reports drift without writing |
+| `sweep` | `sweep -e <REGEX>...` — regex hits over the repo's tracked files as sorted `file:line` sites, with `skipped` counts, `truncated` and `coverage_complete`; `.claude/**` and `docs/plans/**` are excluded by default |
+| `items_sweep` | `items sweep <file>` — re-run each item's stored `sweep` patterns and diff the hits against its `instances` (`new` / `gone` / `kept` / `unverified`); `--update` rewrites `instances`, refusing while any item is truncated or unverified |
+| `items_clusters` | `items clusters <file> --ids <R1,R7,...>` — file-disjoint clusters over `file` plus `instances`, layered by `depends_on` into batches, each cluster carrying `lite_file_scope`; out-of-selection dependencies land in `dropped_deps` and a cycle is refused |
+| `orphans_instances` | `items orphans` reports an `instance-missing` class for every `instances` anchor that does not resolve, with `reason` one of `missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `unparseable` |

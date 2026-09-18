@@ -13,7 +13,6 @@ use crate::io::path_under_root;
 /// ignored, as repo-relative paths spelled the way git emits them (forward
 /// slashes), sorted and deduplicated.
 #[derive(Debug)]
-#[allow(dead_code)] // wired when the sweep engine lands
 pub(crate) struct Enumeration {
     pub(crate) files: Vec<PathBuf>,
     /// Entries whose resolved location lies outside the root — a symlink
@@ -34,7 +33,6 @@ pub(crate) struct Enumeration {
 /// pattern: the exclusions are what keep a sweep from matching the ledger
 /// that records its own search strings, so silently losing one would make
 /// every pattern hit its own record.
-#[allow(dead_code)] // wired when the sweep engine lands
 pub(crate) fn tracked_files(root: &Path, exclude: &[String]) -> Result<Enumeration> {
     let excluded = compile_excludes(exclude)?;
     let output = Command::new("git")

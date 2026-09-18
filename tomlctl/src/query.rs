@@ -127,7 +127,6 @@ pub(crate) fn compile_user_regex(pattern: &str) -> Result<Regex> {
 // lacks (`^`/`$` per line, `.` excluding `\r` as well as `\n`), so a
 // pattern is not portable between `tomlctl sweep` and
 // `items list --where-regex`.
-#[allow(dead_code)] // the sweep engine is its caller
 pub(crate) fn compile_user_bytes_regex(pattern: &str) -> Result<regex::bytes::Regex> {
     check_user_pattern_len(pattern)?;
     regex::bytes::RegexBuilder::new(pattern)

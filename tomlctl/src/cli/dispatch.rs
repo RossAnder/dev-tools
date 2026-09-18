@@ -16,6 +16,7 @@ use super::types::{
 };
 
 use crate::blocks::blocks_verify;
+use crate::clusters::items_clusters;
 use crate::convert::{
     detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path, str_field,
     toml_to_json,
@@ -29,8 +30,8 @@ use crate::io::{
     compute_set_json_mutation, compute_set_mutation, dry_run_read_opts, guard_write_path, item_id,
     items_array, mutate_doc, mutate_doc_conditional, mutate_doc_plan, on_missing_for, read_doc,
     read_doc_borrowed, read_doc_either, read_json_arg, read_json_value_from_arg,
-    read_ndjson_source, read_toml_str, recheck_claude_containment, strict_read_check,
-    warn_if_created, warn_if_read_outside_claude, with_exclusive_lock,
+    read_ndjson_source, read_toml_str, recheck_claude_containment, repo_or_cwd_root,
+    strict_read_check, warn_if_created, warn_if_read_outside_claude, with_exclusive_lock,
 };
 use crate::items::{
     AddManyOutcome, AddOutcome, array_append, compute_add_many_mutation, compute_add_mutation,
@@ -39,12 +40,14 @@ use crate::items::{
     items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to, items_get_from,
     items_get_from_json, items_infer_and_next_id, items_next_id, items_update_to, parse_ndjson,
 };
+use crate::items_sweep::{items_sweep, update_plan};
 use crate::orphans::items_orphans;
 use crate::output::{
     emit_dry_run_plan, emit_dry_run_scalar, emit_list_raw, print_json, print_json_compact,
     print_raw_value,
 };
 use crate::query::{self, Query, ShapeDispatch};
+use crate::sweep::{self, SweepOptions};
 
 /// Maximum number of ops accepted in a single `items apply` batch.
 /// The 32 MiB stdin cap alone does not bound op count — a well-formed 32 MiB
@@ -382,6 +385,22 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Cmd::Flow { op } => crate::flow::dispatch(op)?,
         Cmd::Backlog { op } => crate::backlog::dispatch::dispatch(op)?,
         Cmd::Tasks { op } => crate::tasks::dispatch::dispatch(op)?,
+        Cmd::Sweep {
+            pattern,
+            max_file_bytes,
+            max_hits,
+            exclude,
+        } => {
+            let root = repo_or_cwd_root()?;
+            let mut opts = SweepOptions {
+                max_file_bytes,
+                max_hits,
+                ..SweepOptions::default()
+            };
+            opts.exclude.extend(exclude);
+            let report = sweep::run(&root, &pattern, &opts)?;
+            print_json(&sweep::report_json(&report))?;
+        }
         Cmd::Json { op } => {
             // Resolve `--json -` stdin sentinel for `json set` at the CLI
             // boundary, mirroring TOML `set-json` / `items add` behaviour.
@@ -1117,6 +1136,81 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let opts = read_integrity_opts(&integrity);
             let orphans = read_doc(&file, opts, items_orphans)?;
             print_json(&JsonValue::Array(orphans))?;
+        }
+        ItemsOp::Sweep {
+            file,
+            ids,
+            update,
+            dry_run,
+            max_file_bytes,
+            max_hits,
+            integrity,
+        } => {
+            if dry_run && !update {
+                bail!(
+                    "items sweep --dry-run requires --update (the read-only sweep writes nothing to preview)"
+                );
+            }
+            let root = repo_or_cwd_root()?;
+            let sweep_opts = SweepOptions {
+                max_file_bytes,
+                max_hits,
+                ..SweepOptions::default()
+            };
+            if !update {
+                // `read_doc` never seeds, so a missing ledger surfaces as
+                // `kind=not_found` rather than being created.
+                let read_opts = dry_run_read_opts(integrity.verify_integrity);
+                let results = read_doc(&file, read_opts, |doc| {
+                    items_sweep(doc, &file, &root, &ids, &sweep_opts)
+                })?;
+                print_json(&results)?;
+                return Ok(());
+            }
+            if dry_run {
+                warn_if_read_outside_claude(&file);
+                let read_opts = dry_run_read_opts(integrity.verify_integrity);
+                let plan = read_doc(&file, read_opts, |doc| {
+                    let results = items_sweep(doc, &file, &root, &ids, &sweep_opts)?;
+                    update_plan(doc, &results)
+                })?;
+                emit_dry_run_plan(&plan)?;
+                return Ok(());
+            }
+            let opts = write_integrity_opts(&integrity);
+            let on_missing = on_missing_for(&file, integrity.no_create)?;
+            // The sweep walks every tracked file, so it runs once, in-lock;
+            // an unchanged ledger skips the write and the sidecar bump.
+            let mut updated: Vec<String> = Vec::new();
+            let created =
+                mutate_doc_conditional(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                    let results = items_sweep(doc, &file, &root, &ids, &sweep_opts)?;
+                    let plan = update_plan(doc, &results)?;
+                    if plan.updated.is_empty() {
+                        return Ok(false);
+                    }
+                    updated = plan.updated;
+                    *doc = plan.new_doc;
+                    Ok(true)
+                })?;
+            warn_if_created(&file, created);
+            print_json_compact(&serde_json::json!({
+                "ok": true,
+                "updated": updated,
+                "created": created,
+                "path": file.display().to_string(),
+            }))?;
+        }
+        ItemsOp::Clusters {
+            file,
+            ids,
+            integrity,
+        } => {
+            strict_read_check(&file, integrity.strict_read)?;
+            let opts = read_integrity_opts(&integrity);
+            let root = repo_or_cwd_root()?;
+            let out = read_doc(&file, opts, |doc| items_clusters(doc, &root, &ids))?;
+            print_json(&out)?;
         }
         ItemsOp::BackfillDedupId {
             file,

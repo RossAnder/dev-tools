@@ -69,6 +69,11 @@ pub(crate) const FEATURES: &[&str] = &[
     "tasks_closure",
     "tasks_check",
     "tasks_render",
+    // Regex sweep over tracked files and the ledger verbs built on it.
+    "sweep",
+    "items_sweep",
+    "items_clusters",
+    "orphans_instances",
 ];
 
 /// User-facing top-level subcommand names, as they appear in
@@ -92,6 +97,7 @@ pub(crate) const SUBCOMMANDS: &[&str] = &[
     "json",
     "backlog",
     "tasks",
+    "sweep",
 ];
 
 #[derive(Parser)]
@@ -650,6 +656,31 @@ pub(crate) enum Cmd {
     Tasks {
         #[command(subcommand)]
         op: TasksOp,
+    },
+
+    /// Regex hits over the repo's tracked files, as sorted `file:line`
+    /// sites. Files come from `git ls-files` at the repo root (a tagged
+    /// error outside a git tree); `.claude/**` and `docs/plans/**` are
+    /// excluded by default because ledgers and plans quote patterns
+    /// verbatim. The binary has no Unicode tables, so `\b` / `\w` / `\d`
+    /// need the `(?-u:…)` form. Output carries `hits`, `files_scanned`,
+    /// `skipped` counts, `truncated` and `coverage_complete`.
+    Sweep {
+        /// Pattern to search for; repeatable. Each hit records the index of
+        /// the first pattern that matched its line.
+        #[arg(short = 'e', long = "pattern", required = true, value_name = "REGEX")]
+        pattern: Vec<String>,
+        /// Files larger than this are skipped and counted under
+        /// `skipped.oversize`.
+        #[arg(long, default_value_t = 4194304, value_name = "BYTES")]
+        max_file_bytes: u64,
+        /// Stop after this many distinct `file:line` sites and set
+        /// `truncated: true` rather than erroring.
+        #[arg(long, default_value_t = 5000, value_name = "N")]
+        max_hits: usize,
+        /// Extra glob to exclude, on top of the defaults; repeatable.
+        #[arg(long, value_name = "GLOB")]
+        exclude: Vec<String>,
     },
 }
 
@@ -1700,9 +1731,64 @@ pub(crate) enum ItemsOp {
     },
 
     /// Surface items whose file or symbol has drifted, or whose depends_on
-    /// points at an id that isn't in the ledger.
+    /// points at an id that isn't in the ledger. Classes: `missing-file`,
+    /// `symbol-missing`, `io-error`, `outside-repo`, `dangling-dep`, and
+    /// `instance-missing` for an `instances` anchor that does not resolve —
+    /// its `reason` is one of `missing-file`, `symbol-missing`, `io-error`,
+    /// `outside-repo`, `unparseable`.
     Orphans {
         file: PathBuf,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// Re-run each item's stored `sweep` patterns over the tracked files
+    /// and diff the hits against its `instances`. Per item: `new` sites
+    /// (`file:line`), `gone` anchors with a `reason`, `kept`, `unverified`
+    /// (skipped file or past `--max-hits`), plus `recorded` / `found` file
+    /// sets. Items without a `sweep` array land in `skipped_items`. The
+    /// ledger itself is excluded from its own sweep. Read-only unless
+    /// `--update` rewrites `instances` as kept anchors followed by the new
+    /// sites; `enumeration` is never touched. `--update` refuses while any
+    /// item is `truncated` or has `unverified` anchors.
+    Sweep {
+        file: PathBuf,
+        /// Item ids to sweep. Omit for every item.
+        #[arg(long, value_delimiter = ',', value_name = "R1,R7,...")]
+        ids: Vec<String>,
+        /// Rewrite each swept item's `instances` from the results. Without
+        /// it nothing is written and the file is never created.
+        #[arg(long)]
+        update: bool,
+        /// Preview the `--update` rewrite without writing. Emits a
+        /// `would_change` summary; no file or sidecar touch.
+        #[arg(long = "dry-run")]
+        dry_run: bool,
+        /// Files larger than this are skipped, which leaves their anchors
+        /// `unverified`.
+        #[arg(long, default_value_t = 4194304, value_name = "BYTES")]
+        max_file_bytes: u64,
+        /// Distinct `file:line` sites after which the sweep stops and every
+        /// item reports `truncated: true`.
+        #[arg(long, default_value_t = 5000, value_name = "N")]
+        max_hits: usize,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Group selected items into file-disjoint clusters and order the
+    /// clusters into dependency batches. An item's files are its `file`
+    /// plus the files of its `instances`; items are layered over
+    /// `depends_on` first, so two items sharing a file join one cluster
+    /// only within a layer. `depends_on` targets outside the selection are
+    /// dropped and listed under `dropped_deps`; a cycle is refused. Each
+    /// cluster carries `lite_file_scope`: at most two files, or a single
+    /// item whose `enumeration` is `complete`.
+    Clusters {
+        file: PathBuf,
+        /// Item ids to cluster. Omit for every `open` item.
+        #[arg(long, value_delimiter = ',', value_name = "R1,R7,...")]
+        ids: Vec<String>,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },

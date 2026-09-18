@@ -7,14 +7,12 @@ use std::fmt;
 /// within that file. `file` is kept verbatim so it round-trips through
 /// `Display` unchanged.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] // wired when `items sweep`, `items clusters` and `items orphans` land
 pub(crate) struct Anchor {
     pub(crate) file: String,
     pub(crate) at: AnchorAt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] // wired when `items sweep`, `items clusters` and `items orphans` land
 pub(crate) enum AnchorAt {
     Line(u64),
     Symbol(String),
@@ -24,7 +22,6 @@ pub(crate) enum AnchorAt {
 /// letter stays with the file and `Foo::bar` survives as one symbol. An
 /// all-digit tail is a line; a digit run too long for `u64` is kept as a
 /// symbol rather than rejected.
-#[allow(dead_code)] // wired when `items sweep`, `items clusters` and `items orphans` land
 pub(crate) fn parse(s: &str) -> Option<Anchor> {
     let after_sep = s.rfind(['/', '\\']).map_or(0, |i| i + 1);
     let colon = after_sep + s[after_sep..].find(':')?;
@@ -56,7 +53,6 @@ impl fmt::Display for Anchor {
     }
 }
 
-#[allow(dead_code)] // wired when `items sweep`, `items clusters` and `items orphans` land
 pub(crate) fn files_of<'a>(anchors: impl Iterator<Item = &'a Anchor>) -> BTreeSet<&'a str> {
     anchors.map(|a| a.file.as_str()).collect()
 }

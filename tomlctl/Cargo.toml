@@ -1,6 +1,6 @@
 [package]
 name = "tomlctl"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 rust-version = "1.98"
 authors = ["Ross Anderson"]
@@ -44,6 +44,8 @@ mimalloc = { version = "0.1", default-features = false }
 sha2 = "^0.11"
 # Default features trimmed: no Unicode classes — query predicates target ASCII identifiers/paths
 regex = { version = "^1", default-features = false, features = ["std", "perf"] }
+# memchr: the sweep's binary sniff (NUL in the first 8 KiB) and newline offset table
+memchr = "^2"
 
 [dev-dependencies]
 # Black-box CLI integration harness. assert_cmd locates the built

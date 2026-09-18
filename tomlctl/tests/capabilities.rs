@@ -15,8 +15,8 @@ use common::{
 };
 
 /// Read-only subcommands (`parse`, `get`, `validate`, `items list`,
-/// `items get`, `items find-duplicates`, `items orphans`, `items next-id`)
-/// must NOT expose the write-side integrity flags (`--allow-outside`,
+/// `items get`, `items find-duplicates`, `items orphans`, `items next-id`,
+/// `items clusters`) must NOT expose the write-side integrity flags (`--allow-outside`,
 /// `--no-write-integrity`, `--strict-integrity`). They still accept
 /// `--verify-integrity` because that's the only read-side integrity
 /// concept, and each must list the whole read bundle — a read path that
@@ -35,6 +35,7 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         &["items", "fingerprint", "--help"],
         &["items", "orphans", "--help"],
         &["items", "next-id", "--help"],
+        &["items", "clusters", "--help"],
         &["backlog", "check", "--help"],
         &["backlog", "list", "--help"],
         &["backlog", "show", "--help"],
@@ -103,6 +104,7 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["items", "remove", "--help"],
         &["items", "apply", "--help"],
         &["items", "add-many", "--help"],
+        &["items", "sweep", "--help"],
         &["backlog", "add", "--help"],
         &["backlog", "relate", "--help"],
         &["backlog", "triage", "--help"],
@@ -1086,8 +1088,8 @@ fn strict_read_fires_before_verify_integrity_on_missing_file() {
 
 /// `--strict-read` is accepted on every read subcommand and emits
 /// a consistent `kind=not_found` envelope. Spot-check `parse`, `get`,
-/// `validate`, `items get`, `items orphans`, and `items find-duplicates`
-/// — each is a different dispatch arm that flattens `ReadIntegrityArgs`.
+/// `validate`, `items get`, `items orphans`, `items find-duplicates` and
+/// `items clusters` — each is a different dispatch arm that flattens `ReadIntegrityArgs`.
 /// A single array-driven test keeps the arity manageable and pins the
 /// uniform surface without bloating the test count.
 #[test]
@@ -1105,6 +1107,7 @@ fn strict_read_uniform_across_read_subcommands() {
         &["items", "get", "", "R1"],
         &["items", "orphans", ""],
         &["items", "find-duplicates", ""],
+        &["items", "clusters", ""],
     ];
 
     for argv in cases {
@@ -1617,6 +1620,11 @@ fn capabilities_features_contains_every_plan_feature() {
         "tasks_closure",
         "tasks_check",
         "tasks_render",
+        // Regex sweep over tracked files and the ledger verbs built on it.
+        "sweep",
+        "items_sweep",
+        "items_clusters",
+        "orphans_instances",
     ];
     for name in expected {
         assert!(
@@ -1651,8 +1659,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.8.0",
-        "expected version `0.8.0` (the minor bump for the new `tasks` verb group); got `{version}`"
+        version, "0.9.0",
+        "expected version `0.9.0` (the minor bump for the `sweep` verbs); got `{version}`"
     );
 }
 
