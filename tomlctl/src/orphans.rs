@@ -1,12 +1,14 @@
-//! `items orphans`: ledger rows whose `file`, `symbol` or `depends_on` no
-//! longer resolve.
+//! `items orphans`: ledger rows whose `file`, `symbol`, `instances` or
+//! `depends_on` no longer resolve.
 //!
-//! Reports five orphan classes:
+//! Reports six orphan classes:
 //!   - `missing-file`     — ledger `file` points at a non-existent path
 //!   - `symbol-missing`   — file exists but does not contain the `symbol`
 //!   - `io-error`         — file exists but cannot be read
 //!   - `outside-repo`     — `file` (relative via `..` or absolute) escapes the repo root
 //!   - `dangling-dep`     — `depends_on` names an id not in the ledger
+//!   - `instance-missing` — an `instances` anchor does not resolve; `reason` is one of
+//!     `missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `unparseable`
 
 use anyhow::Result;
 use regex::Regex;
@@ -16,8 +18,112 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use toml::Value as TomlValue;
 
+use crate::anchor::{self, AnchorAt};
 use crate::convert::str_field;
 use crate::io::{item_id, items_array, repo_or_cwd_root};
+
+/// Resolves a ledger path against the repo root and answers, in order,
+/// whether it is contained, exists, is readable and holds `symbol`. Every
+/// filesystem touch is cached per resolved path, so the `file` check and the
+/// `instances` walk naming one file share one `canonicalize`, `exists` and read.
+struct FileProbe {
+    root: PathBuf,
+    // The root is process-invariant, so `canonicalize` is hoisted out of the
+    // per-item loop. Falling back to the un-canonicalised root when it fails
+    // keeps containment checked against something.
+    canonical_root: Option<PathBuf>,
+    // `(exists, contained)` per unique resolved path.
+    path_cache: HashMap<PathBuf, (bool, bool)>,
+    // Holds `Result<String, io::ErrorKind>` rather than
+    // `Result<String, io::Error>` because `io::Error` is not `Clone`; the
+    // caller only inspects success/failure to choose between `symbol-missing`
+    // and `io-error`, so kind-only round-tripping preserves behaviour.
+    read_cache: HashMap<PathBuf, Result<String, std::io::ErrorKind>>,
+    // Compiled word-boundary regexes keyed on the raw symbol string. `None` is
+    // cached for symbols whose regex fails to compile, so the substring
+    // fallback reuses it without re-attempting compilation.
+    symbol_cache: HashMap<String, Option<Regex>>,
+}
+
+impl FileProbe {
+    fn new(root: PathBuf) -> Self {
+        let canonical_root = root.canonicalize().ok();
+        Self {
+            root,
+            canonical_root,
+            path_cache: HashMap::new(),
+            read_cache: HashMap::new(),
+            symbol_cache: HashMap::new(),
+        }
+    }
+
+    /// The first failing check wins: `outside-repo`, `missing-file`,
+    /// `io-error`, then `symbol-missing`. `None` when everything resolves; a
+    /// `None` symbol stops after the existence check.
+    fn check(&mut self, file: &str, symbol: Option<&str>) -> Option<&'static str> {
+        let resolved = resolve_relative_to_root(&self.root, file);
+        // A ledger-item path is attacker-controllable: the ledger author is
+        // not always the tool operator, and a crafted ledger can arrive by
+        // any supply-chain path. Unchecked, a relative path escaping the root
+        // via `..` (`../../etc/passwd`) or an absolute one (`/etc/shadow`,
+        // `~/.ssh/id_rsa`) turns `fs::read_to_string` into an
+        // existence/symbol-presence oracle over arbitrary host files. Both
+        // forms are canonicalised and must satisfy
+        // `starts_with(canonical_root)`; anything else surfaces as
+        // `outside-repo` with no `exists()` or `read_to_string` call.
+        let (exists, contained) = if let Some(hit) = self.path_cache.get(&resolved) {
+            *hit
+        } else {
+            let contained = match (resolved.canonicalize().ok(), self.canonical_root.as_ref()) {
+                (Some(c), Some(r)) => c.starts_with(r),
+                (Some(c), None) => c.starts_with(&self.root),
+                (None, _) => true, // missing target falls through to `missing-file`.
+            };
+            let exists = resolved.exists();
+            self.path_cache
+                .insert(resolved.clone(), (exists, contained));
+            (exists, contained)
+        };
+        if !contained {
+            return Some("outside-repo");
+        }
+        if !exists {
+            return Some("missing-file");
+        }
+        let symbol = symbol?;
+        // IO errors surface as an `io-error` orphan rather than being treated
+        // as an empty file, which would fire `symbol-missing` spuriously for
+        // unreadable-but-existing files.
+        let cached = self
+            .read_cache
+            .entry(resolved.clone())
+            .or_insert_with(|| fs::read_to_string(&resolved).map_err(|e| e.kind()));
+        let Ok(contents) = cached else {
+            return Some("io-error");
+        };
+        // Word-boundary match: a bare `contents.contains` reports a renamed
+        // `id` symbol as still present in any file containing `valid`,
+        // `paid`, or `lived`. The substring fallback is defensive only —
+        // `regex::escape` should make it unreachable. `(?-u:\b)` pins ASCII
+        // semantics regardless of crate feature flags.
+        let compiled = self
+            .symbol_cache
+            .entry(symbol.to_string())
+            .or_insert_with(|| {
+                let pat = format!(r"(?-u:\b){}(?-u:\b)", regex::escape(symbol));
+                Regex::new(&pat).ok()
+            });
+        let present = match compiled {
+            Some(re) => re.is_match(contents),
+            None => contents.contains(symbol),
+        };
+        if present {
+            None
+        } else {
+            Some("symbol-missing")
+        }
+    }
+}
 
 pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
     // `items_array` yields an empty slice when the array is missing, so an
@@ -33,27 +139,7 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
         }
     }
 
-    let root = repo_or_cwd_root()?;
-    // The root is process-invariant, so `canonicalize` is hoisted out of the
-    // per-item loop. Falling back to the un-canonicalised root when it fails
-    // keeps containment checked against something.
-    let canonical_root: Option<PathBuf> = root.canonicalize().ok();
-    // `(exists, contained)` per unique resolved path, so repeated ledger
-    // entries naming the same file cost one `canonicalize` + one `exists`
-    // between them rather than one each.
-    let mut path_cache: HashMap<PathBuf, (bool, bool)> = HashMap::new();
-    // Sibling cache so `fs::read_to_string` runs at most once per unique
-    // resolved path. Holds `Result<String, io::ErrorKind>` rather than
-    // `Result<String, io::Error>` because `io::Error` is not `Clone`; the call
-    // site only inspects success/failure to choose between `symbol-missing`
-    // and `io-error`, so kind-only round-tripping preserves behaviour. Same
-    // key (`PathBuf`) as `path_cache`.
-    let mut read_cache: HashMap<PathBuf, Result<String, std::io::ErrorKind>> = HashMap::new();
-    // Compiled word-boundary regexes keyed on the raw symbol string, so a
-    // symbol recurring across many ledger entries compiles once. `None` is
-    // cached for symbols whose regex fails to compile, so the substring
-    // fallback reuses it without re-attempting compilation.
-    let mut symbol_cache: HashMap<String, Option<Regex>> = HashMap::new();
+    let mut probe = FileProbe::new(repo_or_cwd_root()?);
 
     let mut out = Vec::new();
     for item in items {
@@ -65,82 +151,16 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
         // missing-file / symbol-missing classes (mutually exclusive: the first
         // failing check wins).
         if !file.is_empty() {
-            let resolved = resolve_relative_to_root(&root, file);
-            // A ledger-item `file` field is attacker-controllable: the ledger
-            // author is not always the tool operator, and a crafted ledger can
-            // arrive by any supply-chain path. Unchecked, a relative path
-            // escaping the root via `..` (`../../etc/passwd`) or an absolute
-            // one (`/etc/shadow`, `~/.ssh/id_rsa`) turns `fs::read_to_string`
-            // into an existence/symbol-presence oracle over arbitrary host
-            // files. Both forms are canonicalised and must satisfy
-            // `starts_with(canonical_root)`; anything else surfaces as
-            // `outside-repo` with no `exists()` or `read_to_string` call.
-            let (exists, contained) = if let Some(hit) = path_cache.get(&resolved) {
-                *hit
-            } else {
-                let contained = match (resolved.canonicalize().ok(), canonical_root.as_ref()) {
-                    (Some(c), Some(r)) => c.starts_with(r),
-                    (Some(c), None) => c.starts_with(&root),
-                    (None, _) => true, // missing target falls through to `missing-file`.
-                };
-                let exists = resolved.exists();
-                path_cache.insert(resolved.clone(), (exists, contained));
-                (exists, contained)
-            };
-            if !contained {
+            let symbol = (!symbol.is_empty()).then_some(symbol);
+            if let Some(class) = probe.check(file, symbol) {
                 let mut obj = serde_json::Map::new();
                 obj.insert("id".into(), JsonValue::String(id.into()));
-                obj.insert("class".into(), JsonValue::String("outside-repo".into()));
+                obj.insert("class".into(), JsonValue::String(class.into()));
                 obj.insert("file".into(), JsonValue::String(file.into()));
-                out.push(JsonValue::Object(obj));
-            } else if !exists {
-                let mut obj = serde_json::Map::new();
-                obj.insert("id".into(), JsonValue::String(id.into()));
-                obj.insert("class".into(), JsonValue::String("missing-file".into()));
-                obj.insert("file".into(), JsonValue::String(file.into()));
-                out.push(JsonValue::Object(obj));
-            } else if !symbol.is_empty() {
-                // IO errors surface as an `io-error` orphan rather than being
-                // treated as an empty file, which would fire `symbol-missing`
-                // spuriously for unreadable-but-existing files.
-                let cached = read_cache
-                    .entry(resolved.clone())
-                    .or_insert_with(|| fs::read_to_string(&resolved).map_err(|e| e.kind()));
-                match cached {
-                    Ok(contents) => {
-                        // Word-boundary match: a bare `contents.contains`
-                        // reports a renamed `id` symbol as still present in
-                        // any file containing `valid`, `paid`, or `lived`.
-                        // The substring fallback is defensive only —
-                        // `regex::escape` should make it unreachable.
-                        // `(?-u:\b)` pins ASCII semantics regardless of crate
-                        // feature flags.
-                        let compiled =
-                            symbol_cache.entry(symbol.to_string()).or_insert_with(|| {
-                                let pat = format!(r"(?-u:\b){}(?-u:\b)", regex::escape(symbol));
-                                Regex::new(&pat).ok()
-                            });
-                        let present = match compiled {
-                            Some(re) => re.is_match(contents),
-                            None => contents.contains(symbol),
-                        };
-                        if !present {
-                            let mut obj = serde_json::Map::new();
-                            obj.insert("id".into(), JsonValue::String(id.into()));
-                            obj.insert("class".into(), JsonValue::String("symbol-missing".into()));
-                            obj.insert("file".into(), JsonValue::String(file.into()));
-                            obj.insert("symbol".into(), JsonValue::String(symbol.into()));
-                            out.push(JsonValue::Object(obj));
-                        }
-                    }
-                    Err(_) => {
-                        let mut obj = serde_json::Map::new();
-                        obj.insert("id".into(), JsonValue::String(id.into()));
-                        obj.insert("class".into(), JsonValue::String("io-error".into()));
-                        obj.insert("file".into(), JsonValue::String(file.into()));
-                        out.push(JsonValue::Object(obj));
-                    }
+                if let ("symbol-missing", Some(symbol)) = (class, symbol) {
+                    obj.insert("symbol".into(), JsonValue::String(symbol.into()));
                 }
+                out.push(JsonValue::Object(obj));
             }
         }
 
@@ -164,6 +184,28 @@ pub(crate) fn items_orphans(doc: &TomlValue) -> Result<Vec<JsonValue>> {
                     JsonValue::Array(missing.into_iter().map(JsonValue::String).collect()),
                 );
                 out.push(JsonValue::Object(obj));
+            }
+        }
+
+        // instance-missing class: one row per unresolvable anchor, in array
+        // order. Line anchors are checked for existence only.
+        if let Some(instances) = tbl.get("instances").and_then(|v| v.as_array()) {
+            for instance in instances.iter().filter_map(|v| v.as_str()) {
+                let reason = match anchor::parse(instance) {
+                    None => Some("unparseable"),
+                    Some(a) => match &a.at {
+                        AnchorAt::Line(_) => probe.check(&a.file, None),
+                        AnchorAt::Symbol(symbol) => probe.check(&a.file, Some(symbol)),
+                    },
+                };
+                if let Some(reason) = reason {
+                    let mut obj = serde_json::Map::new();
+                    obj.insert("id".into(), JsonValue::String(id.into()));
+                    obj.insert("class".into(), JsonValue::String("instance-missing".into()));
+                    obj.insert("instance".into(), JsonValue::String(instance.into()));
+                    obj.insert("reason".into(), JsonValue::String(reason.into()));
+                    out.push(JsonValue::Object(obj));
+                }
             }
         }
     }
@@ -218,10 +260,17 @@ summary = "file gone"
 id = "R4"
 depends_on = ["R99", "R1"]
 summary = "dangling dep"
+
+[[items]]
+id = "R5"
+instances = ['{real}:present_symbol', '{root}/missing/x.rs:12', '{real}:no_such_symbol']
+summary = "instances"
 "#,
                 real_file.display(),
                 real_file.display(),
-                root.display()
+                root.display(),
+                real = real_file.display(),
+                root = root.display()
             );
             let doc: TomlValue = toml::from_str(&ledger).unwrap();
             items_orphans(&doc).unwrap()
@@ -249,6 +298,27 @@ summary = "dangling dep"
         let deps = r4.get("dangling_deps").and_then(|v| v.as_array()).unwrap();
         assert_eq!(deps.len(), 1);
         assert_eq!(deps[0], "R99");
+        // instance-missing rows follow the `instances` array order, with the
+        // resolving anchor producing nothing.
+        let r5: Vec<(&str, &str)> = orphans
+            .iter()
+            .filter(|o| o.get("id").and_then(|v| v.as_str()) == Some("R5"))
+            .map(|o| {
+                assert_eq!(
+                    o.get("class").and_then(|v| v.as_str()),
+                    Some("instance-missing")
+                );
+                (
+                    o.get("instance").and_then(|v| v.as_str()).unwrap(),
+                    o.get("reason").and_then(|v| v.as_str()).unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(r5.len(), 2, "{r5:?}");
+        assert!(r5[0].0.ends_with("missing/x.rs:12"), "{r5:?}");
+        assert_eq!(r5[0].1, "missing-file");
+        assert!(r5[1].0.ends_with("real.rs:no_such_symbol"), "{r5:?}");
+        assert_eq!(r5[1].1, "symbol-missing");
     }
 
     /// Absolute-path ledger rows pointing OUTSIDE the repo root must surface
