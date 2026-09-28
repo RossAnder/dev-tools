@@ -83,14 +83,14 @@ tomlctl items list ledger.toml --where status=open --verify-integrity
 `--error-format json` is a global flag on the top-level command. When set, errors are written to **stderr** as a compact single-line JSON envelope:
 
 ```
-{"error":{"kind":"<kind>","message":"<prose>","file":null|"<path>"}}
+{"error":{"kind":"<kind>","message":"<prose>","file":null|"<path>","arg":null|"<arg>"}}
 ```
 
-Exit code stays 1 on error. Success paths are unchanged — text output on success is byte-identical to default mode.
+`arg` names the CLI argument the error is about by its clap id (e.g. `to`, `ids`) where a verb tags one — `backlog triage` does — and is `null` otherwise. Exit code stays 1 on error. Success paths are unchanged — text output on success is byte-identical to default mode.
 
 ```bash
 tomlctl --error-format json items list /nonexistent/ledger.toml 2>&1 >/dev/null
-# {"error":{"kind":"not_found","message":"...","file":"/nonexistent/ledger.toml"}}
+# {"error":{"kind":"not_found","message":"...","file":"/nonexistent/ledger.toml","arg":null}}
 ```
 
 Closed taxonomy (every tag site is enumerated; all other `bail!` sites fall through to `other`):
@@ -115,7 +115,7 @@ Prefer `--error-format json` + `.error.kind` switching over regex-matching stder
 tomlctl flow init --slug <slug> --plan docs/plans/<slug>.md
 # → {"ok":true,"slug":"<slug>","action":"init",
 #    "created":[".claude/flows/<slug>/context.toml",".claude/flows/<slug>/execution-record.toml",".claude/flows/<slug>/tasks.toml"],
-#    "context_path":"<abs>/.claude/flows/<slug>/context.toml","artifacts":{...}}
+#    "context_path":".claude/flows/<slug>/context.toml","artifacts":{...}}
 ```
 
 - **`action`** — `"init"` when this run wrote `context.toml`, `"noop"` when it was already present. It describes `context.toml` alone.
@@ -198,7 +198,7 @@ A block that lost a file to any of those three carries an optional `defects` arr
 
 ```json
 {"name":"backlog-candidates","defects":[{"file":"claude/agents/implement-lite.md","reason":"extracted-empty"}],
- "hash":"<64-lower-hex>","files":["claude/agents/implement-deep.md"],
+ "ok":false,"hash":"<64-lower-hex>","files":["claude/agents/implement-deep.md"],
  "missing":["claude/agents/implement-lite.md"]}
 ```
 
