@@ -357,6 +357,10 @@ mod tests {
                 .collect()
         }
 
+        fn owned(values: &[&str]) -> Vec<String> {
+            values.iter().map(|s| s.to_string()).collect()
+        }
+
         let scalar = variants_of::<ScalarType>();
         let tier = variants_of::<DupTier>();
         let fmt = variants_of::<ErrorFormat>();
@@ -366,6 +370,9 @@ mod tests {
                 "ty" => scalar.clone(),
                 "tier" => tier.clone(),
                 "error_format" => fmt.clone(),
+                // Validated by hand in `flow envelope build`, not a ValueEnum.
+                "command" => owned(crate::flow::VALID_COMMANDS),
+                "require_artifact" => owned(crate::flow::VALID_ARTIFACTS),
                 other => panic!(
                     "ENUM_VALUES references unknown id `{other}` — add a branch to enum_values_match_value_enum_variants"
                 ),

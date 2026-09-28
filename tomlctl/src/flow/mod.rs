@@ -18,5 +18,7 @@ mod stale;
 mod dispatch;
 
 pub(crate) use dispatch::dispatch;
+#[cfg(test)]
+pub(crate) use envelope::{VALID_ARTIFACTS, VALID_COMMANDS};
 pub(crate) use init::validate_slug;
 pub(crate) use schema::FlowProjection;

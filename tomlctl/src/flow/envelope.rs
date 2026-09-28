@@ -20,7 +20,7 @@ use crate::output::print_json_compact;
 
 /// Carrier commands accepted by `--command`. Matches the enumeration in
 /// `claude/agents/flow-bootstrap.md`'s envelope schema.
-const VALID_COMMANDS: &[&str] = &[
+pub(crate) const VALID_COMMANDS: &[&str] = &[
     "review",
     "optimise",
     "plan-new",
@@ -35,7 +35,7 @@ const VALID_COMMANDS: &[&str] = &[
 
 /// Artifact keys accepted by `--require-artifact`. Matches the canonical
 /// artifact set on `flow-bootstrap`'s `require_artifacts` field.
-const VALID_ARTIFACTS: &[&str] = &[
+pub(crate) const VALID_ARTIFACTS: &[&str] = &[
     "review_ledger",
     "optimise_findings",
     "execution_record",
