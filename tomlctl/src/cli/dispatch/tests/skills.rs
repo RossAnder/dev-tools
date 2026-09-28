@@ -170,9 +170,7 @@ fn run_shell_gate(repo_root: &Path, cwd: &Path, manifest: Option<&str>) -> Resul
         let exe = exe.display();
         match cmd.output() {
             // Exit 2 is the script's own "could not run" (no gawk, no hasher,
-            // unreadable manifest) — never a verdict about the tree. So is the
-            // 127 of a bare `bash` that resolved to WSL's, which cannot open a
-            // `C:/` path.
+            // unreadable manifest) — never a verdict about the tree.
             Ok(out) => match out.status.code() {
                 Some(0) => return Ok(true),
                 Some(1) => return Ok(false),
@@ -188,15 +186,18 @@ fn run_shell_gate(repo_root: &Path, cwd: &Path, manifest: Option<&str>) -> Resul
 }
 
 /// The bash executables `run_shell_gate` tries, in order: the `SHELL_GATE_BASH`
-/// override, `bash` from PATH (often absent for a Windows-side cargo), the Git
-/// for Windows bash found from `git --exec-path`, then that install's default
-/// location.
+/// override, `bash` from PATH (not on Windows), the Git for Windows bash found
+/// from `git --exec-path`, then that install's default location.
 fn bash_candidates(override_bash: Option<PathBuf>, git_exec_path: Option<&str>) -> Vec<PathBuf> {
     let mut candidates: Vec<PathBuf> = override_bash
         .filter(|p| !p.as_os_str().is_empty())
         .into_iter()
         .collect();
-    candidates.push(PathBuf::from("bash"));
+    // Windows resolves a bare `bash` to System32's WSL launcher ahead of PATH,
+    // and WSL bash cannot open the `C:/` script path.
+    if !cfg!(windows) {
+        candidates.push(PathBuf::from("bash"));
+    }
     // Git for Windows reports `<root>/mingw64/libexec/git-core`; bash is
     // `<root>/bin/bash.exe`.
     if let Some(root) = git_exec_path
@@ -216,24 +217,30 @@ fn bash_candidates(override_bash: Option<PathBuf>, git_exec_path: Option<&str>) 
 
 #[test]
 fn bash_candidates_put_the_override_first_and_derive_git_bash() {
+    let bare: &[PathBuf] = if cfg!(windows) {
+        &[]
+    } else {
+        &[PathBuf::from("bash")]
+    };
+    let default_install = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
+
+    let mut expected = vec![PathBuf::from("E:/custom/bash.exe")];
+    expected.extend_from_slice(bare);
+    expected.push(Path::new("D:/Tools/Git").join("bin").join("bash.exe"));
+    expected.push(default_install.clone());
     assert_eq!(
         bash_candidates(
             Some(PathBuf::from("E:/custom/bash.exe")),
             Some("D:/Tools/Git/mingw64/libexec/git-core"),
         ),
-        vec![
-            PathBuf::from("E:/custom/bash.exe"),
-            PathBuf::from("bash"),
-            Path::new("D:/Tools/Git").join("bin").join("bash.exe"),
-            PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
-        ]
+        expected
     );
+
+    let mut expected = bare.to_vec();
+    expected.push(default_install);
     assert_eq!(
         bash_candidates(Some(PathBuf::new()), None),
-        vec![
-            PathBuf::from("bash"),
-            PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
-        ],
+        expected,
         "an empty override is no override"
     );
 }
