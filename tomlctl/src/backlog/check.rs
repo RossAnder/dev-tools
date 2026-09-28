@@ -25,7 +25,8 @@ use super::normalise::{
 };
 use super::schema::{
     self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_AREA, FIELD_CONTEXT, FIELD_DEDUP_ID, FIELD_ID,
-    FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, KIND_OTHER, coerce_kind,
+    FIELD_PROMOTED_TO, FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, KIND_OTHER,
+    STATUS_PROMOTED, coerce_kind,
 };
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
@@ -43,6 +44,7 @@ const SHARED_STRUCTURE_MIN: usize = 2;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Reason {
     DedupId,
+    InFlight,
     Compacted,
     DuplicateId,
     Trigram,
@@ -55,6 +57,7 @@ impl Reason {
     fn as_str(self) -> &'static str {
         match self {
             Self::DedupId => "dedup_id",
+            Self::InFlight => "in-flight",
             Self::Compacted => "compacted",
             Self::DuplicateId => "duplicate-id",
             Self::Trigram => "trigram",
@@ -67,6 +70,7 @@ impl Reason {
     fn verdict(self) -> &'static str {
         match self {
             Self::DedupId => "duplicate",
+            Self::InFlight => "in-flight",
             Self::Compacted => "previously-resolved",
             Self::DuplicateId => "duplicate-id",
             Self::Trigram => "likely-duplicate",
@@ -146,6 +150,7 @@ struct Candidate {
     status: String,
     seen_count: i64,
     context: String,
+    promoted_to: Option<String>,
 }
 
 struct Verdicts {
@@ -160,7 +165,8 @@ impl Verdicts {
 }
 
 /// One stored row, flattened across both arrays so the ladder walks a single
-/// list. `array` is what separates `duplicate` from `previously-resolved`.
+/// list. `array` is what separates `duplicate` from `previously-resolved`, and
+/// a live row's `status` separates `duplicate` from `in-flight`.
 struct Row<'a> {
     array: &'static str,
     id: &'a str,
@@ -169,6 +175,7 @@ struct Row<'a> {
     area: &'a str,
     status: &'a str,
     context: &'a str,
+    promoted_to: &'a str,
     tags: BTreeSet<&'a str>,
     seen_count: i64,
 }
@@ -191,6 +198,7 @@ fn rows(doc: &TomlValue) -> Vec<Row<'_>> {
                 area: str_field(item, FIELD_AREA),
                 status: str_field(item, FIELD_STATUS),
                 context: str_field(item, FIELD_CONTEXT),
+                promoted_to: str_field(item, FIELD_PROMOTED_TO),
                 tags: item
                     .get(FIELD_TAGS)
                     .and_then(TomlValue::as_array)
@@ -264,10 +272,13 @@ fn evaluate(doc: &TomlValue, probe: &Probe, thresholds: &Thresholds) -> Verdicts
         .map(Vec::as_slice)
         .unwrap_or_default()
     {
-        let reason = if rows[position].array == ARRAY_BACKLOG {
-            Reason::DedupId
-        } else {
+        let row = &rows[position];
+        let reason = if row.array != ARRAY_BACKLOG {
             Reason::Compacted
+        } else if row.status == STATUS_PROMOTED {
+            Reason::InFlight
+        } else {
+            Reason::DedupId
         };
         graded.insert(position, (reason, 1.0));
     }
@@ -302,6 +313,7 @@ fn evaluate(doc: &TomlValue, probe: &Probe, thresholds: &Thresholds) -> Verdicts
                 status: row.status.to_owned(),
                 seen_count: row.seen_count,
                 context: row.context.to_owned(),
+                promoted_to: (!row.promoted_to.is_empty()).then(|| row.promoted_to.to_owned()),
             }
         })
         .collect();
@@ -343,7 +355,7 @@ fn round4(score: f64) -> f64 {
 fn render(probe: &Probe, thresholds: &Thresholds, verdicts: &Verdicts) -> Result<JsonValue> {
     let mut candidates = Vec::with_capacity(verdicts.candidates.len());
     for candidate in &verdicts.candidates {
-        candidates.push(json!({
+        let mut entry = json!({
             "id": candidate.id,
             "summary": candidate.summary,
             "score": round4(candidate.score),
@@ -352,7 +364,11 @@ fn render(probe: &Probe, thresholds: &Thresholds, verdicts: &Verdicts) -> Result
             "seen_count": candidate.seen_count,
             "context": candidate.context,
             "evidence_files": evidence_count(&candidate.id)?,
-        }));
+        });
+        if let Some(target) = &candidate.promoted_to {
+            entry[FIELD_PROMOTED_TO] = json!(target);
+        }
+        candidates.push(entry);
     }
     Ok(json!({
         "verdict": verdicts.verdict,
@@ -430,7 +446,7 @@ pub(crate) fn dispatch(
 mod tests {
     use super::*;
     use crate::backlog::schema::{
-        COMPACTED_FIELDS, FIELD_COMPACTED_ON, FIELD_KIND, FIELD_TERMINAL_DATE,
+        COMPACTED_FIELDS, FIELD_COMPACTED_ON, FIELD_KIND, FIELD_PROMOTED, FIELD_TERMINAL_DATE,
         FIELD_TERMINAL_REASON, KIND_BUG, KIND_FLAKY_TEST, STATUS_OPEN, STATUS_RESOLVED,
     };
     use crate::test_support::with_root;
@@ -696,6 +712,45 @@ mod tests {
         assert_eq!(hit.status, STATUS_RESOLVED);
         // The workaround is the whole point of surfacing an aged-out row.
         assert_eq!(hit.context, COMPACTED_CONTEXT);
+    }
+
+    #[test]
+    fn a_fingerprint_hit_on_a_promoted_row_is_in_flight() {
+        let mut row = live_row(
+            "B-a1b2c3d4",
+            KIND_FLAKY_TEST,
+            FLAKE_AREA,
+            FLAKE_SUMMARY,
+            FLAKE_CONTEXT,
+        );
+        let fields = row.as_table_mut().unwrap();
+        for (key, value) in [
+            (FIELD_STATUS, STATUS_PROMOTED),
+            (FIELD_PROMOTED, "2026-09-20"),
+            (FIELD_PROMOTED_TO, "docs/plans/pty-readiness.md"),
+        ] {
+            fields.insert(key.to_owned(), TomlValue::String(value.to_owned()));
+        }
+        let doc = store(vec![row], vec![]);
+        let probe = probe(FLAKE_SUMMARY, FLAKE_AREA, KIND_FLAKY_TEST);
+        let verdicts = evaluate(&doc, &probe, &defaults());
+        assert_eq!(verdicts.verdict, "in-flight");
+        assert_eq!(verdicts.candidates[0].reason.as_str(), "in-flight");
+
+        let envelope = with_root(|_| render(&probe, &defaults(), &verdicts).unwrap());
+        assert_eq!(
+            envelope["candidates"][0][FIELD_PROMOTED_TO],
+            "docs/plans/pty-readiness.md"
+        );
+    }
+
+    #[test]
+    fn an_open_row_carries_no_promotion_target() {
+        let doc = populated();
+        let probe = probe(FLAKE_SUMMARY, FLAKE_AREA, KIND_FLAKY_TEST);
+        let verdicts = evaluate(&doc, &probe, &defaults());
+        let envelope = with_root(|_| render(&probe, &defaults(), &verdicts).unwrap());
+        assert!(envelope["candidates"][0].get(FIELD_PROMOTED_TO).is_none());
     }
 
     #[test]
