@@ -379,6 +379,26 @@ body
         assert_eq!(reasons, vec!["extracted-empty", "extracted-empty"]);
     }
 
+    /// The surviving carriers agree, so the block reports a hash and no drift,
+    /// yet the defective carrier still makes the block itself fail.
+    #[test]
+    fn blocks_verify_defective_carrier_fails_the_block_when_survivors_agree() {
+        let dir = tempfile::tempdir().unwrap();
+        let good = "<!-- SHARED-BLOCK:foo START -->\nbody\n<!-- SHARED-BLOCK:foo END -->\n";
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        let c = dir.path().join("c.md");
+        fs::write(&a, good).unwrap();
+        fs::write(&b, good).unwrap();
+        fs::write(&c, "no markers\n").unwrap();
+
+        let report = blocks_verify(&[a, b, c], &["foo".to_string()]).unwrap();
+        assert!(!report.ok);
+        let block = &report.report["blocks"][0];
+        assert!(block.get("hash").is_some(), "{block}");
+        assert_eq!(block["ok"], JsonValue::Bool(false), "{block}");
+    }
+
     /// `blocks_verify`'s no-files error must embed an example invocation, so
     /// an agent reading it sees the expected argument shape directly.
     #[test]

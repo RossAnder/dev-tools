@@ -198,7 +198,7 @@ A block that lost a file to any of those three carries an optional `defects` arr
 
 ```json
 {"name":"backlog-candidates","defects":[{"file":"claude/agents/implement-lite.md","reason":"extracted-empty"}],
- "hash":"<64-lower-hex>","files":["claude/agents/implement-deep.md"],
+ "ok":false,"hash":"<64-lower-hex>","files":["claude/agents/implement-deep.md"],
  "missing":["claude/agents/implement-lite.md"]}
 ```
 
