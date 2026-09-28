@@ -236,13 +236,16 @@ tomlctl items update .claude/flows/foo/review-ledger.toml R22 --json '{"rounds":
 
 `--unset <key>` (repeatable) drops a field from the matched item. The patch is applied **first**, then each unset runs, so an `--unset` on the same key as a `--json` set wins. Unsetting a key that is not present is silently a no-op — field-absent is the desired end state.
 
-`--json` is still required; pass `--json '{}'` when you only want to unset:
+`--json` is optional when `--unset` is given; at least one of the two is required. Both together compose in one rewrite:
 
 ```bash
 # Flip deferred -> open and drop the defer triggers in a single rewrite
 tomlctl items update ledger.toml R7 \
   --json '{"status":"open","rounds":2}' \
   --unset defer_reason --unset defer_trigger
+
+# Unset only
+tomlctl items update ledger.toml R7 --unset defer_reason
 ```
 
 In `items apply` batches, an `update` op accepts a per-op `unset` array of field names alongside the `json` patch object. Both may appear on the same op: `json` sets fields, `unset` deletes fields; the `unset` pass runs **after** the `json` merge, so an `unset` on the same key as a set wins. Omitting `unset` leaves behaviour unchanged.
