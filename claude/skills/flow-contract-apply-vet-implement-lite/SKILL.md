@@ -5,7 +5,7 @@ description: "Canonical apply-vet-implement-lite contract for the apply-flow car
 
 ## Step 4.5: Vet `implement-lite` apply tags (orchestrator)
 
-After cluster agents return but BEFORE the interim checkpoint, the orchestrator (Opus) MUST vet `applied` tags from `implement-lite` clusters. The Step 5a build/test verification catches bytes-don't-compile bugs and existing-test regressions, but it does NOT catch:
+After cluster agents return but BEFORE the Step 4.6 escalation routing and the interim checkpoint, the orchestrator MUST vet `applied` tags from `implement-lite` clusters. The Step 5a build/test verification catches bytes-don't-compile bugs and existing-test regressions, but it does NOT catch:
 
 - Subtle correctness issues that compile and pass existing tests (e.g. an off-by-one that the tests don't exercise).
 - Anti-pattern introductions (e.g. the agent picked an idiom that compiles but fights the surrounding code's style).
@@ -14,8 +14,8 @@ After cluster agents return but BEFORE the interim checkpoint, the orchestrator 
 
 **Vetting procedure (per cluster):**
 
-1. **Inspect every `applied <id> [vet-recommended]: ...` tag.** This is the agent's explicit ask; the orchestrator MUST read the touched files at the named line ranges and confirm the change is sound. If wrong, re-dispatch the failed item to `implement-deep` for a corrected fix.
-2. **Spot-sample bare `applied` tags.** Sample at least **1 applied per cluster** (or all if the cluster has fewer than 3 applies). For each sampled apply:
+1. **Inspect every `applied <id> [vet-recommended]: ... — uncertain: <reason>` tag.** This is the agent's explicit ask; the orchestrator MUST read the touched files at the named line ranges and confirm the change is sound. The `uncertain:` reason says where to look first — the idiom it pattern-matched, the call site or test it left unread, the judgement call it made. If wrong, re-dispatch the failed item to `implement-deep` for a corrected fix.
+2. **Spot-sample bare `applied` tags.** Sample at least **2 applies per cluster** (all of them when the cluster has 2 or fewer). Sample first any non-trivial edit whose report says `note: check not run` — nothing compiled it. For each sampled apply:
    - Read the touched lines and confirm the change matches the finding's recommended action.
    - Confirm the surrounding code's style (naming, error handling, idioms) is preserved or improved, not regressed.
    - Confirm the change makes structural sense and addresses the finding's root cause — not just satisfying the spec by adding a duplicating helper or silencing the symptom without fixing the underlying issue.

@@ -1,6 +1,6 @@
 ---
 name: flow-contract-apply-pipeline
-description: "Canonical end-to-end pipeline contract shared by the apply-flow carriers (/review-apply, /optimise-apply) — the Step 0→6 orchestration each carrier runs: pre-flight envelope gating, ledger location + selector semantics (ID-prefixed vs legacy numeric, --file-budget / --allow-cross-file overrides), the freshness gate, pre-analysis (Explore delegation, Tier-1/Tier-2 already-applied tests), file clustering, agent dispatch + prompt contract, the interim checkpoint, verification with applied-claim diff reconciliation and the regression cross-check, ledger mutation and the two-call write pattern, the final summary, and deviation follow-up. Carriers bind a small vocabulary interface (id prefix, dispositions, producer command, ledger paths) and state only their domain-specific deltas. Consult when running or editing an apply-flow command."
+description: "Canonical end-to-end pipeline contract shared by the apply-flow carriers (/review-apply, /optimise-apply) — the Step 0→6 orchestration each carrier runs: pre-flight envelope gating, ledger location + selector semantics (ID-prefixed vs legacy numeric, --file-budget / --allow-cross-file overrides), the freshness gate, pre-analysis (Explore delegation, Tier-1/Tier-2 already-applied tests), file clustering, agent dispatch + prompt contract, escalation routing, the interim checkpoint, verification with applied-claim diff reconciliation and the regression cross-check, ledger mutation and the two-call write pattern, the final summary, and deviation follow-up. Carriers bind a small vocabulary interface (id prefix, dispositions, producer command, ledger paths) and state only their domain-specific deltas. Consult when running or editing an apply-flow command."
 ---
 
 # Apply pipeline (shared contract)
@@ -100,10 +100,12 @@ the reply as `envelope`.
      - **Scoped** (`--allow-cross-file <ID>,<ID>`, `--file-budget 8 <ID>`) — the trailing id
        list narrows the override; other selected items keep the default cap.
 
-     Honour an override by emitting one extra header line per affected cluster in the agent
-     prompt, immediately after `DISPATCH:` — `FILE-BUDGET: <N | unlimited> for <id-list>`.
-     Items without an override are not named in the header and inherit the default cap. The
-     flags do NOT alter the lite-eligibility gate; cross-file work still routes to `implement-deep`.
+     The allowance reaches the agent as one header line immediately after `DISPATCH:` —
+     `FILE-BUDGET: <N | unlimited> for <id-list>` — on every `implement-deep` dispatch whose
+     cluster holds an undeclared item, naming each with its allowance (3 unless an override
+     raises it). Declared items are never named, and `implement-lite` gets no header: it
+     escalates `cross-cut` for any file outside `files[]`. The flags do NOT alter the
+     lite-eligibility gate; cross-file work still routes to `implement-deep`.
 
 3. **Selector expansion**: `"all"` → every `status = "open"` item including suggestions;
    `"critical"` → open items with `severity = "critical"`; `"critical,warnings"` → open items
@@ -199,8 +201,8 @@ Consume the output as follows:
   file set, `depends_on` the cluster ids that must land first, `lite_file_scope` the mechanical
   half of gate criterion 1 below.
 - `batches` — sequential rounds of cluster ids. Clusters within a round are file-disjoint and
-  launch together (Step 4's single-message rule); round k+1 launches only after round k is
-  applied and committed, even when its clusters share a file with round k.
+  launch together (Step 4's single-message rule); round k+1 launches only after round k has
+  returned and passed Steps 4.5 and 4.6, even when its clusters share a file with round k.
 - `dropped_deps` — `depends_on` targets outside the selection, dropped as out of scope for this
   run. Name each in the pre-dispatch summary so the ordering assumption is auditable: an
   `unselected` entry whose `status` is `open` is the ordering hazard to call out (the item
@@ -239,7 +241,7 @@ Evaluate each cluster as a whole against ALL of:
 3. **No cross-file refactor**: no item needs coordinated edits to call sites, type definitions,
    or interfaces outside the cluster.
 4. **Not security-sensitive**: no item touches auth, crypto, input-validation, sandbox-boundary,
-   or token-storage code.
+   or token or session handling code.
 
 **Coupling-isolation rule**: if any item fails any criterion, the ENTIRE cluster goes to
 `implement-deep`. Trivial items dependency-linked or file-overlapping with complex ones ride
@@ -249,8 +251,8 @@ marginal saving from peeling out trivial items.
 Dispatch: passes ALL criteria → `subagent_type: "implement-lite"`; fails ANY → `implement-deep`
 (the default). Record the choice as a one-line `DISPATCH:` header at the top of the agent's
 prompt with its rationale, naming the failing criterion and item on a deep dispatch; the header
-is captured in the execution record for audit. Append the `FILE-BUDGET:` header (Step 1) when an
-override names any item in the cluster; omit it entirely otherwise.
+is captured in the execution record for audit. Append the `FILE-BUDGET:` header on a deep dispatch
+whose cluster holds an undeclared item (Step 1); omit it entirely otherwise.
 
 This gate is **separate from** the critical-finding user-confirmation gate in Step 5 — that gate
 suppresses silent automated `<REJECTED>` transitions, not lite/deep selection.
@@ -272,20 +274,48 @@ losing work.
 **You MUST make all independent file-cluster Agent calls in a single response message.** Emit one
 message containing every Agent tool-use block so they execute concurrently. **Do NOT reduce the
 agent count** — launch the full complement. Dependent same-file agents run sequentially after the
-parallel batch, and each sequential batch's changes are committed before the next launches, so a
-later failure is revertible without losing earlier work.
+parallel batch. Nothing is committed between rounds (the apply-constraints no-auto-commit rule), so
+the Step 5.5 rollback reverts the whole run's work, never one round's.
 
-`implement-lite` and `implement-deep` already carry the applied/skipped tag form, the Tier-2
-already-applied protocol, and the no-overlapping-edits rule in their
-system prompts; the per-call prompt restates only the carrier-specific vocabulary and the Step-2
-pre-analysed reasoning. For the mandatory prompt elements, the obligations every agent owes, and
-the partial-apply follow-up that mints a child item for the pending parts, see
+**Dev server (UI clusters).** When a cluster's items change something visible — a component, a
+style, a template — and the project's `.mcp.json` declares the `playwright` server, probe the dev
+URL the project documents (its CLAUDE.md, or the dev script in its manifest). If nothing answers
+and a dev command is documented, start it once in the background before the round launches;
+stop a server this run started before Step 5. Put `DEV SERVER: <url>` in every cluster prompt, or `DEV SERVER: none`;
+the implementers attach only to that URL and never start a server of their own.
+
+The implementers carry their method in their system prompts; the per-call prompt carries the
+carrier's vocabulary and the Step-2 context. For the mandatory prompt elements and the partial-apply
+follow-up that mints a child item for the pending parts, see
 [Agent prompt contract](references/agent-prompt-contract.md#agent-prompt-contract).
+
+## Step 4.6: Escalation routing
+
+Runs after the Step 4.5 vet and before the interim checkpoint, over every `escalate <ID>: <reason>`
+tag the round returned. Every cluster in the round has returned by then, so the tree is quiescent.
+Route each by its reason word, and log one console line per route —
+`escalation: <ID> <reason> → <route>`:
+
+| Reason | From | Route |
+|---|---|---|
+| `cross-cut — needs <file>` | either | Add `<file>` to the item's `files[]` (re-sweep first when the item carries `sweep`), re-run the lite-eligibility gate on the widened set, and re-dispatch. Escalated items whose widened sets share a file merge into one cluster. A second `cross-cut` on the same item goes to `### Escalated`. |
+| `ambiguous`, `security-sensitive`, or any other | `implement-lite` | Re-dispatch the item to `implement-deep`, with the escalation's evidence in the prompt. |
+| `spec-stale` | either | No re-dispatch — the ledger describes code that is not there. Leave the item `open`, list it under `### Escalated` with the evidence, and recommend re-running `<PRODUCER>` on the file. |
+| `stash-required` | either | The stash handler below. |
+| any other | `implement-deep` | The user's call: leave the item `open` and list it under `### Escalated`. |
+
+A re-dispatch carries the full Step 4 prompt; a lite return passes through Step 4.5 again and its
+escalations back through this step.
+
+**Stash handler.** `git stash push -u -m "apply-escalation-stash-<ISO timestamp>"`, perform the
+`what="…"` observation — a read, never an edit — then `git stash pop <stash-ref>`. On a pop
+conflict, halt the run and surface the stash ref; never auto-resolve it. Re-dispatch the item with
+the observation in its prompt. A second `stash-required` for the same item goes to `### Escalated`.
 
 ## Interim checkpoint
 
-After the Step 4.5 vet (and any re-dispatched fixes), persist non-risky transitions in a single
-atomic `tomlctl items apply --ops -` call. Non-risky means:
+After the Step 4.5 vet and the Step 4.6 routing (and their re-dispatches), persist non-risky
+transitions in a single atomic `tomlctl items apply --ops -` call. Non-risky means:
 
 - `<NO-CHANGE>` transitions where agents wrote no bytes and reported the item already in place.
 - `<REJECTED>` transitions for agent-intentional skips (no bytes written, finding declared unsafe
@@ -373,6 +403,10 @@ completeness, and ensure the report reflects what was actually implemented, audi
 ### Skipped
 - [<ID>] [category] Reason — the ledger's rationale field carries the same text
 
+### Escalated
+- [<ID>] [file:line] <reason word> — evidence and next step (for `spec-stale`, re-run <PRODUCER> on
+  the file); the item stays `open`
+
 ### Unknown IDs
 - <ID>: not present in ledger at <path> — check <PRODUCER>'s most recent output
 
@@ -394,38 +428,28 @@ completeness, and ensure the report reflects what was actually implemented, audi
 
 ## Step 6: Plan-deviation follow-up
 
-Inspect each agent's output for `deviation:` lines (agents emit these with the item's ledger ID —
-see Step 4). Skip this step entirely if none were reported.
+A fix landing in a file the resolved flow's plan covers diverges from that plan. The orchestrator
+derives this itself rather than asking agents to classify it: for each `<APPLIED>` item, match the
+paths under its agent's `## Files touched` against the flow's `scope` globs (the `Glob` tool).
 
-For each, check whether the cited file matches any `scope` glob in the resolved flow's `context.toml`
-(use the `Glob` tool with the flow's `scope` patterns).
-
-- **In-scope**: auto-invoke the `plan-update` skill via the `Skill` tool with the literal argument
-  `deviation`, passing through the agents' details (item ID, file, applied-fix summary) so
-  `plan-update deviation` can record them.
-- **Out-of-scope** (no matching glob, or no flow resolved): no plan update fires, so capture the
-  deviation in the repo-scoped backlog instead of leaving it in prose. Invoke the `backlog-capture`
-  skill for the capture discipline before the first mint of the run, then run its check-then-add gate
-  per deviation — the deviation's summary and file as the candidate, its rationale as the item's
-  context, `--origin <CMD>` and `--flow "<slug>"` as provenance. `<CMD>` is the bound carrier command
-  name, `review-apply` or `optimise-apply`, since this contract is shared by both. Report each
-  deviation in the final summary with the item ID, file path, applied fix, the note that it falls
-  outside the active flow's scope, and the backlog id it minted (or the verdict that suppressed the
-  mint).
+When any item matched, auto-invoke the `plan-update` skill via the `Skill` tool with the literal
+argument `deviation`, passing each matching item's ID, file and applied-fix summary, plus its
+agent's `deviation: <ID> — <file> — spec said …, code required …: <why>` line when one came back.
+A `deviation:` line on an item that matched no glob changes no plan; the ledger mutation carries it
+in the item's `resolution`.
 
 ### Capped-skip capture
 
-Runs independently of the deviation gate above — whenever a capped-skip tag came back, including
-runs where no `deviation:` line did.
+Runs whenever a capped-skip tag came back, including runs with no flow or no scope match above.
 
 The apply-constraints contract makes an agent emit `skipped <ID>: requires deliberate refactor` when
-an item is real but needs a design pass its dispatch cannot give it, and `escalate <ID>: cross-cut`
-when the fix reached a file outside the declared set. The escalate is answered in-run: re-sweep,
-widen the cluster to the files it names, re-dispatch. The skip has no in-run answer, and unless the
-orchestrator writes a `<REJECTED>` transition carrying that reason, the work disappears with the
-run's prose. Route each such tag into the backlog after the ledger mutation,
-through the same check-then-add gate — the ledger item's summary and file as the candidate, the skip
-reason as the item's context.
+an item is real but needs a design pass its dispatch cannot give it. The skip has no in-run answer,
+and unless the orchestrator writes a `<REJECTED>` transition carrying that reason, the work
+disappears with the run's prose. Route each such tag into the backlog after the ledger mutation:
+invoke the `backlog-capture` skill for the capture discipline before the run's first mint, then run
+its check-then-add gate — the ledger item's summary and file as the candidate, the skip reason as
+the item's context, `--origin <CMD>` (bare: `review-apply` or `optimise-apply`) and
+`--flow "<slug>"` as provenance.
 
 The orchestrator is the only writer here — cluster agents and the `verification` agent never touch
 the store. Each cluster agent closes its report with the fixed `TANGENTIAL:` heading, one

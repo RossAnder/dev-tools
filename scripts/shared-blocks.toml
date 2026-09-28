@@ -42,6 +42,20 @@ files = [
   "claude/agents/implement-lite.md",
 ]
 
+[[block]]
+name = "implementer-verification"
+files = [
+  "claude/agents/implement-deep.md",
+  "claude/agents/implement-lite.md",
+]
+
+[[block]]
+name = "implementer-report-lines"
+files = [
+  "claude/agents/implement-deep.md",
+  "claude/agents/implement-lite.md",
+]
+
 # The research agents share their method-load, read-only contract, finding
 # record and delivery block; the lite/deep split lives in the sections between.
 [[block]]

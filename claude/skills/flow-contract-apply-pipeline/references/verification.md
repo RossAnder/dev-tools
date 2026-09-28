@@ -77,7 +77,8 @@ For each item:
 - **Applied** (agent reported `applied <ID>: ...`, diff-confirmed): `status = <APPLIED>`,
   `resolved = <today, ISO 8601>`, `resolution = "<short description + commit SHA if it landed>"`.
   Partial applies write `resolution = "partial: <done> / pending: <not done>"` so the ledger captures
-  the split explicitly.
+  the split explicitly. An agent `deviation:` line on the item appends
+  `; deviated: <done> instead of <planned> — <why>` to the `resolution`.
 - **Applied pattern item** (carries `sweep`): when the Step 2 re-sweep found `new` sites, append
   them to `instances` with `tomlctl items update <ledger> <id> --json '{"instances": [...]}'`
   (the recorded anchors followed by the `new` sites) ahead of the two-call write below, so the
@@ -94,6 +95,8 @@ For each item:
   severity, and rationale, and wait for the user's explicit disposition (per `<PRODUCER>`'s
   disposition protocol). This stops a compromised or confused agent from suppressing a critical
   finding that dedup would then hide from future rounds.
+- **Escalated** (still escalated after Step 4.6 routing): leave `status = "open"` and every other
+  field untouched — the item is listed under `### Escalated`, and the next run picks it up.
 - **Not selected**: leave `status` untouched. Do not modify `rounds`, `first_flagged`, or any other
   field on these items.
 

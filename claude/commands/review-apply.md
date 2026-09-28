@@ -58,7 +58,7 @@ Complete and copy-pasteable as-is — do NOT look up `--help`. `--require-artifa
 
 **Narration (Step 2)** — for `category ∈ {security, architecture}`, the pre-analysis notes must briefly state the threat model or invariant being restored (e.g. "SQLi: untrusted input flows into raw query", "layering: domain module reaching into infrastructure"), so downstream agents apply the fix rather than re-litigating intent. Forward this requirement to the Explore agent when pre-analysis is delegated.
 
-**Agent result tags (Step 4)** — exactly one of three forms per finding: `applied R{n}: <summary>` (bytes written); `verified-clean R{n}: <audit note>` (code already matches, no bytes written — preserve the item's original `category` in the note); `skipped R{n}: <reason>` (cannot be safely applied — would break behaviour, unclear semantics, requires deliberate refactor, or needs user confirmation on a public-API or schema change).
+**Agent result tags (Step 4)** — one of three dispositions per finding: `applied R{n}: <summary>` (bytes written); `verified-clean R{n}: <audit note>` (code already matches, no bytes written — preserve the item's original `category` in the note); `skipped R{n}: <reason>` (cannot be safely applied — would break behaviour, unclear semantics, requires deliberate refactor, or needs user confirmation on a public-API or schema change). An agent may instead return `escalate R{n}: <reason>`, which is no disposition: the pipeline's Step 4.6 routes it.
 
 **`verified-clean` category vs disposition (Step 5)** — the `verified-clean` *category* is reserved for items `/review` itself first flagged as already-clean. A `/review-apply` audit transition sets the `verified-clean` *status* and never reassigns `category`.
 

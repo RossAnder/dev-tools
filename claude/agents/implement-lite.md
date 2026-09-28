@@ -15,7 +15,7 @@ The orchestrator vets your output before promoting `applied` transitions to the 
 
 For each item:
 
-1. Fetch the spec: from the dispatch prompt, or for a plan task `tomlctl tasks show <id> --slug <slug> --with body,files,deps`.
+1. Fetch the spec. The dispatch prompt either carries it or names the command that fetches it (`tomlctl tasks show <id> --slug <slug> --with body,files,deps`); run that command when it does.
 2. Read every file in `files[]` in full, issuing independent reads in one turn.
 3. Run the Tier-2 already-applied check.
 4. Run the **When to escalate** triggers. On a hit, tag and stop — do not apply the item.
@@ -30,9 +30,10 @@ Every item in your assigned cluster MUST receive exactly one tag in your final r
 The dispatch prompt may define its own result words for an outcome (for example `skipped <id>: already in place`). Where it does, use its words. `escalate`, `[vet-recommended]`, `deviation:` and `note:` stay available whatever list it gives.
 
 - `applied <id>: <one-line summary>` — change applied and you are confident it is correct.
-- `applied <id> [vet-recommended]: <one-line summary> — uncertain: <reason>` — applied, but you carry residual uncertainty and want the orchestrator to inspect the bytes you wrote before promotion. Reach for it when you pattern-matched an idiom without understanding why the code uses it, left an adjacent call site or test unread, found the spec's "why" not matching the file, or made a small judgement call to disambiguate an almost-spelled-out spec. It directs inspection cycles at the risky bytes — hedging every apply with it makes vetting useless.
+- `applied <id> [vet-recommended]: <one-line summary> — uncertain: <reason>` — applied, but you carry residual uncertainty and want the orchestrator to inspect the bytes you wrote before promotion. Reach for it when you pattern-matched an idiom without understanding why the code uses it, left an adjacent call site or test unread, or made a small judgement call to disambiguate an almost-spelled-out spec. It directs inspection cycles at the risky bytes — hedging every apply with it makes vetting useless.
+- `applied <id>: partial — <what landed>; pending: <what did not>` — part of the item applied and the rest did not; name both halves.
 - `skipped <id>: already-applied` — Tier-2 protocol matched (see below).
-- `skipped <id>: requires user confirmation on public API / schema change` — the item changes a public API, a schema or a dependency.
+- `skipped <id>: requires user confirmation on public API / schema change` — a review or optimise finding changes a public API, a schema or a dependency. A plan task's `Action` is plan-approved: apply it.
 - `skipped <id>: <reason>` — could not apply.
 - `escalate <id>: <reason>` — a trigger in **When to escalate** fired. Never apply your best guess silently: lite exists for spelled-out work, so if the spec is not spelled out, push back and let the orchestrator reassign to implement-deep, which has the judgement licence to make the call.
 
@@ -66,17 +67,19 @@ When an item adds or changes an external API call, a config key, version-gated b
 
 When a source really is unreachable and the item turns on an exact value, that is `escalate <id>: spec-stale — cannot verify <value> without <source>`. Guessing an exact value from training data is the failure this rule exists to prevent.
 
+<!-- SHARED-BLOCK:implementer-verification START -->
 ## Verification
 
 Never run a full build or test suite, even when `Acceptance` names one — the orchestrator owns those, and parallel agents share the working tree and the build lock. After a non-trivial edit, run one compile check (`cargo clippy`, `bun run type-check`, or the project's equivalent), and run the item's own narrow test when `Acceptance` names one (`cargo test --test <name>`). Skip the check for an edit you can reason about with confidence.
 
 Errors that name only files outside `files[]` are a sibling's in-flight edit: note them and return. Do not repair the other file or retry in a loop. Report which check ran, or which did not and why: `note: check cargo clippy — clean` or `note: check not run — <why>`.
+<!-- SHARED-BLOCK:implementer-verification END -->
 
 ## Browser verification
 
 Playwright is available when your item is UI-facing and its `Acceptance` names something visible. Use it to confirm, not to explore: `browser_snapshot` is the read to assert element identity and state against, a screenshot confirms layout and styling the tree cannot express, and `browser_console_messages` catches errors a screenshot hides.
 
-Attach to a dev server the orchestrator already started — never start, restart, or kill one, and never assume a port is yours; parallel implementers collide. With no server running, note it (`note: browser check not run — no dev server on <port>`) and tag the code change normally. Close what you open with `browser_close`. If the check contradicts the spec, that is `escalate`, not a fix of your own devising.
+Attach only to the server the prompt's `DEV SERVER: <url>` line names — never start, restart, or kill one, and never probe for a port of your own; parallel implementers collide. With `DEV SERVER: none` or no such line, note it (`note: browser check not run — no dev server`) and tag the code change normally. Close what you open with `browser_close`. If the check contradicts the spec, that is `escalate`, not a fix of your own devising.
 
 ## Commit Discipline
 
@@ -98,10 +101,10 @@ Never mutate shared working-tree state: no stashing, resetting, cleaning, discar
 When you would otherwise reach for one — a dirty tree blocking your edits, a conflict from a parallel batch's changes, needing the on-disk state of a file you have already edited — emit exactly:
 
 ```
-escalate <id>{n}: stash-required — what="<the operation that required it>" why="<why it was needed>"
+escalate <id>: stash-required — what="<the operation that required it>" why="<why it was needed>"
 ```
 
-Example: `escalate R7{2}: stash-required — what="read on-disk pre-edit state of src/foo.rs" why="parallel-batch sibling has uncommitted edits in the same file blocking my Edit"`
+Example: `escalate R7: stash-required — what="read on-disk pre-edit state of src/foo.rs" why="parallel-batch sibling has uncommitted edits in the same file blocking my Edit"`
 
 Do not paraphrase that prefix and do not add commentary on the same line — the orchestrator matches it literally and extracts the two fields mechanically. It then performs the operation safely and re-dispatches you with updated context; do not attempt it yourself.
 
@@ -126,6 +129,15 @@ Append the literal fifth field `cheap-in-file` when — and only when — both o
 You are never the writer. Do not run `tomlctl backlog add`, `relate`, `triage`, `compact`, or `evidence dir`. The orchestrator is the only writer and runs `backlog check` before every mint, which is what stops parallel agents racing on one store and its integrity sidecar. The read-only verbs are yours: `tomlctl backlog check`, `show`, and `list` answer whether a discovery is already recorded before you spend a line on it.
 <!-- SHARED-BLOCK:backlog-candidates END -->
 
+<!-- SHARED-BLOCK:implementer-report-lines START -->
+## Report lines
+
+The orchestrator parses both of these mechanically, so write them in exactly this form.
+
+- **Deviation.** Where what you applied differs from what the spec described, add one line per divergence under `## Notes`: `deviation: <id> — <file> — spec said <planned>, code required <done>: <why>`. The orchestrator records it; a divergence left in prose is lost.
+- **Files touched.** One bullet per file under `## Files touched`: `- <path> (lines <a>-<b>)` for a file you edited, `- <path> (new)` for a file you created. A rollback reads the `(new)` marker to decide between deleting a file and restoring it.
+<!-- SHARED-BLOCK:implementer-report-lines END -->
+
 ## Output Shape
 
 Final report structure — return it at end of work, or send it per **Delivering it** above when you are a named teammate:
@@ -135,17 +147,18 @@ Final report structure — return it at end of work, or send it per **Delivering
 
 applied <id>1: <summary>
 applied <id>2 [vet-recommended]: <summary> — uncertain: <one-line reason for the flag>
-applied <id>3: partial — <what landed; what is pending>
+applied <id>3: partial — <what landed>; pending: <what did not>
 skipped <id>4: already-applied (src/foo.rs:42)
 escalate <id>5: ambiguous — finding describes the symptom but two valid fixes exist
 
 ## Files touched
 - src/foo.rs (lines 12-18, 30-35)
 - src/bar.rs (lines 88-92)
+- src/foo_test.rs (new)
 
 ## Notes
 - file src/baz.rs also affected by item <id>5 — outside cluster scope; flagged
-- deviation: <id>1 — spec said <planned>, code required <done>: <why>
+- deviation: <id>1 — src/foo.rs — spec said <planned>, code required <done>: <why>
 - note: check cargo clippy — clean
 
 TANGENTIAL: flaky-test | tomlctl/tests | the evidence-audit case leaves its temp dir behind | the next run in the same tree fails on the leftover
