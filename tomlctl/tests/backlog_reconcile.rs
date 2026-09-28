@@ -384,7 +384,11 @@ fn a_run_without_flags_leaves_the_store_and_sidecar_byte_identical() {
     let tasks_before = fs::read(&tasks).unwrap();
 
     let report = reconcile(&root, &[]);
-    assert_eq!(bucket_ids(&report, "ready"), [id.clone()], "{report}");
+    assert_eq!(
+        bucket_ids(&report, "ready"),
+        std::slice::from_ref(&id),
+        "{report}"
+    );
     assert_eq!(report["applied"], json!([]));
     assert_eq!(report["adopted"], json!([]));
     assert_eq!(
