@@ -82,11 +82,11 @@ The seed is only the *starting* doc — the verb's mutation must still succeed a
 
 **Exceptions — `items backfill-dedup-id` and `items sweep --update` do NOT auto-create.** Each pre-reads the ledger — the first for items lacking a `dedup_id`, the second for the `sweep` arrays it re-runs — so a missing target errors with `kind=not_found` on both regardless of `--no-create`, and `items sweep` reports `created` as `false` on every path. This is by design, not a bug: backfilling or re-sweeping an absent ledger is a no-op, so the strict missing-file error is the correct behaviour. Every other mutating verb listed above auto-creates.
 
-**Envelope.** Write-success envelopes carry `"created": <bool>` and `"path": "<file>"` alongside any verb-specific keys (e.g. `added` on `items add-many`, `appended` on `array-append`):
+**Envelope.** Write-success envelopes carry `"created": <bool>` and `"path": "<file>"` alongside any verb-specific keys (e.g. `added` on `items add` and `items add-many`, `appended` on `array-append`):
 
 ```bash
 tomlctl items add .claude/flows/<slug>/review-ledger.toml --json '{"id":"R1","summary":"...","status":"open"}'
-# {"ok":true,"created":true,"path":".claude/flows/<slug>/review-ledger.toml"}
+# {"ok":true,"added":1,"created":true,"path":".claude/flows/<slug>/review-ledger.toml"}
 ```
 
 **Stderr guidance.** When a file is created, exactly one line is written to stderr:

@@ -578,22 +578,23 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 return Ok(());
             }
             if dedupe_fields.is_empty() {
-                // No-dedupe path: the envelope stays plain `{"ok":true}` and
-                // the always-write `mutate_doc` pipeline runs unconditionally.
-                // Absent `--dedupe-by` the output must not gain an `added`
-                // count; the enriched shape belongs to the `--dedupe-by`
-                // branch below.
+                // No-dedupe path: the always-write `mutate_doc` pipeline runs
+                // unconditionally, and the envelope matches the dedupe
+                // branch's `Added` arm so `added` reads the same across the
+                // add verbs.
                 let json = read_json_arg(&json)?;
-                // Auto-create policy.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
-                // Surface `created` + `path`. Purely additive on top of the
-                // plain `{"ok":true}` shape, so consumers reading no extra
-                // keys are unaffected.
                 let created =
                     mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
                         items_add_to(doc, &array, &json)
                     })?;
-                write_envelope(&file, created)?;
+                warn_if_created(&file, created);
+                print_json_compact(&serde_json::json!({
+                    "ok": true,
+                    "added": 1,
+                    "created": created,
+                    "path": file.display().to_string(),
+                }))?;
             } else {
                 // Dedupe path: parse JSON once up-front so we can feed it
                 // to the pre-scan inside the lock without a re-parse.
