@@ -3,7 +3,7 @@ name: implement-deep
 description: DEFAULT for apply/implement work in flow commands. Used unless the orchestrator's lite-eligibility gate fires (≤2 files, action fully specified, no cross-file refactor, not security-sensitive, no coupled deep items). Equipped for cross-file refactors, ambiguous-spec arbitration, and security-sensitive code paths. Used by /optimise-apply Step 4, /review-apply Step 4, /implement Phase 2 batches.
 tools: Read, Edit, Write, Glob, Grep, Bash, Skill, ToolSearch, WebSearch, WebFetch, mcp__plugin_context7_context7__query-docs, mcp__plugin_context7_context7__resolve-library-id, mcp__claude_ai_Context7__query-docs, mcp__claude_ai_Context7__resolve-library-id, mcp__playwright__browser_navigate, mcp__playwright__browser_snapshot, mcp__playwright__browser_take_screenshot, mcp__playwright__browser_console_messages, mcp__playwright__browser_network_requests, mcp__playwright__browser_find, mcp__playwright__browser_wait_for, mcp__playwright__browser_resize, mcp__playwright__browser_tabs, mcp__playwright__browser_close, mcp__playwright__browser_click, mcp__playwright__browser_type, mcp__playwright__browser_fill_form, mcp__playwright__browser_select_option, mcp__playwright__browser_press_key
 model: opus
-effort: high
+effort: medium
 color: red
 ---
 
@@ -46,7 +46,7 @@ When a source really is unreachable and the item turns on an exact value, do not
 
 ## Browser verification
 
-Playwright is available for UI-facing work — reach for it to confirm a change actually renders and behaves, not to explore. `browser_snapshot` (accessibility tree) is the cheap read and the one to assert against: it names elements, whereas a screenshot only shows pixels. `browser_console_messages` and `browser_network_requests` catch the failures a screenshot hides entirely.
+Playwright is available for UI-facing work — reach for it to confirm a change actually renders and behaves, not to explore. `browser_snapshot` (accessibility tree) is the cheap read and the one to assert element identity and state against, because it names elements. A screenshot is the read for what the tree cannot express — layout, overlap, clipping, styling. `browser_console_messages` and `browser_network_requests` catch the failures a screenshot hides entirely.
 
 Attach to a dev server the orchestrator already started; never start, restart, or kill one, and never assume a port is yours. Parallel implementers each spawning a server collide on the same port, and long-running processes belong to the orchestrator for the same reason full builds do (project CLAUDE.md, "Build discipline in multi-agent flows"). With no server running, note it and move on — `note: browser check not run — no dev server on <port>` — rather than starting one; the item's code change still gets its normal tag. Close what you open with `browser_close`.
 

@@ -7,7 +7,7 @@
 The research agents hold navigate, snapshot, screenshot, console messages, network requests, find, wait, resize, tabs and close. Use them to grade a claim, not to explore:
 
 - `browser_console_messages` or `browser_network_requests` showing a real error turns a `low — hypothesis` into `high` evidence.
-- `browser_snapshot` returns the accessibility tree and anchors a layout or accessibility claim to named elements. A screenshot shows pixels; assert against the snapshot.
+- `browser_snapshot` returns the accessibility tree and anchors an accessibility or element-state claim to named elements; assert those against the snapshot. A screenshot grades what the tree cannot express — layout, overlap, clipping, styling.
 - Cite what you observed in the `Source` line, for example `browser_snapshot at /checkout, 1280×720`.
 
 ## What it is not for

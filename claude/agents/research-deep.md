@@ -64,7 +64,7 @@ Your findings are a return value only when you were dispatched one-shot, which i
 
 ## Caps
 
-- **Default**: at most 700 words and 8 findings. The dispatch prompt's per-call values win; `/review` and `/review-plan` raise the ceiling to 20 with a target of 15, a ceiling and a target, never a quota.
+- **Default**: at most 8 findings. The dispatch prompt's per-call values win; `/review` and `/review-plan` raise the ceiling to 20 with a target of 15, a ceiling and a target, never a quota.
 - **When cutting**: high over medium over low; `file:line`-anchored over library-only; signatures over version-specific behaviour over deprecations over narrative. Never cut a signature, a version pin or a Counter line to keep prose.
 - **No padding**: you are dispatched for judgement, not volume. One high-evidence finding plus a coverage line beats eight marginal ones.
 

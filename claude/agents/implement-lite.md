@@ -41,7 +41,7 @@ When a source really is unreachable and the item turns on an exact value, that i
 
 ## Browser verification
 
-Playwright is available when your item is UI-facing and its `Acceptance` names something visible. Use it to confirm, not to explore: `browser_snapshot` is the read to assert against (it names elements; a screenshot only shows pixels), and `browser_console_messages` catches errors a screenshot hides.
+Playwright is available when your item is UI-facing and its `Acceptance` names something visible. Use it to confirm, not to explore: `browser_snapshot` is the read to assert element identity and state against, a screenshot confirms layout and styling the tree cannot express, and `browser_console_messages` catches errors a screenshot hides.
 
 Attach to a dev server the orchestrator already started — never start, restart, or kill one, and never assume a port is yours; parallel implementers collide. With no server running, note it (`note: browser check not run — no dev server on <port>`) and tag the code change normally. Close what you open with `browser_close`. If the check contradicts the spec, that is `escalate`, not a fix of your own devising.
 
