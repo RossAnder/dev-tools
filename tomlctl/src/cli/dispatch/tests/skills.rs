@@ -708,6 +708,140 @@ fn skill_references_under_line_ceiling() {
     }
 }
 
+/// The `description` value from a SKILL.md's YAML frontmatter, with surrounding
+/// quotes stripped and indented continuation lines folded in with one space.
+/// `None` when there is no frontmatter or no `description` key.
+fn frontmatter_description(text: &str) -> Option<String> {
+    let mut lines = text.lines().map(|l| l.trim_end_matches('\r'));
+    if lines.next()? != "---" {
+        return None;
+    }
+    let mut value: Option<String> = None;
+    for line in lines {
+        if line == "---" {
+            break;
+        }
+        if let Some(v) = value.as_mut() {
+            if line.starts_with([' ', '\t']) {
+                v.push(' ');
+                v.push_str(line.trim());
+                continue;
+            }
+            break;
+        }
+        if let Some(rest) = line.strip_prefix("description:") {
+            value = Some(rest.trim().to_string());
+        }
+    }
+    let value = value?;
+    let unquoted = if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
+        value[1..value.len() - 1].replace("\\\"", "\"")
+    } else if value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'') {
+        value[1..value.len() - 1].replace("''", "'")
+    } else {
+        value
+    };
+    Some(unquoted)
+}
+
+/// The Agent Skills specification caps a skill's `description` at 1024
+/// characters, and Claude Code truncates an over-long one in the skill
+/// listing, so the trigger conditions at its tail stop reaching the model.
+#[test]
+fn skill_descriptions_under_spec_cap() {
+    const CAP: usize = 1024;
+
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+    let skills_dir = repo_root.join("claude").join("skills");
+    if !skills_dir.exists() {
+        eprintln!("skill_descriptions_under_spec_cap: claude/skills/ not found, skipping");
+        return;
+    }
+
+    // Plugin skills load into the same listing, so they share the cap.
+    let mut skill_dirs: Vec<PathBuf> = fs::read_dir(&skills_dir)
+        .expect("read claude/skills")
+        .flatten()
+        .map(|e| e.path())
+        .collect();
+    if let Ok(plugins) = fs::read_dir(repo_root.join("claude").join("plugins")) {
+        for plugin in plugins.flatten() {
+            if let Ok(skills) = fs::read_dir(plugin.path().join("skills")) {
+                skill_dirs.extend(skills.flatten().map(|e| e.path()));
+            }
+        }
+    }
+
+    let mut checked = 0usize;
+    let mut offenders: Vec<(String, String)> = Vec::new();
+    for dir in skill_dirs {
+        let body = dir.join("SKILL.md");
+        let Ok(text) = fs::read_to_string(&body) else {
+            continue;
+        };
+        let rel = repo_relative(&body, &repo_root);
+        match frontmatter_description(&text) {
+            None => offenders.push((rel, "no frontmatter `description`".to_string())),
+            Some(d) => {
+                checked += 1;
+                let n = d.chars().count();
+                if n > CAP {
+                    offenders.push((rel, format!("{n} chars ({} over)", n - CAP)));
+                }
+            }
+        }
+    }
+    offenders.sort();
+
+    assert!(
+        checked > 0,
+        "skill_descriptions_under_spec_cap: read no description under claude/skills/ — \
+         the walk or the frontmatter extractor is broken, not the corpus"
+    );
+    if !offenders.is_empty() {
+        let mut msg = format!(
+            "skill_descriptions_under_spec_cap: {} skill(s) over the {CAP}-character \
+             `description` cap. Keep what the skill is and when to use it; drop \
+             enumerations the body already carries:\n",
+            offenders.len()
+        );
+        for (f, why) in &offenders {
+            msg.push_str(&format!("  {f}: {why}\n"));
+        }
+        panic!("{msg}");
+    }
+}
+
+#[test]
+fn frontmatter_description_reads_the_yaml_shapes_in_use() {
+    assert_eq!(
+        frontmatter_description("---\r\nname: x\r\ndescription: \"a \\\"b\\\" c\"\r\n---\r\n"),
+        Some("a \"b\" c".to_string()),
+        "double-quoted, CRLF"
+    );
+    assert_eq!(
+        frontmatter_description("---\nname: x\ndescription: plain `a` — b\n---\nbody\n"),
+        Some("plain `a` — b".to_string()),
+        "plain scalar"
+    );
+    assert_eq!(
+        frontmatter_description("---\ndescription: one\n  two\nname: x\n---\n"),
+        Some("one two".to_string()),
+        "continuation lines fold into the value"
+    );
+    assert_eq!(
+        frontmatter_description("---\nname: x\n---\ndescription: in the body\n"),
+        None,
+        "a body line is not frontmatter"
+    );
+    assert_eq!(
+        frontmatter_description("description: no fence\n"),
+        None,
+        "no frontmatter"
+    );
+}
+
 /// Every markdown file the link check scans: each skill's body plus one level
 /// of its `references/`, sorted.
 fn skill_markdown_files(skills_dir: &Path) -> Vec<PathBuf> {
