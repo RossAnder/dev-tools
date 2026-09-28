@@ -21,6 +21,7 @@ use anyhow::Result;
 use super::finding::{Finding, WARNING, join_ids};
 use super::graph::{Graph, Group, nodes_of};
 use super::markdown::{insert_section_after, insert_section_before, replace_section, sections};
+use super::parse_policy::sentence_case;
 use super::parse_tasks::{note_held_spans, parse_files};
 use super::schema::{BacklogLink, Checkpoint, Policy, Store, TaskRow};
 
@@ -254,7 +255,7 @@ fn render_graph(checkpoints: &[Checkpoint], groups: &[Group], closures: &[Vec<u3
         let rationale = collapse(rationale);
         if !rationale.is_empty() {
             marker.push(' ');
-            marker.push_str(&rationale);
+            marker.push_str(&sentence_case(&rationale));
         }
         if !group.valid_cut {
             marker.push(' ');
@@ -611,15 +612,15 @@ mod tests {
             checkpoints: vec![
                 Checkpoint {
                     id: "A".to_string(),
-                    rationale: "the store and the engine — buildable alone".to_string(),
+                    rationale: "The store and the engine — buildable alone".to_string(),
                 },
                 Checkpoint {
                     id: "B".to_string(),
-                    rationale: "the importer".to_string(),
+                    rationale: "The importer".to_string(),
                 },
                 Checkpoint {
                     id: "C".to_string(),
-                    rationale: "the parsers".to_string(),
+                    rationale: "The parsers".to_string(),
                 },
             ],
             items,
@@ -1034,7 +1035,7 @@ mod tests {
     fn an_asterisk_survives_the_round_trip_wherever_it_is_written() {
         let mut store = fixture();
         store.checkpoints[0].rationale =
-            "the `backlog/*` classes and the **only** new cut".to_string();
+            "The `backlog/*` classes and the **only** new cut".to_string();
         store.items[0].action = "Match `src/**/*.rs` and nothing *else*.".to_string();
         store.policy.note = "Globs such as `*.md` stay literal.".to_string();
         let plan = render_into_plan(&store, PLAN).expect("renders");
@@ -1056,11 +1057,11 @@ mod tests {
         assert_eq!(plan.matches(INVALID_CUT).count(), 1, "{plan}");
         assert!(
             plan.contains(&format!(
-                "CHECKPOINT B after tasks 4 {EMPTY} {CLOSURE_LABEL}: 1, 4, 5. the importer {INVALID_CUT}"
+                "CHECKPOINT B after tasks 4 {EMPTY} {CLOSURE_LABEL}: 1, 4, 5. The importer {INVALID_CUT}"
             )),
             "{plan}"
         );
-        assert_eq!(markers(&plan)[1].rationale, "the importer");
+        assert_eq!(markers(&plan)[1].rationale, "The importer");
         assert_eq!(render_into_plan(&store, &plan).expect("re-renders"), plan);
     }
 

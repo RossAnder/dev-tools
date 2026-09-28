@@ -291,8 +291,18 @@ fn tidy_rationale(tail: &str) -> String {
             .trim_end_matches(is_dash_or_space)
             .trim_end_matches("(INVALID CUT)");
         if out == before {
-            return out.to_string();
+            return sentence_case(out);
         }
+    }
+}
+
+/// A rendered rationale follows the closure list's full stop, so it opens a
+/// sentence; import stores it that way too, keeping the round trip exact.
+pub(crate) fn sentence_case(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) if first.is_lowercase() => first.to_uppercase().chain(chars).collect(),
+        _ => text.to_string(),
     }
 }
 
@@ -440,7 +450,7 @@ mod tests {
     fn shape_triple_hyphen_rule_with_numeric_id() {
         let marker = one_marker("--- CHECKPOINT 1 after tasks 6, 10: closes the shell work ---");
         assert_eq!((marker.id.as_str(), &marker.after[..]), ("1", &[6, 10][..]));
-        assert_eq!(marker.rationale, "closes the shell work");
+        assert_eq!(marker.rationale, "Closes the shell work");
     }
 
     #[test]
@@ -458,7 +468,7 @@ mod tests {
         assert_eq!(marker.after, vec![15, 20]);
         assert_eq!(
             marker.rationale,
-            "documents the `backlog/*` classes, the **only** new ones"
+            "Documents the `backlog/*` classes, the **only** new ones"
         );
     }
 
@@ -466,7 +476,7 @@ mod tests {
     fn a_bolded_paragraph_closes_its_own_emphasis() {
         let marker = one_marker("**— CHECKPOINT A after task 3 — the shell kit lands first.**");
         assert_eq!((marker.id.as_str(), &marker.after[..]), ("A", &[3][..]));
-        assert_eq!(marker.rationale, "the shell kit lands first.");
+        assert_eq!(marker.rationale, "The shell kit lands first.");
     }
 
     #[test]
@@ -509,7 +519,7 @@ mod tests {
         let found = parse_markers(body).expect("markers parse");
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].after, vec![3]);
-        assert_eq!(found[0].rationale, "first wins.");
+        assert_eq!(found[0].rationale, "First wins.");
     }
 
     #[test]

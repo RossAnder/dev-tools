@@ -28,11 +28,11 @@ rationale = "The module tree and the schema round-trip."
 
 [[checkpoints]]
 id = "B"
-rationale = "both parsers and the graph engine land together"
+rationale = "Both parsers and the graph engine land together"
 
 [[checkpoints]]
 id = "C"
-rationale = "the import verb, the renderer and the corpus smoke."
+rationale = "The import verb, the renderer and the corpus smoke."
 
 [[file_notes]]
 ref = "land-the-schema-round-trip"

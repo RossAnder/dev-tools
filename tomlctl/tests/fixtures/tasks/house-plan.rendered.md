@@ -103,9 +103,9 @@ Per-task `Depends on` lines are authoritative; this section states only the chec
 
 — CHECKPOINT A after tasks 3 — dependency closure: 1, 2, 3. The module tree and the schema round-trip.
 
-— CHECKPOINT B after tasks 4, 6 — dependency closure: 1, 2, 3, 4, 5, 6. both parsers and the graph engine land together
+— CHECKPOINT B after tasks 4, 6 — dependency closure: 1, 2, 3, 4, 5, 6. Both parsers and the graph engine land together
 
-— CHECKPOINT C after tasks 9, 10 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10. the import verb, the renderer and the corpus smoke.
+— CHECKPOINT C after tasks 9, 10 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10. The import verb, the renderer and the corpus smoke.
 
 ## Risks
 
