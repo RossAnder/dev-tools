@@ -983,7 +983,7 @@ tags = [
     "windows",
     "stdin",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -996,7 +996,8 @@ evidence = [
     "tomlctl/src/backlog/dispatch.rs:13",
 ]
 related = ["B-4aa2bbbf"]
-reopen_rationale = "flow tomlctl-followups-round-2 completed without scheduling it; returned to triage"
+resolved = 2026-09-28
+resolution = "fixed in f220d98: backlog add-many --ndjson writes a batch in one lock/read/write, all-or-nothing; a failed TOML data write now always errors"
 
 [[backlog]]
 id = "B-bf2c40fb"
@@ -1299,7 +1300,7 @@ tags = [
     "corpus",
     "coupling",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1308,7 +1309,8 @@ origin = "review"
 flow = "whimsical-hugging-puppy"
 context = "tasks_corpus.rs walks docs/plans/** and asserts every plan imports, so adding a plan that uses five-hash task headings or an off-vocabulary effort tag fails cargo test in a commit touching no Rust -- and the failure reads as a tomlctl regression. The self-skip covers a packaged checkout but not this repo. Related: the corpus asserts only that plans import; a corpus-wide render-idempotency pass (import -> render -> re-import) would have surfaced the phase-heading loss of ledger R11 as a corpus failure rather than as a blessed golden fixture."
 evidence = ["tomlctl/tests/tasks_corpus.rs"]
-reopen_rationale = "flow tomlctl-followups-round-2 completed without scheduling it; returned to triage"
+resolved = 2026-09-28
+resolution = "fixed in 7c26cd0: the plan corpus test is #[ignore]d out of cargo test; the hook runs it when a plan is staged"
 
 [[backlog]]
 id = "B-2f9eead8"
@@ -1754,7 +1756,7 @@ tags = [
     "batch-writes",
     "ergonomics",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -1763,7 +1765,8 @@ origin = "review-plan"
 context = "Two round-trips lost on 2026-09-09: piping NDJSON to items apply --ops - fails with trailing characters at line 2, and the per-op patch key is json, not set (the error names the shape, which is the only reason it cost two calls and not more). add-many on the same file takes --ndjson. Proposal: let apply accept NDJSON ops too, and accept set as an alias for json, or document the asymmetry in one line at the top of the tomlctl skill's items section."
 evidence = ["tomlctl/src/items.rs"]
 related = ["B-bf2c40fb"]
-reopen_rationale = "flow tomlctl-followups-round-2 completed without scheduling it; returned to triage"
+resolved = 2026-09-28
+resolution = "fixed in 7cd5425: items apply --ops accepts NDJSON (one op per line) as well as the JSON array"
 
 [[backlog]]
 id = "B-9e7c7e4c"
@@ -2082,13 +2085,15 @@ tags = [
     "gitignore",
     "hygiene",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
 dedup_id = "617ff5dec2921751"
 origin = "implement"
 context = "lumina.db, lumina.db-shm and lumina.db-wal sit at the repo root. lumina/.gitignore scopes its db rules to that subtree, so the root copies are covered only by the root gitignore catch-all. A dev database at the wrong altitude that no lumina/CLAUDE.md reader would expect to find there, and which a root-level clean would treat differently from the intended location."
+resolved = 2026-09-28
+resolution = "fixed in 7d490c3: lumina's default dev database is lumina/lumina.db regardless of cwd; the root copy was moved there"
 
 [[backlog]]
 id = "B-429da635"
@@ -2164,7 +2169,7 @@ tags = [
     "docs",
     "stale",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -2173,6 +2178,8 @@ origin = "implement"
 context = "Line 206 describes the parser as dropping trailing parentheticals such as (new) and folding each bullet remainder into policy.note. Both behaviours were removed by B-fc2d4d05 and B-44f80958. The plan is a historical record of a completed flow, not a live contract, but an agent reading it as current would reimplement exactly the loss those two items just closed. Decide whether completed plans get a superseded marker or are left as-is and trusted to be read as history."
 evidence = ["docs/plans/whimsical-hugging-puppy.md"]
 related = ["B-fc2d4d05"]
+resolved = 2026-09-28
+resolution = "decided in 7c26cd0: completed plans get a superseded note; whimsical-hugging-puppy carries one at the parser passage"
 
 [[backlog]]
 id = "B-df666429"
@@ -2246,13 +2253,15 @@ tags = [
     "tests",
     "ci",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
 dedup_id = "2fa4cf64cc573f1f"
 origin = "implement"
 context = "command_lint, carrier_invokes_required_skills and the new finding_classes gate all run only under a manual cargo test. There is no CI in this repository and the pre-commit hook does not invoke them, which CLAUDE.md states deliberately. Consequence: a finding class added with no doc row, a carrier that drops a required skill invocation, or CLI flag drift can all land and stay unnoticed. Deciding this needs a call on cost: the hook is currently fast because it runs no cargo, so gating it on these would change every commit."
+resolved = 2026-09-28
+resolution = "fixed in 7c26cd0: the pre-commit hook runs cli::dispatch::tests when claude markdown or tomlctl source is staged"
 
 [[backlog]]
 id = "B-134c1b36"
@@ -2563,7 +2572,7 @@ tags = [
     "cli",
     "envelope",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -2572,6 +2581,8 @@ origin = "implement"
 context = "flow list returns a bare JSON array rather than an envelope, so a malformed context.toml it skips can only be reported as a terminal advisory or escalated all-or-nothing through --strict-read. A caller wanting list everything and tell me what was unreadable has no option. Surfaced while gating stderr advisories: this was the one site where no envelope key could carry the fact. Wrapping the array in an object would give it a home but is a breaking output change for every carrier that parses it."
 evidence = ["tomlctl/src/flow/list.rs"]
 related = ["B-429da635"]
+resolved = 2026-09-28
+resolution = "fixed in 5a9525c: flow list returns {ok, flows, skipped[{path, reason}]}; consumers updated"
 
 [[backlog]]
 id = "B-2e172357"
@@ -2605,7 +2616,7 @@ tags = [
     "crlf",
     "parity",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -2613,6 +2624,8 @@ dedup_id = "e977ee2eb3f919a5"
 origin = "implement"
 context = "The extractor inherits its CR handling from the platform text-mode read: MSYS gawk translates exactly one CRLF per line, matching Rust str::lines. Under a CR-preserving read, which is what a non-MSYS gawk does, the shell extracts zero bytes from a plain-CRLF carrier where the mirror passes. So the gate can reach different verdicts on the same tree on Linux and Windows, and nothing in the script says so. Normalising either side breaks the other: binary-mode reads plus an explicit strip would destroy the doubled-CR guard on Windows, where the hook actually runs."
 related = ["B-5ba6d0db"]
+resolved = 2026-09-28
+resolution = "fixed in a0a2c6e: the verifier documents its CR contract and strips the second CR from content lines only, matching blocks.rs"
 
 [[backlog]]
 id = "B-14676dff"
@@ -2623,7 +2636,7 @@ tags = [
     "tests",
     "windows",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -2631,6 +2644,8 @@ dedup_id = "14676dffed6730d9"
 origin = "implement"
 context = "run_shell_gate falls back to an absolute Git bash path because bare bash is not resolvable from a Windows-side cargo even with Git Bash installed. On a non-default Git install the fallback misses and the cross-check degrades to asserting the mirror against itself. It now returns a Result so a skip always prints why, which is the mitigation, but the path is still hardcoded."
 related = ["B-5ba6d0db"]
+resolved = 2026-09-28
+resolution = "fixed in a0a2c6e: run_shell_gate resolves bash from SHELL_GATE_BASH, bare bash, then git --exec-path, before the hardcoded fallback"
 
 [[backlog]]
 id = "B-4fdfea59"
@@ -2641,13 +2656,15 @@ tags = [
     "build",
     "windows",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
 dedup_id = "4fdfea59059ecabd"
 origin = "implement"
 context = "Observed during this run: cargo test --bin tomlctl failed once with rust-lld: failed to write output tomlctl-*.exe: permission denied, clean on immediate retry. Same transient-lock class as the known sidecar rename os error 5, most likely an AV or indexer holding the previous binary. A retry is the fix, but it reads as a real link error and costs a diagnosis."
+resolved = 2026-09-28
+resolution = "documented in 7c26cd0: CLAUDE.md Build tuning names the transient rust-lld permission error and says retry once"
 
 [[backlog]]
 id = "B-e129986c"
@@ -2805,7 +2822,7 @@ tags = [
     "scripts",
     "gate",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -2813,6 +2830,8 @@ dedup_id = "92c6e467657d2a92"
 origin = "implement"
 context = "The analysis path is now awk-only: the resolver, the self-test assertions, the collect filters, the verdict counters and the report display all run on the validated gawk. Setup and teardown still shell out to mktemp, rm and git. Absent rm leaves temp files behind; absent mktemp kills the gate before it reads a line. Both fail loudly rather than silently, unlike the findings already fixed, so this is completeness rather than a false all-clear."
 related = ["B-2b3d34bb"]
+resolved = 2026-09-28
+resolution = "fixed in a0a2c6e: doc-diff-gate checks git, mktemp and rm up front and cleans its temp file on every exit"
 
 [[backlog]]
 id = "B-cf956199"
@@ -2824,13 +2843,15 @@ tags = [
     "gate",
     "coverage",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
 dedup_id = "cf9561993ab56913"
 origin = "implement"
 context = "SRC_RE matches no shell extension, so doc-diff-gate.sh never inspects a .sh file. The three verifier scripts and .githooks/pre-commit are therefore outside the comment discipline they exist to enforce, and doc-diff-gate.sh itself carries some of the heaviest comment prose in the repo. The agent that found it notes G1 twenty-line cap would fire on several blocks in that file. Adding shell to SRC_RE would put the gate under its own rules, which is either the point or a large first run."
+resolved = 2026-09-28
+resolution = "fixed in a0a2c6e: doc-diff-gate's SRC_RE covers .sh and extensionless git hooks"
 
 [[backlog]]
 id = "B-8282b67d"
@@ -2841,7 +2862,7 @@ tags = [
     "dedup",
     "graph",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -2856,6 +2877,8 @@ evidence = [
     "tomlctl/src/tasks/graph.rs:88",
 ]
 related = ["B-6ff6dd3e"]
+resolved = 2026-09-28
+resolution = "fixed in 97af416: graph::build_or_refuse takes a Tense; add and update share it with byte-identical errors"
 
 [[backlog]]
 id = "B-1c66bf40"
@@ -2931,7 +2954,7 @@ kind = "bug"
 summary = "duplicate_findings cannot separate two rows sharing both a task number and a ref"
 area = "tomlctl/src/tasks/check.rs"
 tags = ["diagnostics"]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -2942,6 +2965,8 @@ context = "The class now names the offending rows' refs in detail, which resolve
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["tomlctl/src/tasks/check.rs:141"]
 related = ["B-134c1b36"]
+resolved = 2026-09-28
+resolution = "fixed in 97af416: dag/duplicate-number names colliding rows by position and title when they share number and ref"
 
 [[backlog]]
 id = "B-545a384c"
@@ -2995,7 +3020,7 @@ kind = "debt"
 summary = "two task-store staging families disagree about how a store is set up"
 area = "tomlctl/tests"
 tags = ["fixtures"]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -3006,6 +3031,8 @@ context = "The shared task fixture now stages a real sibling context.toml, so th
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["tomlctl/tests/common/mod.rs:307"]
 related = ["B-2c5ee8c0"]
+resolved = 2026-09-28
+resolution = "fixed in 97af416: tests share stage_tasks_flow, which stages the store with a sibling context the slug path reads"
 
 [[backlog]]
 id = "B-2b4b7470"
@@ -3056,7 +3083,7 @@ kind = "debt"
 summary = "flow-context.md is a retired rewrite record living under a directory named templates"
 area = "scripts/templates"
 tags = ["docs"]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -3067,6 +3094,8 @@ context = "The file's own header declares it a record of a past rewrite rather t
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["scripts/templates/flow-context.md:17"]
 related = ["B-152db71d"]
+resolved = 2026-09-28
+resolution = "resolved in 7a34ebe: scripts/templates/flow-context.md deleted and every live reference removed"
 
 [[backlog]]
 id = "B-17c7528c"
@@ -3092,7 +3121,7 @@ kind = "debt"
 summary = "round-2 plan dependency references to non-integer ids parse as prose rather than edges"
 area = "docs/plans"
 tags = ["plan"]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -3103,6 +3132,8 @@ context = "The plan carries two non-integer task ids, so it is unimportable and 
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["tomlctl/tests/tasks_corpus.rs:19"]
 related = ["B-aa004c21"]
+resolved = 2026-09-28
+resolution = "fixed in aee92c5: lumina-story-planning-round-2 renumbered to integer ids (numbers only, refs unchanged) and removed from the corpus allowlist"
 
 [[backlog]]
 id = "B-a756606c"
@@ -3533,7 +3564,7 @@ kind = "bug"
 summary = "rendering a Files line drops later paths after a dash-annotated entry on re-import"
 area = "tomlctl/src/tasks/render.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3543,6 +3574,8 @@ flow = "unified-singing-gem"
 context = "file_list writes every path on one comma-separated line, but the parser stops splitting at the first ' — ' annotation outside backticks, so a bulleted Files list whose non-last entry carries a dash note (`a.ts` — dual edit, then `b.ts`) renders as one line and re-imports as a.ts only. File claims silently vanish from the store, so conflict checks and dispatch lose them. Fix needs a choice: render a bulleted list when an annotated entry is not last, or teach the parser to resume splitting after an annotation."
 base_sha = "200cd94825830ca0b1efbc3f0c67f2e818c1f812"
 related = ["B-54376dda"]
+resolved = 2026-09-28
+resolution = "fixed in 97af416: a comma-separated Files line resumes splitting after a dash note when the next entry is backticked"
 
 [[backlog]]
 id = "B-d673a8b9"
@@ -3550,7 +3583,7 @@ kind = "bug"
 summary = "flow init stores an absolute --plan verbatim so doctor's plan-path check later refuses it"
 area = "tomlctl/src/flow/init.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3560,6 +3593,8 @@ flow = "unified-singing-gem"
 context = "build_seed_doc writes plan_path as typed (plan_path.display()), so an absolute or backslashed --plan lands in context.toml unnormalised, and flow doctor's plan-path-resolves check and the tasks store then refuse it. /plan-new passes a relative path so it rarely shows. Relativise against the repo root (refusing a path outside it) at init."
 base_sha = "200cd94825830ca0b1efbc3f0c67f2e818c1f812"
 related = ["B-2f9eead8"]
+resolved = 2026-09-28
+resolution = "fixed in 5a9525c: flow init stores --plan repo-relative and refuses an escaping or non-markdown path before writing"
 
 [[backlog]]
 id = "B-1689755d"
@@ -3567,7 +3602,7 @@ kind = "debt"
 summary = "flow init hand-builds the created context path instead of using CanonicalArtifacts"
 area = "tomlctl/src/flow/init.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3577,6 +3612,8 @@ flow = "unified-singing-gem"
 context = "created[0] is format!(.claude/flows/{slug}/context.toml) while every other stored path comes from CanonicalArtifacts or relativise, so two places spell the same path. Arrived cheap-in-file during the backlog sweep and was deferred as low value."
 base_sha = "200cd94825830ca0b1efbc3f0c67f2e818c1f812"
 related = ["B-f6fdcef6"]
+resolved = 2026-09-28
+resolution = "fixed in 5a9525c: flow init derives the context path once through relativise for both created and context_path"
 
 [[backlog]]
 id = "B-6944a250"
@@ -3584,7 +3621,7 @@ kind = "bug"
 summary = "get --raw on an array tells the user to pass --lines, which get does not have"
 area = "tomlctl/src/query.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3594,3 +3631,69 @@ flow = "unified-singing-gem"
 context = "emit_raw's array error is shared by items list and tomlctl get, and recommends --lines, a flag only the list verbs carry. The wording is pinned by tests/tasks_read.rs, so a fix must branch the hint by caller and update that pin. Arrived cheap-in-file during the backlog sweep and was deferred because of the pinned text."
 base_sha = "200cd94825830ca0b1efbc3f0c67f2e818c1f812"
 related = ["B-a52ed19a"]
+resolved = 2026-09-28
+resolution = "fixed in 7cd5425: get --raw on an array suggests omitting --raw or indexing the path, not --lines"
+
+[[backlog]]
+id = "B-c5e8e8cf"
+kind = "debt"
+summary = "backlog reconcile has no envelope slot for flows whose context.toml the resolver skipped"
+area = "tomlctl/src/backlog/reconcile.rs"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "c5e8e8cf532fe220"
+origin = "implement"
+context = "The target resolver skips an unreadable context.toml and can only say so on stderr, in flow list's wording. flow list reports skipped flows in its envelope; reconcile's existing skipped key lists backlog ids, so it needs a distinct skipped_flows [{path, reason}] key plus a Resolver::skipped() accessor, after which the stderr advisory in backlog/target.rs can go. triage would need its own slot designed."
+base_sha = "efb122a308a8e5bdb3b4fd57cdc58c86e4fb31d4"
+related = ["B-72d4075b"]
+
+[[backlog]]
+id = "B-9f3e03a0"
+kind = "debt"
+summary = "record_plan_path's containment check is unreachable from every test"
+area = "tomlctl/src/io.rs"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "9f3e03a0b1714ee3"
+origin = "implement"
+context = "An escaping --plan is refused one step earlier, so disabling the recorded_under_root check in record_plan_path leaves every test green. It is the check the read side depends on; a unit test calling record_plan_path directly with a path that resolves under the root textually but outside it after canonicalisation (e.g. via a junction) would pin it."
+base_sha = "efb122a308a8e5bdb3b4fd57cdc58c86e4fb31d4"
+related = ["B-2f9eead8"]
+
+[[backlog]]
+id = "B-024ccfe3"
+kind = "annoyance"
+summary = "doc-diff-gate reads only the staged diff so it cannot be run against a commit range"
+area = "scripts/doc-diff-gate.sh"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "024ccfe3f6175c5c"
+origin = "implement"
+context = "Checking the gate against history (e.g. before promoting DOC_GATE_MODE=block) needs a scratch copy of the script with git diff --cached swapped out. An opt-in --range A..B argument would let it run over past commits without staging or copying."
+base_sha = "efb122a308a8e5bdb3b4fd57cdc58c86e4fb31d4"
+related = ["B-82d67202"]
+
+[[backlog]]
+id = "B-83555773"
+kind = "bug"
+summary = "a hand-written one-line Files list drops an extensionless path listed after a dash note"
+area = "tomlctl/src/tasks/parse_tasks.rs"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "83555773e418f30f"
+origin = "implement"
+context = "The parser resumes after a dash note only on a path-like backticked span (containing / or .), so `a.rs` — note, `Makefile` imports as a.rs alone and the claim silently leaves file-overlap scheduling. The renderer no longer produces this shape (it falls back to a bulleted list), so only hand-written plans hit it. Cheapest fix: have import-plan raise a warning when a note contains a comma followed by a backticked span, pointing at the bulleted Files form."
+base_sha = "efb122a308a8e5bdb3b4fd57cdc58c86e4fb31d4"
+related = ["B-47926bdb"]
