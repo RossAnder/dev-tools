@@ -21,6 +21,8 @@ agent = "implement"
 task_ref = "add-retry-logic"
 dispatch_tier = "lite"
 dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
 summary = "Added retry logic in src/retry.rs"
 files = ["src/retry.rs", "tests/retry_test.rs"]
 commits = ["abc1234"]
@@ -54,7 +56,7 @@ legacy_id = "D3"
 
 | Type | Required fields (in addition to the always-required five) |
 |------|-----------------------------------------------------------|
-| `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`, `dispatch_tier` ∈ {`lite`, `deep`}, `dispatch_agent` ∈ {`implement-lite`, `implement-deep`}; `commits[]` OPTIONAL (see note below) |
+| `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`, `dispatch_tier` ∈ {`lite`, `deep`}, `dispatch_agent` ∈ {`implement-lite`, `implement-deep`}, `vet` ∈ {`skipped`, `sampled-pass`, `sampled-fail`, `flagged-pass`, `flagged-fail`}, `retries` (integer); optional `escalation_reason`; `commits[]` OPTIONAL (see note below) |
 | `verification` | `command`, `outcome` ∈ {`pass`, `fail`, `timeout`, `flaky`} (`flaky`: the failed tests passed on a narrow rerun or the runner's retry — green; `timeout`: the command outran its budget — neither green nor evidence against the code); optional `duration_s` (integer), `failed_ids[]` (at most 20). Never a log path — the agent's log is machine-local scratch |
 | `deviation` | `original_intent`, `rationale`, `commits[]`; optional `supersedes_entry = "E<n>"`; optional `legacy_id = "D<n>"` (populated by `migrate`) |
 | `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |

@@ -67,7 +67,7 @@ The six lenses. Each names what it owns and what it does not flag; the dispatch 
 
 Invoke the `flow-contract-vet-research` skill to load the universal vet-pass procedure (triage by source+evidence-grade, `ESCALATE-TO-DEEP` honouring, drop-low-confidence rule, spot-check sampling, drop/downgrade-with-rationale, the canonical `[[vet_events]]` append heredoc, the mandatory `vet: Agent-{n} (<lens>) — N sampled, M dropped, K downgraded` console line, and the >30% systemic-failure re-dispatch rule).
 
-**Per-carrier sample sizes**: spot-check ≥ 5 findings per `research-lite` agent (2, 4, 5, 6) and ≥ 3 per `research-deep` agent (1, 3), or all if the agent returned fewer. Lens names for the console line: `quality`, `security`, `architecture`, `completeness`, `testability`, `package-quality`. **Vet pass is NOT optional** — the Step 1 idempotency guards cannot retroactively remove a fabricated finding once persisted.
+**Per-carrier sample sizes**: the skill's default, raised to ≥ 5 findings (or all if fewer) for `architecture`, `completeness` and `package-quality` — the lenses whose findings fail vetting most often, whatever their tier. Lens names for the console line: `quality`, `security`, `architecture`, `completeness`, `testability`, `package-quality`. **Vet pass is NOT optional** — the Step 1 idempotency guards cannot retroactively remove a fabricated finding once persisted.
 
 ## Interim checkpoint
 

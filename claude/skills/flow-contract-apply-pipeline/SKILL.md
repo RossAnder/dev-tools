@@ -230,12 +230,11 @@ finding's `category` so the agent applies the right judgement per item.
 
 Evaluate each cluster as a whole against ALL of:
 
-1. **File scope**: the cluster's `lite_file_scope` from Step 3 is `true` (≤ 2 files, OR a
-   single item whose `instances` carry `enumeration = "complete"`) AND one edit shape across
-   all of its sites. The flag settles only the mechanical half; the orchestrator judges the
-   edit shape itself, and a `lite_file_scope: true` cluster whose items call for different
-   edits still fails this criterion. Twelve sites of the same mechanical fix are lite work;
-   three sites of three different fixes are not.
+1. **File scope**: the cluster's `lite_file_scope` from Step 3 is `true` — ≤ 2 files, OR a
+   single item whose `instances` carry `enumeration = "complete"`. The ≤ 2-file limb passes on
+   its own; the enumeration limb passes only with one edit shape across all of its sites, which
+   the flag cannot see and the orchestrator judges. Twelve sites of the same mechanical fix are
+   lite work; three sites of three different fixes are not.
 2. **Action fully specified**: every item's `summary` + `description` names the exact change.
    No design decisions left to the implementer for ANY item in the cluster.
 3. **No cross-file refactor**: no item needs coordinated edits to call sites, type definitions,
@@ -259,7 +258,7 @@ suppresses silent automated `<REJECTED>` transitions, not lite/deep selection.
 
 **Pre-dispatch summary** (console, before any Agent call): one line per cluster naming its id,
 batch, items, the four criteria results, and the verdict — e.g. `dispatch plan: c1 batch 1
-<files> (<ID>, <ID>) — criterion 1 (lite_file_scope, one edit shape): pass; criterion 2
+<files> (<ID>, <ID>) — criterion 1 (file scope): pass; criterion 2
 (fully-specified): pass; criterion 3 (no cross-file refactor): pass; criterion 4 (not
 security-sensitive): pass → implement-lite` — followed by one line per `dropped_deps` entry.
 This makes the gate auditable from console output alone.
@@ -317,7 +316,8 @@ the observation in its prompt. A second `stash-required` for the same item goes 
 After the Step 4.5 vet and the Step 4.6 routing (and their re-dispatches), persist non-risky
 transitions in a single atomic `tomlctl items apply --ops -` call. Non-risky means:
 
-- `<NO-CHANGE>` transitions where agents wrote no bytes and reported the item already in place.
+- `<NO-CHANGE>` transitions where agents wrote no bytes and reported the item already in place
+  (from `implement-lite`, only once Step 4.5 has confirmed the cited `file:line`).
 - `<REJECTED>` transitions for agent-intentional skips (no bytes written, finding declared unsafe
   or unclear).
 - Orchestrator pre-transitions from Step 2 (deleted-file detection, Tier-1 already-in-place).

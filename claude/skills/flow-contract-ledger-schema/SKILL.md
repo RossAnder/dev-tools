@@ -134,7 +134,7 @@ Fields:
 
 #### Vet event log
 
-When `/review`, `/optimise`, `/review-plan`, `/plan-new`, `/plan-update`, or `/test-bootstrap` runs the vet-research procedure (see the `flow-contract-vet-research` skill), the orchestrator appends one `[[vet_events]]` table per vetted agent to the ledger root:
+When `/review`, `/optimise`, `/review-plan`, `/plan-new`, `/plan-update`, or `/test-bootstrap` runs the vet-research procedure (see the `flow-contract-vet-research` skill), the orchestrator appends one `[[vet_events]]` table per vetted agent to the ledger root; `/review-apply` and `/optimise-apply` append one per vetted `implement-lite` cluster at Step 4.5 (see the `flow-contract-apply-vet-implement-lite` skill):
 
 ```toml
 [[vet_events]]
@@ -142,6 +142,7 @@ timestamp = 2026-05-08T14:32:00Z
 command = "review"
 agent_index = 2
 lens = "security"
+tier = "lite"
 sampled_count = 5
 dropped_count = 1
 downgraded_count = 0
@@ -151,14 +152,15 @@ rationale = "R47 cited file:line that does not exist on disk"
 
 Fields:
 - `timestamp` — ISO 8601 date-time (seconds precision).
-- `command` — one of `"review"`, `"optimise"`, `"review-plan"`, `"plan-new"`, `"plan-update"`, `"test-bootstrap"`.
-- `agent_index` — integer 1..N matching the `Agent-{n}` index in the mandatory console line emitted by step 6 of the `vet-research` block.
-- `lens` — string. The lens name as printed in the console line (e.g. `"security"`, `"test-runner"`, `"coverage"`).
-- `sampled_count`, `dropped_count`, `downgraded_count` — integers matching the N / M / K values in the console line.
+- `command` — one of `"review"`, `"optimise"`, `"review-plan"`, `"plan-new"`, `"plan-update"`, `"test-bootstrap"`, `"review-apply"`, `"optimise-apply"`.
+- `agent_index` — integer 1..N matching the `Agent-{n}` index in the mandatory console line emitted by step 7 of the `vet-research` block. On an `implement-lite` entry it is the cluster's ordinal instead (`c3` → `3`).
+- `lens` — string. The carrier's canonical lens name, lowercase and hyphenated, as printed in the console line (e.g. `"security"`, `"package-quality"`, `"test-runner"`); `"implement-lite"` on an apply-flow entry. Readers aggregate by exact string, so never a display form (`"Package Quality"`) or an agent label (`"Agent-6"`).
+- `tier` — `"lite"` or `"deep"`: the tier of the research run whose findings were vetted. Absent on `implement-lite` entries, whose `lens` already names the tier, and on entries written before the field existed; readers treat a missing `tier` as unknown, never infer it.
+- `sampled_count`, `dropped_count`, `downgraded_count` — integers matching the N / M / K values in the console line (for an `implement-lite` entry: applies and already-applied skips vetted, failed, re-dispatched to deep).
 - `dropped_ids` — array of `R{n}` / `O{n}` ledger IDs that were vetted-out (dropped or downgraded). Empty array when nothing was dropped.
 - `rationale` — string capped at 8 KiB per the field-length-cap convention. Multi-line allowed (TOML multi-line strings).
 
-`[[vet_events]]` is append-only; existing entries are never rewritten or deleted. If the log grows unwieldy, older entries may be archived manually by moving them to `<ledger>.vet-history.toml`; no command automates this yet. Distinguish from `[[rollback_events]]` (which captures Step 5.5 working-tree reverts, not Step 2.5 / Phase 1.5 / Phase 2.5 / Phase 3 vet-pass actions).
+`[[vet_events]]` is append-only; existing entries are never rewritten or deleted. If the log grows unwieldy, older entries may be archived manually by moving them to `<ledger>.vet-history.toml`; no command automates this yet. Distinguish from `[[rollback_events]]` (which captures Step 5.5 working-tree reverts, not Step 2.5 / Step 4.5 / Phase 1.5 / Phase 2.5 / Phase 3 vet-pass actions).
 
 ### Ledger TOML read/write contract
 
