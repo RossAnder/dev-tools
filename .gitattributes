@@ -34,3 +34,8 @@ claude/agents/*.md text eol=lf
 # recurse, so `dir/**` is the required shape. The index is already LF.
 .githooks/** text eol=lf
 scripts/** text eol=lf
+
+# Pin the flow command carriers and this file to LF, like claude/agents above.
+# The index is already LF; the CRLF copies on disk are rewritten in place.
+claude/commands/*.md text eol=lf
+.gitattributes text eol=lf
