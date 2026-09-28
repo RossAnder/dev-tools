@@ -63,6 +63,9 @@ pub(crate) struct Store {
     /// compares them — so an annotation the author wrote has nowhere else to
     /// live and the render would drop it.
     pub(crate) file_notes: Vec<FileNote>,
+    /// Backlog items a row closes or references, keyed by `ref`. A link whose
+    /// ref no row carries is kept until the next import.
+    pub(crate) backlog_links: Vec<BacklogLink>,
     pub(crate) items: Vec<TaskRow>,
 }
 
@@ -137,6 +140,19 @@ impl FileNote {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BacklogLink {
+    pub(crate) r#ref: String,
+    pub(crate) closes: Vec<String>,
+    pub(crate) refs: Vec<String>,
+}
+
+impl BacklogLink {
+    fn is_empty(&self) -> bool {
+        self.r#ref.is_empty() || (self.closes.is_empty() && self.refs.is_empty())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TaskRow {
     pub(crate) id: u32,
     pub(crate) r#ref: String,
@@ -191,6 +207,7 @@ impl Default for Store {
             checkpoints: Vec::new(),
             import_overrides: Vec::new(),
             file_notes: Vec::new(),
+            backlog_links: Vec::new(),
             items: Vec::new(),
         }
     }
@@ -242,6 +259,10 @@ impl Store {
             .iter()
             .find(|entry| entry.r#ref == r#ref && entry.file == file)
             .map(|entry| entry.note.as_str())
+    }
+
+    pub(crate) fn links_for(&self, r#ref: &str) -> Option<&BacklogLink> {
+        self.backlog_links.iter().find(|entry| entry.r#ref == r#ref)
     }
 }
 
@@ -365,6 +386,12 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         .map(|(index, value)| file_note_from_toml(value, index))
         .collect::<Result<Vec<_>>>()?;
     file_notes.retain(|entry| !entry.is_empty());
+    let mut backlog_links = table_array(root, "backlog_links")?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| backlog_link_from_toml(value, index))
+        .collect::<Result<Vec<_>>>()?;
+    backlog_links.retain(|entry| !entry.is_empty());
 
     Ok(Store {
         schema_version,
@@ -378,6 +405,7 @@ pub(crate) fn from_toml(doc: &TomlValue) -> Result<Store> {
         checkpoints,
         import_overrides,
         file_notes,
+        backlog_links,
         items,
     })
 }
@@ -392,6 +420,7 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         checkpoints,
         import_overrides,
         file_notes,
+        backlog_links,
         items,
     } = store;
 
@@ -436,6 +465,14 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         .collect();
     if !notes.is_empty() {
         root.insert("file_notes".to_string(), TomlValue::Array(notes));
+    }
+    let links: Vec<TomlValue> = backlog_links
+        .iter()
+        .filter(|entry| !entry.is_empty())
+        .map(backlog_link_to_toml)
+        .collect();
+    if !links.is_empty() {
+        root.insert("backlog_links".to_string(), TomlValue::Array(links));
     }
     root.insert(
         "items".to_string(),
@@ -597,6 +634,30 @@ fn file_note_to_toml(entry: &FileNote) -> TomlValue {
     table.insert("ref".to_string(), TomlValue::String(r#ref.clone()));
     table.insert("file".to_string(), TomlValue::String(file.clone()));
     table.insert("note".to_string(), TomlValue::String(lf(note)));
+    TomlValue::Table(table)
+}
+
+fn backlog_link_from_toml(value: &TomlValue, index: usize) -> Result<BacklogLink> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| anyhow!("backlog_links[{index}] is not a table"))?;
+    Ok(BacklogLink {
+        r#ref: str_or(table, "ref", ""),
+        closes: str_array(table, "closes"),
+        refs: str_array(table, "refs"),
+    })
+}
+
+fn backlog_link_to_toml(entry: &BacklogLink) -> TomlValue {
+    let BacklogLink {
+        r#ref,
+        closes,
+        refs,
+    } = entry;
+    let mut table = Table::new();
+    table.insert("ref".to_string(), TomlValue::String(r#ref.clone()));
+    table.insert("closes".to_string(), str_arr_value(closes));
+    table.insert("refs".to_string(), str_arr_value(refs));
     TomlValue::Table(table)
 }
 
@@ -852,6 +913,11 @@ mod tests {
                 file: "tomlctl/src/tasks/markdown.rs".to_string(),
                 note: "(new)".to_string(),
             }],
+            backlog_links: vec![BacklogLink {
+                r#ref: "wire-the-renderer".to_string(),
+                closes: vec!["B3".to_string()],
+                refs: vec!["B1".to_string(), "B7".to_string()],
+            }],
             items: vec![
                 TaskRow {
                     id: 1,
@@ -1098,6 +1164,47 @@ mod tests {
             Some("(new)")
         );
         assert_eq!(read.file_note("wire-the-renderer", "nothing.rs"), None);
+    }
+
+    #[test]
+    fn backlog_links_round_trip_and_answer_by_ref() {
+        let read = from_toml(&to_toml(&fixture())).expect("parses");
+        assert_eq!(read.backlog_links, fixture().backlog_links);
+        assert_eq!(
+            read.links_for("wire-the-renderer")
+                .map(|link| link.closes.clone()),
+            Some(vec!["B3".to_string()])
+        );
+        assert_eq!(read.links_for("seed-the-store"), None);
+    }
+
+    /// A store linking nothing writes back without the key, and an entry
+    /// naming no item is dropped on both sides.
+    #[test]
+    fn an_unlinked_store_neither_reads_nor_writes_backlog_links() {
+        let mut store = fixture();
+        store.backlog_links = vec![BacklogLink {
+            r#ref: "seed-the-store".to_string(),
+            closes: Vec::new(),
+            refs: Vec::new(),
+        }];
+        let doc = to_toml(&store);
+        assert!(
+            !doc.as_table()
+                .expect("root table")
+                .contains_key("backlog_links")
+        );
+        assert_eq!(from_toml(&doc).expect("parses").backlog_links, vec![]);
+
+        let mut raw = to_toml(&fixture());
+        raw.as_table_mut()
+            .expect("root table")
+            .insert("backlog_links".to_string(), {
+                let mut table = Table::new();
+                table.insert("ref".to_string(), TomlValue::String("seed".to_string()));
+                TomlValue::Array(vec![TomlValue::Table(table)])
+            });
+        assert_eq!(from_toml(&raw).expect("parses").backlog_links, vec![]);
     }
 
     #[test]
