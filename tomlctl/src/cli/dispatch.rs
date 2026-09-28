@@ -211,16 +211,12 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 })
             })?;
             if raw {
-                // Bare-scalar emit. An array is refused here because
-                // `emit_raw`'s own array error advises the list verbs'
-                // `--lines`; `emit_raw` refuses a table. Null is impossible here — `navigate`
-                // returns `None` for a missing path, which we already
-                // surface as "key path not found" above; a present TOML
-                // scalar cannot map to JSON null via `toml_to_json`.
-                if out.is_array() {
-                    return Err(query::raw_array_error(query::RawArrayHint::Get));
-                }
-                print_raw_value(&out)?;
+                // Bare-scalar emit; `emit_raw` refuses an array or table.
+                // Null is impossible here — `navigate` returns `None` for a
+                // missing path, which we already surface as "key path not
+                // found" above; a present TOML scalar cannot map to JSON null
+                // via `toml_to_json`.
+                print_raw_value(&out, query::RawArrayHint::Get)?;
             } else {
                 print_json(&out)?;
             }

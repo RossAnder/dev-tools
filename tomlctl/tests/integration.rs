@@ -533,6 +533,35 @@ fn get_raw_on_an_array_does_not_advise_lines() {
     );
 }
 
+/// `--pluck <f> --raw` over an array-valued field advises dropping `--raw`, not
+/// adding `--lines`, which fails the same way on every line.
+#[test]
+fn pluck_raw_on_an_array_value_does_not_advise_lines() {
+    let (dir, ledger) = seed_ledger("[[items]]\nid = \"R1\"\ntags = [\"a\", \"b\"]\n");
+    for extra in [&[][..], &["--lines"][..]] {
+        let out = Command::cargo_bin("tomlctl")
+            .unwrap()
+            .env("TOMLCTL_ROOT", dir.path())
+            .env("TOMLCTL_LOCK_TIMEOUT", "5")
+            .args(["items", "list"])
+            .arg(&ledger)
+            .args(["--pluck", "tags", "--raw"])
+            .args(extra)
+            .write_stdin("")
+            .assert()
+            .failure();
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+        assert!(
+            stderr.contains("got array") && stderr.contains("omit --raw"),
+            "{extra:?}: error must name the array target and the omit-`--raw` remedy; got stderr:\n{stderr}"
+        );
+        assert!(
+            !stderr.contains("--lines"),
+            "{extra:?}: `--lines` cannot fix a plucked array, so the error must not advise it; got stderr:\n{stderr}"
+        );
+    }
+}
+
 /// Lock contention smoke test: spawn two `items add` processes
 /// on the same file with a short timeout. At least one must succeed; the
 /// other either succeeds (lock acquired after the first finishes) or errors

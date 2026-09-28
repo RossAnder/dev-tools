@@ -323,7 +323,7 @@ impl ShapeDispatch for OutputShape {
                 let n = v.get("count").ok_or_else(|| {
                     anyhow::anyhow!("internal: --count output missing `count` key")
                 })?;
-                emit_raw(n)
+                emit_raw(n, RawArrayHint::Lines)
             }
             OutputShape::CountDistinct(_) => {
                 // Shape is `{"count_distinct": N, "field": "<name>"}` — drop
@@ -334,7 +334,7 @@ impl ShapeDispatch for OutputShape {
                         "internal: --count-distinct output missing `count_distinct` key"
                     )
                 })?;
-                emit_raw(n)
+                emit_raw(n, RawArrayHint::Lines)
             }
             OutputShape::Pluck(_) => {
                 // Shape is `[v0, v1, ...]`. N==1 is the only emittable
@@ -347,7 +347,7 @@ impl ShapeDispatch for OutputShape {
                     0 => bail!(
                         "--raw requires single-value output (got 0 items); for a possibly-empty pluck use `--pluck <f> --lines` to stream zero-or-more JSON values one per line"
                     ),
-                    1 => emit_raw(&arr[0]),
+                    1 => emit_raw(&arr[0], RawArrayHint::Pluck),
                     n => bail!(
                         "--raw requires single-value output (got {} items); use --lines for newline-delimited",
                         n
@@ -695,10 +695,16 @@ pub(crate) enum RawArrayHint {
     Lines,
     /// `tomlctl get`, which has no `--lines`.
     Get,
+    /// `--pluck <f> --raw` where the plucked value is itself an array: adding
+    /// `--lines` would hit the same error on every line.
+    Pluck,
 }
 
 pub(crate) fn raw_array_error(hint: RawArrayHint) -> anyhow::Error {
     match hint {
+        RawArrayHint::Pluck => anyhow::anyhow!(
+            "--raw requires a scalar target (string|number|bool); got array — the plucked value is itself an array, so omit --raw to emit it as JSON"
+        ),
         RawArrayHint::Lines => anyhow::anyhow!(
             "--raw requires a scalar target (string|number|bool); got array — use `--lines` (or omit --raw) to emit JSON"
         ),
@@ -723,10 +729,10 @@ pub(crate) fn raw_array_error(hint: RawArrayHint) -> anyhow::Error {
 ///   nulls upstream), but errors cleanly if one ever leaks through —
 ///   keeps the helper total.
 /// - Array / Object: error with a load-bearing message the tests assert
-///   byte-for-byte. The array message advises `--lines`, which only the list
-///   verbs carry, so `Cmd::Get --raw` rejects an array before calling here.
+///   byte-for-byte. The array message's remedy is chosen by `hint`, since
+///   `--lines` exists only on the list verbs and cannot fix a plucked array.
 ///
-/// Callers: `Cmd::Get --raw` (via `cli::print_raw_value`) and the
+/// Callers: `Cmd::Get --raw` (via `output::print_raw_value`) and the
 /// `items list --pluck --raw` dispatch branch (after it has asserted
 /// N==1). For `--count` / `--count-distinct --raw` the dispatch extracts
 /// the inner count integer and feeds just that number in, so the Object
@@ -736,7 +742,7 @@ pub(crate) fn raw_array_error(hint: RawArrayHint) -> anyhow::Error {
 /// bare scalars without inverting the module layering (cli → query is
 /// the correct direction). Pure `JsonValue → String` transform; the
 /// module's "I/O-free" docstring continues to hold at this function.
-pub(crate) fn emit_raw(v: &JsonValue) -> Result<String> {
+pub(crate) fn emit_raw(v: &JsonValue, hint: RawArrayHint) -> Result<String> {
     match v {
         JsonValue::String(s) => Ok(s.clone()),
         JsonValue::Number(n) => Ok(n.to_string()),
@@ -746,7 +752,7 @@ pub(crate) fn emit_raw(v: &JsonValue) -> Result<String> {
                 "--raw cannot emit null value; --raw expects a scalar (string|number|bool) — use plain JSON output (omit --raw) to round-trip null"
             )
         }
-        JsonValue::Array(_) => Err(raw_array_error(RawArrayHint::Lines)),
+        JsonValue::Array(_) => Err(raw_array_error(hint)),
         JsonValue::Object(_) => {
             bail!(
                 "--raw requires a scalar target (string|number|bool); got table — use plain JSON output (omit --raw) to emit the object"
@@ -827,15 +833,14 @@ pub(crate) fn run_streaming<W: Write>(
             // unquoted) instead of the JSON-encoded one. Null/missing
             // drops are identical — raw is purely an encoding choice at
             // the emit point. Re-using the local `emit_raw` keeps the
-            // scalar-rendering rules in one place so a table/array leak
-            // (shouldn't happen — Pluck flattens to scalars — but a
-            // defensive double-check) surfaces with the canonical error.
+            // scalar-rendering rules in one place, so a plucked table or
+            // array surfaces with the canonical error.
             for t in &filtered {
                 match t.get(field).map(narrow_toml_to_json) {
                     None | Some(JsonValue::Null) => {}
                     Some(v) => {
                         if q.raw {
-                            writer.write_all(emit_raw(&v)?.as_bytes())?;
+                            writer.write_all(emit_raw(&v, RawArrayHint::Pluck)?.as_bytes())?;
                         } else {
                             serde_json::to_writer(&mut *writer, &v)?;
                         }
@@ -857,7 +862,7 @@ pub(crate) fn run_streaming<W: Write>(
                 Some(item_val) => {
                     // Same raw-vs-json fork as the fast-path above.
                     if q.raw {
-                        writer.write_all(emit_raw(item_val)?.as_bytes())?;
+                        writer.write_all(emit_raw(item_val, RawArrayHint::Pluck)?.as_bytes())?;
                     } else {
                         serde_json::to_writer(&mut *writer, item_val)?;
                     }

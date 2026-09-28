@@ -14,7 +14,7 @@ use std::io::{BufWriter, Write};
 
 use crate::io::ScalarMutationPlan;
 use crate::items::MutationPlan;
-use crate::query::{self, OutputShape, ShapeDispatch};
+use crate::query::{self, OutputShape, RawArrayHint, ShapeDispatch};
 
 pub(crate) fn print_json(v: &JsonValue) -> Result<()> {
     let stdout = std::io::stdout();
@@ -102,11 +102,13 @@ pub(crate) fn print_json_compact(v: &JsonValue) -> Result<()> {
 /// The scalar-rendering rules live in `query::emit_raw` — this
 /// helper is the I/O wrapper that adds stdout locking, buffering, and
 /// the trailing newline. Keeping `emit_raw` in `query` keeps the module
-/// layering honest (cli depends on query, not the reverse).
-pub(crate) fn print_raw_value(v: &JsonValue) -> Result<()> {
+/// layering honest (cli depends on query, not the reverse). `hint` picks the
+/// remedy an array target's error advises; nothing is written on error.
+pub(crate) fn print_raw_value(v: &JsonValue, hint: RawArrayHint) -> Result<()> {
+    let rendered = query::emit_raw(v, hint)?;
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
-    out.write_all(query::emit_raw(v)?.as_bytes())?;
+    out.write_all(rendered.as_bytes())?;
     out.write_all(b"\n")?;
     out.flush()?;
     Ok(())
