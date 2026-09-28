@@ -15,6 +15,7 @@ row and when not to is the `backlog-capture` skill's job
 - [`backlog show`](#backlog-show)
 - [`backlog relate`](#backlog-relate)
 - [`backlog triage`](#backlog-triage)
+- [`backlog reconcile`](backlog-reconcile.md)
 - [`backlog cluster`](#backlog-cluster)
 - [`backlog compact`](#backlog-compact)
 - [`backlog evidence dir`](#backlog-evidence-dir)
@@ -26,10 +27,11 @@ row and when not to is the `backlog-capture` skill's job
 - [Duration grammar](#duration-grammar)
 - [Frozen contracts](#frozen-contracts)
 
-Every mutating op (`add`, `relate`, `triage`, `compact`) carries the shared write bundle —
-`--allow-outside`, `--no-create`, `--no-write-integrity`, `--strict-integrity`,
-`--verify-integrity` — and every read op (`check`, `list`, `show`, `cluster`,
-`evidence audit`, `evidence dir`) the read bundle, `--verify-integrity` and `--strict-read`.
+Every mutating op (`add`, `relate`, `triage`, `reconcile`, `compact`) carries the shared write
+bundle — `--allow-outside`, `--no-create`, `--no-write-integrity`, `--strict-integrity`,
+`--verify-integrity` — `reconcile` included, although it writes only under `--adopt` or
+`--apply`. Every read op (`check`, `list`, `show`, `cluster`, `evidence audit`,
+`evidence dir`) carries the read bundle, `--verify-integrity` and `--strict-read`.
 The store lives inside the `.claude/` containment guard, so none of these needs
 `--allow-outside`. `backlog evidence dir` carries the read bundle but not the write one: it
 reads the store to resolve the id, and the one file it writes is a non-TOML marker, so there
@@ -113,12 +115,14 @@ A threshold outside 0.0–1.0, or NaN, errors with `kind=validation`.
 ```
 
 `score` is rounded to four decimals. `evidence_files` is counted off the filesystem at read
-time; nothing in the store records it.
+time; nothing in the store records it. A candidate carries `promoted_to` only when its row
+holds one: an `in-flight` hit always does, and a `resolved`, `dismissed` or compacted row does
+when it kept the claim.
 
 ## `backlog list`
 
-The three filters below narrow the `backlog` array before the generic query engine sees it, so
-the whole `items list` surface — `--where-*` predicates, `--select` / `--exclude` / `--pluck`,
+`--live`, `--tag`, `--area-prefix` and `--has-evidence` narrow the `backlog` array before the
+generic query engine sees it, so the whole `items list` surface — `--where-*` predicates, `--select` / `--exclude` / `--pluck`,
 `--sort-by` / `--limit` / `--offset`, `--count-by` / `--group-by`, `--raw` / `--lines` /
 `--ndjson` — applies on top. See [query.md](query.md) for that half.
 
@@ -126,12 +130,15 @@ the whole `items list` surface — `--where-*` predicates, `--select` / `--exclu
 tomlctl backlog list --open --area-prefix lumina/server --has-evidence --sort-by seen_count:desc
 # The compact survey shape — one projected object per line, a bare array otherwise:
 tomlctl backlog list --open --select id,kind,area,tags,summary --ndjson
+# Everything still asking for work, promotion claims included:
+tomlctl backlog list --live --area-prefix lumina/server --select id,status,promoted_to,summary --ndjson
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--status` | text | Exact match on `status`. | none |
 | `--open` | — | Shorthand for `--status open`. | off |
+| `--live` | — | Keep only live rows, `open` or `promoted`. An OR over statuses, which `--where` cannot express because its predicates AND. Conflicts with `--open` and `--status`. | off |
 | `--kind` | text | Exact match on `kind`. | none |
 | `--tag` | text, repeatable | Item carries TAG; repeats are ANDed. | none |
 | `--area-prefix` | repo path | Matches on path-component boundaries, so `lumina/server` selects `lumina/server/pty/x.rs` but not `lumina/server-extras/y.rs`. | none |
@@ -189,7 +196,9 @@ case the item that loses is the redundant one.
 ## `backlog triage`
 
 ```bash
-tomlctl backlog triage B-a1b2c3d4 --promote --to lumina-pty-hardening
+tomlctl backlog triage B-a1b2c3d4 --promote --to <flow-slug>
+tomlctl backlog triage B-a1b2c3d4 B-1a2b3c4d --promote --to GH-412 --external
+tomlctl backlog triage B-a1b2c3d4 --reopen --rationale "flow <flow-slug> closed without it"
 ```
 
 | Flag | Value | Meaning | Default |
@@ -199,7 +208,9 @@ tomlctl backlog triage B-a1b2c3d4 --promote --to lumina-pty-hardening
 | `--dismiss` | — | Status → `dismissed`; takes `--reason`. | — |
 | `--resolve` | — | Status → `resolved`; takes `--resolution`. | — |
 | `--reopen` | — | Status → `open`; **requires** `--rationale`. | — |
-| `--to` | slug or plan path | Stored verbatim as `promoted_to`. Nothing is generated from it. | none |
+| `--to` | slug or plan path | The promotion target. Must resolve to an existing flow or plan — see below. | none |
+| `--external` | — | Store `--to` as `external:<REF>` without resolving it. Requires `--promote`. | off |
+| `--allow-closed` | — | Accept a `--to` flow at `review` or `complete`. Requires `--promote`. | off |
 | `--reason` | text | Companion to `--dismiss`. | none |
 | `--resolution` | text | Companion to `--resolve`. | none |
 | `--rationale` | text | Companion to `--reopen`. | none |
@@ -207,11 +218,45 @@ tomlctl backlog triage B-a1b2c3d4 --promote --to lumina-pty-hardening
 The four mode flags are a required, mutually-exclusive group: exactly one per invocation.
 `--rationale` is enforced at the parser rather than the validator because `reopen_rationale`
 is the only companion an `open` item may carry, so a bare `--reopen` would write a row the
-validator then rejects. `--reopen` also clears the terminal date and its companion.
+validator then rejects. Triage does not check a row's current status, so any mode applies to
+any `[[backlog]]` row, and re-promoting a `promoted` row moves its claim.
+
+Each transition clears every managed field its target status does not own — see
+[Store shape](#store-shape). `--resolve` and `--dismiss` keep the promotion claim
+(`promoted` + `promoted_to`) as the history of where the item was sent; `--reopen` drops it,
+so name the flow in the rationale. Every triage transition drops the `resolved_flow` /
+`resolved_tasks` / `resolved_commits` link, which only `reconcile --apply` writes.
+
+`--to` resolves, in order, to:
+
+1. an `external:<text>` value — stored verbatim; `--external` is not needed and does not
+   prefix it twice;
+2. a slug with a `.claude/flows/<slug>/context.toml` — stored as the slug;
+3. a plan path some flow's `plan_path` binds, spelled with `/` or `\`, with or without a
+   leading `./`, or absolute under the repo root — stored as that flow's **slug**;
+4. an existing repo-relative `.md` file no flow binds — stored as the normalised path;
+5. anything else, including a path that escapes the repo root.
+
+A flow whose `context.toml` does not parse is skipped with a stderr note, so its slug falls
+through to the last case. That case is refused with `kind=not_found` unless `--external` is
+given; the remedy is to bootstrap a draft seed flow (`/backlog` offers it, and the
+`backlog-capture` skill defines it) or to promote as external. A flow at `review` or `complete` is refused with `kind=validation`
+unless `--allow-closed` is given. `--external` stores every `--to` as `external:<REF>`, even
+one that would have resolved. Both refusals come before the write, so they leave the store and
+its sidecar untouched.
 
 ```json
-{"ok":true,"transition":"promote","ids":["B-a1b2c3d4"],"path":".claude/backlog.toml"}
+{"ok":true,"transition":"promote","ids":["B-a1b2c3d4"],"path":".claude/backlog.toml","to":"lumina-pty-hardening"}
 ```
+
+`to` appears on `--promote` only, and is the value stored — a slug where `--to` named a bound
+plan path, `external:<REF>` under `--external`.
+
+## `backlog reconcile`
+
+`backlog reconcile` joins `promoted` rows to the tasks that close them and resolves the
+finished ones. Its flags, buckets, `render_needed` duty, `--apply` writes and output shape are
+in [backlog-reconcile.md](backlog-reconcile.md).
 
 ## `backlog cluster`
 
@@ -262,8 +307,11 @@ flag and one per merged set without it.
 
 ## `backlog compact`
 
-Folds terminal rows out of `[[backlog]]` into `[[compacted]]`. `open` rows are never folded
-regardless of age, which is why a dead item should be dismissed rather than left to rot.
+Folds terminal rows — `resolved` and `dismissed` — out of `[[backlog]]` into `[[compacted]]`.
+Live rows, `open` and `promoted`, are never folded regardless of age: a `promoted` row is a
+claim on a flow that is still owed, and folding it would make `check` answer
+`previously-resolved` for undelivered work. A dead item should therefore be dismissed, and a
+dead claim reopened or dismissed, rather than left to rot.
 
 ```bash
 tomlctl backlog compact --older-than 90d --dry-run
@@ -280,8 +328,9 @@ unattended, where one bad row must neither vanish nor stop the run. A sweep that
 skips the write entirely, leaving the store and its sidecar byte-identical, and a sweep that
 finds no store leaves none behind.
 
-Nothing here touches an evidence directory: a folded row keeps its id and id resolution reads
-both arrays, so the drop-box stays reachable.
+A folded row keeps `promoted_to` and `resolved_flow` when it carried them — see the compacted
+shape under [Store shape](#store-shape). Nothing here touches an evidence directory: a folded
+row keeps its id and id resolution reads both arrays, so the drop-box stays reachable.
 
 ```json
 {"ok":true,"compacted":4,"remaining":37,"path":".claude/backlog.toml"}
@@ -370,23 +419,38 @@ TOML date, refreshed on every write) and two arrays of tables.
 | `id` | minted — `B-` plus the leading hex of `dedup_id` |
 | `dedup_id` | minted — the content fingerprint |
 | `summary`, `kind`, `area`, `tags` | the caller, at mint |
-| `status` | `open` at mint, then `triage` only |
+| `status` | `open` at mint, then `triage`, `reconcile --apply`, and the dismissal half of `relate` |
 | `created`, `last_seen`, `seen_count` | minted from the clock; a `bump` refreshes the last two |
 | `context`, `origin`, `flow` | the caller, at mint |
+| `base_sha` | the caller, at mint, via `--base-sha` or `--auto-base-sha`; absent on rows minted before it existed |
 | `evidence` | the caller — `path:line` pointers and bare filenames, never a directory listing |
 | `related`, `duplicate_of`, `supersedes` | `add --related` and `relate` |
+| `promoted`, `promoted_to` | `triage --promote` — the promotion claim |
+| `dismissed`, `dismiss_reason` | `triage --dismiss`, and `relate --as duplicates` / `supersedes` |
+| `resolved`, `resolution` | `triage --resolve` and `reconcile --apply` |
+| `reopen_rationale` | `triage --reopen` |
+| `resolved_flow`, `resolved_tasks`, `resolved_commits` | `reconcile --apply` only — the flow slug, the task refs, and the commit SHAs (an array, possibly empty) that delivered the item |
 
-Each terminal status requires its own date/companion pair, and an `open` item must carry none
-of the three dates: `promoted` needs `promoted` + `promoted_to`, `dismissed` needs `dismissed`
-+ `dismiss_reason`, `resolved` needs `resolved` + `resolution`. `open` requires nothing and may
-optionally carry `reopen_rationale`. Both halves of that invariant are checked on write.
+The statuses split into **live** — `open` and `promoted`, rows still asking for work — and
+**terminal** — `resolved` and `dismissed`. `backlog list --live` selects the first pair, and
+`compact` folds only the second.
+
+Each non-`open` status requires its own date/companion pair: `promoted` needs `promoted` +
+`promoted_to`, `dismissed` needs `dismissed` + `dismiss_reason`, `resolved` needs `resolved` +
+`resolution`. `open` requires nothing and may carry `reopen_rationale`. No row may carry
+another status's pair, with one exception: `resolved` and `dismissed` may keep the promotion
+claim, `promoted` + `promoted_to`, as the history of where the item was sent — both halves or
+neither. `open` carries no claim. The resolution link, `resolved_flow` / `resolved_tasks` /
+`resolved_commits`, is allowed on `resolved` alone. Every half of that invariant is checked on
+write.
 
 `[[compacted]]` — the aged-out rows, a narrower shape: `id`, `dedup_id`, `summary`, `kind`,
-`area`, `status`, `terminal_date`, `terminal_reason`, `context`, `compacted_on`. The three
-terminal date/companion pairs collapse into the single `terminal_date` / `terminal_reason`
-pair. `dedup_id` and `context` are load-bearing rather than archival — `check`'s
-`previously-resolved` verdict keys on the first and reports the second, so folding a row away
-never loses the "we already decided this" answer.
+`area`, `status`, `terminal_date`, `terminal_reason`, `context`, `compacted_on`, plus
+`promoted_to` and `resolved_flow` when the live row carried them non-empty. The terminal
+date/companion pair collapses into the single `terminal_date` / `terminal_reason` pair.
+`dedup_id` and `context` are load-bearing
+rather than archival — `check`'s `previously-resolved` verdict keys on the first and reports
+the second, so folding a row away never loses the "we already decided this" answer.
 
 Ids are unique across the **union** of the two arrays.
 
@@ -420,13 +484,14 @@ normalisation. Reuse the wording the store already has rather than improving it.
 
 ## The `check` verdict ladder
 
-Candidates are graded against the probe on seven rungs; the first rung a row clears is its
+Candidates are graded against the probe on eight rungs; the first rung a row clears is its
 `reason`, and the strongest reason across all candidates is the overall `verdict`. Rung order
 is ladder order:
 
 | `reason` | Rung | `verdict` |
 |---|---|---|
-| `dedup_id` | Exact fingerprint match on a live row | `duplicate` |
+| `dedup_id` | Exact fingerprint match on a `[[backlog]]` row that is not `promoted` | `duplicate` |
+| `in-flight` | Exact fingerprint match on a `promoted` row — the item is claimed by the flow its `promoted_to` names | `in-flight` |
 | `compacted` | Exact fingerprint match on an aged-out row | `previously-resolved` |
 | `duplicate-id` | Two stored rows share one id | `duplicate-id` |
 | `trigram` | Char-trigram Jaccard ≥ `--similarity-strong` (`0.75`) | `likely-duplicate` |

@@ -1,6 +1,6 @@
 ---
 name: tomlctl
-description: "Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml, tasks.toml, .claude/backlog.toml — and their per-row [[items]] arrays; also the regex enumerator over git-tracked files (`sweep`, the preferred `file:line` enumerator for review and optimise findings) and the ledger-driven `items sweep` / `items clusters` that re-verify and batch findings for the apply flow. Verbs: read/parse/get, query/filter/list/count/group-by/pluck, write/set/set-json, append/array-append, items add/add-many/update/remove/apply/backfill-dedup-id/sweep/clusters, sweep, flow resolve/active/doctor/init/ensure-artifact/envelope-build/stale/find-plans/render-progress-log, tasks import-plan/add/add-many/update/remove/show/list/edges/ready/batches/closure/check/render, backlog add/check/list/show/relate/triage/cluster/compact/evidence, validate, integrity refresh/verify, dry-run preview, dedupe. Use this for any TOML mutation in a flow command — never line-edit ledger arrays-of-tables. Outputs JSON; supports stdin via `-` sentinel for ops/json/ndjson payloads. Single agent-native CLI for all flow-TOML I/O on Windows and Linux."
+description: "Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml, tasks.toml, .claude/backlog.toml — and their per-row [[items]] arrays; also the regex enumerator over git-tracked files (`sweep`, the preferred `file:line` enumerator for review and optimise findings) and the ledger-driven `items sweep` / `items clusters` that re-verify and batch findings for the apply flow. Verbs: read/parse/get, query/filter/list/count/group-by/pluck, write/set/set-json, append/array-append, items add/add-many/update/remove/apply/backfill-dedup-id/sweep/clusters, sweep, flow resolve/active/doctor/init/ensure-artifact/envelope-build/stale/find-plans/render-progress-log, tasks import-plan/add/add-many/update/remove/show/list/edges/ready/batches/closure/check/render, backlog add/check/list/show/relate/triage/reconcile/cluster/compact/evidence, validate, integrity refresh/verify, dry-run preview, dedupe. Use this for any TOML mutation in a flow command — never line-edit ledger arrays-of-tables. Outputs JSON; supports stdin via `-` sentinel for ops/json/ndjson payloads. Single agent-native CLI for all flow-TOML I/O on Windows and Linux."
 ---
 
 # tomlctl
@@ -34,7 +34,7 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Read value via json subcommand | `tomlctl json get <file> <path>` |
 | Write value via json subcommand | `tomlctl json set <file> <path> --json <value>` |
 | Delete a key at path | `tomlctl json unset <file> <path>` |
-| Capture / triage the repo backlog (`.claude/backlog.toml`) | `tomlctl backlog add\|check\|list\|show\|relate\|triage\|cluster\|compact\|evidence {dir\|audit}` |
+| Capture / triage the repo backlog (`.claude/backlog.toml`) | `tomlctl backlog add\|check\|list\|show\|relate\|triage\|reconcile\|cluster\|compact\|evidence {dir\|audit}` |
 | Manage active-flow registry | `tomlctl flow active list\|add\|remove\|touch [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...` |
 | Pre-flight envelope (resolve + doctor + plansDirectory in one dispatch) | `Task(subagent_type: "flow-bootstrap", prompt: <input-envelope-JSON>)` ([`claude/agents/flow-bootstrap.md`](../../agents/flow-bootstrap.md); entrypoint note below) |
 | Build the flow-bootstrap input envelope (Step-0 of every flow carrier) | `tomlctl flow envelope build --command <c> [--branch <b>] [--worktree <w>] [--cwd <p>] [--path-arg <p>]... [--require-artifact <a>]...` |
@@ -54,12 +54,13 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 
 ## References
 
-The per-verb flag tables, recipes, and contract prose live in six sibling files. Each is self-contained and opens with its own `## Contents` list.
+The per-verb flag tables, recipes, and contract prose live in seven sibling files. Each is self-contained and opens with its own `## Contents` list.
 
 - [references/query.md](references/query.md) — the read-only verbs: `get` / `parse` / `validate`, the full `items list` query surface (filters, projection, shaping, aggregation, output shapes), `items get`, `items find-duplicates`, `items orphans`, and the tree-walking `sweep`, `items sweep`, `items clusters`.
 - [references/write.md](references/write.md) — the mutating verbs: `set`, `set-json`, `array-append`, the `items` batch verbs, `integrity refresh`, plus auto-create, `--dry-run`, stdin payload handling, and the dedup fingerprint contract.
 - [references/flow.md](references/flow.md) — the cross-cutting surface: the `--verify-integrity` support matrix, what the `.sha256` sidecar does and does not promise, the `--error-format json` envelope, the two emitting `flow` verbs, and the infrastructure-only `blocks` verbs.
 - [references/backlog.md](references/backlog.md) — the `backlog` group's flag tables, the `.claude/backlog.toml` store shape, id derivation, the `check` verdict ladder, and the evidence drop-box. When to mint a row is the `backlog-capture` skill's call, not this one's.
+- [references/backlog-reconcile.md](references/backlog-reconcile.md) — `backlog reconcile`: its flags, the buckets it sorts promoted rows into, the `render_needed` duty, what `--apply` writes, and the output shape.
 - [references/tasks.md](references/tasks.md) — the `tasks` group's per-verb flag tables, the `--slug` / `--file` target group, and the `check` finding classes. What the fields mean and which verb a carrier reaches for is the `flow-contract-task-store` skill's call, not this one's.
 - [references/tasks-store.md](references/tasks-store.md) — the `.claude/flows/<slug>/tasks.toml` store shape, `ref` derivation, the derived graph products, the 512-node cap, and the frozen contracts.
 
@@ -90,7 +91,7 @@ tomlctl --version
 
 ```bash
 tomlctl capabilities
-# {"version":"0.9.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
+# {"version":"0.10.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
 ```
 
 Representative entries:

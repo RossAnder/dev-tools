@@ -1,6 +1,6 @@
 ---
 name: backlog-capture
-description: "Captures a real but out-of-scope discovery into the repo-scoped store at `.claude/backlog.toml` via the `tomlctl backlog` group — when minting is warranted and when it is not, the mandatory `backlog check` gate and how to act on each verdict (duplicate, previously-resolved, duplicate-id, likely-duplicate, related, novel), the kind and status vocabularies, the orchestrator-only writer rule and the `TANGENTIAL:` heading a sub-agent uses to surface a candidate instead, the git-ignored evidence drop-box and its publication discipline in a public repository, and the capture idioms. Use whenever an agent or orchestrator notices a real but out-of-scope issue — a flaky test, a bug elsewhere, a follow-up, an annoyance — and before any `tomlctl backlog add`."
+description: "Captures a real but out-of-scope discovery into the repo-scoped store at `.claude/backlog.toml` via the `tomlctl backlog` group — when minting is warranted and when it is not, the mandatory `backlog check` gate and how to act on each verdict (duplicate, in-flight, previously-resolved, duplicate-id, likely-duplicate, related, novel), the kind and status vocabularies, the live `promoted` claim and its reconcile-driven resolution, seed flows, the orchestrator-only writer rule and the `TANGENTIAL:` heading a sub-agent uses to surface a candidate instead, the git-ignored evidence drop-box and its publication discipline in a public repository, and the capture idioms. Use whenever an agent or orchestrator notices a real but out-of-scope issue — a flaky test, a bug elsewhere, a follow-up, an annoyance — and before any `tomlctl backlog add`."
 ---
 
 # Backlog capture
@@ -41,7 +41,8 @@ Do **not** mint:
 
 | Verdict | What it means | What to do |
 |---|---|---|
-| `duplicate` | Exact fingerprint match on an existing row | Do not mint. `add` would only bump `seen_count`. Read the row's `context` and use it. |
+| `duplicate` | Exact fingerprint match on an `open`, `resolved` or `dismissed` row | Do not mint. `add` would only bump `seen_count`. Read the row's `context` and use it. |
+| `in-flight` | Exact fingerprint match on a `promoted` row; the candidate carries `promoted_to` | Do not mint. Name the claiming flow. If your discovery shows the claim is wrong or incomplete, surface that to the flow instead. |
 | `previously-resolved` | Fingerprint matches a row aged into `[[compacted]]` | Do not mint. Read the compacted row's `context` — this was decided once already. Mint only if you can say why the decision no longer holds. |
 | `duplicate-id` | Two stored rows share one id | A merge artefact. Surface it to the user; do not paper over it with a fresh row. |
 | `likely-duplicate` | Summaries are near-identical by character trigram | Read the named candidate in full. Mint only if yours is genuinely a different problem. |
@@ -69,9 +70,14 @@ under [Id derivation](../tomlctl/references/backlog.md#id-derivation).
 Anything unrecognised is coerced to `other` with a warning rather than rejected, so a typo
 mints a real but badly-filed row; spell it deliberately.
 
-**`status`** — `open` on mint, then `promoted` (picked up by a plan or flow), `dismissed`
-(decided against), or `resolved` (fixed). Status is moved only by `backlog triage`, never by
-re-minting, and `add` never rewrites the `status` or `summary` of a row it lands on.
+**`status`** — `open` on mint, then `promoted` (claimed by a flow or plan), `dismissed`
+(decided against), or `resolved` (fixed). `open` and `promoted` are live; `dismissed` and
+`resolved` are terminal. A `promoted` row is a live claim, named by `promoted_to`, until
+`backlog reconcile` or `backlog triage` resolves it. Resolving or dismissing keeps the claim as
+history; `reconcile --apply` also records `resolved_flow`, `resolved_tasks` and
+`resolved_commits`. `--reopen` clears the claim. Status is moved only by `triage` and
+`reconcile`, never by re-minting, and `add` never rewrites the `status` or `summary` of a row it
+lands on.
 
 ## Who writes
 
@@ -206,9 +212,49 @@ tells you to look.
 
 Items are triaged, not deleted. `backlog triage` moves an item to `promoted` (with `--to`
 naming the flow or plan that took it), `dismissed` (`--reason`), or `resolved`
-(`--resolution`), and `--reopen` (`--rationale`) puts one back. `backlog compact` ages decided
-items into `[[compacted]]`; `open` items are never compacted regardless of age, which is why
-a dead item should be dismissed rather than left to rot.
+(`--resolution`), and `--reopen` (`--rationale`) puts one back. `--promote` validates its
+target: `--to` must name an existing flow or plan, and a flow at `review` or `complete` is
+refused. `--external` stores a target outside the repo as `external:<ref>` unresolved, and
+`--allow-closed` accepts a closed flow. For a flow that does not exist yet, bootstrap a seed
+flow (below) and promote to it.
+
+`backlog reconcile` resolves promotions. It joins each `promoted` row to the tasks that close it
+in its flow's task store and buckets it; `--apply` resolves every `ready` row, and `--adopt`
+links rows no task links yet to the tasks whose prose names their id. Without either flag it
+writes nothing. `backlog compact` ages decided items into `[[compacted]]`; `open` and
+`promoted` items are never compacted regardless of age, which is why a dead item should be
+dismissed rather than left to rot.
+
+### Seed flows
+
+A seed flow is a draft flow bootstrapped to carry promotions before anyone has planned the
+work. Its plan is a stub carrying the marker line `<!-- backlog-seed -->`:
+
+```markdown
+# Plan: <title>
+<!-- backlog-seed -->
+
+**Status**: Draft
+
+## Context
+
+- B-1a2b3c4d — <summary>
+- B-5e6f7a8b — <summary>
+```
+
+Write the stub to `<plans_dir>/<slug>.md`, then bootstrap and promote:
+
+```bash
+tomlctl flow init --slug <slug> --plan <plans_dir>/<slug>.md
+tomlctl flow active remove --slug <slug>
+tomlctl backlog triage <ids> --promote --to <slug>
+```
+
+Pass no `--scope` or `--branch` to `flow init`, and drop the registry entry it writes: flow
+resolution also reads every non-complete flow on disk, registered or not, so a seed carrying a
+scope or branch would match work it has nothing to do with. `/plan-new --backlog` lists the seeds
+and plans the chosen one, writing the approved plan over the stub so the flow and its claims
+carry over.
 
 ## Idioms
 
@@ -269,16 +315,22 @@ Read one item with its relations and its live evidence listing:
 tomlctl backlog show B-1a2b3c4d
 ```
 
-Survey what is open under an area:
+Survey what is live — open or claimed — under an area:
 
 ```bash
-tomlctl backlog list --open --area-prefix lumina/server
+tomlctl backlog list --live --area-prefix lumina/server
 ```
 
 Hand an item to a flow that is picking it up:
 
 ```bash
-tomlctl backlog triage B-1a2b3c4d --promote --to lumina-pty-hardening
+tomlctl backlog triage B-1a2b3c4d --promote --to <slug>
+```
+
+Resolve the promotions a flow has delivered:
+
+```bash
+tomlctl backlog reconcile --flow <slug> --apply
 ```
 
 Check evidence hygiene before a commit that touches the drop-box:
