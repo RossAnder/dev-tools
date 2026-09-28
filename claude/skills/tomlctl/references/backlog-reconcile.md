@@ -73,8 +73,9 @@ becomes `status = "resolved"` dated today, keeps its claim, and gains:
 - `resolution` — ``resolved by flow `<slug>` (tasks <closes>)``;
 - `resolved_flow` — the slug;
 - `resolved_tasks` — the `closes` task refs, then the `refs` ones;
-- `resolved_commits` — the distinct non-empty `commit` values of those tasks, possibly `[]`
-  when the last batch is not yet committed.
+- `resolved_commits` — the distinct non-empty `commit` values of the `closes` tasks only,
+  since a `refs` task did not deliver the item; possibly `[]` when the last batch is not yet
+  committed.
 
 Each row is re-read and re-checked under the lock. One no longer in the backlog, no longer
 `promoted`, whose `promoted_to` has changed since the survey, or that fails validation is

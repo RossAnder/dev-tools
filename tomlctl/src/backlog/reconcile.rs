@@ -410,9 +410,9 @@ fn classify(claim: &Claim, stores: &BTreeMap<String, Store>) -> Entry {
         notes.insert(0, format!("referenced only by: {}", refs.join(", ")));
     }
 
+    // A `refs` task never gates resolution, so its commit did not deliver the item.
     entry.commits = closes
         .iter()
-        .chain(&refs)
         .filter_map(|r#ref| store.find_ref(r#ref))
         .map(|row| row.commit.as_str())
         .filter(|commit| !commit.is_empty())
@@ -975,7 +975,8 @@ mod tests {
         );
         assert_eq!(
             strings(backlog.get(schema::FIELD_RESOLVED_COMMITS)),
-            ["abc1234", "def5678"]
+            ["abc1234"],
+            "a refs task's commit did not deliver the item"
         );
         assert_eq!(
             backlog

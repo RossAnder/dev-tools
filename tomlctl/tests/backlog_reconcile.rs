@@ -153,11 +153,13 @@ fn apply_resolves_a_ready_row_with_its_link_and_keeps_the_claim() {
             ("one", "done", "abc1234", ""),
             ("two", "done", "def5678", ""),
             ("three", "pending", "", ""),
+            ("four", "done", "0ff1ce9", ""),
         ],
         &[
             ("one", &["B-aaaa0001"], &[]),
             ("two", &["B-aaaa0001"], &[]),
             ("three", &["B-aaaa0002"], &[]),
+            ("four", &[], &["B-aaaa0001"]),
         ],
     );
     seed_backlog(
@@ -174,8 +176,12 @@ fn apply_resolves_a_ready_row_with_its_link_and_keeps_the_claim() {
     let row = backlog_row(&root, "B-aaaa0001");
     assert_eq!(str_of(&row, "status"), Some("resolved"), "{row}");
     assert_eq!(str_of(&row, "resolved_flow"), Some(TASKS_SLUG));
-    assert_eq!(strings_of(&row, "resolved_tasks"), ["one", "two"]);
-    assert_eq!(strings_of(&row, "resolved_commits"), ["abc1234", "def5678"]);
+    assert_eq!(strings_of(&row, "resolved_tasks"), ["one", "two", "four"]);
+    assert_eq!(
+        strings_of(&row, "resolved_commits"),
+        ["abc1234", "def5678"],
+        "a refs task's commit did not deliver the item"
+    );
     assert_eq!(str_of(&row, "promoted_to"), Some(TASKS_SLUG));
     assert_eq!(
         str_of(&backlog_row(&root, "B-aaaa0002"), "status"),
