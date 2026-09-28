@@ -1,0 +1,741 @@
+schema_version = 1
+last_updated = 2026-09-28
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-09-28
+agent = "implement"
+summary = "implement started"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "8f034318b63e1e2d"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "parse-the-backlog-plan-bullet"
+status = "done"
+files = [
+    "tomlctl/src/tasks/parse_tasks.rs",
+    "tomlctl/src/tasks/import_plan.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Parse the Backlog plan bullet into backlog_closes/backlog_refs; 3 inline tests"
+dedup_id = "1342d8c3939dfd85"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "add-the-in-flight-verdict-to-backlog-check"
+status = "done"
+files = ["tomlctl/src/backlog/check.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "backlog check ranks a fingerprint hit on a promoted row as in-flight and reports promoted_to"
+dedup_id = "0980e870f23f7649"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "add-the-backlog_links-side-table-to-the-task-store"
+status = "done"
+files = ["tomlctl/src/tasks/schema.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Add the [[backlog_links]] side table and Store::links_for"
+dedup_id = "e6c5684f0206985c"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "add-the-promotion-target-resolver"
+status = "done"
+files = [
+    "tomlctl/src/backlog/target.rs",
+    "tomlctl/src/backlog/mod.rs",
+    "tomlctl/src/flow/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Add backlog::target Resolver/Target for promotion targets; 9 inline tests"
+dedup_id = "f33277adeeb340ce"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "make-promotion-a-live-claim-in-the-backlog-schema"
+status = "done"
+files = ["tomlctl/src/backlog/schema.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Backlog schema: live/terminal split, claim retention on resolved/dismissed, resolution-link fields, clear_for_transition"
+dedup_id = "56837924223725db"
+
+[[items]]
+id = "E7"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "parse-the-backlog-plan-bullet"
+summary = "checkpoint C gate: build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "a5fefc790c93c85c"
+
+[[items]]
+id = "E8"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "parse-the-backlog-plan-bullet"
+summary = "checkpoint C gate: 28 binaries green; --bin tomlctl 780 passed, 3 failed — all 3 pre-existing at HEAD 6fb8659 (capabilities enum_values_match_value_enum_variants; import_plan duplicate-number ref-hint x2), none introduced by this run"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+dedup_id = "24ade856a4301e08"
+
+[[items]]
+id = "E9"
+type = "checkpoint"
+date = 2026-09-28
+agent = "implement"
+kind = "commit-train"
+commits = ["96bc1e9"]
+summary = "checkpoint C: 96bc1e9 -> parse-the-backlog-plan-bullet"
+dedup_id = "503e4a03594f2b8c"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "add-backlog-list-live"
+status = "done"
+files = [
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Add backlog list --live (open or promoted), conflicting with --open/--status"
+dedup_id = "3afd3bc8c2ded1f5"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "route-triage-and-relate-transitions-through-the-shared-clear-helper"
+status = "done"
+files = [
+    "tomlctl/src/backlog/triage.rs",
+    "tomlctl/src/backlog/relate.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "triage/relate route transitions through clear_for_transition; add resolve_with_link"
+dedup_id = "2a89503a7566f098"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "import-backlog-links-from-the-plan"
+status = "done"
+files = ["tomlctl/src/tasks/import_plan.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "import-plan rebuilds store.backlog_links from the plan's Backlog bullets on every import"
+dedup_id = "369eeefdf1999959"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "stop-compact-folding-claimed-rows"
+status = "done"
+files = ["tomlctl/src/backlog/compact.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "compact never folds promoted rows; compacted rows keep promoted_to/resolved_flow"
+dedup_id = "66b0320b60fbb120"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "render-the-backlog-bullet"
+status = "done"
+files = [
+    "tomlctl/src/tasks/render.rs",
+    "tomlctl/src/tasks/show.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "render emits the Backlog bullet after Depends on; tasks show carries backlog {closes, refs}"
+dedup_id = "fec2447644a4b4a3"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "add-backlog-link-findings"
+status = "done"
+files = [
+    "tomlctl/src/tasks/backlog_refs.rs",
+    "tomlctl/src/tasks/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Add tasks::backlog_refs (backlog/* findings, load_backlog) and the store re-exports reconcile needs"
+dedup_id = "94b1f337090d3230"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "route-triage-and-relate-transitions-through-the-shared-clear-helper"
+summary = "checkpoint A+D gate: build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "a3dc81c1171ddbbf"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "route-triage-and-relate-transitions-through-the-shared-clear-helper"
+summary = "checkpoint A+D gate: 28 binaries green; --bin tomlctl 798 passed, 4 failed = 3 HEAD-baseline + finding_classes parity (task 13 classes awaiting task 20 docs, paired at checkpoint E)"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+dedup_id = "a2582907111740ae"
+
+[[items]]
+id = "E18"
+type = "checkpoint"
+date = 2026-09-28
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "29d5d00",
+    "5aa4696",
+    "5f9aecc",
+    "fa0cca7",
+    "f5f16f5",
+    "e7611f4",
+]
+summary = "checkpoints A+D: 29d5d00 -> make-promotion-a-live-claim-in-the-backlog-schema; 5aa4696 -> add-the-promotion-target-resolver; 5f9aecc -> route-triage-and-relate-transitions-through-the-shared-clear-helper; fa0cca7 -> add-backlog-list-live; f5f16f5 -> add-the-backlog_links-side-table-to-the-task-store; e7611f4 -> import-backlog-links-from-the-plan"
+dedup_id = "6b386981fecbc36a"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "surface-backlog-findings-in-import-and-check"
+status = "done"
+files = [
+    "tomlctl/src/tasks/import_plan.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/tests/tasks_corpus.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "import-plan and tasks check surface backlog/* findings, reading the backlog only when links exist; corpus ignores backlog/*"
+dedup_id = "f81f3c1156b6cf90"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "validate-promotion-targets-in-triage"
+status = "done"
+files = [
+    "tomlctl/src/backlog/triage.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "triage --promote resolves and validates its target; add --external and --allow-closed; store the canonical value"
+dedup_id = "353ee7747e647cb5"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "integration-test-validated-promotion-targets"
+status = "done"
+files = ["tomlctl/tests/backlog_write.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "CLI tests for triage --promote target validation (unknown, --external, closed flow/--allow-closed, bound plan path)"
+dedup_id = "a14a0dfef9a928c2"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "test-the-backlog-link-round-trip-end-to-end"
+status = "done"
+files = ["tomlctl/tests/tasks_import.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "Integration test: Backlog bullet -> findings (plan mode) -> [[backlog_links]] -> render --check -> tasks check"
+dedup_id = "e6bbfb019e957c44"
+
+[[items]]
+id = "E23"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "implement-backlog-reconcile"
+status = "done"
+files = [
+    "tomlctl/src/backlog/reconcile.rs",
+    "tomlctl/src/backlog/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "backlog reconcile core: buckets promoted rows, --adopt links prose-referenced ids, --apply resolves ready rows with links; 17 inline tests"
+dedup_id = "f462863c738d9ec6"
+
+[[items]]
+id = "E24"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "document-the-task-store-backlog-link"
+status = "done"
+files = [
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Document the Backlog bullet, [[backlog_links]], render/show behaviour and the four backlog/* finding classes"
+dedup_id = "b2695a25c19b9f74"
+
+[[items]]
+id = "E25"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "test-the-backlog-link-round-trip-end-to-end"
+summary = "checkpoint B+E gate: build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "edee41b29e222f95"
+
+[[items]]
+id = "E26"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "test-the-backlog-link-round-trip-end-to-end"
+summary = "checkpoint B+E gate: 28 binaries green; --bin tomlctl 822 passed, 3 failed — the 3 HEAD-baseline failures only"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+dedup_id = "825812ace60be430"
+
+[[items]]
+id = "E27"
+type = "checkpoint"
+date = 2026-09-28
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "07f50ae",
+    "a238133",
+    "ea593c1",
+    "39179b2",
+    "234401c",
+    "1ab93c9",
+    "c7ab0aa",
+    "f6aa65a",
+    "715bf27",
+]
+summary = "checkpoints B+E: 07f50ae -> add-the-in-flight-verdict-to-backlog-check; a238133 -> stop-compact-folding-claimed-rows; ea593c1 -> validate-promotion-targets-in-triage; 39179b2 -> integration-test-validated-promotion-targets; 234401c -> render-the-backlog-bullet; 1ab93c9 -> add-backlog-link-findings; c7ab0aa -> document-the-task-store-backlog-link; f6aa65a -> surface-backlog-findings-in-import-and-check; 715bf27 -> test-the-backlog-link-round-trip-end-to-end"
+dedup_id = "a6ec8f47d6a66fcf"
+
+[[items]]
+id = "E28"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "register-the-reconcile-verb-and-release-0100"
+status = "done"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Register backlog reconcile (BacklogOp::Reconcile, backlog_reconcile feature), README updates, bump to 0.10.0"
+dedup_id = "6e59c51fd4b9f06e"
+
+[[items]]
+id = "E29"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "integration-test-backlog-reconcile"
+status = "done"
+files = ["tomlctl/tests/backlog_reconcile.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "9 assert_cmd integration tests for backlog reconcile (buckets, --apply, --adopt, --flow, read-only default)"
+dedup_id = "2febbc1e306ae967"
+
+[[items]]
+id = "E30"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "integration-test-backlog-reconcile"
+summary = "checkpoint F gate: build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "521b9fef51880f09"
+
+[[items]]
+id = "E31"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "integration-test-backlog-reconcile"
+summary = "checkpoint F gate: 29 binaries green; --bin tomlctl 822 passed, 3 failed — the 3 HEAD-baseline failures only"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+dedup_id = "88a61e097f6700d6"
+
+[[items]]
+id = "E32"
+type = "checkpoint"
+date = 2026-09-28
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "fbd05db",
+    "7fd9ec4",
+    "5e49a16",
+]
+summary = "checkpoint F: fbd05db -> implement-backlog-reconcile; 7fd9ec4 -> register-the-reconcile-verb-and-release-0100; 5e49a16 -> integration-test-backlog-reconcile"
+dedup_id = "d8c953790c6a5137"
+
+[[items]]
+id = "E33"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "show-live-backlog-rows-to-review-and-optimise"
+status = "done"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "/review and /optimise load the backlog with --live and treat promoted rows as already claimed"
+dedup_id = "0c12c7b59044d61f"
+
+[[items]]
+id = "E34"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "update-the-backlog-capture-skill-for-live-promotion-and-seed-flows"
+status = "done"
+files = ["claude/skills/backlog-capture/SKILL.md"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "backlog-capture: promoted is a live claim, in-flight verdict, reconcile-driven resolution, seed flows"
+dedup_id = "3dec3f2fb651ff14"
+
+[[items]]
+id = "E35"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "document-the-backlog-lifecycle-in-the-tomlctl-reference"
+status = "done"
+files = [
+    "claude/skills/tomlctl/references/backlog.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "tomlctl backlog reference: --live, target validation, claim retention, reconcile section, in-flight verdict; SKILL 0.10.0"
+dedup_id = "16fefb424c7ba17e"
+
+[[items]]
+id = "E36"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "wire-reconcile-into-implement"
+status = "done"
+files = ["claude/commands/implement.md"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+summary = "/implement: Phase 1 unlinked-claims warning, Phase 4 reconcile --apply after green pass, Summary backlog counts, backlog/unknown-id recovery"
+dedup_id = "93d562b545e94c95"
+
+[[items]]
+id = "E37"
+type = "deviation"
+date = 2026-09-28
+agent = "implement"
+task_ref = "document-the-backlog-lifecycle-in-the-tomlctl-reference"
+summary = "references/backlog.md exceeded the 600-line skill-reference ceiling; reconcile section split into a new reference file"
+original_intent = "Task 19 documents backlog reconcile inside claude/skills/tomlctl/references/backlog.md"
+rationale = "The additions took backlog.md to 649 lines and failed skill_references_under_line_ceiling (600); following the tasks.md/tasks-store.md precedent, the reconcile section moves to claude/skills/tomlctl/references/backlog-reconcile.md, a file the plan did not list"
+dedup_id = "a691c719814c557d"
+
+[[items]]
+id = "E38"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "gate-plan-update-complete-on-live-promotions"
+status = "done"
+files = ["claude/commands/plan-update.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "/plan-update: complete reconciles --apply then gates remaining claims (reopen/keep/cancel); status prints reconcile counts"
+dedup_id = "3e39a104e78c2dd0"
+
+[[items]]
+id = "E39"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "document-the-backlog-lifecycle-in-the-tomlctl-reference"
+status = "done"
+files = [
+    "claude/skills/tomlctl/references/backlog.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/backlog-reconcile.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Retry: reconcile section split into references/backlog-reconcile.md to satisfy the 600-line reference ceiling; backlog.md 559 lines"
+dedup_id = "3760edc935fd7c12"
+
+[[items]]
+id = "E40"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "add-promotion-triage-and-seed-bootstrap-to-backlog"
+status = "done"
+files = ["claude/commands/backlog.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "/backlog: Promotions step (reconcile dry run, adopt+render, apply, reopen/re-promote), promote target refusal handling with seed bootstrap, 0.10 gate on --live count"
+dedup_id = "77cf9a7ff159e4ef"
+
+[[items]]
+id = "E41"
+type = "deviation"
+date = 2026-09-28
+agent = "implement"
+task_ref = "add-promotion-triage-and-seed-bootstrap-to-backlog"
+summary = "render drift check moved before --adopt, one flow at a time"
+original_intent = "After reconcile --adopt, run tasks render --check on each render_needed slug and render only when clean"
+rationale = "An adopted link renders a new Backlog line, so --check after --adopt always reports drift and nothing would ever render; the check now runs per flow before reconcile --flow <slug> --adopt. The same correction was applied to claude/skills/tomlctl/references/backlog-reconcile.md by the orchestrator. The plan's Verification Commands step 3 (manual migration) still describes the old order."
+dedup_id = "c65677f9a51f98f1"
+
+[[items]]
+id = "E42"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "wire-the-backlog-into-plan-new-with-backlog-seed-adoption"
+status = "done"
+files = [
+    "claude/commands/plan-new.md",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "/plan-new --backlog seed picker, live-row exploration, fold-in question, Backlog bullets, Phase 9 seed adoption + promotion; plan format documents the bullet; skills test requires backlog-capture"
+dedup_id = "941727fcfe51c67d"
+
+[[items]]
+id = "E43"
+type = "deviation"
+date = 2026-09-28
+agent = "implement"
+task_ref = "cover-the-envelope-enums-in-the-capabilities-parity-test"
+summary = "Minted two tasks to fix the three tests already failing at HEAD 6fb8659"
+original_intent = "plan carries no task for the three baseline test failures (capabilities enum_values_match_value_enum_variants; two import_plan duplicate-number hint tests)"
+rationale = "User asked mid-run to fix them. 6fb8659 added command/require_artifact to ENUM_VALUES without a test branch, and rewrote the rename hint as `tasks update <slug-or-file> <id>`, which is not valid CLI syntax and broke two pinned tests. Minted tasks 27 and 28 (checkpoint G); applied directly by the orchestrator as final-pass fixes."
+dedup_id = "f63849935a43885e"
+
+[[items]]
+id = "E44"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "cover-the-envelope-enums-in-the-capabilities-parity-test"
+status = "done"
+files = [
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/flow/envelope.rs",
+    "tomlctl/src/flow/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Applied directly by the orchestrator: enum_values_match_value_enum_variants compares command/require_artifact against the envelope's VALID_COMMANDS/VALID_ARTIFACTS (falsified: a drifted const fails it)"
+dedup_id = "363e821d41059c23"
+
+[[items]]
+id = "E45"
+type = "task-completion"
+date = 2026-09-28
+agent = "implement"
+task_ref = "make-the-duplicate-number-rename-hint-a-runnable-command"
+status = "done"
+files = ["tomlctl/src/tasks/import_plan.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+summary = "Applied directly by the orchestrator: the duplicate-number hint reads `tomlctl tasks update <id> --ref <new> --slug <slug>` (id positional, target as a flag)"
+dedup_id = "96bb3a335aa6e036"
+
+[[items]]
+id = "E46"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "make-the-duplicate-number-rename-hint-a-runnable-command"
+summary = "final pass: fmt check"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+dedup_id = "7745e10b99c888b8"
+
+[[items]]
+id = "E47"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "make-the-duplicate-number-rename-hint-a-runnable-command"
+summary = "final pass: build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+dedup_id = "c217bf6f4c2d2349"
+
+[[items]]
+id = "E48"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "make-the-duplicate-number-rename-hint-a-runnable-command"
+summary = "final pass: 30 binaries, 1279 passed, 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+dedup_id = "9dbc967c87592854"
+
+[[items]]
+id = "E49"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "make-the-duplicate-number-rename-hint-a-runnable-command"
+summary = "final pass: clippy, 0 warnings"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+dedup_id = "db5286ba7bea16b9"
+
+[[items]]
+id = "E50"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "make-the-duplicate-number-rename-hint-a-runnable-command"
+summary = "final pass: shared blocks"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+dedup_id = "261c6ed2a01ed2f2"
+
+[[items]]
+id = "E51"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "make-the-duplicate-number-rename-hint-a-runnable-command"
+summary = "final pass: plan-story blocks"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+dedup_id = "a2edbeb4552a1c38"
+
+[[items]]
+id = "E52"
+type = "verification"
+date = 2026-09-28
+agent = "implement"
+task_ref = "make-the-duplicate-number-rename-hint-a-runnable-command"
+summary = "final pass: RUSTSEC audit"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+dedup_id = "540081c240174dd8"
+
+[[items]]
+id = "E53"
+type = "checkpoint"
+date = 2026-09-28
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "5d81c57",
+    "f338d0a",
+    "72bcba8",
+    "b579845",
+    "56d9634",
+    "42e5427",
+    "16ed6b9",
+    "e84c716",
+    "0279d61",
+    "464de65",
+    "a602004",
+    "46ff9e8",
+]
+summary = "checkpoint G + final train: 5d81c57 -> document-the-backlog-lifecycle-in-the-tomlctl-reference; f338d0a -> update-the-backlog-capture-skill-for-live-promotion-and-seed-flows; 72bcba8 -> show-live-backlog-rows-to-review-and-optimise; b579845 -> wire-reconcile-into-implement; 56d9634 -> gate-plan-update-complete-on-live-promotions; 42e5427 -> add-promotion-triage-and-seed-bootstrap-to-backlog; 16ed6b9 -> wire-the-backlog-into-plan-new-with-backlog-seed-adoption; e84c716 -> cover-the-envelope-enums-in-the-capabilities-parity-test; 0279d61 -> make-the-duplicate-number-rename-hint-a-runnable-command; 464de65 -> integration-test-backlog-reconcile (clippy follow-up); a602004 -> add-the-backlog_links-side-table-to-the-task-store docs follow-up; 46ff9e8 -> .github skills mirror sync"
+dedup_id = "5921058862107699"
+
+[[items]]
+id = "E54"
+type = "status-transition"
+date = 2026-09-28
+agent = "plan-update"
+summary = "All 28 tasks done and final verification green; awaiting review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "a16c23a6aedcceb6"

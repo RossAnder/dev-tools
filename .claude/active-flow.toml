@@ -576,3 +576,23 @@ scope = [
     "tomlctl/README.md",
     "claude/skills/**",
 ]
+
+[[active]]
+slug = "unified-singing-gem"
+last_used = "2026-09-25T16:04:48.4473946Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/src/backlog/**",
+    "tomlctl/src/tasks/**",
+    "tomlctl/src/flow/mod.rs",
+    "tomlctl/src/cli/**",
+    "tomlctl/tests/**",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "claude/skills/**",
+    "claude/commands/**",
+]

@@ -1,0 +1,30 @@
+slug = "unified-singing-gem"
+plan_path = "docs/plans/unified-singing-gem.md"
+status = "review"
+created = 2026-09-25
+updated = 2026-09-28
+branch = "main"
+scope = [
+    "tomlctl/src/backlog/**",
+    "tomlctl/src/tasks/**",
+    "tomlctl/src/flow/mod.rs",
+    "tomlctl/src/cli/**",
+    "tomlctl/tests/**",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "claude/skills/**",
+    "claude/commands/**",
+]
+
+[tasks]
+total = 28
+completed = 28
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/unified-singing-gem/review-ledger.toml"
+optimise_findings = ".claude/flows/unified-singing-gem/optimise-findings.toml"
+execution_record = ".claude/flows/unified-singing-gem/execution-record.toml"
+plan_review_findings = ".claude/flows/unified-singing-gem/plan-review-findings.toml"
+tasks = ".claude/flows/unified-singing-gem/tasks.toml"

@@ -1,0 +1,454 @@
+schema_version = 1
+last_updated = 2026-09-28
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "executability"
+plan_section = "## Tasks"
+summary = "Every `--lib` acceptance is unrunnable: tomlctl is a bin-only crate"
+description = "tomlctl/Cargo.toml has only [[bin]] path=src/main.rs, no src/lib.rs; `cargo test --lib` fails 'no library targets found'. 19 occurrences across tasks 1,2,3,4,5,6,7,8,9,10,11,12,13,15,18,22,24 (plan lines 289,304x2,315,325,335,352,366,380,391,401,410,425,434,467,511,563x2,593). Replace with `--bin tomlctl <filter>`; spell out the bare fragments in tasks 2 (`--lib backlog::relate`), 7 (`--lib backlog::triage`), 22 (`--lib lint`). Baseline: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- finding_classes lint carrier_invokes_required_skills` = 18 passed today."
+dedup_id = "0e0d780d84c5fe63"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "feasibility"
+plan_section = "## Dependency Graph"
+summary = "Task 12's backlog/* classes break finding_classes parity at checkpoints B and C until task 19"
+description = 'tomlctl/src/cli/dispatch/tests/finding_classes.rs documented_finding_classes_match_the_source scans every src/tasks/*.rs `class:` literal and set-compares against the tables in flow-contract-task-store/SKILL.md and tomlctl/references/tasks.md. Task 12 (checkpoint B) emits 4 new classes; task 19 (checkpoint D) documents them, so B and C gates are red. Fix: put task 19 in checkpoint B (marker after 14, 19; update via the store and re-render), add `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl finding_classes` to task 19 Acceptance, and state in task 12 that each Finding uses a literal `class: "backlog/..."` field with `severity:` within the next four lines (the only shape the parser reads).'
+anchor_old = "— CHECKPOINT B after tasks 14 — dependency closure: 6, 8, 9, 10, 11, 12, 13, 14."
+anchor_new = "— CHECKPOINT B after tasks 14, 19 — dependency closure: 6, 8, 9, 10, 11, 12, 13, 14, 19."
+dedup_id = "0ad9db672bafb36b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "executability"
+plan_section = "### 20. Update the backlog-capture skill for live promotion and seed flows [S]"
+summary = "`flow active remove <slug>` is invalid; the flag is `--slug`"
+description = 'cli/types.rs ActiveOp::Remove has #[arg(long = "slug")]; positional form is UnknownArgument and fails command_lint once written into a skill bash fence. 4 sites: Exploration Notes :88, Approach :220, task 20 :535, Risks :619. Task 24 inherits it. Add `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl lint` to task 20 Acceptance.'
+anchor_old = "then `tomlctl flow active remove <slug>`, then"
+anchor_new = "then `tomlctl flow active remove --slug <slug>`, then"
+dedup_id = "e699c09039f300d6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 22. Wire the backlog into /plan-new with --backlog seed adoption [M]"
+summary = "Seed adoption: `flow init` noop leaves the seed's scope/branch in context.toml"
+description = "flow/init.rs:397-418 noop branch leaves an existing context.toml byte-identical and only upserts the registry. Phase 9's derived scope and branch never reach context.toml, which flow resolve (scope glob, branch) and implement scope warnings read. After re-init, write scope (tomlctl set-json) and branch (tomlctl set) explicitly."
+anchor_old = "use the seed slug for steps 1-6 (`flow init` is idempotent);"
+anchor_new = "use the seed slug for steps 1-6; `flow init`'s noop branch leaves the seed's `context.toml` untouched, so afterwards write the derived scope (`tomlctl set-json .claude/flows/<slug>/context.toml scope --json '[...]'`) and branch (`tomlctl set .claude/flows/<slug>/context.toml branch <b>`) explicitly;"
+dedup_id = "add5b3efddcec112"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "`flow active remove` does not stop a scoped seed from winning flow resolution"
+description = "resolve.rs step 2 (scope glob) and step 5 (branch) enumerate every non-complete flow on disk regardless of the registry; a seed bootstrapped with `--scope <area>` becomes the resolved flow (or a tie) for /review, /optimise, /implement in that area. Bootstrap seeds without --scope/--branch (both optional) and let Phase 9 set them (P4). Fix task 20's bootstrap sequence and this Risks line."
+anchor_old = "Mitigation: the bootstrap runs `flow active remove <slug>` right after `flow init`; `/plan-new` Phase 9's `flow init` re-registers it."
+anchor_new = "Mitigation: the bootstrap runs `flow init` with no `--scope`/`--branch` (resolution steps 2 and 5 read every non-complete flow on disk, registered or not), then `flow active remove --slug <slug>`; `/plan-new` Phase 9 re-registers it and writes scope and branch."
+dedup_id = "b3a5ddc9e6cf4957"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "executability"
+plan_section = "### 13. Surface backlog findings in import and check [S]"
+summary = "Task 13 uses a `slug` that `Import::apply` lacks, and loads the backlog unconditionally"
+description = "import_plan.rs Import struct {parsed, completions, plan_path} has no slug; apply is I/O-free and called by every inline import test. Unconditional load_backlog()? makes every tasks import-plan/check (incl. /implement Step 0) fail on a malformed/conflicted .claude/backlog.toml (git-tracked) even for plans with no links. Do it in import_plan() after each import.apply and before refuse_on_errors, and load the backlog only when store.backlog_links is non-empty; same in the Check arm. (Sidecar mismatch is not a risk: verify_on_read defaults off.)"
+anchor_old = "- In `Import::apply`, append `backlog_findings(&store, &load_backlog()?, slug)` to the findings (:286-300) before `refuse_on_errors`, so `backlog/unknown-id` refuses a real import."
+anchor_new = "- In `import_plan()` (which binds `slug`), after each `import.apply(..)` call and before `refuse_on_errors`, append `backlog_findings(store, &backlog, slug)`, loading the backlog only when `store.backlog_links` is non-empty, so `backlog/unknown-id` refuses a real import and `Import::apply` stays I/O-free."
+dedup_id = "880cc34f6d02a16b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "executability"
+plan_section = "### 7. Validate promotion targets in triage [M]"
+summary = "Task 7 leaves root plumbing open and misreads the backlog_write.rs:527 premise"
+description = "Transition::from_cli (triage.rs:81) is pure with 5 params and called directly by tests; dispatch (:222) has repo_or_cwd_root(). Resolve the Promote companion in dispatch after from_cli and after the companion check (tests at triage.rs:566/:679 expect kind validation on missing --to). backlog_write.rs:520-546 is a clap-conflict test that exits before from_cli; no CLI test promotes successfully, so the new integration cases are the only CLI coverage. Also fix the Exploration Notes claim."
+anchor_old = "- `Transition::from_cli` (triage.rs:81) resolves `--to` via `target::resolve` before the write:"
+anchor_new = "- `dispatch` (triage.rs:222) resolves a `Transition::Promote` companion via `target::resolve(&repo_or_cwd_root()?, ..)` after `Transition::from_cli` (and its missing-companion check) and before `mutate_doc`, keeping `from_cli` pure:"
+dedup_id = "2e625841064e3893"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "executability"
+plan_section = "### 15. Implement backlog reconcile [L]"
+summary = "reconcile's JSON shape is undefined; tasks 21/23 parse it without depending on task 18"
+description = "Step 7 prints {ok, flow, buckets, adopted, applied, render_needed} with no element shapes; entry `closes`/`refs` could be task refs or backlog ids; Approach's 'closes ∪ refs refs' is garbled. Tasks 21/23 write carrier prose over it but depend only on 16. Define the shape and add 18 to tasks 21 and 23 Depends on."
+anchor_old = "  7. Print `{ok, flow, buckets, adopted, applied, render_needed}`."
+anchor_new = "  7. Print `{ok, flow, buckets: {<bucket>: [entry...]} (all seven keys, empty arrays kept), adopted: [{id, flow, task_refs}], applied: [id...], render_needed: [slug...]}`; an entry's `closes`/`refs` are task `ref` slugs."
+dedup_id = "2ccca583c9e1e4d1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "risk"
+plan_section = "### 15. Implement backlog reconcile [L]"
+summary = "reconcile: stale cache after --adopt, unguarded --apply, missing-store read error"
+description = "Step 5 buckets from the step-3 cache, so rows adopted in step 4 stay unlinked and `--adopt --apply` never resolves them (contradicts research note). Step 6 resolves rows chosen from an unlocked read; resolve_with_link rewrites whatever status the row now has, so a row reopened concurrently is resolved anyway, and one validate failure aborts all resolutions. tasks::store::load errors on a missing file (read_doc), so 'missing store means no links' needs an exists() check. Refresh the cache from mutate_store's result; inside mutate_doc re-find each row, skip unless still promoted with unchanged promoted_to, report skips."
+anchor_old = "call `triage::resolve_with_link` for each `ready` row, with:"
+anchor_new = "re-find each `ready` row by id, skip (and report) any no longer `promoted` or whose `promoted_to` changed, and call `triage::resolve_with_link`, with:"
+dedup_id = "a077f6347123a889"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "risk"
+plan_section = "### 15. Implement backlog reconcile [L]"
+summary = "--adopt substring-matches ids, but widened ids extend shorter ones"
+description = "backlog/ids.rs widens a colliding id from 8 to 10/12 hex, so text naming B-1a2b3c4d5e 'contains' B-1a2b3c4d and yields a wrong closes link and eventual wrong auto-resolve. Match the id followed by end-of-text or a non-hex char; add a collision test."
+anchor_old = "find task rows whose `title`/`action`/`detail`/`acceptance` contain the id."
+anchor_new = "find task rows whose `title`/`action`/`detail`/`acceptance` contain the id as a whole token (followed by end-of-text or a non-hex character — widened ids extend shorter ones; add a collision test)."
+dedup_id = "88b3cbb2ddbb98c8"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "risk"
+plan_section = "### 9. Parse the Backlog plan bullet [S]"
+summary = "`refs` binds one token; annotations are not stripped"
+description = "Per-token rule makes `refs B-1, B-2` a refs B-1 and a CLOSING B-2, silently gating resolution. split_entries keeps `(...)`/` — ` annotations (push_file strips them via annotation_at), so `B-1 (partial)` raises backlog/unknown-id ERROR and refuses the import. Strip annotations like push_file; pin the per-token semantics with a test and document it in task 19's format rule (or make refs apply to the rest of the line)."
+anchor_old = "A token starting `refs ` goes to `backlog_refs`, with the remainder trimmed; others go to `backlog_closes`."
+anchor_new = "Strip `(...)` / ` — ` annotations as `push_file` does (`annotation_at`). A token starting `refs ` goes to `backlog_refs`, with the remainder trimmed; others go to `backlog_closes`. `refs` covers its own token only — an inline test pins `refs B-1, B-2` → refs=[B-1], closes=[B-2], and task 19's format rule states it."
+dedup_id = "c735cfc648aa2ef7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "risk"
+plan_section = "### 22. Wire the backlog into /plan-new with --backlog seed adoption [M]"
+summary = "Phase 9 step 7 promotes every linked id, including refs/closed/claimed-elsewhere"
+description = "apply_transition (triage.rs:180-215) never checks current status: re-promoting a resolved/dismissed id erases its resolution; a claimed-elsewhere id's claim silently moves; a compacted id fails the whole call (not_found); promoting a refs id creates a claim with no closes task that sits unlinked→orphaned and lands in the /plan-update complete gate, contradicting User Decision 2. Promote only open closes ids; report the rest. Raise backlog/unpromoted only for closes ids (task 12)."
+anchor_old = "new step 7: collect the linked ids from the store's `[[backlog_links]]` and run `tomlctl backlog triage <ids> --promote --to <slug>`"
+anchor_new = "new step 7: collect the `closes` ids from the store's `[[backlog_links]]` whose backlog status is `open` (never `refs`, resolved, dismissed, compacted or claimed-elsewhere ids — report those) and run `tomlctl backlog triage <ids> --promote --to <slug>`"
+dedup_id = "c661ca40e6130987"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "risk"
+plan_section = "## Execution Policy"
+summary = "Uncommitted shared-file windows let one task's rollback wipe finished siblings"
+description = "implement.md failure rollback runs `git restore -- <failed task's files>` on uncommitted milestone work, 'safe because file ownership is absolute'. In window A task 7 shares triage.rs with 2 and cli/types.rs + backlog/dispatch.rs with 5; in window B tasks 9, 10, 13 share import_plan.rs. A failed 7 or 13 erases done 2/5 or 9/10; per-task commits also collapse. Add cuts before the shared-file successors (checkpoint placement, not cadence). Change via the task store and re-render."
+anchor_old = "- **Checkpoint after**: tasks 3, 4, 7, 14, 17, 21, 22, 23, 24, 25"
+anchor_new = "- **Checkpoint after**: tasks 2, 3, 4, 5, 6, 7, 9, 14, 17, 21, 22, 23, 24, 25"
+dedup_id = "f5163847e271f4e2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "warning"
+category = "risk"
+plan_section = "## Dependency Graph"
+summary = "Carrier edits go live globally before the 0.10.0 binary is installed"
+description = "~/.claude/commands/{implement,plan-new,plan-update,review,optimise}.md and the backlog-capture/tomlctl/task-store/plan-output-format skills are symlinks into this repo; installed tomlctl is 0.9.0. Tasks 18-25 depend only on 16, so they can land while 17 runs; no task runs cargo install, and checkpoint C ('install after this checkpoint') contradicts Verification Commands ('after the final pass'). Any session in any repo running /review, /optimise, /implement meanwhile calls `backlog list --live`/`reconcile` against 0.9.0. Make the install an explicit orchestrator step at checkpoint C and gate tasks 18-25 on 17, or add a Risks line."
+anchor_old = "`cargo install --path tomlctl` after this checkpoint so later carrier checks use the new binary"
+anchor_new = "the orchestrator runs `cargo install --path tomlctl` at this checkpoint, before any task 18-25 dispatches (carrier commands and skills are symlinked into `~/.claude`, so their edits go live in every session immediately)"
+dedup_id = "dce64ad59af8449f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "warning"
+category = "risk"
+plan_section = "### 24. Add promotion triage and seed bootstrap to /backlog [M]"
+summary = "Rendering after --adopt can overwrite drifted plans"
+description = "Plain `tasks render --slug` rewrites the plan; implement.md Phase 4 says drift is not permission to overwrite and runs --check first. whimsical-hugging-puppy (a real adopt target, 9 rows) already reports render/drift today; tomlctl-followups and -round-2 (23 rows) have no tasks.toml so --adopt cannot link them. Run `render --check` first and stop on drift; note in the migration step that those 23 rows go straight to triage."
+anchor_old = "`unlinked` → offer `--adopt`, then `tomlctl tasks render --slug <slug>` for each `render_needed`;"
+anchor_new = "`unlinked` → offer `--adopt`, then for each `render_needed` run `tomlctl tasks render --slug <slug> --check` first and render only when it reports no pre-existing drift (otherwise report and stop);"
+dedup_id = "09720a6fb74a2a8e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "warning"
+category = "completeness"
+plan_section = "### 24. Add promotion triage and seed bootstrap to /backlog [M]"
+summary = "/backlog Step 0 stops on an --open count of 0 before Promotions can run"
+description = "claude/commands/backlog.md:36 'On a count of 0, say the backlog is empty and stop' gates on `list --open --count`; a store with only promoted rows never reaches the new Promotions step. The version gate (:30) still says 0.6; reconcile/--live need 0.10."
+anchor_old = "  - Step 0 (:33) adds a `--live` count line."
+anchor_new = "  - Step 0 (:30-36): stop only when the `--live` count is 0 (not the `--open` count), so promoted-only stores still reach Promotions; raise the version gate from 0.6 to 0.10 (`reconcile`, `--live`)."
+dedup_id = "f3095633b2dca6fd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "warning"
+category = "completeness"
+plan_section = "### 11. Render the Backlog bullet [S]"
+summary = "Implementers never see which backlog item their task closes"
+description = "/implement dispatches by id via `tasks show <id> --with body,files,deps` and deliberately omits ## Tasks prose (implement.md:78). The link lives in the [[backlog_links]] side table, which show does not emit, so the agent never sees the item it will auto-resolve — feeding the premature auto-resolve risk. Precedent: show.rs attaches the ref-keyed import_override. Add show.rs: emit `backlog: {closes, refs}` for a linked row."
+anchor_old = "- **Files**: `tomlctl/src/tasks/render.rs`"
+anchor_new = "- **Files**: `tomlctl/src/tasks/render.rs`, `tomlctl/src/tasks/show.rs`"
+dedup_id = "03ca360efeaaac9c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "warning"
+category = "completeness"
+plan_section = "### 22. Wire the backlog into /plan-new with --backlog seed adoption [M]"
+summary = "Phase-7 dry run raises backlog warnings by design"
+description = "Folded ids are promoted only at Phase 9 step 7, so the Phase-7 `import-plan --plan --dry-run` (and Phase 9 step 6) reports backlog/unpromoted for each; seed ids report backlog/claimed-elsewhere because slug is None and plan_path is the plan-mode file. plan-new.md:103 tells the orchestrator to disposition warnings. Skip claimed-elsewhere when flow is None (task 12), and amend plan-new.md:103."
+anchor_old = "  - Phase 6/7: folded ids go on their tasks' `- **Backlog**:` line (`refs` for partial coverage)."
+anchor_new = "  - Phase 6/7: folded ids go on their tasks' `- **Backlog**:` line (`refs` for partial coverage). Amend Phase 7's dry-run paragraph (plan-new.md:103): `backlog/unpromoted` on a folded id is expected until Phase 9 step 7 — report it, do not disposition it."
+dedup_id = "b15cf7bcba3fac6b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "warning"
+category = "completeness"
+plan_section = "### 16. Register the reconcile verb and release 0.10.0 [M]"
+summary = "Prose the change falsifies with no owning task"
+description = "Unowned: claude/skills/tomlctl/SKILL.md :3 (verb list), :37 (backlog routing row), :93 (0.9.0 sample). Task 16: README :55-64 synopsis (no reconcile/--live; :60 promotes to closed flow tomlctl-backlog-capture; :64 'open items never move'), :345 backlog_compact, :347 backlog_list; types.rs:1229-1230 Compact doc. Task 20: backlog-capture SKILL :3 verdict list, :44, :281 (`--to lumina-pty-hardening`, not a flow). Task 18: references/backlog.md:192 (same bad --to), :384-389 compacted shape. Task 24: commands/backlog.md:61 (closed flow target), :105. Task 25: review.md:41, optimise.md:43 lead-ins. Task 3: compact.rs:159-162 doc + test name :354. Task 1: schema.rs:128-130, :248-250, :327-332. Task 2: triage.rs:4-8, relate.rs:168-173. Task 4: check.rs:162-163. Task 19: task-store SKILL.md:168 'two side tables'. Add claude/skills/tomlctl/SKILL.md to task 18 Files."
+anchor_old = "  - In the README, update the capabilities sample (~:256-268) and the Feature meanings table (~:350)."
+anchor_new = "  - In the README, update the capabilities sample (~:256-268), the Feature meanings table (~:340-350, including the `backlog_compact`/`backlog_list` rows) and the verb synopsis (:55-64); update the `Compact` doc (types.rs:1229-1230)."
+dedup_id = "dc3c70f36d7527a3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "warning"
+category = "completeness"
+plan_section = "### 19. Document the task-store backlog link [M]"
+summary = "references/tasks-store.md (the store-shape reference) is in no task"
+description = "claude/skills/tomlctl/references/tasks-store.md lists the optional side tables ([[import_overrides]], [[file_notes]]) and is the store-shape reference per tomlctl/SKILL.md; [[backlog_links]] goes undocumented there. Adding it makes 4 files — split the plan-output-format edit into its own task if the cap applies."
+anchor_old = "- **Files**: `claude/skills/flow-contract-task-store/SKILL.md`, `claude/skills/tomlctl/references/tasks.md`, `claude/skills/flow-contract-plan-output-format/SKILL.md`"
+anchor_new = "- **Files**: `claude/skills/flow-contract-task-store/SKILL.md`, `claude/skills/tomlctl/references/tasks.md`, `claude/skills/tomlctl/references/tasks-store.md`, `claude/skills/flow-contract-plan-output-format/SKILL.md`"
+dedup_id = "f91be1a8897b274c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P21"
+severity = "warning"
+category = "executability"
+plan_section = "## Tasks"
+summary = "New-module acceptances pass vacuously; tasks 10 and 13 lack falsifiers"
+description = "A cargo test filter matching zero tests exits 0: tasks 6 (backlog::target), 12 (tasks::backlog_refs), 15 (backlog::reconcile) accept 'filter passes' for new modules, so writing no tests goes green. Task 13 writes no test at all (tasks::import_plan runs only existing tests); tasks 10 and 13 state no falsifier. Name the required test functions or require a minimum `running N tests`; add falsifiers (task 13: a plan naming an id absent from .claude/backlog.toml makes a real import refuse with backlog/unknown-id; red before the task)."
+dedup_id = "83617dca579fe221"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P22"
+severity = "warning"
+category = "executability"
+plan_section = "### 5. Add backlog list --live [S]"
+summary = "Task 5's CLI acceptance runs a full build then the installed 0.9.0 binary"
+description = "Bare `tomlctl` is the installed 0.9.0 binary; sub-agents must not run full builds (CLAUDE.md build discipline). Use an inline Cli::try_parse_from test (precedent triage.rs two_mode_flags_conflict_at_the_parser)."
+anchor_old = "and `tomlctl backlog list --live --help` parses after `cargo build`."
+anchor_new = 'and an inline `Cli::try_parse_from(["tomlctl","backlog","list","--live"])` test parses while `--live --open` yields `ArgumentConflict`.'
+dedup_id = "0a58a85b20795d33"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P23"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Tasks"
+summary = "Effort tags / file caps violate the format contract"
+description = "Task 5 [S] has 3 files (S = 1-2); task 7 [M] has 4 files (over the ≤3 cap — split the tests/backlog_write.rs cases into a follow-on S task); task 16 [M] has 6 inseparable files (tag L). Risks says '≤4 files per task'; the contract says ≤3. Changing a tag does not change the ref."
+dedup_id = "9738612175f882e0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P24"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 17. Integration-test backlog reconcile [S]"
+summary = "Test helpers cannot seed a closed flow"
+description = "tests/common/mod.rs seed_tasks hard-codes status in-progress and TASKS_SLUG. Task 7's closed-flow case and task 17's orphaned case need a review-status context; tasks 7 and 14 have no path between them, so each adding a helper to common/mod.rs is an undeclared shared file. Say in tasks 7 and 17: overwrite .claude/flows/<TASKS_SLUG>/context.toml inline after seed_tasks; do not edit tomlctl/tests/common/mod.rs."
+dedup_id = "799a21726ac8193b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P25"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 8. Add the backlog_links side table to the task store [S]"
+summary = "Links on a dead ref after tasks remove / update --ref are unspecified"
+description = "remove.rs:104-107 prunes and update.rs:176-186 re-keys only import_overrides; [[backlog_links]] keeps a ref no row carries until the next import. Task 15 does not say how reconcile buckets such a link. Specify: unlinked with reason 'link names no task' (or extend remove/update)."
+dedup_id = "901d7069bdccf463"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P26"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 12. Add backlog link findings [M]"
+summary = "Unused helpers and re-exports"
+description = "LIVE_STATUSES / is_live (task 1) have no consumer — task 5 should use schema::is_live (and depend on 1). `pub(crate) use backlog_refs::{backlog_findings, load_backlog}` is only used by sibling modules; use super::backlog_refs to avoid unused_imports. Hygiene only (warnings not denied)."
+dedup_id = "9fc0a0df166f975f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P27"
+severity = "suggestion"
+category = "risk"
+plan_section = "### 6. Add the promotion-target resolver [M]"
+summary = "Resolver: refusals should be Unknown not Err; reuse join_under; index flows once; skip malformed"
+description = "An Err on a refused path aborts reconcile for the whole store, contradicting 'reports a reason per row'. io::join_under (io.rs:1679) already handles Windows prefix/root forms that a hand-rolled is_absolute check misses. Scanning .claude/flows/*/context.toml per row is ~16 x 42 reads per reconcile, three reconciles per /implement; enumerate_flows skips unparsable files, a `?` here would let one bad context.toml fail every triage/reconcile. Build the index once and skip malformed entries."
+anchor_old = "  - Refuse absolute paths and `..`."
+anchor_new = "  - Join through `io::join_under`; an absolute, prefixed or `..`-bearing value resolves to `Unknown` (never `Err`). Build the `plan_path` index once per call and skip `context.toml` files that fail to parse, as `enumerate_flows` does."
+dedup_id = "9c387e303bba1428"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P28"
+severity = "suggestion"
+category = "risk"
+plan_section = "### 25. Show live backlog rows to /review and /optimise [S]"
+summary = "in-flight / 'do not re-raise' hides items whose claim leads nowhere"
+description = "Of 47 promoted rows, 32 point at flows at review and 15 at a nonexistent target; check.rs does not resolve targets. Suppressing rediscoveries hides work nobody holds. In skill/carrier text: when promoted_to does not lead to a live flow, route the item to /backlog re-triage instead."
+anchor_old = "Add one sentence to each: a promoted row names its claiming flow in `promoted_to`; do not re-raise it as a new finding."
+anchor_new = "Add one sentence to each: a promoted row names its claiming flow in `promoted_to`; do not re-raise it as a new finding unless that flow is at `review`/`complete` or does not exist — then point the user at `/backlog` re-triage."
+dedup_id = "a6f016dc71c75a42"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P29"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 23. Gate /plan-update complete on live promotions [M]"
+summary = "/plan-update writes to the backlog without invoking backlog-capture"
+description = "Task 23 adds reconcile --apply and triage --reopen writes to plan-update.md, which has no backlog-capture invocation; carrier_invokes_required_skills (skills.rs) requires it of implement, review, tdd, optimise, backlog, and task 22 adds only plan-new. Invoke the skill before step 4 and add plan-update.md to task 22's skills.rs edit."
+dedup_id = "31695b6b5ce4e31b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P30"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 21. Wire reconcile into /implement [S]"
+summary = "/implement's halt diagnostic gives the wrong fix for backlog/unknown-id"
+description = "implement.md re-imports with --reconcile-record every resume and halts on error-class check findings naming only cargo install / git revert. A linked id missing locally (worktree cut before the mint) now halts with a misleading recovery. Add the backlog/unknown-id recovery (sync .claude/backlog.toml, or drop the id from the Backlog bullet) to the Step 0.5 halt text."
+dedup_id = "b99ee15440a4092c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P31"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "tests/tasks_corpus.rs starts depending on the live backlog store"
+description = "tasks_corpus.rs dry-runs every docs/plans plan with TOMLCTL_ROOT = repo root and fails on error findings; after task 13 a plan Backlog bullet naming an id absent locally turns corpus_plans_import_cleanly red. Accept and document, or have the corpus run ignore backlog/*."
+dedup_id = "f9676a2b774dff80"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P32"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 15. Implement backlog reconcile [L]"
+summary = "resolved_commits may be empty for the final uncommitted batch"
+description = 'implement.md:140: under per-batch legacy the final batch stays uncommitted, so its rows have commit="" when Phase 4 reconciles. State that commits may be empty and the resolution text must not claim commits.'
+dedup_id = "c1d3c6148d1398bc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P33"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Exploration Notes"
+summary = "Cited line numbers drifted by 1-42 lines"
+description = "close_field :300→:290; tasks from_toml :369→:327; Default impl :185→:183; to_toml :386→:385; merge_row destructure :618-631→:610/:617; compacted_row 165-180→163-180; relate::dismiss 172-190→174-192; reference triage table 196-206→195-205; status-invariant 380-383→379-382. Also ':527 promotes with an arbitrary --to' is a parser-conflict test (see P7)."
+dedup_id = "a00c8f935ba50105"
+
+[[vet_events]]
+timestamp = "2026-09-25T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 1
+rationale = "F1 no-lib-target and F4 flow-init noop confirmed; F5 downgraded: verify_on_read defaults off so sidecar mismatch does not fail imports, only malformed TOML."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-25T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "backlog.md:36 zero-count stop, references/tasks-store.md existence, tasks_corpus TOMLCTL_ROOT all confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-25T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Cargo.toml bin-only (no lib.rs), ActiveOp::Remove --slug, from_cli 5-arg pure signature all confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-25T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "implement.md git-restore rollback text, ~/.claude/commands symlinks, ids.rs collision widening all confirmed."
+dedup_id = "45ca31c3315a5978"

@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-18
+last_updated = 2026-09-28
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -3330,3 +3330,88 @@ base_sha = "c4a2322e47f09a69fdc9dfdb6f22df742a610f66"
 evidence = ["tomlctl/src/repo_files.rs:57"]
 resolved = 2026-09-18
 resolution = "Enumeration::warnings doc and query.md name the real trigger (an unreadable directory; a Windows junction whose target is gone); cfg(unix) test an_unopenable_directory_is_a_warning_not_an_error covers it, skipping under root, executed under WSL."
+
+[[backlog]]
+id = "B-c16a6230"
+kind = "debt"
+summary = "tomlctl skill frontmatter description exceeds the 1024-character cap many skill loaders enforce"
+area = "claude/skills/tomlctl/SKILL.md"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "c16a6230a94f53b5"
+origin = "implement"
+flow = "unified-singing-gem"
+context = "The description is about 1,280 characters after the reconcile verb was added to its verb list, and no test checks its length. A loader enforcing the cap could truncate or reject it; trim the verb enumeration or move it into the body."
+base_sha = "46ff9e894cbf711dacb18265e4e82665e7e77295"
+related = ["B-54b2d71e"]
+
+[[backlog]]
+id = "B-a58448f6"
+kind = "question"
+summary = "reconcile --apply credits commits from refs-only linked tasks in resolved_commits"
+area = "tomlctl/src/backlog/reconcile.rs"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "a58448f638d0690a"
+origin = "implement"
+flow = "unified-singing-gem"
+context = "resolved_tasks and resolved_commits take both closes and refs tasks, while the resolution text names only closes tasks. A commit from a refs task is recorded as having delivered the item. Decide whether resolved_commits should be closes-only; the reference doc follows the code today."
+base_sha = "46ff9e894cbf711dacb18265e4e82665e7e77295"
+related = ["B-2f9eead8"]
+
+[[backlog]]
+id = "B-277aa7ce"
+kind = "debt"
+summary = "triage reports an unknown --to target and an unknown item id with the same not_found kind"
+area = "tomlctl/src/backlog/triage.rs"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "277aa7ceb49e22f6"
+origin = "implement"
+flow = "unified-singing-gem"
+context = "A carrier branching on --error-format json (the /backlog promote refusal handling) has to match on message text to tell them apart. A distinct kind, or an error field naming the offending argument, would make that branch reliable."
+base_sha = "46ff9e894cbf711dacb18265e4e82665e7e77295"
+related = ["B-cef33ceb"]
+
+[[backlog]]
+id = "B-1ad94a3b"
+kind = "debt"
+summary = "linked_backlog_findings lives in import_plan.rs instead of beside backlog_findings in backlog_refs.rs"
+area = "tomlctl/src/tasks/import_plan.rs"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "1ad94a3b149c2b00"
+origin = "implement"
+flow = "unified-singing-gem"
+context = "The load-only-when-linked guard is shared by import-plan and tasks check but sits in import_plan.rs; a future caller (e.g. reconcile) may re-implement the guard instead of reusing it. Moving it into backlog_refs.rs is a small two-caller refactor."
+base_sha = "46ff9e894cbf711dacb18265e4e82665e7e77295"
+related = ["B-d2f9b0ee"]
+
+[[backlog]]
+id = "B-a764dd02"
+kind = "bug"
+summary = "task-store import drops asterisks from checkpoint marker rationale text"
+area = "tomlctl/src/tasks/parse_policy.rs"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "a764dd026ef18e88"
+origin = "implement"
+flow = "unified-singing-gem"
+context = "A Dependency Graph marker whose rationale contains a backticked `backlog/*` is stored and re-rendered as `backlog/` — the asterisk is lost on import, so the first render after import silently rewrites the author's prose. Seen on docs/plans/unified-singing-gem.md checkpoint E."
+base_sha = "46ff9e894cbf711dacb18265e4e82665e7e77295"
+related = ["B-5fe02fa1"]

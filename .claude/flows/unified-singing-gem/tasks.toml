@@ -1,0 +1,940 @@
+schema_version = 1
+last_updated = 2026-09-28
+plan_path = "docs/plans/unified-singing-gem.md"
+last_import_refs = [
+    "make-promotion-a-live-claim-in-the-backlog-schema",
+    "route-triage-and-relate-transitions-through-the-shared-clear-helper",
+    "stop-compact-folding-claimed-rows",
+    "add-the-in-flight-verdict-to-backlog-check",
+    "add-backlog-list-live",
+    "add-the-promotion-target-resolver",
+    "validate-promotion-targets-in-triage",
+    "integration-test-validated-promotion-targets",
+    "add-the-backlog_links-side-table-to-the-task-store",
+    "parse-the-backlog-plan-bullet",
+    "import-backlog-links-from-the-plan",
+    "render-the-backlog-bullet",
+    "add-backlog-link-findings",
+    "surface-backlog-findings-in-import-and-check",
+    "test-the-backlog-link-round-trip-end-to-end",
+    "implement-backlog-reconcile",
+    "register-the-reconcile-verb-and-release-0100",
+    "integration-test-backlog-reconcile",
+    "document-the-backlog-lifecycle-in-the-tomlctl-reference",
+    "document-the-task-store-backlog-link",
+    "update-the-backlog-capture-skill-for-live-promotion-and-seed-flows",
+    "wire-reconcile-into-implement",
+    "wire-the-backlog-into-plan-new-with-backlog-seed-adoption",
+    "gate-plan-update-complete-on-live-promotions",
+    "add-promotion-triage-and-seed-bootstrap-to-backlog",
+    "show-live-backlog-rows-to-review-and-optimise",
+    "cover-the-envelope-enums-in-the-capabilities-parity-test",
+    "make-the-duplicate-number-rename-hint-a-runnable-command",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "schema, transitions, `--live` and the target resolver; committed before task 7 so a failed 7 cannot restore `triage.rs`, `cli/types.rs` or `backlog/dispatch.rs` over finished work"
+
+[[checkpoints]]
+id = "B"
+rationale = "backlog lifecycle complete (tasks 1-8) — compact, check verdict, validated triage and its CLI cases; crate builds and backlog tests pass"
+
+[[checkpoints]]
+id = "C"
+rationale = "Backlog bullet parse; committed before task 11 because both edit `import_plan.rs`"
+
+[[checkpoints]]
+id = "D"
+rationale = "side table and link import; committed before task 14, the third `import_plan.rs` editor"
+
+[[checkpoints]]
+id = "E"
+rationale = "task↔item link (tasks 9-15) — render and show, findings wired into import and check — plus task 20, which documents the `backlog/` classes the `finding_classes` parity test requires alongside task 13"
+
+[[checkpoints]]
+id = "F"
+rationale = "`backlog reconcile` and the 0.10.0 release (tasks 16-18); the orchestrator runs `cargo install --path tomlctl` at this checkpoint, before any of tasks 19, 21-26 dispatches (carrier commands and skills are symlinked into `~/.claude`, so their edits go live in every session immediately)"
+
+[[checkpoints]]
+id = "G"
+rationale = "skills, references and carrier wiring (tasks 19, 21-26); `command_lint` / `flag_table_lint` pass against the new flags"
+
+[[file_notes]]
+ref = "add-the-promotion-target-resolver"
+file = "tomlctl/src/backlog/target.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-backlog-link-findings"
+file = "tomlctl/src/tasks/backlog_refs.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "implement-backlog-reconcile"
+file = "tomlctl/src/backlog/reconcile.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "integration-test-backlog-reconcile"
+file = "tomlctl/tests/backlog_reconcile.rs"
+note = "(new)"
+
+[[items]]
+id = 1
+ref = "make-promotion-a-live-claim-in-the-backlog-schema"
+title = "Make promotion a live claim in the backlog schema"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase A — backlog lifecycle (tomlctl/src/backlog)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/backlog/schema.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the live/terminal split, the resolution-link fields, the claim-retention rules to `validate`, and a shared `clear_for_transition` helper."
+detail = """
+- Add `FIELD_RESOLVED_FLOW`, `FIELD_RESOLVED_TASKS`, `FIELD_RESOLVED_COMMITS`.
+- Add `LIVE_STATUSES = [open, promoted]` and `is_live(status)` (task 5 consumes it).
+- Add `CLAIM_FIELDS = [promoted, promoted_to]` and `RESOLUTION_LINK_FIELDS`, and append the link fields to `MANAGED_FIELDS`.
+- Add `pub(crate) struct ResolutionLink { flow: String, tasks: Vec<String>, commits: Vec<String> }` with `fn write_to(&self, table)`.
+- Add `pub(crate) fn clear_for_transition(table: &mut toml::Table, target: &str)`. It removes every `MANAGED_FIELDS` entry except the target's own pair, and keeps `CLAIM_FIELDS` when the target is `resolved` or `dismissed`.
+- In `validate` (:345-389):
+  - keep rejecting foreign pairs, but allow the claim pair on `resolved`/`dismissed`;
+  - add a `BacklogError::PartialClaim` (exactly one of the pair present);
+  - reject the link fields on any status other than `resolved`;
+  - `open` still rejects everything.
+- Add `pub(crate) const COMPACTED_OPTIONAL_FIELDS: &[&str] = &[FIELD_PROMOTED_TO, FIELD_RESOLVED_FLOW]`. Leave `COMPACTED_FIELDS` and its pin test unchanged.
+- Update the doc comments this falsifies (:128-130, :248-250, :327-332), which describe promotion as terminal.
+- Update the inline tests `a_terminal_status_rejects_another_status_cluster` (:551) and `every_terminal_status_owns_a_pair_and_open_owns_none` (:747) for the new rule. Add tests:
+  - a resolved row with a claim validates;
+  - a partial claim is rejected;
+  - link fields on `dismissed`/`open` are rejected;
+  - `clear_for_transition` keeps the claim for resolve and dismiss and clears it for reopen."""
+acceptance = '`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl backlog::schema` passes. Falsifier: today `validate` rejects a `resolved` row carrying `promoted`/`promoted_to` with `ForeignTerminalField` (schema.rs:375-387), so the new "resolved row with a claim validates" test is red on the current tree — predicted, unverified.'
+agent = "implement-deep"
+commit = "29d5d00"
+
+[[items]]
+id = 2
+ref = "route-triage-and-relate-transitions-through-the-shared-clear-helper"
+title = "Route triage and relate transitions through the shared clear helper"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Phase A — backlog lifecycle (tomlctl/src/backlog)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/backlog/triage.rs",
+    "tomlctl/src/backlog/relate.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Replace the ad-hoc `MANAGED_FIELDS` loops with `schema::clear_for_transition`, and expose a resolve-with-link entry point for `reconcile`."
+detail = """
+- `triage::rewrite` (:143) calls `clear_for_transition(table, t.status())`, then writes status, date and companion as today.
+- `relate::dismiss` (:174-192) does the same with `STATUS_DISMISSED`.
+- Add `pub(crate) fn resolve_with_link(row: &mut TomlValue, resolution: &str, link: &schema::ResolutionLink, today: Datetime) -> Result<()>`. It calls `rewrite` for `Transition::Resolve`, writes the link fields, then calls `schema::validate`.
+- Update the module docs this falsifies (triage.rs:4-8, relate.rs:168-173).
+- Inline tests:
+  - promote → resolve keeps `promoted`/`promoted_to`;
+  - promote → reopen clears them;
+  - promote → dismiss keeps them;
+  - a resolved row re-dismissed drops the link fields;
+  - relate's duplicate-of dismissal of a promoted row keeps the claim."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- backlog::triage backlog::relate` passes. Falsifier: `rewrite` today removes `promoted_to` on resolve (triage.rs:152-157), so the keep-claim test is red before this task — predicted, unverified."
+agent = "implement-lite"
+commit = "5f9aecc"
+
+[[items]]
+id = 3
+ref = "stop-compact-folding-claimed-rows"
+title = "Stop compact folding claimed rows"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Phase A — backlog lifecycle (tomlctl/src/backlog)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/backlog/compact.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Make `promoted` rows ineligible for folding, and carry the optional claim/resolution fields into compacted rows."
+detail = """
+- In `due` (:132), return `None` when the status is `promoted`.
+- In `compacted_row` (:163-180), copy each `schema::COMPACTED_OPTIONAL_FIELDS` entry when it is present and non-empty.
+- Update the doc (:159-162) and the name of the test at :354, which describe promoted rows as foldable.
+- Inline tests:
+  - an aged promoted row is left in place;
+  - an aged resolved row with a claim folds and keeps `promoted_to` and `resolved_flow`."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl backlog::compact` passes. Falsifier: `due` folds any status with a `terminal_pair` (compact.rs:125-135), so the aged-promoted test is red today — predicted, unverified."
+agent = "implement-lite"
+commit = "a238133"
+
+[[items]]
+id = 4
+ref = "add-the-in-flight-verdict-to-backlog-check"
+title = "Add the in-flight verdict to backlog check"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Phase A — backlog lifecycle (tomlctl/src/backlog)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/backlog/check.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Rank a fingerprint hit on a live `promoted` row as `in-flight` and report its target."
+detail = """
+- Add `Reason::InFlight` between `DedupId` and `Compacted` (enum order is the ladder, :44). `as_str` is `"in-flight"`; `verdict` is `"in-flight"`.
+- In `evaluate` (:257-273), choose `InFlight` when the live row's status is `promoted`.
+- Add `promoted_to` (skipped when absent) to the candidate's JSON.
+- Update the doc at :162-163.
+- Inline test: a dedup hit on a promoted row gives the verdict `in-flight`, and the candidate carries `promoted_to`."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl backlog::check` passes. `cargo test --manifest-path tomlctl/Cargo.toml --test backlog_read` still passes (regression guard; it pins the existing verdict strings). Falsifier: today a promoted live dedup hit yields `duplicate` — predicted, unverified."
+agent = "implement-lite"
+commit = "07f50ae"
+
+[[items]]
+id = 5
+ref = "add-backlog-list-live"
+title = "Add backlog list --live"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase A — backlog lifecycle (tomlctl/src/backlog)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Add a `--live` filter that keeps `open` and `promoted` rows."
+detail = """
+- `BacklogOp::List` (types.rs:1126): `#[arg(long, conflicts_with_all = ["open", "status"], help = "Only live rows: open or promoted")] live: bool`.
+- Thread it through the dispatch arm (dispatch.rs:65) and the `dispatch_list` parameters.
+- Add `live` to `Filters` (query.rs:82) and check it in `filter_backlog` with `schema::is_live`.
+- Inline tests in the query.rs `mod tests` (:284): a store with one row per status gives two rows under `--live`; `Cli::try_parse_from(["tomlctl","backlog","list","--live"])` parses and `--live --open` yields `ArgumentConflict` (precedent: triage.rs `two_mode_flags_conflict_at_the_parser`)."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl backlog::query` passes, including the parser test. Falsifier: the flag does not exist today (clap `UnknownArgument`) — predicted, unverified."
+agent = "implement-deep"
+commit = "fa0cca7"
+
+[[items]]
+id = 6
+ref = "add-the-promotion-target-resolver"
+title = "Add the promotion-target resolver"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Phase A — backlog lifecycle (tomlctl/src/backlog)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/backlog/target.rs",
+    "tomlctl/src/backlog/mod.rs",
+    "tomlctl/src/flow/mod.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create `target.rs`, which resolves a `promoted_to` / `--to` value to a flow, plan, external or unknown target."
+detail = '''
+- `pub(crate) enum Target { Flow { slug, status, plan_path }, Plan { path }, External(String), Unknown(String) }`, plus `fn is_closed(&self)` (a flow at `review`/`complete`) and `fn stored_value(&self) -> String` (slug, path, `external:<text>`).
+- `pub(crate) struct Resolver`, built by `Resolver::new(root: &Path) -> Result<Resolver>`: one pass over `.claude/flows/*/context.toml` (`io::read_dir_sorted`) that indexes each flow's slug, status and normalised `plan_path`, skipping files that fail to parse, as `enumerate_flows` does. A missing `.claude/flows` gives an empty index.
+- `pub(crate) fn resolve(&self, raw: &str) -> Target`, infallible:
+  - an `external:` prefix → `External`;
+  - a slug-shaped value (`flow::validate_slug`) in the index → `Flow`, via `flow::FlowProjection`;
+  - otherwise normalise `\`→`/` and look the value up by `plan_path` → `Flow`;
+  - else join through `io::join_under`; a value it refuses (absolute, prefixed or `..`-bearing) → `Unknown`, never `Err`;
+  - else an existing repo-relative `.md` file → `Plan`;
+  - else `Unknown`.
+- `flow/mod.rs`: add `pub(crate) use init::validate_slug; pub(crate) use schema::FlowProjection;`.
+- `backlog/mod.rs`: add `mod target;` and change `mod schema;` to `pub(crate) mod schema;` (task 13 reads it).
+- Inline tests with `crate::test_support::with_root`: slug, bound plan path, unbound plan, external, unknown, closed flow, a refused `..`/absolute value → `Unknown`, and a malformed `context.toml` skipped without failing `Resolver::new`.'''
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl backlog::target` passes and reports at least 8 tests run (a filter matching none exits 0, so read the count). Falsifier: the module does not exist today, so the filter runs 0 tests — predicted, unverified."
+agent = "implement-deep"
+commit = "5aa4696"
+
+[[items]]
+id = 7
+ref = "validate-promotion-targets-in-triage"
+title = "Validate promotion targets in triage"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Phase A — backlog lifecycle (tomlctl/src/backlog)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/backlog/triage.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+]
+needs = [
+    2,
+    5,
+    6,
+]
+coupling = []
+deps_note = ""
+action = "Make `triage --promote --to` resolve its target, add `--external` and `--allow-closed`, and store the canonical value."
+detail = """
+- `BacklogOp::Triage` (types.rs:1180) gets `#[arg(long, requires = "promote")] external: bool` and `#[arg(long, requires = "promote")] allow_closed: bool` on the variant, not in `TriageMode`. Update the `to` doc (:1185), which currently says "stored verbatim". Thread both through the dispatch arm in `backlog/dispatch.rs`.
+- `dispatch` (triage.rs:222) resolves a `Transition::Promote` companion via `target::Resolver::new(&repo_or_cwd_root()?)?.resolve(..)` after `Transition::from_cli` (and its missing-companion check) and before `mutate_doc`, keeping `from_cli` pure:
+  - `Unknown` → a `NotFound` error: ``no flow or plan `X` — bootstrap a draft seed flow (see /backlog) or pass --external``;
+  - `--external` → `Target::External`;
+  - a closed `Flow` without `--allow-closed` → a `Validation` error naming its status.
+- The stored value is `stored_value()`, so a bound plan path is stored as the slug. The output JSON adds `"to"`.
+- Update any inline test that promotes through `dispatch` to seed a flow directory or pass `external`. The `from_cli` tests (:566, :679) keep expecting kind validation on a missing `--to`.
+- New inline dispatch tests: unknown target → error; `external` stores `external:…`; a closed flow → error, and `allow_closed` passes; a plan path is stored as the slug."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl backlog::triage` passes, including the four new dispatch tests. Falsifier: `--to nonexistent` succeeds today (triage.rs `companion` only rejects blank values), so the unknown-target test is red before this task — predicted, unverified."
+agent = "implement-deep"
+commit = "ea593c1"
+
+[[items]]
+id = 8
+ref = "integration-test-validated-promotion-targets"
+title = "Integration-test validated promotion targets"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Phase A — backlog lifecycle (tomlctl/src/backlog)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/tests/backlog_write.rs"]
+needs = [7]
+coupling = []
+deps_note = ""
+action = "Add CLI cases for `triage --promote` target validation through the real binary."
+detail = """
+- Cases: unknown target → error naming `--external`; `--external` stores `external:…`; a closed flow → error, and `--allow-closed` passes; a plan path is stored as the slug.
+- Seed flows with `seed_tasks`; for the closed-flow case, overwrite `.claude/flows/<TASKS_SLUG>/context.toml` inline with a `review` status after `seed_tasks`. Do not edit `tomlctl/tests/common/mod.rs`.
+- The clap-conflict test at :520-546 exits before `from_cli` and stays as it is."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test backlog_write` passes. Falsifier: `backlog_write` has no unknown-target case today, and on the pre-task-7 binary `--to nonexistent` succeeds — predicted, unverified."
+agent = "implement-lite"
+commit = "39179b2"
+
+[[items]]
+id = 9
+ref = "add-the-backlog_links-side-table-to-the-task-store"
+title = "Add the backlog_links side table to the task store"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Phase B — task↔item link (tomlctl/src/tasks)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/schema.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add a `[[backlog_links]]` side table keyed by task `ref`."
+detail = """
+- `pub(crate) struct BacklogLink { pub(crate) r#ref: String, pub(crate) closes: Vec<String>, pub(crate) refs: Vec<String> }`.
+- Add `Store.backlog_links: Vec<BacklogLink>`, defaulting to empty (`Default` impl :183).
+- Read it in `from_toml` (:327) like `file_notes`, dropping entries with both lists empty.
+- Write it in `to_toml` (:385), omitted when empty (:419-439 pattern).
+- Add `pub(crate) fn links_for(&self, r#ref: &str) -> Option<&BacklogLink>`.
+- `tasks remove` / `tasks update --ref` do not touch `backlog_links`; a link naming a ref no row carries survives until the next import, and task 16 reports it.
+- Inline tests: round trip; an empty table is omitted."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::schema` passes. `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_import` still passes (regression guard; golden `house-plan.tasks.toml`) — predicted, unverified."
+agent = "implement-lite"
+commit = "f5f16f5"
+
+[[items]]
+id = 10
+ref = "parse-the-backlog-plan-bullet"
+title = "Parse the Backlog plan bullet"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Phase B — task↔item link (tomlctl/src/tasks)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/parse_tasks.rs",
+    "tomlctl/src/tasks/import_plan.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Accept `- **Backlog**: B-aaaa1111, refs B-bbbb2222` on a task."
+detail = """
+- Add `Backlog` to the bullet regex (:525), a `Field::Backlog` variant and its `from_label` arm (:192).
+- Add `backlog_closes: Vec<String>` and `backlog_refs: Vec<String>` to `ParsedTask` (:48).
+- In `close_field` (:290): `split_entries(.., ',')`, strip backticks and whitespace, skip `is_empty_marker`. Strip `(...)` / ` — ` annotations as `push_file` does (`annotation_at`). A token starting `refs ` goes to `backlog_refs`, with the remainder trimmed; others go to `backlog_closes`. `refs` covers its own token only.
+- In import_plan.rs, add `backlog_closes: _, backlog_refs: _` to the exhaustive `ParsedTask` destructure in `merge_row` (:617) only.
+- Inline tests: mixed closes/refs, backticked ids, `none`, an annotated id (`B-1 (partial)` → `B-1`), and `refs B-1, B-2` → refs=[B-1], closes=[B-2]."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::parse_tasks` passes. Falsifier: the regex (:525) has no `Backlog` label today, so the bullet is ignored — predicted, unverified."
+agent = "implement-lite"
+commit = "96bc1e9"
+
+[[items]]
+id = 11
+ref = "import-backlog-links-from-the-plan"
+title = "Import backlog links from the plan"
+effort = "S"
+status = "done"
+checkpoint = "D"
+phase = "Phase B — task↔item link (tomlctl/src/tasks)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/import_plan.rs"]
+needs = [
+    9,
+    10,
+]
+coupling = []
+deps_note = ""
+action = "Rebuild `store.backlog_links` from the parsed tasks on every import, as plan-owned state."
+detail = """
+- Beside `surviving_file_notes` (:272/:774), set `store.backlog_links` to one entry per parsed task with a non-empty closes or refs list, keyed by the task's final `ref`.
+- Removed tasks lose their links.
+- `--dry-run` computes the links but writes nothing, as today.
+- Inline test: import a plan with one linked task; the store holds one `BacklogLink`, and re-importing without the bullet clears it."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::import_plan` passes. Falsifier: before this task the import leaves `store.backlog_links` empty, so the one-link assertion is red — predicted, unverified."
+agent = "implement-lite"
+commit = "e7611f4"
+
+[[items]]
+id = 12
+ref = "render-the-backlog-bullet"
+title = "Render the Backlog bullet"
+effort = "S"
+status = "done"
+checkpoint = "E"
+phase = "Phase B — task↔item link (tomlctl/src/tasks)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/render.rs",
+    "tomlctl/src/tasks/show.rs",
+]
+needs = [
+    9,
+    10,
+]
+coupling = []
+deps_note = ""
+action = "Emit `- **Backlog**: …` after `Depends on` for tasks that have links, and show the link on a fetched row."
+detail = """
+- In `render_tasks` (:195-228), after the `Depends on` line, look up `store.links_for(&row.r#ref)`.
+- Emit it only when a link exists: closes ids first, then each refs id prefixed `refs `, comma-separated.
+- In `show.rs`, beside the ref-keyed `import_override` stamp (:76), emit `backlog: {closes, refs}` for a linked row, so `/implement`'s dispatch-by-id shows the implementer the item its task closes.
+- Inline tests: render a fixture with a link, parse it with `parse_tasks`, and get equal lists; `show` of a linked row carries `backlog`, and of an unlinked row omits it."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- tasks::render tasks::show` passes. `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_render` still passes (regression guard; golden `house-plan.rendered.md`) — predicted, unverified."
+agent = "implement-lite"
+commit = "234401c"
+
+[[items]]
+id = 13
+ref = "add-backlog-link-findings"
+title = "Add backlog link findings"
+effort = "M"
+status = "done"
+checkpoint = "E"
+phase = "Phase B — task↔item link (tomlctl/src/tasks)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/backlog_refs.rs",
+    "tomlctl/src/tasks/mod.rs",
+]
+needs = [
+    6,
+    9,
+]
+coupling = []
+deps_note = ""
+action = "Compute the `backlog/*` findings from a store and the backlog document, and expose the store API that `reconcile` needs."
+detail = '''
+- `pub(crate) fn backlog_findings(store: &Store, backlog: &TomlValue, flow: Option<&str>) -> Vec<Finding>`. For each link id, find the row by id in `backlog` then `compacted` (`crate::backlog::schema::{ARRAY_BACKLOG, ARRAY_COMPACTED, …}`). The classes:
+  - `backlog/unknown-id` (`ERROR`): the id is not found.
+  - `backlog/unpromoted` (`WARNING`): a `closes` id's item is `open`.
+  - `backlog/claimed-elsewhere` (`WARNING`): a `closes` id's item is `promoted` with a `promoted_to` that is neither `flow` nor `store.plan_path`. Compare after `\`→`/` normalisation. Not raised when `flow` is `None` (the plan-mode dry run cannot know the slug).
+  - `backlog/closed` (`INFO`): the item is resolved or dismissed, or is in `compacted`.
+- Build each `Finding` with a literal `class: "backlog/..."` field and its `severity:` within the next four lines — the only shape `finding_classes.rs` reads.
+- Findings carry the linked task ids.
+- `pub(crate) fn load_backlog() -> Result<TomlValue>` wraps `crate::backlog::schema::read_store` with default integrity args. A missing store gives an empty table.
+- tasks/mod.rs: add `mod backlog_refs;` — the sibling modules reach it as `super::backlog_refs`, so no re-export. Add `pub(crate) use store::{load as load_store, mutate as mutate_store, resolve_store_path}` and `pub(crate) use schema::{BacklogLink, Status, Store}` for `backlog::reconcile`.
+- Inline tests: one per class, a `refs` id on an `open` item raising nothing, and `flow = None` raising no `claimed-elsewhere`.'''
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::backlog_refs` passes and reports at least 6 tests run. Falsifier: the module does not exist today, so the filter runs 0 tests — predicted, unverified."
+agent = "implement-deep"
+commit = "1ab93c9"
+
+[[items]]
+id = 14
+ref = "surface-backlog-findings-in-import-and-check"
+title = "Surface backlog findings in import and check"
+effort = "M"
+status = "done"
+checkpoint = "E"
+phase = "Phase B — task↔item link (tomlctl/src/tasks)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/import_plan.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/tests/tasks_corpus.rs",
+]
+needs = [
+    11,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Add the `backlog_findings` output to `tasks import-plan` (dry-run and real) and to `tasks check`, without making a link-free store read the backlog."
+detail = """
+- In `import_plan()` (which binds `slug`), after each `import.apply(..)` call and before `refuse_on_errors`, append `backlog_findings(store, &backlog, slug)`, loading the backlog only when `store.backlog_links` is non-empty, so `backlog/unknown-id` refuses a real import and `Import::apply` stays I/O-free.
+- The plan-mode `--plan` dry run passes `None` for the slug.
+- In tasks/dispatch.rs `Check` arm (near :248), append the same under the same non-empty guard, with the `--slug` value (or `None` for `--file`).
+- `tests/tasks_corpus.rs`: ignore `backlog/*` classes when collecting error findings (near :167) — the corpus checks plan structure, not the local backlog store.
+- Inline tests: a plan naming an id absent from `.claude/backlog.toml` makes a real import refuse with `backlog/unknown-id`; a plan with no links imports cleanly when `.claude/backlog.toml` is malformed."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::import_plan` runs both new tests and passes; `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus` still passes. Falsifier: today a plan naming an unknown backlog id imports cleanly, so the refusal test is red before this task — predicted, unverified. Integration coverage is task 15."
+agent = "implement-deep"
+commit = "f6aa65a"
+
+[[items]]
+id = 15
+ref = "test-the-backlog-link-round-trip-end-to-end"
+title = "Test the backlog link round trip end to end"
+effort = "S"
+status = "done"
+checkpoint = "E"
+phase = "Phase B — task↔item link (tomlctl/src/tasks)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/tests/tasks_import.rs"]
+needs = [
+    12,
+    14,
+]
+coupling = []
+deps_note = ""
+action = "Add integration tests for bullet → store → findings → render."
+detail = """
+Use `tests/common/mod.rs` `sandbox`/`cli`. Seed `.claude/backlog.toml` with one open item and one promoted item (targeting the test flow), plus a plan with a `Backlog` bullet naming both as `closes` ids and an unknown id. Assert:
+- `import-plan --plan … --dry-run` reports `backlog/unknown-id` (ERROR) and `backlog/unpromoted` (WARNING);
+- after fixing the unknown id, a real import writes `[[backlog_links]]`;
+- `tasks render --slug … --check` exits 0;
+- `tasks check --slug …` reports no `backlog/claimed-elsewhere`."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test tasks_import` passes — predicted, unverified."
+agent = "implement-lite"
+commit = "715bf27"
+
+[[items]]
+id = 16
+ref = "implement-backlog-reconcile"
+title = "Implement backlog reconcile"
+effort = "L"
+status = "done"
+checkpoint = "F"
+phase = "Phase C — reconcile verb and release"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/backlog/reconcile.rs",
+    "tomlctl/src/backlog/mod.rs",
+]
+needs = [
+    2,
+    6,
+    13,
+]
+coupling = []
+deps_note = ""
+action = "Implement `pub(crate) fn dispatch(flow: Option<String>, apply: bool, adopt: bool, integrity: WriteIntegrityArgs) -> Result<()>`, which buckets promoted rows and optionally adopts links and resolves ready rows."
+detail = """
+The steps, as in the Approach:
+1. Read the store (`schema::read_store`) and select the `promoted` rows.
+2. Build one `target::Resolver`, resolve each row, and filter by `--flow` against the resolved slug.
+3. Cache one store per flow: `tasks::load_store(tasks::resolve_store_path(Some(slug), None)?)` when the file exists, and an empty store (no links) when it does not — `load` errors on a missing file.
+4. If `adopt`: for link-less rows whose target is a `Flow`, find task rows whose `title`/`action`/`detail`/`acceptance` contain the id as a whole token (followed by end-of-text or a non-hex character — widened ids extend shorter ones). Add them to `closes` via `tasks::mutate_store`, and replace the cached store with the store `mutate_store` returns. Record `adopted: [{id, flow, task_refs}]` and `render_needed: [slug]`.
+5. Bucket: `ready`/`in-progress`/`stalled`/`unlinked`/`orphaned`/`dangling`/`external`. Decide by `Status::Done` / `Deferred` / `Failed` and `Target::is_closed()`. A `closes` ref no row carries is left out of the join and named in `reason` (`link names no task: <ref>`); a row left with no live `closes` task is `unlinked`. Each entry carries `id`, `summary`, `target`, `flow_status`, `closes`, `refs` and `reason`.
+6. If `apply`: in one `io::mutate_doc`, re-find each `ready` row by id, skip (and report) any no longer `promoted` or whose `promoted_to` changed, and call `triage::resolve_with_link` on a clone, swapping it in only on success (a failure is reported under `skipped`, and the other rows still resolve), with:
+   - resolution ``resolved by flow `<slug>` (tasks <refs>)`` — it names tasks, never commits;
+   - `ResolutionLink { flow, tasks: the closes and refs task refs, commits: distinct non-empty row.commit }` — `commits` may be empty, since under per-batch legacy the final batch is uncommitted when Phase 4 reconciles;
+   - `last_updated` stamped.
+7. Print `{ok, flow, buckets: {<bucket>: [entry...]} (all seven keys, empty arrays kept), adopted: [{id, flow, task_refs}], applied: [id...], skipped: [{id, reason}], render_needed: [slug...]}`; an entry's `closes`/`refs` are task `ref` slugs.
+- Without flags the verb is read-only.
+- `mod reconcile;` in backlog/mod.rs.
+- Inline tests (`with_root`, seeding `.claude/flows/<slug>/{context,tasks}.toml` and `.claude/backlog.toml`): one per bucket; `--apply` writes the link fields and keeps `promoted_to`; `--adopt` links a prose-referenced id; `--adopt --apply` resolves a row adopted in the same run; `--adopt` does not link `B-1a2b3c4d` from text naming `B-1a2b3c4d5e`; a flow with no `tasks.toml` buckets as `unlinked`; `--flow` filters."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl backlog::reconcile` passes and reports at least 13 tests run. Falsifier: the module does not exist today, so the filter runs 0 tests — predicted, unverified."
+agent = "implement-deep"
+commit = "fbd05db"
+
+[[items]]
+id = 17
+ref = "register-the-reconcile-verb-and-release-0100"
+title = "Register the reconcile verb and release 0.10.0"
+effort = "L"
+status = "done"
+checkpoint = "F"
+phase = "Phase C — reconcile verb and release"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+]
+needs = [
+    7,
+    16,
+]
+coupling = []
+deps_note = ""
+action = "Wire `backlog reconcile` into the CLI and bump the crate to 0.10.0. These edits are inseparable: the parity tests compare `FEATURES`, the capabilities test and the README together, and the version appears in all of them."
+detail = """
+- `BacklogOp::Reconcile { #[arg(long)] flow: Option<String>, #[arg(long)] apply: bool, #[arg(long)] adopt: bool, #[command(flatten)] integrity: WriteIntegrityArgs }` with help text.
+- Add a dispatch arm.
+- Add `"backlog_reconcile"` to `FEATURES` (types.rs:21).
+- In `tests/capabilities.rs`, add it to the expected list (:1571) and `&["backlog","reconcile","--help"]` to the write help list (:98), and bump the version literal (:1662).
+- In the README, update the capabilities sample (~:256-268), the Feature meanings table (~:340-350, including the `backlog_compact`/`backlog_list` rows) and the verb synopsis (:55-64: add `reconcile` and `--live`; :60 promotes to the closed flow `tomlctl-backlog-capture`; :64 says open items never move); update the `Compact` doc (types.rs:1229-1230).
+- Cargo.toml `version = "0.10.0"`; update tomlctl's own entry in Cargo.lock."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes. Falsifier: `readme_sample_version_matches_cargo_toml` and `capabilities_version_matches_cargo_toml` go red if only Cargo.toml is bumped — predicted, unverified."
+agent = "implement-deep"
+commit = "7fd9ec4"
+
+[[items]]
+id = 18
+ref = "integration-test-backlog-reconcile"
+title = "Integration-test backlog reconcile"
+effort = "S"
+status = "done"
+checkpoint = "F"
+phase = "Phase C — reconcile verb and release"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/tests/backlog_reconcile.rs"]
+needs = [17]
+coupling = []
+deps_note = ""
+action = "Add assert_cmd tests for `backlog reconcile` through the real binary."
+detail = """
+Use `tests/common/mod.rs` (`sandbox`, `cli`, `backlog`, `seed_tasks`). For the `review`-status flow, overwrite `.claude/flows/<TASKS_SLUG>/context.toml` inline after `seed_tasks`; do not edit `tomlctl/tests/common/mod.rs`. Scenarios:
+- ready + `--apply`: the row becomes `resolved`, with `resolved_flow`/`resolved_tasks`/`resolved_commits` set and `promoted_to` kept;
+- an `unlinked` row that `--adopt` links, reported under `render_needed`;
+- `orphaned` (flow `review`, pending task);
+- `stalled` (a deferred closes task);
+- `dangling` (a target that doesn't exist);
+- `external`;
+- a refs-only link stays `unlinked`;
+- `--flow` filters;
+- the default run leaves `.claude/backlog.toml` byte-identical."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test backlog_reconcile` passes — predicted, unverified."
+agent = "implement-lite"
+commit = "5e49a16"
+
+[[items]]
+id = 19
+ref = "document-the-backlog-lifecycle-in-the-tomlctl-reference"
+title = "Document the backlog lifecycle in the tomlctl reference"
+effort = "M"
+status = "done"
+checkpoint = "G"
+phase = "Phase D — skills, references and carriers"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/backlog.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/backlog-reconcile.md",
+]
+needs = [18]
+coupling = []
+deps_note = ""
+action = "Document `--live`, the target validation (`--external`, `--allow-closed`), the claim retention, compact's rule for claimed rows, the new store fields, the `in-flight` verdict, and a new `backlog reconcile` section."
+detail = """
+- references/backlog.md:
+  - Contents (10-27): add the reconcile entry.
+  - `list` table (131-139): `--live`.
+  - `triage` table (195-205): the `--to` resolution rules, `--external`, `--allow-closed`. Fix the example at :192, which promotes to a target that is not a flow.
+  - `compact` (263-290).
+  - Store shape table (368-378), status invariant (379-382) and compacted shape (384-389): the live/terminal split, claim pair, link fields and the optional compacted fields.
+  - Verdict ladder (421-441): `in-flight`.
+  - New `## backlog reconcile` section: flags table, bucket definitions, the output shape exactly as task 16 step 7 prints it, and the `render_needed` duty.
+- SKILL.md: the verb list (:3), the backlog routing row (:37) and the version sample (:93, 0.9.0 → 0.10.0).
+- Bash examples must be real flags, because `command_lint` and `flag_table_lint` parse them."""
+acceptance = '`grep -c "backlog reconcile" claude/skills/tomlctl/references/backlog.md` ≥ 3 (today: 0). `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl lint` passes (predicted, unverified).'
+agent = "implement-deep"
+commit = "5d81c57"
+
+[[items]]
+id = 20
+ref = "document-the-task-store-backlog-link"
+title = "Document the task-store backlog link"
+effort = "M"
+status = "done"
+checkpoint = "E"
+phase = "Phase D — skills, references and carriers"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/skills/tomlctl/references/tasks-store.md",
+]
+needs = [14]
+coupling = []
+deps_note = ""
+action = "Document the `- **Backlog**:` bullet (with `refs`), the `[[backlog_links]]` side table (plan-owned, rebuilt on import, rendered after `Depends on`, shown by `tasks show`), and the four `backlog/*` finding classes."
+detail = """
+- task-store SKILL: the side table near the store schema (40-90) and the "two side tables" sentence (:168), the classes table (255-281), the render order (:300). State that `refs` qualifies its own token only.
+- tasks.md: the class table (491-520).
+- tasks-store.md: add `[[backlog_links]]` beside `[[import_overrides]]` and `[[file_notes]]` in the optional side tables."""
+acceptance = """`grep -l "backlog_links" claude/skills/flow-contract-task-store/SKILL.md claude/skills/tomlctl/references/tasks.md claude/skills/tomlctl/references/tasks-store.md | wc -l` = 3 (today: 0). `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl finding_classes` passes. Falsifier: with task 13's classes in the source and this task undone, `documented_finding_classes_match_the_source` is red — predicted, unverified."""
+agent = "implement-deep"
+commit = "c7ab0aa"
+
+[[items]]
+id = 21
+ref = "update-the-backlog-capture-skill-for-live-promotion-and-seed-flows"
+title = "Update the backlog-capture skill for live promotion and seed flows"
+effort = "S"
+status = "done"
+checkpoint = "G"
+phase = "Phase D — skills, references and carriers"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/skills/backlog-capture/SKILL.md"]
+needs = [18]
+coupling = []
+deps_note = ""
+action = """
+- Redefine `promoted` as a live claim.
+- Add the `in-flight` verdict to the gate.
+- Describe reconcile-driven resolution.
+- Define seed flows."""
+detail = """
+- Description (:3): add `in-flight` to the verdict list. Fix :44 to match.
+- Status vocab (66-74): `promoted` is live until reconcile or triage resolves it; resolution keeps the claim and adds `resolved_flow`/`resolved_tasks`/`resolved_commits`.
+- Verdict table: `in-flight` → do not mint. Name the claiming flow; if the discovery shows the claim is wrong or incomplete, surface it to that flow instead.
+- "After the mint" (205-211): `triage --promote` validates its target, `reconcile` resolves.
+- New "Seed flows" subsection:
+  - the marker line `<!-- backlog-seed -->`;
+  - the stub layout (`# Plan: <title>`, `**Status**: Draft`, `## Context` listing each id + summary);
+  - the bootstrap sequence (`tomlctl flow init --slug <slug> --plan <plans_dir>/<slug>.md`, with no `--scope`/`--branch` — resolution steps 2 and 5 read every non-complete flow on disk, registered or not — then `tomlctl flow active remove --slug <slug>`, then `tomlctl backlog triage <ids> --promote --to <slug>`);
+  - `/plan-new --backlog` as the way to pick a seed up.
+- Idioms (275/281): `list --live`; fix :281, whose `--to lumina-pty-hardening` names no flow."""
+acceptance = '`grep -c "backlog-seed" claude/skills/backlog-capture/SKILL.md` ≥ 1 and `grep -c "in-flight" claude/skills/backlog-capture/SKILL.md` ≥ 1 (both today: 0). `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl lint` passes (predicted, unverified).'
+agent = "implement-lite"
+commit = "f338d0a"
+
+[[items]]
+id = 22
+ref = "wire-reconcile-into-implement"
+title = "Wire reconcile into /implement"
+effort = "S"
+status = "done"
+checkpoint = "G"
+phase = "Phase D — skills, references and carriers"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/commands/implement.md"]
+needs = [19]
+coupling = []
+deps_note = ""
+action = """
+- Phase 4 resolves delivered items.
+- Phase 1 warns about claims the plan never links."""
+detail = """
+- Phase 4: update the order sentence (:148) to "render the plan, reconcile the backlog, harvest the backlog, then output the Summary". Add a **Backlog reconcile** paragraph before the harvest (:171): run `tomlctl backlog reconcile --flow <slug> --apply` after the green final pass, only when the pass was green.
+- The Summary `### Backlog` block (193-194) lists the resolved ids and the counts of the remaining buckets.
+- Phase 1: run `tomlctl backlog reconcile --flow <slug>` and surface `unlinked` ids as `N backlog item(s) promoted to <slug> are claimed by no task`.
+- Step 0.5 degradation halt (:48): add the `backlog/unknown-id` recovery — sync `.claude/backlog.toml` (e.g. a worktree cut before the mint), or drop the id from the task's `Backlog` bullet — beside the stale-binary and revert recoveries."""
+acceptance = '`grep -c "backlog reconcile --flow" claude/commands/implement.md` ≥ 2 (today: 0). `grep -c "backlog/unknown-id" claude/commands/implement.md` ≥ 1 (today: 0).'
+agent = "implement-lite"
+commit = "b579845"
+
+[[items]]
+id = 23
+ref = "wire-the-backlog-into-plan-new-with-backlog-seed-adoption"
+title = "Wire the backlog into /plan-new with --backlog seed adoption"
+effort = "M"
+status = "done"
+checkpoint = "G"
+phase = "Phase D — skills, references and carriers"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/commands/plan-new.md",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md",
+]
+needs = [
+    20,
+    21,
+    24,
+]
+coupling = []
+deps_note = ""
+action = "Add backlog awareness to `/plan-new`: a `--backlog [<slug>]` seed picker, live-row exploration, a fold-in question, `Backlog` bullets, and Phase-9 seed adoption plus promotion; document the bullet in the plan format."
+detail = """
+- Frontmatter `argument-hint` (:3): add `[--backlog [seed-slug]]`.
+- Phase 1: `--backlog`. List the seeds with `tomlctl flow list --status draft`, keeping flows whose plan contains `<!-- backlog-seed -->`, each with `tomlctl backlog list --where status=promoted --where promoted_to=<slug> --select id,summary`. Pick via `AskUserQuestion` (or use the slug given). Read the stub as the requirements, and bind `seed_slug` and `seed_plan_path`.
+- Phase 2: invoke the `backlog-capture` skill, run `tomlctl backlog list --live --area-prefix <dir>` per affected area, and record the rows in Exploration Notes.
+- Phase 4: a multi-select fold-in question over those rows, with the seed's items pre-selected.
+- Phase 6/7: folded ids go on their tasks' `- **Backlog**:` line (`refs` for partial coverage). Amend Phase 7's dry-run paragraph (plan-new.md:103): `backlog/unpromoted` on a folded id is expected until Phase 9 step 7 — report it, do not disposition it.
+- Phase 9:
+  - when `seed_slug` is bound: write the approved plan over `seed_plan_path`, delete the plan-mode file, and use the seed slug for steps 1-6; `flow init`'s noop branch leaves the seed's `context.toml` untouched, so afterwards write the derived scope (`tomlctl set-json .claude/flows/<slug>/context.toml scope --json '[...]'`) and branch (`tomlctl set .claude/flows/<slug>/context.toml branch <b>`) explicitly;
+  - new step 7: collect the `closes` ids from the store's `[[backlog_links]]` whose backlog status is `open` (never `refs`, resolved, dismissed, compacted or claimed-elsewhere ids — report those) and run `tomlctl backlog triage <ids> --promote --to <slug>`, then `tomlctl tasks check --slug <slug>` (expect no `backlog/unpromoted`).
+- skills.rs `carrier_invokes_required_skills` (:1011): add `backlog-capture` to the skills required of `plan-new.md` and `plan-update.md` (task 24 adds the invocation there).
+- plan-output-format SKILL: an optional `- **Backlog**:` line in the task template (105-119), and a format rule saying the bullet names backlog ids the task closes or `refs`, with `refs` qualifying its own token only."""
+acceptance = '''`grep -c "backlog-seed\|--backlog" claude/commands/plan-new.md` ≥ 3 (today: 0). `grep -c '\*\*Backlog\*\*' claude/skills/flow-contract-plan-output-format/SKILL.md` ≥ 1 (today: 0). `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- carrier_invokes_required_skills lint` passes (predicted, unverified).'''
+agent = "implement-deep"
+commit = "16ed6b9"
+
+[[items]]
+id = 24
+ref = "gate-plan-update-complete-on-live-promotions"
+title = "Gate /plan-update complete on live promotions"
+effort = "M"
+status = "done"
+checkpoint = "G"
+phase = "Phase D — skills, references and carriers"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/commands/plan-update.md"]
+needs = [19]
+coupling = []
+deps_note = ""
+action = """
+- `complete` resolves ready items, then gates on the rest with a batch reopen.
+- `status` prints the reconcile counts."""
+detail = """
+- Invoke the `backlog-capture` skill before `complete` step 4.
+- `complete` step 4 (:105): first `tomlctl backlog reconcile --flow <slug> --apply`. Then count the remaining rows (`in-progress`, `stalled`, `unlinked`, `orphaned`) and add them to the prompt: `… <b_count> backlog (<b_list>)`. The options:
+  - `Reopen them and complete`: `tomlctl backlog triage <ids> --reopen --rationale "flow <slug> completed without resolving it"`;
+  - `Complete, keep them promoted`;
+  - `Cancel`.
+- Non-interactive runs keep the existing refusal. Update step 6's summary (:107) and the ordering note (:117).
+- `status` (94-96): print `backlog: N ready, M in-progress, …` from a dry run."""
+acceptance = """`grep -c "backlog reconcile --flow" claude/commands/plan-update.md` ≥ 2 (today: 0). `grep -c "backlog-capture" claude/commands/plan-update.md` ≥ 1 (task 23's `carrier_invokes_required_skills` enforces it)."""
+agent = "implement-deep"
+commit = "56d9634"
+
+[[items]]
+id = 25
+ref = "add-promotion-triage-and-seed-bootstrap-to-backlog"
+title = "Add promotion triage and seed bootstrap to /backlog"
+effort = "M"
+status = "done"
+checkpoint = "G"
+phase = "Phase D — skills, references and carriers"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/commands/backlog.md"]
+needs = [
+    19,
+    21,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add a Promotions step.
+- Make the promote disposition validate its target and offer the seed bootstrap."""
+detail = """
+- Step 2 promote option (:56/:61): the `--to` target must resolve; fix :61, which promotes to a closed flow.
+  - On `Unknown`, ask: bootstrap a draft seed flow `<slug>` (per the backlog-capture skill's Seed flows sequence, with plans dir from `tomlctl json get .claude/settings.json plansDirectory`, default `docs/plans/`), pick an existing flow, or `--external`.
+  - On a closed flow, ask: `--allow-closed` or seed a new flow.
+- New step between 2 and 3, "Promotions":
+  - run `tomlctl backlog reconcile`;
+  - `ready` → offer `--apply`;
+  - `unlinked` → offer `--adopt`, then for each `render_needed` run `tomlctl tasks render --slug <slug> --check` first and render only when it reports no pre-existing drift (otherwise report and stop);
+  - `orphaned`/`stalled`/`dangling` → reopen (`triage --reopen --rationale`) or re-promote;
+  - `external` → listed only.
+- Step 0 (:30-36): stop only when the `--live` count is 0 (not the `--open` count), so promoted-only stores still reach Promotions; raise the version gate from 0.6 to 0.10 (`reconcile`, `--live`).
+- Compact (:105): promoted rows no longer fold."""
+acceptance = '`grep -c "backlog reconcile\|backlog-seed" claude/commands/backlog.md` ≥ 3 (today: 0). `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl lint` passes (predicted, unverified).'
+agent = "implement-deep"
+commit = "42e5427"
+
+[[items]]
+id = 26
+ref = "show-live-backlog-rows-to-review-and-optimise"
+title = "Show live backlog rows to /review and /optimise"
+effort = "S"
+status = "done"
+checkpoint = "G"
+phase = "Phase D — skills, references and carriers"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+]
+needs = [18]
+coupling = []
+deps_note = ""
+action = "Switch the backlog context load from `--open` to `--live`, and tell lenses that a `promoted` row is already claimed by a flow."
+detail = """
+- `review.md:44` and `optimise.md:46`: `tomlctl backlog list --live --area-prefix <scope-dir>`; update the lead-ins (review.md:41, optimise.md:43) that describe the load as open rows.
+- Add one sentence to each: a promoted row names its claiming flow in `promoted_to`; do not re-raise it as a new finding unless that flow is at `review`/`complete` or does not exist — then point the user at `/backlog` re-triage."""
+acceptance = '`grep -c "backlog list --live" claude/commands/review.md claude/commands/optimise.md` gives 1 per file (today: 0 each).'
+agent = "implement-lite"
+commit = "72bcba8"
+
+[[items]]
+id = 27
+ref = "cover-the-envelope-enums-in-the-capabilities-parity-test"
+title = "Cover the envelope enums in the capabilities parity test"
+effort = "S"
+status = "done"
+checkpoint = "G"
+phase = "Phase D — skills, references and carriers"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/flow/envelope.rs",
+    "tomlctl/src/flow/mod.rs",
+]
+needs = [17]
+coupling = []
+deps_note = ""
+action = "Add command and require_artifact branches to enum_values_match_value_enum_variants, comparing ENUM_VALUES against the envelope's VALID_COMMANDS / VALID_ARTIFACTS"
+detail = ""
+acceptance = "cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl capabilities passes"
+agent = "implement-deep"
+commit = "e84c716"
+
+[[items]]
+id = 28
+ref = "make-the-duplicate-number-rename-hint-a-runnable-command"
+title = "Make the duplicate-number rename hint a runnable command"
+effort = "S"
+status = "done"
+checkpoint = "G"
+phase = "Phase D — skills, references and carriers"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/import_plan.rs"]
+needs = [14]
+coupling = []
+deps_note = ""
+action = "Rewrite the name_duplicate_rows hint so tasks update/remove put the id first and the store target as a flag, matching the CLI and the two pinned tests"
+detail = ""
+acceptance = "cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::import_plan passes with no failures"
+agent = "implement-deep"
+commit = "0279d61"
