@@ -45,7 +45,7 @@ tomlctl tasks import-plan --slug <slug> --reconcile-record
 
 `--reconcile-record` is what stops a fresh import re-dispatching work the execution record already holds as `done`: it promotes a row whose `task_ref` matches a `status = "done"` completion, adopts the record's spelling of a `ref` on a unique normalised match, and reports every record `task_ref` it could not place in `unmatched_refs`. Surface those; never guess a match. **Re-running it is the resume path's repair, and is idempotent**: the upsert is keyed on `ref` and only ever promotes a row to `done`, never demoting one, which is what recovers a row still `pending` under a completion `<record>` already holds — the shape a `/plan-update status`, `reconcile` or `migrate` run leaves behind, since each derives from `<record>` and none writes a row status. Phase 1's skip-list is store-derived, so without this the resume re-dispatches that task. The envelope's `--require-artifact` list stays as Step 0 has it — naming `tasks` there would fail a flow minted before the store existed, which is exactly the flow this import is for.
 
-**Degradation is a halt, never a fallback.** Halt the run with a named diagnostic when `tasks check` reports an error-class finding, when the store is still absent after an import that claimed to succeed, or when `tomlctl tasks` is unrecognised (a stale binary on `PATH`). The diagnostic names both recoveries: `cargo install --path tomlctl` for the stale binary, and a `git revert` of the four carrier adoptions (`/plan-new`, `/implement`, `/review-plan`, `/plan-update`) to fall back to the prose frontier. Never proceed on partial store output — a frontier computed from a store that failed its own checks dispatches the wrong tasks in the wrong order, and it does so silently.
+**Degradation is a halt, never a fallback.** Halt the run with a named diagnostic when `tasks check` reports an error-class finding, when the store is still absent after an import that claimed to succeed, or when `tomlctl tasks` is unrecognised (a stale binary on `PATH`). The diagnostic names both recoveries: `cargo install --path tomlctl` for the stale binary, and a `git revert` of the four carrier adoptions (`/plan-new`, `/implement`, `/review-plan`, `/plan-update`) to fall back to the prose frontier. A `backlog/unknown-id` error — a task's `Backlog` bullet naming an id `.claude/backlog.toml` holds in neither its live nor its compacted array — has its own recovery: sync `.claude/backlog.toml` (a worktree cut before the item was minted lacks it), or drop the id from the task's `Backlog` bullet and re-import. Never proceed on partial store output — a frontier computed from a store that failed its own checks dispatches the wrong tasks in the wrong order, and it does so silently.
 
 ## Phase 1: Analyse and Decompose (main conversation — thinking enabled)
 
@@ -66,6 +66,14 @@ tomlctl tasks batches --slug <slug>
 ```
 
 Any error-class finding halts per Step 0.5's degradation rule; warnings are surfaced and carried into the Phase-4 report. `dag/unreachable-claim` is the one to read closely — it names the file-claim collisions the frontier will hold on at dispatch. **A `/tdd` sub-flow, or a legacy flow whose plan carries no `## Execution Policy`, binds legacy mode**: per-batch cadence, per-checkpoint granularity, `max_parallel` 6. Only `max_parallel` coincides with the store's own fallback — an absent or partial `[policy]` table falls back to milestones / 6 / per-task — so legacy mode is bound *in place of* the three stored values, never read from them. **The discriminator is `[policy].origin`** in the table the `tomlctl get` above already returned, because the import always materialises a `[policy]` table and a pre-policy plan is otherwise indistinguishable afterwards: a plan carrying no `## Execution Policy` imports as `origin = "default"` — every field a house default, and a `plan/policy-absent` warning raised at the import that substituted them — while `origin = "plan"` means the plan authored the section and `[policy]` is read as-is. **Never test `[policy].note` for mode**: it is authored prose, and an absent policy section leaves it empty. A `/tdd` sub-flow has no store at all and binds legacy mode without the check.
+
+**Unclaimed promotions.** List the backlog items promoted to this flow, read-only:
+
+```bash
+tomlctl backlog reconcile --flow <slug>
+```
+
+Surface each `buckets.unlinked` id as `N backlog item(s) promoted to <slug> are claimed by no task: <ids>` and carry it into the Phase-4 report. It is a warning, not a halt — no task closes those items, so Phase 4's reconcile will not resolve them; the remedy is a `Backlog` bullet on the task that delivers each, or `/backlog` re-triage.
 
 ## Phase 2: Execute (parallel sub-agents)
 
@@ -145,7 +153,7 @@ tomlctl flow render-progress-log --slug <slug>
 
 ## Phase 4: Report
 
-**Reason thoroughly.** After successful verification, render the plan from the store, harvest the backlog, then output the Implementation Summary.
+**Reason thoroughly.** After successful verification, render the plan from the store, reconcile the backlog, harvest the backlog, then output the Implementation Summary.
 
 **Plan render — `--check` first, always.** The store owns `## Execution Policy`, `## Tasks` and `## Dependency Graph`; every other byte of the plan document is preserved. Run the drift gate before anything writes:
 
@@ -167,6 +175,14 @@ tomlctl tasks render --slug <slug>
 ```
 
 The render is a derived write like `PROGRESS-LOG.md` and carries no `.sha256` sidecar. It refuses — writing nothing — on a cycle or a dangling edge, because a marker naming the wrong tasks is worse than a refusal.
+
+**Backlog reconcile.** Only when the Phase-3 final pass was green — never after a red or unfinished pass — resolve the backlog items this flow delivered:
+
+```bash
+tomlctl backlog reconcile --flow <slug> --apply
+```
+
+It resolves every `ready` item (every task that `closes` it is `done`), recording `resolved_flow`, `resolved_tasks` and `resolved_commits`. Under per-batch legacy the final batch is still uncommitted, so `resolved_commits` may be empty; that needs no action. Report `applied` as the resolved ids, and surface each `skipped` entry with its reason.
 
 **Backlog harvest.** Invoke the `backlog-capture` skill to load the capture discipline (mint criteria, the verdict table, the fingerprint rule, the vocabularies, the check-then-add gate). Collect every `TANGENTIAL:` line the Phase-2 agents returned, plus any out-of-scope discovery in the Failed / Skipped and Plan Deviations material — a plan deviation remains a `type=deviation` record; only what falls outside the plan's item set is a backlog candidate. Run the skill's gate on each candidate, minting with `--origin implement --flow <slug>`, and list what it minted or bumped on the report's `Backlog` line.
 
@@ -192,6 +208,7 @@ Fewer than three ⇒ backlog item. Accepting one re-opens the run: mint it per s
 
 ### Backlog
 - [id] — verdict, summary; `(none)` when nothing was captured
+- Resolved: [ids from `applied`]; remaining: in-progress N, stalled N, unlinked N, orphaned N, dangling N, external N
 
 ### Verification
 - Build / Tests / Lint: pass/fail; fix attempts used: N/M
