@@ -1835,14 +1835,11 @@ pub(crate) fn write_sidecar_for(file: &Path, bytes: &[u8]) -> Result<()> {
 /// verification, but the next successful write regenerates the sidecar from
 /// the current on-disk bytes and clears the inconsistency.
 ///
-/// Failure to persist the TOML (the SECOND persist) is reported as
-/// a terminal-only advisory but does not fail the outer write under
-/// `!strict`; `--strict-integrity` is the route for a caller that must see
-/// it on a pipe —
-/// a single retry recomputes the sidecar against the current
-/// on-disk TOML before warning, so a transient EIO doesn't leave the sidecar
-/// pointing at bytes the TOML never received. Set `--strict-integrity` to
-/// upgrade the warning to a hard error.
+/// Failure to persist the TOML (the SECOND persist) is always an error,
+/// whatever `strict` says: the data did not land, and a caller told `ok`
+/// would drop the write. Before returning, the sidecar is recomputed once
+/// against the TOML still on disk, so a transient failure leaves a verifiable
+/// OLD + OLD pair rather than a sidecar naming bytes that never arrived.
 pub(crate) fn write_toml_with_sidecar(
     path: &Path,
     value: &TomlValue,
@@ -1861,46 +1858,22 @@ pub(crate) fn write_toml_with_sidecar(
     // concurrent writer, and any reader observing a mid-swap state lands on
     // the recoverable combinations documented above.
     write_sidecar_for(path, bytes)?;
-    if let Err(e) = atomic_write(path, bytes) {
-        if integrity.strict {
-            return Err(e).with_context(|| {
-                format!(
-                    "refreshed integrity sidecar but failed to persist {} (--strict-integrity was set, so this is a hard error)",
-                    path.display()
-                )
-            });
-        }
-        // The second persist (TOML) failed under !strict. We hold the
-        // exclusive lock so the on-disk TOML cannot have been modified by
-        // another writer; the on-disk pair is now (OLD TOML + NEW sidecar),
-        // which fails verification. Recompute the sidecar against the current
-        // on-disk TOML and rewrite it once to restore an internally
-        // consistent (OLD TOML + OLD sidecar) pair before warning. This
-        // avoids leaving the file pair in a wedged state when the TOML
-        // failure is transient (e.g. EIO, ENOSPC clearing) — the next
-        // successful write still proceeds through the standard
-        // NEW-sidecar / NEW-TOML path.
-        let recovery: Result<()> = (|| {
-            let on_disk = fs::read(path)
-                .with_context(|| format!("re-reading {} for sidecar recovery", path.display()))?;
-            write_sidecar_for(path, &on_disk)
-        })();
-        if let Err(re) = recovery {
-            advise!(
-                "tomlctl: warning: failed to persist {}: {:#}; sidecar recovery also failed: {:#} (on-disk pair may now be inconsistent — verify-integrity will fail until the next successful write)",
-                path.display(),
-                e,
-                re
-            );
-        } else {
-            advise!(
-                "tomlctl: warning: failed to persist {}: {:#}; sidecar rewritten against current on-disk bytes to restore consistency",
-                path.display(),
-                e
-            );
-        }
-    }
-    Ok(())
+    let Err(e) = atomic_write(path, bytes) else {
+        return Ok(());
+    };
+    // The exclusive lock means no other writer touched the TOML, so the pair
+    // is now OLD TOML + NEW sidecar. Point the sidecar back at the bytes on
+    // disk.
+    let recovery = fs::read(path)
+        .map_err(anyhow::Error::from)
+        .and_then(|on_disk| write_sidecar_for(path, &on_disk));
+    let note = match recovery {
+        Ok(()) => "the sidecar still covers the unchanged file".to_string(),
+        Err(re) => format!(
+            "the sidecar could not be restored ({re:#}), so --verify-integrity fails until the next successful write"
+        ),
+    };
+    Err(e.context(format!("failed to persist {}; {note}", path.display())))
 }
 
 /// Total attempts at the final rename, and the pause between them. Both
@@ -2095,6 +2068,27 @@ resolution = "fix in abc123"
             msg.contains("expected") && msg.contains("actual"),
             "expected dual-digest message, got: {msg}"
         );
+    }
+
+    /// A directory squatting on the target makes the TOML rename fail after
+    /// the sidecar landed — the one window where the data can miss disk.
+    #[test]
+    fn a_failed_data_persist_is_an_error_without_strict_integrity() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("ledger.toml");
+        fs::create_dir(&target).unwrap();
+        for write_sidecar in [true, false] {
+            let opts = IntegrityOpts {
+                write_sidecar,
+                verify_on_read: false,
+                strict: false,
+            };
+            let err = write_toml_with_sidecar(&target, &led(), opts).unwrap_err();
+            assert!(
+                format!("{err:#}").contains("ledger.toml"),
+                "write_sidecar={write_sidecar}: {err:#}"
+            );
+        }
     }
 
     #[test]

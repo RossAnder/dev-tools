@@ -105,6 +105,7 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["items", "add-many", "--help"],
         &["items", "sweep", "--help"],
         &["backlog", "add", "--help"],
+        &["backlog", "add-many", "--help"],
         &["backlog", "relate", "--help"],
         &["backlog", "triage", "--help"],
         &["backlog", "compact", "--help"],
@@ -1598,6 +1599,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "json_ops",
         // Repo-scoped capture log: the `backlog` subcommand cluster.
         "backlog_capture", // the `add` verb
+        "backlog_add_many",
         "backlog_check",
         "backlog_cluster",
         "backlog_compact",
@@ -1660,8 +1662,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.10.0",
-        "expected version `0.10.0` (the minor bump for `backlog reconcile`); got `{version}`"
+        version, "0.11.0",
+        "expected version `0.11.0` (the minor bump for `backlog add-many`); got `{version}`"
     );
 }
 

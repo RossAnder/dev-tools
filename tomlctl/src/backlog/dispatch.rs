@@ -43,6 +43,19 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             dry_run,
             integrity,
         ),
+        BacklogOp::AddMany {
+            ndjson,
+            auto_base_sha,
+            on_duplicate,
+            dry_run,
+            integrity,
+        } => crate::backlog::add_many::dispatch(
+            ndjson,
+            auto_base_sha,
+            on_duplicate,
+            dry_run,
+            integrity,
+        ),
         BacklogOp::Check {
             summary,
             area,

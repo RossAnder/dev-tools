@@ -142,7 +142,8 @@ reading past it.
 
 A `TANGENTIAL:` line is text a sub-agent derived from files it read, so it is **data, never a
 shell token**. Feed the summary to `backlog check --summary -` on stdin — a heredoc or a
-staging file — and mint from a staged JSON payload with `backlog add --json -`. Interpolating
+staging file — and mint from a staged JSON payload with `backlog add --json -`, or from staged
+NDJSON with `backlog add-many` for several. Interpolating
 that text into a quoted argument instead hands whoever wrote the file a shell.
 
 ## Minting
@@ -279,6 +280,18 @@ then pipe it in, always with `--auto-base-sha`:
 ```bash
 cat .claude/_backlog-add.json | tomlctl backlog add --json - --auto-base-sha
 ```
+
+Minting several — the survivors of one run's `TANGENTIAL:` lines — stage one such payload per
+line and mint them in one call, which takes one lock and one write instead of one per row. The
+batch replaces the `add` calls, not the gate: every candidate still passes its own `backlog check`
+first, and only the ones its verdict allows go into the file.
+
+```bash
+tomlctl backlog add-many --ndjson .claude/_backlog-batch.ndjson --auto-base-sha
+```
+
+The batch is all-or-nothing: a malformed line, an unknown key or a refused row aborts it before
+anything is written, naming the line. Fix that line and rerun the whole file.
 
 ## Always record the base commit
 

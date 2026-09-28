@@ -10,6 +10,7 @@
 //! content-derived `dedup_id` that every backlog id is built from.
 
 mod add;
+mod add_many;
 mod check;
 mod cluster;
 mod compact;

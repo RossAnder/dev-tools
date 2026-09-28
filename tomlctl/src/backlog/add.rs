@@ -18,9 +18,10 @@ use toml::Value as TomlValue;
 use super::ids;
 use super::schema::{
     self, ARRAY_BACKLOG, ARRAY_COMPACTED, BacklogError, FIELD_AREA, FIELD_BASE_SHA, FIELD_CONTEXT,
-    FIELD_CREATED, FIELD_DEDUP_ID, FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID, FIELD_KIND,
-    FIELD_LAST_SEEN, FIELD_LAST_UPDATED, FIELD_ORIGIN, FIELD_RELATED, FIELD_SEEN_COUNT,
-    FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, KIND_OTHER, STATUS_OPEN, TERMINAL_DATE_FIELDS,
+    FIELD_CREATED, FIELD_DEDUP_ID, FIELD_DUPLICATE_OF, FIELD_EVIDENCE, FIELD_FLOW, FIELD_ID,
+    FIELD_KIND, FIELD_LAST_SEEN, FIELD_LAST_UPDATED, FIELD_ORIGIN, FIELD_RELATED, FIELD_SEEN_COUNT,
+    FIELD_STATUS, FIELD_SUMMARY, FIELD_SUPERSEDES, FIELD_TAGS, KIND_OTHER, MANAGED_FIELDS,
+    STATUS_OPEN, TERMINAL_DATE_FIELDS,
 };
 use crate::cli::{OnDuplicate, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::{is_date_key, json_to_toml, json_type_name, toml_to_json};
@@ -45,13 +46,40 @@ const MINTED_FIELDS: [&str; 5] = [
     FIELD_SEEN_COUNT,
 ];
 
+/// Payload fields read into `AddRequest`'s named slots; every other key
+/// rides in `extra` and is written verbatim.
+const CONSUMED_FIELDS: [&str; 10] = [
+    FIELD_KIND,
+    FIELD_SUMMARY,
+    FIELD_AREA,
+    FIELD_TAGS,
+    FIELD_STATUS,
+    FIELD_ORIGIN,
+    FIELD_FLOW,
+    FIELD_CONTEXT,
+    FIELD_EVIDENCE,
+    FIELD_RELATED,
+];
+
+/// The first payload key that names no live-row field, if any. `add --json`
+/// passes such a key through to the stored row; `add-many` refuses it, so a
+/// typo in one line of a batch cannot land as a stray field.
+pub(super) fn unknown_payload_key(map: &JsonMap<String, JsonValue>) -> Option<&str> {
+    map.keys().map(String::as_str).find(|key| {
+        !(CONSUMED_FIELDS.contains(key)
+            || MINTED_FIELDS.contains(key)
+            || MANAGED_FIELDS.contains(key)
+            || [FIELD_BASE_SHA, FIELD_DUPLICATE_OF, FIELD_SUPERSEDES].contains(key))
+    })
+}
+
 /// Resolve the commit a capture is made against: an explicit `--base-sha` wins,
 /// `--auto-base-sha` asks git, and neither records nothing.
 ///
 /// Auto-resolution is deliberately best-effort. Outside a repo, on an unborn
 /// HEAD, or with no git on PATH there is no answer, and a capture is worth more
 /// than its provenance — so the field is dropped rather than the add failing.
-fn resolve_base_sha(explicit: Option<String>, auto: bool) -> Option<String> {
+pub(super) fn resolve_base_sha(explicit: Option<String>, auto: bool) -> Option<String> {
     if let Some(sha) = explicit {
         return Some(sha);
     }
@@ -72,7 +100,7 @@ fn resolve_base_sha(explicit: Option<String>, auto: bool) -> Option<String> {
 /// One capture, resolved from either the field flags or a `--json` payload.
 /// `kind` is already coerced and `today` already resolved, so `add_item` is a
 /// pure function of this plus the document.
-struct AddRequest {
+pub(super) struct AddRequest {
     kind: String,
     /// The `kind` the caller supplied when the vocabulary does not know it.
     /// Carried so `advisories` can name the coercion in the envelope, which
@@ -97,10 +125,35 @@ struct AddRequest {
     today: toml::value::Datetime,
 }
 
-enum AddOutcome {
+pub(super) enum AddOutcome {
     Added { id: String, dedup_id: String },
     Bumped { id: String, seen_count: i64 },
     Skipped { id: String },
+}
+
+impl AddOutcome {
+    pub(super) fn id(&self) -> &str {
+        match self {
+            Self::Added { id, .. } | Self::Bumped { id, .. } | Self::Skipped { id } => id,
+        }
+    }
+
+    /// The per-capture envelope keys `add` and `add-many` share, appended to
+    /// `out` in their stable order.
+    pub(super) fn extend_envelope(&self, out: &mut JsonMap<String, JsonValue>) {
+        let (action, detail): (&str, Option<(&str, JsonValue)>) = match self {
+            Self::Added { dedup_id, .. } => ("added", Some(("dedup_id", dedup_id.as_str().into()))),
+            Self::Bumped { seen_count, .. } => {
+                ("bumped", Some(("seen_count", (*seen_count).into())))
+            }
+            Self::Skipped { .. } => ("skipped", None),
+        };
+        out.insert("action".to_string(), action.into());
+        out.insert("id".to_string(), self.id().into());
+        if let Some((key, value)) = detail {
+            out.insert(key.to_string(), value);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -152,7 +205,7 @@ pub(crate) fn dispatch(
         // The preview rides the same advisories as the write it previews: a
         // caller using `--dry-run` as its review step would otherwise see
         // strictly less than one that skipped the review.
-        let mut envelope = build_dry_run_plan_envelope(&preview_plan(doc, &outcome));
+        let mut envelope = build_dry_run_plan_envelope(&preview_plan(doc, [(0, &outcome)]));
         if let Some(map) = envelope.as_object_mut() {
             map.insert("advisories".to_string(), serde_json::json!(advisories));
         }
@@ -172,40 +225,25 @@ pub(crate) fn dispatch(
             Ok(persist)
         })?;
 
-    match outcome.ok_or_else(|| anyhow!("backlog add reached the write path without a decision"))? {
-        AddOutcome::Added { id, dedup_id } => {
-            warn_if_created(&file, created);
-            let path = io::relativise(&io::repo_or_cwd_root()?, &file);
-            print_json_compact(&serde_json::json!({
-                "ok": true,
-                "action": "added",
-                "id": id,
-                "dedup_id": dedup_id,
-                "created": created,
-                "path": path,
-                "advisories": advisories,
-            }))
-        }
-        AddOutcome::Bumped { id, seen_count } => print_json_compact(&serde_json::json!({
-            "ok": true,
-            "action": "bumped",
-            "id": id,
-            "seen_count": seen_count,
-            "advisories": advisories,
-        })),
-        AddOutcome::Skipped { id } => print_json_compact(&serde_json::json!({
-            "ok": true,
-            "action": "skipped",
-            "id": id,
-            "advisories": advisories,
-        })),
+    let outcome =
+        outcome.ok_or_else(|| anyhow!("backlog add reached the write path without a decision"))?;
+    let mut envelope = JsonMap::new();
+    envelope.insert("ok".to_string(), true.into());
+    outcome.extend_envelope(&mut envelope);
+    if matches!(outcome, AddOutcome::Added { .. }) {
+        warn_if_created(&file, created);
+        let path = io::relativise(&io::repo_or_cwd_root()?, &file);
+        envelope.insert("created".to_string(), created.into());
+        envelope.insert("path".to_string(), serde_json::json!(path));
     }
+    envelope.insert("advisories".to_string(), serde_json::json!(advisories));
+    print_json_compact(&JsonValue::Object(envelope))
 }
 
 /// Apply one capture to `doc`. Mutates nothing on the `skip` and `fail`
 /// branches, so a caller that declines to persist leaves a doc identical to
 /// the one it read.
-fn add_item(doc: &mut TomlValue, req: &AddRequest, file: &Path) -> Result<AddOutcome> {
+pub(super) fn add_item(doc: &mut TomlValue, req: &AddRequest, file: &Path) -> Result<AddOutcome> {
     resolve_related(doc, req, file)?;
     let dedup_id = ids::dedup_id_from_parts(&req.kind, &req.area, &req.summary);
 
@@ -427,7 +465,7 @@ fn coerced_kind(raw: &str) -> Option<String> {
     schema::known_kind(raw).is_none().then(|| raw.to_string())
 }
 
-fn advisories(req: &AddRequest) -> Vec<String> {
+pub(super) fn advisories(req: &AddRequest) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(raw) = &req.coerced_kind {
         out.push(format!(
@@ -512,14 +550,13 @@ fn build_request(
             }
             let payload: JsonValue =
                 serde_json::from_str(&read_json_arg(&raw)?).context("parsing --json")?;
-            {
-                let mut req = request_from_payload(payload, on_duplicate, today, file)?;
-                // A payload carrying its own base_sha keeps it: that row's `extra`
-                // is written after this field, so the recorded vintage wins over a
-                // re-resolution against whatever HEAD happens to be now.
-                req.base_sha = resolve_base_sha(None, auto_base_sha);
-                req
-            }
+            return payload_request(
+                payload,
+                on_duplicate,
+                today,
+                resolve_base_sha(None, auto_base_sha),
+                file,
+            );
         }
         None => AddRequest {
             kind: schema::known_kind(kind.as_deref().unwrap_or(KIND_OTHER))
@@ -541,6 +578,10 @@ fn build_request(
             today,
         },
     };
+    require_summary(req, file)
+}
+
+fn require_summary(req: AddRequest, file: &Path) -> Result<AddRequest> {
     if req.summary.trim().is_empty() {
         return Err(BacklogError::MissingField {
             field: FIELD_SUMMARY,
@@ -548,6 +589,22 @@ fn build_request(
         .into_tagged(Some(file.to_path_buf())));
     }
     Ok(req)
+}
+
+/// One whole-item payload as a capture — the `--json` form of `add` and one
+/// line of `add-many`. `base_sha` is the resolved `--auto-base-sha` value; a
+/// payload carrying its own keeps it, because `extra` is written after this
+/// field and the recorded vintage wins over whatever HEAD happens to be now.
+pub(super) fn payload_request(
+    payload: JsonValue,
+    on_duplicate: OnDuplicate,
+    today: toml::value::Datetime,
+    base_sha: Option<String>,
+    file: &Path,
+) -> Result<AddRequest> {
+    let mut req = request_from_payload(payload, on_duplicate, today, file)?;
+    req.base_sha = base_sha;
+    require_summary(req, file)
 }
 
 /// Read a whole-item payload. Content fields are the caller's; the five
@@ -565,21 +622,9 @@ fn request_from_payload(
         }
         .into_tagged(Some(file.to_path_buf())));
     };
-    let consumed = [
-        FIELD_KIND,
-        FIELD_SUMMARY,
-        FIELD_AREA,
-        FIELD_TAGS,
-        FIELD_STATUS,
-        FIELD_ORIGIN,
-        FIELD_FLOW,
-        FIELD_CONTEXT,
-        FIELD_EVIDENCE,
-        FIELD_RELATED,
-    ];
     let mut extra = toml::Table::new();
     for (field, value) in &map {
-        if consumed.contains(&field.as_str()) || MINTED_FIELDS.contains(&field.as_str()) {
+        if CONSUMED_FIELDS.contains(&field.as_str()) || MINTED_FIELDS.contains(&field.as_str()) {
             continue;
         }
         extra.insert(field.clone(), payload_value(field, value)?);
@@ -643,7 +688,7 @@ fn strings_of(map: &JsonMap<String, JsonValue>, field: &str) -> Vec<String> {
 /// The document `--dry-run` reasons over: the stored one, or the seed a live
 /// run would have started from. No lock and no sidecar write, so the preview
 /// leaves an absent store absent.
-fn preview_doc(file: &Path, integrity: &WriteIntegrityArgs) -> Result<TomlValue> {
+pub(super) fn preview_doc(file: &Path, integrity: &WriteIntegrityArgs) -> Result<TomlValue> {
     let opts = io::dry_run_read_opts(integrity.verify_integrity);
     match io::read_doc(file, opts, |doc| Ok(doc.clone())) {
         Ok(doc) => Ok(doc),
@@ -660,7 +705,13 @@ fn is_not_found(err: &anyhow::Error) -> bool {
         .is_some_and(|tagged| matches!(tagged.kind, ErrorKind::NotFound))
 }
 
-fn preview_plan(new_doc: TomlValue, outcome: &AddOutcome) -> MutationPlan {
+/// `outcomes` pairs each capture with its input row. A row minted earlier in
+/// the same batch and bumped later is still one new row, so it counts under
+/// `added` only.
+pub(super) fn preview_plan<'a>(
+    new_doc: TomlValue,
+    outcomes: impl IntoIterator<Item = (usize, &'a AddOutcome)>,
+) -> MutationPlan {
     let mut plan = MutationPlan {
         new_doc,
         added: Vec::new(),
@@ -668,13 +719,20 @@ fn preview_plan(new_doc: TomlValue, outcome: &AddOutcome) -> MutationPlan {
         removed: Vec::new(),
         skipped: Vec::new(),
     };
-    match outcome {
-        AddOutcome::Added { id, .. } => plan.added.push(id.clone()),
-        AddOutcome::Bumped { id, .. } => plan.updated.push(id.clone()),
-        AddOutcome::Skipped { id } => plan.skipped.push(SkippedRow {
-            row: 0,
-            matched_id: id.clone(),
-        }),
+    for (row, outcome) in outcomes {
+        let id = outcome.id().to_string();
+        match outcome {
+            AddOutcome::Added { .. } => plan.added.push(id),
+            AddOutcome::Bumped { .. } => {
+                if !plan.added.contains(&id) && !plan.updated.contains(&id) {
+                    plan.updated.push(id);
+                }
+            }
+            AddOutcome::Skipped { .. } => plan.skipped.push(SkippedRow {
+                row,
+                matched_id: id,
+            }),
+        }
     }
     plan
 }

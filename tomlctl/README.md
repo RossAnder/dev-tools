@@ -54,6 +54,7 @@ tomlctl flow stale --slug <s> [--threshold <duration>]              # check whet
 tomlctl blocks verify  <file>... [--block <marker-name>]...  # cross-file shared-block parity
 tomlctl backlog check  --summary <s> [--area PATH] [--kind K] [--tag T]...  # is it already known? read-only graded verdict
 tomlctl backlog add    --summary <s> [--kind K] [--area PATH] [--evidence path:line]... [--context <how-to-work-around>]
+tomlctl backlog add-many --ndjson <src> [--auto-base-sha] [--on-duplicate bump|skip|fail]   # one `add --json` payload per line; one lock, one write, all-or-nothing
 tomlctl backlog list   [--open|--live] [--kind K] [--tag T]... [--area-prefix PATH] [--has-evidence] [--count]   # --live is open or promoted; plus the full --where-* query surface
 tomlctl backlog show   <id>                            # one item + its one-hop relations + its evidence listing
 tomlctl backlog relate B7 --to B3 --as relates-to|duplicates|supersedes   # duplicates dismisses B7, supersedes dismisses B3
@@ -254,7 +255,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.10.0",
+  "version": "0.11.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -263,7 +264,8 @@ downstream flow-command templates can feature-gate at boot without parsing
                "flow_active", "flow_doctor", "flow_init",
                "flow_ensure_artifact", "flow_envelope_build", "flow_stale",
                "flow_find_plans", "flow_list", "flow_render_progress_log",
-               "json_ops", "backlog_capture", "backlog_check",
+               "json_ops", "backlog_capture", "backlog_add_many",
+               "backlog_check",
                "backlog_cluster", "backlog_compact", "backlog_evidence",
                "backlog_list", "backlog_show", "backlog_relate",
                "backlog_triage", "backlog_reconcile",
@@ -326,7 +328,7 @@ Feature meanings:
 | `capabilities` | this subcommand itself |
 | `error_format_json` | `--error-format json` global flag + `ErrorKind` taxonomy |
 | `strict_read` | `--strict-read` on every read subcommand except `items sweep` (write-side integrity bundle) and the standalone `sweep` (no integrity flags) |
-| `dry_run` | `--dry-run` on the write subcommands that support previewing mutations, including `set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id`, `flow init`, `flow ensure-artifact`, `flow doctor`, `flow active add`, `flow active remove`, `flow active touch`, `json set`, `json unset`, `backlog add`, `backlog compact`, `tasks import-plan`, and `items sweep --update` |
+| `dry_run` | `--dry-run` on the write subcommands that support previewing mutations, including `set`, `set-json`, `array-append`, `items add`, `items add-many`, `items update`, `items remove`, `items apply`, `items backfill-dedup-id`, `flow init`, `flow ensure-artifact`, `flow doctor`, `flow active add`, `flow active remove`, `flow active touch`, `json set`, `json unset`, `backlog add`, `backlog add-many`, `backlog compact`, `tasks import-plan`, and `items sweep --update` |
 | `backfill_dedup_id` | `items backfill-dedup-id <file>` |
 | `integrity_refresh` | `tomlctl integrity refresh <file>` — sidecar bootstrap / recovery primitive |
 | `agent_context` | `tomlctl capabilities .commands` emits per-subcommand flag schema (type / required / default / values / repeatable + mutex_groups) for runtime introspection without parsing `--help` prose |
@@ -342,6 +344,7 @@ Feature meanings:
 | `flow_render_progress_log` | `flow render-progress-log --slug <SLUG>` — regenerate a flow's derived `PROGRESS-LOG.md` from its `execution-record.toml`; `--stdout` previews without writing |
 | `json_ops` | `json get` / `set` / `unset` — dotted-path read and write against JSON files such as `.claude/settings.json` |
 | `backlog_capture` | `backlog add` — capture a discovery into the repo-scoped backlog store |
+| `backlog_add_many` | `backlog add-many --ndjson <SRC>` — capture a batch, one `backlog add --json` payload per line, under one lock and one write; a malformed line, an unknown key or a refused row aborts the whole batch, naming its line |
 | `backlog_check` | `backlog check --summary <TEXT>` — read-only graded verdict on whether a discovery is already known, before minting it; `in-flight` when the match is a `promoted` item, with the flow it is promoted to |
 | `backlog_cluster` | `backlog cluster --by <VIEW>` — group open items into candidate work scopes |
 | `backlog_compact` | `backlog compact --older-than <DURATION>` — age resolved and dismissed items into `[[compacted]]`; `open` and `promoted` items are never touched |

@@ -10,6 +10,7 @@ row and when not to is the `backlog-capture` skill's job
 ## Contents
 
 - [`backlog add`](#backlog-add)
+- [`backlog add-many`](#backlog-add-many)
 - [`backlog check`](#backlog-check)
 - [`backlog list`](#backlog-list)
 - [`backlog show`](#backlog-show)
@@ -27,7 +28,7 @@ row and when not to is the `backlog-capture` skill's job
 - [Duration grammar](#duration-grammar)
 - [Frozen contracts](#frozen-contracts)
 
-Every mutating op (`add`, `relate`, `triage`, `reconcile`, `compact`) carries the shared write
+Every mutating op (`add`, `add-many`, `relate`, `triage`, `reconcile`, `compact`) carries the shared write
 bundle — `--allow-outside`, `--no-create`, `--no-write-integrity`, `--strict-integrity`,
 `--verify-integrity` — `reconcile` included, although it writes only under `--adopt` or
 `--apply`. Every read op (`check`, `list`, `show`, `cluster`, `evidence audit`,
@@ -81,6 +82,37 @@ Envelope — one of three actions:
 
 Under `--dry-run` it is the standard mutation-plan envelope,
 `{"ok":true,"dry_run":true,"would_change":{"kind":"items",…}}`.
+
+## `backlog add-many`
+
+The batch form of `add`: one `add --json` payload per NDJSON line, captured under one lock, one
+read and one write. Reach for it whenever more than one row is being minted.
+
+```bash
+tomlctl backlog add-many --ndjson .claude/_backlog-batch.ndjson --auto-base-sha
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--ndjson` | path, `@<path>` or `-` | One JSON object per line; `-` reads stdin. Blank lines are skipped but still counted. | — |
+| `--auto-base-sha` | flag | As on `add`, for every row whose payload carries no `base_sha`. | off |
+| `--on-duplicate` | `bump` \| `skip` \| `fail` | As on `add`, per row. A line colliding with a row an earlier line minted bumps it, as two `add` calls in sequence would. | `bump` |
+| `--dry-run` | — | Emit the mutation plan plus `rows`; touch neither file nor sidecar. | off |
+
+Each row runs exactly as `add --json` would — same id derivation, same advisories, and a
+`related` id may name a row an earlier line minted — with one difference: a key no stored row
+carries is refused, where `add --json` would store it verbatim. The batch is all-or-nothing. A
+malformed line, an unknown key (both `kind=validation`) or any row `add` would refuse aborts it
+before the write, the error naming the 1-based line; an all-`skip` batch writes nothing.
+
+```json
+{"ok":true,"path":".claude/backlog.toml","created":false,"added":["B-a1b2c3d4"],"bumped":["B-1a2b3c4d"],"skipped":[],
+ "rows":[{"line":1,"action":"added","id":"B-a1b2c3d4","dedup_id":"<16 hex>","advisories":[]},
+         {"line":2,"action":"bumped","id":"B-1a2b3c4d","seen_count":3,"advisories":[]}]}
+```
+
+Each `rows` entry carries `add`'s keys for that row. A top-level `advisories`, each entry
+prefixed `line N:`, appears only when some row raised one.
 
 ## `backlog check`
 

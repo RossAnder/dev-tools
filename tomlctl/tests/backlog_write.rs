@@ -822,3 +822,108 @@ fn a_dry_run_surfaces_the_credential_advisory_on_the_preview_envelope() {
         "the advisory names the field, never the value: {advisory}"
     );
 }
+
+fn flake_line() -> String {
+    json!({"summary": FLAKE_SUMMARY, "kind": "flaky-test", "area": FLAKE_AREA}).to_string()
+}
+
+fn drift_line() -> String {
+    json!({"summary": DRIFT_SUMMARY, "kind": "bug", "area": DRIFT_AREA}).to_string()
+}
+
+/// Run a refused `backlog add-many --ndjson -` over `ndjson` and hand back
+/// its JSON error.
+fn refused_batch(root: &Path, ndjson: String) -> serde_json::Value {
+    let out = cli(root)
+        .args([
+            "--error-format",
+            "json",
+            "backlog",
+            "add-many",
+            "--ndjson",
+            "-",
+        ])
+        .write_stdin(ndjson)
+        .assert()
+        .failure()
+        .code(1);
+    parse_json_error_envelope(&String::from_utf8_lossy(&out.get_output().stderr))
+}
+
+#[test]
+fn add_many_mints_a_batch_and_folds_a_repeat_onto_its_earlier_line() {
+    let (_tmp, root) = sandbox();
+    let batch = root.join("batch.ndjson");
+    let repeat =
+        json!({"summary": FLAKE_SUMMARY, "kind": "flaky-test", "area": FLAKE_AREA, "tags": ["ci"]});
+    fs::write(
+        &batch,
+        format!("{}\n{}\n{repeat}\n", flake_line(), drift_line()),
+    )
+    .unwrap();
+
+    let out = backlog(
+        &root,
+        &["add-many", "--ndjson", &format!("@{}", batch.display())],
+    );
+    assert_eq!(out["ok"], json!(true), "{out}");
+    assert_eq!(out["created"], json!(true), "{out}");
+    assert_eq!(out["path"], json!(".claude/backlog.toml"), "{out}");
+    let rows_out = out["rows"].as_array().unwrap();
+    assert_eq!(rows_out.len(), 3, "{out}");
+    let id_a = rows_out[0]["id"].as_str().unwrap().to_string();
+    let id_b = rows_out[1]["id"].as_str().unwrap().to_string();
+    assert_minted_id(&id_a);
+    assert_minted_id(&id_b);
+    assert_eq!(out["added"], json!([id_a, id_b]), "{out}");
+    assert_eq!(out["bumped"], json!([id_a]), "{out}");
+    assert_eq!(rows_out[0]["line"], json!(1));
+    assert_eq!(rows_out[0]["action"], json!("added"));
+    assert_eq!(rows_out[2]["line"], json!(3));
+    assert_eq!(rows_out[2]["action"], json!("bumped"));
+    assert_eq!(rows_out[2]["id"].as_str(), Some(id_a.as_str()));
+    assert_eq!(rows_out[2]["seen_count"], json!(2));
+
+    let doc = read_store(&root);
+    assert_eq!(rows(&doc, "backlog").len(), 2, "{doc}");
+    let a = row(&doc, "backlog", &id_a);
+    assert_eq!(a["seen_count"].as_integer(), Some(2));
+    assert_eq!(a["tags"][0].as_str(), Some("ci"));
+    assert_sidecar_matches(&store_path(&root));
+}
+
+#[test]
+fn add_many_with_a_malformed_line_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    add_drift(&root);
+    let before = snapshot(&root);
+
+    let err = refused_batch(&root, format!("{}\n{{\"summary\": \n", flake_line()));
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(message.starts_with("line 2: "), "{message}");
+    assert_eq!(
+        snapshot(&root),
+        before,
+        "a batch with one bad line must leave the store and its sidecar byte-identical"
+    );
+}
+
+#[test]
+fn add_many_names_the_line_carrying_an_unknown_key() {
+    let (_tmp, root) = sandbox();
+    let typo = json!({"summary": "a row with a typo'd field", "contxt": "x"});
+
+    let err = refused_batch(
+        &root,
+        format!("{}\n{}\n{typo}\n", flake_line(), drift_line()),
+    );
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(message.starts_with("line 3: "), "{message}");
+    assert!(message.contains("`contxt`"), "{message}");
+    assert!(
+        !store_path(&root).exists(),
+        "a refused batch must not create the store"
+    );
+}

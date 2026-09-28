@@ -48,6 +48,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "json_ops",
     // Repo-scoped capture log: the `backlog` subcommand cluster.
     "backlog_capture", // the `add` verb
+    "backlog_add_many",
     "backlog_check",
     "backlog_cluster",
     "backlog_compact",
@@ -1083,6 +1084,37 @@ pub(crate) enum BacklogOp {
             help = "Whole-item JSON payload instead of the field flags; pass `-` to read from stdin or `@<path>` to read a file"
         )]
         json: Option<String>,
+        #[arg(
+            long = "dry-run",
+            help = "Preview the operation without writing. Emits a would_change summary; no file or sidecar touch."
+        )]
+        dry_run: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Capture a batch of discoveries, one `add --json` payload per NDJSON
+    /// line, under one lock and one write. All-or-nothing: a malformed line,
+    /// an unknown key or a refused row aborts before the store is touched.
+    AddMany {
+        #[arg(
+            long = "ndjson",
+            value_name = "SRC",
+            help = "NDJSON source: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+        )]
+        ndjson: String,
+        #[arg(
+            long = "auto-base-sha",
+            help = "Resolve `base_sha` from `git rev-parse HEAD` for every row that carries none"
+        )]
+        auto_base_sha: bool,
+        #[arg(
+            long = "on-duplicate",
+            value_enum,
+            default_value_t = OnDuplicate::Bump,
+            help = "Behaviour when a row's computed dedup_id already exists, including one an earlier row minted"
+        )]
+        on_duplicate: OnDuplicate,
         #[arg(
             long = "dry-run",
             help = "Preview the operation without writing. Emits a would_change summary; no file or sidecar touch."
