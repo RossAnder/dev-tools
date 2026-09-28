@@ -306,23 +306,29 @@ no non-risky transitions are pending — do not emit an empty `--ops` payload.
 
 ### Step 5a: Mechanical build/test verification
 
-Determine build and test commands from (a) CLAUDE.md's documented commands, (b) project root files
-(Cargo.toml, package.json, *.sln, Makefile, pyproject.toml). Ask the user if ambiguous.
+Determine build and test commands from (a) the resolved flow plan's `## Verification Commands`,
+(b) CLAUDE.md's documented commands, (c) project root files (Cargo.toml, package.json, *.sln,
+Makefile, pyproject.toml). Ask the user if ambiguous.
 
 Launch the `verification` agent **once** (`subagent_type: "verification"`) with the full ordered
 command list in a `commands:` field — build first, then tests, then any category-specific commands
-that fit its run-and-report contract. It runs them sequentially, short-circuits on the first
-`fail`, and returns one `command:` + `outcome:` block per attempted command (with `tail:` on
-failure and a `not_run:` line for the remainder). Do not restate the agent's reporting contract in
-the prompt — it lives in the agent's system prompt. One fan-in spawn is the supported pattern; N
-single-command spawns waste orchestrator round-trips and prompt-cache hits for ~9–20 s of work each.
+that fit its run-and-report contract — carrying each command's `timeout:` / `rerun:` options and
+any `transient:` patterns the plan's keys supply. It stops at the first `fail` or `timeout` and
+returns one block per attempted command (`outcome`, `exit`, `summary`, `failed_ids`, `log`), then a
+`not_run:` line. Do not restate the agent's contract in the prompt; one fan-in spawn is the
+supported pattern. **Never run a build or test command in the main conversation** — not to
+corroborate a pass, not to diagnose, not for fear of a slow suite: its output floods the
+orchestrator's context, and time budgets are the agent's to enforce. Judge each block per
+[Reading a verification result](references/verification.md#reading-a-verification-result).
 
 ### Failure handling
 
 On `outcome: fail`, **reason thoroughly to diagnose** in the main conversation. Read the affected
-file(s) using the agent-supplied tail, determine root cause, then fix directly or dispatch a
-targeted fix agent (`implement-deep` for non-trivial fixes, `implement-lite` if the fix is
-mechanical and the lite-eligibility gate would pass). Re-run Step 5a after each attempt.
+file(s) using the block's `tail:` and `failed_ids:` (and at most ~40 lines of its `log:`), determine
+root cause, then fix directly or dispatch a targeted fix agent (`implement-deep` for non-trivial
+fixes, `implement-lite` if the fix is mechanical and the lite-eligibility gate would pass).
+Re-dispatch Step 5a after each attempt. A `flaky` or `timeout` block is not a failure of the code;
+the reading rules say what each one costs.
 
 ### Verify agent-reported `applied` claims
 
@@ -378,8 +384,8 @@ completeness, and ensure the report reflects what was actually implemented, audi
   the ledger transition.
 
 ### Verification
-- Build: pass/fail
-- Tests: pass/fail/none
+- Build: pass/fail/timeout
+- Tests: pass/flaky/fail/timeout/none — with the block's `summary:` count
 - Category-specific: per the carrier's checks, as applicable
 
 ### Regressions Triggered
@@ -424,7 +430,8 @@ reason as the item's context.
 The orchestrator is the only writer here — cluster agents and the `verification` agent never touch
 the store. Each cluster agent closes its report with the fixed `TANGENTIAL:` heading, one
 `<kind> | <area> | <summary> | <context>` line per candidate or the single word `none`; the
-orchestrator collects those lines and runs the same gate on every entry that is not `none`.
+orchestrator collects those lines, plus every `TANGENTIAL: flaky-test` line a `flaky` verification
+block carried, and runs the same gate on every entry that is not `none`.
 
 ### Sync plan context
 

@@ -65,14 +65,13 @@ Reference existing codebase patterns and utilities that should be reused, with f
 ## Verification Commands
 [Build, test, and lint commands discovered during exploration.
 These are passed directly to `/implement` so the verification agent does not need to re-discover them.
-This heading and the fenced block below are PARSED, not read: `/implement` extracts them for
-Phase 3, `/tdd` halts without a `test:` line, and the `test-author` skill infers the project's
-framework from it. Do not rename the heading or unfence the block.
+This heading and the fenced block below are PARSED, not read: `/implement` extracts them for its
+checkpoint gates and Phase 3, the apply flows read them at Step 5, `/tdd` halts without a `test:`
+line, and the `test-author` skill infers the project's framework from it. Do not rename the
+heading or unfence the block.
 
 Anything the commands do not cover — integration or smoke passes, manual verification steps —
-goes in prose directly beneath the fence. It used to live in a separate `## Verification`
-section near the end of the plan, which restated the same build and test commands a second
-time and drifted from them.]
+goes in prose directly beneath the fence, never in a second command list.]
 
 ```
 build: <command>
@@ -80,7 +79,29 @@ test: <command>
 lint: <command>
 ```
 
-[Integration / smoke / manual steps, if any — prose, not a second command list.]
+[Optional keys, one per line in the same block. A key is the text before the first `:`, so a
+`test.rerun:` line is never the `test:` line.
+
+- `e2e: <command>` — the browser or end-to-end suite. Phase 3 runs it after `test:`; checkpoints skip it.
+- `coverage: <command>` — the coverage run `/tdd`'s REFACTOR gate reads.
+- `checkpoint: <command>` — repeatable, in order. The cheaper list `/implement` runs at each
+  checkpoint in place of `build:` + `test:` — a `--profile quick` run, an `@smoke` e2e subset.
+- `<key>.timeout: <seconds>` — that command's budget in the verification agent (default 540).
+  Set it on any suite that can run longer; an overrun reports `timeout`, not `fail`.
+- `<key>.rerun: <template>` — a narrow rerun of that command's failed tests at low parallelism,
+  with `{ids}` where the failed ids go, each single-quoted. A failure that passes on it reports
+  `flaky`. nextest: `cargo nextest run --manifest-path <crate>/Cargo.toml --no-fail-fast -j 1 -- --exact {ids}`;
+  libtest: `cargo test --manifest-path <crate>/Cargo.toml -- --exact --test-threads=1 {ids}`;
+  Playwright: `npx playwright test --last-failed --workers=1` (no `{ids}`);
+  vitest: `npx vitest run --no-file-parallelism {ids}`.
+- `transient: <regex>` — repeatable. An environmental failure signature (`rust-lld: failed to write
+  output.*[Pp]ermission denied`, `EADDRINUSE`, a browser-launch timeout); a command failing with a
+  match is retried once.
+
+Write each test command to collect every failure — `--no-fail-fast` for `cargo test` and nextest,
+which otherwise stop at the first failing binary or test — so one run names every failed id. A
+suite known to flake may carry its runner's own retry (nextest `--retries 1`, Playwright
+`--retries=1`); the verification agent reports a runner-retried pass as `flaky`.]
 
 ## Execution Policy
 [How `/implement` schedules dispatches and places commits for this plan.

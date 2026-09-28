@@ -1,15 +1,37 @@
 # Verification and ledger-mutation reference
 
-Detail behind Step 5 of the apply pipeline: the independent evidence the orchestrator requires
-before it trusts an agent's `applied` tag, the regression check against previously-applied
+Detail behind Step 5 of the apply pipeline: how the orchestrator judges each `verification` block,
+the independent evidence it requires before it trusts an agent's `applied` tag, the regression check against previously-applied
 findings, and the per-disposition ledger write with its secret scan, two-call pattern, and
 locking rules.
 
 ## Contents
 
+- [Reading a verification result](#reading-a-verification-result)
 - [Verify agent-reported `applied` claims](#verify-agent-reported-applied-claims)
 - [Regression cross-check](#regression-cross-check)
 - [Ledger mutation](#ledger-mutation)
+
+### Reading a verification result
+
+The `verification` agent reports; the orchestrator judges. Per block:
+
+- **`pass`** — trust it on `exit: 0`. A test command's `summary:` must also show at least one test
+  executed and none failed: `summary: none` or a zero count (`0 passed`, `No test files found`,
+  `no tests to run`) is a `fail`, because a filter matching nothing exits 0 in most runners. Where
+  `summary:` is `none` only because the agent does not parse that runner, Grep the block's `log:`
+  for the runner's count line before deciding.
+- **`flaky`** — a pass: the failed tests passed on the agent's narrow rerun or on the runner's own
+  retry. It consumes no fix-and-reverify cycle, reruns nothing, and is never a rollback trigger.
+  Add its `TANGENTIAL: flaky-test` lines to the Step 6 backlog harvest.
+- **`fail`** — a test command's block with 1–10 `failed_ids:` and no `rerun:` line had no template
+  to retry with: re-dispatch just those tests, at low parallelism, before diagnosing, and treat a
+  green result as `flaky`. Anything else goes to Failure handling.
+- **`timeout`** — the command outran its budget, so nothing is known about the code. Re-dispatch
+  that command with a larger `timeout:`, or split per crate, binary or shard, followed by the
+  `not_run:` tail; commands that already passed are not rerun. It consumes no fix cycle.
+
+After a code fix the whole list reruns — the fix voids the earlier passes.
 
 ### Verify agent-reported `applied` claims
 

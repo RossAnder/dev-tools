@@ -1,16 +1,16 @@
 ---
 name: flow-contract-apply-rollback-protocol
-description: "Canonical apply-rollback-protocol contract for the apply-flow carriers (/optimise-apply, /review-apply) — defines the Step 5.5 rollback protocol that fires when Step 5 verification fails: the trigger conditions (build failure on a touched file, out-of-scope test regression, applied-claim-without-diff), the seven-step revert sequence (collect touched paths, stash with `-u`, restore tracked files, scope-clamped `git clean` of declared untracked files, reverse ledger transitions back to `open` with `rollback_rationale`, append a `[[rollback_events]]` entry, surface a `### Rollback` callout), the interactive/non-interactive confirmation prompts, and the safety constraints (only this-run transitions, re-derive paths from git diff, never bypass the stash, never auto-retry). Consult before reverting any apply-flow batch or appending a rollback event to a review/optimise ledger."
+description: "Canonical apply-rollback-protocol contract for the apply-flow carriers (/optimise-apply, /review-apply) — defines the Step 5.5 rollback protocol that fires when Step 5 verification fails: the trigger conditions (build failure on a touched file, an out-of-scope test regression that reproduces on a narrow rerun — never a `flaky` or `timeout` outcome — and applied-claim-without-diff), the seven-step revert sequence (collect touched paths, stash with `-u`, restore tracked files, scope-clamped `git clean` of declared untracked files, reverse ledger transitions back to `open` with `rollback_rationale`, append a `[[rollback_events]]` entry, surface a `### Rollback` callout), the interactive/non-interactive confirmation prompts, and the safety constraints (only this-run transitions, re-derive paths from git diff, never bypass the stash, never auto-retry). Consult before reverting any apply-flow batch or appending a rollback event to a review/optimise ledger."
 ---
 
 ## Step 5.5: Rollback protocol
 
 ### Triggers
 
-Rollback fires when Step 5 verification fails AND any of:
+Rollback fires when Step 5 verification returns `outcome: fail` AND any of:
 
 1. **Build failure on a file this run touched** — compile error, type error, linker error on a path in the union of `git diff --name-only HEAD`, `--cached`, and `git ls-files --others --exclude-standard`.
-2. **Test regression outside the finding-ledger scope** — a test file that isn't in any selected item's `file` field now fails (tests that weren't supposed to change but were).
+2. **Test regression outside the finding-ledger scope** — a test file that isn't in any selected item's `file` field now fails, and the failure reproduces: the verification agent's `rerun:` line still exits non-zero, or, where no rerun ran, a re-dispatch narrowed to the block's `failed_ids` fails again. A `flaky` outcome is never a trigger — it is load or timing, not this run's edit. Neither is a `timeout` on its own; Step 5 re-dispatches it with a larger budget or split.
 3. **Applied claim without matching diff** — an agent emitted an `applied <id>` tag but the diff-reconciliation in Step 5 found no matching entry; the agent forged the tag.
 
 Only transitions from THIS run are eligible for rollback. Items resolved in previous runs are never touched.

@@ -55,7 +55,7 @@ legacy_id = "D3"
 | Type | Required fields (in addition to the always-required five) |
 |------|-----------------------------------------------------------|
 | `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`, `dispatch_tier` ∈ {`lite`, `deep`}, `dispatch_agent` ∈ {`implement-lite`, `implement-deep`}; `commits[]` OPTIONAL (see note below) |
-| `verification` | `command`, `outcome` ∈ {`pass`, `fail`} |
+| `verification` | `command`, `outcome` ∈ {`pass`, `fail`, `timeout`, `flaky`} (`flaky`: the failed tests passed on a narrow rerun or the runner's retry — green; `timeout`: the command outran its budget — neither green nor evidence against the code); optional `duration_s` (integer), `failed_ids[]` (at most 20). Never a log path — the agent's log is machine-local scratch |
 | `deviation` | `original_intent`, `rationale`, `commits[]`; optional `supersedes_entry = "E<n>"`; optional `legacy_id = "D<n>"` (populated by `migrate`) |
 | `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |
 | `reconcile` | `direction` ∈ {`forward`, `reverse`}, `findings_count`, `commits_checked[]` |

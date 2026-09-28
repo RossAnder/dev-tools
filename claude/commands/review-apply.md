@@ -64,10 +64,10 @@ Complete and copy-pasteable as-is — do NOT look up `--help`. `--require-artifa
 
 **Category-specific verification (Step 5a)** — add to the `commands:` list where they fit the verification agent's run-and-report contract:
 
-- `security` — a vulnerability scanner if one is on PATH (absent → skip silently and note it); `npm audit` is advisory only, never a hard gate (known false-positive rate on dev-only transitives); grep the staged diff for `AKIA`, `-----BEGIN`, `password\s*=`; confirm input-validation findings gained test coverage (post-apply count ≥ pre-apply). Pre-existing audit findings unrelated to files touched in this run are informational, not blocking.
+- `security` — a vulnerability scanner if one is on PATH (absent → skip silently and note it); `npm audit` is advisory only, never a hard gate (known false-positive rate on dev-only transitives); grep the staged diff for `AKIA`, `-----BEGIN`, `password\s*=`; confirm input-validation findings gained test coverage (the diff adds tests exercising them). Pre-existing audit findings unrelated to files touched in this run are informational, not blocking.
 - `db` — migration dry-run when migrations were touched (use CLAUDE.md's documented command; absent → warn and proceed); reject unreviewed destructive `DROP` / `ALTER` without a down-path.
 - `architecture` — the project's module / layer linter if configured (absent → skip silently). `dependency-check` is a security scanner, not an architecture linter.
-- `quality` / `completeness` — build + relevant tests. For `completeness`, report pre-apply vs post-apply test counts in the summary's `### Verification` block.
+- `quality` / `completeness` — build + relevant tests. For `completeness`, report in the summary's `### Verification` block the test block's `summary:` count and the tests this run's diff added; no pre-apply suite run exists to compare against, and none is started to get one.
 
 **Final summary** — title `## Applied Review Fixes`; the `### Verified Clean` sub-section is live for this carrier.
 
