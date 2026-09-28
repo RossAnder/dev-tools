@@ -21,7 +21,7 @@ use anyhow::Result;
 use super::finding::{Finding, WARNING, join_ids};
 use super::graph::{Graph, Group, nodes_of};
 use super::markdown::{insert_section_after, insert_section_before, replace_section, sections};
-use super::parse_tasks::parse_files;
+use super::parse_tasks::{note_held_spans, parse_files};
 use super::schema::{BacklogLink, Checkpoint, Policy, Store, TaskRow};
 
 /// The sections `render` owns; every other byte of the plan is preserved.
@@ -323,8 +323,8 @@ fn backlog(link: &BacklogLink) -> String {
 }
 
 /// Each path with the annotation the plan wrote against it, on one comma list
-/// when the importer reads that line back to the same paths and notes, and as
-/// one bullet per path when it does not. A ` — ` note has no closing mark, so
+/// when the importer reads that line back to the same paths and notes without
+/// a `plan/files-span-unclaimed` warning, and as one bullet per path otherwise. A ` — ` note has no closing mark, so
 /// on one line the importer can swallow the path after it (`Makefile`) as its
 /// prose; a bullet ends every note at the end of its own line.
 fn files_field(store: &Store, row: &TaskRow) -> String {
@@ -353,7 +353,8 @@ fn files_field(store: &Store, row: &TaskRow) -> String {
 
     let line = entries.join(", ");
     let (read_files, read_notes) = parse_files(std::slice::from_ref(&line));
-    if read_files == row.files && read_notes == notes {
+    let slice = std::slice::from_ref(&line);
+    if read_files == row.files && read_notes == notes && note_held_spans(slice).is_empty() {
         return format!("- **Files**: {line}\n");
     }
     let mut out = String::from("- **Files**:\n");
@@ -813,6 +814,20 @@ mod tests {
             render_into_plan(&reimported, &plan).expect("re-renders"),
             plan
         );
+    }
+
+    /// A note whose prose names a backticked identifier after a comma reads
+    /// back whole on one line, but would warn at every import.
+    #[test]
+    fn a_note_that_would_warn_on_one_line_renders_as_a_bulleted_list() {
+        let store = with_files(&["a.rs", "b.rs"], &[("a.rs", "— touches `foo`, `bar` too")]);
+        let plan = render_into_plan(&store, PLAN).expect("renders");
+        assert!(
+            plan.contains("- **Files**:\n  - `a.rs` — touches `foo`, `bar` too\n  - `b.rs`\n"),
+            "{plan}"
+        );
+        let parsed = parse_tasks_at(&section(&plan, "Tasks"), 1).expect("tasks parse");
+        assert!(parsed.findings.is_empty(), "{:?}", parsed.findings);
     }
 
     #[test]

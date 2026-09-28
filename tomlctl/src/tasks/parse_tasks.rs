@@ -25,7 +25,7 @@ use std::sync::OnceLock;
 use anyhow::{Result, bail};
 use regex::Regex;
 
-use super::finding::{Finding, WARNING};
+use super::finding::{Finding, WARNING, quoted_list};
 use super::markdown::FenceState;
 use super::schema::Effort;
 
@@ -100,7 +100,7 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Pa
         }
 
         if !fenced && line.starts_with('#') {
-            close_field(current.as_mut(), open.take())?;
+            close_field(current.as_mut(), open.take(), &mut findings)?;
             pending_blank = false;
             tasks.extend(current.take());
             match open_heading(line, line_no)? {
@@ -127,7 +127,7 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Pa
             && let Some(caps) = field_re().captures(line)
             && current.is_some()
         {
-            close_field(current.as_mut(), open.take())?;
+            close_field(current.as_mut(), open.take(), &mut findings)?;
             pending_blank = false;
             let label = caps.get(1).map_or("", |m| m.as_str());
             let inline = caps.get(2).map_or("", |m| m.as_str()).trim_end();
@@ -161,7 +161,7 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Pa
             }
             field.lines.push(rest.to_string());
         } else {
-            close_field(current.as_mut(), open.take())?;
+            close_field(current.as_mut(), open.take(), &mut findings)?;
             pending_blank = false;
         }
     }
@@ -174,7 +174,7 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Pa
         );
     }
 
-    close_field(current.as_mut(), open.take())?;
+    close_field(current.as_mut(), open.take(), &mut findings)?;
     tasks.extend(current.take());
     Ok(ParsedTasks { tasks, findings })
 }
@@ -291,7 +291,11 @@ fn phase_label(line: &str) -> Option<&str> {
     (!label.is_empty()).then_some(label)
 }
 
-fn close_field(task: Option<&mut ParsedTask>, open: Option<OpenField>) -> Result<()> {
+fn close_field(
+    task: Option<&mut ParsedTask>,
+    open: Option<OpenField>,
+    findings: &mut Vec<Finding>,
+) -> Result<()> {
     let (Some(task), Some(open)) = (task, open) else {
         return Ok(());
     };
@@ -303,6 +307,7 @@ fn close_field(task: Option<&mut ParsedTask>, open: Option<OpenField>) -> Result
 
     match kind {
         Field::Files => {
+            findings.extend(files_span_unclaimed(task, line_no, &lines));
             let (files, notes) = parse_files(&lines);
             task.files = files;
             task.file_notes = notes;
@@ -382,7 +387,18 @@ fn split_entries_resuming(
     separates: impl Fn(char) -> bool,
     resume: Option<fn(&str) -> bool>,
 ) -> Vec<&str> {
+    scan_entries(line, separates, resume).0
+}
+
+/// The entries, and the backticked span opening the text after each separator
+/// `resume` declined to end an annotation at.
+fn scan_entries(
+    line: &str,
+    separates: impl Fn(char) -> bool,
+    resume: Option<fn(&str) -> bool>,
+) -> (Vec<&str>, Vec<&str>) {
     let mut entries = Vec::new();
+    let mut declined = Vec::new();
     let mut start = 0;
     let mut depth = 0u32;
     let mut quoted = false;
@@ -399,29 +415,68 @@ fn split_entries_resuming(
             '(' => depth += 1,
             ')' => depth = depth.saturating_sub(1),
             _ if depth > 0 => {}
-            _ if separates(ch)
-                && (!annotated
-                    || resume
-                        .is_some_and(|opens| opens(line[at + ch.len_utf8()..].trim_start()))) =>
-            {
-                entries.push(&line[start..at]);
-                start = at + ch.len_utf8();
-                annotated = false;
+            _ if separates(ch) => {
+                let rest = line[at + ch.len_utf8()..].trim_start();
+                if !annotated || resume.is_some_and(|opens| opens(rest)) {
+                    entries.push(&line[start..at]);
+                    start = at + ch.len_utf8();
+                    annotated = false;
+                } else if let Some(span) = leading_span(rest) {
+                    declined.push(span);
+                }
             }
             _ if !annotated && line[at..].starts_with(NOTE_DASH) => annotated = true,
             _ => {}
         }
     }
     entries.push(&line[start..]);
-    entries
+    (entries, declined)
+}
+
+/// The non-empty backticked span `rest` opens on.
+fn leading_span(rest: &str) -> Option<&str> {
+    rest.strip_prefix('`')
+        .and_then(|inner| inner.split_once('`'))
+        .map(|(span, _)| span)
+        .filter(|span| !span.is_empty())
 }
 
 /// A backticked span holding a `/` or `.`. A backticked bare identifier after
 /// the comma is the annotation's own prose, not a path.
 fn opens_on_path(rest: &str) -> bool {
-    rest.strip_prefix('`')
-        .and_then(|inner| inner.split_once('`'))
-        .is_some_and(|(span, _)| span.contains(['/', '.']))
+    leading_span(rest).is_some_and(|span| span.contains(['/', '.']))
+}
+
+/// Backticked spans a comma-list `Files` line kept inside a dash note. The
+/// parse reads each as prose, so an extensionless path written there —
+/// `Makefile` — claims no file and drops out of overlap scheduling unseen.
+pub(crate) fn note_held_spans(lines: &[String]) -> Vec<&str> {
+    lines
+        .iter()
+        .map(|line| line.trim())
+        .filter(|line| !bullet_re().is_match(line))
+        .flat_map(|line| scan_entries(line, |ch| ch == ',', Some(opens_on_path)).1)
+        .collect()
+}
+
+fn files_span_unclaimed(task: &ParsedTask, line_no: usize, lines: &[String]) -> Option<Finding> {
+    let spans = note_held_spans(lines);
+    if spans.is_empty() {
+        return None;
+    }
+    Some(Finding {
+        class: "plan/files-span-unclaimed",
+        severity: WARNING,
+        ids: vec![task.id],
+        detail: format!(
+            "line {line_no}: task {} \"{}\" — the `Files` note carries {} after a comma, \
+             which reads as the note's prose and claims no file. If it is a path, list the \
+             files as a bulleted sub-list, one path per line; if it is prose, reword the note",
+            task.id,
+            task.title,
+            quoted_list(&spans, "")
+        ),
+    })
 }
 
 /// A `Backlog` entry — an optional `refs `, then an id, backticked or bare,
@@ -908,6 +963,35 @@ cargo test
         let task = &parse_tasks(body).expect("parses")[0];
         assert_eq!(task.files, vec!["src/a.rs", "src/b.rs", "Cargo.toml"]);
         assert_eq!(task.file_notes, vec!["— extend `Row`", "— mirror it", ""]);
+    }
+
+    /// The claim stays dropped, so the warning is the one trace an
+    /// extensionless path in a dash note leaves.
+    #[test]
+    fn a_non_path_span_after_a_comma_in_a_dash_note_warns() {
+        let body = "### 3. Wire the build [S]\n- **Files**: `a.rs` — note, `Makefile`\n";
+        let parsed = parse_tasks_at(body, 20).expect("parses");
+        assert_eq!(parsed.tasks[0].files, vec!["a.rs"]);
+        assert_eq!(parsed.findings.len(), 1, "{:?}", parsed.findings);
+
+        let finding = &parsed.findings[0];
+        assert_eq!(finding.class, "plan/files-span-unclaimed");
+        assert_eq!(finding.severity, WARNING);
+        assert_eq!(finding.ids, vec![3]);
+        for fragment in ["line 21", "Wire the build", "`Makefile`", "bulleted"] {
+            assert!(finding.detail.contains(fragment), "{fragment}: {finding:?}");
+        }
+
+        for quiet in [
+            "- **Files**: `a.rs` — extend it, then the SELECT",
+            "- **Files**: `a.rs` — extend `Row`, `b.rs` — mirror it",
+            "- **Files**: `a.rs`, `Makefile`, `src/b.rs`",
+            "- **Files**:\n  - `a.rs` — note, `Makefile`",
+        ] {
+            let body = format!("### 3. Wire the build [S]\n{quiet}\n");
+            let parsed = parse_tasks_at(&body, 1).expect("parses");
+            assert!(parsed.findings.is_empty(), "{quiet}: {:?}", parsed.findings);
+        }
     }
 
     #[test]
