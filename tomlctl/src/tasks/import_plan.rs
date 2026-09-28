@@ -26,7 +26,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use toml::Value as TomlValue;
 
-use super::backlog_refs::{backlog_findings, load_backlog};
+use super::backlog_refs::linked_backlog_findings;
 use super::finding::{ERROR, Finding, NO_TASK, WARNING, task_list};
 use super::graph::{Graph, nodes_of};
 use super::markdown::sections;
@@ -137,15 +137,6 @@ pub(crate) fn import_plan(
         refuse_on_errors(&outcome.findings)?;
         Ok(outcome)
     })
-}
-
-/// Reads `.claude/backlog.toml` only when the store links to an item, so a
-/// link-free store never depends on the backlog parsing.
-pub(super) fn linked_backlog_findings(store: &Store, flow: Option<&str>) -> Result<Vec<Finding>> {
-    if store.backlog_links.is_empty() {
-        return Ok(Vec::new());
-    }
-    Ok(backlog_findings(store, &load_backlog()?, flow))
 }
 
 fn with_backlog_findings(

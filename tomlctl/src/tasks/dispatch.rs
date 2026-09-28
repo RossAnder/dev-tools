@@ -22,8 +22,8 @@ use super::closure::{Direction, Target};
 use super::finding::Finding;
 use super::schema::Store;
 use super::{
-    add, batches, check, closure, edges, import_plan, list, ready, remove, render, show, store,
-    update,
+    add, backlog_refs, batches, check, closure, edges, import_plan, list, ready, remove, render,
+    show, store, update,
 };
 use crate::cli::TasksOp;
 use crate::errors::{ErrorKind, tagged_err};
@@ -245,7 +245,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let store = store::load(&path, &integrity)?;
             let mut findings = check::check(&store, &in_flight);
-            findings.extend(import_plan::linked_backlog_findings(
+            findings.extend(backlog_refs::linked_backlog_findings(
                 &store,
                 target.slug.as_deref(),
             )?);
