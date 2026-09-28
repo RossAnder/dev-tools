@@ -14,10 +14,9 @@ use common::{
     QUERY_FIXTURE, cli, parse_json_error_envelope, run_list_query, run_list_query_with, seed_ledger,
 };
 
-/// Read-only subcommands (`parse`, `get`, `validate`, `items list`,
-/// `items get`, `items find-duplicates`, `items orphans`, `items next-id`,
-/// `items clusters`) must NOT expose the write-side integrity flags (`--allow-outside`,
-/// `--no-write-integrity`, `--strict-integrity`). They still accept
+/// Read-only subcommands (the `read_subs` list below) must NOT expose the
+/// write-side integrity flags (`--allow-outside`, `--no-write-integrity`,
+/// `--strict-integrity`). They still accept
 /// `--verify-integrity` because that's the only read-side integrity
 /// concept, and each must list the whole read bundle — a read path that
 /// resolves its own file instead of going through the shared read seam
