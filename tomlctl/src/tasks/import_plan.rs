@@ -32,8 +32,8 @@ use super::markdown::sections;
 use super::parse_policy::{Marker, ParsedPolicy, parse_markers, parse_policy};
 use super::parse_tasks::{ParsedTask, parse_tasks_at};
 use super::schema::{
-    Checkpoint, Effort, FileNote, ImportOverride, POLICY_ORIGIN_DEFAULT, POLICY_ORIGIN_PLAN,
-    Policy, Status, Store, TaskRow,
+    BacklogLink, Checkpoint, Effort, FileNote, ImportOverride, POLICY_ORIGIN_DEFAULT,
+    POLICY_ORIGIN_PLAN, Policy, Status, Store, TaskRow,
 };
 use super::{check, slug, store};
 use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
@@ -270,6 +270,7 @@ impl Import {
 
         store.import_overrides = surviving_overrides(store, &rows, &reconciled.refs, &overridden);
         store.file_notes = surviving_file_notes(store, &rows, tasks, &reconciled.refs);
+        store.backlog_links = backlog_links(tasks, &reconciled.refs);
         store.items = rows;
         store.checkpoints = markers
             .iter()
@@ -814,6 +815,21 @@ fn surviving_file_notes(
         }
     }
     out
+}
+
+/// Plan-owned whole: unlike a file note, a row the plan no longer names keeps
+/// no link, since only the plan's `Backlog` bullet states one.
+fn backlog_links(tasks: &[ParsedTask], imported_refs: &[String]) -> Vec<BacklogLink> {
+    tasks
+        .iter()
+        .zip(imported_refs.iter())
+        .filter(|(task, _)| !task.backlog_closes.is_empty() || !task.backlog_refs.is_empty())
+        .map(|(task, r#ref)| BacklogLink {
+            r#ref: r#ref.clone(),
+            closes: task.backlog_closes.clone(),
+            refs: task.backlog_refs.clone(),
+        })
+        .collect()
 }
 
 /// Markers in document order, each claiming the dependency closure of its
@@ -2278,6 +2294,32 @@ mod tests {
                 .expect_err("an error-class finding refuses the write")
                 .to_string();
             assert!(message.contains("multi-file"), "{message}");
+        });
+    }
+
+    #[test]
+    fn backlog_links_are_rebuilt_from_the_plan_on_every_import() {
+        with_root(|root| {
+            let linked = write_plan(
+                root,
+                &PLAN.replace(
+                    "- **Action**: Seed it.",
+                    "- **Action**: Seed it.\n- **Backlog**: B-aaaa1111, refs B-bbbb2222",
+                ),
+            );
+            import(&request(&linked, true, false));
+            assert_eq!(
+                loaded(root).backlog_links,
+                vec![BacklogLink {
+                    r#ref: "seed-the-store".to_string(),
+                    closes: vec!["B-aaaa1111".to_string()],
+                    refs: vec!["B-bbbb2222".to_string()],
+                }]
+            );
+
+            let unlinked = write_plan(root, PLAN);
+            import(&request(&unlinked, true, false));
+            assert!(loaded(root).backlog_links.is_empty());
         });
     }
 
