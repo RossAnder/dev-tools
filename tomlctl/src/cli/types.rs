@@ -1188,10 +1188,22 @@ pub(crate) enum BacklogOp {
         ids: Vec<String>,
         #[command(flatten)]
         mode: TriageMode,
-        /// Flow slug or repo-relative plan path, stored verbatim. Nothing is
-        /// generated from it.
+        /// Flow slug or repo-relative plan path. Must name an existing flow
+        /// or plan; a plan some flow binds is stored as that flow's slug.
         #[arg(long = "to", value_name = "REF")]
         to: Option<String>,
+        #[arg(
+            long,
+            requires = "promote",
+            help = "Store --to as `external:<REF>` without resolving it"
+        )]
+        external: bool,
+        #[arg(
+            long = "allow-closed",
+            requires = "promote",
+            help = "Accept a --to flow at `review` or `complete`"
+        )]
+        allow_closed: bool,
         #[arg(long, value_name = "TEXT", help = "Companion to --dismiss")]
         reason: Option<String>,
         #[arg(long, value_name = "TEXT", help = "Companion to --resolve")]

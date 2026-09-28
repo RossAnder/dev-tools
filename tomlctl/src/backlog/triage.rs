@@ -16,6 +16,7 @@ use serde_json::json;
 use toml::Value as TomlValue;
 
 use super::schema::{self, FIELD_LAST_UPDATED};
+use super::target::{Resolver, Target};
 use crate::cli::{TriageMode, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
@@ -229,6 +230,44 @@ fn apply_transition(
     Ok(())
 }
 
+/// The `promoted_to` value for a `--to` argument. A value already spelled
+/// `external:<text>` passes without `external`, and is not prefixed twice
+/// with it.
+fn promotion_target(
+    resolver: &Resolver,
+    raw: &str,
+    external: bool,
+    allow_closed: bool,
+) -> Result<String> {
+    let target = match resolver.resolve(raw) {
+        t @ Target::External(_) => t,
+        _ if external => Target::External(raw.to_string()),
+        Target::Unknown(v) => {
+            return Err(tagged_err(
+                ErrorKind::NotFound,
+                None,
+                format!(
+                    "no flow or plan `{v}` — bootstrap a draft seed flow \
+                     (see /backlog) or pass --external"
+                ),
+            ));
+        }
+        t => t,
+    };
+    if let Target::Flow { slug, status, .. } = &target
+        && target.is_closed()
+        && !allow_closed
+    {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("flow `{slug}` is at `{status}`; pass --allow-closed to promote into it"),
+        ));
+    }
+    Ok(target.stored_value())
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn dispatch(
     ids: Vec<String>,
     mode: TriageMode,
@@ -236,9 +275,21 @@ pub(crate) fn dispatch(
     reason: Option<String>,
     resolution: Option<String>,
     rationale: Option<String>,
+    external: bool,
+    allow_closed: bool,
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
     let transition = Transition::from_cli(mode, to, reason, resolution, rationale)?;
+    let root = repo_or_cwd_root()?;
+    let transition = match transition {
+        Transition::Promote(raw) => Transition::Promote(promotion_target(
+            &Resolver::new(&root)?,
+            &raw,
+            external,
+            allow_closed,
+        )?),
+        other => other,
+    };
     let path = schema::backlog_path()?;
     let today = crate::time::today_toml_date()?;
     let opts = write_integrity_opts(&integrity);
@@ -247,12 +298,16 @@ pub(crate) fn dispatch(
         apply_transition(doc, &ids, &transition, today)
     })?;
     warn_if_created(&path, created);
-    print_json_compact(&json!({
+    let mut out = json!({
         "ok": true,
         "transition": transition.name(),
         "ids": ids,
-        "path": relativise(&repo_or_cwd_root()?, &path),
-    }))
+        "path": relativise(&root, &path),
+    });
+    if let Transition::Promote(to) = &transition {
+        out["to"] = json!(to);
+    }
+    print_json_compact(&out)
 }
 
 #[cfg(test)]
@@ -779,6 +834,8 @@ compacted_on = 2026-06-01
                 None,
                 None,
                 None,
+                false,
+                false,
                 write_args(),
             )
             .unwrap_err();
@@ -804,6 +861,8 @@ compacted_on = 2026-06-01
                 Some("sweep".into()),
                 None,
                 None,
+                false,
+                false,
                 write_args(),
             )
             .unwrap_err();
@@ -824,6 +883,8 @@ compacted_on = 2026-06-01
                 None,
                 Some("fixed in 960677b".into()),
                 None,
+                false,
+                false,
                 write_args(),
             )
             .unwrap();
@@ -843,5 +904,86 @@ compacted_on = 2026-06-01
         );
         assert_valid(&doc, "B-bbbbbbbb");
         assert!(sidecar);
+    }
+
+    fn seed_flow(root: &Path, slug: &str, status: &str) {
+        crate::test_support::write(
+            root,
+            &format!(".claude/flows/{slug}/context.toml"),
+            format!("status = \"{status}\"\nplan_path = \"docs/plans/{slug}.md\"\n").as_bytes(),
+        );
+    }
+
+    /// Promote `B-aaaaaaaa` through `dispatch` and read back its `promoted_to`.
+    fn promote(root: &Path, to: &str, external: bool, allow_closed: bool) -> Result<String> {
+        dispatch(
+            ids(&["B-aaaaaaaa"]),
+            mode("promote"),
+            Some(to.into()),
+            None,
+            None,
+            None,
+            external,
+            allow_closed,
+            write_args(),
+        )?;
+        let text = std::fs::read_to_string(root.join(".claude").join("backlog.toml")).unwrap();
+        let doc: TomlValue = toml::from_str(&text).unwrap();
+        Ok(row(&doc, "B-aaaaaaaa")
+            .get(schema::FIELD_PROMOTED_TO)
+            .and_then(TomlValue::as_str)
+            .unwrap()
+            .to_string())
+    }
+
+    #[test]
+    fn an_unknown_promotion_target_is_not_found_and_writes_nothing() {
+        let (err, bytes) = with_root(|root| {
+            let file = seed(root);
+            let err = promote(root, "task-store-polish", false, false).unwrap_err();
+            (err, std::fs::read(&file).unwrap())
+        });
+        assert_eq!(kind_of(&err), "not_found", "{err:#}");
+        assert!(format!("{err:#}").contains("--external"), "{err:#}");
+        assert_eq!(bytes, STORE.as_bytes());
+    }
+
+    #[test]
+    fn external_stores_the_prefixed_value_exactly_once() {
+        with_root(|root| {
+            seed(root);
+            assert_eq!(
+                promote(root, "task-store-polish", true, false).unwrap(),
+                "external:task-store-polish"
+            );
+            assert_eq!(
+                promote(root, "external:GH-12", true, false).unwrap(),
+                "external:GH-12"
+            );
+        });
+    }
+
+    #[test]
+    fn a_closed_flow_is_refused_unless_allow_closed() {
+        with_root(|root| {
+            seed(root);
+            seed_flow(root, "parked", "review");
+            let err = promote(root, "parked", false, false).unwrap_err();
+            assert_eq!(kind_of(&err), "validation", "{err:#}");
+            assert!(format!("{err:#}").contains("`review`"), "{err:#}");
+            assert_eq!(promote(root, "parked", false, true).unwrap(), "parked");
+        });
+    }
+
+    #[test]
+    fn a_bound_plan_path_is_stored_as_its_flow_slug() {
+        with_root(|root| {
+            seed(root);
+            seed_flow(root, "alpha", "in-progress");
+            assert_eq!(
+                promote(root, "docs/plans/alpha.md", false, false).unwrap(),
+                "alpha"
+            );
+        });
     }
 }
