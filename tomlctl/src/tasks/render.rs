@@ -21,7 +21,7 @@ use anyhow::Result;
 use super::finding::{Finding, WARNING, join_ids};
 use super::graph::{Graph, Group, nodes_of};
 use super::markdown::{insert_section_after, insert_section_before, replace_section, sections};
-use super::schema::{Checkpoint, Policy, Store, TaskRow};
+use super::schema::{BacklogLink, Checkpoint, Policy, Store, TaskRow};
 
 /// The sections `render` owns; every other byte of the plan is preserved.
 pub(crate) const SECTION_TITLES: [&str; 3] = ["Execution Policy", "Tasks", "Dependency Graph"];
@@ -213,6 +213,9 @@ fn render_tasks(store: &Store) -> String {
         ));
         body.push_str(&format!("- **Files**: {}\n", file_list(store, row)));
         body.push_str(&format!("- **Depends on**: {}\n", depends_on(row)));
+        if let Some(link) = store.links_for(&row.r#ref) {
+            body.push_str(&format!("- **Backlog**: {}\n", backlog(link)));
+        }
         for (label, text) in [
             ("Action", &row.action),
             ("Detail", &row.detail),
@@ -305,6 +308,17 @@ fn depends_on(row: &TaskRow) -> String {
     } else {
         format!("{list} ({note})")
     }
+}
+
+/// `refs` qualifies only the entry it prefixes, so each referenced id carries
+/// its own.
+fn backlog(link: &BacklogLink) -> String {
+    link.closes
+        .iter()
+        .cloned()
+        .chain(link.refs.iter().map(|id| format!("refs {id}")))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn file_list(store: &Store, row: &TaskRow) -> String {
@@ -440,7 +454,7 @@ fn lf(src: &str) -> String {
 mod tests {
     use super::*;
     use crate::tasks::parse_policy::{Marker, parse_markers, parse_policy};
-    use crate::tasks::parse_tasks::parse_tasks_at;
+    use crate::tasks::parse_tasks::{parse_tasks, parse_tasks_at};
     use crate::tasks::schema::{DEFAULT_HEADING_DEPTH, Effort, FileNote, Status};
     use crate::tasks::slug::derive_ref;
 
@@ -906,6 +920,28 @@ mod tests {
             "the correction mixed the line endings"
         );
         assert_eq!(lf(&crlf), plan);
+    }
+
+    #[test]
+    fn a_backlog_link_renders_on_its_row_and_re_parses_to_the_same_lists() {
+        let mut store = fixture();
+        store.backlog_links = vec![BacklogLink {
+            r#ref: derive_ref("Build the graph engine"),
+            closes: vec!["B-1".to_string(), "B-3".to_string()],
+            refs: vec!["B-2".to_string(), "B-4".to_string()],
+        }];
+        let plan = render_into_plan(&store, PLAN).expect("renders");
+        assert!(
+            plan.contains("- **Depends on**: 1\n- **Backlog**: B-1, B-3, refs B-2, refs B-4\n"),
+            "{plan}"
+        );
+        assert_eq!(plan.matches("**Backlog**").count(), 1, "{plan}");
+
+        let parsed = parse_tasks(&section(&plan, "Tasks")).expect("tasks parse");
+        assert_eq!(parsed[1].backlog_closes, store.backlog_links[0].closes);
+        assert_eq!(parsed[1].backlog_refs, store.backlog_links[0].refs);
+        assert!(parsed[0].backlog_closes.is_empty() && parsed[0].backlog_refs.is_empty());
+        assert_eq!(render_into_plan(&store, &plan).expect("re-renders"), plan);
     }
 
     #[test]

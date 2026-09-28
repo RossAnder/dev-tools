@@ -75,6 +75,12 @@ pub(crate) fn show(store: &Store, id: u32, parts: &[ShowPart]) -> Result<JsonVal
     {
         out.insert("import_override".to_string(), stamp(entry));
     }
+    if let Some(link) = store.links_for(&row.r#ref) {
+        out.insert(
+            "backlog".to_string(),
+            json!({"closes": link.closes, "refs": link.refs}),
+        );
+    }
     Ok(JsonValue::Object(out))
 }
 
@@ -144,7 +150,7 @@ fn dependents(store: &Store, id: u32) -> Result<Vec<JsonValue>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::schema::{DEFAULT_HEADING_DEPTH, Effort, Status};
+    use crate::tasks::schema::{BacklogLink, DEFAULT_HEADING_DEPTH, Effort, Status};
 
     fn row(id: u32, title: &str, needs: &[u32], coupling: &[u32]) -> TaskRow {
         TaskRow {
@@ -318,6 +324,26 @@ mod tests {
         let out = show(&store, 12, &[ShowPart::Deps]).expect("task 12 shows");
         assert!(out["deps"][0].get("import_override").is_none(), "{out}");
         assert!(out.get("import_override").is_none(), "{out}");
+    }
+
+    #[test]
+    fn a_linked_row_carries_its_backlog_link_and_an_unlinked_row_none() {
+        let mut store = fixture();
+        store.backlog_links = vec![BacklogLink {
+            r#ref: "task-12".to_string(),
+            closes: vec!["B-1".to_string()],
+            refs: vec!["B-2".to_string()],
+        }];
+
+        let out = show(&store, 12, &[ShowPart::Body]).expect("task 12 shows");
+        assert_eq!(
+            out["backlog"],
+            json!({"closes": ["B-1"], "refs": ["B-2"]}),
+            "{out}"
+        );
+
+        let unlinked = show(&store, 13, &[]).expect("task 13 shows");
+        assert!(unlinked.get("backlog").is_none(), "{unlinked}");
     }
 
     #[test]
