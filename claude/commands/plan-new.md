@@ -1,6 +1,6 @@
 ---
 description: Create a structured implementation plan using parallel exploration, research, and design — feeds into /review-plan, /implement, /plan-update
-argument-hint: [task description, design doc path, or feature name]
+argument-hint: [task description, design doc path, or feature name] [--backlog [seed-slug]]
 ---
 
 # /plan-new — structured implementation plan creation
@@ -36,12 +36,28 @@ Gate: fire ONLY when `envelope.plans_directory == null`. When non-null, skip —
 
 1. If not already in plan mode, call `EnterPlanMode`.
 2. Parse `$ARGUMENTS`: read an existing file path for requirements context; note a feature/area name as the exploration target; extract requirements/constraints from a task description; ask the user what to plan when empty.
-3. **Scope assessment** — before exploration, estimate scope (modules touched, bundled concerns). Propose splitting when ANY hold: (a) features could ship independently; (b) ≥4 unrelated modules with no shared refactoring; (c) combines a refactor and a new feature. When any holds, ask via `AskUserQuestion` before investing in exploration.
-4. **Requirements check** — if scope or intent is fundamentally unclear (unspecified target file, ambiguous boundary, conflicting requirements), ask now via `AskUserQuestion` before spending exploration budget. Design-shaping questions are deferred to Phase 4; do not pre-empt them here.
+3. **Backlog seed (`--backlog [<seed-slug>]`)** — when `$ARGUMENTS` carries `--backlog`, the plan's input is a seed flow: a draft flow whose stub plan carries the marker line `<!-- backlog-seed -->` and whose backlog items were promoted before anyone planned them. Invoke the `backlog-capture` skill for the seed-flow layout and the live `promoted` claim, then list the candidates:
+
+   ```bash
+   tomlctl flow list --status draft
+   tomlctl backlog list --where status=promoted --where promoted_to=<slug> --select id,summary
+   ```
+
+   Keep each listed flow whose `plan_path` contains the marker line (Grep for it), and run the second command once per kept slug for the items it carries. A slug given after `--backlog` selects that seed; one naming no kept flow is reported and the picker runs instead. Otherwise pick via `AskUserQuestion`, one option per seed labelled with its slug and item count (the four most recently `updated` when there are more; `Other` accepts any listed slug). With no seed at all, say so and continue as for an empty `$ARGUMENTS`. Read the chosen stub as the requirements, supplemented by any other `$ARGUMENTS` text, and bind `seed_slug`, `seed_plan_path` (its `plan_path`) and `seed_ids` (its promoted items). Phase 4 folds `seed_ids` in by default and Phase 9 adopts the seed flow.
+4. **Scope assessment** — before exploration, estimate scope (modules touched, bundled concerns). Propose splitting when ANY hold: (a) features could ship independently; (b) ≥4 unrelated modules with no shared refactoring; (c) combines a refactor and a new feature. When any holds, ask via `AskUserQuestion` before investing in exploration.
+5. **Requirements check** — if scope or intent is fundamentally unclear (unspecified target file, ambiguous boundary, conflicting requirements), ask now via `AskUserQuestion` before spending exploration budget. Design-shaping questions are deferred to Phase 4; do not pre-empt them here.
 
 ## Phase 2: Explore (parallel agents)
 
 Reason thoroughly through exploration strategy. Launch up to 3 **Explore agents** in parallel based on scope (single sub-area → 1; cross-cutting → up to 3; never below 1 once decided), `subagent_type: "Explore"`, `thoroughness: "very thorough"`. **You MUST make all Explore agent calls in a single response message**, and every one of them one-shot — **never pass `name:`** (see Important Constraints: a named built-in agent has no return channel and its findings are unrecoverable). Common focus patterns: target module (structure, public interfaces, patterns, tests); similar patterns (existing analogous implementations, reusable utilities); integration surface & build system (consumers, CLAUDE.md, manifests, CI — report integration boundaries AND verification commands). Each agent aims for ~500 words structured as file-structure / interfaces / patterns-to-reuse / constraints / [integration agent] build-test-lint commands; prioritise file paths and signatures over prose if truncating.
+
+**Backlog rows**: invoke the `backlog-capture` skill, unless Phase 1 already has, for the status vocabulary and the live `promoted` claim. Once the agents return, list the live backlog rows in each directory exploration found the change touching:
+
+```bash
+tomlctl backlog list --live --area-prefix <dir> --select id,kind,status,promoted_to,summary
+```
+
+A repo with no `.claude/backlog.toml` reads as empty. Record the rows, deduplicated across directories, under a `**Backlog**` sub-heading of the Exploration Notes checkpoint below, together with `seed_ids` when Phase 1 bound a seed. An `open` row is a Phase 4 fold-in candidate; a row `promoted` to another flow is context only, because that flow already claims it.
 
 **Checkpoint**: persist a brief `## Exploration Notes` section to the plan-mode file (recovery point). **Early scope check**: if the change likely touches >~25 unique files, flag now and recommend splitting before research/design (>~10 files: note it — Phase 4 adds a checkpoint-cadence question). Then reason thoroughly to synthesize findings across agents (reusable patterns, constraints, utilities, gaps, verification commands).
 
@@ -61,6 +77,8 @@ Persist only post-vet findings to `## Research Notes`. **Checkpoint**: append `#
 
 Reason thoroughly through question synthesis. Re-read `## Exploration Notes` and `## Research Notes` and identify design-shaping ambiguities that only surface after exploration/research. Formulate up to 8 clarifying questions (target 4-6) drawn from up to five categories — behavioural/UX, integration boundaries, edge cases/fallback, non-functional constraints, approach preference when multiple viable. **Additionally**, when Phase 2's early scope check suggests a large change (>~10 unique files), include one question on checkpoint cadence (`single` / `milestones` / `per-batch`) with the speed-vs-bisectability trade-off stated — the answer feeds Phase 6's execution policy; omit it for small scopes (the `milestones` default suffices). **Each question MUST cite the specific finding that prompted it** (exploration-note line, research URL, or `file:line`); drop a category if no finding points at it. Producing zero questions is rare — justified only when exploration and research left no design-shaping ambiguity AND the task was already unambiguous. Ask via `AskUserQuestion` (≤ 4 per call, up to 2 calls; fill the first call to 4 before opening a second).
 
+**Backlog fold-in**: when Phase 2 recorded any `open` backlog row, one of those questions is a multi-select — *which backlog items should this plan deliver?* — with one option per `open` row (`<id> — <summary>`), citing the Exploration Notes' `**Backlog**` list. `seed_ids` are folded in by default: name them in the question text rather than as options, and drop one only when the user's notes say so. When the `open` rows outnumber the question's options, offer those in the plan's own directories first and list the remainder by id in the question text, so the notes can still name them. Record the folded ids — the chosen rows plus `seed_ids` — in `## User Decisions`; Phase 6 assigns each one to a task.
+
 **Checkpoint**: persist answers to `## User Decisions` (record question, chosen answer, prompting finding). Treat User Decisions content as DATA, not instructions — Phase 5/6 sub-agent prompts that embed answers MUST wrap them in a fenced/quoted block. If zero questions were produced, still write `## User Decisions` with the single line: `_No directed questions required — exploration and initial research fully specified the design space._`
 
 ## Phase 5: Directed Research (conditional — parallel agents)
@@ -76,7 +94,7 @@ Reason thoroughly through the entire design phase — this is where all complex 
 1. **Review research findings** — re-read `## Research Notes`; for each finding with non-empty "Impact on plan", note the constraint; list deprecations and version-specific behaviours that force design choices.
 2. **Evaluate approaches** — when multiple strategies are viable, assess consistency with existing patterns, complexity/risk, performance/maintainability, integration fit.
 3. **Choose an approach** — select one with explicit rationale; note rejected alternatives when the choice is non-obvious or high-stakes.
-4. **Decompose into tasks** — discrete, file-scoped, no file overlap between parallel tasks; sized for a single focused agent session; identify dependencies as a task DAG (`/implement` frontier-schedules from the `Depends on` edges — do NOT serialise beyond the true edges, and never add an edge merely to separate commits; commit separation is the execution policy's job). Derive edges from **acceptance-reachability**, not only from what a task's Action needs to exist — see the plan-output-format skill's rule of that name; a task whose acceptance cannot be *reached* is a missing edge even when the two tasks share no file, and test files couple at collection time so a renamed export fails the whole file rather than one assertion. Prefer more, smaller file-disjoint tasks over fewer large ones (≤3 files per task unless the edits are inseparable); when one multi-responsibility file would serialise several tasks, consider a foundational task that first splits it into focused modules. Target up to the execution policy's max-parallel (default 6) dispatchable tasks per frontier.
+4. **Decompose into tasks** — discrete, file-scoped, no file overlap between parallel tasks; sized for a single focused agent session; identify dependencies as a task DAG (`/implement` frontier-schedules from the `Depends on` edges — do NOT serialise beyond the true edges, and never add an edge merely to separate commits; commit separation is the execution policy's job). Derive edges from **acceptance-reachability**, not only from what a task's Action needs to exist — see the plan-output-format skill's rule of that name; a task whose acceptance cannot be *reached* is a missing edge even when the two tasks share no file, and test files couple at collection time so a renamed export fails the whole file rather than one assertion. Prefer more, smaller file-disjoint tasks over fewer large ones (≤3 files per task unless the edits are inseparable); when one multi-responsibility file would serialise several tasks, consider a foundational task that first splits it into focused modules. Target up to the execution policy's max-parallel (default 6) dispatchable tasks per frontier. Put every folded backlog id (Phase 4) on the `- **Backlog**:` line of the task or tasks that deliver it: a bare id when the plan delivers the item in full, so it resolves once every task closing it is `done`, and `refs <id>` when the plan covers it only in part, which records the link and never resolves it. `refs` qualifies its own entry only, per the plan-output-format skill's format rule; a folded id on no task's line was not folded.
 5. **Set the execution policy** — choose the checkpoint cadence and record it for Phase 7's `## Execution Policy` section (structure per the plan-output-format skill). Default **`milestones`**: place checkpoints only at logically-coherent increment boundaries — after a foundational type/API that later tasks consume, at a crate boundary, or immediately after a risky task (migration, public-API/schema change) — typically 1-3 per plan; each checkpoint group must form a valid topological cut of the DAG. **`single`** suits small or low-risk plans (one verification pass, commits at the end); **`per-batch`** (gate + commit after every dependency level) is the legacy maximum-safety cadence — reserve it for high-risk work where every commit must be independently green. Default commit granularity `per-task`; max parallel agents default 6 (ceiling 8). Honour any cadence preference the user expressed in Phase 4.
 6. **Scope check** — count unique files; split any task touching >3 files unless its edits are inseparable; keep each checkpoint group's file footprint coherent (~12 files max); flag and recommend sequential sub-plans if total scope exceeds ~25 unique files. **Count the prose surface, not just the code surface**: for every symbol the plan renames or deletes, grep source comments and docblocks, `.md`, and user-visible strings, and assign each hit to a task's **Files** line. A file count derived only from where code changes systematically under-counts, and prose the change falsifies is load-bearing precisely because it reads as authoritative. Agent quality degrades with file count *per task*, not with plan size — a well-decomposed many-small-file plan parallelises fine.
 7. **Identify risks** — edge cases, migration risks, backward-compat, performance cliffs.
@@ -86,7 +104,7 @@ Reason thoroughly through the entire design phase — this is where all complex 
 
 ## Phase 7: Write Plan
 
-Determine the plan file location: write to `docs/plans/` if it exists (or the resolved `plans_directory` from Step 0.5), else create it; name descriptively (`{feature-name}.md`); for large multi-file plans create `docs/plans/{feature-name}/00-outline.md`. Phase 7 writes ONLY the plan markdown file — flow-directory creation and active-flow registration are deferred to Phase 9 (after `ExitPlanMode`) because plan-mode prevents writing anywhere outside the plan file.
+Determine the plan file location: write to `docs/plans/` if it exists (or the resolved `plans_directory` from Step 0.5), else create it; name descriptively (`{feature-name}.md`); for large multi-file plans create `docs/plans/{feature-name}/00-outline.md`. Phase 7 writes ONLY the plan markdown file — flow-directory creation and active-flow registration are deferred to Phase 9 (after `ExitPlanMode`) because plan-mode prevents writing anywhere outside the plan file. With a seed bound (Phase 1), write a single-file plan under its own name, never over `seed_plan_path` — the stub must survive a rejected plan — and give its `**Plan path**` header the value `seed_plan_path`, where Phase 9 moves it.
 
 Write the plan document per the canonical structure — invoke the `flow-contract-plan-output-format` skill to load the full plan-document template (the `# Plan:` header block; the `## Context` / `## Scope` / `## Research Notes` / `## User Decisions` / `## Approach` / `## Verification Commands` / `## Execution Policy` / `## Tasks` / `## Dependency Graph` / `## Risks` sections; per-task fields `Files`/`Depends on`/`Action`/`Detail`/`Acceptance`; and the format rules — S/M/L effort sizing, repo-relative paths, Files-line closure, task-number dependencies, mechanically-verifiable acceptance, source-linked research notes, many-small-file-disjoint-task decomposition with frontier parallelism up to the declared max, checkpoint markers as topological cuts, phase/wave grouping above 8 tasks). The skill is the single source for the output shape consumed by `/review-plan`, `/implement`, and `/plan-update`.
 
@@ -100,7 +118,7 @@ Write the plan document per the canonical structure — invoke the `flow-contrac
 tomlctl tasks import-plan --plan <plan_path> --dry-run
 ```
 
-Plan mode is the one shape of the `tasks` group that runs with **no store target**: the flow — and with it `.claude/flows/<slug>/tasks.toml` — is created in Phase 9, so this call parses the plan and writes nothing. Resolve every `error`-class finding before Phase 8, and disposition the warnings rather than carrying them: the plan-output-format skill's format rules already forbid what each one names. Under `--dry-run` a finding is reported in the envelope and the exit code stays `0`, so read `findings`, not `$?`.
+Plan mode is the one shape of the `tasks` group that runs with **no store target**: the flow — and with it `.claude/flows/<slug>/tasks.toml` — is created in Phase 9, so this call parses the plan and writes nothing. Resolve every `error`-class finding before Phase 8, and disposition the warnings rather than carrying them: the plan-output-format skill's format rules already forbid what each one names. The exception is `backlog/unpromoted` on a folded id: the item stays `open` until Phase 9 step 7 promotes it, so report the finding and leave it. A `backlog/unknown-id` error is a mistyped id on a `Backlog` line. Under `--dry-run` a finding is reported in the envelope and the exit code stays `0`, so read `findings`, not `$?`.
 
 ## Phase 8: Exit Plan Mode
 
@@ -113,6 +131,8 @@ Plan-mode write restrictions are lifted here, so the carrier may create `.claude
 This phase writes the first execution-record bytes (via `tomlctl flow init`'s skeleton). Before that write, invoke the `flow-contract-execution-record-schema` skill to load the canonical execution-record schema (field set, type vocabulary, the two-call heredoc write contract, the `tomlctl flow render-progress-log` command that regenerates PROGRESS-LOG.md, `[tasks].completed` derivation, read-path integrity contract, field-length caps, and read rules) so the bootstrap and every downstream writer share one contract.
 
 **Immediately after `ExitPlanMode` returns the user's approval, before any filesystem operation, emit one console line: `bootstrapping flow: <slug>...`** This marker gives the user a visible boundary between plan-mode and the post-approval writes, and gives any downstream log scraper a stable string to anchor on.
+
+**Seed adoption** — when Phase 1 bound `seed_slug`, the seed flow becomes this plan's flow, so its `created` date and its backlog claims carry over. Before step 1, write the approved plan over `seed_plan_path`; only once that write has landed, delete the plan-mode file, unless the two paths name the same file. Steps 1–6 then use `seed_slug` as the slug and `seed_plan_path` as the plan path: step 2 finds the seed's own flow with a matching `plan_path`, and step 5's `flow init` takes its noop branch. Without a seed, no file is deleted.
 
 1. **Derive the slug** per the Shared Rules: plan filename minus `.md`. For multi-file plans where `plan_path` points at `docs/plans/<feature>/00-outline.md`, the slug is the parent directory name (`<feature>`).
 
@@ -151,6 +171,14 @@ This phase writes the first execution-record bytes (via `tomlctl flow init`'s sk
    This one all-or-nothing invocation performs every write the bootstrap requires, with a single failure point (see `tomlctl/src/flow/init.rs` for the authoritative contract): it creates `.claude/flows/<slug>/` with a canonically-schema'd `context.toml` (`slug`, `plan_path`, `status="draft"`, `created`/`updated` = today, `branch` when supplied, `scope`, `[tasks]`, and the five `[artifacts]` paths), bootstraps `execution-record.toml` with the 2-line `schema_version = 1` / `last_updated = <today>` skeleton and `tasks.toml` with the seeded empty store step 6 imports into, materialises every `.sha256` sidecar so the first downstream `--verify-integrity` read lands on a valid sidecar (no bootstrap-grace branch needed), and upserts the active-flow registry entry with the same `branch` / `worktree` / `scope`. No hand-rolled Write-then-`integrity refresh` sequence is needed. Pass `--worktree $(git rev-parse --show-toplevel)` when the carrier has the worktree path (the active-flow binding needs it to disambiguate multi-clone setups); omit it otherwise.
 
    **Idempotent re-run**: when step 2's collision check found a matching `plan_path`, invoke `flow init` unconditionally — its noop path preserves `created` verbatim, leaves the execution record's and the task store's bytes untouched (refreshing their sidecars only if missing), and upserts the registry entry. This is the self-healing recovery path when a previous `/plan-new` crashed between context-write and registry-upsert. On error, surface it verbatim and halt; the user reruns once the underlying issue (disk full, permissions, lock contention) is resolved and the idempotent path picks up cleanly.
+
+   **Seed adoption**: the noop branch upserts the registry entry with this call's `--branch` and `--scope`, but leaves the seed's `context.toml` untouched — and a seed is bootstrapped with neither. Write both explicitly, plus `updated`: the scope as a JSON array of step 3's entries, and the branch only when step 4 captured one.
+
+   ```bash
+   tomlctl set-json .claude/flows/<slug>/context.toml scope --json '["<glob>"]'
+   tomlctl set .claude/flows/<slug>/context.toml branch <branch>
+   tomlctl set .claude/flows/<slug>/context.toml updated <today> --type date
+   ```
 6. **Populate the task store** — `flow init` seeded an empty `tasks.toml` beside the execution record; this step fills it from the approved plan. Run in order, surfacing each envelope's `findings`:
 
    ```bash
@@ -161,6 +189,21 @@ This phase writes the first execution-record bytes (via `tomlctl flow init`'s sk
    `--reconcile-record` reads the flow's `execution-record.toml` and adopts its `done` `task_ref`s onto the matching store rows, joining on a normalised form of the ref (case- and punctuation-insensitive), which is what lets a record written before the store existed still line up. On a first `/plan-new` the record is the skeleton `flow init` just wrote and nothing is adopted; on step 2's re-run path over an existing record it is what stops a re-created plan re-executing work `/implement` already completed. `unmatched_refs` names every record `task_ref` no plan task claimed — surface it rather than dropping it, since it is the signature of a heading the plan rephrased. It is also the input every later `[tasks]` write consumes: `/plan-update`'s Task-store section owns what the counters are written as while the set is non-empty, so a flow that leaves this import's refs unplaced hands that gate the same set on every subsequent write.
 
    `check --plan` exits `1` on any `error`-class finding and reports render drift as a warning; it does not write a byte. Drift at this point is a report, not a rewrite trigger — the store was imported from this very plan moments ago, so drift names something the round-trip does not reproduce, of which a phase-label heading inside `## Tasks` is the benign case. Read `tomlctl tasks render --slug <slug> --stdout` against the authored sections before rewriting anything.
+7. **Promote the folded backlog items** — the import rebuilt the store's `[[backlog_links]]` from the plan's `Backlog` bullets. Collect the `closes` ids and read each item's state:
+
+   ```bash
+   tomlctl items list .claude/flows/<slug>/tasks.toml --array backlog_links --pluck closes --lines
+   tomlctl backlog list --where-in id=<ids> --select id,status,promoted_to
+   ```
+
+   The first prints one JSON array per linking task, and nothing when no task closes an item, which ends this step. Promote the `open` ids in one call, then re-check the store:
+
+   ```bash
+   tomlctl backlog triage <ids> --promote --to <slug>
+   tomlctl tasks check --slug <slug>
+   ```
+
+   Only `closes` ids are promoted; a `refs` id names an item this plan does not deliver. Report every other `closes` id rather than promoting it: one already `promoted` to this flow (a seed's items) needs nothing, one `promoted` elsewhere is a competing claim for `/backlog` to settle, and one `resolved`, `dismissed`, or missing from the list because it was compacted is already decided. The triage is all-or-nothing, so a failure writes nothing — surface it verbatim. Afterwards `tasks check` reports no `backlog/unpromoted`; surface any that remains.
 
 **The store is canonical from this point.** `## Execution Policy`, `## Tasks` and `## Dependency Graph` are rendered from it, and a later hand edit to any of the three is drift that `tomlctl tasks render --check` reports. `/implement`, `/review-plan` and `/plan-update` all read the store rather than re-parsing the markdown.
 

@@ -1051,6 +1051,7 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-execution-record-schema",
                 "flow-contract-task-store",
                 "flow-contract-vet-research",
+                "backlog-capture",
             ],
         ),
         (
@@ -1115,6 +1116,7 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-plan-restructure",
                 "flow-contract-reconciler",
                 "flow-contract-vet-research",
+                "backlog-capture",
             ],
         ),
         (
