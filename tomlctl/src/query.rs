@@ -358,11 +358,8 @@ impl ShapeDispatch for OutputShape {
                 // Array + raw without `--lines` is defensive — an agent who
                 // blanket-added `--raw` to a plain `items list` gets a clear
                 // error rather than a corrupt pretty-print of a JSON array
-                // with quotes stripped. Byte-for-byte wording isn't pinned
-                // by the task spec for this case; keep it descriptive.
-                bail!(
-                    "--raw requires a scalar target (string|number|bool); got array — use `--lines` (or omit --raw) to emit JSON"
-                );
+                // with quotes stripped.
+                Err(raw_array_error(RawArrayHint::Lines))
             }
             OutputShape::CountBy(_) | OutputShape::GroupBy(_) => {
                 // Unreachable in practice: `validate_query` rejects these
@@ -691,6 +688,26 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
     Ok(q.shape.compute(&windowed, q))
 }
 
+/// The remedy a `--raw`-on-an-array error suggests, chosen by the calling verb.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RawArrayHint {
+    /// The list verbs, which stream one value per line with `--lines`.
+    Lines,
+    /// `tomlctl get`, which has no `--lines`.
+    Get,
+}
+
+pub(crate) fn raw_array_error(hint: RawArrayHint) -> anyhow::Error {
+    match hint {
+        RawArrayHint::Lines => anyhow::anyhow!(
+            "--raw requires a scalar target (string|number|bool); got array — use `--lines` (or omit --raw) to emit JSON"
+        ),
+        RawArrayHint::Get => anyhow::anyhow!(
+            "--raw requires a scalar target (string|number|bool); got array — omit --raw to emit the array as JSON, or append an index to the path (e.g. `<path>.0`) to select one element"
+        ),
+    }
+}
+
 /// Convert a single `JsonValue` scalar into its bare on-stdout form.
 ///
 /// - String: emits the underlying `&str` verbatim — no quotes, no escapes.
@@ -705,8 +722,9 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
 /// - Null: unreachable on happy paths (Pluck and `get` both reject/drop
 ///   nulls upstream), but errors cleanly if one ever leaks through —
 ///   keeps the helper total.
-/// - Array / Object: error with the exact load-bearing message that the
-///   `Cmd::Get --raw` spec pins. The tests assert byte-for-byte.
+/// - Array / Object: error with a load-bearing message the tests assert
+///   byte-for-byte. The array message advises `--lines`, which only the list
+///   verbs carry, so `Cmd::Get --raw` rejects an array before calling here.
 ///
 /// Callers: `Cmd::Get --raw` (via `cli::print_raw_value`) and the
 /// `items list --pluck --raw` dispatch branch (after it has asserted
@@ -728,11 +746,7 @@ pub(crate) fn emit_raw(v: &JsonValue) -> Result<String> {
                 "--raw cannot emit null value; --raw expects a scalar (string|number|bool) — use plain JSON output (omit --raw) to round-trip null"
             )
         }
-        JsonValue::Array(_) => {
-            bail!(
-                "--raw requires a scalar target (string|number|bool); got array — use `--lines` (or omit --raw) to emit JSON"
-            )
-        }
+        JsonValue::Array(_) => Err(raw_array_error(RawArrayHint::Lines)),
         JsonValue::Object(_) => {
             bail!(
                 "--raw requires a scalar target (string|number|bool); got table — use plain JSON output (omit --raw) to emit the object"

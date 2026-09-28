@@ -423,6 +423,116 @@ status = "open"
     );
 }
 
+const APPLY_FIXTURE: &str = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+summary = "first"
+status = "open"
+
+[[items]]
+id = "R2"
+summary = "second"
+status = "open"
+"#;
+
+fn apply_ops_via_stdin(dir: &Path, ledger: &Path, ops: &str) -> assert_cmd::assert::Assert {
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir)
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("items")
+        .arg("apply")
+        .arg(ledger)
+        .arg("--ops")
+        .arg("-")
+        .write_stdin(ops.to_string())
+        .assert()
+}
+
+/// NDJSON ops — one op object per line, blank lines skipped — land the same
+/// bytes as the equivalent JSON array.
+#[test]
+fn items_apply_ndjson_ops_match_the_array_form_byte_for_byte() {
+    let array = r#"[
+        {"op":"add","json":{"id":"R3","summary":"third","status":"open"}},
+        {"op":"update","id":"R1","json":{"status":"fixed"}},
+        {"op":"remove","id":"R2"}
+    ]"#;
+    let ndjson = "\
+{\"op\":\"add\",\"json\":{\"id\":\"R3\",\"summary\":\"third\",\"status\":\"open\"}}
+
+{\"op\":\"update\",\"id\":\"R1\",\"json\":{\"status\":\"fixed\"}}
+{\"op\":\"remove\",\"id\":\"R2\"}
+";
+
+    let (dir_a, ledger_a) = seed_ledger(APPLY_FIXTURE);
+    apply_ops_via_stdin(dir_a.path(), &ledger_a, array).success();
+    let (dir_b, ledger_b) = seed_ledger(APPLY_FIXTURE);
+    apply_ops_via_stdin(dir_b.path(), &ledger_b, ndjson).success();
+
+    let bytes_a = fs::read_to_string(&ledger_a).unwrap();
+    let bytes_b = fs::read_to_string(&ledger_b).unwrap();
+    assert!(
+        bytes_a.contains(r#"id = "R3""#) && !bytes_a.contains(r#"id = "R2""#),
+        "the array batch must have applied; got:\n{bytes_a}"
+    );
+    assert_eq!(
+        bytes_a, bytes_b,
+        "NDJSON ops must land the same bytes as the array form"
+    );
+}
+
+/// A malformed NDJSON op line fails the whole batch, names its 1-based source
+/// line (blank lines counted), and leaves the ledger untouched.
+#[test]
+fn items_apply_ndjson_malformed_line_names_it_and_writes_nothing() {
+    let (dir, ledger) = seed_ledger(APPLY_FIXTURE);
+    let ops = "\
+{\"op\":\"update\",\"id\":\"R1\",\"json\":{\"status\":\"fixed\"}}
+
+{\"op\":\"remove\",\"id\":
+";
+    let out = apply_ops_via_stdin(dir.path(), &ledger, ops).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("line 3") && stderr.contains("one op object per line"),
+        "error must name line 3 and the op-per-line shape; got stderr:\n{stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(&ledger).unwrap(),
+        APPLY_FIXTURE,
+        "a malformed batch must leave the ledger untouched"
+    );
+}
+
+/// `get --raw` on an array points at remedies `get` actually has, not at the
+/// list verbs' `--lines`.
+#[test]
+fn get_raw_on_an_array_does_not_advise_lines() {
+    let (dir, ledger) = seed_ledger("scope = [\"a\", \"b\"]\n");
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("get")
+        .arg(&ledger)
+        .arg("scope")
+        .arg("--raw")
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("got array") && stderr.contains("omit --raw"),
+        "error must name the array target and the omit-`--raw` remedy; got stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("--lines"),
+        "`get` has no --lines, so the error must not advise it; got stderr:\n{stderr}"
+    );
+}
+
 /// Lock contention smoke test: spawn two `items add` processes
 /// on the same file with a short timeout. At least one must succeed; the
 /// other either succeeds (lock acquired after the first finishes) or errors

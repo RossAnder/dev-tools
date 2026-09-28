@@ -1094,6 +1094,28 @@ pub(crate) fn items_infer_and_next_id(doc: &TomlValue) -> Result<String> {
 /// `Err`, so the caller may rely on receiving either a fully parsed batch or
 /// no rows at all. No side effects.
 pub(crate) fn parse_ndjson(s: &str) -> Result<Vec<JsonValue>> {
+    parse_ndjson_lines(
+        s,
+        r#"expected one JSON object per line; e.g. {"id":"R1","status":"open"}"#,
+    )
+}
+
+/// Parse an `items apply --ops` payload. A payload whose first non-whitespace
+/// byte is `{` is NDJSON, one op object per line, and comes back as the same
+/// array the JSON-array form parses to; anything else parses as one JSON
+/// value, so a non-array payload reaches the apply path's shape error.
+pub(crate) fn parse_apply_ops(s: &str) -> Result<JsonValue> {
+    if s.trim_start().starts_with('{') {
+        let ops = parse_ndjson_lines(
+            s,
+            r#"expected one op object per line; e.g. {"op":"update","id":"R1","json":{"status":"fixed"}}"#,
+        )?;
+        return Ok(JsonValue::Array(ops));
+    }
+    Ok(serde_json::from_str(s)?)
+}
+
+fn parse_ndjson_lines(s: &str, expected: &str) -> Result<Vec<JsonValue>> {
     // Pre-size by newline count so the common case (one JSON row per
     // line, no blanks) fills the Vec without any reallocation. Blank lines
     // over-shoot by at most a handful, and a trailing-newline-absent final
@@ -1107,8 +1129,8 @@ pub(crate) fn parse_ndjson(s: &str) -> Result<Vec<JsonValue>> {
         if line.trim().is_empty() {
             continue;
         }
-        let v: JsonValue = serde_json::from_str(line)
-            .with_context(|| format!("line {} (expected one JSON object per line; e.g. {{\"id\":\"R1\",\"status\":\"open\"}})", n))?;
+        let v: JsonValue =
+            serde_json::from_str(line).with_context(|| format!("line {n} ({expected})"))?;
         rows.push(v);
     }
     Ok(rows)

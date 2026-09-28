@@ -276,7 +276,7 @@ Supports `--dry-run`; see [Dry-run](#dry-run).
 
 ### Batch multiple mixed item ops (`items apply`)
 
-For runs that mix add/update/remove on `[[items]]` in the same ledger, use `items apply` to parse + rewrite the file once. `--ops` is a JSON array; each op is `{"op": "add|update|remove", ...}` with the same payload shape as the single-op commands (`json` for add/update, `id` for update/remove). Ops run in array order; any op error aborts the whole batch and the file is left unchanged.
+For runs that mix add/update/remove on `[[items]]` in the same ledger, use `items apply` to parse + rewrite the file once. `--ops` is a JSON array of ops, or NDJSON with one op per line; each op is `{"op": "add|update|remove", ...}` with the same payload shape as the single-op commands (`json` for add/update — the patch key is `json`, not `set` — and `id` for update/remove). Ops run in order; any op error aborts the whole batch and the file is left unchanged.
 
 ```bash
 tomlctl items apply .claude/flows/foo/review-ledger.toml --ops - <<'EOF'
@@ -286,6 +286,12 @@ tomlctl items apply .claude/flows/foo/review-ledger.toml --ops - <<'EOF'
   {"op":"remove", "id":"R17"}
 ]
 EOF
+```
+
+A payload whose first non-whitespace character is `{` is read as NDJSON: blank lines are skipped, and a malformed line aborts the batch naming its 1-based line number. Everything else — atomicity, `--no-remove`, `--dry-run`, the output — matches the array form. The single-line pipe works here as it does for `add-many`:
+
+```bash
+printf '%s\n' '{"op":"update","id":"R22","json":{"status":"applied"}}' '{"op":"remove","id":"R17"}' | tomlctl items apply .claude/flows/foo/review-ledger.toml --ops -
 ```
 
 Prefer this over looping single-op invocations — one parse + one write instead of N. For homogeneous add-only batches prefer `items add-many` (simpler input shape). For append-only non-`items` arrays prefer `array-append`.

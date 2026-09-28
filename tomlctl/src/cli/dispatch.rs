@@ -38,7 +38,7 @@ use crate::items::{
     compute_remove_mutation, compute_update_mutation, dedup_id_disabled, items_add_many,
     items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to, items_fingerprint,
     items_get_from, items_get_from_json, items_infer_and_next_id, items_next_id, items_update_to,
-    parse_ndjson,
+    parse_apply_ops, parse_ndjson,
 };
 use crate::items_sweep::{items_sweep, outcome_json, update_plan};
 use crate::orphans::items_orphans;
@@ -211,12 +211,15 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 })
             })?;
             if raw {
-                // Bare-scalar emit. `emit_raw` validates the value is a
-                // scalar (string / number / bool) and errors byte-for-byte
-                // on table/array targets. Null is impossible here — `navigate`
+                // Bare-scalar emit. An array is refused here because
+                // `emit_raw`'s own array error advises the list verbs'
+                // `--lines`; `emit_raw` refuses a table. Null is impossible here — `navigate`
                 // returns `None` for a missing path, which we already
                 // surface as "key path not found" above; a present TOML
                 // scalar cannot map to JSON null via `toml_to_json`.
+                if out.is_array() {
+                    return Err(query::raw_array_error(query::RawArrayHint::Get));
+                }
                 print_raw_value(&out)?;
             } else {
                 print_json(&out)?;
@@ -886,14 +889,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let opts = write_integrity_opts(&integrity);
             // Parse `--ops` ONCE at the CLI boundary and thread the parsed
             // `JsonValue` through both the `MAX_OPS_PER_APPLY` length check
-            // and `compute_apply_mutation`. Parsing separately in each
-            // (here for the count cap, again inside
-            // `compute_apply_mutation` → `items_apply_to_opts`) doubles the
-            // JSON parse cost on every Apply invocation, proportional to the
-            // ops payload size. `read_json_value_from_arg` encapsulates the
-            // same stdin / TTY / `MAX_STDIN_BYTES` discipline as
-            // `read_json_arg`, so the parse semantics stay identical.
-            let parsed_ops: JsonValue = read_json_value_from_arg(&ops).context("parsing --ops")?;
+            // and `compute_apply_mutation`. An NDJSON payload arrives here
+            // already folded into the array form, so everything below is
+            // shared by both encodings.
+            let parsed_ops: JsonValue = read_json_arg(&ops)
+                .and_then(|text| parse_apply_ops(&text))
+                .context("parsing --ops")?;
             // Bound the ops count at the CLI boundary. `MAX_STDIN_BYTES`
             // only caps the raw payload size; a 32 MiB JSON array of minimal
             // `{"op":"update","id":"Rx"}` records can still hold tens of

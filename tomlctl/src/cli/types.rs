@@ -1714,7 +1714,7 @@ pub(crate) enum ItemsOp {
         file: PathBuf,
         #[arg(
             long,
-            help = "JSON array of ops, each `{\"op\":\"add|update|remove\", ...}`; pass `-` to read from stdin or `@<path>` to read a file"
+            help = "JSON array of ops, or NDJSON with one op object per line; each op is `{\"op\":\"add|update|remove\", ...}`; pass `-` to read from stdin or `@<path>` to read a file"
         )]
         ops: String,
         /// Target array-of-tables name. Defaults to `items` (the ledger schema).
