@@ -2675,7 +2675,7 @@ tags = [
     "docs",
     "cli",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -2683,6 +2683,8 @@ dedup_id = "e129986c18686a36"
 origin = "implement"
 context = "Only tasks remove now carries an output-field table. The other twelve verbs document their envelope as a JSON sample plus prose, so adding an output key has no row to update anywhere. tasks add-many is the worst case with no prose at all on added or the rows element keys. An exact-envelope integration assertion is currently the only drift detector for envelope keys, and it covers only the verbs that happen to have such a test. Making it a file-wide convention would need the prose folded into the tables rather than added alongside, to stay under the line ceiling."
 related = ["B-0fb99230"]
+resolved = 2026-09-28
+resolution = "Reference files normalised onto backticked-heading Flag tables (3bceb2a, 121c824, cc1a126) and tasks verbs given output tables (6ac0577)"
 
 [[backlog]]
 id = "B-52825802"
@@ -3144,7 +3146,7 @@ tags = [
     "docs",
     "lint",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -3155,6 +3157,8 @@ context = "The new documented-flag lint keys on a table header cell reading Flag
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["tomlctl/src/cli/dispatch/tests/lint.rs:460"]
 related = ["B-e129986c"]
+resolved = 2026-09-28
+resolution = "Reference files normalised onto backticked-heading Flag tables (3bceb2a, 121c824, cc1a126) and tasks verbs given output tables (6ac0577)"
 
 [[backlog]]
 id = "B-85fecf44"
@@ -3697,3 +3701,40 @@ origin = "implement"
 context = "The parser resumes after a dash note only on a path-like backticked span (containing / or .), so `a.rs` — note, `Makefile` imports as a.rs alone and the claim silently leaves file-overlap scheduling. The renderer no longer produces this shape (it falls back to a bulleted list), so only hand-written plans hit it. Cheapest fix: have import-plan raise a warning when a note contains a comma followed by a backticked span, pointing at the bulleted Files form."
 base_sha = "efb122a308a8e5bdb3b4fd57cdc58c86e4fb31d4"
 related = ["B-47926bdb"]
+
+[[backlog]]
+id = "B-4dbf0005"
+kind = "debt"
+summary = "a successful items add prints no added count while items add-many prints added:N"
+area = "tomlctl/src/cli/dispatch.rs"
+tags = [
+    "cli",
+    "output",
+]
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "4dbf000529c8299f"
+origin = "implement"
+context = "items add succeeds with an envelope carrying no added key, yet a dedupe-skipped items add prints added:0 and items add-many prints added:N, so a caller cannot read one success field across the add verbs. write.md used to document added:1 for items add, which the binary never printed; the doc now shows the real envelope. Adding added:1 to the success path is an additive envelope change; check exact-envelope test assertions first."
+base_sha = "d4c6264d9fec04a6cfb8f1ea12922bec213760d0"
+
+[[backlog]]
+id = "B-74e5be91"
+kind = "question"
+summary = "array-append --dry-run reports one empty-string id per record instead of an empty ids list"
+area = "tomlctl/src/items.rs"
+tags = [
+    "cli",
+    "dry-run",
+]
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "74e5be9122002154"
+origin = "implement"
+context = "compute_array_append_mutation reuses compute_add_many_mutation, which collects each row's id; array-append records usually carry no id, so would_change.ids comes back as one empty string per record. A unit test asserts the empty-string ids, so it may be intended. A caller counting ids gets the record count padded with blanks. Decide whether to filter empties or document it; write.md now shows the real output."
+base_sha = "d4c6264d9fec04a6cfb8f1ea12922bec213760d0"
+related = ["B-fab4798a"]
