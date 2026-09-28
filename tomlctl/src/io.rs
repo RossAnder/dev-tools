@@ -326,18 +326,15 @@ pub(crate) fn read_json_arg(arg: &str) -> Result<String> {
 
 /// Resolve an NDJSON source argument. A literal dash reads stdin via
 /// `read_json_arg` (preserving its guard against a second `-` sentinel on
-/// the same invocation); any other value is a file path — an optional
-/// leading `@` stripped — read verbatim with `fs::read_to_string`.
+/// the same invocation); any other value is a file path, with or without
+/// the `@` prefix.
 pub(crate) fn read_ndjson_source(src: &str) -> Result<String> {
     if src == "-" {
         read_json_arg("-")
+    } else if let Some(path) = at_file_path(src) {
+        read_at_file(path)
     } else {
-        let path = at_file_path(src).unwrap_or(src);
-        if src.starts_with('@') {
-            read_at_file(path)
-        } else {
-            std::fs::read_to_string(path).with_context(|| format!("reading NDJSON file `{}`", src))
-        }
+        fs::read_to_string(src).with_context(|| format!("reading NDJSON file `{src}`"))
     }
 }
 
@@ -2625,6 +2622,28 @@ arr = [1, 2]
     #[test]
     fn read_json_arg_bare_at_is_a_literal() {
         assert_eq!(read_json_arg("@").unwrap(), "@");
+    }
+
+    #[test]
+    fn read_ndjson_source_reads_bare_and_at_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rows.ndjson");
+        fs::write(&path, "{\"a\":1}\n").unwrap();
+        let bare = path.display().to_string();
+        assert_eq!(read_ndjson_source(&bare).unwrap(), "{\"a\":1}\n");
+        assert_eq!(
+            read_ndjson_source(&format!("@{bare}")).unwrap(),
+            "{\"a\":1}\n"
+        );
+    }
+
+    #[test]
+    fn read_ndjson_source_bare_at_is_a_plain_path() {
+        let msg = format!("{:#}", read_ndjson_source("@").unwrap_err());
+        assert!(
+            msg.contains("NDJSON file `@`"),
+            "a bare `@` must be read as a path named `@`, got: {msg}"
+        );
     }
 
     #[test]
