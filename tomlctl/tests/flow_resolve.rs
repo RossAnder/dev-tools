@@ -418,6 +418,32 @@ last_used = "2026-05-09T12:00:00Z"
     assert_eq!(v["slug"], serde_json::json!("feature-y"));
 }
 
+/// A registry entry whose flow directory is gone falls through, and the
+/// warning names the missing `context.toml` repo-relative.
+#[test]
+fn active_latest_candidate_without_a_context_warns_with_a_relative_path() {
+    let (dir, _claude) = fresh_root();
+    seed_active_registry(
+        dir.path(),
+        r#"schema_version = 1
+
+[[active]]
+slug = "ghost"
+last_used = "2026-05-09T12:00:00Z"
+"#,
+    );
+
+    let v = run_resolve(&dir, &[]);
+    assert_eq!(v["resolved"], serde_json::json!(false));
+    let warnings = v["warnings"].as_array().expect("warnings must be an array");
+    assert!(
+        warnings.contains(&serde_json::json!(
+            "active-latest candidate ghost has no context.toml at .claude/flows/ghost/context.toml; falling through"
+        )),
+        "got: {warnings:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // 5. branch-match (registry empty)
 // ---------------------------------------------------------------------------

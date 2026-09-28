@@ -115,7 +115,7 @@ Prefer `--error-format json` + `.error.kind` switching over regex-matching stder
 tomlctl flow init --slug <slug> --plan docs/plans/<slug>.md
 # → {"ok":true,"slug":"<slug>","action":"init",
 #    "created":[".claude/flows/<slug>/context.toml",".claude/flows/<slug>/execution-record.toml",".claude/flows/<slug>/tasks.toml"],
-#    "context_path":"<abs>/.claude/flows/<slug>/context.toml","artifacts":{...}}
+#    "context_path":".claude/flows/<slug>/context.toml","artifacts":{...}}
 ```
 
 - **`action`** — `"init"` when this run wrote `context.toml`, `"noop"` when it was already present. It describes `context.toml` alone.

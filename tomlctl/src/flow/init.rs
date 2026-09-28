@@ -35,8 +35,8 @@ use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::ActiveEntry as SchemaEntry;
 use crate::integrity::refresh_sidecar;
 use crate::io::{
-    guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root, with_exclusive_lock,
-    write_toml_with_sidecar,
+    guard_write_path, read_toml, recheck_claude_containment, relativise, repo_or_cwd_root,
+    with_exclusive_lock, write_toml_with_sidecar,
 };
 use crate::output::print_json_compact;
 use crate::time::{now_rfc3339, today_toml_date};
@@ -466,7 +466,7 @@ pub(crate) fn dispatch(
         "slug": slug,
         "action": action,
         "created": created,
-        "context_path": context_path.display().to_string(),
+        "context_path": relativise(&repo_or_cwd_root()?, &context_path),
         "artifacts": artifacts.to_json(),
     });
     print_json_compact(&envelope)

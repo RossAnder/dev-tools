@@ -112,6 +112,11 @@ fn fresh_init_creates_context_record_sidecars_and_active_entry() {
         ])
     );
     assert_eq!(
+        v["context_path"],
+        serde_json::json!(".claude/flows/feature-x/context.toml"),
+        "context_path must be repo-relative and forward-slashed like `artifacts`"
+    );
+    assert_eq!(
         v["artifacts"]["execution_record"],
         serde_json::json!(".claude/flows/feature-x/execution-record.toml")
     );
@@ -236,6 +241,10 @@ fn reinit_existing_slug_is_idempotent_and_preserves_created() {
     let v = json_stdout(&out);
     assert_eq!(v["action"], serde_json::json!("noop"));
     assert_eq!(v["slug"], serde_json::json!("feature-x"));
+    assert_eq!(
+        v["context_path"],
+        serde_json::json!(".claude/flows/feature-x/context.toml")
+    );
 
     // `created` byte-identical post re-init.
     let second_text = fs::read_to_string(&context).unwrap();

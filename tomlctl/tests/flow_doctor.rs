@@ -786,6 +786,13 @@ fn tampered_sidecar_regenerated_under_fix() {
         ),
         "fixes_applied must include a sidecar-refresh ok=true entry; got: {v}"
     );
+    assert!(
+        fixes.iter().any(|f| f["action"]
+            == JsonValue::String(
+                "refreshed sidecar for .claude/flows/feature-x/context.toml".to_string()
+            )),
+        "the refresh must name the file repo-relative; got: {v}"
+    );
 
     // Sidecar now matches the file.
     let live_bytes = fs::read(&context).unwrap();
@@ -1013,6 +1020,13 @@ fn fix_dry_run_emits_plan_without_writing() {
                 && f["action"].as_str().unwrap_or("").contains("would refresh")
         ),
         "dry-run plan must include `would refresh` action; got: {fixes:?}"
+    );
+    assert!(
+        fixes.iter().any(|f| f["action"]
+            == JsonValue::String(
+                "would refresh sidecar for .claude/flows/real/context.toml".to_string()
+            )),
+        "the planned refresh must name the file repo-relative; got: {fixes:?}"
     );
 
     // Filesystem unchanged: registry still has `gone`; sidecar bytes are

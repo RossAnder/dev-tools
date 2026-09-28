@@ -306,7 +306,7 @@ fn resolve(
                 warnings.push(format!(
                     "active-binding match {slug} has no context.toml at {path}; falling through",
                     slug = best.slug,
-                    path = ctx.display()
+                    path = relativise(root, &ctx)
                 ));
             }
         }
@@ -329,7 +329,7 @@ fn resolve(
                 warnings.push(format!(
                     "active-latest candidate {slug} has no context.toml at {path}; falling through",
                     slug = latest.slug,
-                    path = ctx.display()
+                    path = relativise(root, &ctx)
                 ));
             }
         }

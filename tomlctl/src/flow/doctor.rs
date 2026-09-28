@@ -749,6 +749,7 @@ fn detect_gitignored_claude(root: &Path) -> Option<String> {
 /// refreshed. Acquires the standard exclusive lock + in-lock containment
 /// guard before refreshing. Returns one `Fix` entry per attempt.
 fn apply_sidecar_fixes(
+    root: &Path,
     stale: &[(PathBuf, String)],
     integrity_args: &WriteIntegrityArgs,
     fixes: &mut Vec<Fix>,
@@ -769,13 +770,16 @@ fn apply_sidecar_fixes(
             Ok(()) => fixes.push(Fix {
                 name: "sidecar-refresh",
                 scope: scope.clone(),
-                action: format!("refreshed sidecar for {}", file.display()),
+                action: format!("refreshed sidecar for {}", relativise(root, file)),
                 ok: true,
             }),
             Err(e) => fixes.push(Fix {
                 name: "sidecar-refresh",
                 scope: scope.clone(),
-                action: format!("failed to refresh sidecar for {}: {e:#}", file.display()),
+                action: format!(
+                    "failed to refresh sidecar for {}: {e:#}",
+                    relativise(root, file)
+                ),
                 ok: false,
             }),
         }
@@ -909,6 +913,7 @@ fn apply_tasks_key_backfill(
 /// each entry is reported as `ok=true` and the live-path "what would have
 /// happened" prose.
 fn dry_run_fix_plan(
+    root: &Path,
     stale_sidecars: &[(PathBuf, String)],
     stale_slugs: &[String],
     tasks_backfills: &[String],
@@ -918,7 +923,7 @@ fn dry_run_fix_plan(
         fixes.push(Fix {
             name: "sidecar-refresh",
             scope: scope.clone(),
-            action: format!("would refresh sidecar for {}", file.display()),
+            action: format!("would refresh sidecar for {}", relativise(root, file)),
             ok: true,
         });
     }
@@ -1015,9 +1020,15 @@ pub(crate) fn dispatch(
     let mut fixes: Vec<Fix> = Vec::new();
     if fix {
         if dry_run {
-            dry_run_fix_plan(&stale_sidecars, &stale_slugs, &tasks_backfills, &mut fixes);
+            dry_run_fix_plan(
+                &root,
+                &stale_sidecars,
+                &stale_slugs,
+                &tasks_backfills,
+                &mut fixes,
+            );
         } else {
-            apply_sidecar_fixes(&stale_sidecars, &integrity, &mut fixes)?;
+            apply_sidecar_fixes(&root, &stale_sidecars, &integrity, &mut fixes)?;
             apply_active_prune(&root, &stale_slugs, &integrity, &mut fixes)?;
             // Last: the backfill rewrites context.toml and its sidecar
             // together, so a sidecar refreshed above stays consistent.
