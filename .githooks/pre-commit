@@ -19,3 +19,21 @@ ROOT="$(git rev-parse --show-toplevel)"
 if printf '%s\n' "$STAGED" | grep -q '\.rs$'; then
   cargo fmt --manifest-path "$ROOT/tomlctl/Cargo.toml" -- --check
 fi
+
+# Runs the command given; on failure blocks the commit and names it for a rerun.
+gate() {
+  if ! "$@"; then
+    printf 'pre-commit: blocked. Rerun after fixing:\n  %s\n' "$*" >&2
+    exit 1
+  fi
+}
+
+# Carrier, flag-table, finding-class and skill gates over claude/ and the CLI.
+if grep -Eq '^(claude/.*\.md|tomlctl/src/.*)$' <<<"$STAGED"; then
+  gate cargo test --manifest-path "$ROOT/tomlctl/Cargo.toml" --bin tomlctl -- cli::dispatch::tests
+fi
+
+# The plan corpus test is #[ignore]d so plan edits cannot fail `cargo test`.
+if grep -Eq '^docs/plans/.*\.md$' <<<"$STAGED"; then
+  gate cargo test --manifest-path "$ROOT/tomlctl/Cargo.toml" --test tasks_corpus -- --ignored
+fi

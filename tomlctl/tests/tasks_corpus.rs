@@ -195,6 +195,7 @@ fn first_line(text: &str) -> String {
 /// crate without the repo's plan corpus — the same graceful skip
 /// `command_lint` takes when `claude/` is missing.
 #[test]
+#[ignore = "judges docs/plans content, not crate behaviour; run with `--test tasks_corpus -- --ignored`"]
 fn corpus_plans_import_cleanly() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
