@@ -82,11 +82,11 @@ The seed is only the *starting* doc — the verb's mutation must still succeed a
 
 **Exceptions — `items backfill-dedup-id` and `items sweep --update` do NOT auto-create.** Each pre-reads the ledger — the first for items lacking a `dedup_id`, the second for the `sweep` arrays it re-runs — so a missing target errors with `kind=not_found` on both regardless of `--no-create`, and `items sweep` reports `created` as `false` on every path. This is by design, not a bug: backfilling or re-sweeping an absent ledger is a no-op, so the strict missing-file error is the correct behaviour. Every other mutating verb listed above auto-creates.
 
-**Envelope.** Write-success envelopes carry `"created": <bool>` and `"path": "<file>"` alongside any verb-specific keys (e.g. `added` on `items add-many`, `appended` on `array-append`):
+**Envelope.** Write-success envelopes carry `"created": <bool>` and `"path": "<file>"` alongside any verb-specific keys (e.g. `added` on `items add` and `items add-many`, `appended` on `array-append`):
 
 ```bash
 tomlctl items add .claude/flows/<slug>/review-ledger.toml --json '{"id":"R1","summary":"...","status":"open"}'
-# {"ok":true,"created":true,"path":".claude/flows/<slug>/review-ledger.toml"}
+# {"ok":true,"added":1,"created":true,"path":".claude/flows/<slug>/review-ledger.toml"}
 ```
 
 **Stderr guidance.** When a file is created, exactly one line is written to stderr:
@@ -358,8 +358,8 @@ logic cannot drift between preview and apply. A target outside `.claude/` still 
 
 The envelope takes three shapes. `set` and `set-json` report `kind: "scalar"` with the old and
 new value at the path. Every `items` verb, `array-append` and `items sweep --update` report
-`kind: "items"` with per-op counts and `ids`, the union of every affected id — an
-`array-append` record carries no `id`, so each shows as `""`. `items backfill-dedup-id`
+`kind: "items"` with per-op counts and `ids`, the union of every affected id — a row with
+no `id`, such as an `array-append` record, is counted but not listed. `items backfill-dedup-id`
 reports `would_backfill` and the ids it would stamp.
 
 ```bash
