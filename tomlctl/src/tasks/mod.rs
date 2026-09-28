@@ -10,6 +10,7 @@
 //! every read, never persisted.
 
 mod add;
+mod backlog_refs;
 mod batches;
 mod check;
 mod closure;
@@ -41,6 +42,11 @@ pub(crate) mod markdown;
 // `items clusters` layers ledger items and names a cycle through the same
 // positional passes the task graph runs; the graph itself stays private.
 pub(crate) use graph::{cycle_within, layered_kahn};
+
+// `backlog reconcile` joins a flow's links to its row statuses and writes
+// adopted links back through the same locked pipeline the verbs use.
+pub(crate) use schema::{BacklogLink, Status, Store};
+pub(crate) use store::{load as load_store, mutate as mutate_store, resolve_store_path};
 
 /// The plan document `context.toml` binds `slug` to, through the plan-path
 /// seam's containment and `.md` validation — a recorded value is
