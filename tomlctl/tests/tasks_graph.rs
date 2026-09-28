@@ -26,7 +26,7 @@ use common::{TASKS_SLUG, cli, parse_json_error_envelope, sandbox, seed_tasks};
 /// `checkpoint/orphan-task` stays quiet and the warning count is exactly three.
 const GRAPH_FIXTURE: &str = r#"schema_version = 1
 last_updated = 2026-09-07
-plan_path = "docs/plans/whimsical-hugging-puppy.md"
+plan_path = "docs/plans/fixture-tasks-flow.md"
 last_import_refs = [
     "scaffold-the-module-tree",
     "wire-the-graph-engine",
@@ -139,7 +139,7 @@ commit = ""
 /// finding `check` can raise here.
 const CYCLIC_FIXTURE: &str = r#"schema_version = 1
 last_updated = 2026-09-07
-plan_path = "docs/plans/whimsical-hugging-puppy.md"
+plan_path = "docs/plans/fixture-tasks-flow.md"
 last_import_refs = ["first", "second", "third"]
 
 [policy]
@@ -204,6 +204,8 @@ agent = ""
 commit = ""
 "#;
 
+const PLAN_FIXTURE: &str = include_str!("fixtures/tasks/house-plan.md");
+
 /// The engine's node cap, mirrored — it is private to the graph module, so
 /// widening it there has to move this line with it.
 const NODE_CAP: u32 = 512;
@@ -216,7 +218,7 @@ fn wide_fixture(count: u32) -> String {
     let mut store = String::from(
         "schema_version = 1\n\
          last_updated = 2026-09-07\n\
-         plan_path = \"docs/plans/whimsical-hugging-puppy.md\"\n\
+         plan_path = \"docs/plans/fixture-tasks-flow.md\"\n\
          last_import_refs = [\n",
     );
     for id in 1..=count {
@@ -582,15 +584,26 @@ fn a_store_past_the_node_cap_fails_check_with_an_error_class_finding() {
 // integrity
 // ---------------------------------------------------------------------------
 
-/// Every graph read verb threads `--verify-integrity` through its own load, so a
-/// passing verified read cannot tell a plumbed verb from one that drops the
-/// flag on the floor. Only a sidecar that no longer covers the store separates
-/// them — and the contract is that such a read errors, never repairs.
+/// Every verb that loads the store without writing it — the reads, a `render`
+/// preview and an `import-plan` dry run — threads `--verify-integrity` through
+/// its own load, so a passing verified read cannot tell a plumbed verb from one
+/// that drops the flag on the floor. Only a sidecar that no longer covers the
+/// store separates them — and the contract is that such a read errors, never
+/// repairs.
 #[test]
-fn every_read_verb_refuses_a_tampered_sidecar_under_verify_integrity() {
+fn every_non_writing_verb_refuses_a_tampered_sidecar_under_verify_integrity() {
     let (_tmp, root) = sandbox();
     let store = seed_tasks(&root, GRAPH_FIXTURE);
     let sidecar = sidecar_of(&store);
+
+    // `render` and `import-plan` read the plan the staged context records, so
+    // the unflagged controls below need one on disk.
+    let plan = root
+        .join("docs")
+        .join("plans")
+        .join(format!("{TASKS_SLUG}.md"));
+    fs::create_dir_all(plan.parent().unwrap()).unwrap();
+    fs::write(&plan, PLAN_FIXTURE).unwrap();
 
     // One flipped hex digit: the store's own bytes stay valid TOML, so nothing
     // but the digest comparison can be what refuses the reads below.
@@ -598,7 +611,7 @@ fn every_read_verb_refuses_a_tampered_sidecar_under_verify_integrity() {
     tampered[0] = if tampered[0] == b'0' { b'1' } else { b'0' };
     fs::write(&sidecar, &tampered).expect("the sidecar is rewritten");
 
-    let cases: [&[&str]; 7] = [
+    let cases: [&[&str]; 9] = [
         &["show", "1"],
         &["list"],
         &["edges"],
@@ -606,13 +619,21 @@ fn every_read_verb_refuses_a_tampered_sidecar_under_verify_integrity() {
         &["batches"],
         &["closure", "--checkpoint", "A"],
         &["check"],
+        &["render", "--stdout"],
+        &["import-plan", "--dry-run"],
     ];
 
     for args in cases {
         // Control: unflagged, the same call answers normally over the same
         // tampered sidecar. Without it a verb that failed for its own reasons
         // would read as a verb honouring the flag.
-        tasks(&root, args);
+        cli(&root)
+            .arg("tasks")
+            .args(args)
+            .args(["--slug", TASKS_SLUG])
+            .write_stdin("")
+            .assert()
+            .success();
 
         let mut verified: Vec<&str> = args.to_vec();
         verified.extend(["--slug", TASKS_SLUG, "--verify-integrity"]);
@@ -640,7 +661,7 @@ fn sidecar_of(file: &Path) -> PathBuf {
 // target resolution
 // ---------------------------------------------------------------------------
 
-/// Every read verb refuses an empty `--slug | --file` target as a
+/// Every graph verb refuses an empty `--slug | --file` target as a
 /// `kind=validation` envelope, not as clap usage prose on exit 2.
 #[test]
 fn every_graph_verb_refuses_an_empty_target_as_validation() {

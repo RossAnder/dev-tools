@@ -27,6 +27,11 @@ const SLUG: &str = "harness-progressive-disclosure-wave-2";
 fn stage_flow(record_body: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().to_path_buf();
+    stage_flow_at(&root, record_body);
+    (dir, root)
+}
+
+fn stage_flow_at(root: &Path, record_body: &str) {
     let flow_dir = root.join(".claude").join("flows").join(SLUG);
     fs::create_dir_all(&flow_dir).unwrap();
     fs::write(flow_dir.join("context.toml"), FIXTURE_CONTEXT).unwrap();
@@ -34,7 +39,6 @@ fn stage_flow(record_body: &str) -> (tempfile::TempDir, PathBuf) {
     let plan_dir = root.join("docs").join("plans");
     fs::create_dir_all(&plan_dir).unwrap();
     fs::write(plan_dir.join("render-fixture-plan.md"), FIXTURE_PLAN).unwrap();
-    (dir, root)
 }
 
 /// Run `flow render-progress-log --slug <SLUG> --stdout <extra…>` against the
@@ -363,26 +367,42 @@ fn render_falls_back_to_titlecased_slug_when_plan_absent() {
     );
 }
 
+/// Security: a `plan_path` that leaves the root is never opened, so the title
+/// cannot become a probe of arbitrary files. The escaped target is real and
+/// carries a `# Plan:` header, so only the refusal keeps it out of the H1.
 #[test]
 fn render_falls_back_to_titlecased_slug_when_plan_path_escapes_root() {
-    let (_dir, root) = stage_flow(FIXTURE_RECORD);
-    fs::write(
-        root.join(".claude")
-            .join("flows")
-            .join(SLUG)
-            .join("context.toml"),
-        FIXTURE_CONTEXT.replace(
-            "plan_path = \"docs/plans/render-fixture-plan.md\"",
-            "plan_path = \"../outside.md\"",
-        ),
-    )
-    .unwrap();
+    let outer = tempfile::tempdir().unwrap();
+    let root = outer.path().join("root");
+    stage_flow_at(&root, FIXTURE_RECORD);
+    let outside = outer.path().join("outside.md");
+    fs::write(&outside, "# Plan: LEAKED\n").unwrap();
 
-    let got = String::from_utf8(render_stdout(&root, &[])).unwrap();
-    assert!(
-        got.contains("# Harness Progressive Disclosure Wave 2 \u{2014} Progress Log\n"),
-        "an escaped plan path must use the title-cased slug fallback, got:\n{got}"
-    );
+    // A TOML literal string, so a Windows path's backslashes stay verbatim.
+    let absolute = format!("'{}'", outside.display());
+    for plan_path in ["\"../outside.md\"", absolute.as_str()] {
+        fs::write(
+            root.join(".claude")
+                .join("flows")
+                .join(SLUG)
+                .join("context.toml"),
+            FIXTURE_CONTEXT.replace(
+                "plan_path = \"docs/plans/render-fixture-plan.md\"",
+                &format!("plan_path = {plan_path}"),
+            ),
+        )
+        .unwrap();
+
+        let got = String::from_utf8(render_stdout(&root, &[])).unwrap();
+        assert!(
+            !got.contains("LEAKED"),
+            "{plan_path}: an escaped plan path must not be read, got:\n{got}"
+        );
+        assert!(
+            got.contains("# Harness Progressive Disclosure Wave 2 \u{2014} Progress Log\n"),
+            "{plan_path}: an escaped plan path must use the title-cased slug fallback, got:\n{got}"
+        );
+    }
 }
 
 /// A FORKED supersession chain — two deviation entries that re-point at the
