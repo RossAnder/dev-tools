@@ -931,8 +931,14 @@ fn a_fenced_example_inside_the_tasks_section_changes_nothing() {
     );
     let (_dir, root) = stage(&quoted);
 
+    // The store is untouched, but a render would erase the example, so the
+    // import says so.
     let preview = import(&root, &["--slug", SLUG, "--dry-run"]);
-    assert!(finding_classes(&preview).is_empty(), "{preview}");
+    assert_eq!(
+        finding_classes(&preview),
+        vec!["plan/text-unstored"],
+        "{preview}"
+    );
     import(&root, &["--slug", SLUG]);
     assert_matches_golden(&root);
 }

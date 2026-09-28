@@ -14,6 +14,10 @@
 //! feeds every later `## ` heading into this body, so what parses is a
 //! fraction of the plan.
 //!
+//! A non-blank line the grammar stores in no field — an unknown field, prose
+//! under a task or a phase label, a fence belonging to no field — is reported
+//! as `plan/text-unstored`, since `render` rebuilds the section without it.
+//!
 //! Patterns spell every class out in ASCII. The binary resolves `regex`
 //! without its unicode features, so a `\d`/`\s`/`\w` shorthand makes
 //! `Regex::new` return `Err` at startup there — while a dev-dependency
@@ -58,6 +62,7 @@ pub(crate) struct ParsedTask {
     pub(crate) files: Vec<String>,
     /// The text trailing each path in the `Files` line — `(new)` and the like
     /// — one entry per `files` entry and empty where the author wrote none.
+    /// Lines nested under a bulleted path follow as `\n`-joined lines.
     pub(crate) file_notes: Vec<String>,
     pub(crate) needs: Vec<u32>,
     pub(crate) deps_note: String,
@@ -89,6 +94,14 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Pa
     let mut fence_line = first_line;
     let mut phase = String::new();
     let mut phase_depth = 0u32;
+    let mut phase_line = 0usize;
+    let mut unstored: Option<Unstored> = None;
+    // Held back until a task has parsed: a section with none is refused as
+    // `plan/no-tasks`, so there is no render to lose the text to.
+    let mut unstored_findings: Vec<Finding> = Vec::new();
+    // Under a heading `plan/heading-too-deep` already reports, whose fields
+    // are the dropped task rather than prose of their own.
+    let mut quiet = false;
 
     for (index, line) in section_body.lines().enumerate() {
         let line_no = first_line + index;
@@ -100,11 +113,18 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Pa
         }
 
         if !fenced && line.starts_with('#') {
-            close_field(current.as_mut(), open.take(), &mut findings)?;
+            close_field(current.as_mut(), open.take(), &mut findings, &mut unstored)?;
             pending_blank = false;
+            unstored_findings.extend(text_unstored(
+                unstored.take().filter(|_| !quiet),
+                current.as_ref(),
+                &phase,
+                phase_line,
+            ));
             tasks.extend(current.take());
             match open_heading(line, line_no)? {
                 Some(task) => {
+                    quiet = false;
                     current = Some(ParsedTask {
                         phase: phase.clone(),
                         phase_depth,
@@ -113,10 +133,13 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Pa
                 }
                 None => {
                     current = None;
-                    findings.extend(deep_heading(line, line_no));
+                    let deep = deep_heading(line, line_no);
+                    quiet = deep.is_some();
+                    findings.extend(deep);
                     if let Some(label) = phase_label(line) {
                         phase = label.to_string();
                         phase_depth = heading_depth(line);
+                        phase_line = line_no;
                     }
                 }
             }
@@ -127,23 +150,29 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Pa
             && let Some(caps) = field_re().captures(line)
             && current.is_some()
         {
-            close_field(current.as_mut(), open.take(), &mut findings)?;
+            close_field(current.as_mut(), open.take(), &mut findings, &mut unstored)?;
             pending_blank = false;
             let label = caps.get(1).map_or("", |m| m.as_str());
             let inline = caps.get(2).map_or("", |m| m.as_str()).trim_end();
             let mut lines = Vec::new();
+            let mut line_nos = Vec::new();
             if !inline.is_empty() {
                 lines.push(inline.to_string());
+                line_nos.push(line_no);
             }
             open = Some(OpenField {
                 kind: Field::from_label(label),
                 line_no,
                 lines,
+                line_nos,
             });
             continue;
         }
 
         if open.is_none() {
+            if is_content(line) {
+                note_unstored(&mut unstored, line_no, || describe_unstored(line));
+            }
             continue;
         }
 
@@ -157,12 +186,17 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Pa
             let field = open.as_mut().expect("field is open");
             if pending_blank {
                 field.lines.push(String::new());
+                field.line_nos.push(line_no);
                 pending_blank = false;
             }
             field.lines.push(rest.to_string());
+            field.line_nos.push(line_no);
         } else {
-            close_field(current.as_mut(), open.take(), &mut findings)?;
+            close_field(current.as_mut(), open.take(), &mut findings, &mut unstored)?;
             pending_blank = false;
+            if is_content(line) {
+                note_unstored(&mut unstored, line_no, || describe_unstored(line));
+            }
         }
     }
 
@@ -174,9 +208,126 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Pa
         );
     }
 
-    close_field(current.as_mut(), open.take(), &mut findings)?;
+    close_field(current.as_mut(), open.take(), &mut findings, &mut unstored)?;
+    unstored_findings.extend(text_unstored(
+        unstored.take().filter(|_| !quiet),
+        current.as_ref(),
+        &phase,
+        phase_line,
+    ));
     tasks.extend(current.take());
+    if !tasks.is_empty() {
+        findings.extend(unstored_findings);
+    }
     Ok(ParsedTasks { tasks, findings })
+}
+
+/// The first line under a task or a phase heading that no store field holds,
+/// and how many such lines the block carries in all.
+struct Unstored {
+    line_no: usize,
+    what: String,
+    lines: usize,
+}
+
+fn note_unstored(slot: &mut Option<Unstored>, line_no: usize, what: impl FnOnce() -> String) {
+    match slot {
+        Some(seen) => seen.lines += 1,
+        None => {
+            *slot = Some(Unstored {
+                line_no,
+                what: what(),
+                lines: 1,
+            });
+        }
+    }
+}
+
+fn describe_unstored(line: &str) -> String {
+    let label = label_re()
+        .captures(line)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str());
+    match label {
+        Some(label) if field_re().is_match(line) => {
+            format!("a `{label}` field under no task heading")
+        }
+        Some(label) => format!("the field `{label}`, which the store has no column for"),
+        None => format!(
+            "\"{}\", which stands under no field the store keeps",
+            preview(line)
+        ),
+    }
+}
+
+/// A blank line or a thematic break carries nothing a render loses.
+fn is_content(line: &str) -> bool {
+    let bare: String = line
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .collect();
+    !(bare.is_empty()
+        || (bare.len() >= 3
+            && ["-", "*", "_"]
+                .iter()
+                .any(|mark| bare == mark.repeat(bare.len()))))
+}
+
+fn preview(line: &str) -> String {
+    const WIDTH: usize = 60;
+    let line = line.trim();
+    match line.char_indices().nth(WIDTH) {
+        Some((at, _)) => format!("{}…", &line[..at]),
+        None => line.to_string(),
+    }
+}
+
+fn text_unstored(
+    dropped: Option<Unstored>,
+    task: Option<&ParsedTask>,
+    phase: &str,
+    phase_line: usize,
+) -> Option<Finding> {
+    let Unstored {
+        line_no,
+        what,
+        lines,
+    } = dropped?;
+    let more = match lines {
+        1 => String::new(),
+        2 => " (and 1 more line)".to_string(),
+        n => format!(" (and {} more lines)", n - 1),
+    };
+    let (ids, place, fix) = match task {
+        Some(task) => (
+            vec![task.id],
+            format!(
+                "line {line_no}: task {} \"{}\" carries",
+                task.id, task.title
+            ),
+            "move it under the task's `- **Detail**:` label, indented two spaces, or out of the \
+             task",
+        ),
+        None if phase_line > 0 => (
+            Vec::new(),
+            format!("line {phase_line}: phase \"{phase}\" carries, at line {line_no},"),
+            "move it into a task's `- **Detail**:` or out of the `## Tasks` section",
+        ),
+        None => (
+            Vec::new(),
+            format!("line {line_no}: the `## Tasks` section carries, ahead of its first heading,"),
+            "move it into a task's `- **Detail**:` or out of the `## Tasks` section",
+        ),
+    };
+    Some(Finding {
+        class: "plan/text-unstored",
+        severity: WARNING,
+        ids,
+        detail: format!(
+            "{place} {what}{more}. The import stores it nowhere, so `tasks render` removes it \
+             from the plan; {fix}"
+        ),
+    })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -188,7 +339,6 @@ enum Field {
     Acceptance,
     Effort,
     Backlog,
-    Unknown,
 }
 
 impl Field {
@@ -201,7 +351,7 @@ impl Field {
             "Acceptance" => Self::Acceptance,
             "Effort" => Self::Effort,
             "Backlog" => Self::Backlog,
-            _ => Self::Unknown,
+            _ => unreachable!("field_re admits only the labels above"),
         }
     }
 }
@@ -210,6 +360,8 @@ struct OpenField {
     kind: Field,
     line_no: usize,
     lines: Vec<String>,
+    /// The plan line each entry of `lines` came from.
+    line_nos: Vec<usize>,
 }
 
 /// `None` for a phase label; an error for a heading whose id starts with a
@@ -295,6 +447,7 @@ fn close_field(
     task: Option<&mut ParsedTask>,
     open: Option<OpenField>,
     findings: &mut Vec<Finding>,
+    unstored: &mut Option<Unstored>,
 ) -> Result<()> {
     let (Some(task), Some(open)) = (task, open) else {
         return Ok(());
@@ -303,14 +456,23 @@ fn close_field(
         kind,
         line_no,
         lines,
+        line_nos,
     } = open;
 
     match kind {
         Field::Files => {
-            findings.extend(files_span_unclaimed(task, line_no, &lines));
-            let (files, notes) = parse_files(&lines);
-            task.files = files;
-            task.file_notes = notes;
+            let read = read_files(&lines);
+            findings.extend(files_span_unclaimed(task, line_no, &read.held));
+            if let Some(at) = read.orphan {
+                note_unstored(unstored, line_nos[at], || {
+                    format!(
+                        "the nested `Files` line \"{}\", which has no path above it to annotate",
+                        preview(&lines[at])
+                    )
+                });
+            }
+            task.files = read.files;
+            task.file_notes = read.notes;
         }
         Field::DependsOn => {
             let (needs, note) = parse_depends(&lines);
@@ -336,7 +498,6 @@ fn close_field(
             task.backlog_closes = closes;
             task.backlog_refs = refs;
         }
-        Field::Unknown => {}
     }
     Ok(())
 }
@@ -345,24 +506,81 @@ fn close_field(
 /// two apart, because every consumer of a file claim compares bare paths while
 /// the annotation is the author's and only the render puts it back.
 pub(crate) fn parse_files(lines: &[String]) -> (Vec<String>, Vec<String>) {
-    let mut files = Vec::new();
-    let mut notes = Vec::new();
-    for line in lines {
-        let line = line.trim();
-        // A bulleted line is one path plus prose; a bare line is a comma list.
+    let read = read_files(lines);
+    (read.files, read.notes)
+}
+
+#[derive(Default)]
+struct FilesRead<'a> {
+    files: Vec<String>,
+    notes: Vec<String>,
+    /// Backticked spans a comma-list line kept inside a dash note.
+    held: Vec<&'a str>,
+    /// Index into the field's lines of the first nested line with no path
+    /// above it to annotate.
+    orphan: Option<usize>,
+}
+
+/// A bulleted line is one path plus prose and a bare line is a comma list. A
+/// line indented deeper than the path bullets is the previous path's note
+/// continuing — kept as a further `\n`-joined line of that note, one indent
+/// step removed so its own nesting survives — rather than a path: read as a
+/// bullet, a nested sub-bullet becomes a claim on a file nobody named.
+fn read_files(lines: &[String]) -> FilesRead<'_> {
+    let mut read = FilesRead::default();
+    let mut bullet_indent: Option<usize> = None;
+    let mut owner: Option<usize> = None;
+    let mut after_bullet = false;
+    let mut pending_blank = false;
+    for (index, raw) in lines.iter().enumerate() {
+        let body = raw.trim_start();
+        if body.trim_end().is_empty() {
+            pending_blank = true;
+            continue;
+        }
+        let indent = raw.len() - body.len();
+        if let Some(base) = bullet_indent.filter(|base| after_bullet && indent > *base) {
+            match owner {
+                Some(at) => {
+                    let note = &mut read.notes[at];
+                    if pending_blank {
+                        note.push('\n');
+                    }
+                    let rest = &raw[base..];
+                    note.push('\n');
+                    note.push_str(dedent(rest).unwrap_or(rest.trim_start()).trim_end());
+                }
+                None => {
+                    read.orphan.get_or_insert(index);
+                }
+            }
+            pending_blank = false;
+            continue;
+        }
+        pending_blank = false;
+
+        let line = body.trim_end();
         if bullet_re().is_match(line) {
+            bullet_indent.get_or_insert(indent);
+            after_bullet = true;
+            let before = read.files.len();
             push_file(
-                &mut files,
-                &mut notes,
+                &mut read.files,
+                &mut read.notes,
                 bullet_re().replace(line, "").as_ref(),
             );
+            owner = (read.files.len() > before).then(|| read.files.len() - 1);
         } else {
-            for raw in split_entries_resuming(line, |ch| ch == ',', Some(opens_on_path)) {
-                push_file(&mut files, &mut notes, raw);
+            after_bullet = false;
+            owner = None;
+            let (entries, held) = scan_entries(line, |ch| ch == ',', Some(opens_on_path));
+            read.held.extend(held);
+            for raw in entries {
+                push_file(&mut read.files, &mut read.notes, raw);
             }
         }
     }
-    (files, notes)
+    read
 }
 
 /// The em-dash annotation has no closing mark, so it runs to the end of the
@@ -451,16 +669,10 @@ fn opens_on_path(rest: &str) -> bool {
 /// parse reads each as prose, so an extensionless path written there —
 /// `Makefile` — claims no file and drops out of overlap scheduling unseen.
 pub(crate) fn note_held_spans(lines: &[String]) -> Vec<&str> {
-    lines
-        .iter()
-        .map(|line| line.trim())
-        .filter(|line| !bullet_re().is_match(line))
-        .flat_map(|line| scan_entries(line, |ch| ch == ',', Some(opens_on_path)).1)
-        .collect()
+    read_files(lines).held
 }
 
-fn files_span_unclaimed(task: &ParsedTask, line_no: usize, lines: &[String]) -> Option<Finding> {
-    let spans = note_held_spans(lines);
+fn files_span_unclaimed(task: &ParsedTask, line_no: usize, spans: &[&str]) -> Option<Finding> {
     if spans.is_empty() {
         return None;
     }
@@ -474,7 +686,7 @@ fn files_span_unclaimed(task: &ParsedTask, line_no: usize, lines: &[String]) -> 
              files as a bulleted sub-list, one path per line; if it is prose, reword the note",
             task.id,
             task.title,
-            quoted_list(&spans, "")
+            quoted_list(spans, "")
         ),
     })
 }
@@ -661,6 +873,12 @@ fn field_re() -> &'static Regex {
         )
         .expect("field regex compiles")
     })
+}
+
+/// Any bold field label, known to `field_re` or not.
+fn label_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^[-*] \*\*([^*]+)\*\*:").expect("label regex compiles"))
 }
 
 fn bullet_re() -> &'static Regex {
@@ -911,6 +1129,151 @@ cargo test
                 "lumina/web/src/composables/useSettings.ts",
             ]
         );
+    }
+
+    /// Read as a sibling bullet, the nested line claims a file nobody named
+    /// and feeds it to overlap scheduling.
+    #[test]
+    fn a_line_nested_under_a_bulleted_path_is_its_note_and_claims_nothing() {
+        let body = "### 1. First task [S]\n\
+                    - **Files**:\n\
+                    \x20 - `a.rs` — core\n\
+                    \x20   - sub-note about a.rs\n\
+                    \x20       - deeper\n\
+                    \x20 - `b.rs`\n\
+                    \x20   wrapped prose\n\
+                    - **Depends on**: none\n";
+        let parsed = parse_tasks_at(body, 1).expect("parses");
+        let task = &parsed.tasks[0];
+        assert_eq!(task.files, vec!["a.rs", "b.rs"]);
+        assert_eq!(
+            task.file_notes,
+            vec![
+                "— core\n- sub-note about a.rs\n    - deeper",
+                "\nwrapped prose"
+            ]
+        );
+        assert!(parsed.findings.is_empty(), "{:?}", parsed.findings);
+    }
+
+    #[test]
+    fn an_indented_comma_continuation_is_still_a_path() {
+        let body = "### 1. First task [S]\n- **Files**: `a.rs`,\n    `b.rs`\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(task.files, vec!["a.rs", "b.rs"]);
+        assert_eq!(task.file_notes, vec!["", ""]);
+    }
+
+    #[test]
+    fn a_nested_files_line_with_no_path_above_it_is_unstored() {
+        let body = "### 4. First task [S]\n- **Files**:\n  - none\n    - orphaned\n";
+        let parsed = parse_tasks_at(body, 1).expect("parses");
+        assert!(parsed.tasks[0].files.is_empty(), "{:?}", parsed.tasks[0]);
+        assert_eq!(parsed.findings.len(), 1, "{:?}", parsed.findings);
+        let finding = &parsed.findings[0];
+        assert_eq!(finding.class, "plan/text-unstored");
+        assert_eq!(finding.ids, vec![4]);
+        for fragment in ["line 4", "orphaned", "no path above it"] {
+            assert!(finding.detail.contains(fragment), "{fragment}: {finding:?}");
+        }
+    }
+
+    /// `render` rebuilds the section from the store, so text the store has no
+    /// field for would leave the plan at the next render unannounced.
+    #[test]
+    fn content_no_field_stores_warns_once_per_task() {
+        let body = "\
+### 1. First task [S]
+- **Files**: `a.rs`
+- **Acceptance**:
+  - cargo test passes
+- **Notes**:
+  - an unknown field
+    - nested
+
+### 2. Second task [S]
+- **Files**: `c.rs`
+- a stray bullet
+
+---
+
+### 3. Third task [S]
+- **Files**: `d.rs`
+- **Depends on**: 1, 2
+- **Action**: Plain.
+  1. numbered
+- **Detail**:
+  More.
+- **Acceptance**: ok
+- **Effort**: S
+- **Backlog**: none
+";
+        let parsed = parse_tasks_at(body, 10).expect("parses");
+        assert_eq!(parsed.tasks.len(), 3);
+        let unstored: Vec<&Finding> = parsed
+            .findings
+            .iter()
+            .filter(|finding| finding.class == "plan/text-unstored")
+            .collect();
+        assert_eq!(unstored.len(), 2, "{:?}", parsed.findings);
+
+        assert_eq!(unstored[0].severity, WARNING);
+        assert_eq!(unstored[0].ids, vec![1]);
+        for fragment in [
+            "line 14",
+            "`Notes`",
+            "(and 2 more lines)",
+            "`tasks render` removes it",
+            "`- **Detail**:`",
+        ] {
+            assert!(
+                unstored[0].detail.contains(fragment),
+                "{fragment}: {:?}",
+                unstored[0]
+            );
+        }
+
+        assert_eq!(unstored[1].ids, vec![2]);
+        assert!(
+            unstored[1].detail.contains("line 20") && unstored[1].detail.contains("a stray bullet"),
+            "{:?}",
+            unstored[1]
+        );
+    }
+
+    #[test]
+    fn prose_under_a_phase_heading_warns_against_the_heading() {
+        let body = "\
+Intro before any heading.
+
+### Phase 1 (parallel)
+
+These run together.
+
+#### 1. First task [S]
+- **Files**: `a.rs`
+";
+        let parsed = parse_tasks_at(body, 1).expect("parses");
+        assert_eq!(parsed.findings.len(), 2, "{:?}", parsed.findings);
+        assert!(parsed.findings.iter().all(|f| f.ids.is_empty()));
+        assert!(
+            parsed.findings[0]
+                .detail
+                .contains("line 1: the `## Tasks` section"),
+            "{:?}",
+            parsed.findings[0]
+        );
+        assert!(
+            parsed.findings[1]
+                .detail
+                .contains("line 3: phase \"Phase 1 (parallel)\" carries, at line 5,"),
+            "{:?}",
+            parsed.findings[1]
+        );
+
+        let taskless = parse_tasks_at("### Step one\n\nprose\n- a bullet\n", 1).expect("parses");
+        assert!(taskless.tasks.is_empty());
+        assert!(taskless.findings.is_empty(), "{:?}", taskless.findings);
     }
 
     #[test]
@@ -1194,6 +1557,7 @@ cargo test
             malformed_id_re(),
             effort_tag_re(),
             field_re(),
+            label_re(),
             bullet_re(),
         ];
 

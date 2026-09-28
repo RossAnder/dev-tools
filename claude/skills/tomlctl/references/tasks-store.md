@@ -56,7 +56,8 @@ keying on a `ref` no row holds, is dropped on read and on write.
 
 `[[file_notes]]`: `ref`, `file` and `note` — the annotation a plan's `Files` entry carried
 (`(new)` and the like) against the row claiming that path, so `files` itself stays a list of bare
-paths for the file-claim comparisons to read. Rebuilt from the plan at each import for the rows
+paths for the file-claim comparisons to read. Lines nested under a bulleted path follow the first
+as further `\n`-separated lines of the same `note`. Rebuilt from the plan at each import for the rows
 the plan names, kept only for paths the merged row still claims, and kept whole for a row the
 plan no longer names. Omitted while empty on the same terms as `[[import_overrides]]`.
 

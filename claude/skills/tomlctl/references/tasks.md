@@ -461,6 +461,10 @@ Both non-writing modes branch before the render lands anywhere, so neither leave
 on a plan it disagrees with. `--check` exits `1` on any drift even though `render/drift` is a
 warning class: the mode is a gate.
 
+Only what the store holds comes back: text under a task that no field stores is dropped, which
+`import-plan` reports as `plan/text-unstored`. A `Files` note may span lines — the lines nested
+under a bulleted path — and renders nested under that path's bullet.
+
 A missing section is inserted in canonical order (Execution Policy before Tasks, Dependency
 Graph after Tasks). The source document's dominant line ending is detected and re-applied, so a
 CRLF plan is not rewritten to mixed endings and `--check` does not report permanent drift.
@@ -524,6 +528,7 @@ it.
 | `plan/no-tasks` | error | `import-plan` only — the `## Tasks` section parses to no task, so the import would replace the checkpoint table and policy with the empty and default values such a plan yields. A section holding only links to sibling documents that do carry task headings names that shape instead, the same diagnostic a plan with no section at all raises |
 | `plan/heading-too-deep` | warning | `import-plan` only — a numbered task heading carrying seven or more hashes. The grammar reads three through six, so a deeper one stands as a phase label and its task is dropped with no other trace; **one** finding per heading, `ids` naming the number the author wrote and `detail` the plan line. Warning rather than error because refusing the import over one hash too many would block every other task in the plan |
 | `plan/files-span-unclaimed` | warning | `import-plan` only — a comma-list `Files` line whose ` — ` note has a comma followed by a backticked span holding no `/` or `.`. The parse reads the span as the note's prose, so an extensionless path such as `Makefile` claims no file; **one** finding per `Files` line. A bulleted `Files` list keeps it a claim |
+| `plan/text-unstored` | warning | `import-plan` only — non-blank text the store has no field for: an unknown field label, a line under a task outside any field, a nested `Files` line with no path above it, or prose under a phase heading or ahead of the first heading. `tasks render` removes it from the plan; not raised alongside `plan/no-tasks`; **one** finding per task or phase, `ids` naming the task (empty for a phase) and `detail` the first line dropped. Move it under `- **Detail**:` or out of the task |
 | `plan/orphan-row` | warning, or **error** when the row's status is not `pending` | `check` — the `detail` names every orphaned `ref`, which `ids` cannot: two orphaned rows sharing a task number collapse to one id |
 | `plan/override-held` | warning | `import-plan` only — a hand-patched `files` or `needs` the plan does not state; run `tasks render` to publish it |
 | `plan/override-released` | warning | `import-plan` only — the plan restated the line, so its value replaced the hand-patched one and the stamp is gone |

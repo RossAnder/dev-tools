@@ -276,13 +276,21 @@ fn hashes(stored: u32) -> String {
     "#".repeat(depth(stored) as usize)
 }
 
+/// A value opening on a list item starts on the line after its label: pulled
+/// up beside it, the first item reads as the label's prose and no longer lines
+/// up with the items nested under it.
 fn field_line(label: &str, text: &str) -> Option<String> {
     let text = text.trim();
     if text.is_empty() {
         return None;
     }
-    let mut lines = text.split('\n');
-    let mut out = format!("- **{label}**: {}\n", lines.next().unwrap_or_default());
+    let mut lines = text.split('\n').peekable();
+    let mut out = format!("- **{label}**:");
+    if !lines.peek().is_some_and(|first| opens_list_item(first)) {
+        out.push(' ');
+        out.push_str(lines.next().unwrap_or_default());
+    }
+    out.push('\n');
     for line in lines {
         let line = line.trim_end();
         if line.is_empty() {
@@ -292,6 +300,21 @@ fn field_line(label: &str, text: &str) -> Option<String> {
         }
     }
     Some(out)
+}
+
+/// `- `, `* `, `+ `, `1. ` or `1) `, or the marker alone.
+fn opens_list_item(line: &str) -> bool {
+    let digits = line.len()
+        - line
+            .trim_start_matches(|ch: char| ch.is_ascii_digit())
+            .len();
+    let marker = match digits {
+        0 if line.starts_with(['-', '*', '+']) => 1,
+        0 => return false,
+        _ if line[digits..].starts_with(['.', ')']) => digits + 1,
+        _ => return false,
+    };
+    line[marker..].is_empty() || line[marker..].starts_with([' ', '\t'])
 }
 
 fn depends_on(row: &TaskRow) -> String {
@@ -324,9 +347,11 @@ fn backlog(link: &BacklogLink) -> String {
 
 /// Each path with the annotation the plan wrote against it, on one comma list
 /// when the importer reads that line back to the same paths and notes without
-/// a `plan/files-span-unclaimed` warning, and as one bullet per path otherwise. A ` — ` note has no closing mark, so
-/// on one line the importer can swallow the path after it (`Makefile`) as its
-/// prose; a bullet ends every note at the end of its own line.
+/// a `plan/files-span-unclaimed` warning, and as one bullet per path otherwise.
+/// A ` — ` note has no closing mark, so on one line the importer can swallow
+/// the path after it (`Makefile`) as its prose; a bullet ends every note at
+/// the end of its own line. A multi-line note only has the bulleted form: its
+/// later lines nest under its path's bullet.
 fn files_field(store: &Store, row: &TaskRow) -> String {
     if row.files.is_empty() {
         return format!("- **Files**: {EMPTY}\n");
@@ -337,31 +362,67 @@ fn files_field(store: &Store, row: &TaskRow) -> String {
         .map(|file| {
             store
                 .file_note(&row.r#ref, file)
-                .map(collapse)
+                .map(note_lines)
                 .unwrap_or_default()
         })
         .collect();
-    let entries: Vec<String> = row
-        .files
-        .iter()
-        .zip(&notes)
-        .map(|(file, note)| match note.is_empty() {
-            true => format!("`{file}`"),
-            false => format!("`{file}` {note}"),
-        })
-        .collect();
+    let entry = |file: &str, note: &str| match note.is_empty() {
+        true => format!("`{file}`"),
+        false => format!("`{file}` {note}"),
+    };
 
-    let line = entries.join(", ");
-    let (read_files, read_notes) = parse_files(std::slice::from_ref(&line));
-    let slice = std::slice::from_ref(&line);
-    if read_files == row.files && read_notes == notes && note_held_spans(slice).is_empty() {
-        return format!("- **Files**: {line}\n");
+    if !notes.iter().any(|note| note.contains('\n')) {
+        let line = row
+            .files
+            .iter()
+            .zip(&notes)
+            .map(|(file, note)| entry(file, note))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let slice = std::slice::from_ref(&line);
+        let (read_files, read_notes) = parse_files(slice);
+        if read_files == row.files && read_notes == notes && note_held_spans(slice).is_empty() {
+            return format!("- **Files**: {line}\n");
+        }
     }
     let mut out = String::from("- **Files**:\n");
-    for entry in entries {
-        out.push_str(&format!("  - {entry}\n"));
+    for (file, note) in row.files.iter().zip(&notes) {
+        let mut lines = note.split('\n');
+        out.push_str(&format!(
+            "  - {}\n",
+            entry(file, lines.next().unwrap_or_default())
+        ));
+        for line in lines {
+            if line.is_empty() {
+                out.push('\n');
+            } else {
+                out.push_str(&format!("    {line}\n"));
+            }
+        }
     }
     out
+}
+
+/// `collapse` per line, each nested line keeping its own indent: the lines are
+/// the note's nesting, which one collapsed line would flatten.
+fn note_lines(note: &str) -> String {
+    let mut lines: Vec<String> = note
+        .split('\n')
+        .enumerate()
+        .map(|(index, line)| {
+            let body = line.trim_start();
+            let text = collapse(body);
+            match (text.is_empty(), index) {
+                (true, _) => String::new(),
+                (false, 0) => text,
+                (false, _) => format!("{}{text}", &line[..line.len() - body.len()]),
+            }
+        })
+        .collect();
+    while lines.len() > 1 && lines.last().is_some_and(String::is_empty) {
+        lines.pop();
+    }
+    lines.join("\n")
 }
 
 /// One marker or one field value is one paragraph, so an embedded blank line
@@ -828,6 +889,130 @@ mod tests {
         );
         let parsed = parse_tasks_at(&section(&plan, "Tasks"), 1).expect("tasks parse");
         assert!(parsed.findings.is_empty(), "{:?}", parsed.findings);
+    }
+
+    /// The store an import of `plan`'s Tasks section builds from nothing.
+    fn imported(plan: &str) -> Store {
+        let parsed = parse_tasks(&section(plan, "Tasks")).expect("tasks parse");
+        let mut store = Store::default();
+        for task in &parsed {
+            let mut item = row(
+                task.id,
+                &task.title,
+                task.effort.unwrap_or(Effort::M),
+                "",
+                &task.needs,
+                &[],
+            );
+            item.heading_depth = task.depth;
+            item.files = task.files.clone();
+            item.deps_note = task.deps_note.clone();
+            item.action = task.action.clone();
+            item.detail = task.detail.clone();
+            item.acceptance = task.acceptance.clone();
+            for (file, note) in task.files.iter().zip(&task.file_notes) {
+                if !note.is_empty() {
+                    store.file_notes.push(FileNote {
+                        r#ref: item.r#ref.clone(),
+                        file: file.clone(),
+                        note: note.clone(),
+                    });
+                }
+            }
+            store.items.push(item);
+        }
+        store
+    }
+
+    /// Nested lists under `Files`, under a value opening on a list, and under
+    /// a numbered item all come back byte for byte.
+    #[test]
+    fn nested_lists_survive_import_and_render() {
+        let tasks = "\
+### 1. First task [S]
+- **Files**:
+  - `a.rs` — core
+    - sub-note about a.rs
+  - `b.rs`
+- **Depends on**: —
+- **Action**: Do these:
+  - step one
+    - nested detail
+      - deeper
+  - step two
+- **Acceptance**:
+  - cargo test passes
+    - including the new case
+
+### 2. Second task [S]
+- **Files**: `c.rs`
+- **Depends on**: 1
+- **Action**: Plain.
+  1. numbered
+     - nested under numbered
+- **Acceptance**:
+  1. **Owed pair.** first
+  2. second
+";
+        let src = PLAN.replace("## Tasks\n\nstale\n", &format!("## Tasks\n\n{tasks}"));
+        let store = imported(&src);
+        assert_eq!(store.items[0].files, vec!["a.rs", "b.rs"]);
+        assert_eq!(
+            store.file_note(&store.items[0].r#ref, "a.rs"),
+            Some("— core\n- sub-note about a.rs")
+        );
+
+        let plan = render_into_plan(&store, &src).expect("renders");
+        assert!(section(&plan, "Tasks").contains(tasks), "{plan}");
+        assert_eq!(
+            render_into_plan(&imported(&plan), &plan).expect("re-renders"),
+            plan
+        );
+    }
+
+    #[test]
+    fn a_nested_note_line_on_a_bare_path_renders_under_its_bullet() {
+        let store = with_files(&["a.rs", "b.rs"], &[("b.rs", "\n- detail\n\n  - deeper")]);
+        let plan = render_into_plan(&store, PLAN).expect("renders");
+        assert!(
+            plan.contains(
+                "- **Files**:\n  - `a.rs`\n  - `b.rs`\n    - detail\n\n      - deeper\n- **Depends on**:"
+            ),
+            "{plan}"
+        );
+        let reimported = reimport_files(&store, &plan);
+        assert_eq!(reimported.file_notes, store.file_notes);
+        assert_eq!(
+            render_into_plan(&reimported, &plan).expect("re-renders"),
+            plan
+        );
+    }
+
+    #[test]
+    fn only_a_list_marker_moves_a_value_off_its_label_line() {
+        for (text, opens) in [
+            ("- item", true),
+            ("* item", true),
+            ("+ item", true),
+            ("12. item", true),
+            ("3) item", true),
+            ("-", true),
+            ("--flag set", false),
+            ("**Bold** lead", false),
+            ("2.5x faster", false),
+            ("3 tests pass", false),
+            ("— dash prose", false),
+        ] {
+            assert_eq!(opens_list_item(text), opens, "{text}");
+        }
+        assert_eq!(
+            field_line("Acceptance", "1. one\n   - nested"),
+            Some("- **Acceptance**:\n  1. one\n     - nested\n".to_string())
+        );
+        assert_eq!(
+            field_line("Action", "Do these:\n- one"),
+            Some("- **Action**: Do these:\n  - one\n".to_string())
+        );
     }
 
     #[test]
