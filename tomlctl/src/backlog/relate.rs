@@ -18,8 +18,7 @@ use toml::value::Datetime;
 
 use super::schema::{
     self, ARRAY_BACKLOG, FIELD_DISMISS_REASON, FIELD_DISMISSED, FIELD_DUPLICATE_OF, FIELD_ID,
-    FIELD_LAST_UPDATED, FIELD_RELATED, FIELD_STATUS, FIELD_SUPERSEDES, MANAGED_FIELDS,
-    STATUS_DISMISSED,
+    FIELD_LAST_UPDATED, FIELD_RELATED, FIELD_STATUS, FIELD_SUPERSEDES, STATUS_DISMISSED,
 };
 use crate::cli::{RelationKind, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
@@ -168,20 +167,16 @@ fn set_edge(item: &mut TomlValue, field: &'static str, target: &str) -> Result<b
 /// An already-dismissed row keeps the date and reason it was dismissed with:
 /// the first dismissal is the one that carries the context.
 ///
-/// Clearing the rest of the managed cluster is what lets an edge dismiss a
-/// `promoted` or `resolved` row: `schema::validate` refuses a row still
-/// carrying another status's date or companion.
+/// Clearing through `schema::clear_for_transition` is what lets an edge
+/// dismiss a `promoted` or `resolved` row: `schema::validate` refuses a row
+/// still carrying another status's date or companion. A promoted row keeps
+/// its claim.
 fn dismiss(item: &mut TomlValue, today: Datetime, reason: String) -> Result<bool> {
     let table = table_of(item, FIELD_STATUS)?;
     if table.get(FIELD_STATUS).and_then(TomlValue::as_str) == Some(STATUS_DISMISSED) {
         return Ok(false);
     }
-    for field in MANAGED_FIELDS {
-        if *field == FIELD_DISMISSED || *field == FIELD_DISMISS_REASON {
-            continue;
-        }
-        table.remove(*field);
-    }
+    schema::clear_for_transition(table, STATUS_DISMISSED);
     table.insert(
         FIELD_STATUS.to_string(),
         TomlValue::String(STATUS_DISMISSED.to_string()),
@@ -399,6 +394,47 @@ status = "open"
         assert_eq!(subject.get(schema::FIELD_RESOLVED), None);
         assert_eq!(subject.get(schema::FIELD_RESOLUTION), None);
         assert_eq!(status(&d, "B-a1b2c3d4"), STATUS_DISMISSED);
+        assert_eq!(schema::validate(&toml_to_json(subject)), Ok(()));
+    }
+
+    #[test]
+    fn duplicates_keeps_the_claim_of_a_promoted_row() {
+        let mut d: TomlValue = toml::from_str(
+            r#"schema_version = 1
+
+[[backlog]]
+id = "B-a1b2c3d4"
+summary = "sent to a flow, then found to be a duplicate"
+status = "promoted"
+promoted = 2026-08-01
+promoted_to = "some-flow"
+
+[[backlog]]
+id = "B-7f0e2d91"
+summary = "the original"
+status = "open"
+"#,
+        )
+        .unwrap();
+        assert!(
+            apply_relation(
+                &mut d,
+                "B-a1b2c3d4",
+                "B-7f0e2d91",
+                RelationKind::Duplicates,
+                today()
+            )
+            .unwrap()
+        );
+        let subject = row(&d, "B-a1b2c3d4");
+        assert_eq!(status(&d, "B-a1b2c3d4"), STATUS_DISMISSED);
+        assert_eq!(
+            subject
+                .get(schema::FIELD_PROMOTED_TO)
+                .and_then(TomlValue::as_str),
+            Some("some-flow")
+        );
+        assert!(subject.get(schema::FIELD_PROMOTED).is_some());
         assert_eq!(schema::validate(&toml_to_json(subject)), Ok(()));
     }
 

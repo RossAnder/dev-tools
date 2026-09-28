@@ -1,11 +1,11 @@
 //! `backlog triage` — status transitions and the companion fields each one
 //! requires.
 //!
-//! Every transition rewrites the whole managed cluster — the three terminal
-//! date/companion pairs plus `reopen_rationale` — not just the pair it sets.
-//! `schema::validate` rejects a row carrying a terminal date or companion
-//! its status does not name, so `resolved` → `dismissed` without clearing
-//! `resolved` / `resolution` would produce a row the validator refuses.
+//! Every transition rewrites the whole managed cluster through
+//! `schema::clear_for_transition`, not just the pair it sets: `resolved` →
+//! `dismissed` without clearing `resolved` / `resolution` would produce a row
+//! `schema::validate` refuses. The promotion claim survives a move to
+//! `resolved` or `dismissed` as history; `reopen` drops it.
 //!
 //! A bulk sweep is all-or-nothing: every id is resolved and every rewritten
 //! row validated before the first is stored, so one unknown id leaves the
@@ -149,12 +149,7 @@ fn rewrite(row: &mut TomlValue, t: &Transition, today: toml::value::Datetime) ->
         )
     })?;
     let (date_field, companion_field, value) = t.writes();
-    for field in schema::MANAGED_FIELDS {
-        if Some(*field) == date_field || *field == companion_field {
-            continue;
-        }
-        table.remove(*field);
-    }
+    schema::clear_for_transition(table, t.status());
     // `insert` keeps an existing key in place under `preserve_order`, so
     // re-running the same transition does not reshuffle the row.
     table.insert(
@@ -169,6 +164,21 @@ fn rewrite(row: &mut TomlValue, t: &Transition, today: toml::value::Datetime) ->
         TomlValue::String(value.to_string()),
     );
     Ok(())
+}
+
+/// Resolve one row and record what delivered it. The row is validated here;
+/// storing it is the caller's.
+pub(crate) fn resolve_with_link(
+    row: &mut TomlValue,
+    resolution: &str,
+    link: &schema::ResolutionLink,
+    today: toml::value::Datetime,
+) -> Result<()> {
+    rewrite(row, &Transition::Resolve(resolution.to_string()), today)?;
+    if let Some(table) = row.as_table_mut() {
+        link.write_to(table);
+    }
+    schema::validate(&toml_to_json(row)).map_err(|e| e.into_tagged(None))
 }
 
 /// Transition every named id, or none of them: ids are resolved and their
@@ -422,6 +432,89 @@ compacted_on = 2026-06-01
             field(&doc, "B-aaaaaaaa", schema::FIELD_REOPEN_RATIONALE).as_deref(),
             Some("\"plan was shelved\"")
         );
+        assert_valid(&doc, "B-aaaaaaaa");
+    }
+
+    fn promote_then(t: &Transition) -> TomlValue {
+        let mut doc = store();
+        apply_transition(
+            &mut doc,
+            &ids(&["B-aaaaaaaa"]),
+            &Transition::Promote("some-flow".into()),
+            today(),
+        )
+        .unwrap();
+        apply_transition(&mut doc, &ids(&["B-aaaaaaaa"]), t, today()).unwrap();
+        doc
+    }
+
+    #[test]
+    fn resolve_and_dismiss_keep_the_promotion_claim() {
+        for t in [
+            Transition::Resolve("shipped".into()),
+            Transition::Dismiss("dropped".into()),
+        ] {
+            let doc = promote_then(&t);
+            assert_eq!(
+                field(&doc, "B-aaaaaaaa", schema::FIELD_PROMOTED).as_deref(),
+                Some("2026-09-02"),
+                "{}",
+                t.name()
+            );
+            assert_eq!(
+                field(&doc, "B-aaaaaaaa", schema::FIELD_PROMOTED_TO).as_deref(),
+                Some("\"some-flow\""),
+                "{}",
+                t.name()
+            );
+            assert_valid(&doc, "B-aaaaaaaa");
+        }
+    }
+
+    fn link() -> schema::ResolutionLink {
+        schema::ResolutionLink {
+            flow: "some-flow".into(),
+            tasks: vec!["add-the-thing".into()],
+            commits: vec!["abc1234".into()],
+        }
+    }
+
+    #[test]
+    fn resolve_with_link_writes_the_link_and_keeps_the_claim() {
+        let doc = promote_then(&Transition::Promote("some-flow".into()));
+        let mut item = TomlValue::Table(row(&doc, "B-aaaaaaaa").clone());
+        resolve_with_link(&mut item, "shipped", &link(), today()).unwrap();
+        let table = item.as_table().unwrap();
+        assert_eq!(
+            table.get(schema::FIELD_STATUS).and_then(TomlValue::as_str),
+            Some(schema::STATUS_RESOLVED)
+        );
+        assert_eq!(
+            table
+                .get(schema::FIELD_RESOLVED_FLOW)
+                .and_then(TomlValue::as_str),
+            Some("some-flow")
+        );
+        assert!(table.contains_key(schema::FIELD_RESOLVED_TASKS));
+        assert!(table.contains_key(schema::FIELD_RESOLVED_COMMITS));
+        assert!(table.contains_key(schema::FIELD_PROMOTED_TO));
+    }
+
+    #[test]
+    fn a_linked_resolved_row_re_dismissed_drops_the_link() {
+        let mut doc = store();
+        let rows = items_array_mut(&mut doc, schema::ARRAY_BACKLOG).unwrap();
+        resolve_with_link(&mut rows[0], "shipped", &link(), today()).unwrap();
+        apply_transition(
+            &mut doc,
+            &ids(&["B-aaaaaaaa"]),
+            &Transition::Dismiss("was never ours".into()),
+            today(),
+        )
+        .unwrap();
+        for f in schema::RESOLUTION_LINK_FIELDS {
+            assert_eq!(field(&doc, "B-aaaaaaaa", f), None, "`{f}` must be dropped");
+        }
         assert_valid(&doc, "B-aaaaaaaa");
     }
 
