@@ -18,17 +18,16 @@ use super::types::{
 use crate::blocks::blocks_verify;
 use crate::clusters::items_clusters;
 use crate::convert::{
-    detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path, str_field,
-    toml_to_json,
+    detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path, toml_to_json,
 };
 use crate::dedup::{
-    FINGERPRINTED_FIELDS, items_find_duplicates, items_find_duplicates_across,
-    items_find_duplicates_across_json, items_find_duplicates_json, tier_b_fingerprint_table,
+    items_find_duplicates, items_find_duplicates_across, items_find_duplicates_across_json,
+    items_find_duplicates_json,
 };
 use crate::integrity::{IntegrityOpts, refresh_sidecar, sidecar_path, verify_integrity};
 use crate::io::{
-    compute_set_json_mutation, compute_set_mutation, dry_run_read_opts, guard_write_path, item_id,
-    items_array, mutate_doc, mutate_doc_conditional, mutate_doc_plan, on_missing_for, read_doc,
+    compute_set_json_mutation, compute_set_mutation, dry_run_read_opts, guard_write_path,
+    mutate_doc, mutate_doc_conditional, mutate_doc_plan, on_missing_for, read_doc,
     read_doc_borrowed, read_doc_either, read_json_arg, read_json_value_from_arg,
     read_ndjson_source, read_toml_str, recheck_claude_containment, repo_or_cwd_root,
     strict_read_check, warn_if_created, warn_if_read_outside_claude, with_exclusive_lock,
@@ -37,8 +36,9 @@ use crate::items::{
     AddManyOutcome, AddOutcome, array_append, compute_add_many_mutation, compute_add_mutation,
     compute_apply_mutation, compute_array_append_mutation, compute_backfill_mutation,
     compute_remove_mutation, compute_update_mutation, dedup_id_disabled, items_add_many,
-    items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to, items_get_from,
-    items_get_from_json, items_infer_and_next_id, items_next_id, items_update_to, parse_ndjson,
+    items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to, items_fingerprint,
+    items_get_from, items_get_from_json, items_infer_and_next_id, items_next_id, items_update_to,
+    parse_ndjson,
 };
 use crate::items_sweep::{items_sweep, outcome_json, update_plan};
 use crate::orphans::items_orphans;
@@ -452,35 +452,6 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
     Ok(())
 }
 
-/// Tier-B digest of one stored row, with the field values it hashed.
-///
-/// The `fields` keys are read off `FINGERPRINTED_FIELDS` rather than
-/// transcribed, so the emitted object cannot name a set the hash does not
-/// use. The not-found wording is the one `items_get_from` bails with —
-/// duplicated verbatim, as `items_get_from_json` duplicates it.
-fn items_fingerprint(doc: &toml::Value, id: &str) -> Result<JsonValue> {
-    for item in items_array(doc, "items") {
-        if item_id(item) != Some(id) {
-            continue;
-        }
-        let Some(tbl) = item.as_table() else { continue };
-        let fields: serde_json::Map<String, JsonValue> = FINGERPRINTED_FIELDS
-            .iter()
-            .map(|f| ((*f).to_string(), JsonValue::from(str_field(tbl, f))))
-            .collect();
-        return Ok(serde_json::json!({
-            "id": id,
-            "tier": "B",
-            "dedup_id": tier_b_fingerprint_table(tbl),
-            "fields": fields,
-        }));
-    }
-    bail!(
-        "no item with id = {} (run `tomlctl items list <file> --pluck id` to enumerate available ids)",
-        id
-    )
-}
-
 fn items_dispatch(op: ItemsOp) -> Result<()> {
     match op {
         ItemsOp::List {
@@ -526,14 +497,8 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 //
                 // `--pluck foo --lines --raw` flows through here too;
                 // `run_streaming` reads `q.raw` and emits bare values per
-                // line instead of quoted JSON. The Array variant of this
-                // branch (full-row ndjson) does not honour `--raw` — each
-                // row is a JSON object, not a scalar — and that combo has
-                // no meaningful raw form. `validate_query` does not reject
-                // it (Array + raw is a no-op, not an error) for the same
-                // reason `--lines` on Count is a silent no-op: agents
-                // blanket-add flags, and inducing an error for an
-                // ambiguous-but-harmless combo would be user-hostile.
+                // line instead of quoted JSON. The Array variant has no raw
+                // form, so `validate_query` rejects `--raw` there.
                 use std::io::Write;
                 let stdout = std::io::stdout();
                 let mut h = stdout.lock();

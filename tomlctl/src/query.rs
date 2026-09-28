@@ -405,9 +405,9 @@ pub(crate) struct Query {
     /// the streaming Pluck path (`--pluck f --lines --raw`) which
     /// short-circuits into `run_streaming` with the bare-value emit inline
     /// so we don't materialise quoted JSON only to strip it per line. The
-    /// validation layer also consults this bit (count-by / group-by +
-    /// raw is rejected at `validate_query`). Default false keeps every
-    /// non-raw path byte-identical.
+    /// validation layer also consults this bit (`validate_query` rejects it
+    /// on count-by / group-by and on the streamed row array). Default false
+    /// keeps every non-raw path byte-identical.
     pub raw: bool,
 }
 
@@ -483,6 +483,13 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
     if q.raw && matches!(q.shape, OutputShape::CountBy(_) | OutputShape::GroupBy(_)) {
         validation_bail!(
             "--raw is not supported on --count-by / --group-by (output is a map, not a scalar)"
+        );
+    }
+    // The row-array stream has no bare form, so `--raw` there would be dropped
+    // silently. `--pluck f --raw --lines` stays legal: it streams bare values.
+    if q.raw && q.ndjson && q.shape == OutputShape::Array {
+        validation_bail!(
+            "--raw and --lines/--ndjson cannot be combined on row output: --raw is the single-value form, --lines/--ndjson the one-row-per-line form — pass one, or add --pluck <f> for one bare value per line"
         );
     }
     // Cross-shape pairs. `main.rs` is expected to pick exactly one of the
@@ -2738,6 +2745,26 @@ category = "quality"
         };
         let err = validate_query(&q).unwrap_err().to_string();
         assert!(err.contains("--count") && err.contains("--select"), "{err}");
+    }
+
+    #[test]
+    fn raw_plus_lines_on_row_output_rejected() {
+        let q = Query {
+            select: Some(vec!["id".into()]),
+            ndjson: true,
+            raw: true,
+            ..Default::default()
+        };
+        let err = validate_query(&q).unwrap_err().to_string();
+        assert!(err.contains("--raw") && err.contains("--lines"), "{err}");
+
+        let pluck = Query {
+            shape: OutputShape::Pluck("id".into()),
+            ndjson: true,
+            raw: true,
+            ..Default::default()
+        };
+        assert!(validate_query(&pluck).is_ok());
     }
 
     #[test]

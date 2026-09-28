@@ -146,9 +146,9 @@ tomlctl items list ledger.toml --group-by file
 
 ### Output shapes (`--raw` / `--lines` / `--ndjson`)
 
-- **`--raw`** — emit a single bare scalar (no JSON framing). Requires a shape that collapses to one value: `--count --raw`, `--count-distinct F --raw`, `--pluck F --raw` when exactly one item matches. Errors on multi-element pluck, `--count-by`, `--group-by`, or unfiltered list.
-- **`--lines`** — emit one JSON value per line instead of a JSON array. Available only on `--pluck`.
-- **`--ndjson`** — one item per line instead of a JSON array. Composes with `--select` / `--exclude`, so a projected list is one compact object per line — the agent-facing table shape. Unprojected, each line is a full item and pipes cleanly into `items add-many` / `items apply`.
+- **`--raw`** — emit a single bare scalar (no JSON framing). Requires a shape that collapses to one value: `--count --raw`, `--count-distinct F --raw`, `--pluck F --raw` when exactly one item matches. Errors on multi-element pluck, `--count-by`, `--group-by`, or row output — with or without `--lines` / `--ndjson`.
+- **`--lines`** — emit one JSON value per line instead of a JSON array. Available only on `--pluck`; `--pluck F --lines --raw` emits one bare value per line.
+- **`--ndjson`** — one item per line instead of a JSON array. Composes with `--select` / `--exclude`, so a projected list is one compact object per line — the agent-facing table shape. Unprojected, each line is a full item and pipes cleanly into `items add-many --ndjson`. `items apply --ops` does not take NDJSON: it takes one JSON array of ops, with each row under a `json` key (`[{"op":"add","json":{…}}]`).
 
 ```bash
 tomlctl items list ledger.toml --status open --count --raw         # → 7

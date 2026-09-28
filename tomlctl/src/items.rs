@@ -250,6 +250,34 @@ pub(crate) fn items_get_from_json(
     )
 }
 
+/// Tier-B digest of one stored row, with the field values it hashed.
+///
+/// The `fields` keys are read off `FINGERPRINTED_FIELDS` rather than
+/// transcribed, so the emitted object cannot name a set the hash does not
+/// use. The not-found wording is the one `items_get_from` bails with.
+pub(crate) fn items_fingerprint(doc: &TomlValue, id: &str) -> Result<JsonValue> {
+    for item in items_array(doc, "items") {
+        if item_id(item) != Some(id) {
+            continue;
+        }
+        let Some(tbl) = item.as_table() else { continue };
+        let fields: serde_json::Map<String, JsonValue> = FINGERPRINTED_FIELDS
+            .iter()
+            .map(|f| ((*f).to_string(), JsonValue::from(str_field(tbl, f))))
+            .collect();
+        return Ok(serde_json::json!({
+            "id": id,
+            "tier": "B",
+            "dedup_id": tier_b_fingerprint_table(tbl),
+            "fields": fields,
+        }));
+    }
+    bail!(
+        "no item with id = {} (run `tomlctl items list <file> --pluck id` to enumerate available ids)",
+        id
+    )
+}
+
 #[cfg(test)]
 pub(crate) fn items_add(doc: &mut TomlValue, json: &str) -> Result<()> {
     items_add_to(doc, "items", json)
