@@ -28,9 +28,6 @@ churn — they are cheap at every stage and should be written earliest. Referenc
 prose, architecture overviews and directory maps churn on every refactor and are the correct
 thing to defer.
 
-This is why RFC-first cultures are not a counterexample: they front-load the non-churning
-artefact.
-
 ## The stage ladder
 
 | Stage | Entry trigger | Required | Forbidden as premature |
@@ -57,35 +54,31 @@ describes work that no longer needs describing.
 ## Density is a screen, never a target
 
 Density is a **screening threshold that triggers a look**. It is never a goal, never a gate,
-and never a thing to move. A repo may sit in-band and be diseased; a repo may sit out-of-band
-and be correct. The published evidence does not support density as a quality predictor — what
-correlates with defects is comment/code *inconsistency*, not volume.
+and never a thing to move. What correlates with defects is comment/code *inconsistency*, not
+volume.
 
 **Measure it correctly or not at all.** Comment share = content-comment lines / (content-comment
 lines + code lines), non-blank physical lines, where a line containing any code is code;
 delimiter lines (bare `/**`, `*/`, lone `*`, banner rules, an XML tag with no prose) count in
 neither numerator nor denominator; doc and inline comments are reported **separately**.
-Counting delimiters inflates by roughly 4pp. Exclude generated code first and name the
-exclusion. `scc`, `tokei` and `cloc` all get this wrong and disagree with each other — use
+Exclude generated code first and name the exclusion. `scc`, `tokei` and `cloc` all get this wrong and disagree with each other — use
 them as a fast screen, never as the reported number.
 
 **Screening bands** (comment share, per directory):
 
-- **> 30% → look.** Two unrelated corpora put the boundary here: an all-language mean + 1SD
-  of 29.6%, and a crates.io per-crate p75 of 28%.
-- **> 40% → look hard.** ≈ p90.
-- **< 8% → look**, published or boundary-crossing code only. Weakest of the three, and valid
-  only after generated code is excluded.
+- **> 30% → look.**
+- **> 40% → look hard.**
+- **< 8% → look**, published or boundary-crossing code only, and only after generated code is
+  excluded.
 - **8-30% → report the number and take no action.**
 
 Multiply the 30% trigger by nature: **1.0×** application or CLI, **1.5×** published library or
-design system, **2.0×** knowledge/decision repo. Prototypes and infrastructure get **no
-multiplier — no data exists**; use the relative rule. The mechanism, which survives even where
-the numbers do not, is *who reads the source*: application source is read only by its authors,
-library source occasionally by consumers, teaching source *instead of* running it.
+design system, **2.0×** knowledge/decision repo; prototypes and infrastructure get none, so
+use the relative rule. The mechanism is *who reads the source*: application source is read
+only by its authors, library source occasionally by consumers, teaching source *instead of*
+running it.
 
-**Stage does not move density.** The only large-scale measurement finds it stage-invariant —
-about 1pp over four years, and downward. Do not set a per-stage density target. What stage
+**Stage does not move density.** Do not set a per-stage density target. What stage
 legitimately moves is the *obligation set* (which symbols must carry a doc comment) and the
 lint ladder, both above and in `language-cores.md`.
 

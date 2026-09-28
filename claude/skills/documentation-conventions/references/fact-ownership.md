@@ -1,6 +1,6 @@
 # Fact ownership, volatile facts, and authority order
 
-Loaded from `SKILL.md` Step 1 and Step 3.
+Loaded from `SKILL.md` "Resolve project policy" and "Route the fact".
 
 ## One fact, one home
 
@@ -53,8 +53,8 @@ The highest-churn content there is. These rules are absolute.
 
 Any density or volume measurement excludes generated code first, and **names the exclusion in
 its output**: build-script output, FFI bindings (`*-sys`), `.d.ts` rollups, ORM scaffolding,
-protobuf/OpenAPI clients, vendored trees. On one 401-crate corpus the same files yielded
-11.9% or 21.2% depending solely on whether five generated crates were in scope.
+protobuf/OpenAPI clients, vendored trees. A few generated crates can nearly double a
+workspace's measured comment share.
 
 ## Authority order
 

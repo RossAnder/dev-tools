@@ -9,12 +9,13 @@ set -euo pipefail
 # nobody is going to clear, get bypassed with --no-verify, and take the whole
 # hook with it. Added lines start clean, so the retrofit cost is zero.
 #
-# Pairs with the `documentation-conventions` skill: the skill carries the
-# judgement (the redundancy test, where a fact belongs, what a comment must
-# earn), this carries the seven things a machine can actually decide.
+# Pairs with `.claude/rules/documentation.md` and the `documentation-conventions`
+# skill: they carry the judgement (the redundancy test, where a fact belongs,
+# what a comment must earn), this carries the seven things a machine can
+# actually decide.
 #
-# DELIBERATELY OUT OF SCOPE (NOT gated here — the skill's prose carries these
-# alone, and a clean run is NOT evidence they hold):
+# DELIBERATELY OUT OF SCOPE (NOT gated here — the rule and skill prose carry
+# these alone, and a clean run is NOT evidence they hold):
 #   (a) the redundancy test — whether a comment restates its signature. No
 #       linter in any of these ecosystems expresses it.
 #   (b) whether a long block is EARNED. G1 counts lines; a 189-line module

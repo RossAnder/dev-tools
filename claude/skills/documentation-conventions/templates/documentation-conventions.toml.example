@@ -23,7 +23,7 @@ comment_share_baseline = 21
 measured_on = "2026-08-28"
 
 [measure]
-command = "scripts/doc-density.sh"   # owns the canonical definition; do not restate it here
+command = "<the repo's density script>"   # owns the canonical definition; omit the table if none exists
 exclude = ["**/dist/**", "**/*.d.ts", "**/generated/**", "**/node_modules/**", "**/target/**"]
 
 [blocks]

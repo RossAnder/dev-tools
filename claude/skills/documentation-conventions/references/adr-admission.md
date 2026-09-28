@@ -1,6 +1,6 @@
 # ADR admission
 
-Loaded from `SKILL.md` Step 3, before opening **or amending** any decision record.
+Loaded from `SKILL.md` "Route the fact", before opening **or amending** any decision record.
 
 ## The discriminator
 
