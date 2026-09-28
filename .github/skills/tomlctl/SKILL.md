@@ -34,7 +34,7 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Read value via json subcommand | `tomlctl json get <file> <path>` |
 | Write value via json subcommand | `tomlctl json set <file> <path> --json <value>` |
 | Delete a key at path | `tomlctl json unset <file> <path>` |
-| Capture / triage the repo backlog (`.claude/backlog.toml`) | `tomlctl backlog add\|check\|list\|show\|relate\|triage\|reconcile\|cluster\|compact\|evidence {dir\|audit}` |
+| Capture / triage the repo backlog (`.claude/backlog.toml`) | `tomlctl backlog add\|add-many\|check\|list\|show\|relate\|triage\|reconcile\|cluster\|compact\|evidence {dir\|audit}` |
 | Manage active-flow registry | `tomlctl flow active list\|add\|remove\|touch [--slug <s>] [--branch <b>] [--worktree <w>] [--scope <glob>]...` |
 | Pre-flight envelope (resolve + doctor + plansDirectory in one dispatch) | `Task(subagent_type: "flow-bootstrap", prompt: <input-envelope-JSON>)` ([`claude/agents/flow-bootstrap.md`](../../agents/flow-bootstrap.md); entrypoint note below) |
 | Build the flow-bootstrap input envelope (Step-0 of every flow carrier) | `tomlctl flow envelope build --command <c> [--branch <b>] [--worktree <w>] [--cwd <p>] [--path-arg <p>]... [--require-artifact <a>]...` |
@@ -91,7 +91,7 @@ tomlctl --version
 
 ```bash
 tomlctl capabilities
-# {"version":"0.10.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
+# {"version":"0.11.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
 ```
 
 Representative entries:

@@ -3,7 +3,7 @@
 The cross-cutting half of the tomlctl surface: what `--verify-integrity` is accepted on and
 what the `.sha256` sidecar does and does not promise, the machine-readable error envelope,
 the two `flow` verbs that emit rather than mutate flow state (`render-progress-log` and
-`envelope build`), the bootstrap envelope `flow init` returns, and the infrastructure-only
+`envelope build`), the envelopes `flow init` and `flow list` return, and the infrastructure-only
 `blocks` verbs. The read verbs live in
 [query.md](query.md) and the mutating ones in [write.md](write.md); the flow registry's own
 verbs (`flow active|init|list|resolve|stale|doctor|find-plans|ensure-artifact`) are listed in
@@ -16,6 +16,7 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 - [Error format (`--error-format json`)](#error-format---error-format-json)
 - [Flow verbs](#flow-verbs)
   - [Bootstrap envelope — `flow init`](#bootstrap-envelope--flow-init)
+  - [Enumerate flows — `flow list`](#enumerate-flows--flow-list)
   - [Render PROGRESS-LOG.md — `flow render-progress-log`](#render-progress-logmd--flow-render-progress-log)
   - [Verify shared-block parity across markdown files](#verify-shared-block-parity-across-markdown-files)
 - [Envelope construction — `flow envelope build`](#envelope-construction--flow-envelope-build)
@@ -118,10 +119,27 @@ tomlctl flow init --slug <slug> --plan docs/plans/<slug>.md
 #    "context_path":".claude/flows/<slug>/context.toml","artifacts":{...}}
 ```
 
+`--plan` is recorded as `plan_path` repo-relative with forward slashes: an absolute path under the repo root is relativised, and a relative one resolves against the working directory when it names a file there, the repo root otherwise. A path outside the root, one escaping it with `..`, or one not ending `.md` is refused with `kind=validation` before anything is written, `--dry-run` included.
+
 - **`action`** — `"init"` when this run wrote `context.toml`, `"noop"` when it was already present. It describes `context.toml` alone.
 - **`created`** — the repo-relative stores this run materialised, in creation order; `[]` when every store was already there. Sidecars are excluded: refreshing a `.sha256` beside an existing store is a repair, not a creation.
 
 Branch on `created`, not on `action`, to detect a freshly-seeded store. `flow init` is the only sanctioned route that seeds `tasks.toml` — `flow ensure-artifact --bootstrap --kind tasks` is deliberately a no-op — so a legacy flow carrying only `context.toml` returns `action: "noop"` with `created` naming the `execution-record.toml` and `tasks.toml` it just minted.
+
+### Enumerate flows — `flow list`
+
+`tomlctl flow list` reads every `.claude/flows/<slug>/context.toml` and returns the readable ones under `flows` and the unreadable ones under `skipped`:
+
+```bash
+tomlctl flow list --status draft
+# → {"ok":true,
+#    "flows":[{"slug":"<slug>","status":"draft","updated":"<date>","plan_path":"docs/plans/<slug>.md","branch":"<branch>","scope":[]}],
+#    "skipped":[{"path":".claude/flows/<other>/context.toml","reason":"TOML parse error at line 2: key with no value, expected `=`"}]}
+```
+
+- **`flows`** — one row per readable flow that passes the filters. `status`, `updated` and `plan_path` are `""` when absent; `branch` is omitted when absent; `scope` defaults to `[]`.
+- **`skipped`** — one entry per `context.toml` that could not be read or parsed, with its repo-relative `path` and a one-line `reason`. `--status`, `--branch` and `--active-only` never hide an entry here, since an unreadable file has no fields to filter on. `ok` stays `true` when rows are skipped.
+- **`--strict-read`** turns the first unreadable `context.toml` into a `kind=parse` error instead.
 
 ### Render PROGRESS-LOG.md — `flow render-progress-log`
 

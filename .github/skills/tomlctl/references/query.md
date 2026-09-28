@@ -45,7 +45,7 @@ tomlctl get .claude/flows/auth-overhaul/context.toml tasks.completed --raw # →
 tomlctl validate .claude/flows/auth-overhaul/context.toml
 ```
 
-`--raw` on `get` requires a scalar target. It errors `--raw requires a scalar target; got {toml_type}` on a table or array.
+`--raw` on `get` requires a scalar target. It errors `--raw requires a scalar target (string|number|bool); got {table|array}` on a table or array; for an array, drop `--raw` or index one element (`scope.0`).
 
 TOML dates render as ISO-8601 strings in the JSON output (and as the ISO string in `--raw`).
 
@@ -148,7 +148,7 @@ tomlctl items list ledger.toml --group-by file
 
 - **`--raw`** — emit a single bare scalar (no JSON framing). Requires a shape that collapses to one value: `--count --raw`, `--count-distinct F --raw`, `--pluck F --raw` when exactly one item matches. Errors on multi-element pluck, `--count-by`, `--group-by`, or row output — with or without `--lines` / `--ndjson`.
 - **`--lines`** — emit one JSON value per line instead of a JSON array. Available only on `--pluck`; `--pluck F --lines --raw` emits one bare value per line.
-- **`--ndjson`** — one item per line instead of a JSON array. Composes with `--select` / `--exclude`, so a projected list is one compact object per line — the agent-facing table shape. Unprojected, each line is a full item and pipes cleanly into `items add-many --ndjson`. `items apply --ops` does not take NDJSON: it takes one JSON array of ops, with each row under a `json` key (`[{"op":"add","json":{…}}]`).
+- **`--ndjson`** — one item per line instead of a JSON array. Composes with `--select` / `--exclude`, so a projected list is one compact object per line — the agent-facing table shape. Unprojected, each line is a full item and pipes cleanly into `items add-many --ndjson`. `items apply --ops` takes NDJSON too, but of ops rather than rows: each line wraps a row under a `json` key (`{"op":"add","json":{…}}`), so listed rows need that framing first.
 
 ```bash
 tomlctl items list ledger.toml --status open --count --raw         # → 7

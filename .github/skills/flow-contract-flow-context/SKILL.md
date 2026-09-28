@@ -10,7 +10,7 @@ Flow resolution + doctor checks are delegated to the `flow-bootstrap` sub-agent
 dispatches the agent, gates on `envelope.ok`, and binds `envelope.resolved.{slug,
 context_path, artifacts.*, status, plan_path, scope, stale}` plus `envelope.doctor.ok` for
 downstream phases. Canonical input/output envelope shapes: see `flow-bootstrap.md` Contract
-section (mirrored at `scripts/templates/flow-context.md` Section 3).
+section.
 
 All `.claude/...` paths resolve to the project-local `.claude/` at the git top-level. No
 fallback to `~/.claude/`. **Status vocabulary**: `status ∈ {draft, in-progress, review,
