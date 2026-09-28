@@ -601,9 +601,10 @@ fn name_duplicate_rows(findings: &mut [Finding], rows: &[TaskRow], imported: &[S
             ([taken], [kept]) => format!(
                 "{} — the plan produces `{taken}` and the store still holds `{kept}`, which it \
                  no longer produces: a renamed heading derives a new `ref` and leaves the old \
-                 row on the number. Rename the row with `tomlctl tasks update <slug-or-file> \
-                 {id} --ref {taken}`, or retire it with `tomlctl tasks remove <slug-or-file> \
-                 {id}`, then re-import",
+                 row on the number. Rename the row with `tomlctl tasks update {id} --ref \
+                 {taken} --slug <slug>`, or retire it with `tomlctl tasks remove {id} --slug \
+                 <slug>`, then re-import (`--file <path>` in place of `--slug` for a store \
+                 named by path)",
                 finding.detail
             ),
             (produced, []) => format!(
