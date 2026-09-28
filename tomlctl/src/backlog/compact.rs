@@ -21,7 +21,7 @@ use toml::value::Datetime as TomlDatetime;
 
 use super::schema::{
     self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_COMPACTED_ON, FIELD_ID, FIELD_LAST_UPDATED,
-    FIELD_STATUS, FIELD_TERMINAL_DATE, FIELD_TERMINAL_REASON,
+    FIELD_STATUS, FIELD_TERMINAL_DATE, FIELD_TERMINAL_REASON, STATUS_PROMOTED,
 };
 use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
 use crate::io::advise;
@@ -128,9 +128,13 @@ fn terminal_cluster(item: &TomlValue) -> Option<(&str, &'static str, &'static st
     Some((status, date_field, reason_field))
 }
 
-/// The terminal date of a row old enough to fold, or `None`.
+/// The terminal date of a row old enough to fold, or `None`. A `promoted` row
+/// is a live claim on a flow and never folds, however old.
 fn due(item: &TomlValue, today: Date, threshold: Duration) -> Option<TomlDatetime> {
     let (status, date_field, _) = terminal_cluster(item)?;
+    if status == STATUS_PROMOTED {
+        return None;
+    }
     let Some((stored, civil)) = read_date(item, date_field) else {
         advise!(
             "tomlctl: backlog item {} is status=\"{status}\" with no readable `{date_field}` date — leaving it in place",
@@ -156,10 +160,9 @@ fn read_date(item: &TomlValue, field: &str) -> Option<(TomlDatetime, Date)> {
     Some((stored, civil))
 }
 
-/// Project a live row onto `COMPACTED_FIELDS` — driven by that constant, so
-/// the row carries every pinned key and nothing else. Absent source fields
-/// land as empty strings; every original field outside the projection is
-/// dropped.
+/// Project a live row onto `COMPACTED_FIELDS`, plus each
+/// `COMPACTED_OPTIONAL_FIELDS` entry the row carries non-empty. Absent pinned
+/// fields land as empty strings; every other original field is dropped.
 fn compacted_row(
     item: &TomlValue,
     terminal_date: TomlDatetime,
@@ -175,6 +178,12 @@ fn compacted_row(
             other => TomlValue::String(text(item, other)),
         };
         row.insert((*field).to_string(), value);
+    }
+    for field in schema::COMPACTED_OPTIONAL_FIELDS {
+        let value = text(item, field);
+        if !value.is_empty() {
+            row.insert((*field).to_string(), TomlValue::String(value));
+        }
     }
     TomlValue::Table(row)
 }
@@ -351,7 +360,7 @@ last_seen = {}
     }
 
     #[test]
-    fn the_folded_row_carries_the_pinned_fields_and_nothing_else() {
+    fn an_unclaimed_folded_row_carries_the_pinned_fields_and_nothing_else() {
         let plan = plan_compaction(&resolved_store(&ago(200)), today(), ninety_days()).unwrap();
         let row = &items_array(&plan.new_doc, ARRAY_COMPACTED)[0];
         let table = row.as_table().unwrap();
@@ -375,6 +384,57 @@ last_seen = {}
             table["compacted_on"].as_datetime().unwrap().to_string(),
             "2026-09-01"
         );
+    }
+
+    #[test]
+    fn an_aged_promoted_row_is_left_in_place() {
+        let d = doc(&format!(
+            r#"
+[[backlog]]
+id = "B-7f0e2d91"
+summary = "claimed long ago"
+status = "promoted"
+promoted = {}
+promoted_to = "some-flow"
+"#,
+            ago(1825)
+        ));
+        let plan = plan_compaction(&d, today(), ninety_days()).unwrap();
+        assert!(plan.compacted.is_empty());
+        assert_eq!(plan.remaining, 1);
+        assert!(items_array(&plan.new_doc, ARRAY_COMPACTED).is_empty());
+    }
+
+    #[test]
+    fn a_claimed_resolved_row_keeps_its_claim_and_flow_when_folded() {
+        let mut d = resolved_store(&ago(200));
+        let live = d["backlog"][0].as_table_mut().unwrap();
+        live.insert(
+            schema::FIELD_PROMOTED.to_string(),
+            TomlValue::String(ago(300)),
+        );
+        live.insert(
+            schema::FIELD_PROMOTED_TO.to_string(),
+            TomlValue::String("some-flow".to_string()),
+        );
+        live.insert(
+            schema::FIELD_RESOLVED_FLOW.to_string(),
+            TomlValue::String("some-flow".to_string()),
+        );
+        let plan = plan_compaction(&d, today(), ninety_days()).unwrap();
+        assert_eq!(plan.compacted, vec!["B-7f0e2d91".to_string()]);
+        let row = &items_array(&plan.new_doc, ARRAY_COMPACTED)[0];
+        let row = row.as_table().unwrap();
+
+        let got: BTreeSet<&str> = row.keys().map(String::as_str).collect();
+        let want: BTreeSet<&str> = schema::COMPACTED_FIELDS
+            .iter()
+            .chain(schema::COMPACTED_OPTIONAL_FIELDS)
+            .copied()
+            .collect();
+        assert_eq!(got, want);
+        assert_eq!(row["promoted_to"].as_str(), Some("some-flow"));
+        assert_eq!(row["resolved_flow"].as_str(), Some("some-flow"));
     }
 
     #[test]
