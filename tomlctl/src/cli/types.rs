@@ -1136,6 +1136,12 @@ pub(crate) enum BacklogOp {
         tag: Vec<String>,
         #[arg(long, help = "Shorthand for --status open")]
         open: bool,
+        #[arg(
+            long,
+            conflicts_with_all = ["open", "status"],
+            help = "Only live rows: open or promoted"
+        )]
+        live: bool,
         /// Matches on repo-path component boundaries, so `lumina/server`
         /// selects `lumina/server/pty/x.rs` but not `lumina/server-extras/y.rs`.
         #[arg(long = "area-prefix", value_name = "PATH")]

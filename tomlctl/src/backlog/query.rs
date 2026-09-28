@@ -1,10 +1,11 @@
 //! `backlog list` and `backlog show` — the read paths over the store.
 //!
-//! `list` narrows the `backlog` array by the three filters this module owns,
+//! `list` narrows the `backlog` array by the four filters this module owns,
 //! then hands the narrowed array to the generic query engine, so the whole
-//! `--where-*` / projection / aggregation surface still applies. Those three
-//! are here because no predicate family expresses them: `--tag` tests array
-//! membership, `--area-prefix` matches on path-component boundaries (which
+//! `--where-*` / projection / aggregation surface still applies. Those four
+//! are here because no predicate family expresses them: `--live` is an OR
+//! over statuses (`--where` only ANDs), `--tag` tests array membership,
+//! `--area-prefix` matches on path-component boundaries (which
 //! `--where-prefix` does not), and `--has-evidence` reads the filesystem.
 //!
 //! Evidence is derived from the directory on every call. The store records
@@ -40,6 +41,7 @@ pub(crate) fn dispatch_list(
     kind: Option<String>,
     tag: Vec<String>,
     open: bool,
+    live: bool,
     area_prefix: Option<String>,
     has_evidence: bool,
     count: bool,
@@ -49,6 +51,7 @@ pub(crate) fn dispatch_list(
     let doc = schema::read_store(&integrity)?;
 
     let filters = Filters {
+        live,
         tags: &tag,
         area_prefix: area_prefix.as_deref(),
         has_evidence,
@@ -80,6 +83,7 @@ pub(crate) fn dispatch_show(id: String, integrity: ReadIntegrityArgs) -> Result<
 
 /// Filters applied before the query engine sees the array.
 struct Filters<'a> {
+    live: bool,
     tags: &'a [String],
     area_prefix: Option<&'a str>,
     has_evidence: bool,
@@ -88,6 +92,9 @@ struct Filters<'a> {
 fn filter_backlog(items: &[TomlValue], f: &Filters<'_>) -> Result<Vec<TomlValue>> {
     let mut kept = Vec::new();
     for item in items {
+        if f.live && !schema::is_live(row_str(item, FIELD_STATUS).unwrap_or_default()) {
+            continue;
+        }
         if !f.tags.iter().all(|t| has_tag(item, t)) {
             continue;
         }
@@ -358,6 +365,7 @@ status = "open"
     fn area_prefix_matches_on_component_boundaries() {
         let d = doc(AREAS);
         let f = Filters {
+            live: false,
             tags: &[],
             area_prefix: Some("lumina/server"),
             has_evidence: false,
@@ -409,6 +417,7 @@ status = "open"
         let d = doc(TAGGED);
         let both = [String::from("ci"), String::from("windows")];
         let f = Filters {
+            live: false,
             tags: &both,
             area_prefix: None,
             has_evidence: false,
@@ -418,6 +427,7 @@ status = "open"
 
         let one = [String::from("ci")];
         let f = Filters {
+            live: false,
             tags: &one,
             area_prefix: None,
             has_evidence: false,
@@ -522,6 +532,67 @@ kind = "debt"
             crate::query::run(&d, ARRAY_BACKLOG, &q).unwrap().is_array(),
             "without --count the same filters still list rows"
         );
+    }
+
+    const LIFECYCLE: &str = r#"
+[[backlog]]
+id = "B-1"
+summary = "untriaged"
+status = "open"
+
+[[backlog]]
+id = "B-2"
+summary = "claimed by a flow"
+status = "promoted"
+promoted = 2026-09-01
+promoted_to = "some-flow"
+
+[[backlog]]
+id = "B-3"
+summary = "not worth doing"
+status = "dismissed"
+dismissed = 2026-09-01
+dismiss_reason = "wontfix"
+
+[[backlog]]
+id = "B-4"
+summary = "done"
+status = "resolved"
+resolved = 2026-09-01
+resolution = "fixed"
+"#;
+
+    #[test]
+    fn live_keeps_open_and_promoted_rows() {
+        let d = doc(LIFECYCLE);
+        let f = Filters {
+            live: true,
+            tags: &[],
+            area_prefix: None,
+            has_evidence: false,
+        };
+        let kept = filter_backlog(items_array(&d, ARRAY_BACKLOG), &f).unwrap();
+        assert_eq!(ids(&kept), ["B-1", "B-2"]);
+    }
+
+    fn parse_list(args: &[&str]) -> Result<crate::cli::Cli, clap::Error> {
+        let mut argv = vec!["tomlctl", "backlog", "list"];
+        argv.extend_from_slice(args);
+        crate::cli::Cli::try_parse_from(argv)
+    }
+
+    #[test]
+    fn live_parses_alone_and_conflicts_with_the_status_filters() {
+        assert!(parse_list(&["--live"]).is_ok());
+        for other in [&["--open"][..], &["--status", "open"][..]] {
+            let mut args = vec!["--live"];
+            args.extend_from_slice(other);
+            // `Cli` is not `Debug`, so `unwrap_err` is unavailable here.
+            let Err(err) = parse_list(&args) else {
+                panic!("--live with {other:?} must not parse");
+            };
+            assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+        }
     }
 
     const RELATED: &str = r#"
@@ -640,6 +711,7 @@ duplicate_of = "B-1"
             fs::write(dir.join("shot.png"), b"1234").unwrap();
             let d = doc(RELATED);
             let f = Filters {
+                live: false,
                 tags: &[],
                 area_prefix: None,
                 has_evidence: true,
