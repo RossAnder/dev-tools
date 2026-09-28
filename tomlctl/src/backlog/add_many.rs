@@ -119,12 +119,6 @@ fn parse_rows(
                 format!("expected one JSON object per line, as `backlog add --json` takes: {e}"),
             )
         })?;
-        if let Some(key) = payload.as_object().and_then(add::unknown_payload_key) {
-            return Err(refuse(
-                line,
-                format!("unknown key `{key}`; a line carries only fields a backlog row stores"),
-            ));
-        }
         let req = add::payload_request(payload, on_duplicate, today, base_sha.clone(), file)
             .with_context(|| format!("line {line}"))?;
         let advisories = add::advisories(&req);

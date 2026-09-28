@@ -46,8 +46,8 @@ const MINTED_FIELDS: [&str; 5] = [
     FIELD_SEEN_COUNT,
 ];
 
-/// Payload fields read into `AddRequest`'s named slots; every other key
-/// rides in `extra` and is written verbatim.
+/// Payload fields read into `AddRequest`'s named slots; every other accepted
+/// key rides in `extra` and is written verbatim.
 const CONSUMED_FIELDS: [&str; 10] = [
     FIELD_KIND,
     FIELD_SUMMARY,
@@ -61,10 +61,9 @@ const CONSUMED_FIELDS: [&str; 10] = [
     FIELD_RELATED,
 ];
 
-/// The first payload key that names no live-row field, if any. `add --json`
-/// passes such a key through to the stored row; `add-many` refuses it, so a
-/// typo in one line of a batch cannot land as a stray field.
-pub(super) fn unknown_payload_key(map: &JsonMap<String, JsonValue>) -> Option<&str> {
+/// The first payload key that names no live-row field, if any. Refused rather
+/// than stored, so a typo'd key cannot land as a stray field.
+fn unknown_payload_key(map: &JsonMap<String, JsonValue>) -> Option<&str> {
     map.keys().map(String::as_str).find(|key| {
         !(CONSUMED_FIELDS.contains(key)
             || MINTED_FIELDS.contains(key)
@@ -622,6 +621,13 @@ fn request_from_payload(
         }
         .into_tagged(Some(file.to_path_buf())));
     };
+    if let Some(key) = unknown_payload_key(&map) {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            Some(file.to_path_buf()),
+            format!("unknown key `{key}`; a payload carries only fields a backlog row stores"),
+        ));
+    }
     let mut extra = toml::Table::new();
     for (field, value) in &map {
         if CONSUMED_FIELDS.contains(&field.as_str()) || MINTED_FIELDS.contains(&field.as_str()) {

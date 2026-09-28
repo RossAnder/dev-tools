@@ -484,6 +484,26 @@ fn on_duplicate_add_is_not_a_parser_value() {
 }
 
 #[test]
+fn add_json_refuses_an_unknown_key_and_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let typo = json!({"summary": FLAKE_SUMMARY, "kind": "flaky-test", "contxt": "x"});
+    let out = cli(&root)
+        .args(["--error-format", "json", "backlog", "add", "--json", "-"])
+        .write_stdin(typo.to_string())
+        .assert()
+        .failure()
+        .code(1);
+    let err = parse_json_error_envelope(&String::from_utf8_lossy(&out.get_output().stderr));
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(message.contains("`contxt`"), "{message}");
+    assert!(
+        !store_path(&root).exists(),
+        "a refused payload must not create the store"
+    );
+}
+
+#[test]
 fn dismiss_stores_its_terminal_date_and_reason() {
     let (_tmp, root) = sandbox();
     let added = backlog(
