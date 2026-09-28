@@ -32,24 +32,29 @@ All read commands print JSON on stdout by default.
 > **There is no `--format` / `--output` flag, by decision.** JSON is the only structured output; use `--raw` / `--lines` for bare scalars (see [Output shapes](#output-shapes---raw----lines----ndjson)). The compact table an agent reaches for is `--select <fields> --ndjson`: one self-describing object per line, immune to a `|` or tab inside a summary — which is exactly what a `--tsv` or a hand-rendered pipe table is not. `gh`/`kubectl`-style `--template` / `custom-columns` serve humans and shell scripts; tomlctl's reader is an agent, and NDJSON is strictly better for it. Do **not** invent `--format json`; it errors with `error: unexpected argument '--format' found` and a `Usage:` line for the subcommand, which names the flag to drop. Swallowing that (`2>/dev/null`) throws the diagnosis away and leaves the verification silently producing nothing.
 
 ```bash
-# Whole document (omit path to read the entire file) or a single value
+# Omit the dotted path to read the whole document
 tomlctl get .claude/flows/auth-overhaul/context.toml
-tomlctl get .claude/flows/auth-overhaul/context.toml status
 tomlctl get .claude/flows/auth-overhaul/context.toml tasks.completed
-
-# Scalar as bare text (no JSON quotes / no braces) — pipes straight into bash
 tomlctl get .claude/flows/auth-overhaul/context.toml status --raw          # → review
 tomlctl get .claude/flows/auth-overhaul/context.toml tasks.completed --raw # → 4
-
-# Parse-check (exit 0 on valid)
-tomlctl validate .claude/flows/auth-overhaul/context.toml
+tomlctl validate .claude/flows/auth-overhaul/context.toml                  # exit 0 on valid TOML
 ```
 
-`--raw` on `get` requires a scalar target. It errors `--raw requires a scalar target (string|number|bool); got {table|array}` on a table or array; for an array, drop `--raw` or index one element (`scope.0`).
+#### `get`
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--raw` | — | Emit a bare scalar — no JSON quotes, no braces — that pipes straight into bash. Requires a scalar target: a table or array errors `--raw requires a scalar target (string\|number\|bool); got {table\|array}`; for an array, drop `--raw` or index one element (`scope.0`). | off |
 
 TOML dates render as ISO-8601 strings in the JSON output (and as the ISO string in `--raw`).
 
-`tomlctl parse <file>` remains accepted as a deprecated alias for `tomlctl get <file>` (no path argument) — kept for backward compatibility with older scripts. Prefer `tomlctl get <file>` in new docs and recipes.
+`validate` takes no flag of its own. `tomlctl parse <file>` remains accepted as a deprecated alias for `tomlctl get <file>` (no
+path argument) and likewise takes no flag of its own. Prefer `tomlctl get <file>` in new
+docs and recipes.
+
+`get`, `validate`, `parse` and the `items` query verbs carry the shared read bundle —
+`--verify-integrity`, `--strict-read` (below) and `--error-format text|json` — which their
+flag tables omit; `sweep` and `items sweep` state their own exceptions.
 
 ### Strict reads (`--strict-read`)
 
@@ -70,90 +75,85 @@ tomlctl items list .claude/flows/foo/review-ledger.toml --status open --strict-r
 
 `tomlctl items list <file>` is the one-stop query tool for `[[items]]` (and any other array-of-tables via `--array <name>`). Every flag below is additive; omit any flag and it contributes nothing. Filters AND-combine; projections, shaping, and aggregation apply after filtering.
 
+`tasks list` and `backlog list` carry the same query options — every flag below except
+`--array` and the legacy shortcuts; their own flags are in [tasks.md](tasks.md) and
+[backlog.md](backlog.md).
+
 ### Filters (all repeatable, all AND-combined)
 
-| Operator | Usage | Meaning |
+#### `items list`
+
+| Flag | Example | Meaning |
 |---|---|---|
-| `--where` | `--where status=open` | field equals value (exact match) |
-| `--where-not` | `--where-not status=fixed` | field does not equal value |
-| `--where-in` | `--where-in status=open,deferred,wontfix` | field in comma-separated set |
-| `--where-has` | `--where-has defer_reason` | field present and non-empty |
-| `--where-missing` | `--where-missing resolution` | field absent or empty |
-| `--where-gt` / `--where-gte` | `--where-gte first_flagged=@date:2026-04-01` | field `>` / `>=` value |
-| `--where-lt` / `--where-lte` | `--where-lt line=@int:100` | field `<` / `<=` value |
-| `--where-contains` | `--where-contains summary=allocation` | field string contains substring |
-| `--where-prefix` | `--where-prefix id=R2` | field string starts with |
-| `--where-suffix` | `--where-suffix file=.rs` | field string ends with |
-| `--where-regex` | `--where-regex symbol='^old::'` | caller-supplied regex (does NOT auto-anchor) |
+| `--array` | `--array rollback_events` | Array-of-tables to query. Default `items`, the ledger schema. |
+| `--where` | `--where status=open` | Field equals value (exact match). |
+| `--where-not` | `--where-not status=fixed` | Field does not equal value. |
+| `--where-in` | `--where-in status=open,deferred,wontfix` | Field in comma-separated set. |
+| `--where-has` | `--where-has defer_reason` | Field present and non-empty. |
+| `--where-missing` | `--where-missing resolution` | Field absent or empty. |
+| `--where-gt` / `--where-gte` | `--where-gte first_flagged=@date:2026-04-01` | Field `>` / `>=` value. |
+| `--where-lt` / `--where-lte` | `--where-lt line=@int:100` | Field `<` / `<=` value. |
+| `--where-contains` | `--where-contains summary=allocation` | Field string contains substring. |
+| `--where-prefix` | `--where-prefix id=R2` | Field string starts with. |
+| `--where-suffix` | `--where-suffix file=.rs` | Field string ends with. |
+| `--where-regex` | `--where-regex symbol='^old::'` | Caller-supplied regex; does NOT auto-anchor. |
+| `--status` | `--status open` | Legacy shortcut for `--where status=<v>`; prefer `--where` in anything new. |
+| `--category` | `--category security` | Legacy shortcut for `--where category=<v>`. |
+| `--file` | `--file src/a.rs` | Legacy shortcut for `--where file=<p>`. |
+| `--newer-than` | `--newer-than 2026-04-01` | Legacy shortcut for `--where-gt first_flagged=@date:<d>`. |
 
 **Typed RHS.** All `KEY=VAL` right-hand sides accept an optional `@type:` prefix to disambiguate native TOML types from string literals: `@date:`, `@datetime:`, `@int:`, `@float:`, `@bool:`, `@string:` / `@str:`. With no prefix the RHS is string, coerced to the field's native type when the field is typed.
 
-**Legacy shortcut flags** (preserved; prefer `--where` for anything new): `--status <n>` ≡ `--where status=<n>`, `--category <n>` ≡ `--where category=<n>`, `--file <p>` ≡ `--where file=<p>`, `--newer-than <d>` ≡ `--where-gt first_flagged=@date:<d>`.
-
 ### Projection (mutually exclusive within this group)
 
-```bash
-# Keep only these keys per item
-tomlctl items list ledger.toml --status open --select id,file,summary
+#### `items list`
 
-# Drop these keys per item
-tomlctl items list ledger.toml --status open --exclude description,evidence
+| Flag | Value | Meaning |
+|---|---|---|
+| `--select` | `F1,F2,...` | Keep only these keys per item. |
+| `--exclude` | `F1,F2,...` | Drop these keys per item. |
+| `--pluck` | `FIELD` | Flat array of one field's values, e.g. `["R3","R7","R22"]`. |
 
-# Flat list of one field's values
-tomlctl items list ledger.toml --where-has defer_reason --pluck id
-# → ["R3","R7","R22"]
-```
-
-`--select` + `--exclude`, `--select` + `--pluck`, and `--exclude` + `--pluck` are rejected at parse time.
+`--select` + `--exclude`, `--select` + `--pluck`, and `--exclude` + `--pluck` are rejected.
 
 ### Shaping
 
-```bash
-# Sort ascending (default) or descending, tiebreakers via repeated flag
-tomlctl items list ledger.toml --sort-by first_flagged
-tomlctl items list ledger.toml --sort-by severity:desc --sort-by first_flagged:asc
+#### `items list`
 
-# Paginate
-tomlctl items list ledger.toml --limit 10
-tomlctl items list ledger.toml --offset 20 --limit 10
-
-# Dedup on the projected shape (preserve first occurrence)
-tomlctl items list ledger.toml --select category --distinct
-```
+| Flag | Value | Meaning |
+|---|---|---|
+| `--sort-by` | `FIELD[:asc\|desc]`, repeatable | Sort ascending unless `:desc`; each repeat is a tiebreaker, e.g. `--sort-by severity:desc --sort-by first_flagged:asc`. |
+| `--limit` | `N` | Return at most N items. |
+| `--offset` | `N` | Skip the first N items; `--offset 20 --limit 10` pages. |
+| `--distinct` | — | Dedup on the projected shape, keeping the first occurrence, e.g. `--select category --distinct`. |
 
 ### Aggregation (short-circuits projection / group-by)
 
-```bash
-# Count matching items
-tomlctl items list ledger.toml --status open --count
-# → {"count": 7}
+#### `items list`
 
-# Count distinct values of a field across matching items (replaces the
-# --pluck F | jq -r '.[]' | sort -u | wc -l chain entirely).
-tomlctl items list record.toml --where type=task-completion --count-distinct task_ref
-# → {"count_distinct": 14, "field": "task_ref"}
-
-# Bucket by a field, emit counts
-tomlctl items list ledger.toml --count-by status
-# → {"open": 7, "fixed": 12, "wontfix": 1}
-
-# Bucket by a field, emit item lists
-tomlctl items list ledger.toml --group-by file
-# → {"src/a.rs": [item, ...], "src/b.rs": [item, ...]}
-```
+| Flag | Value | Meaning |
+|---|---|---|
+| `--count` | — | Count matching items: `{"count": 7}`. |
+| `--count-distinct` | `FIELD` | Count distinct values of FIELD across matching items, null or missing excluded: `{"count_distinct": 14, "field": "task_ref"}`. |
+| `--count-by` | `FIELD` | Bucket by FIELD, emit counts: `{"open": 7, "fixed": 12, "wontfix": 1}`. |
+| `--group-by` | `FIELD` | Bucket by FIELD, emit item lists: `{"src/a.rs": [item, ...], "src/b.rs": [item, ...]}`. |
 
 `--count`, `--count-distinct`, `--count-by`, `--group-by`, and `--pluck` are all members of the shape ArgGroup and are mutually exclusive.
 
 ### Output shapes (`--raw` / `--lines` / `--ndjson`)
 
-- **`--raw`** — emit a single bare scalar (no JSON framing). Requires a shape that collapses to one value: `--count --raw`, `--count-distinct F --raw`, `--pluck F --raw` when exactly one item matches. Errors on multi-element pluck, `--count-by`, `--group-by`, or row output — with or without `--lines` / `--ndjson`.
-- **`--lines`** — emit one JSON value per line instead of a JSON array. Available only on `--pluck`; `--pluck F --lines --raw` emits one bare value per line.
-- **`--ndjson`** — one item per line instead of a JSON array. Composes with `--select` / `--exclude`, so a projected list is one compact object per line — the agent-facing table shape. Unprojected, each line is a full item and pipes cleanly into `items add-many --ndjson`. `items apply --ops` takes NDJSON too, but of ops rather than rows: each line wraps a row under a `json` key (`{"op":"add","json":{…}}`), so listed rows need that framing first.
+#### `items list`
+
+| Flag | Meaning |
+|---|---|
+| `--raw` | Emit a single bare scalar (no JSON framing). Requires a shape that collapses to one value: `--count`, `--count-distinct F`, or `--pluck F` when exactly one item matches. Errors on a multi-element pluck, `--count-by`, `--group-by`, or row output, and on row output combined with `--lines` / `--ndjson`; `--pluck F --raw --lines` emits one bare value per line. |
+| `--lines` | The `--ndjson` switch under the spelling the `--pluck` case reaches for: one JSON value per line instead of a JSON array. A no-op on the aggregate shapes, which are one value already. |
+| `--ndjson` | One item per line instead of a JSON array. Composes with `--select` / `--exclude`, so a projected list is one compact object per line — the agent-facing table shape. Unprojected, each line is a full item and pipes cleanly into `items add-many --ndjson`. `items apply --ops` takes NDJSON too, but of ops rather than rows: each line wraps a row under a `json` key (`{"op":"add","json":{…}}`), so listed rows need that framing first. |
 
 ```bash
 tomlctl items list ledger.toml --status open --count --raw         # → 7
 tomlctl items list ledger.toml --where id=R22 --pluck symbol --raw # → old::fn
-tomlctl items list ledger.toml --status open --pluck id --lines    # R1\nR3\nR7
+tomlctl items list ledger.toml --status open --pluck id --lines    # "R1"\n"R3"\n"R7"
 tomlctl items list ledger.toml --status open --ndjson              # {...}\n{...}
 tomlctl items list ledger.toml --status open --select id,severity,summary --ndjson
 # {"id":"R1","severity":"major","summary":"…"}
@@ -174,26 +174,22 @@ post-process it:
 tomlctl items get .claude/flows/auth-overhaul/review-ledger.toml R22
 ```
 
+#### `items get`
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--array` | array name | Array-of-tables to look the id up in, as for `items list`. | `items` |
+
 ### Find duplicates (read-only)
 
-`tomlctl items find-duplicates <ledger> [--tier A|B|C] [--across <other>]` surfaces likely-duplicate items without touching the ledger. Output is a JSON array of `{tier, key, items}` groups (empty array when no duplicates).
+`tomlctl items find-duplicates <ledger>` surfaces likely-duplicate items without touching the ledger. Output is a JSON array of `{tier, key, items}` groups (empty array when no duplicates).
 
-```bash
-# Tier A (default): canonical dedup rule — group by (file, symbol) when
-# symbol is non-empty, otherwise by (file, summary).
-tomlctl items find-duplicates ledger.toml
+#### `items find-duplicates`
 
-# Tier B: content fingerprint. Groups items sharing
-# <file>|<summary>|<severity>|<category>|<symbol> (truncated SHA-256, 16 hex)
-# and the same file basename.
-tomlctl items find-duplicates ledger.toml --tier B
-
-# Tier C: file-scoped greedy line-window grouping for symbol-less items
-# (group anchor + window of 10 lines).
-tomlctl items find-duplicates ledger.toml --tier C
-```
-
-Cross-ledger with `--across`: runs tier A or B over the union of two ledgers. Each output entry is tagged with `source_file` (the basename of its origin ledger); the tag is applied at JSON-emit time and never written back to either on-disk ledger.
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--tier` | `A` \| `B` \| `C` | `A`: the canonical dedup rule — group by (file, symbol) when symbol is non-empty, otherwise by (file, summary). `B`: content fingerprint — items sharing `<file>\|<summary>\|<severity>\|<category>\|<symbol>` (truncated SHA-256, 16 hex) and the same file basename. `C`: file-scoped greedy line-window grouping for symbol-less items (group anchor + window of 10 lines). | `A` |
+| `--across` | path | Run tier A or B over the union of this ledger's items and the other's. Each output entry is tagged with `source_file`, the basename of its origin ledger; the tag is applied at JSON-emit time and never written back to either ledger. Tier C's line-window grouping assumes one source file, so `--tier C --across` errors `tier C is file-scoped; use --tier A or --tier B with --across`. | none |
 
 ```bash
 tomlctl items find-duplicates review-ledger.toml --across optimise-findings.toml --tier B
@@ -202,15 +198,9 @@ tomlctl items find-duplicates review-ledger.toml --across optimise-findings.toml
 #    {…,"source_file":"optimise-findings.toml"}]}, …]
 ```
 
-Tier C is file-scoped by design (its line-window grouping assumes one source file) and errors under `--across`:
-
-```
-tier C is file-scoped; use --tier A or --tier B with --across
-```
-
 ### Surface orphans (read-only)
 
-`tomlctl items orphans <ledger>` walks every item and emits a JSON array of orphan records, one per detected class:
+`tomlctl items orphans <ledger>` takes no flag beyond the shared read bundle. It walks every item and emits a JSON array of orphan records, one per detected class:
 
 - `missing-file` — the item's `file` path does not exist under the repo root.
 - `symbol-missing` — `file` exists but `symbol` is no longer present in it as a whole word (ASCII word-boundary match; a boundary is demanded only at an end of the symbol that is itself a word character, so `bar()` matches a bare call site).
