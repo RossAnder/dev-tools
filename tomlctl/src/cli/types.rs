@@ -188,8 +188,7 @@ pub(crate) struct WriteIntegrityArgs {
     /// Allow write operations on files outside the current repo's `.claude/` directory.
     /// By default, writes are refused if the canonical target path is not under
     /// `<git-top-level>/.claude/` (or the CWD, if not in a git repo). Use this to
-    /// intentionally edit a flow file in another location. Affects only TOML
-    /// write paths (set / set-json / items *).
+    /// intentionally edit a flow file in another location.
     #[arg(long = "allow-outside")]
     pub(crate) allow_outside: bool,
 
@@ -219,8 +218,7 @@ pub(crate) struct WriteIntegrityArgs {
     /// `kind=not_found` error. Default: a missing file is created (seeded
     /// with a schema-aware skeleton for recognised flow files — the ledgers
     /// `execution-record.toml` / `review-ledger.toml` / `optimise-findings.toml`
-    /// / `plan-review-findings.toml` — and an empty table otherwise). Affects
-    /// only TOML write paths (set / set-json / items * / array-append).
+    /// / `plan-review-findings.toml` — and an empty table otherwise).
     /// `items sweep --update` is the exception: it never creates a ledger,
     /// and a missing file is reported as `kind=not_found` either way.
     #[arg(long = "no-create")]
@@ -259,13 +257,13 @@ pub(crate) struct QueryArgs {
     #[arg(
         long = "where-has",
         value_name = "KEY",
-        help = "Filter: field is present (repeatable)"
+        help = "Filter: field is present and non-empty (repeatable)"
     )]
     pub(crate) where_has: Vec<String>,
     #[arg(
         long = "where-missing",
         value_name = "KEY",
-        help = "Filter: field is absent (repeatable)"
+        help = "Filter: field is absent or empty (repeatable)"
     )]
     pub(crate) where_missing: Vec<String>,
     #[arg(
@@ -1610,6 +1608,7 @@ pub(crate) enum ItemsOp {
             help = "JSON object of default field values; pass `-` to read from stdin or `@<path>` to read a file"
         )]
         defaults_json: Option<String>,
+        /// Target array-of-tables name. See `List --array`.
         #[arg(long, default_value = "items")]
         array: String,
         /// Skip rows whose merged payload already matches an existing
