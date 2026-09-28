@@ -95,6 +95,14 @@ Without the rename the real import raises `dag/duplicate-number` and writes noth
 
 Scan plan items against the codebase and git history: for each item, check whether the referenced files exist, the described changes are present, and the relevant tests pass. Apply the reconciler contract before any append — this op is auto-invoked by `/implement` Phase 4.5 immediately after `/implement` wrote its own completions, so the skip-set is what stops a double-write. Then re-render `PROGRESS-LOG.md` and update `context.toml` per Step 1. Writes `status ∈ {in-progress, review}` only — MUST NOT write `complete`.
 
+Report the backlog items promoted to this flow from a read-only reconcile:
+
+```bash
+tomlctl backlog reconcile --flow <slug>
+```
+
+Print `backlog: N ready, M in-progress, K stalled, L unlinked, O orphaned` from the lengths of those five `buckets` arrays (`dangling` and `external` are always empty under `--flow`). This op resolves nothing: a `ready` item is resolved by `/implement`'s Phase 4 or by `complete`.
+
 #### `complete` — Explicitly mark the flow as complete
 
 User-invoked; the ONLY path that may set `status = "complete"`. Run once the user has finished `/review`-ing and `/optimise`-ing the implemented plan and is ready to drop it from auto-resolution. In order:
@@ -102,9 +110,20 @@ User-invoked; the ONLY path that may set `status = "complete"`. Run once the use
 1. Read `<old_status>` via `tomlctl get <context_path> status --verify-integrity`.
 2. **Refuse to transition from `draft`** — emit `flow <slug>: refusing transition draft → complete. A plan that was never in-progress cannot be marked complete. Run /implement first, or transition via /plan-update <slug> status.` and exit.
 3. **No-op if already `complete`** — emit `flow <slug>: already complete — no change.` and exit; no log entry, no render.
-4. **Warn-if-incomplete gate.** Count open items in the resolved review and optimise ledgers with `tomlctl items list <ledger> --status open --count --raw` (plus `--pluck id --raw` for the ID lists), guarded by a file-existence test. Distinguish file-absent (acceptable — count 0) from tomlctl-failed (must surface): let a non-zero exit propagate and halt, and never swallow it with a bare `2>/dev/null`. If the combined count is > 0, ask via `AskUserQuestion`: `<N> open finding(s) on flow <slug>: <r_count> review (<r_list>), <o_count> optimise (<o_list>). Mark complete anyway?` — ID lists capped at 5 each plus `...`; options `Mark complete anyway` (proceed, recording the override) or `Cancel` (exit without writing). **If `AskUserQuestion` is unavailable** (non-interactive harness, no open question slot), refuse: emit `flow <slug>: complete blocked — N open items, AskUserQuestion unavailable for override. Re-run interactively or transition the open items first.` and exit.
+4. **Warn-if-incomplete gate.** Invoke the `backlog-capture` skill to load the promotion lifecycle (the live `promoted` claim, the reconcile buckets, and `--reopen`'s rationale rule). Then:
+
+   - **Resolve delivered backlog items.** Run `tomlctl backlog reconcile --flow <slug> --apply`. It resolves every `ready` item — every task that `closes` it is `done` — and reports those ids under `applied`; surface each `skipped` entry with its reason. The remaining claims are the ids across `buckets.{in-progress, stalled, unlinked, orphaned}`: `<b_count>` and `<b_list>`. A repo with no `.claude/backlog.toml` reads as empty, so it needs no existence guard.
+   - **Count open findings.** Count open items in the resolved review and optimise ledgers with `tomlctl items list <ledger> --status open --count --raw` (plus `--pluck id --raw` for the ID lists), guarded by a file-existence test. Distinguish file-absent (acceptable — count 0) from tomlctl-failed (must surface): let a non-zero exit from this or the reconcile propagate and halt, and never swallow it with a bare `2>/dev/null`.
+   - **Ask.** If the combined count `<N>` is > 0, ask via `AskUserQuestion`: `<N> open item(s) on flow <slug>: <r_count> review (<r_list>), <o_count> optimise (<o_list>), <b_count> backlog (<b_list>). Mark complete anyway?` — ID lists capped at 5 each plus `...`. With `<b_count>` = 0 the options are `Mark complete anyway` (proceed, recording the override) or `Cancel` (exit without writing). With `<b_count>` > 0 they are `Reopen them and complete`, `Complete, keep them promoted`, or `Cancel`; either completing option also overrides any open findings. `Reopen them and complete` returns the backlog claims to triage in one call, before step 5, and a failure halts the op:
+
+     ```bash
+     tomlctl backlog triage <ids> --reopen --rationale "flow <slug> completed without resolving it"
+     ```
+
+     `<ids>` is every remaining claim, not the capped `<b_list>`. `Complete, keep them promoted` leaves the claims on the flow, where `backlog reconcile` and `/backlog` report them as `orphaned`.
+   - **If `AskUserQuestion` is unavailable** (non-interactive harness, no open question slot), refuse: emit `flow <slug>: complete blocked — N open items, AskUserQuestion unavailable for override. Re-run interactively or transition the open items first.` and exit. The `ready` items the reconcile resolved stay resolved.
 5. Set `status = "complete"` and `updated` to today; preserve `created` and key order. When `<old_status> == "in-progress"`, surface the informational note `flow <slug>: skipping the review intermediate state (status was in-progress, transitioning directly to complete). Most flows should pass through review (set via /plan-update <slug> status) before completing.` — the user invoked `complete` explicitly, so honour it.
-6. Append a `type=status-transition` entry with `from_status` / `to_status`, minting the id via `tomlctl items next-id <record> --prefix E`. Its `summary` MUST record whether the warn-gate fired and was overridden (`"User explicitly marked flow complete via /plan-update <slug> complete"`, or the same with `(warn-if-incomplete gate overridden with N open items)` appended). Conclude with `tomlctl set <record> last_updated <today>`.
+6. Append a `type=status-transition` entry with `from_status` / `to_status`, minting the id via `tomlctl items next-id <record> --prefix E`. Its `summary` MUST record whether the warn-gate fired and was overridden (`"User explicitly marked flow complete via /plan-update <slug> complete"`, or the same with `(warn-if-incomplete gate overridden with N open items)` appended), then append `; resolved K backlog item(s)` when the step-4 reconcile applied any, and `; reopened K backlog item(s)` or `; kept K backlog item(s) promoted` for the backlog answer. Conclude with `tomlctl set <record> last_updated <today>`.
 7. **Reap the flow's transient artefacts.** Completion is the only point at which a flow's scaffolding is provably dead, and it is the only step that owns their deletion — every other retention rule in the harness is next-run-triggered and therefore never fires on a flow's final run. Two sweeps, both after the step-5/6 writes have landed:
 
    - **Review siblings.** Delete `<plan>.premerge.md`, `<plan>.revised.md`, and `<plan>.revised.prev.md` for every plan document in scope, including inside `docs/plans/archive/**` for this slug. Each is a near-duplicate of a document git already holds. Report `reaped N review sibling(s)`.
@@ -114,7 +133,7 @@ User-invoked; the ONLY path that may set `status = "complete"`. Run once the use
 
 8. Re-render `PROGRESS-LOG.md`, then print `flow <slug>: status <old_status> → complete. Auto-resolution will skip this flow on subsequent /review, /optimise, /implement runs (use --flow <slug> to target explicitly).`
 
-**Gate ordering is load-bearing**: the step-4 queries and prompt MUST run after the step-3 no-op check (otherwise an already-complete flow is re-prompted) and before the step-5 write (otherwise the transition lands before the user can cancel).
+**Gate ordering is load-bearing**: the step-4 reconcile, queries and prompt MUST run after the step-3 no-op check (otherwise an already-complete flow is re-prompted) and before the step-5 write (otherwise the transition lands before the user can cancel). The reconcile's `--apply` and the batch reopen are the only writes allowed ahead of step 5: a `ready` item is delivered whether or not the flow completes, so a later `Cancel` or refusal leaves it correctly resolved; and a reopen that lands first leaves a failed run safe to repeat, since the flow is still open and the reopened items no longer count.
 
 #### `deviation` — Record a deviation
 
