@@ -46,7 +46,7 @@ Two epics under one project:
 ## 3. Environment state (verified 2026-06-12, re-verify on resume)
 
 - **Server:** running on `http://127.0.0.1:24817` (started by the operator,
-  *with companion*). DB = repo-root `./lumina.db` (NOT `lumina/lumina.db`).
+  *with companion*). DB = repo-root `./lumina.db` (NOT `lumina/lumina.db`). *(Since 2026-09-28 the default dev database is `lumina/lumina.db` regardless of the launch directory — see `lumina/CLAUDE.md`.)*
 - **Clean slate at write time:** 0 work-items, 0 sprints.
 - **MCP:** `lumina` server registered via `.mcp.json`; 87 tools. (Needed a
   reconnect at session start — see finding 1A-F3.)

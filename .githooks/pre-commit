@@ -16,7 +16,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 
 # Crate-wide by construction: cargo fmt cannot be narrowed to a path, so one
 # staged *.rs gates on the whole crate, including files this commit never touched.
-if printf '%s\n' "$STAGED" | grep -q '\.rs$'; then
+if grep -q '\.rs$' <<<"$STAGED"; then
   cargo fmt --manifest-path "$ROOT/tomlctl/Cargo.toml" -- --check
 fi
 
