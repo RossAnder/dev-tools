@@ -113,6 +113,12 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             allow_closed,
             integrity,
         ),
+        BacklogOp::Reconcile {
+            flow,
+            apply,
+            adopt,
+            integrity,
+        } => crate::backlog::reconcile::dispatch(flow, apply, adopt, integrity),
         BacklogOp::Cluster {
             by,
             min_size,

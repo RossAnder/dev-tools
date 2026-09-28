@@ -56,6 +56,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "backlog_show",
     "backlog_relate",
     "backlog_triage",
+    "backlog_reconcile",
     // Per-flow task DAG store: the `tasks` subcommand cluster.
     "tasks_import_plan",
     "tasks_add",
@@ -1214,6 +1215,35 @@ pub(crate) enum BacklogOp {
         integrity: WriteIntegrityArgs,
     },
 
+    /// Join each `promoted` item to the tasks that close it in its target
+    /// flow's store, and bucket it as ready, in-progress, stalled, unlinked,
+    /// orphaned, dangling or external. Writes nothing unless `--adopt` or
+    /// `--apply` is given.
+    Reconcile {
+        #[arg(
+            long,
+            value_name = "SLUG",
+            help = "Only items whose target resolves to this flow"
+        )]
+        flow: Option<String>,
+        #[arg(
+            long,
+            help = "Resolve every ready item, recording its flow, tasks and commits"
+        )]
+        apply: bool,
+        /// Runs before bucketing, so `--apply` in the same run sees the new
+        /// links. They live only in `tasks.toml` until `tasks render` writes
+        /// them into the plan, and the next `tasks import-plan` drops them
+        /// otherwise; `render_needed` names the flows to render.
+        #[arg(
+            long,
+            help = "Link each item no task links yet to every task in its flow whose prose names its id"
+        )]
+        adopt: bool,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
     /// Group open items into candidate work scopes.
     Cluster {
         #[arg(long = "by", value_enum, default_value_t = ClusterBy::All)]
@@ -1244,8 +1274,9 @@ pub(crate) enum BacklogOp {
         integrity: ReadIntegrityArgs,
     },
 
-    /// Age decided items out of `[[backlog]]` into `[[compacted]]`.
-    /// `open` items are never touched regardless of age.
+    /// Age resolved and dismissed items out of `[[backlog]]` into
+    /// `[[compacted]]`. `open` and `promoted` items are never touched
+    /// regardless of age.
     Compact {
         /// `<n>{s|m|h|d|w}`, the same grammar as `flow stale --threshold`.
         #[arg(long = "older-than", default_value = "90d", value_name = "DURATION")]

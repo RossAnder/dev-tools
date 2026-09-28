@@ -109,6 +109,7 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["backlog", "relate", "--help"],
         &["backlog", "triage", "--help"],
         &["backlog", "compact", "--help"],
+        &["backlog", "reconcile", "--help"],
     ];
     for path in write_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();
@@ -1606,6 +1607,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "backlog_show",
         "backlog_relate",
         "backlog_triage",
+        "backlog_reconcile",
         // Per-flow task DAG store: the `tasks` subcommand cluster.
         "tasks_import_plan",
         "tasks_add",
@@ -1659,8 +1661,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.9.0",
-        "expected version `0.9.0` (the minor bump for the `sweep` verbs); got `{version}`"
+        version, "0.10.0",
+        "expected version `0.10.0` (the minor bump for `backlog reconcile`); got `{version}`"
     );
 }
 

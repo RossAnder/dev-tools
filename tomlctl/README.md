@@ -54,14 +54,15 @@ tomlctl flow stale --slug <s> [--threshold <duration>]              # check whet
 tomlctl blocks verify  <file>... [--block <marker-name>]...  # cross-file shared-block parity
 tomlctl backlog check  --summary <s> [--area PATH] [--kind K] [--tag T]...  # is it already known? read-only graded verdict
 tomlctl backlog add    --summary <s> [--kind K] [--area PATH] [--evidence path:line]... [--context <how-to-work-around>]
-tomlctl backlog list   [--open] [--kind K] [--tag T]... [--area-prefix PATH] [--has-evidence] [--count]   # plus the full --where-* query surface
+tomlctl backlog list   [--open|--live] [--kind K] [--tag T]... [--area-prefix PATH] [--has-evidence] [--count]   # --live is open or promoted; plus the full --where-* query surface
 tomlctl backlog show   <id>                            # one item + its one-hop relations + its evidence listing
 tomlctl backlog relate B7 --to B3 --as relates-to|duplicates|supersedes   # duplicates dismisses B7, supersedes dismisses B3
-tomlctl backlog triage --promote --to tomlctl-backlog-capture B7   # or --dismiss --reason / --resolve --resolution / --reopen --rationale
+tomlctl backlog triage --promote --to <flow-slug> B7   # --to must name a flow or plan (see --external / --allow-closed); or --dismiss --reason / --resolve --resolution / --reopen --rationale
+tomlctl backlog reconcile [--flow <s>] [--adopt] [--apply]   # bucket promoted items by their closing tasks; --adopt links by id mention, --apply resolves the ready ones
 tomlctl backlog evidence dir <id>                      # per-item .claude/backlog-evidence/<id>/, created on demand
 tomlctl backlog evidence audit [--strict] [--max-bytes N]   # unowned dirs, policy breaches, stale references
 tomlctl backlog cluster --by all                       # group open items into candidate work scopes
-tomlctl backlog compact [--older-than 90d] [--dry-run]  # ages decided items into [[compacted]]; open items never move
+tomlctl backlog compact [--older-than 90d] [--dry-run]  # ages resolved and dismissed items into [[compacted]]; open and promoted items never move
 
 # Integrity flags (accepted after the subcommand name on any TOML-touching command):
 #   --allow-outside           bypass the best-effort .claude/ containment guard (not a sandbox)
@@ -253,7 +254,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.9.0",
+  "version": "0.10.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -265,7 +266,8 @@ downstream flow-command templates can feature-gate at boot without parsing
                "json_ops", "backlog_capture", "backlog_check",
                "backlog_cluster", "backlog_compact", "backlog_evidence",
                "backlog_list", "backlog_show", "backlog_relate",
-               "backlog_triage", "tasks_import_plan", "tasks_add",
+               "backlog_triage", "backlog_reconcile",
+               "tasks_import_plan", "tasks_add",
                "tasks_add_many", "tasks_update", "tasks_remove",
                "tasks_show", "tasks_list", "tasks_edges", "tasks_ready",
                "tasks_batches", "tasks_closure", "tasks_check",
@@ -340,14 +342,15 @@ Feature meanings:
 | `flow_render_progress_log` | `flow render-progress-log --slug <SLUG>` — regenerate a flow's derived `PROGRESS-LOG.md` from its `execution-record.toml`; `--stdout` previews without writing |
 | `json_ops` | `json get` / `set` / `unset` — dotted-path read and write against JSON files such as `.claude/settings.json` |
 | `backlog_capture` | `backlog add` — capture a discovery into the repo-scoped backlog store |
-| `backlog_check` | `backlog check --summary <TEXT>` — read-only graded verdict on whether a discovery is already known, before minting it |
+| `backlog_check` | `backlog check --summary <TEXT>` — read-only graded verdict on whether a discovery is already known, before minting it; `in-flight` when the match is a `promoted` item, with the flow it is promoted to |
 | `backlog_cluster` | `backlog cluster --by <VIEW>` — group open items into candidate work scopes |
-| `backlog_compact` | `backlog compact --older-than <DURATION>` — age decided items into `[[compacted]]`; `open` items are never touched |
+| `backlog_compact` | `backlog compact --older-than <DURATION>` — age resolved and dismissed items into `[[compacted]]`; `open` and `promoted` items are never touched |
 | `backlog_evidence` | `backlog evidence dir` / `audit` — per-item evidence directories under `.claude/backlog-evidence/` |
-| `backlog_list` | `backlog list` — query the store, with `--open` / `--area-prefix` / `--has-evidence` on top of the shared filter and projection surface |
+| `backlog_list` | `backlog list` — query the store, with `--open` / `--live` (open or promoted) / `--area-prefix` / `--has-evidence` on top of the shared filter and projection surface |
 | `backlog_show` | `backlog show <ID>` — one item with its one-hop relation neighbourhood and evidence listing |
 | `backlog_relate` | `backlog relate <A> --to <ID> --as <KIND>` — write a typed edge between two items |
-| `backlog_triage` | `backlog triage <ID>... --promote` / `--dismiss` / `--resolve` / `--reopen` — transition items out of (or back into) `open` |
+| `backlog_triage` | `backlog triage <ID>... --promote` / `--dismiss` / `--resolve` / `--reopen` — transition items out of (or back into) `open`; `--promote --to` must name an existing flow or plan and stores a plan some flow binds as that flow's slug, `--external` stores `external:<REF>` unresolved, and `--allow-closed` accepts a flow at `review` or `complete`. Resolving or dismissing a promoted item keeps its `promoted` / `promoted_to` claim |
+| `backlog_reconcile` | `backlog reconcile [--flow <SLUG>]` — join each `promoted` item to the tasks that close it in its flow's `tasks.toml` and bucket it as `ready`, `in-progress`, `stalled`, `unlinked`, `orphaned`, `dangling` or `external`, each entry with a `reason`; read-only by default. `--adopt` links an item no task links yet to the tasks whose prose names its id and lists the flows in `render_needed`, which must be re-rendered with `tasks render` before the next import; `--apply` resolves the `ready` items, recording `resolved_flow`, `resolved_tasks` and `resolved_commits` |
 | `tasks_import_plan` | `tasks import-plan --slug <SLUG>` — upsert a plan's `## Tasks`, `## Execution Policy` and `## Dependency Graph` into the store, keyed on each row's `ref`; `--reconcile-record` adopts the execution record's completions |
 | `tasks_add` | `tasks add --title <TEXT> --effort <S\|M\|L>` — append one row, refusing a dangling dependency target or a cycle before writing |
 | `tasks_add_many` | `tasks add-many --ndjson <SRC>` — append a batch of rows all-or-nothing |
