@@ -358,8 +358,8 @@ logic cannot drift between preview and apply. A target outside `.claude/` still 
 
 The envelope takes three shapes. `set` and `set-json` report `kind: "scalar"` with the old and
 new value at the path. Every `items` verb, `array-append` and `items sweep --update` report
-`kind: "items"` with per-op counts and `ids`, the union of every affected id — an
-`array-append` record carries no `id`, so each shows as `""`. `items backfill-dedup-id`
+`kind: "items"` with per-op counts and `ids`, the union of every affected id — a row with
+no `id`, such as an `array-append` record, is counted but not listed. `items backfill-dedup-id`
 reports `would_backfill` and the ids it would stamp.
 
 ```bash

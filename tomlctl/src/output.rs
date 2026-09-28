@@ -245,4 +245,18 @@ mod tests {
         // future cosmetic key reorder still leaves the contract intact.
         assert_eq!(env["would_change"]["kind"], serde_json::json!("items"));
     }
+
+    #[test]
+    fn dry_run_plan_envelope_counts_id_less_rows_without_listing_them() {
+        let plan = MutationPlan {
+            new_doc: toml::Value::Integer(0),
+            added: vec![String::new(), String::new()],
+            updated: vec![],
+            removed: vec![],
+            skipped: vec![],
+        };
+        let env = build_dry_run_plan_envelope(&plan);
+        assert_eq!(env["would_change"]["added"], serde_json::json!(2));
+        assert_eq!(env["would_change"]["ids"], serde_json::json!([]));
+    }
 }

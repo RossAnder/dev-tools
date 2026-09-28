@@ -1274,14 +1274,17 @@ impl MutationPlan {
     /// Concatenation `[...added, ...updated, ...removed]` for the
     /// `--dry-run` summary's `ids` field. First-appearance order within
     /// each category is preserved because the three vectors are built
-    /// in input-order by `compute_apply_mutation`.
+    /// in input-order by `compute_apply_mutation`. A row with no `id`
+    /// (an `array-append` record) is counted in its category but has no
+    /// entry here.
     pub(crate) fn union_ids(&self) -> Vec<String> {
-        let mut out =
-            Vec::with_capacity(self.added.len() + self.updated.len() + self.removed.len());
-        out.extend(self.added.iter().cloned());
-        out.extend(self.updated.iter().cloned());
-        out.extend(self.removed.iter().cloned());
-        out
+        self.added
+            .iter()
+            .chain(&self.updated)
+            .chain(&self.removed)
+            .filter(|id| !id.is_empty())
+            .cloned()
+            .collect()
     }
 }
 
