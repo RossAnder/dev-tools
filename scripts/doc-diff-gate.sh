@@ -116,8 +116,22 @@ fi
 # through -v: gawk processes escapes in a -v value, so `\.` arrives as a plain
 # `.` — it warns on stderr and then matches ANY character, which would sweep
 # `xyrs` into the gated set. The bracket form survives both -v and grep -E.
-SRC_RE='[.](rs|ts|tsx|vue|cs|js|mjs|cjs|svelte|astro|sh)$|^[.]githooks/[^/.]+$'
+SH_PATH_RE='[.]sh$|^[.]githooks/[^/.]+$'
+SRC_RE='[.](rs|ts|tsx|vue|cs|js|mjs|cjs|svelte|astro)$|'"$SH_PATH_RE"
 MD_RE='[.]md$'
+
+# Comment markers, chosen per file by is_comment below. They cannot be one union
+# across languages: `--` would take a shell case arm like `--block)` for a
+# comment, and `#` would take a Rust `#[derive]` or a C# `#if`. A shell `#!` is
+# the shebang, not a comment.
+CMT_SH_RE='^[[:space:]]*#([^!]|$)'
+CMT_C_RE='^[[:space:]]*(//|/[*]|[*][^/]|[*]$)'
+# Shared by the self-test and the per-line pass, so both classify with one body.
+# Each awk program using it must be passed sh_path_re, cmt_sh_re and cmt_c_re.
+IS_COMMENT_FN='
+  function is_comment(path, line) {
+    return line ~ (path ~ sh_path_re ? cmt_sh_re : cmt_c_re)
+  }'
 
 # Paths exempt from every check. A reviewed constant: adding a line here is a
 # deliberate act, not a convenience.
@@ -246,6 +260,21 @@ if [ "$SELFTEST" -eq 1 ]; then
       st_fail=1
     fi
   }
+  # Comment classification, through the same is_comment the per-line pass calls.
+  # A `comment` expectation counts as a pattern, a `code` one as a negative control.
+  st_cmt() { # label, path, line, comment|code
+    if [ "$4" = comment ]; then st_count=$((st_count + 1)); else st_neg_count=$((st_neg_count + 1)); fi
+    if printf '%s\n' "$3" |
+       "$AWK" -v path="$2" -v want="$4" -v sh_path_re="$SH_PATH_RE" \
+         -v cmt_sh_re="$CMT_SH_RE" -v cmt_c_re="$CMT_C_RE" "$IS_COMMENT_FN"'
+         { got = (is_comment(path, $0) ? "comment" : "code") }
+         END { exit(got == want ? 0 : 1) }'; then
+      printf 'selftest ok:   %s\n' "$1"
+    else
+      printf 'selftest FAIL: %s (expected %s in %s: %s)\n' "$1" "$4" "$2" "$3" >&2
+      st_fail=1
+    fi
+  }
   st "G2 argument-closing"   '// Two independent reasons, and either alone would settle it:' "$ARG_RE"
   st "G2 not-the-answer"     '// The top-level test.api is not the answer either.'            "$ARG_RE"
   st "G3 history"            '// O22: previously this ran synchronously at module import'     "$HIST_RE"
@@ -258,6 +287,12 @@ if [ "$SELFTEST" -eq 1 ]; then
   st "G8 caps clause"        '// IDENTITY IS PART OF THIS CONTRACT, not an optimisation'       "$CAPS_RE" cs
   st "G8 banner"             '// ============================='                               "$BANNER_RE" cs
   st "source path git hook"  '.githooks/pre-commit'                                           "$SRC_RE" cs
+  st_cmt "shell case arm is code"    scripts/x.sh         '    --block) MODE=block ;;' code
+  st_cmt "shell # is a comment"      scripts/x.sh         '  # note'                    comment
+  st_cmt "bare shell # is a comment" .githooks/pre-commit '#'                           comment
+  st_cmt "shebang is code"           .githooks/pre-commit '#!/usr/bin/env bash'         code
+  st_cmt "rust attribute is code"    src/lib.rs           '#[derive(Debug)]'            code
+  st_cmt "rust // is a comment"      src/lib.rs           '    // note'                 comment
 
   # Negative controls: the patterns that were REMOVED as net-negative, plus the
   # subjunctive, which matches the GOOD falsifier-naming pattern ~15 times in 15.
@@ -348,7 +383,8 @@ printf 'doc-diff-gate: %s added source lines, %s added markdown lines\n' \
     -v arg_re="$ARG_RE" -v hist_re="$HIST_RE" -v phase_re="$PHASE_RE" \
     -v meas_re="$MEAS_RE" -v date_re="$DATE_RE" -v ledger_re="$LEDGER_RE" \
     -v ledger_msg_re="$LEDGER_MSG_RE" -v iso_re="$ISO_RE" \
-    -v caps_re="$CAPS_RE" -v banner_re="$BANNER_RE" '
+    -v caps_re="$CAPS_RE" -v banner_re="$BANNER_RE" -v sh_path_re="$SH_PATH_RE" \
+    -v cmt_sh_re="$CMT_SH_RE" -v cmt_c_re="$CMT_C_RE" "$IS_COMMENT_FN"'
     function emit(sev, f, n, msg) { printf "%s\t%s:%d\t%s\n", sev, f, n, msg }
     # One registry row per rule, in the order the rules fire. An empty pattern
     # marks a rule the table loop cannot express — it is applied by hand below
@@ -395,7 +431,7 @@ printf 'doc-diff-gate: %s added source lines, %s added markdown lines\n' \
       # those two fields leaves the content verbatim, tabs included.
       c = $0; sub(/^[^\t]*\t[^\t]*\t/, "", c)
       lc = tolower(c)
-      is_c = (c ~ /^[[:space:]]*(\/\/|\/\*|\*[^\/]|\*$|#[^!]|--)/)
+      is_c = is_comment($1, c)
 
       # G1 — contiguous added comment run
       if (is_c && $1 == pf && $2 == pline + 1) { run++; pline = $2 }
