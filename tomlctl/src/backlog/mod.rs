@@ -18,6 +18,7 @@ mod evidence_ops;
 mod ids;
 mod normalise;
 mod query;
+mod reconcile;
 mod relate;
 pub(crate) mod schema;
 mod target;
