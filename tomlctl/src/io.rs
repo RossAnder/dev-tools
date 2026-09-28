@@ -2915,6 +2915,41 @@ arr = [1, 2]
         });
     }
 
+    /// A plan not yet written, under a directory linked out of the root,
+    /// cannot canonicalise, so it relativises lexically as in-root and only
+    /// the containment check stands between it and a recorded `plan_path`
+    /// that every later read refuses.
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn record_plan_path_refuses_a_missing_plan_under_a_link_out_of_root() {
+        let inside = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let link = inside.path().join("docs");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+        #[cfg(windows)]
+        {
+            let status = std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(&link)
+                .arg(outside.path())
+                .stdout(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success(), "mklink /J failed: {status}");
+        }
+        let root = inside.path().canonicalize().unwrap();
+
+        assert_eq!(
+            record_plan_path(&root, &root.join("docs").join("absent.md")),
+            Err(PlanPathRefusal::OutsideRoot("docs/absent.md".to_string()))
+        );
+        assert_eq!(
+            record_plan_path(&root, &root.join("plans").join("absent.md")),
+            Ok("plans/absent.md".to_string())
+        );
+    }
+
     /// Every in-root spelling joins to the one path a `root.join` of its
     /// components gives, and every refusal happens without the leaf — or the
     /// escape target — needing to exist. The outside target is a real file
