@@ -18,3 +18,5 @@ mod stale;
 mod dispatch;
 
 pub(crate) use dispatch::dispatch;
+pub(crate) use init::validate_slug;
+pub(crate) use schema::FlowProjection;

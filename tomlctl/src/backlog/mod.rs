@@ -19,7 +19,8 @@ mod ids;
 mod normalise;
 mod query;
 mod relate;
-mod schema;
+pub(crate) mod schema;
+mod target;
 mod triage;
 
 // `pub(crate)` because the caller is `cli::dispatch::run`, which is not a
