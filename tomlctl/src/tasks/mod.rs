@@ -45,6 +45,8 @@ pub(crate) use graph::{cycle_within, layered_kahn};
 
 // `backlog reconcile` joins a flow's links to its row statuses and writes
 // adopted links back through the same locked pipeline the verbs use.
+#[cfg(test)]
+pub(crate) use schema::Effort;
 pub(crate) use schema::{BacklogLink, Status, Store};
 pub(crate) use store::{load as load_store, mutate as mutate_store, resolve_store_path};
 

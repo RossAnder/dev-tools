@@ -30,7 +30,15 @@ const ENUM_VALUES: &[(&str, &[&str])] = &[
     ("ty", &["str", "int", "float", "bool", "date", "datetime"]), // ScalarType (clap id is "ty" — see Cmd::Set)
     ("tier", &["A", "B", "C"]),                                   // DupTier
     ("error_format", &["text", "json"]),                          // ErrorFormat
+];
+
+/// Vocabularies of flags validated or coerced after parsing, which clap cannot
+/// report. Keyed by subcommand path as well as clap id because one id names a
+/// different vocabulary per subcommand — `status` on `backlog list` is not
+/// `status` on `tasks update`. Format: `(subcommand_path, clap_id, values)`.
+const SCOPED_ENUM_VALUES: &[(&str, &str, &[&str])] = &[
     (
+        "flow envelope build",
         "command",
         &[
             "review",
@@ -46,6 +54,7 @@ const ENUM_VALUES: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "flow envelope build",
         "require_artifact",
         &[
             "review_ledger",
@@ -55,6 +64,30 @@ const ENUM_VALUES: &[(&str, &[&str])] = &[
             "tasks",
         ],
     ),
+    ("backlog add", "kind", BACKLOG_KINDS),
+    ("backlog check", "kind", BACKLOG_KINDS),
+    ("backlog list", "kind", BACKLOG_KINDS),
+    (
+        "backlog list",
+        "status",
+        &["open", "promoted", "dismissed", "resolved"],
+    ),
+    (
+        "tasks update",
+        "status",
+        &["pending", "in-progress", "done", "failed", "deferred"],
+    ),
+    ("tasks add", "effort", &["S", "M", "L"]),
+];
+
+const BACKLOG_KINDS: &[&str] = &[
+    "bug",
+    "flaky-test",
+    "debt",
+    "direction",
+    "annoyance",
+    "question",
+    "other",
 ];
 
 pub(crate) fn build_agent_context() -> JsonValue {
@@ -77,7 +110,7 @@ fn walk_commands(cmd: &Command, parent_path: &str, out: &mut Map<String, JsonVal
         // Container subcommands (items / blocks / integrity) carry no leaf
         // flags of their own. Suppress the key entirely when there are none,
         // so a consumer can rely on `flags` being present iff non-empty.
-        let flags = describe_flags(sub);
+        let flags = describe_flags(sub, &sub_path);
         if flags.as_object().is_some_and(|m| !m.is_empty()) {
             node.insert("flags".to_string(), flags);
         }
@@ -98,7 +131,7 @@ fn walk_commands(cmd: &Command, parent_path: &str, out: &mut Map<String, JsonVal
     }
 }
 
-fn describe_flags(cmd: &Command) -> JsonValue {
+fn describe_flags(cmd: &Command, sub_path: &str) -> JsonValue {
     let mut flags = Map::new();
     for arg in cmd.get_arguments() {
         let id = arg.get_id().as_str();
@@ -116,11 +149,14 @@ fn describe_flags(cmd: &Command) -> JsonValue {
             format!("-{}", id)
         };
 
+        let values = describe_values(arg, sub_path);
+        // A vocabulary validated after parsing is still an enum to the caller.
+        let ty = match infer_type(arg) {
+            "string" if values.is_some() => "enum",
+            ty => ty,
+        };
         let mut entry = Map::new();
-        entry.insert(
-            "type".to_string(),
-            JsonValue::String(infer_type(arg).to_string()),
-        );
+        entry.insert("type".to_string(), JsonValue::String(ty.to_string()));
         entry.insert(
             "required".to_string(),
             JsonValue::Bool(arg.is_required_set()),
@@ -128,7 +164,7 @@ fn describe_flags(cmd: &Command) -> JsonValue {
         if let Some(default) = describe_default(arg) {
             entry.insert("default".to_string(), default);
         }
-        if let Some(values) = describe_values(arg) {
+        if let Some(values) = values {
             entry.insert("values".to_string(), values);
         }
         entry.insert(
@@ -170,7 +206,7 @@ fn describe_default(arg: &clap::Arg) -> Option<JsonValue> {
     }
 }
 
-fn describe_values(arg: &clap::Arg) -> Option<JsonValue> {
+fn describe_values(arg: &clap::Arg, sub_path: &str) -> Option<JsonValue> {
     if let Some(pv) = arg.get_value_parser().possible_values() {
         let vals: Vec<_> = pv
             .map(|p| JsonValue::String(p.get_name().to_string()))
@@ -179,18 +215,22 @@ fn describe_values(arg: &clap::Arg) -> Option<JsonValue> {
             return Some(JsonValue::Array(vals));
         }
     }
-    // Fallback to ENUM_VALUES const (matched against Arg::get_id()).
     let id = arg.get_id().as_str();
-    for (name, vals) in ENUM_VALUES {
-        if *name == id {
-            return Some(JsonValue::Array(
-                vals.iter()
-                    .map(|v| JsonValue::String(v.to_string()))
-                    .collect(),
-            ));
-        }
-    }
-    None
+    let scoped = SCOPED_ENUM_VALUES
+        .iter()
+        .find(|(path, name, _)| *path == sub_path && *name == id)
+        .map(|(_, _, vals)| *vals);
+    let vals = scoped.or_else(|| {
+        ENUM_VALUES
+            .iter()
+            .find(|(name, _)| *name == id)
+            .map(|(_, vals)| *vals)
+    })?;
+    Some(JsonValue::Array(
+        vals.iter()
+            .map(|v| JsonValue::String(v.to_string()))
+            .collect(),
+    ))
 }
 
 fn is_repeatable(arg: &clap::Arg) -> bool {
@@ -357,10 +397,6 @@ mod tests {
                 .collect()
         }
 
-        fn owned(values: &[&str]) -> Vec<String> {
-            values.iter().map(|s| s.to_string()).collect()
-        }
-
         let scalar = variants_of::<ScalarType>();
         let tier = variants_of::<DupTier>();
         let fmt = variants_of::<ErrorFormat>();
@@ -370,9 +406,6 @@ mod tests {
                 "ty" => scalar.clone(),
                 "tier" => tier.clone(),
                 "error_format" => fmt.clone(),
-                // Validated by hand in `flow envelope build`, not a ValueEnum.
-                "command" => owned(crate::flow::VALID_COMMANDS),
-                "require_artifact" => owned(crate::flow::VALID_ARTIFACTS),
                 other => panic!(
                     "ENUM_VALUES references unknown id `{other}` — add a branch to enum_values_match_value_enum_variants"
                 ),
@@ -383,6 +416,87 @@ mod tests {
                 "ENUM_VALUES for `{name}` drifted from <T as ValueEnum>::value_variants(); update the const to match"
             );
         }
+    }
+
+    #[test]
+    fn scoped_enum_values_match_their_validators() {
+        for (path, id, vals) in SCOPED_ENUM_VALUES {
+            let source: &[&str] = match (*path, *id) {
+                ("flow envelope build", "command") => crate::flow::VALID_COMMANDS,
+                ("flow envelope build", "require_artifact") => crate::flow::VALID_ARTIFACTS,
+                ("backlog add" | "backlog check" | "backlog list", "kind") => {
+                    crate::backlog::schema::KINDS
+                }
+                ("backlog list", "status") => crate::backlog::schema::STATUSES,
+                ("tasks update", "status") => crate::tasks::Status::VOCABULARY,
+                ("tasks add", "effort") => crate::tasks::Effort::VOCABULARY,
+                other => panic!(
+                    "SCOPED_ENUM_VALUES references `{other:?}` — add a branch naming its validator's vocabulary"
+                ),
+            };
+            assert_eq!(
+                *vals, source,
+                "SCOPED_ENUM_VALUES for `{path} --{id}` drifted from the vocabulary its validator checks"
+            );
+        }
+    }
+
+    #[test]
+    fn scoped_enum_values_name_real_args_clap_cannot_enumerate() {
+        let root = <Cli as CommandFactory>::command();
+        for (path, id, _) in SCOPED_ENUM_VALUES {
+            let sub = path
+                .split(' ')
+                .try_fold(&root, |cmd, name| cmd.find_subcommand(name))
+                .unwrap_or_else(|| panic!("SCOPED_ENUM_VALUES path `{path}` is not a subcommand"));
+            let arg = sub
+                .get_arguments()
+                .find(|a| a.get_id().as_str() == *id)
+                .unwrap_or_else(|| panic!("`{path}` has no argument with clap id `{id}`"));
+            assert!(
+                arg.get_value_parser().possible_values().is_none(),
+                "`{path}` `{id}` is enumerated by clap, so its SCOPED_ENUM_VALUES entry is never read"
+            );
+        }
+    }
+
+    #[test]
+    fn build_agent_context_scopes_status_values_per_subcommand() {
+        let ctx = build_agent_context();
+        let values = |group: &str, verb: &str| -> Vec<String> {
+            ctx[group]["subcommands"][verb]["flags"]["--status"]["values"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{group} {verb} --status publishes no values"))
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        };
+        assert_eq!(
+            values("tasks", "update"),
+            ["pending", "in-progress", "done", "failed", "deferred"]
+        );
+        assert_eq!(
+            values("backlog", "list"),
+            ["open", "promoted", "dismissed", "resolved"]
+        );
+        assert!(
+            ctx["flow"]["subcommands"]["list"]["flags"]["--status"]
+                .get("values")
+                .is_none(),
+            "flow list --status has no vocabulary constant and must not borrow another subcommand's"
+        );
+    }
+
+    #[test]
+    fn a_published_vocabulary_reports_the_enum_type() {
+        let ctx = build_agent_context();
+        let flag = |group: &str, verb: &str, name: &str| {
+            ctx[group]["subcommands"][verb]["flags"][name].clone()
+        };
+        assert_eq!(flag("tasks", "update", "--status")["type"], "enum");
+        assert_eq!(flag("tasks", "add", "--effort")["type"], "enum");
+        assert_eq!(flag("tasks", "add", "--effort")["values"][0], "S");
+        assert_eq!(flag("flow", "list", "--status")["type"], "string");
     }
 
     #[test]
