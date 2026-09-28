@@ -73,6 +73,7 @@ fn emit_error(err: &anyhow::Error, fmt: ErrorFormat) {
             let file = tagged
                 .and_then(|t| t.file.as_ref())
                 .map(|p| p.to_string_lossy().into_owned());
+            let arg = tagged.and_then(|t| t.arg);
             // `{:#}` to match text mode's full-chain rendering, so JSON
             // consumers get the same prose in the `message` field.
             let message = format!("{:#}", err);
@@ -83,6 +84,9 @@ fn emit_error(err: &anyhow::Error, fmt: ErrorFormat) {
                     // Always include the key — consumers can rely on a
                     // stable JSON shape (null when the tag carries no path).
                     "file": file,
+                    // The clap id of the argument the error is about, when a
+                    // verb tags one; null otherwise.
+                    "arg": arg,
                 }
             });
             // Ignore write errors on the stderr path — if stderr itself is

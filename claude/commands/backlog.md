@@ -83,13 +83,13 @@ tomlctl backlog relate B-1a2b3c4d --to B-5e6f7a8b --as relates-to
 
 ### When a promotion target is refused
 
-`--promote` resolves `--to` before it writes, so a refusal leaves the store and its sidecar untouched and the decision can simply be retaken. Under `--error-format json` the refusal is one stderr line, `{"error":{"kind":…,"message":…}}`. Branch on `kind`:
+`--promote` resolves `--to` before it writes, so a refusal leaves the store and its sidecar untouched and the decision can simply be retaken. Under `--error-format json` the refusal is one stderr line, `{"error":{"kind":…,"message":…,"arg":…}}`. Branch on `kind` and `arg`:
 
-- **`not_found` naming the `--to` value** (`no flow or plan …`) — the target is neither a flow nor a plan. (A `not_found` naming an item id is a stale id, not a target problem.) Ask the user which of three to do:
+- **`not_found` with `arg` `to`** — the target is neither a flow nor a plan. (`not_found` with `arg` `ids` is a stale item id, not a target problem.) Ask the user which of three to do:
   - **Bootstrap a seed flow** — a draft flow that holds the claim until `/plan-new --backlog` plans it. See **Bootstrapping a seed flow** below.
   - **Pick an existing flow** — offer the flows `tomlctl flow list` reports at a status other than `review` or `complete`, and retry with the chosen slug.
   - **Promote as external** — the work is tracked outside this repo; retry with `--external`, which stores `external:<ref>` unresolved.
-- **`validation` naming a flow at `review` or `complete`** — the flow has closed, and unless one of its tasks already closes the item, Step 3 will report the claim `orphaned`. Ask: promote anyway with `--allow-closed`, or bootstrap a seed flow.
+- **`validation` with `arg` `to`** — the `--to` flow has closed at `review` or `complete`, and unless one of its tasks already closes the item, Step 3 will report the claim `orphaned`. Ask: promote anyway with `--allow-closed`, or bootstrap a seed flow.
 
 Leaving the item `open` stays a valid answer to either.
 

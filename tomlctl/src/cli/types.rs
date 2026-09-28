@@ -111,7 +111,7 @@ pub(crate) const SUBCOMMANDS: &[&str] = &[
 pub(crate) struct Cli {
     /// Stderr error rendering format. `text` (default) emits the plain
     /// `tomlctl: <anyhow chain>` line. `json` emits a single
-    /// compact JSON envelope (`{"error":{"kind":...,"message":...,"file":...}}`)
+    /// compact JSON envelope (`{"error":{"kind":...,"message":...,"file":...,"arg":...}}`)
     /// so downstream agents can branch on `kind` without regexing prose. Exit
     /// code stays 1 regardless; this flag only affects stderr shape. `global`
     /// so the flag can appear either before or after the subcommand name.

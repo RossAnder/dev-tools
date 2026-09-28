@@ -604,6 +604,7 @@ fn promote_to_an_unknown_target_is_not_found_and_writes_nothing() {
 
     let err = refused_triage(&root, &[&id, "--promote", "--to", "no-such-flow"]);
     assert_eq!(err["kind"], json!("not_found"), "{err}");
+    assert_eq!(err["arg"], json!("to"), "{err}");
     let message = err["message"].as_str().unwrap();
     assert!(message.contains("`no-such-flow`"), "{message}");
     assert!(message.contains("--external"), "{message}");
@@ -612,6 +613,23 @@ fn promote_to_an_unknown_target_is_not_found_and_writes_nothing() {
         before,
         "a refused promotion must leave the store and its sidecar untouched"
     );
+}
+
+/// An unknown id and an unknown `--to` are both `not_found`; `arg` is what
+/// tells a caller which of the two it has.
+#[test]
+fn promote_of_an_unknown_id_names_the_ids_argument() {
+    let (_tmp, root) = sandbox();
+    add_drift(&root);
+    let before = snapshot(&root);
+
+    let err = refused_triage(
+        &root,
+        &["B-00000000", "--promote", "--to", "external:GH-12"],
+    );
+    assert_eq!(err["kind"], json!("not_found"), "{err}");
+    assert_eq!(err["arg"], json!("ids"), "{err}");
+    assert_eq!(snapshot(&root), before);
 }
 
 #[test]
@@ -662,6 +680,7 @@ fn promote_into_a_closed_flow_needs_allow_closed() {
 
     let err = refused_triage(&root, &[&id, "--promote", "--to", TASKS_SLUG]);
     assert_eq!(err["kind"], json!("validation"), "{err}");
+    assert_eq!(err["arg"], json!("to"), "{err}");
     let message = err["message"].as_str().unwrap();
     assert!(message.contains("`review`"), "{message}");
     assert!(message.contains("--allow-closed"), "{message}");

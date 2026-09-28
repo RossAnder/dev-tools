@@ -19,7 +19,7 @@ use super::schema::{self, FIELD_LAST_UPDATED};
 use super::target::{Resolver, Target};
 use crate::cli::{TriageMode, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
-use crate::errors::{ErrorKind, tagged_err};
+use crate::errors::{ErrorKind, tagged_arg_err, tagged_err};
 use crate::io::{
     item_id, items_array, items_array_mut, mutate_doc, on_missing_for, relativise,
     repo_or_cwd_root, warn_if_created,
@@ -138,7 +138,7 @@ fn not_found(id: &str, compacted: bool) -> anyhow::Error {
     } else {
         format!("no backlog item with id \"{id}\"")
     };
-    tagged_err(ErrorKind::NotFound, None, msg)
+    tagged_arg_err(ErrorKind::NotFound, "ids", msg)
 }
 
 fn rewrite(row: &mut TomlValue, t: &Transition, today: toml::value::Datetime) -> Result<()> {
@@ -243,9 +243,9 @@ fn promotion_target(
         t @ Target::External(_) => t,
         _ if external => Target::External(raw.to_string()),
         Target::Unknown(v) => {
-            return Err(tagged_err(
+            return Err(tagged_arg_err(
                 ErrorKind::NotFound,
-                None,
+                "to",
                 format!(
                     "no flow or plan `{v}` — bootstrap a draft seed flow \
                      (see /backlog) or pass --external"
@@ -258,9 +258,9 @@ fn promotion_target(
         && target.is_closed()
         && !allow_closed
     {
-        return Err(tagged_err(
+        return Err(tagged_arg_err(
             ErrorKind::Validation,
-            None,
+            "to",
             format!("flow `{slug}` is at `{status}`; pass --allow-closed to promote into it"),
         ));
     }
@@ -388,6 +388,11 @@ compacted_on = 2026-06-01
     fn kind_of(err: &anyhow::Error) -> &'static str {
         err.downcast_ref::<crate::errors::TaggedError>()
             .map_or("other", |tagged| tagged.kind.as_str())
+    }
+
+    fn arg_of(err: &anyhow::Error) -> Option<&'static str> {
+        err.downcast_ref::<crate::errors::TaggedError>()
+            .and_then(|tagged| tagged.arg)
     }
 
     fn assert_valid(doc: &TomlValue, id: &str) {
@@ -635,6 +640,7 @@ compacted_on = 2026-06-01
         )
         .unwrap_err();
         assert_eq!(kind_of(&err), "not_found", "{err:#}");
+        assert_eq!(arg_of(&err), Some("ids"), "{err:#}");
         assert_eq!(doc, before);
     }
 
@@ -666,6 +672,7 @@ compacted_on = 2026-06-01
         )
         .unwrap_err();
         assert_eq!(kind_of(&err), "not_found");
+        assert_eq!(arg_of(&err), Some("ids"), "{err:#}");
         assert!(format!("{err:#}").contains("compacted"), "{err:#}");
         assert_eq!(doc, before);
     }
@@ -944,6 +951,7 @@ compacted_on = 2026-06-01
             (err, std::fs::read(&file).unwrap())
         });
         assert_eq!(kind_of(&err), "not_found", "{err:#}");
+        assert_eq!(arg_of(&err), Some("to"), "{err:#}");
         assert!(format!("{err:#}").contains("--external"), "{err:#}");
         assert_eq!(bytes, STORE.as_bytes());
     }
@@ -970,6 +978,7 @@ compacted_on = 2026-06-01
             seed_flow(root, "parked", "review");
             let err = promote(root, "parked", false, false).unwrap_err();
             assert_eq!(kind_of(&err), "validation", "{err:#}");
+            assert_eq!(arg_of(&err), Some("to"), "{err:#}");
             assert!(format!("{err:#}").contains("`review`"), "{err:#}");
             assert_eq!(promote(root, "parked", false, true).unwrap(), "parked");
         });

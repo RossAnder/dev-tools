@@ -83,14 +83,14 @@ tomlctl items list ledger.toml --where status=open --verify-integrity
 `--error-format json` is a global flag on the top-level command. When set, errors are written to **stderr** as a compact single-line JSON envelope:
 
 ```
-{"error":{"kind":"<kind>","message":"<prose>","file":null|"<path>"}}
+{"error":{"kind":"<kind>","message":"<prose>","file":null|"<path>","arg":null|"<arg>"}}
 ```
 
-Exit code stays 1 on error. Success paths are unchanged — text output on success is byte-identical to default mode.
+`arg` names the CLI argument the error is about by its clap id (e.g. `to`, `ids`) where a verb tags one — `backlog triage` does — and is `null` otherwise. Exit code stays 1 on error. Success paths are unchanged — text output on success is byte-identical to default mode.
 
 ```bash
 tomlctl --error-format json items list /nonexistent/ledger.toml 2>&1 >/dev/null
-# {"error":{"kind":"not_found","message":"...","file":"/nonexistent/ledger.toml"}}
+# {"error":{"kind":"not_found","message":"...","file":"/nonexistent/ledger.toml","arg":null}}
 ```
 
 Closed taxonomy (every tag site is enumerated; all other `bail!` sites fall through to `other`):

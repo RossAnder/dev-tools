@@ -79,6 +79,9 @@ pub(crate) struct TaggedError {
     /// Optional path hint — populated for file-scoped tags
     /// (`NotFound`, `Integrity`, `Parse` where the path is known).
     pub(crate) file: Option<PathBuf>,
+    /// The clap id of the argument the error is about, for a caller that
+    /// must tell two refusals of the same `kind` apart.
+    pub(crate) arg: Option<&'static str>,
     /// The caller's human-readable prose. Placed here (rather than a
     /// separate `.context(msg)` layer) so the tag and the message share a
     /// single chain slot — otherwise anyhow's `{:#}` renders the tag as its
@@ -113,6 +116,21 @@ pub(crate) fn tagged_err(
     anyhow::Error::new(TaggedError {
         kind,
         file,
+        arg: None,
+        message: msg.into(),
+    })
+}
+
+/// `tagged_err` for an error about one CLI argument, named by its clap id.
+pub(crate) fn tagged_arg_err(
+    kind: ErrorKind,
+    arg: &'static str,
+    msg: impl Into<String>,
+) -> anyhow::Error {
+    anyhow::Error::new(TaggedError {
+        kind,
+        file: None,
+        arg: Some(arg),
         message: msg.into(),
     })
 }

@@ -245,6 +245,10 @@ unless `--allow-closed` is given. `--external` stores every `--to` as `external:
 one that would have resolved. Both refusals come before the write, so they leave the store and
 its sidecar untouched.
 
+Under `--error-format json` both refusals carry `"arg":"to"` in the error envelope. An unknown
+or compacted item id is also `kind=not_found`, but carries `"arg":"ids"`, so branch on `arg`
+rather than on the message to tell a bad target from a stale id.
+
 ```json
 {"ok":true,"transition":"promote","ids":["B-a1b2c3d4"],"path":".claude/backlog.toml","to":"lumina-pty-hardening"}
 ```
