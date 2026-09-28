@@ -3750,3 +3750,21 @@ base_sha = "d4c6264d9fec04a6cfb8f1ea12922bec213760d0"
 related = ["B-fab4798a"]
 resolved = 2026-09-28
 resolution = "dry-run ids now omit id-less rows; counts still include them (acd5a0f)"
+
+[[backlog]]
+id = "B-22bd6fc6"
+kind = "direction"
+summary = "a field label written with the colon inside the bold is not read as a field, so its value is never imported"
+area = "tomlctl/src/tasks/parse_tasks.rs"
+tags = [
+    "tasks",
+    "import",
+]
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "22bd6fc6e38f2f01"
+origin = "implement"
+context = "field_re matches only the - **Label**: spelling. Older plans write - **Files:** with the colon inside the bold, so their Files, Depends on and Action were never imported: no file claims, no dependency edges. import-plan now raises plan/text-unstored on them, which is how they surface (lumina-vertical-slice, lumina-schema-deepening, flow-tracking-overhaul among others). Accepting the spelling would restore those claims and edges, but re-importing an existing flow would then add edges to its store; decide whether to accept it or to rewrite the old plans."
+base_sha = "97d85b1430c3a0a4c504257ec4d946270b098ddf"
