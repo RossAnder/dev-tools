@@ -15,17 +15,16 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 - [Sidecar files](#sidecar-files)
 - [Error format (`--error-format json`)](#error-format---error-format-json)
 - [Flow verbs](#flow-verbs)
-  - [Bootstrap envelope — `flow init`](#bootstrap-envelope--flow-init)
-  - [Enumerate flows — `flow list`](#enumerate-flows--flow-list)
-  - [Render PROGRESS-LOG.md — `flow render-progress-log`](#render-progress-logmd--flow-render-progress-log)
-  - [Verify shared-block parity across markdown files](#verify-shared-block-parity-across-markdown-files)
-- [Envelope construction — `flow envelope build`](#envelope-construction--flow-envelope-build)
+  - [`flow init`](#flow-init)
+  - [`flow list`](#flow-list)
+  - [`flow render-progress-log`](#flow-render-progress-log)
+  - [`flow envelope build`](#flow-envelope-build)
 - [Advanced / maintenance](#advanced--maintenance)
-  - [`blocks verify` — shared-block parity across markdown files](#blocks-verify--shared-block-parity-across-markdown-files)
+  - [`blocks verify`](#blocks-verify)
 
 ## `--verify-integrity` support matrix
 
-`--verify-integrity` is a **per-subcommand flag**, not a global — it is accepted only on read subcommands that touch a TOML + sidecar pair. Verification is rejected (clap-layer error) on every other path. See [Sidecar files](#sidecar-files) for what it checks.
+`--verify-integrity` is a **per-subcommand flag**, not a global. Every write verb carries it in the write bundle and verifies the target before the read that precedes its write; the read verbs that take it are listed below. Any verb absent from both rejects it at the clap layer. See [Sidecar files](#sidecar-files) for what it checks.
 
 | Subcommand | `--verify-integrity` |
 |---|---|
@@ -49,6 +48,7 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 | `tomlctl tasks check` | yes |
 | `tomlctl tasks render` | yes |
 | `tomlctl flow list` | yes |
+| `tomlctl flow render-progress-log` | yes — checks `execution-record.toml` only |
 
 `tomlctl blocks verify` intentionally does NOT accept `--verify-integrity` (it operates on markdown with no sidecar pair), and neither does the standalone `tomlctl sweep` — it searches tracked files and reads no TOML at all. `tomlctl items sweep` accepts the flag through its write bundle (it can `--update` the ledger), so it takes no `--strict-read`; `tomlctl items clusters` is a plain read verb and takes both.
 
@@ -110,9 +110,15 @@ Prefer `--error-format json` + `.error.kind` switching over regex-matching stder
 
 ## Flow verbs
 
-### Bootstrap envelope — `flow init`
+`flow init` carries the shared write bundle — `--allow-outside`, `--no-create`,
+`--no-write-integrity`, `--strict-integrity`, `--verify-integrity` — and `flow list` and
+`flow render-progress-log` the read bundle, `--verify-integrity` and `--strict-read`. A table
+below lists a bundle flag only where the verb gives it its own meaning. `flow envelope build`
+takes neither bundle. Every verb also takes the global `--error-format`.
 
-`tomlctl flow init --slug <slug> --plan <path>` seeds `context.toml`, `execution-record.toml`, `tasks.toml` and the active-flow registry entry in one re-runnable call. Because it is idempotent, the envelope reports the `context.toml` verdict and the set of stores actually written as two separate keys:
+### `flow init`
+
+Seeds `context.toml`, `execution-record.toml`, `tasks.toml` and the active-flow registry entry in one re-runnable call. Because it is idempotent, the envelope reports the `context.toml` verdict and the set of stores actually written as two separate keys:
 
 ```bash
 tomlctl flow init --slug <slug> --plan docs/plans/<slug>.md
@@ -121,16 +127,23 @@ tomlctl flow init --slug <slug> --plan docs/plans/<slug>.md
 #    "context_path":".claude/flows/<slug>/context.toml","artifacts":{...}}
 ```
 
-`--plan` is recorded as `plan_path` repo-relative with forward slashes: an absolute path under the repo root is relativised, and a relative one resolves against the working directory when it names a file there, the repo root otherwise. A path outside the root, one escaping it with `..`, or one not ending `.md` is refused with `kind=validation` before anything is written, `--dry-run` included.
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--slug` | slug | Flow slug, matching `^[a-z0-9][a-z0-9-]{0,63}$`. | required |
+| `--plan` | path | Plan markdown the flow tracks, recorded as `plan_path` repo-relative with forward slashes: an absolute path under the repo root is relativised, and a relative one resolves against the working directory when it names a file there, the repo root otherwise. A path outside the root, one escaping it with `..`, or one not ending `.md` is refused with `kind=validation` before anything is written, `--dry-run` included. | required |
+| `--branch` | name | `branch` recorded in `context.toml` and on the active-flow entry. | omitted |
+| `--worktree` | absolute path | `worktree` recorded on the active-flow entry. | omitted |
+| `--scope` | glob | Scope glob recorded in `context.toml` and on the active-flow entry. Repeatable. | `[]` |
+| `--dry-run` | — | Write nothing; emit `{"ok":true,"dry_run":true,"would_change":{…}}` in place of the envelope. | off |
 
 - **`action`** — `"init"` when this run wrote `context.toml`, `"noop"` when it was already present. It describes `context.toml` alone.
 - **`created`** — the repo-relative stores this run materialised, in creation order; `[]` when every store was already there. Sidecars are excluded: refreshing a `.sha256` beside an existing store is a repair, not a creation.
 
 Branch on `created`, not on `action`, to detect a freshly-seeded store. `flow init` is the only sanctioned route that seeds `tasks.toml` — `flow ensure-artifact --bootstrap --kind tasks` is deliberately a no-op — so a legacy flow carrying only `context.toml` returns `action: "noop"` with `created` naming the `execution-record.toml` and `tasks.toml` it just minted.
 
-### Enumerate flows — `flow list`
+### `flow list`
 
-`tomlctl flow list` reads every `.claude/flows/<slug>/context.toml` and returns the readable ones under `flows` and the unreadable ones under `skipped`:
+Reads every `.claude/flows/<slug>/context.toml` and returns the readable ones under `flows` and the unreadable ones under `skipped`:
 
 ```bash
 tomlctl flow list --status draft
@@ -141,38 +154,37 @@ tomlctl flow list --status draft
 
 - **`flows`** — one row per readable flow that passes the filters. `status`, `updated` and `plan_path` are `""` when absent; `branch` is omitted when absent; `scope` defaults to `[]`.
 - **`skipped`** — one entry per `context.toml` that could not be read or parsed, with its repo-relative `path` and a one-line `reason`. `--status`, `--branch` and `--active-only` never hide an entry here, since an unreadable file has no fields to filter on. `ok` stays `true` when rows are skipped.
-- **`--verify-integrity`** also skips a `context.toml` whose `.sha256` sidecar is missing or does not match, with the verifier's message as the `reason`.
-- **`--strict-read`** turns the first skipped `context.toml` into an error instead — `kind=integrity` for a sidecar failure, `kind=parse` otherwise.
 
-### Render PROGRESS-LOG.md — `flow render-progress-log`
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--status` | status | Keep flows whose `context.toml` `status` matches exactly. | all |
+| `--branch` | name | Keep flows whose `context.toml` `branch` matches exactly. | all |
+| `--active-only` | — | Keep only slugs present in `.claude/active-flow.toml`. | off |
+| `--verify-integrity` | — | Also skip a `context.toml` whose `.sha256` sidecar is missing or does not match, with the verifier's message as the `reason`. | off |
+| `--strict-read` | — | Turn the first skipped `context.toml` into an error instead — `kind=integrity` for a sidecar failure, `kind=parse` otherwise. | off |
 
-`tomlctl flow render-progress-log --slug <slug>` regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` deterministically. The output is a pure function of two inputs: the flow's `execution-record.toml` and the flow title (read from `context.toml`'s `plan_path` → the plan file's `# Plan:` header). Replaces any hand-rolled "render the log from the execution record" routine — call this verb instead of re-deriving the tables by hand.
+### `flow render-progress-log`
+
+Regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` deterministically. The output is a pure function of two inputs: the flow's `execution-record.toml` and the flow title (read from `context.toml`'s `plan_path` → the plan file's `# Plan:` header). Call this verb rather than re-deriving the tables by hand.
 
 ```bash
-# Regenerate the PROGRESS-LOG.md for a flow (writes the file).
 tomlctl flow render-progress-log --slug <slug>
 # → {"ok":true,"path":".claude/flows/<slug>/PROGRESS-LOG.md","tables":{"completed":N,"deviations":N,"deferrals":N,"sessions":N}}
 ```
 
-The rendered document carries its marker line followed by four tables — **Completed Items**, **Deviations**, **Deferrals**, and **Session Log** — each with a `(none)` empty-state row when it has no entries, plus a trailing newline. The envelope's `tables` counts mirror the row counts of each table. That `{ok, path, tables}` envelope is the **default (file-writing) path only**; under `--stdout` the command prints just the rendered Markdown to stdout and emits NO JSON envelope.
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--slug` | slug | Flow whose `PROGRESS-LOG.md` is regenerated. | required |
+| `--stdout` | — | Print only the rendered Markdown to stdout, write no file, and emit no JSON envelope. | off |
+| `--verify-integrity` | — | Check `execution-record.toml` against its sidecar before rendering. | off |
 
-```bash
-# Print to stdout instead of writing the file.
-tomlctl flow render-progress-log --slug <slug> --stdout
-
-# Verify the execution record's sidecar before rendering.
-tomlctl flow render-progress-log --slug <slug> --verify-integrity
-```
+The rendered document carries its marker line followed by four tables — **Completed Items**, **Deviations**, **Deferrals**, and **Session Log** — each with a `(none)` empty-state row when it has no entries, plus a trailing newline. The envelope's `tables` counts mirror the row counts of each table.
 
 PROGRESS-LOG.md is a **derived artifact**: because it is fully regenerable from `execution-record.toml`, the renderer writes **no `.sha256` sidecar** for it (unlike the source TOML files). There is nothing to integrity-check on the rendered output — re-run the verb to reproduce it.
 
-### Verify shared-block parity across markdown files
+### `flow envelope build`
 
-See [Advanced / maintenance](#advanced--maintenance) for `blocks verify` — infrastructure-only, no flow command invokes it.
-
-## Envelope construction — `flow envelope build`
-
-Emit the canonical `flow-bootstrap` input envelope as JSON on stdout. Replaces the ~15 lines of inline carrier prose that hand-rolled this envelope in every flow command's Step-0 dispatch. Pure / read-only — no filesystem writes, no flow-state mutation. The emitted shape matches the `Contract` section of `claude/agents/flow-bootstrap.md` byte-for-byte; bumping that contract means bumping this subcommand in lock-step.
+Emits the canonical `flow-bootstrap` input envelope as JSON on stdout — what every flow command's Step-0 dispatch sends. Pure / read-only — no filesystem writes, no flow-state mutation. The emitted shape matches the `Contract` section of `claude/agents/flow-bootstrap.md` byte-for-byte; bumping that contract means bumping this subcommand in lock-step.
 
 ```bash
 tomlctl flow envelope build \
@@ -183,11 +195,18 @@ tomlctl flow envelope build \
 # {"command":"review","flow_override":null,"path_args":[],"branch":"main","worktree":"/abs/work","cwd":"/abs/cwd","require_artifacts":[],"staleness_threshold":"7d"}
 ```
 
-`--command` is required and must be one of: `review`, `optimise`, `plan-new`, `plan-update`, `implement`, `review-plan`, `tdd`, `review-apply`, `optimise-apply`, `test-bootstrap`. Unknown values are rejected with `kind=validation`.
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--command` | carrier | One of `review`, `optimise`, `plan-new`, `plan-update`, `implement`, `review-plan`, `tdd`, `review-apply`, `optimise-apply`, `test-bootstrap`; anything else is refused with `kind=validation`. | required |
+| `--flow-override` | slug | Explicit flow slug, passed through to the bootstrap agent. | `null` |
+| `--path-arg` | path | Appended verbatim to `path_args`. Repeatable. | `[]` |
+| `--branch` | name | Current git branch, typically `$(git branch --show-current)`; omit on a detached HEAD. | `null` |
+| `--worktree` | path | Git worktree top level, typically `$(git rev-parse --show-toplevel)`. | `null` |
+| `--cwd` | path | Current working directory, typically `$(pwd)`. | `null` |
+| `--require-artifact` | key | Artifact that must exist: `review_ledger`, `optimise_findings`, `execution_record`, `plan_review_findings` or `tasks`; a typo errors with `kind=validation`. Repeatable. | `[]` |
+| `--staleness-threshold` | duration | Staleness gate for the bootstrap agent (`"1d"`, `"48h"`, …). | `"7d"` |
 
-`--path-arg` and `--require-artifact` are repeatable. `--require-artifact` values are validated against the canonical artifact set (`review_ledger`, `optimise_findings`, `execution_record`, `plan_review_findings`, `tasks`); a typo errors with `kind=validation`. `--staleness-threshold` defaults to `"7d"`; pass another duration (`"1d"`, `"48h"`, …) when the carrier needs a tighter or looser staleness gate.
-
-`--flow-override`, `--branch`, `--worktree`, and `--cwd` are optional and round-trip as JSON `null` when omitted (rather than being dropped from the envelope — the bootstrap agent's contract expects every documented key to be present).
+An omitted optional flag still appears in the envelope, as `null` or `[]` — the bootstrap agent's contract expects every documented key to be present.
 
 ## Advanced / maintenance
 
@@ -198,20 +217,18 @@ verify here. Reach for them for an ad-hoc parity check without the bash+gawk dep
 in-crate `blocks_verify_reproduces_shell_hashes` and `blocks_verify_agrees_with_shell_gate`
 tests pin the mirror to the shell verifier's hashes and to its verdicts.
 
-### `blocks verify` — shared-block parity across markdown files
+### `blocks verify`
 
-`tomlctl blocks verify` checks that named shared blocks are byte-identical across a set of files, mirroring `scripts/verify-shared-blocks.sh` without the bash+awk dependency. Blocks are delimited by `<!-- SHARED-BLOCK:<name> START -->` … `<!-- SHARED-BLOCK:<name> END -->` markers (markers excluded from the hash; content between them joined by `\n`).
-
-Name only blocks the listed files actually carry — a `--block` naming an absent marker exits
-non-zero. `scripts/shared-blocks.toml` enumerates which files carry which markers:
+Checks that named shared blocks are byte-identical across a set of files, mirroring `scripts/verify-shared-blocks.sh` without the bash+awk dependency. Blocks are delimited by `<!-- SHARED-BLOCK:<name> START -->` … `<!-- SHARED-BLOCK:<name> END -->` markers (markers excluded from the hash; content between them joined by `\n`).
 
 ```bash
-# Verify named blocks across the two implementer agents
 tomlctl blocks verify claude/agents/implement-deep.md claude/agents/implement-lite.md --block forbidden-working-tree-ops --block backlog-candidates
-
-# Omit --block to verify every block present in the first listed file
-tomlctl blocks verify claude/agents/implement-deep.md claude/agents/implement-lite.md
 ```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| *(positional)* | files | Markdown files whose spans are compared. | — |
+| `--block` | name | Block to verify. Repeatable. Name only blocks the listed files actually carry — a `--block` naming an absent marker exits non-zero; `scripts/shared-blocks.toml` enumerates which files carry which markers. | every block present in the first listed file |
 
 Output is JSON (`{"ok":true|false,"blocks":[...]}`); exit code 0 on success, non-zero on drift, on a missing marker, and on a span that extracts empty between its markers — two carriers whose spans are both empty hash the same digest of nothing, so parity there reports having compared nothing.
 

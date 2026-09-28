@@ -6,7 +6,7 @@ checkpoint groups beside it. Every verb resolves its store through one shared ta
 (`--slug` or `--file`) and emits JSON on stdout. What the fields *mean*, which verb a carrier
 reaches for, and the rules binding `/plan-new`, `/implement`, `/review-plan` and
 `/plan-update` are the `flow-contract-task-store` skill's job
-(`claude/skills/flow-contract-task-store/SKILL.md`); this file is the flag table.
+(`claude/skills/flow-contract-task-store/SKILL.md`); this file is the flag and output surface.
 
 ## Contents
 
@@ -44,10 +44,12 @@ JSON envelope and its `kind` taxonomy.
 
 ## Output fields
 
-The JSON examples below are representative envelopes, not closed schemas. New
-fields may be added without changing existing fields; callers should select
-the fields they need and use `ok` or the command's documented count/status
-fields for control flow.
+Each verb's `| Key |` table names the keys of the JSON it prints on stdout: `a[].b` is key `b`
+of each element of array `a`, and `[].b` the same for an array printed bare. A key listed with
+no condition is always present, an empty list as `[]`. The tables are not closed schemas — keys
+may be added without changing existing ones — so select the keys you need and branch on `ok`
+or a documented count. `import-plan`, `check` and `render --check` report findings in one
+[shape](#finding-shape).
 
 ## `tasks import-plan`
 
@@ -78,18 +80,6 @@ repo-relative containment; only `plan_path` also has to name a `.md` document. A
 repo root and refused unless it lands under the root as a `.md` path, so what an import records
 and what a later render accepts cannot drift apart.
 
-```json
-{"ok":true,"added":3,"updated":1,"unchanged":32,"removed_refs":[],"added_refs":["wire-the-render-verb"],
- "adopted_refs":["arm_the_sort_engaged_test"],"unmatched_refs":[],"cleared_checkpoint_refs":[],"findings":[]}
-```
-
-`added` + `updated` + `unchanged` counts the *plan's* tasks. `adopted_refs` names refs whose
-spelling came from the execution record rather than the heading; `unmatched_refs` names record
-`task_ref`s no plan task claimed. `cleared_checkpoint_refs` is the subset of `removed_refs`
-whose `checkpoint` named a group this plan no longer declares: membership is recomputed for
-every row the plan produces, so a retained row was the one way an undeclared group id stayed
-in the store. The row survives; the id is blanked.
-
 A row `tasks update --unlock-import-fields` hand-patched carries an `[[import_overrides]]`
 entry holding the plan values that patch replaced. The import keeps the row's `files` /
 `needs` while the plan still states that base — `plan/override-held` — and takes the plan's
@@ -103,6 +93,19 @@ link, and `refs` qualifies only the entry it opens. When the imported store hold
 import reads `.claude/backlog.toml` and adds the [`backlog/*` findings](#the-check-finding-classes);
 `backlog/unknown-id` is error-class, so it refuses a real import. Plan mode has no slug, so it
 never raises `backlog/claimed-elsewhere`.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `ok` | bool | `false` when a finding is error-class, which only `--dry-run` reports — a real import refuses instead. |
+| `added` | count | Plan tasks no stored row matched. `added` + `updated` + `unchanged` counts the *plan's* tasks. |
+| `updated` | count | Plan tasks whose stored row the import changed, an adopted `ref` included. |
+| `unchanged` | count | Plan tasks whose stored row already matched. |
+| `removed_refs` | refs | Stored rows the plan no longer produces. Kept, not deleted. |
+| `added_refs` | refs | The rows `added` counts. |
+| `adopted_refs` | refs | Refs whose spelling came from the execution record rather than the heading. Empty without `--reconcile-record`. |
+| `unmatched_refs` | refs | Record `task_ref`s no plan task claimed. Empty without `--reconcile-record`. |
+| `cleared_checkpoint_refs` | refs | The subset of `removed_refs` whose `checkpoint` named a group this plan no longer declares: membership is recomputed for every row the plan produces, so a retained row was the one way an undeclared group id stayed in the store. The row survives; the id is blanked. |
+| `findings[]` | [findings](#finding-shape) | The import's own classes and the store check's. |
 
 ## `tasks add`
 
@@ -130,11 +133,12 @@ tomlctl tasks add --slug <slug> --title "Extract the token reader" --effort S --
 A title colliding with a stored `ref` takes the first free `-2` / `-3` suffix rather than
 replaying the document-order numbering, which would re-derive a suffix another row holds.
 
-```json
-{"ok":true,"id":37,"ref":"extract-the-token-reader","batch":4}
-```
-
-`batch` is the zero-based Kahn round the row lands in once stored.
+| Key | Value | Meaning |
+|---|---|---|
+| `ok` | `true` | Success path only; a refusal arrives as a `kind=validation` error. |
+| `id` | id | The minted id. |
+| `ref` | slug | The derived `ref`, suffixed when the title collided. |
+| `batch` | integer | Zero-based Kahn round the row lands in once stored — its index in [`tasks batches`](#tasks-batches). |
 
 ## `tasks add-many`
 
@@ -155,16 +159,18 @@ Accepted row keys are exactly `title`, `effort`, `files`, `needs`, `coupling`, `
 row's 1-based index and listing that set — a mistyped `neds` would otherwise silently discard
 an edge. An absent key is the empty value; a wrong JSON type names the key and the type it got.
 
-```json
-{"ok":true,"added":2,"rows":[{"id":37,"ref":"add-the-retry-guard","batch":4},
-                             {"id":38,"ref":"cover-the-retry-guard","batch":5}]}
-```
+| Key | Value | Meaning |
+|---|---|---|
+| `ok` | `true` | Success path only; any refusal lands nothing. |
+| `added` | count | Rows appended — every row, since the batch is all-or-nothing. |
+| `rows[]` | objects | One per NDJSON row, in input order. |
+| `rows[].id` | id | The minted id, ascending with the input. |
+| `rows[].ref` | slug | The derived `ref`, as [`tasks add`](#tasks-add) derives it. |
+| `rows[].batch` | integer | Zero-based Kahn round the row lands in once the whole batch is stored. |
 
 ## `tasks update`
 
-Patches one row's mutable fields. Every assignment is compared against what the row already
-holds, so `changed` reports what moved rather than what was passed — a re-issued
-`--status done` reports `[]`.
+Patches one row's mutable fields.
 
 ```bash
 tomlctl tasks update <id> --slug <slug> --status done --agent implement-deep --commit <sha>
@@ -195,15 +201,15 @@ import-owned and are re-derived from the plan for the paths the row still claims
 than the row alone: a dangling target or an edge that would close a cycle is refused before the
 row moves.
 
-An unlocked patch records the value it replaced as the stamp's *base*, and `changed` reports
-`import_override` alongside the field. The base is the plan's own value, so a second patch keeps
+An unlocked patch records the value it replaced as the stamp's *base*. The base is the plan's own value, so a second patch keeps
 the first one's base rather than overwriting it, and a patch back to the base drops the stamp —
 a row that agrees with the plan overrides nothing. `--ref` carries the stamp with the row.
 There are three ways out: publish the patch with `tasks render` and re-import, let the plan
 change the line, or `--relock-import-fields`. The unlock is not a pin: `tasks render --check`
 reports the divergence as `render/drift` from the moment of the patch, and every import that
-sees a changed line reports `plan/override-released` and takes the plan's value back. `--set title=` is refused when the new title derives a different `ref` than the old one
-did, unless `--ref` rides along in the same invocation; the refusal names the ref the new title
+sees a changed line reports `plan/override-released` and takes the plan's value back.
+
+`--set title=` is refused when the new title derives a different `ref` than the old one did, unless `--ref` rides along in the same invocation; the refusal names the ref the new title
 derives to. A retitle deriving the same ref lands on its own. The comparison is old derivation
 against new, deliberately not against the stored `ref` — a duplicate title is minted a suffixed
 ref and `import-plan --reconcile-record` adopts a record's ref, so a stored ref legitimately
@@ -213,9 +219,11 @@ diverges from what its title derives.
 execution record — a rename orphans the row's `task_ref` there until the next
 `import-plan --reconcile-record` re-adopts it.
 
-```json
-{"ok":true,"id":12,"changed":["agent","status"]}
-```
+| Key | Value | Meaning |
+|---|---|---|
+| `ok` | `true` | Success path only; a refusal arrives as a `kind=validation` error and moves nothing. |
+| `id` | id | The patched row, echoing the positional argument. |
+| `changed` | field names, ascending | Fields whose value moved. Each assignment is compared against what the row already held, so this is what moved rather than what was passed — a re-issued `--status done` reports `[]`. `import_override` joins the list whenever the call adds the stamp, adds a field to it, or drops it. |
 
 ## `tasks remove`
 
@@ -240,18 +248,10 @@ refusal writes nothing.
 Under `--force` the removed id is pruned from every dependent's `needs` and `coupling`, **and
 the removed row's own `needs` are spliced into each dependent's `needs`**: a dependent left one
 edge short would dispatch ahead of work it still waits on, and one left pointing at the removed
-id would make the store `dag/dangling-ref`. `rewired` names the rows whose edge sets moved,
-ascending. There is no `--dry-run`.
+id would make the store `dag/dangling-ref`. There is no `--dry-run`.
 
 A successful removal also drops the row's `[[import_overrides]]` entry, so no stamp outlives the
-row it keys on. The prune runs on the success path only, and `pruned_override_fields` names the
-stamped fields it took — a subset of `files`, `needs`, in that order — so a caller can see which
-values the next import would take from the plan instead. Like `update`'s `changed` and
-`import-plan`'s `cleared_checkpoint_refs`, it is always present and empty when nothing was pruned.
-
-```json
-{"ok":true,"id":21,"ref":"wire-the-render-verb","rewired":[24,25],"pruned_override_fields":["files"]}
-```
+row it keys on.
 
 | Key | Value | Meaning |
 |---|---|---|
@@ -259,7 +259,7 @@ values the next import would take from the plan instead. Like `update`'s `change
 | `id` | id | The removed row, echoing the positional argument. |
 | `ref` | slug | The removed row's `ref` — the join key the execution record and the commit train hold. |
 | `rewired` | ids, ascending | Rows whose `needs` / `coupling` the removal moved. Empty when nothing depended on the row. |
-| `pruned_override_fields` | subset of `files`, `needs` | Stamped fields the dropped `[[import_overrides]]` entry held. Empty when the row carried no stamp. |
+| `pruned_override_fields` | subset of `files`, `needs`, in that order | Stamped fields the dropped `[[import_overrides]]` entry held — the values the next import takes from the plan instead. Empty when the row carried no stamp. |
 
 ## `tasks show`
 
@@ -272,32 +272,22 @@ tomlctl tasks show <id> --slug <slug> --with body,files,deps
 | *(positional)* | id | Task to print. Required. | — |
 | `--with` | comma-separated, repeatable | `summary`, `body`, `files`, `deps`, `dependents`. A clap `value_enum`: an unknown part exits `2` with usage prose naming it and listing the valid set, **outside** the `--error-format json` envelope — not the exit-`1` `kind=validation` error `--effort` and `--status` raise. | `summary` |
 
-`id` is always emitted whatever `--with` selects, so a fetched row can be matched back to the
-id that was asked for. `summary` is `id`, `ref`, `title`, `effort`, `status`, `checkpoint`,
-`files`, `needs`, `coupling`; `body` adds `action`, `detail`, `acceptance`; `deps` is a summary
-per direct `needs` ∪ `coupling` target; `dependents` is the transitive successor set, excluding
-the row itself. Only `dependents` builds the graph, so a store with a cycle or a dangling edge
-still shows its rows under every other part.
+An unknown id errors with `kind=not_found`. Only `dependents` builds the graph, so a store with
+a cycle or a dangling edge still shows its rows under every other part.
 
-```json
-{"id":12,"ref":"check-side-arm-width","title":"Check side-arm width","effort":"S",
- "status":"pending","checkpoint":"A","files":["src/overflow.tsx"],"needs":[10],"coupling":[],
- "action":"…","detail":"…","acceptance":"…","deps":[{"id":10,"ref":"…"}],
- "import_override":{"files":["src/legacy.tsx"],"needs":[9]},
- "backlog":{"closes":["B-aaaa1111"],"refs":["B-bbbb2222"]}}
-```
+| Key | Value | Meaning |
+|---|---|---|
+| `id` | id | Always emitted, whatever `--with` selects, so a fetched row can be matched back to the id that was asked for. |
+| `ref`, `title`, `effort`, `status`, `checkpoint`, `needs`, `coupling` | row fields | The `summary` part; field meanings are the [store's](tasks-store.md#store-shape). |
+| `files` | paths | Under `summary` or `files`. |
+| `action`, `detail`, `acceptance` | text | The `body` part. |
+| `deps[]` | summaries | The `deps` part: the `summary` keys of each direct `needs` ∪ `coupling` target, ascending by id. |
+| `dependents[]` | summaries | The `dependents` part: the `summary` keys of each transitive successor, excluding the row itself. |
+| `import_override.files`, `import_override.needs` | paths, ids | The plan **base** each stamped field replaced — not the patched `files` / `needs` above it. Ungated by `--with`; an unstamped field is omitted and the whole key is absent from an unstamped row. |
+| `backlog.closes`, `backlog.refs` | backlog ids | The row's `[[backlog_links]]` entry. Ungated by `--with`; absent from an unlinked row. |
 
-`import_override` follows the parts `--with` selected and is not gated on it. It holds the plan **base** each
-stamped field replaced — not the patched `files` / `needs` above it — with an unstamped field
-omitted and the whole key absent from an unstamped row, so output for a store nothing has
-hand-patched is unchanged. It carries no `ref` (the row has one), and the summaries nested under
-`deps` / `dependents` never carry it: the stamp belongs to the row that was asked for.
-
-`backlog` comes last, on the same terms: the row's `[[backlog_links]]` entry as backlog ids under
-`closes` and `refs`, ungated by `--with`, absent from an unlinked row, and never on a nested
-summary.
-
-An unknown id errors with `kind=not_found`.
+`import_override` and `backlog` follow the selected parts, and never appear on a summary nested
+under `deps` / `dependents`: they belong to the row that was asked for.
 
 ## `tasks list`
 
@@ -324,6 +314,11 @@ The store carries none of the legacy shortcut flags `items list` accepts. In par
 **`--file` here is the store target, not `--where file=…`** — the one flag whose meaning
 differs between the two groups.
 
+| Key | Value | Meaning |
+|---|---|---|
+| `[]` | rows | The default shape: the matching `[[items]]` rows, keyed as the [store shape](tasks-store.md#store-shape) lists and narrowed by `--select` / `--exclude`. Every other shape is [query.md](query.md)'s. |
+| `count` | integer | Under `--count`, the whole output: the number of matching rows. |
+
 ## `tasks edges`
 
 ```bash
@@ -336,17 +331,15 @@ tomlctl tasks edges --slug <slug> --dot
 | `--kind` | `needs` \| `coupling` \| `overlap` | Restrict to one kind. Omit for all three. A clap `value_enum`, failing exactly as `tasks show --with` does: an unknown kind exits `2` with usage prose, **outside** the `--error-format json` envelope. | all |
 | `--dot` | — | Emit Graphviz DOT source on stdout instead of the JSON edge list. | off |
 
-`from` is the prerequisite and `to` the row that waits on it, so a JSON edge and its DOT arrow
-read the same way round. Edges are grouped by kind in declaration order and ascending within
-each. `needs` and `coupling` come straight off the rows; `overlap` is computed and is the one
-kind that needs a graph, so it is also the one kind a malformed store cannot answer.
-
-```json
-[{"kind":"needs","from":10,"to":12},{"kind":"overlap","from":3,"to":9}]
-```
-
 Under `--dot` every task is a node whatever `--kind` selects, so a filtered graph still renders
 the whole plan; `coupling` arrows are dashed and `overlap` dotted and undirected.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `[]` | edges | Grouped by kind in the order below and ascending within each. Replaced by DOT source under `--dot`. |
+| `[].kind` | `needs` \| `coupling` \| `overlap` | `needs` and `coupling` come straight off the rows; `overlap` — two rows sharing a file with no directed path either way — is computed, and is the one kind that needs a graph, so it is also the one kind a malformed store cannot answer. |
+| `[].from` | id | The prerequisite, so a JSON edge and its DOT arrow read the same way round. For `overlap`, the pair's earlier row in store order. |
+| `[].to` | id | The row that waits on `from`; for `overlap`, the pair's later row. |
 
 ## `tasks ready`
 
@@ -358,18 +351,21 @@ tomlctl tasks ready --slug <slug> --in-flight 3,4
 |---|---|---|---|
 | `--in-flight` | comma-separated ids | Tasks currently dispatched. A ready row sharing a file with one of them is reported as held, and a row waiting on one stays in `next` rather than `blocked`. | empty |
 
-```json
-{"ready":[4],"held":[{"id":3,"blocked_on_file":"engine.rs","holder":2}],"next":[5],"blocked":[]}
-```
-
-`ready` excludes what `held` names, so it is directly dispatchable. `next` is what becomes
-ready once the current round lands. `blocked` names the rows no later wave can reach — each
-with the nearest **ancestor** stranding it and that ancestor's status, which an ancestor that is
-neither `done`, nor `pending`, nor named in `--in-flight` produces. The walk climbs through
-intervening `pending` rows, so `blocker` is the stall itself rather than a pending row between
-it and the blocked row. Every id list is ascending.
 An `--in-flight` id no row carries is refused, as is a cyclic store: Kahn strands a cycle's
 members and a stranded task reads in a frontier exactly like one that is merely waiting.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `ready` | ids, ascending | `pending` rows whose every dependency is `done`, less what `held` names — directly dispatchable. |
+| `held[]` | objects, ascending by `id` | Rows otherwise ready that share a file with an in-flight row. |
+| `held[].id` | id | The held row. |
+| `held[].blocked_on_file` | path | The file it shares. |
+| `held[].holder` | id | The in-flight row claiming that file. |
+| `next` | ids, ascending | `pending` rows that become ready once the current round — `ready`, `held` and `--in-flight` — lands. |
+| `blocked[]` | objects, ascending by `id` | `pending` rows no later wave can reach. |
+| `blocked[].id` | id | The stranded row. |
+| `blocked[].blocker` | id | The nearest **ancestor** stranding it: one that is neither `done`, nor `pending`, nor named in `--in-flight`. The walk climbs through intervening `pending` rows, so this is the stall itself rather than a pending row between it and the blocked row. |
+| `blocked[].blocker_status` | status | The blocker's `status` — `in-progress`, `failed` or `deferred`. |
 
 ## `tasks batches`
 
@@ -377,15 +373,13 @@ members and a stranded task reads in a frontier exactly like one that is merely 
 tomlctl tasks batches --slug <slug>
 ```
 
-No flags beyond the read bundle and the target.
-
-```json
-{"batches":[[1,4],[2],[3]]}
-```
-
-Kahn layers in dependency order, each ascending. In-degree is `needs` ∪ `coupling`, so a
+No flags beyond the read bundle and the target. In-degree is `needs` ∪ `coupling`, so a
 coupling edge pushes its dependent a layer back. A cycle is refused rather than layered — the
 layering drops what a cycle strands, so the answer would omit tasks instead of naming them.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `batches` | arrays of ids | Kahn layers in dependency order, each ascending — `[[1,4],[2],[3]]`. Every row lands in exactly one. |
 
 ## `tasks closure`
 
@@ -406,18 +400,18 @@ conflicts cannot catch are refused with `kind=validation`: no mode at all, `--ta
 direction, and a direction alongside `--checkpoint` — the last is refused rather than ignored.
 An unknown checkpoint id errors and names the ids `[[checkpoints]]` does hold.
 
-```json
-{"checkpoint":"A","members":[1,2,3,4],"maximal":[4],"dependency_closure":[1,2,3,4],"valid_cut":true}
-{"task":12,"direction":"up","ids":[3,7,10,12]}
-```
+The two modes print disjoint key sets:
 
-`valid_cut` covers the union of the group with every earlier one, so it reads as "committable
-here", not "self-contained".
-
-`members` is the group; `dependency_closure` is everything the group reaches upward, which is
-the set the rendered `CHECKPOINT` marker prints under that same name. They coincide exactly when
-every dependency already sits in an earlier group, which is the case a reader cannot use to tell
-them apart — so both are reported.
+| Key | Value | Meaning |
+|---|---|---|
+| `checkpoint` | group id | `--checkpoint` mode: the group asked for. |
+| `members` | ids, ascending | The rows whose `checkpoint` is the group. |
+| `maximal` | ids, ascending | The group's maximal elements — the antichain its `Checkpoint after` bullet names. |
+| `dependency_closure` | ids, ascending | Everything the group reaches upward — the set the rendered `CHECKPOINT` marker prints under that same name. It coincides with `members` exactly when every dependency already sits in an earlier group, which is the case a reader cannot use to tell them apart — so both are reported. |
+| `valid_cut` | bool | Whether the union of the group with every earlier one is downward-closed: "committable here", not "self-contained". |
+| `task` | id | `--task` mode: the row walked from. |
+| `direction` | `up` \| `down` | The direction flag given. |
+| `ids` | ids, ascending | The walk, `task` included. |
 
 ## `tasks check`
 
@@ -432,14 +426,8 @@ tomlctl tasks check --slug <slug> --in-flight 3,4
 | `--plan` | — | Also compare the plan markdown against the render output and report `render/drift`. | off |
 | `--in-flight` | comma-separated ids | Tasks currently dispatched. A row waiting on one of them is not reported as `dag/stalled-dependency`. Unlike [`ready`](#tasks-ready)'s, an id no row carries is dropped rather than refused — a typo must not empty a class. | empty |
 
-```json
-{"ok":false,"findings":[{"class":"dag/cycle","severity":"error","ids":[2,3,4],
-                         "detail":"tasks 2, 3, 4 form a dependency cycle"}]}
-```
-
-Findings sort by `(class, ids)`. **Exit `1` when any finding is error-class, `0` otherwise** —
-warnings alone exit `0`. See [the check finding classes](#the-check-finding-classes) for the
-full list. Under `--plan` the plan is resolved exactly as `render` resolves it, and the same
+**Exit `1` when any finding is error-class, `0` otherwise** — warnings alone exit `0`. See
+[the check finding classes](#the-check-finding-classes) for the full list. Under `--plan` the plan is resolved exactly as `render` resolves it, and the same
 containment refusal applies. `render/drift` is a warning, so it is reported without moving the
 exit code: `check --plan` still exits `0` on a drifted plan, and
 [`tasks render --check`](#tasks-render) is the mode to gate on instead.
@@ -447,6 +435,11 @@ exit code: `check --plan` still exits `0` on a drifted plan, and
 A store holding any `[[backlog_links]]` entry is also joined against `.claude/backlog.toml` for
 the `backlog/*` classes; a link-free store never reads it. Under `--file` there is no slug, so
 `backlog/claimed-elsewhere` is not raised.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `ok` | bool | `false` exactly when a finding is error-class — the exit-`1` case. |
+| `findings[]` | [findings](#finding-shape) | The store's classes, then the `backlog/*` join, then `render/drift` under `--plan`; each of the first two sorted by `(class, ids)`. |
 
 ## `tasks render`
 
@@ -468,12 +461,6 @@ Both non-writing modes branch before the render lands anywhere, so neither leave
 on a plan it disagrees with. `--check` exits `1` on any drift even though `render/drift` is a
 warning class: the mode is a gate.
 
-```json
-{"ok":true,"path":"docs/plans/<slug>.md","sections":["Execution Policy","Tasks","Dependency Graph"]}
-{"ok":false,"path":"docs/plans/<slug>.md","findings":[{"class":"render/drift","severity":"warning","ids":[],
-  "detail":"plan sections out of date with the store: Tasks"}]}
-```
-
 A missing section is inserted in canonical order (Execution Policy before Tasks, Dependency
 Graph after Tasks). The source document's dominant line ending is detected and re-applied, so a
 CRLF plan is not rewritten to mixed endings and `--check` does not report permanent drift.
@@ -484,6 +471,15 @@ The target path comes from the flow context under `--slug` and from the store's 
 under `--file`, never from an argument, and is refused if absolute, `..`-bearing, outside the
 repo root, or not a `.md` document. Under `--slug` a store whose own `plan_path` resolves to a
 different document than the context's is refused too, until the plan is re-imported.
+
+`--stdout` prints the plan itself; the other two modes print:
+
+| Key | Value | Meaning |
+|---|---|---|
+| `ok` | bool | `true` on a write. Under `--check`, `false` exactly when the plan drifts — the exit-`1` case. |
+| `path` | repo-relative path | The plan written or compared. |
+| `sections` | section titles | Write mode only: always `Execution Policy`, `Tasks`, `Dependency Graph` — the sections the write owns, not the ones that drifted. |
+| `findings[]` | [findings](#finding-shape) | `--check` only: empty, or one `render/drift` whose `detail` names the drifted sections. |
 
 ## Store target
 
@@ -536,20 +532,15 @@ it.
 | `backlog/claimed-elsewhere` | warning | `check --slug` and `import-plan --slug` — a `closes` id whose item is `promoted` to neither the slug nor the store's `plan_path`, `\` and `/` compared alike; `ids` names the closing tasks. Never raised under `--file` or in plan mode |
 | `backlog/closed` | info | `check` and `import-plan` — a linked id whose item is `resolved`, `dismissed` or compacted; `ids` names every linking task |
 
-Severity is `error`, `warning` or `info`. Only `error` moves the exit code; `info` is reserved
-for a list a reader judges, and `files/closure` and `backlog/closed` are its members.
-
 The four `backlog/*` classes are joined from the store's `[[backlog_links]]` and
 `.claude/backlog.toml`, read only when the store holds a link — a backlog that does not parse
 then fails the verb. Each linked id raises at most one of them. A link keyed on a `ref` no row
 carries — `tasks remove` and `tasks update --ref` leave links in place until the next import —
 contributes no id to `ids`; its `detail` names the `ref`.
 
-Every finding is `{class, severity, ids, detail}`; `ids` is empty for the whole-store classes —
-`dag/unbuildable`, the four `policy/*`, `plan/policy-absent`, `plan/no-tasks` and
-`render/drift`. A duplicate id and an edge to an absent task are scanned for *before* any graph
-is built, which is what lets one run report every defect instead of dying on the first, and is
-why either of them suppresses `dag/unbuildable` rather than doubling it.
+A duplicate id and an edge to an absent task are scanned for *before* any graph is built, which
+is what lets one run report every defect instead of dying on the first, and is why either of
+them suppresses `dag/unbuildable` rather than doubling it.
 
 `plan/orphan-row` fires only when `last_import_refs` is non-empty — an empty ref set means the
 store has never been imported, not that every row is orphaned.
@@ -563,3 +554,12 @@ the lines whose prose marks a reference as read-only, and emitted at `info` so i
 gate; `/review-plan` keeps its own Files-line closure sub-check as prose regardless.
 `dag/symbol-without-edge` reads only spans an introducing verb covers, for the same reason — a
 bare path- or identifier-token scan is what measured unusable.
+
+### Finding shape
+
+| Key | Value | Meaning |
+|---|---|---|
+| `class` | class name | A row of the table above. |
+| `severity` | `error` \| `warning` \| `info` | Only `error` moves the exit code; `info` is reserved for a list a reader judges, and `files/closure` and `backlog/closed` are its members. |
+| `ids` | ids | The tasks concerned. Empty for the whole-store classes — `dag/unbuildable`, the four `policy/*`, `plan/policy-absent`, `plan/no-tasks` and `render/drift`. |
+| `detail` | text | The diagnostic, naming what `ids` cannot, such as a `ref`. |

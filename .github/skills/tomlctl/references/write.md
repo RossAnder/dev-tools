@@ -11,21 +11,18 @@ fingerprint contract. The read-only verbs live in [query.md](query.md).
 - [Common recipes](#common-recipes)
 - [Write operations](#write-operations)
   - [Auto-create on first write](#auto-create-on-first-write)
-  - [Set a scalar at a path](#set-a-scalar-at-a-path)
-  - [Set an array or object at a path (`set-json`)](#set-an-array-or-object-at-a-path-set-json)
-  - [Append a single new item](#append-a-single-new-item)
-    - [Pre-append dedup (`--dedupe-by`)](#pre-append-dedup---dedupe-by)
-  - [Batch append many items — `items add-many`](#batch-append-many-items--items-add-many)
-  - [Patch an existing item](#patch-an-existing-item)
-    - [Unset fields](#unset-fields)
-  - [Remove an item](#remove-an-item)
-  - [Batch multiple mixed item ops (`items apply`)](#batch-multiple-mixed-item-ops-items-apply)
-    - [Targeting a non-default array-of-tables (`--array`)](#targeting-a-non-default-array-of-tables---array)
-  - [Compute the next id](#compute-the-next-id)
-  - [Append to an array-of-tables — `array-append`](#append-to-an-array-of-tables--array-append)
-  - [Migrate legacy ledgers — `items backfill-dedup-id`](#migrate-legacy-ledgers--items-backfill-dedup-id)
-  - [Re-sweep and rewrite instances (`items sweep --update`)](#re-sweep-and-rewrite-instances-items-sweep---update)
-  - [Regenerate a missing sidecar — `integrity refresh`](#regenerate-a-missing-sidecar--integrity-refresh)
+  - [`set`](#set)
+  - [`set-json`](#set-json)
+  - [`items add`](#items-add)
+  - [`items add-many`](#items-add-many)
+  - [`items update`](#items-update)
+  - [`items remove`](#items-remove)
+  - [`items apply`](#items-apply)
+  - [`items next-id`](#items-next-id)
+  - [`array-append`](#array-append)
+  - [`items backfill-dedup-id`](#items-backfill-dedup-id)
+  - [`items sweep --update`](#items-sweep---update)
+  - [`integrity refresh`](#integrity-refresh)
   - [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads)
 - [Dry-run](#dry-run)
 - [Dedup fingerprint contract](#dedup-fingerprint-contract)
@@ -72,7 +69,7 @@ EOF
 
 ## Write operations
 
-Writes preserve every field the tool didn't touch, including `created`. Key order within tables is preserved.
+Writes preserve every field the tool didn't touch, including `created`. Key order within tables is preserved. The write bundle every verb below carries — `--allow-outside`, `--no-create`, `--no-write-integrity`, `--strict-integrity`, `--dry-run` — is covered once, in [Auto-create on first write](#auto-create-on-first-write) and [Dry-run](#dry-run); the tables list only each verb's own flags.
 
 ### Auto-create on first write
 
@@ -85,11 +82,11 @@ The seed is only the *starting* doc — the verb's mutation must still succeed a
 
 **Exceptions — `items backfill-dedup-id` and `items sweep --update` do NOT auto-create.** Each pre-reads the ledger — the first for items lacking a `dedup_id`, the second for the `sweep` arrays it re-runs — so a missing target errors with `kind=not_found` on both regardless of `--no-create`, and `items sweep` reports `created` as `false` on every path. This is by design, not a bug: backfilling or re-sweeping an absent ledger is a no-op, so the strict missing-file error is the correct behaviour. Every other mutating verb listed above auto-creates.
 
-**Envelope.** Write-success envelopes now carry `"created": <bool>` and `"path": "<file>"` alongside any existing keys (e.g. `added`/`updated`/`removed`):
+**Envelope.** Write-success envelopes carry `"created": <bool>` and `"path": "<file>"` alongside any verb-specific keys (e.g. `added` on `items add-many`, `appended` on `array-append`):
 
 ```bash
 tomlctl items add .claude/flows/<slug>/review-ledger.toml --json '{"id":"R1","summary":"...","status":"open"}'
-# {"ok":true,"created":true,"path":".claude/flows/<slug>/review-ledger.toml","added":1}
+# {"ok":true,"created":true,"path":".claude/flows/<slug>/review-ledger.toml"}
 ```
 
 **Stderr guidance.** When a file is created, exactly one line is written to stderr:
@@ -108,82 +105,55 @@ tomlctl set .claude/flows/<slug>/context.toml status review --no-create
 
 Not every write pipeline auto-creates: `tomlctl flow active` (the active-flow registry) already bootstraps on missing and gains no `created` field; `tomlctl json …` is unchanged (it targets `settings.json`, which always exists); and `tomlctl flow init` keeps its own created-preservation idempotency for `context.toml` + `execution-record.toml`.
 
-### Set a scalar at a path
+### `set`
+
+Sets a scalar at a dotted key path.
 
 ```bash
-# Type is auto-inferred: YYYY-MM-DD → date, true/false → bool, digits → int, else string
 tomlctl set .claude/flows/auth-overhaul/context.toml status review
-tomlctl set .claude/flows/auth-overhaul/context.toml updated 2026-04-17
 tomlctl set .claude/flows/auth-overhaul/context.toml tasks.completed 4
-
-# Force a specific type when inference would go wrong
-tomlctl set path/to/file.toml some_key 42 --type str
 tomlctl set path/to/file.toml when 2026-04-17T10:00:00Z --type datetime
 ```
 
-Supported `--type` values: `str`, `int`, `float`, `bool`, `date`, `datetime`.
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--type` | `str` \| `int` \| `float` \| `bool` \| `date` \| `datetime` | Force the value's TOML type when inference would go wrong (`42` meant as a string, a timestamp meant as a datetime). | inferred: `YYYY-MM-DD` → date, `true`/`false` → bool, digits → int, else string |
 
-Supports `--dry-run`; see [Dry-run](#dry-run).
+### `set-json`
 
-### Set an array or object at a path (`set-json`)
-
-When the target isn't a scalar (e.g. `scope`, `[artifacts]` as a whole), pass a JSON-encoded value with `set-json`. ISO-date strings (`YYYY-MM-DD`) are auto-promoted to TOML date literals, same as `items add` / `items update`.
+Sets a non-scalar at a path — an array such as `scope`, or a whole subtable such as `[artifacts]`. ISO-date strings (`YYYY-MM-DD`) are auto-promoted to TOML date literals, same as `items add` / `items update`.
 
 ```bash
-# Refresh scope array (e.g. during /plan-update reconcile)
-tomlctl set-json .claude/flows/auth/context.toml scope \
-  --json '["src/auth/**","src/routes/**","src/middleware/auth.rs"]'
-
-# Replace a whole subtable
-tomlctl set-json .claude/flows/auth/context.toml artifacts \
-  --json '{"review_ledger":"x.toml","optimise_findings":"y.toml"}'
+tomlctl set-json .claude/flows/auth/context.toml scope --json '["src/auth/**","src/routes/**","src/middleware/auth.rs"]'
+tomlctl set-json .claude/flows/auth/context.toml artifacts --json '{"review_ledger":"x.toml","optimise_findings":"y.toml"}'
 ```
 
-Supports `--dry-run`; see [Dry-run](#dry-run).
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--json` | JSON value, `-` or `@<path>` | The replacement value at the path. | required |
 
-### Append a single new item
+### `items add`
 
-`--json` takes one JSON object representing the new `[[items]]` entry. Field order in the JSON becomes field order in the emitted TOML, so pass fields in the canonical key order the `flow-contract-ledger-schema` skill defines:
+Appends one row. Pass fields in the canonical key order the `flow-contract-ledger-schema` skill defines, since JSON order becomes TOML order:
 `id, file, line, symbol, severity, effort, category, summary, description, evidence, first_flagged, rounds, related, status, <disposition-specific>, flow`.
 
 ```bash
-cat <<'EOF' | tomlctl items add .claude/flows/foo/optimise-findings.toml --json -
-{
-  "id": "O7",
-  "file": "src/svc/foo.rs",
-  "line": 44,
-  "severity": "critical",
-  "effort": "small",
-  "category": "memory",
-  "summary": "Allocates fresh Vec in hot loop",
-  "first_flagged": "2026-04-17",
-  "rounds": 1,
-  "status": "open"
-}
-EOF
+tomlctl items add .claude/flows/foo/optimise-findings.toml --json '{"id":"O7","file":"src/svc/foo.rs","line":44,"severity":"critical","effort":"small","category":"memory","summary":"Allocates fresh Vec in hot loop","first_flagged":"2026-04-17","rounds":1,"status":"open"}'
 ```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--json` | JSON object, `-` or `@<path>` | The new row. | required |
+| `--array` | name | Target array-of-tables, e.g. `rollback_events`. | `items` |
+| `--dedupe-by` | `f1,f2,…` | Skip the add when an existing row equals the payload on every listed field, compared as raw strings; the envelope then reports `"added":0` and the `matched_id`. `dedup_id` is never implied — name it for fingerprint dedup. The pre-scan runs before `dedup_id` auto-populates, so a payload's own fingerprint never matches itself. | off |
 
 `dedup_id` is auto-populated by the write funnel if the payload doesn't set it — see [Dedup fingerprint contract](#dedup-fingerprint-contract). Rendered output (e.g. PROGRESS-LOG columns) is unaffected; the field only appears in the TOML.
 
 Date-shaped strings (`YYYY-MM-DD`) in the `DATE_KEYS` set — `created`, `updated`, `first_flagged`, `last_updated`, `resolved`, `date`, `promoted`, `dismissed`, `last_seen` — are automatically promoted to TOML date literals. The `DATE_KEYS` constant in `tomlctl/src/convert.rs` owns the set; check it there when a field you expected to promote stayed a quoted string.
 
-Supports `--dry-run`; see [Dry-run](#dry-run).
+### `items add-many`
 
-#### Pre-append dedup (`--dedupe-by`)
-
-`--dedupe-by <FIELDS>` on `items add` / `items add-many` rejects rows whose named fields exactly match an existing item. `FIELDS` is a comma-separated list; comparison is raw equality on each named field's string form. Does NOT implicitly include `dedup_id`; pass `--dedupe-by dedup_id` explicitly to use fingerprint-based dedup. The pre-scan runs BEFORE `dedup_id` auto-populate, so a payload's auto-populated `dedup_id` never influences its own pre-scan.
-
-```bash
-# Reject rows where (file, summary) matches any existing row
-tomlctl items add ledger.toml --dedupe-by file,summary --json '{...}'
-
-# Fingerprint-based dedup
-tomlctl items add ledger.toml --dedupe-by dedup_id --json '{...}'
-```
-
-### Batch append many items — `items add-many`
-
-For runs that need to append many new items at once (e.g. a 50-finding review batch), assemble NDJSON line-by-line and pass it to `items add-many` — one parse, one lock, one rewrite, one sidecar refresh. Each line is one JSON object; blank lines are ignored; any malformed line aborts the whole batch pre-mutation and names the offending line number.
+Appends many rows — e.g. a 50-finding review batch — in one parse, one lock, one rewrite, one sidecar refresh.
 
 Two agent-native forms, neither a heredoc and neither a temp file. Prefer the pipe for a handful of rows and the staging file past that (see [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads) for why the heredoc form is not on this list).
 
@@ -205,66 +175,36 @@ The PowerShell spelling pipes a string array; each element becomes one line:
 tomlctl items add-many .claude/flows/foo/review-ledger.toml \
   --defaults-json '{"first_flagged":"2026-04-18","rounds":1,"status":"open"}' \
   --ndjson .claude/flows/foo/_batch.ndjson
-# → {"ok":true,"added":N}
+# → {"ok":true,"added":N,"created":false,"path":".claude/flows/foo/review-ledger.toml"}
 ```
 
-`--array <name>` targets a non-default array-of-tables. `--defaults-json` is optional; omit it for rows that are already fully-formed, or pass `--defaults-json @defaults.json` to read it from a file alongside `--ndjson -`. `--dedupe-by <FIELDS>` works the same as on `items add`.
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--ndjson` | `-` or path (a leading `@` is accepted) | One JSON object per line; blank lines are ignored, and a malformed line aborts the whole batch before mutation, naming its line number. | required |
+| `--defaults-json` | JSON object, `-` or `@<path>` | Fields stamped on every row; a row's own key wins. Omit for fully-formed rows; `@defaults.json` pairs with `--ndjson -`. | none |
+| `--array` | name | As on `items add`. | `items` |
+| `--dedupe-by` | `f1,f2,…` | As on `items add`, per row; skipped rows add `"skipped":M` and `"skipped_rows":[{"row":N,"matched_id":"…"}]` to the envelope. | off |
 
-Supports `--dry-run`; see [Dry-run](#dry-run).
+### `items update`
 
-### Patch an existing item
-
-Matched by `id`. The JSON object is merged into the item (shallow). Existing unmentioned fields stay untouched.
+Patches the row whose `id` matches. The patch is a shallow merge; unmentioned fields stay untouched.
 
 ```bash
-# Mark an item applied with resolution commit
-cat <<'EOF' | tomlctl items update .claude/flows/foo/review-ledger.toml R22 --json -
-{
-  "status": "applied",
-  "resolved": "2026-04-17",
-  "resolution": "Fixed in ab12cd3"
-}
-EOF
+tomlctl items update .claude/flows/foo/review-ledger.toml R22 --json '{"status":"applied","resolved":"2026-04-17","resolution":"Fixed in ab12cd3"}'
 
-# Increment rounds (read current, then set)
-tomlctl items update .claude/flows/foo/review-ledger.toml R22 --json '{"rounds": 2}'
+# Flip deferred -> open and drop the defer triggers in a single rewrite
+tomlctl items update ledger.toml R7 --json '{"status":"open","rounds":2}' --unset defer_reason --unset defer_trigger
 ```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--json` | JSON object, `-` or `@<path>` | The patch. At least one of `--json` / `--unset` is required. | none |
+| `--unset` | key, repeatable | Drop a field. Runs after the `--json` merge, so it wins over a same-key set; a key the row lacks is a no-op. | none |
+| `--array` | name | As on `items add`. | `items` |
 
 `dedup_id` is recomputed by the write funnel when the patch touches a fingerprinted field (`file`, `summary`, `severity`, `category`, `symbol`) and does not set `dedup_id` explicitly. See [Dedup fingerprint contract](#dedup-fingerprint-contract).
 
-#### Unset fields
-
-`--unset <key>` (repeatable) drops a field from the matched item. The patch is applied **first**, then each unset runs, so an `--unset` on the same key as a `--json` set wins. Unsetting a key that is not present is silently a no-op — field-absent is the desired end state.
-
-`--json` is optional when `--unset` is given; at least one of the two is required. Both together compose in one rewrite:
-
-```bash
-# Flip deferred -> open and drop the defer triggers in a single rewrite
-tomlctl items update ledger.toml R7 \
-  --json '{"status":"open","rounds":2}' \
-  --unset defer_reason --unset defer_trigger
-
-# Unset only
-tomlctl items update ledger.toml R7 --unset defer_reason
-```
-
-In `items apply` batches, an `update` op accepts a per-op `unset` array of field names alongside the `json` patch object. Both may appear on the same op: `json` sets fields, `unset` deletes fields; the `unset` pass runs **after** the `json` merge, so an `unset` on the same key as a set wins. Omitting `unset` leaves behaviour unchanged.
-
-```json
-{"op":"update","id":"R7","json":{"status":"open"},"unset":["defer_reason","defer_trigger"]}
-```
-
-```bash
-tomlctl items apply ledger.toml --ops - <<'EOF'
-[
-  {"op":"update","id":"R7","json":{"status":"open"},"unset":["defer_reason","defer_trigger"]}
-]
-EOF
-```
-
-Supports `--dry-run`; see [Dry-run](#dry-run).
-
-### Remove an item
+### `items remove`
 
 Rare — IDs are never renumbered per spec — but occasionally needed for manual cleanup. Fails if the id does not exist.
 
@@ -272,121 +212,96 @@ Rare — IDs are never renumbered per spec — but occasionally needed for manua
 tomlctl items remove .claude/flows/foo/review-ledger.toml R17
 ```
 
-Supports `--dry-run`; see [Dry-run](#dry-run).
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--array` | name | As on `items add`. | `items` |
 
-### Batch multiple mixed item ops (`items apply`)
+### `items apply`
 
-For runs that mix add/update/remove on `[[items]]` in the same ledger, use `items apply` to parse + rewrite the file once. `--ops` is a JSON array of ops, or NDJSON with one op per line; each op is `{"op": "add|update|remove", ...}` with the same payload shape as the single-op commands (`json` for add/update — the patch key is `json`, not `set` — and `id` for update/remove). Ops run in order; any op error aborts the whole batch and the file is left unchanged.
+Runs a mixed add/update/remove batch against one array in a single parse + rewrite. Each op is `{"op": "add|update|remove", ...}` with the single-op payload shape: `json` for add/update (the patch key is `json`, not `set`), `id` for update/remove, and on update an optional `unset` array of field names applied after the `json` merge, as `--unset` is. Ops run in order; any op error aborts the whole batch and the file is left unchanged.
 
 ```bash
 tomlctl items apply .claude/flows/foo/review-ledger.toml --ops - <<'EOF'
 [
   {"op":"add",    "json":{"id":"R24","severity":"minor","summary":"...","status":"open"}},
-  {"op":"update", "id":"R22", "json":{"status":"applied","resolved":"2026-04-17"}},
+  {"op":"update", "id":"R22", "json":{"status":"applied","resolved":"2026-04-17"},"unset":["defer_reason"]},
   {"op":"remove", "id":"R17"}
 ]
 EOF
-```
 
-A payload whose first non-whitespace character is `{` is read as NDJSON: blank lines are skipped, and a malformed line aborts the batch naming its 1-based line number. Everything else — atomicity, `--no-remove`, `--dry-run`, the output — matches the array form. The single-line pipe works here as it does for `add-many`:
-
-```bash
 printf '%s\n' '{"op":"update","id":"R22","json":{"status":"applied"}}' '{"op":"remove","id":"R17"}' | tomlctl items apply .claude/flows/foo/review-ledger.toml --ops -
 ```
 
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--ops` | JSON array or NDJSON, `-` or `@<path>` | The batch. A payload whose first non-whitespace character is `{` is read as NDJSON, one op per line: blank lines are skipped and a malformed line aborts the batch naming its 1-based line number. | required |
+| `--array` | name | Run the batch against another array-of-tables, e.g. `rollback_events`. | `items` |
+| `--no-remove` | — | Reject any `remove` op. The apply flows pass it so an agent-generated payload cannot erase audit history. | off |
+
 Prefer this over looping single-op invocations — one parse + one write instead of N. For homogeneous add-only batches prefer `items add-many` (simpler input shape). For append-only non-`items` arrays prefer `array-append`.
 
-Supports `--dry-run`; see [Dry-run](#dry-run).
+`items next-id`, `items find-duplicates`, `items orphans`, `items sweep`, and `items clusters` take no `--array`: they are ledger-schema specific and only reason about `[[items]]`.
 
-#### Targeting a non-default array-of-tables (`--array`)
+### `items next-id`
 
-`items apply` defaults to mutating the `[[items]]` array at the ledger root. Pass `--array <name>` to redirect the batch at a different array-of-tables (e.g. `rollback_events`). `--array` is accepted on `items list`, `items get`, `items add`, `items add-many`, `items update`, `items remove`, and `items apply` — so any of these can target a non-default array such as `rollback_events`. `items next-id`, `items find-duplicates`, `items orphans`, `items sweep`, and `items clusters` do not take `--array` (they are ledger-schema specific and only reason about `[[items]]`).
-
-### Compute the next id
+Returns the JSON-encoded next id: the prefix + `max(existing numeric suffixes) + 1`.
 
 ```bash
-# Explicit prefix (required unless --infer-from-file is passed)
-tomlctl items next-id .claude/flows/foo/review-ledger.toml --prefix R     # → "R23"
-tomlctl items next-id .claude/flows/foo/optimise-findings.toml --prefix O # → "O1" on empty
-
-# Infer the prefix from existing items — the ledger must be non-empty AND
-# contain exactly one prefix. Errors otherwise:
-#   "--infer-from-file requires a non-empty ledger or explicit --prefix"
-#   "--infer-from-file found multiple prefixes (R, O); pass --prefix explicitly"
-tomlctl items next-id .claude/flows/foo/review-ledger.toml --infer-from-file
-# → "R23"
+tomlctl items next-id .claude/flows/foo/review-ledger.toml --prefix R        # → "R23"
+tomlctl items next-id .claude/flows/foo/review-ledger.toml --infer-from-file # → "R23"
 ```
 
-`--prefix` and `--infer-from-file` are mutually exclusive (one is required). `--prefix` on a missing file returns `<prefix>1` as a bootstrapping fast path (the query reference's strict-reads section covers how to disable that default). `--infer-from-file` cannot bootstrap — it needs existing items to infer from.
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--prefix` | letter | The id prefix. On a missing file returns `<prefix>1` as a bootstrapping fast path; [strict reads](query.md#strict-reads---strict-read) disable that. Required unless `--infer-from-file` is given. | — |
+| `--infer-from-file` | — | Take the prefix from the existing ids. Cannot bootstrap: errors on an empty ledger (`--infer-from-file requires a non-empty ledger or explicit --prefix`) and on more than one prefix (`--infer-from-file found multiple prefixes (R, O); pass --prefix explicitly`). Excludes `--prefix`. | off |
 
-Returns the JSON-encoded string of the next id (prefix + `max(existing numeric suffixes) + 1`).
+### `array-append`
 
-### Append to an array-of-tables — `array-append`
-
-For append-only arrays such as `[[rollback_events]]` (written by `/review-apply` / `/optimise-apply` rollback protocol), use `array-append`. It's a thin shim over `items add-many` that targets an arbitrary array name and doesn't require op-type framing.
+Appends records to an arbitrary array-of-tables such as `[[rollback_events]]` (written by the `/review-apply` / `/optimise-apply` rollback protocol). A thin shim over `items add-many` that takes the array name positionally and needs no op framing. The envelope reports `appended`.
 
 ```bash
-# Single record
-cat <<'EOF' | tomlctl array-append <ledger> rollback_events --json -
-{
-  "timestamp": "2026-04-18T14:32:00Z",
-  "command": "review-apply",
-  "cause": "build failure",
-  "items": ["R3","R7"],
-  "stash_ref": "stash@{0}"
-}
-EOF
-
-# Many records via NDJSON — stage to a sibling file and pass --ndjson <path>.
-# Same >5-item / Windows-heredoc rule as `items add-many` above. Staging file is
-# mandatory on Windows for any batch larger than ~5 items.
-tomlctl array-append <ledger> rollback_events \
-  --ndjson .claude/flows/foo/_rollback-batch.ndjson
+tomlctl array-append <ledger> rollback_events --json '{"timestamp":"2026-04-18T14:32:00Z","command":"review-apply","cause":"build failure","items":["R3","R7"],"stash_ref":"stash@{0}"}'
+tomlctl array-append <ledger> rollback_events --ndjson .claude/flows/foo/_rollback-batch.ndjson
 ```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--json` | JSON object, `-` or `@<path>` | One record. Exactly one of `--json` / `--ndjson` is required. | — |
+| `--ndjson` | `-` or path (a leading `@` is accepted) | Many records, one per line — the same staging-file rule as `items add-many`. | — |
 
 `items apply --array <name>` remains available for heterogeneous batches (add/update/remove on the same array in one parse+write). Use `array-append` when every op is an append.
 
-Supports `--dry-run`; see [Dry-run](#dry-run).
+### `items backfill-dedup-id`
 
-### Migrate legacy ledgers — `items backfill-dedup-id`
-
-Ledgers created before 0.2.0 have no `dedup_id` field on any item. `items backfill-dedup-id` computes and writes the fingerprint for every item that lacks one, preserving any item that already has a (possibly manually set) value. Idempotent — a second run is a no-op.
+Computes and writes the fingerprint for every item that lacks a `dedup_id`, preserving any item that already has a (possibly manually set) value — the upgrade path for legacy ledgers written before the field existed. Idempotent: a second run reports `backfilled:0` and skips the write. Under the [rollback lever](#dedup-fingerprint-contract) it short-circuits without reading the file.
 
 ```bash
-# Apply (returns backfilled:0 when there's nothing to do — idempotent, write skipped)
 tomlctl items backfill-dedup-id .claude/flows/foo/review-ledger.toml
-# → {"ok":true,"backfilled":23}
-
-# Kill switch engaged — short-circuits without reading the file
-TOMLCTL_NO_DEDUP_ID=1 tomlctl items backfill-dedup-id <ledger>
-# → {"ok":true,"backfilled":0,"reason":"disabled-by-env"}
+# → {"ok":true,"backfilled":23,"created":false,"path":".claude/flows/foo/review-ledger.toml"}
 ```
 
-Supports `--dry-run`; see [Dry-run](#dry-run).
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--array` | name | Backfill another array-of-tables that carries a `dedup_id` contract. | `items` |
 
-### Re-sweep and rewrite instances (`items sweep --update`)
+### `items sweep --update`
 
-`items sweep <ledger>` is read-only by default — it re-runs each item's stored `sweep` patterns and reports `new` / `gone` / `kept` / `unverified` against `instances` (the read side is in [query.md](query.md)). `--update` turns that same run into one write: a single `MutationPlan` carrying one `update` op per swept item whose `instances` actually changes, applied in one parse + one rewrite. The rewritten `instances` keeps the listed order: the kept anchors and any `excluded` ones stay in place, spelled as recorded (a `file:symbol` anchor keeps its symbol), and the new sites follow as `file:line`; an item whose rewritten list equals what is stored gets no op. Only an item whose `status` is `open` (absent or unrecognised reads as `open`) gets an op: a terminal item (`fixed` / `wontfix` / `verified-clean` / `deferred` / `applied` / `wontapply`) is reported but never rewritten, even when named in `--ids` — edit its `instances` with `items update`. `enumeration` is never rewritten — whether the patterns can reach every form is the agent's judgement, and the read output reports `coverage_complete` instead.
+`items sweep <ledger>` is read-only by default — it re-runs each item's stored `sweep` patterns and reports `new` / `gone` / `kept` / `unverified` against `instances`; its flag table is [`items sweep`](query.md#items-sweep) in query.md. `--update` turns that same run into one write: a single `MutationPlan` carrying one `update` op per swept item whose `instances` actually changes, applied in one parse + one rewrite. The rewritten `instances` keeps the listed order: the kept anchors and any `excluded` ones stay in place, spelled as recorded (a `file:symbol` anchor keeps its symbol), and the new sites follow as `file:line`; an item whose rewritten list equals what is stored gets no op. Only an item whose `status` is `open` (absent or unrecognised reads as `open`) gets an op: a terminal item (`fixed` / `wontfix` / `verified-clean` / `deferred` / `applied` / `wontapply`) is reported but never rewritten, even when named in `--ids` — edit its `instances` with `items update`. `enumeration` is never rewritten — whether the patterns can reach every form is the agent's judgement, and the read output reports `coverage_complete` instead.
 
 ```bash
 # Rewrite instances for two items; a run that changes nothing writes nothing and leaves the sidecar alone
 tomlctl items sweep .claude/flows/foo/review-ledger.toml --ids R5,R9 --update
 # → {"ok":true,"updated":["R5"],"created":false,"path":".claude/flows/foo/review-ledger.toml"}
-
-# Preview the rewrite — the standard would_change envelope; no file or sidecar touch
-tomlctl items sweep .claude/flows/foo/review-ledger.toml --ids R5,R9 --update --dry-run
-# → {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":0,"updated":1,"removed":0,"skipped":0,"ids":["R5"]}}
 ```
 
 `--update` refuses with `kind=validation` when any open swept item is `truncated` or has an `unverified` anchor whose reason is not `excluded` — absence of a hit in a file the sweep did not search is not evidence the anchor is gone. The refusal names up to five anchors per id with their reason plus the total, and advises raising `--max-hits` for a truncated run or re-anchoring / resolving the named anchors by hand otherwise (`--max-file-bytes` for a `skipped` oversize file); then re-run. `--dry-run` without `--update` is refused (`kind=other`): the read-only sweep has nothing to preview.
 
 A changed run refreshes the `.sha256` sidecar like every other write; a no-change run reports `updated: []` and touches neither. A missing ledger is `kind=not_found` on every `items sweep` path — read-only, `--update` and `--update --dry-run` alike — because an empty seed would have no items to rewrite; `--update` never mints one, `--no-create` changes nothing here, and `created` is always `false`.
 
-### Regenerate a missing sidecar — `integrity refresh`
+### `integrity refresh`
 
-Materialises (or regenerates) the `<file>.sha256` sidecar from the file's current on-disk bytes. Does NOT modify the TOML — use this when the sidecar is absent or lost but the TOML is authoritative as-is.
-
-No bootstrap snippet is needed any more: the first write to a missing flow file [auto-creates and seeds it](#auto-create-on-first-write) through the normal write pipeline, which produces the sidecar in the same pass — so `/plan-new` and `/implement` never have to hand-`Write` a skeleton and then run `integrity refresh` to close a sidecar gap. `integrity refresh` is now purely a recovery / regeneration verb:
+Materialises (or regenerates) the `<file>.sha256` sidecar from the file's current on-disk bytes. Does NOT modify the TOML — use this when the sidecar is absent or lost but the TOML is authoritative as-is. The first write to a missing flow file [auto-creates it](#auto-create-on-first-write) together with its sidecar, so this is a recovery verb only:
 
 ```bash
 # Recovery: sidecar deleted out-of-band (git clean, stray rm), TOML intact.
@@ -394,13 +309,13 @@ tomlctl integrity refresh .claude/flows/<slug>/review-ledger.toml
 # → {"ok":true}
 ```
 
-Acquires the same exclusive lock a write path would, so it serialises correctly with concurrent writers. Subject to the same `.claude/` containment guard as other write paths — pass `--allow-outside` to refresh a sidecar for a file outside `.claude/`. Calling this on a file that already has a valid sidecar is a no-op-ish (it rewrites the sidecar with the same bytes) and idempotent.
+Acquires the same exclusive lock a write path would, so it serialises correctly with concurrent writers. Subject to the same `.claude/` containment guard as other write paths — pass `--allow-outside` to refresh a sidecar for a file outside `.claude/`. Calling this on a file that already has a valid sidecar rewrites the same bytes, so it is idempotent.
 
 ### Stdin input for large JSON payloads
 
 All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) take three spellings: a literal, `-` for stdin, or `@<path>` to read a file. Stdin is capped at 32 MiB and a payload past the cap is an error, never a silent partial batch; tomlctl refuses to block on an interactive TTY; and only one flag per invocation may be `-`, because a process has one stdin (a second errors with `stdin already consumed by another flag on this invocation`). `@<path>` is the release valve — `--ndjson - --defaults-json @defaults.json`, or `--ops @ops.json` for a batch of edits with no pipe at all. In PowerShell quote it (`'@ops.json'`); a bare `@name` is splatting syntax there.
 
-The single-line pipe (`printf '%s\n' '<row>' '<row>' | tomlctl … --ndjson -`, or a PowerShell string array) carries any number of rows without a heredoc or a file; see [`items add-many`](#batch-append-many-items--items-add-many) for both spellings.
+The single-line pipe (`printf '%s\n' '<row>' '<row>' | tomlctl … --ndjson -`, or a PowerShell string array) carries any number of rows without a heredoc or a file; see [`items add-many`](#items-add-many) for both spellings.
 
 On Linux/macOS the heredoc form is fine for any size:
 
@@ -416,7 +331,7 @@ EOF
 - `bash: -c: line N: unexpected EOF while looking for matching \`''` — the whole command errors out, no write happens.
 - Partial success followed by spurious errors — tomlctl actually writes the first N items, then bash treats the tail of the heredoc body as shell commands to execute (e.g. `/c/Users/ros…: Permission denied`). This is the failure mode that shows up as a "false interrupt" in the UI.
 
-Measured behaviour on this machine (Opus 4.x, Git Bash, 2026-04-24): narrow rows (a few fields, <100 bytes each) survive heredocs up to ~80 rows; typical review-finding rows (summary + file + rationale + suggestion ≈ 700 bytes) start failing intermittently at 14 rows and fail consistently at 15 rows. The practical threshold is ~10 KB of total command text. **Don't try to estimate this at call time** — just stage to a file once you're past a handful of rows.
+The threshold is roughly 10 KB of total command text, which a batch of typical review-finding rows passes at around a dozen. **Don't try to estimate this at call time** — just stage to a file once you're past a handful of rows.
 
 Windows-safe pattern (mandatory for >5 items, recommended for all batches):
 
@@ -436,64 +351,26 @@ For `--json` / `--ops` / `--defaults-json`, write the payload to a sibling file 
 `--dry-run` is accepted on every write subcommand — `set`, `set-json`, `array-append`,
 `items add`, `items add-many`, `items update`, `items remove`, `items apply`,
 `items backfill-dedup-id`, and `items sweep --update` (there it requires `--update`, since
-the read-only sweep has nothing to preview). It reports the computed mutation as a
-`would_change` envelope and touches no file. The dry-run path runs the same compute stage as the real path —
-mutation logic cannot drift between preview and apply.
+the read-only sweep has nothing to preview). It reports the computed mutation and touches no
+file or sidecar. The dry-run path runs the same compute stage as the real path — mutation
+logic cannot drift between preview and apply. A target outside `.claude/` still needs
+`--allow-outside`.
+
+The envelope takes three shapes. `set` and `set-json` report `kind: "scalar"` with the old and
+new value at the path. Every `items` verb, `array-append` and `items sweep --update` report
+`kind: "items"` with per-op counts and `ids`, the union of every affected id — an
+`array-append` record carries no `id`, so each shows as `""`. `items backfill-dedup-id`
+reports `would_backfill` and the ids it would stamp.
 
 ```bash
-# Preview a scalar change without touching disk (dry-run on `set`)
-tomlctl set foo.toml status review --type str --dry-run
+tomlctl set foo.toml status review --dry-run
 # {"ok":true,"dry_run":true,"would_change":{"kind":"scalar","path":"status","old":"draft","new":"review"}}
-# Note: if the target path is an absolute path outside .claude/ (e.g. /tmp/scratch.toml),
-# you must also pass --allow-outside.
-```
 
-```bash
-# Preview without touching disk
-tomlctl set-json .claude/flows/auth/context.toml scope --json '["src/auth/**"]' --dry-run
-# {"ok":true,"dry_run":true,"would_change":{"kind":"scalar","path":"scope","old":[...],"new":["src/auth/**"]}}
-```
-
-```bash
-# Preview the add without touching disk
-tomlctl items add .claude/flows/foo/optimise-findings.toml --json '{...}' --dry-run
-# {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":1,"updated":0,"removed":0,"skipped":0,"ids":["O7"]}}
-```
-
-```bash
-# Preview a batch append without touching disk
-tomlctl items add-many .claude/flows/foo/review-ledger.toml --ndjson .claude/flows/foo/_batch.ndjson --dry-run
-# {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":N,"updated":0,"removed":0,"skipped":0,"ids":[...]}}
-```
-
-```bash
-# Preview a patch without touching disk
-tomlctl items update .claude/flows/foo/review-ledger.toml R22 --json '{"status":"applied"}' --dry-run
-# {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":0,"updated":1,"removed":0,"skipped":0,"ids":["R22"]}}
-```
-
-```bash
-# Preview with --dry-run — reports the computed mutation without touching disk
-tomlctl items remove .claude/flows/foo/review-ledger.toml R17 --dry-run
-# → {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":0,"updated":0,"removed":1,"ids":["R17"]}}
-```
-
-```bash
 tomlctl items apply ledger.toml --ops '[...]' --dry-run
-# → {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":1,"updated":1,"removed":1,"ids":["R17","R22","R24"]}}
-# Note: `ids` is the union of all affected ids (added + updated + removed combined).
-```
+# {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":1,"updated":1,"removed":1,"skipped":0,"ids":["R24","R22","R17"]}}
 
-```bash
-# Preview an append without touching disk
-tomlctl array-append <ledger> rollback_events --json '{...}' --dry-run
-# {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":1,"updated":0,"removed":0,"skipped":0,"ids":[]}}
-```
-
-```bash
-# Preview
-tomlctl items backfill-dedup-id .claude/flows/foo/review-ledger.toml --dry-run
-# → {"ok":true,"dry_run":true,"would_backfill":23,"ids":["R1","R2",...]}
+tomlctl items backfill-dedup-id ledger.toml --dry-run
+# {"ok":true,"dry_run":true,"would_backfill":23,"ids":["R1","R2",...]}
 ```
 
 ## Dedup fingerprint contract
@@ -513,4 +390,4 @@ Every write funnel (`items add`, `items add-many`, `items update`, `items apply`
 
 **Rollback lever.** `TOMLCTL_NO_DEDUP_ID=1` disables auto-populate globally. Any value (even empty) disables the hook; unset the env var to re-enable. With the kill switch engaged, `items backfill-dedup-id` short-circuits with `{"ok":true,"backfilled":0,"reason":"disabled-by-env"}`.
 
-**`--dedupe-by` interaction.** `--dedupe-by <FIELDS>` on `items add` / `items add-many` does NOT implicitly include `dedup_id`. Callers wanting fingerprint-based dedup pass `--dedupe-by dedup_id` explicitly. The dedupe pre-scan always runs BEFORE auto-populate, so a payload's auto-populated `dedup_id` never influences its own pre-scan.
+`--dedupe-by` on `items add` / `items add-many` is a separate, caller-chosen pre-scan; see [`items add`](#items-add).
