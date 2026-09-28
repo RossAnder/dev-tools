@@ -1,0 +1,27 @@
+slug = "lively-twirling-babbage"
+plan_path = "docs/plans/lively-twirling-babbage.md"
+status = "draft"
+created = 2026-09-28
+updated = 2026-09-28
+branch = "main"
+scope = [
+    "tomlctl/**",
+    "claude/skills/tomlctl/**",
+    "claude/skills/flow-contract-task-store/**",
+    "glimpse/**",
+    ".gitignore",
+    ".githooks/pre-commit",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/lively-twirling-babbage/review-ledger.toml"
+optimise_findings = ".claude/flows/lively-twirling-babbage/optimise-findings.toml"
+execution_record = ".claude/flows/lively-twirling-babbage/execution-record.toml"
+plan_review_findings = ".claude/flows/lively-twirling-babbage/plan-review-findings.toml"
+tasks = ".claude/flows/lively-twirling-babbage/tasks.toml"

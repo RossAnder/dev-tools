@@ -1,0 +1,1286 @@
+schema_version = 1
+last_updated = 2026-09-28
+plan_path = "docs/plans/lively-twirling-babbage.md"
+last_import_refs = [
+    "accept-the-colon-inside-bold-field-label-spelling",
+    "ignore-agent-records-and-the-glimpse-build-dir-in-git",
+    "add-the-agents-store-schema",
+    "correlate-subagents-with-flow-tasks-from-claude-codes-on-disk-state",
+    "join-the-execution-record-for-the-snapshot",
+    "record-hook-events-into-the-agents-store",
+    "assemble-the-task-snapshot",
+    "add-the-agents-list-verb-and-group-dispatch",
+    "wire-the-new-verbs-into-the-cli",
+    "integration-test-agents-record",
+    "integration-test-tasks-snapshot",
+    "release-tomlctl-0120-with-the-new-features-registered",
+    "document-the-agents-verb-group",
+    "document-the-snapshot-verb-and-the-agents-store-writer",
+    "scaffold-the-glimpse-crate",
+    "define-the-snapshot-model",
+    "add-config-and-theme",
+    "poll-the-flow-files-and-fetch-snapshots",
+    "discover-flows-and-pick-the-freshest",
+    "compute-snapshot-change-sets",
+    "hold-app-state-and-map-keys",
+    "render-the-layer-view",
+    "render-task-details-with-markdown",
+    "render-the-header-strip",
+    "tail-the-selected-agents-transcript",
+    "render-the-traversal-view",
+    "pick-a-flow-from-the-selector",
+    "order-diagram-layers-to-reduce-crossings",
+    "assign-diagram-coordinates",
+    "resolve-junction-glyphs",
+    "route-diagram-edges-through-inter-layer-channels",
+    "paint-and-navigate-the-diagram",
+    "compose-the-frame-and-switch-views",
+    "run-the-event-loop",
+    "wrap-the-herdr-cli",
+    "ensure-one-glimpse-pane-per-tab",
+    "handle-hook-events",
+    "install-hooks-and-the-herdr-keybinding",
+    "parse-arguments-and-wire-the-subcommands",
+    "document-glimpse",
+    "gate-glimpse-formatting-in-pre-commit",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 8
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "The tomlctl data layer is complete: the agents store with its record/list verbs, `tasks snapshot`, docs, 0.12.0, and the `B-22bd6fc6` parser fix. tomlctl builds, its full suite and the plan corpus pass, and nothing in glimpse is needed."
+
+[[checkpoints]]
+id = "B"
+rationale = "The glimpse core: scaffold, model, config/theme, source, flows, diff, app/keys, the layer, details, header and activity renderers, and the pre-commit fmt gate (committed here so an uncommitted hook edit never gates a later train). The crate builds and its unit tests pass; it is not yet wired to `main`."
+
+[[checkpoints]]
+id = "C"
+rationale = "The diagram, traversal view, selector, frame composition, event loop, herdr/hook/setup, CLI wiring and docs. `glimpse` runs end to end."
+
+[[backlog_links]]
+ref = "accept-the-colon-inside-bold-field-label-spelling"
+closes = ["B-22bd6fc6"]
+refs = []
+
+[[items]]
+id = 1
+ref = "accept-the-colon-inside-bold-field-label-spelling"
+title = "Accept the colon-inside-bold field label spelling"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/tasks/parse_tasks.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Make `field_re` and `label_re` (`tomlctl/src/tasks/parse_tasks.rs:868-882`) accept `- **Label:** value` as well as `- **Label**: value`."
+detail = '''
+- The field regex becomes `^- \*\*(Files|Depends on|Blocked-by|Blocked by|Action|Detail|Acceptance|Effort|Backlog)(?:\*\*:|:\*\*)[ \t]*(.*)$`. `label_re` gets the same alternation, so a line with exactly one colon, inside or outside the bold, is a label.
+- Add tests to the file's `mod tests` (`parse_tasks.rs:890`):
+  - `- **Files:** \`a.rs\`` imports `files`.
+  - `- **Depends on:** 1` imports `needs`.
+  - That spelling no longer produces the `plan/text-unstored` finding.
+  - A bold phrase with no colon (`- **Note** text`) is still not a field.'''
+acceptance = '''
+- `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::parse_tasks` passes, including the 4 new tests.
+- Falsifier: on today's tree `field_re` requires `\*\*:` right after the label (`parse_tasks.rs:872`), so the `**Files:**` test fails. Confirmed by reading the regex; predicted, unverified.
+- `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- --ignored` still passes (regression guard). To see which plans use the old spelling, run `grep -rl -- '- \*\*Files:\*\*' docs/plans`; this plan also matches because its own examples quote the spelling. If one of them now surfaces an error-class finding (a dangling or cyclic edge newly imported), stop and report the plan and finding rather than editing the plan.'''
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "ignore-agent-records-and-the-glimpse-build-dir-in-git"
+title = "Ignore agent records and the glimpse build dir in git"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = [".gitignore"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `.claude/flows/*/agents.toml*` and `/glimpse/target/` to `.gitignore`."
+detail = "Match only agent records. Ignoring `.claude/` itself would trip doctor's `gitignore-claude` check (`tomlctl/src/flow/doctor.rs:34-36`). The trailing `*` also covers the `.sha256` sidecar."
+acceptance = "`git check-ignore -q .claude/flows/x/agents.toml && git check-ignore -q .claude/flows/x/agents.toml.sha256 && git check-ignore -q glimpse/target/x && ! git check-ignore -q .claude/flows/x/tasks.toml && echo OK` prints `OK`. Probed both ways: today it prints nothing; against a scratch repo with the two patterns it prints `OK`."
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "add-the-agents-store-schema"
+title = "Add the agents store schema"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/agents/mod.rs",
+    "tomlctl/src/agents/schema.rs",
+    "tomlctl/src/main.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create the `agents` module with the typed `agents.toml` store: record, segment and the three vocabulary enums."
+detail = """
+- Declare `mod agents;` in `tomlctl/src/main.rs`; `mod.rs` declares `pub(crate) mod schema;`.
+- Types:
+  - `AgentsStore { schema_version, last_updated, agents: Vec<AgentRecord> }`.
+  - `AgentRecord` with exactly the fields in the Approach's TOML block, in that order.
+  - `Segment { task_ids: Vec<u32>, started_at: String, ended_at: String }`.
+  - Enums `Harness` (`claude-code|codex|manual`), `AgentKind` (`subagent|teammate`) and `AgentStatus` (`running|idle|stopped`), each with `as_str`/`parse`.
+- Convert by hand with `from_toml`/`to_toml`, following `tomlctl/src/tasks/schema.rs:348,413`: `preserve_order` key order, unknown keys dropped, segments as an inline array of inline tables.
+- Helpers:
+  - `agents_path(slug) -> Result<PathBuf>`: `repo_or_cwd_root()?` joined with `.claude/flows/<slug>/agents.toml`, as `resolve_store_path` does (`tomlctl/src/tasks/store.rs`). Never cwd-relative: the hook runs from the payload's `cwd`, possibly a subdirectory.
+  - `next_id(&store) -> String` (`A<max+1>`).
+  - `find_mut(session_id, agent_id)`, `find_teammate_mut(session_id, name)` (`TeammateIdle`'s `team_name` is deprecated in hooks.md).
+  - `open_segment(task_ids, at)`, which is a no-op when the open segment has the same set, and `close_segment(at)`.
+- Inline tests: TOML round-trip is byte-stable, enum parsing rejects unknown values, `next_id` works on an empty store and on gaps, `open_segment` is idempotent."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl agents::schema` reports ≥4 passed. Today the module doesn't exist, so 0 tests match (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "correlate-subagents-with-flow-tasks-from-claude-codes-on-disk-state"
+title = "Correlate subagents with flow tasks from Claude Code's on-disk state"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/agents/mod.rs",
+]
+needs = [3]
+coupling = []
+deps_note = ""
+action = "Add the read-only functions that turn a hook payload into a transcript path, the latest dispatch (slug + task ids), teammate metadata, and a context-token count."
+detail = '''
+- `subagent_transcript(transcript_path, session_id, agent_id, agent_transcript_path: Option<&str>) -> Option<PathBuf>` prefers `agent_transcript_path`, else `<dirname(transcript_path)>/<session_id>/subagents/agent-<agent_id>.jsonl`. Canonicalise and require the result to sit under `dirname(transcript_path)`, following `contained_in` in `statusline/src/teamdata.rs`.
+- `latest_dispatch(path) -> Option<Dispatch { slug, task_ids }>`:
+  - Read the whole file when ≤4 MiB, else the last 1 MiB (starting after the first newline).
+  - Scan lines newest-first, keeping only `"type":"user"` lines whose `message.content` is a string or text blocks, never `tool_result`.
+  - Collect every `tasks show (\d+) --slug ([a-z0-9][a-z0-9-]{0,63})` match in the newest such line that has any. Task ids are sorted and deduped. If the slugs disagree, return `None`.
+- `meta(path) -> Meta { kind, name, team }` reads the sibling `.meta.json` (capped at 16 KiB). `taskKind == "in_process_teammate"` means `Teammate`.
+- `context_tokens(path) -> u64` takes the last assistant line's `usage` sum.
+- If the transcript is missing, retry up to 10 × 100 ms (meta.json appears within ~124 ms of spawn; see Research Notes). The transcript can also lag the hook (hooks.md, common input fields), so a re-task may still show the previous dispatch; task 6's Stop and Idle paths call `latest_dispatch` again to correct the closing segment.
+- Any other failure returns `None` or `0`.
+- Module doc carries a version anchor: "Observed against Claude Code 2.1.283, 2026-09-28."
+- Unit tests use temp fixture trees: a spawn prompt, a teammate re-task where the newer message wins, a cluster with 2 ids, disagreeing slugs giving `None`, a tool_result line containing the pattern being ignored, and a path outside the tree being rejected.'''
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl agents::correlate` reports ≥6 passed. Today 0 (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "join-the-execution-record-for-the-snapshot"
+title = "Join the execution record for the snapshot"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/snapshot_record.rs",
+    "tomlctl/src/tasks/mod.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `record_view(record: Option<&toml::Value>, store: &Store) -> serde_json::Value`, which builds the snapshot's `record` array and the per-checkpoint `commits`/`verification` join."
+detail = """
+- Declare `mod snapshot_record;` in `tomlctl/src/tasks/mod.rs`.
+- Emit each entry verbatim through `toml_to_json`, plus:
+  - `task_id`: an exact `ref` match, falling back to `slug::normalise_for_match` (`tomlctl/src/tasks/slug.rs:50`); `null` when nothing matches.
+  - `checkpoint_ids` (only on `type = "checkpoint"` entries): each commit in `commits[]` matched by prefix against rows' `commit` → their non-empty `checkpoint`, sorted and deduped.
+- Also expose `checkpoint_facts(&view, &store) -> BTreeMap<String, (Vec<String>, Option<JsonValue>)>`, giving each checkpoint its commits and its latest `verification` entry whose `task_id` is a member (`{outcome, summary}`).
+- Inline tests: ref resolution (exact, normalised, unmatched), mapping `checkpoint_ids` for a two-checkpoint commit train (the "A+D" shape of E18 in `unified-singing-gem`), the latest verification winning."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::snapshot_record` reports ≥4 passed. Today 0 (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "record-hook-events-into-the-agents-store"
+title = "Record hook events into the agents store"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/agents/record.rs",
+    "tomlctl/src/agents/mod.rs",
+    "tomlctl/src/io.rs",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = "Implement `record(harness, payload, write_opts) -> Result<JsonValue>` with the claude-code adapter and the event semantics in the Approach."
+detail = """
+- Add `agents.toml` to `SCHEMA_SEEDED_FLOW_FILES` (`tomlctl/src/io.rs:667`).
+- Structure:
+  - Split a pure `apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome` from the I/O.
+  - `Event` is `Start { session_id, agent_id, agent_type, kind, name, team, transcript_path, task_ids }`, `Stop { session_id, agent_id, summary, context_tokens, transcript_path, task_ids }` or `Idle { session_id, name, task_ids }`. The Stop and Idle `task_ids` come from re-running `correlate::latest_dispatch` (the transcript lags the hook, so the Start-time read can be stale) and replace the closing segment's set when they differ.
+  - `Harness::Codex`/`Manual` return an "adapter not implemented" error.
+- Steps:
+  1. If the payload's `cwd` exists, call `std::env::set_current_dir(cwd)` before anything resolves the repo root.
+  2. Drop an empty `agent_type` as `{"recorded":false,"reason":"internal-agent"}`.
+  3. Choose the flow per the Approach: dispatch slug → session affinity → none (`{"recorded":false,"reason":"no-flow"}`), validating the slug with `flow::validate_slug` (re-exported at `tomlctl/src/flow/mod.rs:23`) and requiring `<root>/.claude/flows/<slug>/context.toml` to exist, else `{"recorded":false,"reason":"unknown-flow"}`. `mutate_doc` creates missing parents under `.claude/`, and a flow directory without `context.toml` fails `flow doctor`.
+  4. For Stop and Idle, scan `<root>/.claude/flows/*/agents.toml` (the root from `repo_or_cwd_root`) for the owning row. A Stop whose agent no row holds (it can outrun its own Start) resolves its flow from the transcript's dispatch and writes a `stopped` row.
+  5. Write with `mutate_doc`, minting ids inside the closure.
+- Trim the summary to 600 chars on a char boundary. Timestamps come from `time::now_rfc3339()`.
+- Unit tests on `apply`: new start, repeat start with the same tasks (no new segment), start with new tasks (the previous segment closes), subagent stop → `stopped`, teammate stop → `idle`, idle by session+name, stop carrying a different dispatch rewrites the closing segment's `task_ids`, stop for an unknown agent with a resolvable flow → a `stopped` row, stop for an unknown agent with no flow → not recorded."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl agents::record` reports ≥9 passed. Today 0 (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "assemble-the-task-snapshot"
+title = "Assemble the task snapshot"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/snapshot.rs",
+    "tomlctl/src/tasks/mod.rs",
+]
+needs = [
+    3,
+    5,
+]
+coupling = []
+deps_note = ""
+action = "Implement `snapshot(slug, store_path, read_opts) -> Result<JsonValue>`, producing the contract in the Approach's snapshot table with keys in that order."
+detail = """
+- Declare `mod snapshot;` and re-export `snapshot` from `tomlctl/src/tasks/mod.rs`.
+- Load the store (`store::load`), build one `Graph` for `layers` and `checkpoints`, and pull `layers` from `kahn_rounds`, `frontier` from `ready::ready(&store, &in_progress_ids)` (the ids of rows whose status is `in-progress`; with `&[]` the engine classes them as stalled), `edges` from `edges::edge_list(&store, None)`, and `checkpoints` from `graph.groups` merged with each `Checkpoint.rationale` and the `checkpoint_facts` from task 5. `ready` and `edge_list` rebuild their own graph internally; accept that and do not modify `tomlctl/src/tasks/ready.rs` or `tomlctl/src/tasks/edges.rs`.
+- Read the execution record, `agents.toml` and `context.toml` with `io::read_doc` after an `exists()` check: `read_doc` returns a NotFound error on a missing file, so the caller maps an absent file to `[]` (or `flow_status = ""`). Take `flow_status` from `context.toml`.
+- `revision` is sha256 over the length-prefixed bytes of `tasks.toml`, `execution-record.toml`, `agents.toml` and `context.toml` (absent = empty), truncated to 16 hex chars.
+- The function is read-only: nothing it calls may create a file.
+- Inline tests: key order, revision stability and change, absent optional files, an in-progress row keeping its dependents in `next` rather than `blocked`."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::snapshot::` reports ≥4 passed. Today 0 (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "add-the-agents-list-verb-and-group-dispatch"
+title = "Add the agents list verb and group dispatch"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/agents/list.rs",
+    "tomlctl/src/agents/dispatch.rs",
+    "tomlctl/src/agents/mod.rs",
+]
+needs = [6]
+coupling = []
+deps_note = ""
+action = "Add `dispatch_record(harness, payload_arg, write_args)` and `dispatch_list(slug, read_args)`. Both take plain arguments so they compile before the clap types exist."
+detail = """
+- `dispatch_record` reads the payload with `io::read_json_value_from_arg` (`tomlctl/src/io.rs:394`), calls `record::record`, and prints the result JSON on one line.
+- `list` prints the `agents` array (`[]` when the file is absent — check `exists()` first, since `io::read_doc` errors on a missing file). Keep the read in a pure-enough `list::rows(path, read_opts) -> Result<JsonValue>` so it is unit-testable.
+- Follow `tomlctl/src/backlog/dispatch.rs:11` for the fan-out and the integrity-arg translation (`cli::dispatch::read_integrity_opts`/`write_integrity_opts`).
+- Inline tests in `list.rs`: an absent `agents.toml` lists `[]`; a seeded one lists its rows in order."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl agents::list` reports ≥2 passed (today 0; predicted, unverified). `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error in `tomlctl/src/agents/` (regression guard)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "wire-the-new-verbs-into-the-cli"
+title = "Wire the new verbs into the CLI"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+]
+needs = [
+    7,
+    8,
+]
+coupling = []
+deps_note = ""
+action = 'Add `Cmd::Agents { op: AgentsOp }` with `Record { --harness <claude-code|codex|manual>, [PAYLOAD default "-"], WriteIntegrityArgs }` and `List { --slug, ReadIntegrityArgs }`, plus `TasksOp::Snapshot { TasksTarget, ReadIntegrityArgs }`, and route them.'
+detail = """
+- These four files are compile-coupled (`tomlctl/src/tasks/dispatch.rs:33` destructures `TasksOp` exhaustively).
+- Insert beside `Cmd::Backlog` (`tomlctl/src/cli/types.rs:650`) and `TasksOp` (`:2006`).
+- Add `"agents"` to `SUBCOMMANDS` (`:88`) and `agents_record`, `agents_list`, `tasks_snapshot` to `FEATURES` (`:21`; snake_case like every entry, and removing an entry later is a breaking change).
+- Re-export `AgentsOp` at `tomlctl/src/cli/mod.rs:31` and route it at `tomlctl/src/cli/dispatch.rs:385`.
+- The `TasksOp::Snapshot` arm resolves the store path via `resolve_store_path` and prints `snapshot(..)`.
+- Task 12 owns the capabilities feature-list test, so it will stay red until 12 lands."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl cli::dispatch::tests::lint` passes (regression guard), plus `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` clean (regression guard). Discriminating: `cargo run -q --manifest-path tomlctl/Cargo.toml -- agents list --help` and `cargo run -q --manifest-path tomlctl/Cargo.toml -- tasks snapshot --help` both exit 0 (today: unrecognised subcommand, exit 2; predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "integration-test-agents-record"
+title = "Integration-test agents record"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/tests/agents_record.rs"]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "Add black-box tests for `tomlctl agents record` and `agents list` over a sandboxed flow and a fake Claude projects tree."
+detail = """
+- Use `tests/common` (`sandbox`, `seed_tasks`, `cli`). Seed the flow's `context.toml` as well, since `record` refuses a slug whose `context.toml` is absent.
+- Build `<tmp>/projects/p/<session>.jsonl` plus `subagents/agent-<id>.jsonl` (line 1 = a user prompt containing `tasks show 2 --slug <TASKS_SLUG> --with body,files,deps`) and `agent-<id>.meta.json`, and pipe payloads on stdin with `cwd` = the sandbox root.
+- Cases:
+  - start → a `running` row with segment `[2]`;
+  - stop → `stopped` with a summary;
+  - teammate start, a new transcript line for task 3, start again → the first segment is closed and a second opened;
+  - `TeammateIdle` → `idle`;
+  - empty `agent_type` → `recorded:false` and no file created;
+  - no slug and no session affinity → `recorded:false`;
+  - a second agent in the same session with no slug → attached by affinity;
+  - a dispatch naming a slug with no `context.toml` → `recorded:false`, `reason:"unknown-flow"`, and no `.claude/flows/<slug>/` directory created;
+  - a payload `cwd` in a subdirectory of the sandbox → the row lands in the root's `.claude/flows/<slug>/agents.toml`;
+  - `agents list` output shape."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test agents_record` reports ≥10 passed. Today the target doesn't exist."
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "integration-test-tasks-snapshot"
+title = "Integration-test tasks snapshot"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/tests/tasks_snapshot.rs"]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "Add black-box tests pinning the snapshot contract."
+detail = """
+Seed a store (following `READ_FIXTURE` in `tomlctl/tests/tasks_read.rs`), an execution record with task-completion, deviation, checkpoint and verification entries, and an `agents.toml`. Assert:
+- the top-level key order;
+- `layers` equals `tasks batches`' `batches`;
+- with one row `in-progress`, `frontier` is byte-equal to `tasks ready --in-flight <that id>` output;
+- `record[].task_id` and `checkpoint_ids` resolve;
+- `checkpoints[].verification` is filled;
+- `revision` is unchanged across two runs and changes after `agents.toml` is edited, and again after `context.toml` is edited;
+- with no record and no agents file, both arrays are `[]` and no file is created."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test tasks_snapshot` reports ≥7 passed. Today the target doesn't exist."
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "release-tomlctl-0120-with-the-new-features-registered"
+title = "Release tomlctl 0.12.0 with the new features registered"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "Bump the version to 0.12.0 and bring the capabilities tests and README up to date with the new surface."
+detail = """
+- These four files are coupled through the version-pin and README-transcription tests.
+- In `tomlctl/tests/capabilities.rs`:
+  - add `tasks snapshot` and `agents list` to `read_only_subcommands_hide_write_integrity_flags_in_help` (`:26`) and `agents record` to `write_subcommands_expose_all_integrity_flags_in_help` (`:96`);
+  - add the three features (`agents_record`, `agents_list`, `tasks_snapshot`) to `capabilities_features_contains_every_plan_feature` (`:1554`), whose count assertion follows the list;
+  - update the version pin (`:1650`).
+- In `tomlctl/README.md`: quick-tour lines (`:15-67`), rows in the Feature meanings table (`:318-369`), and the capabilities sample block (`~:257-281`): its `version`, its `"features"` array (checked by `readme_feature_transcriptions_match_capabilities_features`, `tomlctl/tests/capabilities.rs:2283`) and its `"subcommands"` array (add `agents`)."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes. Falsifier: `capabilities_version_matches_cargo_toml` pins the literal `0.11.0` (`tomlctl/tests/capabilities.rs:1665`, probed), so the bump fails it until the pin is updated."
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "document-the-agents-verb-group"
+title = "Document the agents verb group"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/agents.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/references/write.md",
+    ".github/skills/tomlctl/references/agents.md",
+    ".github/skills/tomlctl/SKILL.md",
+    ".github/skills/tomlctl/references/flow.md",
+    ".github/skills/tomlctl/references/write.md",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "Write `claude/skills/tomlctl/references/agents.md` (the store schema, the event semantics, flow selection, the writer rule, and a `| Flag |` table under a backticked heading for each verb) and link it from the SKILL.md References list (`claude/skills/tomlctl/SKILL.md:55-65`). Bring the other verb and file enumerations up to date."
+detail = """
+- The `.github/skills/tomlctl/**` paths are git-tracked copies reached through a junction on disk, so they change with the `claude/skills/` edits; they are on the Files line so `/implement`'s commit train stages them rather than halting on them as unexplained leftovers.
+- In `claude/skills/tomlctl/SKILL.md`: add the `agents` group to the description's verb groups (the description stays ≤1024 chars, `skill_descriptions_under_spec_cap`); add an `agents` row and `snapshot` to the `tasks` row of the Quick Reference table; drop the count from "seven sibling files" (`:57`); change the `capabilities` example's `0.11.0` (`:94`) to `0.12.0`.
+- In `claude/skills/tomlctl/references/flow.md`: add `tasks snapshot` and `agents list` to the `--verify-integrity` support matrix.
+- In `claude/skills/tomlctl/references/write.md`: add `agents.toml` to the recognised seeded flow files list (`:78`).
+- State that `agents record` is run only from harness hooks (installed by `glimpse setup`), that carriers and sub-agents never call it, and that `agents.toml` is gitignored local telemetry.
+- Every `tomlctl …` line in a bash fence must parse, because `command_lint` checks it.
+- Keep the reference ≤600 lines."""
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl cli::dispatch::tests` passes, and `grep -c 'references/agents.md' claude/skills/tomlctl/SKILL.md` ≥1 (today 0)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "document-the-snapshot-verb-and-the-agents-store-writer"
+title = "Document the snapshot verb and the agents-store writer"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = "Phase A — tomlctl data layer (tomlctl/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    ".github/skills/tomlctl/references/tasks-store.md",
+    ".github/skills/flow-contract-task-store/SKILL.md",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = """
+- Add a `tasks snapshot` section to `claude/skills/tomlctl/references/tasks-store.md` (`claude/skills/tomlctl/references/tasks.md` has no room under the 600-line cap: `wc -l` it) covering the envelope keys, `revision` semantics, and read-only-ness.
+- In `claude/skills/flow-contract-task-store/SKILL.md`: add a `snapshot` paragraph to §5 (verb semantics), add `snapshot` to §11's read-verb list, and add one short paragraph after §11 (`:357-361`): `agents.toml` is not the task store, and its only writer is `tomlctl agents record` run by harness hooks."""
+detail = "Stay under the 500-line ceiling for the SKILL body (`wc -l claude/skills/flow-contract-task-store/SKILL.md`). The `.github/skills/**` paths are git-tracked copies reached through a junction on disk; they are listed so the commit train stages them."
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl cli::dispatch::tests` passes, and `grep -c 'tasks snapshot' claude/skills/tomlctl/references/tasks-store.md` ≥1 (today 0)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "scaffold-the-glimpse-crate"
+title = "Scaffold the glimpse crate"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — glimpse core (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/Cargo.toml",
+    "glimpse/Cargo.lock",
+    "glimpse/src/main.rs",
+    "glimpse/src/cli.rs",
+    "glimpse/src/config.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/model.rs",
+    "glimpse/src/source.rs",
+    "glimpse/src/flows.rs",
+    "glimpse/src/diff.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/runtime.rs",
+    "glimpse/src/transcript.rs",
+    "glimpse/src/herdr.rs",
+    "glimpse/src/pane.rs",
+    "glimpse/src/hook.rs",
+    "glimpse/src/setup.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/header.rs",
+    "glimpse/src/view/layers.rs",
+    "glimpse/src/view/ego.rs",
+    "glimpse/src/view/details.rs",
+    "glimpse/src/view/markdown.rs",
+    "glimpse/src/view/selector.rs",
+    "glimpse/src/view/activity.rs",
+    "glimpse/src/diagram/mod.rs",
+    "glimpse/src/diagram/order.rs",
+    "glimpse/src/diagram/position.rs",
+    "glimpse/src/diagram/route.rs",
+    "glimpse/src/diagram/glyph.rs",
+    "glimpse/src/diagram/paint.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "Create the crate with its whole module tree. Every module file except `main.rs`, `glimpse/src/view/mod.rs` and `glimpse/src/diagram/mod.rs` is a stub holding a single `//!` line naming what it is responsible for; the two `mod.rs` files hold that line plus `pub(crate) mod <child>;` for each child. Later tasks then own disjoint files and never edit `main.rs`."
+detail = """
+- These files can't be split: the module tree must exist before any later task can compile.
+- `Cargo.toml` follows `statusline/Cargo.toml`: edition 2024, `rust-version = "1.98"`, the same `[profile.release]`, `[lints.rustdoc]` deny list.
+- Dependencies: `ratatui = "0.30"` (default features), `pulldown-cmark = { version = "0.13", default-features = false }`, `serde = { version = "1", features = ["derive"] }`, `serde_json = { version = "1", features = ["preserve_order"] }`, `toml = "1"`. crossterm comes only through `ratatui::crossterm`.
+- `main.rs` declares every module (`mod view;` and `mod diagram;` use `mod.rs` files declaring their children) and has a `fn main()` that prints `glimpse: not wired yet` and exits 0. Add `#![allow(dead_code)]` at the top; task 39 removes it.
+- `Cargo.lock` is produced by the first clippy run."""
+acceptance = "`cargo clippy --manifest-path glimpse/Cargo.toml --all-targets` exits 0 (predicted, unverified: it builds). `git check-ignore -q glimpse/target/x` succeeds (depends on task 2)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "define-the-snapshot-model"
+title = "Define the snapshot model"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — glimpse core (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/model.rs",
+    "glimpse/tests/fixtures/snapshot.json",
+]
+needs = [
+    7,
+    15,
+]
+coupling = []
+deps_note = ""
+action = "Define serde types for the snapshot contract (see the snapshot table in Approach), an `Index` built from them, and a fixture whose shape is taken from real `tomlctl tasks snapshot` output."
+detail = """
+- Every struct is `#[serde(default)]`: a missing field reads as absent and unknown fields are ignored, like statusline's degrade-to-absent. Because that hides a misspelt field, take every key name and nesting in the fixture from `tomlctl/src/tasks/snapshot.rs` (task 7) rather than from the Approach table, and add a test that re-serialises the parsed fixture and asserts every key path present in the fixture JSON survives the round trip.
+- `Snapshot::index()` returns an owned `Index` (id → position maps, no borrow of the `Snapshot`, since task 21's `App` stores both) giving `task(id)`, `layer_of(id)`, `dependents(id)`, `coupled(id)`, `agents_for(id)` (rows whose segments contain the id, newest first), `record_for(id)`, `checkpoint(id)`, and `topology_hash()` (FNV or `DefaultHasher` over sorted ids + needs + coupling; stable across status changes).
+- The fixture has 8 tasks over 3 layers with `needs` and `coupling` edges, 2 checkpoints (one carrying commits and verification `pass`), record entries of type task-completion, deviation, checkpoint and verification, and 2 agents (one running subagent on task 4; one idle teammate with two segments).
+- Expose `#[cfg(test)] pub(crate) fn fixture() -> Snapshot` in `glimpse/src/model.rs`, loading `include_str!("../tests/fixtures/snapshot.json")`; every later test (tasks 22–27, 32–34) calls it rather than re-deriving the relative path, which differs from `glimpse/src/view/` and `glimpse/src/diagram/`."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml model::` reports ≥5 passed: fixture parses, every fixture key survives a round trip, unknown key ignored, hash stable under a status change, hash changes when an edge is added (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "add-config-and-theme"
+title = "Add config and theme"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — glimpse core (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/config.rs",
+    "glimpse/src/theme.rs",
+]
+needs = [15]
+coupling = []
+deps_note = ""
+action = "Add `Config` (defaults, loading, a pure `parse(&str)`) and `Theme` (the styles for each status and element), plus the shared enums tasks 21, 22, 26, 32, 33 and 39 import rather than redefine: `Orientation { Vertical, Horizontal }` (the resolved axis, with `flip()`), `OrientationPref { Auto, Fixed(Orientation) }` (the config value) and `ViewKind { Layers, Ego, Diagram }` (with `next()`/`prev()`), all in `glimpse/src/config.rs`."
+detail = """
+- `Config` fields and defaults:
+
+  | Field | Default |
+  |---|---|
+  | `orientation` | `Auto` (also `Vertical`, `Horizontal`) |
+  | `orientation_threshold` | 2.0 |
+  | `split_threshold` | 2.2 |
+  | `pane_ratio` | 0.4 |
+  | `poll_ms` | 500 |
+  | `tomlctl` | `"tomlctl"` |
+  | `default_view` | `Layers` (also `Ego`, `Diagram`) |
+  | `stale_after_s` | 300 (a `running` agent whose transcript is untouched this long is shown stale and keeps no tick alive) |
+
+- Loaded from `$GLIMPSE_CONFIG`, else `<home>/.config/glimpse/config.toml`. A missing file gives the defaults. A malformed file gives the defaults plus a warning string that the header shows.
+- `claude_dir()` follows `statusline/src/teamdata.rs` (`CLAUDE_CONFIG_DIR` → `USERPROFILE` → `HOME`, as a pure `claude_dir_from` + env wrapper).
+- Theme styles:
+  - Status: pending is dim; in-progress is `#FFC799`, the full-strength accent from the shared Kanso Zen palette; done is green; failed is red; deferred is grey.
+  - Also styles for selection, needs-edge highlight, coupling-edge highlight, flash, agent chip and badge."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml config::` reports ≥4 passed: defaults, partial file, malformed file gives a warning, `claude_dir_from` precedence (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "poll-the-flow-files-and-fetch-snapshots"
+title = "Poll the flow files and fetch snapshots"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — glimpse core (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/source.rs"]
+needs = [
+    16,
+    17,
+]
+coupling = []
+deps_note = ""
+action = "Define `pub(crate) enum Event { Snapshot(Box<Snapshot>), SourceError(String), FlowsChanged, Input(ratatui::crossterm::event::Event) }` in `glimpse/src/source.rs` — the one channel type task 34's runtime receives poll and input events on — then implement `Source` plus a poller thread that sends on a `std::sync::mpsc::Sender<Event>`."
+detail = """
+- `fingerprint(root, slug)` is the `(mtime, len)` of `tasks.toml`, `execution-record.toml`, `agents.toml` and `context.toml` (absent → `None`).
+- Each poll also stats every `<root>/.claude/flows/*/tasks.toml` (a directory listing, no process spawn) and sends `Event::FlowsChanged` when that set or its mtimes change — the only trigger for `flows::list`.
+- On start, run `<config.tomlctl> capabilities` once; if its `features` lacks `tasks_snapshot`, send `SourceError("tomlctl ≥0.12.0 required — cargo install --path tomlctl")` instead of polling.
+- Fetching goes through a `Fetcher` trait. The production `Fetcher` runs `<config.tomlctl> tasks snapshot --slug <slug>` with `current_dir(root)` and parses stdout; tests inject a fake.
+- Skip sending when `revision` equals the last one sent. A command channel accepts `SetSlug(String)`, which forces a fetch.
+- Never read integrity sidecars. A parse failure is sent as `SourceError` and retried at the next fingerprint change or after 5 s."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml source::` reports ≥4 passed: fingerprint change detected on temp files, unchanged revision suppressed, fetch error surfaces as `SourceError`, a new `.claude/flows/<slug>/tasks.toml` raises `FlowsChanged` (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "discover-flows-and-pick-the-freshest"
+title = "Discover flows and pick the freshest"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — glimpse core (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/flows.rs"]
+needs = [17]
+coupling = []
+deps_note = ""
+action = "Implement `list(root, tomlctl) -> Vec<FlowEntry { slug, status, updated, plan_path, tasks_mtime }>` and `freshest(&[FlowEntry])`."
+detail = """
+- Run `tomlctl flow list` (JSON `{ok, flows[]}`) and keep flows whose `.claude/flows/<slug>/tasks.toml` exists, sorted by `tasks_mtime` descending.
+- `repo_root(cwd)` is `git rev-parse --show-toplevel`, falling back to walking up for `.claude/flows`.
+- The pure `rank(entries)` and a JSON parse fn are unit-tested."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml flows::` reports ≥3 passed (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 20
+ref = "compute-snapshot-change-sets"
+title = "Compute snapshot change sets"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — glimpse core (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/diff.rs"]
+needs = [16]
+coupling = []
+deps_note = ""
+action = "Implement `diff(old: &Snapshot, new: &Snapshot) -> Changes { topology_changed, status_changed: Vec<(u32, String, String)>, agents_started: Vec<String>, agents_stopped: Vec<String>, record_added: Vec<String> }`."
+detail = "Topology comes from `topology_hash`. Agents are keyed by `id`, record entries by `id`."
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml diff::` reports ≥4 passed (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 21
+ref = "hold-app-state-and-map-keys"
+title = "Hold app state and map keys"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — glimpse core (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+]
+needs = [
+    16,
+    17,
+    19,
+    20,
+]
+coupling = []
+deps_note = ""
+action = "Implement `App`, the `Action` enum, `App::apply(action)`, `App::apply_snapshot(snapshot, now)`, and `keys::map(KeyEvent) -> Option<Action>`."
+detail = """
+- `App` fields: `snapshot`, `index`, `view: ViewKind`, `orientation_override: Option<Orientation>` (the `config.rs` types), `selected: Option<u32>`, `follow: bool` (default true), `auto_flow: bool`, `details_open`, `details_fullscreen`, `activity_open`, `selector_open`, `flows: Vec<flows::FlowEntry>`, `selector_cursor: usize`, `flashes: HashMap<u32, Instant>` (1.5 s), `pending_changes: usize` (changes seen while follow is paused), `warning: Option<String>`, `source_error: Option<String>`, `stale_agents: HashSet<String>`, `theme: Theme`, `nav: Option<Box<dyn Navigator>>`.
+- `Action` includes the moves, view/orientation/follow/auto-flow/overlay toggles, the selector cursor moves, and `SwitchFlow(String)` (task 27 emits it, task 34 handles it).
+- `enum Dir` and `trait Navigator { fn neighbor(&self, from: u32, dir: Dir) -> Option<u32>; }` live here; the active view sets the navigator each frame.
+- With follow on, `apply_snapshot` reselects the frontier (the first `in-progress` task by (layer, id), else the first `ready`). A manual move sets `follow = false`.
+- `apply_snapshot` recomputes `stale_agents`: `running` rows whose `transcript_path` mtime is older than `config.stale_after_s` (a missing file counts as stale).
+- `needs_tick(now)` is true while any flash is live or any `running` agent is not stale.
+- Keys (`KeyEventKind::Release` dropped): `j/k/h/l` and arrows, `Tab`/`BackTab` for views, `Enter` for details, `o` orientation, `f` follow, `s` selector, `a` auto-flow, `t` activity, `q`/`Esc` to close an overlay or quit."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml app::` and `keys::` together report ≥7 passed: follow reselects on snapshot, manual nav pauses follow, flash expiry, `needs_tick`, a stale running agent keeps no tick alive, Release ignored, Tab cycles (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 22
+ref = "render-the-layer-view"
+title = "Render the layer view"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — glimpse core (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/layers.rs"]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Implement the layer-list widget and its `Navigator` in both orientations."
+detail = """
+- Vertical layout:
+  - A `── L<n> ──` header row per layer. After the layer that completes a checkpoint group, a separator row showing the checkpoint id, the short commits and a `✓`/`✗` from `checkpoint.verification`.
+  - One row per task: a gutter mark (`↑` needs, `↓` dependents, `⇡`/`⇣` coupling, relative to the selection), a status glyph (`○ ◐ ✓ ✗ ⏸`), the id, the truncated title, the effort, an agent chip (type initial + elapsed for a running agent, dimmed when the agent is in `app.stale_agents`), and record badges (`⚠` deviation, `⏸` deferral).
+  - With a selection, unrelated rows are dimmed.
+- Horizontal: layers become columns of compact `◐14 title…` cells.
+- The navigator moves within the layer along the cross axis and between layers along the layer axis. Scrolling keeps the selection visible."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::layers` reports ≥5 passed: `TestBackend` renders of the fixture at 100×30 (vertical) and 160×20 (horizontal) contain every task id and the checkpoint row; gutter marks for a selected task; navigation (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 23
+ref = "render-task-details-with-markdown"
+title = "Render task details with markdown"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — glimpse core (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/markdown.rs",
+    "glimpse/src/view/details.rs",
+]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Implement `markdown::to_text(&str, &Theme) -> Text<'static>` over pulldown-cmark events, and the scrollable details panel."
+detail = """
+- The markdown renderer handles paragraphs, nested bullet lists (indented), inline `code`, **strong**, *emphasis* and soft/hard breaks, leaving wrapping to `Paragraph::wrap`.
+- Details sections: title/status/effort/checkpoint/phase; Files; Needs, Coupling and Dependents with status glyphs; Action; Detail; Acceptance; deps note; Record (type, date, summary; deviation `original_intent`/`rationale`); Agents (type, kind, status, segments with durations, context tokens, summary)."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::markdown` and `view::details` together report ≥5 passed (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 24
+ref = "render-the-header-strip"
+title = "Render the header strip"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — glimpse core (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/header.rs"]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Implement the one- or two-row header."
+detail = "Shows the slug, `flow_status`, the policy cadence, done/total counts, `⟳ follow` or `⏸ paused (+N)`, the number of running agents, and the latest flow-level record event (`status-transition` or `reconcile`). The source error or config warning appears in place of the second row."
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::header` reports ≥2 passed (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 25
+ref = "tail-the-selected-agents-transcript"
+title = "Tail the selected agent's transcript"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Phase B — glimpse core (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/transcript.rs",
+    "glimpse/src/view/activity.rs",
+]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Implement an incremental transcript tail (`TailState { path, offset, entries }`, `refresh()` reads only the bytes after `offset`, first read capped at the last 64 KiB) and the activity panel for the selected task's newest running agent."
+detail = """
+- Entries are `{ts, kind: ToolUse { name, detail } | Text, text}`, taken from assistant lines. `detail` is `input.description`, else `input.command`, else `input.file_path`, truncated.
+- The path must canonicalise under `claude_dir()`, else nothing is read.
+- The panel shows elapsed time since `started_at`, the last ~10 entries, and `context_tokens`.
+- Module doc carries the version anchor "Observed against Claude Code 2.1.283, 2026-09-28.""""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml transcript::` and `view::activity` together report ≥4 passed: incremental offset, partial last line held back, path outside the claude dir rejected, panel render (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 26
+ref = "render-the-traversal-view"
+title = "Render the traversal view"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/ego.rs"]
+needs = [21]
+coupling = []
+deps_note = ""
+action = "Implement the traversal widget and its `Navigator`."
+detail = """
+- Horizontal: the selected task sits in a centre card, with a `needs` column on the left (coupling entries dashed `┄`) and a dependents column on the right.
+- Vertical: needs sit above and dependents below.
+- Moving across columns focuses that column's item, which becomes the new centre on the next frame. Moving along a column walks its items."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::ego` reports ≥4 passed (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 27
+ref = "pick-a-flow-from-the-selector"
+title = "Pick a flow from the selector"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/selector.rs"]
+needs = [
+    19,
+    21,
+]
+coupling = []
+deps_note = ""
+action = "Implement the selector overlay: flows from `flows::list`, newest first, each with status and updated date, the current one marked, and the auto-follow state shown. `Enter` emits `Action::SwitchFlow(slug)`."
+detail = ""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::selector` reports ≥2 passed (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 28
+ref = "order-diagram-layers-to-reduce-crossings"
+title = "Order diagram layers to reduce crossings"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/diagram/order.rs"]
+needs = [15]
+coupling = []
+deps_note = ""
+action = "Implement `order(layers: &[Vec<u32>], edges: &[Edge { from, to, kind }]) -> Ordered { rows: Vec<Vec<Slot>>, chains }`. A `Slot` is `Task(u32)` or `Dummy { edge, step }`."
+detail = """
+- Insert one dummy per intermediate layer for every edge spanning more than one layer.
+- Run 24 iterations of alternating median down/up sweeps, each followed by adjacent-swap transpose passes, keeping the ordering with the fewest crossings (pairwise count per channel).
+- Break ties by task id, so the result is deterministic.
+- Own input types only; the module does not depend on `model`."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml diagram::order` reports ≥4 passed: a crafted two-layer graph with 2 crossings is reordered to 0; the dummy count for a span-3 edge is 2; identical output across runs; the input layer membership is preserved (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 29
+ref = "assign-diagram-coordinates"
+title = "Assign diagram coordinates"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/diagram/position.rs"]
+needs = [28]
+coupling = []
+deps_note = ""
+action = "Implement `position(&Ordered, label_width: impl Fn(u32) -> u16) -> Positions { x: HashMap<Slot, u16>, layer_extent }` using Sugiyama's priority method."
+detail = "Nodes have width `label_width` and pitch width + 2. Dummies have width 1 and pitch 2. Dummies get the highest priority so long edges stay straight. No two slots in a layer overlap."
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml diagram::position` reports ≥3 passed: no overlap, minimum spacing respected, a dummy chain shares one x where unobstructed (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 30
+ref = "resolve-junction-glyphs"
+title = "Resolve junction glyphs"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/diagram/glyph.rs"]
+needs = [15]
+coupling = []
+deps_note = ""
+action = "Implement `ArmMask` (N/E/S/W bits), `CellOwners` (up to 4 owners of `(edge_group, ArmMask, dashed)`), and `glyph(&CellOwners, rounded: bool) -> char`."
+detail = "Merge the arms of owners in the same source group. For owners from different groups, draw the vertical and break the horizontal. Dashed edges use `┄`/`┆` for straight segments. Arrowhead chars are `▼ ▲ ▶ ◀`."
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml diagram::glyph` reports ≥3 passed: an exhaustive table for all 16 masks, the unrelated-crossing rule, dashed straight segments (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 31
+ref = "route-diagram-edges-through-inter-layer-channels"
+title = "Route diagram edges through inter-layer channels"
+effort = "L"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/diagram/route.rs"]
+needs = [
+    29,
+    30,
+]
+coupling = []
+deps_note = ""
+action = "Implement `route(&Ordered, &Positions) -> Routed { channel_depth: Vec<u16>, cells: HashMap<(u16, u16), CellOwners>, edge_cells: HashMap<EdgeId, Vec<(u16, u16)>> }` in abstract (layer axis, cross axis) coordinates."
+detail = """
+- Each source gets one horizontal bus per channel, with `coupling` edges in their own bus group.
+- Overlapping buses are ordered through a dependency graph that prefers the cheaper crossing, with cycles broken by id, and tracks are assigned by longest path. Channel depth = tracks + 1.
+- Each edge drops from its source, runs along its bus track, and rises into its target with an arrowhead cell.
+- `edge_cells` records every cell an edge owns, for highlighting."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml diagram::route` reports ≥4 passed: overlapping buses get distinct tracks; channel depth = tracks + 1; every edge's cells form a connected path from source to target; coupling buses are separate (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 32
+ref = "paint-and-navigate-the-diagram"
+title = "Paint and navigate the diagram"
+effort = "L"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/diagram/mod.rs",
+    "glimpse/src/diagram/paint.rs",
+]
+needs = [
+    21,
+    31,
+]
+coupling = []
+deps_note = ""
+action = "Add `DiagramCache` (the layout is recomputed only when `(topology_hash, orientation)` changes; a `computations` counter is exposed for tests), the orientation mapping, a `Navigator` over (layer, slot) that skips dummies, and a widget that paints into the ratatui `Buffer`."
+detail = """
+- Layers come from `snapshot.layers` verbatim.
+- Orientation mapping: vertical puts the layer axis on rows; horizontal puts it on columns (swap axes and use the matching glyph orientation).
+- Nodes are drawn as `[14]` in their status style, with the flash style while flashing.
+- The selected node's in-edges (from `edge_cells`) are highlighted in the needs style and out-edges in the dependents style; all other cells are dimmed.
+- The viewport scrolls to keep the selection visible."""
+acceptance = """
+`cargo test --manifest-path glimpse/Cargo.toml -- diagram::tests diagram::paint` reports ≥5 passed (tests may sit in `glimpse/src/diagram/mod.rs`'s `mod tests` or in `glimpse/src/diagram/paint.rs`):
+- A status-only snapshot change leaves `computations` unchanged; an orientation flip increments it.
+- A `TestBackend` render of the fixture in both orientations shows every `[id]`.
+- Navigation right/down reaches every task.
+
+(Predicted, unverified.)"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 33
+ref = "compose-the-frame-and-switch-views"
+title = "Compose the frame and switch views"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/mod.rs"]
+needs = [
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    32,
+]
+coupling = []
+deps_note = ""
+action = "Implement `render(frame, &mut App, &Config, &mut DiagramCache, &mut TailState)`."
+detail = """
+- The frame has the header, then the body (the active view), then a one-row footer of key hints.
+- Details and activity split to the right when `width ≥ 2 × height`, else below; `Enter` pressed twice makes them full-screen.
+- The selector draws as a centred overlay.
+- Orientation is resolved per frame (the override, else `config.orientation`, else auto via `orientation_threshold`).
+- Installs the active view's navigator into `App`."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::tests` reports ≥4 passed: each view renders the fixture; details split side versus bottom by aspect; the selector overlay shows (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 34
+ref = "run-the-event-loop"
+title = "Run the event loop"
+effort = "L"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/runtime.rs"]
+needs = [
+    18,
+    33,
+]
+coupling = []
+deps_note = ""
+action = "Implement `run(opts) -> Result<()>` and `render_once(opts, snapshot, width, height) -> String`."
+detail = """
+- `run`:
+  - `ratatui::init()`/`ratatui::restore()`; `init` installs the panic hook.
+  - One input thread owns blocking `crossterm::event::read()` and forwards each event as `source::Event::Input`; the `source` poller thread sends on the same channel.
+  - The main loop blocks on `recv()`, or `recv_timeout(1s)` while `app.needs_tick()`. It drains all pending events, then draws once.
+  - `Resize` triggers a redraw. `SwitchFlow` sends `SetSlug`. `FlowsChanged` re-runs `flows::list` into `app.flows`; with auto-flow on, it switches when `flows::freshest` changes. Nothing else runs `flows::list`, so an idle flow costs no process spawns.
+- `render_once` draws one frame into a `TestBackend` and returns its lines as plain text, without ANSI."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml runtime::` reports ≥2 passed: `render_once` of the fixture contains the header slug and every task id; a drain-then-draw loop over a scripted channel draws once for a burst of 3 resize events (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 35
+ref = "wrap-the-herdr-cli"
+title = "Wrap the herdr CLI"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/herdr.rs"]
+needs = [15]
+coupling = []
+deps_note = ""
+action = "Implement `Herdr { bin }` (`$HERDR_BIN_PATH`, else `herdr`) with `pane_list`, `pane_get`, `layout(pane_id) -> Rect` (`herdr pane layout`; `pane list`/`get` carry no rect), `split(origin, dir, ratio, cwd) -> pane_id` (always `--no-focus`), `focus`, `rename`, and `run`. `run` types its text plus Enter into the pane's shell (`herdr pane run` sends input; it does not spawn a process)."
+detail = """
+- herdr output is JSON `{"id":…,"result":…}`: `pane list` → `.result.panes[]`, `pane get` → `.result.pane`, `pane split` → `.result.pane.pane_id`. Errors come as JSON on stderr with exit 1.
+- `PaneInfo` includes `pane_id`, `tab_id`, `label`, `cwd` and `rect` (from `pane layout`).
+- Parse functions are pure and tested on captured samples."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml herdr::` reports ≥3 passed (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 36
+ref = "ensure-one-glimpse-pane-per-tab"
+title = "Ensure one glimpse pane per tab"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/pane.rs"]
+needs = [
+    17,
+    35,
+]
+coupling = []
+deps_note = ""
+action = "Implement `ensure(herdr, origin_pane, slug: Option<&str>, cwd, focus, config) -> Result<PaneOutcome>`. `None` (the keybinding with no `--slug`) launches glimpse on the freshest flow with auto-flow on."
+detail = """
+1. Take an exclusive lock with `File::create_new` on `<claude_dir>/glimpse/pane.lock`. A lock older than 10 s is removed; wait at most 3 s.
+2. Look for a pane labelled `glimpse` in the origin's tab. If found, focus it when asked; done.
+3. Otherwise choose the direction from the origin rect (`herdr.layout(origin_pane)`): `right` if `width ≥ split_threshold × height`, else `down`.
+4. `split` at `pane_ratio`, `rename` to `glimpse`, then `run` the line built by a pure `launch_line(current_exe, slug)`. `herdr pane run` types the text plus Enter into the pane's default shell (pwsh on this machine), where a line opening on a quoted string is a parse error, so `launch_line` emits the bare path when it has no whitespace, else `& '<exe>'`, followed by `--slug <slug>` when a slug is given.
+5. Release the lock.
+- The pure functions `choose_direction`, `find_existing` and `launch_line` are tested."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml pane::` reports ≥6 passed: direction at 100×56 → `down`, at 240×50 → `right`; an existing labelled pane in the same tab is reused; one in another tab is ignored; a stale lock is reclaimed; `launch_line` gives a bare path for `C:/x/glimpse.exe` and a `& '…'` form for a path with a space (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 37
+ref = "handle-hook-events"
+title = "Handle hook events"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/hook.rs"]
+needs = [36]
+coupling = []
+deps_note = ""
+action = "Implement `run_hook(stdin) -> ()`."
+detail = """
+1. Read stdin (capped at 32 MiB).
+2. Spawn `<config.tomlctl> agents record --harness claude-code -` with `current_dir(payload.cwd)` and pipe the payload in.
+3. Parse the one-line result.
+4. `decide(result, env)` returns `EnsurePane { slug, cwd }` only for `recorded && event == "start"` with `HERDR_PANE_ID` set.
+5. Append errors, one timestamped line each, to `<claude_dir>/glimpse/hook.log` (truncated to empty when over 1 MiB). An "unknown subcommand" from an old tomlctl is logged as "tomlctl ≥0.12.0 required — cargo install --path tomlctl".
+- Never write to stdout or stderr."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml hook::` reports ≥4 passed: `decide` for start with herdr set, start without herdr, stop, and not recorded; log rotation (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 38
+ref = "install-hooks-and-the-herdr-keybinding"
+title = "Install hooks and the herdr keybinding"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/setup.rs"]
+needs = [17]
+coupling = []
+deps_note = ""
+action = "Implement `setup(dry_run) -> Result<Report>` with pure `merge_settings(Value, exe) -> (Value, changed)` and `merge_herdr(&str, exe) -> (String, changed)`."
+detail = """
+- Settings (`<claude_dir>/settings.json`): for each of `SubagentStart`, `SubagentStop` and `TeammateIdle`, append a matcher-less group `{"hooks":[{"type":"command","command":"<exe>","args":["hook"],"async":true}]}` — exec form, so Claude Code spawns the exe directly with no shell and no Git Bash process per event (hooks.md, "Exec form and shell form") — unless a hook whose `command` contains `glimpse` and whose `args` (or `command`) contains `hook` already exists. `exe` is `current_exe()`. Key order is preserved (`preserve_order`); write pretty-printed.
+- herdr (`%APPDATA%/herdr/config.toml` on Windows, else `~/.config/herdr/config.toml`): unless the text contains `glimpse`, append
+
+  ```toml
+  [[keys.command]]
+  key = "prefix+alt+g"
+  type = "popup"
+  command = '<exe> ensure-pane --focus'
+  description = "glimpse task graph"
+  width = 40
+  height = 6
+  ```
+
+  as text, so existing comments survive.
+- Write each file atomically (a temp file in the same directory, then rename), backing it up first (`<file>.bak-glimpse-<unix-ts>`) only when the merge changed it; then run `herdr server reload-config`. `--dry-run` writes nothing and reports the planned changes.
+- Claude Code's file watcher normally applies hook edits to running sessions (hooks.md, "Disable or remove hooks"); the report says to restart Claude Code only if the hooks do not fire."""
+acceptance = '`cargo test --manifest-path glimpse/Cargo.toml setup::` reports ≥6 passed: hooks added to a settings file with unrelated keys (order kept), in exec form with `args = ["hook"]`; a second merge is a no-op; a merge over an existing shell-form `glimpse hook` entry is also a no-op; an existing SessionStart hook is untouched; the appended herdr TOML parses with `toml`; a second herdr merge is a no-op (predicted, unverified).'
+agent = ""
+commit = ""
+
+[[items]]
+id = 39
+ref = "parse-arguments-and-wire-the-subcommands"
+title = "Parse arguments and wire the subcommands"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/main.rs",
+    "glimpse/src/cli.rs",
+    "glimpse/tests/cli.rs",
+]
+needs = [
+    34,
+    37,
+    38,
+]
+coupling = []
+deps_note = ""
+action = "Implement the hand-rolled parser (pattern: `statusline/src/cli.rs`) and route every subcommand from `main`. Remove the scaffold's `#![allow(dead_code)]`."
+detail = """
+- Commands:
+  - `glimpse [--slug S] [--view layers|ego|diagram] [--orientation auto|vertical|horizontal] [--once [--size WxH] [--snapshot <file>]]`
+  - `glimpse hook`
+  - `glimpse ensure-pane [--slug S] [--focus]`
+  - `glimpse setup [--dry-run]`
+  - `--help`, `--version`
+- Exit codes: 0 on success, 2 on a usage error.
+- Without `--slug`, glimpse opens the freshest flow with auto-flow on.
+- `ensure-pane` uses `HERDR_ACTIVE_PANE_ID` (falling back to `HERDR_PANE_ID`), takes the cwd from `herdr pane get`, and exits 1 with a message outside herdr.
+- `--once --snapshot <file>` renders from a file without running tomlctl.
+- `tests/cli.rs` drives `env!("CARGO_BIN_EXE_glimpse")` (pattern: `statusline/tests/cli.rs`) with these cases:
+  - `--help` → 0;
+  - an unknown flag → 2;
+  - `hook` with empty stdin → 0, empty stdout/stderr, and one line in the temp dir's `glimpse/hook.log`;
+  - `--once --snapshot tests/fixtures/snapshot.json --size 100x30` prints every fixture task id;
+  - `--once --snapshot tests/fixtures/snapshot.json --view diagram --size 100x30` prints `[1]`;
+  - `setup --dry-run` writes nothing.
+- Every case sets `CLAUDE_CONFIG_DIR`, `GLIMPSE_CONFIG` and `APPDATA` to a temp dir, so no case reads the real config, writes the real `hook.log`, or runs the installed `tomlctl` (still 0.11.0 until the smoke check installs it).
+- `ensure-pane` without `--slug` passes `None` to `pane::ensure`."""
+acceptance = "`cargo test --manifest-path glimpse/Cargo.toml --test cli` reports ≥6 passed (predicted, unverified)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 40
+ref = "document-glimpse"
+title = "Document glimpse"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/README.md",
+    "glimpse/CLAUDE.md",
+    "CLAUDE.md",
+]
+needs = [
+    39,
+    41,
+]
+coupling = []
+deps_note = ""
+action = """
+- Write `glimpse/README.md`: install (`cargo install --path tomlctl` then `cargo install --path glimpse`), `glimpse setup`, restarting Claude Code only if the hooks do not fire, the keybinding, config keys, views and keys, and the data flow.
+- Write `glimpse/CLAUDE.md`: hook edits are normally hot-reloaded by Claude Code's file watcher, with a restart as the fallback; the hooks are exec form so no shell runs per event; async hooks are silent, so check `hook.log`; transcripts follow the version anchor; the layout cache key; `--once` for headless checks.
+- Add `glimpse/` to the root `CLAUDE.md` Sibling crates list (`CLAUDE.md:63-68`), and mention task 41's glimpse fmt step in the root `CLAUDE.md` Developer setup paragraph that lists the hook's steps."""
+detail = "Follow `.claude/rules/documentation.md`: measurements are commands, not numbers."
+acceptance = "`grep -c 'glimpse/' CLAUDE.md` ≥1 (today 0), and `test -s glimpse/README.md && test -s glimpse/CLAUDE.md` exits 0 (today 1)."
+agent = ""
+commit = ""
+
+[[items]]
+id = 41
+ref = "gate-glimpse-formatting-in-pre-commit"
+title = "Gate glimpse formatting in pre-commit"
+effort = "S"
+status = "pending"
+checkpoint = "B"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = [".githooks/pre-commit"]
+needs = [15]
+coupling = []
+deps_note = ""
+action = 'When the staged set contains a `glimpse/**/*.rs` path, run `gate cargo fmt --manifest-path "$ROOT/glimpse/Cargo.toml" -- --check` in a block after the `gate()` definition in `.githooks/pre-commit`, so a diff blocks the commit and names the rerun command. (The tomlctl fmt step above `gate()` is a bare `cargo fmt`, and already fires on any staged `*.rs`, glimpse included.)'
+detail = "This file runs unsandboxed on every commit (root `CLAUDE.md`, Supply chain), so keep the change to one guarded block and add no new executables."
+acceptance = "`grep -c 'glimpse/Cargo.toml' .githooks/pre-commit` ≥1 (today 0) and `bash -n .githooks/pre-commit` exits 0."
+agent = ""
+commit = ""

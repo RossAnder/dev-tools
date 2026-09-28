@@ -1,0 +1,513 @@
+schema_version = 1
+last_updated = 2026-09-28
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "risk"
+plan_section = "36. Ensure one glimpse pane per tab [M]"
+summary = "herdr `pane run` types the line into the pane's pwsh shell; a leading quoted exe path is a pwsh parse error, so glimpse never starts"
+description = """herdr pane_run (herdr/src/cli/pane.rs pane_run) sends args.join(' ') + Enter via PaneSendInput into the pane's default shell, which is pwsh here (%APPDATA%/herdr/config.toml default_shell). In PowerShell `"C:/.../glimpse.exe" --slug x` is a string expression followed by an unexpected token. Build the line in a pure tested launch_line(exe, slug): bare path when it has no whitespace, else `& '<exe>' --slug <slug>`. Raised by Agents 1 and 4."""
+anchor_old = 'then `run` `"<current_exe>" --slug <slug>`.'
+anchor_new = "then `run` the line built by a pure `launch_line(current_exe, slug)`. `herdr pane run` types the text plus Enter into the pane's default shell (pwsh on this machine), where a line opening on a quoted string is a parse error, so `launch_line` emits the bare path when it has no whitespace, else `& '<exe>' --slug <slug>`."
+dedup_id = "30915b671dcea195"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "risk"
+plan_section = "38. Install hooks and the herdr keybinding [M]"
+summary = "Shell-form hook runs through Git Bash on Windows: one bash.exe per event in every session (MSYS stampede); use exec form"
+description = "hooks.md 'Exec form and shell form': shell form (no `args`) runs via Git Bash on Windows; exec form (`args` set) spawns the exe directly with no shell. The hooks are user-level, so every SubagentStart/Stop/TeammateIdle in every repo spawns bash.exe; an /implement frontier of 8 starts ~8 concurrently, the documented trigger for this machine's MSYS poisoning. Exec form also removes the 'Git Bash strips backslashes' workaround. Idempotence check must recognise exec-form entries."
+anchor_old = 'append a matcher-less group `{"hooks":[{"type":"command","command":"<exe> hook","async":true}]}`, unless a command containing `glimpse` and ` hook` already exists. `exe` is `current_exe()` with forward slashes, since Git Bash strips backslashes.'
+anchor_new = 'append a matcher-less group `{"hooks":[{"type":"command","command":"<exe>","args":["hook"],"async":true}]}` — exec form, so no shell and no Git Bash process per event — unless a hook whose `command` contains `glimpse` and whose `args` (or `command`) contains `hook` already exists. `exe` is `current_exe()`.'
+dedup_id = "2b21ef216eff66ce"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "executability"
+plan_section = "8. Add the agents list verb and group dispatch [S]"
+summary = "Acceptance is vacuous: clippy reporting no error in tomlctl/src/agents/ already holds before the task runs"
+description = "Step 2.6 check 3/4: a forward criterion that already holds discriminates nothing — before task 8, tomlctl/src/agents/ holds only tasks 3/4/6's compiling files, so 'no error in tomlctl/src/agents/' passes on a no-op. Add a discriminating unit test for the list path (absent file -> [] ; populated store -> rows) and tag clippy as a regression guard."
+anchor_old = "- **Acceptance**: `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error in `tomlctl/src/agents/` (predicted, unverified)."
+anchor_new = "- **Acceptance**: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl agents::list` reports ≥2 passed — an absent `agents.toml` lists `[]`, a seeded one lists its rows (today 0). `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error in `tomlctl/src/agents/` (regression guard)."
+dedup_id = "96ea63858866eafd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "executability"
+plan_section = "9. Wire the new verbs into the CLI [M]"
+summary = "FEATURES names use hyphens (every entry is snake_case, removal is breaking) and `agents list` gets no feature"
+description = "tomlctl/src/cli/types.rs FEATURES (:21-80) is all snake_case (tasks_render, backlog_list), one entry per verb; its doc comment says removing an entry is a breaking change. Use agents_record, agents_list, tasks_snapshot; task 12 then adds three names to capabilities_features_contains_every_plan_feature and the README. Raised by Agents 2, 3, 4."
+anchor_old = "and `agents-record`, `tasks-snapshot` to `FEATURES` (`:21`)."
+anchor_new = "and `agents_record`, `agents_list`, `tasks_snapshot` to `FEATURES` (`:21`; snake_case like every entry). Task 12 adds all three to the feature-list test."
+dedup_id = "1d3fc97a179064db"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "feasibility"
+plan_section = "6. Record hook events into the agents store [L]"
+summary = "Slug validation is regex-only; a stray transcript slug makes mutate_doc create .claude/flows/<slug>/ which fails flow doctor"
+description = "validate_slug (tomlctl/src/flow/init.rs) checks syntax only; mutate_doc -> guard_write_path -> ensure_parent_under_claude create_dir_all's missing parents. A directory holding only the gitignored agents.toml is invisible to git but doctor's discover_slugs enumerates it and fails context-exists — halting every carrier's Step 0. Hooks are user-level, so this fires in every repo with .claude/flows. Require context.toml to exist; add a task-10 case. Raised by Agents 1, 2, 4."
+anchor_old = "validating the slug with `flow::validate_slug` (re-exported at `tomlctl/src/flow/mod.rs:23`)."
+anchor_new = 'validating the slug with `flow::validate_slug` (re-exported at `tomlctl/src/flow/mod.rs:23`) and requiring `<root>/.claude/flows/<slug>/context.toml` to exist, else `{"recorded":false,"reason":"unknown-flow"}` — `mutate_doc` creates missing parents under `.claude/`, and a flow directory without `context.toml` fails `flow doctor`.'
+dedup_id = "ecc48bc543105e55"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "feasibility"
+plan_section = "7. Assemble the task snapshot [M]"
+summary = "`io::read_doc` errors NotFound on a missing file; it does not yield []"
+description = "read_doc (tomlctl/src/io.rs:574) calls read_toml, which returns a NotFound-tagged error; only mutate_doc's read_or_seed tolerates absence. As written the snapshot fails on every flow without agents.toml (and on a missing record/context.toml). Task 11's 'no record and no agents file' case would fail. Raised by Agents 1, 2."
+anchor_old = "Read the execution record and `agents.toml` with `io::read_doc` (a missing file gives `[]`)"
+anchor_new = "Read the execution record and `agents.toml` with `io::read_doc` after an `exists()` check — `read_doc` returns a NotFound error on a missing file, so the caller maps an absent file to `[]`"
+dedup_id = "f99a4e0b5beb6cea"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "completeness"
+plan_section = "7. Assemble the task snapshot [M]"
+summary = "frontier from `ready(&store, &[])` classes every in-progress row as stalled — wrong for a live view"
+description = "graph.rs Standing::of maps InProgress to Stalled unless passed as in-flight; with &[] every pending task behind a running one lands in `blocked` (not `next`) and `held` is never computed, so `ready` lists tasks colliding with running agents. /implement always passes --in-flight. Pass the ids of in-progress rows; update the Approach snapshot table row and task 11's assertion to `tasks ready --in-flight <in-progress ids>`."
+anchor_old = "`frontier` from `ready::ready(&store, &[])`"
+anchor_new = "`frontier` from `ready::ready(&store, &in_progress_ids)` (the ids of rows whose status is `in-progress`; with `&[]` the engine classes them as stalled)"
+dedup_id = "1a00c3a0cf93ed79"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "feasibility"
+plan_section = "39. Parse arguments and wire the subcommands [M]"
+summary = "CLI test cases escape the sandbox: `--once --view diagram` runs the installed tomlctl 0.11.0 on real flows; `hook` writes the real hook.log"
+description = "Without --snapshot, glimpse runs `<config.tomlctl> tasks snapshot` on the freshest real flow; installed tomlctl is 0.11.0 (no `tasks snapshot`) until smoke step 1, so the checkpoint-C gate fails, and later depends on the machine. The empty-stdin `hook` case logs to <claude_dir>/glimpse/hook.log with no CLAUDE_CONFIG_DIR override. Also: which slug `ensure-pane` passes without --slug is unstated (see the task 36 finding). Raised by Agents 1, 2, 3."
+anchor_old = "`--once --view diagram` prints `[1]`;"
+anchor_new = "`--once --snapshot tests/fixtures/snapshot.json --view diagram --size 100x30` prints `[1]`; every case sets `CLAUDE_CONFIG_DIR`, `GLIMPSE_CONFIG` and `APPDATA` to a temp dir, so no case reads the real config, writes the real `hook.log`, or runs the installed `tomlctl`;"
+dedup_id = "c56fe1a9b3f950f8"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "completeness"
+plan_section = "12. Release tomlctl 0.12.0 with the new features registered [M]"
+summary = "README sample block's `features` array (test-checked) and `subcommands` array are not in task 12's README edits"
+description = "readme_feature_transcriptions_match_capabilities_features (tomlctl/tests/capabilities.rs:2283) checks the sample block via features_in_readme_sample as well as the Feature meanings table; the block (tomlctl/README.md ~257-281) also lists `subcommands`, which would lack `agents`. Raised by Agents 2, 3."
+anchor_old = "and the capabilities sample version (`~:258`)."
+anchor_new = 'and the capabilities sample block (`~:257-281`): its `version`, its `"features"` array (checked by `readme_feature_transcriptions_match_capabilities_features`) and its `"subcommands"` array (add `agents`).'
+dedup_id = "842ee1476bb8b6ce"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "risk"
+plan_section = "4. Correlate subagents with flow tasks from Claude Code's on-disk state [M]"
+summary = "Transcript can lag the hook, so a teammate re-task keeps the previous task set; retry covers only a missing file"
+description = "hooks.md common fields: the transcript 'is written asynchronously and may lag ... may not yet include the current turn's most recent messages when a hook fires'. On a named-pool re-task latest_dispatch can still see the old `tasks show` line; open_segment's same-set no-op then pins the old task for the whole assignment. Fix: task 6's Stop/Idle path re-runs latest_dispatch (by then written) and corrects the closing segment's task_ids. Raised by Agents 1, 4."
+anchor_old = "- If the transcript is missing, retry up to 10 × 100 ms (meta.json appears within ~124 ms of spawn; see Research Notes)."
+anchor_new = "- If the transcript is missing, retry up to 10 × 100 ms (meta.json appears within ~124 ms of spawn; see Research Notes). The transcript can also lag the hook (hooks.md, common input fields), so a re-task may still show the previous dispatch: task 6's Stop and Idle paths re-run `latest_dispatch` and correct the closing segment's `task_ids`."
+dedup_id = "676f60fa6e20c1e6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "risk"
+plan_section = "tomlctl: the agents store"
+summary = "TeammateIdle `team_name` is deprecated upstream; matching on (team, name) breaks when it is removed"
+description = "hooks.md TeammateIdle input table: `team_name` — 'Deprecated. Session-derived team name; will be removed in a future release'. Match on (session_id, name): both payloads carry session_id. Same edit to find_teammate_mut(team, name) in task 3 and Idle { team, name } in task 6."
+anchor_old = "matches on `(team, name)`, sets `idle` and closes the segment."
+anchor_new = "matches on `(session_id, name)` (`team_name` is deprecated in hooks.md and is not used for matching), sets `idle` and closes the segment."
+dedup_id = "32432b4af96da6b9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "risk"
+plan_section = "6. Record hook events into the agents store [L]"
+summary = "Rows can stay `running` forever (Stop before Start, killed session, failed sidecar rename) and keep glimpse ticking"
+description = "Async hooks carry no ordering guarantee; Start retries up to 1 s through Git Bash -> glimpse -> tomlctl, so a short agent's Stop can arrive first and hit 'unknown agent -> not recorded'. `claude -p` teardown, crashes and /clear lose Stops. A ghost `running` row keeps needs_tick true and chips on screen. Fix: a Stop for an unknown agent writes a `stopped` row when the dispatch resolves a flow; glimpse treats a running row whose transcript mtime is older than a config value as stale and it does not keep ticks alive (tasks 21, 25)."
+anchor_old = "stop for an unknown agent → not recorded."
+anchor_new = "stop for an unknown agent → a `stopped` row when its transcript's dispatch resolves a flow, else not recorded."
+dedup_id = "4f0a43b7cab930d4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "feasibility"
+plan_section = "3. Add the agents store schema [M]"
+summary = "`agents_path(slug)` is cwd-relative; every other flow path joins repo_or_cwd_root"
+description = "tomlctl/src/tasks/store.rs resolve_store_path joins repo_or_cwd_root()?. A relative .claude/flows/<slug>/agents.toml resolves against the payload cwd (task 6 chdirs; task 37 sets current_dir), which may be a subdirectory such as lumina/, so the write is refused or lands in the wrong tree. Same for task 6's stop/idle scan."
+anchor_old = "`agents_path(slug) -> PathBuf` (`.claude/flows/<slug>/agents.toml`)."
+anchor_new = "`agents_path(slug) -> Result<PathBuf>`: `repo_or_cwd_root()?` joined with `.claude/flows/<slug>/agents.toml`, as `resolve_store_path` does (`tomlctl/src/tasks/store.rs`) — never cwd-relative, since the hook runs from the payload's `cwd`, possibly a subdirectory. Task 6's stop/idle scan uses the same root."
+dedup_id = "27145955e4116146"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "warning"
+category = "feasibility"
+plan_section = "16. Define the snapshot model [M]"
+summary = "Hand-written fixture + #[serde(default)] everywhere: nothing checks the glimpse model against real `tasks snapshot` output"
+description = "Task 16 has no edge to task 7; every struct defaults missing fields, so a key-name mismatch (checkpoints[].verification, agents[].segments[].task_ids, record[].checkpoint_ids) parses silently to empty data and every glimpse test (22-39) passes on the invented shape. Add edge 7 and derive the fixture's key shape from task 7's snapshot output (task 7's inline test fixture or a `tasks snapshot --file` over a seeded store), hand-editing only values."
+anchor_old = """
+- **Depends on**: 15
+- **Action**: Define serde types for the snapshot contract"""
+anchor_new = """
+- **Depends on**: 7, 15
+- **Action**: Define serde types for the snapshot contract"""
+dedup_id = "5372d14a16367768"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "warning"
+category = "executability"
+plan_section = "18. Poll the flow files and fetch snapshots [M]"
+summary = "No task owns the `Event` enum; task 34's single recv() loop also needs an input variant"
+description = "Task 18 sends Event::Snapshot/SourceError but never says where Event lives; task 34's input thread forwards events onto the same channel, and cannot edit source.rs. Task 18 defines the complete enum."
+anchor_old = "Implement `Source` plus a poller thread that sends `Event::Snapshot(Box<Snapshot>)` or `Event::SourceError(String)` on a `std::sync::mpsc::Sender`."
+anchor_new = "Define `pub(crate) enum Event { Snapshot(Box<Snapshot>), SourceError(String), FlowsChanged, Input(ratatui::crossterm::event::Event) }` in `glimpse/src/source.rs` — the one channel type task 34's runtime receives poll and input events on — then implement `Source` plus a poller thread that sends on a `std::sync::mpsc::Sender<Event>`."
+dedup_id = "62d1f8b52713713c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "warning"
+category = "executability"
+plan_section = "21. Hold app state and map keys [L]"
+summary = "App fields / Action variants omit state tasks 23, 24, 27, 33, 34 need, and none of those may edit app.rs"
+description = "Missing: Action::SwitchFlow (27 emits, 34 handles); a full-screen details state (33 'Enter twice'); the flow list + selector cursor (27); source_error (24); a Theme for markdown::to_text (33's render signature passes none); Dir beside Navigator. FlowEntry lives in flows.rs, so add edge 19."
+anchor_old = "`warning: Option<String>`, `nav: Option<Box<dyn Navigator>>`."
+anchor_new = "`warning: Option<String>`, `source_error: Option<String>`, `details_fullscreen: bool`, `flows: Vec<flows::FlowEntry>`, `selector_cursor: usize`, `theme: Theme`, `nav: Option<Box<dyn Navigator>>`. `Action` includes `SwitchFlow(String)` and the selector cursor moves; `Dir` is defined here beside `Navigator`. Depends on 19 for `FlowEntry`."
+dedup_id = "3da3fab15b87246a"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "warning"
+category = "executability"
+plan_section = "17. Add config and theme [M]"
+summary = "`Orientation` and `ViewKind` have no owner; config, app, views and CLI would each define copies"
+description = "Task 17's config holds orientation Auto|Vertical|Horizontal and default_view; task 21 uses Option<Orientation> and ViewKind; 22/26/32 need a resolved two-value axis and 32 keys its cache on it. config.rs lands before app.rs so cannot import from it. Define Orientation {Vertical, Horizontal} (flip), OrientationPref {Auto, Fixed(Orientation)} and ViewKind {Layers, Ego, Diagram} (next/prev) in config.rs."
+anchor_old = "Add `Config` (defaults, loading, a pure `parse(&str)`) and `Theme` (the styles for each status and element)."
+anchor_new = "Add `Config` (defaults, loading, a pure `parse(&str)`) and `Theme` (the styles for each status and element), plus the shared enums tasks 21, 22, 26, 32, 33 and 39 import rather than redefine: `Orientation { Vertical, Horizontal }` (the resolved axis, with `flip()`), `OrientationPref { Auto, Fixed(Orientation) }` (the config value) and `ViewKind { Layers, Ego, Diagram }` (with `next()`/`prev()`)."
+dedup_id = "bf6ebc10776c9cfb"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "warning"
+category = "executability"
+plan_section = "16. Define the snapshot model [M]"
+summary = "If `Index` borrows `Snapshot`, task 21's App (holding both) is self-referential"
+description = "Task 21 stores snapshot and index side by side; an Index<'a> would make App self-referential, and task 21 cannot edit model.rs. State that index() returns an owned Index."
+anchor_old = "`Snapshot::index()` gives `task(id)`,"
+anchor_new = "`Snapshot::index()` returns an owned `Index` (id → position maps, no borrow of the `Snapshot`, since task 21's `App` stores both) giving `task(id)`,"
+dedup_id = "faac1f60217a334e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "warning"
+category = "risk"
+plan_section = "34. Run the event loop [L]"
+summary = "Auto-flow never notices a new flow while the current one is idle"
+description = "Task 18's poller fingerprints only the current slug's files and suppresses unchanged revisions, so 'checked on each poll event' never runs while the current flow is quiet; running `tomlctl flow list` every tick spawns a process every 500 ms under Sophos. Have the poller also stat .claude/flows/*/tasks.toml (no spawn) and emit FlowsChanged, the only trigger for flows::list (source.rs task 18, runtime.rs task 34)."
+anchor_old = "With auto-flow on, it switches when `flows::freshest` changes (checked on each poll event)."
+anchor_new = "With auto-flow on, it switches when `flows::freshest` changes. Task 18's poller also stats every `.claude/flows/*/tasks.toml` (no process spawn) and sends `Event::FlowsChanged`, the only trigger for `flows::list`."
+dedup_id = "4e989aefb16b82be"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "warning"
+category = "completeness"
+plan_section = "13. Document the agents verb group [M]"
+summary = "The tracked .github/skills mirror files are on no Files line, so /implement's commit train halts on them as unexplained leftovers"
+description = ".github/skills/tomlctl and .github/skills/flow-contract-task-store are junctions on disk but git tracks separate copies (27 files; core.symlinks=false), so edits via claude/skills/ show as dirty .github paths; claude/commands/implement.md step 5(iii) stages exactly the tasks' files[] and halts on unexplained leftovers — contradicting the Risks bullet. Task 13 adds .github/skills/tomlctl/references/agents.md and .github/skills/tomlctl/SKILL.md; task 14 adds .github/skills/tomlctl/references/tasks-store.md and .github/skills/flow-contract-task-store/SKILL.md (plus any flow.md/write.md mirrors from the task-13 doc finding)."
+anchor_old = "- **Files**: `claude/skills/tomlctl/references/agents.md`, `claude/skills/tomlctl/SKILL.md`"
+anchor_new = "- **Files**: `claude/skills/tomlctl/references/agents.md`, `claude/skills/tomlctl/SKILL.md`, `.github/skills/tomlctl/references/agents.md`, `.github/skills/tomlctl/SKILL.md`"
+dedup_id = "8034f24363b8ef10"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P21"
+severity = "warning"
+category = "completeness"
+plan_section = "13. Document the agents verb group [M]"
+summary = "Doc enumerations of verbs/files/versions go stale and two reference files are on no Files line"
+description = "Stale sites: claude/skills/tomlctl/SKILL.md:3 description 'Verb groups:' (968/1024 chars, skill_descriptions_under_spec_cap); :20-50 When-to-use table (no agents row; tasks row lacks snapshot); :57 'seven sibling files'; :94 capabilities example version 0.11.0; claude/skills/tomlctl/references/flow.md:29-50 --verify-integrity matrix (lacks tasks snapshot, agents list); claude/skills/tomlctl/references/write.md:78 'four recognised flow files' (lacks agents.toml; already stale). Add flow.md and write.md (+ mirrors) to Files. Raised by Agents 2, 3."
+anchor_old = "and link it from the SKILL.md References list (`claude/skills/tomlctl/SKILL.md:55-65`)."
+anchor_new = """and link it from the SKILL.md References list (`claude/skills/tomlctl/SKILL.md:55-65`). Also update the SKILL.md description's verb groups (≤1024 chars), add an `agents` row and `snapshot` to the `tasks` row of the Quick Reference table, drop the count from "seven sibling files", and change the `capabilities` example's `0.11.0` to `0.12.0`; add `tasks snapshot` and `agents list` to the `--verify-integrity` matrix in `claude/skills/tomlctl/references/flow.md`, and `agents.toml` to the seeded-file list in `claude/skills/tomlctl/references/write.md`."""
+dedup_id = "736080de09b107e5"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P22"
+severity = "warning"
+category = "completeness"
+plan_section = "14. Document the snapshot verb and the agents-store writer [S]"
+summary = "Task-store contract §5 (per-verb semantics) and §11 (sub-agent read verbs) will omit `snapshot`"
+description = "claude/skills/flow-contract-task-store/SKILL.md promises 'the semantics of every tasks verb' with a §5 paragraph per verb; §11 (:359) lists the read verbs a sub-agent may call (show, list, edges, ready, batches, closure, check). Task 14 only adds the agents.toml paragraph."
+anchor_old = "Add one short paragraph after §11 (`claude/skills/flow-contract-task-store/SKILL.md:357-361`)"
+anchor_new = "Add a `snapshot` paragraph to §5, add `snapshot` to §11's read-verb list, and add one short paragraph after §11 (`claude/skills/flow-contract-task-store/SKILL.md:357-361`)"
+dedup_id = "48afb10d81ce5ce9"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P23"
+severity = "warning"
+category = "executability"
+plan_section = "Verification Commands"
+summary = "Smoke step 4 cannot catch the defect it targets and its baseline is not empty"
+description = "Task 2 gitignores .claude/flows/*/agents.toml*, so `git status --porcelain` never shows a wrongly created agents file; the check passes with the defect present. Baseline today is non-empty (`?? .claude/flows/lively-twirling-babbage/`) and the execution record changes during the run. Compare `git status --porcelain --ignored .claude/flows` before and after. Raised by Agent 2 and the orchestrator probe."
+anchor_old = "and the `.claude/flows` tree is unchanged: `git status --porcelain .claude/flows` is empty."
+anchor_new = "and no agents file appears: `git status --porcelain --ignored .claude/flows` prints the same before and after the call."
+dedup_id = "a8e9c3c325eea693"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P24"
+severity = "warning"
+category = "executability"
+plan_section = "9. Wire the new verbs into the CLI [M]"
+summary = "Acceptance has no discriminating criterion: both checks are regression guards that pass on a no-op"
+description = "Step 2.6 check 3: `cli::dispatch::tests::lint` and clippy both pass today; 'Tasks 10 and 11 discriminate' puts the discriminator in other tasks. Add a check the wiring alone makes true, e.g. the verbs parse."
+anchor_old = "plus `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` clean. Tasks 10 and 11 discriminate (predicted, unverified)."
+anchor_new = "plus `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` clean (regression guard). Discriminating: `cargo run -q --manifest-path tomlctl/Cargo.toml -- agents list --help` and `-- tasks snapshot --help` both exit 0 (today: unrecognised subcommand, exit 2)."
+dedup_id = "96d3fbf28cca823d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P25"
+severity = "suggestion"
+category = "executability"
+plan_section = "16. Define the snapshot model [M]"
+summary = "~10 later test modules load the fixture; `include_str!` path is wrong from view/ and diagram/"
+description = "include_str! resolves relative to the calling file: from glimpse/src/view/*.rs or diagram/*.rs the path is ../../tests/..., not ../tests/.... Expose one #[cfg(test)] loader in model.rs."
+anchor_old = 'Tests use `include_str!("../tests/fixtures/snapshot.json")`.'
+anchor_new = 'Expose `#[cfg(test)] pub(crate) fn fixture() -> Snapshot` in `glimpse/src/model.rs`, loading `include_str!("../tests/fixtures/snapshot.json")`; every later test (tasks 22–27, 32–34) calls it rather than re-deriving the relative path.'
+dedup_id = "f50f674af089ee7d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P26"
+severity = "suggestion"
+category = "executability"
+plan_section = "32. Paint and navigate the diagram [L]"
+summary = "Test filter `diagram::tests` misses tests placed in paint.rs, which task 32 also owns"
+description = "Tests in paint.rs get paths diagram::paint::tests::..., which don't contain `diagram::tests`; the ≥5 count could fail a correct implementation."
+anchor_old = "`cargo test --manifest-path glimpse/Cargo.toml diagram::tests` reports ≥5 passed:"
+anchor_new = "`cargo test --manifest-path glimpse/Cargo.toml -- diagram::tests diagram::paint` reports ≥5 passed:"
+dedup_id = "6279b89fe5d9dea2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P27"
+severity = "suggestion"
+category = "executability"
+plan_section = "15. Scaffold the glimpse crate [M]"
+summary = "Stub rule contradicts the mod.rs child declarations; module visibility unstated"
+description = "'Every module file except main.rs is a stub holding a single //! line' conflicts with view/mod.rs and diagram/mod.rs declaring children; a private `mod paint;` would block task 33 from reaching crate::diagram::paint."
+anchor_old = "Every module file except `main.rs` is a stub holding a single `//!` line naming what it is responsible for"
+anchor_new = "Every module file except `main.rs`, `glimpse/src/view/mod.rs` and `glimpse/src/diagram/mod.rs` is a stub holding a single `//!` line naming what it is responsible for; the two `mod.rs` files hold that line plus `pub(crate) mod <child>;` for each child"
+dedup_id = "d93587c7507cbe97"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P28"
+severity = "suggestion"
+category = "executability"
+plan_section = "7. Assemble the task snapshot [M]"
+summary = "'Build the graph once' cannot hold: ready::ready and edges::edge_list build their own"
+description = "ready calls build_or_refuse internally (tomlctl/src/tasks/ready.rs) and edge_list takes &Store; honouring 'once' would force edits to files not on the Files line."
+anchor_old = "Load the store (`store::load`), build the graph once, and pull"
+anchor_new = "Load the store (`store::load`), build one `Graph` for `layers` and `checkpoints` (`ready` and `edge_list` rebuild internally — accept that; do not modify `ready.rs` or `edges.rs`), and pull"
+dedup_id = "e5e66caa0c84b6ba"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P29"
+severity = "suggestion"
+category = "executability"
+plan_section = "40. Document glimpse [S]"
+summary = "Acceptance never checks the two new glimpse docs exist"
+description = "Only the root CLAUDE.md grep is checked; the task passes with glimpse/README.md and glimpse/CLAUDE.md unwritten."
+anchor_old = "- **Acceptance**: `grep -c 'glimpse/' CLAUDE.md` ≥1 (today 0)."
+anchor_new = "- **Acceptance**: `grep -c 'glimpse/' CLAUDE.md` ≥1 (today 0), and `test -s glimpse/README.md && test -s glimpse/CLAUDE.md` exits 0 (today 1)."
+dedup_id = "ffec2ccc97c9f40d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P30"
+severity = "suggestion"
+category = "executability"
+plan_section = "41. Gate glimpse formatting in pre-commit [S]"
+summary = "Cited line is off, the tomlctl fmt step has no rerun message (gate() does), and CLAUDE.md's hook description goes stale"
+description = ".githooks/pre-commit: the fmt step is :20-22 (bare cargo fmt); gate() is defined at :25-30 and is what prints the rerun line. That bare step already fires on any staged .rs, glimpse included. Root CLAUDE.md 'Developer setup' lists the hook's steps; task 40 owns CLAUDE.md but doesn't update it — add that to task 40 with edge 41→40. Raised by Agents 2, 3."
+anchor_old = 'mirroring the existing tomlctl fmt step (`.githooks/pre-commit:23`) and its "rerun" message.'
+anchor_new = 'as `gate cargo fmt --manifest-path "$ROOT/glimpse/Cargo.toml" -- --check` in a block after the `gate()` definition, so it names the rerun command (the tomlctl fmt step above `gate()` is bare). Task 40 updates the root `CLAUDE.md` Developer setup paragraph to mention it.'
+dedup_id = "b2f69e61600ed3c0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P31"
+severity = "suggestion"
+category = "risk"
+plan_section = "38. Install hooks and the herdr keybinding [M]"
+summary = "Claude Code hot-reloads hook edits: write settings.json atomically, back up only on change, fix the 'restart' claim"
+description = "hooks.md 'Disable or remove hooks': direct edits to hooks in settings files are normally picked up by the file watcher — contradicting Exploration Notes and task 40's note. A truncate-and-write can be read half-written by live sessions; backups accumulate each run."
+anchor_old = "- The report reminds the user to restart Claude Code, because settings are read once at session start."
+anchor_new = """- Write each file atomically (temp file in the same directory, then rename) and back up only when the merge changed it. Claude Code's file watcher normally applies hook edits to running sessions (hooks.md, "Disable or remove hooks"); the report says to restart only if the hooks do not fire."""
+dedup_id = "af354f9b9348e7d0"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P32"
+severity = "suggestion"
+category = "risk"
+plan_section = "Execution Policy"
+summary = "Task 41's uncommitted pre-commit edit gates checkpoint B's commit train; move 41 into checkpoint B"
+description = "Task 41 depends only on 15 so it runs during phase B; until checkpoint C the edited, uncommitted, unsandboxed hook gates B's commits. Adding 41 to B's marker is a valid cut (its only dependency, 15, is in B). Edit the Dependency Graph marker; the Checkpoint after bullet follows."
+dedup_id = "35997a874c8d58fa"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P33"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "35. Wrap the herdr CLI [S]"
+summary = "Wrapper has no `layout` call, but task 36 needs the origin rect and cannot edit herdr.rs"
+description = "PaneInfo.rect comes 'from pane layout', a separate verb; herdr pane list/get return no rect (herdr/src/api/schema/panes.rs PaneInfo)."
+anchor_old = "with `pane_list`, `pane_get`, `split(origin, dir, ratio, cwd) -> pane_id` (always `--no-focus`), `focus`, `rename`, and `run`."
+anchor_new = "with `pane_list`, `pane_get`, `layout(pane_id) -> Rect` (`herdr pane layout`), `split(origin, dir, ratio, cwd) -> pane_id` (always `--no-focus`), `focus`, `rename`, and `run`."
+dedup_id = "cdc85d1e745962d7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P34"
+severity = "suggestion"
+category = "completeness"
+plan_section = "18. Poll the flow files and fetch snapshots [M]"
+summary = "glimpse never checks the installed tomlctl has the new verbs; on 0.11.0 it fails with a raw error / silent hook.log"
+description = "FEATURES exists so consumers can gate on it. Probe `tomlctl capabilities` once (source, hook, setup); if tasks_snapshot / agents_record are absent show 'tomlctl ≥0.12.0 required — cargo install --path tomlctl'."
+dedup_id = "3ab39f204cb82ed2"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P35"
+severity = "suggestion"
+category = "completeness"
+plan_section = "tomlctl: the snapshot contract"
+summary = "`revision` and the poller fingerprint omit context.toml although the snapshot carries flow_status from it"
+description = "A bare `tomlctl set context.toml status ...` changes neither, so the header's flow_status goes stale until another file changes."
+anchor_old = "the length-prefixed bytes of `tasks.toml`, `execution-record.toml` and `agents.toml`; an absent file counts as empty"
+anchor_new = "the length-prefixed bytes of `tasks.toml`, `execution-record.toml`, `agents.toml` and `context.toml`; an absent file counts as empty (task 18's fingerprint watches the same four)"
+dedup_id = "e4c3e2a52dc0f25e"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P36"
+severity = "suggestion"
+category = "completeness"
+plan_section = "36. Ensure one glimpse pane per tab [M]"
+summary = "`ensure-pane` from the keybinding has no slug, but `pane::ensure` requires one"
+description = "Task 39's ensure-pane takes an optional --slug; task 36's ensure(herdr, origin_pane, slug, ...) needs one. Take Option<&str>, with None launching `glimpse` (freshest flow, auto-follow)."
+dedup_id = "02e5a8c14389c0b6"
+
+[[vet_events]]
+timestamp = "2026-09-28T12:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified F1 (herdr pane_run sends text+Enter; default_shell pwsh), F3 (store.rs joins repo_or_cwd_root), F8 (herdr PaneInfo has no rect), F9 (read_toml returns NotFound). Duplicates merged into P1,P5,P6,P8,P11."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-28T12:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified F1 (graph.rs Standing::of InProgress=>Stalled), F2 (read_doc NotFound), F4 (.github/skills tracked copies, 27 files, core.symlinks=false, junctions on disk; implement.md halts on leftovers), F11 (smoke baseline non-empty; agents.toml gitignored). F14/F15 self-dropped/out-of-lens; F15 kept as suggestion P36."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-28T12:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified F8 (README sample-block test at capabilities.rs:2283), F9 (FEATURES snake_case), F10 (pre-commit fmt step bare at :20-22, gate() after), F13 (SKILL.md :57 seven sibling files, :94 0.11.0). Its ruled-out note that .github mirrors are junctions is contradicted by git (tracked copies) - Agent 2 F4 kept."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-28T12:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified F1 (herdr pane_run), F2 (hooks.md exec vs shell form; Git Bash on Windows), F3 (hooks.md :2679 team_name deprecated), F4 (transcript written asynchronously, may lag), F6 (validate_slug regex-only), F9 (file watcher picks up hook edits)."
+dedup_id = "45ca31c3315a5978"

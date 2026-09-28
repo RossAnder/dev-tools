@@ -3760,7 +3760,7 @@ tags = [
     "tasks",
     "import",
 ]
-status = "open"
+status = "promoted"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3768,3 +3768,5 @@ dedup_id = "22bd6fc6e38f2f01"
 origin = "implement"
 context = "field_re matches only the - **Label**: spelling. Older plans write - **Files:** with the colon inside the bold, so their Files, Depends on and Action were never imported: no file claims, no dependency edges. import-plan now raises plan/text-unstored on them, which is how they surface (lumina-vertical-slice, lumina-schema-deepening, flow-tracking-overhaul among others). Accepting the spelling would restore those claims and edges, but re-importing an existing flow would then add edges to its store; decide whether to accept it or to rewrite the old plans."
 base_sha = "97d85b1430c3a0a4c504257ec4d946270b098ddf"
+promoted = 2026-09-28
+promoted_to = "lively-twirling-babbage"

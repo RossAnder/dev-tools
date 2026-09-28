@@ -596,3 +596,20 @@ scope = [
     "claude/skills/**",
     "claude/commands/**",
 ]
+
+[[active]]
+slug = "lively-twirling-babbage"
+last_used = "2026-09-28T12:46:01.8977313Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/**",
+    "claude/skills/tomlctl/**",
+    "claude/skills/flow-contract-task-store/**",
+    "glimpse/**",
+    ".gitignore",
+    ".githooks/pre-commit",
+    "CLAUDE.md",
+]
