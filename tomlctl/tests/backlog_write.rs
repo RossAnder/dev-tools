@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 
 mod common;
 use common::{
-    age_terminal_date, assert_sidecar_matches, backlog, cli, parse_json_error_envelope, sandbox,
-    store_path,
+    TASKS_SLUG, age_terminal_date, assert_sidecar_matches, backlog, cli, parse_json_error_envelope,
+    sandbox, seed_tasks, store_path,
 };
 
 const FLAKE_SUMMARY: &str = "pty_readiness_probe flakes on slow CI";
@@ -543,6 +543,155 @@ fn triage_with_two_mode_flags_is_a_parser_error() {
         stderr.contains("cannot be used with"),
         "the refusal must be a conflict, not an unrecognised flag; got: {stderr:?}"
     );
+}
+
+fn add_drift(root: &Path) -> String {
+    let added = backlog(
+        root,
+        &[
+            "add",
+            "--summary",
+            DRIFT_SUMMARY,
+            "--kind",
+            "bug",
+            "--area",
+            DRIFT_AREA,
+        ],
+    );
+    added["id"].as_str().unwrap().to_string()
+}
+
+/// Run a refused `backlog triage <args…>` and hand back its JSON error.
+fn refused_triage(root: &Path, args: &[&str]) -> serde_json::Value {
+    let out = cli(root)
+        .args(["--error-format", "json", "backlog", "triage"])
+        .args(args)
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    parse_json_error_envelope(&stderr)
+}
+
+fn promoted_to(root: &Path, id: &str) -> Option<String> {
+    field(row(&read_store(root), "backlog", id), "promoted_to").map(str::to_owned)
+}
+
+/// A flow bound to `docs/plans/<TASKS_SLUG>.md` whose `context.toml` sits at
+/// `status` rather than the fixture's `in-progress`.
+fn seed_flow_at(root: &Path, status: &str) {
+    seed_tasks(root, "schema_version = 1\n");
+    let ctx = root
+        .join(".claude")
+        .join("flows")
+        .join(TASKS_SLUG)
+        .join("context.toml");
+    let text = fs::read_to_string(&ctx).unwrap();
+    let rewritten = text.replace(
+        "status = \"in-progress\"",
+        &format!("status = \"{status}\""),
+    );
+    assert_ne!(rewritten, text, "the seeded context must carry a status");
+    fs::write(&ctx, rewritten).unwrap();
+}
+
+#[test]
+fn promote_to_an_unknown_target_is_not_found_and_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let id = add_drift(&root);
+    let before = snapshot(&root);
+
+    let err = refused_triage(&root, &[&id, "--promote", "--to", "no-such-flow"]);
+    assert_eq!(err["kind"], json!("not_found"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(message.contains("`no-such-flow`"), "{message}");
+    assert!(message.contains("--external"), "{message}");
+    assert_eq!(
+        snapshot(&root),
+        before,
+        "a refused promotion must leave the store and its sidecar untouched"
+    );
+}
+
+#[test]
+fn promote_external_stores_the_prefix_exactly_once() {
+    let (_tmp, root) = sandbox();
+    let id = add_drift(&root);
+
+    let out = backlog(
+        &root,
+        &[
+            "triage",
+            &id,
+            "--promote",
+            "--to",
+            "task-store-polish",
+            "--external",
+        ],
+    );
+    assert_eq!(out["transition"], json!("promote"));
+    assert_eq!(out["to"], json!("external:task-store-polish"));
+    assert_eq!(
+        promoted_to(&root, &id).as_deref(),
+        Some("external:task-store-polish")
+    );
+
+    let out = backlog(
+        &root,
+        &[
+            "triage",
+            &id,
+            "--promote",
+            "--to",
+            "external:GH-12",
+            "--external",
+        ],
+    );
+    assert_eq!(out["to"], json!("external:GH-12"));
+    assert_eq!(promoted_to(&root, &id).as_deref(), Some("external:GH-12"));
+    assert_sidecar_matches(&store_path(&root));
+}
+
+#[test]
+fn promote_into_a_closed_flow_needs_allow_closed() {
+    let (_tmp, root) = sandbox();
+    seed_flow_at(&root, "review");
+    let id = add_drift(&root);
+    let before = snapshot(&root);
+
+    let err = refused_triage(&root, &[&id, "--promote", "--to", TASKS_SLUG]);
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(message.contains("`review`"), "{message}");
+    assert!(message.contains("--allow-closed"), "{message}");
+    assert_eq!(snapshot(&root), before);
+
+    let out = backlog(
+        &root,
+        &[
+            "triage",
+            &id,
+            "--promote",
+            "--to",
+            TASKS_SLUG,
+            "--allow-closed",
+        ],
+    );
+    assert_eq!(out["to"], json!(TASKS_SLUG));
+    assert_eq!(promoted_to(&root, &id).as_deref(), Some(TASKS_SLUG));
+}
+
+#[test]
+fn promote_to_a_bound_plan_path_stores_the_flow_slug() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, "schema_version = 1\n");
+    let id = add_drift(&root);
+    let plan = format!("docs/plans/{TASKS_SLUG}.md");
+
+    let out = backlog(&root, &["triage", &id, "--promote", "--to", &plan]);
+    assert_eq!(out["to"], json!(TASKS_SLUG));
+    assert_eq!(promoted_to(&root, &id).as_deref(), Some(TASKS_SLUG));
 }
 
 /// stderr is a machine channel: under `--error-format json` it carries the
