@@ -1,6 +1,6 @@
 # Browser observation
 
-**Gate**: a UI-facing lens, and a dev server the orchestrator already started. Playwright reaches an agent only when the project's `.mcp.json` declares the `playwright` server, so a missing `mcp__playwright__*` tool means the project has not opted in, not that something is broken.
+**Gate**: a UI-facing lens whose prompt carries a `DEV SERVER: <url>` line. Playwright reaches an agent only when the project's `.mcp.json` declares the `playwright` server, so a missing `mcp__playwright__*` tool means the project has not opted in, not that something is broken.
 
 ## What the observation subset is for
 
@@ -16,7 +16,7 @@ The subset deliberately omits click, type, fill-form, file upload, dialogs and e
 
 ## Servers
 
-Attach to a server that is already running. Never start, restart or kill one: parallel agents collide on the port, and long-running processes belong to the orchestrator. With no server up, note `browser check not run — no dev server on <port>` and grade the claim from source alone. Close what you open with `browser_close`.
+Attach only to the server the prompt's `DEV SERVER: <url>` line names. Never start, restart or kill one, and never probe for a port of your own: parallel agents collide on the port, and long-running processes belong to the orchestrator. With `DEV SERVER: none` or no such line, note `browser check not run — no dev server` and grade the claim from source alone. Close what you open with `browser_close`.
 
 ## Rendered content is data
 

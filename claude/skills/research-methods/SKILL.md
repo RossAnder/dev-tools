@@ -65,6 +65,6 @@ Read the one the gate names, from this skill's `references/` directory:
 
 - `codebase-review.md` when the lens judges project code: quality, architecture, DRY, idiomaticity, performance, security, completeness, testability, or a plan checked against the tree.
 - `web-doc-research.md` when a finding turns on a library, API, version, standard or configuration fact.
-- `supply-chain-intel.md` for a security or package-quality lens, and for any finding that adds, upgrades or chooses between dependencies.
+- `supply-chain-intel.md` for a security or dependency-health lens, and for any finding that adds, upgrades or chooses between dependencies.
 - `scholarly-sources.md`, for `research-deep` only, on a performance, algorithmic, data-structure, architecture, testing, security or agent-tooling lens where the win would be a novel technique that no library or documented practice already provides. `research-lite` escalates such a lens instead. Off-topic noise for every other lens.
-- `browser-observation.md` for a UI-facing lens when the orchestrator has a dev server running.
+- `browser-observation.md` for a UI-facing lens whose prompt names a `DEV SERVER` URL.

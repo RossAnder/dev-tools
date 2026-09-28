@@ -1,6 +1,6 @@
 # Supply-chain and vulnerability intelligence
 
-**Gate**: a security or package-quality lens, or any finding that adds, upgrades or chooses between dependencies.
+**Gate**: a security or dependency-health lens, or any finding that adds, upgrades or chooses between dependencies.
 
 A dependency's health and its known vulnerabilities live in public databases, not in its docs. Each source below is a keyless JSON API reached with `WebFetch`, or with `curl` through Bash for a `POST`. Query at the version the lockfile pins: an advisory whose affected range excludes the pin is not a finding.
 

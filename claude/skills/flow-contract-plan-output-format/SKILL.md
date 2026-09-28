@@ -48,7 +48,8 @@ If sourced from a design doc or spec, reference it here.]
 
 ## Research Notes
 [Technology findings, API discoveries, pattern analysis from Phase 3 (initial research) and any Phase 5 (directed research) additions.
-Each note should reference its source (Context7 doc, URL, codebase file).
+Each note should reference its source (installed-source or codebase `file:line`, URL or Context7 id with the version it describes).
+Keep each topic's vetted `Searched:` line beneath its notes: its fetch dates are what `/plan-update catchup` judges staleness by.
 This section is extracted by `/plan-update reformat` into RESEARCH-NOTES.md.
 Omit this section only if both Phase 3 (initial research) and Phase 5 (directed research) returned no actionable findings — otherwise keep the section even if it's a single-line stub noting that research ran and found nothing surprising.]
 

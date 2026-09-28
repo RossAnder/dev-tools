@@ -65,7 +65,11 @@ Single-file plans split into at minimum the plan itself (clean, actionable) plus
 ## {Topic 1} (referenced by Item #N)
 - Finding...
 - Source/version note...
+
+Searched: {queries; sources with fetch dates; newest source date seen; dead ends}
 ```
+
+Carry each topic's `Searched:` line over verbatim beneath its notes — `/plan-update catchup` judges a topic's staleness by its fetch dates. A topic whose source plan recorded none gets none; never reconstruct one.
 
 ### Rules for the rewrite
 

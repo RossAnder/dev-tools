@@ -11,7 +11,7 @@ Stands up a modern, opinionated test framework in the current project as a **one
 
 This command is intentionally **not flow-aware**: it does not read `.claude/active-flow.toml`, carries no flow-context or execution-record contract, and does not participate in the `/plan-new` → `/implement` → `/review` lifecycle. Re-runs are gated by the `CLAUDE.md` marker block, not a flow ledger.
 
-> **Effort**: Requires `max` — Phase 2 dispatches 4 concurrent research agents (Context7 + WebSearch). Lower effort may collapse the dispatch and degrade recommendation quality.
+> **Effort**: Requires `max` — Phase 2 dispatches 4 concurrent research agents. Lower effort may collapse the dispatch and degrade recommendation quality.
 
 ## Usage
 
@@ -58,7 +58,7 @@ Use `Glob` and `Read` in a single batched response message to detect:
 
 Dispatch **4 research agents in a single response message** — one Agent tool-use block each, all `subagent_type: "research-lite"`, all given the full Project Profile. The orchestrator MUST NOT serialise these calls.
 
-Place a **byte-identical preamble** atop each prompt so the 5-minute prompt cache covers the shared prefix: the full Project Profile blob, then the task framing — *surface current best-practice options for `{decision}` given this profile; return 2-3 ranked candidates with package name, version range (e.g. `^4.2.0`), install command, verbatim ready-to-write config-file template, a summary of breaking changes in the last ~6 months, and a one-paragraph rationale tying the candidate to the profile signals (scale / project_type / ci_provider / performance_signal); cap ~400 words per candidate to keep Phase 3 synthesis tractable; rank by suitability for THIS profile, not generic popularity.* Per-agent divergence goes below a `--- AGENT-SPECIFIC SECTION: <A|B|C|D>` divider.
+Place a **byte-identical preamble** atop each prompt so the 5-minute prompt cache covers the shared prefix: the full Project Profile blob, then the task framing — *surface current best-practice options for `{decision}` given this profile; return 2-3 graded candidates, unranked (Phase 3 ranks them), each with package name, the recommended version and the range to write (e.g. `^4.2.0`), install command, verbatim ready-to-write config-file template, a summary of breaking changes in the six months before your fetch date, and a one-paragraph rationale naming the profile signals it fits (scale / project_type / ci_provider / performance_signal). Every candidate is a dependency choice: report its OSV advisories at the recommended version, its deps.dev deprecation status and latest release date, and its Scorecard `Maintained` check. Cap ~400 words per candidate to keep Phase 3 synthesis tractable.* Per-agent divergence goes below a `--- AGENT-SPECIFIC SECTION: <A|B|C|D>` divider.
 
 **Agent A — test runner.** Unit + integration framework. Returns package name, version range, install command, verbatim config template (`vitest.config.ts` / `pytest.ini` / the `[dev-dependencies]` block), a smoke-test template exercising the framework's core API, the parallelisation flag (`--threads`, `pytest-xdist -n auto`, `cargo test --jobs N`), and breaking changes. Profile weighting: `scale = small` favours zero-config runners; `scale = large` favours proven monorepo support and parallelisation; `project_type = web-service` favours built-in HTTP test helpers; `project_type = library` favours library-friendly assertion failures. When `with_showcase = true`, Agent A additionally emits the showcase test file per the `flow-contract-showcase-bundle` skill's Part 2 (invoke it before dispatching, so the contract is in the prompt).
 
@@ -76,7 +76,7 @@ After all 4 agents return, BEFORE the Phase 2 cache write and before Phase 3 syn
 
 Invoke the `flow-contract-vet-research` skill to load the universal vet-pass procedure (triage by source+evidence-grade, `ESCALATE-TO-DEEP` honouring, drop-low-confidence rule, spot-check sampling, drop/downgrade-with-rationale, the canonical `[[vet_events]]` append heredoc, the mandatory per-agent console line, and the >30% systemic-failure re-dispatch rule).
 
-**Sample size**: at least 5 candidates per agent (or all if fewer) — higher than other carriers because all four agents share the same fetch-and-summarise fabrication-risk profile. Lens names for the console line and the `[[vet_events]]` entries (which carry `command: "test-bootstrap"` and the discriminating `agent_index`): `Agent-A (test-runner)`, `Agent-B (coverage)`, `Agent-C (mutation+property)`, `Agent-D (ci-integration)`. Per sampled candidate, verify the version pin against the registry (npm / PyPI / crates.io / Go module proxy), confirm the install command's syntax parses for the chosen package manager, and confirm the config template matches the pinned version's documented schema (fetch-and-summarise research often conflates major-version schemas); for Agent D, confirm the CI config parses as YAML / `.gitlab-ci.yml` / Jenkinsfile.
+**Sample size**: at least 5 candidates per agent (or all if fewer) — higher than other carriers because all four agents share the same fetch-and-summarise fabrication-risk profile. Lens names for the console line and the `[[vet_events]]` entries (which carry `command: "test-bootstrap"` and the discriminating `agent_index`, 1–4 for Agents A–D): `test-runner`, `coverage`, `mutation-property`, `ci-integration`. Per sampled candidate, confirm the recommended version exists and is not deprecated on deps.dev (`https://api.deps.dev/v3/systems/<system>/packages/<name>`), confirm the install command's syntax parses for the chosen package manager, and confirm the config template matches the pinned version's documented schema (fetch-and-summarise research often conflates major-version schemas); for Agent D, confirm the CI config parses as YAML / `.gitlab-ci.yml` / Jenkinsfile.
 
 **Vet pass is NOT optional.** The build/test verification agent catches code-shape failures but never fabricated references or invented version pins. Skipping it ships broken install commands and stale config templates straight into the user's project — costly in trust on first run, and hard to unwind once the marker block is written.
 
@@ -84,9 +84,9 @@ Invoke the `flow-contract-vet-research` skill to load the universal vet-pass pro
 
 ## Phase 3: Synthesis into stack candidates
 
-Combine the 4 agents' outputs into **2-3 cohesive stack candidates** — not a Cartesian product, but coherent triples where runner, coverage tool, mutation tool (if requested), and CI snippet work well together in the same ecosystem:
+Rank each agent's candidates by suitability for THIS profile, not generic popularity, then combine the 4 agents' outputs into **2-3 cohesive stack candidates** — not a Cartesian product, but coherent triples where runner, coverage tool, mutation tool (if requested), and CI snippet work well together in the same ecosystem:
 
-- **Mainstream / safe** — the most-adopted candidate from each agent's top-of-rank. Lowest novelty risk, highest search-result density when something breaks.
+- **Mainstream / safe** — each agent's most-adopted candidate. Lowest novelty risk, highest search-result density when something breaks.
 - **Cutting-edge / active** — the newest-maintained candidate from each agent. Best for greenfield or teams comfortable absorbing API churn.
 - **Minimal** — the smallest dependency footprint across the four. Best for `scale = small` + `project_type = library`, or constrained environments (embedded, edge, plugin sandboxes).
 
