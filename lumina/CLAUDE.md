@@ -6,7 +6,7 @@
 
 Four members: `core` (`lumina-core` — domain/repo/db/export/import + migrations), `server` (`lumina-server` — the `lumina` + `pty_stub` bins, http/mcp/pty/assets), `protocol` (`lumina-protocol` — the serde-only control↔execution wire types of [ADR-0006](../docs/adr/0006-git-execution-companion.md)), and `companion` (`lumina-companion` — the git EXECUTION plane; it dials `/api/companion/ws` and runs git on the server's behalf).
 
-The dev DB `lumina/lumina.db` is gitignored and recreated on demand by `db::init` (which also runs the embedded migrations) or `sqlx migrate run`.
+The dev DB is `lumina/lumina.db` (plus its `-wal`/`-shm` sidecars — move or copy all three together), gitignored and recreated on demand by `db::init` (which also runs the embedded migrations) or `sqlx migrate run`. The server and `lumina import-flow` resolve that path from the build's `CARGO_MANIFEST_DIR`, not the launching cwd, so an installed binary keeps pointing at the checkout it was built from; `DATABASE_URL` (e.g. `sqlite://C:/path/other.db`) overrides it.
 
 ## Build & install gotchas
 

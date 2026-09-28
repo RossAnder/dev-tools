@@ -8,6 +8,7 @@
 //! this file, so Wave B/C parallelism is conflict-free.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context as _;
@@ -183,6 +184,32 @@ fn scheduler_env_enabled() -> bool {
     }
 }
 
+/// `DATABASE_URL` when set, else [`default_database_url`].
+pub(crate) fn database_url() -> String {
+    std::env::var("DATABASE_URL").unwrap_or_else(|_| default_database_url())
+}
+
+/// `lumina.db` at the workspace root, fixed at compile time so the dev DB lands
+/// in the same place whatever directory the server is launched from. A binary
+/// built from a checkout that no longer exists needs `DATABASE_URL`.
+fn default_database_url() -> String {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("the server crate sits inside the lumina workspace");
+    sqlite_url_for(&workspace_root.join("lumina.db"))
+}
+
+/// sqlx's SQLite URL parser splits at `?` and percent-decodes the rest, so both
+/// characters are escaped to keep an arbitrary path intact.
+fn sqlite_url_for(path: &Path) -> String {
+    let escaped = path
+        .display()
+        .to_string()
+        .replace('%', "%25")
+        .replace('?', "%3F");
+    format!("sqlite://{escaped}")
+}
+
 /// Build the pool, assemble the router, spawn the export task, and serve.
 ///
 /// `db::init` opens the pool (creating the file if absent) and runs the
@@ -193,11 +220,7 @@ fn scheduler_env_enabled() -> bool {
 /// in-process scheduler loop spawns when it is `true` OR `LUMINA_SCHEDULER` is
 /// set (see [`scheduler_env_enabled`]); with neither, no scheduler task spawns.
 pub async fn serve(with_scheduler: bool) -> anyhow::Result<()> {
-    // `.env` is read by the operator's shell / dotenv tooling in dev; we read
-    // straight from the process environment with a sensible local default so
-    // `cargo run` works out of the box without external dotenv loading.
-    let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://lumina.db".to_string());
+    let database_url = database_url();
 
     // Open the pool (creating the file if absent, foreign keys on) and run the
     // embedded migrations on startup — `db::init` (Task 2) is the single entry
@@ -415,5 +438,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    fn parsed_filename(url: &str) -> std::path::PathBuf {
+        use std::str::FromStr as _;
+        sqlx::sqlite::SqliteConnectOptions::from_str(url)
+            .expect("the URL parses")
+            .get_filename()
+            .to_path_buf()
+    }
+
+    #[test]
+    fn default_database_is_lumina_db_at_the_workspace_root() {
+        let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let filename = parsed_filename(&default_database_url());
+        assert!(filename.is_absolute(), "{}", filename.display());
+        assert_eq!(filename, workspace_root.join("lumina.db"));
+    }
+
+    #[test]
+    fn sqlite_url_round_trips_percent_and_question_mark() {
+        let path = Path::new("/tmp/a%20b?c/lumina.db");
+        assert_eq!(parsed_filename(&sqlite_url_for(path)), path);
     }
 }

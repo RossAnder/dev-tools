@@ -308,10 +308,7 @@ async fn import_flow_cmd(slug: &str) -> anyhow::Result<()> {
         );
     }
 
-    // Reuse the runtime DB the server uses, honouring DATABASE_URL with the same
-    // local default as `app::serve`.
-    let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://lumina.db".to_string());
+    let database_url = crate::app::database_url();
     let pool = lumina_core::db::init(&database_url)
         .await
         .with_context(|| format!("initialising database at {database_url}"))?;
