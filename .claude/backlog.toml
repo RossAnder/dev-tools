@@ -3644,7 +3644,7 @@ kind = "debt"
 summary = "backlog reconcile has no envelope slot for flows whose context.toml the resolver skipped"
 area = "tomlctl/src/backlog/reconcile.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3653,6 +3653,8 @@ origin = "implement"
 context = "The target resolver skips an unreadable context.toml and can only say so on stderr, in flow list's wording. flow list reports skipped flows in its envelope; reconcile's existing skipped key lists backlog ids, so it needs a distinct skipped_flows [{path, reason}] key plus a Resolver::skipped() accessor, after which the stderr advisory in backlog/target.rs can go. triage would need its own slot designed."
 base_sha = "efb122a308a8e5bdb3b4fd57cdc58c86e4fb31d4"
 related = ["B-72d4075b"]
+resolved = 2026-09-28
+resolution = "reconcile reports skipped_flows [{path, reason}] (61431c1)"
 
 [[backlog]]
 id = "B-9f3e03a0"
@@ -3660,7 +3662,7 @@ kind = "debt"
 summary = "record_plan_path's containment check is unreachable from every test"
 area = "tomlctl/src/io.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3669,6 +3671,8 @@ origin = "implement"
 context = "An escaping --plan is refused one step earlier, so disabling the recorded_under_root check in record_plan_path leaves every test green. It is the check the read side depends on; a unit test calling record_plan_path directly with a path that resolves under the root textually but outside it after canonicalisation (e.g. via a junction) would pin it."
 base_sha = "efb122a308a8e5bdb3b4fd57cdc58c86e4fb31d4"
 related = ["B-2f9eead8"]
+resolved = 2026-09-28
+resolution = "unit test calls record_plan_path under a junction/symlink; falsified by disabling the check (1ec7fdd)"
 
 [[backlog]]
 id = "B-024ccfe3"
@@ -3676,7 +3680,7 @@ kind = "annoyance"
 summary = "doc-diff-gate reads only the staged diff so it cannot be run against a commit range"
 area = "scripts/doc-diff-gate.sh"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3685,6 +3689,8 @@ origin = "implement"
 context = "Checking the gate against history (e.g. before promoting DOC_GATE_MODE=block) needs a scratch copy of the script with git diff --cached swapped out. An opt-in --range A..B argument would let it run over past commits without staging or copying."
 base_sha = "efb122a308a8e5bdb3b4fd57cdc58c86e4fb31d4"
 related = ["B-82d67202"]
+resolved = 2026-09-28
+resolution = "doc-diff-gate --range A..B (eb96a56)"
 
 [[backlog]]
 id = "B-83555773"
@@ -3692,7 +3698,7 @@ kind = "bug"
 summary = "a hand-written one-line Files list drops an extensionless path listed after a dash note"
 area = "tomlctl/src/tasks/parse_tasks.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3701,6 +3707,8 @@ origin = "implement"
 context = "The parser resumes after a dash note only on a path-like backticked span (containing / or .), so `a.rs` — note, `Makefile` imports as a.rs alone and the claim silently leaves file-overlap scheduling. The renderer no longer produces this shape (it falls back to a bulleted list), so only hand-written plans hit it. Cheapest fix: have import-plan raise a warning when a note contains a comma followed by a backticked span, pointing at the bulleted Files form."
 base_sha = "efb122a308a8e5bdb3b4fd57cdc58c86e4fb31d4"
 related = ["B-47926bdb"]
+resolved = 2026-09-28
+resolution = "import-plan warns plan/files-span-unclaimed; render bullets such lines (e5a6ebe)"
 
 [[backlog]]
 id = "B-4dbf0005"
