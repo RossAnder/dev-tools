@@ -154,6 +154,8 @@ fn import_dry_run(repo_root: &Path, plan: &Path) -> ImportRun {
 }
 
 /// `class: detail` for each `error`-severity finding in a dry-run envelope.
+/// `backlog/*` findings judge the local backlog store rather than the plan's
+/// structure, so they are not collected.
 fn error_findings(stdout: &str) -> Vec<String> {
     let envelope: serde_json::Value = match serde_json::from_str(stdout.trim()) {
         Ok(v) => v,
@@ -165,6 +167,11 @@ fn error_findings(stdout: &str) -> Vec<String> {
         .map(|rows| {
             rows.iter()
                 .filter(|row| row.get("severity").and_then(|s| s.as_str()) == Some("error"))
+                .filter(|row| {
+                    !row.get("class")
+                        .and_then(|c| c.as_str())
+                        .is_some_and(|class| class.starts_with("backlog/"))
+                })
                 .map(|row| {
                     format!(
                         "{}: {}",

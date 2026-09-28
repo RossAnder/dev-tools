@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use toml::Value as TomlValue;
 
+use super::backlog_refs::{backlog_findings, load_backlog};
 use super::finding::{ERROR, Finding, NO_TASK, WARNING, task_list};
 use super::graph::{Graph, nodes_of};
 use super::markdown::sections;
@@ -121,16 +122,45 @@ pub(crate) fn import_plan(
     };
 
     let Some(path) = target else {
-        return import.apply(&mut Store::default());
+        let mut store = Store::default();
+        let outcome = import.apply(&mut store)?;
+        return with_backlog_findings(outcome, &store, None);
     };
     if dry_run {
-        return import.apply(&mut load_or_default(&path, integrity)?);
+        let mut store = load_or_default(&path, integrity)?;
+        let outcome = import.apply(&mut store)?;
+        return with_backlog_findings(outcome, &store, slug);
     }
     store::mutate(&path, integrity, |store| {
         let outcome = import.apply(store)?;
+        let outcome = with_backlog_findings(outcome, store, slug)?;
         refuse_on_errors(&outcome.findings)?;
         Ok(outcome)
     })
+}
+
+/// Reads `.claude/backlog.toml` only when the store links to an item, so a
+/// link-free store never depends on the backlog parsing.
+pub(super) fn linked_backlog_findings(store: &Store, flow: Option<&str>) -> Result<Vec<Finding>> {
+    if store.backlog_links.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(backlog_findings(store, &load_backlog()?, flow))
+}
+
+fn with_backlog_findings(
+    mut outcome: ImportOutcome,
+    store: &Store,
+    flow: Option<&str>,
+) -> Result<ImportOutcome> {
+    let linked = linked_backlog_findings(store, flow)?;
+    if !linked.is_empty() {
+        outcome.findings.extend(linked);
+        outcome
+            .findings
+            .sort_by(|a, b| (a.class, &a.ids).cmp(&(b.class, &b.ids)));
+    }
+    Ok(outcome)
 }
 
 struct ParsedPlan {
@@ -2300,6 +2330,11 @@ mod tests {
     #[test]
     fn backlog_links_are_rebuilt_from_the_plan_on_every_import() {
         with_root(|root| {
+            write_backlog(
+                root,
+                "[[backlog]]\nid = \"B-aaaa1111\"\nsummary = \"a\"\nstatus = \"open\"\n\n\
+                 [[backlog]]\nid = \"B-bbbb2222\"\nsummary = \"b\"\nstatus = \"open\"\n",
+            );
             let linked = write_plan(
                 root,
                 &PLAN.replace(
@@ -2320,6 +2355,70 @@ mod tests {
             let unlinked = write_plan(root, PLAN);
             import(&request(&unlinked, true, false));
             assert!(loaded(root).backlog_links.is_empty());
+        });
+    }
+
+    fn write_backlog(root: &Path, body: &str) {
+        fs::write(root.join(".claude").join("backlog.toml"), body).expect("the backlog is written");
+    }
+
+    fn linking(root: &Path, id: &str) -> PathBuf {
+        write_plan(
+            root,
+            &PLAN.replace(
+                "- **Action**: Seed it.",
+                &format!("- **Action**: Seed it.\n- **Backlog**: {id}"),
+            ),
+        )
+    }
+
+    #[test]
+    fn a_link_to_an_id_the_backlog_lacks_refuses_the_write_but_not_the_dry_run() {
+        with_root(|root| {
+            write_backlog(
+                root,
+                "[[backlog]]\nid = \"B-0pen0001\"\nsummary = \"open\"\nstatus = \"open\"\n",
+            );
+            let plan = linking(root, "B-m1ss1ng1");
+
+            let preview = import(&request(&plan, true, true));
+            let unknown = preview
+                .findings
+                .iter()
+                .find(|finding| finding.class == "backlog/unknown-id")
+                .expect("the dry run reports the unknown id");
+            assert_eq!(unknown.severity, ERROR);
+            assert_eq!(unknown.ids, vec![1], "{preview:?}");
+            let plan_mode = import(&request(&plan, false, true));
+            assert!(
+                classes(&plan_mode).contains(&"backlog/unknown-id"),
+                "{plan_mode:?}"
+            );
+
+            let message = import_plan(&request(&plan, true, false), &write_args())
+                .expect_err("an unknown backlog id refuses the write")
+                .to_string();
+            assert!(message.contains("backlog/unknown-id"), "{message}");
+            assert!(message.contains("`B-m1ss1ng1`"), "{message}");
+            assert!(
+                !store_path(root).exists(),
+                "a refused import must persist nothing"
+            );
+        });
+    }
+
+    #[test]
+    fn a_link_free_plan_imports_past_a_backlog_that_does_not_parse() {
+        with_root(|root| {
+            write_backlog(root, "[[backlog]\nid = ");
+
+            let outcome = import(&request(&write_plan(root, PLAN), true, false));
+            assert_eq!(outcome.added, 3, "{outcome:?}");
+            assert!(store_path(root).exists());
+
+            let linked = linking(root, "B-0pen0001");
+            import_plan(&request(&linked, true, false), &write_args())
+                .expect_err("a linked plan does read the backlog");
         });
     }
 

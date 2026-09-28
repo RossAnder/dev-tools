@@ -245,6 +245,10 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let store = store::load(&path, &integrity)?;
             let mut findings = check::check(&store, &in_flight);
+            findings.extend(import_plan::linked_backlog_findings(
+                &store,
+                target.slug.as_deref(),
+            )?);
             if plan {
                 let plan_path = plan_target(target.slug.as_deref(), &store)?;
                 findings.extend(render::check_render_drift(&store, &read_plan(&plan_path)?)?);
