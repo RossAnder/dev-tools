@@ -40,13 +40,13 @@ Invoke the `flow-contract-ledger-schema` skill to load the canonical ledger sche
 
 **Lint baseline, once.** Run the project's declared lint (the `Build & test` section of its CLAUDE.md) one time here and keep the diagnostics touching in-scope files as a `LINT BASELINE` fence for every prompt; clippy's `perf` group already names the cheap wins, and a candidate it reports is not a finding. Five agents each running it serialise on one build lock. With no declared lint, embed `LINT BASELINE: not run — no lint command declared`.
 
-Invoke the `backlog-capture` skill for the repo-scoped capture store's discipline, then load its open rows alongside the ledger's (drop `--area-prefix` when the scope is not a single directory):
+Invoke the `backlog-capture` skill for the repo-scoped capture store's discipline, then load its live rows (`open` and `promoted`) alongside the ledger's (drop `--area-prefix` when the scope is not a single directory):
 
 ```bash
-tomlctl backlog list --open --area-prefix <scope-dir>
+tomlctl backlog list --live --area-prefix <scope-dir>
 ```
 
-Hand each returned row's `summary` and `context` to the lens agents as prior context: a row is a known repo-scoped issue plus how to work around it, so an agent tripping over the same thing does not spend the round rediscovering it.
+Hand each returned row's `summary` and `context` to the lens agents as prior context: a row is a known repo-scoped issue plus how to work around it, so an agent tripping over the same thing does not spend the round rediscovering it. A `promoted` row is already claimed by the flow its `promoted_to` names: do not re-raise it as a new finding unless that flow is at `review` or `complete` or does not exist, and in that case point the user at `/backlog` to re-triage it.
 
 Invoke the `flow-contract-ledger-disposition-sweep` skill to load the orphan-surfacing and deferred-reopen sweep contracts. Run both after the ledger loads and before agent dispatch. Orphan-surface read-only via `tomlctl items orphans <ledger>`; on an older binary predating that subcommand, fall back to a one-off `Glob` sweep over each item's `file` plus a `Grep` sweep over each item's `symbol`, leaving `depends_on` dangling-refs unchecked until `cargo install --path tomlctl`. Deferred-reopen is **a user-engagement gate — the autonomy directive does not apply** (every reopen passes through the per-item prompt; non-interactive invocations surface candidates only and never mutate the ledger).
 
