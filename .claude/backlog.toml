@@ -10,7 +10,7 @@ tags = [
     "lint",
     "docs",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -20,6 +20,8 @@ flow = "tomlctl-backlog-capture"
 context = "is_shell_op treats any token starting with < as shell plumbing. Put placeholders last in a fence line or use concrete example values until the tokeniser learns angle-bracket placeholders."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in 0059f19: command_lint substitutes a stand-in for <placeholder> tokens so later flags still reach the parser"
 
 [[backlog]]
 id = "B-fb853ff8"
@@ -30,7 +32,7 @@ tags = [
     "lint",
     "docs",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -40,6 +42,8 @@ flow = "tomlctl-backlog-capture"
 context = "The skip list is printed, not failed. Convert the snippets to the --json - heredoc form or teach the linter to stitch quoted multi-line blocks."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in edc8ba5: the six write.md snippets use the single-line --json - form command_lint parses"
 
 [[backlog]]
 id = "B-0a34cd73"
@@ -47,7 +51,7 @@ kind = "debt"
 summary = "carrier_invokes_required_skills matches skill names by bare substring so a mention satisfies it"
 area = "tomlctl/src/cli/dispatch.rs"
 tags = ["lint"]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -57,6 +61,8 @@ flow = "tomlctl-backlog-capture"
 context = "Any prose naming the skill, including a do-not-use sentence, passes. Match the Invoke-the phrase or a backtick-quoted name followed by the word skill."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in d582aa2: carrier_invokes_required_skills requires a non-negated invocation phrase"
 
 [[backlog]]
 id = "B-4aa2bbbf"
@@ -64,7 +70,7 @@ kind = "bug"
 summary = "date-key promotion list omits promoted, dismissed and last_seen so backlog rows written through items add store those as strings"
 area = "tomlctl/src/convert.rs"
 tags = ["backlog"]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -74,6 +80,8 @@ flow = "tomlctl-backlog-capture"
 context = "backlog compact tolerates string dates read-side and the backlog verbs write native dates, so only rows routed through items add are affected. Widen the promotion list or document that backlog rows must go through the backlog verbs."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in 0fb20aa: DATE_KEYS includes promoted, dismissed and last_seen"
 
 [[backlog]]
 id = "B-e69651d3"
@@ -84,7 +92,7 @@ tags = [
     "hooks",
     "windows",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -94,6 +102,8 @@ flow = "tomlctl-backlog-capture"
 context = "Under a CR-preserving awk every block hashes the empty string and parity reads OK vacuously. Assert each extracted block is non-empty."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in aca394f: verify-shared-blocks.sh refuses a block that extracts to no content"
 
 [[backlog]]
 id = "B-cc214a62"
@@ -104,7 +114,7 @@ tags = [
     "backlog",
     "dry",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -114,6 +124,8 @@ flow = "tomlctl-backlog-capture"
 context = "Lift the constant into backlog/schema.rs beside the other field names."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in 95b0cfd: FIELD_LAST_UPDATED has one definition in backlog/schema.rs"
 
 [[backlog]]
 id = "B-4175a4bf"
@@ -124,7 +136,7 @@ tags = [
     "lint",
     "docs",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -134,6 +146,8 @@ flow = "tomlctl-backlog-capture"
 context = "A short bash link checker was written during the tomlctl SKILL.md rewrite. Port it as a sibling of skill_bodies_under_line_ceiling."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in d582aa2: skill_markdown_links_resolve gates relative skill/reference links (file existence; anchors out of scope by design)"
 
 [[backlog]]
 id = "B-46de01dc"
@@ -144,7 +158,7 @@ tags = [
     "backlog",
     "dry",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -154,6 +168,8 @@ flow = "tomlctl-backlog-capture"
 context = "Promote it to pub(crate) and call it from check, query and cluster."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in 95b0cfd: strict_read_check has one definition in crate::io used by backlog read_store"
 
 [[backlog]]
 id = "B-98a1c2e6"
@@ -164,7 +180,7 @@ tags = [
     "backlog",
     "docs",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -174,6 +190,8 @@ flow = "tomlctl-backlog-capture"
 context = "The design freezes the incumbent's id so its evidence directory is never orphaned. Fix the doc comment to match the behaviour."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in a4fdef9: the ids.rs module doc matches the frozen-incumbent behaviour"
 
 [[backlog]]
 id = "B-f37b7739"
@@ -181,7 +199,7 @@ kind = "annoyance"
 summary = "cargo fmt -- --check with a path argument ignores the path and checks the whole crate"
 area = "tomlctl"
 tags = ["tooling"]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -191,6 +209,8 @@ flow = "tomlctl-backlog-capture"
 context = "Use rustfmt --edition 2024 with the path in parallel-agent work so one agent does not reformat files it does not own."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "documented in 8f21311: CLAUDE.md records that cargo fmt ignores paths and the rustfmt --edition 2024 workaround"
 
 [[backlog]]
 id = "B-4eaf4d34"
@@ -198,7 +218,7 @@ kind = "direction"
 summary = "blocks verify-skills is vacuous because no manifest block sets the skill field"
 area = "claude/skills/tomlctl/references/flow.md"
 tags = ["tomlctl"]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -208,6 +228,8 @@ flow = "tomlctl-backlog-capture"
 context = "It sits in a collapsed Old patterns block. If that stays true it is a deletion candidate for the verb, not a documentation one."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in 95b0cfd: the vacuous blocks verify-skills verb was deleted"
 
 [[backlog]]
 id = "B-f3469081"
@@ -218,7 +240,7 @@ tags = [
     "backlog",
     "tests",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -228,6 +250,8 @@ flow = "tomlctl-backlog-capture"
 context = "Reachable only in a repo whose .gitignore lost the backlog rules; it then correctly reports every file as tracked."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in 95b0cfd: an_unignored_evidence_tree_audits_as_fully_published covers the git exit-1 arm"
 
 [[backlog]]
 id = "B-7269164c"
@@ -238,7 +262,7 @@ tags = [
     "fmt",
     "hooks",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -249,6 +273,8 @@ context = "cargo fmt --check reported 397 hunks across 51 files on 2026-09-02, 4
 related = ["B-f37b7739"]
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in ec689ba + 8f21311: the crate is formatted and the pre-commit hook runs cargo fmt --check"
 
 [[backlog]]
 id = "B-2fa6e384"
@@ -273,7 +299,7 @@ kind = "annoyance"
 summary = "items update requires --json even when only --unset is given and a null or empty-array patch does not clear a field"
 area = "tomlctl/src/cli"
 tags = ["cli"]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -284,6 +310,8 @@ context = "Pass --json '{}' alongside --unset <field>. Setting a key to null or 
 related = ["B-cc214a62"]
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in 95b0cfd: items update --json is optional when --unset is given (write.md sentence corrected in this sweep)"
 
 [[backlog]]
 id = "B-90c6b8fe"
@@ -291,7 +319,7 @@ kind = "debt"
 summary = "finding ids and review round refs appear in source comments across io.rs, cli/dispatch.rs and flow/stale.rs"
 area = "tomlctl/src"
 tags = ["docs"]
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -302,6 +330,8 @@ context = '''Comments such as R6 / R39 route through crate::time cite ledger ids
 related = ["B-98a1c2e6"]
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "fixed in 69e23ab..7fbcca8: finding-id and task-ref citations removed from source comments"
 
 [[backlog]]
 id = "B-80707fec"
@@ -343,7 +373,7 @@ kind = "debt"
 summary = "the shipped_gitignore extractor is duplicated between tests/common/mod.rs and src/backlog/evidence_ops.rs"
 area = "tomlctl/src/backlog/evidence_ops.rs"
 tags = []
-status = "promoted"
+status = "resolved"
 created = 2026-09-02
 last_seen = 2026-09-02
 seen_count = 1
@@ -353,6 +383,8 @@ flow = "tomlctl-backlog-capture"
 context = "Deduplicating the evidence ignore RULES replaced three hand-kept rule copies with two copies of a ~26-line extractor plus literal. tomlctl is bin-only so tests/ cannot import from src/, and the shared-block verifier cannot help because its markers are HTML comments, invalid in Rust. Both copies self-check against the repo .gitignore, so rule drift fails loudly; extractor drift does not. Closing it needs either a lib target or a build-script-generated shared module."
 promoted = 2026-09-02
 promoted_to = "docs/plans/tomlctl-followups.md"
+resolved = 2026-09-28
+resolution = "gated in 95b0cfd: the shipped-gitignore shared block keeps the two test_support copies byte-identical"
 
 [[backlog]]
 id = "B-b7da5466"
@@ -800,7 +832,7 @@ tags = [
     "doc-gate",
     "awk",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -811,6 +843,8 @@ context = '''added_lines emits path<TAB>lineno<TAB>content and the checking awk 
 evidence = ["scripts/doc-diff-gate.sh:79"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 7a4a562: doc-diff-gate strips only the first two tab fields so tab-indented content reaches every rule, with a self-test"
 
 [[backlog]]
 id = "B-e3f5da9c"
@@ -843,7 +877,7 @@ tags = [
     "line-endings",
     "windows",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -852,8 +886,8 @@ origin = "implement"
 flow = "tomlctl-followups-round-2"
 context = "With core.autocrlf=true, an unpinned tracked text file is written CRLF on checkout against an LF index. Two gaps survive the 2026-09-03 pin: claude/commands/*.md is unpinned while claude/agents/*.md is, and .gitattributes itself is currently w/mixed (its first paragraph CRLF, the rest LF). Both are the same half-done shape b8d7368 left behind. Closing needs a pin plus a worktree refresh - the pin alone provably does not rewrite already-checked-out files."
 evidence = [".gitattributes:1"]
-promoted = 2026-09-09
-promoted_to = "tomlctl-followups-round-2"
+resolved = 2026-09-28
+resolution = "fixed in e728e7c: claude/commands/*.md and .gitattributes pinned to LF; the three CRLF working copies rewritten in place"
 
 [[backlog]]
 id = "B-e74d4650"
@@ -880,7 +914,7 @@ kind = "debt"
 summary = "items_fingerprint holds row-lookup logic in dispatch.rs against the module's stated pure-plumbing invariant"
 area = "tomlctl/src/cli/dispatch.rs"
 tags = ["structure"]
-status = "promoted"
+status = "resolved"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -890,8 +924,8 @@ flow = "tomlctl-followups-round-2"
 context = "The module header states every arm delegates to items::/blocks::/io:: helpers with no business logic in dispatch.rs. items_fingerprint was placed there only because the implementing task did not own items.rs under the file-claim rule. It belongs beside items_get_from in src/items.rs; moving it is a pure relocation with no behaviour change."
 evidence = ["tomlctl/src/cli/dispatch.rs:1"]
 related = ["B-90c6b8fe"]
-promoted = 2026-09-09
-promoted_to = "tomlctl-followups-round-2"
+resolved = 2026-09-28
+resolution = "fixed in 531d062: items_fingerprint moved from cli/dispatch.rs into items.rs"
 
 [[backlog]]
 id = "B-7ccba7cc"
@@ -902,7 +936,7 @@ tags = [
     "windows",
     "awk",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -914,6 +948,8 @@ evidence = ["scripts/verify-shared-blocks.sh:1"]
 related = ["B-e69651d3"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 7a4a562: the gnu-awk-resolver shared block probes for gawk by name and verifies a GNU Awk banner"
 
 [[backlog]]
 id = "B-34428ed3"
@@ -924,7 +960,7 @@ tags = [
     "docs",
     "tests",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -934,8 +970,8 @@ flow = "tomlctl-followups-round-2"
 context = "The doc comment on read_only_subcommands_hide_write_integrity_flags_in_help lists the read-only subcommands in prose. It already omitted all seven backlog entries before items fingerprint was added, and now omits that too. A prose enumeration silently drifting from the array directly below it is the same check-that-does-not-check shape this flow addressed elsewhere; no gate compares the two. Fix by deleting the enumeration and pointing at the array."
 evidence = ["tomlctl/tests/capabilities.rs:17"]
 related = ["B-2c5ee8c0"]
-promoted = 2026-09-09
-promoted_to = "tomlctl-followups-round-2"
+resolved = 2026-09-28
+resolution = "fixed in 6318bc1: the doc comment points at the read_subs list instead of restating it"
 
 [[backlog]]
 id = "B-cef33ceb"
@@ -947,7 +983,7 @@ tags = [
     "windows",
     "stdin",
 ]
-status = "promoted"
+status = "open"
 created = 2026-09-03
 last_seen = 2026-09-03
 seen_count = 1
@@ -960,8 +996,7 @@ evidence = [
     "tomlctl/src/backlog/dispatch.rs:13",
 ]
 related = ["B-4aa2bbbf"]
-promoted = 2026-09-09
-promoted_to = "tomlctl-followups-round-2"
+reopen_rationale = "flow tomlctl-followups-round-2 completed without scheduling it; returned to triage"
 
 [[backlog]]
 id = "B-bf2c40fb"
@@ -1033,7 +1068,7 @@ tags = [
     "security",
     "dry",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1048,6 +1083,8 @@ evidence = [
 related = ["B-46de01dc"]
 promoted = 2026-09-08
 promoted_to = "whimsical-hugging-puppy"
+resolved = 2026-09-28
+resolution = "fixed in 609461d: the three containment copies share io::recorded_under_root"
 
 [[backlog]]
 id = "B-d2f9b0ee"
@@ -1058,7 +1095,7 @@ tags = [
     "import",
     "silent-loss",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1070,6 +1107,8 @@ evidence = ["tomlctl/src/tasks/parse_tasks.rs"]
 related = ["B-e3f5da9c"]
 promoted = 2026-09-08
 promoted_to = "whimsical-hugging-puppy"
+resolved = 2026-09-28
+resolution = "fixed in 70a59e9: five- and six-hash task headings import as tasks; seven or more raise plan/heading-too-deep"
 
 [[backlog]]
 id = "B-aa004c21"
@@ -1080,7 +1119,7 @@ tags = [
     "import",
     "convention",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1091,6 +1130,8 @@ context = "docs/plans/lumina-story-planning-round-2.md line 90 carries heading 1
 evidence = ["tomlctl/tests/tasks_corpus.rs"]
 promoted = 2026-09-08
 promoted_to = "whimsical-hugging-puppy"
+resolved = 2026-09-28
+resolution = "fixed in 609461d: the task-store skill documents renumber-don't-suffix for inserted tasks"
 
 [[backlog]]
 id = "B-5ccd0e38"
@@ -1101,7 +1142,7 @@ tags = [
     "gate",
     "silent-pass",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1113,6 +1154,8 @@ evidence = ["tomlctl/src/tasks/check.rs"]
 related = ["B-108e130a"]
 promoted = 2026-09-08
 promoted_to = "whimsical-hugging-puppy"
+resolved = 2026-09-28
+resolution = "fixed in 70a59e9: tasks check reports dag/unbuildable (error) when the graph build fails past the node cap"
 
 [[backlog]]
 id = "B-54b2d71e"
@@ -1120,7 +1163,7 @@ kind = "debt"
 summary = "the capabilities example output still shows version 0.6.0"
 area = "claude/skills/tomlctl"
 tags = ["stale-doc"]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1132,6 +1175,8 @@ evidence = ["claude/skills/tomlctl/SKILL.md:86"]
 related = ["B-e74d4650"]
 promoted = 2026-09-08
 promoted_to = "whimsical-hugging-puppy"
+resolved = 2026-09-28
+resolution = "fixed in a9b0e2f: the tomlctl SKILL.md capabilities sample tracks the crate version (0.10.0)"
 
 [[backlog]]
 id = "B-3c59ed80"
@@ -1139,7 +1184,7 @@ kind = "debt"
 summary = "the verify-integrity support matrix omits the seven tasks read verbs"
 area = "claude/skills/tomlctl"
 tags = ["stale-doc"]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1151,6 +1196,8 @@ evidence = ["claude/skills/tomlctl/references/flow.md"]
 related = ["B-4eaf4d34"]
 promoted = 2026-09-08
 promoted_to = "whimsical-hugging-puppy"
+resolved = 2026-09-28
+resolution = "fixed in 609461d: the --verify-integrity support table lists every tasks read verb"
 
 [[backlog]]
 id = "B-fe2a80ba"
@@ -1161,7 +1208,7 @@ tags = [
     "task-ref",
     "tdd",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1173,6 +1220,8 @@ evidence = ["claude/commands/tdd.md:65"]
 related = ["B-b7da5466"]
 promoted = 2026-09-08
 promoted_to = "whimsical-hugging-puppy"
+resolved = 2026-09-28
+resolution = "fixed in 609461d: tdd.md uses one task_ref spelling, tdd-cycle-<NNN>-<short-name>"
 
 [[backlog]]
 id = "B-36c11be9"
@@ -1183,7 +1232,7 @@ tags = [
     "diagnostics",
     "import",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1195,6 +1244,8 @@ evidence = ["tomlctl/src/tasks/parse_tasks.rs"]
 related = ["B-87020d9e"]
 promoted = 2026-09-08
 promoted_to = "whimsical-hugging-puppy"
+resolved = 2026-09-28
+resolution = "fixed in 70a59e9: task parse errors carry the plan-file line number via parse_tasks_at"
 
 [[backlog]]
 id = "B-432a1b0f"
@@ -1202,7 +1253,7 @@ kind = "debt"
 summary = "plan-update states the tasks total derivation in two places"
 area = "claude/commands"
 tags = ["dry"]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1214,6 +1265,8 @@ evidence = ["claude/commands/plan-update.md"]
 related = ["B-b7da5466"]
 promoted = 2026-09-08
 promoted_to = "whimsical-hugging-puppy"
+resolved = 2026-09-28
+resolution = "fixed in 609461d: plan-update states the [tasks] derivation once, in Step 3 item 4"
 
 [[backlog]]
 id = "B-ef701081"
@@ -1246,7 +1299,7 @@ tags = [
     "corpus",
     "coupling",
 ]
-status = "promoted"
+status = "open"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1255,8 +1308,7 @@ origin = "review"
 flow = "whimsical-hugging-puppy"
 context = "tasks_corpus.rs walks docs/plans/** and asserts every plan imports, so adding a plan that uses five-hash task headings or an off-vocabulary effort tag fails cargo test in a commit touching no Rust -- and the failure reads as a tomlctl regression. The self-skip covers a packaged checkout but not this repo. Related: the corpus asserts only that plans import; a corpus-wide render-idempotency pass (import -> render -> re-import) would have surfaced the phase-heading loss of ledger R11 as a corpus failure rather than as a blessed golden fixture."
 evidence = ["tomlctl/tests/tasks_corpus.rs"]
-promoted = 2026-09-09
-promoted_to = "tomlctl-followups-round-2"
+reopen_rationale = "flow tomlctl-followups-round-2 completed without scheduling it; returned to triage"
 
 [[backlog]]
 id = "B-2f9eead8"
@@ -1268,7 +1320,7 @@ tags = [
     "security",
     "plan-path",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1280,6 +1332,8 @@ evidence = ["tomlctl/src/flow/doctor.rs:521"]
 related = ["B-6ff6dd3e"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: flow doctor's plan-path-resolves check uses the shared contained plan-path resolver"
 
 [[backlog]]
 id = "B-4e370bb0"
@@ -1312,7 +1366,7 @@ tags = [
     "tasks",
     "checkpoints",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1324,6 +1378,8 @@ evidence = ["tomlctl/src/tasks/import_plan.rs:220"]
 related = ["B-46de01dc"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: a re-import clears an undeclared checkpoint on a retained row and reports it in cleared_checkpoint_refs"
 
 [[backlog]]
 id = "B-b55bc561"
@@ -1356,7 +1412,7 @@ tags = [
     "tasks",
     "parser",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1368,6 +1424,8 @@ evidence = ["tomlctl/src/tasks/parse_tasks.rs:43"]
 related = ["B-0b8e45d9"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: the fence guard covers field and continuation lines and an unclosed fence is a named error"
 
 [[backlog]]
 id = "B-5bb39cf9"
@@ -1379,7 +1437,7 @@ tags = [
     "flow",
     "markdown",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1391,6 +1449,8 @@ evidence = ["tomlctl/src/tasks/markdown.rs:24"]
 related = ["B-46de01dc"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: plan_declares_tasks uses the shared fence-aware tasks::markdown scanner"
 
 [[backlog]]
 id = "B-152db71d"
@@ -1422,7 +1482,7 @@ tags = [
     "tasks",
     "render",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1434,6 +1494,8 @@ evidence = ["tomlctl/src/tasks/render.rs:278"]
 related = ["B-98a1c2e6"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: render moves misplaced owned sections into canonical order and --check reports it as drift"
 
 [[backlog]]
 id = "B-44f80958"
@@ -1445,7 +1507,7 @@ tags = [
     "render",
     "policy",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1457,6 +1519,8 @@ evidence = ["tomlctl/tests/fixtures/tasks/house-plan.rendered.md:18"]
 related = ["B-36c11be9"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: the commit-granularity trailing clause is stored in its own field and rendered on its bullet"
 
 [[backlog]]
 id = "B-fc2d4d05"
@@ -1468,7 +1532,7 @@ tags = [
     "render",
     "testability",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1480,6 +1544,8 @@ evidence = ["tomlctl/tests/fixtures/tasks/house-plan.rendered.md:1"]
 related = ["B-108e130a"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: Files annotations live in [[file_notes]] and survive the plan-to-plan round trip"
 
 [[backlog]]
 id = "B-0752278d"
@@ -1491,7 +1557,7 @@ tags = [
     "tasks",
     "drift",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1503,6 +1569,8 @@ evidence = ["tomlctl/src/tasks/check.rs:29"]
 related = ["B-6d908b8f"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: documented_finding_classes_match_the_source compares every documented class table with the engine"
 
 [[backlog]]
 id = "B-6a671fa3"
@@ -1514,7 +1582,7 @@ tags = [
     "import",
     "multi-file",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1526,6 +1594,8 @@ evidence = ["tomlctl/src/tasks/import_plan.rs:126"]
 related = ["B-36c11be9"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: an outline with no Tasks section that links sibling plans gets a dedicated multi-file diagnostic"
 
 [[backlog]]
 id = "B-a3c38307"
@@ -1585,7 +1655,7 @@ tags = [
     "lines",
     "engine-wide",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-08
 last_seen = 2026-09-08
 seen_count = 1
@@ -1595,8 +1665,8 @@ flow = "whimsical-hugging-puppy"
 context = "validate_query rejects --raw only for the two map shapes, and raw_emit is never reached on the streaming path. So `list --raw --select id` refuses with a scalar-target error, while `list --raw --lines --select id` exits 0 and streams quoted JSON - honouring neither the refusal nor the flag. An agent that blanket-adds --lines to a --raw call silently loses the bare-scalar encoding it asked for, with no diagnostic. Engine-wide, not task-store-local: `items list` behaves identically, so a fix belongs in the shared query layer. Workaround: never pair --raw with --lines; use --lines alone for multi-value output and --raw alone for single-value."
 evidence = ["tomlctl/src/query.rs:1"]
 related = ["B-9ed1f411"]
-promoted = 2026-09-09
-promoted_to = "tomlctl-followups-round-2"
+resolved = 2026-09-28
+resolution = "fixed in 531d062: --raw with --lines/--ndjson on row output is refused; --pluck --raw --lines still emits bare values"
 
 [[backlog]]
 id = "B-da4e2b62"
@@ -1636,7 +1706,7 @@ tags = [
     "closure",
     "naming",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -1649,6 +1719,8 @@ evidence = [
 ]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: closure reports members and dependency_closure separately and the marker is labelled dependency closure"
 
 [[backlog]]
 id = "B-d17eff50"
@@ -1682,7 +1754,7 @@ tags = [
     "batch-writes",
     "ergonomics",
 ]
-status = "promoted"
+status = "open"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -1691,8 +1763,7 @@ origin = "review-plan"
 context = "Two round-trips lost on 2026-09-09: piping NDJSON to items apply --ops - fails with trailing characters at line 2, and the per-op patch key is json, not set (the error names the shape, which is the only reason it cost two calls and not more). add-many on the same file takes --ndjson. Proposal: let apply accept NDJSON ops too, and accept set as an alias for json, or document the asymmetry in one line at the top of the tomlctl skill's items section."
 evidence = ["tomlctl/src/items.rs"]
 related = ["B-bf2c40fb"]
-promoted = 2026-09-09
-promoted_to = "tomlctl-followups-round-2"
+reopen_rationale = "flow tomlctl-followups-round-2 completed without scheduling it; returned to triage"
 
 [[backlog]]
 id = "B-9e7c7e4c"
@@ -1705,7 +1776,7 @@ tags = [
     "token-cost",
     "review-plan",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -1718,6 +1789,8 @@ evidence = [
 ]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: tasks update --unlock-import-fields patches files/needs and stamps an import override"
 
 [[backlog]]
 id = "B-d87efb6a"
@@ -1729,7 +1802,7 @@ tags = [
     "resolve",
     "path-args",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -1743,6 +1816,8 @@ evidence = [
 related = ["B-2f9eead8"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 82c7e33: a path argument matching a flow's plan_path resolves as plan-path-arg ahead of scope globs"
 
 [[backlog]]
 id = "B-0183d41f"
@@ -1755,7 +1830,7 @@ tags = [
     "tasks",
     "check",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -1766,6 +1841,8 @@ evidence = ["claude/commands/review-plan.md"]
 related = ["B-da4e2b62"]
 promoted = 2026-09-09
 promoted_to = "task-store-polish"
+resolved = 2026-09-28
+resolution = "fixed in 6471a74: review-plan's STORE CHECK fence covers the edge set as written and leaves completeness to the lens"
 
 [[backlog]]
 id = "B-4500b63e"
@@ -2600,7 +2677,7 @@ tags = [
     "cli",
     "envelope",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -2608,6 +2685,8 @@ dedup_id = "52825802a08611ba"
 origin = "implement"
 context = "emit_result carries the relativised store path; emit_preview does not. A piped caller diffing a preview against the result sees a spurious field change and cannot tell which store the sweep would touch. Milder than the advisories asymmetry because it is informational rather than a safety signal, but it is still a field the real envelope carries and the dry run drops."
 related = ["B-2e172357"]
+resolved = 2026-09-28
+resolution = "fixed in 6fb8659: compact's emit_preview carries the relativised path; backlog_write mint_bump_relate_triage_and_compact_walk pins it"
 
 [[backlog]]
 id = "B-1cb6596a"
@@ -2619,7 +2698,7 @@ tags = [
     "docs",
     "envelope",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -2627,6 +2706,8 @@ dedup_id = "1cb6596a3c16465d"
 origin = "implement"
 context = "build_dry_run_plan_envelope documents its envelope as ok, dry_run and would_change, written as a closed list. backlog add now inserts advisories alongside them. A reader treating the list as exhaustive would write a consumer that rejects the extra key."
 related = ["B-2e172357"]
+resolved = 2026-09-28
+resolution = "fixed in 6fb8659: build_dry_run_plan_envelope's doc says the listed keys are stable and commands may add further top-level fields"
 
 [[backlog]]
 id = "B-f075938e"
@@ -2659,7 +2740,7 @@ tags = [
     "tasks",
     "docs",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -2668,6 +2749,8 @@ origin = "implement"
 context = "The file_list doc comment states that the parser cuts an entry at its first paren or em-dash so an annotation carrying a comma would re-import as a further path. B-54376dda removed exactly that behaviour, which is why the render round-trip golden held unchanged. A reader trusting the comment would re-introduce the split-then-cut ordering the fix removed. Two lines; render.rs was off-limits to the agent that made the change."
 evidence = ["tomlctl/src/tasks/render.rs"]
 related = ["B-54376dda"]
+resolved = 2026-09-28
+resolution = "fixed in 3e0f083: file_list's doc states the current annotation/split behaviour (false comment removed in 92a8889)"
 
 [[backlog]]
 id = "B-c49565c6"
@@ -2679,7 +2762,7 @@ tags = [
     "cli",
     "diagnostics",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -2688,6 +2771,8 @@ origin = "implement"
 context = "The new dag/duplicate-number refusal tells the caller to run tomlctl tasks update <id> --ref <ref>, but omits the --slug or --file target group the invocation used, so pasted verbatim it fails once with no task store target. Import::apply has no access to the request target spelling, so threading one through purely for a message was judged disproportionate at the time; the alternative is to name the target group generically in the message."
 evidence = ["tomlctl/src/tasks/import_plan.rs"]
 related = ["B-134c1b36"]
+resolved = 2026-09-28
+resolution = "fixed in 0279d61: the duplicate-number hint now reads tasks update <id> --ref <new> --slug <slug> (or --file <path>)"
 
 [[backlog]]
 id = "B-a05687b4"
@@ -2699,7 +2784,7 @@ tags = [
     "cli",
     "envelope",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-09
 last_seen = 2026-09-09
 seen_count = 1
@@ -2708,6 +2793,8 @@ origin = "implement"
 context = "Verified by running the binary against a two-file fixture: when one carrier is defective and the rest still agree, the block object carries name, defects, hash, files and missing with NO ok key at all. Block-level ok:false appears only on drift, or when every listed file is defective. Top-level ok is false and the exit code is 1 either way, so a consumer reading top-level ok is correct — but one scanning blocks[].ok for the offending block finds nothing, on a run that exited 1. Decide whether the block object should always carry ok, or whether the reference should state plainly that per-block ok is not the failure indicator."
 evidence = ["tomlctl/src/blocks.rs"]
 related = ["B-5ba6d0db"]
+resolved = 2026-09-28
+resolution = "fixed in 6fb8659 (every block carries ok); pinned by a test and the reference example updated in 01e176c"
 
 [[backlog]]
 id = "B-92c6e467"
@@ -2776,7 +2863,7 @@ kind = "debt"
 summary = "read_ndjson_source hand-rolls the at-prefix strip instead of reusing the adjacent at-file helpers"
 area = "tomlctl/src/io.rs"
 tags = ["dedup"]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -2787,6 +2874,8 @@ context = "The helper moved into io.rs beside read_json_arg, which made the dupl
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["tomlctl/src/io.rs:325"]
 related = ["B-4b893074"]
+resolved = 2026-09-28
+resolution = "fixed in d4d2555: read_ndjson_source routes @-paths through at_file_path/read_at_file; a bare @ is a plain path"
 
 [[backlog]]
 id = "B-d03997d9"
@@ -2822,7 +2911,7 @@ tags = [
     "windows",
     "envelope",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -2833,6 +2922,8 @@ context = "Observed on flow init: context_path comes back as a verbatim extended
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["tomlctl/src/flow/init.rs:466"]
 related = ["B-d87efb6a"]
+resolved = 2026-09-28
+resolution = "fixed in 2fec8c9: flow init context_path and doctor/resolve messages are repo-relative"
 
 [[backlog]]
 id = "B-588dd37b"
@@ -2861,7 +2952,7 @@ tags = [
     "coverage",
     "security",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -2875,6 +2966,8 @@ evidence = [
     "tomlctl/src/io.rs:1524",
 ]
 related = ["B-d57bcdf9"]
+resolved = 2026-09-28
+resolution = "fixed in 5f39a94: render_progress_log test reads a real file outside the root via ../ and absolute plan_path and asserts the fallback title"
 
 [[backlog]]
 id = "B-a0d884ec"
@@ -2882,7 +2975,7 @@ kind = "debt"
 summary = "post-parse-validated vocabulary flags publish no values array in capabilities"
 area = "tomlctl/src/capabilities.rs"
 tags = ["agent-surface"]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -2893,6 +2986,8 @@ context = "describe_values reads only clap's possible_values, and the ENUM_VALUE
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["tomlctl/src/capabilities.rs"]
 related = ["B-80707fec"]
+resolved = 2026-09-28
+resolution = "fixed in 9d569fb: post-parse vocabularies publish values and type enum, scoped by subcommand (SCOPED_ENUM_VALUES)"
 
 [[backlog]]
 id = "B-b5895c72"
@@ -2921,7 +3016,7 @@ tags = [
     "coverage",
     "naming",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -2932,6 +3027,8 @@ context = "The tampered-sidecar sweep names seven verbs but not render or import
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["tomlctl/tests/tasks_graph.rs:646"]
 related = ["B-34428ed3"]
+resolved = 2026-09-28
+resolution = "fixed in 5f39a94: the tampered-sidecar sweep covers render and import-plan --dry-run, and the copied doc comment is corrected"
 
 [[backlog]]
 id = "B-684379b8"
@@ -2939,7 +3036,7 @@ kind = "debt"
 summary = "the plan-update complete op numbers a step 6.5 inside an ordered list"
 area = "claude/commands"
 tags = ["docs"]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -2950,6 +3047,8 @@ context = "The complete op's ordered list runs 1 to 7 with an interpolated 6.5 b
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["claude/commands/plan-update.md"]
 related = ["B-432a1b0f"]
+resolved = 2026-09-28
+resolution = "fixed in 6fb8659: the complete op is numbered 1-8 with no interpolated 6.5 step"
 
 [[backlog]]
 id = "B-a8c44c31"
@@ -3032,7 +3131,7 @@ kind = "debt"
 summary = "the shared task fixture hardcodes a live flow slug as its test constant"
 area = "tomlctl/tests"
 tags = ["fixtures"]
-status = "open"
+status = "resolved"
 created = 2026-09-10
 last_seen = 2026-09-10
 seen_count = 1
@@ -3043,6 +3142,8 @@ context = "The fixture's slug constant is the name of a real flow in this reposi
 base_sha = "e9b582cea1e0022e283d46a0e7ba996cfacfc1be"
 evidence = ["tomlctl/tests/common/mod.rs:301"]
 related = ["B-2c5ee8c0"]
+resolved = 2026-09-28
+resolution = "fixed in 6fb8659: the shared fixture slug is the neutral fixture-tasks-flow"
 
 [[backlog]]
 id = "B-bae678a7"
@@ -3337,7 +3438,7 @@ kind = "debt"
 summary = "tomlctl skill frontmatter description exceeds the 1024-character cap many skill loaders enforce"
 area = "claude/skills/tomlctl/SKILL.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3347,6 +3448,8 @@ flow = "unified-singing-gem"
 context = "The description is about 1,280 characters after the reconcile verb was added to its verb list, and no test checks its length. A loader enforcing the cap could truncate or reject it; trim the verb enumeration or move it into the body."
 base_sha = "46ff9e894cbf711dacb18265e4e82665e7e77295"
 related = ["B-54b2d71e"]
+resolved = 2026-09-28
+resolution = "fixed in a7bbdba: seven skill descriptions trimmed under 1024 chars; skill_descriptions_under_spec_cap gates repo and plugin skills"
 
 [[backlog]]
 id = "B-a58448f6"
@@ -3354,7 +3457,7 @@ kind = "question"
 summary = "reconcile --apply credits commits from refs-only linked tasks in resolved_commits"
 area = "tomlctl/src/backlog/reconcile.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3364,6 +3467,8 @@ flow = "unified-singing-gem"
 context = "resolved_tasks and resolved_commits take both closes and refs tasks, while the resolution text names only closes tasks. A commit from a refs task is recorded as having delivered the item. Decide whether resolved_commits should be closes-only; the reference doc follows the code today."
 base_sha = "46ff9e894cbf711dacb18265e4e82665e7e77295"
 related = ["B-2f9eead8"]
+resolved = 2026-09-28
+resolution = "decided and fixed in 2fe2fdb: resolved_commits comes from closes tasks only; resolved_tasks still records closes and refs"
 
 [[backlog]]
 id = "B-277aa7ce"
@@ -3371,7 +3476,7 @@ kind = "debt"
 summary = "triage reports an unknown --to target and an unknown item id with the same not_found kind"
 area = "tomlctl/src/backlog/triage.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3381,6 +3486,8 @@ flow = "unified-singing-gem"
 context = "A carrier branching on --error-format json (the /backlog promote refusal handling) has to match on message text to tell them apart. A distinct kind, or an error field naming the offending argument, would make that branch reliable."
 base_sha = "46ff9e894cbf711dacb18265e4e82665e7e77295"
 related = ["B-cef33ceb"]
+resolved = 2026-09-28
+resolution = "fixed in 0d288f6: the JSON error envelope carries arg; triage tags to and ids so /backlog branches on it"
 
 [[backlog]]
 id = "B-1ad94a3b"
@@ -3388,7 +3495,7 @@ kind = "debt"
 summary = "linked_backlog_findings lives in import_plan.rs instead of beside backlog_findings in backlog_refs.rs"
 area = "tomlctl/src/tasks/import_plan.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3398,6 +3505,8 @@ flow = "unified-singing-gem"
 context = "The load-only-when-linked guard is shared by import-plan and tasks check but sits in import_plan.rs; a future caller (e.g. reconcile) may re-implement the guard instead of reusing it. Moving it into backlog_refs.rs is a small two-caller refactor."
 base_sha = "46ff9e894cbf711dacb18265e4e82665e7e77295"
 related = ["B-d2f9b0ee"]
+resolved = 2026-09-28
+resolution = "fixed in 467b36b: linked_backlog_findings lives in backlog_refs.rs beside backlog_findings"
 
 [[backlog]]
 id = "B-a764dd02"
@@ -3405,7 +3514,7 @@ kind = "bug"
 summary = "task-store import drops asterisks from checkpoint marker rationale text"
 area = "tomlctl/src/tasks/parse_policy.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3415,3 +3524,73 @@ flow = "unified-singing-gem"
 context = "A Dependency Graph marker whose rationale contains a backticked `backlog/*` is stored and re-rendered as `backlog/` — the asterisk is lost on import, so the first render after import silently rewrites the author's prose. Seen on docs/plans/unified-singing-gem.md checkpoint E."
 base_sha = "46ff9e894cbf711dacb18265e4e82665e7e77295"
 related = ["B-5fe02fa1"]
+resolved = 2026-09-28
+resolution = "fixed in 3e0f083: marker rationale is taken from the original text, so asterisks survive import and render (round-trip test)"
+
+[[backlog]]
+id = "B-47926bdb"
+kind = "bug"
+summary = "rendering a Files line drops later paths after a dash-annotated entry on re-import"
+area = "tomlctl/src/tasks/render.rs"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "47926bdbc6a2a26f"
+origin = "implement"
+flow = "unified-singing-gem"
+context = "file_list writes every path on one comma-separated line, but the parser stops splitting at the first ' — ' annotation outside backticks, so a bulleted Files list whose non-last entry carries a dash note (`a.ts` — dual edit, then `b.ts`) renders as one line and re-imports as a.ts only. File claims silently vanish from the store, so conflict checks and dispatch lose them. Fix needs a choice: render a bulleted list when an annotated entry is not last, or teach the parser to resume splitting after an annotation."
+base_sha = "200cd94825830ca0b1efbc3f0c67f2e818c1f812"
+related = ["B-54376dda"]
+
+[[backlog]]
+id = "B-d673a8b9"
+kind = "bug"
+summary = "flow init stores an absolute --plan verbatim so doctor's plan-path check later refuses it"
+area = "tomlctl/src/flow/init.rs"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "d673a8b9b2fdde8c"
+origin = "implement"
+flow = "unified-singing-gem"
+context = "build_seed_doc writes plan_path as typed (plan_path.display()), so an absolute or backslashed --plan lands in context.toml unnormalised, and flow doctor's plan-path-resolves check and the tasks store then refuse it. /plan-new passes a relative path so it rarely shows. Relativise against the repo root (refusing a path outside it) at init."
+base_sha = "200cd94825830ca0b1efbc3f0c67f2e818c1f812"
+related = ["B-2f9eead8"]
+
+[[backlog]]
+id = "B-1689755d"
+kind = "debt"
+summary = "flow init hand-builds the created context path instead of using CanonicalArtifacts"
+area = "tomlctl/src/flow/init.rs"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "1689755ddfd4223b"
+origin = "implement"
+flow = "unified-singing-gem"
+context = "created[0] is format!(.claude/flows/{slug}/context.toml) while every other stored path comes from CanonicalArtifacts or relativise, so two places spell the same path. Arrived cheap-in-file during the backlog sweep and was deferred as low value."
+base_sha = "200cd94825830ca0b1efbc3f0c67f2e818c1f812"
+related = ["B-f6fdcef6"]
+
+[[backlog]]
+id = "B-6944a250"
+kind = "bug"
+summary = "get --raw on an array tells the user to pass --lines, which get does not have"
+area = "tomlctl/src/query.rs"
+tags = []
+status = "open"
+created = 2026-09-28
+last_seen = 2026-09-28
+seen_count = 1
+dedup_id = "6944a2504b920c8c"
+origin = "implement"
+flow = "unified-singing-gem"
+context = "emit_raw's array error is shared by items list and tomlctl get, and recommends --lines, a flag only the list verbs carry. The wording is pinned by tests/tasks_read.rs, so a fix must branch the hint by caller and update that pin. Arrived cheap-in-file during the backlog sweep and was deferred because of the pinned text."
+base_sha = "200cd94825830ca0b1efbc3f0c67f2e818c1f812"
+related = ["B-a52ed19a"]
