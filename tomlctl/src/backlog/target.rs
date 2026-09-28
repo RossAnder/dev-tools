@@ -56,22 +56,39 @@ struct FlowEntry {
     plan_path: Option<String>,
 }
 
+/// A `context.toml` left out of the index, shaped as `flow list` reports it
+/// under `skipped`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SkippedFlow {
+    /// Relative to the repo root, `/`-separated.
+    pub(crate) path: String,
+    pub(crate) reason: String,
+}
+
+impl SkippedFlow {
+    pub(crate) fn to_json(&self) -> serde_json::Value {
+        serde_json::json!({"path": self.path, "reason": self.reason})
+    }
+}
+
 /// An index over `.claude/flows/*/context.toml`, built once per command.
 #[derive(Debug)]
 pub(crate) struct Resolver {
     root: PathBuf,
     flows: BTreeMap<String, FlowEntry>,
     by_plan: HashMap<String, String>,
+    skipped: Vec<SkippedFlow>,
 }
 
 impl Resolver {
     /// A flow whose `context.toml` cannot be read or parsed is left out of
-    /// the index rather than failing the build.
+    /// the index rather than failing the build, and recorded in `skipped`.
     pub(crate) fn new(root: &Path) -> Result<Resolver> {
         let mut resolver = Resolver {
             root: root.to_path_buf(),
             flows: BTreeMap::new(),
             by_plan: HashMap::new(),
+            skipped: Vec::new(),
         };
         let flows_dir = root.join(".claude").join("flows");
         if !flows_dir.exists() {
@@ -89,16 +106,13 @@ impl Resolver {
             if !ctx.is_file() {
                 continue;
             }
-            // `flow list` reports the same file under `skipped` with the same
-            // reason; the triage and reconcile envelopes carry no such slot.
             let doc = match read_toml_reason(&ctx) {
                 Ok(doc) => doc,
                 Err(reason) => {
-                    advise!(
-                        "tomlctl: warning: skipped {}: {}",
-                        relativise(root, &ctx),
-                        reason
-                    );
+                    resolver.skipped.push(SkippedFlow {
+                        path: relativise(root, &ctx),
+                        reason,
+                    });
                     continue;
                 }
             };
@@ -123,6 +137,18 @@ impl Resolver {
             );
         }
         Ok(resolver)
+    }
+
+    /// In enumeration order, so a report built from it is stable run to run.
+    pub(crate) fn skipped(&self) -> &[SkippedFlow] {
+        &self.skipped
+    }
+
+    /// For a caller whose envelope has no slot for [`Resolver::skipped`].
+    pub(crate) fn advise_skipped(&self) {
+        for skip in &self.skipped {
+            advise!("tomlctl: warning: skipped {}: {}", skip.path, skip.reason);
+        }
     }
 
     pub(crate) fn resolve(&self, raw: &str) -> Target {
@@ -313,6 +339,13 @@ mod tests {
             let resolver = Resolver::new(root).expect("a malformed flow must not fail the build");
             assert_eq!(resolver.resolve("broken"), Target::Unknown("broken".into()));
             assert!(matches!(resolver.resolve("alpha"), Target::Flow { .. }));
+            let skipped = resolver.skipped();
+            assert_eq!(skipped.len(), 1, "{skipped:?}");
+            assert_eq!(skipped[0].path, ".claude/flows/broken/context.toml");
+            assert!(
+                skipped[0].reason.starts_with("TOML parse error at line 1"),
+                "{skipped:?}"
+            );
         });
     }
 

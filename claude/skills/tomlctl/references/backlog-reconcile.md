@@ -94,6 +94,8 @@ store and its sidecar stay byte-identical. `--apply` never writes a `tasks.toml`
  "adopted":[{"id":"B-1a2b3c4d","flow":"alpha","task_refs":["fix-the-probe"]}],
  "applied":["B-a1b2c3d4"],
  "skipped":[],
+ "skipped_flows":[{"path":".claude/flows/broken/context.toml",
+                   "reason":"TOML parse error at line 1: unclosed array, expected `]`"}],
  "render_needed":["alpha"]}
 ```
 
@@ -103,6 +105,10 @@ store and its sidecar stay byte-identical. `--apply` never writes a `tasks.toml`
   slug. `flow_status` is `null` in `dangling` and `external`.
 - `closes` and `refs` are task `ref` slugs, not ids.
 - `adopted`, `applied` and `skipped` are `[]` without the flag that fills them, as is
-  `render_needed` without `--adopt`.
+  `render_needed` without `--adopt`. `skipped` names backlog ids.
+- `skipped_flows` lists each `.claude/flows/*/context.toml` that could not be read or parsed,
+  in the shape `flow list` reports under `skipped`, and is always present — `[]` when every
+  flow read. A skipped flow is out of the index, so a row promoted to it lands in `dangling`,
+  and `--flow` does not filter this list.
 
 `reason` is prose for a reader, not an enum. Branch on the bucket, never on `reason`.

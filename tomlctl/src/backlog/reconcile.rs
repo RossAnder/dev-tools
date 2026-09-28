@@ -14,7 +14,7 @@ use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use super::schema::{self, FIELD_LAST_UPDATED};
-use super::target::{Resolver, Target};
+use super::target::{Resolver, SkippedFlow, Target};
 use super::triage::resolve_with_link;
 use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs, write_integrity_opts};
 use crate::io::{
@@ -105,6 +105,7 @@ struct Adoption {
 struct Survey {
     entries: Vec<Entry>,
     adopted: Vec<Adoption>,
+    skipped_flows: Vec<SkippedFlow>,
 }
 
 #[derive(Default)]
@@ -167,6 +168,11 @@ fn reconcile(
             .iter()
             .map(|(id, reason)| json!({"id": id, "reason": reason}))
             .collect::<Vec<_>>(),
+        "skipped_flows": survey
+            .skipped_flows
+            .iter()
+            .map(SkippedFlow::to_json)
+            .collect::<Vec<_>>(),
         "render_needed": render_needed,
     }))
 }
@@ -196,7 +202,11 @@ fn survey(flow: Option<&str>, adopt: bool, integrity: &WriteIntegrityArgs) -> Re
         .iter()
         .map(|claim| classify(claim, &stores))
         .collect();
-    Ok(Survey { entries, adopted })
+    Ok(Survey {
+        entries,
+        adopted,
+        skipped_flows: resolver.skipped().to_vec(),
+    })
 }
 
 fn promoted_claims(backlog: &TomlValue, resolver: &Resolver, flow: Option<&str>) -> Vec<Claim> {
@@ -714,6 +724,7 @@ mod tests {
         assert_eq!(ready["target"], "alpha");
         assert_eq!(ready["flow_status"], "in-progress");
         assert_eq!(report["applied"], json!([]));
+        assert_eq!(report["skipped_flows"], json!([]));
         assert_eq!(before, after, "a run without flags is read-only");
         assert!(!sidecar);
         for bucket in Bucket::ALL {
@@ -1173,6 +1184,33 @@ mod tests {
         assert_eq!(report["adopted"], json!([]), "{report}");
         assert_eq!(bucket_ids(&report, "unlinked"), ["B-1a2b3c4d"]);
         assert_eq!(before, after, "a run adopting nothing writes no store");
+    }
+
+    #[test]
+    fn an_unreadable_context_is_reported_in_skipped_flows_and_its_rows_dangle() {
+        let report = with_root(|root| {
+            write(
+                root,
+                ".claude/flows/broken/context.toml",
+                b"status = [unclosed\n",
+            );
+            seed_flow(root, "alpha", "in-progress");
+            seed_backlog(root, &[("B-aaaa0001", "broken"), ("B-aaaa0002", "alpha")]);
+            run(None, false, false)
+        });
+        let skipped = report["skipped_flows"].as_array().unwrap();
+        assert_eq!(skipped.len(), 1, "{report}");
+        assert_eq!(skipped[0]["path"], ".claude/flows/broken/context.toml");
+        assert!(
+            skipped[0]["reason"]
+                .as_str()
+                .unwrap()
+                .starts_with("TOML parse error at line 1"),
+            "{report}"
+        );
+        assert_eq!(report["skipped"], json!([]), "backlog ids only: {report}");
+        assert_eq!(bucket_ids(&report, "dangling"), ["B-aaaa0001"]);
+        assert_eq!(bucket_ids(&report, "unlinked"), ["B-aaaa0002"]);
     }
 
     #[test]

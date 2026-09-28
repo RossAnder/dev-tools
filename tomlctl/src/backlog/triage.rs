@@ -282,12 +282,13 @@ pub(crate) fn dispatch(
     let transition = Transition::from_cli(mode, to, reason, resolution, rationale)?;
     let root = repo_or_cwd_root()?;
     let transition = match transition {
-        Transition::Promote(raw) => Transition::Promote(promotion_target(
-            &Resolver::new(&root)?,
-            &raw,
-            external,
-            allow_closed,
-        )?),
+        Transition::Promote(raw) => {
+            // Ahead of the lookup, so a `--to` naming the skipped flow fails
+            // after the line saying why.
+            let resolver = Resolver::new(&root)?;
+            resolver.advise_skipped();
+            Transition::Promote(promotion_target(&resolver, &raw, external, allow_closed)?)
+        }
         other => other,
     };
     let path = schema::backlog_path()?;

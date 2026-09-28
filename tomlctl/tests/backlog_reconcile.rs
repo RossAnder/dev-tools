@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::{TASKS_SLUG, assert_sidecar_matches, backlog, sandbox, seed_tasks, store_path};
+use common::{TASKS_SLUG, assert_sidecar_matches, backlog, cli, sandbox, seed_tasks, store_path};
 
 const OTHER_SLUG: &str = "fixture-other-flow";
 
@@ -355,6 +355,40 @@ fn the_flow_filter_keeps_only_rows_targeting_that_flow() {
     assert_eq!(bucket_ids(&report, "unlinked"), ["B-aaaa0002"], "{report}");
     assert_eq!(bucket_ids(&report, "dangling"), Vec::<String>::new());
     assert_eq!(bucket_ids(&report, "external"), Vec::<String>::new());
+}
+
+#[test]
+fn a_malformed_flow_context_lands_in_skipped_flows_and_not_on_stderr() {
+    let (_tmp, root) = sandbox();
+    let broken = root.join(".claude").join("flows").join("broken");
+    fs::create_dir_all(&broken).unwrap();
+    fs::write(broken.join("context.toml"), "status = [unclosed\n").unwrap();
+    seed_backlog(&root, &[("B-aaaa0001", "broken")]);
+
+    let out = cli(&root)
+        .args(["backlog", "reconcile"])
+        .write_stdin("")
+        .assert()
+        .success();
+    let output = out.get_output();
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let skipped = report["skipped_flows"].as_array().expect("always present");
+    assert_eq!(skipped.len(), 1, "{report}");
+    assert_eq!(skipped[0]["path"], ".claude/flows/broken/context.toml");
+    assert!(
+        skipped[0]["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("TOML parse error at line 1"),
+        "{report}"
+    );
+    assert_eq!(report["skipped"], json!([]));
+    assert_eq!(bucket_ids(&report, "dangling"), ["B-aaaa0001"]);
+
+    fs::remove_dir_all(&broken).unwrap();
+    let clean = reconcile(&root, &[]);
+    assert_eq!(clean["skipped_flows"], json!([]), "{clean}");
 }
 
 #[test]
