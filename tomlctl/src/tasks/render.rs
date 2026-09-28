@@ -323,8 +323,9 @@ fn backlog(link: &BacklogLink) -> String {
 
 /// Each path with the annotation the plan wrote against it. The importer reads
 /// an annotation from the first `(` or ` — ` outside a backticked span, and
-/// splits the line only on a comma outside both, so an annotation's own comma
-/// stays with its path.
+/// splits the line only on a comma outside both — except that a comma opening
+/// a backticked entry ends a ` — ` annotation, which is how the path after one
+/// is found. An annotation's own `, \`` therefore reads as a new path.
 fn file_list(store: &Store, row: &TaskRow) -> String {
     if row.files.is_empty() {
         return EMPTY.to_string();
@@ -689,6 +690,48 @@ mod tests {
         assert_eq!(
             parsed[2].file_notes,
             vec!["(new)".to_string(), String::new()]
+        );
+        assert_eq!(render_into_plan(&store, &plan).expect("re-renders"), plan);
+    }
+
+    /// Both annotations sit mid-list, where the renderer's one-line join puts
+    /// a later path straight after them.
+    #[test]
+    fn a_path_after_a_mid_list_annotation_survives_the_round_trip() {
+        let mut store = fixture();
+        let r#ref = store.items[2].r#ref.clone();
+        store.items[2].files = vec![
+            "tomlctl/src/tasks/t3.rs".to_string(),
+            "tomlctl/src/tasks/mod.rs".to_string(),
+            "tomlctl/src/tasks/graph.rs".to_string(),
+            "tomlctl/src/tasks/check.rs".to_string(),
+        ];
+        store.file_notes = vec![
+            FileNote {
+                r#ref: r#ref.clone(),
+                file: "tomlctl/src/tasks/t3.rs".to_string(),
+                note: "— dual edit: extend `Row`, then the SELECT".to_string(),
+            },
+            FileNote {
+                r#ref,
+                file: "tomlctl/src/tasks/graph.rs".to_string(),
+                note: "(new)".to_string(),
+            },
+        ];
+        let plan = render_into_plan(&store, PLAN).expect("renders");
+
+        let parsed = parse_tasks_at(&section(&plan, "Tasks"), 1)
+            .expect("tasks parse")
+            .tasks;
+        assert_eq!(parsed[2].files, store.items[2].files, "{plan}");
+        assert_eq!(
+            parsed[2].file_notes,
+            vec![
+                "— dual edit: extend `Row`, then the SELECT".to_string(),
+                String::new(),
+                "(new)".to_string(),
+                String::new(),
+            ]
         );
         assert_eq!(render_into_plan(&store, &plan).expect("re-renders"), plan);
     }

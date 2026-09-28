@@ -21,7 +21,7 @@ use std::path::Path;
 use anyhow::Result;
 
 use super::add::reject_undeclared_checkpoint;
-use super::graph::{Graph, Node};
+use super::graph::{Node, Tense, build_or_refuse};
 use super::schema::{Effort, ImportOverride, Status, Store, TaskRow};
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
@@ -397,10 +397,7 @@ fn reject_broken_graph(
             node
         })
         .collect();
-    let graph = Graph::build(&nodes)
-        .map_err(|err| tagged_err(ErrorKind::Validation, None, err.to_string()))?;
-
-    super::graph::cycle_error(&graph, "to update").map_or(Ok(()), Err)
+    build_or_refuse(&nodes, "to update", Tense::Candidate).map(drop)
 }
 
 fn retitle_err(id: u32, derived: &str) -> anyhow::Error {

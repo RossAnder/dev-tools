@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde_json::Value as JsonValue;
 
-use super::graph::{Graph, Node};
+use super::graph::{Node, Tense, build_or_refuse};
 use super::schema::{DEFAULT_HEADING_DEPTH, Effort, Status, Store, TaskRow};
 use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
@@ -127,12 +127,7 @@ fn append(store: &mut Store, tasks: Vec<NewTask>) -> Result<Vec<AddOutcome>> {
         .collect();
     // `Graph::build` is the dangling-target check: it names the referring task
     // and the absent one.
-    let graph = Graph::build(&nodes)
-        .map_err(|err| tagged_err(ErrorKind::Validation, None, err.to_string()))?;
-
-    if let Some(err) = super::graph::cycle_error(&graph, "to add") {
-        return Err(err);
-    }
+    let graph = build_or_refuse(&nodes, "to add", Tense::Candidate)?;
 
     let rounds = graph.kahn_rounds();
     let outcomes = minted

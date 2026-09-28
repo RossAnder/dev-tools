@@ -352,7 +352,7 @@ fn parse_files(lines: &[String]) -> (Vec<String>, Vec<String>) {
                 bullet_re().replace(line, "").as_ref(),
             );
         } else {
-            for raw in split_entries(line, |ch| ch == ',') {
+            for raw in split_entries_resuming(line, |ch| ch == ',', true) {
                 push_file(&mut files, &mut notes, raw);
             }
         }
@@ -369,6 +369,14 @@ const NOTE_DASH: &str = " — ";
 /// cutting the annotation afterwards reads `(new, generated)` as a second
 /// path, which every consumer of a file claim then treats as one.
 fn split_entries(line: &str, separates: impl Fn(char) -> bool) -> Vec<&str> {
+    split_entries_resuming(line, separates, false)
+}
+
+/// `resume` ends an em-dash annotation at a separator whose next entry opens
+/// on a backtick, which is how a rendered `Files` line lists the path after an
+/// annotated one. Without it the annotation runs to the end of the line and
+/// every later path is read as its prose.
+fn split_entries_resuming(line: &str, separates: impl Fn(char) -> bool, resume: bool) -> Vec<&str> {
     let mut entries = Vec::new();
     let mut start = 0;
     let mut depth = 0u32;
@@ -379,18 +387,21 @@ fn split_entries(line: &str, separates: impl Fn(char) -> bool) -> Vec<&str> {
             quoted = !quoted;
             continue;
         }
-        if quoted || annotated {
+        if quoted || (annotated && !resume) {
             continue;
         }
         match ch {
             '(' => depth += 1,
             ')' => depth = depth.saturating_sub(1),
             _ if depth > 0 => {}
-            _ if separates(ch) => {
+            _ if separates(ch)
+                && (!annotated || line[at + ch.len_utf8()..].trim_start().starts_with('`')) =>
+            {
                 entries.push(&line[start..at]);
                 start = at + ch.len_utf8();
+                annotated = false;
             }
-            _ if line[at..].starts_with(NOTE_DASH) => annotated = true,
+            _ if !annotated && line[at..].starts_with(NOTE_DASH) => annotated = true,
             _ => {}
         }
     }

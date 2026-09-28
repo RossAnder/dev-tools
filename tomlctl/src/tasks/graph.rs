@@ -82,36 +82,36 @@ pub(crate) fn refuse(err: anyhow::Error) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, err.to_string())
 }
 
-pub(crate) fn cycle_error(graph: &Graph<'_>, subject: &str) -> Option<anyhow::Error> {
-    let cycle = graph.cycle_members();
-    if cycle.is_empty() {
-        return None;
-    }
-    let members: Vec<String> = cycle.iter().map(u32::to_string).collect();
-    Some(tagged_err(
-        ErrorKind::Validation,
-        None,
-        format!(
-            "refusing {subject}: the dependency graph would contain a cycle through tasks {}",
-            members.join(", ")
-        ),
-    ))
+/// Whether the nodes handed to `build_or_refuse` are the store as it stands or
+/// the store a write would leave behind — the refusal says which.
+#[derive(Clone, Copy)]
+pub(crate) enum Tense {
+    Stored,
+    Candidate,
 }
 
-/// The builder a read verb runs when a cycle leaves it no answer to give,
-/// `subject` naming what is refused — shared so the verbs cannot drift apart on
-/// what a cycle means.
-pub(crate) fn build_or_refuse<'a>(nodes: &'a [Node], subject: &str) -> Result<Graph<'a>> {
+/// The builder a verb runs when a dangling edge or a cycle leaves it no answer
+/// to give, `subject` naming what is refused — shared so the verbs cannot drift
+/// apart on what a cycle means.
+pub(crate) fn build_or_refuse<'a>(
+    nodes: &'a [Node],
+    subject: &str,
+    tense: Tense,
+) -> Result<Graph<'a>> {
     let graph = Graph::build(nodes).map_err(refuse)?;
 
     let cycle = graph.cycle_members();
     if !cycle.is_empty() {
         let members: Vec<String> = cycle.iter().map(u32::to_string).collect();
+        let contains = match tense {
+            Tense::Stored => "contains",
+            Tense::Candidate => "would contain",
+        };
         return Err(tagged_err(
             ErrorKind::Validation,
             None,
             format!(
-                "refusing {subject}: the dependency graph contains a cycle through tasks {}",
+                "refusing {subject}: the dependency graph {contains} a cycle through tasks {}",
                 members.join(", ")
             ),
         ));

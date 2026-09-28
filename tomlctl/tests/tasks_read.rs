@@ -26,7 +26,7 @@ use common::{TASKS_SLUG, cli, parse_json_error_envelope, sandbox, seed_tasks};
 /// cardinality `--raw` refuses and `--lines` exists for.
 const READ_FIXTURE: &str = r#"schema_version = 1
 last_updated = 2026-09-07
-plan_path = "docs/plans/whimsical-hugging-puppy.md"
+plan_path = "docs/plans/fixture-tasks-flow.md"
 last_import_refs = [
     "scaffold-the-module-tree",
     "wire-the-graph-engine",

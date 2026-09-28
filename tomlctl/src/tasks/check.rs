@@ -22,7 +22,7 @@ use std::ops::RangeInclusive;
 use super::finding::{ERROR, Finding, INFO, NO_TASK, WARNING, quoted_list, task_list};
 use super::graph::{Graph, nodes_of};
 use super::parse_policy::{CHECKPOINTS_VALUES, GRANULARITY_VALUES, ORIGIN_VALUES};
-use super::schema::{Status, Store};
+use super::schema::{Status, Store, TaskRow};
 
 const MAX_PARALLEL: RangeInclusive<u32> = 1..=8;
 
@@ -138,22 +138,56 @@ fn vocabulary_finding(
 /// `ids` carries the number alone, so the `ref`s are what name which rows
 /// carry it — the store's own key, and the argument every write verb takes.
 fn duplicate_findings(store: &Store) -> Vec<Finding> {
-    let mut claimed: BTreeMap<u32, Vec<&str>> = BTreeMap::new();
-    for row in &store.items {
-        claimed.entry(row.id).or_default().push(row.r#ref.as_str());
+    let mut claimed: BTreeMap<u32, Vec<(usize, &TaskRow)>> = BTreeMap::new();
+    for (position, row) in store.items.iter().enumerate() {
+        claimed.entry(row.id).or_default().push((position, row));
     }
     claimed
         .into_iter()
-        .filter(|(_, refs)| refs.len() > 1)
-        .map(|(id, refs)| Finding {
-            class: "dag/duplicate-number",
-            severity: ERROR,
-            ids: vec![id],
-            detail: format!(
-                "task number {id} is claimed by {} rows: {}",
-                refs.len(),
-                quoted_list(&refs, "no row")
-            ),
+        .filter(|(_, rows)| rows.len() > 1)
+        .map(|(id, rows)| {
+            let refs: Vec<&str> = rows.iter().map(|(_, row)| row.r#ref.as_str()).collect();
+            Finding {
+                class: "dag/duplicate-number",
+                severity: ERROR,
+                ids: vec![id],
+                detail: format!(
+                    "task number {id} is claimed by {} rows: {}{}",
+                    refs.len(),
+                    quoted_list(&refs, "no row"),
+                    shared_key_detail(id, &rows)
+                ),
+            }
+        })
+        .collect()
+}
+
+/// Rows sharing the ref as well as the number have no key a verb can take to
+/// tell them apart — `tasks remove` takes the first row holding the number —
+/// so only their places in `[[items]]` and their titles name them.
+fn shared_key_detail(id: u32, rows: &[(usize, &TaskRow)]) -> String {
+    let mut by_ref: BTreeMap<&str, Vec<(usize, &TaskRow)>> = BTreeMap::new();
+    for (position, row) in rows {
+        by_ref
+            .entry(row.r#ref.as_str())
+            .or_default()
+            .push((*position, *row));
+    }
+    by_ref
+        .into_iter()
+        .filter(|(_, rows)| rows.len() > 1)
+        .map(|(key, rows)| {
+            let positions: Vec<String> = rows.iter().map(|(at, _)| at.to_string()).collect();
+            let titles: Vec<String> = rows
+                .iter()
+                .map(|(_, row)| format!("\"{}\"", row.title))
+                .collect();
+            format!(
+                "; rows {} ({}) of `[[items]]`, counting from 0, share number {id} and ref \
+                 `{key}`, so `tomlctl tasks remove` cannot pick one: hand-edit one row's `id`",
+                positions.join(", "),
+                titles.join(", ")
+            )
         })
         .collect()
 }
@@ -853,6 +887,48 @@ mod tests {
             .expect("the second row's ref was not imported");
         assert_eq!(orphan.ids, vec![1], "the id list deduplicates");
         assert!(orphan.detail.contains("`task-1-again`"), "{orphan:?}");
+    }
+
+    #[test]
+    fn rows_sharing_a_number_and_a_ref_are_named_by_position_and_title() {
+        let mut store = store(
+            vec![
+                row(1, &[], &["a.rs"], "A"),
+                row(3, &[], &["b.rs"], "A"),
+                row(3, &[], &["c.rs"], "A"),
+            ],
+            &["A"],
+        );
+        store.items[2].title = "Task 3, merged twice".to_string();
+        let findings = check(&store, &[]);
+
+        let duplicate = findings
+            .iter()
+            .find(|finding| finding.class == "dag/duplicate-number")
+            .expect("two rows claim task 3");
+        assert_eq!(duplicate.ids, vec![3]);
+        assert!(
+            duplicate
+                .detail
+                .contains("rows 1, 2 (\"Task 3\", \"Task 3, merged twice\")"),
+            "{duplicate:?}"
+        );
+        assert!(
+            duplicate.detail.contains("share number 3 and ref `task-3`"),
+            "{duplicate:?}"
+        );
+        assert!(
+            duplicate.detail.contains("hand-edit one row's `id`"),
+            "{duplicate:?}"
+        );
+
+        store.items[2].r#ref = "task-3-again".to_string();
+        let findings = check(&store, &[]);
+        let duplicate = findings
+            .iter()
+            .find(|finding| finding.class == "dag/duplicate-number")
+            .expect("two rows still claim task 3");
+        assert!(!duplicate.detail.contains("rows 1, 2"), "{duplicate:?}");
     }
 
     #[test]

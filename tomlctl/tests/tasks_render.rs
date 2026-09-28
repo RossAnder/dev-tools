@@ -27,6 +27,9 @@ use assert_cmd::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod common;
+use common::{stage_tasks_flow, tasks_context, write_tasks_store};
+
 const FIXTURE_PLAN: &str = include_str!("fixtures/tasks/house-plan.md");
 const FIXTURE_STORE: &str = include_str!("fixtures/tasks/house-plan.tasks.toml");
 const GOLDEN_PLAN: &str = include_str!("fixtures/tasks/house-plan.rendered.md");
@@ -40,10 +43,7 @@ const FIRST_OWNED: &str = "## Execution Policy";
 const AFTER_OWNED: &str = "## Risks";
 
 fn context(plan_path: &str) -> String {
-    format!(
-        "schema_version = 1\nlast_updated = 2026-09-08\nslug = \"{SLUG}\"\n\
-         status = \"in-progress\"\nplan_path = \"{plan_path}\"\n"
-    )
+    tasks_context(SLUG, plan_path)
 }
 
 /// Stage a flow tree under a fresh tempdir:
@@ -58,17 +58,13 @@ fn stage(plan_body: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().canonicalize().expect("canonical root");
 
-    let flow_dir = root.join(".claude").join("flows").join(SLUG);
-    fs::create_dir_all(&flow_dir).expect("flow dir");
-    fs::write(flow_dir.join("context.toml"), context(PLAN_REL)).expect("context written");
-
-    write_store(&root, FIXTURE_STORE);
+    stage_tasks_flow(&root, SLUG, PLAN_REL, Some(FIXTURE_STORE));
     write_plan(&root, plan_body);
     (dir, root)
 }
 
 fn write_store(root: &Path, body: &str) {
-    fs::write(store_path(root), body).expect("store written");
+    write_tasks_store(&store_path(root), body);
 }
 
 fn store_path(root: &Path) -> PathBuf {

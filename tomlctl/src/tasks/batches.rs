@@ -6,14 +6,14 @@
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use super::graph::{build_or_refuse, nodes_of};
+use super::graph::{Tense, build_or_refuse, nodes_of};
 use super::schema::Store;
 
 /// `{batches[[…]]}` — dependency order, each layer ascending. In-degree is
 /// `needs ∪ coupling`, so a coupling edge pushes its dependent a layer back.
 pub(crate) fn batches(store: &Store) -> Result<JsonValue> {
     let nodes = nodes_of(&store.items);
-    let graph = build_or_refuse(&nodes, "the layering")?;
+    let graph = build_or_refuse(&nodes, "the layering", Tense::Stored)?;
 
     Ok(json!({ "batches": graph.kahn_rounds() }))
 }

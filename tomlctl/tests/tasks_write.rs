@@ -25,7 +25,7 @@ use common::{
 /// assertion here can be reading.
 const WRITE_FIXTURE: &str = r#"schema_version = 1
 last_updated = 2026-09-07
-plan_path = "docs/plans/whimsical-hugging-puppy.md"
+plan_path = "docs/plans/fixture-tasks-flow.md"
 last_import_refs = ["scaffold-the-module-tree", "wire-the-graph-engine"]
 
 [policy]
@@ -79,7 +79,7 @@ commit = ""
 /// inherits in its place.
 const REMOVE_FIXTURE: &str = r#"schema_version = 1
 last_updated = 2026-09-07
-plan_path = "docs/plans/whimsical-hugging-puppy.md"
+plan_path = "docs/plans/fixture-tasks-flow.md"
 last_import_refs = [
     "scaffold-the-module-tree",
     "wire-the-graph-engine",

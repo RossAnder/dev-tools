@@ -23,6 +23,9 @@ use assert_cmd::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod common;
+use common::{stage_tasks_flow, tasks_context};
+
 const FIXTURE_PLAN: &str = include_str!("fixtures/tasks/house-plan.md");
 const GOLDEN_STORE: &str = include_str!("fixtures/tasks/house-plan.tasks.toml");
 const RENDERED_PLAN: &str = include_str!("fixtures/tasks/house-plan.rendered.md");
@@ -34,13 +37,6 @@ const PLAN_REL: &str = "docs/plans/house-plan.md";
 /// before the compare, and `last_updated_is_a_bare_date` is what still holds
 /// the writer to stamping one.
 const GOLDEN_DATE: &str = "last_updated = 2026-09-08";
-
-const FIXTURE_CONTEXT: &str = r#"schema_version = 1
-last_updated = 2026-09-08
-slug = "house-plan-fixture"
-status = "in-progress"
-plan_path = "docs/plans/house-plan.md"
-"#;
 
 /// Two completions this plan produces and one it does not. `E1` matches task
 /// 1's derived ref exactly; `E2` spells task 4's `max_parallel` with a hyphen,
@@ -105,10 +101,12 @@ fn stage(plan_body: &str) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().canonicalize().expect("canonical root");
 
-    let flow_dir = root.join(".claude").join("flows").join(SLUG);
-    fs::create_dir_all(&flow_dir).expect("flow dir");
-    fs::write(flow_dir.join("context.toml"), FIXTURE_CONTEXT).expect("context written");
-    fs::write(flow_dir.join("execution-record.toml"), FIXTURE_RECORD).expect("record written");
+    stage_tasks_flow(&root, SLUG, PLAN_REL, None);
+    fs::write(
+        flow_dir(&root).join("execution-record.toml"),
+        FIXTURE_RECORD,
+    )
+    .expect("record written");
 
     write_plan(&root, plan_body);
     (dir, root)
@@ -129,7 +127,7 @@ fn flow_dir(root: &Path) -> PathBuf {
 fn write_context(root: &Path, extra: &str) {
     fs::write(
         flow_dir(root).join("context.toml"),
-        format!("{FIXTURE_CONTEXT}{extra}"),
+        format!("{}{extra}", tasks_context(SLUG, PLAN_REL)),
     )
     .expect("context written");
 }

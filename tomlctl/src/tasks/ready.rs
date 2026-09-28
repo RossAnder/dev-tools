@@ -6,7 +6,7 @@
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use super::graph::{build_or_refuse, nodes_of, refuse};
+use super::graph::{Tense, build_or_refuse, nodes_of, refuse};
 use super::schema::Store;
 
 /// `{ready[], held[{id, blocked_on_file, holder}], next[],
@@ -16,7 +16,7 @@ use super::schema::Store;
 /// one.
 pub(crate) fn ready(store: &Store, in_flight: &[u32]) -> Result<JsonValue> {
     let nodes = nodes_of(&store.items);
-    let graph = build_or_refuse(&nodes, "the frontier")?;
+    let graph = build_or_refuse(&nodes, "the frontier", Tense::Stored)?;
 
     let mut frontier = graph.frontier(in_flight).map_err(refuse)?;
     frontier.ready.sort_unstable();

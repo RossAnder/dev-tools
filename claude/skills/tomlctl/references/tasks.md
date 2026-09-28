@@ -510,7 +510,7 @@ it.
 |---|---|---|
 | `dag/cycle` | error | `check` — suppresses every class needing reachability |
 | `dag/dangling-ref` | error | `check` |
-| `dag/duplicate-number` | error | `check` — `ids` carries the number alone, so the `detail` names the `ref` of every row on it; `import-plan` splits those refs into the ones the plan produced and the ones the store still holds |
+| `dag/duplicate-number` | error | `check` — `ids` carries the number alone, so the `detail` names the `ref` of every row on it, and rows sharing the `ref` too by 0-based `[[items]]` position and title (hand-edit one row's `id`); `import-plan` splits those refs into the ones the plan produced and the ones the store still holds |
 | `dag/unbuildable` | error | `check` — the graph engine refuses the store for a reason no row scan named; past the [node cap](tasks-store.md#the-512-node-cap) is the live case |
 | `dag/unreachable-claim` | warning | `check` — shared file, no directed path either way |
 | `dag/stalled-dependency` | warning | `check` — an `in-progress`, `failed` or `deferred` row with pending rows behind it; one finding per blocker, `ids` naming the blocker and `detail` its dependents. A blocker named in `--in-flight` raises nothing; never changes the exit code |
