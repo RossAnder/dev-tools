@@ -655,7 +655,7 @@ Per-task `Depends on` lines are authoritative; this section states only the chec
 
 — CHECKPOINT D after tasks 11 — dependency closure: 9, 10, 11. side table and link import; committed before task 14, the third `import_plan.rs` editor
 
-— CHECKPOINT E after tasks 15, 20 — dependency closure: 6, 9, 10, 11, 12, 13, 14, 15, 20. task↔item link (tasks 9-15) — render and show, findings wired into import and check — plus task 20, which documents the `backlog/` classes the `finding_classes` parity test requires alongside task 13
+— CHECKPOINT E after tasks 15, 20 — dependency closure: 6, 9, 10, 11, 12, 13, 14, 15, 20. task↔item link (tasks 9-15) — render and show, findings wired into import and check — plus task 20, which documents the `backlog/*` classes the `finding_classes` parity test requires alongside task 13
 
 — CHECKPOINT F after tasks 18 — dependency closure: 1, 2, 5, 6, 7, 9, 13, 16, 17, 18. `backlog reconcile` and the 0.10.0 release (tasks 16-18); the orchestrator runs `cargo install --path tomlctl` at this checkpoint, before any of tasks 19, 21-26 dispatches (carrier commands and skills are symlinked into `~/.claude`, so their edits go live in every session immediately)
 

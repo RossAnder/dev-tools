@@ -57,7 +57,7 @@ rationale = "side table and link import; committed before task 14, the third `im
 
 [[checkpoints]]
 id = "E"
-rationale = "task↔item link (tasks 9-15) — render and show, findings wired into import and check — plus task 20, which documents the `backlog/` classes the `finding_classes` parity test requires alongside task 13"
+rationale = "task↔item link (tasks 9-15) — render and show, findings wired into import and check — plus task 20, which documents the `backlog/*` classes the `finding_classes` parity test requires alongside task 13"
 
 [[checkpoints]]
 id = "F"
