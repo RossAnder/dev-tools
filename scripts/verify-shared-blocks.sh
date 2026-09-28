@@ -76,14 +76,20 @@ fi
 # never accept a tree this rejects. The in-crate
 # `blocks_verify_agrees_with_shell_gate` holds the two to one verdict by running
 # this script.
+#
+# CR contract: carriers are pinned LF by .gitattributes. A marker matches the
+# line exactly as this awk reads it — MSYS gawk's text-mode read drops one CR,
+# as str::lines() does in the mirror — so a marker ending `\r\r\n` matches
+# nothing; content lines lose one further CR. A CR-preserving gawk (non-MSYS)
+# extracts nothing from a CRLF carrier the mirror accepts, and fails the
+# empty-extraction guard below rather than passing.
 extract_block() {
   local file=$1 name=$2
   "$AWK" -v start="<!-- SHARED-BLOCK:${name} START -->" \
       -v end="<!-- SHARED-BLOCK:${name} END -->" '
-    { sub(/\r$/, "", $0) }
     $0 == start { in_block=1; next }
     $0 == end   { in_block=0; next }
-    in_block    { print }
+    in_block    { sub(/\r$/, ""); print }
   ' "$file"
 }
 
@@ -92,8 +98,9 @@ extract_block() {
 # invocation dies 127 and every carrier is reported as missing its START marker,
 # blaming the files for an absent binary. The test is whole-line equality, the
 # extractor's own semantics, with a single deliberate relaxation — a trailing CR
-# is stripped here and in extract_block, so CRLF carriers use the same marker
-# and content bytes as LF carriers.
+# is stripped here and NOT in extract_block's marker match, so a marker keeping
+# a CR clears this guard and trips the empty-extraction guard below, which
+# names line endings instead.
 has_marker() {
   local file=$1 marker=$2
   "$AWK" -v m="$marker" '
@@ -145,15 +152,13 @@ while IFS=$'\t' read -r bname bfile; do
     continue
   fi
 
-  # Capture the block before hashing: the marker guards above tolerate a trailing
-  # CR, which the extraction awk removes before comparing and hashing.
   # The trailing 'x' preserves the block's own trailing newlines through the
   # command substitution so the hashed bytes are unchanged.
   block=$(extract_block "$bfile" "$bname"; printf 'x')
   block=${block%x}
 
   if [[ -z $block ]]; then
-    echo "error: block '$bname' in $bfile extracted to no content between its markers" >&2
+    echo "error: block '$bname' in $bfile extracted to no content between its markers (empty span, or a marker line still ending in CR after awk's read — see the CR contract at extract_block)" >&2
     fail=1
     continue
   fi

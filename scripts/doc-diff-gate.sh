@@ -43,6 +43,14 @@ for arg in "$@"; do
   esac
 done
 
+# The externals setup and teardown need beyond awk. Without git the repo lookup
+# below misreports, without mktemp the run dies mid-way, and without rm the
+# temp files are left behind silently.
+for tool in git mktemp rm; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "doc-diff-gate: requires '$tool' on PATH" >&2; exit 2; }
+done
+
 cd "$(git rev-parse --show-toplevel 2>/dev/null)" || {
   echo "doc-diff-gate: not inside a git repository" >&2; exit 2; }
 
@@ -101,13 +109,14 @@ fi
 <!-- SHARED-BLOCK:gnu-awk-resolver END -->
 '
 
-# Source extensions carrying comments we gate. Markdown is included for G6 only.
+# Source extensions carrying comments we gate, plus the extensionless git hooks.
+# Markdown is included for G6 only.
 #
 # A literal dot is `[.]`, never `\.`, in every pattern this script passes to awk
 # through -v: gawk processes escapes in a -v value, so `\.` arrives as a plain
 # `.` — it warns on stderr and then matches ANY character, which would sweep
 # `xyrs` into the gated set. The bracket form survives both -v and grep -E.
-SRC_RE='[.](rs|ts|tsx|vue|cs|js|mjs|cjs|svelte|astro|sh)$'
+SRC_RE='[.](rs|ts|tsx|vue|cs|js|mjs|cjs|svelte|astro|sh)$|^[.]githooks/[^/.]+$'
 MD_RE='[.]md$'
 
 # Paths exempt from every check. A reviewed constant: adding a line here is a
@@ -248,6 +257,7 @@ if [ "$SELFTEST" -eq 1 ]; then
   st "G7 measurement"        '// ~38x slower than the native path'                            "$MEAS_RE"
   st "G8 caps clause"        '// IDENTITY IS PART OF THIS CONTRACT, not an optimisation'       "$CAPS_RE" cs
   st "G8 banner"             '// ============================='                               "$BANNER_RE" cs
+  st "source path git hook"  '.githooks/pre-commit'                                           "$SRC_RE" cs
 
   # Negative controls: the patterns that were REMOVED as net-negative, plus the
   # subjunctive, which matches the GOOD falsifier-naming pattern ~15 times in 15.
@@ -305,8 +315,10 @@ if [ -z "$STAGED_SRC" ] && [ -z "$STAGED_MD" ]; then
   exit 0
 fi
 
+# Armed before mktemp so no exit path, however early, leaves a file behind.
+TMP=''
+trap '[ -z "$TMP" ] || rm -f "$TMP" "$TMP.md" "$TMP.out" "$TMP.rules" "$TMP.md.rules"' EXIT
 TMP=$(mktemp)
-trap 'rm -f "$TMP" "$TMP.md" "$TMP.out" "$TMP.rules" "$TMP.md.rules"' EXIT
 : > "$TMP"; : > "$TMP.md"
 [ -n "$STAGED_SRC" ] && added_lines $STAGED_SRC > "$TMP"
 [ -n "$STAGED_MD" ] && added_lines $STAGED_MD > "$TMP.md"

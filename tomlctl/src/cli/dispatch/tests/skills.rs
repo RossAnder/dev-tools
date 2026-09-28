@@ -150,50 +150,92 @@ fn run_shell_gate(repo_root: &Path, cwd: &Path, manifest: Option<&str>) -> Resul
     }
     // MSYS bash reads a backslash as an escape, so hand it the slash form.
     let script = script_path.to_string_lossy().replace('\\', "/");
-    // `bash` is often off PATH for Windows-side cargo. Prefer an explicit
-    // override, then discover Git for Windows from the `git` executable rather
-    // than assuming its default installation directory.
-    let mut candidates = vec!["bash".to_string()];
-    if let Ok(output) = Command::new("git").arg("--exec-path").output()
-        && output.status.success()
-    {
-        let exec = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-        if let Some(root) = exec
-            .parent()
-            .and_then(Path::parent)
-            .and_then(Path::parent)
-            .and_then(Path::parent)
-        {
-            candidates.push(root.join("bin").join("bash.exe").display().to_string());
-        }
-    }
-    if let Ok(bash) = std::env::var("BASH") {
-        candidates.insert(0, bash);
-    }
-    let mut last = String::new();
+    let git_exec_path = Command::new("git")
+        .arg("--exec-path")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    let candidates = bash_candidates(
+        std::env::var_os("SHELL_GATE_BASH").map(PathBuf::from),
+        git_exec_path.as_deref(),
+    );
+    let mut attempts = Vec::new();
     for exe in candidates {
         let mut cmd = Command::new(&exe);
         cmd.arg(&script).current_dir(cwd);
         if let Some(m) = manifest {
             cmd.env("MANIFEST", m);
         }
+        let exe = exe.display();
         match cmd.output() {
             // Exit 2 is the script's own "could not run" (no gawk, no hasher,
-            // unreadable manifest) — never a verdict about the tree.
+            // unreadable manifest) — never a verdict about the tree. So is the
+            // 127 of a bare `bash` that resolved to WSL's, which cannot open a
+            // `C:/` path.
             Ok(out) => match out.status.code() {
                 Some(0) => return Ok(true),
                 Some(1) => return Ok(false),
-                other => {
-                    last = format!(
-                        "{exe} exited {other:?}: {}",
-                        String::from_utf8_lossy(&out.stderr).trim()
-                    )
-                }
+                other => attempts.push(format!(
+                    "{exe} exited {other:?}: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                )),
             },
-            Err(e) => last = format!("{exe}: {e}"),
+            Err(e) => attempts.push(format!("{exe}: {e}")),
         }
     }
-    Err(last)
+    Err(attempts.join("; "))
+}
+
+/// The bash executables `run_shell_gate` tries, in order: the `SHELL_GATE_BASH`
+/// override, `bash` from PATH (often absent for a Windows-side cargo), the Git
+/// for Windows bash found from `git --exec-path`, then that install's default
+/// location.
+fn bash_candidates(override_bash: Option<PathBuf>, git_exec_path: Option<&str>) -> Vec<PathBuf> {
+    let mut candidates: Vec<PathBuf> = override_bash
+        .filter(|p| !p.as_os_str().is_empty())
+        .into_iter()
+        .collect();
+    candidates.push(PathBuf::from("bash"));
+    // Git for Windows reports `<root>/mingw64/libexec/git-core`; bash is
+    // `<root>/bin/bash.exe`.
+    if let Some(root) = git_exec_path
+        .map(Path::new)
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+    {
+        candidates.push(root.join("bin").join("bash.exe"));
+    }
+    let default_install = PathBuf::from(r"C:\Program Files\Git\bin\bash.exe");
+    if !candidates.contains(&default_install) {
+        candidates.push(default_install);
+    }
+    candidates
+}
+
+#[test]
+fn bash_candidates_put_the_override_first_and_derive_git_bash() {
+    assert_eq!(
+        bash_candidates(
+            Some(PathBuf::from("E:/custom/bash.exe")),
+            Some("D:/Tools/Git/mingw64/libexec/git-core"),
+        ),
+        vec![
+            PathBuf::from("E:/custom/bash.exe"),
+            PathBuf::from("bash"),
+            Path::new("D:/Tools/Git").join("bin").join("bash.exe"),
+            PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
+        ]
+    );
+    assert_eq!(
+        bash_candidates(Some(PathBuf::new()), None),
+        vec![
+            PathBuf::from("bash"),
+            PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
+        ],
+        "an empty override is no override"
+    );
 }
 
 /// Whether `blocks_verify` reports parity for every block the manifest names.
