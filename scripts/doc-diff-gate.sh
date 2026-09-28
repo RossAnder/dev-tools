@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Documentation gate over STAGED ADDED LINES ONLY.
+# Documentation gate over ADDED LINES ONLY — of the staged diff by default, or of
+# `git diff A..B` under --range A..B, for checking the gate against history.
 #
 # Scope is deliberate: the regression this catches is in newly-added code, not in
 # the existing corpus. A repo-wide cap would fail on day one against a backlog
@@ -34,14 +35,32 @@ set -euo pipefail
 
 MODE="${DOC_GATE_MODE:-warn}"
 SELFTEST=0
-for arg in "$@"; do
-  case "$arg" in
+RANGE=''
+USAGE='usage: doc-diff-gate.sh [--warn | --block] [--range A..B] | --self-test'
+usage_fail() { echo "doc-diff-gate: $1" >&2; echo "$USAGE" >&2; exit 2; }
+while [ "$#" -gt 0 ]; do
+  case "$1" in
     --block) MODE=block ;;
     --warn) MODE=warn ;;
     --self-test) SELFTEST=1 ;;
-    *) echo "doc-diff-gate: unknown argument '$arg'" >&2; exit 2 ;;
+    --range)
+      [ "$#" -ge 2 ] || usage_fail "--range needs a value"
+      RANGE=$2; shift
+      # A bare revision would diff it against the WORKING TREE, and a leading
+      # dash would reach git as an option.
+      case "$RANGE" in
+        -*) usage_fail "--range value '$RANGE' is not a range" ;;
+        *..*) ;;
+        *) usage_fail "--range value '$RANGE' is not a range" ;;
+      esac ;;
+    *) usage_fail "unknown argument '$1'" ;;
   esac
+  shift
 done
+# The revision argument every diff read below passes to git.
+if [ -n "$RANGE" ]; then DIFF_SRC=("$RANGE"); else DIFF_SRC=(--cached); fi
+# Absolute, because the self-test re-invokes this script after the cd below.
+case "$0" in /*|[A-Za-z]:[/\\]*) SELF=$0 ;; *) SELF=$PWD/$0 ;; esac
 
 # The externals setup and teardown need beyond awk. Without git the repo lookup
 # below misreports, without mktemp the run dies mid-way, and without rm the
@@ -53,6 +72,14 @@ done
 
 cd "$(git rev-parse --show-toplevel 2>/dev/null)" || {
   echo "doc-diff-gate: not inside a git repository" >&2; exit 2; }
+
+# Checked here rather than left to the diff: a bad revision there dies inside a
+# command substitution with git's exit code, not the exit 2 that means "could
+# not run".
+if [ -n "$RANGE" ] && ! git rev-parse --quiet "$RANGE" >/dev/null 2>&1; then
+  echo "doc-diff-gate: --range '$RANGE' does not resolve to revisions in this repository" >&2
+  exit 2
+fi
 
 # Require GNU awk. Every rule below leans on GNU semantics — POSIX character
 # classes inside the -v-passed patterns, and `gsub` on matched anchors in the
@@ -156,11 +183,11 @@ report() { # severity, file:line, message
 }
 
 # --- added-line extraction ---------------------------------------------------
-# Emits "path<TAB>lineno<TAB>content" for every added line in the staged diff.
-# The content is verbatim and may itself contain tabs, so a consumer must split
-# on the FIRST TWO tabs only — see the content extraction in the checks below.
+# Emits "path<TAB>lineno<TAB>content" for every added line in the diff DIFF_SRC
+# selects. The content is verbatim and may itself contain tabs, so a consumer
+# must split on the FIRST TWO tabs only — see the content extraction below.
 added_lines() {
-  git diff --cached -U0 --no-color --diff-filter=ACM -- "$@" |
+  git diff -U0 --no-color --diff-filter=ACM "${DIFF_SRC[@]}" -- "$@" |
     "$AWK" '
       /^\+\+\+ b\// { file = substr($0, 7); next }
       /^@@ / {
@@ -203,8 +230,8 @@ LEDGER_RE="^[[:space:]]*(//|[*]|#)[[:space:]]*$LEDGER_DENY[0-9]{1,3}([.][0-9]+)?
 # Two blind spots, both deliberate, neither an oversight:
 #   - it catches four of the five leak classes. `R<n>` stays invisible because it
 #     is outside LEDGER_DENY above; widening to it costs 12 false positives.
-#   - it is staged-diff-only like every other rule here, so it prevents the next
-#     leak and finds none of today's. A clean run still means "the idiom did not
+#   - it reads added lines only like every other rule here, so it prevents the
+#     next leak and finds none already in the tree. A clean run still means "the idiom did not
 #     appear", and a hand sweep of the existing corpus is still a separate job.
 MSG_WORD_RE='(regression|must|expected|got)'
 LEDGER_MSG_RE="\"[^\"]*($LEDGER_DENY[0-9]{1,3}[^\"]*$MSG_WORD_RE|$MSG_WORD_RE[^\"]*$LEDGER_DENY[0-9]{1,3})[^\"]*\""
@@ -325,6 +352,46 @@ if [ "$SELFTEST" -eq 1 ]; then
     printf 'selftest FAIL: a tab-indented line did not reach the rules — content extraction is truncating at the tab\n' >&2
     st_fail=1
   fi
+  # Argument routing, through a re-invocation of this script. A rejected argument
+  # must exit 2; falling through instead would run the gate over the staged diff
+  # and report on something the caller never asked about.
+  st_rej() { # label, args...
+    local label=$1 rc=0; shift
+    st_neg_count=$((st_neg_count + 1))
+    "$BASH" "$SELF" "$@" >/dev/null 2>&1 || rc=$?
+    if [ "$rc" -ne 2 ]; then
+      printf 'selftest FAIL: %s exited %d, not 2\n' "$label" "$rc" >&2
+      st_fail=1
+    fi
+  }
+  st_rej "unknown argument"        --bogus
+  st_rej "--range with no value"   --range
+  st_rej "--range bare revision"   --range HEAD
+  st_rej "--range unresolvable"    --range HEAD..doc-diff-gate-no-such-rev
+  # Which diff each mode reads, against a scratch index (GIT_INDEX_FILE) so the
+  # real one is never written. With the scratch index equal to HEAD, a --range
+  # run that sees added lines can only have read the range; with an existing blob
+  # then staged under a gated path, a plain run must see it. The range runs from
+  # the empty tree to this script's own directory at HEAD, so every object it
+  # names already exists and none is written.
+  st_idx=$(mktemp)
+  trap 'rm -f "$st_idx"' EXIT
+  st_empty=$(git hash-object -t tree --stdin </dev/null)
+  st_dir=$(cd "${SELF%/*}" && git rev-parse --show-prefix)
+  st_blob=$(git ls-tree -r HEAD | "$AWK" '$2 == "blob" && !b { b = $3 } END { print b }')
+  GIT_INDEX_FILE=$st_idx git read-tree HEAD
+  st_route() { # label, args...
+    local label=$1 out; shift
+    st_count=$((st_count + 1))
+    out=$(GIT_INDEX_FILE=$st_idx "$BASH" "$SELF" "$@" 2>&1) || true
+    case "$out" in
+      *'added source lines'*) printf 'selftest ok:   %s\n' "$label" ;;
+      *) printf 'selftest FAIL: %s read no added lines\n' "$label" >&2; st_fail=1 ;;
+    esac
+  }
+  st_route "--range reads the range, not the index" --range "$st_empty..HEAD:$st_dir"
+  GIT_INDEX_FILE=$st_idx git update-index --add --cacheinfo "100644,$st_blob,doc-diff-gate-selftest-probe.sh"
+  st_route "no argument reads the staged diff"
   [ "$st_fail" -eq 0 ] && printf 'doc-diff-gate self-test: OK (%d patterns fire, %d negative controls clean, tab-indented content reaches the rules)\n' \
     "$st_count" "$st_neg_count"
   exit "$st_fail"
@@ -339,14 +406,14 @@ fi
 # validated, so routing through it makes the collect stage depend on nothing
 # else. It also drops the `|| true`: awk exits 0 on no match, so a non-zero
 # status here now means git or awk actually failed and set -e should see it.
-staged_paths() { # include-pattern
-  git diff --cached --name-only --diff-filter=ACM |
+changed_paths() { # include-pattern
+  git diff --name-only --diff-filter=ACM "${DIFF_SRC[@]}" |
     "$AWK" -v inc="$1" -v exc="$EXCLUDE_RE" '$0 ~ inc && $0 !~ exc'
 }
-STAGED_SRC=$(staged_paths "$SRC_RE")
-STAGED_MD=$(staged_paths "$MD_RE")
+CHANGED_SRC=$(changed_paths "$SRC_RE")
+CHANGED_MD=$(changed_paths "$MD_RE")
 
-if [ -z "$STAGED_SRC" ] && [ -z "$STAGED_MD" ]; then
+if [ -z "$CHANGED_SRC" ] && [ -z "$CHANGED_MD" ]; then
   exit 0
 fi
 
@@ -355,8 +422,8 @@ TMP=''
 trap '[ -z "$TMP" ] || rm -f "$TMP" "$TMP.md" "$TMP.out" "$TMP.rules" "$TMP.md.rules"' EXIT
 TMP=$(mktemp)
 : > "$TMP"; : > "$TMP.md"
-[ -n "$STAGED_SRC" ] && added_lines $STAGED_SRC > "$TMP"
-[ -n "$STAGED_MD" ] && added_lines $STAGED_MD > "$TMP.md"
+[ -n "$CHANGED_SRC" ] && added_lines $CHANGED_SRC > "$TMP"
+[ -n "$CHANGED_MD" ] && added_lines $CHANGED_MD > "$TMP.md"
 
 # Counted by the resolved awk, not `wc -l`. With wc absent the substitutions come
 # back empty and this line prints blanks where two figures belong, so the summary
@@ -515,5 +582,5 @@ if [ "$MODE" = block ] && [ "$blockers" -gt 0 ]; then
   printf 'Fix the blocking findings above; do NOT skip the gate.\n' >&2
   exit 1
 fi
-printf 'Mode is "%s" — not failing the commit. Set DOC_GATE_MODE=block once the FP rate is proven.\n' "$MODE"
+printf 'Mode is "%s" — not failing. Set DOC_GATE_MODE=block once the FP rate is proven.\n' "$MODE"
 exit 0
