@@ -299,79 +299,79 @@ shared-blocks: bash scripts/verify-shared-blocks.sh
 - **Detail**: Frontmatter 6 keys (4 mandatory + 2 forked). Final summary back to parent enumerates finding counts by severity + the rubric category that fired most. Supersession: if a previous /lumina:story-review run left findings, the new run uses `update_finding {status: "resolved"}` or `supersede_finding {old_id, new_id}` for findings that are still relevant but materially restated; otherwise leaves the old findings as a historical trail.
 - **Acceptance**: 6-key frontmatter (4 + fork pair); §i pattern cited; calls only `add_finding` + `update_finding` + `supersede_finding` + `record_task_activity`. **Note**: `findings.kind="story-review"` is forward-compatible storage only — `repo::list_findings` does not filter by kind today, and no SPA consumer filters either. Read-side disambiguation (UI filter or a `list_findings_by_kind` repo method) is a follow-up; round-2 ships the write side only.
 
-#### 13a. Re-enable not-doing [S]
+#### 13. Re-enable not-doing [S]
 - **Files**: `claude/plugins/lumina-story-blocks/skills/not-doing/SKILL.md`
 - **Depends on**: 4, 7
 - **Action**: Remove the entire DISABLED banner; rewrite §b steps 3 and 5 to call the new widened `set_story_plan({id, not_doing: <text>})` instead of `update_work_item`.
 
-#### 13b. Harden approach for hard-fail-on-zero-accepted [S]
+#### 14. Harden approach for hard-fail-on-zero-accepted [S]
 - **Files**: `claude/plugins/lumina-story-blocks/skills/approach/SKILL.md`
 - **Depends on**: 4, 7
 - **Action**: In step 2 of the pre-read survey, count `detail.research_notes` with `state == "accepted"`; if zero, ABORT (do NOT continue) with the one-line message: `approach requires at least one accepted research note; run /lumina:vet-research <id> to accept proposed notes first, then re-run.`. Replace the existing "⚠ No accepted research notes..." warn-and-continue paragraph entirely.
-- **Detail**: Both T13a and T13b SKILL.md files retain the §b 5-step structure and the §b-supersession verbatim phrasing. not-doing additionally retains its kind-precondition-free posture (any work_item kind permitted, per the existing §g.1 reasoning that attributes exists on every kind — though typical target remains story). Cross-reference R28's tri-state pattern from approach if relevant to "what if the user wants to re-run after rejecting all notes" (a rare edge — note it but do not implement here).
+- **Detail**: Both T13 and T14 SKILL.md files retain the §b 5-step structure and the §b-supersession verbatim phrasing. not-doing additionally retains its kind-precondition-free posture (any work_item kind permitted, per the existing §g.1 reasoning that attributes exists on every kind — though typical target remains story). Cross-reference R28's tri-state pattern from approach if relevant to "what if the user wants to re-run after rejecting all notes" (a rare edge — note it but do not implement here).
 - **Acceptance**: not-doing/SKILL.md has NO "DISABLED" string anywhere; approach/SKILL.md has the hard-fail abort message at exactly the documented point; both files still parse YAML frontmatter.
 
 ### Phase 3 — Orchestration + task decomposition
 
-#### 14. Advisor skill — next-block [M]
+#### 15. Advisor skill — next-block [M]
 - **Files**: `claude/plugins/lumina-story-blocks/skills/next-block/SKILL.md`
-- **Depends on**: 7, 8, 9, 10, 11, 12, 13a, 13b (needs every block's slash command name to be stable)
+- **Depends on**: 7, 8, 9, 10, 11, 12, 13, 14 (needs every block's slash command name to be stable)
 - **Action**: Author SKILL.md (~120 lines, body ≤150 instructions per R6). Frontmatter is the §a read-only exception: NO `disable-model-invocation` (model-discoverable, mirrors `mcp` catalogue precedent). Body reads `get_story_readiness(story_id)`, maps each `NextAction` enum variant to a one-line recommendation + the slash command to run next, and emits that as prose. NO writes (calls only `get_story_readiness`).
 - **Detail**: Cites Superpowers advisor pattern (R1). Description ≤140 chars per R2. The recommendation prose includes the slash command verbatim (since siblings have `disable-model-invocation: true`, the model cannot auto-load their descriptions — names must be explicit per R1 counter).
 - **Acceptance**: 4-key frontmatter (no disable-model-invocation); body ≤150 instructions; cites every `/lumina:<block>` slash command by name; calls only `get_story_readiness`.
 
-#### 15. Chained runner — plan-story [L]
+#### 16. Chained runner — plan-story [L]
 - **Files**: `claude/plugins/lumina-story-blocks/skills/plan-story/SKILL.md`
-- **Depends on**: 14, 16, 17, 18 (the chain walks every block including the new task-decomposition family; T19's closure batch lists this skill in README so T19 depends downstream on T15, not vice versa)
+- **Depends on**: 15, 17, 18, 19 (the chain walks every block including the new task-decomposition family; T21's closure batch lists this skill in README so T21 depends downstream on T16, not vice versa)
 - **Action**: Author SKILL.md (~200 lines, body ≤200 instructions per R6). Frontmatter has `disable-model-invocation: true` (side-effecting orchestrator). Body walks the canonical sequence: problem-statement → research-notes → vet-research → user-interrogation → alternatives → approach → not-doing → verification-commands → edge-cases → risks → decompose-tasks → set-task-spec → wire-task-deps → story-review. For each block: AskUserQuestion with options `Run`, `Skip`, `Inspect current state` (calls get_story_readiness inline), `Abort`. On Run: dispatch the matching skill via the Skill tool. On Skip: log and move on. On Abort: exit with summary.
 - **Detail**: Re-reads `get_story_readiness` after each block to keep the suggested next-step current (handles user-side edits between blocks). Documents that each block remains independently runnable; the chained runner is convenience-only (R6 emphasises orchestration ≠ enforcement).
 - **Acceptance**: 4-key frontmatter with `disable-model-invocation: true`; body walks the canonical sequence; references the per-block slash commands; ≤200 instructions.
 
-#### 16. Task decomposition — decompose-tasks [L]
+#### 17. Task decomposition — decompose-tasks [L]
 - **Files**: `claude/plugins/lumina-story-blocks/skills/decompose-tasks/SKILL.md`
 - **Depends on**: 4, 12 (story-review may flag issues that block decomposition)
 - **Action**: Author SKILL.md (~250 lines). Frontmatter: 6 keys (4 mandatory + `context: fork`, `agent: general-purpose`) — this is the deepest skill, multi-step exploration + judgement. Body reads ALL story content via `get_work_item` (problem_statement, accepted research_notes, status=answered open_questions, execution_strategy, rejected_alternatives, risks, edge-case research_notes via `lens="edge-case"` filter, verification_commands). Proposes a task list with: (a) vertical-slice grouping (per R24, foundation-first ordering for migration / shared-type tasks); (b) explicit `task_kind` per task; (c) for `pattern_replacement` tasks, exhaustive file enumeration via a Grep --files_with_matches call recorded in the proposed task's `files_touched` (R25). Multi-agent fan-out: if the story's verification_commands or research_notes indicate >1 foundation-disjoint module — defined per R26 as `separate crates, separate top-level dirs with no shared types` — dispatch parallel sub-decompose-agents within the fork; otherwise single-pass. The SKILL.md body MUST transcribe this heuristic verbatim, not summarise. Per proposed task: AskUserQuestion (Accept / Edit / Drop / Skip rest). On Accept: `create_work_item {parent_id: story_id, kind: "task", title, body}` then `set_task_kind {id: <task_id>, task_kind}`. Re-run handling per R28 tri-state.
 - **Detail**: Body is dense but the per-section structure is clear: (1) Prerequisite read; (2) Multi-agent fan-out heuristic + sub-agent prompt template; (3) Proposal synthesis; (4) Per-task user gate; (5) Write + provenance; (6) Re-run tri-state branches. Cites R25 + R26 + R28 by reference rather than re-explaining each. Final summary back to parent: `decompose-tasks: created N tasks, M tasks edited, K dropped; foundation/vertical-slice/pattern-replacement/polish counts; <next step: /lumina:set-task-spec or /lumina:wire-task-deps>`.
 - **Acceptance**: 6-key frontmatter; body cites R25 + R26 + R28 by source reference; calls only `get_work_item`, `create_work_item`, `set_task_kind`, `record_task_activity`, and (within the fork) read tools (Grep, Read, WebSearch as appropriate).
 
-#### 17. Per-task spec writer — set-task-spec [M]
+#### 18. Per-task spec writer — set-task-spec [M]
 - **Files**: `claude/plugins/lumina-story-blocks/skills/set-task-spec/SKILL.md`
-- **Depends on**: 4, 16
+- **Depends on**: 4, 17
 - **Action**: Author SKILL.md (~150 lines). Per-task walk: AskUserQuestion to collect `execution_detail` / `files_touched` (with drift-check for pattern-replacement kind per R25) / dual-track `outcome` (split into `automated` and `manual` lists per R23) / `dispatch` (lite vs deep). Writes via `set_task_spec` (existing MCP tool; the `outcome` schema is extended in task 4 if needed). For `pattern_replacement` task_kind: re-runs Grep against the recorded pattern at start and surfaces any drift (new matching files added since decompose); flags drift via AskUserQuestion (Accept new files / Decompose pattern again / Continue without).
 - **Detail**: Per-axis §b iteration. If `set_task_spec` doesn't already accept a structured outcome shape (it accepts a string today per backend exploration), task 4 widens it; if not, the skill stores the dual-track outcome as a structured JSON string within the existing string field and documents the convention.
 - **Acceptance**: 4-key frontmatter; cites `set_task_spec`; documents the dual-track outcome split + the pattern-replacement drift check.
 
-#### 18. Task dependency wirer — wire-task-deps [M]
+#### 19. Task dependency wirer — wire-task-deps [M]
 - **Files**: `claude/plugins/lumina-story-blocks/skills/wire-task-deps/SKILL.md`
-- **Depends on**: 4, 16
+- **Depends on**: 4, 17
 - **Action**: Author SKILL.md (~180 lines, body ≤200 instructions per R6). Walks the story's task children; for each task, prompts the user via AskUserQuestion for explicit task→task dependencies (per-task multi-select against the other tasks in the same story). Writes via `block_task_on_task`. After all dependencies are wired, calls `compute_task_batches` and surfaces the resulting batch schedule. On `AppError::Cycle`: surface the offending edge list and prompt the user to remove one edge before retrying. **Complexity-high gate** (R27): for any task with `complexity="high"`, prompt the user to confirm it shouldn't split further BEFORE accepting any inbound or outbound dep.
 - **Detail**: Per-edge §b — if an edge already exists, no-op; if absent, write. Phase display format: `Phase 1 (foundation): T1, T2 | Phase 2 (parallel): T3, T4 | Phase 3 (after T3): T5 | …`. Cites R22 (Kiro wave-batched execution) as the consumer pattern (Kiro's term retained verbatim in citation context).
 - **Acceptance**: 4-key frontmatter; cites `compute_task_batches`; documents the complexity-high gate; calls only `block_task_on_task` / `unblock_task_from_task` / `compute_task_batches` / `record_task_activity`.
 
-#### 19a. Research-notes cite + mcp catalogue update [M]
+#### 20. Research-notes cite + mcp catalogue update [M]
 - **Files**: `claude/plugins/lumina-story-blocks/skills/research-notes/SKILL.md`, `claude/plugins/lumina-story-blocks/skills/mcp/SKILL.md`
-- **Depends on**: 8, 9, 10, 11, 12, 13a, 13b, 14, 15, 16, 17, 18
+- **Depends on**: 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
 
-#### 19b. README skill-list + plugin.json version bump [S]
+#### 21. README skill-list + plugin.json version bump [S]
 - **Files**: `claude/plugins/lumina-story-blocks/README.md`, `claude/plugins/lumina-story-blocks/.claude-plugin/plugin.json`
-- **Depends on**: 8, 9, 10, 11, 12, 13a, 13b, 14, 15, 16, 17, 18
+- **Depends on**: 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
 - **Action**: research-notes/SKILL.md gets one new sentence in its "State lifecycle" section pointing at `/lumina:vet-research` as the accept/reject promotion path. mcp/SKILL.md catalogue updated with all new tools (sections: Planning & decision tools gains risks/alternatives CRUD; new "Task graph tools" section for block_task_on_task / compute_task_batches; new "Readiness" section for get_story_readiness; new entry for set_task_kind). README.md skill-list table gets the 10 new skills + a one-paragraph "Orchestration" section explaining the advisor + chained-runner pair. plugin.json `version` bumped 0.1.0 → 0.2.0 (R2: breaking-but-additive change set).
 - **Detail**: Don't rewrite the existing catalogue or skill list — add. The mcp catalogue's `add_open_question` `story_id` gotcha (the R1 case-sensitive name diagnostic) stays as is.
 - **Acceptance**: README's skill-list table has 19 rows total (existing 9 user-facing + 10 new — `mcp` continues to be documented separately as the absorbed catalogue, NOT counted in the skill-list table per the R4 resolution); mcp catalogue mentions every new tool by name with parameter shapes; research-notes points at vet-research; plugin.json shows version "0.2.0".
 
 ### Phase 4 — Integration / verification
 
-#### 20. Cross-reference updates — lumina/CLAUDE.md plugin section + repo-root CLAUDE.md [S]
+#### 22. Cross-reference updates — lumina/CLAUDE.md plugin section + repo-root CLAUDE.md [S]
 - **Files**: `lumina/CLAUDE.md`, `CLAUDE.md`
-- **Depends on**: 19
+- **Depends on**: 20, 21
 - **Action**: lumina/CLAUDE.md "Story-block skills plugin" section updated with the new skill list (point at the new README.md for canonical surface) + the new MCP tools (point at the new mcp/SKILL.md). Repo-root CLAUDE.md `## lumina` section: update the MCP tool surface paragraph to mention the new tool families introduced by this plan (one-sentence per family; do NOT enumerate every tool).
 - **Detail**: Both updates are additive paragraphs; preserve all existing content. Cite the plugin README + plugin mcp catalogue by relative path.
 - **Acceptance**: Both files mention the round-2 surface explicitly; existing paragraphs unchanged.
 
-#### 21. End-to-end smoke test [M] — human-gated checklist (NOT dispatchable to /implement)
-- **Files**: (none — manual; treated as a release-checklist item executed by the human after T20)
-- **Depends on**: 1-20
-- **Dispatch note**: This task is NOT dispatched to a `/implement` batch agent — the 8-step procedure drives an interactive Claude Code session and cannot be self-driven. A `/implement` orchestrator that encounters T21 should skip dispatch and surface the checklist to the user. Optional follow-up: convert to a scripted MCP-driven smoke at `lumina/tests/smoke.rs` so it becomes automatable.
+#### 23. End-to-end smoke test [M] — human-gated checklist (NOT dispatchable to /implement)
+- **Files**: (none — manual; treated as a release-checklist item executed by the human after T22)
+- **Depends on**: 1-22
+- **Dispatch note**: This task is NOT dispatched to a `/implement` batch agent — the 8-step procedure drives an interactive Claude Code session and cannot be self-driven. A `/implement` orchestrator that encounters T23 should skip dispatch and surface the checklist to the user. Optional follow-up: convert to a scripted MCP-driven smoke at `lumina/tests/smoke.rs` so it becomes automatable.
 - **Action**: Walk a real test story end-to-end through `/lumina:plan-story <id>`; verify each block writes the expected DB rows; verify orchestrator re-run respects R28 tri-state; run all five guardrail commands.
 - **Detail**: (1) Start `cargo run --manifest-path lumina/Cargo.toml`; create test project → epic → feature → story via raw MCP. (2) Launch Claude Code with `claude --plugin-dir claude/plugins/lumina-story-blocks` (or use `--scope project` install). (3) Invoke `/lumina:plan-story <story_id>`; walk every block sequentially; on each, accept the proposed action; verify each MCP write produces the expected row(s) via `mcp__lumina__get_work_item`. (4) After story-review: confirm findings appear with `kind="story-review"`. (5) After decompose-tasks: confirm task children exist with task_kind populated. (6) After wire-task-deps: confirm `mcp__lumina__compute_task_batches` returns a valid topological sort and no cycle. (7) Re-invoke `/lumina:plan-story <story_id>`: confirm `status=done` tasks are immutable; confirm not-started tasks are superseded en-masse on re-decompose (R28). (8) Run the guardrails: `cargo build --manifest-path lumina/Cargo.toml`, `cargo nextest run --manifest-path lumina/Cargo.toml`, `cargo clippy --manifest-path lumina/Cargo.toml --all-targets`, `cargo sqlx prepare --check --manifest-path lumina/Cargo.toml`, `bash scripts/verify-shared-blocks.sh` — each exits 0.
 - **Acceptance**: Every block produces expected writes on first invocation; supersession-confirm prompts on second invocation; R28 tri-state preserved on re-run; all 5 guardrail commands exit 0.
@@ -382,18 +382,18 @@ shared-blocks: bash scripts/verify-shared-blocks.sh
 - **Phase 2** (gated by Phase 1):
   - Batch 2.1 (single): T7 (CONVENTIONS.md amendments — gates Phase 2 skills which cite §i/§j/§c-exception).
   - Batch 2.2 (parallel, 4 agents): T8 (risks), T9 (alternatives), T10 (verification-commands), T11 (vet-research).
-  - Batch 2.3 (parallel, 3 agents): T12 (story-review), T13a (not-doing re-enable), T13b (approach hard-fail).
+  - Batch 2.3 (parallel, 3 agents): T12 (story-review), T13 (not-doing re-enable), T14 (approach hard-fail).
 - **Phase 3** (gated by Phase 2):
-  - Batch 3.1 (single): T14 (advisor — needs every block's slash command name stable).
-  - Batch 3.2 (single, longest skill): T16 (decompose-tasks — forked, deep).
-  - Batch 3.3 (parallel, 2 agents): T17 (set-task-spec), T18 (wire-task-deps) — both depend on T16's task-creation pattern.
-  - Batch 3.4 (single): T15 (plan-story — chained runner needs all blocks defined).
-  - Batch 3.5 (parallel, 2 agents): T19a (research-notes + mcp catalogue, 2 files), T19b (README + plugin.json, 2 files) — split per /review-plan P4 to honour the apply-flow 3-file-per-task cap.
+  - Batch 3.1 (single): T15 (advisor — needs every block's slash command name stable).
+  - Batch 3.2 (single, longest skill): T17 (decompose-tasks — forked, deep).
+  - Batch 3.3 (parallel, 2 agents): T18 (set-task-spec), T19 (wire-task-deps) — both depend on T17's task-creation pattern.
+  - Batch 3.4 (single): T16 (plan-story — chained runner needs all blocks defined).
+  - Batch 3.5 (parallel, 2 agents): T20 (research-notes + mcp catalogue, 2 files), T21 (README + plugin.json, 2 files) — split per /review-plan P4 to honour the apply-flow 3-file-per-task cap.
 - **Phase 4** (gated by Phase 3):
-  - Batch 4.1 (single): T20 (cross-ref CLAUDE.md updates).
-  - Batch 4.2 (manual, single): T21 (end-to-end smoke test + guardrails).
+  - Batch 4.1 (single): T22 (cross-ref CLAUDE.md updates).
+  - Batch 4.2 (manual, single): T23 (end-to-end smoke test + guardrails).
 
-Total batches: 9 (8 automatic + 1 manual). Parallelism peaks at 4 agents (Batch 2.2 — within the cap). Post-split task count: 23 tasks (T13→13a/13b, T19→19a/19b).
+Total batches: 9 (8 automatic + 1 manual). Parallelism peaks at 4 agents (Batch 2.2 — within the cap). Post-split task count: 23 tasks (T13/T14 and T20/T21 are each one original task, split).
 
 ## Verification
 
@@ -403,8 +403,8 @@ Total batches: 9 (8 automatic + 1 manual). Parallelism peaks at 4 agents (Batch 
 - **sqlx cache integrity**: `cargo sqlx prepare --check --manifest-path lumina/Cargo.toml` exits 0 (benign warning OK) after T6.
 - **Shared-block parity**: `bash scripts/verify-shared-blocks.sh` exits 0 (no-op for this plan's file set; runs as accident-guard).
 - **Plugin load**: `claude --plugin-dir claude/plugins/lumina-story-blocks` lists 19 commands prefixed `lumina:`.
-- **YAML frontmatter validity**: per-skill-task acceptance step (P17) — each Phase 2/3 task that authors a SKILL.md adds a one-liner to its acceptance verifying the frontmatter parses and contains the required §a-defined keys. PowerShell example: `(Get-Content path/to/SKILL.md -Raw) -split '---',3 | Select-Object -Index 1 | ConvertFrom-Yaml` (or equivalent Python `yaml.safe_load`). Plugin load (T21) remains the integration gate, but per-task YAML parse is the early-detection gate.
-- **Manual smoke test** (T21): the load-bearing acceptance — walk a story through the orchestrator end-to-end.
+- **YAML frontmatter validity**: per-skill-task acceptance step (P17) — each Phase 2/3 task that authors a SKILL.md adds a one-liner to its acceptance verifying the frontmatter parses and contains the required §a-defined keys. PowerShell example: `(Get-Content path/to/SKILL.md -Raw) -split '---',3 | Select-Object -Index 1 | ConvertFrom-Yaml` (or equivalent Python `yaml.safe_load`). Plugin load (T23) remains the integration gate, but per-task YAML parse is the early-detection gate.
+- **Manual smoke test** (T23): the load-bearing acceptance — walk a story through the orchestrator end-to-end.
 
 ## Risks
 
@@ -415,8 +415,8 @@ Total batches: 9 (8 automatic + 1 manual). Parallelism peaks at 4 agents (Batch 
 - **Risk**: `/lumina:story-review` writing to `findings` may collide with existing /review code-review usage. — **Mitigation**: every story-review finding carries `kind="story-review"` (distinct from `kind="code-review"` used by /review); UI filters by kind; SQL queries can disambiguate.
 - **Risk**: `pattern_replacement` task-kind's exhaustive file enumeration may miss files added between decomposition and execution. — **Mitigation**: `/lumina:set-task-spec` re-runs Grep at execution start and surfaces drift via AskUserQuestion (Accept new files / Decompose again / Continue without). Documented as the contract.
 - **Risk**: CONVENTIONS.md §i and §j additions may collide with future §-letter assignments (round-3+ growth). — **Mitigation**: explicit comment at the end of CONVENTIONS.md noting "§i and §j are this plan's additions; new sections should append §k, §l..." — single-source the letter-allocation history.
-- **Risk**: T16 (decompose-tasks) is the longest skill body (~250 lines) and the deepest — risk of body over-instructions blowing through R6's ≤250 budget. — **Mitigation**: cite R25 + R26 + R28 by source reference rather than re-explaining; off-load the rubric details to inline pseudocode rather than prose; first-pass authoring includes an instruction-count audit (manual or via a simple line-count proxy).
-- **Risk**: `/lumina:plan-story` chained runner depending on ALL Phase 2-3 skills creates a tight critical-path serialisation (T15 → T19 → T20 → T21). If any earlier task slips, every downstream task slips. — **Mitigation**: T15 is independently testable against existing skills (the canonical sequence doesn't change after T7-T18 land); audit dependencies on each batch-completion.
+- **Risk**: T17 (decompose-tasks) is the longest skill body (~250 lines) and the deepest — risk of body over-instructions blowing through R6's ≤250 budget. — **Mitigation**: cite R25 + R26 + R28 by source reference rather than re-explaining; off-load the rubric details to inline pseudocode rather than prose; first-pass authoring includes an instruction-count audit (manual or via a simple line-count proxy).
+- **Risk**: `/lumina:plan-story` chained runner depending on ALL Phase 2-3 skills creates a tight critical-path serialisation (T16 → T20/T21 → T22 → T23). If any earlier task slips, every downstream task slips. — **Mitigation**: T16 is independently testable against existing skills (the canonical sequence doesn't change after T7-T19 land); audit dependencies on each batch-completion.
 - **Risk**: 24-file scope is at the upper end. If any phase's verification fails, recovery is per-phase (delete or revert phase-scoped files). — **Mitigation**: each phase has explicit verification checkpoints (cargo build after Phase 1; plugin load after Phase 2-3); recoverable rollback granularity is at the batch level, not file level.
 
 ## Phase 9 note (re: filename)
