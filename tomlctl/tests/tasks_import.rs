@@ -986,6 +986,133 @@ fn an_unclosed_fence_inside_the_tasks_section_is_refused() {
     );
 }
 
+const BACKLOG_STORE: &str = r#"schema_version = 1
+
+[[backlog]]
+id = "B-0pen0001"
+kind = "bug"
+summary = "still waiting for triage"
+area = "src/tasks/mod.rs"
+status = "open"
+created = 2026-09-01
+last_seen = 2026-09-01
+seen_count = 1
+dedup_id = "1111111111111111"
+
+[[backlog]]
+id = "B-pr0m0001"
+kind = "debt"
+summary = "promoted onto the fixture flow"
+area = "src/tasks/mod.rs"
+status = "promoted"
+created = 2026-09-01
+last_seen = 2026-09-01
+seen_count = 1
+dedup_id = "2222222222222222"
+promoted = 2026-09-02
+promoted_to = "house-plan-fixture"
+"#;
+
+/// The rendered plan with task 1 closing `ids`, placed where the renderer
+/// emits the bullet so the imported store renders back onto the same bytes.
+fn plan_closing(ids: &str) -> String {
+    let anchor = "#### 1. Scaffold the module tree [S]\n- **Files**: `src/tasks/mod.rs`\n\
+                  - **Depends on**: —\n";
+    assert!(RENDERED_PLAN.contains(anchor), "the rendered fixture moved");
+    RENDERED_PLAN.replacen(anchor, &format!("{anchor}- **Backlog**: {ids}\n"), 1)
+}
+
+fn class_severities(envelope: &serde_json::Value) -> Vec<(String, String)> {
+    envelope
+        .get("findings")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| panic!("envelope must carry `findings`: {envelope}"))
+        .iter()
+        .map(|finding| {
+            let field = |key: &str| {
+                finding
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            (field("class"), field("severity"))
+        })
+        .collect()
+}
+
+/// Plan bullet → store → findings → render, against a backlog holding one
+/// open item and one promoted onto this flow by slug.
+#[test]
+fn a_backlog_bullet_imports_links_renders_back_and_checks_clean_of_foreign_claims() {
+    let (_dir, root) = stage(&plan_closing("B-0pen0001, B-pr0m0001, B-m1ss1ng1"));
+    fs::write(root.join(".claude").join("backlog.toml"), BACKLOG_STORE).expect("backlog written");
+
+    let preview = import(&root, &["--plan", PLAN_REL, "--dry-run"]);
+    assert_eq!(
+        class_severities(&preview),
+        vec![
+            ("backlog/unknown-id".to_string(), "error".to_string()),
+            ("backlog/unpromoted".to_string(), "warning".to_string()),
+        ],
+        "{preview}"
+    );
+    assert_eq!(preview.get("ok"), Some(&serde_json::Value::Bool(false)));
+    assert!(
+        !store_path(&root).exists(),
+        "plan mode must create no store"
+    );
+
+    write_plan(&root, &plan_closing("B-0pen0001, B-pr0m0001"));
+    let envelope = import(&root, &["--slug", SLUG]);
+    assert!(error_finding_classes(&envelope).is_empty(), "{envelope}");
+
+    let text = fs::read_to_string(store_path(&root)).expect("the store is on disk");
+    let store: toml::Value = toml::from_str(&text).expect("the store is valid TOML");
+    let links = store
+        .get("backlog_links")
+        .and_then(toml::Value::as_array)
+        .unwrap_or_else(|| panic!("the store carries no `[[backlog_links]]`:\n{text}"));
+    assert_eq!(links.len(), 1, "{text}");
+    assert_eq!(
+        links[0].get("ref").and_then(toml::Value::as_str),
+        Some("scaffold-the-module-tree"),
+        "{text}"
+    );
+    assert_eq!(
+        links[0].get("closes"),
+        Some(&toml::Value::Array(vec![
+            toml::Value::String("B-0pen0001".to_string()),
+            toml::Value::String("B-pr0m0001".to_string()),
+        ])),
+        "{text}"
+    );
+
+    cli(&root)
+        .args(["tasks", "render", "--slug", SLUG, "--check"])
+        .write_stdin("")
+        .assert()
+        .success();
+
+    let out = cli(&root)
+        .args(["tasks", "check", "--slug", SLUG])
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let checked: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("check stdout must be JSON: {e}; got: {stdout}"));
+    let classes = finding_classes(&checked);
+    assert!(
+        classes.contains(&"backlog/unpromoted".to_string()),
+        "check must join the links against the backlog at all: {checked}"
+    );
+    assert!(
+        !classes.contains(&"backlog/claimed-elsewhere".to_string()),
+        "a claim naming this flow's slug is this flow's: {checked}"
+    );
+}
+
 fn sidecar_of(file: &Path) -> PathBuf {
     let mut raw = file.as_os_str().to_os_string();
     raw.push(".sha256");
