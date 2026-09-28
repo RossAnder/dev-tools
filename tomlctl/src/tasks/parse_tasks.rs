@@ -64,6 +64,8 @@ pub(crate) struct ParsedTask {
     pub(crate) action: String,
     pub(crate) detail: String,
     pub(crate) acceptance: String,
+    pub(crate) backlog_closes: Vec<String>,
+    pub(crate) backlog_refs: Vec<String>,
 }
 
 /// Line numbers relative to `section_body` itself, which is what a fixture
@@ -185,6 +187,7 @@ enum Field {
     Detail,
     Acceptance,
     Effort,
+    Backlog,
     Unknown,
 }
 
@@ -197,6 +200,7 @@ impl Field {
             "Detail" => Self::Detail,
             "Acceptance" => Self::Acceptance,
             "Effort" => Self::Effort,
+            "Backlog" => Self::Backlog,
             _ => Self::Unknown,
         }
     }
@@ -321,6 +325,11 @@ fn close_field(task: Option<&mut ParsedTask>, open: Option<OpenField>) -> Result
                 )
             })?;
             task.effort = Some(effort);
+        }
+        Field::Backlog => {
+            let (closes, refs) = parse_backlog(&lines);
+            task.backlog_closes = closes;
+            task.backlog_refs = refs;
         }
         Field::Unknown => {}
     }
@@ -462,6 +471,26 @@ fn parse_depends(lines: &[String]) -> (Vec<u32>, String) {
     (needs, note.join(", "))
 }
 
+/// The ids the task closes and the ids it only `refs`. The qualifier binds the
+/// one comma-separated entry it opens, so `refs B-1, B-2` closes `B-2`.
+fn parse_backlog(lines: &[String]) -> (Vec<String>, Vec<String>) {
+    let value = lines.join(" ");
+    let mut closes = Vec::new();
+    let mut refs = Vec::new();
+    for raw in split_entries(value.trim(), |ch| ch == ',') {
+        let entry = raw[..annotation_at(raw)].replace('`', "");
+        let entry = entry.trim();
+        let (target, id) = match entry.strip_prefix("refs ") {
+            Some(rest) => (&mut refs, rest.trim()),
+            None => (&mut closes, entry),
+        };
+        if !id.is_empty() && !is_empty_marker(id) {
+            target.push(id.to_string());
+        }
+    }
+    (closes, refs)
+}
+
 /// `lo-hi` (hyphen or en dash) with `lo <= hi`; anything else is not a range.
 fn parse_range(token: &str) -> Option<(u32, u32)> {
     let (lo, hi) = token.split_once(['-', '–'])?;
@@ -522,7 +551,7 @@ fn field_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new(
-            r"^- \*\*(Files|Depends on|Blocked-by|Blocked by|Action|Detail|Acceptance|Effort)\*\*:[ \t]*(.*)$",
+            r"^- \*\*(Files|Depends on|Blocked-by|Blocked by|Action|Detail|Acceptance|Effort|Backlog)\*\*:[ \t]*(.*)$",
         )
         .expect("field regex compiles")
     })
@@ -835,6 +864,32 @@ cargo test
     fn a_legacy_effort_line_sets_the_effort() {
         let second = &parse_tasks(PHASED).expect("parses")[1];
         assert_eq!(second.effort, Some(Effort::M));
+    }
+
+    #[test]
+    fn a_backlog_line_splits_closes_from_refs() {
+        let body = "### 1. Ship it [S]\n\
+                    - **Backlog**: `B-aaaa1111`, refs `B-bbbb2222`, B-cccc3333 (partial), \
+                    refs B-dddd4444 — follow-up\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(task.backlog_closes, vec!["B-aaaa1111", "B-cccc3333"]);
+        assert_eq!(task.backlog_refs, vec!["B-bbbb2222", "B-dddd4444"]);
+    }
+
+    #[test]
+    fn refs_qualifies_only_its_own_entry() {
+        let body = "### 1. Ship it [S]\n- **Backlog**: refs B-1, B-2\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(task.backlog_refs, vec!["B-1"]);
+        assert_eq!(task.backlog_closes, vec!["B-2"]);
+    }
+
+    #[test]
+    fn a_backlog_line_of_none_links_nothing() {
+        let body = "### 1. Ship it [S]\n- **Backlog**: none\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert!(task.backlog_closes.is_empty(), "{:?}", task.backlog_closes);
+        assert!(task.backlog_refs.is_empty(), "{:?}", task.backlog_refs);
     }
 
     /// A dropped id is not a parsing nicety: the store then holds no edge for

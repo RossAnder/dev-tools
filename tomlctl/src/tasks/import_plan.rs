@@ -628,6 +628,8 @@ fn merge_row(
         action,
         detail,
         acceptance,
+        backlog_closes: _,
+        backlog_refs: _,
     } = task;
 
     let coupling = existing.map(|row| row.coupling.clone()).unwrap_or_default();
