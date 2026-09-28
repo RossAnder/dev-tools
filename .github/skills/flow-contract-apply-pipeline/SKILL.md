@@ -276,7 +276,7 @@ parallel batch, and each sequential batch's changes are committed before the nex
 later failure is revertible without losing earlier work.
 
 `implement-lite` and `implement-deep` already carry the applied/skipped tag form, the Tier-2
-already-applied protocol, the no-overlapping-edits rule, and plan-deviation reporting in their
+already-applied protocol, and the no-overlapping-edits rule in their
 system prompts; the per-call prompt restates only the carrier-specific vocabulary and the Step-2
 pre-analysed reasoning. For the mandatory prompt elements, the obligations every agent owes, and
 the partial-apply follow-up that mints a child item for the pending parts, see

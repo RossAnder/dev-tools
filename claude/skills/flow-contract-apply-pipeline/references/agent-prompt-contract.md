@@ -8,7 +8,7 @@ runs on a partial apply.
 ### Agent prompt contract
 
 `implement-lite` and `implement-deep` already carry the applied/skipped tag form, the Tier-2
-already-applied protocol, the no-overlapping-edits rule, and plan-deviation reporting in their
+already-applied protocol, and the no-overlapping-edits rule in their
 system prompts. The per-call prompt restates only the carrier-specific vocabulary, and MUST include:
 
 - The exact files to read and modify: the cluster's `files[]`, which is the union of each item's `file`, its `instances` files and the files its `description` names, plus any growth the pre-analysis re-sweep found. For a pattern item, list every site as `file:symbol` so the agent works the set rather than rediscovering it.
