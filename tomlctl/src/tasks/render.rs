@@ -321,6 +321,10 @@ fn backlog(link: &BacklogLink) -> String {
         .join(", ")
 }
 
+/// Each path with the annotation the plan wrote against it. The importer reads
+/// an annotation from the first `(` or ` — ` outside a backticked span, and
+/// splits the line only on a comma outside both, so an annotation's own comma
+/// stays with its path.
 fn file_list(store: &Store, row: &TaskRow) -> String {
     if row.files.is_empty() {
         return EMPTY.to_string();
@@ -686,6 +690,24 @@ mod tests {
             parsed[2].file_notes,
             vec!["(new)".to_string(), String::new()]
         );
+        assert_eq!(render_into_plan(&store, &plan).expect("re-renders"), plan);
+    }
+
+    #[test]
+    fn an_asterisk_survives_the_round_trip_wherever_it_is_written() {
+        let mut store = fixture();
+        store.checkpoints[0].rationale =
+            "the `backlog/*` classes and the **only** new cut".to_string();
+        store.items[0].action = "Match `src/**/*.rs` and nothing *else*.".to_string();
+        store.policy.note = "Globs such as `*.md` stay literal.".to_string();
+        let plan = render_into_plan(&store, PLAN).expect("renders");
+
+        assert_eq!(markers(&plan)[0].rationale, store.checkpoints[0].rationale);
+        let tasks = parse_tasks(&section(&plan, "Tasks")).expect("tasks parse");
+        assert_eq!(tasks[0].action, store.items[0].action);
+        let policy =
+            parse_policy(Some(&section(&plan, "Execution Policy"))).expect("policy parses");
+        assert_eq!(policy.note, store.policy.note);
         assert_eq!(render_into_plan(&store, &plan).expect("re-renders"), plan);
     }
 

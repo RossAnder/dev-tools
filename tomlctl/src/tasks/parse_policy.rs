@@ -124,15 +124,16 @@ pub(crate) fn parse_markers(section_body: &str) -> Result<Vec<Marker>> {
     let mut markers: Vec<Marker> = Vec::new();
 
     for paragraph in paragraphs(section_body) {
-        let flat = strip_marker_furniture(&paragraph);
+        let (flat, raw_at) = without_asterisks(&paragraph);
         let Some(caps) = marker_re().captures(&flat) else {
             continue;
         };
         let whole = caps.get(0).expect("capture group 0 always matches");
+        let (header, tail) = paragraph.split_at(raw_at[whole.end()]);
         let marker = Marker {
             id: caps[1].to_string(),
             after: expand_ids(caps[2].trim())?,
-            rationale: tidy_rationale(&flat[whole.end()..]),
+            rationale: tidy_rationale(close_emphasis(header, tail)),
         };
 
         match markers.iter().find(|m| m.id == marker.id) {
@@ -234,11 +235,43 @@ fn paragraphs(body: &str) -> Vec<String> {
     out
 }
 
-fn strip_marker_furniture(paragraph: &str) -> String {
-    paragraph
-        .replace('*', "")
-        .trim_start_matches(is_dash_or_space)
-        .to_string()
+/// The paragraph without its `*`, so emphasis cannot break the marker match,
+/// and each byte's offset back in `paragraph`. An offset lands past any `*` run
+/// ahead of it, so a header cut there keeps its own closing emphasis.
+fn without_asterisks(paragraph: &str) -> (String, Vec<usize>) {
+    let mut flat = String::with_capacity(paragraph.len());
+    let mut raw_at = Vec::with_capacity(paragraph.len() + 1);
+    for (at, ch) in paragraph.char_indices() {
+        if ch != '*' {
+            flat.push(ch);
+            raw_at.extend(at..at + ch.len_utf8());
+        }
+    }
+    raw_at.push(paragraph.len());
+    (flat, raw_at)
+}
+
+/// The rationale with the closing emphasis of a header that opened some and
+/// did not close it — `**— CHECKPOINT A after task 3 — prose.**`. Every other
+/// `*` in the rationale is the author's text.
+fn close_emphasis<'a>(header: &str, tail: &'a str) -> &'a str {
+    let mut open: Vec<usize> = Vec::new();
+    for run in header.split(|c| c != '*').filter(|run| !run.is_empty()) {
+        match open.last() {
+            Some(&last) if last == run.len() => {
+                open.pop();
+            }
+            _ => open.push(run.len()),
+        }
+    }
+    let mut out = tail.trim_end();
+    for width in open.into_iter().rev() {
+        out = out
+            .strip_suffix("*".repeat(width).as_str())
+            .unwrap_or(out)
+            .trim_end();
+    }
+    out
 }
 
 /// The closure clause is recomputed on every render, so it must never survive
@@ -415,6 +448,25 @@ mod tests {
         let marker = one_marker("— CHECKPOINT D after task 6 — closure {6, 1}");
         assert_eq!((marker.id.as_str(), &marker.after[..]), ("D", &[6][..]));
         assert_eq!(marker.rationale, "");
+    }
+
+    #[test]
+    fn an_asterisk_in_the_rationale_is_the_authors_text() {
+        let marker = one_marker(
+            "— CHECKPOINT E after tasks 15, 20 — documents the `backlog/*` classes, the **only** new ones",
+        );
+        assert_eq!(marker.after, vec![15, 20]);
+        assert_eq!(
+            marker.rationale,
+            "documents the `backlog/*` classes, the **only** new ones"
+        );
+    }
+
+    #[test]
+    fn a_bolded_paragraph_closes_its_own_emphasis() {
+        let marker = one_marker("**— CHECKPOINT A after task 3 — the shell kit lands first.**");
+        assert_eq!((marker.id.as_str(), &marker.after[..]), ("A", &[3][..]));
+        assert_eq!(marker.rationale, "the shell kit lands first.");
     }
 
     #[test]
