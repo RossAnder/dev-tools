@@ -5,8 +5,8 @@
 //! `tempfile::tempdir()` and points `TOMLCTL_ROOT` at it via
 //! `assert_cmd::Command::env`. The plan path passed to `--plan` is a real
 //! file on the tempdir so callers that resolve it later don't trip on a
-//! missing source — but `flow init` itself does NOT read the plan file
-//! (it only stamps the path string into `context.toml`).
+//! missing source — `flow init` itself does NOT read the plan file; it
+//! records its repo-relative path in `context.toml`.
 
 use assert_cmd::Command;
 use std::fs;
@@ -16,9 +16,8 @@ mod common;
 use common::assert_sidecar_matches;
 
 /// Bootstrap an empty `.claude/` under a fresh tempdir and create a
-/// throwaway plan file at `docs/plans/<slug>.md` so tests have a real
-/// path to feed to `--plan` (the field is opaque to `flow init`, but
-/// integration tests prefer a real on-disk anchor for clarity).
+/// throwaway plan file at `docs/plans/<slug>.md` so tests have a real,
+/// absolute path to feed to `--plan`.
 fn fresh_root(slug: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let claude = dir.path().join(".claude");
@@ -389,6 +388,105 @@ fn dry_run_does_not_mutate_anything() {
         "dry-run must not register in active-flow.toml"
     );
     assert!(!sidecar_for(&active).exists(), "no active sidecar");
+}
+
+// ---------------------------------------------------------------------------
+// --plan normalisation
+// ---------------------------------------------------------------------------
+
+fn recorded_plan_path(context: &Path) -> String {
+    let ctx: toml::Value = toml::from_str(&fs::read_to_string(context).unwrap()).unwrap();
+    ctx.get("plan_path")
+        .and_then(|v| v.as_str())
+        .expect("plan_path must be recorded")
+        .to_string()
+}
+
+/// `flow doctor` and the task store accept only a repo-relative,
+/// `/`-separated `plan_path`, so an absolute or backslashed `--plan` under the
+/// root is recorded in that form.
+#[test]
+fn a_plan_under_the_root_is_recorded_repo_relative() {
+    let (dir, plan, context) = fresh_root("feature-x");
+    assert!(plan.is_absolute(), "{}", plan.display());
+    let plan_str = plan.to_string_lossy().to_string();
+
+    let out = run_init(
+        &dir,
+        &["--slug", "feature-x", "--plan", &plan_str, "--dry-run"],
+    )
+    .success();
+    assert_eq!(
+        json_stdout(&out)["would_change"]["seed"]["plan_path"],
+        serde_json::json!("docs/plans/feature-x.md")
+    );
+
+    run_init(&dir, &["--slug", "feature-x", "--plan", &plan_str]).success();
+    assert_eq!(recorded_plan_path(&context), "docs/plans/feature-x.md");
+
+    let other = dir
+        .path()
+        .join(".claude")
+        .join("flows")
+        .join("other")
+        .join("context.toml");
+    run_init(
+        &dir,
+        &["--slug", "other", "--plan", r"docs\plans\feature-x.md"],
+    )
+    .success();
+    assert_eq!(recorded_plan_path(&other), "docs/plans/feature-x.md");
+}
+
+/// A `--plan` outside the root, escaping it with `..`, or naming something
+/// other than a `.md` document is refused with `kind=validation` before any
+/// file is written — dry-run included.
+#[test]
+fn a_plan_outside_the_root_or_not_markdown_is_refused_before_any_write() {
+    let (dir, _plan, context) = fresh_root("feature-x");
+    let elsewhere = tempfile::tempdir().unwrap();
+    let outside = elsewhere.path().join("plan.md");
+    fs::write(&outside, "# Plan\n").unwrap();
+    let not_markdown = dir.path().join("docs").join("plans").join("feature-x.txt");
+    fs::write(&not_markdown, "# Plan\n").unwrap();
+
+    let refused = [
+        outside.to_string_lossy().to_string(),
+        "../plan.md".to_string(),
+        not_markdown.to_string_lossy().to_string(),
+    ];
+    let mut admitted = Vec::new();
+    for plan in &refused {
+        for dry_run in [false, true] {
+            let mut args = vec!["--slug", "feature-x", "--plan", plan.as_str()];
+            if dry_run {
+                args.push("--dry-run");
+            }
+            let out = run_init_with_error_json(&dir, &args).get_output().clone();
+            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            let kind = serde_json::from_str::<serde_json::Value>(stderr.trim())
+                .ok()
+                .and_then(|v| v["error"]["kind"].as_str().map(str::to_string));
+            if out.status.success() || kind.as_deref() != Some("validation") {
+                admitted.push(format!("--plan {plan} (dry-run: {dry_run}): {stderr}"));
+            }
+        }
+    }
+    assert!(
+        admitted.is_empty(),
+        "each must be a validation error:\n{}",
+        admitted.join("\n")
+    );
+
+    assert!(!context.exists(), "no context.toml may be written");
+    assert!(
+        !dir.path().join(".claude").join("flows").exists(),
+        "no flow directory may be created"
+    );
+    assert!(
+        !dir.path().join(".claude").join("active-flow.toml").exists(),
+        "no active-flow registration may be written"
+    );
 }
 
 // ---------------------------------------------------------------------------

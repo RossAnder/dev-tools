@@ -87,7 +87,7 @@ tomlctl backlog relate B-1a2b3c4d --to B-5e6f7a8b --as relates-to
 
 - **`not_found` with `arg` `to`** — the target is neither a flow nor a plan. (`not_found` with `arg` `ids` is a stale item id, not a target problem.) Ask the user which of three to do:
   - **Bootstrap a seed flow** — a draft flow that holds the claim until `/plan-new --backlog` plans it. See **Bootstrapping a seed flow** below.
-  - **Pick an existing flow** — offer the flows `tomlctl flow list` reports at a status other than `review` or `complete`, and retry with the chosen slug.
+  - **Pick an existing flow** — offer the rows of `tomlctl flow list`'s `flows` array at a status other than `review` or `complete`, and retry with the chosen slug.
   - **Promote as external** — the work is tracked outside this repo; retry with `--external`, which stores `external:<ref>` unresolved.
 - **`validation` with `arg` `to`** — the `--to` flow has closed at `review` or `complete`, and unless one of its tasks already closes the item, Step 3 will report the claim `orphaned`. Ask: promote anyway with `--allow-closed`, or bootstrap a seed flow.
 

@@ -46,10 +46,9 @@ fn run_list(root: &Path, args: &[&str]) -> Vec<JsonValue> {
         .clone()
 }
 
-/// Same as `run_list` but captures stderr alongside the stdout array, so
-/// tests that need to assert on the malformed-context.toml warning can
-/// inspect both. Asserts success.
-fn run_list_capture(root: &Path, args: &[&str]) -> (Vec<JsonValue>, String) {
+/// Same as `run_list` but returns the whole stdout envelope alongside stderr.
+/// Asserts success.
+fn run_list_capture(root: &Path, args: &[&str]) -> (JsonValue, String) {
     let mut cmd = Command::cargo_bin("tomlctl").unwrap();
     cmd.env("TOMLCTL_ROOT", root)
         .env("TOMLCTL_LOCK_TIMEOUT", "5")
@@ -63,11 +62,7 @@ fn run_list_capture(root: &Path, args: &[&str]) -> (Vec<JsonValue>, String) {
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     let v: JsonValue = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("stdout must be JSON; err={e}; stdout:\n{stdout}"));
-    let arr = v["flows"]
-        .as_array()
-        .unwrap_or_else(|| panic!("stdout must carry a `flows` array; got: {stdout}"))
-        .clone();
-    (arr, stderr)
+    (v, stderr)
 }
 
 /// Seed `.claude/flows/<slug>/context.toml` under `root` with the given
@@ -361,12 +356,11 @@ updated = 2026-04-02
 }
 
 /// A malformed `context.toml` in one flow does NOT abort the whole list —
-/// the other flows still surface. The skip note is terminal-only: `flow
-/// list` emits a bare JSON array with nowhere to carry it, and a captured
-/// stderr is contractually the error envelope alone. `--strict-read` is the
-/// route that surfaces the bad flow to a machine.
+/// the other flows still surface, the bad one lands in `skipped` with a
+/// one-line reason, and `ok` stays true. A captured
+/// stderr stays empty; `--strict-read` escalates the bad flow to an error.
 #[test]
-fn a_malformed_context_is_skipped_quietly_and_strict_read_escalates_it() {
+fn a_malformed_context_is_reported_in_skipped_and_strict_read_escalates_it() {
     let (_g, root) = make_root();
     // Good flow.
     seed_flow(
@@ -388,11 +382,24 @@ this is not valid toml
 "#,
     );
 
-    let (arr, stderr) = run_list_capture(&root, &[]);
+    let (v, stderr) = run_list_capture(&root, &[]);
+    assert_eq!(v["ok"], serde_json::json!(true), "{v}");
     assert_eq!(
-        slugs_of(&arr),
+        slugs_of(v["flows"].as_array().expect("flows array")),
         vec!["good"],
         "good flow must still surface; bad flow must be skipped"
+    );
+    let skipped = v["skipped"].as_array().expect("skipped array");
+    assert_eq!(skipped.len(), 1, "{v}");
+    assert_eq!(
+        skipped[0]["path"],
+        serde_json::json!(".claude/flows/bad/context.toml"),
+        "{v}"
+    );
+    let reason = skipped[0]["reason"].as_str().expect("reason string");
+    assert_eq!(
+        reason, "TOML parse error at line 2: key with no value, expected `=`",
+        "reason must be one line naming the parse failure"
     );
     assert_eq!(stderr, "", "the skip note must not reach a captured stderr");
 

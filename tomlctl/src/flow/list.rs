@@ -1,15 +1,19 @@
 //! `tomlctl flow list [--status <s>] [--branch <b>] [--active-only] [--json]`.
 //!
 //! Read-only enumeration of every `<root>/.claude/flows/<slug>/context.toml`
-//! record. Output is an envelope containing `flows` and skipped-flow
-//! diagnostics:
+//! record:
 //!
 //! ```json
-//! {"flows": [
+//! {"ok": true,
+//!  "flows": [
 //!   {"slug": "feature-x", "status": "in-progress", "updated": "2026-05-08",
 //!    "plan_path": "docs/plans/feature-x.md", "branch": "feat/x",
 //!    "scope": ["src/foo/**"]}
-//! ], "skipped": []}
+//!  ],
+//!  "skipped": [
+//!   {"path": ".claude/flows/broken/context.toml",
+//!    "reason": "TOML parse error at line 1: invalid basic string"}
+//!  ]}
 //! ```
 //!
 //! Field contract:
@@ -30,11 +34,10 @@
 //!   emitted because the read-only `flow active list` already surfaces the
 //!   legacy-pointer warning at its own call site.
 //!
-//! Error tolerance: a malformed `context.toml` in one flow does NOT abort
-//! the whole list; its slug is added to `skipped` and we emit a stderr warning of the form
-//! `tomlctl: flow <slug>: malformed context.toml — skipped` and continue.
-//! Under `--strict-read` a parse error escalates to a tagged `kind=parse`
-//! error per the plan's strict-mode contract.
+//! Error tolerance: an unreadable or malformed `context.toml` does NOT abort
+//! the list — it lands in `skipped` with a one-line `reason`, `ok` stays
+//! true, and the filters never hide it. `--strict-read` escalates the first
+//! one to a tagged `kind=parse` error instead.
 
 use std::fs;
 use std::path::Path;
@@ -46,8 +49,7 @@ use toml::Value as TomlValue;
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::schema::{ActiveDoc, FlowProjection};
-use crate::io::advise;
-use crate::io::{read_dir_sorted, repo_or_cwd_root};
+use crate::io::{read_dir_sorted, relativise, repo_or_cwd_root};
 use crate::output::print_json;
 
 pub(crate) fn dispatch(
@@ -68,7 +70,7 @@ pub(crate) fn dispatch(
         None
     };
 
-    let (records, skipped) = enumerate_flows(&flows_dir, integrity.strict_read)?;
+    let (records, skipped) = enumerate_flows(&root, &flows_dir, integrity.strict_read)?;
 
     let mut out: Vec<JsonValue> = Vec::with_capacity(records.len());
     for rec in records {
@@ -90,7 +92,7 @@ pub(crate) fn dispatch(
         out.push(rec.to_json());
     }
 
-    print_json(&serde_json::json!({"flows": out, "skipped": skipped}))
+    print_json(&serde_json::json!({"ok": true, "flows": out, "skipped": skipped}))
 }
 
 /// One flow's listed projection — not a full `context.toml` deserialisation,
@@ -136,17 +138,19 @@ impl FlowRecord {
 }
 
 /// Walk `<root>/.claude/flows/*/context.toml` (one level deep) and emit one
-/// `FlowRecord` per readable context.toml. A missing flows dir yields the
-/// empty list (a fresh clone with no flows yet is not an error). Per-flow
-/// parse failures emit a stderr warning and skip the flow, unless
-/// `strict_read` is set in which case the failure escalates to a tagged
-/// `kind=parse` error.
-fn enumerate_flows(flows_dir: &Path, strict_read: bool) -> Result<(Vec<FlowRecord>, Vec<String>)> {
+/// `FlowRecord` per readable context.toml plus one `skipped` entry per
+/// unreadable one. A missing flows dir yields two empty lists (a fresh clone
+/// with no flows yet is not an error).
+fn enumerate_flows(
+    root: &Path,
+    flows_dir: &Path,
+    strict_read: bool,
+) -> Result<(Vec<FlowRecord>, Vec<JsonValue>)> {
     if !flows_dir.exists() {
         return Ok((Vec::new(), Vec::new()));
     }
     let mut records: Vec<FlowRecord> = Vec::new();
-    let mut skipped: Vec<String> = Vec::new();
+    let mut skipped: Vec<JsonValue> = Vec::new();
     let entries = read_dir_sorted(flows_dir)?;
     for entry in entries {
         let path = entry.path();
@@ -169,39 +173,36 @@ fn enumerate_flows(flows_dir: &Path, strict_read: bool) -> Result<(Vec<FlowRecor
         }
         match read_context_record(&ctx_path, &slug) {
             Ok(rec) => records.push(rec),
-            Err(e) => {
+            Err(reason) => {
                 if strict_read {
                     return Err(tagged_err(
                         ErrorKind::Parse,
                         Some(ctx_path.clone()),
-                        format!("parsing {}: {}", ctx_path.display(), e),
+                        format!("parsing {}: {}", ctx_path.display(), reason),
                     ));
                 }
-                advise!("tomlctl: flow {}: malformed context.toml — skipped", slug);
-                skipped.push(slug);
+                skipped.push(serde_json::json!({
+                    "path": relativise(root, &ctx_path),
+                    "reason": reason,
+                }));
             }
         }
     }
     Ok((records, skipped))
 }
 
-/// Read and project a single flow's `context.toml`. Returns the typed
-/// record; on parse failure returns `Err` so the caller (`enumerate_flows`)
-/// can decide between warn-and-skip and `--strict-read` escalation.
+/// Read and project a single flow's `context.toml`, or say in one line why
+/// it could not be — the `reason` a `skipped` entry carries.
 ///
-/// Deliberately does NOT funnel through `crate::io::read_toml`: that path
-/// layers tagged-error envelopes that downstream callers would consume
-/// verbatim, but the per-flow tolerance contract here calls for a plain
-/// `Result<_>` whose inner error we project into either a stderr warning
-/// or a `kind=parse` re-tag at the `enumerate_flows` boundary.
-fn read_context_record(path: &Path, slug: &str) -> Result<FlowRecord> {
-    let s = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let doc: TomlValue =
-        toml::from_str(&s).with_context(|| format!("parsing {}", path.display()))?;
+/// Deliberately does NOT funnel through `crate::io::read_toml`: its error is
+/// a multi-line tagged envelope, and the `skipped` contract is one line.
+fn read_context_record(path: &Path, slug: &str) -> std::result::Result<FlowRecord, String> {
+    let s = fs::read_to_string(path).map_err(|e| format!("unreadable: {e}"))?;
+    let doc: TomlValue = toml::from_str(&s).map_err(|e| parse_reason(&s, &e))?;
     // Route through the shared `FlowProjection` parse so list and resolve
     // consume one canonical projection.
     let proj = FlowProjection::from_toml_value(&doc)
-        .ok_or_else(|| anyhow::anyhow!("context.toml root is not a table"))?;
+        .ok_or_else(|| "context.toml root is not a table".to_string())?;
     Ok(FlowRecord {
         slug: slug.to_string(),
         status: proj.status,
@@ -210,6 +211,19 @@ fn read_context_record(path: &Path, slug: &str) -> Result<FlowRecord> {
         branch: proj.branch,
         scope: proj.scope,
     })
+}
+
+/// `toml::de::Error`'s `Display` spans several lines (a source excerpt and a
+/// caret), so the line number is recomputed from the span instead.
+fn parse_reason(source: &str, e: &toml::de::Error) -> String {
+    let message = e.message().split_whitespace().collect::<Vec<_>>().join(" ");
+    match e.span().and_then(|span| source.get(..span.start)) {
+        Some(before) => {
+            let line = before.matches('\n').count() + 1;
+            format!("TOML parse error at line {line}: {message}")
+        }
+        None => format!("TOML parse error: {message}"),
+    }
 }
 
 /// Load the set of slugs from `<root>/.claude/active-flow.toml` for the

@@ -35,8 +35,8 @@ use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::ActiveEntry as SchemaEntry;
 use crate::integrity::refresh_sidecar;
 use crate::io::{
-    guard_write_path, read_toml, recheck_claude_containment, relativise, repo_or_cwd_root,
-    with_exclusive_lock, write_toml_with_sidecar,
+    guard_write_path, read_toml, recheck_claude_containment, recorded_under_root, relativise,
+    relativise_under, repo_or_cwd_root, with_exclusive_lock, write_toml_with_sidecar,
 };
 use crate::output::print_json_compact;
 use crate::time::{now_rfc3339, today_toml_date};
@@ -120,7 +120,7 @@ fn active_flow_path() -> Result<PathBuf> {
 ///   `plan-new`'s post-derivation behaviour).
 fn build_seed_doc(
     slug: &str,
-    plan_path: &Path,
+    plan_path: &str,
     branch: Option<&str>,
     scope: &[String],
     today: toml::value::Datetime,
@@ -130,7 +130,7 @@ fn build_seed_doc(
     root.insert("slug".to_string(), TomlValue::String(slug.to_string()));
     root.insert(
         "plan_path".to_string(),
-        TomlValue::String(plan_path.display().to_string()),
+        TomlValue::String(plan_path.to_string()),
     );
     root.insert("status".to_string(), TomlValue::String("draft".to_string()));
     root.insert("created".to_string(), TomlValue::Datetime(today));
@@ -171,6 +171,35 @@ fn build_seed_doc(
     root.insert("artifacts".to_string(), TomlValue::Table(arts));
 
     TomlValue::Table(root)
+}
+
+/// `--plan` as `context.toml` records it: repo-relative and `/`-separated, in
+/// the form `flow doctor` and the task store accept. A relative argument
+/// resolves against the working directory when it names a file there and
+/// against the repo root otherwise, as `tasks import-plan --plan` does.
+fn recorded_plan_path(root: &Path, plan: &Path) -> Result<String> {
+    let typed = if plan.is_absolute() || plan.exists() {
+        plan.to_path_buf()
+    } else {
+        root.join(plan)
+    };
+    let resolved = typed.canonicalize().unwrap_or(typed);
+    let is_markdown = |rel: &str| {
+        Path::new(rel)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+    };
+    match relativise_under(root, &resolved) {
+        Some(rel) if recorded_under_root(root, Path::new(&rel)) && is_markdown(&rel) => Ok(rel),
+        _ => Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!(
+                "--plan must name a `.md` plan document under the repo root, got `{}`",
+                plan.display()
+            ),
+        )),
+    }
 }
 
 /// Render an existing `context.toml` doc as a JSON object suitable for
@@ -345,8 +374,11 @@ pub(crate) fn dispatch(
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
     validate_slug(&slug)?;
+    let root = repo_or_cwd_root()?;
+    let plan_path = recorded_plan_path(&root, &plan)?;
 
     let context_path = context_path_for(&slug)?;
+    let context_rel = relativise(&root, &context_path);
     let execution_record_path = execution_record_path_for(&slug)?;
     let tasks_path = tasks_path_for(&slug)?;
     let artifacts = CanonicalArtifacts::for_slug(&slug);
@@ -375,7 +407,14 @@ pub(crate) fn dispatch(
         let seed_json = if let Some(ref existing_doc) = existing {
             doc_to_json(existing_doc)
         } else {
-            let seed = build_seed_doc(&slug, &plan, branch.as_deref(), &scope, today, &artifacts);
+            let seed = build_seed_doc(
+                &slug,
+                &plan_path,
+                branch.as_deref(),
+                &scope,
+                today,
+                &artifacts,
+            );
             doc_to_json(&seed)
         };
 
@@ -414,7 +453,14 @@ pub(crate) fn dispatch(
         "noop"
     } else {
         // Fresh init: write the seed under the standard write pipeline.
-        let seed = build_seed_doc(&slug, &plan, branch.as_deref(), &scope, today, &artifacts);
+        let seed = build_seed_doc(
+            &slug,
+            &plan_path,
+            branch.as_deref(),
+            &scope,
+            today,
+            &artifacts,
+        );
         let opts = write_integrity_opts(&integrity);
         let allow_outside = integrity.allow_outside;
         with_exclusive_lock(&context_path, || {
@@ -435,7 +481,7 @@ pub(crate) fn dispatch(
     // order this run materialises them.
     let mut created: Vec<String> = Vec::new();
     if action == "init" {
-        created.push(format!(".claude/flows/{slug}/context.toml"));
+        created.push(context_rel.clone());
     }
 
     // Bootstrap execution-record.toml and tasks.toml (idempotent — the helper
@@ -466,7 +512,7 @@ pub(crate) fn dispatch(
         "slug": slug,
         "action": action,
         "created": created,
-        "context_path": relativise(&repo_or_cwd_root()?, &context_path),
+        "context_path": context_rel,
         "artifacts": artifacts.to_json(),
     });
     print_json_compact(&envelope)
