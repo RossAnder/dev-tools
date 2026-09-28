@@ -39,7 +39,10 @@ use super::schema::{
 use super::{check, slug, store};
 use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{read_toml, recorded_under_root, relativise, repo_or_cwd_root};
+use crate::io::{
+    PlanPathRefusal, read_toml, record_plan_path, recorded_under_root, relativise,
+    repo_or_cwd_root, resolve_plan_arg,
+};
 
 const TASKS_SECTION: &str = "Tasks";
 const POLICY_SECTION: &str = "Execution Policy";
@@ -1108,15 +1111,10 @@ fn load_or_default(path: &Path, integrity: &WriteIntegrityArgs) -> Result<Store>
 /// `--plan` as the caller typed it; otherwise the flow's `context.toml`.
 fn resolve_plan_path(plan: Option<&Path>, slug: Option<&str>) -> Result<PathBuf> {
     if let Some(path) = plan {
-        // A relative `--plan` resolves against the repo root when it does not
-        // resolve against the working directory, so the verb works from a
-        // subdirectory. It is a caller argument rather than file-controlled
-        // input, so the containment check does not bound what it may name —
-        // only what `recorded_plan_path` keeps of it.
-        return match path.is_absolute() || path.exists() {
-            true => Ok(path.to_path_buf()),
-            false => Ok(repo_or_cwd_root()?.join(path)),
-        };
+        // A caller argument rather than file-controlled input, so the
+        // containment check does not bound what it may name — only what
+        // `recorded_plan_path` keeps of it.
+        return Ok(resolve_plan_arg(&repo_or_cwd_root()?, path));
     }
 
     let Some(slug) = slug else {
@@ -1131,20 +1129,14 @@ fn resolve_plan_path(plan: Option<&Path>, slug: Option<&str>) -> Result<PathBuf>
     resolve_context_plan_path(slug)
 }
 
-/// What the store records for a plan `--plan` already accepted. The flag takes
-/// an absolute or subdirectory-relative argument, and the read side takes only
-/// a contained repo-relative one, so the resolved document is relativised
-/// against the root and then put through the read side's own check: a value
-/// that check would refuse must never reach the store, where it would wedge
-/// every later render with no way back but a re-import.
+/// What the store records for a plan `--plan` already accepted, refused with
+/// the wording `contained` gives the same value on the read side.
 fn recorded_plan_path(plan_path: &Path) -> Result<String> {
-    let root = repo_or_cwd_root()?;
-    let resolved = plan_path
-        .canonicalize()
-        .unwrap_or_else(|_| root.join(plan_path));
-    let recorded = relativise(&root, &resolved);
-    contained("the import", &recorded)?;
-    Ok(recorded)
+    const SOURCE: &str = "the import";
+    record_plan_path(&repo_or_cwd_root()?, plan_path).map_err(|refusal| match refusal {
+        PlanPathRefusal::OutsideRoot(recorded) => outside_root("plan_path", SOURCE, &recorded),
+        PlanPathRefusal::NotMarkdown(recorded) => not_markdown(SOURCE, &recorded),
+    })
 }
 
 /// The plan document `context.toml` binds the flow to. `import-plan` is the
@@ -1220,13 +1212,28 @@ fn contained(source: &str, recorded: &str) -> Result<PathBuf> {
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
     {
-        return Err(tagged_err(
-            ErrorKind::Validation,
-            None,
-            format!("`plan_path` in {source} must name a `.md` plan document, got `{recorded}`"),
-        ));
+        return Err(not_markdown(source, recorded));
     }
     Ok(resolved)
+}
+
+fn not_markdown(source: &str, recorded: &str) -> anyhow::Error {
+    tagged_err(
+        ErrorKind::Validation,
+        None,
+        format!("`plan_path` in {source} must name a `.md` plan document, got `{recorded}`"),
+    )
+}
+
+fn outside_root(field: &str, source: &str, recorded: &str) -> anyhow::Error {
+    tagged_err(
+        ErrorKind::Validation,
+        None,
+        format!(
+            "`{field}` in {source} must be repo-relative and stay under the repo root, \
+             got `{recorded}`"
+        ),
+    )
 }
 
 /// A recorded path is file-controlled input, so a value that does not anchor
@@ -1237,14 +1244,7 @@ fn under_root(field: &str, source: &str, recorded: &str) -> Result<PathBuf> {
     let candidate = PathBuf::from(recorded);
     let root = repo_or_cwd_root()?;
     if !recorded_under_root(&root, &candidate) {
-        return Err(tagged_err(
-            ErrorKind::Validation,
-            None,
-            format!(
-                "`{field}` in {source} must be repo-relative and stay under the repo root, \
-                 got `{recorded}`"
-            ),
-        ));
+        return Err(outside_root(field, source, recorded));
     }
     Ok(root.join(&candidate))
 }

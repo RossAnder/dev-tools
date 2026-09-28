@@ -3,6 +3,7 @@
 //! Owns:
 //!   - `strict_read_check` — the crate-wide `--strict-read` existence gate
 //!   - `read_toml` — parse-only TOML reader
+//!   - `read_toml_reason` — the same read, failing with a one-line reason
 //!   - `read_toml_str` / `read_doc_borrowed` — borrowed-lifetime fast-path
 //!   - `read_json_arg` / `read_json_value_from_arg` — `-` stdin sentinel
 //!   - `write_toml_with_sidecar` — atomic write + SHA-256 sidecar refresh
@@ -11,6 +12,8 @@
 //!   - `recheck_claude_containment` — TOCTOU narrowing
 //!   - `path_under_root` — canonical prefix-ancestry containment check
 //!   - `recorded_under_root` — containment for a path a repo file records
+//!   - `resolve_plan_arg` / `record_plan_path` — a `--plan` argument, and
+//!     the `plan_path` a repo file records for it
 //!   - `join_under` / `canonical_key` — lexical join and canonical key for a
 //!     path a ledger or listing spells
 //!   - `with_exclusive_lock` — lock-file acquire/release
@@ -490,6 +493,26 @@ pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
             Some(path.to_owned()),
             format!("parsing {}: {}", path.display(), e),
         )),
+    }
+}
+
+/// `read_toml` for a caller that reports a bad file and moves on: the error
+/// is one line, where `read_toml`'s spans a source excerpt and a caret.
+pub(crate) fn read_toml_reason(path: &Path) -> std::result::Result<TomlValue, String> {
+    let source = fs::read_to_string(path).map_err(|e| format!("unreadable: {e}"))?;
+    toml::from_str(&source).map_err(|e| parse_reason(&source, &e))
+}
+
+/// The line number is recomputed from the span, since the error's `Display`
+/// is the multi-line form.
+fn parse_reason(source: &str, e: &toml::de::Error) -> String {
+    let message = e.message().split_whitespace().collect::<Vec<_>>().join(" ");
+    match e.span().and_then(|span| source.get(..span.start)) {
+        Some(before) => {
+            let line = before.matches('\n').count() + 1;
+            format!("TOML parse error at line {line}: {message}")
+        }
+        None => format!("TOML parse error: {message}"),
     }
 }
 
@@ -1571,6 +1594,50 @@ pub(crate) fn path_under_root(root: &Path, candidate: &Path) -> bool {
 /// anchors on the nearest existing ancestor — is what refuses that.
 pub(crate) fn recorded_under_root(root: &Path, recorded: &Path) -> bool {
     lexically_anchored(recorded) && path_under_root(root, &root.join(recorded))
+}
+
+/// The file a `--plan` argument names. A relative argument resolves against
+/// the working directory when it names a file there and against `root`
+/// otherwise, so the flag works from a subdirectory.
+pub(crate) fn resolve_plan_arg(root: &Path, plan: &Path) -> PathBuf {
+    if plan.is_absolute() || plan.exists() {
+        plan.to_path_buf()
+    } else {
+        root.join(plan)
+    }
+}
+
+/// Why `record_plan_path` refused a plan, carrying the spelling it reached.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PlanPathRefusal {
+    /// Not under the root: repo-relative when it got that far, else absolute.
+    OutsideRoot(String),
+    /// Under the root, repo-relative, and not a `.md` document.
+    NotMarkdown(String),
+}
+
+/// A resolved plan spelled as a repo file records its `plan_path`:
+/// `/`-separated, relative to `root`, contained per `recorded_under_root`,
+/// and ending `.md`. The readers of a recorded `plan_path` refuse anything
+/// else, so a value recorded past this check wedges every later read.
+pub(crate) fn record_plan_path(
+    root: &Path,
+    plan: &Path,
+) -> std::result::Result<String, PlanPathRefusal> {
+    let resolved = plan.canonicalize().unwrap_or_else(|_| plan.to_path_buf());
+    let Some(rel) = relativise_under(root, &resolved) else {
+        return Err(PlanPathRefusal::OutsideRoot(slashed_display(&resolved)));
+    };
+    if !recorded_under_root(root, Path::new(&rel)) {
+        return Err(PlanPathRefusal::OutsideRoot(rel));
+    }
+    if !Path::new(&rel)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
+    {
+        return Err(PlanPathRefusal::NotMarkdown(rel));
+    }
+    Ok(rel)
 }
 
 /// Would `root.join(path)` stay under `root` without consulting the disk?

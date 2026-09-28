@@ -427,6 +427,82 @@ this is not valid toml
     );
 }
 
+/// `--verify-integrity` skips a flow whose sidecar disagrees with its
+/// `context.toml` and still lists one whose sidecar matches; without the flag
+/// the tampered flow lists normally, and `--strict-read` makes it an error.
+#[test]
+fn verify_integrity_skips_a_tampered_context() {
+    let (_g, root) = make_root();
+    for slug in ["good", "tampered"] {
+        seed_flow(
+            &root,
+            slug,
+            &format!(
+                "slug = \"{slug}\"\nplan_path = \"docs/plans/{slug}.md\"\nstatus = \"draft\"\n"
+            ),
+        );
+    }
+    let good_ctx = root.join(".claude/flows/good/context.toml");
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", &root)
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .args(["integrity", "refresh"])
+        .arg(&good_ctx)
+        .assert()
+        .success();
+    fs::write(
+        root.join(".claude/flows/tampered/context.toml.sha256"),
+        format!("{}  context.toml\n", "0".repeat(64)),
+    )
+    .unwrap();
+
+    let (v, _) = run_list_capture(&root, &["--verify-integrity"]);
+    assert_eq!(
+        slugs_of(v["flows"].as_array().expect("flows array")),
+        vec!["good"],
+        "{v}"
+    );
+    let skipped = v["skipped"].as_array().expect("skipped array");
+    assert_eq!(skipped.len(), 1, "{v}");
+    assert_eq!(
+        skipped[0]["path"],
+        serde_json::json!(".claude/flows/tampered/context.toml"),
+        "{v}"
+    );
+    let reason = skipped[0]["reason"].as_str().expect("reason string");
+    assert!(
+        reason.starts_with("integrity check failed") && !reason.contains('\n'),
+        "reason must be the verifier's one-line message: {reason}"
+    );
+
+    let arr = run_list(&root, &[]);
+    assert_eq!(slugs_of(&arr), vec!["good", "tampered"], "{arr:?}");
+
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", &root)
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .args([
+            "--error-format",
+            "json",
+            "flow",
+            "list",
+            "--verify-integrity",
+            "--strict-read",
+        ])
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err: JsonValue = serde_json::from_str(stderr.trim()).unwrap();
+    assert_eq!(
+        err["error"]["kind"],
+        serde_json::json!("integrity"),
+        "{err}"
+    );
+}
+
 /// `branch` field is omitted from the JSON record when the source
 /// `context.toml` has no `branch` key. The other contract fields (slug,
 /// status, updated, plan_path, scope) remain present.

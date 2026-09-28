@@ -10,10 +10,11 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use toml::Value as TomlValue;
 
 use crate::flow::{FlowProjection, validate_slug};
-use crate::io::{advise, join_under, read_dir_sorted, relativise_under};
+use crate::io::{
+    advise, join_under, read_dir_sorted, read_toml_reason, relativise, relativise_under,
+};
 
 const EXTERNAL_PREFIX: &str = "external:";
 
@@ -88,8 +89,20 @@ impl Resolver {
             if !ctx.is_file() {
                 continue;
             }
-            let Some(proj) = read_projection(&ctx) else {
-                advise!("tomlctl: flow {}: malformed context.toml — skipped", slug);
+            // `flow list` reports the same file under `skipped` with the same
+            // reason; the triage and reconcile envelopes carry no such slot.
+            let doc = match read_toml_reason(&ctx) {
+                Ok(doc) => doc,
+                Err(reason) => {
+                    advise!(
+                        "tomlctl: warning: skipped {}: {}",
+                        relativise(root, &ctx),
+                        reason
+                    );
+                    continue;
+                }
+            };
+            let Some(proj) = FlowProjection::from_toml_value(&doc) else {
                 continue;
             };
             let plan_path = proj.plan_path.as_deref().map(normalise);
@@ -153,12 +166,6 @@ impl Resolver {
     fn flow_for_plan(&self, plan: &str) -> Option<Target> {
         self.flow(self.by_plan.get(plan)?)
     }
-}
-
-fn read_projection(ctx: &Path) -> Option<FlowProjection> {
-    let text = std::fs::read_to_string(ctx).ok()?;
-    let doc: TomlValue = toml::from_str(&text).ok()?;
-    FlowProjection::from_toml_value(&doc)
 }
 
 /// One spelling per plan path: `/` separators and no leading `./`.

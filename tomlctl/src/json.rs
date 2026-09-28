@@ -473,10 +473,9 @@ fn handle_unset(
 
 /// Refresh the sidecar after a successful JSON write, honouring the
 /// co-writer skip (`settings.json`) and the `--no-write-integrity` /
-/// `--strict-integrity` flags. Mirrors `write_toml_with_sidecar`'s
-/// failure-handling shape (warn on stderr by default, fail-hard under
-/// `--strict-integrity`) so the JSON and TOML write paths surface
-/// identical operator-facing behaviour on a stuck disk / bad sidecar.
+/// `--strict-integrity` flags. The primary write has already landed, so a
+/// sidecar failure warns on stderr by default and fails hard under
+/// `--strict-integrity`.
 fn refresh_sidecar_after_write(
     file: &Path,
     skip: bool,

@@ -35,8 +35,8 @@ use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::ActiveEntry as SchemaEntry;
 use crate::integrity::refresh_sidecar;
 use crate::io::{
-    guard_write_path, read_toml, recheck_claude_containment, recorded_under_root, relativise,
-    relativise_under, repo_or_cwd_root, with_exclusive_lock, write_toml_with_sidecar,
+    guard_write_path, read_toml, recheck_claude_containment, record_plan_path, relativise,
+    repo_or_cwd_root, resolve_plan_arg, with_exclusive_lock, write_toml_with_sidecar,
 };
 use crate::output::print_json_compact;
 use crate::time::{now_rfc3339, today_toml_date};
@@ -173,33 +173,19 @@ fn build_seed_doc(
     TomlValue::Table(root)
 }
 
-/// `--plan` as `context.toml` records it: repo-relative and `/`-separated, in
-/// the form `flow doctor` and the task store accept. A relative argument
-/// resolves against the working directory when it names a file there and
-/// against the repo root otherwise, as `tasks import-plan --plan` does.
+/// `--plan` as `context.toml` records it, resolved and checked exactly as
+/// `tasks import-plan --plan` records it in the task store.
 fn recorded_plan_path(root: &Path, plan: &Path) -> Result<String> {
-    let typed = if plan.is_absolute() || plan.exists() {
-        plan.to_path_buf()
-    } else {
-        root.join(plan)
-    };
-    let resolved = typed.canonicalize().unwrap_or(typed);
-    let is_markdown = |rel: &str| {
-        Path::new(rel)
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
-    };
-    match relativise_under(root, &resolved) {
-        Some(rel) if recorded_under_root(root, Path::new(&rel)) && is_markdown(&rel) => Ok(rel),
-        _ => Err(tagged_err(
+    record_plan_path(root, &resolve_plan_arg(root, plan)).map_err(|_| {
+        tagged_err(
             ErrorKind::Validation,
             None,
             format!(
                 "--plan must name a `.md` plan document under the repo root, got `{}`",
                 plan.display()
             ),
-        )),
-    }
+        )
+    })
 }
 
 /// Render an existing `context.toml` doc as a JSON object suitable for

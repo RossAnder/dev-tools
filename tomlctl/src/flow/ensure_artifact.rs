@@ -290,8 +290,8 @@ fn bootstrap_execution_record(
             recheck_claude_containment(artifact)?;
         }
         if opts.write_sidecar {
-            // Refresh failures escalate identically to the
-            // `write_toml_with_sidecar` strict-integrity contract.
+            // The artifact is already written: a refresh failure warns, and
+            // fails hard only under --strict-integrity.
             if let Err(e) = crate::io::write_sidecar_for(artifact, body.as_bytes()) {
                 if opts.strict {
                     return Err(e);
