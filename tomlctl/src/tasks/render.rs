@@ -21,6 +21,7 @@ use anyhow::Result;
 use super::finding::{Finding, WARNING, join_ids};
 use super::graph::{Graph, Group, nodes_of};
 use super::markdown::{insert_section_after, insert_section_before, replace_section, sections};
+use super::parse_tasks::parse_files;
 use super::schema::{BacklogLink, Checkpoint, Policy, Store, TaskRow};
 
 /// The sections `render` owns; every other byte of the plan is preserved.
@@ -211,7 +212,7 @@ fn render_tasks(store: &Store) -> String {
             row.title,
             row.effort.as_str()
         ));
-        body.push_str(&format!("- **Files**: {}\n", file_list(store, row)));
+        body.push_str(&files_field(store, row));
         body.push_str(&format!("- **Depends on**: {}\n", depends_on(row)));
         if let Some(link) = store.links_for(&row.r#ref) {
             body.push_str(&format!("- **Backlog**: {}\n", backlog(link)));
@@ -321,29 +322,45 @@ fn backlog(link: &BacklogLink) -> String {
         .join(", ")
 }
 
-/// Each path with the annotation the plan wrote against it. The importer reads
-/// an annotation from the first `(` or ` — ` outside a backticked span, and
-/// splits the line only on a comma outside both — except that a comma opening
-/// a backticked entry ends a ` — ` annotation, which is how the path after one
-/// is found. An annotation's own `, \`` therefore reads as a new path.
-fn file_list(store: &Store, row: &TaskRow) -> String {
+/// Each path with the annotation the plan wrote against it, on one comma list
+/// when the importer reads that line back to the same paths and notes, and as
+/// one bullet per path when it does not. A ` — ` note has no closing mark, so
+/// on one line the importer can swallow the path after it (`Makefile`) as its
+/// prose; a bullet ends every note at the end of its own line.
+fn files_field(store: &Store, row: &TaskRow) -> String {
     if row.files.is_empty() {
-        return EMPTY.to_string();
+        return format!("- **Files**: {EMPTY}\n");
     }
-    row.files
+    let notes: Vec<String> = row
+        .files
         .iter()
         .map(|file| {
-            match store
+            store
                 .file_note(&row.r#ref, file)
                 .map(collapse)
-                .filter(|note| !note.is_empty())
-            {
-                Some(note) => format!("`{file}` {note}"),
-                None => format!("`{file}`"),
-            }
+                .unwrap_or_default()
         })
-        .collect::<Vec<_>>()
-        .join(", ")
+        .collect();
+    let entries: Vec<String> = row
+        .files
+        .iter()
+        .zip(&notes)
+        .map(|(file, note)| match note.is_empty() {
+            true => format!("`{file}`"),
+            false => format!("`{file}` {note}"),
+        })
+        .collect();
+
+    let line = entries.join(", ");
+    let (read_files, read_notes) = parse_files(std::slice::from_ref(&line));
+    if read_files == row.files && read_notes == notes {
+        return format!("- **Files**: {line}\n");
+    }
+    let mut out = String::from("- **Files**:\n");
+    for entry in entries {
+        out.push_str(&format!("  - {entry}\n"));
+    }
+    out
 }
 
 /// One marker or one field value is one paragraph, so an embedded blank line
@@ -734,6 +751,83 @@ mod tests {
             ]
         );
         assert_eq!(render_into_plan(&store, &plan).expect("re-renders"), plan);
+    }
+
+    /// The store an import of `plan` rebuilds its file claims into: each row's
+    /// `files` and `[[file_notes]]` from the plan alone, nothing carried over.
+    fn reimport_files(store: &Store, plan: &str) -> Store {
+        let parsed = parse_tasks(&section(plan, "Tasks")).expect("tasks parse");
+        let mut out = store.clone();
+        out.file_notes = Vec::new();
+        for (row, task) in out.items.iter_mut().zip(&parsed) {
+            row.files = task.files.clone();
+            for (file, note) in task.files.iter().zip(&task.file_notes) {
+                if !note.is_empty() {
+                    out.file_notes.push(FileNote {
+                        r#ref: row.r#ref.clone(),
+                        file: file.clone(),
+                        note: note.clone(),
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    fn with_files(files: &[&str], notes: &[(&str, &str)]) -> Store {
+        let mut store = fixture();
+        let r#ref = store.items[2].r#ref.clone();
+        store.items[2].files = files.iter().map(|file| file.to_string()).collect();
+        store.file_notes = notes
+            .iter()
+            .map(|(file, note)| FileNote {
+                r#ref: r#ref.clone(),
+                file: file.to_string(),
+                note: note.to_string(),
+            })
+            .collect();
+        store
+    }
+
+    /// On one line the importer reads `Makefile` as the dash note's prose,
+    /// since only a backticked span holding a `/` or `.` ends one.
+    #[test]
+    fn a_path_a_dash_note_would_swallow_renders_as_a_bulleted_list() {
+        let store = with_files(&["a.rs", "Makefile"], &[("a.rs", "— extend `Row`")]);
+        let plan = render_into_plan(&store, PLAN).expect("renders");
+        assert!(
+            plan.contains(
+                "- **Files**:\n  - `a.rs` — extend `Row`\n  - `Makefile`\n- **Depends on**:"
+            ),
+            "{plan}"
+        );
+
+        let parsed = parse_tasks(&section(&plan, "Tasks")).expect("tasks parse");
+        assert_eq!(parsed[2].files, store.items[2].files, "{plan}");
+        assert_eq!(parsed[2].file_notes, vec!["— extend `Row`", ""]);
+
+        let reimported = reimport_files(&store, &plan);
+        assert_eq!(reimported.items, store.items);
+        assert_eq!(reimported.file_notes, store.file_notes);
+        assert_eq!(
+            render_into_plan(&reimported, &plan).expect("re-renders"),
+            plan
+        );
+    }
+
+    #[test]
+    fn a_files_line_that_reads_back_whole_stays_on_one_line() {
+        let store = with_files(&["a.rs", "src/b.rs"], &[("a.rs", "— extend `Row`")]);
+        let plan = render_into_plan(&store, PLAN).expect("renders");
+        assert!(
+            plan.contains("- **Files**: `a.rs` — extend `Row`, `src/b.rs`\n"),
+            "{plan}"
+        );
+        assert_eq!(plan.matches("- **Files**:\n").count(), 0, "{plan}");
+        assert_eq!(
+            render_into_plan(&reimport_files(&store, &plan), &plan).expect("re-renders"),
+            plan
+        );
     }
 
     #[test]

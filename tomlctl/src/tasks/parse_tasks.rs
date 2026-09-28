@@ -339,7 +339,7 @@ fn close_field(task: Option<&mut ParsedTask>, open: Option<OpenField>) -> Result
 /// The paths, and the annotation trailing each of them — the store keeps the
 /// two apart, because every consumer of a file claim compares bare paths while
 /// the annotation is the author's and only the render puts it back.
-fn parse_files(lines: &[String]) -> (Vec<String>, Vec<String>) {
+pub(crate) fn parse_files(lines: &[String]) -> (Vec<String>, Vec<String>) {
     let mut files = Vec::new();
     let mut notes = Vec::new();
     for line in lines {
@@ -352,7 +352,7 @@ fn parse_files(lines: &[String]) -> (Vec<String>, Vec<String>) {
                 bullet_re().replace(line, "").as_ref(),
             );
         } else {
-            for raw in split_entries_resuming(line, |ch| ch == ',', true) {
+            for raw in split_entries_resuming(line, |ch| ch == ',', Some(opens_on_path)) {
                 push_file(&mut files, &mut notes, raw);
             }
         }
@@ -369,14 +369,19 @@ const NOTE_DASH: &str = " — ";
 /// cutting the annotation afterwards reads `(new, generated)` as a second
 /// path, which every consumer of a file claim then treats as one.
 fn split_entries(line: &str, separates: impl Fn(char) -> bool) -> Vec<&str> {
-    split_entries_resuming(line, separates, false)
+    split_entries_resuming(line, separates, None)
 }
 
-/// `resume` ends an em-dash annotation at a separator whose next entry opens
-/// on a backtick, which is how a rendered `Files` line lists the path after an
+/// `resume` ends an em-dash annotation at a separator when it accepts the text
+/// after that separator, which is how a rendered line lists the entry after an
 /// annotated one. Without it the annotation runs to the end of the line and
-/// every later path is read as its prose.
-fn split_entries_resuming(line: &str, separates: impl Fn(char) -> bool, resume: bool) -> Vec<&str> {
+/// every later entry is read as its prose; with one too loose, the
+/// annotation's own `, x` becomes an entry nobody wrote.
+fn split_entries_resuming(
+    line: &str,
+    separates: impl Fn(char) -> bool,
+    resume: Option<fn(&str) -> bool>,
+) -> Vec<&str> {
     let mut entries = Vec::new();
     let mut start = 0;
     let mut depth = 0u32;
@@ -387,7 +392,7 @@ fn split_entries_resuming(line: &str, separates: impl Fn(char) -> bool, resume: 
             quoted = !quoted;
             continue;
         }
-        if quoted || (annotated && !resume) {
+        if quoted || (annotated && resume.is_none()) {
             continue;
         }
         match ch {
@@ -395,7 +400,9 @@ fn split_entries_resuming(line: &str, separates: impl Fn(char) -> bool, resume: 
             ')' => depth = depth.saturating_sub(1),
             _ if depth > 0 => {}
             _ if separates(ch)
-                && (!annotated || line[at + ch.len_utf8()..].trim_start().starts_with('`')) =>
+                && (!annotated
+                    || resume
+                        .is_some_and(|opens| opens(line[at + ch.len_utf8()..].trim_start()))) =>
             {
                 entries.push(&line[start..at]);
                 start = at + ch.len_utf8();
@@ -407,6 +414,39 @@ fn split_entries_resuming(line: &str, separates: impl Fn(char) -> bool, resume: 
     }
     entries.push(&line[start..]);
     entries
+}
+
+/// A backticked span holding a `/` or `.`. A backticked bare identifier after
+/// the comma is the annotation's own prose, not a path.
+fn opens_on_path(rest: &str) -> bool {
+    rest.strip_prefix('`')
+        .and_then(|inner| inner.split_once('`'))
+        .is_some_and(|(span, _)| span.contains(['/', '.']))
+}
+
+/// A `Backlog` entry — an optional `refs `, then an id, backticked or bare,
+/// with nothing after it but the end of the entry or its annotation. Prose
+/// that merely names an id (`B-2 is related`) stays in the note.
+fn opens_on_backlog_id(rest: &str) -> bool {
+    let rest = rest.strip_prefix("refs ").map_or(rest, str::trim_start);
+    let (id, after) = match rest.strip_prefix('`') {
+        Some(inner) => match inner.split_once('`') {
+            Some(pair) => pair,
+            None => return false,
+        },
+        None => rest.split_at(
+            rest.find(|ch: char| ch == ',' || ch == '(' || ch.is_ascii_whitespace())
+                .unwrap_or(rest.len()),
+        ),
+    };
+    let after = after.trim_start();
+    is_backlog_id(id) && (after.is_empty() || after.starts_with([',', '(', '—']))
+}
+
+fn is_backlog_id(token: &str) -> bool {
+    token
+        .strip_prefix("B-")
+        .is_some_and(|hex| !hex.is_empty() && hex.chars().all(|ch| ch.is_ascii_hexdigit()))
 }
 
 fn push_file(files: &mut Vec<String>, notes: &mut Vec<String>, raw: &str) {
@@ -488,7 +528,7 @@ fn parse_backlog(lines: &[String]) -> (Vec<String>, Vec<String>) {
     let value = lines.join(" ");
     let mut closes = Vec::new();
     let mut refs = Vec::new();
-    for raw in split_entries(value.trim(), |ch| ch == ',') {
+    for raw in split_entries_resuming(value.trim(), |ch| ch == ',', Some(opens_on_backlog_id)) {
         let entry = raw[..annotation_at(raw)].replace('`', "");
         let entry = entry.trim();
         let (target, id) = match entry.strip_prefix("refs ") {
@@ -849,6 +889,28 @@ cargo test
     }
 
     #[test]
+    fn a_backticked_identifier_inside_a_dash_note_claims_no_file() {
+        let body = "### 1. Split the store [S]\n\
+                    - **Files**: `src/a.rs` — touches `foo`, `bar` too\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(
+            task.files,
+            vec!["src/a.rs"],
+            "a note's identifier became a claim"
+        );
+        assert_eq!(task.file_notes, vec!["— touches `foo`, `bar` too"]);
+    }
+
+    #[test]
+    fn a_backticked_path_after_a_dash_note_is_the_next_claim() {
+        let body = "### 1. Split the store [S]\n\
+                    - **Files**: `src/a.rs` — extend `Row`, `src/b.rs` — mirror it, `Cargo.toml`\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(task.files, vec!["src/a.rs", "src/b.rs", "Cargo.toml"]);
+        assert_eq!(task.file_notes, vec!["— extend `Row`", "— mirror it", ""]);
+    }
+
+    #[test]
     fn files_none_yields_no_entries() {
         let second = &parse_tasks(PHASED).expect("parses")[1];
         assert!(second.files.is_empty(), "{:?}", second.files);
@@ -893,6 +955,24 @@ cargo test
         let task = &parse_tasks(body).expect("parses")[0];
         assert_eq!(task.backlog_refs, vec!["B-1"]);
         assert_eq!(task.backlog_closes, vec!["B-2"]);
+    }
+
+    #[test]
+    fn a_backlog_id_after_a_dash_note_is_still_linked() {
+        let body = "### 1. Ship it [S]\n\
+                    - **Backlog**: `B-1` — follow-up, `B-2`, B-3 — again, refs `B-4` (partial)\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(task.backlog_closes, vec!["B-1", "B-2", "B-3"]);
+        assert_eq!(task.backlog_refs, vec!["B-4"]);
+    }
+
+    #[test]
+    fn a_backlog_id_named_in_a_dash_note_is_not_linked() {
+        let body = "### 1. Ship it [S]\n\
+                    - **Backlog**: `B-1` — follow-up, B-2 is related, `B-note`\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(task.backlog_closes, vec!["B-1"]);
+        assert!(task.backlog_refs.is_empty(), "{:?}", task.backlog_refs);
     }
 
     #[test]
