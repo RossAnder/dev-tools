@@ -29,14 +29,14 @@ commit_granularity_note = "— tasks 5 and 6 land in one commit"
 id = "A"
 rationale = "store, schema and graph engine — buildable alone"
 
+[[import_overrides]]
+ref = "check-side-arm-width-at-a-narrow-viewport"
+files = ["packages/shell-react/src/studioOverflow.test.tsx"]
+
 [[file_notes]]
 ref = "check-side-arm-width-at-a-narrow-viewport"
 file = "packages/shell-react/src/studioOverflow.browser.test.tsx"
 note = "(new)"
-
-[[import_overrides]]
-ref = "check-side-arm-width-at-a-narrow-viewport"
-files = ["packages/shell-react/src/studioOverflow.test.tsx"]
 
 [[backlog_links]]
 ref = "check-side-arm-width-at-a-narrow-viewport"
