@@ -3711,7 +3711,7 @@ tags = [
     "cli",
     "output",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3719,6 +3719,8 @@ dedup_id = "4dbf000529c8299f"
 origin = "implement"
 context = "items add succeeds with an envelope carrying no added key, yet a dedupe-skipped items add prints added:0 and items add-many prints added:N, so a caller cannot read one success field across the add verbs. write.md used to document added:1 for items add, which the binary never printed; the doc now shows the real envelope. Adding added:1 to the success path is an additive envelope change; check exact-envelope test assertions first."
 base_sha = "d4c6264d9fec04a6cfb8f1ea12922bec213760d0"
+resolved = 2026-09-28
+resolution = "items add now reports added:1 on success (fcd9b89)"
 
 [[backlog]]
 id = "B-74e5be91"
@@ -3729,7 +3731,7 @@ tags = [
     "cli",
     "dry-run",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3738,3 +3740,5 @@ origin = "implement"
 context = "compute_array_append_mutation reuses compute_add_many_mutation, which collects each row's id; array-append records usually carry no id, so would_change.ids comes back as one empty string per record. A unit test asserts the empty-string ids, so it may be intended. A caller counting ids gets the record count padded with blanks. Decide whether to filter empties or document it; write.md now shows the real output."
 base_sha = "d4c6264d9fec04a6cfb8f1ea12922bec213760d0"
 related = ["B-fab4798a"]
+resolved = 2026-09-28
+resolution = "dry-run ids now omit id-less rows; counts still include them (acd5a0f)"
