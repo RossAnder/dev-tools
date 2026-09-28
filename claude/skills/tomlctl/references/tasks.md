@@ -97,6 +97,13 @@ value back, dropping the entry, the moment the plan states anything else —
 `plan/override-released`. Membership, not order, is the comparison: reordering a `Files` line
 states no new value.
 
+A task's `- **Backlog**:` bullet — `B-aaaa1111, refs B-bbbb2222` — is rebuilt into
+`[[backlog_links]]` on every import, keyed by the row's final `ref`: a bare id is a `closes`
+link, and `refs` qualifies only the entry it opens. When the imported store holds any link the
+import reads `.claude/backlog.toml` and adds the [`backlog/*` findings](#the-check-finding-classes);
+`backlog/unknown-id` is error-class, so it refuses a real import. Plan mode has no slug, so it
+never raises `backlog/claimed-elsewhere`.
+
 ## `tasks add`
 
 Appends one row, minting `max(id) + 1` and deriving the `ref` from the title. A dangling
@@ -276,14 +283,19 @@ still shows its rows under every other part.
 {"id":12,"ref":"check-side-arm-width","title":"Check side-arm width","effort":"S",
  "status":"pending","checkpoint":"A","files":["src/overflow.tsx"],"needs":[10],"coupling":[],
  "action":"…","detail":"…","acceptance":"…","deps":[{"id":10,"ref":"…"}],
- "import_override":{"files":["src/legacy.tsx"],"needs":[9]}}
+ "import_override":{"files":["src/legacy.tsx"],"needs":[9]},
+ "backlog":{"closes":["B-aaaa1111"],"refs":["B-bbbb2222"]}}
 ```
 
-`import_override` is emitted last and is not gated on `--with`. It holds the plan **base** each
+`import_override` follows the parts `--with` selected and is not gated on it. It holds the plan **base** each
 stamped field replaced — not the patched `files` / `needs` above it — with an unstamped field
 omitted and the whole key absent from an unstamped row, so output for a store nothing has
 hand-patched is unchanged. It carries no `ref` (the row has one), and the summaries nested under
 `deps` / `dependents` never carry it: the stamp belongs to the row that was asked for.
+
+`backlog` comes last, on the same terms: the row's `[[backlog_links]]` entry as backlog ids under
+`closes` and `refs`, ungated by `--with`, absent from an unlinked row, and never on a nested
+summary.
 
 An unknown id errors with `kind=not_found`.
 
@@ -432,6 +444,10 @@ containment refusal applies. `render/drift` is a warning, so it is reported with
 exit code: `check --plan` still exits `0` on a drifted plan, and
 [`tasks render --check`](#tasks-render) is the mode to gate on instead.
 
+A store holding any `[[backlog_links]]` entry is also joined against `.claude/backlog.toml` for
+the `backlog/*` classes; a link-free store never reads it. Under `--file` there is no slug, so
+`backlog/claimed-elsewhere` is not raised.
+
 ## `tasks render`
 
 Rewrites the plan's `## Execution Policy`, `## Tasks` and `## Dependency Graph` sections from
@@ -515,9 +531,19 @@ it.
 | `plan/override-held` | warning | `import-plan` only — a hand-patched `files` or `needs` the plan does not state; run `tasks render` to publish it |
 | `plan/override-released` | warning | `import-plan` only — the plan restated the line, so its value replaced the hand-patched one and the stamp is gone |
 | `render/drift` | warning | `check --plan` and `render --check` |
+| `backlog/unknown-id` | error | `check` and `import-plan` — a linked id in neither the `backlog` nor the `compacted` array of `.claude/backlog.toml`, through a `closes` or a `refs` link; `ids` names every linking task. A missing backlog reads as empty |
+| `backlog/unpromoted` | warning | `check` and `import-plan` — a `closes` id whose item is still `open`; `ids` names the closing tasks, and a `refs` link raises nothing |
+| `backlog/claimed-elsewhere` | warning | `check --slug` and `import-plan --slug` — a `closes` id whose item is `promoted` to neither the slug nor the store's `plan_path`, `\` and `/` compared alike; `ids` names the closing tasks. Never raised under `--file` or in plan mode |
+| `backlog/closed` | info | `check` and `import-plan` — a linked id whose item is `resolved`, `dismissed` or compacted; `ids` names every linking task |
 
 Severity is `error`, `warning` or `info`. Only `error` moves the exit code; `info` is reserved
-for a list a reader judges, and `files/closure` is its one member.
+for a list a reader judges, and `files/closure` and `backlog/closed` are its members.
+
+The four `backlog/*` classes are joined from the store's `[[backlog_links]]` and
+`.claude/backlog.toml`, read only when the store holds a link — a backlog that does not parse
+then fails the verb. Each linked id raises at most one of them. A link keyed on a `ref` no row
+carries — `tasks remove` and `tasks update --ref` leave links in place until the next import —
+contributes no id to `ids`; its `detail` names the `ref`.
 
 Every finding is `{class, severity, ids, detail}`; `ids` is empty for the whole-store classes —
 `dag/unbuildable`, the four `policy/*`, `plan/policy-absent`, `plan/no-tasks` and

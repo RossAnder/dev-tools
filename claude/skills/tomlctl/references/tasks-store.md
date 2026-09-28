@@ -17,8 +17,8 @@ is [tasks.md](tasks.md); what the fields *mean* and which verb a carrier reaches
 ## Store shape
 
 `.claude/flows/<slug>/tasks.toml` carries four top-level keys, a `[policy]` table, a
-`[[checkpoints]]` array, optional `[[import_overrides]]` and `[[file_notes]]` arrays and an
-`[[items]]` array. Keys are written in that order and the order is stable across writes, so a
+`[[checkpoints]]` array, optional `[[import_overrides]]`, `[[file_notes]]` and `[[backlog_links]]`
+arrays and an `[[items]]` array. Keys are written in that order and the order is stable across writes, so a
 re-render is a clean diff.
 
 | Key | Set by |
@@ -41,9 +41,9 @@ from those fallbacks, which is the only thing distinguishing a pre-policy plan o
 has materialised the table. It was added without a `schema_version` bump: an absent `origin`
 reads as `plan`, except that a `note` of exactly `policy absent in source plan` — what
 pre-`origin` imports stamped there for the same condition — reads as `default` with the note
-cleared. `note` is otherwise authored prose the renderer writes back verbatim. `[[file_notes]]`
-and the three `*_note` keys were added the same way, without a bump: absent from every store
-written before them, read as empty, and omitted on write while empty.
+cleared. `note` is otherwise authored prose the renderer writes back verbatim. `[[file_notes]]`,
+`[[backlog_links]]` and the three `*_note` keys were added the same way, without a bump: absent
+from every store written before them, read as empty, and omitted on write while empty.
 
 `[[checkpoints]]`: `id` and `rationale`, in marker order. Group *membership* is not here — it
 is the `checkpoint` field on each row.
@@ -60,12 +60,21 @@ paths for the file-claim comparisons to read. Rebuilt from the plan at each impo
 the plan names, kept only for paths the merged row still claims, and kept whole for a row the
 plan no longer names. Omitted while empty on the same terms as `[[import_overrides]]`.
 
+`[[backlog_links]]`: `ref`, `closes` and `refs` — the `.claude/backlog.toml` ids a task's
+`- **Backlog**:` bullet names, `refs` holding the entries the `refs` qualifier opened and `closes`
+the rest. Plan-owned whole: every import rebuilds the table from the bullets, keyed by each row's
+final `ref`, and a row the plan no longer names keeps no link. `tasks remove` and
+`tasks update --ref` leave it alone, so until the next import an entry can key on a `ref` no row
+carries. An entry with no `ref` or no id is dropped on read and on write, and the table is omitted while
+empty on the same terms as `[[import_overrides]]`.
+
 `[[items]]`: `id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `phase`, `phase_depth`,
 `heading_depth`, `files`, `needs`, `coupling`, `deps_note`, `action`, `detail`, `acceptance`,
 `agent`, `commit`. The plan owns every field but four: `status`, `agent`, `commit` and
 `coupling` survive every re-import. `files` and `needs` survive one too while an
 `[[import_overrides]]` entry holds the plan value they were patched against. Per-path
-annotations are not on the row — they are `[[file_notes]]` entries keyed by `ref`.
+annotations are not on the row — they are `[[file_notes]]` entries keyed by `ref`, as backlog
+links are `[[backlog_links]]` entries.
 
 `phase` and `phase_depth` hold the heading standing over the row in `## Tasks` and its `#` run,
 `heading_depth` the row's own; absent, they read `""`, `0` and `3`. Neither `add-many` nor
