@@ -49,7 +49,7 @@ tomlctl backlog add --summary "conpty spawn intermittently fails with CreateProc
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--summary` | text | Hashed, after normalisation, into the item's id. Required unless `--json` is given. | — |
-| `--kind` | text | `bug`, `flaky-test`, `debt`, `direction`, `annoyance`, `question`, `other`. Free-form at the parser: an unrecognised value is coerced to `other` with a stderr warning rather than rejected. | `other` |
+| `--kind` | text | `bug`, `flaky-test`, `debt`, `direction`, `annoyance`, `question`, `other`. Free-form at the parser: an unrecognised value is coerced to `other` rather than rejected, with an advisory in the envelope's `advisories` (echoed to stderr on a terminal). | `other` |
 | `--area` | repo-relative path | File or directory prefix the discovery sits under. Hashed verbatim. | empty |
 | `--tag` | text, repeatable | Free-form tag. | none |
 | `--evidence` | ref, repeatable | A `path:line` pointer into tracked source, or a bare filename inside the item's own evidence directory. Nothing else. | none |
@@ -59,14 +59,14 @@ tomlctl backlog add --summary "conpty spawn intermittently fails with CreateProc
 | `--flow` | slug | Flow in force at mint time. | none |
 | `--base-sha` | sha | Commit the capture was made against. Conflicts with `--json`, which should carry the value in its payload. | none |
 | `--auto-base-sha` | flag | Resolve `base_sha` from `git rev-parse HEAD`. Composes with `--json` — it supplies no content — and a payload's own `base_sha` wins. Silently records nothing outside a repo, on an unborn HEAD, or with no git on PATH: a capture is worth more than its provenance. | off |
-| `--on-duplicate` | `bump` \| `skip` \| `fail` \| `add` | Behaviour when the computed `dedup_id` is already stored. | `bump` |
-| `--json` | payload or `-` | Whole-item JSON instead of the field flags; `-` reads stdin. Mutually exclusive with every field flag above — passing both errors with `kind=validation`. | — |
+| `--on-duplicate` | `bump` \| `skip` \| `fail` | Behaviour when the computed `dedup_id` is already stored. | `bump` |
+| `--json` | payload or `-` | Whole-item JSON instead of the field flags; `-` reads stdin. Mutually exclusive with every field flag above — passing both errors with `kind=validation`. A key no stored row carries is refused with `kind=validation` naming it. | — |
 | `--dry-run` | — | Emit the mutation plan; touch neither file nor sidecar. | off |
 
-`--on-duplicate bump` increments `seen_count`, refreshes `last_seen`, and unions `tags` and
-`evidence`, leaving `summary` and `status` alone. `skip` reports the incumbent and writes
-nothing — including no sidecar rewrite. `fail` errors. `add` appends anyway, producing two
-rows under one id, which the uniqueness validator then rejects.
+`--on-duplicate bump` increments `seen_count`, refreshes `last_seen`, and unions `tags`,
+`evidence` and `related`, leaving `summary` and `status` alone. `skip` reports the incumbent
+and writes nothing — including no sidecar rewrite. `fail` errors with `kind=validation`, naming
+the incumbent. No value appends a second row: one id maps to one row.
 
 `id`, `dedup_id`, `created`, `last_seen` and `seen_count` are minted from content or from the
 clock, so a `--json` payload replayed out of a `show` has those five overwritten rather than
@@ -99,11 +99,11 @@ tomlctl backlog add-many --ndjson .claude/_backlog-batch.ndjson --auto-base-sha
 | `--on-duplicate` | `bump` \| `skip` \| `fail` | As on `add`, per row. A line colliding with a row an earlier line minted bumps it, as two `add` calls in sequence would. | `bump` |
 | `--dry-run` | — | Emit the mutation plan plus `rows`; touch neither file nor sidecar. | off |
 
-Each row runs exactly as `add --json` would — same id derivation, same advisories, and a
-`related` id may name a row an earlier line minted — with one difference: a key no stored row
-carries is refused, where `add --json` would store it verbatim. The batch is all-or-nothing. A
-malformed line, an unknown key (both `kind=validation`) or any row `add` would refuse aborts it
-before the write, the error naming the 1-based line; an all-`skip` batch writes nothing.
+Each row runs exactly as `add --json` would — same id derivation, same advisories, same
+refusal of an unknown key — and a `related` id may name a row an earlier line minted. The
+batch is all-or-nothing. A malformed line, an unknown key (both `kind=validation`) or any row
+`add` would refuse aborts it before the write, the error naming the 1-based line; an all-`skip`
+batch writes nothing.
 
 ```json
 {"ok":true,"path":".claude/backlog.toml","created":false,"added":["B-a1b2c3d4"],"bumped":["B-1a2b3c4d"],"skipped":[],

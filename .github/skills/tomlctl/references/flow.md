@@ -48,6 +48,7 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 | `tomlctl tasks closure` | yes |
 | `tomlctl tasks check` | yes |
 | `tomlctl tasks render` | yes |
+| `tomlctl flow list` | yes |
 
 `tomlctl blocks verify` intentionally does NOT accept `--verify-integrity` (it operates on markdown with no sidecar pair), and neither does the standalone `tomlctl sweep` — it searches tracked files and reads no TOML at all. `tomlctl items sweep` accepts the flag through its write bundle (it can `--update` the ledger), so it takes no `--strict-read`; `tomlctl items clusters` is a plain read verb and takes both.
 
@@ -65,8 +66,8 @@ tomlctl items update ledger.toml R7 --json '{"status":"fixed"}'
 # Skip the sidecar (e.g. read-only-ish FS, or hand-editing before the next write).
 tomlctl items update ledger.toml R7 --json '{"status":"fixed"}' --no-write-integrity
 
-# Treat sidecar write failures as hard errors.
-tomlctl items update ledger.toml R7 --json '{"status":"fixed"}' --strict-integrity
+# Fail on a sidecar refresh failure after the JSON write, rather than warn.
+tomlctl json set .claude/config.json key --json '"value"' --strict-integrity
 
 # Verify on read — errors if sidecar is missing OR the digest disagrees.
 tomlctl items list ledger.toml --where status=open --verify-integrity
@@ -74,7 +75,8 @@ tomlctl items list ledger.toml --where status=open --verify-integrity
 
 - **Missing sidecar under `--verify-integrity`** → hard error naming the expected path; never auto-regenerated. Run `tomlctl integrity refresh` to materialise it.
 - **Digest mismatch** → hard error naming both expected (from sidecar) and actual (from current bytes). Resolve by a human; `tomlctl` never auto-repairs.
-- **Sidecar write failure after a successful primary write** → stderr warning and exit 0 by default (data is durable; the next write rebuilds the sidecar). `--strict-integrity` flips this to a hard error.
+- **Sidecar write failure on a TOML write** (`set`, `set-json`, and the `items`, `tasks`, `backlog` and `flow` writers) → always a hard error. The sidecar is persisted first, so its failure leaves the TOML untouched; a TOML persist that fails after it points the sidecar back at the unchanged file and errors too. `--strict-integrity` has no effect here.
+- **Sidecar refresh failure after a successful primary write** — `json set`, `json unset` and `flow ensure-artifact --bootstrap`, which write the primary first → stderr warning and exit 0 by default (the data is durable; the next write rebuilds the sidecar). `--strict-integrity` flips this to a hard error.
 - **`--allow-outside`** applies identically — the sidecar lands next to the target wherever that is.
 
 > `.sha256` is not a MAC — it detects accidental corruption and out-of-band edits, not an adversary with write access. Hostile-actor threat models still require auditing the ledger's git history.
@@ -139,7 +141,8 @@ tomlctl flow list --status draft
 
 - **`flows`** — one row per readable flow that passes the filters. `status`, `updated` and `plan_path` are `""` when absent; `branch` is omitted when absent; `scope` defaults to `[]`.
 - **`skipped`** — one entry per `context.toml` that could not be read or parsed, with its repo-relative `path` and a one-line `reason`. `--status`, `--branch` and `--active-only` never hide an entry here, since an unreadable file has no fields to filter on. `ok` stays `true` when rows are skipped.
-- **`--strict-read`** turns the first unreadable `context.toml` into a `kind=parse` error instead.
+- **`--verify-integrity`** also skips a `context.toml` whose `.sha256` sidecar is missing or does not match, with the verifier's message as the `reason`.
+- **`--strict-read`** turns the first skipped `context.toml` into an error instead — `kind=integrity` for a sidecar failure, `kind=parse` otherwise.
 
 ### Render PROGRESS-LOG.md — `flow render-progress-log`
 
