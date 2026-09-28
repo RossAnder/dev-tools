@@ -71,6 +71,9 @@ pub(crate) const FIELD_DISMISS_REASON: &str = "dismiss_reason";
 pub(crate) const FIELD_RESOLVED: &str = "resolved";
 pub(crate) const FIELD_RESOLUTION: &str = "resolution";
 pub(crate) const FIELD_REOPEN_RATIONALE: &str = "reopen_rationale";
+pub(crate) const FIELD_RESOLVED_FLOW: &str = "resolved_flow";
+pub(crate) const FIELD_RESOLVED_TASKS: &str = "resolved_tasks";
+pub(crate) const FIELD_RESOLVED_COMMITS: &str = "resolved_commits";
 
 /// Compacted-row fields with no live-row counterpart: the three terminal
 /// date/companion pairs collapse into one pair, plus the fold date.
@@ -109,7 +112,15 @@ pub(crate) const STATUSES: &[&str] = &[
     STATUS_RESOLVED,
 ];
 
-/// The date field each terminal status must carry, and which `open` must
+/// Statuses whose row still asks for work. A `promoted` row is a claim on a
+/// flow and stays live until that flow's work resolves it or triage moves it.
+pub(crate) const LIVE_STATUSES: &[&str] = &[STATUS_OPEN, STATUS_PROMOTED];
+
+pub(crate) fn is_live(status: &str) -> bool {
+    LIVE_STATUSES.contains(&status)
+}
+
+/// The date field each non-`open` status must carry, and which `open` must
 /// carry none of. Each is spelled the same as its status.
 pub(crate) const TERMINAL_DATE_FIELDS: &[&str] = &{
     let mut fields = [""; TERMINAL_CLUSTERS.len()];
@@ -125,9 +136,21 @@ pub(crate) const TERMINAL_DATE_FIELDS: &[&str] = &{
 /// holds an array of ids; the other two hold a single id.
 pub(crate) const RELATION_FIELDS: &[&str] = &[FIELD_RELATED, FIELD_DUPLICATE_OF, FIELD_SUPERSEDES];
 
-/// Fields a status transition owns outright. A transition clears every one
-/// it does not itself write, which is what lets a row move between two
-/// terminal states.
+/// The promotion claim: required on `promoted`, kept whole or not at all on
+/// `resolved` and `dismissed` as the history of where the item was sent, and
+/// forbidden on `open`.
+pub(crate) const CLAIM_FIELDS: &[&str] = &[FIELD_PROMOTED, FIELD_PROMOTED_TO];
+
+/// What delivered a resolved item. Allowed only on `resolved`.
+pub(crate) const RESOLUTION_LINK_FIELDS: &[&str] = &[
+    FIELD_RESOLVED_FLOW,
+    FIELD_RESOLVED_TASKS,
+    FIELD_RESOLVED_COMMITS,
+];
+
+/// Fields a status transition owns outright; `clear_for_transition` decides
+/// which of them survive a move. A field missing here outlives every
+/// transition, so a reopen would leave it stale.
 pub(crate) const MANAGED_FIELDS: &[&str] = &[
     FIELD_PROMOTED,
     FIELD_PROMOTED_TO,
@@ -136,6 +159,9 @@ pub(crate) const MANAGED_FIELDS: &[&str] = &[
     FIELD_RESOLVED,
     FIELD_RESOLUTION,
     FIELD_REOPEN_RATIONALE,
+    FIELD_RESOLVED_FLOW,
+    FIELD_RESOLVED_TASKS,
+    FIELD_RESOLVED_COMMITS,
 ];
 
 /// Row shape written by `compact` and read by `check`'s
@@ -154,7 +180,11 @@ pub(crate) const COMPACTED_FIELDS: &[&str] = &[
     FIELD_COMPACTED_ON,
 ];
 
-/// The date/companion pair each terminal status owns, and the single source
+/// Fields `compact` copies onto a compacted row only when the live row
+/// carries them non-empty.
+pub(crate) const COMPACTED_OPTIONAL_FIELDS: &[&str] = &[FIELD_PROMOTED_TO, FIELD_RESOLVED_FLOW];
+
+/// The date/companion pair each non-`open` status owns, and the single source
 /// `required_fields` and `terminal_pair` both read. Typed at exactly two, so
 /// a status that grows a third required field is a compile error here rather
 /// than a silent `None` in the callers that want the pair.
@@ -176,10 +206,56 @@ pub(crate) fn required_fields(status: &str) -> &'static [&'static str] {
     cluster_of(status).map_or(&[], |fields| fields.as_slice())
 }
 
-/// The (date, companion) pair a terminal status owns; `None` for `open` and
+/// The (date, companion) pair a non-`open` status owns; `None` for `open` and
 /// for any unrecognised status.
 pub(crate) fn terminal_pair(status: &str) -> Option<(&'static str, &'static str)> {
     cluster_of(status).map(|[date, companion]| (*date, *companion))
+}
+
+fn keeps_claim(status: &str) -> bool {
+    status == STATUS_RESOLVED || status == STATUS_DISMISSED
+}
+
+/// Remove every managed field `target` does not own, ahead of a transition
+/// writing the target's own. A status owns its date/companion pair — `open`
+/// owns `reopen_rationale` — and `resolved` and `dismissed` also keep the
+/// claim. The resolution link is always removed: a caller resolving with
+/// one writes it afterwards, so a bare resolve never inherits a stale link.
+pub(crate) fn clear_for_transition(table: &mut toml::Table, target: &str) {
+    let owned: &[&str] = match cluster_of(target) {
+        Some(pair) => pair.as_slice(),
+        None if target == STATUS_OPEN => &[FIELD_REOPEN_RATIONALE],
+        None => &[],
+    };
+    for field in MANAGED_FIELDS {
+        if owned.contains(field) || (keeps_claim(target) && CLAIM_FIELDS.contains(field)) {
+            continue;
+        }
+        table.remove(*field);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolutionLink {
+    pub(crate) flow: String,
+    pub(crate) tasks: Vec<String>,
+    pub(crate) commits: Vec<String>,
+}
+
+impl ResolutionLink {
+    /// Writes all three fields, an empty `commits` included, so every linked
+    /// row has one shape.
+    pub(crate) fn write_to(&self, table: &mut toml::Table) {
+        let strings = |values: &[String]| {
+            TomlValue::Array(values.iter().cloned().map(TomlValue::String).collect())
+        };
+        table.insert(
+            FIELD_RESOLVED_FLOW.to_string(),
+            TomlValue::String(self.flow.clone()),
+        );
+        table.insert(FIELD_RESOLVED_TASKS.to_string(), strings(&self.tasks));
+        table.insert(FIELD_RESOLVED_COMMITS.to_string(), strings(&self.commits));
+    }
 }
 
 /// The vocabulary entry `raw` names, or `None` for one outside it. A caller
@@ -245,12 +321,19 @@ pub(crate) enum BacklogError {
         status: String,
         field: &'static str,
     },
-    /// A terminal date or companion belonging to some status other than the
-    /// row's own — the reverse half of the terminal-status invariant, and
-    /// what holds a row to exactly one cluster.
+    /// A date, companion or resolution-link field belonging to some status
+    /// other than the row's own — the reverse half of the status invariant,
+    /// and what holds a row to one cluster plus, once past `promoted`, its
+    /// claim.
     ForeignTerminalField {
         status: String,
         field: &'static str,
+    },
+    /// One half of the promotion claim on a row that keeps it as history.
+    PartialClaim {
+        status: String,
+        present: &'static str,
+        missing: &'static str,
     },
     DuplicateId {
         id: String,
@@ -265,6 +348,7 @@ impl BacklogError {
             | Self::UnknownStatus { .. }
             | Self::MissingStatusField { .. }
             | Self::ForeignTerminalField { .. }
+            | Self::PartialClaim { .. }
             | Self::DuplicateId { .. } => ErrorKind::Validation,
         }
     }
@@ -299,6 +383,15 @@ impl std::fmt::Display for BacklogError {
                 f,
                 "backlog item with status=\"{status}\" must not carry the terminal field `{field}`"
             ),
+            Self::PartialClaim {
+                status,
+                present,
+                missing,
+            } => write!(
+                f,
+                "backlog item with status=\"{status}\" carries `{present}` without `{missing}`; \
+                 the promotion claim is kept whole or not at all"
+            ),
             Self::DuplicateId { id } => {
                 write!(f, "backlog id \"{id}\" appears more than once")
             }
@@ -329,7 +422,9 @@ fn missing(map: &serde_json::Map<String, JsonValue>, field: &str) -> bool {
 /// the first two. The status invariant runs both ways: a row carries the
 /// date and companion its own status names, non-empty, and no field from any
 /// other status's cluster — so `open` carries no terminal cluster at all,
-/// though it may hold `reopen_rationale`.
+/// though it may hold `reopen_rationale`. The one exception is the claim
+/// (`CLAIM_FIELDS`), which `resolved` and `dismissed` may keep, both halves or
+/// neither. The resolution link is `resolved`'s alone.
 ///
 /// An unknown `status` is rejected rather than coerced, because `triage`,
 /// `check` and `compact` all select on the four known values and would skip
@@ -372,18 +467,38 @@ pub(crate) fn validate(value: &JsonValue) -> std::result::Result<(), BacklogErro
             });
         }
     }
-    for (owner, [date_field, companion]) in TERMINAL_CLUSTERS {
-        if *owner == status {
+    let foreign = |field: &'static str| BacklogError::ForeignTerminalField {
+        status: status.to_string(),
+        field,
+    };
+    for (owner, pair) in TERMINAL_CLUSTERS {
+        if *owner == status || (keeps_claim(status) && pair.as_slice() == CLAIM_FIELDS) {
             continue;
         }
-        for field in [*date_field, *companion] {
-            if !missing(map, field) {
-                return Err(BacklogError::ForeignTerminalField {
-                    status: status.to_string(),
-                    field,
-                });
-            }
+        if let Some(field) = pair.iter().copied().find(|field| !missing(map, field)) {
+            return Err(foreign(field));
         }
+    }
+    if keeps_claim(status) {
+        let (held, absent): (Vec<&'static str>, Vec<&'static str>) = CLAIM_FIELDS
+            .iter()
+            .copied()
+            .partition(|field| !missing(map, field));
+        if let ([present], [lacking]) = (held.as_slice(), absent.as_slice()) {
+            return Err(BacklogError::PartialClaim {
+                status: status.to_string(),
+                present,
+                missing: lacking,
+            });
+        }
+    }
+    if status != STATUS_RESOLVED
+        && let Some(field) = RESOLUTION_LINK_FIELDS
+            .iter()
+            .copied()
+            .find(|field| !missing(map, field))
+    {
+        return Err(foreign(field));
     }
     Ok(())
 }
@@ -415,6 +530,7 @@ pub(crate) fn validate_ids_unique(doc: &TomlValue) -> std::result::Result<(), Ba
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::convert::toml_to_json;
     use serde_json::json;
 
     fn open_item() -> JsonValue {
@@ -575,6 +691,179 @@ mod tests {
             }),
             "the companion is as foreign as the date"
         );
+        assert_eq!(
+            validate(&with(
+                STATUS_PROMOTED,
+                &[
+                    (FIELD_PROMOTED, "2026-09-01"),
+                    (FIELD_PROMOTED_TO, "some-flow"),
+                    (FIELD_DISMISSED, "2026-08-01"),
+                ]
+            )),
+            Err(BacklogError::ForeignTerminalField {
+                status: STATUS_PROMOTED.into(),
+                field: FIELD_DISMISSED,
+            }),
+            "only the claim outlives its status; no other pair outlives promotion"
+        );
+    }
+
+    fn claimed(status: &str, date: &str, companion: &str) -> JsonValue {
+        with(
+            status,
+            &[
+                (date, "2026-09-01"),
+                (companion, "why"),
+                (FIELD_PROMOTED, "2026-08-01"),
+                (FIELD_PROMOTED_TO, "some-flow"),
+            ],
+        )
+    }
+
+    #[test]
+    fn resolved_and_dismissed_rows_keep_a_whole_claim() {
+        assert_eq!(
+            validate(&claimed(STATUS_RESOLVED, FIELD_RESOLVED, FIELD_RESOLUTION)),
+            Ok(())
+        );
+        assert_eq!(
+            validate(&claimed(
+                STATUS_DISMISSED,
+                FIELD_DISMISSED,
+                FIELD_DISMISS_REASON
+            )),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_partial_claim_is_rejected() {
+        for (status, date, companion) in [
+            (STATUS_RESOLVED, FIELD_RESOLVED, FIELD_RESOLUTION),
+            (STATUS_DISMISSED, FIELD_DISMISSED, FIELD_DISMISS_REASON),
+        ] {
+            for (present, lacking) in [
+                (FIELD_PROMOTED, FIELD_PROMOTED_TO),
+                (FIELD_PROMOTED_TO, FIELD_PROMOTED),
+            ] {
+                let v = with(
+                    status,
+                    &[(date, "2026-09-01"), (companion, "why"), (present, "x")],
+                );
+                assert_eq!(
+                    validate(&v),
+                    Err(BacklogError::PartialClaim {
+                        status: status.into(),
+                        present,
+                        missing: lacking,
+                    }),
+                    "status={status} with only `{present}`"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn resolution_link_fields_belong_to_resolved_alone() {
+        let link = ResolutionLink {
+            flow: "some-flow".into(),
+            tasks: vec!["add-the-thing".into()],
+            commits: vec!["abc1234".into()],
+        };
+        let rows = [
+            open_item(),
+            with(
+                STATUS_PROMOTED,
+                &[
+                    (FIELD_PROMOTED, "2026-09-01"),
+                    (FIELD_PROMOTED_TO, "some-flow"),
+                ],
+            ),
+            with(
+                STATUS_DISMISSED,
+                &[
+                    (FIELD_DISMISSED, "2026-09-01"),
+                    (FIELD_DISMISS_REASON, "why"),
+                ],
+            ),
+        ];
+        for row in rows {
+            let status = row[FIELD_STATUS].as_str().unwrap().to_string();
+            let mut table = json_to_table(&row);
+            link.write_to(&mut table);
+            assert_eq!(
+                validate(&toml_to_json(&TomlValue::Table(table))),
+                Err(BacklogError::ForeignTerminalField {
+                    status: status.clone(),
+                    field: FIELD_RESOLVED_FLOW,
+                }),
+                "status={status} must reject the resolution link"
+            );
+        }
+        let mut resolved =
+            json_to_table(&claimed(STATUS_RESOLVED, FIELD_RESOLVED, FIELD_RESOLUTION));
+        link.write_to(&mut resolved);
+        assert_eq!(validate(&toml_to_json(&TomlValue::Table(resolved))), Ok(()));
+    }
+
+    fn json_to_table(v: &JsonValue) -> toml::Table {
+        match crate::convert::json_to_toml(v).unwrap() {
+            TomlValue::Table(table) => table,
+            other => panic!("expected a table, got {other}"),
+        }
+    }
+
+    fn every_managed_field() -> toml::Table {
+        let mut table = json_to_table(&open_item());
+        for field in MANAGED_FIELDS {
+            table.insert((*field).into(), TomlValue::String("x".into()));
+        }
+        table
+    }
+
+    fn kept(table: &toml::Table) -> Vec<&str> {
+        MANAGED_FIELDS
+            .iter()
+            .copied()
+            .filter(|field| table.contains_key(*field))
+            .collect()
+    }
+
+    #[test]
+    fn clear_for_transition_keeps_the_claim_only_past_promotion() {
+        let cases: [(&str, &[&str]); 4] = [
+            (
+                STATUS_RESOLVED,
+                &[
+                    FIELD_PROMOTED,
+                    FIELD_PROMOTED_TO,
+                    FIELD_RESOLVED,
+                    FIELD_RESOLUTION,
+                ],
+            ),
+            (
+                STATUS_DISMISSED,
+                &[
+                    FIELD_PROMOTED,
+                    FIELD_PROMOTED_TO,
+                    FIELD_DISMISSED,
+                    FIELD_DISMISS_REASON,
+                ],
+            ),
+            (STATUS_PROMOTED, &[FIELD_PROMOTED, FIELD_PROMOTED_TO]),
+            (STATUS_OPEN, &[FIELD_REOPEN_RATIONALE]),
+        ];
+        for (target, want) in cases {
+            let mut table = every_managed_field();
+            clear_for_transition(&mut table, target);
+            assert_eq!(kept(&table), want, "target={target}");
+            for field in [FIELD_ID, FIELD_SUMMARY, FIELD_STATUS, FIELD_KIND] {
+                assert!(
+                    table.contains_key(field),
+                    "target={target} must keep `{field}`"
+                );
+            }
+        }
     }
 
     #[test]
@@ -756,6 +1045,19 @@ status = "resolved"
                 required_fields(status),
                 &[date, companion],
                 "the pair and the required cluster must not disagree"
+            );
+        }
+        assert_eq!(
+            terminal_pair(STATUS_PROMOTED),
+            Some((CLAIM_FIELDS[0], CLAIM_FIELDS[1])),
+            "the claim is the pair `promoted` owns"
+        );
+        let live: Vec<&str> = STATUSES.iter().copied().filter(|s| is_live(s)).collect();
+        assert_eq!(live, [STATUS_OPEN, STATUS_PROMOTED]);
+        for field in CLAIM_FIELDS.iter().chain(RESOLUTION_LINK_FIELDS) {
+            assert!(
+                MANAGED_FIELDS.contains(field),
+                "`{field}` must be transition-managed or a reopen leaves it stale"
             );
         }
     }
