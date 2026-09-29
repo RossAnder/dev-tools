@@ -5,7 +5,7 @@
 //! `TOMLCTL_ROOT` at that tempdir, and then invokes the built `tomlctl`
 //! binary via `assert_cmd`. The TOMLCTL_ROOT env var is the canonical test
 //! escape-hatch from `repo_or_cwd_root()` — without it, `find-plans` would
-//! attempt to detect a repo via `git rev-parse --show-toplevel` and read
+//! attempt to detect the repository top level (see `io::repo_or_cwd_root`) and read
 //! the CHECKED-IN `.claude/settings.json`, which would invalidate every
 //! configuration assertion.
 

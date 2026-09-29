@@ -52,9 +52,9 @@ use crate::output::print_json_compact;
 use crate::time::now_rfc3339;
 
 /// Resolve `<repo-or-cwd-root>/.claude/active-flow.toml`. The root honours
-/// `TOMLCTL_ROOT` first (test sandbox), then `git rev-parse --show-toplevel`,
-/// then CWD — same precedence `io::repo_or_cwd_root` enforces for every
-/// other write path.
+/// `TOMLCTL_ROOT` first (test sandbox), then the repository top level, then
+/// CWD — `io::repo_or_cwd_root` decides how the top level is found, for every
+/// other write path too.
 fn active_flow_path() -> Result<PathBuf> {
     let root = repo_or_cwd_root()?;
     Ok(root.join(".claude").join("active-flow.toml"))
