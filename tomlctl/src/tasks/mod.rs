@@ -27,6 +27,8 @@ mod render;
 mod schema;
 mod show;
 mod slug;
+mod snapshot;
+mod snapshot_record;
 mod store;
 mod update;
 
@@ -48,6 +50,7 @@ pub(crate) use graph::{cycle_within, layered_kahn};
 #[cfg(test)]
 pub(crate) use schema::Effort;
 pub(crate) use schema::{BacklogLink, Status, Store};
+pub(crate) use snapshot::snapshot;
 pub(crate) use store::{load as load_store, mutate as mutate_store, resolve_store_path};
 
 /// The plan document `context.toml` binds `slug` to, through the plan-path
