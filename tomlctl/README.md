@@ -228,15 +228,30 @@ tier C is file-scoped; use --tier A or --tier B with --across
 | Zero-byte                 | Treated as a minimal valid doc            | Same (no error)              |
 | Exists but malformed TOML | Error `kind=parse`                        | Same                         |
 
-Today the only read subcommand with a "missing file → silent default" branch
-is `items next-id --prefix <P>`, which returns `"<P>1"` as a bootstrapping fast
-path for flows that mint the first id before the ledger file exists. Every
-other read subcommand (`parse`, `get`, `validate`, `items list`, `items get`,
-`items find-duplicates`, `items orphans`, `items sweep` without `--update`,
-`items clusters`) already errors on a missing file with
+Three read surfaces have a "missing file → silent default" branch, and
+`--strict-read` turns each into `kind=not_found`:
+
+- `items next-id --prefix <P>` returns `"<P>1"`, a bootstrapping fast path for
+  flows that mint the first id before the ledger file exists.
+- The `backlog` read verbs (`check`, `list`, `show`, `cluster`, `evidence dir`,
+  `evidence audit`) read a missing `.claude/backlog.toml` as an empty store,
+  because the first capture in a repo runs `backlog check` before anything
+  exists.
+- `agents list` returns `[]` for a missing `agents.toml`, the state of a flow
+  whose hooks have not fired yet.
+
+Every other read subcommand (`parse`, `get`, `validate`, `json get`,
+`items list`, `items get`, `items find-duplicates`, `items fingerprint`,
+`items orphans`, `items clusters`) already errors on a missing file with
 `kind=not_found` — `--strict-read` is a no-op there, but the flag is accepted
 on every read subcommand so a caller can pass it uniformly without branching
-on subcommand name. Two exceptions: `items sweep` carries the write-side
+on subcommand name. The `tasks` read verbs (`show`, `list`, `edges`, `ready`,
+`batches`, `closure`, `check`, `render`, `snapshot`) belong to this group too;
+`snapshot`'s companion files stay optional under the flag. Four `flow` read verbs give
+the flag a meaning of their own: `flow stale` and an explicit
+`flow resolve --flow` error on a missing `context.toml`, `flow find-plans` on
+a missing configured plan directory, and `flow list` on an unreadable
+`context.toml` it would otherwise skip. Two exceptions: `items sweep` carries the write-side
 integrity bundle (it can `--update` the ledger) and rejects `--strict-read`,
 and the standalone `sweep` reads no TOML and takes no integrity flag at all.
 
@@ -245,10 +260,10 @@ existing ledger" from "ledger does not exist" — e.g. when a flow expects a
 specific file to have been bootstrapped by `/plan-new` or `/implement` before
 proceeding.
 
-`--strict-read` fires **before** `--verify-integrity`: a missing file under
-both flags produces `kind=not_found`, not `kind=integrity` (the sidecar check
-would also have failed, but the underlying state is "file missing", not
-"file tampered").
+`--strict-read` fires **before**
+`--verify-integrity`: a missing file under both flags produces
+`kind=not_found`, not `kind=integrity` (the sidecar check would also have
+failed, but the underlying state is "file missing", not "file tampered").
 
 ### Capabilities feature list
 

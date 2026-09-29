@@ -151,8 +151,8 @@ pub(crate) enum ErrorFormat {
 /// off read subcommands.
 ///
 /// `--strict-read` turns the "missing file → silent default" branches
-/// (today only `items next-id --prefix <P>`) into a tagged `kind=not_found`
-/// error. On every other read subcommand the flag is a benign no-op —
+/// (`items next-id --prefix <P>`, the `backlog` read verbs, `agents list`)
+/// into a tagged `kind=not_found` error. On every other read subcommand the flag is a benign no-op —
 /// `io::read_toml` already surfaces `kind=not_found` on a missing file via
 /// its error tagging, so passing `--strict-read` there changes nothing. The
 /// flag lives here (rather than only on `NextId`) so `ReadIntegrityArgs`
@@ -168,11 +168,12 @@ pub(crate) struct ReadIntegrityArgs {
     pub(crate) verify_integrity: bool,
 
     /// Error on a missing target file (`kind=not_found`) instead of returning
-    /// an empty default. Every other read path is unaffected: `items list` /
-    /// `items orphans` already error on a missing file, but
-    /// `items next-id --prefix <P>` returns `"<P>1"` as a bootstrapping fast
-    /// path. Pass `--strict-read` when the caller needs to distinguish
-    /// "no matches in an existing ledger" from "ledger does not exist".
+    /// an empty default. Only the defaulting reads change: `items next-id
+    /// --prefix <P>` (which returns `"<P>1"`), the `backlog` read verbs (an
+    /// empty store) and `agents list` (`[]`); `items list` / `items orphans`
+    /// already error on a missing file. Pass `--strict-read` when the caller
+    /// needs to distinguish "no matches in an existing ledger" from "ledger
+    /// does not exist".
     ///
     /// Fires BEFORE `--verify-integrity` — a missing file yields
     /// `kind=not_found`, not `kind=integrity`, even when both flags are set.
@@ -223,7 +224,8 @@ pub(crate) struct WriteIntegrityArgs {
     /// `kind=not_found` error. Default: a missing file is created (seeded
     /// with a schema-aware skeleton for recognised flow files — the ledgers
     /// `execution-record.toml` / `review-ledger.toml` / `optimise-findings.toml`
-    /// / `plan-review-findings.toml` — and an empty table otherwise).
+    /// / `plan-review-findings.toml`, and the stores `backlog.toml` /
+    /// `tasks.toml` / `agents.toml` — and an empty table otherwise).
     /// `items sweep --update` is the exception: it never creates a ledger,
     /// and a missing file is reported as `kind=not_found` either way.
     #[arg(long = "no-create")]

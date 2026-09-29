@@ -2,8 +2,8 @@
 
 The on-disk shape of `.claude/flows/<slug>/tasks.toml`, the `ref` rule that keys it, what the
 graph engine recomputes on every read, the node cap that bounds it, and the behaviours the four
-adopting carriers are entitled to rely on. The flag surface of the verbs that read and write it
-is [tasks.md](tasks.md); what the fields *mean* and which verb a carrier reaches for is the
+adopting carriers are entitled to rely on. The flag surface of the verbs that read it is
+[tasks.md](tasks.md), and of those that write it [tasks-write.md](tasks-write.md); what the fields *mean* and which verb a carrier reaches for is the
 `flow-contract-task-store` skill's job (`claude/skills/flow-contract-task-store/SKILL.md`).
 
 ## Contents

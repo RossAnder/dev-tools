@@ -7,7 +7,7 @@ description: Canonical contract for a flow's per-flow task DAG store at `.claude
 
 `.claude/flows/<slug>/tasks.toml` is a flow's task DAG: one row per plan task, the two stored edge sets, the execution policy, and the checkpoint groups. From `/plan-new` Phase 9 onward it is canonical and the plan document's `## Execution Policy`, `## Tasks` and `## Dependency Graph` sections are *rendered* from it — the same derive-don't-author pattern `PROGRESS-LOG.md` already follows. Everything a carrier used to re-derive in prose (the frontier, file-claim intersections, checkpoint closures, Kahn batches) is a verb.
 
-The flag tables for every verb live in [`claude/skills/tomlctl/references/tasks.md`](../tomlctl/references/tasks.md). This document is the contract: what the fields mean, which verb a carrier reaches for, and the rules that bind all four carriers.
+The flag tables for every verb live in [`claude/skills/tomlctl/references/tasks.md`](../tomlctl/references/tasks.md) (the read verbs) and [`tasks-write.md`](../tomlctl/references/tasks-write.md) (the mutating verbs). This document is the contract: what the fields mean, which verb a carrier reaches for, and the rules that bind all four carriers.
 
 ### 1. Store schema
 
@@ -244,7 +244,7 @@ tomlctl tasks check --slug <slug> --plan
 tomlctl tasks render --slug <slug> --check
 ```
 
-**`snapshot`** — one read of everything a flow viewer renders: the rows, `layers`, the `ready` frontier with every `in-progress` row counted as in flight, the edge list, each checkpoint group with the commits and latest verification the execution record attributes to it, the record's entries joined to rows by `task_id`, and the `agents.toml` rows verbatim. The record, `agents.toml` and `context.toml` are read as siblings of the store and each reads as empty when absent. `revision` fingerprints the four files' raw bytes, hashed before anything is parsed, so a poller that sees an unchanged revision can skip the snapshot. The verb writes nothing and seeds no absent file; the envelope's key order and the `revision` formula are in `references/tasks-store.md` of the `tomlctl` skill.
+**`snapshot`** — one read of everything a flow viewer renders: the rows, `layers`, the `ready` frontier with every `in-progress` row counted as in flight, the edge list, each checkpoint group with the commits and latest verification the execution record attributes to it, the record's entries joined to rows by `task_id`, and the `agents.toml` rows verbatim. The record, `agents.toml` and `context.toml` are read as siblings of the store and each reads as empty when absent. `revision` fingerprints the four files' raw bytes, hashed before anything is parsed, so a poller that sees an unchanged revision can skip the snapshot. The verb writes nothing and seeds no absent file; the envelope's key order and the `revision` formula are in `references/tasks-store.md` of the `tomlctl` skill, its flags in `references/tasks.md`.
 
 ```bash
 tomlctl tasks snapshot --slug <slug>
