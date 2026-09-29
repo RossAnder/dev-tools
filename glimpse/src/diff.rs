@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::model::{AgentStatus, Snapshot};
+use crate::model::{AgentStatus, Snapshot, topology_hash};
 
 /// What moved between two snapshots. Ids are in the new snapshot's order.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -71,7 +71,7 @@ pub(crate) fn diff(old: &Snapshot, new: &Snapshot) -> Changes {
         .collect();
 
     Changes {
-        topology_changed: old.index().topology_hash() != new.index().topology_hash(),
+        topology_changed: topology_hash(&old.tasks) != topology_hash(&new.tasks),
         status_changed,
         agents_started,
         agents_stopped,

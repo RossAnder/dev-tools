@@ -55,7 +55,9 @@ pub(crate) struct TailState {
     pub(crate) tokens: Option<u64>,
     /// Set when the path does not canonicalise under the root; nothing is read.
     pub(crate) rejected: bool,
-    /// The directory the transcript must sit under; `None` rejects every path.
+    /// Set once the path has canonicalised under the root.
+    accepted: bool,
+    /// The canonical directory the transcript must sit under; `None` rejects every path.
     root: Option<PathBuf>,
 }
 
@@ -65,10 +67,12 @@ impl TailState {
         TailState::within(path, claude_dir())
     }
 
+    /// A tail confined to `root`, canonicalised once here; a root that cannot be
+    /// canonicalised rejects every path.
     pub(crate) fn within(path: &str, root: Option<PathBuf>) -> TailState {
         TailState {
             path: path.to_string(),
-            root,
+            root: root.and_then(|root| std::fs::canonicalize(root).ok()),
             ..TailState::default()
         }
     }
@@ -77,7 +81,11 @@ impl TailState {
     /// current one. The root is kept.
     pub(crate) fn retarget(&mut self, path: &str) {
         if self.path != path {
-            *self = TailState::within(path, self.root.take());
+            *self = TailState {
+                path: path.to_string(),
+                root: self.root.take(),
+                ..TailState::default()
+            };
         }
     }
 
@@ -85,6 +93,14 @@ impl TailState {
     /// visible changed. A file shorter than `offset` was replaced, so the tail
     /// starts over; a trailing line with no newline yet is left for next time.
     pub(crate) fn refresh(&mut self) -> bool {
+        // A path already accepted whose length has not moved has nothing to read, and
+        // costs one stat instead of canonicalising, opening and statting.
+        if self.accepted
+            && !self.rejected
+            && std::fs::metadata(&self.path).is_ok_and(|meta| meta.len() == self.offset)
+        {
+            return false;
+        }
         let Some(path) = self.resolve() else {
             return false;
         };
@@ -172,9 +188,9 @@ impl TailState {
         let inside = self
             .root
             .as_deref()
-            .and_then(|root| std::fs::canonicalize(root).ok())
             .is_some_and(|root| file.starts_with(root));
         self.rejected = !inside;
+        self.accepted |= inside;
         inside.then_some(file)
     }
 }

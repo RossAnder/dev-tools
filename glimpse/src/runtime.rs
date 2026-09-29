@@ -5,9 +5,10 @@
 //! queued before drawing once. With no running agent and nothing on screen changing over
 //! time the loop blocks without a timeout, so an idle glimpse does no work at all.
 
-use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{
@@ -67,22 +68,19 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
         capture_mouse();
     }
     spawn_input(events.clone());
-    let source = Source::start(root.clone(), slug, &config, events);
+    let source = Source::start(root, slug, &config, events);
 
     let mut screen = Screen::new(app, config, TailState::new(""));
-    let tomlctl = screen.config.tomlctl.clone();
     let mut host = TerminalHost {
         terminal: &mut terminal,
         source: &source,
-        root: &root,
-        tomlctl: &tomlctl,
     };
     let result = run_loop(&mut screen, &rx, &mut host);
     if mouse {
         release_mouse();
     }
     ratatui::restore();
-    source.stop();
+    source.detach();
     result
 }
 
@@ -206,14 +204,11 @@ impl Screen {
 trait Host {
     fn draw(&mut self, screen: &mut Screen) -> Result<(), String>;
     fn set_slug(&mut self, slug: String);
-    fn list_flows(&mut self) -> Result<Vec<FlowEntry>, String>;
 }
 
 struct TerminalHost<'a> {
     terminal: &'a mut DefaultTerminal,
     source: &'a Source,
-    root: &'a Path,
-    tomlctl: &'a str,
 }
 
 impl Host for TerminalHost<'_> {
@@ -227,10 +222,6 @@ impl Host for TerminalHost<'_> {
     fn set_slug(&mut self, slug: String) {
         self.source.set_slug(slug);
     }
-
-    fn list_flows(&mut self) -> Result<Vec<FlowEntry>, String> {
-        flows::list(self.root, self.tomlctl)
-    }
 }
 
 enum Step {
@@ -241,8 +232,9 @@ enum Step {
 
 /// Draws, then waits for events and redraws once per batch until a quit or until every
 /// sender has gone. Waits carry a timeout only while the app asks for ticks or the
-/// activity panel is open, since a transcript grows without any snapshot announcing it.
-/// Every draw is preceded by [`Screen::refresh_tail`], the only place the tail moves.
+/// activity panel shows a running agent, since a transcript grows without any snapshot
+/// announcing it. Every draw is preceded by [`Screen::refresh_tail`], the only place the
+/// tail moves; a batch that draws nothing leaves the tail alone.
 fn run_loop(
     screen: &mut Screen,
     events: &Receiver<Event>,
@@ -255,7 +247,7 @@ fn run_loop(
     host.draw(screen)?;
 
     loop {
-        let interval = if screen.app.activity_open {
+        let interval = if screen.app.activity_open && view::activity::agent(&screen.app).is_some() {
             Some(TICK)
         } else {
             screen.app.tick_interval(Instant::now())
@@ -293,10 +285,9 @@ fn run_loop(
             }
             Some(_) => {}
         }
-        if screen.refresh_tail() {
-            redraw = true;
-        }
+        // The tick arm sets `redraw`, so the transcript is still polled once per tick.
         if redraw {
+            screen.refresh_tail();
             host.draw(screen)?;
         }
     }
@@ -318,8 +309,16 @@ fn handle(
             app.source_error = Some(message);
             Step::Redraw
         }
-        Event::FlowsChanged => {
-            flows_changed(app, host, freshest);
+        Event::Flows(Ok(entries)) => {
+            flows_listed(app, entries, host, freshest);
+            Step::Redraw
+        }
+        Event::Flows(Err(message)) => {
+            app.source_error = Some(message);
+            Step::Redraw
+        }
+        Event::FlowMtimes(mtimes) => {
+            flow_mtimes_moved(app, &mtimes, host, freshest);
             Step::Redraw
         }
         Event::Input(input @ (TermEvent::Key(_) | TermEvent::Mouse(_))) => {
@@ -345,19 +344,39 @@ fn handle(
     }
 }
 
-/// Re-lists the flows. A list failure lands in `source_error`, which the next snapshot
-/// clears.
-fn flows_changed(app: &mut App, host: &mut impl Host, freshest: &mut Option<String>) {
-    let entries = match host.list_flows() {
-        Ok(entries) => entries,
-        Err(message) => {
-            app.source_error = Some(message);
-            return;
-        }
-    };
-    let top = flows::freshest(&entries).map(|flow| flow.slug.clone());
+/// Takes a fresh flow list from the poller.
+fn flows_listed(
+    app: &mut App,
+    entries: Vec<FlowEntry>,
+    host: &mut impl Host,
+    freshest: &mut Option<String>,
+) {
     app.flows = entries;
     app.selector_cursor = app.selector_cursor.min(app.flows.len().saturating_sub(1));
+    follow_freshest(app, host, freshest);
+}
+
+/// Re-ranks the listed flows by their new `tasks.toml` mtimes; a slug the list lacks is
+/// ignored until the next list.
+fn flow_mtimes_moved(
+    app: &mut App,
+    mtimes: &BTreeMap<String, SystemTime>,
+    host: &mut impl Host,
+    freshest: &mut Option<String>,
+) {
+    for flow in &mut app.flows {
+        if let Some(mtime) = mtimes.get(&flow.slug) {
+            flow.tasks_mtime = *mtime;
+        }
+    }
+    flows::rank(&mut app.flows);
+    follow_freshest(app, host, freshest);
+}
+
+/// With auto-flow on, switches to the freshest flow when it differs from the one at the
+/// last flow change.
+fn follow_freshest(app: &mut App, host: &mut impl Host, freshest: &mut Option<String>) {
+    let top = flows::freshest(&app.flows).map(|flow| flow.slug.clone());
     if app.auto_flow
         && top != *freshest
         && let Some(slug) = &top
@@ -374,7 +393,7 @@ mod tests {
     use crate::config::ViewKind;
     use crate::model::fixture;
     use ratatui::crossterm::event::{KeyCode, KeyEvent};
-    use std::time::{Duration, SystemTime};
+    use std::time::Duration;
 
     fn opts(view: ViewKind) -> RunOpts {
         RunOpts {
@@ -393,7 +412,6 @@ mod tests {
     struct FakeHost {
         draws: usize,
         slugs: Vec<String>,
-        flows: Vec<FlowEntry>,
     }
 
     impl Host for FakeHost {
@@ -404,10 +422,6 @@ mod tests {
 
         fn set_slug(&mut self, slug: String) {
             self.slugs.push(slug);
-        }
-
-        fn list_flows(&mut self) -> Result<Vec<FlowEntry>, String> {
-            Ok(self.flows.clone())
         }
     }
 
@@ -517,26 +531,40 @@ mod tests {
     fn auto_flow_switches_only_when_the_freshest_flow_moves() {
         let mut app = idle_screen("").app;
         app.auto_flow = true;
-        let mut host = FakeHost {
-            flows: vec![flow("old", 1), flow("new", 2)],
-            ..FakeHost::default()
-        };
+        let mut host = FakeHost::default();
         let mut freshest = None;
+        let mut flows = vec![flow("old", 1), flow("new", 2)];
 
-        flows_changed(&mut app, &mut host, &mut freshest);
+        flows_listed(&mut app, flows.clone(), &mut host, &mut freshest);
         assert_eq!(host.slugs, ["new"]);
         assert_eq!(app.flows.len(), 2);
 
-        flows_changed(&mut app, &mut host, &mut freshest);
+        flows_listed(&mut app, flows.clone(), &mut host, &mut freshest);
         assert_eq!(host.slugs, ["new"], "an unmoved freshest is not re-sent");
 
-        host.flows.push(flow("newer", 3));
-        flows_changed(&mut app, &mut host, &mut freshest);
+        flows.push(flow("newer", 3));
+        flows_listed(&mut app, flows.clone(), &mut host, &mut freshest);
         assert_eq!(host.slugs, ["new", "newer"]);
 
+        let mtimes = BTreeMap::from([(
+            "old".to_string(),
+            SystemTime::UNIX_EPOCH + Duration::from_secs(9),
+        )]);
+        flow_mtimes_moved(&mut app, &mtimes, &mut host, &mut freshest);
+        assert_eq!(
+            host.slugs,
+            ["new", "newer", "old"],
+            "a task store write moves it"
+        );
+        assert_eq!(app.flows[0].slug, "old", "re-ranked newest first");
+
         app.auto_flow = false;
-        host.flows.push(flow("newest", 4));
-        flows_changed(&mut app, &mut host, &mut freshest);
-        assert_eq!(host.slugs, ["new", "newer"], "auto-flow off never switches");
+        flows.push(flow("newest", 40));
+        flows_listed(&mut app, flows, &mut host, &mut freshest);
+        assert_eq!(
+            host.slugs,
+            ["new", "newer", "old"],
+            "auto-flow off never switches"
+        );
     }
 }

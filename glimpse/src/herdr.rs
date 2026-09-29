@@ -85,13 +85,18 @@ impl Herdr {
 
     /// Rect of `pane_id` within its tab's layout.
     pub fn layout(&self, pane_id: &str) -> Result<Rect, String> {
-        let out = self.exec(&[
+        parse_layout(&self.layout_output(pane_id)?, pane_id)
+    }
+
+    /// Raw `pane layout` output for `pane_id`'s tab, which lists every pane in that tab;
+    /// read rects from it with [`parse_layout`].
+    pub fn layout_output(&self, pane_id: &str) -> Result<String, String> {
+        self.exec(&[
             "pane".into(),
             "layout".into(),
             "--pane".into(),
             pane_id.into(),
-        ])?;
-        parse_layout(&out, pane_id)
+        ])
     }
 
     /// Splits `origin` without moving focus and returns the new pane id.

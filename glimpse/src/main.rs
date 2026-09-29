@@ -108,7 +108,14 @@ fn once_snapshot(opts: &RunOpts, once: &Once) -> Result<Snapshot, String> {
         return read_snapshot(path);
     }
     let tomlctl = &opts.config.tomlctl;
-    source::probe_tomlctl(tomlctl, &opts.root)?;
+    fetch_once(opts, tomlctl).map_err(|fetch_error| {
+        source::probe_tomlctl(tomlctl, &opts.root)
+            .err()
+            .unwrap_or(fetch_error)
+    })
+}
+
+fn fetch_once(opts: &RunOpts, tomlctl: &str) -> Result<Snapshot, String> {
     let slug = match &opts.slug {
         Some(slug) => slug.clone(),
         None => {
@@ -124,7 +131,7 @@ fn once_snapshot(opts: &RunOpts, once: &Once) -> Result<Snapshot, String> {
         }
     };
     TomlctlFetcher {
-        tomlctl: tomlctl.clone(),
+        tomlctl: tomlctl.to_owned(),
     }
     .fetch(&opts.root, &slug)
 }
@@ -141,10 +148,8 @@ fn ensure_pane(slug: Option<&str>, focus: bool) -> Result<(), String> {
         .ok_or(
             "ensure-pane runs inside herdr: neither HERDR_ACTIVE_PANE_ID nor HERDR_PANE_ID is set",
         )?;
-    let herdr = Herdr::from_env();
-    let cwd = herdr.pane_get(&origin)?.cwd;
     let (config, _) = Config::load();
-    pane::ensure(&herdr, &origin, slug, &cwd, focus, &config).map(drop)
+    pane::ensure(&Herdr::from_env(), &origin, slug, None, focus, &config).map(drop)
 }
 
 fn run_setup(dry_run: bool) -> Result<(), String> {

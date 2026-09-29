@@ -82,6 +82,7 @@ pub(crate) fn list(root: &Path, tomlctl: &str) -> Result<Vec<FlowEntry>, String>
     let out = Command::new(tomlctl)
         .args(["flow", "list"])
         .current_dir(root)
+        .env("TOMLCTL_ROOT", root)
         .output()
         .map_err(|e| format!("cannot run `{tomlctl} flow list`: {e}"))?;
     if !out.status.success() {

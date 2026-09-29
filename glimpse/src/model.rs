@@ -428,7 +428,7 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 /// FNV-1a rather than `DefaultHasher`, whose output may change between Rust
 /// releases. Each list is length-prefixed so ids cannot slide between them.
-fn topology_hash(tasks: &[Task]) -> u64 {
+pub(crate) fn topology_hash(tasks: &[Task]) -> u64 {
     fn feed(hash: &mut u64, value: u32) {
         for byte in value.to_le_bytes() {
             *hash ^= u64::from(byte);

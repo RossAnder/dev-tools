@@ -1,21 +1,21 @@
 //! Ensures a single glimpse pane per herdr tab.
 //!
-//! Concurrent hooks serialise on a lock file, so the look-up and the split that follows it
-//! cannot race into two panes. herdr has no focus-by-id: an existing pane is focused by
-//! moving from the origin in the direction the two rects imply, which only works when they
-//! are adjacent; otherwise the pane is reused without focus.
+//! A pane that already exists is found without locking; before splitting, concurrent hooks
+//! serialise on an OS file lock and look again, so they cannot race into two panes. herdr
+//! has no focus-by-id: an existing pane is focused by moving from the origin in the
+//! direction the two rects imply, which only works when they are adjacent; otherwise the
+//! pane is reused without focus.
 
-use std::fs::File;
+use std::fs::{File, OpenOptions, TryLockError};
 use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 use crate::config::{Config, claude_dir};
-use crate::herdr::{FocusDir, Herdr, PaneInfo, Rect, SplitDir};
+use crate::herdr::{FocusDir, Herdr, PaneInfo, Rect, SplitDir, parse_layout};
 
 pub(crate) const PANE_LABEL: &str = "glimpse";
 
-const LOCK_STALE_AFTER: Duration = Duration::from_secs(10);
 const LOCK_WAIT: Duration = Duration::from_secs(3);
 const LOCK_POLL: Duration = Duration::from_millis(50);
 
@@ -30,34 +30,52 @@ pub(crate) enum PaneOutcome {
 }
 
 /// `slug = None` launches glimpse with no `--slug`, which opens the freshest flow with
-/// auto-flow on.
+/// auto-flow on. `cwd = None` splits in the origin pane's working directory.
 pub(crate) fn ensure(
     herdr: &Herdr,
     origin_pane: &str,
     slug: Option<&str>,
-    cwd: &str,
+    cwd: Option<&str>,
     focus: bool,
     config: &Config,
 ) -> Result<PaneOutcome, String> {
+    // Finding an existing pane needs no lock; only the split decision does, and it is
+    // re-checked under the lock in case another hook split first.
+    let panes = herdr.pane_list()?;
+    if let Some(reused) = reuse(herdr, &panes, origin_pane, focus) {
+        return Ok(reused);
+    }
+
     let dir = claude_dir()
         .ok_or("cannot resolve the claude directory")?
         .join("glimpse");
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let _lock = PaneLock::acquire(&dir.join("pane.lock"), LOCK_STALE_AFTER, LOCK_WAIT)?;
+    let _lock = PaneLock::acquire(&dir.join("pane.lock"), LOCK_WAIT)?;
 
     let panes = herdr.pane_list()?;
-    if let Some(existing) = find_existing(&panes, origin_pane) {
-        let pane_id = existing.pane_id.clone();
-        let focused = focus && focus_existing(herdr, origin_pane, &pane_id);
-        return Ok(PaneOutcome::Reused { pane_id, focused });
+    if let Some(reused) = reuse(herdr, &panes, origin_pane, focus) {
+        return Ok(reused);
     }
+    let cwd = match cwd {
+        Some(cwd) => cwd.to_string(),
+        None => match panes.iter().find(|p| p.pane_id == origin_pane) {
+            Some(origin) => origin.cwd.clone(),
+            None => herdr.pane_get(origin_pane)?.cwd,
+        },
+    };
 
     let direction = choose_direction(herdr.layout(origin_pane)?, config.split_threshold);
-    let pane_id = herdr.split(origin_pane, direction, config.pane_ratio as f32, cwd)?;
+    let pane_id = herdr.split(origin_pane, direction, config.pane_ratio as f32, &cwd)?;
     if let Err(e) = label_and_launch(herdr, &pane_id, slug) {
         return Err(discard_pane(e, || herdr.close(&pane_id)));
     }
     Ok(PaneOutcome::Created { pane_id, direction })
+}
+
+fn reuse(herdr: &Herdr, panes: &[PaneInfo], origin_pane: &str, focus: bool) -> Option<PaneOutcome> {
+    let pane_id = find_existing(panes, origin_pane)?.pane_id.clone();
+    let focused = focus && focus_existing(herdr, origin_pane, &pane_id);
+    Some(PaneOutcome::Reused { pane_id, focused })
 }
 
 fn label_and_launch(herdr: &Herdr, pane_id: &str, slug: Option<&str>) -> Result<(), String> {
@@ -77,11 +95,18 @@ fn discard_pane(err: String, close: impl FnOnce() -> Result<(), String>) -> Stri
 }
 
 /// Best-effort: any herdr failure or a non-adjacent pane yields `false`, never an error.
+/// Both panes share a tab, so one layout lists both rects.
 fn focus_existing(herdr: &Herdr, origin_pane: &str, pane_id: &str) -> bool {
     if pane_id == origin_pane {
         return true;
     }
-    let (Ok(origin), Ok(target)) = (herdr.layout(origin_pane), herdr.layout(pane_id)) else {
+    let Ok(layout) = herdr.layout_output(origin_pane) else {
+        return false;
+    };
+    let (Ok(origin), Ok(target)) = (
+        parse_layout(&layout, origin_pane),
+        parse_layout(&layout, pane_id),
+    ) else {
         return false;
     };
     match focus_direction(origin, target) {
@@ -170,27 +195,29 @@ fn single_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
 }
 
-/// Exclusive lock held by existence of a file created with `create_new`; removed on drop.
+/// Exclusive OS lock on a persistent file, released when the handle closes, so only its
+/// holder releases it and a dead holder's lock is released by the OS. The file is never
+/// deleted: removing it would let a second locker lock a new file under the same name.
 struct PaneLock {
-    path: PathBuf,
+    _file: File,
 }
 
 impl PaneLock {
-    /// A lock whose file is older than `stale_after` is taken over, since its holder has
-    /// died. Gives up after `wait`.
-    fn acquire(path: &Path, stale_after: Duration, wait: Duration) -> Result<PaneLock, String> {
+    /// Gives up after `wait`.
+    fn acquire(path: &Path, wait: Duration) -> Result<PaneLock, String> {
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(path)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
         let start = Instant::now();
         loop {
-            match File::create_new(path) {
-                Ok(_) => {
-                    return Ok(PaneLock {
-                        path: path.to_path_buf(),
-                    });
-                }
-                Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-                    reclaim_if_stale(path, stale_after);
-                }
-                Err(e) => return Err(format!("{}: {e}", path.display())),
+            match file.try_lock() {
+                Ok(()) => return Ok(PaneLock { _file: file }),
+                Err(TryLockError::WouldBlock) => {}
+                Err(TryLockError::Error(e)) if e.kind() == ErrorKind::Interrupted => continue,
+                Err(TryLockError::Error(e)) => return Err(format!("{}: {e}", path.display())),
             }
             if start.elapsed() >= wait {
                 return Err(format!("{} is held by another process", path.display()));
@@ -200,29 +227,10 @@ impl PaneLock {
     }
 }
 
-impl Drop for PaneLock {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
-/// Re-reads the mtime just before removing, which narrows (but cannot close) the window in
-/// which a lock another waiter has just replaced is removed instead.
-fn reclaim_if_stale(path: &Path, stale_after: Duration) {
-    let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-    let Some(seen) = modified(path) else {
-        return;
-    };
-    let stale = SystemTime::now()
-        .duration_since(seen)
-        .is_ok_and(|age| age > stale_after);
-    if stale && modified(path) == Some(seen) {
-        let _ = std::fs::remove_file(path);
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     fn rect(x: u16, y: u16, width: u16, height: u16) -> Rect {
@@ -344,19 +352,15 @@ mod tests {
     }
 
     #[test]
-    fn a_stale_lock_is_reclaimed() {
-        let dir = temp_dir("stale");
+    fn a_dropped_lock_is_free_again() {
+        let dir = temp_dir("dropped");
         let path = dir.join("pane.lock");
-        let file = File::create(&path).expect("lock file");
-        file.set_modified(SystemTime::now() - Duration::from_secs(60))
-            .expect("backdate");
-        drop(file);
-
-        let lock = PaneLock::acquire(&path, LOCK_STALE_AFTER, Duration::from_millis(500))
-            .expect("a stale lock is taken over");
-        assert!(path.exists());
-        drop(lock);
-        assert!(!path.exists(), "dropping the lock removes its file");
+        let held = PaneLock::acquire(&path, LOCK_WAIT).expect("first lock");
+        drop(held);
+        assert!(path.exists(), "the lock file persists");
+        let again = PaneLock::acquire(&path, Duration::from_millis(150))
+            .expect("a released lock is free at once");
+        drop(again);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -364,8 +368,8 @@ mod tests {
     fn a_live_lock_times_out() {
         let dir = temp_dir("live");
         let path = dir.join("pane.lock");
-        let held = PaneLock::acquire(&path, LOCK_STALE_AFTER, LOCK_WAIT).expect("first lock");
-        let err = PaneLock::acquire(&path, LOCK_STALE_AFTER, Duration::from_millis(150))
+        let held = PaneLock::acquire(&path, LOCK_WAIT).expect("first lock");
+        let err = PaneLock::acquire(&path, Duration::from_millis(150))
             .err()
             .expect("a held lock blocks");
         assert!(err.contains("held by another process"), "{err}");

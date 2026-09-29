@@ -233,6 +233,11 @@ fn handle(stdin: impl Read, harness: Harness) -> Result<(), String> {
         log_error(&w);
     }
     let cwd = payload_cwd(&payload);
+    let root_override = std::env::var_os("TOMLCTL_ROOT").is_some_and(|r| !r.is_empty());
+    let flowless = cwd.as_deref().is_some_and(outside_any_flow);
+    if flowless && !root_override {
+        return Ok(());
+    }
     let result = record(&config, harness, &payload, cwd.as_deref())?;
     let herdr_pane = std::env::var("HERDR_PANE_ID").ok();
     let cwd = cwd.unwrap_or_else(|| ".".to_string());
@@ -246,13 +251,23 @@ fn handle(stdin: impl Read, harness: Harness) -> Result<(), String> {
             &Herdr::from_env(),
             &origin_pane,
             slug.as_deref(),
-            &cwd,
+            Some(&cwd),
             false,
             &config,
         )
         .map(drop)
         .map_err(|e| format!("cannot open the glimpse pane: {e}")),
     }
+}
+
+/// True when `dir` exists and neither it nor any ancestor holds a `.claude/flows`
+/// directory, so `tomlctl agents record` could only answer that there is no flow.
+pub(crate) fn outside_any_flow(dir: impl AsRef<Path>) -> bool {
+    let dir = dir.as_ref();
+    dir.is_dir()
+        && !dir
+            .ancestors()
+            .any(|a| a.join(".claude").join("flows").is_dir())
 }
 
 fn read_capped(stdin: impl Read) -> Result<Vec<u8>, String> {
@@ -417,6 +432,21 @@ mod tests {
         assert_eq!(payload_cwd(br#"{"cwd":""}"#), None);
         assert_eq!(payload_cwd(b"{}"), None);
         assert_eq!(payload_cwd(b"not json"), None);
+    }
+
+    #[test]
+    fn a_directory_under_a_flows_root_is_not_outside_any_flow() {
+        let dir = temp_dir("flows");
+        std::fs::create_dir_all(dir.join(".claude").join("flows")).expect("flows dir");
+        let nested = dir.join("a").join("b");
+        std::fs::create_dir_all(&nested).expect("nested dir");
+        assert!(!outside_any_flow(&dir));
+        assert!(!outside_any_flow(&nested));
+        assert!(
+            !outside_any_flow(dir.join("missing")),
+            "a missing directory keeps the normal path"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

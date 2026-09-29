@@ -13,6 +13,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use serde::Deserialize;
 
+use crate::flows::{self, FlowEntry};
 use crate::model::Snapshot;
 
 /// Everything the runtime's main loop receives, from the poller and the input thread alike.
@@ -20,8 +21,11 @@ use crate::model::Snapshot;
 pub(crate) enum Event {
     Snapshot(Box<Snapshot>),
     SourceError(String),
-    /// The set of flows with a `tasks.toml`, or one of their mtimes, moved.
-    FlowsChanged,
+    /// A fresh flow list, taken because the set of flows with a `tasks.toml` or one of their
+    /// `context.toml` files moved, or on the first scan.
+    Flows(Result<Vec<FlowEntry>, String>),
+    /// Only `tasks.toml` mtimes moved: the new mtime of every flow with a task store.
+    FlowMtimes(BTreeMap<String, SystemTime>),
     Input(ratatui::crossterm::event::Event),
 }
 
@@ -63,27 +67,70 @@ pub(crate) fn fingerprint(root: &Path, slug: &str) -> Fingerprint {
     })
 }
 
-/// The mtime of every `<root>/.claude/flows/*/tasks.toml`, keyed by flow directory name.
-/// A directory listing plus one stat per flow; no process is spawned.
-fn flows_fingerprint(root: &Path) -> BTreeMap<String, SystemTime> {
+/// `(tasks.toml mtime, context.toml mtime)` of one flow.
+type FlowTimes = (SystemTime, Option<SystemTime>);
+
+/// What the last scan saw of one flow directory.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FlowStat {
+    dir: Option<SystemTime>,
+    tasks: Option<SystemTime>,
+    context: Option<SystemTime>,
+}
+
+fn modified(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
+/// The [`FlowTimes`] of every `<root>/.claude/flows/*` that has a `tasks.toml`, keyed by
+/// directory name. A flow's files are re-statted only when its directory's mtime moved or it
+/// is new to `cache`: tomlctl writes by rename, which moves the directory's mtime, and the
+/// listing already carries that mtime without opening anything. On NTFS the listing lags an
+/// in-place write until the directory's next change, so only renamed writes are seen at once.
+/// No process is spawned.
+fn flows_fingerprint(
+    root: &Path,
+    cache: &mut BTreeMap<String, FlowStat>,
+) -> BTreeMap<String, FlowTimes> {
     let Ok(entries) = std::fs::read_dir(root.join(".claude").join("flows")) else {
+        cache.clear();
         return BTreeMap::new();
     };
-    entries
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let mtime = std::fs::metadata(entry.path().join("tasks.toml"))
-                .and_then(|m| m.modified())
-                .ok()?;
-            Some((entry.file_name().to_string_lossy().into_owned(), mtime))
-        })
+    let mut next = BTreeMap::new();
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let dir = entry.metadata().and_then(|m| m.modified()).ok();
+        let stat = match cache.get(&name) {
+            Some(old) if dir.is_some() && old.dir == dir => *old,
+            _ => {
+                let path = entry.path();
+                FlowStat {
+                    dir,
+                    tasks: modified(&path.join("tasks.toml")),
+                    context: modified(&path.join("context.toml")),
+                }
+            }
+        };
+        next.insert(name, stat);
+    }
+    *cache = next;
+    cache
+        .iter()
+        .filter_map(|(slug, stat)| Some((slug.clone(), (stat.tasks?, stat.context))))
         .collect()
 }
 
-/// Produces a snapshot for one flow. The production implementation shells out to tomlctl;
-/// tests substitute a fake.
+/// What a flow scan asks the poller to send.
+enum FlowsChange {
+    Relist,
+    Mtimes(BTreeMap<String, SystemTime>),
+}
+
+/// Produces a snapshot for one flow and lists the repo's flows. The production implementation
+/// shells out to tomlctl; tests substitute a fake.
 pub(crate) trait Fetcher: Send {
     fn fetch(&mut self, root: &Path, slug: &str) -> Result<Snapshot, String>;
+    fn list_flows(&mut self, root: &Path) -> Result<Vec<FlowEntry>, String>;
 }
 
 /// Runs `<tomlctl> tasks snapshot --slug <slug>` in the repository root.
@@ -97,6 +144,7 @@ impl Fetcher for TomlctlFetcher {
         let out = Command::new(tomlctl)
             .args(["tasks", "snapshot", "--slug", slug])
             .current_dir(root)
+            .env("TOMLCTL_ROOT", root)
             .output()
             .map_err(|e| format!("cannot run `{tomlctl} tasks snapshot`: {e}"))?;
         if !out.status.success() {
@@ -106,6 +154,10 @@ impl Fetcher for TomlctlFetcher {
             ));
         }
         serde_json::from_slice(&out.stdout).map_err(|e| format!("bad `tasks snapshot` output: {e}"))
+    }
+
+    fn list_flows(&mut self, root: &Path) -> Result<Vec<FlowEntry>, String> {
+        flows::list(root, &self.tomlctl)
     }
 }
 
@@ -152,9 +204,18 @@ struct Poller {
     /// When the last fetch failed, so a failure with no file change still retries.
     failed_at: Option<Instant>,
     /// `None` until the first scan, so the first scan reports the flows it finds.
-    last_flows: Option<BTreeMap<String, SystemTime>>,
+    last_flows: Option<BTreeMap<String, FlowTimes>>,
+    flow_stats: BTreeMap<String, FlowStat>,
+    /// Set when the last flow list failed, so the next change lists again.
+    relist_pending: bool,
     retry_after: Duration,
+    /// Run once, on the first failed fetch, to tell an old tomlctl from a transient failure.
+    probe: Option<Probe>,
+    /// Set when the probe failed: the poller stops fetching and only waits to be stopped.
+    halted: bool,
 }
+
+type Probe = Box<dyn FnOnce() -> Result<(), String> + Send>;
 
 impl Poller {
     fn new(
@@ -172,7 +233,11 @@ impl Poller {
             last_revision: None,
             failed_at: None,
             last_flows: None,
+            flow_stats: BTreeMap::new(),
+            relist_pending: false,
             retry_after: RETRY_AFTER,
+            probe: None,
+            halted: false,
         }
     }
 
@@ -184,15 +249,58 @@ impl Poller {
     }
 
     /// One poll. Returns `false` once the receiver has gone, which ends the thread.
+    ///
+    /// With no flow chosen yet the flow list goes first, since the runtime picks a flow from
+    /// it; otherwise the viewed flow's snapshot does.
     fn tick(&mut self) -> bool {
-        let flows = flows_fingerprint(&self.root);
-        if self.last_flows.as_ref() != Some(&flows) {
-            self.last_flows = Some(flows);
-            if self.events.send(Event::FlowsChanged).is_err() {
-                return false;
-            }
+        let change = self.scan_flows();
+        if self.slug.is_none() {
+            return self.send_flows(change);
         }
+        self.poll_snapshot() && self.send_flows(change)
+    }
 
+    /// Compares the flows on disk with the last scan. A new or vanished task store, a moved
+    /// `context.toml` (the selector shows its status and date), the first scan, or a failed
+    /// last list ask for a relist; moved `tasks.toml` mtimes alone need no process.
+    fn scan_flows(&mut self) -> Option<FlowsChange> {
+        let flows = flows_fingerprint(&self.root, &mut self.flow_stats);
+        let last = self.last_flows.replace(flows.clone());
+        if last.as_ref() == Some(&flows) {
+            return None;
+        }
+        let relist = self.relist_pending
+            || last.is_none_or(|last| {
+                !last.keys().eq(flows.keys())
+                    || last.values().zip(flows.values()).any(|(a, b)| a.1 != b.1)
+            });
+        Some(if relist {
+            FlowsChange::Relist
+        } else {
+            FlowsChange::Mtimes(
+                flows
+                    .into_iter()
+                    .map(|(slug, (tasks, _))| (slug, tasks))
+                    .collect(),
+            )
+        })
+    }
+
+    fn send_flows(&mut self, change: Option<FlowsChange>) -> bool {
+        let event = match change {
+            None => return true,
+            Some(FlowsChange::Relist) => {
+                let listed = self.fetcher.list_flows(&self.root);
+                self.relist_pending = listed.is_err();
+                Event::Flows(listed)
+            }
+            Some(FlowsChange::Mtimes(mtimes)) => Event::FlowMtimes(mtimes),
+        };
+        self.events.send(event).is_ok()
+    }
+
+    /// Fetches the viewed flow when its files moved or a failed fetch is due a retry.
+    fn poll_snapshot(&mut self) -> bool {
         let Some(slug) = self.slug.clone() else {
             return true;
         };
@@ -218,7 +326,13 @@ impl Poller {
             }
             Err(e) => {
                 self.failed_at = Some(Instant::now());
-                Event::SourceError(e)
+                match self.probe.take().map(|probe| probe()) {
+                    Some(Err(probe_error)) => {
+                        self.halted = true;
+                        Event::SourceError(probe_error)
+                    }
+                    _ => Event::SourceError(e),
+                }
             }
         };
         self.events.send(event).is_ok()
@@ -229,6 +343,10 @@ impl Poller {
     fn run(mut self, interval: Duration, control: &Receiver<Control>) {
         loop {
             if !self.tick() {
+                return;
+            }
+            if self.halted {
+                while let Ok(Control::SetSlug(_)) = control.recv() {}
                 return;
             }
             match control.recv_timeout(interval) {
@@ -247,7 +365,8 @@ pub(crate) struct Source {
 }
 
 impl Source {
-    /// Starts the production poller: probes the configured tomlctl, then fetches through it.
+    /// Starts the production poller: fetches through the configured tomlctl, probing it only
+    /// after the first failed fetch.
     pub(crate) fn start(
         root: PathBuf,
         slug: Option<String>,
@@ -269,8 +388,9 @@ impl Source {
         )
     }
 
-    /// Runs `probe` once on the poller thread; on failure its message is sent as a
-    /// `SourceError` and the thread idles until stopped instead of polling.
+    /// Runs `probe` on the poller thread after the first failed fetch; if it fails, its message
+    /// is sent as a `SourceError` in place of the fetch error and the thread idles until
+    /// stopped instead of polling.
     pub(crate) fn spawn(
         root: PathBuf,
         slug: Option<String>,
@@ -281,13 +401,9 @@ impl Source {
     ) -> Source {
         let (control, control_rx) = mpsc::channel();
         let handle = std::thread::spawn(move || {
-            if let Err(e) = probe() {
-                if events.send(Event::SourceError(e)).is_ok() {
-                    while let Ok(Control::SetSlug(_)) = control_rx.recv() {}
-                }
-                return;
-            }
-            Poller::new(root, slug, fetcher, events).run(interval, &control_rx);
+            let mut poller = Poller::new(root, slug, fetcher, events);
+            poller.probe = Some(Box::new(probe));
+            poller.run(interval, &control_rx);
         });
         Source {
             control,
@@ -300,8 +416,17 @@ impl Source {
         let _ = self.control.send(Control::SetSlug(slug));
     }
 
+    #[cfg(test)]
     pub(crate) fn stop(mut self) {
         self.shutdown();
+    }
+
+    /// Tells the poller to stop without waiting for it, so exit never waits out an
+    /// in-flight fetch. Safe because a fetch only reads and holds no lock; process exit
+    /// reaps the thread.
+    pub(crate) fn detach(mut self) {
+        let _ = self.control.send(Control::Stop);
+        self.handle.take();
     }
 
     fn shutdown(&mut self) {
@@ -332,16 +457,23 @@ mod tests {
         dir
     }
 
-    /// Returns each queued result in turn, then repeats the last; counts its calls.
+    /// Returns each queued result in turn, then repeats the last; counts its calls. Lists no
+    /// flows, counting those calls apart.
     struct FakeFetcher {
         results: Vec<Result<Snapshot, String>>,
         calls: Arc<AtomicUsize>,
+        lists: Arc<AtomicUsize>,
     }
 
     impl Fetcher for FakeFetcher {
         fn fetch(&mut self, _root: &Path, _slug: &str) -> Result<Snapshot, String> {
             let n = self.calls.fetch_add(1, Ordering::SeqCst);
             self.results[n.min(self.results.len() - 1)].clone()
+        }
+
+        fn list_flows(&mut self, _root: &Path) -> Result<Vec<FlowEntry>, String> {
+            self.lists.fetch_add(1, Ordering::SeqCst);
+            Ok(Vec::new())
         }
     }
 
@@ -353,12 +485,32 @@ mod tests {
     }
 
     fn fake(results: Vec<Result<Snapshot, String>>) -> (Box<dyn Fetcher>, Arc<AtomicUsize>) {
+        let (fetcher, calls, _lists) = fake_counting_lists(results);
+        (fetcher, calls)
+    }
+
+    fn fake_counting_lists(
+        results: Vec<Result<Snapshot, String>>,
+    ) -> (Box<dyn Fetcher>, Arc<AtomicUsize>, Arc<AtomicUsize>) {
         let calls = Arc::new(AtomicUsize::new(0));
+        let lists = Arc::new(AtomicUsize::new(0));
         let fetcher = FakeFetcher {
             results,
             calls: Arc::clone(&calls),
+            lists: Arc::clone(&lists),
         };
-        (Box::new(fetcher), calls)
+        (Box::new(fetcher), calls, lists)
+    }
+
+    /// Writes `name` the way tomlctl does, through a temporary file renamed into place,
+    /// stamped with `secs` past the epoch.
+    fn write_renamed(dir: &Path, name: &str, secs: u64) {
+        let tmp = dir.join(format!("{name}.tmp"));
+        let file = std::fs::File::create(&tmp).expect("create");
+        file.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(secs))
+            .expect("stamp");
+        drop(file);
+        std::fs::rename(&tmp, dir.join(name)).expect("rename");
     }
 
     fn drain(rx: &Receiver<Event>) -> Vec<Event> {
@@ -473,17 +625,17 @@ mod tests {
     }
 
     #[test]
-    fn a_new_flow_task_store_raises_flows_changed() {
+    fn a_new_flow_task_store_relists_the_flows() {
         let root = temp_root("flows");
-        let (fetcher, calls) = fake(vec![Ok(with_revision("r1"))]);
+        let (fetcher, calls, lists) = fake_counting_lists(vec![Ok(with_revision("r1"))]);
         let (tx, rx) = mpsc::channel();
         let mut poller = Poller::new(root.clone(), None, fetcher, tx);
 
         assert!(poller.tick());
-        assert_eq!(
-            drain(&rx).len(),
-            1,
-            "the first scan reports the flows found"
+        let events = drain(&rx);
+        assert!(
+            matches!(events.as_slice(), [Event::Flows(Ok(_))]),
+            "the first scan reports the flows found: {events:?}"
         );
         assert!(poller.tick());
         assert!(drain(&rx).is_empty(), "no change, no event");
@@ -496,14 +648,51 @@ mod tests {
             "a flow without tasks.toml does not count"
         );
 
-        std::fs::write(dir.join("tasks.toml"), "").expect("write");
+        write_renamed(&dir, "tasks.toml", 100);
         assert!(poller.tick());
         let events = drain(&rx);
         assert!(
-            matches!(events.as_slice(), [Event::FlowsChanged]),
+            matches!(events.as_slice(), [Event::Flows(Ok(_))]),
             "{events:?}"
         );
+        assert_eq!(lists.load(Ordering::SeqCst), 2);
         assert_eq!(calls.load(Ordering::SeqCst), 0, "no slug, no fetch");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_task_store_write_sends_mtimes_and_a_context_write_relists() {
+        let root = temp_root("mtimes");
+        let dir = flow_dir(&root, "f");
+        std::fs::create_dir_all(&dir).expect("flow dir");
+        write_renamed(&dir, "tasks.toml", 100);
+        let (fetcher, _calls, lists) = fake_counting_lists(vec![Ok(with_revision("r1"))]);
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        assert!(poller.tick());
+        drain(&rx);
+        assert_eq!(lists.load(Ordering::SeqCst), 1);
+
+        write_renamed(&dir, "tasks.toml", 200);
+        assert!(poller.tick());
+        let events = drain(&rx);
+        let Some(Event::FlowMtimes(mtimes)) = events.first() else {
+            panic!("{events:?}");
+        };
+        assert_eq!(
+            mtimes.get("f"),
+            Some(&(SystemTime::UNIX_EPOCH + Duration::from_secs(200)))
+        );
+        assert_eq!(lists.load(Ordering::SeqCst), 1, "no list for a tasks write");
+
+        write_renamed(&dir, "context.toml", 300);
+        assert!(poller.tick());
+        let events = drain(&rx);
+        assert!(
+            matches!(events.as_slice(), [Event::Flows(Ok(_))]),
+            "{events:?}"
+        );
+        assert_eq!(lists.load(Ordering::SeqCst), 2);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -523,7 +712,7 @@ mod tests {
     #[test]
     fn a_failed_probe_reports_and_never_polls() {
         let root = temp_root("probe");
-        let (fetcher, calls) = fake(vec![Ok(with_revision("r1"))]);
+        let (fetcher, calls) = fake(vec![Err("raw failure".into())]);
         let (tx, rx) = mpsc::channel();
         let source = Source::spawn(
             root.clone(),
@@ -537,8 +726,13 @@ mod tests {
         assert!(matches!(&first, Event::SourceError(m) if m == REQUIRED_MESSAGE));
         source.set_slug("g".into());
         source.stop();
-        assert!(drain(&rx).is_empty(), "nothing after the probe failure");
-        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(
+            !drain(&rx)
+                .iter()
+                .any(|e| matches!(e, Event::SourceError(_) | Event::Snapshot(_))),
+            "nothing polled after the probe failure"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "only the first fetch ran");
         let _ = std::fs::remove_dir_all(&root);
     }
 
