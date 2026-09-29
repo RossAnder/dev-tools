@@ -80,7 +80,7 @@ fn render_at(
     }
 }
 
-/// The selection's in-edges take the needs style and its out-edges the coupling
+/// The selection's in-edges take the needs style and its out-edges the out-edge
 /// style; with a selection every other edge is dimmed.
 fn edge_style(layout: &Layout, stroke: &Stroke, selected: Option<u32>, theme: &Theme) -> Style {
     let Some(id) = selected else {
@@ -90,7 +90,7 @@ fn edge_style(layout: &Layout, stroke: &Stroke, selected: Option<u32>, theme: &T
     if edges.clone().any(|edge| edge.to == id) {
         theme.needs_edge
     } else if edges.any(|edge| edge.from == id) {
-        theme.coupling_edge
+        theme.out_edge
     } else {
         Style::new().add_modifier(Modifier::DIM)
     }
@@ -229,7 +229,11 @@ mod tests {
             let (x, y) = sole_cell(&cache, |from, to| (from, to) == (2, 5));
             assert_eq!(buf[(x, y)].fg, ACCENT, "{orientation:?} in-edge");
             let (x, y) = sole_cell(&cache, |from, _| from == 5);
-            assert_eq!(buf[(x, y)].fg, Color::Cyan, "{orientation:?} out-edge");
+            assert_eq!(
+                Some(buf[(x, y)].fg),
+                app.theme.out_edge.fg,
+                "{orientation:?} out-edge"
+            );
             let (x, y) = sole_cell(&cache, |from, to| (from, to) == (6, 8));
             assert!(
                 buf[(x, y)].modifier.contains(Modifier::DIM),

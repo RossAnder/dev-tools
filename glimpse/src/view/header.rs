@@ -40,9 +40,52 @@ fn second_row(app: &App) -> Option<Line<'static>> {
     })
 }
 
-/// One row, or two when there is an error, a warning or a flow event to show.
-pub(crate) fn height(app: &App) -> u16 {
-    if second_row(app).is_some() { 2 } else { 1 }
+/// One row, or two when there is an error, a warning or a flow event to show. A
+/// `compact` header drops the flow event, which is history rather than state.
+pub(crate) fn height(app: &App, compact: bool) -> u16 {
+    if rows(app, compact).len() > 1 { 2 } else { 1 }
+}
+
+fn rows(app: &App, compact: bool) -> Vec<Line<'static>> {
+    let mut lines = vec![if compact {
+        compact_row(app)
+    } else {
+        first_row(app)
+    }];
+    let second = if compact && app.source_error.is_none() && app.warning.is_none() {
+        None
+    } else {
+        second_row(app)
+    };
+    lines.extend(second);
+    lines
+}
+
+/// `slug  3/8  ⟳  1▶`: the first row with the flow status, the checkpoint policy and the
+/// words dropped, to fit a narrow pane.
+fn compact_row(app: &App) -> Line<'static> {
+    let snap = &app.snapshot;
+    let done = snap
+        .tasks
+        .iter()
+        .filter(|task| task.status == TaskStatus::Done)
+        .count();
+    let running = snap
+        .agents
+        .iter()
+        .filter(|agent| agent.status == AgentStatus::Running)
+        .count();
+    let follow = if app.follow {
+        Span::styled("  ⟳", app.theme.in_progress)
+    } else {
+        Span::styled(format!("  ⏸+{}", app.pending_changes), app.theme.warning)
+    };
+    Line::from(vec![
+        Span::styled(snap.slug.clone(), app.theme.badge),
+        Span::raw(format!("  {done}/{}", snap.tasks.len())),
+        follow,
+        Span::styled(format!("  {running}▶"), app.theme.agent_chip),
+    ])
 }
 
 fn first_row(app: &App) -> Line<'static> {
@@ -84,12 +127,8 @@ fn first_row(app: &App) -> Line<'static> {
     Line::from(spans)
 }
 
-pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App) {
-    let mut lines = vec![first_row(app)];
-    if let Some(line) = second_row(app) {
-        lines.push(line);
-    }
-    frame.render_widget(Paragraph::new(lines), area);
+pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, compact: bool) {
+    frame.render_widget(Paragraph::new(rows(app, compact)), area);
 }
 
 #[cfg(test)]
@@ -101,9 +140,13 @@ mod tests {
     use ratatui::backend::TestBackend;
 
     fn draw(app: &App) -> Vec<String> {
+        draw_as(app, false)
+    }
+
+    fn draw_as(app: &App, compact: bool) -> Vec<String> {
         let mut terminal = Terminal::new(TestBackend::new(100, 2)).expect("terminal");
         terminal
-            .draw(|frame| render(frame, frame.area(), app))
+            .draw(|frame| render(frame, frame.area(), app, compact))
             .expect("draw");
         let buffer = terminal.backend().buffer().clone();
         (0..2)
@@ -140,7 +183,24 @@ mod tests {
             "the second row carries the latest flow event: {:?}",
             rows[1]
         );
-        assert_eq!(height(&app), 2);
+        assert_eq!(height(&app, false), 2);
+    }
+
+    #[test]
+    fn the_compact_header_is_one_short_row_unless_something_is_wrong() {
+        let mut app = App::new(fixture(), &Config::default());
+        let rows = draw_as(&app, true);
+        assert_eq!(rows[0], "demo-flow  3/8  ⟳  1▶");
+        assert_eq!(rows[1], "", "the flow event is dropped");
+        assert_eq!(height(&app, true), 1);
+
+        app.follow = false;
+        app.pending_changes = 2;
+        app.warning = Some("unknown config key".to_string());
+        let rows = draw_as(&app, true);
+        assert!(rows[0].contains("⏸+2"), "{:?}", rows[0]);
+        assert!(rows[1].contains("unknown config key"));
+        assert_eq!(height(&app, true), 2);
     }
 
     #[test]
@@ -170,6 +230,6 @@ mod tests {
         let mut snap = fixture();
         snap.record.clear();
         let app = App::new(snap, &Config::default());
-        assert_eq!(height(&app), 1);
+        assert_eq!(height(&app, false), 1);
     }
 }

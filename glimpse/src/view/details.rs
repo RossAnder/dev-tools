@@ -7,22 +7,23 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Margin, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Paragraph, Wrap};
+use ratatui::widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap};
 
 use crate::app::App;
-use crate::model::{Agent, AgentKind, AgentStatus, RecordEntry, TaskStatus};
+use crate::hook::parse_utc;
+use crate::model::{Agent, AgentKind, AgentStatus, RecordEntry};
 use crate::theme::Theme;
-use crate::view::activity::parse_utc;
 use crate::view::markdown;
 
 const INDENT: &str = "  ";
 
 /// Draws the details of `app.selected` into `area`, scrolled down `scroll`
 /// rows, and returns the wrapped content height in rows. An offset past the
-/// end is drawn as the last full page.
+/// end is drawn as the last full page. Overflowing content gets a scrollbar
+/// on the right border and a `row/total` count on the bottom one.
 pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, scroll: u16) -> u16 {
     let text = content(app, SystemTime::now());
     let title = match app
@@ -37,8 +38,9 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, scroll: u16) -> u
     let height = wrapped_height(&text, inner.width);
     let scroll = scroll.min(height.saturating_sub(inner.height));
 
+    let overflows = scroll > 0 || scroll + inner.height < height;
     let mut block = block;
-    if scroll > 0 || scroll + inner.height < height {
+    if overflows {
         block =
             block.title_bottom(Line::from(format!(" {}/{} ", scroll + 1, height)).right_aligned());
     }
@@ -47,6 +49,17 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, scroll: u16) -> u
         .wrap(Wrap { trim: false })
         .scroll((scroll, 0));
     frame.render_widget(paragraph, area);
+    if overflows {
+        let max_scroll = height.saturating_sub(inner.height);
+        let mut state = ScrollbarState::new(usize::from(max_scroll) + 1)
+            .viewport_content_length(usize::from(inner.height))
+            .position(usize::from(scroll));
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight),
+            area.inner(Margin::new(0, 1)),
+            &mut state,
+        );
+    }
     height
 }
 
@@ -67,7 +80,7 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
     ));
 
     let mut facts = vec![Span::styled(
-        format!("{} {}", glyph(task.status), task.status.as_str()),
+        format!("{} {}", task.status.glyph(), task.status.as_str()),
         theme.status(task.status.as_str()),
     )];
     let mut fact = |label: &str, value: String| {
@@ -115,7 +128,7 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
                 Some(peer) => Line::from(vec![
                     Span::raw(INDENT),
                     Span::styled(
-                        format!("{} {}", glyph(peer.status), peer.id),
+                        format!("{} {}", peer.status.glyph(), peer.id),
                         theme.status(peer.status.as_str()),
                     ),
                     Span::raw(format!(" {}", peer.title)),
@@ -258,17 +271,6 @@ fn agent_lines(out: &mut Vec<Line<'static>>, agent: &Agent, theme: &Theme, now: 
             format!("{INDENT}{INDENT}{}", agent.summary),
             Style::new().add_modifier(Modifier::DIM),
         ));
-    }
-}
-
-fn glyph(status: TaskStatus) -> &'static str {
-    match status {
-        TaskStatus::Pending => "○",
-        TaskStatus::InProgress => "●",
-        TaskStatus::Done => "✓",
-        TaskStatus::Failed => "✗",
-        TaskStatus::Deferred => "–",
-        TaskStatus::Unknown => "?",
     }
 }
 

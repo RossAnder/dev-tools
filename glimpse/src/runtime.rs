@@ -2,19 +2,22 @@
 //!
 //! Three threads feed one channel: the input thread owns the blocking terminal read, the
 //! source poller sends snapshots and flow changes, and the main loop drains whatever has
-//! queued before drawing once. With nothing on screen changing over time the loop blocks
-//! without a timeout, so an idle glimpse does no work at all.
+//! queued before drawing once. With no running agent and nothing on screen changing over
+//! time the loop blocks without a timeout, so an idle glimpse does no work at all.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use ratatui::backend::TestBackend;
-use ratatui::crossterm::event::{self as term_event, Event as TermEvent};
+use ratatui::crossterm::event::{
+    self as term_event, DisableMouseCapture, EnableMouseCapture, Event as TermEvent,
+};
+use ratatui::crossterm::execute;
 use ratatui::text::Span;
 use ratatui::{DefaultTerminal, Frame, Terminal};
 
-use crate::app::{Action, App};
+use crate::app::{Action, App, TICK};
 use crate::config::Config;
 use crate::diagram::DiagramCache;
 use crate::flows::{self, FlowEntry};
@@ -23,9 +26,6 @@ use crate::model::Snapshot;
 use crate::source::{Event, Source};
 use crate::transcript::TailState;
 use crate::view;
-
-/// The wake-up interval while something on screen changes with time alone.
-const TICK: Duration = Duration::from_secs(1);
 
 /// What the live view and the one-shot render start from.
 pub(crate) struct RunOpts {
@@ -62,6 +62,10 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
         ratatui::restore();
         format!("cannot open the terminal: {e}")
     })?;
+    let mouse = config.mouse;
+    if mouse {
+        capture_mouse();
+    }
     spawn_input(events.clone());
     let source = Source::start(root.clone(), slug, &config, events);
 
@@ -74,16 +78,44 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
         tomlctl: &tomlctl,
     };
     let result = run_loop(&mut screen, &rx, &mut host);
+    if mouse {
+        release_mouse();
+    }
     ratatui::restore();
     source.stop();
     result
 }
 
+/// Turns mouse reporting on and chains a panic hook that turns it off again ahead of
+/// ratatui's own restore, so a panic cannot leave the shell receiving mouse escapes.
+fn capture_mouse() {
+    let _ = execute!(std::io::stdout(), EnableMouseCapture);
+    let restore = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        release_mouse();
+        restore(info);
+    }));
+}
+
+fn release_mouse() {
+    let _ = execute!(std::io::stdout(), DisableMouseCapture);
+}
+
 /// Draws one frame of `snapshot` into an off-screen buffer and returns its rows as plain
 /// text, one line per row with trailing blanks trimmed.
-pub(crate) fn render_once(opts: &RunOpts, snapshot: Snapshot, width: u16, height: u16) -> String {
+pub(crate) fn render_once(
+    opts: &RunOpts,
+    snapshot: Snapshot,
+    select: Option<u32>,
+    width: u16,
+    height: u16,
+) -> String {
     let mut app = App::new(snapshot, &opts.config);
     app.warning = opts.warning.clone();
+    if select.is_some() {
+        app.selected = select;
+        app.follow = false;
+    }
     let mut screen = Screen::new(app, opts.config.clone(), TailState::default());
     let Ok(mut terminal) = Terminal::new(TestBackend::new(width, height));
     let Ok(_) = terminal.draw(|frame| screen.render(frame));
@@ -152,7 +184,7 @@ impl Screen {
             &mut self.app,
             &self.config,
             &mut self.cache,
-            &mut self.tail,
+            &self.tail,
         );
     }
 
@@ -208,8 +240,9 @@ enum Step {
 }
 
 /// Draws, then waits for events and redraws once per batch until a quit or until every
-/// sender has gone. Waits carry a timeout only while the app needs ticks or the activity
-/// panel is open, since a transcript grows without any snapshot announcing it.
+/// sender has gone. Waits carry a timeout only while the app asks for ticks or the
+/// activity panel is open, since a transcript grows without any snapshot announcing it.
+/// Every draw is preceded by [`Screen::refresh_tail`], the only place the tail moves.
 fn run_loop(
     screen: &mut Screen,
     events: &Receiver<Event>,
@@ -222,9 +255,13 @@ fn run_loop(
     host.draw(screen)?;
 
     loop {
-        let ticking = screen.app.needs_tick(Instant::now()) || screen.app.activity_open;
-        let first = if ticking {
-            let wait = (last_tick + TICK).saturating_duration_since(Instant::now());
+        let interval = if screen.app.activity_open {
+            Some(TICK)
+        } else {
+            screen.app.tick_interval(Instant::now())
+        };
+        let first = if let Some(interval) = interval {
+            let wait = (last_tick + interval).saturating_duration_since(Instant::now());
             match events.recv_timeout(wait) {
                 Ok(event) => Some(event),
                 Err(RecvTimeoutError::Timeout) => None,
@@ -247,12 +284,14 @@ fn run_loop(
         }
 
         let now = Instant::now();
-        if !ticking {
-            last_tick = now;
-        } else if now.saturating_duration_since(last_tick) >= TICK {
-            last_tick = now;
-            screen.app.tick(now);
-            redraw = true;
+        match interval {
+            None => last_tick = now,
+            Some(interval) if now.saturating_duration_since(last_tick) >= interval => {
+                last_tick = now;
+                screen.app.tick(now);
+                redraw = true;
+            }
+            Some(_) => {}
         }
         if screen.refresh_tail() {
             redraw = true;
@@ -283,8 +322,13 @@ fn handle(
             flows_changed(app, host, freshest);
             Step::Redraw
         }
-        Event::Input(TermEvent::Key(key)) => {
-            let Some(action) = keys::map(key) else {
+        Event::Input(input @ (TermEvent::Key(_) | TermEvent::Mouse(_))) => {
+            let action = match input {
+                TermEvent::Key(key) => keys::map(key),
+                TermEvent::Mouse(mouse) => keys::mouse(mouse, app),
+                _ => None,
+            };
+            let Some(action) = action else {
                 return Step::Nothing;
             };
             match app.apply(action) {
@@ -330,7 +374,7 @@ mod tests {
     use crate::config::ViewKind;
     use crate::model::fixture;
     use ratatui::crossterm::event::{KeyCode, KeyEvent};
-    use std::time::SystemTime;
+    use std::time::{Duration, SystemTime};
 
     fn opts(view: ViewKind) -> RunOpts {
         RunOpts {
@@ -395,7 +439,7 @@ mod tests {
     fn render_once_shows_the_slug_and_every_task() {
         let snapshot = fixture();
         let ids: Vec<u32> = snapshot.tasks.iter().map(|task| task.id).collect();
-        let text = render_once(&opts(ViewKind::Diagram), snapshot, 110, 40);
+        let text = render_once(&opts(ViewKind::Diagram), snapshot, None, 110, 40);
         assert!(text.contains("demo-flow"), "{text}");
         for id in ids {
             assert!(
@@ -421,6 +465,21 @@ mod tests {
     }
 
     #[test]
+    fn the_activity_tail_follows_the_selected_agent() {
+        let config = Config::default();
+        let mut screen = Screen::new(App::new(fixture(), &config), config, TailState::default());
+        let expected = view::activity::agent(&screen.app)
+            .map(|agent| agent.transcript_path.clone())
+            .expect("task 4 has a running agent");
+        screen.refresh_tail();
+        assert_eq!(screen.tail.path, "", "a closed panel leaves the tail alone");
+
+        screen.app.apply(Action::ToggleActivity);
+        screen.refresh_tail();
+        assert_eq!(screen.tail.path, expected);
+    }
+
+    #[test]
     fn a_quit_key_ends_the_loop_before_the_batch_draws() {
         let mut screen = idle_screen("demo-flow");
         let mut host = FakeHost::default();
@@ -428,6 +487,27 @@ mod tests {
         tx.send(resize()).expect("send");
         let quit = KeyEvent::from(KeyCode::Char('q'));
         tx.send(Event::Input(TermEvent::Key(quit))).expect("send");
+        drop(tx);
+        run_loop(&mut screen, &rx, &mut host).expect("loop");
+        assert_eq!(host.draws, 1, "only the first frame");
+    }
+
+    #[test]
+    fn mouse_motion_never_redraws() {
+        use ratatui::crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+        let mut screen = idle_screen("demo-flow");
+        let mut host = FakeHost::default();
+        let (tx, rx) = mpsc::channel();
+        for column in 0..5 {
+            let moved = MouseEvent {
+                kind: MouseEventKind::Moved,
+                column,
+                row: 3,
+                modifiers: KeyModifiers::NONE,
+            };
+            tx.send(Event::Input(TermEvent::Mouse(moved)))
+                .expect("send");
+        }
         drop(tx);
         run_loop(&mut screen, &rx, &mut host).expect("loop");
         assert_eq!(host.draws, 1, "only the first frame");

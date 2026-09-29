@@ -86,6 +86,18 @@ impl TaskStatus {
             Self::Unknown => "unknown",
         }
     }
+
+    /// The mark every view draws beside a task's id or status name.
+    pub(crate) fn glyph(self) -> &'static str {
+        match self {
+            Self::Pending => "○",
+            Self::InProgress => "◐",
+            Self::Done => "✓",
+            Self::Failed => "✗",
+            Self::Deferred => "⏸",
+            Self::Unknown => "?",
+        }
+    }
 }
 
 /// The dispatchable frontier with every in-progress row counted in flight.

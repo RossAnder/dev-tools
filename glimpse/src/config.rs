@@ -1,4 +1,5 @@
-//! User configuration, its defaults, and the orientation and view-kind enums shared across views.
+//! User configuration, its defaults, and the orientation, density and view-kind enums
+//! shared across views.
 
 use std::path::{Path, PathBuf};
 
@@ -47,6 +48,64 @@ impl OrientationPref {
     }
 }
 
+/// How the body is shared once `auto` has met a terminal width: `Compact` gives the view
+/// the whole body and opens panels as modals, `Comfortable` docks them beside or below it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Density {
+    Compact,
+    Comfortable,
+}
+
+impl Density {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Density::Compact => "compact",
+            Density::Comfortable => "comfortable",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DensityPref {
+    Auto,
+    Fixed(Density),
+}
+
+impl DensityPref {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
+        match s {
+            "auto" => Some(DensityPref::Auto),
+            "compact" => Some(DensityPref::Fixed(Density::Compact)),
+            "comfortable" => Some(DensityPref::Fixed(Density::Comfortable)),
+            _ => None,
+        }
+    }
+
+    /// `Auto` is compact while `width < compact_below`, in cells.
+    pub(crate) fn resolve(self, width: u16, compact_below: u16) -> Density {
+        match self {
+            DensityPref::Fixed(d) => d,
+            DensityPref::Auto if width < compact_below => Density::Compact,
+            DensityPref::Auto => Density::Comfortable,
+        }
+    }
+
+    /// Auto, then compact, then comfortable, then auto again.
+    pub(crate) fn next(self) -> Self {
+        match self {
+            DensityPref::Auto => DensityPref::Fixed(Density::Compact),
+            DensityPref::Fixed(Density::Compact) => DensityPref::Fixed(Density::Comfortable),
+            DensityPref::Fixed(Density::Comfortable) => DensityPref::Auto,
+        }
+    }
+}
+
+/// Bounds of the docked panel's share of the body, in percent.
+pub(crate) const PANEL_PERCENT_RANGE: std::ops::RangeInclusive<u16> = 20..=70;
+/// Bounds of a horizontal layers column, in cells; the low end is the narrowest that
+/// still shows a status, an id and a few characters of title.
+pub(crate) const COLUMN_RANGE: std::ops::RangeInclusive<u16> = 18..=120;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ViewKind {
     Layers,
@@ -90,6 +149,15 @@ pub(crate) struct Config {
     pub(crate) default_view: ViewKind,
     /// A `running` agent whose transcript is untouched this long is shown stale.
     pub(crate) stale_after_s: u64,
+    pub(crate) density: DensityPref,
+    /// Terminal width in cells below which `auto` density is compact.
+    pub(crate) compact_below: u16,
+    /// The docked panel's starting share of the body, within [`PANEL_PERCENT_RANGE`].
+    pub(crate) panel_percent: u16,
+    /// Widest a horizontal layers column grows to fit its titles, within [`COLUMN_RANGE`].
+    pub(crate) column_max: u16,
+    /// Mouse capture blocks the terminal's own text selection while glimpse runs.
+    pub(crate) mouse: bool,
 }
 
 impl Default for Config {
@@ -103,6 +171,11 @@ impl Default for Config {
             tomlctl: "tomlctl".to_string(),
             default_view: ViewKind::Layers,
             stale_after_s: 300,
+            density: DensityPref::Auto,
+            compact_below: 90,
+            panel_percent: 40,
+            column_max: 40,
+            mouse: true,
         }
     }
 }
@@ -147,6 +220,19 @@ impl Config {
                         })?;
                 }
                 "stale_after_s" => cfg.stale_after_s = positive_int(key, value)?,
+                "density" => {
+                    cfg.density = DensityPref::parse(str_value(key, value)?).ok_or_else(|| {
+                        "`density` must be auto, compact or comfortable".to_string()
+                    })?;
+                }
+                "compact_below" => cfg.compact_below = int_in(key, value, 1..=u16::MAX)?,
+                "panel_percent" => cfg.panel_percent = int_in(key, value, PANEL_PERCENT_RANGE)?,
+                "column_max" => cfg.column_max = int_in(key, value, COLUMN_RANGE)?,
+                "mouse" => {
+                    cfg.mouse = value
+                        .as_bool()
+                        .ok_or_else(|| "`mouse` must be true or false".to_string())?;
+                }
                 other => return Err(format!("unknown key `{other}`")),
             }
         }
@@ -204,6 +290,26 @@ fn positive_int(key: &str, value: &toml::Value) -> Result<u64, String> {
     match value {
         toml::Value::Integer(i) if *i > 0 => Ok(*i as u64),
         toml::Value::Integer(_) => Err(format!("`{key}` must be greater than 0")),
+        _ => Err(format!("`{key}` must be an integer")),
+    }
+}
+
+fn int_in(
+    key: &str,
+    value: &toml::Value,
+    range: std::ops::RangeInclusive<u16>,
+) -> Result<u16, String> {
+    match value {
+        toml::Value::Integer(i) => u16::try_from(*i)
+            .ok()
+            .filter(|v| range.contains(v))
+            .ok_or_else(|| {
+                format!(
+                    "`{key}` must be between {} and {}",
+                    range.start(),
+                    range.end()
+                )
+            }),
         _ => Err(format!("`{key}` must be an integer")),
     }
 }
@@ -274,6 +380,44 @@ mod tests {
         assert_eq!(cfg.tomlctl, "tomlctl");
         assert_eq!(cfg.default_view, ViewKind::Layers);
         assert_eq!(cfg.stale_after_s, 300);
+        assert_eq!(cfg.density, DensityPref::Auto);
+        assert_eq!(cfg.compact_below, 90);
+        assert_eq!(cfg.panel_percent, 40);
+        assert_eq!(cfg.column_max, 40);
+        assert!(cfg.mouse);
+    }
+
+    #[test]
+    fn layout_keys_parse_and_reject_out_of_range_values() {
+        let cfg = Config::parse(
+            "density = \"comfortable\"\ncompact_below = 60\npanel_percent = 55\ncolumn_max = 30\nmouse = false\n",
+        )
+        .expect("layout keys parse");
+        assert_eq!(cfg.density, DensityPref::Fixed(Density::Comfortable));
+        assert_eq!(cfg.compact_below, 60);
+        assert_eq!(cfg.panel_percent, 55);
+        assert_eq!(cfg.column_max, 30);
+        assert!(!cfg.mouse);
+        for bad in [
+            "density = \"cosy\"",
+            "panel_percent = 15",
+            "panel_percent = 75",
+            "column_max = 10",
+            "compact_below = 0",
+            "mouse = 1",
+        ] {
+            assert!(Config::parse(bad).is_err(), "{bad:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn auto_density_turns_compact_below_the_threshold() {
+        let auto = DensityPref::Auto;
+        assert_eq!(auto.resolve(89, 90), Density::Compact);
+        assert_eq!(auto.resolve(90, 90), Density::Comfortable);
+        let fixed = DensityPref::Fixed(Density::Comfortable);
+        assert_eq!(fixed.resolve(40, 90), Density::Comfortable);
+        assert_eq!(auto.next().next().next(), auto, "the cycle has three steps");
     }
 
     #[test]

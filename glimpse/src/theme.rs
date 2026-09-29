@@ -17,9 +17,15 @@ pub(crate) struct Theme {
     pub(crate) selection: Style,
     pub(crate) needs_edge: Style,
     pub(crate) coupling_edge: Style,
+    /// The diagram's edges leaving the selection.
+    pub(crate) out_edge: Style,
     pub(crate) flash: Style,
     pub(crate) agent_chip: Style,
     pub(crate) badge: Style,
+    /// A row's execution record holds a deferral.
+    pub(crate) deferral_badge: Style,
+    /// Inline code in a markdown task body.
+    pub(crate) inline_code: Style,
     pub(crate) warning: Style,
 }
 
@@ -34,9 +40,12 @@ impl Default for Theme {
             selection: Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
             needs_edge: Style::new().fg(ACCENT).add_modifier(Modifier::BOLD),
             coupling_edge: Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            out_edge: Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
             flash: Style::new().fg(Color::Black).bg(ACCENT),
             agent_chip: Style::new().fg(Color::Black).bg(ACCENT_BG),
             badge: Style::new().add_modifier(Modifier::BOLD),
+            deferral_badge: Style::new().add_modifier(Modifier::BOLD),
+            inline_code: Style::new().fg(ACCENT),
             warning: Style::new().fg(Color::Yellow),
         }
     }

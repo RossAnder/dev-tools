@@ -1,7 +1,7 @@
 //! The flow selector overlay.
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Flex, Layout, Rect};
+use ratatui::layout::{Constraint, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 
@@ -13,16 +13,6 @@ pub(crate) fn selected_slug(app: &App) -> Option<&str> {
     app.flows
         .get(app.selector_cursor)
         .map(|flow| flow.slug.as_str())
-}
-
-fn centred(area: Rect, width: u16, height: u16) -> Rect {
-    let [row] = Layout::vertical([Constraint::Length(height.min(area.height))])
-        .flex(Flex::Center)
-        .areas(area);
-    let [cell] = Layout::horizontal([Constraint::Length(width.min(area.width))])
-        .flex(Flex::Center)
-        .areas(row);
-    cell
 }
 
 fn rows(app: &App) -> Vec<Line<'static>> {
@@ -63,7 +53,10 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App) {
     let title = format!(" flows · auto-follow {auto} ");
     let width = (widest.max(title.chars().count()) + 4) as u16;
     let height = lines.len() as u16 + 2;
-    let rect = centred(area, width, height);
+    let rect = area.centered(
+        Constraint::Length(width.min(area.width)),
+        Constraint::Length(height.min(area.height)),
+    );
     frame.render_widget(Clear, rect);
     let block = Block::default()
         .borders(Borders::ALL)

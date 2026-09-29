@@ -29,10 +29,18 @@ use crate::runtime::RunOpts;
 use crate::source::{Fetcher, TomlctlFetcher};
 
 fn main() -> ExitCode {
-    let command = match cli::parse(std::env::args().skip(1)) {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let is_hook = args.first().is_some_and(|a| a == "hook");
+    let command = match cli::parse(args) {
         Parsed::Run(command) => command,
         Parsed::Print(text) => {
             print!("{text}");
+            return ExitCode::SUCCESS;
+        }
+        // A harness reads neither the stream nor the exit code of an async hook, so a
+        // mistyped hook entry is reported where the hook's other failures go.
+        Parsed::Fail(text) if is_hook => {
+            hook::log_error(text.lines().next().unwrap_or_default());
             return ExitCode::SUCCESS;
         }
         Parsed::Fail(text) => {
@@ -41,8 +49,8 @@ fn main() -> ExitCode {
         }
     };
     let result = match command {
-        Command::Hook => {
-            hook::run_hook(std::io::stdin().lock());
+        Command::Hook { harness } => {
+            hook::run_hook(std::io::stdin().lock(), harness);
             Ok(())
         }
         Command::EnsurePane { slug, focus } => ensure_pane(slug.as_deref(), focus),
@@ -79,9 +87,14 @@ fn run_view(args: ViewArgs) -> Result<(), String> {
         None => runtime::run(opts),
         Some(once) => {
             let snapshot = once_snapshot(&opts, &once)?;
+            if let Some(id) = once.select
+                && !snapshot.tasks.iter().any(|task| task.id == id)
+            {
+                return Err(format!("--select {id}: no such task in {}", snapshot.slug));
+            }
             print!(
                 "{}",
-                runtime::render_once(&opts, snapshot, once.width, once.height)
+                runtime::render_once(&opts, snapshot, once.select, once.width, once.height)
             );
             Ok(())
         }

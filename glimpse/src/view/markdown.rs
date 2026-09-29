@@ -9,7 +9,7 @@ use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 
-use crate::theme::{ACCENT, Theme};
+use crate::theme::Theme;
 
 const BULLET: &str = "• ";
 const RULE: &str = "────────";
@@ -49,7 +49,7 @@ impl Writer {
             in_code_block: false,
             pending_blank: false,
             strong: theme.badge,
-            code: Style::new().fg(ACCENT),
+            code: theme.inline_code,
         }
     }
 
@@ -238,7 +238,7 @@ mod tests {
         };
         assert!(style_of("b").add_modifier.contains(Modifier::BOLD));
         assert!(style_of("c").add_modifier.contains(Modifier::ITALIC));
-        assert_eq!(style_of("d").fg, Some(ACCENT));
+        assert_eq!(style_of("d"), Theme::default().inline_code);
         assert_eq!(style_of("a "), Style::default());
     }
 

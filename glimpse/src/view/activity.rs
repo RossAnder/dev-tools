@@ -12,6 +12,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 use crate::app::App;
+use crate::hook::parse_utc;
 use crate::model::{Agent, AgentStatus};
 use crate::transcript::{EntryKind, TailState};
 
@@ -125,41 +126,10 @@ fn format_tokens(tokens: u64) -> String {
     }
 }
 
-/// Seconds since the Unix epoch of an RFC 3339 UTC timestamp such as
-/// `2026-09-28T11:04:22Z`; fractional seconds are ignored and any offset
-/// other than `Z` gives `None`.
-pub(crate) fn parse_utc(ts: &str) -> Option<u64> {
-    let bytes = ts.as_bytes();
-    if bytes.len() < 20 || bytes[4] != b'-' || bytes[10] != b'T' || !ts.ends_with('Z') {
-        return None;
-    }
-    let num = |range: std::ops::Range<usize>| ts.get(range)?.parse::<i64>().ok();
-    let (year, month, day) = (num(0..4)?, num(5..7)?, num(8..10)?);
-    let (hour, minute, second) = (num(11..13)?, num(14..16)?, num(17..19)?);
-    if !(1..=12).contains(&month)
-        || !(1..=31).contains(&day)
-        || hour > 23
-        || minute > 59
-        || second > 60
-    {
-        return None;
-    }
-    // Days-from-civil over 400-year eras of 146 097 days, with March as month 0.
-    let y = if month <= 2 { year - 1 } else { year };
-    let era = y.div_euclid(400);
-    let yoe = y.rem_euclid(400);
-    let mp = if month > 2 { month - 3 } else { month + 9 };
-    let doy = (153 * mp + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    u64::try_from(days * 86_400 + hour * 3_600 + minute * 60 + second).ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::hook::format_utc;
     use crate::model::fixture;
     use crate::transcript::Entry;
     use ratatui::Terminal;
@@ -276,20 +246,6 @@ mod tests {
         tail.rejected = true;
         let rows = draw(&app, &tail, at("2026-09-28T12:00:00Z"), 6);
         assert!(rows[2].contains("outside the Claude directory"), "{rows:?}");
-    }
-
-    #[test]
-    fn parse_utc_inverts_format_utc() {
-        for secs in [0, 951_782_400, 1_790_000_000, 4_102_444_799] {
-            assert_eq!(parse_utc(&format_utc(secs)), Some(secs));
-        }
-        assert_eq!(
-            parse_utc("2026-09-28T11:04:22.517Z"),
-            Some(parse_utc("2026-09-28T11:04:22Z").unwrap())
-        );
-        assert_eq!(parse_utc("2026-09-28T11:04:22+02:00"), None);
-        assert_eq!(parse_utc(""), None);
-        assert_eq!(parse_utc("2026-13-01T00:00:00Z"), None);
     }
 
     #[test]

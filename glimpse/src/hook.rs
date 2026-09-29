@@ -1,6 +1,7 @@
-//! Claude Code hook handler: records agent events and opens the glimpse pane on subagent start.
+//! Claude Code and Codex hook handler: records agent events and opens the glimpse pane on
+//! subagent start.
 //!
-//! Claude Code neither waits for nor reads an async hook, so a failure here would vanish
+//! Neither harness waits for nor reads an async hook, so a failure here would vanish
 //! silently. Every error is appended instead to `<claude_dir>/glimpse/hook.log`, and nothing
 //! is ever written to stdout or stderr. The I/O lives in `run_hook` and the helpers it
 //! names; `decide`, `parse_record_result` and `append_log` are what the tests cover.
@@ -13,6 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::cli::Harness;
 use crate::config::{Config, claude_dir};
 use crate::herdr::Herdr;
 
@@ -134,11 +136,79 @@ pub(crate) fn format_utc(secs: u64) -> String {
     )
 }
 
+/// Seconds since the Unix epoch of an RFC 3339 timestamp, with optional
+/// fractional seconds (dropped) and a `Z` or `±HH:MM` offset; `None` for
+/// anything else, or for an instant before the epoch.
+pub(crate) fn parse_utc(s: &str) -> Option<u64> {
+    let bytes = s.as_bytes();
+    let digits = |from: usize, to: usize| -> Option<i64> {
+        let part = bytes.get(from..to)?;
+        if !part.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        std::str::from_utf8(part).ok()?.parse().ok()
+    };
+    let separators = [(4, b'-'), (7, b'-'), (13, b':'), (16, b':')];
+    if separators
+        .iter()
+        .any(|(at, sep)| bytes.get(*at) != Some(sep))
+        || !matches!(bytes.get(10), Some(b'T' | b't' | b' '))
+    {
+        return None;
+    }
+    let (year, month, day) = (digits(0, 4)?, digits(5, 7)?, digits(8, 10)?);
+    let (hour, minute, second) = (digits(11, 13)?, digits(14, 16)?, digits(17, 19)?);
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 60
+    {
+        return None;
+    }
+
+    let mut rest = &s[19..];
+    if let Some(fraction) = rest.strip_prefix('.') {
+        rest = fraction.trim_start_matches(|c: char| c.is_ascii_digit());
+    }
+    let offset = match rest {
+        "Z" | "z" => 0,
+        _ => {
+            let sign = match rest.as_bytes().first() {
+                Some(b'+') => 1,
+                Some(b'-') => -1,
+                _ => return None,
+            };
+            let tail = rest.as_bytes();
+            if tail.len() != 6 || tail[3] != b':' {
+                return None;
+            }
+            let at = s.len() - 6;
+            sign * (digits(at + 1, at + 3)? * 3_600 + digits(at + 4, at + 6)? * 60)
+        }
+    };
+
+    let secs =
+        days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second - offset;
+    u64::try_from(secs).ok()
+}
+
+/// Days since 1970-01-01 of a proleptic Gregorian date, over 400-year eras
+/// with March as month 0; the inverse of the civil-from-days in [`format_utc`].
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let yoe = year - era * 400;
+    let doy = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
 fn log_path() -> Option<PathBuf> {
     Some(claude_dir()?.join("glimpse").join("hook.log"))
 }
 
-fn log_error(message: &str) {
+pub(crate) fn log_error(message: &str) {
     let Some(path) = log_path() else {
         return;
     };
@@ -150,20 +220,20 @@ fn log_error(message: &str) {
 }
 
 /// Handles one hook payload. Never fails and never prints; errors go to the hook log.
-pub(crate) fn run_hook(stdin: impl Read) {
-    if let Err(e) = handle(stdin) {
+pub(crate) fn run_hook(stdin: impl Read, harness: Harness) {
+    if let Err(e) = handle(stdin, harness) {
         log_error(&e);
     }
 }
 
-fn handle(stdin: impl Read) -> Result<(), String> {
+fn handle(stdin: impl Read, harness: Harness) -> Result<(), String> {
     let payload = read_capped(stdin)?;
     let (config, warning) = Config::load();
     if let Some(w) = warning {
         log_error(&w);
     }
     let cwd = payload_cwd(&payload);
-    let result = record(&config, &payload, cwd.as_deref())?;
+    let result = record(&config, harness, &payload, cwd.as_deref())?;
     let herdr_pane = std::env::var("HERDR_PANE_ID").ok();
     let cwd = cwd.unwrap_or_else(|| ".".to_string());
     match decide(&result, herdr_pane.as_deref(), &cwd) {
@@ -197,11 +267,20 @@ fn read_capped(stdin: impl Read) -> Result<Vec<u8>, String> {
     Ok(payload)
 }
 
+pub(crate) fn record_args(harness: Harness) -> [&'static str; 5] {
+    ["agents", "record", "--harness", harness.as_str(), "-"]
+}
+
 /// Runs `tomlctl agents record` in the payload's `cwd` when that directory exists, so
 /// tomlctl resolves the worktree the agent ran in.
-fn record(config: &Config, payload: &[u8], cwd: Option<&str>) -> Result<RecordResult, String> {
+fn record(
+    config: &Config,
+    harness: Harness,
+    payload: &[u8],
+    cwd: Option<&str>,
+) -> Result<RecordResult, String> {
     let mut cmd = Command::new(&config.tomlctl);
-    cmd.args(["agents", "record", "--harness", "claude-code", "-"])
+    cmd.args(record_args(harness))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -318,6 +397,18 @@ mod tests {
     }
 
     #[test]
+    fn the_harness_reaches_the_tomlctl_arguments() {
+        assert_eq!(
+            record_args(Harness::ClaudeCode),
+            ["agents", "record", "--harness", "claude-code", "-"]
+        );
+        assert_eq!(
+            record_args(Harness::Codex),
+            ["agents", "record", "--harness", "codex", "-"]
+        );
+    }
+
+    #[test]
     fn payload_cwd_is_read_tolerantly() {
         assert_eq!(
             payload_cwd(br#"{"cwd":"C:/dev/x","other":1}"#).as_deref(),
@@ -357,5 +448,24 @@ mod tests {
         assert_eq!(format_utc(0), "1970-01-01T00:00:00Z");
         assert_eq!(format_utc(951_782_400), "2000-02-29T00:00:00Z");
         assert_eq!(format_utc(1_790_000_000), "2026-09-21T14:13:20Z");
+    }
+
+    #[test]
+    fn parse_utc_inverts_format_utc() {
+        for secs in [0, 951_782_400, 1_790_000_000, 1_790_000_059, 4_102_444_799] {
+            assert_eq!(parse_utc(&format_utc(secs)), Some(secs));
+        }
+        assert_eq!(
+            parse_utc("2026-09-28T11:04:22.517Z"),
+            parse_utc("2026-09-28T11:04:22Z")
+        );
+        assert_eq!(
+            parse_utc("2026-09-28T13:04:22.5+02:00"),
+            parse_utc("2026-09-28T11:04:22Z")
+        );
+        assert_eq!(parse_utc(""), None);
+        assert_eq!(parse_utc("2026-09-28"), None);
+        assert_eq!(parse_utc("2026-13-28T11:04:22Z"), None);
+        assert_eq!(parse_utc("2026-09-28T11:04:22+0200"), None);
     }
 }

@@ -2,9 +2,11 @@
 //!
 //! Tasks are grouped by the snapshot's Kahn layers, taken verbatim. Vertically
 //! each layer is a header row followed by one row per task; horizontally each
-//! layer is a column of compact cells. A checkpoint row follows the layer that
-//! completes the checkpoint's group. With a selection, every row is marked by
-//! its relation to it and unrelated rows are dimmed.
+//! layer is a column of compact cells, sized to the longest title within the
+//! app's `column_max` (or to `column_override`), showing only the layers that
+//! fit. A checkpoint row follows the layer that completes the checkpoint's group.
+//! With a selection, every row is marked by its relation to it and unrelated rows
+//! are dimmed.
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -14,11 +16,12 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::app::{App, Dir, Navigator};
-use crate::config::Orientation;
+use crate::config::{COLUMN_RANGE, Orientation};
+use crate::hook::parse_utc;
 use crate::model::{AgentStatus, Checkpoint, Index, Snapshot, Task, TaskStatus};
 
-/// Narrowest horizontal column; past it the columns scroll instead of shrinking.
-const MIN_COLUMN: u16 = 18;
+/// A task row's on-screen rect, for mouse hits.
+pub(crate) type Target = (Rect, u32);
 
 /// One layer, plus the checkpoints whose last member sits in it.
 struct Group {
@@ -149,9 +152,14 @@ impl Navigator for LayerNav {
     }
 }
 
-/// Draws the layer list into `area` of `buf`; a `Frame` caller passes
-/// `frame.buffer_mut()`.
-pub(crate) fn render(buf: &mut Buffer, area: Rect, app: &App, orientation: Orientation) {
+/// Draws the layer list into `area` of `buf` and returns where each task row landed; a
+/// `Frame` caller passes `frame.buffer_mut()`.
+pub(crate) fn render(
+    buf: &mut Buffer,
+    area: Rect,
+    app: &App,
+    orientation: Orientation,
+) -> Vec<Target> {
     render_at(
         buf,
         area,
@@ -159,7 +167,35 @@ pub(crate) fn render(buf: &mut Buffer, area: Rect, app: &App, orientation: Orien
         orientation,
         SystemTime::now(),
         Instant::now(),
-    );
+    )
+}
+
+/// The horizontal column width, gutter included, before it meets the pane: the
+/// override when set, else the widest task cell clamped to `COLUMN_RANGE` and
+/// `app.column_max`. Every layer counts, not just the visible ones, so the width holds
+/// still while the view scrolls.
+pub(crate) fn column_width(app: &App) -> u16 {
+    let ctx = Ctx::new(app, SystemTime::now(), Instant::now());
+    column_for(&ctx)
+}
+
+fn column_for(ctx: &Ctx) -> u16 {
+    if let Some(width) = ctx.app.column_override {
+        return width;
+    }
+    let widest = ctx
+        .app
+        .snapshot
+        .tasks
+        .iter()
+        .map(|task| natural_width(ctx, task, None))
+        .max()
+        .unwrap_or(0);
+    let column = u16::try_from(widest + 1).unwrap_or(u16::MAX);
+    column.clamp(
+        *COLUMN_RANGE.start(),
+        ctx.app.column_max.max(*COLUMN_RANGE.start()),
+    )
 }
 
 /// `wall` dates the agents' elapsed counters and `now` the flashes.
@@ -170,9 +206,9 @@ fn render_at(
     orientation: Orientation,
     wall: SystemTime,
     now: Instant,
-) {
+) -> Vec<Target> {
     if area.width == 0 || area.height == 0 {
-        return;
+        return Vec::new();
     }
     let ctx = Ctx::new(app, wall, now);
     let groups = groups(&app.snapshot, &app.index);
@@ -182,13 +218,14 @@ fn render_at(
     }
 }
 
-/// A drawn row and the style laid over its full width.
+/// A drawn row, the style laid over its full width, and the task it shows.
 struct Row {
     line: Line<'static>,
     overlay: Option<Style>,
+    task: Option<u32>,
 }
 
-fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) {
+fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) -> Vec<Target> {
     let width = usize::from(area.width);
     let id_width = ctx
         .app
@@ -204,6 +241,7 @@ fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) {
         rows.push(Row {
             line: rule(&format!("── {} ", group.label), '─', width, dim()),
             overlay: None,
+            task: None,
         });
         for id in &group.ids {
             let Some(task) = ctx.app.index.task(&ctx.app.snapshot, *id) else {
@@ -215,26 +253,30 @@ fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) {
             rows.push(Row {
                 line: task_line(ctx, task, width, Some(id_width)),
                 overlay: ctx.overlay(*id),
+                task: Some(*id),
             });
         }
         for pos in &group.closes {
             rows.push(Row {
                 line: checkpoint_line(ctx, &ctx.app.snapshot.checkpoints[*pos], width, true),
                 overlay: None,
+                task: None,
             });
         }
     }
     let height = usize::from(area.height);
     let offset = scroll(selected_row, rows.len(), height);
-    draw_rows(buf, area, &rows[offset..]);
+    draw_rows(buf, area, &rows[offset..])
 }
 
-fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) {
+/// Columns keep the width [`column_for`] picks and only as many layers as fit are drawn,
+/// scrolled so the selected layer is the last one on screen. `‹` on the first column's
+/// rule and `›` at the right edge mark layers scrolled off either side.
+fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) -> Vec<Target> {
     if groups.is_empty() {
-        return;
+        return Vec::new();
     }
-    let count = u16::try_from(groups.len()).unwrap_or(u16::MAX);
-    let column = (area.width / count).max(MIN_COLUMN.min(area.width));
+    let column = column_for(ctx).min(area.width).max(1);
     let visible = usize::from(area.width / column).max(1);
     let selected_column = groups
         .iter()
@@ -243,11 +285,18 @@ fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) 
     let height = usize::from(area.height);
     // The last cell of a column is left blank as the gutter to the next one.
     let cell = usize::from(column).saturating_sub(1).max(1);
+    let mut targets = Vec::new();
     for (slot, group) in groups.iter().skip(first).take(visible).enumerate() {
         let x = area.x + column * u16::try_from(slot).unwrap_or(0);
+        let label = if slot == 0 && first > 0 {
+            format!("‹ {} ", group.label)
+        } else {
+            format!("{} ", group.label)
+        };
         let mut rows = vec![Row {
-            line: rule(&format!("{} ", group.label), '─', cell, dim()),
+            line: rule(&label, '─', cell, dim()),
             overlay: None,
+            task: None,
         }];
         let mut selected_row = None;
         for id in &group.ids {
@@ -260,33 +309,46 @@ fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) 
             rows.push(Row {
                 line: task_line(ctx, task, cell, None),
                 overlay: ctx.overlay(*id),
+                task: Some(*id),
             });
         }
         for pos in &group.closes {
             rows.push(Row {
                 line: checkpoint_line(ctx, &ctx.app.snapshot.checkpoints[*pos], cell, false),
                 overlay: None,
+                task: None,
             });
         }
         let offset = scroll(selected_row, rows.len(), height);
         let width = u16::try_from(cell)
             .unwrap_or(u16::MAX)
             .min(area.right().saturating_sub(x));
-        draw_rows(
+        targets.extend(draw_rows(
             buf,
             Rect::new(x, area.y, width, area.height),
             &rows[offset..],
-        );
+        ));
     }
+    if first + visible < groups.len() {
+        let x = area.right().saturating_sub(2).max(area.x);
+        buf.set_string(x, area.y, " ›", ctx.app.theme.badge);
+    }
+    targets
 }
 
-fn draw_rows(buf: &mut Buffer, area: Rect, rows: &[Row]) {
+fn draw_rows(buf: &mut Buffer, area: Rect, rows: &[Row]) -> Vec<Target> {
+    let mut targets = Vec::new();
     for (row, y) in rows.iter().zip(area.y..area.bottom()) {
+        let rect = Rect::new(area.x, y, area.width, 1);
         buf.set_line(area.x, y, &row.line, area.width);
         if let Some(style) = row.overlay {
-            buf.set_style(Rect::new(area.x, y, area.width, 1), style);
+            buf.set_style(rect, style);
+        }
+        if let Some(id) = row.task {
+            targets.push((rect, id));
         }
     }
+    targets
 }
 
 /// First row to draw so that the selected one sits on screen, kept a couple
@@ -394,7 +456,11 @@ impl<'a> Ctx<'a> {
                 Some((agent, open.started_at.as_str()))
             })?;
         let elapsed = parse_utc(started)
-            .and_then(|at| self.wall.duration_since(at).ok())
+            .and_then(|at| {
+                self.wall
+                    .duration_since(UNIX_EPOCH + Duration::from_secs(at))
+                    .ok()
+            })
             .map(|age| format!(" {}", format_elapsed(age)))
             .unwrap_or_default();
         let style = if self.app.stale_agents.contains(&agent.id) {
@@ -408,15 +474,17 @@ impl<'a> Ctx<'a> {
         ))
     }
 
-    fn badges(&self, id: u32) -> Vec<Span<'static>> {
-        let record = self.app.index.record_for(&self.app.snapshot, id);
+    /// A deferral record is badged only while the status does not already
+    /// say deferred, since both draw the same pause glyph.
+    fn badges(&self, task: &Task) -> Vec<Span<'static>> {
+        let record = self.app.index.record_for(&self.app.snapshot, task.id);
         let has = |kind: &str| record.iter().any(|entry| entry.entry_type == kind);
         let mut badges = Vec::new();
-        if has("deviation") {
-            badges.push(Span::styled("⚠", self.app.theme.warning));
-        }
-        if has("deferral") {
-            badges.push(Span::styled("⏸", self.app.theme.badge));
+        if task.status != TaskStatus::Deferred && has("deferral") {
+            badges.push(Span::styled(
+                TaskStatus::Deferred.glyph(),
+                self.app.theme.deferral_badge,
+            ));
         }
         badges
     }
@@ -426,36 +494,54 @@ fn dim() -> Style {
     Style::new().add_modifier(Modifier::DIM)
 }
 
-fn glyph(status: TaskStatus) -> &'static str {
-    match status {
-        TaskStatus::Pending => "○",
-        TaskStatus::InProgress => "◐",
-        TaskStatus::Done => "✓",
-        TaskStatus::Failed => "✗",
-        TaskStatus::Deferred => "⏸",
-        TaskStatus::Unknown => "?",
-    }
-}
-
 /// One task row. `id_width` right-aligns the id in a full row; `None` gives
 /// the compact `◐14 title…` cell with no effort column.
 fn task_line(ctx: &Ctx, task: &Task, width: usize, id_width: Option<usize>) -> Line<'static> {
+    let (mut left, right) = task_parts(ctx, task, id_width);
+    let used = parts_width(&left, &right);
+    let room = width.saturating_sub(used);
+    let title = truncate(&task.title, room);
+    let pad = room.saturating_sub(text_width(&title));
+    left.push(Span::raw(format!("{title}{}", " ".repeat(pad))));
+    if !right.is_empty() {
+        left.push(Span::raw(" "));
+        left.extend(right);
+    }
+    Line::from(left)
+}
+
+/// Cells [`task_line`] needs to show `task`'s whole title.
+fn natural_width(ctx: &Ctx, task: &Task, id_width: Option<usize>) -> usize {
+    let (left, right) = task_parts(ctx, task, id_width);
+    parts_width(&left, &right) + text_width(&task.title)
+}
+
+fn parts_width(left: &[Span], right: &[Span]) -> usize {
+    left.iter().chain(right).map(Span::width).sum::<usize>() + usize::from(!right.is_empty())
+}
+
+/// The spans before the title (mark, status, id) and after it (badges, chip, effort).
+fn task_parts(
+    ctx: &Ctx,
+    task: &Task,
+    id_width: Option<usize>,
+) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
     let status = ctx.app.theme.status(task.status.as_str());
     let (mark, mark_style) = ctx.mark(task.id).unwrap_or((" ", Style::new()));
     let mut left = vec![Span::styled(mark, mark_style)];
     match id_width {
         Some(w) => {
             left.push(Span::raw(" "));
-            left.push(Span::styled(glyph(task.status), status));
+            left.push(Span::styled(task.status.glyph(), status));
             left.push(Span::raw(format!(" {:>w$} ", task.id)));
         }
         None => {
-            left.push(Span::styled(glyph(task.status), status));
+            left.push(Span::styled(task.status.glyph(), status));
             left.push(Span::raw(format!("{} ", task.id)));
         }
     }
 
-    let mut right = ctx.badges(task.id);
+    let mut right = ctx.badges(task);
     if let Some(chip) = ctx.chip(task.id) {
         if !right.is_empty() {
             right.push(Span::raw(" "));
@@ -468,18 +554,7 @@ fn task_line(ctx: &Ctx, task: &Task, width: usize, id_width: Option<usize>) -> L
         }
         right.push(Span::styled(task.effort.clone(), dim()));
     }
-
-    let used: usize =
-        left.iter().chain(&right).map(Span::width).sum::<usize>() + usize::from(!right.is_empty());
-    let room = width.saturating_sub(used);
-    let title = truncate(&task.title, room);
-    let pad = room.saturating_sub(text_width(&title));
-    left.push(Span::raw(format!("{title}{}", " ".repeat(pad))));
-    if !right.is_empty() {
-        left.push(Span::raw(" "));
-        left.extend(right);
-    }
-    Line::from(left)
+    (left, right)
 }
 
 /// `◆ A ✓ a1b2c3d …`: the checkpoint id, its verification verdict and its
@@ -572,76 +647,11 @@ fn format_elapsed(age: Duration) -> String {
     }
 }
 
-/// An RFC 3339 timestamp, with optional fractional seconds and a `Z` or
-/// `±HH:MM` offset; `None` for anything else.
-fn parse_utc(s: &str) -> Option<SystemTime> {
-    let bytes = s.as_bytes();
-    let digits = |from: usize, to: usize| -> Option<i64> {
-        let part = bytes.get(from..to)?;
-        if !part.iter().all(u8::is_ascii_digit) {
-            return None;
-        }
-        std::str::from_utf8(part).ok()?.parse().ok()
-    };
-    let separators = [(4, b'-'), (7, b'-'), (13, b':'), (16, b':')];
-    if separators
-        .iter()
-        .any(|(at, sep)| bytes.get(*at) != Some(sep))
-        || !matches!(bytes.get(10), Some(b'T' | b't' | b' '))
-    {
-        return None;
-    }
-    let (year, month, day) = (digits(0, 4)?, digits(5, 7)?, digits(8, 10)?);
-    let (hour, minute, second) = (digits(11, 13)?, digits(14, 16)?, digits(17, 19)?);
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || minute > 59 {
-        return None;
-    }
-
-    let mut rest = &s[19..];
-    if let Some(fraction) = rest.strip_prefix('.') {
-        rest = fraction.trim_start_matches(|c: char| c.is_ascii_digit());
-    }
-    let offset = match rest {
-        "Z" | "z" => 0,
-        _ => {
-            let sign = match rest.as_bytes().first() {
-                Some(b'+') => 1,
-                Some(b'-') => -1,
-                _ => return None,
-            };
-            let tail = rest.as_bytes();
-            if tail.len() != 6 || tail[3] != b':' {
-                return None;
-            }
-            let at = s.len() - 6;
-            sign * (digits(at + 1, at + 3)? * 3_600 + digits(at + 4, at + 6)? * 60)
-        }
-    };
-
-    let secs =
-        days_from_civil(year, month, day) * 86_400 + hour * 3_600 + minute * 60 + second - offset;
-    u64::try_from(secs)
-        .ok()
-        .map(|secs| UNIX_EPOCH + Duration::from_secs(secs))
-}
-
-/// Days since 1970-01-01 of a proleptic Gregorian date, over 400-year eras
-/// with March as month 0.
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = year.div_euclid(400);
-    let yoe = year - era * 400;
-    let doy = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146_097 + doe - 719_468
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::hook::format_utc;
-    use crate::model::fixture;
+    use crate::model::{RecordEntry, fixture};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
@@ -651,7 +661,8 @@ mod tests {
 
     /// Twelve minutes after the running agent's segment on task 4 opened.
     fn wall() -> SystemTime {
-        parse_utc("2026-09-28T11:16:22Z").expect("valid timestamp")
+        UNIX_EPOCH
+            + Duration::from_secs(parse_utc("2026-09-28T11:16:22Z").expect("valid timestamp"))
     }
 
     fn draw(app: &App, orientation: Orientation, width: u16, height: u16) -> Buffer {
@@ -698,7 +709,7 @@ mod tests {
         for task in &app.snapshot.tasks {
             row_of(
                 &lines,
-                &format!("{} {} {}", glyph(task.status), task.id, task.title),
+                &format!("{} {} {}", task.status.glyph(), task.id, task.title),
             );
         }
         let (a, row) = row_of(&lines, "◆ A");
@@ -719,7 +730,7 @@ mod tests {
         for task in &app.snapshot.tasks {
             row_of(
                 &lines,
-                &format!("{}{} {}", glyph(task.status), task.id, task.title),
+                &format!("{}{} {}", task.status.glyph(), task.id, task.title),
             );
         }
         let (_, row) = row_of(&lines, "◆ A");
@@ -783,12 +794,31 @@ mod tests {
     }
 
     #[test]
-    fn the_deviation_badge_marks_its_task() {
+    fn a_deviation_is_not_badged_on_its_row() {
         let mut app = app();
         app.selected = None;
         let lines = lines(&draw(&app, Orientation::Vertical, 100, 30));
-        assert!(row_of(&lines, "Load the config").1.contains('⚠'));
-        assert!(!row_of(&lines, "Define the schema").1.contains('⚠'));
+        assert!(!row_of(&lines, "Load the config").1.contains('⚠'));
+    }
+
+    #[test]
+    fn a_deferral_draws_one_pause_glyph_whatever_the_status() {
+        let mut snap = fixture();
+        let (id, title) = (snap.tasks[6].id, snap.tasks[6].title.clone());
+        snap.record.push(RecordEntry {
+            entry_type: "deferral".to_string(),
+            task_id: Some(id),
+            ..RecordEntry::default()
+        });
+        let pauses = |snap: Snapshot| {
+            let mut app = App::new(snap, &Config::default());
+            app.selected = None;
+            let lines = lines(&draw(&app, Orientation::Vertical, 100, 30));
+            row_of(&lines, &title).1.matches('⏸').count()
+        };
+        assert_eq!(pauses(snap.clone()), 1, "a pending row carries the badge");
+        snap.tasks[6].status = TaskStatus::Deferred;
+        assert_eq!(pauses(snap), 1, "a deferred row drops it");
     }
 
     #[test]
@@ -843,19 +873,109 @@ mod tests {
     }
 
     #[test]
-    fn timestamps_round_trip_through_format_utc() {
-        for secs in [0, 951_782_400, 1_790_000_000, 1_790_000_059] {
-            assert_eq!(
-                parse_utc(&format_utc(secs)),
-                Some(UNIX_EPOCH + Duration::from_secs(secs))
-            );
-        }
-        assert_eq!(
-            parse_utc("2026-09-28T13:04:22.5+02:00"),
-            parse_utc("2026-09-28T11:04:22Z")
+    fn columns_fit_the_longest_title_within_the_configured_max() {
+        let mut app = app();
+        app.stale_agents.clear();
+        let ctx = Ctx::new(&app, wall(), Instant::now());
+        let widest = app
+            .snapshot
+            .tasks
+            .iter()
+            .map(|task| natural_width(&ctx, task, None))
+            .max()
+            .expect("tasks");
+        let expected = u16::try_from(widest + 1).expect("fits");
+        assert!(
+            expected > *COLUMN_RANGE.start() && expected < 40,
+            "{expected}"
         );
-        assert_eq!(parse_utc("2026-09-28"), None);
-        assert_eq!(parse_utc("2026-13-28T11:04:22Z"), None);
+        assert_eq!(column_for(&ctx), expected, "sized to content plus gutter");
+
+        app.column_max = 20;
+        assert_eq!(column_for(&Ctx::new(&app, wall(), Instant::now())), 20);
+        app.column_max = 5;
+        assert_eq!(
+            column_for(&Ctx::new(&app, wall(), Instant::now())),
+            *COLUMN_RANGE.start(),
+            "never below the narrowest column"
+        );
+        app.column_override = Some(33);
+        assert_eq!(column_for(&Ctx::new(&app, wall(), Instant::now())), 33);
+    }
+
+    #[test]
+    fn a_wide_pane_shows_whole_titles_and_leaves_the_rest_blank() {
+        let app = app();
+        let lines = lines(&draw(&app, Orientation::Horizontal, 200, 12));
+        let longest = app
+            .snapshot
+            .tasks
+            .iter()
+            .map(|task| task.title.as_str())
+            .max_by_key(|title| title.len())
+            .expect("tasks");
+        row_of(&lines, longest);
+        assert!(
+            !lines[0].contains('›') && !lines[0].contains('‹'),
+            "{lines:#?}"
+        );
+    }
+
+    #[test]
+    fn off_screen_layers_are_marked_on_both_sides() {
+        let mut app = app();
+        app.column_override = Some(30);
+        app.selected = Some(1);
+        let lines = lines(&draw(&app, Orientation::Horizontal, 60, 10));
+        assert!(lines[0].starts_with("L1 "), "{lines:#?}");
+        assert!(lines[0].trim_end().ends_with('›'), "{lines:#?}");
+        assert!(!lines[0].contains('‹'));
+
+        app.selected = Some(8);
+        let lines = self::lines(&draw(&app, Orientation::Horizontal, 60, 10));
+        assert!(lines[0].starts_with("‹ L2 "), "{lines:#?}");
+        assert!(!lines[0].contains('›'));
+    }
+
+    #[test]
+    fn render_reports_where_each_task_row_landed() {
+        let app = app();
+        let mut terminal = Terminal::new(TestBackend::new(60, 30)).expect("terminal");
+        let mut targets = Vec::new();
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 2, 60, 28);
+                targets = render_at(
+                    frame.buffer_mut(),
+                    area,
+                    &app,
+                    Orientation::Vertical,
+                    wall(),
+                    Instant::now(),
+                );
+            })
+            .expect("draw");
+        assert_eq!(targets.len(), app.snapshot.tasks.len());
+        let buf = terminal.backend().buffer().clone();
+        let text = |rect: Rect| {
+            (rect.x..rect.right())
+                .map(|x| buf[(x, rect.y)].symbol())
+                .collect::<String>()
+        };
+        for (rect, id) in &targets {
+            let title = &app
+                .snapshot
+                .tasks
+                .iter()
+                .find(|t| t.id == *id)
+                .expect("task")
+                .title;
+            assert!(text(*rect).contains(title.as_str()), "row for {id}");
+        }
+    }
+
+    #[test]
+    fn chip_and_title_helpers_are_compact() {
         assert_eq!(format_elapsed(Duration::from_secs(3_725)), "1h02");
         assert_eq!(initials("implement-deep"), "ID");
         assert_eq!(truncate("Render the rows", 8), "Render …");

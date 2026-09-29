@@ -1,4 +1,9 @@
-//! Frame composition: header, the active view, overlays and the key-hint footer.
+//! Frame composition: header, the active view, panels, overlays and the key-hint footer.
+//!
+//! Density decides where the panels go. Comfortable docks them beside or below the view
+//! at `app.panel_percent` of the body; compact gives the view the whole body and draws the
+//! panels as a centred modal over it. Each frame records its density, its layers column
+//! width, the details scroll bounds and the mouse regions back into `app`.
 
 pub(crate) mod activity;
 pub(crate) mod details;
@@ -8,41 +13,51 @@ pub(crate) mod layers;
 pub(crate) mod markdown;
 pub(crate) mod selector;
 
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, Clear, Paragraph};
 
-use crate::app::{App, Navigator};
-use crate::config::{Config, Orientation, ViewKind};
+use crate::app::{App, Navigator, Regions};
+use crate::config::{Config, Density, Orientation, ViewKind};
 use crate::diagram::{self, DiagramCache};
 use crate::transcript::TailState;
 
-/// Share of the body the details and activity panels take when split beside or below the view.
-const PANEL_PERCENT: u16 = 40;
+/// Rows an activity-only modal needs: borders, the status row and every shown entry.
+const ACTIVITY_ROWS: u16 = activity::SHOWN_ENTRIES as u16 + 3;
+
+/// Where the panels go this frame.
+enum Panels {
+    None,
+    Docked(Rect),
+    Modal(Rect),
+}
 
 /// Draws one frame and installs the active view's navigator into `app`.
 ///
-/// `tail` is only retargeted at the activity agent's transcript; reading it is the
-/// caller's job, so a frame never touches the filesystem through it.
+/// `tail` is drawn as it stands: pointing it at the activity agent's transcript and
+/// reading it are the caller's job, so a frame never touches the filesystem.
 pub(crate) fn render(
     frame: &mut Frame,
     app: &mut App,
     config: &Config,
     cache: &mut DiagramCache,
-    tail: &mut TailState,
+    tail: &TailState,
 ) {
     let area = frame.area();
+    let density = app.density.resolve(area.width, config.compact_below);
+    app.resolved_density = density;
+    let compact = density == Density::Compact;
     let [head, body, foot] = Layout::vertical([
-        Constraint::Length(header::height(app)),
+        Constraint::Length(header::height(app, compact)),
         Constraint::Min(0),
         Constraint::Length(1),
     ])
     .areas(area);
 
-    let (view_area, panel_area) = split_body(app, body);
+    let (view_area, panels) = split_body(app, body, density);
     let orientation_area = view_area.unwrap_or(body);
     let orientation = app.orientation_override.unwrap_or_else(|| {
         config.orientation.resolve(
@@ -52,21 +67,37 @@ pub(crate) fn render(
         )
     });
     app.resolved_orientation = orientation;
-
-    if app.activity_open
-        && let Some(agent) = activity::agent(app)
-    {
-        tail.retarget(&agent.transcript_path);
+    if app.view == ViewKind::Layers && orientation == Orientation::Horizontal {
+        app.resolved_column = layers::column_width(app);
     }
 
-    header::render(frame, head, app);
-    if let Some(view_area) = view_area {
-        draw_view(frame, view_area, app, orientation, cache);
+    header::render(frame, head, app, compact);
+    let tasks = match view_area {
+        Some(view_area) => draw_view(frame, view_area, app, orientation, cache),
+        None => Vec::new(),
+    };
+    let (panel_area, modal) = match panels {
+        Panels::None => (None, None),
+        Panels::Docked(rect) => (Some(rect), None),
+        Panels::Modal(rect) => {
+            frame.render_widget(Clear, rect);
+            (Some(rect), Some(rect))
+        }
+    };
+    let details = panel_area.and_then(|rect| draw_panels(frame, rect, app, tail, modal.is_some()));
+    if let Some((rect, height)) = details {
+        let page = Block::bordered().inner(rect).height;
+        app.details_page = page;
+        app.details_max_scroll = height.saturating_sub(page);
+        app.details_scroll = app.details_scroll.min(app.details_max_scroll);
     }
-    if let Some(panel_area) = panel_area {
-        draw_panels(frame, panel_area, app, tail);
-    }
-    frame.render_widget(Paragraph::new(footer(app)), foot);
+    app.regions = Regions {
+        view: view_area,
+        details: details.map(|(rect, _)| rect),
+        modal,
+        tasks,
+    };
+    frame.render_widget(Paragraph::new(footer(app, Instant::now())), foot);
     if app.selector_open {
         selector::render(frame, area, app);
     }
@@ -75,26 +106,39 @@ pub(crate) fn render(
     app.nav = Some(nav);
 }
 
-/// The view's rect and the panels' rect. Panels sit to the right when the body is at least
-/// twice as wide as it is tall, else below; full-screen details leave no room for the view.
-fn split_body(app: &App, body: Rect) -> (Option<Rect>, Option<Rect>) {
+/// The view's rect and where the panels go. Compact density leaves the view the whole
+/// body under a modal a cell in from each edge; an activity-only modal is only as tall as
+/// its entries. Comfortable panels sit to the right when the body is at least twice as
+/// wide as it is tall, else below, and full-screen details leave no room for the view.
+fn split_body(app: &App, body: Rect, density: Density) -> (Option<Rect>, Panels) {
     let panels = app.details_open || app.activity_open;
     if !panels {
-        return (Some(body), None);
+        return (Some(body), Panels::None);
+    }
+    if density == Density::Compact {
+        let width = body.width.saturating_sub(2).max(body.width.min(20));
+        let tall = body.height.saturating_sub(2).max(body.height.min(8));
+        let height = if app.details_open {
+            tall
+        } else {
+            tall.min(ACTIVITY_ROWS)
+        };
+        let modal = body.centered(Constraint::Length(width), Constraint::Length(height));
+        return (Some(body), Panels::Modal(modal));
     }
     if app.details_open && app.details_fullscreen {
-        return (None, Some(body));
+        return (None, Panels::Docked(body));
     }
     let constraints = [
-        Constraint::Percentage(100 - PANEL_PERCENT),
-        Constraint::Percentage(PANEL_PERCENT),
+        Constraint::Percentage(100 - app.panel_percent),
+        Constraint::Percentage(app.panel_percent),
     ];
     let [view, panel] = if beside(body) {
         Layout::horizontal(constraints).areas(body)
     } else {
         Layout::vertical(constraints).areas(body)
     };
-    (Some(view), Some(panel))
+    (Some(view), Panels::Docked(panel))
 }
 
 fn beside(area: Rect) -> bool {
@@ -107,36 +151,52 @@ fn draw_view(
     app: &App,
     orientation: Orientation,
     cache: &mut DiagramCache,
-) {
+) -> Vec<layers::Target> {
     match app.view {
         ViewKind::Layers => layers::render(frame.buffer_mut(), area, app, orientation),
         ViewKind::Ego => ego::render(frame, area, app, orientation),
         ViewKind::Diagram => {
             diagram::paint::render(frame.buffer_mut(), area, app, orientation, cache);
+            Vec::new()
         }
     }
 }
 
-/// Details and activity share the panel rect along its longer axis when both are open.
-/// The details scroll is held at the top, since `App` carries no scroll offset.
-fn draw_panels(frame: &mut Frame, area: Rect, app: &App, tail: &TailState) {
+/// Details and activity share the panel rect along its longer axis when both are open;
+/// in a `modal` activity sits under details and takes only the rows its entries need.
+/// Returns the details rect and its wrapped content height, when details are drawn.
+fn draw_panels(
+    frame: &mut Frame,
+    area: Rect,
+    app: &App,
+    tail: &TailState,
+    modal: bool,
+) -> Option<(Rect, u16)> {
     let now = SystemTime::now();
     match (app.details_open, app.activity_open) {
         (true, true) => {
             let halves = [Constraint::Percentage(50), Constraint::Percentage(50)];
-            let [first, second] = if area.width > area.height {
+            let [first, second] = if modal {
+                let activity = ACTIVITY_ROWS.min(area.height / 2);
+                Layout::vertical([Constraint::Min(0), Constraint::Length(activity)]).areas(area)
+            } else if area.width > area.height {
                 Layout::horizontal(halves).areas(area)
             } else {
                 Layout::vertical(halves).areas(area)
             };
-            details::render(frame, first, app, 0);
+            let height = details::render(frame, first, app, app.details_scroll);
             activity::render(frame, second, app, tail, now);
+            Some((first, height))
         }
         (true, false) => {
-            details::render(frame, area, app, 0);
+            let height = details::render(frame, area, app, app.details_scroll);
+            Some((area, height))
         }
-        (false, true) => activity::render(frame, area, app, tail, now),
-        (false, false) => {}
+        (false, true) => {
+            activity::render(frame, area, app, tail, now);
+            None
+        }
+        (false, false) => None,
     }
 }
 
@@ -148,14 +208,35 @@ fn navigator(app: &App, orientation: Orientation, cache: &mut DiagramCache) -> B
     }
 }
 
-fn footer(app: &App) -> Line<'static> {
+/// A live notice replaces the hints. Compact density lists fewer hints, most useful
+/// first, since the footer is cut at the pane's edge.
+fn footer(app: &App, now: Instant) -> Line<'static> {
+    if let Some(notice) = app.live_notice(now) {
+        return Line::from(Span::styled(notice.to_string(), app.theme.badge));
+    }
     let on_off = |flag: bool| if flag { "on" } else { "off" };
+    let compact = app.resolved_density == Density::Compact;
     let hints: Vec<(&str, String)> = if app.selector_open {
         vec![
             ("j/k", "move".to_string()),
             ("enter", "switch".to_string()),
             ("a", format!("auto-follow {}", on_off(app.auto_flow))),
             ("esc", "close".to_string()),
+        ]
+    } else if app.details_open && compact {
+        vec![
+            ("J/K", "scroll".to_string()),
+            ("hjkl", "move".to_string()),
+            ("enter", "close".to_string()),
+            ("t", "activity".to_string()),
+        ]
+    } else if compact {
+        vec![
+            ("enter", "details".to_string()),
+            ("tab", "view".to_string()),
+            ("d", "density".to_string()),
+            ("q", "back".to_string()),
+            ("hjkl", "move".to_string()),
         ]
     } else {
         let details = if !app.details_open {
@@ -165,16 +246,23 @@ fn footer(app: &App) -> Line<'static> {
         } else {
             "close details"
         };
-        vec![
+        let mut hints = vec![
             ("hjkl", "move".to_string()),
             ("tab", "view".to_string()),
             ("o", "orient".to_string()),
             ("enter", details.to_string()),
+        ];
+        if app.details_open {
+            hints.push(("J/K", "scroll".to_string()));
+        }
+        hints.extend([
             ("t", "activity".to_string()),
             ("f", format!("follow {}", on_off(app.follow))),
             ("s", "flows".to_string()),
+            ("d", "density".to_string()),
             ("q", "back".to_string()),
-        ]
+        ]);
+        hints
     };
     let mut spans = Vec::with_capacity(hints.len() * 3);
     for (i, (key, label)) in hints.into_iter().enumerate() {
@@ -204,9 +292,9 @@ mod tests {
     fn draw(app: &mut App, width: u16, height: u16) -> Vec<String> {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
         let mut cache = DiagramCache::default();
-        let mut tail = TailState::default();
+        let tail = TailState::default();
         terminal
-            .draw(|frame| render(frame, app, &Config::default(), &mut cache, &mut tail))
+            .draw(|frame| render(frame, app, &Config::default(), &mut cache, &tail))
             .expect("draw");
         let buffer = terminal.backend().buffer();
         (0..height)
@@ -266,8 +354,105 @@ mod tests {
     }
 
     #[test]
+    fn a_narrow_pane_draws_compact_and_details_as_a_modal() {
+        let mut app = app();
+        let closed = draw(&mut app, 45, 55);
+        assert_eq!(app.resolved_density, Density::Compact);
+        assert!(closed[0].starts_with("demo-flow  3/8"), "{:?}", closed[0]);
+        let (row, _) = find(&closed, "Render the rows").expect("the view");
+        assert!(
+            row < 20,
+            "the view starts under a one-row header, row {row}"
+        );
+        assert!(!app.regions.tasks.is_empty(), "layers rows are clickable");
+
+        app.apply(Action::Details);
+        let open = draw(&mut app, 45, 55);
+        let (row, col) = find(&open, "#4 Render the rows").expect("modal title");
+        assert!(
+            row <= 2 && col <= 3,
+            "the modal fills the body, at {row},{col}"
+        );
+        let modal = app.regions.modal.expect("a modal");
+        assert_eq!((modal.width, modal.height), (43, 51));
+        assert_eq!(app.details_page, 49, "the modal's inner height");
+        assert!(open.last().is_some_and(|row| row.contains("J/K scroll")));
+
+        app.apply(Action::Details);
+        assert!(!app.details_open, "Enter closes the modal");
+    }
+
+    #[test]
+    fn a_click_on_an_ego_entry_selects_it() {
+        use crate::keys;
+        use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+        let mut app = app();
+        app.view = ViewKind::Ego;
+        let rows = draw(&mut app, 45, 55);
+        let (row, col) = find(&rows, "7 Assemble").expect("a dependent");
+        let click = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: u16::try_from(col).expect("column"),
+            row: u16::try_from(row).expect("row"),
+            modifiers: KeyModifiers::NONE,
+        };
+        let action = keys::mouse(click, &app).expect("the row is a target");
+        assert_eq!(action, Action::Select(7));
+        app.apply(action);
+        assert_eq!(app.selected, Some(7));
+    }
+
+    #[test]
+    fn density_can_be_pinned_against_the_width() {
+        let mut app = app();
+        app.density = crate::config::DensityPref::Fixed(Density::Comfortable);
+        app.apply(Action::Details);
+        let rows = draw(&mut app, 45, 55);
+        assert_eq!(app.resolved_density, Density::Comfortable);
+        assert!(app.regions.modal.is_none());
+        let (row, _) = find(&rows, "#4 Render the rows").expect("docked details");
+        assert!(row > 25, "docked below the view, row {row}");
+
+        app.density = crate::config::DensityPref::Fixed(Density::Compact);
+        draw(&mut app, 200, 50);
+        assert!(app.regions.modal.is_some(), "compact holds on a wide pane");
+    }
+
+    #[test]
+    fn the_docked_panel_takes_the_adjusted_share() {
+        let mut app = app();
+        app.apply(Action::Details);
+        let col_at = |app: &mut App| {
+            let rows = draw(app, 120, 30);
+            find(&rows, "#4 Render the rows").expect("details").1
+        };
+        let default = col_at(&mut app);
+        app.apply(Action::ResizePanel(true));
+        app.apply(Action::ResizePanel(true));
+        let wider = col_at(&mut app);
+        assert!(wider + 10 <= default, "{wider} vs {default}");
+    }
+
+    #[test]
+    fn details_scroll_is_clamped_by_the_frame_and_drawn() {
+        let mut app = app();
+        app.selected = Some(3);
+        app.apply(Action::Details);
+        draw(&mut app, 120, 16);
+        assert!(app.details_max_scroll > 0, "task 3 overflows a short panel");
+        app.apply(Action::ScrollDetails(crate::app::Scroll::Bottom));
+        assert_eq!(app.details_scroll, app.details_max_scroll);
+        let rows = draw(&mut app, 120, 16);
+        let height = app.details_max_scroll + app.details_page;
+        let counter = format!(" {}/{height} ", app.details_scroll + 1);
+        assert!(rows.iter().any(|row| row.contains(&counter)), "{rows:#?}");
+    }
+
+    #[test]
     fn details_split_beside_a_wide_body_and_below_a_tall_one() {
         let mut app = app();
+        app.density = crate::config::DensityPref::Fixed(Density::Comfortable);
         app.apply(Action::Details);
 
         let wide = draw(&mut app, 120, 30);
@@ -323,26 +508,5 @@ mod tests {
         let (row, _) = find(&open, "flows · auto-follow off").expect("selector title");
         assert!(row > 5 && row < 35, "the overlay is centred, row {row}");
         assert!(open.last().is_some_and(|row| row.contains("switch")));
-    }
-
-    #[test]
-    fn the_activity_tail_follows_the_selected_agent() {
-        let mut app = app();
-        let expected = activity::agent(&app)
-            .map(|agent| agent.transcript_path.clone())
-            .expect("task 4 has a running agent");
-        let mut terminal = Terminal::new(TestBackend::new(100, 40)).expect("terminal");
-        let mut cache = DiagramCache::default();
-        let mut tail = TailState::default();
-        terminal
-            .draw(|frame| render(frame, &mut app, &Config::default(), &mut cache, &mut tail))
-            .expect("draw");
-        assert_eq!(tail.path, "", "a closed panel leaves the tail alone");
-
-        app.apply(Action::ToggleActivity);
-        terminal
-            .draw(|frame| render(frame, &mut app, &Config::default(), &mut cache, &mut tail))
-            .expect("draw");
-        assert_eq!(tail.path, expected);
     }
 }

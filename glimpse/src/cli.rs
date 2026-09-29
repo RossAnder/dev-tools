@@ -1,5 +1,5 @@
 //! Command-line parsing for glimpse's subcommands. Hand-rolled: the parser is small, and
-//! `hook` runs once per Claude Code subagent event, so startup cost matters.
+//! `hook` runs once per Claude Code or Codex subagent event, so startup cost matters.
 
 use std::path::PathBuf;
 
@@ -10,10 +10,11 @@ glimpse — live terminal view of a flow's task graph, checkpoints and running a
 
 USAGE
     glimpse [OPTIONS]                       open the live view
-    glimpse hook                            handle one Claude Code hook payload on stdin
+    glimpse hook [--harness H]              handle one subagent hook payload on stdin
     glimpse ensure-pane [--slug S] [--focus]
                                             open or reuse the glimpse pane in this herdr tab
-    glimpse setup [--dry-run]               install the Claude Code hooks and herdr keybinding
+    glimpse setup [--dry-run]               install the Claude Code and Codex hooks and the
+                                            herdr keybinding
 
 VIEW OPTIONS
         --slug <S>              open flow S; without it glimpse opens the freshest
@@ -24,6 +25,11 @@ VIEW OPTIONS
         --size <WxH>            --once only: frame size in cells (default: 120x40)
         --snapshot <FILE>       --once only: render a `tomlctl tasks snapshot` JSON
                                 file instead of running tomlctl
+        --select <ID>           --once only: select task ID instead of the frontier
+
+HOOK OPTIONS
+        --harness <H>           claude-code or codex: which harness sent the payload
+                                (default: claude-code)
 
 ENSURE-PANE OPTIONS
         --slug <S>              launch the pane on flow S instead of the freshest
@@ -38,7 +44,7 @@ OPTIONS
 
 EXIT STATUS
     0 on success, 1 on a runtime failure, 2 on a usage error. `hook` always exits 0
-    and reports failures only to <claude dir>/glimpse/hook.log.
+    and reports failures, usage errors included, only to <claude dir>/glimpse/hook.log.
 ";
 
 /// The `--once` frame size when `--size` is absent.
@@ -49,6 +55,7 @@ pub(crate) struct Once {
     pub(crate) width: u16,
     pub(crate) height: u16,
     pub(crate) snapshot: Option<PathBuf>,
+    pub(crate) select: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,10 +66,35 @@ pub(crate) struct ViewArgs {
     pub(crate) once: Option<Once>,
 }
 
+/// The harness a hook payload came from, passed to `tomlctl agents record --harness`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum Harness {
+    #[default]
+    ClaudeCode,
+    Codex,
+}
+
+impl Harness {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Harness::ClaudeCode => "claude-code",
+            Harness::Codex => "codex",
+        }
+    }
+
+    fn parse(s: &str) -> Option<Harness> {
+        match s {
+            "claude-code" => Some(Harness::ClaudeCode),
+            "codex" => Some(Harness::Codex),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Command {
     View(ViewArgs),
-    Hook,
+    Hook { harness: Harness },
     EnsurePane { slug: Option<String>, focus: bool },
     Setup { dry_run: bool },
 }
@@ -103,8 +135,10 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
     let mut once = false;
     let mut size = None;
     let mut snapshot = None;
+    let mut select = None;
     let mut focus = false;
     let mut dry_run = false;
+    let mut harness = Harness::default();
 
     while let Some(arg) = args.next() {
         let (name, inline) = match arg.split_once('=') {
@@ -157,12 +191,27 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
                 snapshot = Some(PathBuf::from(value("--snapshot")?));
                 true
             }
+            (None, "--select") => {
+                let v = value("--select")?;
+                select = Some(
+                    v.parse()
+                        .map_err(|_| format!("--select must be a task id, got `{v}`"))?,
+                );
+                true
+            }
             (Some("ensure-pane"), "--focus") => {
                 focus = true;
                 true
             }
             (Some("setup"), "--dry-run") => {
                 dry_run = true;
+                true
+            }
+            (Some("hook"), "--harness") => {
+                let v = value("--harness")?;
+                harness = Harness::parse(&v).ok_or_else(|| {
+                    format!("unknown harness `{v}`: expected claude-code or codex")
+                })?;
                 true
             }
             _ => false,
@@ -179,12 +228,12 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
     }
 
     let command = match sub.as_deref() {
-        Some("hook") => Command::Hook,
+        Some("hook") => Command::Hook { harness },
         Some("ensure-pane") => Command::EnsurePane { slug, focus },
         Some(_) => Command::Setup { dry_run },
         None => {
-            if !once && (size.is_some() || snapshot.is_some()) {
-                return Err("--size and --snapshot need --once".to_string());
+            if !once && (size.is_some() || snapshot.is_some() || select.is_some()) {
+                return Err("--size, --snapshot and --select need --once".to_string());
             }
             let once = once.then(|| {
                 let (width, height) = size.unwrap_or(DEFAULT_SIZE);
@@ -192,6 +241,7 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
                     width,
                     height,
                     snapshot,
+                    select,
                 }
             });
             Command::View(ViewArgs {
@@ -282,8 +332,11 @@ mod tests {
                 width: 100,
                 height: 30,
                 snapshot: Some(PathBuf::from("s.json")),
+                select: None,
             })
         );
+        let v = view(&["--once", "--select", "7"]);
+        assert_eq!(v.once.expect("--once parsed").select, Some(7));
         let v = view(&["--once"]);
         let once = v.once.expect("--once parsed");
         assert_eq!((once.width, once.height), DEFAULT_SIZE);
@@ -293,6 +346,8 @@ mod tests {
     fn size_and_snapshot_without_once_are_usage_errors() {
         assert!(fails(&["--size", "10x10"]).contains("--once"));
         assert!(fails(&["--snapshot", "s.json"]).contains("--once"));
+        assert!(fails(&["--select", "7"]).contains("--once"));
+        assert!(fails(&["--once", "--select", "seven"]).contains("task id"));
     }
 
     #[test]
@@ -316,7 +371,12 @@ mod tests {
 
     #[test]
     fn subcommands_accept_only_their_own_flags() {
-        assert_eq!(run(&["hook"]), Command::Hook);
+        assert_eq!(
+            run(&["hook"]),
+            Command::Hook {
+                harness: Harness::ClaudeCode,
+            }
+        );
         assert_eq!(
             run(&["ensure-pane"]),
             Command::EnsurePane {
@@ -340,6 +400,39 @@ mod tests {
         assert!(fails(&["setup", "--focus"]).contains("for `setup`"));
         assert!(fails(&["ensure-pane", "--once"]).contains("for `ensure-pane`"));
         assert!(fails(&["--focus"]).contains("unknown argument"));
+    }
+
+    #[test]
+    fn hook_takes_a_harness_in_both_spellings() {
+        for args in [
+            &["hook", "--harness", "codex"][..],
+            &["hook", "--harness=codex"][..],
+        ] {
+            assert_eq!(
+                run(args),
+                Command::Hook {
+                    harness: Harness::Codex,
+                },
+                "{args:?}"
+            );
+        }
+        assert_eq!(
+            run(&["hook", "--harness", "claude-code"]),
+            Command::Hook {
+                harness: Harness::ClaudeCode,
+            }
+        );
+        assert_eq!(Harness::Codex.as_str(), "codex");
+        assert_eq!(Harness::ClaudeCode.as_str(), "claude-code");
+    }
+
+    #[test]
+    fn a_bad_harness_is_rejected() {
+        assert!(fails(&["hook", "--harness", "manual"]).contains("unknown harness"));
+        assert!(fails(&["hook", "--harness", "Codex"]).contains("unknown harness"));
+        assert!(fails(&["hook", "--harness"]).contains("needs a value"));
+        assert!(fails(&["--harness", "codex"]).contains("unknown argument"));
+        assert!(fails(&["setup", "--harness", "codex"]).contains("for `setup`"));
     }
 
     #[test]
