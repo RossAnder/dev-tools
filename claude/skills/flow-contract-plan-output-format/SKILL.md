@@ -168,6 +168,7 @@ inside it. Naming that antichain is enough, because its closure *is* the group, 
 same reason this section carries markers only.]
 
 — CHECKPOINT A after tasks 1–4: foundational API + direct consumers (buildable increment) —
+
 — CHECKPOINT B after tasks 5–7: independent leaf work —
 
 ## Risks

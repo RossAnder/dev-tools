@@ -120,36 +120,67 @@ pub(crate) fn parse_policy(section_body: Option<&str>) -> Result<ParsedPolicy> {
 
 /// Fed the `## Dependency Graph` section only — markers duplicated inside
 /// `## Tasks` are the caller's problem, not this parser's.
+///
+/// Markers on adjacent lines share one paragraph, so each match's rationale
+/// runs only to the rule opening the next.
 pub(crate) fn parse_markers(section_body: &str) -> Result<Vec<Marker>> {
     let mut markers: Vec<Marker> = Vec::new();
 
     for paragraph in paragraphs(section_body) {
         let (flat, raw_at) = without_asterisks(&paragraph);
-        let Some(caps) = marker_re().captures(&flat) else {
-            continue;
-        };
-        let whole = caps.get(0).expect("capture group 0 always matches");
-        let (header, tail) = paragraph.split_at(raw_at[whole.end()]);
-        let marker = Marker {
-            id: caps[1].to_string(),
-            after: expand_ids(caps[2].trim())?,
-            rationale: tidy_rationale(close_emphasis(header, tail)),
-        };
+        let found: Vec<_> = marker_re().captures_iter(&flat).collect();
+        for (index, caps) in found.iter().enumerate() {
+            let whole = caps.get(0).expect("capture group 0 always matches");
+            let start = match index {
+                0 => 0,
+                _ => marker_start(&paragraph, raw_at[whole.start()]),
+            };
+            // The id class also takes `-`, so a `---` rule after the list
+            // would carry the cut into the next marker's opening rule.
+            let ids = caps.get(2).expect("the id list always matches");
+            let cut = raw_at[ids.start()
+                + ids
+                    .as_str()
+                    .trim_end_matches(|c: char| !c.is_ascii_digit())
+                    .len()];
+            let end = found.get(index + 1).map_or(paragraph.len(), |next| {
+                let next = next.get(0).expect("capture group 0 always matches");
+                marker_start(&paragraph, raw_at[next.start()]).max(cut)
+            });
+            let marker = Marker {
+                id: caps[1].to_string(),
+                after: expand_ids(caps[2].trim())?,
+                rationale: tidy_rationale(close_emphasis(
+                    &paragraph[start..cut],
+                    &paragraph[cut..end],
+                )),
+            };
 
-        match markers.iter().find(|m| m.id == marker.id) {
-            Some(first) => {
-                if first.after != marker.after || first.rationale != marker.rationale {
-                    advise!(
-                        "tomlctl: checkpoint `{}` is declared twice with different text — keeping the first",
-                        marker.id
-                    );
+            match markers.iter().find(|m| m.id == marker.id) {
+                Some(first) => {
+                    if first.after != marker.after || first.rationale != marker.rationale {
+                        advise!(
+                            "tomlctl: checkpoint `{}` is declared twice with different text — keeping the first",
+                            marker.id
+                        );
+                    }
                 }
+                None => markers.push(marker),
             }
-            None => markers.push(marker),
         }
     }
 
     Ok(markers)
+}
+
+/// The start of the rule and emphasis token (`—`, `---`, `**—`) ahead of the
+/// `CHECKPOINT` at `at`. Only the token adjoining the marker moves: an earlier
+/// `*` run closes the previous marker's own emphasis.
+fn marker_start(paragraph: &str, at: usize) -> usize {
+    paragraph[..at]
+        .trim_end_matches([' ', '\t'])
+        .trim_end_matches(['*', '—', '–', '-'])
+        .len()
 }
 
 /// Every `N`, `N-M` and `N–M` in `text`, in document order, ranges expanded.
@@ -520,6 +551,58 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].after, vec![3]);
         assert_eq!(found[0].rationale, "First wins.");
+    }
+
+    #[test]
+    fn adjacent_marker_lines_are_each_a_marker() {
+        let body = "— CHECKPOINT A after task 1: first —\n\
+                    — CHECKPOINT B after task 2: second —\n\
+                    — CHECKPOINT C after tasks 3–4: third —\n";
+        let found = parse_markers(body).expect("markers parse");
+        let read: Vec<(&str, &[u32], &str)> = found
+            .iter()
+            .map(|m| (m.id.as_str(), &m.after[..], m.rationale.as_str()))
+            .collect();
+        assert_eq!(
+            read,
+            vec![
+                ("A", &[1][..], "First"),
+                ("B", &[2][..], "Second"),
+                ("C", &[3, 4][..], "Third"),
+            ]
+        );
+    }
+
+    #[test]
+    fn adjacent_bolded_markers_each_close_their_own_emphasis() {
+        let body = "**— CHECKPOINT A after task 1 — the kit lands.**\n\
+                    **— CHECKPOINT B after task 2 — the panel lands.**\n";
+        let found = parse_markers(body).expect("markers parse");
+        assert_eq!(found.len(), 2, "{found:?}");
+        assert_eq!(found[0].rationale, "The kit lands.");
+        assert_eq!(found[1].after, vec![2]);
+        assert_eq!(found[1].rationale, "The panel lands.");
+    }
+
+    #[test]
+    fn adjacent_hyphen_ruled_markers_keep_their_own_lists() {
+        let body = "--- CHECKPOINT 1 after tasks 6, 10 ---\n\
+                    --- CHECKPOINT 2 after task 11 --- closes the shell work\n\
+                    **---CHECKPOINT 3 after task 12**---CHECKPOINT 4 after task 13\n";
+        let found = parse_markers(body).expect("markers parse");
+        let read: Vec<(&str, &[u32], &str)> = found
+            .iter()
+            .map(|m| (m.id.as_str(), &m.after[..], m.rationale.as_str()))
+            .collect();
+        assert_eq!(
+            read,
+            vec![
+                ("1", &[6, 10][..], ""),
+                ("2", &[11][..], "Closes the shell work"),
+                ("3", &[12][..], ""),
+                ("4", &[13][..], ""),
+            ]
+        );
     }
 
     #[test]
