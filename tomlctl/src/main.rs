@@ -8,6 +8,7 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+mod agents;
 mod anchor;
 mod backlog;
 mod blocks;
