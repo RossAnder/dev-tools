@@ -12,6 +12,7 @@ is [tasks.md](tasks.md); what the fields *mean* and which verb a carrier reaches
 - [Ref derivation](#ref-derivation)
 - [Derived graph products](#derived-graph-products)
 - [The 512-node cap](#the-512-node-cap)
+- [The snapshot read](#the-snapshot-read)
 - [Frozen contracts](#frozen-contracts)
 
 ## Store shape
@@ -135,6 +136,59 @@ construction with `graph exceeds 512 tasks`. `ready`, `batches`, `closure`, `ren
 raises `dag/unbuildable` in place of the graph-derived ones, so a store above the cap exits `1`
 instead of reading as a clean bill. A duplicate id or a dangling edge already accounts for a
 refusal, and those findings then stand on their own.
+
+## The snapshot read
+
+`tasks snapshot` is one consistent read of everything a flow viewer renders: the store, its
+graph products, the execution record joined to the rows, and the hook-written agent records.
+
+```bash
+tomlctl tasks snapshot --slug <slug>
+```
+
+It reads four files from one directory. `tasks.toml` is the target and must exist; its three
+companions — `execution-record.toml`, `agents.toml` and `context.toml` — are resolved as
+siblings of the store path, under `--file` as under `--slug`, and each reads as empty when
+absent. Under `--file` the envelope's `slug` is the store's parent directory name, the value a
+`--slug` read of the same store would carry.
+
+The envelope's keys, in emission order:
+
+| Key | Holds |
+|---|---|
+| `schema` | the envelope's own version, `1` |
+| `revision` | the input fingerprint, below |
+| `slug` | the flow slug |
+| `plan_path` | the store's recorded `plan_path` |
+| `flow_status` | `context.toml`'s `status`, `""` when the context is absent |
+| `policy` | `checkpoints`, `max_parallel`, `commit_granularity` — the notes and `origin` are not carried |
+| `tasks` | one object per row in store order: `id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `phase`, `files`, `needs`, `coupling`, `deps_note`, `action`, `detail`, `acceptance`, `agent`, `commit` |
+| `layers` | the Kahn layers `tasks batches` reports |
+| `frontier` | the `tasks ready` shape, with every `in-progress` row passed as in flight |
+| `edges` | the `tasks edges` list, every kind |
+| `checkpoints` | per group: `id`, `rationale`, `members`, `maximal`, `valid_cut`, `commits`, `verification` |
+| `record` | every execution-record entry verbatim plus `task_id`; `checkpoint` entries also carry `checkpoint_ids` |
+| `agents` | every `[[agents]]` row of `agents.toml` verbatim, unknown keys included |
+
+A record entry's `task_id` resolves its `task_ref` exactly, then through the separator-blind
+matcher `--reconcile-record` uses, and is `null` when neither places it. `checkpoint` entries
+carry no ref, so their `commits` are mapped to groups by commit prefix against each row's
+`commit`, either side abbreviated. A group's `commits` are those, in record order; its
+`verification` is the last `verification` entry whose `task_id` is a member, as
+`{outcome, summary}`, or `null`.
+
+**`revision`** is the first 16 hex characters of a SHA-256 over the four files in the order
+`tasks.toml`, `execution-record.toml`, `agents.toml`, `context.toml`, each contributing its byte
+length as a little-endian `u64` and then its bytes; an absent file contributes a zero length. It
+is computed from the raw bytes **before** any file is parsed, so a write landing mid-read leaves
+a stale revision over fresh content — which the next poll corrects — and never a fresh revision
+over stale content, which a poller comparing revisions would skip. Two snapshots with equal
+revisions read identical inputs.
+
+**It is read-only.** A plain read creates nothing: no absent companion is seeded, no sidecar is
+written. `--verify-integrity` checks each file that exists against its own sidecar and may leave
+a lock file under `.claude/.locks/`; nothing else is written. A cycle, a dangling edge or a
+store past the 512-node cap refuses the whole snapshot, as it does `ready` and `batches`.
 
 ## Frozen contracts
 

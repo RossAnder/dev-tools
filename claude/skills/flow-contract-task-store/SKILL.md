@@ -244,6 +244,12 @@ tomlctl tasks check --slug <slug> --plan
 tomlctl tasks render --slug <slug> --check
 ```
 
+**`snapshot`** — one read of everything a flow viewer renders: the rows, `layers`, the `ready` frontier with every `in-progress` row counted as in flight, the edge list, each checkpoint group with the commits and latest verification the execution record attributes to it, the record's entries joined to rows by `task_id`, and the `agents.toml` rows verbatim. The record, `agents.toml` and `context.toml` are read as siblings of the store and each reads as empty when absent. `revision` fingerprints the four files' raw bytes, hashed before anything is parsed, so a poller that sees an unchanged revision can skip the snapshot. The verb writes nothing and seeds no absent file; the envelope's key order and the `revision` formula are in `references/tasks-store.md` of the `tomlctl` skill.
+
+```bash
+tomlctl tasks snapshot --slug <slug>
+```
+
 `ready`, `batches` and `closure` **refuse a cyclic store** rather than answering. Kahn strands a cycle's members, and a stranded task reads in a frontier exactly like one that is merely waiting — a partial answer would be indistinguishable from a clean bill. Run `tasks check` to get the cycle's members named.
 
 `closure --checkpoint <id> --up` (or `--down`) is likewise refused with `kind=validation`: a direction walks one task, and silently ignoring it on a checkpoint would answer a question nobody asked.
@@ -356,9 +362,11 @@ then re-import. The gate is specified as a `--dry-run` step precisely so the ren
 
 ### 11. Status writes are the orchestrator's
 
-Only the orchestrating carrier writes to the store. `import-plan`, `add`, `add-many`, `update`, `remove` and `render` are orchestrator verbs; a sub-agent gets the read verbs — `show`, `list`, `edges`, `ready`, `batches`, `closure`, `check` — and nothing else.
+Only the orchestrating carrier writes to the store. `import-plan`, `add`, `add-many`, `update`, `remove` and `render` are orchestrator verbs; a sub-agent gets the read verbs — `show`, `list`, `edges`, `ready`, `batches`, `closure`, `check`, `snapshot` — and nothing else.
 
 An implementing agent reports its outcome in its return payload, exactly as it does today. The orchestrator moves the row (`--status in-progress` at dispatch, `--status done` or `--status failed` on return) and appends the execution-record entry. Two writers on one store means a row's status and the record's `task-completion` entries can disagree, and the store has no supersession mechanism to reconcile them.
+
+`agents.toml`, beside the store in the flow directory, is not the task store and no carrier writes it. Its only writer is `tomlctl agents record`, run by the harness hooks as agents start and stop; `tasks snapshot` reads it and nothing else in the task-store contract touches it.
 
 ### 12. Fetch by id at dispatch
 
