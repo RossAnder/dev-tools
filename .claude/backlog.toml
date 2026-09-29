@@ -4157,7 +4157,7 @@ tags = [
     "agents",
     "glimpse",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-29
 last_seen = 2026-09-29
 seen_count = 1
@@ -4169,6 +4169,11 @@ base_sha = "25214b9df726d588be65a6a56483fd55a0907698"
 evidence = ["tomlctl/src/agents/correlate.rs:358"]
 promoted = 2026-09-29
 promoted_to = "woolly-greeting-rainbow"
+resolved = 2026-09-29
+resolution = "resolved by flow `woolly-greeting-rainbow` (tasks recover-the-dispatch-from-the-head-of-a-long-transcript)"
+resolved_flow = "woolly-greeting-rainbow"
+resolved_tasks = ["recover-the-dispatch-from-the-head-of-a-long-transcript"]
+resolved_commits = ["f30ebe1"]
 
 [[backlog]]
 id = "B-09e5fdea"
@@ -4179,7 +4184,7 @@ tags = [
     "agents",
     "glimpse",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-29
 last_seen = 2026-09-29
 seen_count = 1
@@ -4191,3 +4196,8 @@ base_sha = "25214b9df726d588be65a6a56483fd55a0907698"
 evidence = ["tomlctl/src/agents/record.rs:99"]
 promoted = 2026-09-29
 promoted_to = "woolly-greeting-rainbow"
+resolved = 2026-09-29
+resolution = "resolved by flow `woolly-greeting-rainbow` (tasks reap-agents-whose-transcript-went-quiet)"
+resolved_flow = "woolly-greeting-rainbow"
+resolved_tasks = ["reap-agents-whose-transcript-went-quiet"]
+resolved_commits = ["28adb41"]

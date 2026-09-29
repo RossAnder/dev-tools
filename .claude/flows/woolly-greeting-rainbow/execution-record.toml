@@ -1,0 +1,394 @@
+schema_version = 1
+last_updated = 2026-09-29
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-09-29
+agent = "implement"
+summary = "implement started"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "8f034318b63e1e2d"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Added tests/common git_command helper stripping inherited git env; routed sandbox init, git_available and backlog_read git add through it"
+task_ref = "strip-an-inherited-git-environment-from-integration-test-git-spawns"
+status = "done"
+files = [
+    "tomlctl/tests/common/mod.rs",
+    "tomlctl/tests/backlog_read.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "01a8a7175bf97785"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Added test_support::git_command stripping inherited git env; routed all test-side git spawns in test_support, skills tests and evidence_ops tests through it; added git_command_ignores_an_inherited_git_dir"
+task_ref = "strip-an-inherited-git-environment-from-unit-test-git-spawns"
+status = "done"
+files = [
+    "tomlctl/src/test_support.rs",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+    "tomlctl/src/backlog/evidence_ops.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "ebf5149ddcc1ff03"
+
+[[items]]
+id = "E4"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+task_ref = "strip-an-inherited-git-environment-from-unit-test-git-spawns"
+summary = "test_support::git now runs in root via git_command(root) (current_dir) in tomlctl/src/test_support.rs"
+original_intent = "leave git(root, args) as a git -C <root> spawn"
+rationale = "the helper sets the working directory with current_dir; the effect is the same"
+dedup_id = "109874902908fba3"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Added head-line dispatch fallback for transcripts over WHOLE_READ_MAX in agents/correlate.rs; tail dispatch still wins; tokens from tail only"
+task_ref = "recover-the-dispatch-from-the-head-of-a-long-transcript"
+status = "done"
+files = ["tomlctl/src/agents/correlate.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+dedup_id = "db7bfa40e0f04a46"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Added owner::is_owned_by_current_user (Windows owner SID vs token user SID; Unix lstat uid vs non-zero euid) with windows-sys/libc direct deps; mod owner declared in main.rs"
+task_ref = "add-a-current-user-ownership-check"
+status = "done"
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/src/main.rs",
+    "tomlctl/src/owner.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "19a262ab68f0448f"
+
+[[items]]
+id = "E7"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+task_ref = "add-a-current-user-ownership-check"
+summary = "owner.rs judges only drive-letter paths (Prefix::Disk / VerbatimDisk); every other path prefix gives Ok(false)"
+original_intent = "a UNC path or any remaining UNC-style prefix gives Ok(false)"
+rationale = "stricter: prefix-less and volume-GUID paths also hand off to git; canonical verbatim drive paths are still judged"
+dedup_id = "43dd5121401d260f"
+
+[[items]]
+id = "E8"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+task_ref = "strip-an-inherited-git-environment-from-unit-test-git-spawns"
+summary = "orchestrator moved the new mod tests to the end of tomlctl/src/test_support.rs"
+original_intent = "test module added mid-file ahead of the shipped-gitignore shared block"
+rationale = "clippy::items_after_test_module fails the plan lint command (-D warnings)"
+dedup_id = "c531ed1da02f35b7"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Added REAP_AFTER (1 h) and pure reap() in agents/record.rs, run in the mutate_doc_conditional closure after apply; persists when the event changed the store or reap stopped rows"
+task_ref = "reap-agents-whose-transcript-went-quiet"
+status = "done"
+files = ["tomlctl/src/agents/record.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "4401c6240d863f5e"
+
+[[items]]
+id = "E10"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+task_ref = "reap-agents-whose-transcript-went-quiet"
+summary = "reap tests named without a reap_ prefix in tomlctl/src/agents/record.rs"
+original_intent = "tests named by behaviour only"
+rationale = "acceptance grep -c fn reap must report 1; reap_-prefixed test names would raise it"
+dedup_id = "26e1d346ab99c6b6"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Documented reaping, the stale-start rule and the stale-start reason in the agents reference and its .github mirror (head fallback omitted: the reference does not describe the tail read)"
+task_ref = "document-reaping-and-stale-starts-in-the-agents-reference"
+status = "done"
+files = [
+    "claude/skills/tomlctl/references/agents.md",
+    ".github/skills/tomlctl/references/agents.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "23243f4b86403be7"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Added repo_root::discover (env gate, canonical walk, git-dir/gitfile validity, config scan, ownership of worktree/gitdir/commondir/gitfile) with 16 tests incl. a differential check against real git; declared in main.rs"
+task_ref = "discover-the-repo-root-in-process"
+status = "done"
+files = [
+    "tomlctl/src/repo_root.rs",
+    "tomlctl/src/main.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "908a4de66b8a061c"
+
+[[items]]
+id = "E13"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+task_ref = "discover-the-repo-root-in-process"
+summary = "is-D-a-git-dir hands off whenever D is named .git or holds any HEAD entry, in tomlctl/src/repo_root.rs"
+original_intent = "D is a git dir when it holds HEAD + objects/-or-commondir + refs/"
+rationale = "git looks for objects/ and refs/ in the common dir, so a gitdir with no local refs/ would slip past; this hands off more often, never less"
+dedup_id = "5f3fc90b0d84edb3"
+
+[[items]]
+id = "E14"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+task_ref = "discover-the-repo-root-in-process"
+summary = "git-dir validity checks HEAD contents and looks for objects/ + refs/ under the commondir target, in tomlctl/src/repo_root.rs"
+original_intent = "HEAD + objects/ (or a commondir file) + refs/ in the gitdir"
+rationale = "a linked worktree gitdir has no local refs/; the spec check would hand off instead of giving Root"
+dedup_id = "1b37bad28d40b6eb"
+
+[[items]]
+id = "E15"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+task_ref = "discover-the-repo-root-in-process"
+summary = "probe .git with symlink_metadata and hand off on a symlink or junction .git; gitfile read whole and strictly (single line, no stray whitespace, inner .. hands off); ownership also covers the common dir; config.worktree always scanned"
+original_intent = "fs::metadata probe; gitfile first line + trim_end; ownership of D, gitdir, gitfile"
+rationale = "each is stricter and only hands more cases to git"
+dedup_id = "7f1bbf516853e8bc"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "checkpoint A+C gate: build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 5
+task_ref = "strip-an-inherited-git-environment-from-integration-test-git-spawns"
+dedup_id = "dff02f65eb337ea0"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "checkpoint A+C gate: fmt check (passed after cargo fmt fixed three rewrapped git_command chains)"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 2
+task_ref = "strip-an-inherited-git-environment-from-integration-test-git-spawns"
+dedup_id = "f3d5e0c5f7d7a15a"
+
+[[items]]
+id = "E18"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "checkpoint A+C gate: tests 1438 passed, 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 123
+task_ref = "strip-an-inherited-git-environment-from-integration-test-git-spawns"
+dedup_id = "dda42748987a8c65"
+
+[[items]]
+id = "E19"
+type = "checkpoint"
+date = 2026-09-29
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoints A and C: dc30183 -> strip-an-inherited-git-environment-from-integration-test-git-spawns; f30ebe1 -> recover-the-dispatch-from-the-head-of-a-long-transcript; 28adb41 -> reap-agents-whose-transcript-went-quiet; be12a7d -> document-reaping-and-stale-starts-in-the-agents-reference"
+commits = [
+    "dc30183",
+    "f30ebe1",
+    "28adb41",
+    "be12a7d",
+]
+dedup_id = "4d33ecd249994b05"
+
+[[items]]
+id = "E20"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+task_ref = "resolve-the-root-through-the-walk"
+summary = "task 5 files widened to tomlctl/src/main.rs"
+original_intent = "Files line for resolve-the-root-through-the-walk omits tomlctl/src/main.rs"
+rationale = "mod repo_root carries cfg_attr(not(test), allow(dead_code)) until io.rs calls discover; the task wiring the caller removes it"
+dedup_id = "dfa17ad8a498c989"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "repo_or_cwd_root now resolves TOMLCTL_ROOT, then repo_root::discover, then the unchanged git spawn (git_toplevel_or_cwd) when the walk defers, then the cwd; docs rewritten; dead_code allow dropped from mod repo_root. flow list median 215 ms walk vs 204 ms TOMLCTL_ROOT (debug binary, 10 interleaved runs)"
+task_ref = "resolve-the-root-through-the-walk"
+status = "done"
+files = [
+    "tomlctl/src/io.rs",
+    "tomlctl/src/main.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "d110c10e9ac2ca7f"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Reworded doc comments in flow/active.rs and tests/flow_find_plans.rs to say the repository top level, deferring to io::repo_or_cwd_root"
+task_ref = "correct-prose-that-names-the-old-root-lookup"
+status = "done"
+files = [
+    "tomlctl/src/flow/active.rs",
+    "tomlctl/tests/flow_find_plans.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+dedup_id = "600257e2d2ea9f90"
+
+[[items]]
+id = "E23"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "final pass: build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 13
+task_ref = "correct-prose-that-names-the-old-root-lookup"
+dedup_id = "c217bf6f4c2d2349"
+
+[[items]]
+id = "E24"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "final pass: fmt check"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 2
+task_ref = "correct-prose-that-names-the-old-root-lookup"
+dedup_id = "7745e10b99c888b8"
+
+[[items]]
+id = "E25"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "final pass: tests 1438 passed, 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 116
+task_ref = "correct-prose-that-names-the-old-root-lookup"
+dedup_id = "2b5383b69cf3195b"
+
+[[items]]
+id = "E26"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "final pass: clippy clean"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+duration_s = 23
+task_ref = "correct-prose-that-names-the-old-root-lookup"
+dedup_id = "3518606630cccf37"
+
+[[items]]
+id = "E27"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "final pass: audit clean"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+duration_s = 12
+task_ref = "correct-prose-that-names-the-old-root-lookup"
+dedup_id = "e4695e1e673866ba"
+
+[[items]]
+id = "E28"
+type = "checkpoint"
+date = 2026-09-29
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint B: 4baa5b3 -> strip-an-inherited-git-environment-from-unit-test-git-spawns; 161a0d1 -> add-a-current-user-ownership-check, discover-the-repo-root-in-process, resolve-the-root-through-the-walk (merged: all three edit tomlctl/src/main.rs); 9a1f3b9 -> correct-prose-that-names-the-old-root-lookup"
+commits = [
+    "4baa5b3",
+    "161a0d1",
+    "9a1f3b9",
+]
+dedup_id = "7c8557255b5adada"
+
+[[items]]
+id = "E29"
+type = "status-transition"
+date = 2026-09-29
+agent = "plan-update"
+summary = "all 9 tasks done; implementation complete, awaiting review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "3032f37880d8a307"

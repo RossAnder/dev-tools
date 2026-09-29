@@ -1,0 +1,23 @@
+slug = "woolly-greeting-rainbow"
+plan_path = "docs/plans/woolly-greeting-rainbow.md"
+status = "review"
+created = 2026-09-29
+updated = 2026-09-29
+branch = "main"
+scope = [
+    "tomlctl/**",
+    "claude/skills/tomlctl/references/agents.md",
+    ".github/skills/tomlctl/references/agents.md",
+]
+
+[tasks]
+total = 9
+completed = 9
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/woolly-greeting-rainbow/review-ledger.toml"
+optimise_findings = ".claude/flows/woolly-greeting-rainbow/optimise-findings.toml"
+execution_record = ".claude/flows/woolly-greeting-rainbow/execution-record.toml"
+plan_review_findings = ".claude/flows/woolly-greeting-rainbow/plan-review-findings.toml"
+tasks = ".claude/flows/woolly-greeting-rainbow/tasks.toml"

@@ -1,0 +1,276 @@
+schema_version = 1
+last_updated = 2026-09-29
+plan_path = "docs/plans/woolly-greeting-rainbow.md"
+last_import_refs = [
+    "strip-an-inherited-git-environment-from-unit-test-git-spawns",
+    "strip-an-inherited-git-environment-from-integration-test-git-spawns",
+    "add-a-current-user-ownership-check",
+    "discover-the-repo-root-in-process",
+    "resolve-the-root-through-the-walk",
+    "correct-prose-that-names-the-old-root-lookup",
+    "recover-the-dispatch-from-the-head-of-a-long-transcript",
+    "reap-agents-whose-transcript-went-quiet",
+    "document-reaping-and-stale-starts-in-the-agents-reference",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "Integration-test git spawns ignore an inherited hook environment."
+
+[[checkpoints]]
+id = "B"
+rationale = "Unit-test git env, the owner check, the walk with its differential tests, the resolver wiring and its prose: one buildable increment, since `repo_or_cwd_root` changes only once the walk and its tests exist."
+
+[[checkpoints]]
+id = "C"
+rationale = "The agents-store backlog fixes and their reference."
+
+[[backlog_links]]
+ref = "recover-the-dispatch-from-the-head-of-a-long-transcript"
+closes = ["B-5d16fc4b"]
+refs = []
+
+[[backlog_links]]
+ref = "reap-agents-whose-transcript-went-quiet"
+closes = ["B-09e5fdea"]
+refs = []
+
+[[items]]
+id = 1
+ref = "strip-an-inherited-git-environment-from-unit-test-git-spawns"
+title = "Strip an inherited git environment from unit-test git spawns"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/test_support.rs",
+    "tomlctl/src/cli/dispatch/tests/skills.rs",
+    "tomlctl/src/backlog/evidence_ops.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `pub(crate) fn git_command(dir: &Path) -> std::process::Command` to `tomlctl/src/test_support.rs` and route every test-side git spawn in these three files through it."
+detail = "The helper sets `current_dir(dir)` and `env_remove`s `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_COMMON_DIR` and `GIT_OBJECT_DIRECTORY`. Use it in `test_support.rs` `git_available` and `git`, in the `tomlctl/src/cli/dispatch/tests/skills.rs` `git --exec-path` probe and fixture `git init`, and in the two `#[cfg(test)]` spawns in `tomlctl/src/backlog/evidence_ops.rs`. Leave the production `ignored_set` spawn in `evidence_ops.rs` alone. Add a test in `test_support.rs`, `git_command_ignores_an_inherited_git_dir`: under `env_lock()`, set `GIT_DIR` to a scratch path, `git init` a second tempdir through the helper, restore the variable, and assert that the second tempdir now holds `.git`."
+acceptance = """`grep -c 'Command::new("git")' tomlctl/src/cli/dispatch/tests/skills.rs tomlctl/src/backlog/evidence_ops.rs tomlctl/src/test_support.rs` reports `0`, `1`, `1` (today: `2`, `3`, `2`). `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- test_support:: cli::dispatch::tests::skills` passes. Falsifier: remove the `GIT_DIR` `env_remove` and the new test fails, because `git init` writes into the inherited `GIT_DIR` instead — predicted, unverified."""
+agent = "implement-deep"
+commit = "4baa5b3"
+
+[[items]]
+id = 2
+ref = "strip-an-inherited-git-environment-from-integration-test-git-spawns"
+title = "Strip an inherited git environment from integration-test git spawns"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/tests/common/mod.rs",
+    "tomlctl/tests/backlog_read.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `pub fn git_command(dir: &Path) -> std::process::Command` to `tomlctl/tests/common/mod.rs`, with the same five `env_remove`s as task 1, and route `sandbox`'s `git init`, the other spawn in that file and the `tomlctl/tests/backlog_read.rs` spawn through it."
+detail = "Integration tests cannot reach `test_support.rs`, so the helper is duplicated on purpose. Keep the body identical to task 1's so the two stay in step."
+acceptance = """`grep -c 'Command::new("git")' tomlctl/tests/backlog_read.rs tomlctl/tests/common/mod.rs` reports `0`, `1` (today: `1`, `2`). `cargo test --manifest-path tomlctl/Cargo.toml --test backlog_read` passes (regression guard)."""
+agent = "implement-lite"
+commit = "dc30183"
+
+[[items]]
+id = 3
+ref = "add-a-current-user-ownership-check"
+title = "Add a current-user ownership check"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/src/owner.rs",
+    "tomlctl/src/main.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create `tomlctl/src/owner.rs` with `pub(crate) fn is_owned_by_current_user(path: &Path) -> std::io::Result<bool>`, declare it in `tomlctl/src/main.rs`, and add the platform dependencies."
+detail = '''In `tomlctl/Cargo.toml`, add `[target.'cfg(windows)'.dependencies] windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }` and `[target.'cfg(unix)'.dependencies] libc = "0.2"`, each with a one-line comment giving the reason. Build once without `--locked` so `tomlctl/Cargo.lock` records them (two added lines; no new package). Implement both platforms as described in Approach, **Owner check**, with a `// SAFETY:` comment on every `unsafe` block. Windows must free the security descriptor and close the token on every path. The four edits must land together, because the module needs its dependencies and its `mod` line to compile. Tests in `owner.rs`: a tempdir the test created is owned (`Ok(true)`); on Windows `C:\Windows` is not (`Ok(false)`), and neither is a `\\?\UNC\` path; a missing path is `Err`; on Unix, `/` is not owned unless running as root.'''
+acceptance = '''`grep -cE '^(windows-sys|libc) *=' tomlctl/Cargo.toml` reports `2` (today: `0`). `grep -c '^name = ' tomlctl/Cargo.lock` is unchanged (today: 87). `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- owner::` passes. Falsifier: a constant `Ok(true)` fails the `C:\Windows` case — predicted, unverified.'''
+agent = "implement-deep"
+commit = "161a0d1"
+
+[[items]]
+id = 4
+ref = "discover-the-repo-root-in-process"
+title = "Discover the repo root in-process"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/repo_root.rs",
+    "tomlctl/src/main.rs",
+]
+needs = [
+    1,
+    3,
+]
+coupling = []
+deps_note = ""
+action = "Create `tomlctl/src/repo_root.rs` with `pub(crate) enum Discovery { Root(PathBuf), NoRepo, AskGit }` and `pub(crate) fn discover(start: &Path, env: impl Fn(&str) -> bool) -> Discovery`, implementing the walk in Approach, and declare the module in `tomlctl/src/main.rs`."
+detail = """
+Follow Approach steps 1–4 exactly. Every doubtful branch returns `AskGit`; the walk never tries to reimplement git's "skip an invalid `.git` and keep walking". Split into small helpers: `env_forces_git`, `is_git_dir`, `read_gitfile`, `config_forces_git`, `owned`. Use the `.device()` check under `#[cfg(unix)]` only. Add a module doc of at most fifteen lines stating the invariant (the result equals `git rev-parse --show-toplevel` whenever it is `Root` or `NoRepo`) and naming the git version it was checked against (2.55.0.windows.3).
+Tests, with fixtures built by `crate::test_support::git_command` (task 1) where real git is needed:
+- A plain repo, started from a subdirectory, gives `Root`.
+- A linked worktree (`git worktree add`) gives `Root(<worktree>)`.
+- A submodule working tree gives `AskGit`.
+- A cwd inside `.git/` and inside a bare repo give `AskGit`.
+- An empty `.git/` dir under a repo gives `AskGit`.
+- A garbage or dangling gitfile gives `AskGit`.
+- `core.worktree`, `core.bare = true` and `[extensions]` in the config each give `AskGit`.
+- Each of the seven env names present gives `AskGit`.
+- A tempdir outside any repo gives `NoRepo`.
+- On Windows, a start path reached through a `cmd /C mklink /J` junction gives the same `Root` as the direct path (copy the junction pattern from the `tomlctl/src/io.rs` tests).
+- **Differential test**: for every fixture above, `Root(p)` implies `git rev-parse --show-toplevel` run from the same start, canonicalised, equals `p`; `NoRepo` implies git exits non-zero. Skip the real-git cases when `test_support::git_available()` is false."""
+acceptance = "`test -f tomlctl/src/repo_root.rs` succeeds (today: absent). `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- repo_root::` passes, including the differential test. Falsifier: drop the gitfile validity check and the dangling-gitfile case fails (`Root` where git exits 128) — predicted, unverified."
+agent = "implement-deep"
+commit = "161a0d1"
+
+[[items]]
+id = 5
+ref = "resolve-the-root-through-the-walk"
+title = "Resolve the root through the walk"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/io.rs",
+    "tomlctl/src/main.rs",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = "In `repo_or_cwd_root`, after the `TOMLCTL_ROOT` branch and the `OnceLock` fast path, call `crate::repo_root::discover(&cwd, |k| std::env::var_os(k).is_some())`. Map `Root` to the root, `NoRepo` to `cwd.canonicalize().unwrap_or(cwd)`, and `AskGit` to the existing spawn code, moved unchanged into a private `git_toplevel_or_cwd(cwd)`."
+detail = "Keep the cache lazy: `agents record` changes directory before its first root call. Rewrite the three doc comments in `tomlctl/src/io.rs` that name the mechanism — the resolver's doc (resolution order: `TOMLCTL_ROOT`, then the in-process walk, then `git rev-parse --show-toplevel` when the walk defers, then the cwd), `guard_write_path`'s step 3, and the module-doc bullet if it is affected. `tomlctl_root_env_wins_over_git_toplevel` must still pass unchanged."
+acceptance = "`grep -c 'repo_root::discover' tomlctl/src/io.rs` reports `1` (today: `0`). `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- io::` passes (regression guard). `cargo test --manifest-path tomlctl/Cargo.toml --test agents_record` passes, including `a_payload_cwd_in_a_subdirectory_records_under_the_repo_root`, which now resolves through the walk (regression guard)."
+agent = "implement-deep"
+commit = "161a0d1"
+
+[[items]]
+id = 6
+ref = "correct-prose-that-names-the-old-root-lookup"
+title = "Correct prose that names the old root lookup"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/flow/active.rs",
+    "tomlctl/tests/flow_find_plans.rs",
+]
+needs = [5]
+coupling = []
+deps_note = ""
+action = 'Reword the doc comments that describe the root as `git rev-parse --show-toplevel` so they say "the repository top level" and defer to `io::repo_or_cwd_root` for how it is found.'
+detail = "`tomlctl/src/flow/active.rs`: the `active-flow.toml` path resolver's doc. `tomlctl/tests/flow_find_plans.rs`: the module doc explaining why tests set `TOMLCTL_ROOT`. Comments only. Re-derive the set before editing with `grep -rn 'rev-parse --show-toplevel' tomlctl/src tomlctl/tests`, and leave `tomlctl/src/io.rs` (task 5) and `tomlctl/src/cli/types.rs`, which describes a carrier's `--worktree` argument that git still produces."
+acceptance = "`grep -c 'rev-parse --show-toplevel' tomlctl/src/flow/active.rs tomlctl/tests/flow_find_plans.rs` reports `0`, `0` (today: `1`, `1`)."
+agent = "implement-lite"
+commit = "9a1f3b9"
+
+[[items]]
+id = 7
+ref = "recover-the-dispatch-from-the-head-of-a-long-transcript"
+title = "Recover the dispatch from the head of a long transcript"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/agents/correlate.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "When a transcript exceeds `WHOLE_READ_MAX` and no dispatch is found in the tail read, read the file's first line (up to `TAIL_BYTES`) and look for the dispatch there."
+detail = "Apply this in the shared reader behind `latest_dispatch`, `codex_latest_dispatch`, `dispatch_and_tokens` and `codex_dispatch_and_tokens`, so Start and Stop both benefit. Token counting still reads only the tail. A dispatch found in the tail still wins, so the latest re-task is kept. Test: a synthetic transcript whose line 1 is a dispatch prompt, padded past `WHOLE_READ_MAX` with non-dispatch lines, yields that dispatch; a synthetic transcript with a later dispatch in the tail yields the later one."
+acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- agents::correlate` passes. Falsifier: without the head fallback the first new test yields `None` — predicted, unverified."
+agent = "implement-lite"
+commit = "f30ebe1"
+
+[[items]]
+id = 8
+ref = "reap-agents-whose-transcript-went-quiet"
+title = "Reap agents whose transcript went quiet"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/agents/record.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `REAP_AFTER` (1 h) and a pure `reap(store, now, except, idle, mtime_of) -> usize` to `tomlctl/src/agents/record.rs`, and call it inside the `mutate_doc_conditional` closure after `apply`."
+detail = """
+Behaviour as in Approach, **B-09e5fdea**. `except` is the `(session_id, agent_id)` the event targets. The closure persists when `persist` is true or `reap` returned more than 0. When the event itself changes nothing, `record()` still reports the event's own outcome. Tests (with `mtime_of` injected):
+- A Running row whose transcript is older than 1 h is Stopped, with `ended_at` set to the transcript mtime and its open segment closed.
+- A Running row with a fresh transcript is untouched.
+- The event's own row is never reaped.
+- A row whose transcript mtime is unreadable is untouched.
+- An idle or stopped row is untouched."""
+acceptance = "`grep -c 'fn reap' tomlctl/src/agents/record.rs` reports `1` (today: `0`). `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- agents::record` passes. `cargo test --manifest-path tomlctl/Cargo.toml --test agents_record` passes (regression guard)."
+agent = "implement-deep"
+commit = "28adb41"
+
+[[items]]
+id = 9
+ref = "document-reaping-and-stale-starts-in-the-agents-reference"
+title = "Document reaping and stale starts in the agents reference"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/agents.md",
+    ".github/skills/tomlctl/references/agents.md",
+]
+needs = [
+    7,
+    8,
+]
+coupling = []
+deps_note = ""
+action = "In `claude/skills/tomlctl/references/agents.md`'s events section, add the reaping rule and the stale-start rule, add the long-transcript head fallback to the correlation text, then copy the file byte-for-byte to its `.github` mirror."
+detail = """
+- **Reaping**: on any recorded event, `running` rows in that store whose transcript has not changed for an hour are set to `stopped`, with `ended_at` at the transcript's mtime.
+- **Stale start**: the `SubagentStart` row currently says it "Sets `running` and clears `ended_at`". Add that a start older than the row's recorded stop is ignored (`stale-start`), a rule landed by the previous flow's O9 without a doc update.
+- **Head fallback**: add it only if the reference already describes the 4 MiB / 1 MiB read.
+- Stay under the 600-line reference cap that `cli::dispatch::tests` enforces."""
+acceptance = "`grep -ciE 'reap|stale-start' claude/skills/tomlctl/references/agents.md` reports at least `2` (today: `0`). `diff -q claude/skills/tomlctl/references/agents.md .github/skills/tomlctl/references/agents.md` prints nothing (today: identical — regression guard). `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- cli::dispatch::tests` passes."
+agent = "implement-lite"
+commit = "be12a7d"
