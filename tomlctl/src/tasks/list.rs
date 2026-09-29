@@ -9,7 +9,7 @@ use anyhow::Result;
 
 use super::store;
 use crate::cli::{LegacyShortcuts, QueryArgs, ReadIntegrityArgs, TasksTarget, read_integrity_opts};
-use crate::io::read_doc;
+use crate::io::{read_doc, strict_read_check};
 use crate::output::{emit_list_raw, print_json};
 use crate::query::{self, Query, ShapeDispatch};
 
@@ -24,6 +24,7 @@ pub(crate) fn dispatch(
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
     let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
+    strict_read_check(&path, integrity.strict_read)?;
     let opts = read_integrity_opts(&integrity);
     let q = build_query(count, &query_args)?;
 

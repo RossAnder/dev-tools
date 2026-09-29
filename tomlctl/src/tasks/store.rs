@@ -16,7 +16,9 @@ use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
 };
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{mutate_doc, on_missing_for, read_doc, repo_or_cwd_root, warn_if_created};
+use crate::io::{
+    mutate_doc, on_missing_for, read_doc, repo_or_cwd_root, strict_read_check, warn_if_created,
+};
 
 /// Basename of the per-flow store, and the key `io::seed_doc_for` matches on.
 const STORE_FILE: &str = "tasks.toml";
@@ -63,6 +65,7 @@ pub(crate) fn resolve_store_path(slug: Option<&str>, file: Option<&Path>) -> Res
 /// runs first, under a shared lock, so a write mid-swap cannot be read as a
 /// mismatch.
 pub(crate) fn load(path: &Path, integrity: &ReadIntegrityArgs) -> Result<Store> {
+    strict_read_check(path, integrity.strict_read)?;
     read_doc(path, read_integrity_opts(integrity), schema::from_toml)
 }
 
@@ -227,6 +230,19 @@ mod tests {
                 resolve_store_path(None, None).is_err(),
                 "an empty target must be refused"
             );
+        });
+    }
+
+    #[test]
+    fn strict_read_reports_a_missing_store_as_not_found_before_integrity() {
+        with_root(|root| {
+            let args = ReadIntegrityArgs {
+                verify_integrity: true,
+                strict_read: true,
+            };
+            let err = load(&store_path(root), &args).unwrap_err();
+            let tagged = err.downcast_ref::<crate::errors::TaggedError>().unwrap();
+            assert!(matches!(tagged.kind, ErrorKind::NotFound), "{tagged:?}");
         });
     }
 }
