@@ -1,6 +1,6 @@
 ---
 name: tomlctl
-description: "Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml, tasks.toml, .claude/backlog.toml — and their per-row [[items]] arrays; also the regex enumerator over git-tracked files (`sweep`, the preferred `file:line` enumerator for review and optimise findings) and the ledger-driven `items sweep` / `items clusters` that re-verify and batch findings for the apply flow. Verb groups: get/query/set/set-json/append, items, flow (resolve, doctor, envelope-build, render-progress-log), tasks (import-plan, check, render), backlog (add, check, reconcile), validate, integrity, dedupe. Use this for any TOML mutation in a flow command — never line-edit ledger arrays-of-tables. Outputs JSON; supports stdin via `-` sentinel for ops/json/ndjson payloads. Single agent-native CLI for all flow-TOML I/O on Windows and Linux."
+description: "Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml, tasks.toml, agents.toml, .claude/backlog.toml — and their per-row [[items]] arrays; also the regex enumerator over git-tracked files (`sweep`, the preferred `file:line` enumerator for review and optimise findings) and the ledger-driven `items sweep` / `items clusters` that re-verify and batch findings for the apply flow. Verb groups: get/query/set/set-json/append, items, flow (resolve, doctor, envelope-build, render-progress-log), tasks (import-plan, check, render, snapshot), backlog (add, check, reconcile), agents (hook-written record, list), validate, integrity, dedupe. Use this for any TOML mutation in a flow command — never line-edit ledger arrays-of-tables. Outputs JSON; supports stdin via `-` sentinel for ops/json/ndjson payloads. Single agent-native CLI for all flow-TOML I/O on Windows and Linux."
 ---
 
 # tomlctl
@@ -47,14 +47,15 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Check whether a flow is stale | `tomlctl flow stale --slug <s> [--threshold <duration>]` |
 | Regenerate PROGRESS-LOG.md from the execution record | `tomlctl flow render-progress-log --slug <s> [--stdout] [--verify-integrity]` |
 | Import a plan's tasks into the flow's task DAG | `tomlctl tasks import-plan --slug <s> [--plan <p>] [--reconcile-record] [--dry-run]` |
-| Query, mutate or gate that DAG (`.claude/flows/<slug>/tasks.toml`) | `tomlctl tasks add\|add-many\|update\|remove\|show\|list\|edges\|ready\|batches\|closure\|check\|render --slug <s>` |
+| Query, mutate or gate that DAG (`.claude/flows/<slug>/tasks.toml`) | `tomlctl tasks add\|add-many\|update\|remove\|show\|list\|edges\|ready\|batches\|closure\|check\|render\|snapshot --slug <s>` |
+| List a flow's agent records (`.claude/flows/<slug>/agents.toml`; `agents record` is hook-only) | `tomlctl agents list --slug <s>` |
 | Refresh integrity sidecar | `tomlctl integrity refresh <file>` |
 
 <a id="flow-bootstrap-agent-entrypoint"></a>**`flow-bootstrap` agent entrypoint**: per-command pre-flight is delegated to the `flow-bootstrap` sub-agent (`claude/agents/flow-bootstrap.md`), which composes `tomlctl flow resolve --with-staleness`, `tomlctl flow doctor`, and (for `plan-new` / `plan-update` / `review-plan`) `tomlctl json get .claude/settings.json plansDirectory` into a single JSON envelope. Each carrier's `## Step 0: Pre-flight (flow resolution + doctor)` section dispatches via `Task` with `subagent_type: "flow-bootstrap"` and a JSON-encoded input envelope; downstream phases consume `envelope.resolved.{slug,context_path,artifacts.*,status,plan_path,scope,stale}` plus `envelope.doctor.ok` instead of running the resolve / doctor primitives inline. The agent is read-only — never passes `--fix` to doctor — so auto-repair stays an orchestrator decision.
 
 ## References
 
-The per-verb flag tables, recipes, and contract prose live in seven sibling files. Each is self-contained and opens with its own `## Contents` list.
+The per-verb flag tables, recipes, and contract prose live in the sibling files below. Each is self-contained and opens with its own `## Contents` list.
 
 - [references/query.md](references/query.md) — the read-only verbs: `get` / `parse` / `validate`, the full `items list` query surface (filters, projection, shaping, aggregation, output shapes), `items get`, `items find-duplicates`, `items orphans`, and the tree-walking `sweep`, `items sweep`, `items clusters`.
 - [references/write.md](references/write.md) — the mutating verbs: `set`, `set-json`, `array-append`, the `items` batch verbs, `integrity refresh`, plus auto-create, `--dry-run`, stdin payload handling, and the dedup fingerprint contract.
@@ -63,6 +64,7 @@ The per-verb flag tables, recipes, and contract prose live in seven sibling file
 - [references/backlog-reconcile.md](references/backlog-reconcile.md) — `backlog reconcile`: its flags, the buckets it sorts promoted rows into, the `render_needed` duty, what `--apply` writes, and the output shape.
 - [references/tasks.md](references/tasks.md) — the `tasks` group's per-verb flag tables, the `--slug` / `--file` target group, and the `check` finding classes. What the fields mean and which verb a carrier reaches for is the `flow-contract-task-store` skill's call, not this one's.
 - [references/tasks-store.md](references/tasks-store.md) — the `.claude/flows/<slug>/tasks.toml` store shape, `ref` derivation, the derived graph products, the 512-node cap, and the frozen contracts.
+- [references/agents.md](references/agents.md) — the `agents` group: `agents record` (run only by harness hooks) and `agents list`, the gitignored `.claude/flows/<slug>/agents.toml` store shape, the start / stop / idle events, flow selection, and the `record` output and its not-recorded reasons.
 
 To find a section without reading a whole file:
 
@@ -91,7 +93,7 @@ tomlctl --version
 
 ```bash
 tomlctl capabilities
-# {"version":"0.11.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
+# {"version":"0.12.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
 ```
 
 Representative entries:
