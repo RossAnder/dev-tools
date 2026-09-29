@@ -15,12 +15,6 @@ ROOT="$(git rev-parse --show-toplevel)"
 # (measure it with `scripts/doc-diff-gate.sh --range A..B`).
 "$ROOT/scripts/doc-diff-gate.sh"
 
-# Crate-wide by construction: cargo fmt cannot be narrowed to a path, so one
-# staged *.rs gates on the whole crate, including files this commit never touched.
-if grep -q '\.rs$' <<<"$STAGED"; then
-  cargo fmt --manifest-path "$ROOT/tomlctl/Cargo.toml" -- --check
-fi
-
 # Runs the command given; on failure blocks the commit and names it for a rerun.
 gate() {
   if ! "$@"; then
@@ -28,6 +22,13 @@ gate() {
     exit 1
   fi
 }
+
+# Crate-wide by construction: cargo fmt cannot be narrowed to a path, so one
+# staged tomlctl *.rs gates on the whole crate, including files this commit
+# never touched.
+if grep -Eq '^tomlctl/.*\.rs$' <<<"$STAGED"; then
+  gate cargo fmt --manifest-path "$ROOT/tomlctl/Cargo.toml" -- --check
+fi
 
 # Carrier, flag-table, finding-class and skill gates over claude/ and the CLI.
 if grep -Eq '^(claude/.*\.md|tomlctl/src/.*)$' <<<"$STAGED"; then
