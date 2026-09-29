@@ -270,7 +270,17 @@ fn the_fetch_by_id_projection_carries_the_body_the_files_and_a_summary_per_dep()
     let stdout = tasks_stdout(&root, &["show", "3", "--with", "body,files,deps"]);
     assert_eq!(
         top_level_keys(&stdout),
-        vec!["id", "files", "action", "detail", "acceptance", "deps"],
+        vec![
+            "id",
+            "files",
+            "file_notes",
+            "new_files",
+            "deleted_files",
+            "action",
+            "detail",
+            "acceptance",
+            "deps"
+        ],
         "{stdout}"
     );
 

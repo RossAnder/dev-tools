@@ -139,6 +139,37 @@ impl FileNote {
     }
 }
 
+/// The change a `Files` note declares for its path; a note declaring neither
+/// is an edit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileKind {
+    New,
+    Delete,
+}
+
+impl FileKind {
+    /// Reads only a note opening with a parenthetical whose first word is the
+    /// whole of it or is followed by `,`, `;`, `:` or ` —`, so `(new thread)`,
+    /// an addition to an existing file, is no new file.
+    pub(crate) fn of_note(note: &str) -> Option<Self> {
+        let inner = note.trim_start().strip_prefix('(')?;
+        let word_len = inner
+            .find(|ch: char| !ch.is_alphabetic())
+            .unwrap_or(inner.len());
+        let (word, rest) = inner.split_at(word_len);
+        let word_ends = rest.starts_with([')', ',', ';', ':'])
+            || (rest.starts_with(char::is_whitespace) && rest.trim_start().starts_with('—'));
+        if !word_ends {
+            return None;
+        }
+        match word.to_lowercase().as_str() {
+            "new" => Some(Self::New),
+            "delete" | "deleted" => Some(Self::Delete),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BacklogLink {
     pub(crate) r#ref: String,

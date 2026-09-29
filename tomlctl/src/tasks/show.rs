@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 
 use super::graph::{Graph, nodes_of};
-use super::schema::{ImportOverride, Store, TaskRow};
+use super::schema::{FileKind, ImportOverride, Store, TaskRow};
 use super::store;
 use crate::cli::{ReadIntegrityArgs, ShowPart, TasksTarget};
 use crate::errors::{ErrorKind, tagged_err};
@@ -54,6 +54,7 @@ pub(crate) fn show(store: &Store, id: u32, parts: &[ShowPart]) -> Result<JsonVal
     };
     if parts.contains(&ShowPart::Files) {
         out.insert("files".to_string(), json!(row.files));
+        insert_file_notes(&mut out, store, row);
     }
     if parts.contains(&ShowPart::Body) {
         out.insert("action".to_string(), json!(row.action));
@@ -97,6 +98,28 @@ fn stamp(entry: &ImportOverride) -> JsonValue {
         map.insert("needs".to_string(), json!(needs));
     }
     JsonValue::Object(map)
+}
+
+/// All three keys are always present so a reader never has to tell an absent
+/// key from an empty one; `new_files` and `deleted_files` keep `files` order.
+fn insert_file_notes(out: &mut JsonMap<String, JsonValue>, store: &Store, row: &TaskRow) {
+    let mut notes = JsonMap::new();
+    let mut new_files = Vec::new();
+    let mut deleted_files = Vec::new();
+    for file in &row.files {
+        let Some(note) = store.file_note(&row.r#ref, file) else {
+            continue;
+        };
+        notes.insert(file.clone(), json!(note));
+        match FileKind::of_note(note) {
+            Some(FileKind::New) => new_files.push(file.as_str()),
+            Some(FileKind::Delete) => deleted_files.push(file.as_str()),
+            None => {}
+        }
+    }
+    out.insert("file_notes".to_string(), JsonValue::Object(notes));
+    out.insert("new_files".to_string(), json!(new_files));
+    out.insert("deleted_files".to_string(), json!(deleted_files));
 }
 
 fn summary(row: &TaskRow) -> JsonMap<String, JsonValue> {
@@ -150,7 +173,7 @@ fn dependents(store: &Store, id: u32) -> Result<Vec<JsonValue>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::schema::{BacklogLink, DEFAULT_HEADING_DEPTH, Effort, Status};
+    use crate::tasks::schema::{BacklogLink, DEFAULT_HEADING_DEPTH, Effort, FileNote, Status};
 
     fn row(id: u32, title: &str, needs: &[u32], coupling: &[u32]) -> TaskRow {
         TaskRow {
@@ -344,6 +367,89 @@ mod tests {
 
         let unlinked = show(&store, 13, &[]).expect("task 13 shows");
         assert!(unlinked.get("backlog").is_none(), "{unlinked}");
+    }
+
+    #[test]
+    fn files_part_reports_notes_and_change_kinds() {
+        let mut store = fixture();
+        let paths = [
+            "a/created.rs",
+            "a/shouted.rs",
+            "a/generated.rs",
+            "a/removed.rs",
+            "a/threaded.rs",
+            "a/edited.rs",
+            "a/plain.rs",
+        ];
+        let notes = [
+            "(new)",
+            "(NEW)",
+            "(new, generated)",
+            "(delete)",
+            "(new thread)",
+            "— extend `Row`",
+        ];
+        store.items[2].files = paths.iter().map(|path| path.to_string()).collect();
+        store.file_notes = paths
+            .iter()
+            .zip(notes)
+            .map(|(file, note)| FileNote {
+                r#ref: "task-12".to_string(),
+                file: file.to_string(),
+                note: note.to_string(),
+            })
+            .collect();
+
+        let out = show(&store, 12, &[ShowPart::Files]).expect("task 12 shows");
+        let keys: Vec<&str> = out
+            .as_object()
+            .expect("an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            vec!["id", "files", "file_notes", "new_files", "deleted_files"],
+            "{out}"
+        );
+        assert_eq!(
+            out["new_files"],
+            json!(["a/created.rs", "a/shouted.rs", "a/generated.rs"]),
+            "{out}"
+        );
+        assert_eq!(out["deleted_files"], json!(["a/removed.rs"]), "{out}");
+        assert_eq!(out["file_notes"]["a/threaded.rs"], "(new thread)", "{out}");
+        assert_eq!(out["file_notes"]["a/edited.rs"], "— extend `Row`", "{out}");
+        assert!(
+            out["file_notes"].get("a/plain.rs").is_none(),
+            "an unannotated path has no note: {out}"
+        );
+
+        let bare = show(&fixture(), 12, &[ShowPart::Files]).expect("task 12 shows");
+        assert_eq!(bare["file_notes"], json!({}), "{bare}");
+        assert_eq!(bare["new_files"], json!([]), "{bare}");
+        assert_eq!(bare["deleted_files"], json!([]), "{bare}");
+    }
+
+    #[test]
+    fn a_note_is_a_change_kind_only_when_its_first_word_is_the_whole_word() {
+        for (note, kind) in [
+            ("(new)", Some(FileKind::New)),
+            ("(New — generated)", Some(FileKind::New)),
+            ("(new; generated)", Some(FileKind::New)),
+            ("(new: generated)", Some(FileKind::New)),
+            ("(deleted)", Some(FileKind::Delete)),
+            ("(DELETE, superseded)", Some(FileKind::Delete)),
+            ("(newline handling)", None),
+            ("(new thread)", None),
+            ("(new `Shape` enum)", None),
+            ("(new", None),
+            ("— (new)", None),
+            ("new", None),
+            ("", None),
+        ] {
+            assert_eq!(FileKind::of_note(note), kind, "{note:?}");
+        }
     }
 
     #[test]
