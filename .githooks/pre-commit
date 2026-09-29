@@ -38,3 +38,8 @@ fi
 if grep -Eq '^docs/plans/.*\.md$' <<<"$STAGED"; then
   gate cargo test --manifest-path "$ROOT/tomlctl/Cargo.toml" --test tasks_corpus -- --ignored
 fi
+
+# glimpse is a separate crate, so the tomlctl fmt check above never covers it.
+if grep -Eq '^glimpse/.*\.rs$' <<<"$STAGED"; then
+  gate cargo fmt --manifest-path "$ROOT/glimpse/Cargo.toml" -- --check
+fi
