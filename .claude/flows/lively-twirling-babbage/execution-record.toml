@@ -1,2 +1,1440 @@
 schema_version = 1
-last_updated = 2026-09-28
+last_updated = 2026-09-29
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-09-29
+agent = "implement"
+summary = "/implement started"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "e3df49749c4941a8"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Ignored per-flow agents.toml records and /glimpse/target/ in .gitignore"
+task_ref = "ignore-agent-records-and-the-glimpse-build-dir-in-git"
+status = "done"
+files = [".gitignore"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "138d26a606a7a1bb"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "field_re and label_re accept the colon-inside-bold **Label:** spelling; 4 tests added; corpus passes"
+task_ref = "accept-the-colon-inside-bold-field-label-spelling"
+status = "done"
+files = ["tomlctl/src/tasks/parse_tasks.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "8acab28a53bdcc40"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Scaffolded standalone glimpse crate (ratatui 0.30.2, pulldown-cmark 0.13.4) with the full stub module tree; clippy clean"
+task_ref = "scaffold-the-glimpse-crate"
+status = "done"
+files = [
+    "glimpse/Cargo.toml",
+    "glimpse/Cargo.lock",
+    "glimpse/src/main.rs",
+    "glimpse/src/cli.rs",
+    "glimpse/src/config.rs",
+    "glimpse/src/theme.rs",
+    "glimpse/src/model.rs",
+    "glimpse/src/source.rs",
+    "glimpse/src/flows.rs",
+    "glimpse/src/diff.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/runtime.rs",
+    "glimpse/src/transcript.rs",
+    "glimpse/src/herdr.rs",
+    "glimpse/src/pane.rs",
+    "glimpse/src/hook.rs",
+    "glimpse/src/setup.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/header.rs",
+    "glimpse/src/view/layers.rs",
+    "glimpse/src/view/ego.rs",
+    "glimpse/src/view/details.rs",
+    "glimpse/src/view/markdown.rs",
+    "glimpse/src/view/selector.rs",
+    "glimpse/src/view/activity.rs",
+    "glimpse/src/diagram/mod.rs",
+    "glimpse/src/diagram/order.rs",
+    "glimpse/src/diagram/position.rs",
+    "glimpse/src/diagram/route.rs",
+    "glimpse/src/diagram/glyph.rs",
+    "glimpse/src/diagram/paint.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "553e79e48d563397"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Pre-commit hook runs a gated cargo fmt --check on the glimpse crate when a glimpse .rs path is staged"
+task_ref = "gate-glimpse-formatting-in-pre-commit"
+status = "done"
+files = [".githooks/pre-commit"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "fa63e79111c5dc24"
+
+[[items]]
+id = "E6"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Block comment in .githooks/pre-commit states the tomlctl fmt step never covers glimpse; block itself is as specified"
+task_ref = "gate-glimpse-formatting-in-pre-commit"
+original_intent = "The tomlctl fmt step already fires on any staged *.rs, glimpse included"
+rationale = "It fires on a staged glimpse .rs but checks only the tomlctl crate via --manifest-path, so glimpse formatting was never checked; the new gated block is the only glimpse fmt check"
+dedup_id = "9dca1f059bb48b09"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Herdr CLI wrapper with pure parsers for pane list/get/layout/split and a single exec wrapper; 5 tests"
+task_ref = "wrap-the-herdr-cli"
+status = "done"
+files = ["glimpse/src/herdr.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "673e40dd5a91d7f5"
+
+[[items]]
+id = "E8"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Herdr::focus takes (pane_id, FocusDir) in glimpse/src/herdr.rs"
+task_ref = "wrap-the-herdr-cli"
+original_intent = "focus(pane_id) focuses a named pane"
+rationale = "herdr pane focus requires --direction and moves focus to a neighbour; herdr 0.9.1 has no focus-by-id"
+dedup_id = "71692aac5acf1e1b"
+
+[[items]]
+id = "E9"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Herdr::layout looks the pane up by id in result.layout.panes[]"
+task_ref = "wrap-the-herdr-cli"
+original_intent = "layout(pane_id) -> Rect directly from herdr pane layout"
+rationale = "herdr pane layout --pane <id> returns the whole tab layout, so the rect must be selected by pane_id"
+dedup_id = "cc630359ae3652bb"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "record_view and checkpoint_facts join the execution record to store rows and checkpoints; 5 tests"
+task_ref = "join-the-execution-record-for-the-snapshot"
+status = "done"
+files = [
+    "tomlctl/src/tasks/snapshot_record.rs",
+    "tomlctl/src/tasks/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "c9d46a0cbf6cb2e8"
+
+[[items]]
+id = "E11"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "checkpoint_facts assigns a train commit that matches no row to every checkpoint in that entry's checkpoint_ids"
+task_ref = "join-the-execution-record-for-the-snapshot"
+original_intent = "checkpoint_facts gives each checkpoint its commits"
+rationale = "The spec gave no rule for commits matching no row (fixups, docs); attributing them to the entry's checkpoints loses none"
+dedup_id = "79ce381465ed4fab"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "ArmMask, CellOwners and glyph() with same-group merge, vertical-wins crossing and dashed straights; arrowheads left to the painter; 4 tests"
+task_ref = "resolve-junction-glyphs"
+status = "done"
+files = ["glimpse/src/diagram/glyph.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+dedup_id = "7fdd7b4e0e2dec62"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Typed agents.toml store: AgentsStore, AgentRecord, Segment, Harness/AgentKind/AgentStatus enums and path/id/segment helpers; 7 tests"
+task_ref = "add-the-agents-store-schema"
+status = "done"
+files = [
+    "tomlctl/src/agents/mod.rs",
+    "tomlctl/src/agents/schema.rs",
+    "tomlctl/src/main.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "d84301b2f55f1dcb"
+
+[[items]]
+id = "E14"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "agents.toml segments are written as [[agents.segments]] array-of-tables; the reader accepts both forms"
+task_ref = "add-the-agents-store-schema"
+original_intent = "segments as an inline array of inline tables"
+rationale = "io::write_toml_with_sidecar uses toml::to_string_pretty, which always writes a non-empty array of tables as [[...]] blocks; toml::Value cannot mark a table inline without changing the shared writer or adding toml_edit"
+dedup_id = "561eb97d31ea478f"
+
+[[items]]
+id = "E15"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse Config (defaults, strict parse, load), claude_dir, shared Orientation/OrientationPref/ViewKind enums and Theme; 9 tests"
+task_ref = "add-config-and-theme"
+status = "done"
+files = [
+    "glimpse/src/config.rs",
+    "glimpse/src/theme.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "2dd8106ff4e909fe"
+
+[[items]]
+id = "E16"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Config treats unknown keys, wrong types and out-of-range values as malformed (defaults + warning); Theme adds a warning style and ACCENT_BG"
+task_ref = "add-config-and-theme"
+original_intent = "A malformed file gives the defaults plus a warning; theme styles for statuses and listed elements"
+rationale = "Strict validation reports a typo instead of silently ignoring it; the header needs a style for the config warning"
+dedup_id = "4f80a0d2b13144b0"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Diagram layer ordering: dummy insertion, 24 median sweeps with transpose, best-crossing retention, deterministic ties; 6 tests"
+task_ref = "order-diagram-layers-to-reduce-crossings"
+status = "done"
+files = ["glimpse/src/diagram/order.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "b5e93acff67acfae"
+
+[[items]]
+id = "E18"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Ordered.chains is Vec<Chain> carrying edge id, the Edge and its top layer; dummies tie-break after tasks by (edge, step)"
+task_ref = "order-diagram-layers-to-reduce-crossings"
+original_intent = "Ordered { rows, chains } with ties broken by task id"
+rationale = "route receives only &Ordered and needs each edge's kind and direction for coupling buses and arrowheads; dummies also need a deterministic tie order"
+dedup_id = "282b35552d53a1b8"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse flow discovery: parse tomlctl flow list, keep flows with tasks.toml, rank by tasks mtime, freshest, repo_root; 4 tests"
+task_ref = "discover-flows-and-pick-the-freshest"
+status = "done"
+files = ["glimpse/src/flows.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "5ef4631413d4de02"
+
+[[items]]
+id = "E20"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "rank sorts in place and freshest returns Option<&FlowEntry>; parse_flows takes an mtime lookup closure"
+task_ref = "discover-flows-and-pick-the-freshest"
+original_intent = "pure rank(entries) and freshest(&[FlowEntry]) over flow list JSON carrying tasks_mtime"
+rationale = "tomlctl flow list output carries no tasks_mtime, so the mtime comes from a filesystem lookup injected for testability; slug breaks mtime ties deterministically"
+dedup_id = "37e9ccd2258a9441"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "pane::ensure with pane.lock, same-tab reuse, direction choice, split/rename/run and pwsh-safe launch_line; 9 tests"
+task_ref = "ensure-one-glimpse-pane-per-tab"
+status = "done"
+files = ["glimpse/src/pane.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "c6bda8070d05b509"
+
+[[items]]
+id = "E22"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Focus of an existing glimpse pane is derived from adjacent rects via herdr pane focus --direction; best-effort, focused=false when not adjacent"
+task_ref = "ensure-one-glimpse-pane-per-tab"
+original_intent = "If found, focus it when asked"
+rationale = "herdr 0.9.1 has no focus-by-pane-id; focus moves only to a neighbour in a direction"
+dedup_id = "4f402a2a08c4b04c"
+
+[[items]]
+id = "E23"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "launch_line leaves the path bare only for [A-Za-z0-9:/._-]; otherwise & '<exe>' with ' doubled"
+task_ref = "ensure-one-glimpse-pane-per-tab"
+original_intent = "bare path when it has no whitespace, else & '<exe>'"
+rationale = "pwsh expands $ and chokes on ( & ' in a bare token, so whitespace alone is not a safe test"
+dedup_id = "d26054567f371e4d"
+
+[[items]]
+id = "E24"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "tasks::snapshot assembles the snapshot contract (revision, policy, tasks, layers, frontier, edges, checkpoints, record, agents) from one graph build; 5 tests"
+task_ref = "assemble-the-task-snapshot"
+status = "done"
+files = [
+    "tomlctl/src/tasks/snapshot.rs",
+    "tomlctl/src/tasks/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "3ea65329aa5331f0"
+
+[[items]]
+id = "E25"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "snapshot resolves agents.toml, execution-record.toml and context.toml as siblings of store_path; slug comes from the argument"
+task_ref = "assemble-the-task-snapshot"
+original_intent = "agents_path(slug) for the agents file; slug from the store"
+rationale = "Sibling resolution keeps a --file store and its companions together with no second slug resolution; Store has no slug field"
+dedup_id = "0a3cb43eb4c62412"
+
+[[items]]
+id = "E26"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "agents::correlate resolves the subagent transcript (contained under the session dir), latest dispatch, teammate meta and context tokens; 11 tests"
+task_ref = "correlate-subagents-with-flow-tasks-from-claude-codes-on-disk-state"
+status = "done"
+files = [
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/agents/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "c563f2f32251ba8d"
+
+[[items]]
+id = "E27"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Dispatch regex matches task ids with [0-9]+ rather than the digit class"
+task_ref = "correlate-subagents-with-flow-tasks-from-claude-codes-on-disk-state"
+original_intent = "tasks show (digit-class+) --slug ([a-z0-9][a-z0-9-]{0,63})"
+rationale = "tomlctl builds regex with default-features = false and no Unicode classes, so the digit class does not compile; the ASCII digits matched are identical"
+dedup_id = "d78c8ef8201d58c7"
+
+[[items]]
+id = "E28"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Diagram coordinates via Sugiyama priority method: dummies top priority, middle-out ties, symmetric gap rule; 5 tests"
+task_ref = "assign-diagram-coordinates"
+status = "done"
+files = ["glimpse/src/diagram/position.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "fee951875287949b"
+
+[[items]]
+id = "E29"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Positions carries a width map and a centre(slot) method"
+task_ref = "assign-diagram-coordinates"
+original_intent = "Positions { x, layer_extent }"
+rationale = "route and paint need each slot's width to find edge attachment points and lay out labels"
+dedup_id = "e2cfa6790967e830"
+
+[[items]]
+id = "E30"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse setup: exec-form async hook merge into settings.json and herdr popup keybinding append, backups, atomic writes, dry-run report; 11 tests"
+task_ref = "install-hooks-and-the-herdr-keybinding"
+status = "done"
+files = ["glimpse/src/setup.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "d175afd4cf6b009e"
+
+[[items]]
+id = "E31"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "merge_settings returns Result<(Value, added events)>; herdr config path follows herdr's own resolution order; apply_herdr refuses a merge that breaks a parseable config"
+task_ref = "install-hooks-and-the-herdr-keybinding"
+original_intent = "merge_settings(Value, exe) -> (Value, changed); herdr config at %APPDATA%/herdr/config.toml on Windows, else ~/.config/herdr/config.toml"
+rationale = "A malformed settings file must be rejected rather than overwritten, and the added-event list feeds the dry-run report; HERDR_CONFIG_PATH and XDG_CONFIG_HOME are what herdr itself loads"
+dedup_id = "55e37f8b09c30b84"
+
+[[items]]
+id = "E32"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse hook: forwards the payload to tomlctl agents record, decides EnsurePane on a recorded start inside herdr, logs errors to a capped hook.log; 10 tests"
+task_ref = "handle-hook-events"
+status = "done"
+files = ["glimpse/src/hook.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "fba64345c691bab7"
+
+[[items]]
+id = "E33"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "decide takes (result, herdr_pane_id, cwd) as plain arguments"
+task_ref = "handle-hook-events"
+original_intent = "decide(result, env)"
+rationale = "cwd comes from the payload, not the environment; plain arguments keep decide pure without set_var, which is unsafe in edition 2024"
+dedup_id = "d556341a718d3682"
+
+[[items]]
+id = "E34"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse snapshot serde model, owned Index with lookups and FNV-1a topology_hash, fixture() loader and 8-task fixture; 8 tests"
+task_ref = "define-the-snapshot-model"
+status = "done"
+files = [
+    "glimpse/src/model.rs",
+    "glimpse/tests/fixtures/snapshot.json",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "6aaf47992f8bb589"
+
+[[items]]
+id = "E35"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Index lookups task, agents_for, record_for and checkpoint take (snapshot, id)"
+task_ref = "define-the-snapshot-model"
+original_intent = "task(id), agents_for(id), record_for(id), checkpoint(id)"
+rationale = "Index must stay owned with no borrow of the Snapshot, so returning row references needs the snapshot passed in"
+dedup_id = "313beff47ade1e76"
+
+[[items]]
+id = "E36"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "agents::record with claude-code adapter, pure apply over Start/Stop/Idle, flow choice, locked id minting; agents.toml seeded; 12 tests"
+task_ref = "record-hook-events-into-the-agents-store"
+status = "done"
+files = [
+    "tomlctl/src/agents/record.rs",
+    "tomlctl/src/agents/mod.rs",
+    "tomlctl/src/io.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "5ec9bc9eee7baf3f"
+
+[[items]]
+id = "E37"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "record writes through mutate_doc_conditional; Stop carries agent_type/kind/name/team; Start flow order checks the flow already holding the agent before session affinity"
+task_ref = "record-hook-events-into-the-agents-store"
+original_intent = "write with mutate_doc; Stop {session_id, agent_id, summary, context_tokens, transcript_path, task_ids}; Start flow order dispatch then session affinity"
+rationale = "A no-op repeat start must not rewrite the file; a Stop that outruns its Start writes a complete row; a resume with no new dispatch stays in the agent's own flow"
+dedup_id = "def53a4e7c97b10b"
+
+[[items]]
+id = "E38"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "diff(old,new) -> Changes: topology via topology_hash, status transitions, agents started/stopped by id, record entries added; 5 tests"
+task_ref = "compute-snapshot-change-sets"
+status = "done"
+files = ["glimpse/src/diff.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "5f977a203f9ed25f"
+
+[[items]]
+id = "E39"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Orthogonal edge routing: per-source per-kind buses, cheaper-crossing track order, longest-path tracks, arrowhead cells, edge_cells for highlighting; 7 tests"
+task_ref = "route-diagram-edges-through-inter-layer-channels"
+status = "done"
+files = ["glimpse/src/diagram/route.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "080f5691f3b9f206"
+
+[[items]]
+id = "E40"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "A channel gains one leading row when an upward edge enters the upper layer; Routed adds arrows and layer_row()"
+task_ref = "route-diagram-edges-through-inter-layer-channels"
+original_intent = "channel depth = tracks + 1; Routed { channel_depth, cells, edge_cells }"
+rationale = "An upward edge's arrowhead must sit next to the upper layer, which would otherwise land on track 0; the painter needs arrowhead cells and each layer's row"
+dedup_id = "666fe69653f88744"
+
+[[items]]
+id = "E41"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "agents dispatch_record/dispatch_list plus list::rows (absent store lists [], strict-read not_found); 3 tests"
+task_ref = "add-the-agents-list-verb-and-group-dispatch"
+status = "done"
+files = [
+    "tomlctl/src/agents/list.rs",
+    "tomlctl/src/agents/dispatch.rs",
+    "tomlctl/src/agents/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "d58b0737df9ba00d"
+
+[[items]]
+id = "E42"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "dispatch_record takes harness as &str parsed by Harness::parse; list honours --strict-read with a not_found error"
+task_ref = "add-the-agents-list-verb-and-group-dispatch"
+original_intent = "dispatch_record(harness, payload_arg, write_args) with an untyped harness; list prints [] for an absent file"
+rationale = "The clap types do not exist yet so a plain &str is the neutral argument; strict-read parity with the backlog store"
+dedup_id = "3c7211612a4eb97b"
+
+[[items]]
+id = "E43"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse Source: Event enum, flow-file fingerprints, Fetcher trait with tomlctl fetcher, capabilities probe, revision suppression, stoppable poller thread; 8 tests"
+task_ref = "poll-the-flow-files-and-fetch-snapshots"
+status = "done"
+files = ["glimpse/src/source.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "ef00a0bcb493b7f0"
+
+[[items]]
+id = "E44"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Source sends FlowsChanged on the first scan and runs the capabilities probe on the poller thread"
+task_ref = "poll-the-flow-files-and-fetch-snapshots"
+original_intent = "FlowsChanged only when the flow set or its mtimes change; capabilities check location unspecified"
+rationale = "The runtime lists flows only on FlowsChanged, so without a baseline event the selector stays empty; probing on the thread keeps Source::start non-blocking"
+dedup_id = "dcb98274a7d83b6a"
+
+[[items]]
+id = "E45"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Wired Cmd::Agents (record, list) and TasksOp::Snapshot; SUBCOMMANDS agents; FEATURES tasks_snapshot, agents_record, agents_list"
+task_ref = "wire-the-new-verbs-into-the-cli"
+status = "done"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "2033c1f7023b628b"
+
+[[items]]
+id = "E46"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "AgentsOp is not re-exported from cli/mod.rs; tasks snapshot --file takes the slug from the store's parent directory; orchestrator lifted the pre-wiring dead-code allows and relabelled the payload error to PAYLOAD"
+task_ref = "wire-the-new-verbs-into-the-cli"
+original_intent = "Re-export AgentsOp at cli/mod.rs; slug unspecified under --file; allows lifted by later tasks"
+rationale = "The only consumer imports from cli::types, so a re-export would be unused; the flow directory name equals the slug; once wired, the allows in agents/mod.rs, tasks/mod.rs, snapshot.rs and snapshot_record.rs were stale and dispatch.rs named a --payload flag that does not exist"
+dedup_id = "792562467c0e1845"
+
+[[items]]
+id = "E47"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse App state, Action/Dir/Navigator, apply/apply_snapshot/tick/needs_tick with follow and flashes, stale agents, and context-free keys::map; 20 tests"
+task_ref = "hold-app-state-and-map-keys"
+status = "done"
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "f7316752a8b82146"
+
+[[items]]
+id = "E48"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "App adds resolved_orientation and stale_after fields and a tick(now) method; apply returns Option<Action> for Quit and SwitchFlow"
+task_ref = "hold-app-state-and-map-keys"
+original_intent = "App fields as listed; apply(action)"
+rationale = "o needs a base orientation before any override; staleness and flash expiry happen without a new snapshot; the runtime needs Quit/SwitchFlow back from apply"
+dedup_id = "290b68f18865163a"
+
+[[items]]
+id = "E49"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse header strip: identity, cadence, done/total, follow/paused, running agents; second row for error, warning or latest flow event; 4 tests"
+task_ref = "render-the-header-strip"
+status = "done"
+files = ["glimpse/src/view/header.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "ec0ea3a3caa0c904"
+
+[[items]]
+id = "E50"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "tomlctl 0.12.0: version bump, capabilities tests and README updated for agents record, agents list and tasks snapshot; 67 capabilities tests pass"
+task_ref = "release-tomlctl-0120-with-the-new-features-registered"
+status = "done"
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "82387e5e69a4d7ee"
+
+[[items]]
+id = "E51"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "references/agents.md written and linked; tomlctl SKILL.md, flow.md and write.md enumerations updated (mirrors via junction)"
+task_ref = "document-the-agents-verb-group"
+status = "done"
+files = [
+    "claude/skills/tomlctl/references/agents.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/references/write.md",
+    ".github/skills/tomlctl/references/agents.md",
+    ".github/skills/tomlctl/SKILL.md",
+    ".github/skills/tomlctl/references/flow.md",
+    ".github/skills/tomlctl/references/write.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "73891f74a08c7ddc"
+
+[[items]]
+id = "E52"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "write.md seeded-file list now matches SCHEMA_SEEDED_FLOW_FILES (adds backlog.toml, tasks.toml, agents.toml, drops the count); flow.md qualifies the tasks snapshot integrity entry"
+task_ref = "document-the-agents-verb-group"
+original_intent = "Add agents.toml to the seeded flow files list; add tasks snapshot to the verify-integrity matrix"
+rationale = "The existing list was already stale against io.rs; snapshot applies read options to every companion file it reads"
+dedup_id = "6caa575ab7877a5a"
+
+[[items]]
+id = "E53"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "tests/tasks_snapshot.rs: 8 black-box tests pin key order, --file slug, layers, frontier parity, record joins, checkpoint facts, revision and read-only-ness"
+task_ref = "integration-test-tasks-snapshot"
+status = "done"
+files = ["tomlctl/tests/tasks_snapshot.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "cc37ec5f164b4d9f"
+
+[[items]]
+id = "E54"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Documented tasks snapshot in tasks-store.md and flow-contract-task-store SKILL.md (verb semantics, read-verb list, agents.toml writer rule); mirrors via junction"
+task_ref = "document-the-snapshot-verb-and-the-agents-store-writer"
+status = "done"
+files = [
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    ".github/skills/tomlctl/references/tasks-store.md",
+    ".github/skills/flow-contract-task-store/SKILL.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "115e430693cd0101"
+
+[[items]]
+id = "E55"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "tests/agents_record.rs: 14 black-box tests over agents record and agents list with a sandboxed flow and fake Claude projects tree"
+task_ref = "integration-test-agents-record"
+status = "done"
+files = ["tomlctl/tests/agents_record.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "df3e20e3076ac3e0"
+
+[[items]]
+id = "E56"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse flow selector overlay (cursor and current markers, auto-follow state) and selected_slug helper; 2 tests"
+task_ref = "pick-a-flow-from-the-selector"
+status = "done"
+files = ["glimpse/src/view/selector.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "edb911fe37aae213"
+
+[[items]]
+id = "E57"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse layer view in both orientations: layer headers, gutter marks, status glyphs, agent chips, badges, checkpoint rows, dimming, scrolling, and its navigator; 11 tests"
+task_ref = "render-the-layer-view"
+status = "done"
+files = ["glimpse/src/view/layers.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "29fe16474dff04e8"
+
+[[items]]
+id = "E58"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Vertical layer navigation moves Up/Down in reading order across layers and Left/Right between layers; agent chip elapsed time parsed by a local RFC 3339 parser"
+task_ref = "render-the-layer-view"
+original_intent = "Navigator moves within the layer along the cross axis and between layers along the layer axis"
+rationale = "In a vertical list a layer's rows run along the same axis as the layers, so the literal mapping makes Down skip rows; the crate has no date library"
+dedup_id = "51dc9951e5b3df45"
+
+[[items]]
+id = "E59"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "pulldown-cmark markdown renderer and scrollable details panel (metadata, files, edges with glyphs, bodies, record, agents with segments); 15 tests"
+task_ref = "render-task-details-with-markdown"
+status = "done"
+files = [
+    "glimpse/src/view/markdown.rs",
+    "glimpse/src/view/details.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "5c9fffc59088f77f"
+
+[[items]]
+id = "E60"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "Incremental transcript tail (64 KiB cap, partial-line hold-back, claude-dir containment) and the activity panel for the selected task's newest running agent; 13 tests"
+task_ref = "tail-the-selected-agents-transcript"
+status = "done"
+files = [
+    "glimpse/src/transcript.rs",
+    "glimpse/src/view/activity.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "1ef79a51fc8355e6"
+
+[[items]]
+id = "E61"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "TailState adds tokens and rejected fields; activity.rs adds parse_utc"
+task_ref = "tail-the-selected-agents-transcript"
+original_intent = "TailState { path, offset, entries }"
+rationale = "agents.toml fills context_tokens only on stop, so a running agent needs the tail's latest usage; rejected lets the panel say why it is empty; glimpse had no RFC 3339 parser"
+dedup_id = "7456f1d707a74d07"
+
+[[items]]
+id = "E62"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse traversal view: centre card with needs/dependents columns (coupling dashed) in both orientations and its navigator; 9 tests"
+task_ref = "render-the-traversal-view"
+status = "done"
+files = ["glimpse/src/view/ego.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "f0d0f7ce14608181"
+
+[[items]]
+id = "E63"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Traversal along-axis moves walk the centre task's layer rather than the side column"
+task_ref = "render-the-traversal-view"
+original_intent = "Moving along a column walks its items"
+rationale = "The centre is always app.selected, so walking a side column after crossing needs a trail field on App, which is outside the task's files"
+dedup_id = "3e22cce9273231b4"
+
+[[items]]
+id = "E64"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoint A build"
+task_ref = "release-tomlctl-0120-with-the-new-features-registered"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 34
+dedup_id = "ec1c544aef736f7a"
+
+[[items]]
+id = "E65"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoint A tests: 1405 passed, 0 failed"
+task_ref = "release-tomlctl-0120-with-the-new-features-registered"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 221
+dedup_id = "771fd6770057741e"
+
+[[items]]
+id = "E66"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoint A plan corpus: 1 passed"
+task_ref = "release-tomlctl-0120-with-the-new-features-registered"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- --ignored"
+outcome = "pass"
+duration_s = 4
+dedup_id = "bccf75ba904c2c7a"
+
+[[items]]
+id = "E67"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoint A clippy: 0 warnings"
+task_ref = "release-tomlctl-0120-with-the-new-features-registered"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 17
+dedup_id = "3423049f2a135d9a"
+
+[[items]]
+id = "E68"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoint A fmt check"
+task_ref = "release-tomlctl-0120-with-the-new-features-registered"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 1
+dedup_id = "52aff44b8353e351"
+
+[[items]]
+id = "E69"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "DiagramCache keyed on (topology_hash, orientation), orientation mapping, dummy-skipping navigator and buffer painter with edge highlighting; 12 tests"
+task_ref = "paint-and-navigate-the-diagram"
+status = "done"
+files = [
+    "glimpse/src/diagram/mod.rs",
+    "glimpse/src/diagram/paint.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "b68e9063473cc7b2"
+
+[[items]]
+id = "E70"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Horizontal glyphs reflect the resolved character across the diagonal; out-edges use theme.coupling_edge"
+task_ref = "paint-and-navigate-the-diagram"
+original_intent = "Swap arms before calling glyph; out-edges in the dependents style"
+rationale = "Reflecting keeps the layer-axis line unbroken at crossings in both orientations; the theme has no dependents style"
+dedup_id = "f7001e3a3f8d2f4e"
+
+[[items]]
+id = "E71"
+type = "checkpoint"
+date = 2026-09-29
+agent = "implement"
+kind = "commit-train"
+summary = "Checkpoint A: 4bc83fd=accept-the-colon-inside-bold-field-label-spelling; 276629b=ignore-agent-records-and-the-glimpse-build-dir-in-git; d9774f7=add-the-agents-store-schema+correlate-subagents-with-flow-tasks-from-claude-codes-on-disk-state+record-hook-events-into-the-agents-store+add-the-agents-list-verb-and-group-dispatch; 9de79fc=join-the-execution-record-for-the-snapshot+assemble-the-task-snapshot; 128ed87=wire-the-new-verbs-into-the-cli; 07617ce=integration-test-agents-record; e44aa30=integration-test-tasks-snapshot; 558e328=release-tomlctl-0120-with-the-new-features-registered; 1753880=document-the-agents-verb-group; 4111eaa=document-the-snapshot-verb-and-the-agents-store-writer"
+commits = [
+    "4bc83fd",
+    "276629b",
+    "d9774f7",
+    "9de79fc",
+    "128ed87",
+    "07617ce",
+    "e44aa30",
+    "558e328",
+    "1753880",
+    "4111eaa",
+]
+dedup_id = "a7dacd59c585d3e9"
+
+[[items]]
+id = "E72"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoint B build"
+task_ref = "compute-snapshot-change-sets"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 8
+dedup_id = "200b0eccee0e2131"
+
+[[items]]
+id = "E73"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoint B tests: 177 passed, 0 failed"
+task_ref = "compute-snapshot-change-sets"
+command = "cargo test --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 23
+dedup_id = "6af32332835fd756"
+
+[[items]]
+id = "E74"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoint B clippy: 0 warnings"
+task_ref = "compute-snapshot-change-sets"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 21
+dedup_id = "4b660c6f034250bc"
+
+[[items]]
+id = "E75"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoint B fmt check"
+task_ref = "compute-snapshot-change-sets"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 1
+dedup_id = "fc8bfca0fa495580"
+
+[[items]]
+id = "E76"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoint B train attributes each glimpse file to the task that filled it and also commits the completed C-group modules"
+task_ref = "scaffold-the-glimpse-crate"
+original_intent = "Merge commit groups whose files overlap; commit only the window's tasks"
+rationale = "The scaffold's Files line claims every module, which would collapse the crate into one commit; main.rs declares every module, so B's tip builds from git only if the completed C-group files land with it, and gate B verified that exact tree"
+dedup_id = "7e585d32afc5c091"
+
+[[items]]
+id = "E77"
+type = "checkpoint"
+date = 2026-09-29
+agent = "implement"
+kind = "commit-train"
+summary = "Checkpoint B: dc15786=gate-glimpse-formatting-in-pre-commit; 26194f3=scaffold-the-glimpse-crate; fc43ce3=add-config-and-theme; cb81394=define-the-snapshot-model; 9720ff7=discover-flows-and-pick-the-freshest; e12ceb8=compute-snapshot-change-sets; 910b4f3=poll-the-flow-files-and-fetch-snapshots; 46ef07c=hold-app-state-and-map-keys; 5374c8a=render-the-layer-view; 2ac5664=render-task-details-with-markdown; 79b5b3d=render-the-header-strip; 951b90e=tail-the-selected-agents-transcript; cc60a17=render-the-traversal-view; b501d48=pick-a-flow-from-the-selector; b32333e=order-diagram-layers-to-reduce-crossings; ef5f424=assign-diagram-coordinates; 2a0b2f5=resolve-junction-glyphs; 410ff42=route-diagram-edges-through-inter-layer-channels; 5858d7b=paint-and-navigate-the-diagram; d8d0118=ensure-one-glimpse-pane-per-tab; 2c3ce5c=handle-hook-events; 22c7a94=install-hooks-and-the-herdr-keybinding; 843d26f=wrap-the-herdr-cli"
+commits = [
+    "dc15786",
+    "26194f3",
+    "fc43ce3",
+    "cb81394",
+    "9720ff7",
+    "e12ceb8",
+    "910b4f3",
+    "46ef07c",
+    "5374c8a",
+    "2ac5664",
+    "79b5b3d",
+    "951b90e",
+    "cc60a17",
+    "b501d48",
+    "b32333e",
+    "ef5f424",
+    "2a0b2f5",
+    "410ff42",
+    "5858d7b",
+    "d8d0118",
+    "2c3ce5c",
+    "22c7a94",
+    "843d26f",
+]
+dedup_id = "8dc4dd935e1f3baa"
+
+[[items]]
+id = "E78"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "view::render composes header, active view, footer hints, side/bottom details and activity panels, full-screen details and the selector overlay; resolves orientation and installs the navigator; 6 tests"
+task_ref = "compose-the-frame-and-switch-views"
+status = "done"
+files = ["glimpse/src/view/mod.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "5e69b2c363f95121"
+
+[[items]]
+id = "E79"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse runtime: RunOpts, run() with input thread, drain-then-draw loop, ticks, flow switching and auto-flow; render_once over TestBackend; 4 tests"
+task_ref = "run-the-event-loop"
+status = "done"
+files = ["glimpse/src/runtime.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "957722d14fd679de"
+
+[[items]]
+id = "E80"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "The loop ticks while needs_tick() or the activity panel is open, and opens the terminal with ratatui::try_init"
+task_ref = "run-the-event-loop"
+original_intent = "recv_timeout(1s) while app.needs_tick(); ratatui::init()"
+rationale = "A transcript grows without any agents.toml change, so no snapshot wakes the loop to show new lines; try_init returns an init failure as an error instead of panicking"
+dedup_id = "2a6a202331b2d08c"
+
+[[items]]
+id = "E81"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse CLI parser and main routing for view/--once, hook, ensure-pane, setup, --help, --version; blanket dead_code allow removed; tests/cli.rs 7 cases"
+task_ref = "parse-arguments-and-wire-the-subcommands"
+status = "done"
+files = [
+    "glimpse/src/main.rs",
+    "glimpse/src/cli.rs",
+    "glimpse/tests/cli.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "45b4577d86b18bbb"
+
+[[items]]
+id = "E82"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "CLI tests pin HERDR_BIN_PATH to a missing sandbox path; orchestrator gated test-only helpers behind cfg(test) and deleted the unused Herdr::with_bin"
+task_ref = "parse-arguments-and-wire-the-subcommands"
+original_intent = "Remove HERDR_BIN_PATH in tests; removing the blanket allow leaves no dead code"
+rationale = "Unset, the tests fall back to the installed herdr and a regressed dry run would reload the live server; removing the allow surfaced five dead_code warnings in diagram/mod.rs, diagram/order.rs, diff.rs, herdr.rs and view/selector.rs"
+dedup_id = "e5360c6ac8887c4c"
+
+[[items]]
+id = "E83"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "glimpse README.md and CLAUDE.md written from the code; root CLAUDE.md lists glimpse/ and the glimpse fmt hook step"
+task_ref = "document-glimpse"
+status = "done"
+files = [
+    "glimpse/README.md",
+    "glimpse/CLAUDE.md",
+    "CLAUDE.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "ad91dce1edb851ae"
+
+[[items]]
+id = "E84"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "README names the traversal view ego (its CLI value); CLAUDE.md says a moved binary needs its hook and keybinding entries fixed by hand"
+task_ref = "document-glimpse"
+original_intent = "Views layers, traversal and diagram; setup reinstall unspecified"
+rationale = "ViewKind::parse and --view accept ego; setup skips any existing entry naming glimpse, so rerunning it does not repoint a moved binary"
+dedup_id = "d8a1e3c3613e564f"
+
+[[items]]
+id = "E85"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+summary = "Minted a task to correct the AgentRecord timestamp doc comment, harvested from a TANGENTIAL line and applied by the orchestrator"
+task_ref = "correct-the-agents-timestamp-doc-comment"
+original_intent = "plan carries no task for the AgentRecord timestamp comment"
+rationale = "The comment said timestamps come from the hook payload or transcript, but record stamps them with now_rfc3339(); cheap, inside a file this run wrote, and compiled by the final pass"
+dedup_id = "034c05418e63fde5"
+
+[[items]]
+id = "E86"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+summary = "AgentRecord timestamp doc comment now states tomlctl stamps its own clock"
+task_ref = "correct-the-agents-timestamp-doc-comment"
+status = "done"
+files = ["tomlctl/src/agents/schema.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "ba040fb6375f9c04"
+
+[[items]]
+id = "E87"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Final build tomlctl"
+task_ref = "document-glimpse"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 15
+dedup_id = "0486ba3919132e61"
+
+[[items]]
+id = "E88"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Final build glimpse"
+task_ref = "document-glimpse"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 8
+dedup_id = "41ae9a8466926c05"
+
+[[items]]
+id = "E89"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Final tomlctl tests: 1405 passed, 0 failed"
+task_ref = "document-glimpse"
+command = "cargo test --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 87
+dedup_id = "af21a721ea8f2a4a"
+
+[[items]]
+id = "E90"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Final plan corpus: 1 passed"
+task_ref = "document-glimpse"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- --ignored"
+outcome = "pass"
+duration_s = 2
+dedup_id = "4febd4e8ad4aaaa7"
+
+[[items]]
+id = "E91"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Final glimpse tests: 202 passed, 0 failed"
+task_ref = "document-glimpse"
+command = "cargo test --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 9
+dedup_id = "26715d2adee60b6e"
+
+[[items]]
+id = "E92"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Final clippy tomlctl: 0 warnings"
+task_ref = "document-glimpse"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 9
+dedup_id = "27517eb7928a9ef2"
+
+[[items]]
+id = "E93"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Final clippy glimpse: 0 warnings"
+task_ref = "document-glimpse"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 4
+dedup_id = "60c225cf547a156d"
+
+[[items]]
+id = "E94"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Final fmt glimpse"
+task_ref = "document-glimpse"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 0
+dedup_id = "d66307793d4c1846"
+
+[[items]]
+id = "E95"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Final fmt tomlctl"
+task_ref = "document-glimpse"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 2
+dedup_id = "384d66f402e28cd5"
+
+[[items]]
+id = "E96"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Final audit tomlctl: no advisories"
+task_ref = "document-glimpse"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+duration_s = 12
+dedup_id = "e01838391fb9c68f"
+
+[[items]]
+id = "E97"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+summary = "Final audit glimpse: no advisories"
+task_ref = "document-glimpse"
+command = "cargo audit --file glimpse/Cargo.lock"
+outcome = "pass"
+duration_s = 12
+dedup_id = "9d974aacd91bd417"
+
+[[items]]
+id = "E98"
+type = "checkpoint"
+date = 2026-09-29
+agent = "implement"
+kind = "commit-train"
+summary = "Checkpoint C (final train): 76eb415=compose-the-frame-and-switch-views; 0adfde5=run-the-event-loop; 303dec1=parse-arguments-and-wire-the-subcommands; 5d52046=document-glimpse; c348e7a=correct-the-agents-timestamp-doc-comment"
+commits = [
+    "76eb415",
+    "0adfde5",
+    "303dec1",
+    "5d52046",
+    "c348e7a",
+]
+dedup_id = "076057d11ab0a8e0"
+
+[[items]]
+id = "E99"
+type = "status-transition"
+date = 2026-09-29
+agent = "plan-update"
+summary = "All 42 tasks done; final pass green"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "ad2615d348cbfab0"
+
+[[items]]
+type = "deviation"
+date = 2026-09-29
+agent = "optimise-apply"
+id = "E100"
+summary = "Poller sends Event::Flows / Event::FlowMtimes and lists flows on its own thread; the capabilities probe runs after the first failed fetch"
+task_ref = "poll-the-flow-files-and-fetch-snapshots"
+original_intent = "Poller sends a data-less FlowsChanged as the only trigger for flows::list, and runs capabilities once on start"
+rationale = "FlowsChanged made the UI thread spawn tomlctl flow list (0.4-0.65 s freeze) on every tasks.toml write; the poller now relists only on a flow-set or context.toml change and otherwise sends mtimes. The eager probe cost a spawn before every first snapshot, and a successful fetch already proves the capability, so it runs only on failure and its message still wins"
+dedup_id = "3e36426c100478e3"
+
+[[items]]
+type = "deviation"
+date = 2026-09-29
+agent = "optimise-apply"
+id = "E101"
+summary = "pane::ensure looks up an existing pane unlocked; the split path takes an OS File::try_lock and re-lists before splitting"
+task_ref = "ensure-one-glimpse-pane-per-tab"
+original_intent = "Take an exclusive File::create_new lock first (lock older than 10 s removed, wait 3 s), then look up the pane"
+rationale = "Every SubagentStart serialised a read-only herdr pane list behind the global lock, so bursts hit the 3 s wait; and the stale takeover let a slow holder's Drop delete its successor's lock. Double-checked locking keeps the one-split guarantee, and an OS lock is released only by its holder or by the OS when the holder dies"
+dedup_id = "d4fd47f0ab7a1fce"

@@ -214,7 +214,7 @@ After the final pass, run the end-to-end smoke check by hand:
 ## Execution Policy
 
 - **Checkpoints**: milestones
-- **Checkpoint after**: tasks 1, 2, 10, 11, 12, 13, 14, 18, 22, 23, 24, 25, 40, 41
+- **Checkpoint after**: tasks 1, 2, 10, 11, 12, 13, 14, 18, 22, 23, 24, 25, 40, 41, 42
 - **Max parallel agents**: 8
 - **Commit granularity**: per-task
 
@@ -756,6 +756,12 @@ After the final pass, run the end-to-end smoke check by hand:
 - **Detail**: This file runs unsandboxed on every commit (root `CLAUDE.md`, Supply chain), so keep the change to one guarded block and add no new executables.
 - **Acceptance**: `grep -c 'glimpse/Cargo.toml' .githooks/pre-commit` ≥1 (today 0) and `bash -n .githooks/pre-commit` exits 0.
 
+### 42. Correct the agents timestamp doc comment [S]
+- **Files**: `tomlctl/src/agents/schema.rs`
+- **Depends on**: 6
+- **Action**: State in the AgentRecord timestamp doc comment that record stamps every timestamp with tomlctl's own clock, not the hook's.
+- **Acceptance**: grep -c "tomlctl's own clock" tomlctl/src/agents/schema.rs is 1.
+
 ## Dependency Graph
 
 Per-task `Depends on` lines are authoritative; this section states only the checkpoint cuts.
@@ -764,7 +770,7 @@ Per-task `Depends on` lines are authoritative; this section states only the chec
 
 — CHECKPOINT B after tasks 18, 22, 23, 24, 25, 41 — dependency closure: 2, 3, 5, 7, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 41. The glimpse core: scaffold, model, config/theme, source, flows, diff, app/keys, the layer, details, header and activity renderers, and the pre-commit fmt gate (committed here so an uncommitted hook edit never gates a later train). The crate builds and its unit tests pass; it is not yet wired to `main`.
 
-— CHECKPOINT C after tasks 40 — dependency closure: 2, 3, 5, 7, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41. The diagram, traversal view, selector, frame composition, event loop, herdr/hook/setup, CLI wiring and docs. `glimpse` runs end to end.
+— CHECKPOINT C after tasks 40, 42 — dependency closure: 2, 3, 4, 5, 6, 7, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42. The diagram, traversal view, selector, frame composition, event loop, herdr/hook/setup, CLI wiring and docs. `glimpse` runs end to end.
 
 ## Risks
 

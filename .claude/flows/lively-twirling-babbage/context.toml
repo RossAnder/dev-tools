@@ -1,8 +1,8 @@
 slug = "lively-twirling-babbage"
 plan_path = "docs/plans/lively-twirling-babbage.md"
-status = "draft"
+status = "review"
 created = 2026-09-28
-updated = 2026-09-28
+updated = 2026-09-29
 branch = "main"
 scope = [
     "tomlctl/**",
@@ -15,8 +15,8 @@ scope = [
 ]
 
 [tasks]
-total = 0
-completed = 0
+total = 42
+completed = 42
 in_progress = 0
 
 [artifacts]

@@ -1,0 +1,558 @@
+schema_version = 1
+last_updated = 2026-09-29
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O1"
+file = "glimpse/src/runtime.rs"
+line = 350
+symbol = "flows_changed"
+severity = "critical"
+effort = "medium"
+category = "concurrency"
+summary = "Every tasks.toml write in any flow runs `tomlctl flow list` synchronously on the UI thread (~0.4-0.65 s freeze per task status change)"
+description = "Flagged by 4 lenses (memory, serialization, queries, async). Poller::tick (source.rs:188-194) sends a data-less Event::FlowsChanged whenever any flow's tasks.toml mtime moves, including the viewed flow's own on every `tasks update`. handle (runtime.rs:321) -> flows_changed -> TerminalHost::list_flows -> flows::list spawns `tomlctl flow list` with Command::output on the thread that owns input and drawing. During /implement every task start/finish freezes keys, mouse and redraw for 0.4-0.65 s. Recommended fix (two parts, same change): (1) carry the fingerprint map on the event (`FlowsChanged { mtimes, set_changed }`); when the slug set is unchanged, update app.flows[i].tasks_mtime from the map, call flows::rank and compute freshest locally with no spawn; (2) spawn flows::list only when the set changes, a context.toml mtime moves (add that stat to flows_fingerprint, since the selector shows status/updated from context.toml), or the selector opens - and run it on the poller thread (Fetcher::list_flows, Event::Flows(Result<Vec<FlowEntry>,String>)), removing Host::list_flows. Risk: runtime::tests::auto_flow_switches_only_when_the_freshest_flow_moves and FakeHost need updating; selector status of other flows refreshes only on set/context change or open."
+evidence = [
+    "glimpse/src/runtime.rs:321-324 handle -> flows_changed; :231-233 TerminalHost::list_flows",
+    "glimpse/src/source.rs:188-194 Poller::tick sends FlowsChanged on any mtime change",
+    "glimpse/src/flows.rs:81-86 flows::list Command::output",
+    "`tomlctl flow list` measured 2026-09-29: 486-679 ms (4 independent lens runs); `tomlctl --version` 283-398 ms",
+]
+instances = [
+    "glimpse/src/runtime.rs:flows_changed",
+    "glimpse/src/source.rs:Poller::tick",
+    "glimpse/src/flows.rs:list",
+]
+enumeration = "complete"
+dedup_id = "7a8f2f7124955b32"
+resolved = 2026-09-29
+resolution = "uncommitted: every tomlctl spawn moved to the poller thread; FlowsChanged replaced by Event::Flows(Result) (relist on slug-set change, context.toml move, first scan or failed last list) and Event::FlowMtimes (tasks mtimes only, no spawn); Host::list_flows removed; auto-flow decision stays on the main thread via follow_freshest"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O2"
+file = "glimpse/src/source.rs"
+line = 97
+symbol = "TomlctlFetcher::fetch"
+severity = "warning"
+effort = "trivial"
+category = "query"
+summary = "glimpse's tomlctl children re-run `git rev-parse` for a root glimpse already resolved; pass TOMLCTL_ROOT (or `--file`)"
+description = 'Flagged by serialization, queries, algorithm. `tasks snapshot --slug` (store.rs:57 resolve_store_path) and `flow list` (flow/list.rs:66) both call io::repo_or_cwd_root, which spawns `git rev-parse --show-toplevel` unless TOMLCTL_ROOT is set (io.rs:1525-1542). glimpse resolved the root once at start (main.rs:79 flows::repo_root). Change: add `.env("TOMLCTL_ROOT", root)` next to `.current_dir(root)` in TomlctlFetcher::fetch (source.rs:97-99) and flows::list (flows.rs:82-84); alternatively fetch with `tasks snapshot --file <root>/.claude/flows/<slug>/tasks.toml` (verified byte-identical output). Saves ~75-120 ms (~20-30%) per fetch and per flow list. probe_tomlctl resolves no root. The hook cannot use this (it lacks the root) - see O4/O10.'
+evidence = [
+    "tomlctl/src/io.rs:1525-1542 repo_or_cwd_root: TOMLCTL_ROOT first, else git spawn",
+    "A/B 15 interleaved runs 2026-09-29: tasks snapshot median 288 -> 212 ms with TOMLCTL_ROOT; flow list 351 -> 246 ms",
+    "`diff <(tomlctl tasks snapshot --slug lively-twirling-babbage) <(tomlctl tasks snapshot --file .claude/flows/lively-twirling-babbage/tasks.toml)` -> identical; median 564 -> 447 ms",
+]
+instances = [
+    "glimpse/src/source.rs:TomlctlFetcher::fetch",
+    "glimpse/src/flows.rs:list",
+]
+sweep = ['Command::new\(tomlctl\)']
+enumeration = "complete"
+dedup_id = "53b481e56a33e86c"
+resolved = 2026-09-29
+resolution = "uncommitted: TOMLCTL_ROOT passed to the tasks snapshot and flow list children in TomlctlFetcher::fetch and flows::list"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O3"
+file = "tomlctl/src/agents/record.rs"
+line = 359
+symbol = "load_flows"
+severity = "warning"
+effort = "small"
+category = "query"
+summary = "`agents record` opens and parses every flow's agents.toml on every hook event, even when a Start's dispatch already names the flow"
+description = "Flagged by memory, serialization, queries, algorithm. record() calls load_flows(&root) unconditionally at :359, before transcript/dispatch resolution. choose_flow's Kind::Start arm returns dispatched() first (:278), so a Start with a resolved dispatch never reads flows; only Idle (transcript lookup :362-368), Stop (holder lookup :281) and dispatch-less Start need it. The set grows with every flow ever created (43 dirs today, none pruned) and cost is dominated by per-file open under AV (~2.4 ms per flow with an agents.toml: 0 flows 223 ms vs 50 flows 346-368 ms median). Change: load only for Idle up front; after dispatch resolves, `let flows = match (kind, &dispatch) { (Kind::Start, Some(_)) => Vec::new(), _ => idle_flows.unwrap_or_else(|| load_flows(&root)) };` (or LazyCell/OnceCell). Leave Stop's precedence unchanged. Counter: Starts whose transcript lacks a dispatch line yet (transcript lag) still take the full scan - check the task_ids:[] start-row rate. Optional follow-up: skip stores not containing the session_id text before parsing (limited value since open dominates)."
+evidence = [
+    "tomlctl/src/agents/record.rs:278 Kind::Start => dispatched().or_else(..)",
+    "tomlctl/src/agents/record.rs:290-309 load_flows reads+parses every <flow>/agents.toml",
+    "scratch-root timing 2026-09-29, 15 interleaved runs: 0 flows 223 ms; 50 flows w/ 49-byte agents.toml 346-368 ms; 50x69 KB 360 ms",
+]
+dedup_id = "02e52b86d9da473a"
+resolved = 2026-09-29
+resolution = "uncommitted: load_flows runs up front only for Idle; a Start with a resolved dispatch skips it; Stop precedence unchanged"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O4"
+file = "glimpse/src/hook.rs"
+line = 236
+symbol = "handle"
+severity = "warning"
+effort = "trivial"
+category = "query"
+summary = "`glimpse hook` spawns tomlctl (and git) for every subagent event in every repo, including repos with no .claude/flows"
+description = """setup merges matcher-less async hooks into the user-level settings.json (setup.rs:68-75,107), so every SubagentStart/Stop/Idle in every repo runs handle, which always spawns `tomlctl agents record` (hook.rs:236) -> git rev-parse -> up to 10x100 ms transcript wait -> `no-flow`. When no ancestor of the payload cwd contains .claude/flows nothing can be recorded. Change after hook.rs:235: `if std::env::var_os("TOMLCTL_ROOT").is_none() && let Some(dir) = cwd.as_deref().map(Path::new).filter(|d| d.is_dir()) && !dir.ancestors().any(|a| a.join(".claude").join("flows").is_dir()) { return Ok(()); }` - a few ~60 us stats instead of ~0.6 s of spawns. Tradeoff: a too-old tomlctl in a flow-less repo is no longer logged. Payloads without cwd keep today's path (tests/cli.rs hook cases unchanged)."""
+evidence = [
+    "glimpse/src/hook.rs:235-236 handle always calls record",
+    "glimpse/src/setup.rs:68-75,107 matcher-less async hooks in user settings",
+    "tomlctl/src/agents/record.rs:397-410 returns no-flow only after transcript work",
+    "timing 2026-09-29: tomlctl --version median 398 ms; git 206-276 ms",
+]
+dedup_id = "b53978a4e755f4cd"
+resolved = 2026-09-29
+resolution = "uncommitted: hook returns early when TOMLCTL_ROOT is unset/empty and no ancestor of the payload cwd holds .claude/flows (outside_any_flow); cwd-less payloads unchanged"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O5"
+file = "glimpse/src/pane.rs"
+line = 46
+symbol = "ensure"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "pane.lock is held across `herdr pane list` even when the pane already exists, serialising SubagentStart bursts against a 3 s wait"
+description = "Flagged by async and queries. ensure acquires the global <claude dir>/glimpse/pane.lock (:46) before herdr.pane_list() (:48). The hook always passes focus=false (hook.rs:250), so on the common reuse path the lock protects a read-only lookup. N simultaneous starts queue N x ~0.25-0.4 s; with LOCK_WAIT=3 s a burst of ~10+ logs 'held by another process' to hook.log although the pane exists. The lock is global, so unrelated tabs queue too. Change (double-checked): pane_list() + find_existing unlocked -> Reused; else acquire lock, re-list, re-check, split. The no-pane path pays one extra `pane list` once per tab; the 'never two splits' guarantee holds since the split decision is still under the lock (plan line 780 already names 'lock plus re-check'). Counter: if burst arrivals are spread >0.3 s apart the queue never builds - check hook.log after a max_parallel=10 batch."
+evidence = [
+    "glimpse/src/pane.rs:18-20 LOCK_STALE_AFTER 10 s / LOCK_WAIT 3 s / LOCK_POLL 50 ms",
+    "glimpse/src/pane.rs:46-52 lock acquired before pane_list",
+    "glimpse/src/hook.rs:245-252 ensure(.., focus=false)",
+    "`herdr pane list` measured 254-404 ms 2026-09-29",
+]
+related = [
+    "O8",
+    "O16",
+]
+dedup_id = "b0a41209b2a66aaa"
+resolved = 2026-09-29
+resolution = "uncommitted: pane::ensure finds an existing pane without the lock; only the split path locks, re-lists and re-checks"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O6"
+file = "glimpse/src/source.rs"
+line = 68
+symbol = "flows_fingerprint"
+severity = "warning"
+effort = "small"
+category = "query"
+summary = "The poller opens every flow's tasks.toml every 500 ms forever (~4.6 ms/tick, grows with flow count), contradicting 'an idle glimpse does no work'"
+description = "flows_fingerprint does read_dir(.claude/flows) plus std::fs::metadata(<flow>/tasks.toml) per flow each tick (source.rs:75); on Windows metadata opens a handle (std sys/fs/windows.rs:1500-1510) while DirEntry::metadata returns FindNextFileW data with no open (:188-190). Change: keep BTreeMap<String,(SystemTime dir, SystemTime tasks)>; per tick read entry.metadata()?.modified() for each flow dir and re-stat tasks.toml only when the dir mtime moved or the entry is new. tomlctl always writes by tempfile+rename, which moves the parent dir mtime (tested). Keep the 4-file viewed-flow fingerprint as is. Tradeoff: an in-place non-rename edit to another flow's tasks.toml lags until that dir's next rename-in; a full re-stat every N ticks bounds it."
+evidence = [
+    "glimpse/src/source.rs:68-80 flows_fingerprint metadata per flow",
+    "rustc 1.98.1 std library/std/src/sys/fs/windows.rs:188-190,1500-1510",
+    "scratch micro-benchmark 2026-09-29 (43 flows, 200 iters): 4.53-4.69 ms/tick current vs 0.14-0.20 ms dir-entry",
+    "scratch test: tempfile+rename inside sub/ moves parent listing mtime; in-place write does not",
+]
+dedup_id = "d8fbb9b916cb33dd"
+resolved = 2026-09-29
+resolution = "uncommitted: flows_fingerprint keeps a per-flow FlowStat cache and re-stats tasks.toml/context.toml only when the flow dir mtime (DirEntry::metadata) moves; in-place-edit lag documented in glimpse/CLAUDE.md"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O7"
+file = "glimpse/src/transcript.rs"
+line = 163
+symbol = "TailState::resolve"
+severity = "warning"
+effort = "small"
+category = "query"
+summary = "With the activity panel open, every event batch (incl. mouse-move batches that never redraw) runs 2x canonicalize + open + fstat on the UI thread"
+description = "Flagged by async, queries, memory (tangential). run_loop calls screen.refresh_tail() unconditionally after every batch (runtime.rs:296); keys::mouse returns no action for motion, but refresh still runs. TailState::refresh -> resolve canonicalizes the transcript path and the fixed root every call (transcript.rs:168,175), then File::open + metadata (:91-94), only then returns on len == offset. ~2.1-2.5 ms per call measured. Changes (independent): (a) in run_loop track `ticked` in the tick arm and call refresh_tail only when `redraw || ticked`; (b) canonicalize the root once in TailState::within and store it; (c) gate refresh on std::fs::metadata(path).len() == offset (~70 us) before the canonicalize/open - containment still checked before any byte is read. Truncation (len < offset) still falls through to the reset."
+evidence = [
+    "glimpse/src/runtime.rs:296-298 refresh_tail after every batch",
+    "glimpse/src/transcript.rs:87-106 refresh; :163-179 resolve canonicalizes twice",
+    "scratch benchmark 2026-09-29: refresh 2.09-2.47 ms; File::open+metadata 0.86-1.9 ms; canonicalize 91-101 us; metadata 56-74 us",
+]
+instances = [
+    "glimpse/src/transcript.rs:TailState::resolve",
+    "glimpse/src/transcript.rs:TailState::refresh",
+    "glimpse/src/runtime.rs:run_loop",
+]
+related = ["O17"]
+dedup_id = "d80fbac6610d7751"
+resolved = 2026-09-29
+resolution = "uncommitted: refresh_tail runs only in batches that redraw; root canonicalized once in TailState::within; refresh returns early on a metadata len == offset check for an accepted path"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O8"
+file = "glimpse/src/pane.rs"
+line = 84
+symbol = "focus_existing"
+severity = "warning"
+effort = "small"
+category = "query"
+summary = "`ensure-pane --focus` spawns herdr five times; `pane get` and the second `pane layout` are redundant"
+description = "Keybinding path: main.rs:145 herdr.pane_get(&origin)?.cwd; pane.rs:48 pane_list() (PaneInfo already carries cwd per pane, herdr.rs:187-196); pane.rs:84 layout(origin) and layout(pane_id) although find_existing guarantees the same tab and one `pane layout` output lists every pane in it (parse_layout looks up by id, herdr.rs:223-235). Change: pass cwd: Option<&str> into ensure and resolve it from the origin's PaneInfo in the list already fetched; add Herdr::layout_output(pane) -> String and parse both rects from one output. 5 -> 3 spawns, ~0.5-0.8 s less latency per key press. hook::handle passes Some(cwd)."
+evidence = [
+    "glimpse/src/main.rs:137-148 ensure_pane pane_get for cwd",
+    "glimpse/src/pane.rs:80-91 focus_existing calls layout twice",
+    "glimpse/src/herdr.rs:187-196,223-235,241-244 list carries cwd; layout fixture lists both panes",
+    "`herdr pane list` 254-404 ms per call 2026-09-29",
+]
+instances = [
+    "glimpse/src/pane.rs:focus_existing",
+    "glimpse/src/main.rs:ensure_pane",
+    "glimpse/src/herdr.rs:layout",
+]
+related = [
+    "O5",
+    "O16",
+]
+dedup_id = "8eac9442d5d14e2c"
+resolved = 2026-09-29
+resolution = "uncommitted: ensure takes cwd: Option and resolves it from the pane list (pane_get only as fallback); Herdr::layout_output lets focus_existing parse both rects from one layout call; 5 -> 3 herdr spawns"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O9"
+file = "tomlctl/src/agents/record.rs"
+line = 99
+symbol = "apply"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "A SubagentStart recorded after its own Stop resurrects the row as Running forever (phantom agent, 30 s wakes, pane opened)"
+description = """Async hooks impose no ordering. The Start arm finds the Stopped row and, since `changed = opened || row.status != Running` is true, sets status = Running and clears ended_at (record.rs:110-125). `now` is taken at :465, after correlation waits of up to ~2 s (correlate.rs:32-33 RETRY_ATTEMPTS 10 x 100 ms per file), widening the window for short-lived agents. Out-of-order Stop-before-Start is already expected (record.rs:142-147, test a_stop_for_an_unknown_agent_with_a_flow_writes_a_stopped_row) but Start-after-Stop is untested. Effect: glimpse's tick_interval keeps a 30 s wake forever (app.rs:433-439) and shows a phantom agent. Change: take `now` at the top of record(); in the Start arm, if row.status == Stopped and parsed ended_at (jiff Timestamp, not string compare - variable fractional seconds) is later than this event's entry time, return changed=false / NotRecorded("stale-start"). A genuine resume (entry time after ended_at) still reopens. Add an apply test: stop at t1 then start at t0 < t1 leaves the row Stopped. Evidence medium: interleaving inferred from code, not reproduced."""
+evidence = [
+    "tomlctl/src/agents/record.rs:99-127 Start arm reopens a Stopped row",
+    "tomlctl/src/agents/record.rs:465 now taken after correlation",
+    "tomlctl/src/agents/correlate.rs:32-33,385-393 wait_for_file retry up to ~1 s per file",
+    "glimpse/src/app.rs:433-439 30 s tick while any agent Running",
+]
+dedup_id = "c01c17cbf326c3bd"
+resolved = 2026-09-29
+resolution = "uncommitted: record() takes now at entry; Start on a Stopped row whose ended_at is later (jiff Timestamp compare) returns NotRecorded(stale-start); resume after stop still reopens; test a_start_older_than_the_recorded_stop_leaves_the_row_stopped"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "open"
+flow = "lively-twirling-babbage"
+id = "O10"
+file = "tomlctl/src/io.rs"
+line = 1540
+symbol = "repo_or_cwd_root"
+severity = "warning"
+effort = "medium"
+category = "query"
+summary = "Every tomlctl process (incl. each hook-driven `agents record`) spawns `git rev-parse --show-toplevel` to find the repo root"
+description = "[needs-plan] The OnceLock caches per process, but hooks and glimpse children are all fresh processes, so git runs every time (~75-250 ms here). Proposed: before spawning git, when GIT_DIR/GIT_WORK_TREE are unset, walk cwd.ancestors() for a `.git` entry (dir, or worktree/submodule file), canonicalize, fall back to git. Decisions needed because this is the containment anchor for guard_write_path (deliberate since 20d24f9) and is shared by ~26 modules: core.worktree configs, GIT_* overrides, safe.directory refusal (today falls back to cwd; the walk would return the real toplevel), worktree + submodule layouts. Needs a worktree/submodule/safe.directory test matrix and the full tomlctl suite. Alternative rejected by the queries lens: have glimpse's hook set TOMLCTL_ROOT from its own walk - the nearest .claude/flows can sit above a worktree that has none, changing which store is written."
+evidence = [
+    "tomlctl/src/io.rs:1522-1558 repo_or_cwd_root spawns git",
+    "tomlctl/src/agents/record.rs:358 record -> repo_or_cwd_root",
+    "A/B 2026-09-29: agents record median 411 ms plain vs 307 ms with TOMLCTL_ROOT (12 runs)",
+]
+dedup_id = "16af543f665f17ad"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O11"
+file = "tomlctl/src/agents/correlate.rs"
+line = 358
+symbol = "read_tail"
+severity = "suggestion"
+effort = "small"
+category = "query"
+summary = "On SubagentStop the agent transcript (p50 0.5 MB, p90 1 MB) is read twice and copied twice"
+description = "Flagged by memory, queries, algorithm. record() calls latest_dispatch (correlate.rs:101-106) and context_tokens (:284-286) on Stop; each calls read_tail, which reads up to 4 MiB and returns String::from_utf8_lossy(&bytes).into_owned() (:364,:369) - a second full copy even for valid UTF-8. Change: add `pub(crate) fn dispatch_and_tokens(path) -> (Option<Dispatch>, u64)` (plus Codex twin) that reads once and runs dispatch_in/tokens_in over the same &str; build text with `String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())`; for the tail branch `bytes.drain(..start)` before converting. Keep latest_dispatch/context_tokens as thin wrappers for existing tests. Saves one open + ~1-4 MB read/copy per Stop."
+evidence = [
+    "tomlctl/src/agents/correlate.rs:358-370 read_tail from_utf8_lossy(..).into_owned()",
+    "tomlctl/src/agents/record.rs:391-395,453 both readers called on Stop",
+    "transcript size distribution 2026-09-29 (545 local agent-*.jsonl): p50 498 KB, p90 1.0 MB, max 1.97 MB",
+]
+dedup_id = "667d85c6ad8cda58"
+resolved = 2026-09-29
+resolution = "uncommitted: dispatch_and_tokens / codex_dispatch_and_tokens read the transcript once on Stop; read_tail converts with from_utf8 (lossy only on invalid UTF-8); context_tokens now cfg(test), codex_context_tokens removed as dead"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O12"
+file = "glimpse/src/diff.rs"
+line = 74
+symbol = "diff"
+severity = "suggestion"
+effort = "trivial"
+category = "algorithm"
+summary = "Each snapshot builds a full Index three times, two of them only to compare one topology hash"
+description = "Flagged by memory and algorithm. diff computes `old.index().topology_hash() != new.index().topology_hash()` (diff.rs:74); apply_snapshot then builds snapshot.index() again (app.rs:397) while self.index already holds the old one. Index::new builds ~7 HashMaps plus per-agent maps and sorted lists. Change: make model::topology_hash(&[Task]) pub(crate) and compare `topology_hash(&old.tasks) != topology_hash(&new.tasks)`; or build the new index first in apply_snapshot and pass both indexes into diff. Per-snapshot, microseconds - but the fix is one line."
+evidence = [
+    "glimpse/src/diff.rs:74 old.index()/new.index() for topology_hash",
+    "glimpse/src/app.rs:383-397 apply_snapshot calls diff then snapshot.index()",
+    "glimpse/src/model.rs:431 topology_hash(&[Task])",
+]
+instances = [
+    "glimpse/src/diff.rs:diff",
+    "glimpse/src/model.rs:topology_hash",
+    "glimpse/src/app.rs:apply_snapshot",
+]
+dedup_id = "36c72ed303d8521b"
+resolved = 2026-09-29
+resolution = "uncommitted: diff compares model::topology_hash over both task lists directly (now pub(crate)); no Index built for the comparison"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O13"
+file = "tomlctl/src/tasks/snapshot.rs"
+line = 143
+symbol = "read_optional"
+severity = "suggestion"
+effort = "small"
+category = "query"
+summary = "`tasks snapshot` reads each of its 4 inputs twice (hash, then parse) and deep-clones each parsed optional doc"
+description = "Flagged by queries and memory. revision() fs::reads all four files (snapshot.rs:47,149-165), then store::load and three read_optional calls re-open and re-read them, plus three exists() stats; read_optional returns read_doc(.., |doc| Ok(doc.clone())) (:143), deep-cloning a tree read_doc is about to drop. Change: read the four files once into [Option<Vec<u8>>; 4], hash them in revision_of(&bytes) and parse from the same buffers - which also makes revision and content exactly consistent; keep the read_doc path when verify_integrity/strict_read is set (needs the shared lock + sidecar). Separately add io::read_doc_owned (read_doc body returning doc without clone) for the verify path and backlog/add.rs:preview_doc. Serialization lens measured the whole snapshot compute as within spawn noise, so this is marginal (~4-6 ms/fetch)."
+evidence = [
+    "tomlctl/src/tasks/snapshot.rs:44-52 revision then load/read_optional",
+    "tomlctl/src/tasks/snapshot.rs:139-144 read_optional doc.clone()",
+    "tomlctl/src/io.rs:574-598 read_doc lends the owned doc to the closure",
+    "scratch benchmark 2026-09-29: 70 KB read 1.14-1.58 ms",
+]
+instances = [
+    "tomlctl/src/tasks/snapshot.rs:read_optional",
+    "tomlctl/src/tasks/snapshot.rs:revision",
+    "tomlctl/src/backlog/add.rs:preview_doc",
+]
+sweep = ['\|doc\| Ok\(doc\.clone\(\)\)']
+enumeration = "complete"
+related = ["O14"]
+dedup_id = "f12408a8f8ea3708"
+resolved = 2026-09-29
+resolution = "uncommitted: default snapshot path reads each input once, hashes and parses the same bytes; verify/strict path unchanged; io::read_doc_owned + io::parse_toml_bytes added; read_optional and backlog preview_doc no longer clone"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O14"
+file = "tomlctl/src/tasks/snapshot.rs"
+line = 55
+symbol = "snapshot"
+severity = "suggestion"
+effort = "small"
+category = "algorithm"
+summary = "`tasks snapshot` builds the task graph three times, not once as the plan states"
+description = "snapshot builds nodes + graph at :54-55, then ready::ready (:66 -> ready.rs:18-19) and edges::edge_list (:67 -> edges.rs:98-99 Graph::build(..).overlap_pairs()) each rebuild it (re-cloning nodes, recomputing Kahn and bitset reachability). Plan docs/plans/lively-twirling-babbage.md:149 says the snapshot 'builds the graph once'. Change: add graph-taking variants ready::frontier_json(&Graph, in_flight) and edges::edge_list_with(store, &Graph); keep ready()/edge_list() as thin wrappers for the standalone verbs. Wall-time win is microseconds (MAX_NODES-bounded); the value is matching the stated design."
+evidence = [
+    "tomlctl/src/tasks/snapshot.rs:54-55,66-67",
+    "tomlctl/src/tasks/ready.rs:17-19 build_or_refuse",
+    "tomlctl/src/tasks/edges.rs:96-99 Graph::build for overlap_pairs",
+    "docs/plans/lively-twirling-babbage.md:149",
+]
+instances = [
+    "tomlctl/src/tasks/snapshot.rs:snapshot",
+    "tomlctl/src/tasks/ready.rs:ready",
+    "tomlctl/src/tasks/edges.rs:edge_list",
+]
+related = ["O13"]
+dedup_id = "003034ca7383efaf"
+resolved = 2026-09-29
+resolution = "uncommitted: ready::ready_with(&Graph) and edges::edge_list_with(store, &Graph) added; snapshot passes its one graph; standalone verbs and their refusal labels unchanged"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O15"
+file = "glimpse/src/source.rs"
+line = 283
+symbol = "Source::spawn"
+severity = "suggestion"
+effort = "small"
+category = "concurrency"
+summary = "The eager `tomlctl capabilities` probe adds a full spawn (~0.5 s) before the first snapshot on every start and every `--once`"
+description = "Source::spawn runs probe() on the poller thread before Poller::run (source.rs:283-290); main.rs:111 does the same for --once. A successful `tasks snapshot` already proves the >=0.12.0 capability. Change: drop the eager probe; on the first fetch failure call probe_tomlctl and send REQUIRED_MESSAGE if it fails, else the fetch error (hook.rs:75-85 failure_message already maps 'unrecognized subcommand' the same way). Plan line 484 specifies the eager probe; its purpose (a clear message for an old tomlctl) is preserved by the lazy form. Tests a_failed_probe_reports_and_never_polls and capabilities_without_the_snapshot_feature_are_rejected need re-pointing."
+evidence = [
+    "glimpse/src/source.rs:130-140 probe_tomlctl; :283-290 probe before Poller::run",
+    "`tomlctl capabilities` measured 502-718 ms 2026-09-29",
+    "docs/plans/lively-twirling-babbage.md:484 'On start, run capabilities once'",
+]
+instances = [
+    "glimpse/src/source.rs:Source::spawn",
+    "glimpse/src/main.rs:once_snapshot",
+]
+dedup_id = "cdd728530cde26a4"
+depends_on = ["O8"]
+resolved = 2026-09-29
+resolution = "uncommitted: capabilities probe runs once, after the first failed fetch (poller and --once); its error wins and the poller halts as before"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O16"
+file = "glimpse/src/pane.rs"
+line = 173
+symbol = "PaneLock"
+severity = "suggestion"
+effort = "small"
+category = "concurrency"
+summary = "The create_new + mtime-staleness pane lock lets a slow holder's Drop delete its successor's lock; use an OS advisory lock (File::try_lock)"
+description = "PaneLock::acquire takes over a lock file older than 10 s (reclaim_if_stale, :211-222) and Drop unconditionally remove_file(&self.path) (:203-207). herdr calls are untimed (herdr.rs:150-160 Command::output). Race: holder A runs past 10 s -> waiter B reclaims and creates its own file -> A's Drop deletes B's file -> waiter C acquires while B is still splitting -> two glimpse panes. reclaim_if_stale's own comment admits it only narrows the window; the Drop race is undocumented. Change: open a persistent pane.lock with create(true).write(true).truncate(false) and poll File::try_lock() (stable since Rust 1.89; glimpse rust-version 1.98; tomlctl already uses it at io.rs:1153) every LOCK_POLL until LOCK_WAIT; Drop deletes nothing; remove reclaim_if_stale and LOCK_STALE_AFTER. Plan line 672 specified create_new, so the vet may treat it as deliberate; likelihood is low (needs a >10 s herdr call)."
+evidence = [
+    "glimpse/src/pane.rs:170-207 PaneLock create_new + Drop remove_file",
+    "glimpse/src/pane.rs:211-222 reclaim_if_stale",
+    "tomlctl/src/io.rs:1149-1153 File::try_lock already used in-repo",
+]
+related = [
+    "O5",
+    "O8",
+]
+dedup_id = "37c95dd40fde6657"
+resolved = 2026-09-29
+resolution = "uncommitted: PaneLock is File::try_lock on a persistent pane.lock; Drop deletes nothing; reclaim_if_stale and LOCK_STALE_AFTER removed; test a_dropped_lock_is_free_again"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O17"
+file = "glimpse/src/runtime.rs"
+line = 258
+symbol = "run_loop"
+severity = "suggestion"
+effort = "trivial"
+category = "concurrency"
+summary = "An open activity panel forces a 1 Hz wake-and-redraw even when it shows no agent"
+description = "runtime.rs:258-262 sets interval = Some(TICK) whenever app.activity_open, and the tick arm sets redraw = true (:287-293). When activity::agent(app) is None the panel draws a static 'no running agent on task N' (view/activity.rs:32-42), so a panel left open on a finished task redraws once a second forever, breaking 'an idle glimpse does no work'. Change: `let interval = if screen.app.activity_open && view::activity::agent(&screen.app).is_some() { Some(TICK) } else { screen.app.tick_interval(Instant::now()) };` (make agent pub(crate) if needed). Same function as O7(a) but independent."
+evidence = [
+    "glimpse/src/runtime.rs:258-262 activity_open forces TICK",
+    "glimpse/src/view/activity.rs:32-42 static message when no agent",
+]
+related = ["O7"]
+dedup_id = "f7929a0684b3b881"
+resolved = 2026-09-29
+resolution = "uncommitted: the 1 s tick for an open activity panel applies only while activity::agent is Some"
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "applied"
+flow = "lively-twirling-babbage"
+id = "O18"
+file = "glimpse/src/source.rs"
+line = 303
+symbol = "Source::stop"
+severity = "suggestion"
+effort = "trivial"
+category = "concurrency"
+summary = "Quitting joins the poller, blocking exit for an in-flight untimed tomlctl fetch (or forever if it hangs)"
+description = "run() calls ratatui::restore() then source.stop() (runtime.rs:84-85); shutdown sends Control::Stop and joins (source.rs:306-311), but Stop is only read between ticks, after a fetch (~0.4-0.5 s, untimed Command::output at :97-101) completes. Meanwhile the never-joined input thread may still be blocked in event::read and swallow keys typed at the restored shell (inferred, not observed). Change: add `pub(crate) fn detach(mut self) { let _ = self.control.send(Control::Stop); self.handle.take(); }` and call it at runtime.rs:85; Drop keeps its join for tests. The fetch is read-only and lockless, so an orphaned child finishes harmlessly against a closed pipe."
+evidence = [
+    "glimpse/src/runtime.rs:78-86 restore then source.stop()",
+    "glimpse/src/source.rs:303-312 shutdown joins the poller",
+    "glimpse/src/source.rs:97-101 fetch Command::output with no timeout",
+]
+instances = [
+    "glimpse/src/source.rs:Source::stop",
+    "glimpse/src/runtime.rs:run",
+]
+dedup_id = "44a9ba11a9d10e51"
+resolved = 2026-09-29
+resolution = "uncommitted: Source::detach sends Stop without joining; run() uses it; stop() now cfg(test); Drop still joins"
+
+[[vet_events]]
+timestamp = "2026-09-29T00:00:00Z"
+command = "optimise"
+agent_index = 1
+lens = "memory"
+tier = "deep"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 5 anchors confirmed (runtime.rs flows_changed, record.rs:359/278, correlate.rs read_tail, diff.rs:74, snapshot.rs:143). F1->O1, F2->O3, F3->O11, F4->O12, F5 merged into O13. Tangential WHOLE_READ_MAX dispatch loss routed to backlog."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T00:00:00Z"
+command = "optimise"
+agent_index = 2
+lens = "serialization"
+tier = "deep"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 1
+dropped_ids = ["O2"]
+rationale = 'F1 (TOMLCTL_ROOT) downgraded critical->warning: the fetch runs on the poller thread, not the UI thread; ~25-30% per fetch but no user-visible stall. Merged into O2. F2->O1, F3->O3, F4->O10 (needs-plan). Sweep Command::new\(tomlctl\) re-run: 3 hits, 2 in instances + probe_tomlctl (resolves no root, correctly excluded).'
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T00:00:00Z"
+command = "optimise"
+agent_index = 3
+lens = "queries"
+tier = "deep"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled Q1,Q2,Q5,Q6,Q7,Q10 anchors: all match (hook.rs:236, transcript.rs:163-179, main.rs:145, pane.rs:46-84, snapshot.rs:44-52). Q1->O1, Q2->O4, Q3->O2, Q4->O6, Q5->O7, Q6->O8, Q7->O5, Q8->O3, Q9->O10, Q10->O13, Q11->O11."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T00:00:00Z"
+command = "optimise"
+agent_index = 4
+lens = "algorithm"
+tier = "deep"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 1
+dropped_ids = ["O3"]
+rationale = "F1 (load_flows) downgraded critical->warning: the hook is async so the ~2.4 ms/flow scan adds latency to agents.toml updates, not a blocking user-visible cost; merged into O3. F2->O2, F3->O11, F4->O14 (ready.rs:18-19, edges.rs:98 confirmed), F5->O12."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T00:00:00Z"
+command = "optimise"
+agent_index = 5
+lens = "async"
+tier = "deep"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1,F2,F3,F4,F5,F7 anchors: runtime.rs:258/321/350, source.rs:283-290, pane.rs:46/170-222, record.rs:99-127/465, activity.rs:32-42 all match. F1->O1, F2->O15, F3->O5, F4->O16, F5->O9, F6->O7, F7->O17, F8->O18. Tangential no-reaper for dead-session Running rows routed to backlog."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T12:00:00Z"
+command = "optimise-apply"
+agent_index = 8
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "O15 read in full: poller probes once on first failed fetch (probe.take), halts on probe failure, else forwards the fetch error; once_snapshot probes on fetch error. Sound. One stale doc comment on Source::start fixed by the orchestrator."
+dedup_id = "45ca31c3315a5978"

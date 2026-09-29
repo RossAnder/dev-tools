@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-28
+last_updated = 2026-09-29
 plan_path = "docs/plans/lively-twirling-babbage.md"
 last_import_refs = [
     "accept-the-colon-inside-bold-field-label-spelling",
@@ -43,6 +43,7 @@ last_import_refs = [
     "parse-arguments-and-wire-the-subcommands",
     "document-glimpse",
     "gate-glimpse-formatting-in-pre-commit",
+    "correct-the-agents-timestamp-doc-comment",
 ]
 
 [policy]
@@ -74,7 +75,7 @@ id = 1
 ref = "accept-the-colon-inside-bold-field-label-spelling"
 title = "Accept the colon-inside-bold field label spelling"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -95,15 +96,15 @@ acceptance = '''
 - `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::parse_tasks` passes, including the 4 new tests.
 - Falsifier: on today's tree `field_re` requires `\*\*:` right after the label (`parse_tasks.rs:872`), so the `**Files:**` test fails. Confirmed by reading the regex; predicted, unverified.
 - `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- --ignored` still passes (regression guard). To see which plans use the old spelling, run `grep -rl -- '- \*\*Files:\*\*' docs/plans`; this plan also matches because its own examples quote the spelling. If one of them now surfaces an error-class finding (a dangling or cyclic edge newly imported), stop and report the plan and finding rather than editing the plan.'''
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "4bc83fd"
 
 [[items]]
 id = 2
 ref = "ignore-agent-records-and-the-glimpse-build-dir-in-git"
 title = "Ignore agent records and the glimpse build dir in git"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -115,15 +116,15 @@ deps_note = ""
 action = "Add `.claude/flows/*/agents.toml*` and `/glimpse/target/` to `.gitignore`."
 detail = "Match only agent records. Ignoring `.claude/` itself would trip doctor's `gitignore-claude` check (`tomlctl/src/flow/doctor.rs:34-36`). The trailing `*` also covers the `.sha256` sidecar."
 acceptance = "`git check-ignore -q .claude/flows/x/agents.toml && git check-ignore -q .claude/flows/x/agents.toml.sha256 && git check-ignore -q glimpse/target/x && ! git check-ignore -q .claude/flows/x/tasks.toml && echo OK` prints `OK`. Probed both ways: today it prints nothing; against a scratch repo with the two patterns it prints `OK`."
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "276629b"
 
 [[items]]
 id = 3
 ref = "add-the-agents-store-schema"
 title = "Add the agents store schema"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -152,15 +153,15 @@ detail = """
   - `open_segment(task_ids, at)`, which is a no-op when the open segment has the same set, and `close_segment(at)`.
 - Inline tests: TOML round-trip is byte-stable, enum parsing rejects unknown values, `next_id` works on an empty store and on gaps, `open_segment` is idempotent."""
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl agents::schema` reports ≥4 passed. Today the module doesn't exist, so 0 tests match (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "d9774f7"
 
 [[items]]
 id = 4
 ref = "correlate-subagents-with-flow-tasks-from-claude-codes-on-disk-state"
 title = "Correlate subagents with flow tasks from Claude Code's on-disk state"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -186,15 +187,15 @@ detail = '''
 - Module doc carries a version anchor: "Observed against Claude Code 2.1.283, 2026-09-28."
 - Unit tests use temp fixture trees: a spawn prompt, a teammate re-task where the newer message wins, a cluster with 2 ids, disagreeing slugs giving `None`, a tool_result line containing the pattern being ignored, and a path outside the tree being rejected.'''
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl agents::correlate` reports ≥6 passed. Today 0 (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "d9774f7"
 
 [[items]]
 id = 5
 ref = "join-the-execution-record-for-the-snapshot"
 title = "Join the execution record for the snapshot"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -215,15 +216,15 @@ detail = """
 - Also expose `checkpoint_facts(&view, &store) -> BTreeMap<String, (Vec<String>, Option<JsonValue>)>`, giving each checkpoint its commits and its latest `verification` entry whose `task_id` is a member (`{outcome, summary}`).
 - Inline tests: ref resolution (exact, normalised, unmatched), mapping `checkpoint_ids` for a two-checkpoint commit train (the "A+D" shape of E18 in `unified-singing-gem`), the latest verification winning."""
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::snapshot_record` reports ≥4 passed. Today 0 (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "9de79fc"
 
 [[items]]
 id = 6
 ref = "record-hook-events-into-the-agents-store"
 title = "Record hook events into the agents store"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -252,15 +253,15 @@ detail = """
 - Trim the summary to 600 chars on a char boundary. Timestamps come from `time::now_rfc3339()`.
 - Unit tests on `apply`: new start, repeat start with the same tasks (no new segment), start with new tasks (the previous segment closes), subagent stop → `stopped`, teammate stop → `idle`, idle by session+name, stop carrying a different dispatch rewrites the closing segment's `task_ids`, stop for an unknown agent with a resolvable flow → a `stopped` row, stop for an unknown agent with no flow → not recorded."""
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl agents::record` reports ≥9 passed. Today 0 (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "d9774f7"
 
 [[items]]
 id = 7
 ref = "assemble-the-task-snapshot"
 title = "Assemble the task snapshot"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -284,15 +285,15 @@ detail = """
 - The function is read-only: nothing it calls may create a file.
 - Inline tests: key order, revision stability and change, absent optional files, an in-progress row keeping its dependents in `next` rather than `blocked`."""
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl tasks::snapshot::` reports ≥4 passed. Today 0 (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "9de79fc"
 
 [[items]]
 id = 8
 ref = "add-the-agents-list-verb-and-group-dispatch"
 title = "Add the agents list verb and group dispatch"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -312,15 +313,15 @@ detail = """
 - Follow `tomlctl/src/backlog/dispatch.rs:11` for the fan-out and the integrity-arg translation (`cli::dispatch::read_integrity_opts`/`write_integrity_opts`).
 - Inline tests in `list.rs`: an absent `agents.toml` lists `[]`; a seeded one lists its rows in order."""
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl agents::list` reports ≥2 passed (today 0; predicted, unverified). `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` reports no error in `tomlctl/src/agents/` (regression guard)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "d9774f7"
 
 [[items]]
 id = 9
 ref = "wire-the-new-verbs-into-the-cli"
 title = "Wire the new verbs into the CLI"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -346,15 +347,15 @@ detail = """
 - The `TasksOp::Snapshot` arm resolves the store path via `resolve_store_path` and prints `snapshot(..)`.
 - Task 12 owns the capabilities feature-list test, so it will stay red until 12 lands."""
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl cli::dispatch::tests::lint` passes (regression guard), plus `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets` clean (regression guard). Discriminating: `cargo run -q --manifest-path tomlctl/Cargo.toml -- agents list --help` and `cargo run -q --manifest-path tomlctl/Cargo.toml -- tasks snapshot --help` both exit 0 (today: unrecognised subcommand, exit 2; predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "128ed87"
 
 [[items]]
 id = 10
 ref = "integration-test-agents-record"
 title = "Integration-test agents record"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -379,15 +380,15 @@ detail = """
   - a payload `cwd` in a subdirectory of the sandbox → the row lands in the root's `.claude/flows/<slug>/agents.toml`;
   - `agents list` output shape."""
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test agents_record` reports ≥10 passed. Today the target doesn't exist."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "07617ce"
 
 [[items]]
 id = 11
 ref = "integration-test-tasks-snapshot"
 title = "Integration-test tasks snapshot"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -407,15 +408,15 @@ Seed a store (following `READ_FIXTURE` in `tomlctl/tests/tasks_read.rs`), an exe
 - `revision` is unchanged across two runs and changes after `agents.toml` is edited, and again after `context.toml` is edited;
 - with no record and no agents file, both arrays are `[]` and no file is created."""
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test tasks_snapshot` reports ≥7 passed. Today the target doesn't exist."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "e44aa30"
 
 [[items]]
 id = 12
 ref = "release-tomlctl-0120-with-the-new-features-registered"
 title = "Release tomlctl 0.12.0 with the new features registered"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -438,15 +439,15 @@ detail = """
   - update the version pin (`:1650`).
 - In `tomlctl/README.md`: quick-tour lines (`:15-67`), rows in the Feature meanings table (`:318-369`), and the capabilities sample block (`~:257-281`): its `version`, its `"features"` array (checked by `readme_feature_transcriptions_match_capabilities_features`, `tomlctl/tests/capabilities.rs:2283`) and its `"subcommands"` array (add `agents`)."""
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes. Falsifier: `capabilities_version_matches_cargo_toml` pins the literal `0.11.0` (`tomlctl/tests/capabilities.rs:1665`, probed), so the bump fails it until the pin is updated."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "558e328"
 
 [[items]]
 id = 13
 ref = "document-the-agents-verb-group"
 title = "Document the agents verb group"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -474,15 +475,15 @@ detail = """
 - Every `tomlctl …` line in a bash fence must parse, because `command_lint` checks it.
 - Keep the reference ≤600 lines."""
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl cli::dispatch::tests` passes, and `grep -c 'references/agents.md' claude/skills/tomlctl/SKILL.md` ≥1 (today 0)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "1753880"
 
 [[items]]
 id = 14
 ref = "document-the-snapshot-verb-and-the-agents-store-writer"
 title = "Document the snapshot verb and the agents-store writer"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = "Phase A — tomlctl data layer (tomlctl/)"
 phase_depth = 3
@@ -501,15 +502,15 @@ action = """
 - In `claude/skills/flow-contract-task-store/SKILL.md`: add a `snapshot` paragraph to §5 (verb semantics), add `snapshot` to §11's read-verb list, and add one short paragraph after §11 (`:357-361`): `agents.toml` is not the task store, and its only writer is `tomlctl agents record` run by harness hooks."""
 detail = "Stay under the 500-line ceiling for the SKILL body (`wc -l claude/skills/flow-contract-task-store/SKILL.md`). The `.github/skills/**` paths are git-tracked copies reached through a junction on disk; they are listed so the commit train stages them."
 acceptance = "`cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl cli::dispatch::tests` passes, and `grep -c 'tasks snapshot' claude/skills/tomlctl/references/tasks-store.md` ≥1 (today 0)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "4111eaa"
 
 [[items]]
 id = 15
 ref = "scaffold-the-glimpse-crate"
 title = "Scaffold the glimpse crate"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase B — glimpse core (glimpse/)"
 phase_depth = 3
@@ -559,15 +560,15 @@ detail = """
 - `main.rs` declares every module (`mod view;` and `mod diagram;` use `mod.rs` files declaring their children) and has a `fn main()` that prints `glimpse: not wired yet` and exits 0. Add `#![allow(dead_code)]` at the top; task 39 removes it.
 - `Cargo.lock` is produced by the first clippy run."""
 acceptance = "`cargo clippy --manifest-path glimpse/Cargo.toml --all-targets` exits 0 (predicted, unverified: it builds). `git check-ignore -q glimpse/target/x` succeeds (depends on task 2)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "26194f3"
 
 [[items]]
 id = 16
 ref = "define-the-snapshot-model"
 title = "Define the snapshot model"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase B — glimpse core (glimpse/)"
 phase_depth = 3
@@ -589,15 +590,15 @@ detail = """
 - The fixture has 8 tasks over 3 layers with `needs` and `coupling` edges, 2 checkpoints (one carrying commits and verification `pass`), record entries of type task-completion, deviation, checkpoint and verification, and 2 agents (one running subagent on task 4; one idle teammate with two segments).
 - Expose `#[cfg(test)] pub(crate) fn fixture() -> Snapshot` in `glimpse/src/model.rs`, loading `include_str!("../tests/fixtures/snapshot.json")`; every later test (tasks 22–27, 32–34) calls it rather than re-deriving the relative path, which differs from `glimpse/src/view/` and `glimpse/src/diagram/`."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml model::` reports ≥5 passed: fixture parses, every fixture key survives a round trip, unknown key ignored, hash stable under a status change, hash changes when an edge is added (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "cb81394"
 
 [[items]]
 id = 17
 ref = "add-config-and-theme"
 title = "Add config and theme"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase B — glimpse core (glimpse/)"
 phase_depth = 3
@@ -630,15 +631,15 @@ detail = """
   - Status: pending is dim; in-progress is `#FFC799`, the full-strength accent from the shared Kanso Zen palette; done is green; failed is red; deferred is grey.
   - Also styles for selection, needs-edge highlight, coupling-edge highlight, flash, agent chip and badge."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml config::` reports ≥4 passed: defaults, partial file, malformed file gives a warning, `claude_dir_from` precedence (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "fc43ce3"
 
 [[items]]
 id = 18
 ref = "poll-the-flow-files-and-fetch-snapshots"
 title = "Poll the flow files and fetch snapshots"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase B — glimpse core (glimpse/)"
 phase_depth = 3
@@ -659,15 +660,15 @@ detail = """
 - Skip sending when `revision` equals the last one sent. A command channel accepts `SetSlug(String)`, which forces a fetch.
 - Never read integrity sidecars. A parse failure is sent as `SourceError` and retried at the next fingerprint change or after 5 s."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml source::` reports ≥4 passed: fingerprint change detected on temp files, unchanged revision suppressed, fetch error surfaces as `SourceError`, a new `.claude/flows/<slug>/tasks.toml` raises `FlowsChanged` (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "910b4f3"
 
 [[items]]
 id = 19
 ref = "discover-flows-and-pick-the-freshest"
 title = "Discover flows and pick the freshest"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase B — glimpse core (glimpse/)"
 phase_depth = 3
@@ -682,15 +683,15 @@ detail = """
 - `repo_root(cwd)` is `git rev-parse --show-toplevel`, falling back to walking up for `.claude/flows`.
 - The pure `rank(entries)` and a JSON parse fn are unit-tested."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml flows::` reports ≥3 passed (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "9720ff7"
 
 [[items]]
 id = 20
 ref = "compute-snapshot-change-sets"
 title = "Compute snapshot change sets"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase B — glimpse core (glimpse/)"
 phase_depth = 3
@@ -702,15 +703,15 @@ deps_note = ""
 action = "Implement `diff(old: &Snapshot, new: &Snapshot) -> Changes { topology_changed, status_changed: Vec<(u32, String, String)>, agents_started: Vec<String>, agents_stopped: Vec<String>, record_added: Vec<String> }`."
 detail = "Topology comes from `topology_hash`. Agents are keyed by `id`, record entries by `id`."
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml diff::` reports ≥4 passed (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "e12ceb8"
 
 [[items]]
 id = 21
 ref = "hold-app-state-and-map-keys"
 title = "Hold app state and map keys"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase B — glimpse core (glimpse/)"
 phase_depth = 3
@@ -737,15 +738,15 @@ detail = """
 - `needs_tick(now)` is true while any flash is live or any `running` agent is not stale.
 - Keys (`KeyEventKind::Release` dropped): `j/k/h/l` and arrows, `Tab`/`BackTab` for views, `Enter` for details, `o` orientation, `f` follow, `s` selector, `a` auto-flow, `t` activity, `q`/`Esc` to close an overlay or quit."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml app::` and `keys::` together report ≥7 passed: follow reselects on snapshot, manual nav pauses follow, flash expiry, `needs_tick`, a stale running agent keeps no tick alive, Release ignored, Tab cycles (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "46ef07c"
 
 [[items]]
 id = 22
 ref = "render-the-layer-view"
 title = "Render the layer view"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase B — glimpse core (glimpse/)"
 phase_depth = 3
@@ -763,15 +764,15 @@ detail = """
 - Horizontal: layers become columns of compact `◐14 title…` cells.
 - The navigator moves within the layer along the cross axis and between layers along the layer axis. Scrolling keeps the selection visible."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::layers` reports ≥5 passed: `TestBackend` renders of the fixture at 100×30 (vertical) and 160×20 (horizontal) contain every task id and the checkpoint row; gutter marks for a selected task; navigation (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "5374c8a"
 
 [[items]]
 id = 23
 ref = "render-task-details-with-markdown"
 title = "Render task details with markdown"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase B — glimpse core (glimpse/)"
 phase_depth = 3
@@ -788,15 +789,15 @@ detail = """
 - The markdown renderer handles paragraphs, nested bullet lists (indented), inline `code`, **strong**, *emphasis* and soft/hard breaks, leaving wrapping to `Paragraph::wrap`.
 - Details sections: title/status/effort/checkpoint/phase; Files; Needs, Coupling and Dependents with status glyphs; Action; Detail; Acceptance; deps note; Record (type, date, summary; deviation `original_intent`/`rationale`); Agents (type, kind, status, segments with durations, context tokens, summary)."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::markdown` and `view::details` together report ≥5 passed (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "2ac5664"
 
 [[items]]
 id = 24
 ref = "render-the-header-strip"
 title = "Render the header strip"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase B — glimpse core (glimpse/)"
 phase_depth = 3
@@ -808,15 +809,15 @@ deps_note = ""
 action = "Implement the one- or two-row header."
 detail = "Shows the slug, `flow_status`, the policy cadence, done/total counts, `⟳ follow` or `⏸ paused (+N)`, the number of running agents, and the latest flow-level record event (`status-transition` or `reconcile`). The source error or config warning appears in place of the second row."
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::header` reports ≥2 passed (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "79b5b3d"
 
 [[items]]
 id = 25
 ref = "tail-the-selected-agents-transcript"
 title = "Tail the selected agent's transcript"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase B — glimpse core (glimpse/)"
 phase_depth = 3
@@ -835,15 +836,15 @@ detail = """
 - The panel shows elapsed time since `started_at`, the last ~10 entries, and `context_tokens`.
 - Module doc carries the version anchor "Observed against Claude Code 2.1.283, 2026-09-28.""""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml transcript::` and `view::activity` together report ≥4 passed: incremental offset, partial last line held back, path outside the claude dir rejected, panel render (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "951b90e"
 
 [[items]]
 id = 26
 ref = "render-the-traversal-view"
 title = "Render the traversal view"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -858,15 +859,15 @@ detail = """
 - Vertical: needs sit above and dependents below.
 - Moving across columns focuses that column's item, which becomes the new centre on the next frame. Moving along a column walks its items."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::ego` reports ≥4 passed (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "cc60a17"
 
 [[items]]
 id = 27
 ref = "pick-a-flow-from-the-selector"
 title = "Pick a flow from the selector"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -881,15 +882,15 @@ deps_note = ""
 action = "Implement the selector overlay: flows from `flows::list`, newest first, each with status and updated date, the current one marked, and the auto-follow state shown. `Enter` emits `Action::SwitchFlow(slug)`."
 detail = ""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::selector` reports ≥2 passed (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "b501d48"
 
 [[items]]
 id = 28
 ref = "order-diagram-layers-to-reduce-crossings"
 title = "Order diagram layers to reduce crossings"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -905,15 +906,15 @@ detail = """
 - Break ties by task id, so the result is deterministic.
 - Own input types only; the module does not depend on `model`."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml diagram::order` reports ≥4 passed: a crafted two-layer graph with 2 crossings is reordered to 0; the dummy count for a span-3 edge is 2; identical output across runs; the input layer membership is preserved (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "b32333e"
 
 [[items]]
 id = 29
 ref = "assign-diagram-coordinates"
 title = "Assign diagram coordinates"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -925,15 +926,15 @@ deps_note = ""
 action = "Implement `position(&Ordered, label_width: impl Fn(u32) -> u16) -> Positions { x: HashMap<Slot, u16>, layer_extent }` using Sugiyama's priority method."
 detail = "Nodes have width `label_width` and pitch width + 2. Dummies have width 1 and pitch 2. Dummies get the highest priority so long edges stay straight. No two slots in a layer overlap."
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml diagram::position` reports ≥3 passed: no overlap, minimum spacing respected, a dummy chain shares one x where unobstructed (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "ef5f424"
 
 [[items]]
 id = 30
 ref = "resolve-junction-glyphs"
 title = "Resolve junction glyphs"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -945,15 +946,15 @@ deps_note = ""
 action = "Implement `ArmMask` (N/E/S/W bits), `CellOwners` (up to 4 owners of `(edge_group, ArmMask, dashed)`), and `glyph(&CellOwners, rounded: bool) -> char`."
 detail = "Merge the arms of owners in the same source group. For owners from different groups, draw the vertical and break the horizontal. Dashed edges use `┄`/`┆` for straight segments. Arrowhead chars are `▼ ▲ ▶ ◀`."
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml diagram::glyph` reports ≥3 passed: an exhaustive table for all 16 masks, the unrelated-crossing rule, dashed straight segments (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "2a0b2f5"
 
 [[items]]
 id = 31
 ref = "route-diagram-edges-through-inter-layer-channels"
 title = "Route diagram edges through inter-layer channels"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -972,15 +973,15 @@ detail = """
 - Each edge drops from its source, runs along its bus track, and rises into its target with an arrowhead cell.
 - `edge_cells` records every cell an edge owns, for highlighting."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml diagram::route` reports ≥4 passed: overlapping buses get distinct tracks; channel depth = tracks + 1; every edge's cells form a connected path from source to target; coupling buses are separate (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "410ff42"
 
 [[items]]
 id = 32
 ref = "paint-and-navigate-the-diagram"
 title = "Paint and navigate the diagram"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -1009,15 +1010,15 @@ acceptance = """
 - Navigation right/down reaches every task.
 
 (Predicted, unverified.)"""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "5858d7b"
 
 [[items]]
 id = 33
 ref = "compose-the-frame-and-switch-views"
 title = "Compose the frame and switch views"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -1042,15 +1043,15 @@ detail = """
 - Orientation is resolved per frame (the override, else `config.orientation`, else auto via `orientation_threshold`).
 - Installs the active view's navigator into `App`."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml view::tests` reports ≥4 passed: each view renders the fixture; details split side versus bottom by aspect; the selector overlay shows (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "76eb415"
 
 [[items]]
 id = 34
 ref = "run-the-event-loop"
 title = "Run the event loop"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -1071,15 +1072,15 @@ detail = """
   - `Resize` triggers a redraw. `SwitchFlow` sends `SetSlug`. `FlowsChanged` re-runs `flows::list` into `app.flows`; with auto-flow on, it switches when `flows::freshest` changes. Nothing else runs `flows::list`, so an idle flow costs no process spawns.
 - `render_once` draws one frame into a `TestBackend` and returns its lines as plain text, without ANSI."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml runtime::` reports ≥2 passed: `render_once` of the fixture contains the header slug and every task id; a drain-then-draw loop over a scripted channel draws once for a burst of 3 resize events (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "0adfde5"
 
 [[items]]
 id = 35
 ref = "wrap-the-herdr-cli"
 title = "Wrap the herdr CLI"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -1094,15 +1095,15 @@ detail = """
 - `PaneInfo` includes `pane_id`, `tab_id`, `label`, `cwd` and `rect` (from `pane layout`).
 - Parse functions are pure and tested on captured samples."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml herdr::` reports ≥3 passed (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "843d26f"
 
 [[items]]
 id = 36
 ref = "ensure-one-glimpse-pane-per-tab"
 title = "Ensure one glimpse pane per tab"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -1123,15 +1124,15 @@ detail = """
 5. Release the lock.
 - The pure functions `choose_direction`, `find_existing` and `launch_line` are tested."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml pane::` reports ≥6 passed: direction at 100×56 → `down`, at 240×50 → `right`; an existing labelled pane in the same tab is reused; one in another tab is ignored; a stale lock is reclaimed; `launch_line` gives a bare path for `C:/x/glimpse.exe` and a `& '…'` form for a path with a space (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "d8d0118"
 
 [[items]]
 id = 37
 ref = "handle-hook-events"
 title = "Handle hook events"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -1149,15 +1150,15 @@ detail = """
 5. Append errors, one timestamped line each, to `<claude_dir>/glimpse/hook.log` (truncated to empty when over 1 MiB). An "unknown subcommand" from an old tomlctl is logged as "tomlctl ≥0.12.0 required — cargo install --path tomlctl".
 - Never write to stdout or stderr."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml hook::` reports ≥4 passed: `decide` for start with herdr set, start without herdr, stop, and not recorded; log rotation (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "2c3ce5c"
 
 [[items]]
 id = 38
 ref = "install-hooks-and-the-herdr-keybinding"
 title = "Install hooks and the herdr keybinding"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -1185,15 +1186,15 @@ detail = """
 - Write each file atomically (a temp file in the same directory, then rename), backing it up first (`<file>.bak-glimpse-<unix-ts>`) only when the merge changed it; then run `herdr server reload-config`. `--dry-run` writes nothing and reports the planned changes.
 - Claude Code's file watcher normally applies hook edits to running sessions (hooks.md, "Disable or remove hooks"); the report says to restart Claude Code only if the hooks do not fire."""
 acceptance = '`cargo test --manifest-path glimpse/Cargo.toml setup::` reports ≥6 passed: hooks added to a settings file with unrelated keys (order kept), in exec form with `args = ["hook"]`; a second merge is a no-op; a merge over an existing shell-form `glimpse hook` entry is also a no-op; an existing SessionStart hook is untouched; the appended herdr TOML parses with `toml`; a second herdr merge is a no-op (predicted, unverified).'
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "22c7a94"
 
 [[items]]
 id = 39
 ref = "parse-arguments-and-wire-the-subcommands"
 title = "Parse arguments and wire the subcommands"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -1232,15 +1233,15 @@ detail = """
 - Every case sets `CLAUDE_CONFIG_DIR`, `GLIMPSE_CONFIG` and `APPDATA` to a temp dir, so no case reads the real config, writes the real `hook.log`, or runs the installed `tomlctl` (still 0.11.0 until the smoke check installs it).
 - `ensure-pane` without `--slug` passes `None` to `pane::ensure`."""
 acceptance = "`cargo test --manifest-path glimpse/Cargo.toml --test cli` reports ≥6 passed (predicted, unverified)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "303dec1"
 
 [[items]]
 id = 40
 ref = "document-glimpse"
 title = "Document glimpse"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -1262,15 +1263,15 @@ action = """
 - Add `glimpse/` to the root `CLAUDE.md` Sibling crates list (`CLAUDE.md:63-68`), and mention task 41's glimpse fmt step in the root `CLAUDE.md` Developer setup paragraph that lists the hook's steps."""
 detail = "Follow `.claude/rules/documentation.md`: measurements are commands, not numbers."
 acceptance = "`grep -c 'glimpse/' CLAUDE.md` ≥1 (today 0), and `test -s glimpse/README.md && test -s glimpse/CLAUDE.md` exits 0 (today 1)."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "5d52046"
 
 [[items]]
 id = 41
 ref = "gate-glimpse-formatting-in-pre-commit"
 title = "Gate glimpse formatting in pre-commit"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
 phase_depth = 3
@@ -1282,5 +1283,25 @@ deps_note = ""
 action = 'When the staged set contains a `glimpse/**/*.rs` path, run `gate cargo fmt --manifest-path "$ROOT/glimpse/Cargo.toml" -- --check` in a block after the `gate()` definition in `.githooks/pre-commit`, so a diff blocks the commit and names the rerun command. (The tomlctl fmt step above `gate()` is a bare `cargo fmt`, and already fires on any staged `*.rs`, glimpse included.)'
 detail = "This file runs unsandboxed on every commit (root `CLAUDE.md`, Supply chain), so keep the change to one guarded block and add no new executables."
 acceptance = "`grep -c 'glimpse/Cargo.toml' .githooks/pre-commit` ≥1 (today 0) and `bash -n .githooks/pre-commit` exits 0."
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "dc15786"
+
+[[items]]
+id = 42
+ref = "correct-the-agents-timestamp-doc-comment"
+title = "Correct the agents timestamp doc comment"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Phase C — diagram, herdr integration and wiring (glimpse/)"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/agents/schema.rs"]
+needs = [6]
+coupling = []
+deps_note = ""
+action = "State in the AgentRecord timestamp doc comment that record stamps every timestamp with tomlctl's own clock, not the hook's."
+detail = ""
+acceptance = """grep -c "tomlctl's own clock" tomlctl/src/agents/schema.rs is 1."""
+agent = "implement-deep"
+commit = "c348e7a"

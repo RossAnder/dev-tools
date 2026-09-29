@@ -613,3 +613,16 @@ scope = [
     ".githooks/pre-commit",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "woolly-greeting-rainbow"
+last_used = "2026-09-29T09:55:18.8571996Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/**",
+    "claude/skills/tomlctl/references/agents.md",
+    ".github/skills/tomlctl/references/agents.md",
+]

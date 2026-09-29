@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-28
+last_updated = 2026-09-29
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -3760,7 +3760,7 @@ tags = [
     "tasks",
     "import",
 ]
-status = "promoted"
+status = "resolved"
 created = 2026-09-28
 last_seen = 2026-09-28
 seen_count = 1
@@ -3770,3 +3770,424 @@ context = "field_re matches only the - **Label**: spelling. Older plans write - 
 base_sha = "97d85b1430c3a0a4c504257ec4d946270b098ddf"
 promoted = 2026-09-28
 promoted_to = "lively-twirling-babbage"
+resolved = 2026-09-29
+resolution = "resolved by flow `lively-twirling-babbage` (tasks accept-the-colon-inside-bold-field-label-spelling)"
+resolved_flow = "lively-twirling-babbage"
+resolved_tasks = ["accept-the-colon-inside-bold-field-label-spelling"]
+resolved_commits = ["4bc83fd"]
+
+[[backlog]]
+id = "B-68821249"
+kind = "direction"
+summary = "agents record has no Codex payload adapter; harness=codex returns adapter not implemented"
+area = "tomlctl/src/agents"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "68821249dc2b9a9b"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "Codex SubagentStart/SubagentStop carry near-identical fields (agent_transcript_path, last_assistant_message, turn_id) and support async hooks, so an adapter can map them onto the same Event enum in agents/record.rs. Planned follow-up of the glimpse flow."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "tomlctl agents record --harness codex maps Codex SubagentStart/SubagentStop (rust-v0.158.0 schemas); glimpse hook takes --harness and glimpse setup installs Codex hooks into CODEX_HOME/hooks.json."
+
+[[backlog]]
+id = "B-e319e3b1"
+kind = "bug"
+summary = "herdr popup keybinding command breaks when the glimpse exe path contains a space"
+area = "glimpse/src/setup.rs"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "e319e3b1fd9a8ace"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "setup writes command = '<exe> ensure-pane --focus' and herdr runs popup commands through the user's shell, so a path under Program Files fails; the default ~/.cargo/bin has no spaces. Arrived cheap-in-file but deferred: the right quoting depends on which shell herdr popups use. pane::launch_line already solves the same problem for pane run."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "setup::popup_command quotes the exe for the shell herdr popups use (cmd /d /c on Windows, sh -c on Unix). Existing broken entries are not rewritten by setup."
+
+[[backlog]]
+id = "B-f0b743fe"
+kind = "bug"
+summary = "glimpse stops ticking once every running agent is stale, so a resumed agent stays shown stale"
+area = "glimpse/src/app.rs"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "f0b743fefac652cc"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "needs_tick is false when all running agents are stale and agents.toml only changes on start/stop hooks, so nothing wakes the loop to re-check transcript mtimes. A coarse timed re-check (e.g. every 30 s while any running agent exists) would fix it."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "App::tick_interval rechecks every 30 s while any agent is running, so a resumed stale agent is noticed; idle glimpse still blocks."
+
+[[backlog]]
+id = "B-3c34612b"
+kind = "annoyance"
+summary = "traversal view cannot walk a side column past its first entry"
+area = "glimpse/src/view/ego.rs"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "3c34612b8622850c"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "The centre is always app.selected, so after crossing into the needs or dependents column only that column's first entry is reachable; along-axis moves walk the centre task's layer. Fixing it needs a trail field on App (origin task and side crossed)."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "App.trail records side crossings so moving along after a crossing walks the side column; moving back pops one crossing."
+
+[[backlog]]
+id = "B-d6cf24e5"
+kind = "bug"
+summary = "a failed rename or run after pane split leaves an unlabelled pane, so the next ensure opens a second one"
+area = "glimpse/src/pane.rs"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "d6cf24e5e93c326c"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "pane::ensure splits, renames and runs; a failure after split leaves a pane without the glimpse label that find_existing cannot see. Closing it on error needs a herdr pane close wrapper in herdr.rs."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "pane::ensure closes the freshly split pane via Herdr::close when rename or launch fails, and returns the original error."
+
+[[backlog]]
+id = "B-4a2adde1"
+kind = "bug"
+summary = "diagram can route a long edge through the column of another edge's target, so the two read as one edge"
+area = "glimpse/src/diagram"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "4a2adde1eb972e73"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "Observed in a sample render: the dummy for edge 1->8 in the middle layer shared a cross-axis column with task 7, making it look like 1->7. Connectivity tests pass; position.rs could keep dummies off target columns or route.rs could jog the bus."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "diagram position::separate_dummies keeps a long edge's dummy off columns of unrelated tasks and other edges' dummies in adjacent layers."
+
+[[backlog]]
+id = "B-5c5da7b8"
+kind = "debt"
+summary = "status glyph table and RFC 3339 parsing are duplicated across glimpse modules"
+area = "glimpse/src/view"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "5c5da7b8b9f5d0d5"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "glyph(TaskStatus) exists privately in layers.rs, details.rs and ego.rs; parse_utc exists in view/activity.rs and layers.rs beside hook::format_utc. A shared helper module would stop the copies drifting; a round-trip test pins format/parse for now."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "One TaskStatus::glyph in model.rs and one parse_utc beside format_utc in hook.rs; the view copies are gone."
+
+[[backlog]]
+id = "B-af2c5b24"
+kind = "debt"
+summary = "glimpse Theme lacks inline-code, out-edge and deferral-badge styles"
+area = "glimpse/src/theme.rs"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "af2c5b24f721ad51"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "markdown.rs hard-codes fg(ACCENT) for inline code; the diagram borrows coupling_edge for a selection's out-edges; the deferred status glyph and the deferral record badge are both the same pause glyph, so a deferred row with a deferral shows it twice."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "Theme gained inline_code, out_edge and deferral_badge styles; a Deferred row no longer shows the pause glyph twice."
+
+[[backlog]]
+id = "B-b19668cb"
+kind = "debt"
+summary = "pre-commit runs the tomlctl fmt check on glimpse-only commits and without the gate helper"
+area = ".githooks/pre-commit"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "b19668cb58b62b98"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "The tomlctl fmt step fires on any staged *.rs, so a glimpse-only commit waits on a tomlctl-wide fmt run, and a failure there prints no rerun hint unlike the gated steps. Narrowing it to tomlctl/**/*.rs and wrapping it in gate would fix both; the file runs unsandboxed so review carefully."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "pre-commit tomlctl fmt step now fires only on staged tomlctl/**/*.rs and runs under gate, so a failure prints the rerun hint."
+
+[[backlog]]
+id = "B-a7ef0518"
+kind = "debt"
+summary = "README File state contract list of read subcommands omits tasks, backlog and agents list"
+area = "tomlctl/README.md"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "a7ef051890ca03a2"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "Readers relying on --strict-read may think those verbs are not covered. Arrived cheap-in-file; deferred because no test covers that README section."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "README File state contract now lists every read verb and how each treats --strict-read, including tasks, backlog and agents list."
+
+[[backlog]]
+id = "B-6bc48e18"
+kind = "debt"
+summary = "--no-create help text names the seeded ledgers but omits tasks.toml and agents.toml"
+area = "tomlctl/src/cli/types.rs"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "6bc48e188acc620b"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "SCHEMA_SEEDED_FLOW_FILES in io.rs also seeds tasks.toml and agents.toml, so the help understates which files get a schema skeleton."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "The no-create help lists all seven seeded files (tasks.toml, agents.toml and backlog.toml were missing); strict-read help corrected too."
+
+[[backlog]]
+id = "B-ddd7141e"
+kind = "debt"
+summary = "tasks.md has no tasks snapshot flag table, contents entry or read-bundle mention"
+area = "claude/skills/tomlctl/references/tasks.md"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "ddd7141e6d07d724"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "tasks.md is the tasks group's flag reference but sits near its 600-line cap; tasks-store.md carries the snapshot section instead. A split of tasks.md would make room."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+related = ["B-3c59ed80"]
+resolved = 2026-09-29
+resolution = "Split the mutating verbs into references/tasks-write.md; tasks.md now carries the tasks snapshot flag table, contents entry and read-bundle mention."
+
+[[backlog]]
+id = "B-66309d8a"
+kind = "debt"
+summary = "view::render and the runtime both retarget the activity tail before each draw"
+area = "glimpse/src/view/mod.rs"
+tags = []
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "66309d8ac8662a0c"
+origin = "implement"
+flow = "lively-twirling-babbage"
+context = "runtime's Screen::refresh_tail now does the retarget, so the call inside view::render could be dropped, leaving rendering side-effect free."
+base_sha = "c348e7a526e3daaa4f46c3290760792bcd0ee086"
+resolved = 2026-09-29
+resolution = "view::render takes &TailState and no longer retargets; runtime's refresh_tail is the only retarget."
+
+[[backlog]]
+id = "B-cf744741"
+kind = "direction"
+summary = "density-aware layout that adapts to pane size, with manual overrides"
+area = "glimpse/src/view"
+tags = [
+    "layout",
+    "responsive",
+]
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "cf744741771e1d6e"
+origin = "user"
+flow = "lively-twirling-babbage"
+context = "User-requested umbrella. Layout today is fixed ratios: PANEL_PERCENT = 40 for the details/activity panel, beside() puts it side-by-side only when width >= 2*height, and the layers view packs every layer into the width. glimpse is meant to live in a split pane (~20% of a 1080p display, roughly 40-50 columns), where it is cramped. Want breakpoints that choose density per view (rows per task, columns shown, panel docked vs modal) aimed at readability, plus keys to override: panel size, column width or visible-layer count, compact/comfortable density, and a pinned choice that survives resizes. Child items cover the concrete symptoms."
+base_sha = "93dbb9d20051adf8da89579cba49e032cfc8982c"
+evidence = [
+    "glimpse/src/view/mod.rs:24",
+    "glimpse/src/view/mod.rs:100",
+]
+resolved = 2026-09-29
+resolution = "Density modes auto/compact/comfortable (d, config density + compact_below), resizable docked panel ([ ], panel_percent), column width keys (- =, column_max), mouse capture (mouse)."
+
+[[backlog]]
+id = "B-9d6525a8"
+kind = "direction"
+summary = "narrow panes should show task details as a modal overlay instead of a fixed side panel"
+area = "glimpse/src/view/mod.rs"
+tags = [
+    "layout",
+    "responsive",
+]
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "9d6525a8a8c9178a"
+origin = "user"
+flow = "lively-twirling-babbage"
+context = "split_body always carves a permanent 40% panel when details are open (or fullscreen replaces the view entirely). In a narrow pane that leaves too little for the tree. Below a width/height breakpoint, Enter should open details as a centred popover over the view (dismiss with Esc/q) and the tree should keep the full body and scroll; the docked panel stays for large windows."
+base_sha = "93dbb9d20051adf8da89579cba49e032cfc8982c"
+evidence = ["glimpse/src/view/mod.rs:80"]
+related = ["B-cf744741"]
+resolved = 2026-09-29
+resolution = "Compact mode draws details and activity as a centred modal over the full-width view; comfortable keeps the docked panel."
+
+[[backlog]]
+id = "B-e2458ee6"
+kind = "annoyance"
+summary = "horizontal layers view splits the width evenly across every layer, truncating task titles"
+area = "glimpse/src/view/layers.rs"
+tags = ["layout"]
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "e2458ee604195738"
+origin = "user"
+flow = "lively-twirling-babbage"
+context = "render_horizontal sets column = width / layer_count, floored at MIN_COLUMN = 18, so on a wide flow every layer is on screen at once and titles are cut to a handful of characters. Better: pick a column width from the title lengths (or a readable target like 30-40 cells), show fewer layers, and scroll horizontally to follow the selection, which the first-visible-column logic already supports. A key to widen/narrow columns covers the override."
+base_sha = "93dbb9d20051adf8da89579cba49e032cfc8982c"
+evidence = [
+    "glimpse/src/view/layers.rs:21",
+    "glimpse/src/view/layers.rs:237",
+]
+related = ["B-cf744741"]
+resolved = 2026-09-29
+resolution = "Horizontal layers columns sized to the widest task cell within column_max, only fitting layers drawn, with off-screen markers and - / = to resize."
+
+[[backlog]]
+id = "B-1eb0eeac"
+kind = "bug"
+summary = "details panel cannot be scrolled by key or mouse"
+area = "glimpse/src/view/details.rs"
+tags = ["input"]
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "1eb0eeac91b850e5"
+origin = "user"
+flow = "lively-twirling-babbage"
+context = "draw_panels passes a hard-coded scroll of 0 to details::render because App carries no scroll offset; keys.rs has no scroll bindings for the panel and the terminal never enables mouse capture, so content past the panel height is unreachable (only the fullscreen toggle helps). Needs a details_scroll field reset on selection change, PgUp/PgDn (or J/K) while details are focused, and crossterm EnableMouseCapture with wheel events routed to whichever pane the pointer is over."
+base_sha = "93dbb9d20051adf8da89579cba49e032cfc8982c"
+evidence = [
+    "glimpse/src/view/mod.rs:120",
+    "glimpse/src/keys.rs:25",
+]
+related = ["B-cf744741"]
+resolved = 2026-09-29
+resolution = "Details scroll with J/K, PgUp/PgDn, Home/End and the mouse wheel, reset on selection change, with a scrollbar; left click selects in layers and ego."
+
+[[backlog]]
+id = "B-12a30166"
+kind = "annoyance"
+summary = "vertical ego view spreads a sparse traversal across the full pane height"
+area = "glimpse/src/view/ego.rs"
+tags = ["layout"]
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "12a3016605780943"
+origin = "user"
+flow = "lively-twirling-babbage"
+context = "With vertical orientation the ego view puts the current layer in the middle and the needs/dependents text at the top and bottom edges, leaving most of the pane empty. It should size its bands to content (stack needs, centre and dependents compactly, or show more neighbours / deeper hops) rather than stretching to fill the height."
+base_sha = "93dbb9d20051adf8da89579cba49e032cfc8982c"
+evidence = ["glimpse/src/view/ego.rs:147"]
+related = [
+    "B-cf744741",
+    "B-3c34612b",
+]
+resolved = 2026-09-29
+resolution = "Ego view stacks its bands to content from the top, fills spare room with a card summary and second-hop rows, and respects density."
+
+[[backlog]]
+id = "B-d8dae134"
+kind = "annoyance"
+summary = "deviation badge marks most tasks and nothing explains what it means"
+area = "glimpse/src/view/layers.rs"
+tags = ["legend"]
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "d8dae13460717334"
+origin = "user"
+flow = "lively-twirling-babbage"
+context = "The warning badge after a task means its execution-record has at least one deviation entry (the pause badge means a deferral). On lively-twirling-babbage 32 deviations sit across 42 completions, so nearly every row carries it and it stops signalling anything; there is no legend or help overlay naming it either. Options: a help/legend key, show a count only in details, or reserve the badge for deviations marked significant."
+base_sha = "93dbb9d20051adf8da89579cba49e032cfc8982c"
+evidence = ["glimpse/src/view/layers.rs:411"]
+related = ["B-af2c5b24"]
+resolved = 2026-09-29
+resolution = "Removed the deviation badge from task rows; deviations stay listed in the details pane."
+
+[[backlog]]
+id = "B-5d16fc4b"
+kind = "bug"
+summary = "read_tail keeps only the last 1 MiB of a transcript over 4 MiB, so the dispatch prompt on line 1 drops out of latest_dispatch"
+area = "tomlctl/src/agents"
+tags = [
+    "agents",
+    "glimpse",
+]
+status = "promoted"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "5d16fc4b19d52980"
+origin = "optimise"
+flow = "lively-twirling-babbage"
+context = "correlate::read_tail reads a transcript whole only up to WHOLE_READ_MAX (4 MiB); above that it reads the last TAIL_BYTES (1 MiB). A subagent's dispatch prompt is normally its first line, so on a very long transcript latest_dispatch finds nothing and a Stop can no longer be attributed via the dispatch (task_ids empty). Largest local transcript seen 2026-09-29 was 1.97 MB, so not hit yet. Fix direction: read the first line separately (bounded) in addition to the tail. Surfaced by the /optimise memory lens; correctness, not performance, so kept out of the optimise ledger (O11 touches the same function)."
+base_sha = "25214b9df726d588be65a6a56483fd55a0907698"
+evidence = ["tomlctl/src/agents/correlate.rs:358"]
+promoted = 2026-09-29
+promoted_to = "woolly-greeting-rainbow"
+
+[[backlog]]
+id = "B-09e5fdea"
+kind = "bug"
+summary = "agents store has no reaper for Running rows whose session died without a SubagentStop"
+area = "tomlctl/src/agents"
+tags = [
+    "agents",
+    "glimpse",
+]
+status = "promoted"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "09e5fdeaf5ec6826"
+origin = "optimise"
+flow = "lively-twirling-babbage"
+context = "If a Claude Code session crashes or its terminal is killed, SubagentStop never fires and the agents.toml row stays Running forever. glimpse then keeps its 30 s wake (App::tick_interval) and shows a phantom running agent. Nothing ages such rows out. Fix needs a decision: mark rows stale when the session transcript has not grown for N minutes, or reap on the next SessionStart for that session. Distinct from optimise O9 (Start arriving after Stop), which has the same symptom."
+base_sha = "25214b9df726d588be65a6a56483fd55a0907698"
+evidence = ["tomlctl/src/agents/record.rs:99"]
+promoted = 2026-09-29
+promoted_to = "woolly-greeting-rainbow"
