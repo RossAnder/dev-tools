@@ -160,9 +160,14 @@ Both adapters read the payload's `hook_event_name`. Any other event prints
 
 | Hook event | Label | Effect |
 |---|---|---|
-| `SubagentStart` | `start` | Upserts the row on `(session_id, agent_id)` and opens a segment on the dispatched task set, closing any open one first. If the open segment already covers the same set and the row is `running`, nothing changes. Sets `running` and clears `ended_at`. Fills `agent_type`, `transcript_path`, `name` and `team` from the payload and `.meta.json`, never blanking a value an earlier event recorded. Claude Code fires this on a spawn, on a resume, and each time a teammate takes a new message, so this one path covers re-tasking a pool worker. |
+| `SubagentStart` | `start` | Upserts the row on `(session_id, agent_id)` and opens a segment on the dispatched task set, closing any open one first. If the open segment already covers the same set and the row is `running`, nothing changes. Sets `running` and clears `ended_at`. A start whose time is earlier than the `ended_at` already recorded on a `stopped` row is ignored and prints `{"recorded":false,"reason":"stale-start"}`; a resume started after the stop still reopens the row. Fills `agent_type`, `transcript_path`, `name` and `team` from the payload and `.meta.json`, never blanking a value an earlier event recorded. Claude Code fires this on a spawn, on a resume, and each time a teammate takes a new message, so this one path covers re-tasking a pool worker. |
 | `SubagentStop` | `stop` | Closes the open segment and sets `stopped` with `ended_at` for a subagent, or `idle` for a teammate — a teammate that stops is parked, not finished. Stores the summary and the context size. A stop whose agent no row holds (it outran its own start) creates the row only when its transcript's dispatch names a flow; otherwise it prints `no-flow`. |
 | `TeammateIdle` | `idle` | Finds the teammate's latest row by `(session_id, teammate_name)` — `team_name` is not matched — closes its open segment and sets `idle`. Never creates a row. |
+
+**Reaping.** Every recorded event also reaps the store it wrote to: any other `running` row
+whose transcript has not changed for an hour is set to `stopped`, with `ended_at` and its open
+segment's end at the transcript's mtime and `updated_at` at the event's time. A row with no
+`transcript_path`, or whose mtime cannot be read, is left alone.
 
 A `SubagentStart` or `SubagentStop` with an empty `agent_type` is a harness-internal agent and
 prints `{"recorded":false,"reason":"internal-agent"}` without reading anything else.
@@ -244,7 +249,7 @@ segment is left alone rather than re-attributed.
 | `event` | `start` \| `stop` \| `idle` | The [event](#events) applied. Only when `recorded`. |
 | `id` | `A<n>` | The row touched. Only when `recorded`. |
 | `task_ids` | task ids | The row's last segment's task set after the event. Only when `recorded`. |
-| `reason` | `internal-agent` \| `no-flow` \| `unknown-flow` \| `unknown-agent` \| `unsupported-event` | Why nothing was recorded. Only when not `recorded`. |
+| `reason` | `internal-agent` \| `no-flow` \| `unknown-flow` \| `unknown-agent` \| `stale-start` \| `unsupported-event` | Why nothing was recorded. Only when not `recorded`. |
 
 A `recorded: false` line exits `0` — declining an event is not an error. A malformed payload,
 an unimplemented harness, a store that fails to parse, or a lock timeout exits non-zero with
