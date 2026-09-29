@@ -96,6 +96,14 @@ pub(crate) fn apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome
             transcript_path,
             task_ids,
         } => {
+            // Hooks arrive unordered: a start older than the row's recorded
+            // stop must not reopen it. A resume, started after the stop, does.
+            if let Some(row) = store.find_mut(&session_id, &agent_id)
+                && row.status == AgentStatus::Stopped
+                && stopped_after(&row.ended_at, now)
+            {
+                return Outcome::NotRecorded("stale-start");
+            }
             if store.find_mut(&session_id, &agent_id).is_none() {
                 let id = store.next_id();
                 store.agents.push(AgentRecord {
@@ -212,6 +220,18 @@ fn close(row: &mut AgentRecord, task_ids: Option<&[u32]>, now: &str) {
         if last.task_ids != ids {
             last.task_ids = ids;
         }
+    }
+}
+
+/// Whether `ended_at` is later than `now`. Compared as instants, since the
+/// fractional-second width varies; either side unparseable reads as false.
+fn stopped_after(ended_at: &str, now: &str) -> bool {
+    match (
+        ended_at.parse::<jiff::Timestamp>(),
+        now.parse::<jiff::Timestamp>(),
+    ) {
+        (Ok(ended), Ok(now)) => ended > now,
+        _ => false,
     }
 }
 
@@ -333,6 +353,8 @@ pub(crate) fn record(
         );
     }
     let codex = harness == Harness::Codex;
+    // The event's time is when the hook fired, not after correlation waits.
+    let now = crate::time::now_rfc3339();
 
     // The repo root is resolved once per process and cached, so the hook's
     // own working directory has to be in place before anything asks for it.
@@ -462,7 +484,6 @@ pub(crate) fn record(
     };
 
     let file = schema::agents_path(&slug)?;
-    let now = crate::time::now_rfc3339();
     let today = crate::time::today_toml_date()?;
     let on_missing = io::on_missing_for(&file, write_opts.no_create)?;
     let mut outcome: Option<Outcome> = None;
@@ -632,6 +653,26 @@ mod tests {
         assert_eq!(row.summary, "Applied.");
         assert_eq!(row.context_tokens, 1234);
         assert_eq!(row.segments[0].ended_at, "t1");
+    }
+
+    #[test]
+    fn a_start_older_than_the_recorded_stop_leaves_the_row_stopped() {
+        let t0 = "2026-09-29T10:00:00.5Z";
+        let t1 = "2026-09-29T10:00:01Z";
+        let t2 = "2026-09-29T10:00:02.123456Z";
+        let mut store = AgentsStore::default();
+        apply(&mut store, stop("a1", Some(&[16])), t1);
+        let before = store.clone();
+
+        let late = apply(&mut store, start("a1", &[16]), t0);
+        assert_eq!(late, Outcome::NotRecorded("stale-start"));
+        assert_eq!(store, before);
+
+        let resume = apply(&mut store, start("a1", &[16]), t2);
+        assert!(matches!(resume, Outcome::Recorded { changed: true, .. }));
+        let row = &store.agents[0];
+        assert_eq!(row.status, AgentStatus::Running);
+        assert_eq!(row.ended_at, "");
     }
 
     #[test]
