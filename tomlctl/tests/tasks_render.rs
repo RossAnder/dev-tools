@@ -646,3 +646,49 @@ fn check_plan_refuses_a_context_naming_a_document_the_store_never_came_from() {
         "the message must name the document the store was imported from: {error}"
     );
 }
+
+const SECTIONS_PLAN: &str = include_str!("fixtures/tasks/house-plan-sections.md");
+const SECTIONS_SLUG: &str = "house-plan-sections-fixture";
+const SECTIONS_REL: &str = "docs/plans/house-plan-sections.md";
+
+/// `tasks import-plan` under the sections fixture's slug, parsed.
+fn import_sections(root: &Path) -> serde_json::Value {
+    let out = cli(root)
+        .args(["tasks", "import-plan", "--slug", SECTIONS_SLUG])
+        .write_stdin("")
+        .assert()
+        .success();
+    json_of(&String::from_utf8_lossy(&out.get_output().stdout))
+}
+
+/// A plan in the full house section order, from `## Summary` through the
+/// `## Research Notes` appendix, is already what `render` would write: the
+/// import stores every line of its `## Tasks` section, and the render moves no
+/// section and rewrites no byte. A second import of the rendered plan and a
+/// second render change nothing either, so the fixture is a fixed point.
+#[test]
+fn a_plan_in_the_full_section_order_renders_unchanged() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().canonicalize().expect("canonical root");
+    stage_tasks_flow(&root, SECTIONS_SLUG, SECTIONS_REL, None);
+    let plan = root.join(SECTIONS_REL);
+    fs::create_dir_all(plan.parent().expect("plan has a parent")).expect("plans dir");
+    fs::write(&plan, SECTIONS_PLAN).expect("plan written");
+
+    for pass in 1..=2 {
+        let envelope = import_sections(&root);
+        assert!(
+            !finding_classes(&envelope).contains(&"plan/text-unstored".to_string()),
+            "pass {pass}: the import dropped fixture text: {envelope}"
+        );
+        cli(&root)
+            .args(["tasks", "render", "--slug", SECTIONS_SLUG])
+            .write_stdin("")
+            .assert()
+            .success();
+        let written = fs::read_to_string(&plan).expect("the plan is on disk");
+        if written != SECTIONS_PLAN {
+            panic!("pass {pass}: {}", first_line_diff(&written, SECTIONS_PLAN));
+        }
+    }
+}
