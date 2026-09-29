@@ -10,6 +10,7 @@
 //! `{"recorded":false,"reason"}` when the payload names nothing to record.
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Result, bail};
 use serde_json::{Value as JsonValue, json};
@@ -221,6 +222,52 @@ fn close(row: &mut AgentRecord, task_ids: Option<&[u32]>, now: &str) {
             last.task_ids = ids;
         }
     }
+}
+
+/// How long a running agent's transcript may go unwritten before its row is
+/// taken for a dead session's and stopped.
+const REAP_AFTER: Duration = Duration::from_secs(60 * 60);
+
+/// Stop every `Running` row other than `except` (its session and agent id)
+/// whose transcript `mtime_of` last saw modified more than `idle` before
+/// `now`; it ends at that mtime. A row without a readable mtime, or an
+/// unparseable `now`, is left alone. Returns how many rows were stopped.
+fn reap(
+    store: &mut AgentsStore,
+    now: &str,
+    except: (&str, &str),
+    idle: Duration,
+    mtime_of: impl Fn(&str) -> Option<SystemTime>,
+) -> usize {
+    let Ok(now_at) = now.parse::<jiff::Timestamp>() else {
+        return 0;
+    };
+    let now_at = SystemTime::from(now_at);
+    let mut reaped = 0;
+    for row in &mut store.agents {
+        if row.status != AgentStatus::Running
+            || (row.session_id == except.0 && row.agent_id == except.1)
+            || row.transcript_path.is_empty()
+        {
+            continue;
+        }
+        let Some(mtime) = mtime_of(&row.transcript_path) else {
+            continue;
+        };
+        if !now_at.duration_since(mtime).is_ok_and(|age| age > idle) {
+            continue;
+        }
+        let Ok(ended_at) = jiff::Timestamp::try_from(mtime) else {
+            continue;
+        };
+        let ended_at = ended_at.to_string();
+        row.close_segment(&ended_at);
+        row.status = AgentStatus::Stopped;
+        row.ended_at = ended_at;
+        row.updated_at = now.to_string();
+        reaped += 1;
+    }
+    reaped
 }
 
 /// Whether `ended_at` is later than `now`. Compared as instants, since the
@@ -498,7 +545,14 @@ pub(crate) fn record(
             // same store can never mint the same one.
             let mut store = schema::from_toml(doc)?;
             let result = apply(&mut store, event, &now);
-            let persist = matches!(result, Outcome::Recorded { changed: true, .. });
+            let reaped = reap(
+                &mut store,
+                &now,
+                (session_id, agent_id),
+                REAP_AFTER,
+                |path| std::fs::metadata(path).and_then(|m| m.modified()).ok(),
+            );
+            let persist = matches!(result, Outcome::Recorded { changed: true, .. }) || reaped > 0;
             if persist {
                 store.last_updated = Some(today);
                 *doc = schema::to_toml(&store);
@@ -800,6 +854,83 @@ mod tests {
             choose_flow(Kind::Start, &flows, "other-session", "x", "", None),
             None
         );
+    }
+
+    fn at(rfc3339: &str) -> SystemTime {
+        SystemTime::from(rfc3339.parse::<jiff::Timestamp>().expect("timestamp"))
+    }
+
+    /// Three running rows `a1`..`a3` started at 09:00, one transcript each.
+    fn running_store() -> AgentsStore {
+        let mut store = AgentsStore::default();
+        for agent_id in ["a1", "a2", "a3"] {
+            apply(&mut store, start(agent_id, &[1]), "2026-09-29T09:00:00Z");
+        }
+        store
+    }
+
+    const REAP_NOW: &str = "2026-09-29T12:00:00Z";
+
+    #[test]
+    fn a_running_row_whose_transcript_went_quiet_is_reaped() {
+        let mut store = running_store();
+        let reaped = reap(
+            &mut store,
+            REAP_NOW,
+            ("s1", "a3"),
+            REAP_AFTER,
+            |path| match path {
+                "/p/agent-a1.jsonl" => Some(at("2026-09-29T10:30:00Z")),
+                "/p/agent-a2.jsonl" => Some(at("2026-09-29T11:30:00Z")),
+                _ => Some(at("2026-09-29T09:00:00Z")),
+            },
+        );
+        assert_eq!(reaped, 1);
+        let stale = &store.agents[0];
+        assert_eq!(stale.status, AgentStatus::Stopped);
+        assert_eq!(stale.ended_at, "2026-09-29T10:30:00Z");
+        assert_eq!(stale.updated_at, REAP_NOW);
+        assert_eq!(stale.segments[0].ended_at, "2026-09-29T10:30:00Z");
+        // A fresh transcript and the event's own row are both left running.
+        assert_eq!(store.agents[1].status, AgentStatus::Running);
+        assert_eq!(store.agents[2].status, AgentStatus::Running);
+        assert_eq!(store.agents[2].ended_at, "");
+    }
+
+    #[test]
+    fn a_row_without_a_readable_transcript_mtime_is_not_reaped() {
+        let mut store = running_store();
+        store.agents[1].transcript_path.clear();
+        let before = store.clone();
+        let reaped = reap(&mut store, REAP_NOW, ("s1", "none"), REAP_AFTER, |path| {
+            // An empty path must read as unreadable even where a lookup answers.
+            (path.is_empty() || path == "/p/agent-a3.jsonl").then(|| at("2026-09-29T09:00:00Z"))
+        });
+        assert_eq!(reaped, 1);
+        assert_eq!(store.agents[0], before.agents[0]);
+        assert_eq!(store.agents[1], before.agents[1]);
+        assert_eq!(store.agents[2].status, AgentStatus::Stopped);
+    }
+
+    #[test]
+    fn idle_and_stopped_rows_are_not_reaped() {
+        let mut store = AgentsStore::default();
+        apply(
+            &mut store,
+            teammate_start("a1", "worker-1", &[3]),
+            "2026-09-29T09:00:00Z",
+        );
+        apply(&mut store, stop("a1", None), "2026-09-29T09:10:00Z");
+        apply(&mut store, start("a2", &[4]), "2026-09-29T09:00:00Z");
+        apply(&mut store, stop("a2", None), "2026-09-29T09:10:00Z");
+        store.agents[0].transcript_path = "/p/agent-a1.jsonl".into();
+        store.agents[1].transcript_path = "/p/agent-a2.jsonl".into();
+        let before = store.clone();
+        let reaped = reap(&mut store, REAP_NOW, ("s1", "none"), REAP_AFTER, |_| {
+            Some(at("2026-09-29T09:00:00Z"))
+        });
+        assert_eq!(reaped, 0);
+        assert_eq!(store, before);
     }
 
     #[test]
