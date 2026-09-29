@@ -175,14 +175,29 @@ fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'stat
         }
         if store.items[index].r#ref != *new_ref {
             let previous = store.items[index].r#ref.clone();
-            // The stamp is keyed on `ref` like `last_import_refs`, so it
-            // follows the row rather than being stranded under the old key.
+            // The stamp, file notes and backlog links are keyed on `ref` like
+            // `last_import_refs`, so they follow the row rather than being
+            // stranded under the old key.
             if let Some(entry) = store
                 .import_overrides
                 .iter_mut()
                 .find(|entry| entry.r#ref == previous)
             {
                 entry.r#ref.clone_from(new_ref);
+            }
+            for note in store
+                .file_notes
+                .iter_mut()
+                .filter(|note| note.r#ref == previous)
+            {
+                note.r#ref.clone_from(new_ref);
+            }
+            for link in store
+                .backlog_links
+                .iter_mut()
+                .filter(|link| link.r#ref == previous)
+            {
+                link.r#ref.clone_from(new_ref);
             }
             store.items[index].r#ref.clone_from(new_ref);
             changed.insert("ref");
@@ -1037,6 +1052,53 @@ mod tests {
                 .to_string();
             assert!(message.contains("cycle"), "{message}");
             assert!(reload(&path).items[0].needs.is_empty());
+        });
+    }
+
+    #[test]
+    fn a_ref_rename_carries_file_notes_and_backlog_links() {
+        use crate::tasks::schema::{BacklogLink, FileNote};
+
+        with_root(|root| {
+            let path = seeded_with(root, &["src/a.rs"]);
+            store::mutate(&path, &write_args(), |store| {
+                store.file_notes.push(FileNote {
+                    r#ref: "seed-the-store".to_string(),
+                    file: "src/a.rs".to_string(),
+                    note: "(new)".to_string(),
+                });
+                store.backlog_links.push(BacklogLink {
+                    r#ref: "seed-the-store".to_string(),
+                    closes: vec!["B3".to_string()],
+                    refs: vec!["B1".to_string()],
+                });
+                Ok(())
+            })
+            .expect("the seed lands");
+
+            update(
+                &path,
+                &write_args(),
+                1,
+                UpdateFields {
+                    task_ref: Some("reseed-the-store".to_string()),
+                    ..fields()
+                },
+            )
+            .expect("the rename lands");
+
+            let store = reload(&path);
+            assert_eq!(store.file_notes.len(), 1);
+            assert_eq!(store.file_notes[0].r#ref, "reseed-the-store");
+            assert_eq!(store.backlog_links.len(), 1);
+            assert_eq!(store.backlog_links[0].r#ref, "reseed-the-store");
+            assert!(store.file_notes.iter().all(|n| n.r#ref != "seed-the-store"));
+            assert!(
+                store
+                    .backlog_links
+                    .iter()
+                    .all(|l| l.r#ref != "seed-the-store")
+            );
         });
     }
 
