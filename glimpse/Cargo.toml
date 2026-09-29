@@ -1,0 +1,35 @@
+[package]
+name = "glimpse"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+authors = ["Ross Anderson"]
+description = "Live terminal view of a flow's task graph, checkpoints and running agents, fed by tomlctl tasks snapshot"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "glimpse"
+path = "src/main.rs"
+
+[dependencies]
+# crossterm comes only through `ratatui::crossterm`, so the two cannot drift apart.
+ratatui = "0.30"
+pulldown-cmark = { version = "0.13", default-features = false }
+serde = { version = "1", features = ["derive"] }
+# `preserve_order`: settings.json merges must keep the user's key order.
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Doc-link rot is silent: a renamed item leaves every [`Link`] to it pointing at
+# nothing, and rustdoc only warns. Denied here so it fails the build instead.
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+private_intra_doc_links = "deny"
+invalid_html_tags = "deny"
