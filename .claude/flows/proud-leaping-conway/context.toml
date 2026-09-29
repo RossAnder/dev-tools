@@ -1,0 +1,32 @@
+slug = "proud-leaping-conway"
+plan_path = "docs/plans/proud-leaping-conway.md"
+status = "draft"
+created = 2026-09-29
+updated = 2026-09-29
+branch = "main"
+scope = [
+    "claude/skills/flow-contract-plan-output-format/**",
+    "claude/skills/flow-contract-plan-restructure/SKILL.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/skills/backlog-capture/SKILL.md",
+    "claude/commands/plan-new.md",
+    "claude/commands/review-plan.md",
+    "claude/commands/implement.md",
+    "claude/commands/plan-update.md",
+    "tomlctl/src/tasks/**",
+    "tomlctl/tests/**",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/proud-leaping-conway/review-ledger.toml"
+optimise_findings = ".claude/flows/proud-leaping-conway/optimise-findings.toml"
+execution_record = ".claude/flows/proud-leaping-conway/execution-record.toml"
+plan_review_findings = ".claude/flows/proud-leaping-conway/plan-review-findings.toml"
+tasks = ".claude/flows/proud-leaping-conway/tasks.toml"

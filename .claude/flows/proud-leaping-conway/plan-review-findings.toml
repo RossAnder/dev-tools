@@ -1,0 +1,217 @@
+schema_version = 1
+last_updated = 2026-09-29
+round = 1
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "risk"
+plan_section = "Rollback of created files"
+summary = "Rollback git clean deletes irreversibly on plan-note/agent-report evidence; no stash, no git-state split"
+description = "The design cleans any untracked declared path the plan marks (new) or the agent reports (new), clamped only to the task's files (which an agent can widen via `escalate … cross-cut`). The apply-rollback protocol it claims to mirror stashes first (step 2) and requires git evidence AND declaration. Scratch-repo tests (git 2.55.0): `git clean -f -- <path>` is unrecoverable; a directory entry cleans every untracked file under it (sibling in-flight new files, user scratch); `[`/`*` paths glob. Also `git restore -- <tracked> <untracked>` exits 1 and restores NOTHING, so the restore set must be `git ls-files -- <files>`, not 'not in new_files'. Fix: record which declared paths exist at dispatch; on rollback stash (`git stash push -u -m implement-rollback-<ref> -- <existing paths>`) then remove only paths untracked now, absent at dispatch, regular files, and in new_files or reported (new); pass literal pathspecs; restore the `git ls-files` set."
+dedup_id = "a26768e878cc0948"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "feasibility"
+plan_section = "Risks"
+summary = "Uncommitted plan/files-malformed work shares tasks 2, 7, 9's files and two unclaimed files; train halts, rollback can discard it"
+description = "Working tree holds uncommitted edits to tomlctl/src/tasks/parse_tasks.rs (+121), parse_policy.rs, tomlctl/tests/tasks_corpus.rs and one line in each of the three skill docs tasks 2 and 9 edit. Per-task selective staging sweeps the files-malformed feature into task 2/7/9 commits (checkpoint A's tip then names a class whose code is uncommitted; B's tip marks 4 corpus plans unparseable without the EXPECTED_UNPARSEABLE update); parse_policy.rs and tasks_corpus.rs are claimed by no task so implement.md:146 halts the train; step 6's `git restore` on task 2/7/9 would discard the work. `.github/*` symlink deletions are also unclaimed leftovers. Mitigation: commit the in-flight work before /implement; task 2 keeps the files-malformed sentence; the train treats .github/* deletions as expected."
+anchor_old = "- **Carrier prose drifts from the template.**"
+anchor_new = """
+- **Uncommitted in-flight work shares this plan's files.** The `plan/files-malformed` change (`tomlctl/src/tasks/parse_tasks.rs`, `tomlctl/src/tasks/parse_policy.rs`, `tomlctl/tests/tasks_corpus.rs`, and one line in each of the three skill docs tasks 2 and 9 edit) is uncommitted. Per-task staging would split it across checkpoints A and B, the two unclaimed files would halt the commit train, and step 6's `git restore` would discard it. Mitigation: commit it as its own change before `/implement` starts; task 2 keeps its Files-line `plan/files-malformed` sentence; the `.github/*` symlink deletions are never staged.
+- **Carrier prose drifts from the template.**"""
+dedup_id = "479b3e901d73a5db"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "warning"
+category = "completeness"
+plan_section = "5. Report file notes and change kinds from tasks show [M]"
+summary = "Task 5 breaks tasks_read.rs exact key-order test it does not list; key placement left open"
+description = "tomlctl/tests/tasks_read.rs `the_fetch_by_id_projection_carries_the_body_the_files_and_a_summary_per_dep` asserts top_level_keys == [id, files, action, detail, acceptance, deps] for `show 3 --with body,files,deps` (serde_json preserve_order). 'Always present' new_files/deleted_files break it. Add the file to Files, state key order (file_notes {} when empty, new_files, deleted_files directly after files), add guard `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_read`. Also stale: tomlctl/src/cli/types.rs ShowPart::Files doc comment ('The row's declared files list on its own') and task-store SKILL.md 'tasks show reports the first and the third' (fold into task 9)."
+anchor_old = "- **Files**: `tomlctl/src/tasks/schema.rs`, `tomlctl/src/tasks/show.rs`"
+anchor_new = "- **Files**: `tomlctl/src/tasks/schema.rs`, `tomlctl/src/tasks/show.rs`, `tomlctl/tests/tasks_read.rs` — extend the key list in `the_fetch_by_id_projection_carries_the_body_the_files_and_a_summary_per_dep`"
+dedup_id = "25734f99ac3e338f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "warning"
+category = "feasibility"
+plan_section = "Verification Commands"
+summary = "Checkpoint commands skip the integration binaries tasks 5 and 8 affect"
+description = "implement.md:100 runs checkpoint: commands in place of build/test; the plan's are --bin tomlctl only, and the hook runs only cli::dispatch::tests. tasks_read (P3), tasks_render (task 8) and tasks_import are first run at Phase 3, after B and C commit."
+anchor_old = "checkpoint: cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl --no-fail-fast -- tasks:: cli::dispatch::tests"
+anchor_new = """
+checkpoint: cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl --no-fail-fast -- tasks:: cli::dispatch::tests
+checkpoint: cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast --test tasks_read --test tasks_render --test tasks_import"""
+dedup_id = "20b1ba2300a28570"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "feasibility"
+plan_section = "7. Warn on an id anchor in a task heading [S]"
+summary = "New class undocumented until task 9 fails finding_classes gate in sibling guards; move table rows into task 7"
+description = "finding_classes.rs documented_finding_classes_match_the_source reports '`{class}` is emitted but has no table row' against flow-contract-task-store/SKILL.md and tomlctl/references/tasks.md. Between task 7 and task 9 landing, the cli::dispatch::tests guards of tasks 2, 10, 11 (and checkpoint A's gate if drained in that window) go red on files they don't own. Move the two plan/heading-anchor rows into task 7 (3 files, retag [M]); task 9 keeps the show-field and rename docs and still depends on 7."
+dedup_id = "af2685df57dbbee7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "executability"
+plan_section = "12. Define the implementer preamble and run success and rollback steps in /implement [L]"
+summary = "Task 12 reads new_files from a fetch only the sub-agent makes"
+description = "implement.md:92 — the prompt carries the id and the command; the implementer runs `tasks show --with body,files,deps`. Step 6 runs in the orchestrator, which never sees that JSON. Step 6 must fetch it itself and read a missing key (installed tomlctl older than task 5) as empty. Add guard `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- cli::dispatch::tests` (command_lint scans implement.md)."
+anchor_old = "The `new_files` array comes from the `tasks show … --with files` fetch the dispatch already makes."
+anchor_new = "Step 6 fetches `new_files` itself with `tomlctl tasks show <id> --slug <slug> --with files` (the dispatch-time fetch is the sub-agent's, so its output never reaches the orchestrator), and reads a missing key (an installed `tomlctl` older than task 5) as an empty array."
+dedup_id = "c256c7cc9b5dd31c"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "executability"
+plan_section = "Verification Commands"
+summary = "success: commands judged by exit code only; the plan's two success: lines cannot fail"
+description = "verification.md: outcome comes from EXIT= only. `grep -cE …` exits 0 at counts 1-3; `tasks show … --with files` exits 0 with no new_files key (checked on installed 0.12.0). Task 2's optional-keys entry must state success: commands exit non-zero when the criterion fails, and say whether apply flows (apply-pipeline Step 5a) run them. Also rewrite the second line to test for the new_files membership."
+anchor_old = """
+success: grep -cE '^## (Summary|Success Criteria|After Merge|Exploration Notes)$' claude/skills/flow-contract-plan-output-format/SKILL.md
+success: cargo run -q --manifest-path tomlctl/Cargo.toml -- tasks show 1 --slug proud-leaping-conway --with files"""
+anchor_new = '''
+success: test "$(grep -cE '^## (Summary|Success Criteria|After Merge|Exploration Notes)$' claude/skills/flow-contract-plan-output-format/SKILL.md)" -eq 4
+success: cargo run -q --manifest-path tomlctl/Cargo.toml -- tasks show 1 --slug proud-leaping-conway --with files | tr -d ' \r\n' | grep -qF '"new_files":["claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md"]''''
+dedup_id = "87b50d2e4953a6c5"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "completeness"
+plan_section = "9. Document the show fields, rename carry-over and anchor warning [M]"
+summary = "Task 6 reverses a documented rule stated at six sites; task 9 appends rather than rewrites and misses four"
+description = "Sites saying `tasks update --ref` leaves side tables alone or naming only the stamp: task-store SKILL.md §1 Backlog paragraph ('leave it alone') and §5a ('--ref carries the stamp', 'tasks show reports the first and the third'); tomlctl/references/tasks.md backlog paragraph ('leave links in place until the next import'); references/tasks-store.md:68-69; references/tasks-write.md:177; references/backlog-reconcile.md:44. Task 9 must rewrite (not add) these, so either widen its Files (tasks-write.md at least) or add an S task for tasks-store.md, tasks-write.md, backlog-reconcile.md depending on 6, inside checkpoint B; widen flow scope."
+anchor_old = "State in both files that `tasks update --ref` re-keys file notes and backlog links."
+anchor_new = "Rewrite, in both files, the sentences that say `tasks update --ref` leaves backlog links in place or carries only the stamp, so they say it re-keys file notes and backlog links too; do the same for `tasks show`'s side-table sentence."
+dedup_id = "9896d33e1663ba31"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "risk"
+plan_section = "File notes in the store"
+summary = "First-word classifier marks additions to existing files as new; 'first' vs 'leading' parenthetical inconsistent"
+description = "Corpus notes like `lumina/src/domain.rs` (new `Shape` enum …), `(new thread)`, `(new fns; …)`, `(new §o …)` describe additions to existing files; 9 such false positives vs 293 true across docs/plans. Approach says 'first parenthetical' (anywhere), task 5 'leading', Template 'opening with (new)'. Require the note to open with the parenthetical and `new` to close it or be followed by , ; : or a dash; replace the (new stub file) test case with a negative (new thread) case."
+anchor_old = "its first word, case-insensitive, is `new` (→ new) or `delete`/`deleted` (→ delete). `(new stub file)`, `(NEW)` and `(new, generated)` all count as new."
+anchor_new = "its first word, case-insensitive, is `new` (→ new) or `delete`/`deleted` (→ delete), and that word closes the parenthetical or is followed by `,`, `;`, `:` or a ` —` dash. Only a note that opens with the parenthetical is classified. `(NEW)`, `(new — generated)` and `(new, generated)` count as new; `(new thread)` and `(new `Shape` enum …)` describe an addition to an existing file and do not."
+dedup_id = "e2d3530f233614e4"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "completeness"
+plan_section = "Template"
+summary = "New guard: label is not mapped onto the (regression guard) tag the probe sweeps honour"
+description = "review-plan.md:105 rates a forward criterion that already holds critical-vacuous unless tagged `(regression guard)`; plan-new.md:113 and the verdict table task 1 moves use the same tag. None of tasks 1, 10, 11 says `guard:` is that tag's new spelling, so every guard: line would be flagged critical."
+anchor_old = "with `today: <value>` on a forward criterion. A single criterion may stay inline."
+anchor_new = "with `today: <value>` on a forward criterion. A single criterion may stay inline. `guard:` is the `(regression guard)` tag's new spelling: the verdict table and both probe sweeps accept either, and a guard still needs a `forward:` or `falsifier:` beside it (tasks 1, 10, 11)."
+dedup_id = "28ba07c92d6ccb91"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "executability"
+plan_section = "11. Teach /review-plan the new sections [M]"
+summary = "'Created before this format' has no detection rule"
+description = "The executor must invent the test. The dropped **Status** header is a date-free marker, present in 67 of 77 files under docs/plans/."
+anchor_old = "A plan created before this format is judged minor for the absence."
+anchor_new = "A plan that still carries a `**Status**` header line predates this format, and the absence is judged minor for it; write that test into the lens text."
+dedup_id = "dc5949adcfb9e32d"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "suggestion"
+category = "executability"
+plan_section = "9. Document the show fields, rename carry-over and anchor warning [M]"
+summary = "Two-file grep -c prints path:count lines, and an exact 1 fails a doc naming the class twice"
+description = "Probe: prints `claude/skills/flow-contract-task-store/SKILL.md:0` / `…/tasks.md:0`; the sibling plan/heading-too-deep already counts 2 in SKILL.md."
+anchor_old = "prints `1` for each file (today: `0`, `0`)."
+anchor_new = "prints `<path>:N` for each file with N ≥ 1 (today: both `:0`)."
+dedup_id = "f29466e729271ec7"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "suggestion"
+category = "executability"
+plan_section = "8. Pin the full section order through import and render [M]"
+summary = "Pattern pointers in tasks 8, 7, 5 send the agent to the wrong place"
+description = "Task 8: tasks_render.rs stage() seeds the committed house-plan store; the import-then-render pattern is `a_files_annotation_survives_the_plan_to_plan_round_trip` in tomlctl/tests/tasks_import.rs (stage with None). Task 7: numbered headings land in the Some(task) arm of open_heading in parse_tasks_at, not where phase-label findings are pushed. Task 5: every_pattern_compiles lists only parse_tasks.rs/parse_policy.rs regexes, so a schema.rs regex is uncovered — classify with string ops."
+anchor_old = "Follow the sandbox pattern of the existing golden test in `tomlctl/tests/tasks_render.rs` (`a_render_matches_the_golden_rendered_plan`)."
+anchor_new = "Stage with `stage_tasks_flow(&root, SLUG, PLAN_REL, None)` (no seeded store) and import then render as `a_files_annotation_survives_the_plan_to_plan_round_trip` in `tomlctl/tests/tasks_import.rs` does; the `tasks_render.rs` `stage()` helper seeds the house-plan store and must not be reused."
+dedup_id = "111853149c56dfd1"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "suggestion"
+category = "executability"
+plan_section = "10. Teach /plan-new the new sections [M]"
+summary = "Phase 4 writes User Decisions after the appended notes; task 10 doesn't say where it goes"
+description = "plan-new.md:82 persists ## User Decisions in Phase 4, after Phase 2/3 append the notes at the end."
+anchor_old = "  - Phase 7 lists the new section order (`:109`) and writes `## Summary` last but places it first."
+anchor_new = "  - Phase 4 inserts `## User Decisions` above `## Exploration Notes`, not at the file's end. Phase 7 lists the new section order (`:109`), writes the document in that order with both notes sections kept verbatim at the end, and writes `## Summary` last but places it first."
+dedup_id = "61c69ba3810ccc9f"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "suggestion"
+category = "completeness"
+plan_section = "Template"
+summary = "Unauthored Checkpoint after bullet makes every new-format plan report render/drift until something renders"
+description = "render.rs always emits the bullet; this plan already drifts (`tasks check --plan`: Execution Policy, Dependency Graph). Have /plan-new Phase 9 run `tomlctl tasks render --slug <slug>` once after a clean import (task 10)."
+anchor_old = "The markers are the source and `render` derives the bullet."
+anchor_new = "The markers are the source and `render` derives the bullet; `/plan-new` Phase 9 runs `tomlctl tasks render --slug <slug>` once after a clean import (task 10), so the derived bullet lands before `/review-plan` and `/implement` read the plan."
+dedup_id = "d7846941a8c91144"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "suggestion"
+category = "completeness"
+plan_section = "13. Carry the new sections through plan restructuring [M]"
+summary = "/plan-update reformat Agent 1 inventory omits the four new sections"
+description = "plan-update.md:161 enumerates content classes for extraction; task 13 edits only Step 3 item 3."
+anchor_old = '  - In `claude/commands/plan-update.md` Step 3 item 3, scope the "Last updated" refresh to `RESEARCH-NOTES.md`, the one document whose format carries that line.'
+anchor_new = """
+  - In `claude/commands/plan-update.md` Step 3 item 3, scope the "Last updated" refresh to `RESEARCH-NOTES.md`, the one document whose format carries that line.
+  - In the same file's reformat Agent 1 inventory, add `## Summary`, `## Success Criteria`, `## After Merge` and `## Exploration Notes` to the enumerated content classes."""
+dedup_id = "8402bb00ef94b3e3"

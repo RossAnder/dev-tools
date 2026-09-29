@@ -626,3 +626,25 @@ scope = [
     "claude/skills/tomlctl/references/agents.md",
     ".github/skills/tomlctl/references/agents.md",
 ]
+
+[[active]]
+slug = "proud-leaping-conway"
+last_used = "2026-09-29T13:26:57.9973623Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "claude/skills/flow-contract-plan-output-format/**",
+    "claude/skills/flow-contract-plan-restructure/SKILL.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/skills/backlog-capture/SKILL.md",
+    "claude/commands/plan-new.md",
+    "claude/commands/review-plan.md",
+    "claude/commands/implement.md",
+    "claude/commands/plan-update.md",
+    "tomlctl/src/tasks/**",
+    "tomlctl/tests/**",
+    "CLAUDE.md",
+]
