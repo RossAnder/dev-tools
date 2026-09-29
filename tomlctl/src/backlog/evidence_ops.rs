@@ -499,9 +499,8 @@ fn ignored_set(root: &Path, paths: &[PathBuf]) -> Option<BTreeSet<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{git_available, shipped_gitignore};
+    use crate::test_support::{git_available, git_command, shipped_gitignore};
     use std::fs;
-    use std::process::Command;
 
     /// The shared `RootGuard` plus the per-drop-box path helpers this module's
     /// tests need. The guard has to outlive the test body rather than a
@@ -528,10 +527,7 @@ mod tests {
         fn with_gitignore(gitignore: &str) -> Self {
             let guard = crate::test_support::RootGuard::new();
             fs::write(guard.root().join(".gitignore"), gitignore).unwrap();
-            let _ = Command::new("git")
-                .args(["init", "-q", "."])
-                .current_dir(guard.root())
-                .output();
+            let _ = git_command(guard.root()).args(["init", "-q", "."]).output();
             Self { guard }
         }
 
@@ -584,11 +580,7 @@ mod tests {
         }
 
         fn git(&self, args: &[&str]) {
-            let out = Command::new("git")
-                .args(args)
-                .current_dir(self.root())
-                .output()
-                .unwrap();
+            let out = git_command(self.root()).args(args).output().unwrap();
             assert!(out.status.success(), "git {args:?} failed: {out:?}");
         }
     }

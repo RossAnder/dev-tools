@@ -84,25 +84,35 @@ pub(crate) fn with_root<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
     f(guard.root())
 }
 
+/// A `git` command run in `dir`, stripped of the discovery variables a git
+/// hook exports. Without that, a suite run from inside a hook would have
+/// every fixture `git init` or `git add` land in the outer repository.
+#[cfg(test)]
+pub(crate) fn git_command(dir: &Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new("git");
+    cmd.current_dir(dir)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_COMMON_DIR")
+        .env_remove("GIT_OBJECT_DIRECTORY");
+    cmd
+}
+
 /// Tests that shell out to git return early when this is false, rather than
 /// failing on a machine without it.
 #[cfg(test)]
 pub(crate) fn git_available() -> bool {
-    std::process::Command::new("git")
+    git_command(Path::new("."))
         .arg("--version")
         .output()
         .is_ok_and(|o| o.status.success())
 }
 
-/// Run `git -C <root> <args>`, failing the test on a non-zero exit.
+/// Run `git <args>` in `root`, failing the test on a non-zero exit.
 #[cfg(test)]
 pub(crate) fn git(root: &Path, args: &[&str]) {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()
-        .unwrap();
+    let out = git_command(root).args(args).output().unwrap();
     assert!(
         out.status.success(),
         "git {} failed: {}",
@@ -162,3 +172,55 @@ pub(crate) fn shipped_gitignore() -> &'static str {
 /*
 <!-- SHARED-BLOCK:shipped-gitignore END -->
 */
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Restores `GIT_DIR` to what it was, including during an unwind, so a
+    /// failed assertion cannot leave later git-spawning tests pointed at a
+    /// deleted directory.
+    struct GitDirGuard(Option<std::ffi::OsString>);
+
+    impl Drop for GitDirGuard {
+        fn drop(&mut self) {
+            // SAFETY: set_var/remove_var are unsafe in edition 2024;
+            // acceptable because the env lock is held for the guard's life.
+            unsafe {
+                match self.0.take() {
+                    Some(prior) => std::env::set_var("GIT_DIR", prior),
+                    None => std::env::remove_var("GIT_DIR"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn git_command_ignores_an_inherited_git_dir() {
+        if !git_available() {
+            return;
+        }
+        let _lock = env_lock();
+        let decoy = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let inherited = decoy.path().join("inherited.git");
+        let status = {
+            let _restore = GitDirGuard(std::env::var_os("GIT_DIR"));
+            // SAFETY: set_var is unsafe in edition 2024; acceptable while the
+            // env lock above is held.
+            unsafe {
+                std::env::set_var("GIT_DIR", &inherited);
+            }
+            git_command(target.path())
+                .args(["init", "-q", "."])
+                .status()
+                .unwrap()
+        };
+        assert!(status.success(), "git init failed: {status:?}");
+        assert!(
+            target.path().join(".git").is_dir(),
+            "git init wrote into the inherited GIT_DIR instead of the target"
+        );
+        assert!(!inherited.exists(), "the inherited GIT_DIR was initialised");
+    }
+}

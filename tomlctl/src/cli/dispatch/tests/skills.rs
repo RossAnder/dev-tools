@@ -150,7 +150,7 @@ fn run_shell_gate(repo_root: &Path, cwd: &Path, manifest: Option<&str>) -> Resul
     }
     // MSYS bash reads a backslash as an escape, so hand it the slash form.
     let script = script_path.to_string_lossy().replace('\\', "/");
-    let git_exec_path = Command::new("git")
+    let git_exec_path = crate::test_support::git_command(cwd)
         .arg("--exec-path")
         .output()
         .ok()
@@ -355,9 +355,8 @@ fn both_gates_reject_a_cr_marker_and_an_empty_span() {
 
         // The shell verifier resolves its paths from the git top level, so the
         // fixture needs to be one.
-        let inited = Command::new("git")
+        let inited = crate::test_support::git_command(&case_dir)
             .args(["init", "-q", "."])
-            .current_dir(&case_dir)
             .status()
             .map(|s| s.success())
             .unwrap_or(false);
