@@ -136,6 +136,11 @@ impl Herdr {
             .map(drop)
     }
 
+    pub fn close(&self, pane_id: &str) -> Result<(), String> {
+        self.exec(&["pane".into(), "close".into(), pane_id.into()])
+            .map(drop)
+    }
+
     /// Types `command` plus Enter into the pane's shell; it spawns no process itself.
     pub fn run(&self, pane_id: &str, command: &str) -> Result<(), String> {
         self.exec(&["pane".into(), "run".into(), pane_id.into(), command.into()])

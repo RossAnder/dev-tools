@@ -54,10 +54,26 @@ pub(crate) fn ensure(
 
     let direction = choose_direction(herdr.layout(origin_pane)?, config.split_threshold);
     let pane_id = herdr.split(origin_pane, direction, config.pane_ratio as f32, cwd)?;
-    herdr.rename(&pane_id, PANE_LABEL)?;
-    let exe = std::env::current_exe().map_err(|e| format!("cannot locate glimpse: {e}"))?;
-    herdr.run(&pane_id, &launch_line(&exe.to_string_lossy(), slug))?;
+    if let Err(e) = label_and_launch(herdr, &pane_id, slug) {
+        return Err(discard_pane(e, || herdr.close(&pane_id)));
+    }
     Ok(PaneOutcome::Created { pane_id, direction })
+}
+
+fn label_and_launch(herdr: &Herdr, pane_id: &str, slug: Option<&str>) -> Result<(), String> {
+    herdr.rename(pane_id, PANE_LABEL)?;
+    let exe = std::env::current_exe().map_err(|e| format!("cannot locate glimpse: {e}"))?;
+    herdr.run(pane_id, &launch_line(&exe.to_string_lossy(), slug))
+}
+
+/// Closes a pane whose set-up failed and returns `err`, noting a failed close. An
+/// unlabelled pane is invisible to `find_existing`, so leaving it would make the next
+/// `ensure` split a second one.
+fn discard_pane(err: String, close: impl FnOnce() -> Result<(), String>) -> String {
+    match close() {
+        Ok(()) => err,
+        Err(close_err) => format!("{err} (closing the new pane also failed: {close_err})"),
+    }
 }
 
 /// Best-effort: any herdr failure or a non-adjacent pane yields `false`, never an error.
@@ -287,6 +303,21 @@ mod tests {
             launch_line("C:/it's/glimpse.exe", None),
             "& 'C:/it''s/glimpse.exe'"
         );
+    }
+
+    #[test]
+    fn a_failed_set_up_closes_the_pane_and_keeps_the_original_error() {
+        let mut closed = false;
+        let err = discard_pane("rename failed".to_string(), || {
+            closed = true;
+            Ok(())
+        });
+        assert!(closed);
+        assert_eq!(err, "rename failed");
+
+        let err = discard_pane("run failed".to_string(), || Err("no such pane".to_string()));
+        assert!(err.starts_with("run failed"), "{err}");
+        assert!(err.contains("no such pane"), "{err}");
     }
 
     #[test]
