@@ -105,6 +105,34 @@ pub(crate) fn latest_dispatch(path: &Path) -> Option<Dispatch> {
     dispatch_in(&read_tail(path)?, user_text)
 }
 
+/// [`latest_dispatch`] and the context size at the last assistant turn, from
+/// one read of `path`, for a stop that needs both.
+pub(crate) fn dispatch_and_tokens(path: &Path) -> (Option<Dispatch>, u64) {
+    dispatch_and_tokens_with(path, user_text, tokens_in)
+}
+
+/// [`dispatch_and_tokens`] over a Codex rollout.
+pub(crate) fn codex_dispatch_and_tokens(path: &Path) -> (Option<Dispatch>, u64) {
+    dispatch_and_tokens_with(path, codex_user_text, codex_tokens_in)
+}
+
+fn dispatch_and_tokens_with(
+    path: &Path,
+    prompt_of: fn(&str) -> Option<String>,
+    tokens_of: fn(&str) -> u64,
+) -> (Option<Dispatch>, u64) {
+    let present = wait_for_file(path, RETRY_ATTEMPTS);
+    let Some(text) = read_tail(path) else {
+        return (None, 0);
+    };
+    let dispatch = if present {
+        dispatch_in(&text, prompt_of)
+    } else {
+        None
+    };
+    (dispatch, tokens_of(&text))
+}
+
 /// Resolve a Codex agent's rollout from the payload path naming it. Codex
 /// keeps rollouts under `<CODEX_HOME>/sessions/YYYY/MM/DD/`, so a child
 /// spawned past midnight sits outside its parent's directory; containment is
@@ -279,12 +307,13 @@ fn meta_with(path: &Path, attempts: u32) -> Meta {
     }
 }
 
-/// The context size at the agent's last assistant turn: the sum of that
-/// line's input, cache-read, cache-creation and output token counts.
-pub(crate) fn context_tokens(path: &Path) -> u64 {
+#[cfg(test)]
+fn context_tokens(path: &Path) -> u64 {
     read_tail(path).map_or(0, |text| tokens_in(&text))
 }
 
+/// The context size at the agent's last assistant turn: the sum of that
+/// line's input, cache-read, cache-creation and output token counts.
 fn tokens_in(text: &str) -> u64 {
     for line in text.lines().rev() {
         if !line.contains("\"assistant\"") || !line.contains("\"usage\"") {
@@ -314,10 +343,6 @@ fn tokens_in(text: &str) -> u64 {
 
 /// The context size at a Codex agent's last response: that response's
 /// `total_tokens`, whose input count already includes the cached tokens.
-pub(crate) fn codex_context_tokens(path: &Path) -> u64 {
-    read_tail(path).map_or(0, |text| codex_tokens_in(&text))
-}
-
 fn codex_tokens_in(text: &str) -> u64 {
     for line in text.lines().rev() {
         if !line.contains("token_") {
@@ -361,12 +386,18 @@ fn read_tail(path: &Path) -> Option<String> {
     let mut bytes = Vec::new();
     if len <= WHOLE_READ_MAX {
         file.take(WHOLE_READ_MAX + 1).read_to_end(&mut bytes).ok()?;
-        return Some(String::from_utf8_lossy(&bytes).into_owned());
+        return Some(into_text(bytes));
     }
     file.seek(SeekFrom::Start(len - TAIL_BYTES)).ok()?;
     file.take(TAIL_BYTES).read_to_end(&mut bytes).ok()?;
     let start = memchr::memchr(b'\n', &bytes).map_or(bytes.len(), |i| i + 1);
-    Some(String::from_utf8_lossy(&bytes[start..]).into_owned())
+    bytes.drain(..start);
+    Some(into_text(bytes))
+}
+
+/// Take the buffer as text without copying it when it is valid UTF-8.
+fn into_text(bytes: Vec<u8>) -> String {
+    String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
 }
 
 /// Read a file expected to be small, or nothing. The cap binds the bytes

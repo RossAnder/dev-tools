@@ -378,11 +378,12 @@ pub(crate) fn record(
     let agent_id = field(payload, "agent_id");
     let name = field(payload, "teammate_name");
     let root = io::repo_or_cwd_root()?;
-    let flows = load_flows(&root);
+    let idle_flows = (kind == Kind::Idle).then(|| load_flows(&root));
 
     let transcript: Option<PathBuf> = match kind {
-        Kind::Idle => flows
+        Kind::Idle => idle_flows
             .iter()
+            .flatten()
             .flat_map(|(_, store)| store.agents.iter())
             .filter(|row| !name.is_empty() && row.session_id == session_id && row.name == name)
             .max_by(|a, b| a.updated_at.cmp(&b.updated_at))
@@ -410,11 +411,18 @@ pub(crate) fn record(
             )
         }
     };
-    let dispatch = transcript.as_deref().and_then(if codex {
-        correlate::codex_latest_dispatch
-    } else {
-        correlate::latest_dispatch
-    });
+    let (dispatch, stop_tokens) = match (kind, transcript.as_deref()) {
+        (_, None) => (None, 0),
+        (Kind::Stop, Some(path)) if codex => correlate::codex_dispatch_and_tokens(path),
+        (Kind::Stop, Some(path)) => correlate::dispatch_and_tokens(path),
+        (_, Some(path)) if codex => (correlate::codex_latest_dispatch(path), 0),
+        (_, Some(path)) => (correlate::latest_dispatch(path), 0),
+    };
+    // A start that names its flow never consults the other stores.
+    let flows = match (kind, &dispatch) {
+        (Kind::Start, Some(_)) => Vec::new(),
+        _ => idle_flows.unwrap_or_else(|| load_flows(&root)),
+    };
 
     let Some(slug) = choose_flow(kind, &flows, session_id, agent_id, name, dispatch.as_ref())
     else {
@@ -444,13 +452,6 @@ pub(crate) fn record(
         (_, Some(_)) if codex => correlate::Meta::default(),
         (_, Some(path)) => correlate::meta(path),
     };
-    let context_tokens = |path: &Path| {
-        if codex {
-            correlate::codex_context_tokens(path)
-        } else {
-            correlate::context_tokens(path)
-        }
-    };
     let event = match kind {
         Kind::Start => Event::Start {
             harness,
@@ -472,7 +473,7 @@ pub(crate) fn record(
             name: meta.name,
             team: meta.team,
             summary: field(payload, "last_assistant_message").to_string(),
-            context_tokens: transcript.as_deref().map_or(0, context_tokens),
+            context_tokens: stop_tokens,
             transcript_path,
             task_ids,
         },
