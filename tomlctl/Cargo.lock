@@ -712,6 +712,7 @@ dependencies = [
  "clap",
  "globset",
  "jiff",
+ "libc",
  "memchr",
  "mimalloc",
  "predicates",
@@ -721,6 +722,7 @@ dependencies = [
  "shell-words",
  "tempfile",
  "toml",
+ "windows-sys",
 ]
 
 [[package]]

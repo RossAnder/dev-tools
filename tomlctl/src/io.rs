@@ -1331,8 +1331,9 @@ pub(crate) fn with_shared_lock<R>(path: &Path, f: impl FnOnce() -> Result<R>) ->
 ///      ancestor lies under `<root>/.claude/`, create the missing
 ///      intermediates (mkdir -p, bounded by the containment root).
 ///   2. Canonicalise the target (parent if file doesn't exist yet).
-///   3. Find the git top-level via `git rev-parse --show-toplevel`.
-///      Fall back to CWD if git is missing or we're not inside a repo.
+///   3. Find the repo root via `repo_or_cwd_root`: `TOMLCTL_ROOT`, else the
+///      in-process walk, else `git rev-parse --show-toplevel` when the walk
+///      defers, else the CWD.
 ///   4. Assert canonical target lies under `<root>/.claude/`.
 pub(crate) fn guard_write_path(file: &Path, allow_outside: bool) -> Result<()> {
     if !allow_outside {
@@ -1544,11 +1545,13 @@ fn refuse_outside_symlink_leaf(path: &Path) -> Result<()> {
 ///      does not exist. Intended for tests, chroots, and unusual layouts where
 ///      neither the git top-level nor the CWD is the right anchor. Checked on
 ///      EVERY call so tests can swap it in/out under `env_lock()`.
-///   2. `git rev-parse --show-toplevel` output, canonicalised. Memoised
-///      in a process-lifetime `OnceLock` so repeated CLI dispatches don't fork
-///      `git` more than once.
-///   3. Current working directory, canonicalised. Also memoised (same cache
-///      slot — the resolved anchor is deterministic for a given process).
+///   2. The in-process walk from the cwd (`discover` in `repo_root`), which finds
+///      the top level git would print without spawning it.
+///   3. `git rev-parse --show-toplevel`, canonicalised, whenever the walk
+///      defers to git because it could disagree with it.
+///   4. Current working directory, canonicalised, outside any repo or when
+///      git fails. Steps 2-4 resolve once per process into one `OnceLock`
+///      slot, lazily, so a caller may change directory before the first call.
 pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
     // Env override is always live — never cached, so a test flipping
     // TOMLCTL_ROOT sees the new value on the next call.
@@ -1560,14 +1563,27 @@ pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
             .canonicalize()
             .with_context(|| format!("canonicalising TOMLCTL_ROOT={}", env_root));
     }
-    // Cache git-or-cwd resolution per process. The first call resolves
+    // Cache the walk/git/cwd resolution per process. The first call resolves
     // it; every subsequent call hits the OnceLock fast path.
     static REPO_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     if let Some(cached) = REPO_ROOT.get() {
         return Ok(cached.clone());
     }
     let cwd = std::env::current_dir().context("reading current working directory")?;
-    let resolved = match std::process::Command::new("git")
+    let resolved = match crate::repo_root::discover(&cwd, |k| std::env::var_os(k).is_some()) {
+        crate::repo_root::Discovery::Root(root) => root,
+        crate::repo_root::Discovery::NoRepo => cwd.canonicalize().unwrap_or(cwd),
+        crate::repo_root::Discovery::AskGit => git_toplevel_or_cwd(cwd),
+    };
+    // `get_or_init` ensures only the first caller's resolved path wins — a
+    // second concurrent resolve just discards its computed value.
+    Ok(REPO_ROOT.get_or_init(|| resolved).clone())
+}
+
+/// `git rev-parse --show-toplevel` run from the process cwd, canonicalised;
+/// the canonical `cwd` when git is missing, fails, or prints nothing.
+fn git_toplevel_or_cwd(cwd: PathBuf) -> PathBuf {
+    match std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()
     {
@@ -1581,10 +1597,7 @@ pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
             }
         }
         _ => cwd.canonicalize().unwrap_or(cwd),
-    };
-    // `get_or_init` ensures only the first caller's resolved path wins — a
-    // second concurrent resolve just discards its computed value.
-    Ok(REPO_ROOT.get_or_init(|| resolved).clone())
+    }
 }
 
 /// Prefix-ancestry over canonical paths: is `candidate` — which need not

@@ -47,6 +47,14 @@ regex = { version = "^1", default-features = false, features = ["std", "perf"] }
 # memchr: the sweep's binary sniff (NUL in the first 8 KiB) and newline offset table
 memchr = "^2"
 
+[target.'cfg(windows)'.dependencies]
+# Owner check: the file's owner SID against the process token's user SID
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Threading"] }
+
+[target.'cfg(unix)'.dependencies]
+# Owner check: std exposes no effective uid, so `geteuid` comes from libc
+libc = "0.2"
+
 [dev-dependencies]
 # Black-box CLI integration harness. assert_cmd locates the built
 # binary via `Command::cargo_bin("tomlctl")`; predicates supplies the
