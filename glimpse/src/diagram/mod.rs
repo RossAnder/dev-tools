@@ -80,6 +80,7 @@ pub(crate) struct DiagramCache {
 
 impl DiagramCache {
     /// Layouts computed so far; unchanged by a snapshot that only moves statuses.
+    #[cfg(test)]
     pub(crate) fn computations(&self) -> usize {
         self.computations
     }

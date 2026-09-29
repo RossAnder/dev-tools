@@ -59,6 +59,7 @@ pub(crate) struct Ordered {
 
 impl Ordered {
     /// Pairwise segment crossings summed over every channel between adjacent rows.
+    #[cfg(test)]
     pub(crate) fn crossings(&self) -> usize {
         let pos: HashMap<Slot, usize> = self
             .rows

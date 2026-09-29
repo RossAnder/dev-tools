@@ -8,6 +8,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use crate::app::App;
 
 /// The slug under the selector cursor, if any flow is listed.
+#[cfg(test)]
 pub(crate) fn selected_slug(app: &App) -> Option<&str> {
     app.flows
         .get(app.selector_cursor)

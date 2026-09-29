@@ -19,6 +19,7 @@ pub(crate) struct Changes {
     pub(crate) record_added: Vec<String>,
 }
 
+#[cfg(test)]
 impl Changes {
     pub(crate) fn is_empty(&self) -> bool {
         *self == Self::default()

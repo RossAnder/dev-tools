@@ -75,10 +75,6 @@ impl Herdr {
         Herdr { bin }
     }
 
-    pub fn with_bin(bin: impl Into<OsString>) -> Self {
-        Herdr { bin: bin.into() }
-    }
-
     pub fn pane_list(&self) -> Result<Vec<PaneInfo>, String> {
         parse_pane_list(&self.exec(&["pane".into(), "list".into()])?)
     }
