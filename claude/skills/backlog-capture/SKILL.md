@@ -235,8 +235,6 @@ work. Its plan is a stub carrying the marker line `<!-- backlog-seed -->`:
 # Plan: <title>
 <!-- backlog-seed -->
 
-**Status**: Draft
-
 ## Context
 
 - B-1a2b3c4d — <summary>
