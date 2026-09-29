@@ -53,8 +53,8 @@ pub(crate) struct AgentRecord {
     pub(crate) name: String,
     pub(crate) team: String,
     pub(crate) status: AgentStatus,
-    /// ISO-8601 timestamps as the hook payload or transcript carried them;
-    /// `ended_at` is `""` while the agent has not stopped.
+    /// RFC 3339 UTC timestamps from tomlctl's own clock at record time, not
+    /// the hook's; `ended_at` is `""` while the agent has not stopped.
     pub(crate) started_at: String,
     pub(crate) updated_at: String,
     pub(crate) ended_at: String,
