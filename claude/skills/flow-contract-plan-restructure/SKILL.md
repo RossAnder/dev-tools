@@ -46,12 +46,12 @@ Multi-file plans:
 ├── 00-outline.md              — Master sequencing: objective, constraints, phases/waves, item table with status
 ├── 01-{topic}.md              — Detail documents (one per major topic/wave; preserve existing numbering and topics)
 ├── PROGRESS-LOG.md            — Regenerated, never hand-authored
-└── RESEARCH-NOTES.md          — Extracted research findings, corrections, and technical notes
+└── RESEARCH-NOTES.md          — Extracted exploration notes, research findings, corrections, and technical notes
 ```
 
-The outline is the document `plan_path` names, so `## Tasks`, `## Execution Policy` and `## Dependency Graph` live there per the gate above; a detail document carries the expanded narrative a task body references, never a task heading.
+The outline is the document `plan_path` names, so `## Tasks`, `## Execution Policy` and `## Dependency Graph` live there per the gate above; a detail document carries the expanded narrative a task body references, never a task heading. The approver's sections stay in the outline too: `## Summary`, `## Success Criteria` (its `success:` keys stay in `## Verification Commands`) and `## After Merge`. The `## Exploration Notes` / `## Research Notes` appendix leaves the outline for `RESEARCH-NOTES.md`.
 
-Single-file plans split into at minimum the plan itself (clean, actionable) plus a `PROGRESS-LOG.md` when there is any status-tracking content to extract.
+Single-file plans split into at minimum the plan itself (clean, actionable) plus a `PROGRESS-LOG.md` when there is any status-tracking content to extract, and a `RESEARCH-NOTES.md` when the plan carries an `## Exploration Notes` or `## Research Notes` section. `## Summary`, `## Success Criteria` and `## After Merge` stay in the plan.
 
 `RESEARCH-NOTES.md` format:
 
@@ -62,12 +62,17 @@ Single-file plans split into at minimum the plan itself (clean, actionable) plus
 > Reference these from plan items rather than embedding inline.
 > Last updated: {date}
 
+## Exploration Notes
+- Codebase finding...
+
 ## {Topic 1} (referenced by Item #N)
 - Finding...
 - Source/version note...
 
 Searched: {queries; sources with fetch dates; newest source date seen; dead ends}
 ```
+
+The plan's `## Exploration Notes` section moves under its own `## Exploration Notes` topic heading, ahead of the research topics, with its content carried over unchanged; it records codebase facts rather than fetched sources, so it takes no `Searched:` line. `## Research Notes` content splits into the per-topic headings as before.
 
 Carry each topic's `Searched:` line over verbatim beneath its notes — `/plan-update catchup` judges a topic's staleness by its fetch dates. A topic whose source plan recorded none gets none; never reconstruct one.
 
@@ -94,7 +99,7 @@ Carry each topic's `Searched:` line over verbatim beneath its notes — `/plan-u
   **Files-line closure stays prose**, checked by reading each task body the rewrite touched: every edit target named in **Action**/**Detail**/**Acceptance** appears on the **Files** line. `tasks check` ships a `files/closure` class, but at **info** severity and moving no exit code — a candidate list of the paths a row names outside its `files`, not a verdict, because the format requires a read-only reference to stay off that line and no token scan separates the two. Its scope and the measurement that made it info-only are in the finding-class table of the `flow-contract-task-store` skill. Read the list; make the call in prose.
 
   Do NOT mirror `Depends on` edges into `## Dependency Graph` — that section carries checkpoint markers only, and the per-task edges are authoritative.
-- **Clean the outline** — the outline carries the sequencing table, dependencies, constraints, and verification checklists. Research notes, verbose corrections, and progress tracking move to their own files, referenced from the outline where needed ("See RESEARCH-NOTES.md §{Topic}").
+- **Clean the outline** — the outline carries `## Summary`, the sequencing table, dependencies, constraints, `## Success Criteria`, verification checklists, and `## After Merge`. Exploration notes, research notes, verbose corrections, and progress tracking move to their own files, referenced from the outline where needed ("See RESEARCH-NOTES.md §{Topic}").
 - **Infer deferrals** — items described as "deferred", "future", "nice-to-have", or "not needed yet" become `type=deferral` E-entries (via the `defer` op pattern) with concrete re-evaluation triggers. A legacy `DF<n>` ID from the source row is copied into `legacy_id`.
 - **Infer deviations** — prose describing "we did X instead of Y" or "the plan said X but actually Y" becomes a `type=deviation` E-entry (via the `deviation` op pattern). A legacy `D<n>` ID is copied into `legacy_id`; supersession is by `supersedes_entry = "E<n>"`, never by re-using legacy numbers. No renumbering is needed because E-numbers are monotonic.
 - **`PROGRESS-LOG.md` is regenerated, not hand-authored.** After the inferred deviation/deferral entries and any migrated completions are appended to `<record>`, append exactly **one `type=checkpoint` entry** tagging the restructure (its `summary` describes what changed — "Restructured plan into outline + detail docs + RESEARCH-NOTES.md", or the catchup scope), then run `tomlctl flow render-progress-log --slug <slug>`. The rendered shape (marker line plus the Completed Items / Deviations / Deferrals / Session Log tables) is defined in the `flow-contract-execution-record-schema` skill — do not duplicate the table layout. Row identifiers come from the log's `id` (`E<n>`); `legacy_id` exists for back-compat but never appears in the `#` column.
