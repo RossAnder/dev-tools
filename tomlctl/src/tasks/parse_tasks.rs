@@ -29,7 +29,7 @@ use std::sync::OnceLock;
 use anyhow::{Result, bail};
 use regex::Regex;
 
-use super::finding::{Finding, WARNING, quoted_list};
+use super::finding::{ERROR, Finding, WARNING, quoted_list};
 use super::markdown::FenceState;
 use super::schema::Effort;
 
@@ -463,6 +463,7 @@ fn close_field(
         Field::Files => {
             let read = read_files(&lines);
             findings.extend(files_span_unclaimed(task, line_no, &read.held));
+            findings.extend(files_malformed(task, line_no, &read.malformed));
             if let Some(at) = read.orphan {
                 note_unstored(unstored, line_nos[at], || {
                     format!(
@@ -516,6 +517,8 @@ struct FilesRead<'a> {
     notes: Vec<String>,
     /// Backticked spans a comma-list line kept inside a dash note.
     held: Vec<&'a str>,
+    /// Entries stored as a claim that are not one path.
+    malformed: Vec<&'a str>,
     /// Index into the field's lines of the first nested line with no path
     /// above it to annotate.
     orphan: Option<usize>,
@@ -564,11 +567,8 @@ fn read_files(lines: &[String]) -> FilesRead<'_> {
             bullet_indent.get_or_insert(indent);
             after_bullet = true;
             let before = read.files.len();
-            push_file(
-                &mut read.files,
-                &mut read.notes,
-                bullet_re().replace(line, "").as_ref(),
-            );
+            let marker = bullet_re().find(line).expect("the bullet matched");
+            push_file(&mut read, &line[marker.end()..]);
             owner = (read.files.len() > before).then(|| read.files.len() - 1);
         } else {
             after_bullet = false;
@@ -576,7 +576,7 @@ fn read_files(lines: &[String]) -> FilesRead<'_> {
             let (entries, held) = scan_entries(line, |ch| ch == ',', Some(opens_on_path));
             read.held.extend(held);
             for raw in entries {
-                push_file(&mut read.files, &mut read.notes, raw);
+                push_file(&mut read, raw);
             }
         }
     }
@@ -716,14 +716,59 @@ fn is_backlog_id(token: &str) -> bool {
         .is_some_and(|hex| !hex.is_empty() && hex.chars().all(|ch| ch.is_ascii_hexdigit()))
 }
 
-fn push_file(files: &mut Vec<String>, notes: &mut Vec<String>, raw: &str) {
+fn push_file<'a>(read: &mut FilesRead<'a>, raw: &'a str) {
     let at = annotation_at(raw);
-    let entry = raw[..at].replace('`', "").trim().to_string();
-    if entry.is_empty() || is_empty_marker(&entry) {
+    let claim = raw[..at].trim();
+    let entry = claim.replace('`', "");
+    let entry = entry.trim();
+    if entry.is_empty() || is_empty_marker(entry) {
         return;
     }
-    files.push(entry);
-    notes.push(raw[at..].trim().to_string());
+    if !is_one_path(claim) {
+        read.malformed.push(claim);
+    }
+    read.files.push(entry.to_string());
+    read.notes.push(raw[at..].trim().to_string());
+}
+
+/// A bare token, or one backticked span whole. A `Created:` label ahead of
+/// the span, a second span, or prose a comma split off would each be stored
+/// as a path no file carries.
+fn is_one_path(claim: &str) -> bool {
+    match claim
+        .strip_prefix('`')
+        .and_then(|inner| inner.strip_suffix('`'))
+    {
+        Some(inner) => !inner.contains('`'),
+        None => !claim.contains(|c: char| c == '`' || c.is_whitespace()),
+    }
+}
+
+/// `/implement` trusts `files` for file-claim dispatch and rollback, so a
+/// claim that names no file is an error rather than a warning: the real paths
+/// it hides are never claimed.
+fn files_malformed(task: &ParsedTask, line_no: usize, claims: &[&str]) -> Option<Finding> {
+    if claims.is_empty() {
+        return None;
+    }
+    Some(Finding {
+        class: "plan/files-malformed",
+        severity: ERROR,
+        ids: vec![task.id],
+        detail: format!(
+            "line {line_no}: task {} \"{}\" — the `Files` field reads {} as a path, which \
+             claims no real file. Write each path as its own backticked entry — one per \
+             bullet, or a comma list of paths — and move any label or prose into a ` — ` \
+             note after the path it describes",
+            task.id,
+            task.title,
+            claims
+                .iter()
+                .map(|claim| format!("\"{claim}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    })
 }
 
 /// Where the annotation trailing a path starts — the first `(` or ` — `
@@ -1389,6 +1434,58 @@ These run together.
             "- **Files**: `a.rs` — extend `Row`, `b.rs` — mirror it",
             "- **Files**: `a.rs`, `Makefile`, `src/b.rs`",
             "- **Files**:\n  - `a.rs` — note, `Makefile`",
+        ] {
+            let body = format!("### 3. Wire the build [S]\n{quiet}\n");
+            let parsed = parse_tasks_at(&body, 1).expect("parses");
+            assert!(parsed.findings.is_empty(), "{quiet}: {:?}", parsed.findings);
+        }
+    }
+
+    #[test]
+    fn a_labelled_sub_bullet_holding_a_comma_list_is_an_error() {
+        let body = "### 2. Scaffold [S]\n\
+                    - **Files**:\n\
+                    \x20 - Created: `src/a.ts`, `src/b.ts`\n\
+                    \x20 - Also edited: `src/c.ts`\n";
+        let parsed = parse_tasks_at(body, 10).expect("parses");
+        assert_eq!(parsed.findings.len(), 1, "{:?}", parsed.findings);
+        let finding = &parsed.findings[0];
+        assert_eq!(finding.class, "plan/files-malformed");
+        assert_eq!(finding.severity, ERROR);
+        assert_eq!(finding.ids, vec![2]);
+        for fragment in [
+            "line 11",
+            "Scaffold",
+            "\"Created: `src/a.ts`, `src/b.ts`\"",
+            "\"Also edited: `src/c.ts`\"",
+        ] {
+            assert!(finding.detail.contains(fragment), "{fragment}: {finding:?}");
+        }
+    }
+
+    #[test]
+    fn prose_a_comma_splits_off_is_an_error() {
+        let body = "### 3. Generate [S]\n\
+                    - **Files**: `src/d.ts`, plus every file `node gen.mjs` (dry run) lists at run time\n";
+        let parsed = parse_tasks_at(body, 1).expect("parses");
+        assert_eq!(parsed.findings.len(), 1, "{:?}", parsed.findings);
+        assert_eq!(parsed.findings[0].class, "plan/files-malformed");
+        assert!(
+            parsed.findings[0]
+                .detail
+                .contains("\"plus every file `node gen.mjs`\""),
+            "{:?}",
+            parsed.findings[0]
+        );
+    }
+
+    #[test]
+    fn a_single_path_per_entry_is_not_malformed() {
+        for quiet in [
+            "- **Files**: `a.rs`, Cargo.toml, `docs/My Notes.md` (new)",
+            "- **Files**:\n  - `src/a.ts` — created, with `src/b.ts`\n  - src/c.ts (edited)",
+            "- **Files**: `tomlctl/src/tasks/`,\n    `tomlctl/src/main.rs`",
+            "- **Files**: none",
         ] {
             let body = format!("### 3. Wire the build [S]\n{quiet}\n");
             let parsed = parse_tasks_at(&body, 1).expect("parses");

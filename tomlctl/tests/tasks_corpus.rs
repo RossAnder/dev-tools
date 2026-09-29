@@ -25,10 +25,28 @@ use std::path::{Path, PathBuf};
 /// contract's (`claude/skills/flow-contract-task-store/SKILL.md`), and each
 /// reason below names the one that fired. A rejection no rule accounts for
 /// belongs in the importer or in the plan, never here.
-const EXPECTED_UNPARSEABLE: &[(&str, &str)] = &[(
-    "tomlctl-capability-gaps.md",
-    "effort tag `[M-leaning-L]` is outside the S|M|L vocabulary",
-)];
+const EXPECTED_UNPARSEABLE: &[(&str, &str)] = &[
+    (
+        "composed-painting-truffle.md",
+        "task 2's `Files` line holds prose, not a path (`plan/files-malformed`)",
+    ),
+    (
+        "flow-commands-hardening.md",
+        "task 1's `Files` line holds prose, not a path (`plan/files-malformed`)",
+    ),
+    (
+        "lumina-vertical-slice.md",
+        "task 8's `Files` line holds prose, not a path (`plan/files-malformed`)",
+    ),
+    (
+        "tomlctl-capability-gaps.md",
+        "effort tag `[M-leaning-L]` is outside the S|M|L vocabulary",
+    ),
+    (
+        "tomlctl-followups.md",
+        "task 1's `Files` line holds prose, not a path (`plan/files-malformed`)",
+    ),
+];
 
 /// Derived companions of a plan, not plans themselves: pre-merge snapshots,
 /// research dumps, superseded revisions, and the census / follow-up reports.
