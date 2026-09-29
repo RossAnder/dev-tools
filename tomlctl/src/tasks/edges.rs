@@ -45,15 +45,28 @@ pub(crate) fn dispatch(
 /// Edges as `{kind, from, to}`, grouped by kind in declaration order and
 /// ascending within each.
 pub(crate) fn edge_list(store: &Store, kind: Option<EdgeKind>) -> Result<JsonValue> {
+    Ok(list(collect(store, kind, None)?))
+}
+
+/// `edge_list` over `graph`, which must have been built from `store`'s rows.
+pub(crate) fn edge_list_with(
+    store: &Store,
+    graph: &Graph<'_>,
+    kind: Option<EdgeKind>,
+) -> Result<JsonValue> {
+    Ok(list(collect(store, kind, Some(graph))?))
+}
+
+fn list(groups: Vec<EdgeGroup>) -> JsonValue {
     let mut out = Vec::new();
-    for (label, pairs) in collect(store, kind)? {
+    for (label, pairs) in groups {
         out.extend(
             pairs
                 .into_iter()
                 .map(|(from, to)| json!({ "kind": label, "from": from, "to": to })),
         );
     }
-    Ok(JsonValue::Array(out))
+    JsonValue::Array(out)
 }
 
 /// One node per task whatever `--kind` selects, so a filtered graph still
@@ -69,7 +82,7 @@ pub(crate) fn dot_source(store: &Store, kind: Option<EdgeKind>) -> Result<String
             escape(&row.title)
         );
     }
-    for (label, pairs) in collect(store, kind)? {
+    for (label, pairs) in collect(store, kind, None)? {
         let attrs = match label {
             KIND_COUPLING => " [style=dashed]",
             KIND_OVERLAP => " [style=dotted, dir=none]",
@@ -85,8 +98,12 @@ pub(crate) fn dot_source(store: &Store, kind: Option<EdgeKind>) -> Result<String
 
 /// The requested kinds in a fixed order. `overlap` builds the graph; the two
 /// stored kinds do not, so a store whose edges do not yet form a DAG can still
-/// list them.
-fn collect(store: &Store, kind: Option<EdgeKind>) -> Result<Vec<EdgeGroup>> {
+/// list them. A `graph` passed in is used for `overlap` instead of a fresh one.
+fn collect(
+    store: &Store,
+    kind: Option<EdgeKind>,
+    graph: Option<&Graph<'_>>,
+) -> Result<Vec<EdgeGroup>> {
     let mut out = Vec::new();
     if matches!(kind, None | Some(EdgeKind::Needs)) {
         out.push((KIND_NEEDS, stored(store, |row| &row.needs)));
@@ -95,8 +112,14 @@ fn collect(store: &Store, kind: Option<EdgeKind>) -> Result<Vec<EdgeGroup>> {
         out.push((KIND_COUPLING, stored(store, |row| &row.coupling)));
     }
     if matches!(kind, None | Some(EdgeKind::Overlap)) {
-        let nodes = nodes_of(&store.items);
-        out.push((KIND_OVERLAP, Graph::build(&nodes)?.overlap_pairs()?));
+        let pairs = match graph {
+            Some(graph) => graph.overlap_pairs()?,
+            None => {
+                let nodes = nodes_of(&store.items);
+                Graph::build(&nodes)?.overlap_pairs()?
+            }
+        };
+        out.push((KIND_OVERLAP, pairs));
     }
     Ok(out)
 }

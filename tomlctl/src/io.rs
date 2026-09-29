@@ -486,14 +486,30 @@ pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
                 .with_context(|| format!("reading {}", path.display()));
         }
     };
-    match toml::from_str::<TomlValue>(&s) {
-        Ok(v) => Ok(v),
-        Err(e) => Err(tagged_err(
+    parse_toml_source(path, &s)
+}
+
+/// `read_toml` over bytes the caller already read from `path`, for a caller
+/// that also needs the raw bytes. Errors read as `read_toml`'s would.
+pub(crate) fn parse_toml_bytes(path: &Path, bytes: Vec<u8>) -> Result<TomlValue> {
+    let s = String::from_utf8(bytes).map_err(|_| {
+        anyhow::Error::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        ))
+        .context(format!("reading {}", path.display()))
+    })?;
+    parse_toml_source(path, &s)
+}
+
+fn parse_toml_source(path: &Path, source: &str) -> Result<TomlValue> {
+    toml::from_str::<TomlValue>(source).map_err(|e| {
+        tagged_err(
             ErrorKind::Parse,
             Some(path.to_owned()),
             format!("parsing {}: {}", path.display(), e),
-        )),
-    }
+        )
+    })
 }
 
 /// `read_toml` for a caller that reports a bad file and moves on: the error
@@ -594,6 +610,20 @@ pub(crate) fn read_doc<R>(
     } else {
         let doc = read_toml(file)?;
         f(&doc)
+    }
+}
+
+/// `read_doc` for a caller that keeps the parsed doc: the same lock and
+/// sidecar check, handing back the owned tree instead of cloning it out of a
+/// closure.
+pub(crate) fn read_doc_owned(file: &Path, integrity: IntegrityOpts) -> Result<TomlValue> {
+    if integrity.verify_on_read {
+        with_shared_lock(file, || {
+            crate::integrity::maybe_verify_integrity(file, integrity)?;
+            read_toml(file)
+        })
+    } else {
+        read_toml(file)
     }
 }
 

@@ -17,11 +17,11 @@ use toml::Value as TomlValue;
 use super::graph::{Tense, build_or_refuse, nodes_of};
 use super::schema::{Status, TaskRow};
 use super::snapshot_record::{checkpoint_facts, record_view};
-use super::{edges, ready, store};
+use super::{edges, ready, schema, store};
 use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::convert::toml_to_json;
 use crate::integrity::hex_lower;
-use crate::io::{items_array, read_doc};
+use crate::io::{items_array, parse_toml_bytes, read_doc_owned};
 
 const SCHEMA: u32 = 1;
 const RECORD_FILE: &str = "execution-record.toml";
@@ -41,15 +41,38 @@ pub(crate) fn snapshot(
     let agents_path = sibling(store_path, AGENTS_FILE);
     let context_path = sibling(store_path, CONTEXT_FILE);
 
-    // Hashed before parsing: a write landing in between then leaves a stale
-    // revision over fresh content, which the next poll corrects, never a fresh
-    // revision over stale content, which it would skip.
-    let revision = revision(&[store_path, &record_path, &agents_path, &context_path])?;
+    let paths = [store_path, &record_path, &agents_path, &context_path];
+    let [store_raw, record_raw, agents_raw, context_raw] = paths.map(read_raw);
+    let (store_raw, record_raw, agents_raw, context_raw) =
+        (store_raw?, record_raw?, agents_raw?, context_raw?);
+    let revision = revision(&[&store_raw, &record_raw, &agents_raw, &context_raw]);
 
-    let store = store::load(store_path, read_opts)?;
-    let record = read_optional(&record_path, read_opts)?;
-    let agents = read_optional(&agents_path, read_opts)?;
-    let context = read_optional(&context_path, read_opts)?;
+    let (store, record, agents, context) = if read_opts.verify_integrity || read_opts.strict_read {
+        // The sidecar check and the strict-read gate need the file and its
+        // lock, so these re-read. Hashed first: a write landing in between
+        // leaves a stale revision over fresh content, which the next poll
+        // corrects, never a fresh revision over stale content, which it
+        // would skip.
+        (
+            store::load(store_path, read_opts)?,
+            read_optional(&record_path, read_opts)?,
+            read_optional(&agents_path, read_opts)?,
+            read_optional(&context_path, read_opts)?,
+        )
+    } else {
+        // Parsed from the hashed bytes, so revision and content agree.
+        let store = match store_raw {
+            Some(bytes) => schema::from_toml(&parse_toml_bytes(store_path, bytes)?)?,
+            // Absent: `load` raises the missing-store error.
+            None => store::load(store_path, read_opts)?,
+        };
+        (
+            store,
+            parse_optional(&record_path, record_raw)?,
+            parse_optional(&agents_path, agents_raw)?,
+            parse_optional(&context_path, context_raw)?,
+        )
+    };
 
     let nodes = nodes_of(&store.items);
     let graph = build_or_refuse(&nodes, "the snapshot", Tense::Stored)?;
@@ -63,8 +86,8 @@ pub(crate) fn snapshot(
         .filter(|row| row.status == Status::InProgress)
         .map(|row| row.id)
         .collect();
-    let frontier = ready::ready(&store, &in_progress)?;
-    let edge_list = edges::edge_list(&store, None)?;
+    let frontier = ready::ready_with(&graph, &in_progress)?;
+    let edge_list = edges::edge_list_with(&store, &graph, None)?;
 
     let record_json = record_view(record.as_ref(), &store);
     let mut facts = checkpoint_facts(&record_json, &store);
@@ -140,28 +163,35 @@ fn read_optional(path: &Path, read_opts: &ReadIntegrityArgs) -> Result<Option<To
     if !path.exists() {
         return Ok(None);
     }
-    read_doc(path, read_integrity_opts(read_opts), |doc| Ok(doc.clone())).map(Some)
+    read_doc_owned(path, read_integrity_opts(read_opts)).map(Some)
+}
+
+fn parse_optional(path: &Path, bytes: Option<Vec<u8>>) -> Result<Option<TomlValue>> {
+    bytes.map(|bytes| parse_toml_bytes(path, bytes)).transpose()
+}
+
+/// A file's bytes, or `None` when it does not exist.
+fn read_raw(path: &Path) -> Result<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(err) if err.kind() == IoErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err).with_context(|| format!("reading {}", path.display())),
+    }
 }
 
 /// Each file contributes its byte length (u64, little-endian) and then its
 /// bytes, so moving bytes from one file to the next changes the digest. An
 /// absent file contributes a zero length.
-fn revision(paths: &[&Path]) -> Result<String> {
+fn revision(files: &[&Option<Vec<u8>>]) -> String {
     let mut hasher = Sha256::new();
-    for path in paths {
-        let bytes = match std::fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(err) if err.kind() == IoErrorKind::NotFound => Vec::new(),
-            Err(err) => {
-                return Err(err).with_context(|| format!("reading {}", path.display()));
-            }
-        };
+    for file in files {
+        let bytes = file.as_deref().unwrap_or_default();
         hasher.update((bytes.len() as u64).to_le_bytes());
-        hasher.update(&bytes);
+        hasher.update(bytes);
     }
     let mut hex = hex_lower(&hasher.finalize());
     hex.truncate(REVISION_HEX_LEN);
-    Ok(hex)
+    hex
 }
 
 fn task_json(row: &TaskRow) -> JsonValue {

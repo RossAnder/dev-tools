@@ -696,7 +696,7 @@ fn strings_of(map: &JsonMap<String, JsonValue>, field: &str) -> Vec<String> {
 /// leaves an absent store absent.
 pub(super) fn preview_doc(file: &Path, integrity: &WriteIntegrityArgs) -> Result<TomlValue> {
     let opts = io::dry_run_read_opts(integrity.verify_integrity);
-    match io::read_doc(file, opts, |doc| Ok(doc.clone())) {
+    match io::read_doc_owned(file, opts) {
         Ok(doc) => Ok(doc),
         Err(e) if is_not_found(&e) => match on_missing_for(file, integrity.no_create)? {
             OnMissing::Create(seed) => Ok(seed),
