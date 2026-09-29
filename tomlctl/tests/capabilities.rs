@@ -57,6 +57,8 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         // argument, so — like `backlog evidence dir` — it carries the read
         // bundle and none of the write bundle.
         &["tasks", "render", "--help"],
+        &["tasks", "snapshot", "--help"],
+        &["agents", "list", "--help"],
     ];
     for path in read_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();
@@ -110,6 +112,7 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["backlog", "triage", "--help"],
         &["backlog", "compact", "--help"],
         &["backlog", "reconcile", "--help"],
+        &["agents", "record", "--help"],
     ];
     for path in write_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();
@@ -1623,6 +1626,10 @@ fn capabilities_features_contains_every_plan_feature() {
         "tasks_closure",
         "tasks_check",
         "tasks_render",
+        "tasks_snapshot",
+        // Hook-written agent lifecycle store: the `agents` subcommand cluster.
+        "agents_record",
+        "agents_list",
         // Regex sweep over tracked files and the ledger verbs built on it.
         "sweep",
         "items_sweep",
@@ -1662,8 +1669,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.11.0",
-        "expected version `0.11.0` (the minor bump for `backlog add-many`); got `{version}`"
+        version, "0.12.0",
+        "expected version `0.12.0` (the minor bump for `agents` and `tasks snapshot`); got `{version}`"
     );
 }
 

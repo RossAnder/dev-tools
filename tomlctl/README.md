@@ -64,6 +64,9 @@ tomlctl backlog evidence dir <id>                      # per-item .claude/backlo
 tomlctl backlog evidence audit [--strict] [--max-bytes N]   # unowned dirs, policy breaches, stale references
 tomlctl backlog cluster --by all                       # group open items into candidate work scopes
 tomlctl backlog compact [--older-than 90d] [--dry-run]  # ages resolved and dismissed items into [[compacted]]; open and promoted items never move
+tomlctl tasks snapshot --slug <s>                      # one consistent read of a flow: rows, graph products, joined execution record, agent records
+tomlctl agents record --harness claude-code|codex|manual [-]   # one hook payload from stdin into the dispatching flow's agents.toml; run by harness hooks only
+tomlctl agents list --slug <s>                         # a flow's agent lifecycle records as a JSON array
 
 # Integrity flags (accepted after the subcommand name on any TOML-touching command):
 #   --allow-outside           bypass the best-effort .claude/ containment guard (not a sandbox)
@@ -255,7 +258,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.11.0",
+  "version": "0.12.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -273,12 +276,13 @@ downstream flow-command templates can feature-gate at boot without parsing
                "tasks_add_many", "tasks_update", "tasks_remove",
                "tasks_show", "tasks_list", "tasks_edges", "tasks_ready",
                "tasks_batches", "tasks_closure", "tasks_check",
-               "tasks_render", "sweep", "items_sweep", "items_clusters",
+               "tasks_render", "tasks_snapshot", "agents_record",
+               "agents_list", "sweep", "items_sweep", "items_clusters",
                "orphans_instances"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
-                  "sweep"],
+                  "agents", "sweep"],
   "commands": {
     "items": {
       "subcommands": {
@@ -367,6 +371,9 @@ Feature meanings:
 | `tasks_closure` | `tasks closure --checkpoint <ID>` / `--task <N> --up` / `--down` — a checkpoint group's task set or one task's transitive closure, plus its maximal elements |
 | `tasks_check` | `tasks check --in-flight <N1,N2,...>` — the store's invariant checks; any `error`-class finding exits 1, and `--plan` reports render drift as a warning, so gate drift on `tasks render --check` |
 | `tasks_render` | `tasks render` — rewrite the plan's `## Execution Policy`, `## Tasks` and `## Dependency Graph` from the store; `--stdout` previews and `--check` reports drift without writing |
+| `tasks_snapshot` | `tasks snapshot --slug <SLUG>` — one read-only JSON view of a flow for a viewer: rows, Kahn layers, the `tasks ready` frontier, edges, checkpoints, the execution record joined to its rows, and the agent records; absent sibling files read as empty, and `revision` fingerprints the raw input bytes |
+| `agents_record` | `agents record --harness <HARNESS> [PAYLOAD]` — record one hook payload (an agent starting, idling or stopping) into the dispatching flow's `.claude/flows/<SLUG>/agents.toml`; run by harness hooks, never by carriers or sub-agents |
+| `agents_list` | `agents list --slug <SLUG>` — a flow's agent lifecycle records as a JSON array |
 | `sweep` | `sweep -e <REGEX>...` — regex hits over the repo's tracked files as sorted `file:line` sites, with `skipped` counts, `truncated` and `coverage_complete`; `.claude/**` and `docs/plans/**` are excluded by default |
 | `items_sweep` | `items sweep <file>` — re-run each item's stored `sweep` patterns and diff the hits against its `instances` (`new` / `gone` / `kept` / `unverified`); `--update` rewrites an open item's `instances` in listed order, appending new sites, and refuses while the run is truncated or an anchor is unverified for any reason but `excluded` |
 | `items_clusters` | `items clusters <file> --ids <R1,R7,...>` — file-disjoint clusters over `file` plus `instances`, layered by `depends_on` into batches, each cluster carrying `lite_file_scope`; out-of-selection dependencies land in `dropped_deps` and a cycle is refused |
