@@ -1,0 +1,28 @@
+# glimpse
+
+`glimpse/` is a standalone Cargo crate (sibling of `tomlctl`/`statusline`, own `Cargo.lock` and `target/`): a ratatui TUI that draws a flow's task DAG, checkpoints and running agents from `tomlctl tasks snapshot`, plus the Claude Code hook and herdr pane plumbing that feeds and opens it. Usage, keys, config keys and the data flow live in `README.md`.
+
+Structure: `cli.rs` (hand-rolled parser; `hook` runs on every subagent event, so start-up cost matters), `main.rs` (wiring only). Data in: `source.rs` (fingerprint poller + `tomlctl tasks snapshot` fetcher), `flows.rs` (`tomlctl flow list`, freshest flow), `model.rs` (snapshot types and the `Index` views look rows up through), `diff.rs` (change sets between snapshots), `transcript.rs` (incremental JSONL tail for the activity panel). State: `app.rs` (selection, overlays, follow, flashes; never draws, never spawns), `keys.rs`, `config.rs`. Drawing: `runtime.rs` (event loop and `--once`), `view/` (header, layers, ego, details, activity, selector, markdown), `diagram/` (the hand-written layered layout: `order` → `position` → `route` → `paint`). Out to the world: `hook.rs`, `pane.rs`, `herdr.rs` (herdr CLI wrapper), `setup.rs`.
+
+Gotchas:
+
+- **Hook edits are normally hot-reloaded.** Claude Code's settings watcher picks up the hooks `glimpse setup` merges into a running session; a restart is the fallback when they do not fire, not a step of setup. That is what setup's closing line says, and it should keep saying it.
+- **The hooks are exec form on purpose.** `setup` writes `"command": "<glimpse path>", "args": ["hook"]`, so Claude Code spawns the binary directly; a shell-form command would start Git Bash on Windows for every subagent event. `is_glimpse_hook` treats a shell-form `glimpse hook` entry as already installed and leaves it alone.
+- **Async hooks are silent.** Claude Code neither waits for an async hook nor reads its exit code, stdout or stderr, so `glimpse hook` never prints and always exits 0. When agents stop appearing, read `<claude dir>/glimpse/hook.log` first: every failure is one timestamped line there, including a `tomlctl` too old to know `agents record`. The log is truncated to empty once it passes `LOG_CAP` rather than rotated.
+- **Never run `glimpse setup` without `--dry-run` while testing.** It edits the real `settings.json` and herdr `config.toml`. `tests/cli.rs` points every config location into a per-case sandbox and names a `tomlctl` and `herdr` that do not exist, so no case touches the user's files; keep new binary-level cases inside that sandbox.
+- **Transcripts follow a version anchor.** The JSONL line shape `transcript.rs` reads is observed, not documented; its module doc records the Claude Code version and date it was checked against. A renamed field degrades to an empty activity panel rather than an error, so a panel that goes quiet on a live agent starts there, and a re-check updates that anchor.
+- **The diagram layout is cached on `(topology_hash, orientation)`.** `Index::topology_hash` covers only task ids and both edge sets (FNV-1a, stable across Rust releases), so a status change reuses the layout and only `paint` re-runs. A layout input added to `diagram/` that is not in that hash will go stale on screen; add it to the hash in the same change.
+- **herdr has no focus-by-id.** `pane::ensure` focuses an existing pane by moving from the origin in the direction the two rects imply, which works only when they are adjacent; otherwise the pane is reused unfocused. `herdr pane run` types text plus Enter into the pane's shell (pwsh here) rather than spawning a process, which is why `launch_line` quotes for pwsh.
+- **One pane per tab is enforced by a lock file**, `<claude dir>/glimpse/pane.lock`, so two hooks firing together cannot both split. A lock older than its stale limit is taken over.
+- **Never verify integrity sidecars from glimpse.** tomlctl writes the sidecar and the TOML as two renames, so a check from the poller can land between them. A torn read surfaces as a failed fetch and is retried on the next poll.
+- **`Release` key events are dropped** in `keys::map`: Windows reports both edges of every key, which would apply each action twice.
+- **An idle glimpse does no work.** The main loop blocks on its channel without a timeout unless `App::needs_tick` (a live flash, or a running agent whose clock is advancing). Anything new that changes on screen with time alone has to be reflected there, or it will freeze between snapshots.
+
+Commands:
+
+- `cargo test --manifest-path glimpse/Cargo.toml` — unit tests plus `tests/cli.rs`, which drives the built binary through `CARGO_BIN_EXE_glimpse` for exit codes, stream discipline and on-disk effects; run that file alone with `--test cli`
+- `cargo clippy --manifest-path glimpse/Cargo.toml --all-targets` — lint
+- `cargo fmt --manifest-path glimpse/Cargo.toml -- --check` — the pre-commit hook runs this whenever a `glimpse/**/*.rs` path is staged
+- `cargo install --path glimpse` — install onto PATH. The hooks and keybinding store glimpse's absolute path, and `setup` skips any entry that already names glimpse, so if the binary moves, fix those entries by hand; rerunning setup changes nothing
+- `glimpse --once --snapshot glimpse/tests/fixtures/snapshot.json --size 110x40 [--view diagram]` — render one frame headlessly, with no terminal and no tomlctl; `--once --slug <slug>` does the same against a live flow
+- `glimpse setup --dry-run` — show what setup would add, writing nothing
