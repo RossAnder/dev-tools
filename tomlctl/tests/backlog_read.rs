@@ -691,9 +691,8 @@ fn a_force_added_evidence_file_is_tracked_and_strict_still_passes() {
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join(".evidence"), "B-00000001  seeded\n").unwrap();
     fs::write(dir.join("shot.png"), b"x").unwrap();
-    let add = std::process::Command::new("git")
+    let add = common::git_command(&root)
         .args(["add", "-f", ".claude/backlog-evidence/B-00000001/shot.png"])
-        .current_dir(&root)
         .output()
         .unwrap();
     // An add that ran and failed would otherwise surface below as a bare

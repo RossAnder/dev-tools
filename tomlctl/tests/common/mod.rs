@@ -281,11 +281,7 @@ pub fn sandbox() -> (tempfile::TempDir, PathBuf) {
     // tracked-count assertion, so it is caught here instead. A git that never
     // ran at all stays tolerated: the tests that need a repo gate on
     // `git_available`, the rest do not care.
-    if let Ok(init) = std::process::Command::new("git")
-        .args(["init", "-q", "."])
-        .current_dir(&root)
-        .output()
-    {
+    if let Ok(init) = git_command(&root).args(["init", "-q", "."]).output() {
         assert!(
             init.status.success(),
             "`git init` failed in {}: {}",
@@ -393,8 +389,21 @@ pub fn backlog(root: &Path, args: &[&str]) -> serde_json::Value {
     })
 }
 
+/// A `git` command rooted at `dir` that ignores any repository a running git
+/// hook exported through the environment.
+pub fn git_command(dir: &Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new("git");
+    cmd.current_dir(dir)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_COMMON_DIR")
+        .env_remove("GIT_OBJECT_DIRECTORY");
+    cmd
+}
+
 pub fn git_available() -> bool {
-    std::process::Command::new("git")
+    git_command(Path::new("."))
         .arg("--version")
         .output()
         .is_ok_and(|o| o.status.success())
