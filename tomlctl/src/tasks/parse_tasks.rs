@@ -869,7 +869,7 @@ fn field_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new(
-            r"^- \*\*(Files|Depends on|Blocked-by|Blocked by|Action|Detail|Acceptance|Effort|Backlog)\*\*:[ \t]*(.*)$",
+            r"^- \*\*(Files|Depends on|Blocked-by|Blocked by|Action|Detail|Acceptance|Effort|Backlog)(?:\*\*:|:\*\*)[ \t]*(.*)$",
         )
         .expect("field regex compiles")
     })
@@ -878,7 +878,9 @@ fn field_re() -> &'static Regex {
 /// Any bold field label, known to `field_re` or not.
 fn label_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^[-*] \*\*([^*]+)\*\*:").expect("label regex compiles"))
+    RE.get_or_init(|| {
+        Regex::new(r"^[-*] \*\*([^*]+)(?:\*\*:|:\*\*)").expect("label regex compiles")
+    })
 }
 
 fn bullet_re() -> &'static Regex {
@@ -1162,6 +1164,43 @@ cargo test
         let task = &parse_tasks(body).expect("parses")[0];
         assert_eq!(task.files, vec!["a.rs", "b.rs"]);
         assert_eq!(task.file_notes, vec!["", ""]);
+    }
+
+    #[test]
+    fn a_colon_inside_the_bold_still_imports_files() {
+        let body = "### 1. First task [S]\n- **Files:** `a.rs`\n";
+        let task = &parse_tasks(body).expect("parses")[0];
+        assert_eq!(task.files, vec!["a.rs"]);
+    }
+
+    #[test]
+    fn a_colon_inside_the_bold_still_imports_needs() {
+        let body = "### 1. First task [S]\n- **Files**: none\n\n### 2. Second task [S]\n- **Depends on:** 1\n";
+        let tasks = parse_tasks(body).expect("parses");
+        assert_eq!(tasks[1].needs, vec![1]);
+    }
+
+    #[test]
+    fn a_colon_inside_the_bold_is_not_unstored() {
+        let body = "### 1. First task [S]\n- **Files:** `a.rs`\n- **Action:** Do it.\n";
+        let parsed = parse_tasks_at(body, 1).expect("parses");
+        assert!(parsed.findings.is_empty(), "{:?}", parsed.findings);
+    }
+
+    #[test]
+    fn a_bold_phrase_with_no_colon_is_not_a_field() {
+        let body = "### 1. First task [S]\n- **Files**: `a.rs`\n- **Note** text\n";
+        let parsed = parse_tasks_at(body, 1).expect("parses");
+        assert!(!field_re().is_match("- **Note** text"));
+        assert!(!label_re().is_match("- **Note** text"));
+        assert!(
+            parsed
+                .findings
+                .iter()
+                .any(|f| f.class == "plan/text-unstored"),
+            "{:?}",
+            parsed.findings
+        );
     }
 
     #[test]
