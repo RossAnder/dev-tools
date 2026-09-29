@@ -102,7 +102,26 @@ pub(crate) fn latest_dispatch(path: &Path) -> Option<Dispatch> {
     if !wait_for_file(path, RETRY_ATTEMPTS) {
         return None;
     }
-    dispatch_in(&read_tail(path)?, user_text)
+    latest_dispatch_with(path, user_text)
+}
+
+fn latest_dispatch_with(path: &Path, prompt_of: fn(&str) -> Option<String>) -> Option<Dispatch> {
+    dispatch_in(&read_tail(path)?, prompt_of).or_else(|| head_dispatch(path, prompt_of))
+}
+
+/// The dispatch on a transcript's first line, for a file too large to be read
+/// whole: the spawn prompt sits at the head, outside the tail window.
+fn head_dispatch(path: &Path, prompt_of: fn(&str) -> Option<String>) -> Option<Dispatch> {
+    let file = std::fs::File::open(path).ok()?;
+    if file.metadata().ok()?.len() <= WHOLE_READ_MAX {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.take(TAIL_BYTES).read_to_end(&mut bytes).ok()?;
+    if let Some(end) = memchr::memchr(b'\n', &bytes) {
+        bytes.truncate(end);
+    }
+    dispatch_in(&into_text(bytes), prompt_of)
 }
 
 /// [`latest_dispatch`] and the context size at the last assistant turn, from
@@ -126,7 +145,7 @@ fn dispatch_and_tokens_with(
         return (None, 0);
     };
     let dispatch = if present {
-        dispatch_in(&text, prompt_of)
+        dispatch_in(&text, prompt_of).or_else(|| head_dispatch(path, prompt_of))
     } else {
         None
     };
@@ -161,7 +180,7 @@ pub(crate) fn codex_latest_dispatch(path: &Path) -> Option<Dispatch> {
     if !wait_for_file(path, RETRY_ATTEMPTS) {
         return None;
     }
-    dispatch_in(&read_tail(path)?, codex_user_text)
+    latest_dispatch_with(path, codex_user_text)
 }
 
 fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Dispatch> {
@@ -746,7 +765,40 @@ mod tests {
         let tail = read_tail(&agent).expect("tail");
         assert!(tail.len() as u64 <= TAIL_BYTES);
         assert!(tail.starts_with("{\"type\""), "tail starts on a whole line");
-        // The old dispatch sits before the tail window.
+        // The old dispatch sits before the tail window, but on the first line.
+        assert_eq!(
+            latest_dispatch(&agent).map(|d| d.slug),
+            Some("old-flow".to_string())
+        );
+    }
+
+    #[test]
+    fn a_dispatch_in_the_tail_wins_over_the_first_line() {
+        let (_tmp, _, agent) = session_tree(&[]);
+        let filler = user_line(&"x".repeat(1000));
+        let mut body = user_line("tasks show 1 --slug old-flow");
+        body.push('\n');
+        while (body.len() as u64) <= WHOLE_READ_MAX {
+            body.push_str(&filler);
+            body.push('\n');
+        }
+        body.push_str(&user_line("tasks show 2 --slug new-flow"));
+        body.push('\n');
+        std::fs::write(&agent, &body).expect("large transcript");
+        let (dispatch, _) = dispatch_and_tokens(&agent);
+        assert_eq!(dispatch.map(|d| d.slug), Some("new-flow".to_string()));
+    }
+
+    #[test]
+    fn a_large_transcript_without_a_head_dispatch_gives_none() {
+        let (_tmp, _, agent) = session_tree(&[]);
+        let filler = user_line(&"x".repeat(1000));
+        let mut body = String::new();
+        while (body.len() as u64) <= WHOLE_READ_MAX {
+            body.push_str(&filler);
+            body.push('\n');
+        }
+        std::fs::write(&agent, &body).expect("large transcript");
         assert_eq!(latest_dispatch(&agent), None);
     }
 }
