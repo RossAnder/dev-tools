@@ -1,1 +1,462 @@
 //! The terminal event loop and one-shot frame rendering.
+//!
+//! Three threads feed one channel: the input thread owns the blocking terminal read, the
+//! source poller sends snapshots and flow changes, and the main loop drains whatever has
+//! queued before drawing once. With nothing on screen changing over time the loop blocks
+//! without a timeout, so an idle glimpse does no work at all.
+
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::time::{Duration, Instant};
+
+use ratatui::backend::TestBackend;
+use ratatui::crossterm::event::{self as term_event, Event as TermEvent};
+use ratatui::text::Span;
+use ratatui::{DefaultTerminal, Frame, Terminal};
+
+use crate::app::{Action, App};
+use crate::config::Config;
+use crate::diagram::DiagramCache;
+use crate::flows::{self, FlowEntry};
+use crate::keys;
+use crate::model::Snapshot;
+use crate::source::{Event, Source};
+use crate::transcript::TailState;
+use crate::view;
+
+/// The wake-up interval while something on screen changes with time alone.
+const TICK: Duration = Duration::from_secs(1);
+
+/// What the live view and the one-shot render start from.
+pub(crate) struct RunOpts {
+    pub(crate) root: PathBuf,
+    /// `None` opens the freshest flow and turns auto-flow on.
+    pub(crate) slug: Option<String>,
+    pub(crate) config: Config,
+    /// A config-load problem to show in the header.
+    pub(crate) warning: Option<String>,
+}
+
+/// Runs the live view until the user quits.
+///
+/// Until the first snapshot arrives the app holds an empty one named after the requested
+/// slug, so the frame draws its header and footer around an empty view.
+pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
+    let RunOpts {
+        root,
+        slug,
+        config,
+        warning,
+    } = opts;
+    let placeholder = Snapshot {
+        slug: slug.clone().unwrap_or_default(),
+        ..Snapshot::default()
+    };
+    let mut app = App::new(placeholder, &config);
+    app.auto_flow = slug.is_none();
+    app.warning = warning;
+
+    let (events, rx) = mpsc::channel();
+    // `try_init` installs the panic hook that restores the terminal before anything else runs.
+    let mut terminal = ratatui::try_init().map_err(|e| {
+        ratatui::restore();
+        format!("cannot open the terminal: {e}")
+    })?;
+    spawn_input(events.clone());
+    let source = Source::start(root.clone(), slug, &config, events);
+
+    let mut screen = Screen::new(app, config, TailState::new(""));
+    let tomlctl = screen.config.tomlctl.clone();
+    let mut host = TerminalHost {
+        terminal: &mut terminal,
+        source: &source,
+        root: &root,
+        tomlctl: &tomlctl,
+    };
+    let result = run_loop(&mut screen, &rx, &mut host);
+    ratatui::restore();
+    source.stop();
+    result
+}
+
+/// Draws one frame of `snapshot` into an off-screen buffer and returns its rows as plain
+/// text, one line per row with trailing blanks trimmed.
+pub(crate) fn render_once(opts: &RunOpts, snapshot: Snapshot, width: u16, height: u16) -> String {
+    let mut app = App::new(snapshot, &opts.config);
+    app.warning = opts.warning.clone();
+    let mut screen = Screen::new(app, opts.config.clone(), TailState::default());
+    let Ok(mut terminal) = Terminal::new(TestBackend::new(width, height));
+    let Ok(_) = terminal.draw(|frame| screen.render(frame));
+    let buffer = terminal.backend().buffer();
+    let mut out = String::new();
+    for y in 0..height {
+        let mut row = String::new();
+        // A wide glyph's trailing cells are padding the glyph already covers.
+        let mut hidden = 0usize;
+        for x in 0..width {
+            let symbol = buffer[(x, y)].symbol();
+            if hidden == 0 {
+                row.push_str(symbol);
+                hidden = Span::raw(symbol).width().saturating_sub(1);
+            } else {
+                hidden -= 1;
+            }
+        }
+        out.push_str(row.trim_end());
+        out.push('\n');
+    }
+    out
+}
+
+/// Forwards every terminal event onto the channel. The thread owns the blocking read for
+/// the whole run: splitting poll and read across threads loses events. It is never
+/// joined; it ends with the process, or when the channel closes.
+fn spawn_input(events: Sender<Event>) {
+    std::thread::spawn(move || {
+        loop {
+            let event = match term_event::read() {
+                Ok(event) => Event::Input(event),
+                Err(e) => {
+                    let _ = events.send(Event::SourceError(format!("terminal input failed: {e}")));
+                    return;
+                }
+            };
+            if events.send(event).is_err() {
+                return;
+            }
+        }
+    });
+}
+
+/// Everything a frame is drawn from.
+struct Screen {
+    app: App,
+    config: Config,
+    cache: DiagramCache,
+    tail: TailState,
+}
+
+impl Screen {
+    fn new(app: App, config: Config, tail: TailState) -> Screen {
+        Screen {
+            app,
+            config,
+            cache: DiagramCache::default(),
+            tail,
+        }
+    }
+
+    fn render(&mut self, frame: &mut Frame) {
+        view::render(
+            frame,
+            &mut self.app,
+            &self.config,
+            &mut self.cache,
+            &mut self.tail,
+        );
+    }
+
+    /// Points the tail at the activity agent's transcript and reads what was appended.
+    /// Returns whether the panel's content changed; a closed panel reads nothing.
+    fn refresh_tail(&mut self) -> bool {
+        if !self.app.activity_open {
+            return false;
+        }
+        let Some(agent) = view::activity::agent(&self.app) else {
+            return false;
+        };
+        self.tail.retarget(&agent.transcript_path);
+        self.tail.refresh()
+    }
+}
+
+/// The loop's side effects, kept behind a trait so a test can script them.
+trait Host {
+    fn draw(&mut self, screen: &mut Screen) -> Result<(), String>;
+    fn set_slug(&mut self, slug: String);
+    fn list_flows(&mut self) -> Result<Vec<FlowEntry>, String>;
+}
+
+struct TerminalHost<'a> {
+    terminal: &'a mut DefaultTerminal,
+    source: &'a Source,
+    root: &'a Path,
+    tomlctl: &'a str,
+}
+
+impl Host for TerminalHost<'_> {
+    fn draw(&mut self, screen: &mut Screen) -> Result<(), String> {
+        self.terminal
+            .draw(|frame| screen.render(frame))
+            .map(|_| ())
+            .map_err(|e| format!("cannot draw: {e}"))
+    }
+
+    fn set_slug(&mut self, slug: String) {
+        self.source.set_slug(slug);
+    }
+
+    fn list_flows(&mut self) -> Result<Vec<FlowEntry>, String> {
+        flows::list(self.root, self.tomlctl)
+    }
+}
+
+enum Step {
+    Nothing,
+    Redraw,
+    Quit,
+}
+
+/// Draws, then waits for events and redraws once per batch until a quit or until every
+/// sender has gone. Waits carry a timeout only while the app needs ticks or the activity
+/// panel is open, since a transcript grows without any snapshot announcing it.
+fn run_loop(
+    screen: &mut Screen,
+    events: &Receiver<Event>,
+    host: &mut impl Host,
+) -> Result<(), String> {
+    // The freshest flow at the last flow change; auto-flow switches only when it moves.
+    let mut freshest: Option<String> = None;
+    let mut last_tick = Instant::now();
+    screen.refresh_tail();
+    host.draw(screen)?;
+
+    loop {
+        let ticking = screen.app.needs_tick(Instant::now()) || screen.app.activity_open;
+        let first = if ticking {
+            let wait = (last_tick + TICK).saturating_duration_since(Instant::now());
+            match events.recv_timeout(wait) {
+                Ok(event) => Some(event),
+                Err(RecvTimeoutError::Timeout) => None,
+                Err(RecvTimeoutError::Disconnected) => return Ok(()),
+            }
+        } else {
+            match events.recv() {
+                Ok(event) => Some(event),
+                Err(_) => return Ok(()),
+            }
+        };
+
+        let mut redraw = false;
+        for event in first.into_iter().chain(events.try_iter()) {
+            match handle(screen, event, host, &mut freshest) {
+                Step::Nothing => {}
+                Step::Redraw => redraw = true,
+                Step::Quit => return Ok(()),
+            }
+        }
+
+        let now = Instant::now();
+        if !ticking {
+            last_tick = now;
+        } else if now.saturating_duration_since(last_tick) >= TICK {
+            last_tick = now;
+            screen.app.tick(now);
+            redraw = true;
+        }
+        if screen.refresh_tail() {
+            redraw = true;
+        }
+        if redraw {
+            host.draw(screen)?;
+        }
+    }
+}
+
+fn handle(
+    screen: &mut Screen,
+    event: Event,
+    host: &mut impl Host,
+    freshest: &mut Option<String>,
+) -> Step {
+    let app = &mut screen.app;
+    match event {
+        Event::Snapshot(snapshot) => {
+            app.apply_snapshot(*snapshot, Instant::now());
+            Step::Redraw
+        }
+        Event::SourceError(message) => {
+            app.source_error = Some(message);
+            Step::Redraw
+        }
+        Event::FlowsChanged => {
+            flows_changed(app, host, freshest);
+            Step::Redraw
+        }
+        Event::Input(TermEvent::Key(key)) => {
+            let Some(action) = keys::map(key) else {
+                return Step::Nothing;
+            };
+            match app.apply(action) {
+                Some(Action::Quit) => Step::Quit,
+                Some(Action::SwitchFlow(slug)) => {
+                    host.set_slug(slug);
+                    Step::Redraw
+                }
+                _ => Step::Redraw,
+            }
+        }
+        Event::Input(TermEvent::Resize(..)) => Step::Redraw,
+        Event::Input(_) => Step::Nothing,
+    }
+}
+
+/// Re-lists the flows. A list failure lands in `source_error`, which the next snapshot
+/// clears.
+fn flows_changed(app: &mut App, host: &mut impl Host, freshest: &mut Option<String>) {
+    let entries = match host.list_flows() {
+        Ok(entries) => entries,
+        Err(message) => {
+            app.source_error = Some(message);
+            return;
+        }
+    };
+    let top = flows::freshest(&entries).map(|flow| flow.slug.clone());
+    app.flows = entries;
+    app.selector_cursor = app.selector_cursor.min(app.flows.len().saturating_sub(1));
+    if app.auto_flow
+        && top != *freshest
+        && let Some(slug) = &top
+        && *slug != app.snapshot.slug
+    {
+        host.set_slug(slug.clone());
+    }
+    *freshest = top;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ViewKind;
+    use crate::model::fixture;
+    use ratatui::crossterm::event::{KeyCode, KeyEvent};
+    use std::time::SystemTime;
+
+    fn opts(view: ViewKind) -> RunOpts {
+        RunOpts {
+            root: PathBuf::new(),
+            slug: None,
+            config: Config {
+                default_view: view,
+                ..Config::default()
+            },
+            warning: None,
+        }
+    }
+
+    /// Counts draws and records what the loop asked of the outside world.
+    #[derive(Default)]
+    struct FakeHost {
+        draws: usize,
+        slugs: Vec<String>,
+        flows: Vec<FlowEntry>,
+    }
+
+    impl Host for FakeHost {
+        fn draw(&mut self, _screen: &mut Screen) -> Result<(), String> {
+            self.draws += 1;
+            Ok(())
+        }
+
+        fn set_slug(&mut self, slug: String) {
+            self.slugs.push(slug);
+        }
+
+        fn list_flows(&mut self) -> Result<Vec<FlowEntry>, String> {
+            Ok(self.flows.clone())
+        }
+    }
+
+    /// A screen with nothing that ticks, so the loop blocks on `recv` rather than a timeout.
+    fn idle_screen(slug: &str) -> Screen {
+        let snapshot = Snapshot {
+            slug: slug.to_string(),
+            ..Snapshot::default()
+        };
+        let config = Config::default();
+        Screen::new(App::new(snapshot, &config), config, TailState::default())
+    }
+
+    fn resize() -> Event {
+        Event::Input(TermEvent::Resize(80, 24))
+    }
+
+    fn flow(slug: &str, secs: u64) -> FlowEntry {
+        FlowEntry {
+            slug: slug.to_string(),
+            status: "in-progress".to_string(),
+            updated: String::new(),
+            plan_path: String::new(),
+            tasks_mtime: SystemTime::UNIX_EPOCH + Duration::from_secs(secs),
+        }
+    }
+
+    #[test]
+    fn render_once_shows_the_slug_and_every_task() {
+        let snapshot = fixture();
+        let ids: Vec<u32> = snapshot.tasks.iter().map(|task| task.id).collect();
+        let text = render_once(&opts(ViewKind::Diagram), snapshot, 110, 40);
+        assert!(text.contains("demo-flow"), "{text}");
+        for id in ids {
+            assert!(
+                text.contains(&format!("[{id}]")),
+                "task {id} is drawn:\n{text}"
+            );
+        }
+        assert_eq!(text.lines().count(), 40);
+        assert!(!text.contains('\u{1b}'), "no escape sequences");
+    }
+
+    #[test]
+    fn a_burst_of_resizes_draws_once() {
+        let mut screen = idle_screen("demo-flow");
+        let mut host = FakeHost::default();
+        let (tx, rx) = mpsc::channel();
+        for _ in 0..3 {
+            tx.send(resize()).expect("send");
+        }
+        drop(tx);
+        run_loop(&mut screen, &rx, &mut host).expect("loop");
+        assert_eq!(host.draws, 2, "the first frame, then one for the burst");
+    }
+
+    #[test]
+    fn a_quit_key_ends_the_loop_before_the_batch_draws() {
+        let mut screen = idle_screen("demo-flow");
+        let mut host = FakeHost::default();
+        let (tx, rx) = mpsc::channel();
+        tx.send(resize()).expect("send");
+        let quit = KeyEvent::from(KeyCode::Char('q'));
+        tx.send(Event::Input(TermEvent::Key(quit))).expect("send");
+        drop(tx);
+        run_loop(&mut screen, &rx, &mut host).expect("loop");
+        assert_eq!(host.draws, 1, "only the first frame");
+    }
+
+    #[test]
+    fn auto_flow_switches_only_when_the_freshest_flow_moves() {
+        let mut app = idle_screen("").app;
+        app.auto_flow = true;
+        let mut host = FakeHost {
+            flows: vec![flow("old", 1), flow("new", 2)],
+            ..FakeHost::default()
+        };
+        let mut freshest = None;
+
+        flows_changed(&mut app, &mut host, &mut freshest);
+        assert_eq!(host.slugs, ["new"]);
+        assert_eq!(app.flows.len(), 2);
+
+        flows_changed(&mut app, &mut host, &mut freshest);
+        assert_eq!(host.slugs, ["new"], "an unmoved freshest is not re-sent");
+
+        host.flows.push(flow("newer", 3));
+        flows_changed(&mut app, &mut host, &mut freshest);
+        assert_eq!(host.slugs, ["new", "newer"]);
+
+        app.auto_flow = false;
+        host.flows.push(flow("newest", 4));
+        flows_changed(&mut app, &mut host, &mut freshest);
+        assert_eq!(host.slugs, ["new", "newer"], "auto-flow off never switches");
+    }
+}
