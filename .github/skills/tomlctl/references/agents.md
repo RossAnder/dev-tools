@@ -8,7 +8,8 @@ harness hooks as agents start, idle and stop, and read back by `agents list` and
 
 **Writer rule.** `agents record` is run only from harness hooks — the async
 `SubagentStart`, `SubagentStop` and `TeammateIdle` hooks that `glimpse setup` installs in the
-user's Claude Code settings. No carrier, orchestrator or sub-agent calls it, and nothing else
+user's Claude Code settings, and the `SubagentStart` and `SubagentStop` hooks it installs in
+`<CODEX_HOME>/hooks.json`, which pass `--harness codex`. No carrier, orchestrator or sub-agent calls it, and nothing else
 writes the store: `items`, `set` and `set-json` are never pointed at it. A flow that needs to
 know what an agent did reads the execution record, which stays the durable audit trail.
 
@@ -47,7 +48,7 @@ printf '{"hook_event_name":"SubagentStop","session_id":"<session>","agent_id":"<
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | *(positional)* | JSON or `-` | The hook payload, inline or `-` for stdin. A hook pipes it on stdin. | `-` |
-| `--harness` | `claude-code` \| `codex` \| `manual` | Harness that emitted the payload. Case-sensitive. Only the `claude-code` adapter exists: `codex` and `manual` are accepted by the parser and then refused with a non-zero exit, and any other value errors naming the vocabulary. | required |
+| `--harness` | `claude-code` \| `codex` \| `manual` | Harness that emitted the payload. Case-sensitive. Adapters exist for `claude-code` and `codex`; `manual` is accepted by the parser and then refused with a non-zero exit, and any other value errors naming the vocabulary. | required |
 
 - **Repo root.** When the payload's `cwd` names an existing directory, the process moves
   there before anything resolves the repo root, so a hook fired from a subdirectory or a
@@ -125,11 +126,11 @@ and any key not listed here is dropped.
 | Field | Value | Meaning |
 |---|---|---|
 | `id` | `A<n>` | `A` plus one more than the largest well-formed id in the store; `A1` on an empty one. A gap is never refilled. A row without an `id` refuses the store. |
-| `harness` | `claude-code` \| `codex` \| `manual` | Harness that recorded the row. Absent reads as `claude-code`. |
-| `session_id` | text | The parent session the hook fired in. |
-| `agent_id` | text | The harness's agent id. With `session_id`, the key a start or stop event matches on. |
-| `agent_type` | text | The agent's type, e.g. `implement-deep`, `research-lite`, `verification`. |
-| `kind` | `subagent` \| `teammate` | `teammate` when the agent's `.meta.json` carries `taskKind = "in_process_teammate"` — a named `Agent` spawn — else `subagent`. Absent reads as `subagent`. Once a row is a teammate, a later start never demotes it. |
+| `harness` | `claude-code` \| `codex` \| `manual` | Harness whose hook created the row — the `--harness` it was recorded under. Absent reads as `claude-code`. |
+| `session_id` | text | The parent session the hook fired in. Under Codex, the id its root thread and every descendant share. |
+| `agent_id` | text | The harness's agent id — under Codex, the child's thread id. With `session_id`, the key a start or stop event matches on. |
+| `agent_type` | text | The agent's type, e.g. `implement-deep`, `research-lite`, `verification`. Under Codex, the spawn's agent role, `default` when none was given. |
+| `kind` | `subagent` \| `teammate` | `teammate` when the agent's `.meta.json` carries `taskKind = "in_process_teammate"` — a named `Agent` spawn — else `subagent`. Absent reads as `subagent`. Once a row is a teammate, a later start never demotes it. Codex writes no `.meta.json`, so its rows are always `subagent`, with `name` and `team` left `""`. |
 | `name` | text | Teammate name; `""` for a subagent. The key an idle event matches on. |
 | `team` | text | Team name from the `.meta.json`; informational only, never matched. |
 | `status` | `running` \| `idle` \| `stopped` | See [Events](#events). Absent reads as `running`. |
@@ -138,7 +139,7 @@ and any key not listed here is dropped.
 | `ended_at` | RFC 3339 UTC or `""` | Set when a subagent stops; cleared by a later start. A teammate's stays `""`. |
 | `transcript_path` | path | The agent's own transcript, canonicalised. |
 | `summary` | text | The stop payload's `last_assistant_message`, trimmed to 600 characters with line endings folded to LF. A stop without one keeps the previous summary. |
-| `context_tokens` | integer | Context size at the agent's last assistant turn: that turn's input, cache-read, cache-creation and output token counts summed. `0` until a stop reads it; a malformed value reads as `0`. |
+| `context_tokens` | integer | Context size at the agent's last assistant turn: that turn's input, cache-read, cache-creation and output token counts summed. Under Codex, the `total_tokens` of the rollout's last `token_count` event or `token_usage_record` — its input count already includes cached tokens. `0` until a stop reads it; a malformed value reads as `0`. |
 | `segments` | array of tables | One per assignment, oldest first. |
 
 An unknown `harness`, `kind` or `status` value refuses the whole store, naming the row.
@@ -153,8 +154,9 @@ An unknown `harness`, `kind` or `status` value refuses the whole store, naming t
 
 ## Events
 
-`--harness claude-code` reads the payload's `hook_event_name`. Any other event prints
-`{"recorded":false,"reason":"unsupported-event"}`.
+Both adapters read the payload's `hook_event_name`. Any other event prints
+`{"recorded":false,"reason":"unsupported-event"}`, and so does `TeammateIdle` under
+`--harness codex`, which has no teammates.
 
 | Hook event | Label | Effect |
 |---|---|---|
@@ -165,6 +167,11 @@ An unknown `harness`, `kind` or `status` value refuses the whole store, naming t
 A `SubagentStart` or `SubagentStop` with an empty `agent_type` is a harness-internal agent and
 prints `{"recorded":false,"reason":"internal-agent"}` without reading anything else.
 
+Codex fires `SubagentStart` only when a child thread is spawned or forked, and `SubagentStop`
+at the end of every child turn, so a child given a follow-up message stops again without a
+fresh start: the row is re-stamped `stopped` and keeps its closed segment. Codex fires neither
+for its internal agents.
+
 ## Flow selection
 
 A payload names no flow, so `record` works out which flow's store owns the event. It first
@@ -173,8 +180,17 @@ reads the agent's transcript — the payload's `agent_transcript_path` when pres
 second for it to appear — and accepts it only when it canonicalises inside the session's own
 transcript directory. An idle event uses the `transcript_path` already on the teammate's row.
 
+Under `--harness codex` the transcript is the child's rollout: the stop payload's
+`agent_transcript_path`, and the start payload's `transcript_path`, which on a start names the
+child's own rollout rather than the parent's. Codex files rollouts by date under
+`<CODEX_HOME>/sessions/YYYY/MM/DD/`, so no parent directory contains them; a rollout is
+accepted only when its canonical file name is `rollout-*.jsonl` and carries the payload's
+`agent_id`. Either path may be `null`, which leaves the event with no transcript.
+
 The **dispatch** is the newest user-authored line in that transcript carrying at least one
 `tasks show <id> --slug <slug>` command — the fetch line every flow dispatch prompt contains.
+In a Codex rollout that is a user-role `response_item` message's `input_text`, or an
+`inter_agent_communication` item's `content`.
 Its ids become the segment's task set. A line whose `tasks show` commands name two different
 slugs yields no dispatch, and a line that is a tool result echoing such a command is not a
 prompt and is skipped.

@@ -409,7 +409,7 @@ fn a_harness_without_an_adapter_or_outside_the_vocabulary_fails() {
     projects.agent("a1", &[dispatch_line(2, TASKS_SLUG)], &subagent_meta());
     let start = payload("SubagentStart", &root, &projects, "a1").to_string();
 
-    for harness in ["codex", "Claude-Code"] {
+    for harness in ["manual", "Claude-Code"] {
         cli(&root)
             .args(["agents", "record", "--harness", harness])
             .write_stdin(start.clone())

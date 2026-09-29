@@ -7,7 +7,8 @@
 //! live-appended one JSON object per line, with a sibling `.meta.json` that
 //! appears within ~124 ms of the transcript's first line. The transcript can
 //! also lag the hook that names it, so a lookup here may still see an agent's
-//! previous dispatch; callers that close a segment look again.
+//! previous dispatch; callers that close a segment look again. The `codex_*`
+//! readers follow the rollout format of openai/codex `rust-v0.158.0`.
 //!
 //! Every failure degrades to `None`, a default, or `0`: a hook has nobody to
 //! report an error to.
@@ -101,10 +102,41 @@ pub(crate) fn latest_dispatch(path: &Path) -> Option<Dispatch> {
     if !wait_for_file(path, RETRY_ATTEMPTS) {
         return None;
     }
-    dispatch_in(&read_tail(path)?)
+    dispatch_in(&read_tail(path)?, user_text)
 }
 
-fn dispatch_in(text: &str) -> Option<Dispatch> {
+/// Resolve a Codex agent's rollout from the payload path naming it. Codex
+/// keeps rollouts under `<CODEX_HOME>/sessions/YYYY/MM/DD/`, so a child
+/// spawned past midnight sits outside its parent's directory; containment is
+/// instead the file name, `rollout-<timestamp>-<thread id>.jsonl`, which must
+/// carry `agent_id`.
+pub(crate) fn codex_rollout(path: &str, agent_id: &str) -> Option<PathBuf> {
+    codex_rollout_with(path, agent_id, RETRY_ATTEMPTS)
+}
+
+fn codex_rollout_with(path: &str, agent_id: &str, attempts: u32) -> Option<PathBuf> {
+    if path.is_empty() || agent_id.is_empty() {
+        return None;
+    }
+    let candidate = Path::new(path);
+    if !wait_for_file(candidate, attempts) {
+        return None;
+    }
+    let canonical = std::fs::canonicalize(candidate).ok()?;
+    let name = canonical.file_name()?.to_str()?;
+    (name.starts_with("rollout-") && name.ends_with(".jsonl") && name.contains(agent_id))
+        .then_some(canonical)
+}
+
+/// [`latest_dispatch`] over a Codex rollout.
+pub(crate) fn codex_latest_dispatch(path: &Path) -> Option<Dispatch> {
+    if !wait_for_file(path, RETRY_ATTEMPTS) {
+        return None;
+    }
+    dispatch_in(&read_tail(path)?, codex_user_text)
+}
+
+fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Dispatch> {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     // `[0-9]` rather than `\d`: the crate is built without Unicode classes.
     let pattern = PATTERN.get_or_init(|| {
@@ -113,12 +145,12 @@ fn dispatch_in(text: &str) -> Option<Dispatch> {
     });
 
     for line in text.lines().rev() {
-        // Cheap rejections before a JSON parse: a line that cannot match is
+        // A cheap rejection before a JSON parse: a line that cannot match is
         // skipped whatever its shape.
-        if !line.contains("tasks show") || !line.contains("\"user\"") {
+        if !line.contains("tasks show") {
             continue;
         }
-        let Some(prompt) = user_text(line) else {
+        let Some(prompt) = prompt_of(line) else {
             continue;
         };
         let mut slug: Option<&str> = None;
@@ -153,6 +185,9 @@ fn dispatch_in(text: &str) -> Option<Dispatch> {
 /// `tool_result` block is a tool's output echoed back, not a prompt, and
 /// yields `None` even when it quotes a dispatch command.
 fn user_text(line: &str) -> Option<String> {
+    if !line.contains("\"user\"") {
+        return None;
+    }
     let value: JsonValue = serde_json::from_str(line).ok()?;
     if value.get("type")?.as_str()? != "user" {
         return None;
@@ -175,6 +210,36 @@ fn user_text(line: &str) -> Option<String> {
             }
             Some(out)
         }
+        _ => None,
+    }
+}
+
+/// The prompt prose of a Codex rollout line: the `input_text` blocks of a
+/// user-role `response_item` message, or the `content` of an
+/// `inter_agent_communication`, the form a spawn prompt takes under Codex's
+/// v2 multi-agent protocol. Tool output is a `function_call_output` item.
+fn codex_user_text(line: &str) -> Option<String> {
+    let value: JsonValue = serde_json::from_str(line).ok()?;
+    let payload = value.get("payload")?;
+    match value.get("type")?.as_str()? {
+        "response_item" => {
+            if payload.get("type")?.as_str()? != "message"
+                || payload.get("role")?.as_str()? != "user"
+            {
+                return None;
+            }
+            let mut out = String::new();
+            for block in payload.get("content")?.as_array()? {
+                if block.get("type").and_then(JsonValue::as_str) == Some("input_text")
+                    && let Some(text) = block.get("text").and_then(JsonValue::as_str)
+                {
+                    out.push_str(text);
+                    out.push('\n');
+                }
+            }
+            Some(out)
+        }
+        "inter_agent_communication" => Some(payload.get("content")?.as_str()?.to_string()),
         _ => None,
     }
 }
@@ -243,6 +308,47 @@ fn tokens_in(text: &str) -> u64 {
         .iter()
         .filter_map(|k| usage.get(*k).and_then(JsonValue::as_u64))
         .fold(0u64, u64::saturating_add);
+    }
+    0
+}
+
+/// The context size at a Codex agent's last response: that response's
+/// `total_tokens`, whose input count already includes the cached tokens.
+pub(crate) fn codex_context_tokens(path: &Path) -> u64 {
+    read_tail(path).map_or(0, |text| codex_tokens_in(&text))
+}
+
+fn codex_tokens_in(text: &str) -> u64 {
+    for line in text.lines().rev() {
+        if !line.contains("token_") {
+            continue;
+        }
+        let Ok(value) = serde_json::from_str::<JsonValue>(line) else {
+            continue;
+        };
+        let Some(payload) = value.get("payload") else {
+            continue;
+        };
+        let usage = match value.get("type").and_then(JsonValue::as_str) {
+            Some("event_msg")
+                if payload.get("type").and_then(JsonValue::as_str) == Some("token_count") =>
+            {
+                payload
+                    .get("info")
+                    .and_then(|info| info.get("last_token_usage"))
+            }
+            Some("token_usage_record") => payload.get("usage"),
+            _ => None,
+        };
+        let Some(usage) = usage else {
+            continue;
+        };
+        let count = |key: &str| usage.get(key).and_then(JsonValue::as_u64);
+        return count("total_tokens").unwrap_or_else(|| {
+            count("input_tokens")
+                .unwrap_or(0)
+                .saturating_add(count("output_tokens").unwrap_or(0))
+        });
     }
     0
 }
@@ -347,7 +453,7 @@ mod tests {
             "tasks show 12 --slug my-flow\ntasks show 5 --slug my-flow\ntasks show 12 --slug my-flow",
         );
         assert_eq!(
-            dispatch_in(&text),
+            dispatch_in(&text, user_text),
             Some(Dispatch {
                 slug: "my-flow".into(),
                 task_ids: vec![5, 12],
@@ -362,7 +468,7 @@ mod tests {
             user_line("tasks show 2 --slug one-flow\ntasks show 3 --slug other-flow"),
         ]
         .join("\n");
-        assert_eq!(dispatch_in(&text), None);
+        assert_eq!(dispatch_in(&text, user_text), None);
     }
 
     #[test]
@@ -381,12 +487,134 @@ mod tests {
         ]
         .join("\n");
         assert_eq!(
-            dispatch_in(&text),
+            dispatch_in(&text, user_text),
             Some(Dispatch {
                 slug: "real-flow".into(),
                 task_ids: vec![4],
             })
         );
+    }
+
+    fn codex_line(kind: &str, payload: serde_json::Value) -> String {
+        serde_json::json!({"timestamp": "2026-09-29T10:00:01.000Z", "type": kind, "payload": payload})
+            .to_string()
+    }
+
+    #[test]
+    fn a_codex_rollout_names_its_dispatch_in_a_user_message_or_agent_message() {
+        let prompt = codex_line(
+            "response_item",
+            serde_json::json!({"type": "message", "role": "user", "content": [
+                {"type": "input_text", "text": "DISPATCH: implement-deep\n`tomlctl tasks show 16 --slug my-flow --with body`"}
+            ]}),
+        );
+        let echoed = [
+            codex_line(
+                "response_item",
+                serde_json::json!({"type": "function_call_output", "call_id": "c1",
+                    "output": "tasks show 9 --slug echoed-flow"}),
+            ),
+            codex_line(
+                "response_item",
+                serde_json::json!({"type": "message", "role": "assistant", "content": [
+                    {"type": "output_text", "text": "running tasks show 8 --slug assistant-flow"}
+                ]}),
+            ),
+            codex_line(
+                "event_msg",
+                serde_json::json!({"type": "agent_message", "message": "tasks show 7 --slug event-flow"}),
+            ),
+        ];
+        let text = std::iter::once(prompt.clone())
+            .chain(echoed.iter().cloned())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            dispatch_in(&text, codex_user_text),
+            Some(Dispatch {
+                slug: "my-flow".into(),
+                task_ids: vec![16],
+            })
+        );
+        // Claude's reader finds nothing in a Codex rollout.
+        assert_eq!(dispatch_in(&text, user_text), None);
+
+        let retask = codex_line(
+            "inter_agent_communication",
+            serde_json::json!({"author": "/root", "recipient": "/root/worker",
+                "other_recipients": [], "content": "next: tomlctl tasks show 3 --slug my-flow",
+                "trigger_turn": true}),
+        );
+        assert_eq!(
+            dispatch_in(&[prompt, retask].join("\n"), codex_user_text).map(|d| d.task_ids),
+            Some(vec![3])
+        );
+    }
+
+    #[test]
+    fn codex_context_tokens_reads_the_last_response_usage() {
+        let usage = |input: u64, cached: u64, output: u64| {
+            serde_json::json!({"input_tokens": input, "cached_input_tokens": cached,
+                "output_tokens": output, "reasoning_output_tokens": 0,
+                "total_tokens": input + output})
+        };
+        let text = [
+            codex_line(
+                "event_msg",
+                serde_json::json!({"type": "token_count", "info": {
+                    "total_token_usage": usage(9000, 8000, 900),
+                    "last_token_usage": usage(4000, 3500, 200),
+                    "model_context_window": 272000}, "rate_limits": null}),
+            ),
+            codex_line(
+                "event_msg",
+                serde_json::json!({"type": "token_count", "info": null, "rate_limits": null}),
+            ),
+            codex_line(
+                "response_item",
+                serde_json::json!({"type": "message", "role": "user", "content": [
+                    {"type": "input_text", "text": "token_count"}]}),
+            ),
+        ]
+        .join("\n");
+        assert_eq!(codex_tokens_in(&text), 4200);
+
+        let record = codex_line(
+            "token_usage_record",
+            serde_json::json!({"thread_id": "t", "turn_id": "1", "session_id": "s",
+                "root_turn_id": "1", "response_id": "r",
+                "usage": {"input_tokens": 50, "cached_input_tokens": 0, "output_tokens": 5},
+                "turn_token_usage": usage(1, 0, 1), "thread_token_usage": usage(1, 0, 1)}),
+        );
+        assert_eq!(codex_tokens_in(&[text, record].join("\n")), 55);
+        assert_eq!(codex_tokens_in(""), 0);
+    }
+
+    #[test]
+    fn a_codex_rollout_must_be_named_for_its_agent() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let day = tmp
+            .path()
+            .join("sessions")
+            .join("2026")
+            .join("09")
+            .join("29");
+        std::fs::create_dir_all(&day).expect("day dir");
+        let thread = "0199a3c1-7f2e-7d40-9b1a-5c7e2f0a1b2c";
+        let rollout = day.join(format!("rollout-2026-09-29T10-00-00-{thread}.jsonl"));
+        std::fs::write(&rollout, "").expect("rollout");
+        let stray = day.join("notes.jsonl");
+        std::fs::write(&stray, "").expect("stray");
+        let path = rollout.to_string_lossy().into_owned();
+
+        assert!(codex_rollout_with(&path, thread, 0).is_some());
+        assert_eq!(codex_rollout_with(&path, "another-thread", 0), None);
+        assert_eq!(codex_rollout_with(&path, "", 0), None);
+        assert_eq!(
+            codex_rollout_with(&stray.to_string_lossy(), "notes", 0),
+            None
+        );
+        assert_eq!(codex_rollout_with("", thread, 0), None);
     }
 
     #[test]
