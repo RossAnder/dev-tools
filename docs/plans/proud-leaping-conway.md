@@ -121,6 +121,7 @@ Also run `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- -
 ## Execution Policy
 
 - **Checkpoints**: milestones
+- **Checkpoint after**: tasks 2, 3, 4, 8, 9, 10, 11, 12, 13, 14
 - **Max parallel agents**: 6
 - **Commit granularity**: per-task
 
@@ -293,11 +294,11 @@ Also run `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- -
 
 Per-task `Depends on` lines are authoritative; this section states only the checkpoint cuts.
 
-— CHECKPOINT A after tasks 2, 3, 4 — the template, its probing reference, and the two prose fixes: one coherent documentation increment.
+— CHECKPOINT A after tasks 2, 3, 4 — dependency closure: 1, 2, 3, 4. The template, its probing reference, and the two prose fixes: one coherent documentation increment.
 
-— CHECKPOINT B after tasks 8, 9, 14 — the tomlctl changes with their tests and reference docs: a buildable increment the pre-commit gates can check on their own.
+— CHECKPOINT B after tasks 8, 9, 14 — dependency closure: 5, 6, 7, 8, 9, 14. The tomlctl changes with their tests and reference docs: a buildable increment the pre-commit gates can check on their own.
 
-— CHECKPOINT C after tasks 10, 11, 12, 13 — the four carriers adopting the new template and store fields.
+— CHECKPOINT C after tasks 10, 11, 12, 13 — dependency closure: 1, 2, 5, 10, 11, 12, 13. The four carriers adopting the new template and store fields.
 
 ## Risks
 

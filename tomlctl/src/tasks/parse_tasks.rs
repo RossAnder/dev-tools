@@ -433,9 +433,9 @@ fn deep_heading(line: &str, line_no: usize) -> Option<Finding> {
 /// the anchor names nothing the store keys on: after the effort tag it is
 /// dropped with the tag, before it the ref absorbs it.
 fn heading_anchor(task: &ParsedTask, line: &str, line_no: usize) -> Option<Finding> {
-    if !line.contains("{#") {
-        return None;
-    }
+    let start = line.find("{#")?;
+    let rest = &line[start..];
+    let anchor = rest.find('}').map_or(rest, |end| &rest[..=end]);
     let fate = if task.title.contains("{#") {
         "sits inside the title, so it becomes part of the task's ref"
     } else {
@@ -446,7 +446,7 @@ fn heading_anchor(task: &ParsedTask, line: &str, line_no: usize) -> Option<Findi
         severity: WARNING,
         ids: vec![task.id],
         detail: format!(
-            "line {line_no}: task {} \"{}\" carries a `{{#…}}` anchor, which {fate}. A \
+            "line {line_no}: task {} \"{}\" carries a `{anchor}` anchor, which {fate}. A \
              task's ref derives from its title, never from an anchor; remove it",
             task.id, task.title
         ),
@@ -1095,6 +1095,12 @@ mod tests {
         assert_eq!(anchors[0].ids, vec![1]);
         assert!(anchors[0].detail.contains("line 10"), "{:?}", anchors[0]);
         assert!(anchors[0].detail.contains("dropped"), "{:?}", anchors[0]);
+        assert!(anchors[0].detail.contains("`{#ship}`"), "{:?}", anchors[0]);
+        assert!(
+            anchors[1].detail.contains("`{#follow}`"),
+            "{:?}",
+            anchors[1]
+        );
         assert_eq!(anchors[1].ids, vec![2]);
         assert!(anchors[1].detail.contains("line 13"), "{:?}", anchors[1]);
         assert!(

@@ -261,7 +261,7 @@ tomlctl items next-id .claude/flows/foo/review-ledger.toml --infer-from-file # â
 Appends records to an arbitrary array-of-tables such as `[[rollback_events]]` (written by the `/review-apply` / `/optimise-apply` rollback protocol). A thin shim over `items add-many` that takes the array name positionally and needs no op framing. The envelope reports `appended`.
 
 ```bash
-tomlctl array-append <ledger> rollback_events --json '{"timestamp":"2026-04-18T14:32:00Z","command":"review-apply","cause":"build failure","items":["R3","R7"],"stash_ref":"stash@{0}"}'
+tomlctl array-append <ledger> rollback_events --json '{"timestamp":"2026-04-18T14:32:00Z","command":"review-apply","cause":"build failure","items":["R3","R7"],"stash_ref":"3f9c2a7e5b1d4c8e9a0f6b2d7c3e1a5f8b4d9c02"}'
 tomlctl array-append <ledger> rollback_events --ndjson .claude/flows/foo/_rollback-batch.ndjson
 ```
 

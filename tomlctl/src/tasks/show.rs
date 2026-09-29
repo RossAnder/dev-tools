@@ -399,6 +399,12 @@ mod tests {
                 note: note.to_string(),
             })
             .collect();
+        // Another task's note on a path this one claims is not this task's.
+        store.file_notes.push(FileNote {
+            r#ref: "task-13".to_string(),
+            file: "a/plain.rs".to_string(),
+            note: "(new)".to_string(),
+        });
 
         let out = show(&store, 12, &[ShowPart::Files]).expect("task 12 shows");
         let keys: Vec<&str> = out
@@ -440,6 +446,13 @@ mod tests {
             ("(new: generated)", Some(FileKind::New)),
             ("(deleted)", Some(FileKind::Delete)),
             ("(DELETE, superseded)", Some(FileKind::Delete)),
+            ("( new)", Some(FileKind::New)),
+            ("(new )", Some(FileKind::New)),
+            ("(remove)", Some(FileKind::Delete)),
+            ("(Created)", Some(FileKind::New)),
+            ("(removed, generated)", Some(FileKind::Delete)),
+            ("(remove the call)", None),
+            ("(create thread)", None),
             ("(newline handling)", None),
             ("(new thread)", None),
             ("(new `Shape` enum)", None),

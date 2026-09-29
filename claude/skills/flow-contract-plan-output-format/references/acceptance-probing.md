@@ -1,21 +1,13 @@
 # Acceptance probing
 
-How a plan's **Acceptance** criteria are written, labelled and probed before the plan ships.
-`/plan-new` Phase 7 and `/review-plan` Step 2.6 run this method; the format rules carry only the
-two-control rule's statement and point here.
+How a plan's **Acceptance** criteria are probed before the plan ships. `/plan-new` Phase 7 and
+`/review-plan` Step 2.6 run this method. The format rules carry the acceptance sub-bullet
+convention and the two-control rule's statement; this file holds the probing method.
 
 ## Acceptance sub-bullets
 
-Write one sub-bullet per criterion under **Acceptance**, each opening with its polarity:
-
-- `forward:` — describes the tree after the task lands. Append `today: <value>` with the
-  negative-control baseline, so the executing agent inherits the before-value.
-- `falsifier:` — describes the tree before the task lands; the negative control settles it.
-- `guard:` — a regression guard, a forward criterion that already holds today. It is the
-  `(regression guard)` tag's other spelling, and both are accepted. A guard never stands
-  alone: pair it with a `forward:` or `falsifier:` criterion that discriminates.
-
-A task with a single criterion may keep it inline on the **Acceptance** line.
+The `forward:` / `falsifier:` / `guard:` labels are the format rules' **Acceptance sub-bullets**
+rule in the skill's `SKILL.md`; a criterion is probed under the polarity its label declares.
 
 ```markdown
 - **Acceptance**:
@@ -52,7 +44,16 @@ p 9 neg 'git diff -U0 src/rail.ts | grep -E "^[+-][^+-]" | grep -vE "^[+-]\s*(\*
 p 9 pos 'printf "+/* Why:\n+   bare prose\n+ */\n" | grep -E "^[+-][^+-]" | grep -vE "^[+-]\s*(\*|/\*|//)"'
 ```
 
-Quote each command with the quote style it does not itself contain; inside double quotes a literal `$` is `\$` — the quotes are the *caller's*, so an unescaped `awk '{print $1}'` expands `$1` against the calling shell and almost always yields the empty string, silently turning the probe into a different program rather than erroring. Prefix `cd <dir> &&` when the **Acceptance** line names a working directory — the subshell discards it. Every probe prints one tab-separated line — `task`, `neg|pos`, `rc`, stdout, stderr (each stream's first 100 bytes, newlines folded to `|`) — and nothing short-circuits. Judge on the stdout and stderr columns, not the rc: a pipeline's exit status is its last stage's, so an `awk: fatal` first stage still reports `rc=1` like a healthy miss, and git's `LF will be replaced by CRLF` warning lands in the stderr column without touching the verdict.
+Quote each command with the quote style it does not itself contain; inside double quotes a literal `$` is `\$` — the quotes are the *caller's*, so an unescaped `awk '{print $1}'` expands `$1` against the calling shell and almost always yields the empty string, silently turning the probe into a different program rather than erroring. Prefix `cd <dir> &&` when the **Acceptance** line names a working directory — the subshell discards it. Every probe prints one tab-separated line — `task`, `neg|pos`, `rc`, stdout, stderr (each stream's first 100 bytes, newlines folded to `|`) — and nothing short-circuits. Judge an acceptance command on the stdout and stderr columns, not the rc (a [`success:` key](#success-keys) is the exception): a pipeline's exit status is its last stage's, so an `awk: fatal` first stage still reports `rc=1` like a healthy miss, and git's `LF will be replaced by CRLF` warning lands in the stderr column without touching the verdict.
+
+## `success:` keys
+
+A `success:` key under `## Verification Commands` is probed for its exit status alone, since
+that is all the `verification` agent judges it by. Run it through the same helper and read the
+rc column: a key that exits 0 on the current tree while its criterion does not hold yet is
+**broken** — the bare-count shape, which exits 0 whatever it prints. Plan-time probing runs only
+the read-only keys; one that builds, writes or mutates is left unprobed and noted as such, and
+`/implement` Phase 3 remains the only place that runs it.
 
 ## Verdicts
 
@@ -63,6 +64,7 @@ Quote each command with the quote style it does not itself contain; inside doubl
 | forward | does not hold | does not hold | **unsatisfiable** — the command is broken; fix the command, never the task |
 | falsifier | holds | — | **healthy** — the named check does bind what the task changes |
 | falsifier | does not hold | — | **permanently green** — the check cannot detect this task's change; strengthen the assertion or name one that binds the changed values |
+| `success:` key | exits 0 while its criterion does not hold | — | **broken** — rewrite it to exit non-zero when the criterion fails |
 | either | stderr carries `No such file`, `command not found`, or `fatal` | any | **broken** — wrong path, tool, or working directory |
 
 Skip only commands that write build output (`target/`, `dist/`) — both carriers run before approval. A criterion that cannot be probed read-only is labelled **predicted, unverified** on its own line.

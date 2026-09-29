@@ -1,0 +1,635 @@
+schema_version = 1
+last_updated = 2026-09-29
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R1"
+file = "claude/commands/implement.md"
+line = 159
+symbol = "Phase 2 step 6 rollback: stash then guarded removal"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Rollback step 2's stash push -u already removes every declared untracked path, so step 4's four-condition removal never fires and the report is wrong"
+description = "git stash push -u -- <paths> stashes AND deletes each named untracked file. By step 4 every non-ignored declared new file is gone (fails test -f) and ignored ones survive git clean -f, so step 4 removes nothing; the absent-at-dispatch record (:112, :188) and the new_files fetch guard nothing. Worse, an untracked path that existed at dispatch (e.g. a file created by an earlier task in the same uncommitted milestones window) is swept into the stash too, and the Phase-4 report lists stashed files as 'left in place'. Recoverable from the stash, but the checkpoint train then commits without it. Fix (converged by four lenses): evaluate step 4's tests on the pre-stash state; build the stash pathspec from existing tracked paths plus only the untracked paths that pass the test (keep -u for a recovery copy); rewrite step 4 as 'the stash removed these; every other untracked path stays and is named'. Also reword the rollback sentences in flow-contract-plan-output-format SKILL.md:237 and flow-contract-task-store SKILL.md:194, and the plan's Risks mitigation."
+evidence = [
+    "claude/commands/implement.md:159",
+    "claude/commands/implement.md:161",
+    "claude/commands/implement.md:112",
+    "scratch repo git 2.55: git --literal-pathspecs stash push -u -m r -- t.rs new.rs -> rc 0; ls -> t.rs only (reproduced by orchestrator and 4 lenses)",
+]
+instances = [
+    "claude/commands/implement.md:112",
+    "claude/commands/implement.md:159",
+    "claude/commands/implement.md:161",
+    "claude/commands/implement.md:163",
+    "claude/commands/implement.md:188",
+]
+sweep = [
+    "stash push -u",
+    "absent at dispatch",
+    "git --literal-pathspecs clean",
+]
+enumeration = "complete"
+related = [
+    "R2",
+    "R4",
+]
+dedup_id = "b9e2e562dc2fbf0b"
+resolved = 2026-09-29
+resolution = "Uncommitted: implement.md step 6 classifies declared paths before stashing; stash pathspec is tracked paths plus only untracked paths passing the new-file test, so failing untracked files stay on disk; git clean removal replaced by reporting; empty pathspec skips the stash."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R2"
+file = "claude/commands/implement.md"
+line = 159
+symbol = "Phase 2 step 6 rollback: directory claims in files"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "A directory entry on the failed task's Files line makes the rollback stash and restore sweep a sibling task's in-flight edits and new files"
+description = "The parser accepts directory claims (parse_tasks.rs:969 fixture; real plans carry lumina/server/, lumina/tests/ etc.), and the scheduler's first_claim / overlap_pairs (graph.rs:420, :338) intersect exact path strings, so a task claiming d/ runs alongside a sibling claiming d/x.rs. On rollback, stash push -u -- d/ and ls-files -- d/ capture the sibling's work, contradicting ':150 no other task's file is ever in that set'. Recoverable from the stash but unreported. Fix in implement.md: exclude directory claims (test -d or trailing /) from steps 2-3 and treat them like the existing uncertain-file-set case (leave alone, name in report). Scheduler-side coverage of directory claims would need a plan."
+evidence = [
+    "claude/commands/implement.md:150",
+    "claude/commands/implement.md:159",
+    "claude/commands/implement.md:160",
+    "tomlctl/src/tasks/graph.rs:420",
+    "tomlctl/src/tasks/graph.rs:338",
+    "scratch repo: git --literal-pathspecs stash push -u -m rb -- d/ d/failnew.rs -> stash holds d/sib.rs d/sibnew.rs",
+]
+instances = [
+    "claude/commands/implement.md:159",
+    "claude/commands/implement.md:160",
+]
+enumeration = "complete"
+related = ["R1"]
+dedup_id = "896d8b81eddac0d4"
+resolved = 2026-09-29
+resolution = "Uncommitted: implement.md step 6 drops directory claims (trailing / or test -d) before any git call and names them in the report."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R3"
+file = "tomlctl/src/tasks/update.rs"
+line = 165
+symbol = "patch"
+severity = "warning"
+effort = "small"
+category = "db"
+summary = "tasks update --ref onto a ref whose side-table entries a removed row left behind merges those orphans into the renamed row"
+description = "The collision check (update.rs:165-175) looks only at store.items; tasks remove (remove.rs:100-107) prunes only import_overrides, leaving file_notes and backlog_links keyed on a ref no row holds; tasks add (add.rs:101-105) likewise builds its in-use set from items only. A rename or same-slug add onto that ref inherits the orphans, and Store::file_note / links_for (schema.rs:288, :295) return the first match, so show can report the removed row's notes, new_files and closes links. surviving_file_notes keeps them across import for store-only rows. Now load-bearing because new_files feeds implementer prompts and rollback. Fix: drop entries keyed on new_ref before re-keying; have remove drop file_notes (and backlog_links or keep the documented until-next-import for links); ideally give Store rekey_side_tables / drop_side_tables used by update, import_plan::adopt_refs and remove. Add a remove-then-rename test."
+evidence = [
+    "tomlctl/src/tasks/update.rs:165",
+    "tomlctl/src/tasks/remove.rs:100",
+    "tomlctl/src/tasks/add.rs:101",
+    "tomlctl/src/tasks/schema.rs:288",
+    "tomlctl/src/tasks/schema.rs:295",
+    "tomlctl/src/tasks/import_plan.rs:549",
+]
+instances = [
+    "tomlctl/src/tasks/update.rs:patch",
+    "tomlctl/src/tasks/remove.rs:100",
+    "tomlctl/src/tasks/import_plan.rs:adopt_refs",
+    "tomlctl/src/tasks/schema.rs:Store",
+]
+enumeration = "complete"
+related = [
+    "R12",
+    "R15",
+]
+dedup_id = "ae0ea4b991dba078"
+resolved = 2026-09-29
+resolution = "Uncommitted: Store::drop_ref_entries drops file_notes/backlog_links keyed on a ref; tasks update --ref and tasks add call it for the ref they claim; tests for remove-then-rename and add; tasks-store.md documents it."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R4"
+file = "claude/commands/implement.md"
+line = 159
+symbol = "Phase 2 step 6 rollback: stash ref recording"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Rollback records a positional stash@{N} ref that the next rollback in the same run shifts"
+description = "git stash list -n 1 yields stash@{0}; a second failed task's rollback pushes another stash and the first becomes stash@{1}, so the Phase-4 report names stash@{0} for both and popping it recovers the wrong task. Record git rev-parse --verify stash@{0} (the commit SHA, accepted by git stash apply) or name the stash by its unique implement-rollback-<ref> message; adjust the :163 report wording."
+evidence = [
+    "claude/commands/implement.md:159",
+    "scratch repo: second stash push -> stash@{0} implement-rollback-y, stash@{1} earlier",
+]
+related = ["R1"]
+dedup_id = "322fba85e1206a11"
+resolved = 2026-09-29
+resolution = "Uncommitted: implement.md rollback records the stash commit SHA (git rev-parse --verify -q stash@{0}) and the report names it."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R5"
+file = "claude/commands/review-plan.md"
+line = 105
+symbol = "Step 2.6 check 4 two-control sweep"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "The sweep cites acceptance-probing.md by a dev-tools repo path and never says to read it, so outside this repo the helper and verdict table are never loaded"
+description = "Skills install as directory copies under the user skills dir; the repo path claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md does not exist in other repos, and invoking the skill loads only SKILL.md, which now holds a one-line pointer. plan-new.md:113 does it right ('the plan-output-format skill's references/acceptance-probing.md; read it before probing'). Drop the repo-path parenthetical, cite the file relative to the skill's base directory, and add an explicit read instruction."
+evidence = [
+    "claude/commands/review-plan.md:105",
+    "claude/commands/plan-new.md:113",
+]
+instances = ["claude/commands/review-plan.md:105"]
+sweep = ["claude/skills/[a-z-]+/references"]
+enumeration = "complete"
+dedup_id = "64836f596f0e3712"
+resolved = 2026-09-29
+resolution = "Uncommitted: review-plan.md check 4 cites the reference relative to the skill base directory and says to read it before probing."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R6"
+file = "claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md"
+line = 4
+symbol = "purpose line and Acceptance sub-bullets section"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The acceptance sub-bullet convention is stated in full in both the reference and SKILL.md:247, and the reference's intro claims the format rules carry only the two-control statement"
+description = "acceptance-probing.md:4-5 says 'the format rules carry only the two-control rule's statement and point here', but SKILL.md:247 carries the full forward/today/falsifier/guard convention, duplicating the reference's section at :7-18 with slightly different guard wording. Keep the convention in SKILL.md (the authoring contract Phase 7 loads and review-plan's FORMAT CONTRACT fence embeds), cut the reference section to a pointer (keep the example if useful), and correct the intro sentence."
+evidence = [
+    "claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md:4",
+    "claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md:7",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md:247",
+]
+instances = [
+    "claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md:4",
+    "claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md:7",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md:247",
+]
+enumeration = "complete"
+dedup_id = "2df81e81d618d148"
+resolved = 2026-09-29
+resolution = "Uncommitted: acceptance-probing.md intro corrected; its sub-bullet section cut to a pointer to the SKILL.md format rule plus example."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R7"
+file = "claude/skills/flow-contract-plan-output-format/SKILL.md"
+line = 237
+symbol = "Format rules: Files change kind"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "The change-kind grammar is written out in full in three docs, including the skill that says it restates nothing about store verbs"
+description = "The same rule (opening parenthetical, case-insensitive new/delete/deleted, terminators ) , ; : and ' —', the (new thread) example) appears at plan-output-format SKILL.md:237, flow-contract-task-store SKILL.md:194 and tomlctl references tasks.md:81-84, while plan-output-format SKILL.md:17-19 says store verbs are 'not restated here'. Keep authoring guidance in plan-output-format (write (new)/(delete); (new thread) is an edit) minus the show keys and rollback usage; keep the full grammar in task-store; replace tasks.md's paragraph with a link, following tasks.md:71's existing deferral."
+evidence = [
+    "claude/skills/flow-contract-plan-output-format/SKILL.md:17",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md:237",
+    "claude/skills/flow-contract-task-store/SKILL.md:194",
+    "claude/skills/tomlctl/references/tasks.md:81",
+]
+instances = [
+    "claude/skills/flow-contract-plan-output-format/SKILL.md:237",
+    "claude/skills/flow-contract-task-store/SKILL.md:194",
+    "claude/skills/tomlctl/references/tasks.md:81",
+]
+sweep = ["new thread"]
+enumeration = "complete"
+related = ["R8"]
+dedup_id = "5d3793736dddbb26"
+resolved = 2026-09-29
+resolution = "Uncommitted: full change-kind grammar lives in task-store SKILL.md; plan-output-format keeps authoring guidance only; tasks.md points to the task-store rule."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R8"
+file = "tomlctl/src/tasks/schema.rs"
+line = 154
+symbol = "FileKind::of_note"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "of_note silently classifies near-misses as edits: synonyms like (remove)/(create) and whitespace like ( new) or (new )"
+description = "The closed set is new|delete|deleted. Corpus: (remove) x10 and (create) x4 outnumber or rival (delete) x5, and the crate's own parse test uses (new stub file). ( new) yields an empty word and (new ) fails the terminator check, so both drop out of new_files with no signal. Either accept remove/removed/create/created (and trim inside the parenthetical), or keep the set closed and emit an import-plan warning when an opening parenthetical starts with one of those words but does not classify. Add the cases to a_note_is_a_change_kind_only_when_its_first_word_is_the_whole_word and update the prose copies (R7)."
+evidence = [
+    "tomlctl/src/tasks/schema.rs:154",
+    "tomlctl/src/tasks/schema.rs:165",
+    "tomlctl/src/tasks/parse_tasks.rs:1430",
+    "git grep corpus: (new) 282, (NEW) 20, (remove) 10, (delete) 5, (create) 4",
+]
+related = ["R7"]
+dedup_id = "9db4f97a836e4e5a"
+resolved = 2026-09-29
+resolution = "Uncommitted: FileKind::of_note tolerates whitespace inside the parenthetical and accepts create/created and remove/removed; table test extended."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R9"
+file = "claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md"
+line = 55
+symbol = "Acceptance probe helper paragraph"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The probing reference says judge on stdout/stderr not the rc, and never mentions success: keys, which are judged on exit status alone"
+description = "Both carriers route the Success Criteria sweep through this reference, but the success:-key rule lives only in plan-new.md:113 and review-plan.md:105, worded differently. Add a success: keys section and a verdict row (exits 0 on the current tree while its criterion does not hold -> broken), scope :55's rc rule to acceptance commands, and replace the carrier sentences with a pointer."
+evidence = [
+    "claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md:55",
+    "claude/commands/plan-new.md:113",
+    "claude/commands/review-plan.md:105",
+]
+instances = [
+    "claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md:55",
+    "claude/commands/plan-new.md:113",
+    "claude/commands/review-plan.md:105",
+]
+enumeration = "complete"
+related = ["R18"]
+dedup_id = "aad011890161f6d0"
+resolved = 2026-09-29
+resolution = "Uncommitted: acceptance-probing.md gains a success: keys section and verdict row; rc rule scoped to acceptance commands; carriers point to it."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R10"
+file = "claude/commands/plan-new.md"
+line = 109
+symbol = "Phase 7 write the plan document"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Phase 7 says it restates none of the format skill, then restates the full 15-section order"
+description = "A fourth copy of the section order (skill description, template, format rule :228) beside a claim that there are none. Keep only the carrier-owned placement instructions (notes appendix last; Summary written last, placed first). The fixture-based render test pins the order, so no guard is lost."
+evidence = [
+    "claude/commands/plan-new.md:109",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md:228",
+]
+dedup_id = "c2e799f5e89890e7"
+resolved = 2026-09-29
+resolution = "Uncommitted: plan-new.md Phase 7 no longer enumerates the section order; keeps only carrier-owned placement rules."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R11"
+file = "claude/skills/flow-contract-plan-output-format/SKILL.md"
+line = 236
+symbol = "Format rules: Files-line closure"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Files-line closure says the set of files a task creates or edits, omitting deletes that the template and change-kind rule include"
+description = "Template :154 says 'creates, deletes or edits' and :237 defines (delete). An author following :236 literally leaves a deleted file off Files, so it gets no (delete) kind, no scheduling claim and no rollback restore. Change to 'creates, deletes or edits'."
+evidence = [
+    "claude/skills/flow-contract-plan-output-format/SKILL.md:154",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md:236",
+]
+dedup_id = "213e2e1c72cef147"
+resolved = 2026-09-29
+resolution = "Uncommitted: Files-line closure rule now says creates, deletes or edits."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R12"
+file = "claude/skills/flow-contract-task-store/SKILL.md"
+line = 180
+symbol = "needs / --ref paragraph"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "A comma splice makes tasks remove read as dropping file notes and backlog links, contradicting :104, tasks-store.md and remove.rs"
+description = "':--ref re-keys the stamp to the new ref, together with the row's file notes and backlog links, tasks remove drops it with the row' leaves 'it' ambiguous after a three-item list. remove.rs:100-107 prunes only import_overrides. Split the sentence and name the stamp explicitly (and revisit if R3 changes remove)."
+evidence = [
+    "claude/skills/flow-contract-task-store/SKILL.md:180",
+    "claude/skills/flow-contract-task-store/SKILL.md:104",
+    "tomlctl/src/tasks/remove.rs:100",
+]
+related = ["R3"]
+dedup_id = "cfc62c9bf24a1acb"
+resolved = 2026-09-29
+resolution = "Uncommitted: task-store SKILL.md sentence split; tasks remove drops the stamp and leaves notes/links until next import or a claiming add/update --ref."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R13"
+file = "claude/skills/flow-contract-task-store/SKILL.md"
+line = 131
+symbol = "Lower set and antichain paragraph"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The paragraph still calls Checkpoint after a list the plan author writes, though authors no longer write it"
+description = "This change moved the bullet to render-derived (plan-output-format SKILL.md:135 'Do not author a Checkpoint after bullet'; plan-new.md:98). Reword so the marker's after list (authored) and the rendered Checkpoint after bullet are both the antichain, as tasks-store.md:119-122 already does."
+evidence = [
+    "claude/skills/flow-contract-task-store/SKILL.md:131",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md:135",
+]
+sweep = ["Checkpoint after"]
+enumeration = "complete"
+dedup_id = "faad6bd844778959"
+resolved = 2026-09-29
+resolution = "Uncommitted: task-store SKILL.md antichain paragraph now names the authored marker after list and the rendered Checkpoint after bullet."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R14"
+file = "tomlctl/tests/tasks_read.rs"
+line = 265
+symbol = "the_fetch_by_id_projection_carries_the_body_the_files_and_a_summary_per_dep"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "No integration test checks new_files / deleted_files values through a real import; only key order is asserted"
+description = "show.rs unit tests hand-build FileNote rows; READ_FIXTURE has no notes. house-plan-sections.md already carries (new) and (delete) at :52 but the render test never runs show. After the import in tasks_render.rs, run tasks show 1 --with files and assert new_files == [src/widget/mod.rs] and deleted_files == [src/legacy_widget.rs]."
+evidence = [
+    "tomlctl/tests/tasks_read.rs:270",
+    "tomlctl/src/tasks/show.rs:393",
+    "tomlctl/tests/fixtures/tasks/house-plan-sections.md:52",
+]
+dedup_id = "7135ff7f84213b4d"
+resolved = 2026-09-29
+resolution = "Uncommitted: tasks_render.rs test an_imported_files_line_reports_its_new_and_deleted_paths asserts new_files/deleted_files through a real import."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R15"
+file = "tomlctl/src/tasks/update.rs"
+line = 1059
+symbol = "a_ref_rename_carries_file_notes_and_backlog_links"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "The rename and show tests seed no entry keyed to another ref, so dropping the ref filter would still pass"
+description = "The rename test seeds one note and one link, both under the renamed ref; files_part_reports_notes_and_change_kinds replaces store.file_notes wholesale with the task's entries. Add an entry for another ref in each and assert it is unchanged / not reported."
+evidence = [
+    "tomlctl/src/tasks/update.rs:1059",
+    "tomlctl/src/tasks/show.rs:373",
+]
+instances = [
+    "tomlctl/src/tasks/update.rs:1059",
+    "tomlctl/src/tasks/show.rs:373",
+]
+enumeration = "complete"
+related = ["R3"]
+dedup_id = "3be0c054d694b14d"
+resolved = 2026-09-29
+resolution = "Uncommitted: rename and show tests seed entries under another ref and assert they are untouched / not reported."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R16"
+file = "tomlctl/tests/fixtures/tasks/house-plan-sections.md"
+line = 37
+symbol = "## Verification Commands"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The every-section fixture writes Verification Commands as bullets instead of the required fenced build:/test:/success: block"
+description = "plan-output-format SKILL.md:81-96 says the heading and fenced block are parsed and must not be unfenced; the fixture uses - **build**: bullets and puts success: only under Success Criteria. Render ignores the section so the test passes, but the fixture teaches the wrong shape."
+evidence = [
+    "tomlctl/tests/fixtures/tasks/house-plan-sections.md:37",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md:87",
+]
+dedup_id = "d53700a54be97c16"
+resolved = 2026-09-29
+resolution = "Uncommitted: house-plan-sections.md Verification Commands is now a fenced build/test/success block."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R17"
+file = "tomlctl/src/tasks/parse_tasks.rs"
+line = 435
+symbol = "heading_anchor"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "The plan/heading-anchor warning prints a literal {#…} placeholder instead of the actual anchor text"
+description = "The message gives line, task id, fate and 'remove it', but quoting the {#...} substring from the line would let an author find it in a long heading. The test at :1071 asserts only 'dropped' and 'line 10'."
+evidence = [
+    "tomlctl/src/tasks/parse_tasks.rs:447",
+    "tomlctl/src/tasks/parse_tasks.rs:1071",
+]
+dedup_id = "adea4f15cfa93748"
+resolved = 2026-09-29
+resolution = "Uncommitted: plan/heading-anchor message quotes the actual anchor; test asserts it."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R18"
+file = "claude/commands/plan-new.md"
+line = 113
+symbol = "Acceptance probe sweep: success: keys"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Plan-time sweep runs every success: key with no read-only limit, before approval, while the format skill says only /implement Phase 3 runs them"
+description = "The two-control rule is scoped to read-only commands, but the success:-key probe sentence is not, so a build-writing or mutating success: key runs in the orchestrator's shell before the user approves the plan; plan-output-format SKILL.md:108 says 'Only /implement Phase 3 runs it'. Limit the plan-time probe to read-only success: keys (flag the rest as unprobed) and reconcile the SKILL.md wording."
+evidence = [
+    "claude/commands/plan-new.md:113",
+    "claude/skills/flow-contract-plan-output-format/SKILL.md:108",
+]
+related = ["R9"]
+dedup_id = "d3777f895812f183"
+resolved = 2026-09-29
+resolution = "Uncommitted: plan-time probing limited to read-only success: keys; plan-output-format SKILL.md success: bullet reconciled."
+
+[[items]]
+first_flagged = 2026-09-29
+rounds = 1
+status = "fixed"
+flow = "proud-leaping-conway"
+id = "R19"
+file = "CLAUDE.md"
+line = 57
+symbol = "Build & test: .github mirror note"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The corrected mirror note calls the skills mirror a git symlink, but .github/skills is a directory of per-skill symlinks covering 17 of 23 skills"
+description = "git ls-files -s .github shows .github/agents as one 120000 entry and 17 per-skill 120000 entries under .github/skills; backlog-clear, commit-conventions, documentation-conventions, flow-contract-showcase-bundle, research-methods and test-author have none. Either say the skills mirror is partial by design (and why) or add the missing symlinks."
+evidence = [
+    "CLAUDE.md:57",
+    "git ls-files -s .github -> 18 mode-120000 entries; ls claude/skills -> 23",
+]
+dedup_id = "225f6413e3a320f1"
+resolved = 2026-09-29
+resolution = "Uncommitted: CLAUDE.md mirror note says .github/agents is one symlink and .github/skills holds per-skill symlinks for a subset."
+
+[[vet_events]]
+timestamp = "2026-09-29T18:30:06Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+tier = "deep"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (scratch-repo stash -u repro), F3 (parse_tasks.rs:1430 (new stub file)), F5 (acceptance-probing.md:55 rc rule, 0 success: mentions), F6 (plan-new.md:109), F7 (SKILL.md:236 creates or edits), F9 (task-store SKILL.md:180 vs :104). All anchors matched. F1 merged into R1, F2 into R3, F4 into R7."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T18:30:06Z"
+command = "review"
+agent_index = 2
+lens = "security"
+tier = "deep"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "F1 (directory claims): implement.md:159-160 stash/ls-files over <files> and graph.rs:420 first_claim exact BTreeSet intersection confirmed. Tangential on step-4 dead removal merged into R1; tangential on plan-new success: probe is in scope and minted as R18."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T18:30:06Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+tier = "deep"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 4 checked: F1 reproduced by orchestrator scratch repo; F2 remove.rs:100-107 prunes only import_overrides and no file_notes/backlog_links refs in remove.rs/add.rs; F3 new thread grammar present at plan-output-format:237, task-store:194, tasks.md:84 and SKILL.md:17-19 restates-nothing claim; F4 acceptance-probing.md:4-5 vs SKILL.md:247. F1->R1, F2->R3, F3->R7, F4->R6."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T18:30:06Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+tier = "lite"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "F1 merged into R1 (adds the pre-existing untracked sweep); F2 task-store SKILL.md:131 'a plan author writes' confirmed -> R13. .github mirror tangential is in scope (CLAUDE.md) and confirmed via git ls-files -> R19. apply-pipeline success: tangential not captured: Step 5a selects build and test commands only (architecture lens ruled it out)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T18:30:06Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+tier = "lite"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "F1 reproduced (merged R1); F5 of_note whitespace cases traced through schema.rs:154-170 (merged into R8); F6 fixture :32-40 uses bullets vs SKILL.md fenced block (R16). F4 merged into R3."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T18:30:06Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+tier = "lite"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "F1 review-plan.md:105 repo-path citation confirmed vs plan-new.md:113 (R5); F2 acceptance-probing.md:4-5 vs SKILL.md:247 confirmed, merged with Agent 3 F4 (R6)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T18:39:34Z"
+command = "review-apply"
+agent_index = 4
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R14 diff read in full: new integration test imports the sections fixture and asserts new_files/deleted_files through tasks show --with files."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T18:39:34Z"
+command = "review-apply"
+agent_index = 5
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R16 diff read in full: Verification Commands bullets replaced by fenced build/test/success block; Tasks untouched."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T18:39:34Z"
+command = "review-apply"
+agent_index = 6
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R17 diff read in full: anchor sliced at find() boundaries and quoted; test asserts both anchors. rustfmt later reflowed the file (orchestrator ran cargo fmt)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T18:39:34Z"
+command = "review-apply"
+agent_index = 7
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R19 CLAUDE.md:57 reword read: agents one symlink, skills a directory of per-skill symlinks for a subset."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-29T18:39:34Z"
+command = "review-apply"
+agent_index = 9
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "Backlog B-7c18f900 (not a ledger item): file_notes/new_files/deleted_files sentence added to implement-lite step 2 and implement-deep Tier-2 paragraph, outside shared blocks; parity OK."
+dedup_id = "45ca31c3315a5978"

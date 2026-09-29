@@ -36,8 +36,11 @@ The widget module gains a parser and a renderer, each in its own file.
 
 ## Verification Commands
 
-- **build**: `cargo build`
-- **test**: `cargo test`
+```
+build: cargo build
+test: cargo test
+success: test "$(grep -c 'fn render' src/widget/render.rs)" -eq 1
+```
 
 ## Execution Policy
 

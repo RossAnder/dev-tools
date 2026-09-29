@@ -60,14 +60,17 @@ keying on a `ref` no row holds, is dropped on read and on write.
 paths for the file-claim comparisons to read. Lines nested under a bulleted path follow the first
 as further `\n`-separated lines of the same `note`. Rebuilt from the plan at each import for the rows
 the plan names, kept only for paths the merged row still claims, and kept whole for a row the
-plan no longer names. Omitted while empty on the same terms as `[[import_overrides]]`.
+plan no longer names. `tasks remove` leaves a row's notes in place, and `tasks add` and
+`tasks update --ref` drop any already keyed on the `ref` they claim. Omitted while empty on the
+same terms as `[[import_overrides]]`.
 
 `[[backlog_links]]`: `ref`, `closes` and `refs` — the `.claude/backlog.toml` ids a task's
 `- **Backlog**:` bullet names, `refs` holding the entries the `refs` qualifier opened and `closes`
 the rest. Plan-owned whole: every import rebuilds the table from the bullets, keyed by each row's
 final `ref`, and a row the plan no longer names keeps no link. `tasks update --ref` re-keys the
 row's entry, as it does its `[[file_notes]]` and `[[import_overrides]]` entries; `tasks remove`
-leaves the table alone, so until the next import an entry can key on a `ref` no row carries. An entry with no `ref` or no id is dropped on read and on write, and the table is omitted while
+leaves the table alone, so until the next import an entry can key on a `ref` no row carries, and
+`tasks add` and `tasks update --ref` drop any entry already keyed on the `ref` they claim. An entry with no `ref` or no id is dropped on read and on write, and the table is omitted while
 empty on the same terms as `[[import_overrides]]`.
 
 `[[items]]`: `id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `phase`, `phase_depth`,

@@ -120,7 +120,7 @@ timestamp = 2026-04-17T14:32:00Z
 command = "review-apply"
 cause = "build failure on src/accounting/postings.rs:122"
 items = ["R3", "R7"]
-stash_ref = "stash@{0}"
+stash_ref = "3f9c2a7e5b1d4c8e9a0f6b2d7c3e1a5f8b4d9c02"
 ```
 
 Fields:
@@ -128,7 +128,7 @@ Fields:
 - `command` — `"review-apply"` or `"optimise-apply"`.
 - `cause` — short description (build fail, test regression, or claimed-applied-without-diff).
 - `items` — array of ledger IDs that were reverted back to `status = "open"`.
-- `stash_ref` — `git stash` reference for the rolled-back working-tree state so the user can recover the changes if desired.
+- `stash_ref` — commit SHA of the stash holding the rolled-back working-tree state (`git rev-parse --verify -q stash@{0}` right after the push), so the user can recover the changes with `git stash apply <sha>`. A SHA, not a positional `stash@{N}`, which a later stash shifts. Absent when the rollback had nothing to stash.
 
 `[[rollback_events]]` is append-only; existing entries are never rewritten or deleted. If the log grows unwieldy, older entries may be archived manually by moving them to `<ledger>.rollback-history.toml`; no command automates this yet.
 

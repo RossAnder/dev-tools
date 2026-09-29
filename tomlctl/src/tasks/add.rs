@@ -142,6 +142,11 @@ fn append(store: &mut Store, tasks: Vec<NewTask>) -> Result<Vec<AddOutcome>> {
         })
         .collect();
 
+    // Each minted `ref` is free of rows, so anything keyed on it is a removed
+    // row's leftover.
+    for row in &minted {
+        store.drop_ref_entries(&row.r#ref);
+    }
     store.items.extend(minted);
     Ok(outcomes)
 }
@@ -507,6 +512,54 @@ mod tests {
                 ),
                 ("same-title", "same-title-2", "same-title-3")
             );
+        });
+    }
+
+    /// A removed row's notes and links outlive it, so a new row minted onto
+    /// its `ref` must not inherit them.
+    #[test]
+    fn a_new_row_drops_entries_left_under_its_ref() {
+        use super::super::schema::{BacklogLink, FileNote};
+
+        with_root(|root| {
+            let path = store_path(root);
+            seeded(&path);
+            store::mutate(&path, &write_args(), |store| {
+                for r#ref in ["seed-the-store", "same-title"] {
+                    store.file_notes.push(FileNote {
+                        r#ref: r#ref.to_string(),
+                        file: "src/a.rs".to_string(),
+                        note: "(new)".to_string(),
+                    });
+                    store.backlog_links.push(BacklogLink {
+                        r#ref: r#ref.to_string(),
+                        closes: vec!["B1".to_string()],
+                        refs: Vec::new(),
+                    });
+                }
+                Ok(())
+            })
+            .expect("the leftovers land");
+
+            let added = add(&path, &write_args(), task("Same title", &[])).expect("it lands");
+            assert_eq!(added.r#ref, "same-title");
+
+            let store = store::load(
+                &path,
+                &crate::cli::ReadIntegrityArgs {
+                    verify_integrity: true,
+                    strict_read: false,
+                },
+            )
+            .expect("the store loads");
+            let note_refs: Vec<&str> = store.file_notes.iter().map(|n| n.r#ref.as_str()).collect();
+            let link_refs: Vec<&str> = store
+                .backlog_links
+                .iter()
+                .map(|l| l.r#ref.as_str())
+                .collect();
+            assert_eq!(note_refs, ["seed-the-store"]);
+            assert_eq!(link_refs, ["seed-the-store"]);
         });
     }
 

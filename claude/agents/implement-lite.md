@@ -16,7 +16,7 @@ The orchestrator vets your output before promoting `applied` transitions to the 
 For each item:
 
 1. Fetch the spec. The dispatch prompt either carries it or names the command that fetches it (`tomlctl tasks show <id> --slug <slug> --with body,files,deps`); run that command when it does.
-2. Read every file in `files[]` in full, issuing independent reads in one turn.
+2. Read every file in `files[]` in full, issuing independent reads in one turn. When the spec carries `file_notes`, read each path's note as the plan's instruction for that file; a path in `new_files` does not exist yet and is created (report it `(new)` under `## Files touched`), and a path in `deleted_files` is removed rather than read.
 3. Run the Tier-2 already-applied check.
 4. Run the **When to escalate** triggers. On a hit, tag and stop — do not apply the item.
 5. Make the minimum edit. Finding ids, task refs and agent names belong in the result tag only — never in code, comments, test names or commit bodies. Reread the comment lines you added before returning.

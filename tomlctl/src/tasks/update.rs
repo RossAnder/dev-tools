@@ -175,6 +175,9 @@ fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'stat
         }
         if store.items[index].r#ref != *new_ref {
             let previous = store.items[index].r#ref.clone();
+            // No row holds `new_ref`, so anything keyed on it is a removed
+            // row's leftover.
+            store.drop_ref_entries(new_ref);
             // The stamp, file notes and backlog links are keyed on `ref` like
             // `last_import_refs`, so they follow the row rather than being
             // stranded under the old key.
@@ -1061,17 +1064,20 @@ mod tests {
 
         with_root(|root| {
             let path = seeded_with(root, &["src/a.rs"]);
+            add_row(&path, "Wire the renderer");
             store::mutate(&path, &write_args(), |store| {
-                store.file_notes.push(FileNote {
-                    r#ref: "seed-the-store".to_string(),
-                    file: "src/a.rs".to_string(),
-                    note: "(new)".to_string(),
-                });
-                store.backlog_links.push(BacklogLink {
-                    r#ref: "seed-the-store".to_string(),
-                    closes: vec!["B3".to_string()],
-                    refs: vec!["B1".to_string()],
-                });
+                for r#ref in ["seed-the-store", "wire-the-renderer"] {
+                    store.file_notes.push(FileNote {
+                        r#ref: r#ref.to_string(),
+                        file: "src/a.rs".to_string(),
+                        note: "(new)".to_string(),
+                    });
+                    store.backlog_links.push(BacklogLink {
+                        r#ref: r#ref.to_string(),
+                        closes: vec!["B3".to_string()],
+                        refs: vec!["B1".to_string()],
+                    });
+                }
                 Ok(())
             })
             .expect("the seed lands");
@@ -1088,16 +1094,75 @@ mod tests {
             .expect("the rename lands");
 
             let store = reload(&path);
-            assert_eq!(store.file_notes.len(), 1);
-            assert_eq!(store.file_notes[0].r#ref, "reseed-the-store");
-            assert_eq!(store.backlog_links.len(), 1);
-            assert_eq!(store.backlog_links[0].r#ref, "reseed-the-store");
-            assert!(store.file_notes.iter().all(|n| n.r#ref != "seed-the-store"));
-            assert!(
+            let note_refs: Vec<&str> = store.file_notes.iter().map(|n| n.r#ref.as_str()).collect();
+            let link_refs: Vec<&str> = store
+                .backlog_links
+                .iter()
+                .map(|l| l.r#ref.as_str())
+                .collect();
+            assert_eq!(note_refs, ["reseed-the-store", "wire-the-renderer"]);
+            assert_eq!(link_refs, ["reseed-the-store", "wire-the-renderer"]);
+        });
+    }
+
+    /// `tasks remove` leaves a row's notes and links behind, so a rename onto
+    /// the freed `ref` must not adopt them beside its own.
+    #[test]
+    fn a_rename_onto_a_removed_rows_ref_drops_that_rows_leftovers() {
+        use crate::tasks::remove::remove;
+        use crate::tasks::schema::{BacklogLink, FileNote};
+
+        with_root(|root| {
+            let path = seeded_with(root, &["src/a.rs"]);
+            add_row_with(&path, "Wire the renderer", &["src/b.rs"], &[]);
+            store::mutate(&path, &write_args(), |store| {
+                for (r#ref, file, id) in [
+                    ("seed-the-store", "src/a.rs", "B1"),
+                    ("wire-the-renderer", "src/b.rs", "B2"),
+                ] {
+                    store.file_notes.push(FileNote {
+                        r#ref: r#ref.to_string(),
+                        file: file.to_string(),
+                        note: "(new)".to_string(),
+                    });
+                    store.backlog_links.push(BacklogLink {
+                        r#ref: r#ref.to_string(),
+                        closes: vec![id.to_string()],
+                        refs: Vec::new(),
+                    });
+                }
+                Ok(())
+            })
+            .expect("the seed lands");
+            remove(&path, &write_args(), 2, false).expect("the pending row is removed");
+
+            update(
+                &path,
+                &write_args(),
+                1,
+                UpdateFields {
+                    task_ref: Some("wire-the-renderer".to_string()),
+                    ..fields()
+                },
+            )
+            .expect("no row holds the freed ref");
+
+            let store = reload(&path);
+            assert_eq!(
+                store
+                    .file_notes
+                    .iter()
+                    .map(|n| (n.r#ref.as_str(), n.file.as_str()))
+                    .collect::<Vec<_>>(),
+                [("wire-the-renderer", "src/a.rs")]
+            );
+            assert_eq!(
                 store
                     .backlog_links
                     .iter()
-                    .all(|l| l.r#ref != "seed-the-store")
+                    .map(|l| (l.r#ref.as_str(), l.closes.clone()))
+                    .collect::<Vec<_>>(),
+                [("wire-the-renderer", vec!["B1".to_string()])]
             );
         });
     }

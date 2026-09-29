@@ -57,7 +57,7 @@ id = 1
 ref = "move-the-acceptance-probing-method-into-a-reference-file"
 title = "Move the acceptance-probing method into a reference file"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -71,15 +71,15 @@ detail = """Carry over these parts of the "Two-control rule" bullet and what fol
 acceptance = """
 - forward: `cat claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md 2>/dev/null | grep -c 'p(){'` prints `1` (today: `0`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- cli::dispatch::tests::skills` passes."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "c1ab225"
 
 [[items]]
 id = 2
 ref = "rewrite-the-plan-template-and-format-rules"
 title = "Rewrite the plan template and format rules"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -104,15 +104,15 @@ acceptance = '''
 - forward: `grep -c 'p(){' claude/skills/flow-contract-plan-output-format/SKILL.md` prints `0` (today: `1`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- cli::dispatch::tests` passes (description cap, line cap, link resolution, required-skill invocation).
 - falsifier: a description over 1024 characters fails the `skills.rs` description-cap test — predicted, unverified.'''
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "fda6e32"
 
 [[items]]
 id = 3
 ref = "drop-the-status-line-from-the-backlog-seed-stub"
 title = "Drop the status line from the backlog seed stub"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -124,15 +124,15 @@ deps_note = ""
 action = "Remove the `**Status**: Draft` line from the seed-flow stub example. Keep the `<!-- backlog-seed -->` marker line, which seed detection reads."
 detail = ""
 acceptance = '''forward: `grep -c '^\*\*Status\*\*' claude/skills/backlog-capture/SKILL.md` prints `0` (today: `1`).'''
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "dd8a2bb"
 
 [[items]]
 id = 4
 ref = "correct-the-mirror-note-in-claudemd"
 title = "Correct the mirror note in CLAUDE.md"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "A"
 phase = ""
 phase_depth = 0
@@ -144,15 +144,15 @@ deps_note = ""
 action = 'In the Build & test bullet on the full suite, replace "tracked copies of `claude/` synced by hand" with the truth. `.github/agents` and `.github/skills/*` are git symlinks (mode 120000) into `claude/`, shown as junctions on disk, and `core.symlinks=false` makes git report them as deleted. Say to edit `claude/` only and never stage those deletions.'
 detail = ""
 acceptance = "forward: `grep -c 'synced by hand' CLAUDE.md` prints `0` (today: `1`)."
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "77a1c22"
 
 [[items]]
 id = 5
 ref = "report-file-notes-and-change-kinds-from-tasks-show"
 title = "Report file notes and change kinds from tasks show"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -172,15 +172,15 @@ acceptance = """
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- tasks::show::` passes, including `files_part_reports_notes_and_change_kinds`.
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_read` passes.
 - falsifier: an always-empty `new_files`, or `(new thread)` classified as new, fails that test — predicted, unverified."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "146e4db"
 
 [[items]]
 id = 6
 ref = "carry-file-notes-and-backlog-links-through-a-ref-rename"
 title = "Carry file notes and backlog links through a ref rename"
 effort = "S"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -195,15 +195,15 @@ acceptance = """
 - forward: `grep -c 'file_notes' tomlctl/src/tasks/update.rs` prints at least `1` (today: `0`).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- tasks::update::` passes, including the new test.
 - falsifier: deleting the new re-key lines fails it — predicted, unverified."""
-agent = ""
-commit = ""
+agent = "implement-lite"
+commit = "a06ce7e"
 
 [[items]]
 id = 7
 ref = "warn-on-an-id-anchor-in-a-task-heading"
 title = "Warn on an id anchor in a task heading"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -223,15 +223,15 @@ acceptance = """
 - forward: `grep -c 'plan/heading-anchor' claude/skills/flow-contract-task-store/SKILL.md claude/skills/tomlctl/references/tasks.md` prints `<path>:N` for each file with N ≥ 1 (today: both `:0`).
 - forward: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- tasks::parse_tasks::` passes, including the new test.
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- cli::dispatch::tests` passes (finding-class gate)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "bafefbb"
 
 [[items]]
 id = 8
 ref = "pin-the-full-section-order-through-import-and-render"
 title = "Pin the full section order through import and render"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -249,15 +249,15 @@ acceptance = """
 - forward: `grep -c 'fn a_plan_in_the_full_section_order' tomlctl/tests/tasks_render.rs` prints `1` (today: `0`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_render` passes.
 - falsifier: moving `## After Merge` above `## Risks` in the rendered output (a `reorder_owned_sections` change) fails the byte comparison — predicted, unverified."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "1e2306a"
 
 [[items]]
 id = 9
 ref = "document-the-show-fields-and-rename-carry-over"
 title = "Document the show fields and rename carry-over"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -285,15 +285,15 @@ acceptance = """
 - forward: `grep -c 'new_files' claude/skills/tomlctl/references/tasks.md` prints at least `1` (today: `0`).
 - forward: `grep -c 'update --ref. leave' claude/skills/flow-contract-task-store/SKILL.md claude/skills/tomlctl/references/tasks.md` prints `<path>:0` for each file (today: `SKILL.md:1`, `tasks.md:1`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- cli::dispatch::tests` passes (finding-class and flag-table gates)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "bafefbb"
 
 [[items]]
 id = 10
 ref = "teach-plan-new-the-new-sections"
 title = "Teach /plan-new the new sections"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -314,15 +314,15 @@ acceptance = """
 - forward: `grep -c 'Success Criteria' claude/commands/plan-new.md` prints at least `1` (today: `0`).
 - forward: `grep -c 'references/acceptance-probing.md' claude/commands/plan-new.md` prints at least `1` (today: `0`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- cli::dispatch::tests` passes."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "7e5f7f6"
 
 [[items]]
 id = 11
 ref = "teach-review-plan-the-new-sections"
 title = "Teach /review-plan the new sections"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -337,15 +337,15 @@ acceptance = """
 - forward: `grep -c 'references/acceptance-probing.md' claude/commands/review-plan.md` prints at least `1` (today: `0`).
 - forward: `grep -c 'Success Criteria' claude/commands/review-plan.md` prints at least `1` (today: `0`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- cli::dispatch::tests` passes."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "6fa73a2"
 
 [[items]]
 id = 12
 ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
 title = "Define the implementer preamble and run success and rollback steps in /implement"
 effort = "L"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -371,15 +371,15 @@ acceptance = """
 - forward: `grep -c 'new_files' claude/commands/implement.md` prints at least `1` (today: `0`).
 - forward: `grep -c 'success:' claude/commands/implement.md` prints at least `1` (today: `0`).
 - forward: `grep -c 'After Merge' claude/commands/implement.md` prints at least `1` (today: `0`)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "298ef75"
 
 [[items]]
 id = 13
 ref = "carry-the-new-sections-through-plan-restructuring"
 title = "Carry the new sections through plan restructuring"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "C"
 phase = ""
 phase_depth = 0
@@ -401,15 +401,15 @@ acceptance = """
 - forward: `grep -c 'Exploration Notes' claude/skills/flow-contract-plan-restructure/SKILL.md` prints at least `1` (today: `0`).
 - forward: `grep -c 'After Merge' claude/skills/flow-contract-plan-restructure/SKILL.md` prints at least `1` (today: `0`).
 - forward: `grep -c 'Last updated.*RESEARCH-NOTES' claude/commands/plan-update.md` prints `1` (today: `0`)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "bac801b"
 
 [[items]]
 id = 14
 ref = "correct-the-remaining-rename-and-show-field-references"
 title = "Correct the remaining rename and show-field references"
 effort = "M"
-status = "pending"
+status = "done"
 checkpoint = "B"
 phase = ""
 phase_depth = 0
@@ -435,5 +435,5 @@ acceptance = """
 - forward: `grep -c 'tasks update --ref' claude/skills/tomlctl/references/backlog-reconcile.md` prints `0` (today: `1`).
 - forward: `grep -c 'new_files' tomlctl/src/cli/types.rs` prints at least `1` (today: `0`).
 - guard: `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- cli::dispatch::tests` passes (flag-table gates read the clap help text)."""
-agent = ""
-commit = ""
+agent = "implement-deep"
+commit = "9d86998"

@@ -23,7 +23,7 @@ Every item in your assigned cluster MUST receive exactly one tag in your final r
 
 ## Tier-2 Already-Applied Protocol
 
-Before editing for any item, read the related files at the line ranges the finding/task names. If the change is already present, return `skipped <id>: already-applied` with `file:line` evidence instead of editing.
+Before editing for any item, read the related files at the line ranges the finding/task names. If the change is already present, return `skipped <id>: already-applied` with `file:line` evidence instead of editing. When the spec carries `file_notes`, read each path's note as the plan's instruction for that file; a path in `new_files` does not exist yet and is created (report it `(new)` under `## Files touched`), and a path in `deleted_files` is removed rather than read.
 
 ## Scope and cross-file reasoning
 

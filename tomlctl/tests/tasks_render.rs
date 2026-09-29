@@ -692,3 +692,35 @@ fn a_plan_in_the_full_section_order_renders_unchanged() {
         }
     }
 }
+
+/// The `(new)` and `(delete)` suffixes on a task's `Files` line survive a real
+/// import and come back from `show --with files` as `new_files` and
+/// `deleted_files`.
+#[test]
+fn an_imported_files_line_reports_its_new_and_deleted_paths() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().canonicalize().expect("canonical root");
+    stage_tasks_flow(&root, SECTIONS_SLUG, SECTIONS_REL, None);
+    let plan = root.join(SECTIONS_REL);
+    fs::create_dir_all(plan.parent().expect("plan has a parent")).expect("plans dir");
+    fs::write(&plan, SECTIONS_PLAN).expect("plan written");
+    import_sections(&root);
+
+    let out = cli(&root)
+        .args(["tasks", "show", "1", "--slug", SECTIONS_SLUG])
+        .args(["--with", "files"])
+        .write_stdin("")
+        .assert()
+        .success();
+    let shown = json_of(&String::from_utf8_lossy(&out.get_output().stdout));
+    assert_eq!(
+        shown["new_files"],
+        serde_json::json!(["src/widget/mod.rs"]),
+        "{shown}"
+    );
+    assert_eq!(
+        shown["deleted_files"],
+        serde_json::json!(["src/legacy_widget.rs"]),
+        "{shown}"
+    );
+}

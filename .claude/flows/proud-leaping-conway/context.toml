@@ -1,6 +1,6 @@
 slug = "proud-leaping-conway"
 plan_path = "docs/plans/proud-leaping-conway.md"
-status = "draft"
+status = "review"
 created = 2026-09-29
 updated = 2026-09-29
 branch = "main"
@@ -20,8 +20,8 @@ scope = [
 ]
 
 [tasks]
-total = 0
-completed = 0
+total = 14
+completed = 14
 in_progress = 0
 
 [artifacts]

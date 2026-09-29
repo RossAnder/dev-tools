@@ -78,10 +78,8 @@ a cycle or a dangling edge still shows its rows under every other part.
 | `import_override.files`, `import_override.needs` | paths, ids | The plan **base** each stamped field replaced — not the patched `files` / `needs` above it. Ungated by `--with`; an unstamped field is omitted and the whole key is absent from an unstamped row. |
 | `backlog.closes`, `backlog.refs` | backlog ids | The row's `[[backlog_links]]` entry. Ungated by `--with`; absent from an unlinked row. |
 
-The change kind is derived from the note on read, never stored. A note counts only when it
-opens with a parenthetical whose first word, case-insensitive, is `new` or `delete` / `deleted`
-and either closes it or is followed by `,`, `;`, `:` or a ` —` dash: `(NEW)` and
-`(new, generated)` mark a new file, `(new thread)` an addition to an existing one.
+The change kind is derived from the note on read, never stored; the rule is the
+`flow-contract-task-store` skill's (`tasks show` in its verb semantics).
 
 `import_override` and `backlog` follow the selected parts, and never appear on a summary nested
 under `deps` / `dependents`: they belong to the row that was asked for.

@@ -4201,3 +4201,96 @@ resolution = "resolved by flow `woolly-greeting-rainbow` (tasks reap-agents-whos
 resolved_flow = "woolly-greeting-rainbow"
 resolved_tasks = ["reap-agents-whose-transcript-went-quiet"]
 resolved_commits = ["28adb41"]
+
+[[backlog]]
+id = "B-fa2b11aa"
+kind = "question"
+summary = "apply-flow rollback stash can halt half-done on a git-ignored or missing path"
+area = "claude/skills/flow-contract-apply-rollback-protocol"
+tags = [
+    "rollback",
+    "git-stash",
+]
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "fa2b11aa134c281c"
+origin = "implement"
+flow = "proud-leaping-conway"
+context = "Step 2 stashes over every touched path and step 3 uses git checkout --. A scratch-repo test during the proud-leaping-conway run found that naming a missing or git-ignored path in git stash push -u -- <paths> exits 1 after writing the stash but without reverting the tree. /implement step 6 now filters to existing, non-ignored paths and uses --literal-pathspecs (see claude/commands/implement.md, Rollback on failure). Decide whether the apply-flow protocol should adopt the same filter and the git-derived restore set."
+base_sha = "9d86998fb4544c2e1a378008ab9550842e99fb35"
+evidence = ["claude/skills/flow-contract-apply-rollback-protocol/SKILL.md:1"]
+resolved = 2026-09-29
+resolution = "Rollback protocol steps 2-4 rewritten (uncommitted): stash pathspec limited to existing non-ignored paths with --literal-pathspecs, untracked paths classified before the stash, git clean step removed, directory entries excluded, stash_ref recorded as the stash commit SHA (also in ledger-schema and write.md examples)"
+
+[[backlog]]
+id = "B-07f8cd33"
+kind = "bug"
+summary = "apply-flow rollback git clean step is dead because stash -u already removes the declared untracked paths"
+area = "claude/skills/flow-contract-apply-rollback-protocol"
+tags = [
+    "rollback",
+    "git-stash",
+]
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "07f8cd3393542e6d"
+origin = "review"
+flow = "proud-leaping-conway"
+context = "Found by the proud-leaping-conway /review (ledger R1 is the /implement copy of the same flaw). git stash push -u -- <paths> stashes and deletes each named untracked file, so the protocol's later scope-clamped git clean of declared untracked files never removes anything and its clamp guards nothing; the rollback callout cannot list removed files correctly. Fix shape: evaluate the removal guard before the stash and pass only guarded untracked paths to stash -u. Distinct from B-fa2b11aa (missing/ignored paths halting the stash)."
+base_sha = "bac801bb19278a2edb8cc43bf086ef0f35306807"
+evidence = ["claude/skills/flow-contract-apply-rollback-protocol/SKILL.md:1"]
+related = ["B-fa2b11aa"]
+resolved = 2026-09-29
+resolution = "Rollback protocol steps 2-4 rewritten (uncommitted): stash pathspec limited to existing non-ignored paths with --literal-pathspecs, untracked paths classified before the stash, git clean step removed, directory entries excluded, stash_ref recorded as the stash commit SHA (also in ledger-schema and write.md examples)"
+
+[[backlog]]
+id = "B-fbf06409"
+kind = "bug"
+summary = "apply-flow rollback records a positional stash@{0} ref that a later stash shifts"
+area = "claude/skills/flow-contract-apply-rollback-protocol"
+tags = [
+    "rollback",
+    "git-stash",
+]
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "fbf06409c28d492e"
+origin = "review"
+flow = "proud-leaping-conway"
+context = "Found by the proud-leaping-conway /review (ledger R4 is the /implement copy). The [[rollback_events]] stash_ref and the callout name stash@{0}; any later stash shifts it to stash@{1}, so the user is sent to the wrong stash. Record git rev-parse --verify stash@{0} (a SHA git stash apply accepts) or the unique stash message instead."
+base_sha = "bac801bb19278a2edb8cc43bf086ef0f35306807"
+evidence = ["claude/skills/flow-contract-apply-rollback-protocol/SKILL.md:1"]
+related = ["B-fa2b11aa"]
+resolved = 2026-09-29
+resolution = "Rollback protocol steps 2-4 rewritten (uncommitted): stash pathspec limited to existing non-ignored paths with --literal-pathspecs, untracked paths classified before the stash, git clean step removed, directory entries excluded, stash_ref recorded as the stash commit SHA (also in ledger-schema and write.md examples)"
+
+[[backlog]]
+id = "B-7c18f900"
+kind = "debt"
+summary = "implementer agents never mention the file_notes / new_files keys in the fetched task spec"
+area = "claude/agents"
+tags = [
+    "implementer",
+    "file-notes",
+]
+status = "resolved"
+created = 2026-09-29
+last_seen = 2026-09-29
+seen_count = 1
+dedup_id = "7c18f900908187ee"
+origin = "review"
+flow = "proud-leaping-conway"
+context = "Found by the proud-leaping-conway /review. tasks show --with files now carries file_notes, new_files and deleted_files, but implement-lite.md / implement-deep.md say only to read every file in files[] in full, so a declared new file is presented as a file to read and the plan's claim that implementers see per-file notes depends on agents noticing unexplained keys. Add one line to each agent's procedure on reading the notes and treating new_files as to-be-created."
+base_sha = "bac801bb19278a2edb8cc43bf086ef0f35306807"
+evidence = [
+    "claude/agents/implement-lite.md:1",
+    "claude/agents/implement-deep.md:1",
+]
+resolved = 2026-09-29
+resolution = "implement-lite step 2 and implement-deep's pre-edit reading paragraph now explain file_notes, new_files and deleted_files (uncommitted)"

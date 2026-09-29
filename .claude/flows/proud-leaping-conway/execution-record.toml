@@ -1,2 +1,476 @@
 schema_version = 1
 last_updated = 2026-09-29
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-09-29
+agent = "implement"
+summary = "/implement started: draft -> in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "ca77b3436a514b4c"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "drop-the-status-line-from-the-backlog-seed-stub"
+status = "done"
+summary = "Removed the Status: Draft line from the backlog seed-flow stub; seed marker kept"
+files = ["claude/skills/backlog-capture/SKILL.md"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "50c67ebf830399bc"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "move-the-acceptance-probing-method-into-a-reference-file"
+status = "done"
+summary = "Created references/acceptance-probing.md with the two-control rule, probe helper and verdict table moved from the format skill, plus the acceptance sub-bullet convention"
+files = ["claude/skills/flow-contract-plan-output-format/references/acceptance-probing.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "ae7ff70340b6f488"
+
+[[items]]
+id = "E4"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+task_ref = "move-the-acceptance-probing-method-into-a-reference-file"
+summary = "Moved probing text restructured under ## headings (Two-control rule / Acceptance probe helper / Verdicts) in acceptance-probing.md; in-page anchor link replaces 'below'"
+original_intent = "Move the probing method verbatim"
+rationale = "The moved text was indented continuation under a bullet; as a standalone file it needs top-level headings. Every other sentence is byte-for-byte unchanged."
+dedup_id = "ab54e3f2ab66231c"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "carry-file-notes-and-backlog-links-through-a-ref-rename"
+status = "done"
+summary = "tasks update --ref now re-keys file_notes and backlog_links with import_overrides; added a_ref_rename_carries_file_notes_and_backlog_links"
+files = ["tomlctl/src/tasks/update.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+dedup_id = "9f730823125e97fb"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "correct-the-mirror-note-in-claudemd"
+status = "done"
+summary = "CLAUDE.md Build & test bullet now describes .github mirrors as git symlinks into claude/ and warns not to stage their deletions"
+files = ["CLAUDE.md"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "32151b5b8cb11087"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "warn-on-an-id-anchor-in-a-task-heading"
+status = "done"
+summary = "parse_tasks raises plan/heading-anchor warning per numbered heading containing {#; rows added to both finding-class tables; test an_id_anchor_in_a_heading_warns"
+files = [
+    "tomlctl/src/tasks/parse_tasks.rs",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/tomlctl/references/tasks.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "abd00de0f453e1ff"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "pin-the-full-section-order-through-import-and-render"
+status = "done"
+summary = "Added house-plan-sections.md fixture in the full section order and a_plan_in_the_full_section_order_renders_unchanged (two import+render passes, byte-identical, no plan/text-unstored)"
+files = [
+    "tomlctl/tests/tasks_render.rs",
+    "tomlctl/tests/fixtures/tasks/house-plan-sections.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "57b6692b20957e5b"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "report-file-notes-and-change-kinds-from-tasks-show"
+status = "done"
+summary = "Added FileKind::of_note classifier in schema.rs; tasks show --with files emits file_notes, new_files, deleted_files after files; tests files_part_reports_notes_and_change_kinds and a_note_is_a_change_kind_only_when_its_first_word_is_the_whole_word"
+files = [
+    "tomlctl/src/tasks/schema.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/tests/tasks_read.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "e911768e62297643"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "correct-the-remaining-rename-and-show-field-references"
+status = "done"
+summary = "tasks-store.md and backlog-reconcile.md now say only tasks remove leaves side tables behind; ShowPart::Files doc comment names file_notes, new_files, deleted_files"
+files = [
+    "claude/skills/tomlctl/references/tasks-store.md",
+    "claude/skills/tomlctl/references/backlog-reconcile.md",
+    "tomlctl/src/cli/types.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "d49b3b6f2ad5a73a"
+
+[[items]]
+id = "E11"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "document-the-show-fields-and-rename-carry-over"
+status = "done"
+summary = "Documented file_notes/new_files/deleted_files in task-store SKILL.md §5 and tasks.md; rewrote the four --ref-leaves-it-alone sentences to say --ref re-keys stamp, file notes and backlog links"
+files = [
+    "claude/skills/flow-contract-task-store/SKILL.md",
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "1202e473915a5c93"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "rewrite-the-plan-template-and-format-rules"
+status = "done"
+summary = "Rewrote plan-output-format SKILL.md to the new section order (Summary, Success Criteria, After Merge, notes appendix), success: key, effort by dispatch meaning, Files (new)/(delete) vocabulary, acceptance sub-bullets; probing method replaced by short rule + link; description 1009 chars"
+files = ["claude/skills/flow-contract-plan-output-format/SKILL.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "b34e4760bc48f06a"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+task_ref = "rewrite-the-plan-template-and-format-rules"
+summary = "checkpoint A+B gate: fmt clean"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 0
+dedup_id = "5f2a3edd7cb16ad8"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+task_ref = "rewrite-the-plan-template-and-format-rules"
+summary = "checkpoint A+B gate: 312 passed, 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl --no-fail-fast -- tasks:: cli::dispatch::tests"
+outcome = "pass"
+duration_s = 0
+dedup_id = "086064488f7f6bc7"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+task_ref = "rewrite-the-plan-template-and-format-rules"
+summary = "checkpoint A+B gate: 46 passed, 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast --test tasks_read --test tasks_render --test tasks_import"
+outcome = "pass"
+duration_s = 1
+dedup_id = "4395136664f200fd"
+
+[[items]]
+id = "E16"
+type = "checkpoint"
+kind = "commit-train"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoints A+B train: c1ab225=move-the-acceptance-probing-method-into-a-reference-file; fda6e32=rewrite-the-plan-template-and-format-rules; dd8a2bb=drop-the-status-line-from-the-backlog-seed-stub; 77a1c22=correct-the-mirror-note-in-claudemd; 146e4db=report-file-notes-and-change-kinds-from-tasks-show; a06ce7e=carry-file-notes-and-backlog-links-through-a-ref-rename; bafefbb=warn-on-an-id-anchor-in-a-task-heading+document-the-show-fields-and-rename-carry-over; 1e2306a=pin-the-full-section-order-through-import-and-render; 9d86998=correct-the-remaining-rename-and-show-field-references"
+commits = [
+    "c1ab225",
+    "fda6e32",
+    "dd8a2bb",
+    "77a1c22",
+    "146e4db",
+    "a06ce7e",
+    "bafefbb",
+    "1e2306a",
+    "9d86998",
+]
+dedup_id = "568118b87a5c0fd3"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "teach-review-plan-the-new-sections"
+status = "done"
+summary = "review-plan Step 2.6 points at references/acceptance-probing.md, sweeps Success Criteria and success: keys, vacuous exemption accepts guard:; Agent 3 lens checks Summary/Success Criteria and goal coverage, minor for legacy **Status** plans"
+files = ["claude/commands/review-plan.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "c17e1ce7fd77a576"
+
+[[items]]
+id = "E18"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "carry-the-new-sections-through-plan-restructuring"
+status = "done"
+summary = "Restructure contract keeps Summary, Success Criteria, After Merge in the outline and moves Exploration Notes to RESEARCH-NOTES.md; plan-update scopes Last updated to RESEARCH-NOTES.md and inventories the new section classes"
+files = [
+    "claude/skills/flow-contract-plan-restructure/SKILL.md",
+    "claude/commands/plan-update.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "f8f2dec4eaf97919"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "teach-plan-new-the-new-sections"
+status = "done"
+summary = "plan-new phases follow the new template: notes appended as the end appendix, User Decisions above them, Phase 6 drafts Success Criteria and After Merge, Phase 7 sweep covers Success Criteria and points at references/acceptance-probing.md, Phase 9 renders once after a clean import"
+files = ["claude/commands/plan-new.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "768dd33b319a4504"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-09-29
+agent = "implement"
+task_ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
+status = "done"
+summary = "implement.md defines narrative sections, runs success: keys in Phase 3, rolls back per Rollback of created files (stash first, literal pathspecs, git-derived restore set, four-condition git clean), reports After Merge verbatim"
+files = ["claude/commands/implement.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "f42e3e935d3f785b"
+
+[[items]]
+id = "E21"
+type = "deviation"
+date = 2026-09-29
+agent = "implement"
+task_ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
+summary = "implement.md step 6 stash also excludes git-ignored paths (git check-ignore -q) from the pathspec list"
+original_intent = "Stash over the declared paths that exist now"
+rationale = "Tested on a scratch repo: naming an ignored path in git stash push -u -- <paths> exits 1 with the stash written and the tree not reverted, the same failure mode as a missing path. git check-ignore rejects --literal-pathspecs, so that one call is written without it."
+dedup_id = "9bea3846bc686d9c"
+
+[[items]]
+id = "E22"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+task_ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
+summary = "final pass: fmt clean"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 0
+dedup_id = "82f0b1dfd0ca7896"
+
+[[items]]
+id = "E23"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+task_ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
+summary = "final pass: build ok"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 5
+dedup_id = "9fdde0bc7d87fa8a"
+
+[[items]]
+id = "E24"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+task_ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
+summary = "final pass: 1451 passed, 0 failed across 32 binaries"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 20
+dedup_id = "aa343b52405e3bee"
+
+[[items]]
+id = "E25"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+task_ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
+summary = "final pass: corpus 1 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- --ignored"
+outcome = "pass"
+duration_s = 0
+dedup_id = "1a166c13d1fbb145"
+
+[[items]]
+id = "E26"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+task_ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
+summary = "final pass: success criterion 1 holds"
+command = "success: grep section count == 4 in plan-output-format SKILL.md"
+outcome = "pass"
+duration_s = 0
+dedup_id = "bd6aba8181946c4a"
+
+[[items]]
+id = "E27"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+task_ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
+summary = "final pass: success criterion 2 holds"
+command = "success: tasks show 1 --with files lists acceptance-probing.md under new_files"
+outcome = "pass"
+duration_s = 1
+dedup_id = "f5d861800d130d8a"
+
+[[items]]
+id = "E28"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+task_ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
+summary = "final pass: clippy clean"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings"
+outcome = "pass"
+duration_s = 5
+dedup_id = "3518606630cccf37"
+
+[[items]]
+id = "E29"
+type = "verification"
+date = 2026-09-29
+agent = "implement"
+task_ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
+summary = "final pass: no advisories"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+duration_s = 4
+dedup_id = "b8e66185490ecc2f"
+
+[[items]]
+id = "E30"
+type = "checkpoint"
+kind = "commit-train"
+date = 2026-09-29
+agent = "implement"
+summary = "Checkpoint C train (after the green final pass): 7e5f7f6=teach-plannew-the-new-sections; 6fa73a2=teach-review-plan-the-new-sections; 298ef75=define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement; bac801b=carry-the-new-sections-through-plan-restructuring"
+commits = [
+    "7e5f7f6",
+    "6fa73a2",
+    "298ef75",
+    "bac801b",
+]
+dedup_id = "60d6b5563b2eb42d"
+
+[[items]]
+id = "E31"
+type = "status-transition"
+date = 2026-09-29
+agent = "plan-update"
+summary = "All 14 tasks done after /implement; in-progress -> review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "5bd7a33f5c4cdc1d"
+
+[[items]]
+id = "E32"
+type = "deviation"
+date = 2026-09-29
+agent = "review-apply"
+task_ref = "define-the-implementer-preamble-and-run-success-and-rollback-steps-in-implement"
+summary = "/implement rollback classifies declared paths before stashing, drops directory claims, records the stash by commit SHA, and runs no git clean"
+original_intent = "Stash every existing non-ignored declared path, restore the tracked set, then remove declared new files with a four-condition guarded git clean; record the stash as stash@{0}"
+rationale = "git stash push -u deletes every untracked path it names, so the guarded clean never fired and untracked files present at dispatch were swept into the stash. The guard now builds the stash pathspec; directory claims would capture a sibling's work because the scheduler compares claims as exact strings; a positional stash ref shifts under a later rollback."
+dedup_id = "499d8a44e3fdccde"
+
+[[items]]
+id = "E33"
+type = "deviation"
+date = 2026-09-29
+agent = "review-apply"
+task_ref = "carry-file-notes-and-backlog-links-through-a-ref-rename"
+summary = "tasks add and tasks update --ref drop orphaned file notes and backlog links keyed on the ref they claim"
+original_intent = "Carry a row's file notes and backlog links across a ref rename"
+rationale = "tasks remove leaves those entries until the next import, so a rename or same-slug add onto that ref inherited the removed row's notes and closes-links, which now feed new_files and implementer prompts."
+dedup_id = "72897bf4c79512ed"
+
+[[items]]
+id = "E34"
+type = "deviation"
+date = 2026-09-29
+agent = "review-apply"
+task_ref = "report-file-notes-and-change-kinds-from-tasks-show"
+summary = "Change-kind vocabulary widened to create/created and remove/removed, with whitespace tolerated inside the parenthetical"
+original_intent = "Classify a Files note as new or delete only when its first word is exactly new, delete or deleted, flush against the parenthesis"
+rationale = "The plan corpus uses (remove) and (create) as often as (delete); near-misses silently classified as edits and dropped out of new_files / deleted_files. The full grammar now lives only in the task-store skill."
+dedup_id = "4b39786d2789d9d0"
