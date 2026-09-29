@@ -309,6 +309,21 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                 "sections": render::SECTION_TITLES,
             }))
         }
+
+        TasksOp::Snapshot { target, integrity } => {
+            let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
+            // Under `--file` there is no slug; the flow directory's name is
+            // the slug a `--slug` read of the same store would carry.
+            let slug = match target.slug {
+                Some(slug) => slug,
+                None => path
+                    .parent()
+                    .and_then(Path::file_name)
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            };
+            print_json(&super::snapshot(&slug, &path, &integrity)?)
+        }
     }
 }
 

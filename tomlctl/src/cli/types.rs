@@ -72,6 +72,10 @@ pub(crate) const FEATURES: &[&str] = &[
     "tasks_closure",
     "tasks_check",
     "tasks_render",
+    "tasks_snapshot",
+    // Hook-written agent lifecycle records: the `agents` subcommand cluster.
+    "agents_record",
+    "agents_list",
     // Regex sweep over tracked files and the ledger verbs built on it.
     "sweep",
     "items_sweep",
@@ -100,6 +104,7 @@ pub(crate) const SUBCOMMANDS: &[&str] = &[
     "json",
     "backlog",
     "tasks",
+    "agents",
     "sweep",
 ];
 
@@ -659,6 +664,13 @@ pub(crate) enum Cmd {
     Tasks {
         #[command(subcommand)]
         op: TasksOp,
+    },
+
+    /// Agent lifecycle records over `.claude/flows/<slug>/agents.toml`,
+    /// written by harness hooks as subagents start, idle and stop.
+    Agents {
+        #[command(subcommand)]
+        op: AgentsOp,
     },
 
     /// Regex hits over the repo's tracked files, as sorted `file:line`
@@ -2319,6 +2331,45 @@ pub(crate) enum TasksOp {
         /// Report drift and exit 1 without writing.
         #[arg(long = "check")]
         check: bool,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// Print one consistent read of the flow for a viewer: task rows, graph
+    /// products, the execution record joined to the rows, and the agent
+    /// records. Sibling files are optional and read as empty when absent;
+    /// `revision` fingerprints the raw input bytes.
+    Snapshot {
+        #[command(flatten)]
+        target: TasksTarget,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+}
+
+/// `agents` subcommand cluster. Each op resolves the flow's `agents.toml`
+/// itself and emits JSON.
+#[derive(Subcommand)]
+pub(crate) enum AgentsOp {
+    /// Record one hook payload: an agent starting, idling or stopping.
+    Record {
+        /// Harness that emitted the payload: claude-code|codex|manual.
+        // Free-form rather than a `value_enum`, so an unknown name exits 1
+        // through the `--error-format` envelope instead of clap usage prose.
+        #[arg(long = "harness", value_name = "HARNESS")]
+        harness: String,
+        /// Hook payload JSON, or `-` for stdin.
+        #[arg(value_name = "PAYLOAD", default_value = "-")]
+        payload: String,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Print the flow's agent records as a JSON array.
+    List {
+        /// Flow slug whose `agents.toml` is read.
+        #[arg(long = "slug", value_name = "SLUG")]
+        slug: String,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },

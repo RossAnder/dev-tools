@@ -11,8 +11,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value as JsonValue;
 
 use super::types::{
-    BlocksOp, Cli, Cmd, FEATURES, IntegrityOp, ItemsOp, LegacyShortcuts, ReadIntegrityArgs,
-    SUBCOMMANDS, WriteIntegrityArgs,
+    AgentsOp, BlocksOp, Cli, Cmd, FEATURES, IntegrityOp, ItemsOp, LegacyShortcuts,
+    ReadIntegrityArgs, SUBCOMMANDS, WriteIntegrityArgs,
 };
 
 use crate::blocks::blocks_verify;
@@ -384,6 +384,16 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Cmd::Flow { op } => crate::flow::dispatch(op)?,
         Cmd::Backlog { op } => crate::backlog::dispatch::dispatch(op)?,
         Cmd::Tasks { op } => crate::tasks::dispatch::dispatch(op)?,
+        Cmd::Agents { op } => match op {
+            AgentsOp::Record {
+                harness,
+                payload,
+                integrity,
+            } => crate::agents::dispatch::dispatch_record(&harness, &payload, &integrity)?,
+            AgentsOp::List { slug, integrity } => {
+                crate::agents::dispatch::dispatch_list(&slug, &integrity)?
+            }
+        },
         Cmd::Sweep {
             pattern,
             max_file_bytes,
