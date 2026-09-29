@@ -47,6 +47,8 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 | `tomlctl tasks closure` | yes |
 | `tomlctl tasks check` | yes |
 | `tomlctl tasks render` | yes |
+| `tomlctl tasks snapshot` | yes — checks `tasks.toml` and each of `execution-record.toml`, `agents.toml`, `context.toml` that is present |
+| `tomlctl agents list` | yes |
 | `tomlctl flow list` | yes |
 | `tomlctl flow render-progress-log` | yes — checks `execution-record.toml` only |
 
