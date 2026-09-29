@@ -174,7 +174,7 @@ row moves.
 
 An unlocked patch records the value it replaced as the stamp's *base*. The base is the plan's own value, so a second patch keeps
 the first one's base rather than overwriting it, and a patch back to the base drops the stamp —
-a row that agrees with the plan overrides nothing. `--ref` carries the stamp with the row.
+a row that agrees with the plan overrides nothing. `--ref` re-keys the stamp to the new `ref`, together with the row's file notes and backlog links.
 There are three ways out: publish the patch with `tasks render` and re-import, let the plan
 change the line, or `--relock-import-fields`. The unlock is not a pin: `tasks render --check`
 reports the divergence as `render/drift` from the moment of the patch, and every import that

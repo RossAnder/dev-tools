@@ -70,11 +70,18 @@ a cycle or a dangling edge still shows its rows under every other part.
 | `id` | id | Always emitted, whatever `--with` selects, so a fetched row can be matched back to the id that was asked for. |
 | `ref`, `title`, `effort`, `status`, `checkpoint`, `needs`, `coupling` | row fields | The `summary` part; field meanings are the [store's](tasks-store.md#store-shape). |
 | `files` | paths | Under `summary` or `files`. |
+| `file_notes` | object | The `files` part: each claimed path carrying a `[[file_notes]]` entry, mapped to its note; `{}` when none does. |
+| `new_files`, `deleted_files` | paths | The `files` part: the paths whose note marks a created or a removed file, in `files` order; always present, possibly empty. |
 | `action`, `detail`, `acceptance` | text | The `body` part. |
 | `deps[]` | summaries | The `deps` part: the `summary` keys of each direct `needs` ∪ `coupling` target, ascending by id. |
 | `dependents[]` | summaries | The `dependents` part: the `summary` keys of each transitive successor, excluding the row itself. |
 | `import_override.files`, `import_override.needs` | paths, ids | The plan **base** each stamped field replaced — not the patched `files` / `needs` above it. Ungated by `--with`; an unstamped field is omitted and the whole key is absent from an unstamped row. |
 | `backlog.closes`, `backlog.refs` | backlog ids | The row's `[[backlog_links]]` entry. Ungated by `--with`; absent from an unlinked row. |
+
+The change kind is derived from the note on read, never stored. A note counts only when it
+opens with a parenthetical whose first word, case-insensitive, is `new` or `delete` / `deleted`
+and either closes it or is followed by `,`, `;`, `:` or a ` —` dash: `(NEW)` and
+`(new, generated)` mark a new file, `(new thread)` an addition to an existing one.
 
 `import_override` and `backlog` follow the selected parts, and never appear on a summary nested
 under `deps` / `dependents`: they belong to the row that was asked for.
@@ -340,6 +347,7 @@ it.
 | `plan/policy-absent` | warning | `import-plan` only — no `## Execution Policy` section, so `origin` is `default` and every policy field is a house default |
 | `plan/no-tasks` | error | `import-plan` only — the `## Tasks` section parses to no task, so the import would replace the checkpoint table and policy with the empty and default values such a plan yields. A section holding only links to sibling documents that do carry task headings names that shape instead, the same diagnostic a plan with no section at all raises |
 | `plan/heading-too-deep` | warning | `import-plan` only — a numbered task heading carrying seven or more hashes. The grammar reads three through six, so a deeper one stands as a phase label and its task is dropped with no other trace; **one** finding per heading, `ids` naming the number the author wrote and `detail` the plan line. Warning rather than error because refusing the import over one hash too many would block every other task in the plan |
+| `plan/heading-anchor` | warning | `import-plan` only — a numbered task heading containing a `{#…}` id anchor. A ref derives from the title, so an anchor after the effort tag is dropped with it and one before the tag becomes part of the ref; **one** finding per heading, `ids` naming the task and `detail` the plan line. Remove the anchor |
 | `plan/files-span-unclaimed` | warning | `import-plan` only — a comma-list `Files` line whose ` — ` note has a comma followed by a backticked span holding no `/` or `.`. The parse reads the span as the note's prose, so an extensionless path such as `Makefile` claims no file; **one** finding per `Files` line. A bulleted `Files` list keeps it a claim |
 | `plan/files-malformed` | error | `import-plan` only — a `Files` entry that is neither a bare token nor one backticked span whole: a label ahead of the span, two spans on one sub-bullet, or prose a comma split off. The real paths beside it go unclaimed; **one** finding per `Files` field, `detail` naming each entry. Write one path per entry, any label or prose in a ` — ` note after it |
 | `plan/text-unstored` | warning | `import-plan` only — non-blank text the store has no field for: an unknown field label, a line under a task outside any field, a nested `Files` line with no path above it, or prose under a phase heading or ahead of the first heading. `tasks render` removes it from the plan; not raised alongside `plan/no-tasks`; **one** finding per task or phase, `ids` naming the task (empty for a phase) and `detail` the first line dropped. Move it under `- **Detail**:` or out of the task |
@@ -355,7 +363,8 @@ it.
 The four `backlog/*` classes are joined from the store's `[[backlog_links]]` and
 `.claude/backlog.toml`, read only when the store holds a link — a backlog that does not parse
 then fails the verb. Each linked id raises at most one of them. A link keyed on a `ref` no row
-carries — `tasks remove` and `tasks update --ref` leave links in place until the next import —
+carries — `tasks remove` leaves links in place until the next import, while `tasks update --ref`
+re-keys them to the new `ref` —
 contributes no id to `ids`; its `detail` names the `ref`.
 
 A duplicate id and an edge to an absent task are scanned for *before* any graph is built, which

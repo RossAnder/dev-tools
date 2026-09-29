@@ -125,6 +125,7 @@ pub(crate) fn parse_tasks_at(section_body: &str, first_line: usize) -> Result<Pa
             match open_heading(line, line_no)? {
                 Some(task) => {
                     quiet = false;
+                    findings.extend(heading_anchor(&task, line, line_no));
                     current = Some(ParsedTask {
                         phase: phase.clone(),
                         phase_depth,
@@ -424,6 +425,30 @@ fn deep_heading(line: &str, line_no: usize) -> Option<Finding> {
              {MAX_TASK_DEPTH} a task heading may carry, so it reads as a phase label \
              and the task is dropped",
             heading_depth(line)
+        ),
+    })
+}
+
+/// A `{#…}` id anchor on a task heading. The ref derives from the title, so
+/// the anchor names nothing the store keys on: after the effort tag it is
+/// dropped with the tag, before it the ref absorbs it.
+fn heading_anchor(task: &ParsedTask, line: &str, line_no: usize) -> Option<Finding> {
+    if !line.contains("{#") {
+        return None;
+    }
+    let fate = if task.title.contains("{#") {
+        "sits inside the title, so it becomes part of the task's ref"
+    } else {
+        "follows the effort tag, so it is dropped with the tag"
+    };
+    Some(Finding {
+        class: "plan/heading-anchor",
+        severity: WARNING,
+        ids: vec![task.id],
+        detail: format!(
+            "line {line_no}: task {} \"{}\" carries a `{{#…}}` anchor, which {fate}. A \
+             task's ref derives from its title, never from an anchor; remove it",
+            task.id, task.title
         ),
     })
 }
@@ -1041,6 +1066,42 @@ mod tests {
         let parsed = parse_tasks_at(&kept, 10).expect("parses");
         assert_eq!(parsed.tasks.len(), 2);
         assert!(parsed.findings.is_empty(), "{:?}", parsed.findings);
+    }
+
+    #[test]
+    fn an_id_anchor_in_a_heading_warns() {
+        let body = "\
+### 1. Ship it [S] {#ship}
+- **Files**: none
+
+### 2. Follow up {#follow} [M]
+- **Files**: none
+
+### 3. Tidy up [S]
+- **Files**: none
+";
+        let parsed = parse_tasks_at(body, 10).expect("parses");
+        assert_eq!(parsed.tasks.len(), 3);
+        assert_eq!(parsed.tasks[0].title, "Ship it");
+        assert_eq!(parsed.tasks[1].title, "Follow up {#follow}");
+
+        let anchors: Vec<&Finding> = parsed
+            .findings
+            .iter()
+            .filter(|f| f.class == "plan/heading-anchor")
+            .collect();
+        assert_eq!(anchors.len(), 2, "{:?}", parsed.findings);
+        assert_eq!(anchors[0].severity, WARNING);
+        assert_eq!(anchors[0].ids, vec![1]);
+        assert!(anchors[0].detail.contains("line 10"), "{:?}", anchors[0]);
+        assert!(anchors[0].detail.contains("dropped"), "{:?}", anchors[0]);
+        assert_eq!(anchors[1].ids, vec![2]);
+        assert!(anchors[1].detail.contains("line 13"), "{:?}", anchors[1]);
+        assert!(
+            anchors[1].detail.contains("part of the task's ref"),
+            "{:?}",
+            anchors[1]
+        );
     }
 
     #[test]
