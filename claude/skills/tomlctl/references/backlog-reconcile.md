@@ -41,7 +41,7 @@ whose target is a flow lands in the first of the other five buckets that fits, i
 | `dangling` | `promoted_to` resolves to no flow: an unknown value, or a plan no flow binds. |
 | `external` | `promoted_to` is an `external:` reference. |
 
-A link naming a `ref` no task carries — left behind by `tasks remove` or `tasks update --ref`
+A link naming a `ref` no task carries — left behind by `tasks remove`
 until the next import — is dropped from the join and noted in `reason`.
 
 `--adopt` considers each row whose target flow has a `tasks.toml` in which no link, `closes`

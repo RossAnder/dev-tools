@@ -1989,7 +1989,7 @@ pub(crate) enum ShowPart {
     Summary,
     /// The `action` / `detail` / `acceptance` prose an executing agent needs.
     Body,
-    /// The row's declared `files` list on its own.
+    /// The row's `files` list, then `file_notes`, `new_files` and `deleted_files`.
     Files,
     /// A summary per direct `needs` / `coupling` target of the row.
     Deps,
