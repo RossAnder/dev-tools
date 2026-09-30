@@ -7,6 +7,9 @@
 //! The poller never reads integrity sidecars: tomlctl writes the sidecar and the TOML as two
 //! separate renames, so a check from here could catch them mid-update. A torn read instead
 //! surfaces as a fetch failure and is retried.
+//!
+//! The poller also tails the activity panel's transcript, re-reading it every [`TICK`] while
+//! the runtime has one targeted; a tail refresh never counts as a tick.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -16,8 +19,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 use notify::RecommendedWatcher;
 
+use crate::app::TICK;
 use crate::flows::{self, FlowEntry};
 use crate::model::Snapshot;
+use crate::transcript::TailState;
 use crate::watch::{self, Wake};
 
 /// Everything the runtime's main loop receives, from the poller and the input thread alike.
@@ -30,6 +35,8 @@ pub(crate) enum Event {
     Flows(Result<Vec<FlowEntry>, String>),
     /// Only `tasks.toml` mtimes moved: the new mtime of every flow with a task store.
     FlowMtimes(BTreeMap<String, SystemTime>),
+    /// The targeted transcript's tail, sent on a retarget and whenever a refresh changed it.
+    Tail(Box<TailState>),
     Input(ratatui::crossterm::event::Event),
 }
 
@@ -38,6 +45,8 @@ pub(crate) enum Event {
 enum Control {
     /// Switch to another flow and fetch it at once.
     SetSlug(String),
+    /// Tail this transcript from now on, reading it at once; `None` stops tailing.
+    Tail(Option<String>),
     /// The watcher saw something change; sent from notify's event thread.
     Wake(Wake),
     Stop,
@@ -223,11 +232,31 @@ struct Deadlines {
     safety: Instant,
     /// When a failed fetch is due another try.
     retry: Option<Instant>,
+    /// When the targeted transcript is next re-read.
+    tail: Option<Instant>,
+}
+
+/// Which deadlines had been reached when a wait ran out.
+struct Due {
+    safety: bool,
+    retry: bool,
+    tail: bool,
+}
+
+impl Deadlines {
+    fn due(&self, now: Instant) -> Due {
+        let reached = |at: Option<Instant>| at.is_some_and(|at| now >= at);
+        Due {
+            safety: now >= self.safety,
+            retry: reached(self.retry),
+            tail: reached(self.tail),
+        }
+    }
 }
 
 /// How long to wait for a message before the earliest deadline; zero once one has passed.
 fn next_wait(now: Instant, deadlines: &Deadlines) -> Duration {
-    [Some(deadlines.safety), deadlines.retry]
+    [Some(deadlines.safety), deadlines.retry, deadlines.tail]
         .into_iter()
         .flatten()
         .min()
@@ -274,6 +303,9 @@ struct Poller {
     /// Set when the last flow list failed, so the next change lists again.
     relist_pending: bool,
     retry_after: Duration,
+    /// The transcript the runtime asked to tail, and when it is next re-read.
+    tail: Option<TailState>,
+    tail_at: Option<Instant>,
 }
 
 impl Poller {
@@ -295,7 +327,40 @@ impl Poller {
             flow_stats: BTreeMap::new(),
             relist_pending: false,
             retry_after: RETRY_AFTER,
+            tail: None,
+            tail_at: None,
         }
+    }
+
+    /// Points the tail at `path`, reads it and always sends the result; `None` drops the tail.
+    /// Returns `false` once the receiver has gone.
+    fn set_tail(&mut self, path: Option<String>) -> bool {
+        let Some(path) = path else {
+            self.tail = None;
+            self.tail_at = None;
+            return true;
+        };
+        let tail = self.tail.get_or_insert_with(|| TailState::new(&path));
+        tail.retarget(&path);
+        tail.refresh();
+        let event = Event::Tail(Box::new(tail.clone()));
+        self.tail_at = Instant::now().checked_add(TICK);
+        self.events.send(event).is_ok()
+    }
+
+    /// Re-reads the targeted transcript, sending the tail only when it changed. Returns
+    /// `false` once the receiver has gone.
+    fn refresh_tail(&mut self) -> bool {
+        let Some(tail) = &mut self.tail else {
+            self.tail_at = None;
+            return true;
+        };
+        self.tail_at = Instant::now().checked_add(TICK);
+        if !tail.refresh() {
+            return true;
+        }
+        let event = Event::Tail(Box::new(tail.clone()));
+        self.events.send(event).is_ok()
     }
 
     fn set_slug(&mut self, slug: String) {
@@ -421,6 +486,7 @@ impl Poller {
         match message {
             Control::SetSlug(slug) => self.set_slug(slug),
             Control::Wake(wake) => wakes.add(wake),
+            Control::Tail(path) => return self.set_tail(path),
             Control::Stop => return false,
         }
         true
@@ -475,23 +541,32 @@ impl Poller {
                 let deadlines = Deadlines {
                     safety: next_safety_at,
                     retry: self.retry_at(),
+                    tail: self.tail_at,
                 };
                 match messages.recv_timeout(next_wait(Instant::now(), &deadlines)) {
                     Ok(message) => {
                         let woke = matches!(message, Control::Wake(_));
+                        let retail = matches!(message, Control::Tail(_));
                         if !self.handle(message, &mut wakes)
                             || (woke && !self.drain(messages, &mut wakes))
                         {
                             return;
+                        }
+                        // A retarget has already read and sent the tail; it needs no tick.
+                        if retail {
+                            continue;
                         }
                         safety = false;
                         break;
                     }
                     Err(RecvTimeoutError::Disconnected) => return,
                     Err(RecvTimeoutError::Timeout) => {
-                        let now = Instant::now();
-                        safety = now >= deadlines.safety;
-                        if safety || deadlines.retry.is_some_and(|at| now >= at) {
+                        let due = deadlines.due(Instant::now());
+                        if due.tail && !self.refresh_tail() {
+                            return;
+                        }
+                        safety = due.safety;
+                        if due.safety || due.retry {
                             break;
                         }
                     }
@@ -552,6 +627,12 @@ impl Source {
     /// Switches the poller to `slug` and forces a fetch.
     pub(crate) fn set_slug(&self, slug: String) {
         let _ = self.control.send(Control::SetSlug(slug));
+    }
+
+    /// Tails the transcript at `path`, sending [`Event::Tail`] at once and on every change;
+    /// `None` stops tailing.
+    pub(crate) fn set_tail(&self, path: Option<String>) {
+        let _ = self.control.send(Control::Tail(path));
     }
 
     #[cfg(test)]
@@ -867,6 +948,7 @@ mod tests {
         let watching = Deadlines {
             safety: now + safety_period(true, poll),
             retry: None,
+            tail: None,
         };
         assert_eq!(next_wait(now, &watching), SAFETY_TICK);
         assert_eq!(SAFETY_TICK, Duration::from_secs(10));
@@ -880,6 +962,7 @@ mod tests {
         let polling = Deadlines {
             safety: now + safety_period(false, poll),
             retry: None,
+            tail: None,
         };
         assert_eq!(next_wait(now, &polling), poll);
 
@@ -889,6 +972,89 @@ mod tests {
             Duration::ZERO,
             "a passed deadline"
         );
+    }
+
+    #[test]
+    fn tail_refreshes_do_not_hold_off_the_safety_tick() {
+        let now = Instant::now();
+        let mut deadlines = Deadlines {
+            safety: now + Duration::from_secs(3),
+            retry: None,
+            tail: Some(now + TICK),
+        };
+        assert_eq!(next_wait(now, &deadlines), Duration::from_secs(1));
+
+        // Walks the poller's wait loop: each tail refresh moves only the tail deadline.
+        let mut at = now;
+        let mut refreshes = 0;
+        for _ in 0..10 {
+            at += next_wait(at, &deadlines);
+            let due = deadlines.due(at);
+            assert!(!due.retry);
+            if due.tail {
+                refreshes += 1;
+                deadlines.tail = Some(at + TICK);
+            }
+            if due.safety {
+                break;
+            }
+        }
+        assert_eq!(refreshes, 3);
+        assert_eq!(at, now + Duration::from_secs(3), "safety on time");
+    }
+
+    #[test]
+    fn a_tail_is_sent_on_retarget_and_then_only_when_it_changes() {
+        let root = temp_root("tail");
+        let path = root.join("agent.jsonl");
+        let line = |text: &str| {
+            serde_json::json!({
+                "type": "assistant",
+                "timestamp": "2026-09-28T11:04:30Z",
+                "message": {"content": [{"type": "text", "text": text}]}
+            })
+            .to_string()
+                + "\n"
+        };
+        std::fs::write(&path, line("one")).expect("write");
+        let path = path.to_string_lossy().into_owned();
+        let (fetcher, _calls) = fake(vec![Ok(with_revision("r1"))]);
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        poller.tail = Some(TailState::within("", Some(root.clone())));
+        let texts = |events: Vec<Event>| -> Vec<Vec<String>> {
+            events
+                .into_iter()
+                .filter_map(|e| match e {
+                    Event::Tail(t) => Some(t.entries.into_iter().map(|e| e.text).collect()),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        let mut wakes = Wakes::default();
+        assert!(poller.handle(Control::Tail(Some(path.clone())), &mut wakes));
+        assert!(wakes.is_empty());
+        assert_eq!(texts(drain(&rx)), [["one"]]);
+        assert!(poller.tail_at.is_some());
+
+        assert!(poller.refresh_tail());
+        assert!(drain(&rx).is_empty(), "nothing appended, nothing sent");
+
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("open");
+        std::io::Write::write_all(&mut file, line("two").as_bytes()).expect("append");
+        drop(file);
+        assert!(poller.refresh_tail());
+        assert_eq!(texts(drain(&rx)), [["one", "two"]]);
+
+        assert!(poller.handle(Control::Tail(None), &mut wakes));
+        assert!(poller.tail.is_none() && poller.tail_at.is_none());
+        assert!(poller.refresh_tail());
+        assert!(drain(&rx).is_empty(), "no tail, nothing read");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Rewrites `name` in place, stamped with `secs` past the epoch, and puts the directory's

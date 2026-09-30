@@ -1,8 +1,8 @@
 //! The activity panel for the selected task's newest running agent.
 //!
-//! The panel draws from a [`TailState`] the caller owns and refreshes; it
-//! reads no files itself. [`agent`] names the row whose transcript the caller
-//! should point that tail at.
+//! The panel draws from the [`TailState`] the poller thread last sent; it
+//! reads no files itself. [`agent`] names the row whose transcript the
+//! runtime asks the poller to tail.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

@@ -1,9 +1,10 @@
 //! The terminal event loop and one-shot frame rendering.
 //!
 //! Three threads feed one channel: the input thread owns the blocking terminal read, the
-//! source poller sends snapshots and flow changes, and the main loop drains whatever has
-//! queued before drawing once. With no running agent and nothing on screen changing over
-//! time the loop blocks without a timeout, so an idle glimpse does no work at all.
+//! source poller sends snapshots, flow changes and the activity panel's transcript tail, and
+//! the main loop drains whatever has queued before drawing once. The main loop reads no
+//! files. With no running agent and nothing on screen changing over time it blocks without
+//! a timeout, so an idle glimpse does no work at all.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -18,7 +19,7 @@ use ratatui::crossterm::execute;
 use ratatui::text::Span;
 use ratatui::{DefaultTerminal, Frame, Terminal};
 
-use crate::app::{Action, App, TICK};
+use crate::app::{Action, App};
 use crate::config::Config;
 use crate::diagram::DiagramCache;
 use crate::flows::{self, FlowEntry};
@@ -80,7 +81,7 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
     spawn_input(events.clone());
     let source = Source::start(root, slug, &config, events);
 
-    let mut screen = Screen::new(app, config, TailState::new(""));
+    let mut screen = Screen::new(app, config, TailState::default());
     let mut host = TerminalHost {
         terminal: &mut terminal,
         source: &source,
@@ -209,18 +210,24 @@ impl Screen {
             &self.tail,
         );
     }
+}
 
-    /// Points the tail at the activity agent's transcript and reads what was appended.
-    /// Returns whether the panel's content changed; a closed panel reads nothing.
-    fn refresh_tail(&mut self) -> bool {
-        if !self.app.activity_open {
-            return false;
-        }
-        let Some(agent) = view::activity::agent(&self.app) else {
-            return false;
-        };
-        self.tail.retarget(&agent.transcript_path);
-        self.tail.refresh()
+/// The transcript the activity panel shows: its agent's while the panel is open.
+fn tail_target(app: &App) -> Option<String> {
+    if !app.activity_open {
+        return None;
+    }
+    view::activity::agent(app).map(|agent| agent.transcript_path.clone())
+}
+
+/// Asks the poller to tail the panel's transcript when it differs from the one last sent,
+/// dropping the old agent's tail so it is never drawn under the new agent.
+fn follow_tail(screen: &mut Screen, host: &mut impl Host, sent: &mut Option<String>) {
+    let target = tail_target(&screen.app);
+    if target != *sent {
+        screen.tail = TailState::default();
+        host.set_tail(target.clone());
+        *sent = target;
     }
 }
 
@@ -228,6 +235,7 @@ impl Screen {
 trait Host {
     fn draw(&mut self, screen: &mut Screen) -> Result<(), String>;
     fn set_slug(&mut self, slug: String);
+    fn set_tail(&mut self, path: Option<String>);
 }
 
 struct TerminalHost<'a> {
@@ -246,6 +254,10 @@ impl Host for TerminalHost<'_> {
     fn set_slug(&mut self, slug: String) {
         self.source.set_slug(slug);
     }
+
+    fn set_tail(&mut self, path: Option<String>) {
+        self.source.set_tail(path);
+    }
 }
 
 enum Step {
@@ -255,10 +267,9 @@ enum Step {
 }
 
 /// Draws, then waits for events and redraws once per batch until a quit or until every
-/// sender has gone. Waits carry a timeout only while the app asks for ticks or the
-/// activity panel shows a running agent, since a transcript grows without any snapshot
-/// announcing it. Every draw is preceded by [`Screen::refresh_tail`], the only place the
-/// tail moves; a batch that draws nothing leaves the tail alone.
+/// sender has gone. Waits carry a timeout only while the app asks for ticks. After each
+/// batch the poller is told which transcript to tail, if that changed; the tail itself
+/// arrives as [`Event::Tail`].
 fn run_loop(
     screen: &mut Screen,
     events: &Receiver<Event>,
@@ -266,16 +277,13 @@ fn run_loop(
 ) -> Result<(), String> {
     // The freshest flow at the last flow change; auto-flow switches only when it moves.
     let mut freshest: Option<String> = None;
+    let mut tailing: Option<String> = None;
     let mut last_tick = Instant::now();
-    screen.refresh_tail();
+    follow_tail(screen, host, &mut tailing);
     host.draw(screen)?;
 
     loop {
-        let interval = if screen.app.activity_open && view::activity::agent(&screen.app).is_some() {
-            Some(TICK)
-        } else {
-            screen.app.tick_interval(Instant::now())
-        };
+        let interval = screen.app.tick_interval(Instant::now());
         let first = if let Some(interval) = interval {
             let wait = (last_tick + interval).saturating_duration_since(Instant::now());
             match events.recv_timeout(wait) {
@@ -309,9 +317,8 @@ fn run_loop(
             }
             Some(_) => {}
         }
-        // The tick arm sets `redraw`, so the transcript is still polled once per tick.
+        follow_tail(screen, host, &mut tailing);
         if redraw {
-            screen.refresh_tail();
             host.draw(screen)?;
         }
     }
@@ -343,6 +350,10 @@ fn handle(
         }
         Event::FlowMtimes(mtimes) => {
             flow_mtimes_moved(app, &mtimes, host, freshest);
+            Step::Redraw
+        }
+        Event::Tail(tail) => {
+            screen.tail = *tail;
             Step::Redraw
         }
         Event::Input(input @ (TermEvent::Key(_) | TermEvent::Mouse(_))) => {
@@ -444,6 +455,7 @@ mod tests {
     struct FakeHost {
         draws: usize,
         slugs: Vec<String>,
+        tails: Vec<Option<String>>,
     }
 
     impl Host for FakeHost {
@@ -454,6 +466,10 @@ mod tests {
 
         fn set_slug(&mut self, slug: String) {
             self.slugs.push(slug);
+        }
+
+        fn set_tail(&mut self, path: Option<String>) {
+            self.tails.push(path);
         }
     }
 
@@ -517,12 +533,31 @@ mod tests {
         let expected = view::activity::agent(&screen.app)
             .map(|agent| agent.transcript_path.clone())
             .expect("task 4 has a running agent");
-        screen.refresh_tail();
-        assert_eq!(screen.tail.path, "", "a closed panel leaves the tail alone");
+        let mut host = FakeHost::default();
+        let mut tailing = None;
+        follow_tail(&mut screen, &mut host, &mut tailing);
+        assert!(host.tails.is_empty(), "a closed panel tails nothing");
 
         screen.app.apply(Action::ToggleActivity);
-        screen.refresh_tail();
-        assert_eq!(screen.tail.path, expected);
+        follow_tail(&mut screen, &mut host, &mut tailing);
+        follow_tail(&mut screen, &mut host, &mut tailing);
+        assert_eq!(host.tails, [Some(expected.clone())], "sent once on opening");
+
+        let mut tail = TailState::default();
+        tail.path = expected.clone();
+        tail.tokens = Some(42);
+        let step = handle(
+            &mut screen,
+            Event::Tail(Box::new(tail.clone())),
+            &mut host,
+            &mut None,
+        );
+        assert!(matches!(step, Step::Redraw));
+        assert_eq!(screen.tail, tail, "the poller's tail is drawn");
+
+        screen.app.apply(Action::ToggleActivity);
+        follow_tail(&mut screen, &mut host, &mut tailing);
+        assert_eq!(host.tails, [Some(expected), None], "closing stops the tail");
     }
 
     #[test]
