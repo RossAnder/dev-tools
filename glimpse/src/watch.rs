@@ -8,9 +8,6 @@
 //! `Access` events are dropped because inotify reports every `open`, including glimpse's own
 //! snapshot reads; waking on them would make each fetch schedule the next one.
 
-// Nothing outside the tests calls into this module until the poller owns a watcher.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use std::path::{Component, Path, PathBuf};
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
