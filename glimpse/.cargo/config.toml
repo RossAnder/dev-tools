@@ -1,0 +1,8 @@
+# The `glimpse hook` process starts once per subagent event, so start-up cost
+# is paid many times per session. Linking the C runtime statically drops six
+# DLL loads (VCRUNTIME140 and the api-ms-win-crt-* set) from every start.
+# Scoped to Windows MSVC so Linux and macOS builds are unaffected. Like
+# tomlctl's config, this applies only when cargo runs from `glimpse/` or via
+# `cargo install --path glimpse`.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
