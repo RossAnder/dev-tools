@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 authors = ["Ross Anderson"]
-description = "Live terminal view of a flow's task graph, checkpoints and running agents, fed by tomlctl tasks snapshot"
+description = "Live terminal view of a flow's task graph, checkpoints and running agents, built on tomlctl's snapshot code"
 license = "MIT OR Apache-2.0"
 
 [[bin]]
@@ -19,6 +19,10 @@ serde = { version = "1", features = ["derive"] }
 # `preserve_order`: settings.json merges must keep the user's key order.
 serde_json = { version = "1", features = ["preserve_order"] }
 toml = "1"
+# Default features kept: macOS's FSEvents backend needs `macos_fsevent`.
+notify = "8.2.0"
+# In-process snapshot, flow list and hook recording, without tomlctl's allocator.
+tomlctl = { path = "../tomlctl", default-features = false }
 
 [profile.release]
 opt-level = 3
