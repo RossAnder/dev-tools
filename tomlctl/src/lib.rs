@@ -34,12 +34,57 @@ mod time;
 mod union_find;
 
 use std::io::Write;
+use std::path::Path;
 use std::process::ExitCode;
 
+use anyhow::anyhow;
 use clap::Parser;
 
-use crate::cli::{Cli, ErrorFormat};
+use crate::agents::schema::Harness;
+use crate::cli::{Cli, ErrorFormat, ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::TaggedError;
+
+/// The `tasks snapshot` document for the flow whose store is `store_path`,
+/// read without integrity checks. Advisories are silenced for the process.
+pub fn snapshot(slug: &str, store_path: &Path) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    let read_opts = ReadIntegrityArgs {
+        verify_integrity: false,
+        strict_read: false,
+    };
+    tasks::snapshot(slug, store_path, &read_opts)
+}
+
+/// The unfiltered `flow list` envelope for every flow under
+/// `<root>/.claude/flows`, read without integrity checks.
+pub fn flow_list(root: &Path) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    flow::list_all(root)
+}
+
+/// Record one hook payload as `agents record <harness>` does. Changes the
+/// process's working directory to the payload's `cwd` and fixes the repo root
+/// for the rest of the process, so call it once per process.
+pub fn record_agent(
+    harness: &str,
+    payload: &serde_json::Value,
+) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    let harness = Harness::parse(harness).ok_or_else(|| {
+        anyhow!(
+            "agents record: unknown harness `{harness}` — expected one of {}",
+            Harness::VOCABULARY.join(", ")
+        )
+    })?;
+    let write_opts = WriteIntegrityArgs {
+        allow_outside: false,
+        no_write_integrity: false,
+        verify_integrity: false,
+        strict_integrity: false,
+        no_create: false,
+    };
+    agents::record::record(harness, payload, &write_opts)
+}
 
 /// Parses the process arguments, runs the selected verb and reports any error
 /// on stderr. Returns `ExitCode::FAILURE` on error; clap's own parse-error and

@@ -78,11 +78,19 @@ pub(crate) fn advise_fmt(args: std::fmt::Arguments<'_>) {
     let _ = writeln!(stderr, "{args}");
 }
 
+/// Whether advisories reach stderr, decided once per process.
+static VISIBLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
 /// Cached so every advisory in one invocation agrees on the answer, and a run
 /// emitting many pays one `isatty`.
 fn advisories_visible() -> bool {
-    static VISIBLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *VISIBLE.get_or_init(|| std::io::stderr().is_terminal())
+}
+
+/// Suppress every later advisory in this process, for a library caller that
+/// owns the terminal. A no-op once the answer is already cached.
+pub(crate) fn silence_advisories() {
+    let _ = VISIBLE.set(false);
 }
 
 /// Resolve the effective lock timeout from `TOMLCTL_LOCK_TIMEOUT`, clamped to
