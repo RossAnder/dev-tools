@@ -1,17 +1,24 @@
-//! Polls a flow's files for changes and fetches fresh snapshots onto the event channel.
+//! Watches a repo's flows for changes and fetches fresh snapshots onto the event channel.
+//!
+//! A filesystem watch only wakes the poller; the fingerprints below still decide what changed.
+//! A safety tick every [`SAFETY_TICK`] catches what the watch missed, and two consecutive
+//! safety ticks that find an unreported change switch to polling every `poll_ms` for good.
 //!
 //! The poller never reads integrity sidecars: tomlctl writes the sidecar and the TOML as two
 //! separate renames, so a check from here could catch them mid-update. A torn read instead
 //! surfaces as a fetch failure and is retried.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
+use notify::RecommendedWatcher;
+
 use crate::flows::{self, FlowEntry};
 use crate::model::Snapshot;
+use crate::watch::{self, Wake};
 
 /// Everything the runtime's main loop receives, from the poller and the input thread alike.
 #[derive(Debug)]
@@ -31,11 +38,24 @@ pub(crate) enum Event {
 enum Control {
     /// Switch to another flow and fetch it at once.
     SetSlug(String),
+    /// The watcher saw something change; sent from notify's event thread.
+    Wake(Wake),
     Stop,
 }
 
 /// How long a failed fetch waits before retrying when no file has changed.
 const RETRY_AFTER: Duration = Duration::from_secs(5);
+
+/// How often a healthy watch is double-checked by a full tick.
+const SAFETY_TICK: Duration = Duration::from_secs(10);
+
+/// After a wake, further messages are gathered until none arrives for this long...
+const COALESCE_QUIET: Duration = Duration::from_millis(50);
+/// ...or this long has passed since the wake, whichever comes first.
+const COALESCE_MAX: Duration = Duration::from_millis(250);
+
+/// Consecutive safety ticks with an unreported change before the watch is abandoned.
+const MISS_LIMIT: u8 = 2;
 
 /// The four files a snapshot is built from, in a fixed order.
 const FLOW_FILES: [&str; 4] = [
@@ -77,10 +97,8 @@ fn modified(path: &Path) -> Option<SystemTime> {
 
 /// The [`FlowTimes`] of every `<root>/.claude/flows/*` that has a `tasks.toml`, keyed by
 /// directory name. A flow's files are re-statted only when its directory's mtime moved or it
-/// is new to `cache`: tomlctl writes by rename, which moves the directory's mtime, and the
-/// listing already carries that mtime without opening anything. On NTFS the listing lags an
-/// in-place write until the directory's next change, so only renamed writes are seen at once.
-/// No process is spawned.
+/// is absent from `cache`. A rename moves the directory's mtime; an in-place write does not,
+/// on NTFS and ext4 alike, so those are caught by the watcher evicting the flow's entry.
 fn flows_fingerprint(
     root: &Path,
     cache: &mut BTreeMap<String, FlowStat>,
@@ -141,6 +159,103 @@ impl Fetcher for InProcessFetcher {
     }
 }
 
+/// Every wake gathered before one tick, merged: an `All` or `Rewatch` covers every flow.
+#[derive(Debug, Default)]
+struct Wakes {
+    flows: BTreeSet<String>,
+    all: bool,
+    rewatch: bool,
+}
+
+impl Wakes {
+    fn add(&mut self, wake: Wake) {
+        match wake {
+            Wake::Flow(slug) => {
+                self.flows.insert(slug);
+            }
+            Wake::All => self.all = true,
+            Wake::Rewatch => self.rewatch = true,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.flows.is_empty() && !self.all && !self.rewatch
+    }
+}
+
+/// Whether a watch is feeding the poller. The watcher lives here, on the poller thread.
+enum Mode {
+    /// Held only so the watch lives until the mode changes.
+    Watching { _watcher: RecommendedWatcher },
+    /// Polling every `poll_ms`; `retry_watch` while the last watch start failed, cleared once
+    /// the watch was abandoned for missing changes.
+    Polling { retry_watch: bool },
+}
+
+impl Mode {
+    /// Watches `flows_root`, forwarding every wake onto the poller's own control channel.
+    fn start(flows_root: &Path, control: &Sender<Control>) -> Mode {
+        if !flows_root.is_dir() {
+            return Mode::Polling { retry_watch: true };
+        }
+        let tx = control.clone();
+        match watch::start(flows_root, move |wake| {
+            let _ = tx.send(Control::Wake(wake));
+        }) {
+            Ok(watcher) => Mode::Watching { _watcher: watcher },
+            Err(_) => Mode::Polling { retry_watch: true },
+        }
+    }
+
+    fn is_watching(&self) -> bool {
+        matches!(self, Mode::Watching { .. })
+    }
+}
+
+/// How long the poller goes between ticks when nothing wakes it.
+fn safety_period(watching: bool, poll: Duration) -> Duration {
+    if watching { SAFETY_TICK } else { poll }
+}
+
+/// The instants at which the poller wakes of its own accord.
+struct Deadlines {
+    /// The next safety tick; moves only when a tick runs.
+    safety: Instant,
+    /// When a failed fetch is due another try.
+    retry: Option<Instant>,
+}
+
+/// How long to wait for a message before the earliest deadline; zero once one has passed.
+fn next_wait(now: Instant, deadlines: &Deadlines) -> Duration {
+    [Some(deadlines.safety), deadlines.retry]
+        .into_iter()
+        .flatten()
+        .min()
+        .map_or(Duration::ZERO, |at| at.saturating_duration_since(now))
+}
+
+/// Counts consecutive safety ticks that found a change no wake had reported.
+#[derive(Debug, Default)]
+struct MissedChanges {
+    streak: u8,
+}
+
+impl MissedChanges {
+    /// Records one tick; `true` means the watch has missed enough to be abandoned.
+    fn on_tick(&mut self, safety: bool, changed: bool, woke: bool) -> bool {
+        if woke {
+            self.streak = 0;
+        } else if safety {
+            self.streak = if changed {
+                self.streak.saturating_add(1)
+            } else {
+                0
+            };
+        }
+        self.streak >= MISS_LIMIT
+    }
+}
+
 /// The poller's state between ticks. Kept apart from the thread so a test can drive it one
 /// tick at a time.
 struct Poller {
@@ -190,16 +305,42 @@ impl Poller {
         self.failed_at = None;
     }
 
-    /// One poll. Returns `false` once the receiver has gone, which ends the thread.
+    /// One poll. Returns `false` once the receiver has gone.
+    #[cfg(test)]
+    fn tick(&mut self) -> bool {
+        self.step().is_some()
+    }
+
+    /// One poll: whether the flow scan or the viewed flow's fingerprint changed, or `None`
+    /// once the receiver has gone, which ends the thread.
     ///
     /// With no flow chosen yet the flow list goes first, since the runtime picks a flow from
     /// it; otherwise the viewed flow's snapshot does.
-    fn tick(&mut self) -> bool {
+    fn step(&mut self) -> Option<bool> {
         let change = self.scan_flows();
-        if self.slug.is_none() {
-            return self.send_flows(change);
+        let mut changed = change.is_some();
+        if self.slug.is_some() {
+            changed |= self.poll_snapshot()?;
         }
-        self.poll_snapshot() && self.send_flows(change)
+        self.send_flows(change).then_some(changed)
+    }
+
+    /// Drops the cached state `wakes` invalidates, so the next tick re-reads it.
+    fn evict(&mut self, wakes: &Wakes) {
+        if wakes.all || wakes.rewatch {
+            self.flow_stats.clear();
+            self.last_fingerprint = None;
+        } else {
+            for slug in &wakes.flows {
+                self.flow_stats.remove(slug);
+            }
+        }
+    }
+
+    /// When a failed fetch is next due a retry.
+    fn retry_at(&self) -> Option<Instant> {
+        self.failed_at
+            .and_then(|at| at.checked_add(self.retry_after))
     }
 
     /// Compares the flows on disk with the last scan. A new or vanished task store, a moved
@@ -241,10 +382,11 @@ impl Poller {
         self.events.send(event).is_ok()
     }
 
-    /// Fetches the viewed flow when its files moved or a failed fetch is due a retry.
-    fn poll_snapshot(&mut self) -> bool {
+    /// Fetches the viewed flow when its files moved or a failed fetch is due a retry. Returns
+    /// whether the files moved, or `None` once the receiver has gone.
+    fn poll_snapshot(&mut self) -> Option<bool> {
         let Some(slug) = self.slug.clone() else {
-            return true;
+            return Some(false);
         };
         let current = fingerprint(&self.root, &slug);
         let changed = self.last_fingerprint != Some(current);
@@ -252,7 +394,7 @@ impl Poller {
             .failed_at
             .is_some_and(|at| at.elapsed() >= self.retry_after);
         if !changed && !retry_due {
-            return true;
+            return Some(false);
         }
         // Recorded before the fetch: a write that lands during it moves the fingerprint again
         // and is picked up next tick.
@@ -261,7 +403,7 @@ impl Poller {
             Ok(snapshot) => {
                 self.failed_at = None;
                 if self.last_revision.as_deref() == Some(snapshot.revision.as_str()) {
-                    return true;
+                    return Some(changed);
                 }
                 self.last_revision = Some(snapshot.revision.clone());
                 Event::Snapshot(Box::new(snapshot))
@@ -271,20 +413,94 @@ impl Poller {
                 Event::SourceError(e)
             }
         };
-        self.events.send(event).is_ok()
+        self.events.send(event).ok().map(|()| changed)
     }
 
-    /// Polls every `interval` until told to stop. Waiting on the control channel rather than
-    /// sleeping makes `SetSlug` and `Stop` take effect at once.
-    fn run(mut self, interval: Duration, control: &Receiver<Control>) {
+    /// Applies one control message, merging a wake into `wakes`; `false` means stop.
+    fn handle(&mut self, message: Control, wakes: &mut Wakes) -> bool {
+        match message {
+            Control::SetSlug(slug) => self.set_slug(slug),
+            Control::Wake(wake) => wakes.add(wake),
+            Control::Stop => return false,
+        }
+        true
+    }
+
+    /// Gathers the messages that follow a wake, so a burst of writes costs one tick. Returns
+    /// once the channel has been quiet for [`COALESCE_QUIET`] or [`COALESCE_MAX`] has passed;
+    /// `false` means stop.
+    fn drain(&mut self, control: &Receiver<Control>, wakes: &mut Wakes) -> bool {
+        let until = Instant::now() + COALESCE_MAX;
         loop {
-            if !self.tick() {
-                return;
+            let left = until.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return true;
             }
-            match control.recv_timeout(interval) {
-                Ok(Control::SetSlug(slug)) => self.set_slug(slug),
-                Ok(Control::Stop) | Err(RecvTimeoutError::Disconnected) => return,
-                Err(RecvTimeoutError::Timeout) => {}
+            match control.recv_timeout(left.min(COALESCE_QUIET)) {
+                Ok(message) => {
+                    if !self.handle(message, wakes) {
+                        return false;
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => return true,
+                Err(RecvTimeoutError::Disconnected) => return false,
+            }
+        }
+    }
+
+    /// Ticks whenever a wake, a slug change, a fetch retry or the safety deadline calls for
+    /// it, until told to stop. `control` is the sending half of the poller's own channel,
+    /// which the watcher's callback posts wakes onto.
+    fn run(mut self, poll: Duration, messages: &Receiver<Control>, control: &Sender<Control>) {
+        let flows_root = self.root.join(".claude").join("flows");
+        let mut mode = Mode::start(&flows_root, control);
+        let mut misses = MissedChanges::default();
+        let mut wakes = Wakes::default();
+        let mut safety = false;
+        loop {
+            if matches!(mode, Mode::Polling { retry_watch: true }) {
+                mode = Mode::start(&flows_root, control);
+            }
+            let Some(changed) = self.step() else {
+                return;
+            };
+            if mode.is_watching() && misses.on_tick(safety, changed, !wakes.is_empty()) {
+                mode = Mode::Polling { retry_watch: false };
+            }
+            let now = Instant::now();
+            let period = safety_period(mode.is_watching(), poll);
+            let next_safety_at = now.checked_add(period).unwrap_or(now + SAFETY_TICK);
+            wakes = Wakes::default();
+            loop {
+                let deadlines = Deadlines {
+                    safety: next_safety_at,
+                    retry: self.retry_at(),
+                };
+                match messages.recv_timeout(next_wait(Instant::now(), &deadlines)) {
+                    Ok(message) => {
+                        let woke = matches!(message, Control::Wake(_));
+                        if !self.handle(message, &mut wakes)
+                            || (woke && !self.drain(messages, &mut wakes))
+                        {
+                            return;
+                        }
+                        safety = false;
+                        break;
+                    }
+                    Err(RecvTimeoutError::Disconnected) => return,
+                    Err(RecvTimeoutError::Timeout) => {
+                        let now = Instant::now();
+                        safety = now >= deadlines.safety;
+                        if safety || deadlines.retry.is_some_and(|at| now >= at) {
+                            break;
+                        }
+                    }
+                }
+            }
+            self.evict(&wakes);
+            // Dropping the old watcher here lets the next pass start a fresh one.
+            if wakes.rewatch && mode.is_watching() {
+                mode = Mode::Polling { retry_watch: true };
             }
         }
     }
@@ -297,7 +513,8 @@ pub(crate) struct Source {
 }
 
 impl Source {
-    /// Starts the production poller, reading flows in-process every `poll_ms`.
+    /// Starts the production poller, reading flows in-process whenever the watch reports a
+    /// change, and every `poll_ms` if the watch cannot be kept.
     pub(crate) fn start(
         root: PathBuf,
         slug: Option<String>,
@@ -313,17 +530,18 @@ impl Source {
         )
     }
 
-    /// Runs a poller over `fetcher` on its own thread.
+    /// Runs a poller over `fetcher` on its own thread; `poll` is the fallback polling interval.
     pub(crate) fn spawn(
         root: PathBuf,
         slug: Option<String>,
-        interval: Duration,
+        poll: Duration,
         fetcher: Box<dyn Fetcher>,
         events: Sender<Event>,
     ) -> Source {
         let (control, control_rx) = mpsc::channel();
+        let wake_tx = control.clone();
         let handle = std::thread::spawn(move || {
-            Poller::new(root, slug, fetcher, events).run(interval, &control_rx);
+            Poller::new(root, slug, fetcher, events).run(poll, &control_rx, &wake_tx);
         });
         Source {
             control,
@@ -640,5 +858,175 @@ mod tests {
             Err(RecvTimeoutError::Disconnected)
         ));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_wait_runs_to_the_earliest_deadline() {
+        let now = Instant::now();
+        let poll = Duration::from_millis(500);
+        let watching = Deadlines {
+            safety: now + safety_period(true, poll),
+            retry: None,
+        };
+        assert_eq!(next_wait(now, &watching), SAFETY_TICK);
+        assert_eq!(SAFETY_TICK, Duration::from_secs(10));
+
+        let retrying = Deadlines {
+            retry: Some(now + Duration::from_secs(2)),
+            ..watching
+        };
+        assert_eq!(next_wait(now, &retrying), Duration::from_secs(2));
+
+        let polling = Deadlines {
+            safety: now + safety_period(false, poll),
+            retry: None,
+        };
+        assert_eq!(next_wait(now, &polling), poll);
+
+        let late = now + Duration::from_secs(20);
+        assert_eq!(
+            next_wait(late, &polling),
+            Duration::ZERO,
+            "a passed deadline"
+        );
+    }
+
+    /// Rewrites `name` in place, stamped with `secs` past the epoch, and puts the directory's
+    /// mtime back if the write moved it, so only an eviction can reveal the change.
+    fn write_in_place(dir: &Path, name: &str, secs: u64) {
+        let before = modified(dir).expect("dir mtime");
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(dir.join(name))
+            .expect("open");
+        std::io::Write::write_all(&mut file, b"status = \"done\"\n").expect("write");
+        file.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(secs))
+            .expect("stamp");
+        drop(file);
+        if modified(dir) != Some(before) {
+            open_dir_for_stamp(dir)
+                .set_modified(before)
+                .expect("restore");
+        }
+    }
+
+    #[cfg(windows)]
+    fn open_dir_for_stamp(dir: &Path) -> std::fs::File {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_WRITE_ATTRIBUTES: u32 = 0x100;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        std::fs::OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(dir)
+            .expect("open dir")
+    }
+
+    #[cfg(not(windows))]
+    fn open_dir_for_stamp(dir: &Path) -> std::fs::File {
+        std::fs::File::open(dir).expect("open dir")
+    }
+
+    #[test]
+    fn a_flow_wake_evicts_that_flows_cached_stat() {
+        let root = temp_root("evict");
+        let dir = flow_dir(&root, "b");
+        std::fs::create_dir_all(&dir).expect("flow dir");
+        write_renamed(&dir, "tasks.toml", 100);
+        write_renamed(&dir, "context.toml", 100);
+        let (fetcher, _calls, lists) = fake_counting_lists(vec![Ok(with_revision("r1"))]);
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        assert!(poller.tick());
+        drain(&rx);
+
+        write_in_place(&dir, "context.toml", 300);
+        assert!(poller.tick());
+        assert!(
+            drain(&rx).is_empty(),
+            "the cached stat hides an in-place write"
+        );
+
+        let mut wakes = Wakes::default();
+        wakes.add(Wake::Flow("b".into()));
+        poller.evict(&wakes);
+        assert!(poller.tick());
+        let events = drain(&rx);
+        assert!(
+            matches!(events.as_slice(), [Event::Flows(Ok(_))]),
+            "{events:?}"
+        );
+        assert_eq!(lists.load(Ordering::SeqCst), 2);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_set_slug_mid_drain_is_applied_and_wakes_merge() {
+        let root = temp_root("drain-slug");
+        let (fetcher, _calls) = fake(vec![Ok(with_revision("r1"))]);
+        let (tx, _rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        let (control, messages) = mpsc::channel();
+        control.send(Control::SetSlug("f".into())).expect("send");
+        control
+            .send(Control::Wake(Wake::Flow("a".into())))
+            .expect("send");
+        control
+            .send(Control::Wake(Wake::Flow("b".into())))
+            .expect("send");
+
+        let mut wakes = Wakes::default();
+        wakes.add(Wake::Flow("a".into()));
+        assert!(poller.drain(&messages, &mut wakes));
+        assert_eq!(poller.slug.as_deref(), Some("f"));
+        assert_eq!(wakes.flows, BTreeSet::from(["a".into(), "b".into()]));
+        assert!(!wakes.all && !wakes.rewatch);
+
+        control.send(Control::Wake(Wake::All)).expect("send");
+        assert!(poller.drain(&messages, &mut wakes));
+        assert!(wakes.all, "an All joins the merged set");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_stop_mid_drain_ends_the_loop() {
+        let root = temp_root("drain-stop");
+        let (fetcher, _calls) = fake(vec![Ok(with_revision("r1"))]);
+        let (tx, _rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        let (control, messages) = mpsc::channel();
+        control.send(Control::Wake(Wake::All)).expect("send");
+        control.send(Control::Stop).expect("send");
+        control.send(Control::Wake(Wake::Rewatch)).expect("send");
+
+        let mut wakes = Wakes::default();
+        assert!(!poller.drain(&messages, &mut wakes));
+        assert!(!wakes.rewatch, "nothing after the stop is taken");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn two_unreported_changes_abandon_the_watch_and_a_wake_resets_the_count() {
+        let mut misses = MissedChanges::default();
+        assert!(!misses.on_tick(true, true, false), "one miss");
+        assert!(misses.on_tick(true, true, false), "the second in a row");
+
+        let mut misses = MissedChanges::default();
+        assert!(!misses.on_tick(true, true, false));
+        assert!(!misses.on_tick(false, true, true), "a wake resets");
+        assert!(!misses.on_tick(true, true, false), "counting starts over");
+
+        let mut misses = MissedChanges::default();
+        assert!(!misses.on_tick(true, true, false));
+        assert!(
+            !misses.on_tick(false, true, false),
+            "only safety ticks count"
+        );
+        assert!(
+            !misses.on_tick(true, false, false),
+            "a clean safety tick breaks the run"
+        );
+        assert!(!misses.on_tick(true, true, false));
     }
 }
