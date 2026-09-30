@@ -322,7 +322,9 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_default(),
             };
-            print_json(&super::snapshot(&slug, &path, &integrity)?)
+            let snap = super::snapshot(&slug, &path, &integrity, None)?
+                .expect("no known revision always builds");
+            print_json(&snap)
         }
     }
 }

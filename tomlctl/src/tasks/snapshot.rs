@@ -32,13 +32,15 @@ const CONTEXT_FILE: &str = crate::SNAPSHOT_INPUTS[3];
 const REVISION_HEX_LEN: usize = 16;
 
 /// The snapshot of the flow whose store is `store_path`; its siblings are
-/// read from the same directory. Errors when the store is missing or its
-/// graph has a dangling edge or a cycle.
+/// read from the same directory. `None` when the inputs hash to `known`, so a
+/// poller skips the parse and graph build; `known: None` always builds.
+/// Errors when the store is missing or its graph has a dangling edge or a cycle.
 pub(crate) fn snapshot(
     slug: &str,
     store_path: &Path,
     read_opts: &ReadIntegrityArgs,
-) -> Result<JsonValue> {
+    known: Option<&str>,
+) -> Result<Option<JsonValue>> {
     let record_path = sibling(store_path, RECORD_FILE);
     let agents_path = sibling(store_path, AGENTS_FILE);
     let context_path = sibling(store_path, CONTEXT_FILE);
@@ -48,6 +50,9 @@ pub(crate) fn snapshot(
     let (store_raw, record_raw, agents_raw, context_raw) =
         (store_raw?, record_raw?, agents_raw?, context_raw?);
     let revision = revision(&[&store_raw, &record_raw, &agents_raw, &context_raw]);
+    if known == Some(revision.as_str()) {
+        return Ok(None);
+    }
 
     let (store, record, agents, context) = if read_opts.verify_integrity || read_opts.strict_read {
         // The sidecar check and the strict-read gate need the file and its
@@ -153,7 +158,7 @@ pub(crate) fn snapshot(
     out.insert("checkpoints".into(), JsonValue::Array(checkpoints));
     out.insert("record".into(), record_json);
     out.insert("agents".into(), JsonValue::Array(agents_json));
-    Ok(JsonValue::Object(out))
+    Ok(Some(JsonValue::Object(out)))
 }
 
 fn sibling(store_path: &Path, name: &str) -> PathBuf {
@@ -269,6 +274,12 @@ needs = [1]
         (tmp, store)
     }
 
+    fn build(store: &Path) -> JsonValue {
+        snapshot("demo", store, &args(), None)
+            .unwrap()
+            .expect("no known revision always builds")
+    }
+
     fn keys(value: &JsonValue) -> Vec<&str> {
         value
             .as_object()
@@ -281,7 +292,7 @@ needs = [1]
     #[test]
     fn top_level_keys_follow_the_contract_order() {
         let (_tmp, store) = flow_dir();
-        let snap = snapshot("demo", &store, &args()).unwrap();
+        let snap = build(&store);
         assert_eq!(
             keys(&snap),
             [
@@ -341,21 +352,31 @@ needs = [1]
     #[test]
     fn revision_is_stable_until_an_input_file_changes() {
         let (tmp, store) = flow_dir();
-        let first = snapshot("demo", &store, &args()).unwrap()["revision"].clone();
-        let again = snapshot("demo", &store, &args()).unwrap()["revision"].clone();
+        let first = build(&store)["revision"].clone();
+        let again = build(&store)["revision"].clone();
         assert_eq!(first, again);
         assert_eq!(first.as_str().unwrap().len(), REVISION_HEX_LEN);
 
         fs::write(tmp.path().join(CONTEXT_FILE), "status = \"in-progress\"\n").unwrap();
-        let changed = snapshot("demo", &store, &args()).unwrap();
+        let changed = build(&store);
         assert_ne!(changed["revision"], first);
         assert_eq!(changed["flow_status"], json!("in-progress"));
     }
 
     #[test]
+    fn a_known_revision_skips_the_build_and_any_other_builds() {
+        let (_tmp, store) = flow_dir();
+        let revision = build(&store)["revision"].as_str().unwrap().to_string();
+        let same = snapshot("demo", &store, &args(), Some(&revision)).unwrap();
+        assert!(same.is_none(), "matching revision yields nothing");
+        let other = snapshot("demo", &store, &args(), Some("0000000000000000")).unwrap();
+        assert_eq!(other.expect("built")["revision"], json!(revision));
+    }
+
+    #[test]
     fn absent_optional_files_read_as_empty_and_are_not_created() {
         let (tmp, store) = flow_dir();
-        let snap = snapshot("demo", &store, &args()).unwrap();
+        let snap = build(&store);
         assert_eq!(snap["flow_status"], json!(""));
         assert_eq!(snap["record"], json!([]));
         assert_eq!(snap["agents"], json!([]));
@@ -375,7 +396,7 @@ needs = [1]
             "schema_version = 1\n[[agents]]\nid = \"A1\"\nagent_id = \"x\"\nfuture_key = 7\n",
         )
         .unwrap();
-        let snap = snapshot("demo", &store, &args()).unwrap();
+        let snap = build(&store);
         assert_eq!(
             snap["agents"],
             json!([{ "id": "A1", "agent_id": "x", "future_key": 7 }])
@@ -394,7 +415,7 @@ needs = [1]
     #[test]
     fn an_in_progress_row_keeps_its_dependents_in_next() {
         let (_tmp, store) = flow_dir();
-        let snap = snapshot("demo", &store, &args()).unwrap();
+        let snap = build(&store);
         assert_eq!(snap["frontier"]["next"], json!([2]));
         assert_eq!(snap["frontier"]["blocked"], json!([]));
         assert_eq!(snap["frontier"]["ready"], json!([]));

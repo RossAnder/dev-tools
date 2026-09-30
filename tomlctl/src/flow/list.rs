@@ -80,6 +80,7 @@ pub(crate) fn dispatch(
         &flows_dir,
         integrity.verify_integrity,
         integrity.strict_read,
+        &mut |_| true,
     )?;
 
     let mut out: Vec<JsonValue> = Vec::with_capacity(records.len());
@@ -105,11 +106,13 @@ pub(crate) fn dispatch(
     print_json(&envelope(out, skipped))
 }
 
-/// Every flow under `<root>/.claude/flows` in the `flow list` envelope, with
-/// no filters and no integrity checks.
-pub(crate) fn list_all(root: &Path) -> Result<JsonValue> {
+/// Every flow under `<root>/.claude/flows` whose slug `keep` accepts, in the
+/// `flow list` envelope, with no other filters and no integrity checks. `keep`
+/// runs before a flow's `context.toml` is read, so a rejected flow costs no
+/// read and never lands in `skipped`.
+pub(crate) fn list_all(root: &Path, mut keep: impl FnMut(&str) -> bool) -> Result<JsonValue> {
     let flows_dir = root.join(".claude").join("flows");
-    let (records, skipped) = enumerate_flows(root, &flows_dir, false, false)?;
+    let (records, skipped) = enumerate_flows(root, &flows_dir, false, false, &mut keep)?;
     let flows = records.iter().map(FlowRecord::to_json).collect();
     Ok(envelope(flows, skipped))
 }
@@ -163,12 +166,14 @@ impl FlowRecord {
 /// Walk `<root>/.claude/flows/*/context.toml` (one level deep) and emit one
 /// `FlowRecord` per readable context.toml plus one `skipped` entry per
 /// unreadable one. A missing flows dir yields two empty lists (a fresh clone
-/// with no flows yet is not an error).
+/// with no flows yet is not an error). A slug `keep` rejects is passed over
+/// before any of its files is touched.
 fn enumerate_flows(
     root: &Path,
     flows_dir: &Path,
     verify: bool,
     strict_read: bool,
+    keep: &mut dyn FnMut(&str) -> bool,
 ) -> Result<(Vec<FlowRecord>, Vec<JsonValue>)> {
     if !flows_dir.exists() {
         return Ok((Vec::new(), Vec::new()));
@@ -178,9 +183,6 @@ fn enumerate_flows(
     let entries = read_dir_sorted(flows_dir)?;
     for entry in entries {
         let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
         let Some(slug) = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -188,6 +190,9 @@ fn enumerate_flows(
         else {
             continue;
         };
+        if !keep(&slug) || !path.is_dir() {
+            continue;
+        }
         let ctx_path = path.join("context.toml");
         if !ctx_path.exists() {
             // A flow directory without a context.toml is structurally
@@ -299,10 +304,18 @@ mod tests {
         .unwrap();
         fs::write(flows.join("bad").join("context.toml"), "status = \"oops\n").unwrap();
 
-        let out = list_all(tmp.path()).unwrap();
+        let out = list_all(tmp.path(), |_| true).unwrap();
         assert_eq!(out["ok"], true);
         assert_eq!(out["flows"].as_array().unwrap().len(), 1);
         assert_eq!(out["flows"][0]["slug"], "good");
         assert_eq!(out["skipped"].as_array().unwrap().len(), 1);
+
+        let kept = list_all(tmp.path(), |slug| slug == "good").unwrap();
+        assert_eq!(kept["flows"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            kept["skipped"].as_array().unwrap().len(),
+            0,
+            "a rejected flow is never read"
+        );
     }
 }

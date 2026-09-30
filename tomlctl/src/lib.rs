@@ -63,6 +63,17 @@ pub fn validate_slug(slug: &str) -> anyhow::Result<()> {
 /// CLI would refuse, so it can never name a path outside that directory.
 /// Advisories are silenced for the process.
 pub fn snapshot(root: &Path, slug: &str) -> anyhow::Result<serde_json::Value> {
+    let built = snapshot_if_changed(root, slug, None)?;
+    Ok(built.expect("no known revision always builds"))
+}
+
+/// [`snapshot`], or `None` when the flow's inputs still hash to
+/// `known_revision`, in which case nothing past the hash is parsed or built.
+pub fn snapshot_if_changed(
+    root: &Path,
+    slug: &str,
+    known_revision: Option<&str>,
+) -> anyhow::Result<Option<serde_json::Value>> {
     io::silence_advisories();
     flow::validate_slug(slug)?;
     let store_path = root
@@ -74,14 +85,23 @@ pub fn snapshot(root: &Path, slug: &str) -> anyhow::Result<serde_json::Value> {
         verify_integrity: false,
         strict_read: false,
     };
-    tasks::snapshot(slug, &store_path, &read_opts)
+    tasks::snapshot(slug, &store_path, &read_opts, known_revision)
 }
 
 /// The unfiltered `flow list` envelope for every flow under
 /// `<root>/.claude/flows`, read without integrity checks.
 pub fn flow_list(root: &Path) -> anyhow::Result<serde_json::Value> {
+    flow_list_matching(root, |_| true)
+}
+
+/// [`flow_list`] restricted to the flows whose slug `keep` accepts; a rejected
+/// flow's `context.toml` is never read, so it cannot land in `skipped` either.
+pub fn flow_list_matching(
+    root: &Path,
+    keep: impl FnMut(&str) -> bool,
+) -> anyhow::Result<serde_json::Value> {
     io::silence_advisories();
-    flow::list_all(root)
+    flow::list_all(root, keep)
 }
 
 /// Record one hook payload as `agents record <harness>` does. Changes the
