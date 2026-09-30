@@ -178,6 +178,9 @@ pub(crate) struct App {
     pub(crate) source_error: Option<String>,
     /// Ids of `running` agents whose transcript has gone quiet.
     pub(crate) stale_agents: HashSet<String>,
+    /// Per fresh running agent, the wall time it can first go stale: its
+    /// transcript's last observed mtime plus `stale_after`.
+    pub(crate) stale_deadlines: HashMap<String, SystemTime>,
     pub(crate) stale_after: Duration,
     pub(crate) theme: Theme,
     pub(crate) nav: Option<Box<dyn Navigator>>,
@@ -234,6 +237,7 @@ impl App {
             warning: None,
             source_error: None,
             stale_agents: HashSet::new(),
+            stale_deadlines: HashMap::new(),
             stale_after: Duration::from_secs(config.stale_after_s),
             theme: Theme::build(&config.theme, config.no_color),
             nav: None,
@@ -478,14 +482,14 @@ impl App {
         self.reselect();
     }
 
-    /// Called on each timed wake-up: drops expired flashes and re-reads
-    /// transcript ages, since an agent goes stale without any snapshot.
+    /// Called on each timed wake-up: drops expired flashes and re-reads the
+    /// transcript ages that are due, since an agent goes stale without any snapshot.
     pub(crate) fn tick(&mut self, now: Instant) {
         self.expire_flashes(now);
         if self.live_notice(now).is_none() {
             self.notice = None;
         }
-        self.refresh_stale();
+        self.recheck_stale(SystemTime::now(), transcript_mtime);
     }
 
     /// True while something on screen changes with time alone: a live flash or
@@ -584,12 +588,30 @@ impl App {
             .retain(|_, at| now.saturating_duration_since(*at) < FLASH);
     }
 
+    /// Re-stats every running agent's transcript.
     fn refresh_stale(&mut self) {
+        self.refresh_stale_with(SystemTime::now(), transcript_mtime);
+    }
+
+    fn refresh_stale_with(
+        &mut self,
+        wall_now: SystemTime,
+        mtime: impl Fn(&str) -> Option<SystemTime>,
+    ) {
+        self.stale_deadlines.clear();
+        self.recheck_stale(wall_now, mtime);
+    }
+
+    /// Re-stats only the agents already stale or past their deadline in
+    /// [`App::stale_deadlines`]; the rest cannot have gone stale yet.
+    fn recheck_stale(&mut self, wall_now: SystemTime, mtime: impl Fn(&str) -> Option<SystemTime>) {
         self.stale_agents = stale_agents(
             &self.snapshot,
             self.stale_after,
-            SystemTime::now(),
-            transcript_mtime,
+            wall_now,
+            &self.stale_agents,
+            &mut self.stale_deadlines,
+            mtime,
         );
     }
 
@@ -673,25 +695,46 @@ fn transcript_mtime(path: &str) -> Option<SystemTime> {
 
 /// `running` agents whose transcript `mtime` is older than `stale_after`.
 /// A transcript with no readable mtime counts as stale; one dated after
-/// `wall_now` (clock skew) counts as fresh.
+/// `wall_now` (clock skew) counts as fresh. An agent not in `previous` whose
+/// entry in `deadlines` is still ahead of `wall_now` is kept fresh without a
+/// stat; `deadlines` is rewritten to hold only the running, fresh agents.
 pub(crate) fn stale_agents(
     snapshot: &Snapshot,
     stale_after: Duration,
     wall_now: SystemTime,
+    previous: &HashSet<String>,
+    deadlines: &mut HashMap<String, SystemTime>,
     mtime: impl Fn(&str) -> Option<SystemTime>,
 ) -> HashSet<String> {
-    snapshot
+    let mut stale = HashSet::new();
+    let mut next = HashMap::new();
+    for agent in snapshot
         .agents
         .iter()
         .filter(|agent| agent.status == AgentStatus::Running)
-        .filter(|agent| match mtime(&agent.transcript_path) {
-            None => true,
-            Some(at) => wall_now
-                .duration_since(at)
-                .is_ok_and(|age| age > stale_after),
-        })
-        .map(|agent| agent.id.clone())
-        .collect()
+    {
+        if !previous.contains(&agent.id)
+            && let Some(&deadline) = deadlines.get(&agent.id)
+            && wall_now <= deadline
+        {
+            next.insert(agent.id.clone(), deadline);
+            continue;
+        }
+        match mtime(&agent.transcript_path).map(|at| at.checked_add(stale_after)) {
+            None => {
+                stale.insert(agent.id.clone());
+            }
+            Some(None) => {}
+            Some(Some(deadline)) if wall_now > deadline => {
+                stale.insert(agent.id.clone());
+            }
+            Some(Some(deadline)) => {
+                next.insert(agent.id.clone(), deadline);
+            }
+        }
+    }
+    *deadlines = next;
+    stale
 }
 
 #[cfg(test)]
@@ -895,18 +938,95 @@ mod tests {
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(10_000);
         let after = Duration::from_secs(300);
 
-        let fresh = stale_agents(&snap, after, now, |_| Some(now - Duration::from_secs(10)));
-        assert!(fresh.is_empty());
+        let check = |at: SystemTime| {
+            stale_agents(
+                &snap,
+                after,
+                now,
+                &HashSet::new(),
+                &mut HashMap::new(),
+                |_| Some(at),
+            )
+        };
 
-        let old = stale_agents(&snap, after, now, |_| Some(now - Duration::from_secs(301)));
+        assert!(check(now - Duration::from_secs(10)).is_empty());
         assert_eq!(
-            old,
+            check(now - Duration::from_secs(301)),
             HashSet::from(["A2".to_string()]),
             "idle A1 is never stale"
         );
+        assert!(check(now + Duration::from_secs(5)).is_empty());
+    }
 
-        let future = stale_agents(&snap, after, now, |_| Some(now + Duration::from_secs(5)));
-        assert!(future.is_empty());
+    /// Runs one tick-path recheck at `wall_now` against a transcript last
+    /// written at `at`, returning how many times the transcript was stat'd.
+    fn recheck_at(app: &mut App, wall_now: SystemTime, at: SystemTime) -> usize {
+        let calls = std::cell::Cell::new(0);
+        app.recheck_stale(wall_now, |_| {
+            calls.set(calls.get() + 1);
+            Some(at)
+        });
+        calls.get()
+    }
+
+    #[test]
+    fn a_fresh_agent_is_not_restatted_before_its_deadline() {
+        let mut app = app();
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(10_000);
+        let after = app.stale_after;
+        app.refresh_stale_with(t0, |_| Some(t0));
+        assert!(app.stale_agents.is_empty());
+        assert_eq!(app.stale_deadlines.get("A2"), Some(&(t0 + after)));
+
+        assert_eq!(recheck_at(&mut app, t0 + after, t0), 0, "not yet due");
+        assert!(app.stale_agents.is_empty());
+
+        let past = t0 + after + Duration::from_secs(1);
+        assert_eq!(recheck_at(&mut app, past, t0), 1, "due, so stat'd");
+        assert!(app.stale_agents.contains("A2"));
+        assert!(app.stale_deadlines.is_empty());
+
+        assert_eq!(
+            recheck_at(&mut app, past, t0),
+            1,
+            "a stale agent is stat'd on every recheck"
+        );
+    }
+
+    #[test]
+    fn a_grown_transcript_pushes_the_deadline_back() {
+        let mut app = app();
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(10_000);
+        let after = app.stale_after;
+        app.refresh_stale_with(t0, |_| Some(t0));
+
+        let grown = t0 + Duration::from_secs(60);
+        let due = t0 + after + Duration::from_secs(1);
+        assert_eq!(recheck_at(&mut app, due, grown), 1);
+        assert!(app.stale_agents.is_empty(), "the transcript grew");
+        assert_eq!(app.stale_deadlines.get("A2"), Some(&(grown + after)));
+        assert_eq!(recheck_at(&mut app, grown + after, grown), 0);
+    }
+
+    #[test]
+    fn a_full_refresh_restats_every_agent_and_drops_gone_ones() {
+        let mut app = app();
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(10_000);
+        app.refresh_stale_with(t0, |_| Some(t0));
+        app.stale_deadlines
+            .insert("gone".to_string(), t0 + app.stale_after);
+
+        let calls = std::cell::Cell::new(0);
+        app.refresh_stale_with(t0, |_| {
+            calls.set(calls.get() + 1);
+            Some(t0)
+        });
+        assert_eq!(
+            calls.get(),
+            1,
+            "A2 is stat'd although its deadline is ahead"
+        );
+        assert!(!app.stale_deadlines.contains_key("gone"));
     }
 
     #[test]
