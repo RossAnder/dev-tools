@@ -13,7 +13,7 @@ use ratatui::layout::Rect;
 
 use crate::config::{
     COLUMN_RANGE, Config, Density, DensityPref, Orientation, OrientationPref, PANEL_PERCENT_RANGE,
-    ViewKind,
+    Split, ViewKind,
 };
 use crate::diff::{Changes, diff};
 use crate::flows::FlowEntry;
@@ -87,6 +87,10 @@ pub(crate) struct Regions {
     pub(crate) modal: Option<Rect>,
     /// One rect per clickable task. The layers and traversal views fill this.
     pub(crate) tasks: Vec<(Rect, u32)>,
+    /// The body the docked panel shares with the view; a drag measures against it.
+    pub(crate) body: Rect,
+    /// The strip between the view and a docked panel that a drag resizes from.
+    pub(crate) divider: Option<Rect>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,6 +100,16 @@ pub(crate) enum Action {
     NextView,
     PrevView,
     FlipOrientation,
+    /// Moves docked panels between beside and below the view.
+    FlipSplit,
+    /// Lays the diagram out with or without the needs edges other paths imply.
+    ToggleImplied,
+    ToggleLegend,
+    /// A press on the divider; the following drags resize the docked panel.
+    DragStart,
+    /// The pointer's column and row while a drag is on.
+    DragTo(u16, u16),
+    DragEnd,
     ToggleFollow,
     ToggleAutoFlow,
     ToggleActivity,
@@ -128,6 +142,20 @@ pub(crate) struct App {
     /// The orientation the last frame drew in; `o` flips from this when no
     /// override is set yet.
     pub(crate) resolved_orientation: Orientation,
+    pub(crate) split_override: Option<Split>,
+    /// Where the last frame docked panels, `None` while none were docked; `auto`
+    /// keeps it inside the dead band and `|` flips from it.
+    pub(crate) resolved_split: Option<Split>,
+    /// A cell's height over its width: measured from the terminal when it reports
+    /// pixels, else the config's `cell_aspect`.
+    pub(crate) cell_aspect: f64,
+    /// Whether the diagram lays out the needs edges other paths already imply.
+    pub(crate) show_implied: bool,
+    /// Needs edges `(from, to)` another path of needs edges implies.
+    pub(crate) implied: HashSet<(u32, u32)>,
+    pub(crate) legend_open: bool,
+    /// A drag on the divider is under way.
+    pub(crate) dragging: bool,
     pub(crate) selected: Option<u32>,
     /// The crossings the traversal view made to reach the selection, oldest first.
     /// Any selection change a navigator's `walk` did not make empties it.
@@ -180,10 +208,17 @@ impl App {
         };
         let mut app = App {
             index: snapshot.index(),
+            implied: implied_set(&snapshot),
             snapshot,
             view: config.default_view,
             orientation_override: None,
             resolved_orientation,
+            split_override: None,
+            resolved_split: None,
+            cell_aspect: config.cell_aspect,
+            show_implied: false,
+            legend_open: false,
+            dragging: false,
             selected: None,
             trail: Vec::new(),
             follow: true,
@@ -200,7 +235,7 @@ impl App {
             source_error: None,
             stale_agents: HashSet::new(),
             stale_after: Duration::from_secs(config.stale_after_s),
-            theme: Theme::default(),
+            theme: Theme::build(&config.theme, config.no_color),
             nav: None,
             density: config.density,
             resolved_density: config.density.resolve(u16::MAX, config.compact_below),
@@ -248,6 +283,41 @@ impl App {
                     .unwrap_or(self.resolved_orientation);
                 self.orientation_override = Some(current.flip());
                 self.nav = None;
+                None
+            }
+            Action::FlipSplit => {
+                let current = self
+                    .split_override
+                    .or(self.resolved_split)
+                    .unwrap_or(Split::Below);
+                let next = current.flip();
+                self.split_override = Some(next);
+                self.notify(format!("panels {}", next.as_str()));
+                None
+            }
+            Action::ToggleImplied => {
+                self.show_implied = !self.show_implied;
+                self.nav = None;
+                let state = if self.show_implied { "shown" } else { "hidden" };
+                self.notify(format!("implied edges {state}"));
+                None
+            }
+            Action::ToggleLegend => {
+                self.legend_open = !self.legend_open;
+                None
+            }
+            Action::DragStart => {
+                self.dragging = self.regions.divider.is_some();
+                None
+            }
+            Action::DragTo(column, row) => {
+                if self.dragging {
+                    self.drag_to(column, row);
+                }
+                None
+            }
+            Action::DragEnd => {
+                self.dragging = false;
                 None
             }
             Action::ToggleFollow => {
@@ -360,7 +430,9 @@ impl App {
                 Some(Action::SwitchFlow(slug))
             }
             Action::Back => {
-                if self.selector_open {
+                if self.legend_open {
+                    self.legend_open = false;
+                } else if self.selector_open {
                     self.selector_open = false;
                 } else if self.details_fullscreen && self.resolved_density == Density::Comfortable {
                     self.details_fullscreen = false;
@@ -381,6 +453,7 @@ impl App {
     /// Swaps in `snapshot`, flashing each task whose status changed. A
     /// snapshot of a different flow replaces the old one without flashes.
     pub(crate) fn apply_snapshot(&mut self, snapshot: Snapshot, now: Instant) {
+        let old_topology = self.index.topology_hash();
         if snapshot.slug == self.snapshot.slug {
             let changes = diff(&self.snapshot, &snapshot);
             for (id, _, _) in &changes.status_changed {
@@ -395,6 +468,9 @@ impl App {
             self.select(None);
         }
         self.index = snapshot.index();
+        if self.index.topology_hash() != old_topology {
+            self.implied = implied_set(&snapshot);
+        }
         self.snapshot = snapshot;
         self.source_error = None;
         self.expire_flashes(now);
@@ -458,6 +534,24 @@ impl App {
 
     fn notify(&mut self, text: String) {
         self.notice = Some((text, Instant::now()));
+    }
+
+    /// Sets the docked panel's share so its edge follows the pointer, measured against
+    /// the body and split the last frame drew.
+    fn drag_to(&mut self, column: u16, row: u16) {
+        let body = self.regions.body;
+        let (edge, span) = match self.resolved_split {
+            Some(Split::Beside) => (body.right().saturating_sub(column), body.width),
+            Some(Split::Below) => (body.bottom().saturating_sub(row), body.height),
+            None => return,
+        };
+        if span == 0 {
+            return;
+        }
+        let percent = u32::from(edge) * 100 / u32::from(span);
+        let percent = u16::try_from(percent).unwrap_or(u16::MAX);
+        self.panel_percent =
+            percent.clamp(*PANEL_PERCENT_RANGE.start(), *PANEL_PERCENT_RANGE.end());
     }
 
     /// Every selection change goes through here so the details scroll starts over
@@ -552,6 +646,12 @@ impl App {
             .map(|task| task.id)
             .min_by_key(|id| (self.index.layer_of(*id).unwrap_or(usize::MAX), *id))
     }
+}
+
+fn implied_set(snapshot: &Snapshot) -> HashSet<(u32, u32)> {
+    crate::diagram::reduce::implied_edges(snapshot)
+        .into_iter()
+        .collect()
 }
 
 fn change_count(changes: &Changes) -> usize {

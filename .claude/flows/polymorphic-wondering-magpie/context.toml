@@ -1,0 +1,29 @@
+slug = "polymorphic-wondering-magpie"
+plan_path = "docs/plans/polymorphic-wondering-magpie.md"
+status = "draft"
+created = 2026-09-30
+updated = 2026-09-30
+branch = "main"
+scope = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/src/main.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/flow/list.rs",
+    "tomlctl/tests/library_facade.rs",
+    ".githooks/pre-commit",
+    "glimpse/**",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/polymorphic-wondering-magpie/review-ledger.toml"
+optimise_findings = ".claude/flows/polymorphic-wondering-magpie/optimise-findings.toml"
+execution_record = ".claude/flows/polymorphic-wondering-magpie/execution-record.toml"
+plan_review_findings = ".claude/flows/polymorphic-wondering-magpie/plan-review-findings.toml"
+tasks = ".claude/flows/polymorphic-wondering-magpie/tasks.toml"

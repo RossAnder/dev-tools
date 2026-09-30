@@ -46,6 +46,9 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
         KeyCode::BackTab => Action::PrevView,
         KeyCode::Enter => Action::Details,
         KeyCode::Char('o') => Action::FlipOrientation,
+        KeyCode::Char('|') => Action::FlipSplit,
+        KeyCode::Char('i') => Action::ToggleImplied,
+        KeyCode::Char('?') => Action::ToggleLegend,
         KeyCode::Char('f') => Action::ToggleFollow,
         KeyCode::Char('s') => Action::ToggleSelector,
         KeyCode::Char('a') => Action::ToggleAutoFlow,
@@ -62,16 +65,32 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
 }
 
 /// The wheel scrolls the details panel under the pointer, else moves the selection over
-/// the view; a left press on a task row selects it. Only the press edge of a click acts,
-/// the mouse counterpart of dropping key `Release`. Every other kind, including the
-/// motion reports capture turns on, maps to nothing. With the selector or the compact
-/// modal up, nothing outside the details panel reacts.
+/// the view; a left press on a task row selects it, and one on the divider starts a
+/// drag that left-button motion continues and the release ends. Only the press edge of
+/// a click acts, the mouse counterpart of dropping key `Release`. Every other kind,
+/// including the motion reports capture turns on, maps to nothing. With the selector,
+/// the legend or the compact modal up, nothing outside the details panel reacts.
 pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
-    if app.selector_open {
+    if app.dragging {
+        return match event.kind {
+            MouseEventKind::Drag(MouseButton::Left) => {
+                Some(Action::DragTo(event.column, event.row))
+            }
+            MouseEventKind::Up(_) | MouseEventKind::Down(_) => Some(Action::DragEnd),
+            _ => None,
+        };
+    }
+    if app.selector_open || app.legend_open {
         return None;
     }
     let at = Position::new(event.column, event.row);
     let regions = &app.regions;
+    if event.kind == MouseEventKind::Down(MouseButton::Left)
+        && regions.modal.is_none()
+        && regions.divider.is_some_and(|r| r.contains(at))
+    {
+        return Some(Action::DragStart);
+    }
     let over_details = regions.details.is_some_and(|r| r.contains(at));
     let over_view = regions.modal.is_none() && regions.view.is_some_and(|r| r.contains(at));
     match event.kind {
@@ -223,6 +242,7 @@ mod tests {
             details: Some(Rect::new(60, 2, 40, 20)),
             modal: None,
             tasks: vec![(Rect::new(0, 3, 60, 1), 1), (Rect::new(0, 4, 60, 1), 2)],
+            ..Regions::default()
         };
         app
     }

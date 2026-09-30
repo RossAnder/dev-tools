@@ -35,7 +35,7 @@ fn second_row(app: &App) -> Option<Line<'static>> {
     latest_flow_event(app).map(|entry| {
         Line::from(Span::styled(
             format!("{} {}: {}", entry.date, entry.entry_type, entry.summary),
-            app.theme.pending,
+            app.theme.secondary,
         ))
     })
 }
@@ -76,15 +76,18 @@ fn compact_row(app: &App) -> Line<'static> {
         .filter(|agent| agent.status == AgentStatus::Running)
         .count();
     let follow = if app.follow {
-        Span::styled("  ⟳", app.theme.in_progress)
+        Span::styled("⟳", app.theme.in_progress)
     } else {
-        Span::styled(format!("  ⏸+{}", app.pending_changes), app.theme.warning)
+        Span::styled(format!("⏸+{}", app.pending_changes), app.theme.warning)
     };
     Line::from(vec![
-        Span::styled(snap.slug.clone(), app.theme.badge),
-        Span::raw(format!("  {done}/{}", snap.tasks.len())),
+        Span::styled(snap.slug.clone(), app.theme.slug),
+        GAP,
+        Span::raw(format!("{done}/{}", snap.tasks.len())),
+        GAP,
         follow,
-        Span::styled(format!("  {running}▶"), app.theme.agent_chip),
+        GAP,
+        running_chip(app, format!("{running}▶"), running),
     ])
 }
 
@@ -101,30 +104,50 @@ fn first_row(app: &App) -> Line<'static> {
         .filter(|agent| agent.status == AgentStatus::Running)
         .count();
 
-    let mut spans = vec![Span::styled(snap.slug.clone(), app.theme.badge)];
+    let mut spans = vec![Span::styled(snap.slug.clone(), app.theme.slug)];
     if !snap.flow_status.is_empty() {
+        spans.push(GAP);
         spans.push(Span::styled(
-            format!("  {}", snap.flow_status),
+            snap.flow_status.clone(),
             app.theme.status(&snap.flow_status),
         ));
     }
     if !snap.policy.checkpoints.is_empty() {
-        spans.push(Span::raw(format!("  {}", snap.policy.checkpoints)));
+        spans.push(GAP);
+        spans.push(Span::styled(
+            snap.policy.checkpoints.clone(),
+            app.theme.checkpoint,
+        ));
     }
-    spans.push(Span::raw(format!("  {done}/{} done", snap.tasks.len())));
+    spans.push(GAP);
+    spans.push(Span::raw(format!("{done}/{} done", snap.tasks.len())));
+    spans.push(GAP);
     if app.follow {
-        spans.push(Span::styled("  ⟳ follow", app.theme.in_progress));
+        spans.push(Span::styled("⟳ follow", app.theme.in_progress));
     } else {
         spans.push(Span::styled(
-            format!("  ⏸ paused (+{})", app.pending_changes),
+            format!("⏸ paused (+{})", app.pending_changes),
             app.theme.warning,
         ));
     }
-    spans.push(Span::styled(
-        format!("  {running} running"),
-        app.theme.agent_chip,
-    ));
+    spans.push(GAP);
+    spans.push(running_chip(app, format!("{running} running"), running));
     Line::from(spans)
+}
+
+/// Separators stay unstyled so no chip's background runs into them.
+const GAP: Span<'static> = Span {
+    style: ratatui::style::Style::new(),
+    content: std::borrow::Cow::Borrowed("  "),
+};
+
+/// The running-agents count, as a chip while any agent runs.
+fn running_chip(app: &App, text: String, running: usize) -> Span<'static> {
+    if running > 0 {
+        super::chip(&text, app.theme.agent_chip)
+    } else {
+        Span::styled(text, app.theme.secondary)
+    }
 }
 
 pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, compact: bool) {
@@ -190,7 +213,7 @@ mod tests {
     fn the_compact_header_is_one_short_row_unless_something_is_wrong() {
         let mut app = App::new(fixture(), &Config::default());
         let rows = draw_as(&app, true);
-        assert_eq!(rows[0], "demo-flow  3/8  ⟳  1▶");
+        assert_eq!(rows[0], "demo-flow  3/8  ⟳   1▶");
         assert_eq!(rows[1], "", "the flow event is dropped");
         assert_eq!(height(&app, true), 1);
 
@@ -201,6 +224,26 @@ mod tests {
         assert!(rows[0].contains("⏸+2"), "{:?}", rows[0]);
         assert!(rows[1].contains("unknown config key"));
         assert_eq!(height(&app, true), 2);
+    }
+
+    #[test]
+    fn the_running_chip_is_padded_evenly_and_its_gap_is_unstyled() {
+        let app = App::new(fixture(), &Config::default());
+        let mut terminal = Terminal::new(TestBackend::new(100, 2)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, frame.area(), &app, false))
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        let row: Vec<&str> = (0..100).map(|x| buffer[(x, 0)].symbol()).collect();
+        let start = (0..row.len())
+            .find(|&x| row[x..].iter().take(9).copied().collect::<String>() == "1 running")
+            .expect("the chip");
+        let first = u16::try_from(start).expect("column");
+        let last = first + 8;
+        let bg = app.theme.agent_chip.bg.expect("a background");
+        assert_eq!(buffer[(first - 1, 0)].bg, bg, "one padding cell before");
+        assert_eq!(buffer[(last + 1, 0)].bg, bg, "one padding cell after");
+        assert_ne!(buffer[(first - 2, 0)].bg, bg, "the gap is not painted");
     }
 
     #[test]

@@ -3,7 +3,7 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 
 use crate::app::App;
 
@@ -19,7 +19,7 @@ fn rows(app: &App) -> Vec<Line<'static>> {
     if app.flows.is_empty() {
         return vec![Line::from(Span::styled(
             "no flows found",
-            app.theme.pending,
+            app.theme.secondary,
         ))];
     }
     app.flows
@@ -33,9 +33,11 @@ fn rows(app: &App) -> Vec<Line<'static>> {
                 " "
             };
             let line = Line::from(vec![
-                Span::raw(format!("{cursor}{current} {}  ", flow.slug)),
+                Span::styled(cursor, app.theme.selection_mark),
+                Span::styled(current, app.theme.in_progress),
+                Span::raw(format!(" {}  ", flow.slug)),
                 Span::styled(flow.status.clone(), app.theme.status(&flow.status)),
-                Span::raw(format!("  {}", flow.updated)),
+                Span::styled(format!("  {}", flow.updated), app.theme.secondary),
             ]);
             if i == app.selector_cursor {
                 line.style(app.theme.selection)
@@ -60,8 +62,9 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Clear, rect);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(app.theme.badge)
-        .title(title);
+        .border_style(app.theme.border)
+        .title(Line::styled(title, app.theme.border_title))
+        .padding(Padding::horizontal(1));
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
     frame.render_widget(Paragraph::new(std::mem::take(&mut lines)), inner);

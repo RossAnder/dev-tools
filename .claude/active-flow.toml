@@ -648,3 +648,22 @@ scope = [
     "tomlctl/tests/**",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "polymorphic-wondering-magpie"
+last_used = "2026-09-30T09:06:36.7062468Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/src/main.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/flow/list.rs",
+    "tomlctl/tests/library_facade.rs",
+    ".githooks/pre-commit",
+    "glimpse/**",
+    "CLAUDE.md",
+]

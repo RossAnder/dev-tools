@@ -62,17 +62,24 @@ fn render_at(
         let style = edge_style(layout, stroke, selected, theme);
         put(buf, area, scroll, (stroke.x, stroke.y), stroke.ch, style);
     }
+    let overlaps = selected.map_or(&[][..], |id| app.index.overlaps(id));
     for node in &layout.nodes {
         let Some(task) = app.index.task(&app.snapshot, node.id) else {
             continue;
         };
         let mut style = if app.is_flashing(node.id, now) {
-            theme.flash
+            theme.flash(task.status)
         } else {
             theme.status(task.status.as_str())
         };
         if selected == Some(node.id) {
             style = style.patch(theme.selection);
+        } else if overlaps.contains(&node.id) {
+            // Overlaps have no edge to draw, so a peer is underlined in the overlap colour.
+            style = style.add_modifier(Modifier::UNDERLINED);
+            if let Some(colour) = theme.overlap.fg {
+                style = style.underline_color(colour);
+            }
         }
         for (x, ch) in (node.x..).zip(format!("[{}]", node.id).chars()) {
             put(buf, area, scroll, (x, node.y), ch, style);
@@ -84,7 +91,7 @@ fn render_at(
 /// style; with a selection every other edge is dimmed.
 fn edge_style(layout: &Layout, stroke: &Stroke, selected: Option<u32>, theme: &Theme) -> Style {
     let Some(id) = selected else {
-        return Style::new();
+        return theme.edge;
     };
     let mut edges = stroke.edges.iter().filter_map(|&e| layout.edges.get(e));
     if edges.clone().any(|edge| edge.to == id) {
@@ -92,7 +99,7 @@ fn edge_style(layout: &Layout, stroke: &Stroke, selected: Option<u32>, theme: &T
     } else if edges.any(|edge| edge.from == id) {
         theme.out_edge
     } else {
-        Style::new().add_modifier(Modifier::DIM)
+        theme.edge_faded
     }
 }
 
@@ -133,10 +140,8 @@ mod tests {
     use crate::config::Config;
     use crate::diagram::order::EdgeKind;
     use crate::model::fixture;
-    use crate::theme::ACCENT;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
-    use ratatui::style::Color;
 
     fn draw(
         app: &App,
@@ -226,8 +231,12 @@ mod tests {
                     .any(|e| e.from == 5 && e.to == 8 && e.kind == EdgeKind::Coupling)
             );
 
-            let (x, y) = sole_cell(&cache, |from, to| (from, to) == (2, 5));
-            assert_eq!(buf[(x, y)].fg, ACCENT, "{orientation:?} in-edge");
+            let (x, y) = sole_cell(&cache, |from, to| (from, to) == (1, 5));
+            assert_eq!(
+                Some(buf[(x, y)].fg),
+                app.theme.needs_edge.fg,
+                "{orientation:?} in-edge"
+            );
             let (x, y) = sole_cell(&cache, |from, _| from == 5);
             assert_eq!(
                 Some(buf[(x, y)].fg),
@@ -235,24 +244,28 @@ mod tests {
                 "{orientation:?} out-edge"
             );
             let (x, y) = sole_cell(&cache, |from, to| (from, to) == (6, 8));
-            assert!(
-                buf[(x, y)].modifier.contains(Modifier::DIM),
+            assert_eq!(
+                Some(buf[(x, y)].fg),
+                app.theme.edge_faded.fg,
                 "{orientation:?}"
             );
 
             let node = layout.node(5).expect("drawn");
-            assert!(buf[(node.x, node.y)].modifier.contains(Modifier::REVERSED));
+            assert_eq!(Some(buf[(node.x, node.y)].bg), app.theme.selection.bg);
             let other = layout.node(6).expect("drawn");
+            assert_ne!(Some(buf[(other.x, other.y)].bg), app.theme.selection.bg);
+            let overlap = layout.node(4).expect("drawn");
             assert!(
-                !buf[(other.x, other.y)]
+                buf[(overlap.x, overlap.y)]
                     .modifier
-                    .contains(Modifier::REVERSED)
+                    .contains(Modifier::UNDERLINED),
+                "4 shares a file with 5"
             );
         }
     }
 
     #[test]
-    fn a_flashing_node_takes_the_flash_style() {
+    fn a_flashing_node_takes_the_flash_of_its_new_status() {
         let mut app = App::new(fixture(), &Config::default());
         app.selected = None;
         app.flashes.insert(7, Instant::now());
@@ -264,8 +277,10 @@ mod tests {
             .and_then(|l| l.node(7))
             .cloned()
             .unwrap();
-        assert_eq!(buf[(node.x, node.y)].bg, crate::theme::ACCENT);
-        assert_eq!(buf[(node.x, node.y)].fg, Color::Black);
+        let status = app.snapshot.tasks[6].status;
+        let flash = app.theme.flash(status);
+        assert_eq!(Some(buf[(node.x, node.y)].bg), flash.bg);
+        assert_eq!(Some(buf[(node.x, node.y)].fg), flash.fg);
     }
 
     #[test]

@@ -1,19 +1,23 @@
 //! Cross-axis coordinate assignment for ordered layers.
 //!
-//! Sugiyama's priority method (Sugiyama, Tagawa and Toda 1981): alternating sweeps
-//! move each slot towards the barycentre of its neighbours in the reference row,
-//! highest priority first. A slot may push lower-priority slots aside but never one
-//! already placed in the same pass. Dummies outrank every task, so a long edge stays
-//! straight wherever nothing placed before it blocks the way. Equal priorities are
-//! placed from the middle of the row outwards, so a parent settles over its middle
-//! child rather than its first. A final step moves any dummy that lines up with an
-//! unrelated edge's task or dummy in the next or previous layer, so the two never draw
-//! as one line.
+//! Four stages. Sugiyama's priority method (Sugiyama, Tagawa and Toda 1981) sweeps each
+//! slot towards the barycentre of its neighbours, highest priority first, dummies above
+//! tasks so long edges come out straight. The sweeps only ever pull, so one far
+//! neighbour leaves the subtree below it offset and an empty band beside it; [`realign`]
+//! keeps the straight runs they chose as rigid blocks, packs the blocks tight and lets
+//! each settle at the weighted median of its neighbours (Gansner et al. 1993 weights).
+//! [`separate_dummies`] then moves any dummy off a column where it would join an
+//! unrelated edge's vertical. Last, [`compact`] closes remaining bands with cut shifts,
+//! which move everything past a cross-axis cut as one piece: rows keep their order,
+//! straight segments stay straight, and a shift that lengthens the edges crossing the
+//! cut or joins two unrelated verticals is refused. Brandes–Köpf alignment compacts as
+//! well, but would re-derive the straight runs the sweeps already chose. [`pack`] sets
+//! separately placed components side by side.
 
 use std::cmp::Reverse;
 use std::collections::HashMap;
 
-use super::order::{Ordered, Slot};
+use super::order::{Chain, Ordered, Slot};
 
 /// Down, up, down, up, down: the last pass aligns each chain with its upper endpoint.
 const PASSES: usize = 5;
@@ -24,6 +28,13 @@ const DUMMY_GAP: i32 = 1;
 /// Cap on the rounds that move dummies off unrelated columns, since each push can
 /// uncover a new clash in the rows next to it.
 const SEPARATE_ROUNDS: usize = 8;
+/// Cap on full cut sweeps; a shift can open room at a cut already passed.
+const COMPACT_ROUNDS: usize = 4;
+/// Cap on the median rounds after block packing; alternate rounds run in opposite
+/// directions and a round that moves nothing ends them early.
+const RELAX_ROUNDS: usize = 16;
+/// Blank cells between two packed components.
+const COMPONENT_GAP: i32 = 3;
 
 /// Coordinates along the slot axis, in cells: across the page when layers run down it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,6 +60,10 @@ impl Positions {
 /// [`DUMMY_GAP`] between two dummies, so a row of tasks has pitch `width + 2` and a
 /// run of dummies pitch 2.
 pub(crate) fn position(ordered: &Ordered, label_width: impl Fn(u32) -> u16) -> Positions {
+    place_all(ordered, label_width, true)
+}
+
+fn place_all(ordered: &Ordered, label_width: impl Fn(u32) -> u16, compacted: bool) -> Positions {
     let rows = &ordered.rows;
     let widths: Vec<Vec<i32>> = rows
         .iter()
@@ -119,7 +134,13 @@ pub(crate) fn position(ordered: &Ordered, label_width: impl Fn(u32) -> u16) -> P
             place(&mut xs[r], &widths[r], &rows[r], neighbours, &centres);
         }
     }
+    if compacted {
+        realign(&mut xs, &widths, rows, &up, &down);
+    }
     separate_dummies(&mut xs, &widths, rows, &up, &down);
+    if compacted {
+        compact(&mut xs, &widths, rows, &up, &down);
+    }
 
     let shift = xs.iter().flatten().copied().min().unwrap_or(0);
     let to_cell = |v: i32| u16::try_from(v.max(0)).unwrap_or(u16::MAX);
@@ -284,6 +305,388 @@ fn separate_dummies(
             break;
         }
     }
+}
+
+/// Closes empty cross-axis bands by cut shifts, sweeping each gap between two distinct
+/// slot centres left to right. At a cut, every slot centred at or past it moves left by
+/// one amount, bounded by the slack of each row's pair straddling the cut and by the
+/// gap itself, so centres never reorder. [`best_shift`] picks the amount.
+fn compact(
+    xs: &mut [Vec<i32>],
+    widths: &[Vec<i32>],
+    rows: &[Vec<Slot>],
+    up: &[Vec<Vec<usize>>],
+    down: &[Vec<Vec<usize>>],
+) {
+    let mut centres = centres_of(xs, widths);
+    let seps = centre_separations(widths, rows);
+    for _ in 0..COMPACT_ROUNDS {
+        let mut values: Vec<i32> = centres.iter().flatten().copied().collect();
+        values.sort_unstable();
+        values.dedup();
+        let mut moved = false;
+        for k in 1..values.len() {
+            let cut = values[k];
+            let mut limit = cut - values[k - 1] - 1;
+            for (row, seps) in centres.iter().zip(&seps) {
+                if let Some(i) = (0..seps.len()).find(|&i| row[i] < cut && row[i + 1] >= cut) {
+                    limit = limit.min(row[i + 1] - row[i] - seps[i]);
+                }
+            }
+            if limit <= 0 {
+                continue;
+            }
+            let shift = best_shift(&centres, rows, up, down, cut, limit);
+            if shift == 0 {
+                continue;
+            }
+            for c in centres.iter_mut().flatten().filter(|c| **c >= cut) {
+                *c -= shift;
+            }
+            for v in &mut values[k..] {
+                *v -= shift;
+            }
+            moved = true;
+        }
+        if !moved {
+            break;
+        }
+    }
+    set_centres(xs, widths, &centres);
+}
+
+fn centres_of(xs: &[Vec<i32>], widths: &[Vec<i32>]) -> Vec<Vec<i32>> {
+    xs.iter()
+        .zip(widths)
+        .map(|(xs, ws)| xs.iter().zip(ws).map(|(&x, &w)| x + w / 2).collect())
+        .collect()
+}
+
+fn set_centres(xs: &mut [Vec<i32>], widths: &[Vec<i32>], centres: &[Vec<i32>]) {
+    for ((xs, centres), ws) in xs.iter_mut().zip(centres).zip(widths) {
+        for ((x, &c), &w) in xs.iter_mut().zip(centres).zip(ws) {
+            *x = c - w / 2;
+        }
+    }
+}
+
+/// `seps[r][i]` is the least distance from slot `i`'s centre to slot `i + 1`'s.
+fn centre_separations(widths: &[Vec<i32>], rows: &[Vec<Slot>]) -> Vec<Vec<i32>> {
+    rows.iter()
+        .zip(widths)
+        .map(|(row, ws)| {
+            (0..row.len().saturating_sub(1))
+                .map(|i| ws[i] - ws[i] / 2 + ws[i + 1] / 2 + gap(row[i], row[i + 1]))
+                .collect()
+        })
+        .collect()
+}
+
+/// Makes each straight run of a long edge, or of tasks joined one-to-one, a rigid block
+/// and every other slot a block of its own, packs the blocks as far towards the leading
+/// edge as their rows allow, then moves each to the weighted median of the slots it
+/// joins, within its rows' slack and the packed extent. The packing removes the slack
+/// the sweeps left; the medians put back only what the edges ask for, and one far
+/// neighbour drags a median less than a barycentre. A lone task takes the midpoint of
+/// its two medians, so a parent stays centred over two children, while a block moves
+/// no further than it must. No move lands a vertical on an unrelated one.
+fn realign(
+    xs: &mut [Vec<i32>],
+    widths: &[Vec<i32>],
+    rows: &[Vec<Slot>],
+    up: &[Vec<Vec<usize>>],
+    down: &[Vec<Vec<usize>>],
+) {
+    let centres = centres_of(xs, widths);
+    let seps = centre_separations(widths, rows);
+    let start: Vec<usize> = rows
+        .iter()
+        .scan(0, |next, row| {
+            let at = *next;
+            *next += row.len();
+            Some(at)
+        })
+        .collect();
+    let total = start.last().map_or(0, |&s| s + rows[rows.len() - 1].len());
+    let mut parent: Vec<usize> = (0..total).collect();
+    fn root(parent: &mut [usize], mut v: usize) -> usize {
+        while parent[v] != v {
+            parent[v] = parent[parent[v]];
+            v = parent[v];
+        }
+        v
+    }
+    for r in 0..rows.len().saturating_sub(1) {
+        for (i, lower) in down[r].iter().enumerate() {
+            for &j in lower {
+                let dummy = [rows[r][i], rows[r + 1][j]]
+                    .iter()
+                    .any(|slot| matches!(slot, Slot::Dummy { .. }));
+                let link = lower.len() == 1 && up[r + 1][j].len() == 1;
+                if (dummy || link) && centres[r][i] == centres[r + 1][j] {
+                    let (a, b) = (
+                        root(&mut parent, start[r] + i),
+                        root(&mut parent, start[r + 1] + j),
+                    );
+                    parent[a.max(b)] = a.min(b);
+                }
+            }
+        }
+    }
+    let mut block_of: Vec<Vec<usize>> = rows.iter().map(|row| vec![0; row.len()]).collect();
+    let mut ids: HashMap<usize, usize> = HashMap::new();
+    let mut members: Vec<Vec<(usize, usize)>> = Vec::new();
+    let mut pos: Vec<i32> = Vec::new();
+    for (r, row) in rows.iter().enumerate() {
+        for i in 0..row.len() {
+            let key = root(&mut parent, start[r] + i);
+            let b = *ids.entry(key).or_insert_with(|| {
+                members.push(Vec::new());
+                pos.push(centres[r][i]);
+                members.len() - 1
+            });
+            block_of[r][i] = b;
+            members[b].push((r, i));
+        }
+    }
+
+    // Every left-of relation between blocks runs to a larger centre, so ascending
+    // centre order is a topological order of the packing constraints.
+    let mut by_centre: Vec<usize> = (0..members.len()).collect();
+    by_centre.sort_by_key(|&b| (pos[b], b));
+    let bounds = |pos: &[i32], b: usize| {
+        let mut lo = i32::MIN;
+        let mut hi = i32::MAX;
+        for &(r, i) in &members[b] {
+            if i > 0 {
+                lo = lo.max(pos[block_of[r][i - 1]] + seps[r][i - 1]);
+            }
+            if i + 1 < rows[r].len() {
+                hi = hi.min(pos[block_of[r][i + 1]] - seps[r][i]);
+            }
+        }
+        (lo, hi)
+    };
+    for &b in &by_centre {
+        pos[b] = bounds(&pos, b).0.max(0);
+    }
+    let extent = pos.iter().copied().max().unwrap_or(0);
+
+    for round in 0..RELAX_ROUNDS {
+        let mut moved = false;
+        let sweep: Vec<usize> = if round % 2 == 0 {
+            by_centre.clone()
+        } else {
+            by_centre.iter().rev().copied().collect()
+        };
+        for b in sweep {
+            let mut pulls: Vec<(i32, i64)> = Vec::new();
+            let mut forbidden: Vec<i32> = Vec::new();
+            for &(r, i) in &members[b] {
+                let slot = rows[r][i];
+                let sides = [
+                    r.checked_sub(1).map(|a| (a, &up[r][i], down)),
+                    (r + 1 < rows.len()).then(|| (r + 1, &down[r][i], up)),
+                ];
+                for (a, own, facing) in sides.into_iter().flatten() {
+                    for &j in own {
+                        if block_of[a][j] != b {
+                            pulls.push((pos[block_of[a][j]], weight(slot, rows[a][j])));
+                        }
+                    }
+                    if own.is_empty() {
+                        continue;
+                    }
+                    for (j, edges) in facing[a].iter().enumerate() {
+                        if !edges.is_empty() && !own.contains(&j) {
+                            forbidden.push(pos[block_of[a][j]]);
+                        }
+                    }
+                }
+            }
+            let Some((low, high)) = weighted_median(&mut pulls) else {
+                continue;
+            };
+            let here = pos[b];
+            let lone_task = members[b].len() == 1
+                && matches!(rows[members[b][0].0][members[b][0].1], Slot::Task(_));
+            let wanted = if lone_task {
+                (low + high).div_euclid(2)
+            } else {
+                here.clamp(low, high)
+            };
+            let (lo, hi) = bounds(&pos, b);
+            let mut to = wanted.clamp(lo.max(0), hi.min(extent).max(lo.max(0)));
+            while to != here && forbidden.contains(&to) {
+                to += (here - to).signum();
+            }
+            if to != here {
+                pos[b] = to;
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+
+    let mut centres = centres;
+    for (b, list) in members.iter().enumerate() {
+        for &(r, i) in list {
+            centres[r][i] = pos[b];
+        }
+    }
+    set_centres(xs, widths, &centres);
+}
+
+/// The lower and upper weighted medians of `pulls`, or `None` when it is empty.
+fn weighted_median(pulls: &mut [(i32, i64)]) -> Option<(i32, i32)> {
+    pulls.sort_unstable();
+    let total: i64 = pulls.iter().map(|&(_, w)| w).sum();
+    let mut seen = 0;
+    let mut low = None;
+    for &(c, w) in pulls.iter() {
+        seen += w;
+        if low.is_none() && 2 * seen >= total {
+            low = Some(c);
+        }
+        if 2 * seen > total {
+            return Some((low.unwrap_or(c), c));
+        }
+    }
+    None
+}
+
+/// The shift in `1..=limit` for the slots centred at or past `cut`, or 0. The segments
+/// crossing the cut are the only ones it changes: it takes the least total weighted
+/// length they can reach, the furthest such shift on a tie, and never one longer than
+/// they are now. A shift that would centre a vertical leaving one slot on an unrelated
+/// vertical entering the same channel from the other side is refused.
+fn best_shift(
+    centres: &[Vec<i32>],
+    rows: &[Vec<Slot>],
+    up: &[Vec<Vec<usize>>],
+    down: &[Vec<Vec<usize>>],
+    cut: i32,
+    limit: i32,
+) -> i32 {
+    let right = |c: i32| c >= cut;
+    let mut spans: Vec<(i32, i64)> = Vec::new();
+    let mut forbidden: Vec<i32> = Vec::new();
+    for r in 0..rows.len().saturating_sub(1) {
+        for (i, lower) in down[r].iter().enumerate() {
+            let a = centres[r][i];
+            for &j in lower {
+                let b = centres[r + 1][j];
+                if right(a) != right(b) {
+                    spans.push(((a - b).abs(), weight(rows[r][i], rows[r + 1][j])));
+                }
+            }
+            if lower.is_empty() {
+                continue;
+            }
+            for (j, upper) in up[r + 1].iter().enumerate() {
+                let b = centres[r + 1][j];
+                if !upper.is_empty() && !lower.contains(&j) && right(a) != right(b) {
+                    forbidden.push((a - b).abs());
+                }
+            }
+        }
+    }
+    let cost = |shift: i32| -> i64 {
+        spans
+            .iter()
+            .map(|&(d, w)| w * i64::from((d - shift).abs()))
+            .sum()
+    };
+    let near = |v: i32| [v - 1, v, v + 1];
+    let candidates = std::iter::once(limit)
+        .chain(spans.iter().flat_map(|&(d, _)| near(d)))
+        .chain(forbidden.iter().flat_map(|&f| near(f)))
+        .filter(|&s| (1..=limit).contains(&s) && !forbidden.contains(&s));
+    let baseline = cost(0);
+    candidates
+        .map(|s| (cost(s), Reverse(s)))
+        .min()
+        .filter(|&(c, _)| c <= baseline)
+        .map_or(0, |(_, Reverse(s))| s)
+}
+
+/// Gansner et al.'s weights: a bend costs most between two dummies, so a long edge is
+/// the last thing a shift bends.
+fn weight(a: Slot, b: Slot) -> i64 {
+    match (a, b) {
+        (Slot::Dummy { .. }, Slot::Dummy { .. }) => 8,
+        (Slot::Task(_), Slot::Task(_)) => 1,
+        _ => 2,
+    }
+}
+
+/// Lays separately positioned components side by side along the slot axis, in the
+/// given order. Each goes as far towards the leading edge as it can while staying
+/// [`COMPONENT_GAP`] cells clear of everything placed before it in every row and every
+/// channel, so a small component tucks in beside a narrow stretch of a large one but
+/// never between its slots. All parts must have the same row count.
+pub(crate) fn pack(parts: Vec<(Ordered, Positions)>) -> (Ordered, Positions) {
+    let count = parts.first().map_or(0, |(ordered, _)| ordered.rows.len());
+    let mut rows: Vec<Vec<Slot>> = vec![Vec::new(); count];
+    let mut chains: Vec<Chain> = Vec::new();
+    let mut packed = Positions {
+        x: HashMap::new(),
+        width: HashMap::new(),
+        layer_extent: 0,
+    };
+    let levels = 2 * count;
+    // Trailing edge of what is placed, per row and per channel.
+    let mut contour: Vec<Option<i32>> = vec![None; levels];
+    for (ordered, positions) in parts {
+        let hull: Vec<Option<(i32, i32)>> = ordered
+            .rows
+            .iter()
+            .map(|row| {
+                row.iter().fold(None, |acc: Option<(i32, i32)>, slot| {
+                    let x = i32::from(positions.x[slot]);
+                    let end = x + i32::from(positions.width[slot]);
+                    Some(acc.map_or((x, end), |(lo, hi)| (lo.min(x), hi.max(end))))
+                })
+            })
+            .collect();
+        // Level `2r` is row `r`; level `2r + 1` the channel after it, whose lines stay
+        // within the two rows' hulls and exist only when both rows hold slots.
+        let reach: Vec<Option<(i32, i32)>> = (0..levels)
+            .map(|level| {
+                let r = level / 2;
+                if level % 2 == 0 {
+                    return hull[r];
+                }
+                let ((a, b), (c, d)) = (hull[r]?, (*hull.get(r + 1)?)?);
+                Some((a.min(c), b.max(d)))
+            })
+            .collect();
+        let offset = (0..levels)
+            .filter_map(|l| Some(contour[l]? + COMPONENT_GAP - reach[l]?.0))
+            .max()
+            .unwrap_or(0)
+            .max(0);
+        for (edge, reach) in contour.iter_mut().zip(&reach) {
+            if let Some((_, hi)) = reach {
+                *edge = Some(edge.map_or(hi + offset, |e| e.max(hi + offset)));
+            }
+        }
+        let shift = u16::try_from(offset).unwrap_or(u16::MAX);
+        for (row, slots) in rows.iter_mut().zip(&ordered.rows) {
+            row.extend(slots);
+        }
+        for (&slot, &x) in &positions.x {
+            let width = positions.width[&slot];
+            let x = x.saturating_add(shift);
+            packed.x.insert(slot, x);
+            packed.width.insert(slot, width);
+            packed.layer_extent = packed.layer_extent.max(x.saturating_add(width));
+        }
+        chains.extend(ordered.chains);
+    }
+    (Ordered { rows, chains }, packed)
 }
 
 /// Mean of the neighbours' centres, rounded half up; `neighbours` is non-empty.
@@ -527,6 +930,99 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    /// A second root feeding the middle of a chain drags every task below it towards
+    /// itself, and the fan at the bottom hangs past everything above it.
+    fn dragged_fan() -> Ordered {
+        let layers = vec![
+            vec![1, 2],
+            vec![3, 4, 5, 6],
+            vec![7],
+            vec![8],
+            vec![9, 10, 11, 12],
+        ];
+        let mut edges: Vec<Edge> = [3, 4, 5, 6].map(|to| needs(1, to)).to_vec();
+        edges.extend([needs(6, 7), needs(2, 7), needs(7, 8)]);
+        edges.extend([9, 10, 11, 12].map(|to| needs(8, to)));
+        order(&layers, &edges)
+    }
+
+    #[test]
+    fn compaction_closes_the_slack_a_dragged_subtree_leaves() {
+        let ordered = dragged_fan();
+        for (name, cross) in [("vertical", 3), ("horizontal", 1)] {
+            let loose = place_all(&ordered, |_| cross, false);
+            let tight = position(&ordered, |_| cross);
+            assert!(
+                tight.layer_extent * 4 <= loose.layer_extent * 3,
+                "{name}: {} is not a quarter under {}",
+                tight.layer_extent,
+                loose.layer_extent
+            );
+            for row in gaps(&ordered, &tight) {
+                for (left, right, blank) in row {
+                    assert!(blank >= 1, "{name}: {left:?} {right:?} gap {blank}");
+                }
+            }
+            assert_eq!(
+                dummies_on_foreign_columns(&ordered, &tight),
+                vec![],
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_parent_of_two_stays_centred_after_compaction() {
+        let ordered = order(&[vec![1], vec![2, 3]], &[needs(1, 2), needs(1, 3)]);
+        let positions = position(&ordered, |_| 3);
+        let (a, b) = (
+            positions.centre(Slot::Task(2)).unwrap(),
+            positions.centre(Slot::Task(3)).unwrap(),
+        );
+        assert_eq!(positions.centre(Slot::Task(1)), Some((a + b) / 2));
+        assert_eq!(b - a, 5, "the children pack at pitch");
+    }
+
+    #[test]
+    fn packed_components_keep_clear_of_each_other() {
+        // A tall chain with a wide foot, and a pair beside its narrow top.
+        let big = order(
+            &[vec![1], vec![2], vec![3, 4, 5, 6], vec![]],
+            &[
+                needs(1, 2),
+                needs(2, 3),
+                needs(2, 4),
+                needs(2, 5),
+                needs(2, 6),
+            ],
+        );
+        let small = order(&[vec![7], vec![8], vec![], vec![]], &[needs(7, 8)]);
+        let lone = order(&[vec![], vec![], vec![], vec![9]], &[]);
+        let parts: Vec<(Ordered, Positions)> = [big, small, lone]
+            .into_iter()
+            .map(|ordered| {
+                let positions = position(&ordered, |_| 3);
+                (ordered, positions)
+            })
+            .collect();
+        let (ordered, positions) = pack(parts);
+        let x = |id| positions.x[&Slot::Task(id)];
+        assert_eq!(ordered.rows[0], vec![Slot::Task(1), Slot::Task(7)]);
+        assert_eq!(ordered.chains.len(), 6);
+        // The pair clears the chain's top and the channel under it, but not the foot.
+        assert_eq!(x(7), x(1) + 3 + 3);
+        assert!(x(8) < x(6));
+        // The lone task shares no row or channel with anything, so it starts the row.
+        assert_eq!(x(9), 0);
+        let extent = ordered
+            .rows
+            .iter()
+            .flatten()
+            .map(|slot| positions.x[slot] + positions.width[slot])
+            .max();
+        assert_eq!(Some(positions.layer_extent), extent);
     }
 
     #[test]

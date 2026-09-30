@@ -277,6 +277,7 @@ pub(crate) struct Index {
     layer: HashMap<u32, usize>,
     dependents: HashMap<u32, Vec<u32>>,
     coupled: HashMap<u32, Vec<u32>>,
+    overlaps: HashMap<u32, Vec<u32>>,
     agents: HashMap<u32, Vec<usize>>,
     record: HashMap<u32, Vec<usize>>,
     checkpoint: HashMap<u32, usize>,
@@ -309,7 +310,16 @@ impl Snapshot {
                 coupled.entry(*peer).or_default().push(task.id);
             }
         }
-        for ids in dependents.values_mut().chain(coupled.values_mut()) {
+        let mut overlaps: HashMap<u32, Vec<u32>> = HashMap::new();
+        for edge in self.edges.iter().filter(|e| e.kind == EdgeKind::Overlap) {
+            overlaps.entry(edge.from).or_default().push(edge.to);
+            overlaps.entry(edge.to).or_default().push(edge.from);
+        }
+        for ids in dependents
+            .values_mut()
+            .chain(coupled.values_mut())
+            .chain(overlaps.values_mut())
+        {
             ids.sort_unstable();
             ids.dedup();
         }
@@ -358,6 +368,7 @@ impl Snapshot {
             layer,
             dependents,
             coupled,
+            overlaps,
             agents,
             record,
             checkpoint,
@@ -387,6 +398,11 @@ impl Index {
     /// `coupling` list, as [`Index::dependents`] is of `needs`.
     pub(crate) fn coupled(&self, id: u32) -> &[u32] {
         self.coupled.get(&id).map_or(&[], Vec::as_slice)
+    }
+
+    /// Rows sharing a file with `id` with no path either way, ascending.
+    pub(crate) fn overlaps(&self, id: u32) -> &[u32] {
+        self.overlaps.get(&id).map_or(&[], Vec::as_slice)
     }
 
     /// Agents with a segment on `id`, newest assignment first.

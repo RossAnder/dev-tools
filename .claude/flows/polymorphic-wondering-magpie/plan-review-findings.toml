@@ -1,0 +1,418 @@
+schema_version = 1
+last_updated = 2026-09-30
+round = 1
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P1"
+severity = "critical"
+category = "risk"
+plan_section = "## Risks"
+summary = "Uncommitted glimpse UI work overlaps 7 task files; per-task staging commits it and mod state; breaks the build"
+description = "git status: 20 modified glimpse files (+2278/-428) plus untracked glimpse/src/state.rs, diagram/reduce.rs, view/legend.rs. Tasks 6/10 (main.rs), 8 (config.rs, cli.rs), 12 (runtime.rs, view/activity.rs), 13 (README.md, CLAUDE.md) edit dirty files. implement.md step 5(iii) stages whole declared files, so task 6's commit carries `+mod state;` without state.rs (E0583 at checkpoint B tip) and ~2,300 unrelated UI lines; unclaimed dirty paths halt every train; step 6 rollback stashes a failed task's files to HEAD, taking the UI edits with it. Only mention is Exploration Notes (never sent to implementers). Fix: precondition — commit the UI work first and confirm `git status --porcelain glimpse/` is empty. Raised by all four lenses."
+anchor_old = "- **glimpse carries its own copy of tomlctl.**"
+anchor_new = """
+- **Precondition: a clean glimpse tree.** The working tree carries uncommitted glimpse UI work (20 modified files plus untracked `glimpse/src/state.rs`, `glimpse/src/diagram/reduce.rs`, `glimpse/src/view/legend.rs`) in files tasks 6, 8, 10, 12 and 13 edit, and `glimpse/src/main.rs` already declares `mod state;`. Commit it as its own change before `/implement` starts and confirm `git status --porcelain glimpse/` is empty; otherwise whole-file staging commits that work under this plan's messages (task 6's commit would not build) and a task rollback stashes it away.
+- **glimpse carries its own copy of tomlctl.**"""
+dedup_id = "57e53bf004e83efa"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P2"
+severity = "critical"
+category = "executability"
+plan_section = "### 8. Remove the `tomlctl` config key [S]"
+summary = "Task 8 acceptance and success key `! grep -q 'tomlctl' config.rs` are unsatisfiable given the new unknown-key test"
+description = '''Task 8 adds a test that a config setting `tomlctl` fails with `unknown key`; config tests live inline in glimpse/src/config.rs `mod tests` (:502, existing rejection case at :584 is `"tomlctl = \"\""`), so the literal `tomlctl` must remain. Probe: positive control (correct impl with inline test) prints 1 / key exits 1 — unsatisfiable. Same defect in the Success Criteria bullet ('today: 8 mentions') and `success: ! grep -q 'tomlctl' glimpse/src/config.rs`. Corrected, probed command: `grep -cE 'tomlctl:|"tomlctl" =>|cfg\.tomlctl' glimpse/src/config.rs` (today 6, correct impl 0); key `success: ! grep -qE 'tomlctl:|"tomlctl" =>|cfg\.tomlctl' glimpse/src/config.rs`.'''
+anchor_old = "  - forward: `grep -c 'tomlctl' glimpse/src/config.rs` prints `0` (today: `8`)."
+anchor_new = '''  - forward: `grep -cE 'tomlctl:|"tomlctl" =>|cfg\.tomlctl' glimpse/src/config.rs` prints `0` (today: `6`). The new unknown-key test's `tomlctl = "x"` literal does not match it.'''
+dedup_id = "85ea474a57de650a"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P3"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 2. Add a root-taking flow listing [S]"
+summary = "flow::list is a private module; lib.rs cannot reach flow::list::list_all (E0603) — flow/mod.rs must re-export"
+description = "tomlctl/src/flow/mod.rs:12 is `mod list;` (private); only dispatch/validate_slug/FlowProjection are re-exported. A pub(crate) fn in a private submodule is unreachable from lib.rs. Contrast tasks/mod.rs `pub(crate) use snapshot::snapshot;` and agents/mod.rs `pub(crate) mod record;`. Fix: add `pub(crate) use list::list_all;` to tomlctl/src/flow/mod.rs (joins task 2 Files) and have the facade call `flow::list_all`; update Approach 'Library facade' wording."
+anchor_old = "- **Files**: `tomlctl/src/flow/list.rs`"
+anchor_new = "- **Files**: `tomlctl/src/flow/list.rs`, `tomlctl/src/flow/mod.rs` — add `pub(crate) use list::list_all;` (`mod list;` is private)"
+dedup_id = "12409ee6a7f30880"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P4"
+severity = "warning"
+category = "executability"
+plan_section = "### 2. Add a root-taking flow listing [S]"
+summary = "Task 2's acceptance never runs its new unit test, and the test's target (--bin vs --lib) flips mid-flight while task 1 runs in parallel"
+description = "The only runnable check is `cargo test --test flow_list` (integration binary), which never runs `list_all_reports_flows_and_skips` inside tomlctl/src/flow/list.rs. Tasks 1 and 2 share the first frontier, so the unit test moves from the bin target to the lib target during task 2's run and its clippy compiles task 1's half-moved tree. Fix: Depends on: 1 and add a forward criterion `cargo test --manifest-path tomlctl/Cargo.toml --lib -- flow::list::` (predicted, unverified)."
+dedup_id = "d1851545ec6fc10d"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P5"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 4. Expose the in-process facade [M]"
+summary = "WriteIntegrityArgs literal omits the `no_create` field (E0063); struct has no Default"
+description = "tomlctl/src/cli/types.rs `pub(crate) struct WriteIntegrityArgs` (#[derive(Args, Clone)], no Default) has five fields: allow_outside, no_write_integrity, verify_integrity, strict_integrity, no_create. agents/record.rs reads write_opts.no_create; CLI no-flag default is false."
+anchor_old = "`record_agent` builds `WriteIntegrityArgs { allow_outside: false, no_write_integrity: false, verify_integrity: false, strict_integrity: false }`."
+anchor_new = "`record_agent` builds `WriteIntegrityArgs { allow_outside: false, no_write_integrity: false, verify_integrity: false, strict_integrity: false, no_create: false }` (all five fields; the struct derives no `Default`)."
+dedup_id = "44700b378e2a0e0d"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P6"
+severity = "warning"
+category = "executability"
+plan_section = "### 4. Expose the in-process facade [M]"
+summary = "Facade test: CLI `flow list` side has no TOMLCTL_ROOT, and the verify=true falsifier cannot fire on a CLI-built fixture"
+description = "Only the snapshot comparison names TOMLCTL_ROOT; `flow list` dispatch uses repo_or_cwd_root() (flow/list.rs:66) and would list the real repo's 45 flows. CLI also canonicalises TOMLCTL_ROOT (io.rs:1564) so skipped[].path needs a canonical root. Every tomlctl write creates a .sha256 sidecar, so with a `flow init`+`tasks add` fixture verify=true skips nothing and the falsifier stays green. Fix: use tomlctl/tests/common/mod.rs helpers (sandbox() canonical root, seed_tasks/stage_tasks_flow, cli(root) sets TOMLCTL_ROOT) and add one extra flow whose context.toml is written with std::fs::write (no sidecar)."
+anchor_old = "    - assert `tomlctl::flow_list(&root)` equals the parsed stdout of `tomlctl flow list`;"
+anchor_new = '    - assert `tomlctl::flow_list(&root)` equals the parsed stdout of `common::cli(&root).args(["flow", "list"])` (which sets `TOMLCTL_ROOT`), with `root` from `common::sandbox()` (canonicalised). The root also holds one extra flow whose `context.toml` is written with `std::fs::write` and has no `.sha256` sidecar, so the falsifier below can fire;'
+dedup_id = "dcf3c5c5803d9249"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P7"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Watcher as a wake-up signal"
+summary = "Wake has no variant telling the poller to re-create the watcher; errors/root-removal/outside-path/rescan all collapse to All"
+description = "The Approach says a Wake::All caused by a watcher error drops and re-creates the watcher, but classify returns only Flow/All so the cause is lost at task 10's interface. On macOS every non-canonical path is 'outside' → All, so re-creating on every All would restart FSEvents constantly; the research note also says Remove of the root must re-establish the watch, which the Approach omits (only the missed-change detector would catch it, ≥20 s later, then sticky polling). Fix: `enum Wake { Flow(String), All, Rewatch }` — Rewatch for Err and Remove of flows_root evicts like All and re-creates the watcher; task 10 tests and task 11 match updated."
+anchor_old = "`pub(crate) enum Wake { Flow(String), All }`."
+anchor_new = "`pub(crate) enum Wake { Flow(String), All, Rewatch }`. `Rewatch` (an `Err`, or a `Remove` of `flows_root` itself) evicts like `All` and also tells the poller to drop and re-create the watcher; `All` (a rescan flag, or a path outside `flows_root`) never re-creates it."
+dedup_id = "36d851591f175e17"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P8"
+severity = "warning"
+category = "risk"
+plan_section = "### Watcher as a wake-up signal"
+summary = "Coalescing drain must merge every wake and handle non-Wake messages (SetSlug/Tail/Stop), not filter them"
+description = "After the plan the control channel carries Wake, SetSlug, Tail, Stop. A drain written as `while let Ok(Control::Wake(w))` drops SetSlug/Tail and a dropped Stop hangs Source::drop/stop joins (and tests); keeping only the last Wake::Flow loses earlier slugs' evictions. The research notes already flag the same trap in the halted loop. Fix: state that drained Wakes are merged (Flow slugs unioned; any All wins) and any other message is handled as in the main loop, Stop returning at once; task 11 adds a test that a SetSlug sent mid-drain is applied."
+anchor_old = "A tomlctl write is ~18 raw events."
+anchor_new = "A tomlctl write is ~18 raw events. The drain combines, it doesn't filter: every drained `Wake` is merged (`Flow` slugs unioned; any `All` wins), and any other message is handled as in the main loop — `SetSlug` and `Tail` retarget, `Stop` returns at once."
+dedup_id = "2b26072f495a7afd"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P9"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 11. Drive the poller from the watcher [M]"
+summary = "next_wait is now-relative; with task 12's 1 s tail cap the safety tick either fires every second or never"
+description = "Task 12 caps the wait at app::TICK while a tail is targeted. If tail timeouts count as safety ticks, tick() runs every second and the missed-change detector judges 1 s windows; if they don't, the 10 s wait is recomputed each iteration and never expires, silently disabling the safety net and detector while the activity panel is open. Task 11's pure next_wait cases pin neither. Fix: deadline-based waits — next_safety_at (reset only when a tick runs), retry deadline, and (task 12) tail_at; only reaching next_safety_at is a safety tick; a tail deadline refreshes the tail without tick(). Add a case: tail due 1 s, safety due 3 s → 1 s, and after three tail wakes the safety tick still fires."
+anchor_old = "    - `Polling` gives `poll_ms`."
+anchor_new = """
+    - `Polling` gives `poll_ms`.
+  - Make the wait deadline-based: keep `next_safety_at: Instant` (reset only when a tick runs) plus the retry deadline, and have `next_wait(now, ...)` return the time to the earliest; task 12 adds a `tail_at` deadline to the same function. Only reaching `next_safety_at` counts as a safety tick for the missed-change detector; a tail deadline refreshes the tail and runs no `tick()`."""
+dedup_id = "b28dda66b232717f"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P10"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 10. Add the watch module [M]"
+summary = "Live watch test fails on macOS: FSEvents reports canonical /private/var paths, so classify returns All for a /var temp root"
+description = 'notify-8.2.0 src/fsevent.rs canonicalises the watch root (append_path) and builds event paths from raw FSEvents paths (PathBuf::from at ~:542), which are canonical; macOS temp_dir is under /var -> /private/var, so strip_prefix fails and the test expecting Flow("a") fails on one of the three required platforms (unseen from Windows). Same effect in production for a symlinked repo/.claude (coarse All eviction). Also the rename write and in-place write share one channel, so trailing rename events can satisfy the in-place expectation. Fix: canonicalise flows_root once (falling back to the given path), pass the same path to watch and classify; drain the channel until quiet ~500 ms between the two writes. Raised by three lenses.'
+anchor_old = "Add one live test that watches a temp `flows` dir."
+anchor_new = "Add one live test that watches a temp `flows` dir. `start`'s caller canonicalises `flows_root` once (keeping the given path if that fails) and passes the same path to `watch` and `classify`, and so does the test: macOS temp dirs sit under the `/var` → `/private/var` symlink and FSEvents reports canonical paths. Between the rename write and the in-place write, drain the channel until it is quiet for 500 ms, so the in-place assertion cannot be met by the rename's trailing events."
+dedup_id = "aaedbac6248cb03f"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P11"
+severity = "warning"
+category = "risk"
+plan_section = "### 3. Point the pre-commit gates at the library [S]"
+summary = "New glimpse clippy gate lacks --locked, so the hook silently rewrites glimpse/Cargo.lock unstaged"
+description = "Scratch probe (cargo 1.98.1): bumping a path dependency's version, a dependent's `cargo metadata --locked` exits 101 while without --locked it rewrites the dependent's lock. The gate triggers on tomlctl/Cargo.toml, so any tomlctl version/dependency change re-resolves glimpse/Cargo.lock inside the unsandboxed hook and commits without it. With --locked the hook blocks and names the problem. Task 3 acceptance grep still matches; task 14's description of the gate should mention it."
+anchor_old = 'then gate cargo clippy --manifest-path "$ROOT/glimpse/Cargo.toml"; fi`.'
+anchor_new = 'then gate cargo clippy --manifest-path "$ROOT/glimpse/Cargo.toml" --locked; fi`. `--locked` makes a tomlctl dependency change that `glimpse/Cargo.lock` does not yet reflect block the commit, instead of the hook rewriting the lockfile unstaged.'
+dedup_id = "46dac666fa2b78c9"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P12"
+severity = "warning"
+category = "executability"
+plan_section = "### 3. Point the pre-commit gates at the library [S]"
+summary = "No criterion requires the --lib test gate to exist; deleting the gate passes all checks (also task 14 and Success Criteria)"
+description = "Task 3 checks `--bin tomlctl` count 0, glimpse clippy line count 1 and `bash -n`; deleting .githooks/pre-commit:35 satisfies all three, losing the gate the Summary flags first. Same gap in task 14 (CLAUDE.md) and the Success Criteria bullet/key. Probe: `grep -c -- '--lib -- cli::dispatch::tests'` prints 0 on both files today, 1 on the target line. Add it to task 3 and task 14 and a key `success: grep -q -- '--lib -- cli::dispatch::tests' .githooks/pre-commit`."
+anchor_old = "  - guard: `bash -n .githooks/pre-commit` exits 0."
+anchor_new = """
+  - forward: `grep -c -- '--lib -- cli::dispatch::tests' .githooks/pre-commit` prints `1` (today: `0`).
+  - guard: `bash -n .githooks/pre-commit` exits 0."""
+dedup_id = "dc977256c261bb78"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P13"
+severity = "warning"
+category = "executability"
+plan_section = "### 3. Point the pre-commit gates at the library [S]"
+summary = "Task 3 edits the unsandboxed pre-commit hook but is tagged S (lite-eligible); security-sensitive work is M"
+description = "Format contract: S requires not security-sensitive. Root CLAUDE.md 'Supply chain' gotcha says the hook runs unsandboxed without confirmation, and the task itself says so. Retag [M]; the effort tag is not part of the ref."
+anchor_old = "### 3. Point the pre-commit gates at the library [S]"
+anchor_new = "### 3. Point the pre-commit gates at the library [M]"
+dedup_id = "af9aa2c5c2938726"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P14"
+severity = "warning"
+category = "executability"
+plan_section = "### 5. Add the tomlctl path dependency to glimpse [S]"
+summary = "'Let cargo regenerate glimpse/Cargo.lock' names no command; a lite agent's `cargo update` would silently bump every pin (tasks 5 and 9)"
+description = "Tasks 5 and 9 are S/lite. `cargo update`/`generate-lockfile` re-resolve every package (ratatui 0.30.2, crossterm 0.29.0 etc.) and no acceptance notices. Fix: name a resolve-only command (any build/clippy/`cargo tree` resolves minimally) and forbid `cargo update`; add guard `git diff -U0 glimpse/Cargo.lock | grep -c '^-version'` prints 0 (glimpse/Cargo.lock is clean today). Apply to task 9 too."
+anchor_old = "  - Let cargo regenerate `glimpse/Cargo.lock`."
+anchor_new = "  - Regenerate `glimpse/Cargo.lock` with a resolve-only command such as `cargo tree --manifest-path glimpse/Cargo.toml > /dev/null`, which adds the new packages without re-resolving existing pins. Never run `cargo update` or `cargo generate-lockfile`."
+dedup_id = "712d507979617b84"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P15"
+severity = "warning"
+category = "completeness"
+plan_section = "### 14. Update root CLAUDE.md for the library split [S]"
+summary = "tomlctl docs saying `agents record` is run only by harness hooks become false after task 7; no task owns them"
+description = "After task 7, `glimpse hook` writes agents.toml via tomlctl::record_agent and nothing in production runs `agents record`. Stale: claude/skills/tomlctl/references/agents.md:9-12 ('Writer rule. agents record is run only from harness hooks ... that glimpse setup installs'), claude/skills/tomlctl/SKILL.md:51 ('agents record is hook-only') and :68 ('run only by harness hooks'), tomlctl/README.md:68 ('run by harness hooks only'). None is in any task's Files or the flow scope. Fix: add them to task 14 (edit claude/ only; .github/skills is a symlink mirror) and to the flow scope; a staged claude/**/*.md triggers the dispatch-tests gate."
+dedup_id = "8e0ad5ac6b307862"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P16"
+severity = "warning"
+category = "completeness"
+plan_section = "### 14. Update root CLAUDE.md for the library split [S]"
+summary = "Stale prose inside files the tasks already own is not listed in any task's Detail"
+description = "CLAUDE.md:45 Build tuning (`rustfmt --edition 2024 --check tomlctl/src/main.rs` walks the whole module tree → now lib.rs; task 14); tomlctl/src/main.rs:1-3 ('thin wrapper over cli::run()'; task 1) and :5-7 mimalloc rationale (stale if task 15 sets default = []; task 15 says 'No other file changes'); glimpse/CLAUDE.md:12 ('a tomlctl too old to know agents record'; task 13); glimpse/README.md:240-241 Hook bullet and :74 'never runs tomlctl' (task 13); glimpse/src/cli.rs:71 Harness doc (task 8); glimpse/tests/cli.rs:122-123 doc on hook_is_silent_and_logs_one_line (task 7); glimpse/src/hook.rs:263-264 outside_any_flow doc (task 7); glimpse/src/source.rs:368-369, :391-393 Source::start/spawn docs (task 6). Task 13's grep helper misses the root CLAUDE.md and source-file sites. Repo rule: change a line, fix its comments in the same edit."
+anchor_old = "  - reword the Sibling crates `glimpse/` bullet to say it links tomlctl as a library"
+anchor_new = """
+  - in the Build tuning `rustfmt` bullet, change the example path `tomlctl/src/main.rs` to `tomlctl/src/lib.rs`, since the module tree now hangs off the lib root;
+  - reword the Sibling crates `glimpse/` bullet to say it links tomlctl as a library"""
+dedup_id = "cd2d1b6c0897a0d4"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P17"
+severity = "warning"
+category = "completeness"
+plan_section = "### 6. Fetch snapshots and flow lists in-process [M]"
+summary = "No automated test exercises glimpse's real in-process data path (InProcessFetcher, store path, from_value, flows::list)"
+description = "All source.rs tests use FakeFetcher (glimpse/src/source.rs:462-478); flows.rs tests parse literals; task 6's guard names only fake-backed tests; the only live check is a predicted After-Merge step. Cheap automation: in glimpse/tests/cli.rs seed <sandbox>/cwd/.claude/flows/x/tasks.toml, run `--once --slug x` with PATH emptied (flows::repo_root falls back to the nearest .claude/flows ancestor, flows.rs:104-121), assert exit 0 and slug on stdout. glimpse/tests/cli.rs is task 7's file, so place the test in a task that depends on both 6 and 7 (task 8) or add the edge."
+dedup_id = "9ba6739489325a31"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P18"
+severity = "warning"
+category = "executability"
+plan_section = "## Success Criteria"
+summary = "Two Context goals have no criterion (tail off the UI thread; cross-platform notify defaults); two bullets lack a polarity label"
+description = """Context goals 'no file I/O on the UI thread for the tail' and 'Windows, Linux and macOS' have no success criterion. Probed proxies: `test "$(grep -c 'refresh_tail' glimpse/src/runtime.rs)" -eq 0` (today 6 → exits 1) and `grep -E '^notify' glimpse/Cargo.toml | grep -vq 'default-features'` (exits 1 today, 0 on `notify = "8.2.0"`, 1 on default-features = false). The two predicted bullets (glimpse --once; idle wake/in-place edit) carry no forward: label. Add bullets and matching success: keys."""
+anchor_old = "- guard: `#[global_allocator]` appears only in `tomlctl/src/main.rs` (today: holds)."
+anchor_new = """
+- guard: `#[global_allocator]` appears only in `tomlctl/src/main.rs` (today: holds).
+- forward: the UI thread no longer reads transcripts: `glimpse/src/runtime.rs` has no `refresh_tail` (today: 6).
+- forward: notify keeps the default features the macOS build needs: `grep -E '^notify' glimpse/Cargo.toml | grep -vq 'default-features'` exits 0 (today: exits 1, no notify line)."""
+dedup_id = "04cc9480cfdc5788"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P19"
+severity = "warning"
+category = "risk"
+plan_section = "## Dependency Graph"
+summary = "Checkpoint placement: dependent tasks sharing a file in one uncommitted window can't be rolled back separately (1→4 lib.rs, 11→12 source.rs)"
+description = "implement.md step 6 rolls a failed task's declared files back to HEAD. Task 12 failing reverts glimpse/src/source.rs to checkpoint B, wiping task 11's poller rewrite (riskiest task) while its row stays done. Task 4 failing leaves task-1-created untracked lib.rs (with task 4's partial facade) but reverts io.rs — inconsistent. Fix: add checkpoints after task 1 (lib/bin split) and after task 11 (poller rewrite); markers are authored here and Execution Policy is re-rendered from the store."
+dedup_id = "7e81e7f4035f4824"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P20"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "Windows: the recursive watch handle blocks renaming/moving the repo, .claude, or a worktree while glimpse runs"
+description = "notify-8.2.0 src/windows.rs opens the watched dir with CreateFileW(FILE_LIST_DIRECTORY, FILE_SHARE_READ|DELETE|WRITE, BACKUP_SEMANTICS|OVERLAPPED). Probe 2026-09-30 on Win11 NTFS with the same flags: Rename-Item of repo and of .claude → Access denied; child flow rename and recursive delete OK; after Dispose parent rename OK. New failure mode vs polling (no handles); long-lived hook-opened panes make `git worktree move` realistic. Add a Risk bullet and a glimpse/CLAUDE.md gotcha in task 13."
+anchor_old = "The design treats notify 9.0's rescan events as a later improvement, not a requirement."
+anchor_new = """
+The design treats notify 9.0's rescan events as a later improvement, not a requirement.
+- **Windows: the watch handle blocks renaming its ancestors.** While glimpse runs, renaming or moving the repo, its `.claude` directory or a worktree fails with "Access denied" (deleting still works). Mitigation: a `glimpse/CLAUDE.md` gotcha (task 13): close the glimpse pane first."""
+dedup_id = "b5cab37bfe4636d2"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P21"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 7. Record hook events in-process [M]"
+summary = "CLI test sandbox no longer isolates hook cases from a set TOMLCTL_ROOT once recording is in-process"
+description = 'Sandbox isolation for hook cases rested on the non-existent tomlctl. In-process, record resolves root via repo_or_cwd_root which reads TOMLCTL_ROOT first (tomlctl/src/io.rs:1558) and handle reads it as root_override (glimpse/src/hook.rs:236); Sandbox::run (tests/cli.rs:42-61) never removes it. Current payloads exit before root resolution, but a future recordable case would write into that root. Add `.env_remove("TOMLCTL_ROOT")` to Sandbox::run.'
+anchor_old = """    - stop writing `tomlctl = "glimpse-test-no-such-tomlctl"` into the sandbox config (write an empty file), and drop the module doc's "names a tomlctl" clause;"""
+anchor_new = """    - stop writing `tomlctl = "glimpse-test-no-such-tomlctl"` into the sandbox config (write an empty file), add `.env_remove("TOMLCTL_ROOT")` to `Sandbox::run` (the in-process recorder and `handle`'s `root_override` both honour it), and reword the module doc's "names a tomlctl" clause to say so;"""
+dedup_id = "437d8a3c3b77895e"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P22"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 12. Move the transcript tail onto the poller thread [M]"
+summary = "render_once has no synchronous tail read to keep (Approach and task 12 both claim one)"
+description = "glimpse/src/runtime.rs:128-163 builds Screen::new(app, …, TailState::default()) and draws once; refresh_tail is called only inside run_loop (:270, :314); --once never opens the activity panel. The claim invites an implementer to add a read. Same text in Approach 'Transcript tail on the poller thread'."
+anchor_old = "  - `render_once` keeps its one-shot synchronous `TailState` read."
+anchor_new = "  - `render_once` is unchanged: it draws with `TailState::default()` and reads no transcript."
+dedup_id = "43f8558821a1fa11"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P23"
+severity = "warning"
+category = "executability"
+plan_section = "### 15. Measure mimalloc against the system allocator for tomlctl [M]"
+summary = "The `default = [...]` forward criterion already holds at dispatch (task 1 adds the line) — relabel as guard"
+description = 'Task 15 depends (via 3, 4) on task 1, which adds `default = ["mimalloc"]`, so the criterion prints 1 before task 15 does anything. Probes: both `default = ["mimalloc"]` and `default = []` print 1. Discriminating criteria (Microsoft 0, dated comment) sit beside it, so the fix is a relabel.'
+anchor_old = '''  - forward: `grep -cE '^default = \[("mimalloc")?\]' tomlctl/Cargo.toml` prints `1`, recording the decision either way (today: `0`, since task 1 adds the line).'''
+anchor_new = '''  - guard: `grep -cE '^default = \[("mimalloc")?\]' tomlctl/Cargo.toml` prints `1` (at dispatch: already `1`, since task 1 adds the line).'''
+dedup_id = "878393180918aad6"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P24"
+severity = "suggestion"
+category = "risk"
+plan_section = "### 15. Measure mimalloc against the system allocator for tomlctl [M]"
+summary = "Timing loop runs beside up to 5 sibling agents' cargo builds; noise exceeds the <1 ms decision threshold"
+description = "Depends only on 3, 4, so it becomes ready alongside tasks 5-9 and 14 under max_parallel 6. Interleaving cancels drift but not concurrent-compile spikes (load swings up to 6x under Sophos). Fix: add Depends on 12, 14 (or state it runs with nothing else in flight) so only docs task 13 can run beside it."
+dedup_id = "9bd58933c65e2a6c"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P25"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 11. Drive the poller from the watcher [M]"
+summary = "Missed-change detector test needs a Mode::Watching(RecommendedWatcher); factor the detector as a pure counter"
+description = "Watching holds a live RecommendedWatcher, so a unit test asserting the switch to Polling must build a real watcher or leave the design to the executor. Factor like next_wait: e.g. `fn on_tick(&mut self, safety: bool, changed: bool, woke: bool) -> bool` and unit-test it."
+anchor_old = "  - Unit-test the missed-change detector: two safety ticks that each find a change with no wake switch the mode to `Polling`, and a wake in between resets the count."
+anchor_new = "  - Factor the missed-change detector into a pure counter (`fn on_tick(&mut self, safety: bool, changed: bool, woke: bool) -> bool`, true meaning switch to `Polling`) and unit-test it: two safety ticks that each find a change with no wake return true on the second, and a wake in between resets the count."
+dedup_id = "d1baf34c6f4238d1"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P26"
+severity = "suggestion"
+category = "risk"
+plan_section = "## After Merge"
+summary = "A leftover `tomlctl` key makes glimpse ignore the whole config file, not just fail on one key"
+description = "glimpse/src/config.rs:352 returns Err on unknown key and load_from (:360-368) falls back to Config::default() with a warning; in `glimpse hook` the warning only reaches hook.log while panes open with defaults. The user's current config does not set tomlctl, so local impact is nil; the wording understates it."
+anchor_old = "or glimpse reports `unknown key`."
+anchor_new = "or glimpse ignores the whole file and runs on defaults: the TUI shows an `unknown key` warning, and `glimpse hook` only logs it to `hook.log` while opening panes with default settings."
+dedup_id = "4884f4110b1dbc94"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P27"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "inotify Risk bullet assumes the watcher drops only at exit; the design drops it mid-session too"
+description = "The design re-creates the watcher after errors and drops it on sticky fallback. Conclusion still holds for a different reason: notify-8.2.0 src/inotify.rs Drop unwraps fail only if the loop thread is gone, which ends only on Shutdown or its own `poll failed` panic (already aborted under panic = abort); glimpse's panic hook (runtime.rs:71-105) restores the terminal. State the real reason."
+anchor_old = "A panic there aborts only at exit, when inotify's own thread has already died. Accepted as low probability."
+anchor_new = "The watcher is also dropped mid-session (re-created after an error, discarded on the sticky fallback). That drop is safe too: the `.unwrap()`s fail only when inotify's loop thread is gone, and it exits only on `Shutdown` or its own `poll failed` panic, which has already aborted. glimpse's panic hook restores the terminal first. Accepted as low probability."
+dedup_id = "9fa66a28d1bb31ee"
+
+[[items]]
+review_round = 1
+status = "open"
+id = "P28"
+severity = "suggestion"
+category = "completeness"
+plan_section = "## Exploration Notes"
+summary = "Transcribed anchors/counts drifted; one cited path does not exist"
+description = "`tests/lint.rs:261` / `tests/skills.rs:1193` → real sites tomlctl/src/cli/dispatch/tests/lint.rs:262 and …/skills.rs:1194 (tomlctl/tests/lint.rs does not exist). '224 cargo_bin' → 228 (grep -rc cargo_bin tomlctl/tests, summed). '11 fences' → 12 (all json/toml/text, doctest=false still right). `recv_timeout` is source.rs:352 (run at :343). render_once is runtime.rs:128 (:141 is its TailState::default line)."
+anchor_old = "`tests/lint.rs:261` command_lint, `tests/skills.rs:1193`"
+anchor_new = "`cli/dispatch/tests/lint.rs:262` command_lint, `cli/dispatch/tests/skills.rs:1194`"
+dedup_id = "cdb4991d075afbd0"
+
+[[vet_events]]
+timestamp = "2026-09-30T00:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+tier = "deep"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "F2 flow::list private (flow/mod.rs:12), F3 no_create (cli/types.rs) verified by read; F6 merged with Agent-3 F6 / Agent-4 F4; F8 dup of Agent-2 F7"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T00:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+tier = "deep"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "F2 no_create verified; F9 tomlctl/tests/lint.rs absent (ls) and real path confirmed; F7 render_once TailState::default verified (runtime.rs)"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T00:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+tier = "deep"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "F1 unsatisfiable confirmed by orchestrator two-control probe; F6 fsevent.rs PathBuf::from raw path verified in installed notify-8.2.0"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T00:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+tier = "deep"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "F2 rollback-to-HEAD semantics confirmed at implement.md step 6; F4 fsevent canonicalize in append_path verified"
+dedup_id = "45ca31c3315a5978"

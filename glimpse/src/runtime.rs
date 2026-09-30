@@ -25,6 +25,7 @@ use crate::flows::{self, FlowEntry};
 use crate::keys;
 use crate::model::Snapshot;
 use crate::source::{Event, Source};
+use crate::state::State;
 use crate::transcript::TailState;
 use crate::view;
 
@@ -36,6 +37,9 @@ pub(crate) struct RunOpts {
     pub(crate) config: Config,
     /// A config-load problem to show in the header.
     pub(crate) warning: Option<String>,
+    /// The view and orientation came from the command line, so saved ones do not apply.
+    pub(crate) keep_view: bool,
+    pub(crate) keep_orientation: bool,
 }
 
 /// Runs the live view until the user quits.
@@ -48,6 +52,8 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
         slug,
         config,
         warning,
+        keep_view,
+        keep_orientation,
     } = opts;
     let placeholder = Snapshot {
         slug: slug.clone().unwrap_or_default(),
@@ -56,6 +62,10 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
     let mut app = App::new(placeholder, &config);
     app.auto_flow = slug.is_none();
     app.warning = warning;
+    State::load().apply(&mut app, keep_view, keep_orientation);
+    if let Some(aspect) = measured_cell_aspect() {
+        app.cell_aspect = aspect;
+    }
 
     let (events, rx) = mpsc::channel();
     // `try_init` installs the panic hook that restores the terminal before anything else runs.
@@ -76,6 +86,7 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
         source: &source,
     };
     let result = run_loop(&mut screen, &rx, &mut host);
+    State::capture(&screen.app).save();
     if mouse {
         release_mouse();
     }
@@ -97,6 +108,19 @@ fn capture_mouse() {
 
 fn release_mouse() {
     let _ = execute!(std::io::stdout(), DisableMouseCapture);
+}
+
+/// A cell's height over its width from the terminal's pixel size, when it reports one;
+/// many Windows terminals answer zero, and the config's `cell_aspect` then stands.
+fn measured_cell_aspect() -> Option<f64> {
+    let size = ratatui::crossterm::terminal::window_size().ok()?;
+    if size.width == 0 || size.height == 0 || size.columns == 0 || size.rows == 0 {
+        return None;
+    }
+    let cell_w = f64::from(size.width) / f64::from(size.columns);
+    let cell_h = f64::from(size.height) / f64::from(size.rows);
+    let aspect = cell_h / cell_w;
+    (aspect.is_finite() && (0.5..=5.0).contains(&aspect)).then_some(aspect)
 }
 
 /// Draws one frame of `snapshot` into an off-screen buffer and returns its rows as plain
@@ -339,7 +363,13 @@ fn handle(
                 _ => Step::Redraw,
             }
         }
-        Event::Input(TermEvent::Resize(..)) => Step::Redraw,
+        Event::Input(TermEvent::Resize(..)) => {
+            // A font change reaches the terminal as a resize, so the cell shape is re-read.
+            if let Some(aspect) = measured_cell_aspect() {
+                app.cell_aspect = aspect;
+            }
+            Step::Redraw
+        }
         Event::Input(_) => Step::Nothing,
     }
 }
@@ -404,6 +434,8 @@ mod tests {
                 ..Config::default()
             },
             warning: None,
+            keep_view: false,
+            keep_orientation: false,
         }
     }
 

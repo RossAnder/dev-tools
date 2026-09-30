@@ -78,26 +78,41 @@ saved `tomlctl tasks snapshot` document and never runs tomlctl.
 Three views, cycled with `Tab` and `Shift+Tab`:
 
 - **layers** (the default): tasks grouped by their Kahn layer, with a checkpoint
-  row after the layer that completes each checkpoint. Tasks unrelated to the
-  selection are dimmed.
+  row after the layer that completes each checkpoint. With a selection, each row is
+  marked by its relation to it (`↑` needs, `↓` dependent, `⇡`/`⇣` coupling, `≈`
+  shares a file) and unrelated rows are faded, all but their status mark.
 - **ego**, the traversal view: the selected task in a centre card, what it waits on
   to one side and what waits on it to the other. Coupling edges are dashed. It is
-  drawn from the top of the pane at its natural size; spare rows go to the task's
-  action and files in the card, then to a `2 hops` list of what lies one step
-  further out on each side.
+  drawn from the top of the pane across its full width. Spare rows go first to a
+  few rows of the task's action in the card, then to a `2 hops` list of what lies
+  one step further out on each side, then (at comfortable density) back to the
+  card, which shows the action's markdown lists and then its files. Horizontally
+  the card takes whatever width the side columns leave.
 - **diagram**: the layered graph drawn as `[id]` nodes joined by routed edges,
-  coupling edges dashed.
+  coupling edges dashed. A needs edge that another path of needs edges already
+  implies is left out of the layout, which keeps wide graphs compact; `i` lays them
+  out too, and details marks them `implied` under Needs. Tasks sharing a file with
+  the selection are underlined.
+
+Shapes are judged in pixels, not cells: a cell is about twice as tall as it is
+wide, by a factor that depends on the font. glimpse asks the terminal for its pixel
+size and, when it gets no answer (most Windows terminals give none), uses
+`cell_aspect`. Set that to your font's cell height over its width — about 2.5 for
+Iosevka, 2.1 for Cascadia Mono — if the automatic choices below look wrong.
 
 Each view lays its layers down the screen (vertical) or across it (horizontal).
-`auto` picks horizontal when the pane is at least `orientation_threshold` times as
-wide as it is tall, in cells.
+`auto` picks horizontal when the view's width over its height, in pixels, is at
+least `orientation_threshold`.
 
 **Density** decides how the body is shared. *Comfortable* docks the details and
-activity panels beside the view (or below it, in a pane less than twice as wide as
-it is tall). *Compact* gives the view the whole body and opens the panels as a
-centred modal over it, with a one-row header. `auto`, the default, is compact while
-the terminal is narrower than `compact_below` columns; `d` pins it either way and
-shows the choice in the footer for a moment.
+activity panels beside a landscape body and below a portrait one; `panel_split`
+pins either side and `|` flips it. The switch point
+is `panel_split_threshold`, with a margin either side so a pane resized near it
+does not flicker. Drag the panel's near border with the mouse to resize it, or use
+`[` and `]`. *Compact* gives the view the whole body and
+opens the panels as a centred modal over it, with a one-row header. `auto`, the
+default, is compact while the terminal is narrower than `compact_below` columns;
+`d` pins it either way and shows the choice in the footer for a moment.
 
 Moving in the traversal view follows the arrows. Moving *across* (toward needs or
 dependents) selects that side's first entry, and the card recentres on it. Moving
@@ -116,13 +131,16 @@ the selection. `‹` and `›` on the top row mark layers off-screen to either s
 | `h` `j` `k` `l` / arrows | move the selection; this turns follow off |
 | `Tab` / `Shift+Tab` | next / previous view |
 | `o` | flip the orientation |
+| `\|` | dock the panels beside or below the view |
+| `i` | diagram: lay out implied edges too, or leave them out |
+| `?` | legend: every mark, colour and key, in the current theme |
 | `f` | toggle follow |
 | `Enter` | details panel, then full-screen details, then close; compact opens and closes a modal |
 | `J` / `K` | scroll the details one row down / up |
 | `PgDn` / `PgUp`, `End` / `Home` | scroll the details a page, or to the bottom / top |
 | `t` | activity panel for the selected task's newest running agent |
 | `d` | cycle density: auto, compact, comfortable |
-| `[` / `]` | shrink / grow the docked panel by 5% of the body, between 20% and 70% |
+| `[` / `]` | shrink / grow the docked panel by 5% of the body, between 20% and 70%; dragging the divider does the same |
 | `-` / `=` (or `+`) | narrow / widen the horizontal layers columns by 4 cells |
 | `s` | flow selector; `j`/`k` move and `Enter` switches, which turns auto-flow off |
 | `a` | toggle auto-flow (switch to the freshest flow as flows change) |
@@ -134,12 +152,17 @@ mouse on, the wheel scrolls the details panel under the pointer and moves the
 selection over the view, and a left click on a task in the layers or ego view
 selects it; the diagram view takes the wheel but not clicks. Mouse capture stops the
 terminal's own text selection while glimpse runs; most terminals still select
-with `Shift` held, or set `mouse = false`. Runtime tweaks last until glimpse exits.
+with `Shift` held, or set `mouse = false`.
+
+The view, a flipped orientation or panel side, the panel's share and the implied
+edge toggle are saved on exit to `<claude dir>/glimpse/state.toml` and restored at
+the next start; `--view` and `--orientation` still win. Delete the file to go back
+to the config's defaults. `--once` neither reads nor writes it.
 
 **Follow** keeps the selection on the frontier: the first in-progress task by
 (layer, id), else the first ready one. While follow is off the header counts the
 changes that arrived since. A task whose status changes is highlighted briefly
-either way.
+either way, in the colour of the status it changed to.
 
 A `running` agent whose transcript has not been written for `stale_after_s` is
 shown as stale.
@@ -153,7 +176,10 @@ optional:
 | Key | Default | Meaning |
 |---|---|---|
 | `orientation` | `"auto"` | `auto`, `vertical` or `horizontal` |
-| `orientation_threshold` | `2.0` | width ÷ height at which `auto` turns horizontal |
+| `orientation_threshold` | `0.9` | width ÷ height, in pixels, at which `auto` turns horizontal |
+| `panel_split` | `"auto"` | `auto`, `beside` or `below`: where comfortable density docks the panels |
+| `panel_split_threshold` | `1.0` | width ÷ height, in pixels, around which `auto` moves the panels beside |
+| `cell_aspect` | `2.2` | a cell's height ÷ width, used when the terminal does not report pixels |
 | `split_threshold` | `2.2` | width ÷ height at which a new pane splits right rather than down |
 | `pane_ratio` | `0.4` | share of the origin pane a new glimpse pane takes, between 0 and 1 |
 | `poll_ms` | `500` | how often the flow's files are checked for changes |
@@ -164,11 +190,41 @@ optional:
 | `compact_below` | `90` | terminal width in columns below which `auto` density is compact |
 | `panel_percent` | `40` | the docked panel's share of the body, 20 to 70 |
 | `column_max` | `40` | widest a horizontal layers column grows to fit its titles, 18 to 120 |
-| `mouse` | `true` | capture the mouse for wheel scrolling and click-to-select |
+| `mouse` | `true` | capture the mouse for wheel scrolling, click-to-select and dragging the divider |
+| `[theme]` | | colour tokens, below |
 
 Validation is strict: an unknown key, a wrong type or an out-of-range value makes
 the whole file fall back to the defaults, with a warning in the header naming the
 problem. The `--view` and `--orientation` flags override the file.
+
+### Theme
+
+The `[theme]` table overrides colour tokens. A value is a colour — `#rrggbb`, an
+ANSI name such as `red` or `light-blue`, an index `0`–`255`, or `default` for the
+terminal's own — or the name of another token. Palette tokens hold colours;
+element tokens name one part of the UI and default to a palette token, so you can
+repaint a single feature or the whole palette:
+
+```toml
+[theme]
+accent = "#E6A06B"      # everything that uses the accent
+checkpoint = "info"     # just the checkpoint rows, borrowing another token
+key = "#7FB4CA"         # the footer's key names
+```
+
+| Group | Tokens |
+|---|---|
+| Palette | `fg` `accent` `accent_bg` `success` `danger` `warning` `info` `violet` `teal` `idle` `muted` `faint` `subtle` `highlight` `on_color` |
+| Status | `status_pending` `status_in_progress` `status_done` `status_failed` `status_deferred`, and `flash_fg` for text on a status-change flash |
+| Selection | `selection_bg` `selection_mark` `unrelated` |
+| Edges | `edge` `edge_faded` `edge_needs` `edge_out` `edge_coupling` `edge_overlap` |
+| Chrome | `border` `border_title` `layer_rule` `layer_label` `section` `secondary` `slug` |
+| Chips and rows | `checkpoint` `commit` `agent_bg` `agent_fg` `effort` `code` `warning_text` |
+| Footer | `key` `key_label` `key_separator` `notice` |
+
+The defaults are the Kanso Zen palette. `?` shows the legend in the live theme.
+With `NO_COLOR` set, every colour is dropped and highlights fall back to reverse
+video.
 
 ## How it works
 

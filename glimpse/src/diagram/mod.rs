@@ -1,19 +1,24 @@
 //! The layered DAG diagram view: layout cache, orientation mapping and navigation.
 //!
-//! The layout runs [`order`](order::order), [`position`](position::position) and
-//! [`route`](route::route) in abstract `(layer axis, cross axis)` cells, then maps them
-//! onto the screen. Vertically the layer axis runs down the rows; horizontally it runs
+//! The layout leaves out the needs edges [`reduce`] finds implied unless asked to show
+//! them, splits what remains into weakly connected components, and runs
+//! [`order`](order::order) and [`position`](position::position) on each before
+//! [`pack`](position::pack) sets them side by side and [`route`](route::route) draws
+//! the edges, all in abstract `(layer axis, cross axis)` cells. It then maps them onto
+//! the screen. Vertically the layer axis runs down the rows; horizontally it runs
 //! across the columns, each layer's column widening to its longest `[id]` label. The
-//! layout depends only on task ids and edges, so [`DiagramCache`] keeps it until the
-//! topology or the orientation changes, and a status-only snapshot just repaints.
+//! layout depends only on task ids, edges and the implied-edge toggle, so
+//! [`DiagramCache`] keeps it until one of those or the orientation changes, and a
+//! status-only snapshot just repaints.
 
 pub(crate) mod glyph;
 pub(crate) mod order;
 pub(crate) mod paint;
 pub(crate) mod position;
+pub(crate) mod reduce;
 pub(crate) mod route;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::app::{Dir, Navigator};
 use crate::config::Orientation;
@@ -48,7 +53,7 @@ pub(crate) struct Stroke {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Layout {
     pub(crate) orientation: Orientation,
-    /// Indexed by [`EdgeId`].
+    /// The edges laid out, indexed by [`EdgeId`]; hidden implied edges are absent.
     pub(crate) edges: Vec<Edge>,
     pub(crate) nodes: Vec<NodeBox>,
     node_index: HashMap<u32, usize>,
@@ -67,11 +72,14 @@ impl Layout {
     }
 }
 
-/// Holds the last layout and recomputes it only when `(topology_hash, orientation)`
-/// changes. The viewport scroll lives here too, since it must survive between frames.
+/// Holds the last layout and recomputes it only when
+/// `(topology_hash, orientation, show_implied)` changes. The viewport scroll lives here
+/// too, since it must survive between frames.
 #[derive(Debug, Default)]
 pub(crate) struct DiagramCache {
-    key: Option<(u64, Orientation)>,
+    key: Option<(u64, Orientation, bool)>,
+    /// Whether implied needs edges are laid out; hidden by default.
+    show_implied: bool,
     layout: Option<Layout>,
     computations: usize,
     /// Canvas cell at the viewport's top-left corner.
@@ -85,6 +93,12 @@ impl DiagramCache {
         self.computations
     }
 
+    /// Shows or hides the implied needs edges from the next layout on; a change re-lays
+    /// out the diagram and resets the scroll like any other.
+    pub(crate) fn set_implied(&mut self, show: bool) {
+        self.show_implied = show;
+    }
+
     pub(crate) fn layout(
         &mut self,
         snapshot: &Snapshot,
@@ -92,16 +106,17 @@ impl DiagramCache {
         orientation: Orientation,
     ) -> &Layout {
         self.refresh(snapshot, index, orientation);
+        let show = self.show_implied;
         self.layout
-            .get_or_insert_with(|| layout(snapshot, orientation))
+            .get_or_insert_with(|| layout(snapshot, orientation, show))
     }
 
     fn refresh(&mut self, snapshot: &Snapshot, index: &Index, orientation: Orientation) {
-        let key = (index.topology_hash(), orientation);
+        let key = (index.topology_hash(), orientation, self.show_implied);
         if self.key == Some(key) && self.layout.is_some() {
             return;
         }
-        self.layout = Some(layout(snapshot, orientation));
+        self.layout = Some(layout(snapshot, orientation, self.show_implied));
         self.key = Some(key);
         self.computations += 1;
         self.scroll = (0, 0);
@@ -213,8 +228,14 @@ fn layers(snapshot: &Snapshot) -> Vec<Vec<u32>> {
 }
 
 /// Edges read from the same `needs` and `coupling` lists the topology hash covers,
-/// so a cached layout can never disagree with its key.
-fn edges(snapshot: &Snapshot) -> Vec<Edge> {
+/// so a cached layout can never disagree with its key. Implied needs edges are left
+/// out unless `show_implied`.
+fn edges(snapshot: &Snapshot, show_implied: bool) -> Vec<Edge> {
+    let hidden: HashSet<(u32, u32)> = if show_implied {
+        HashSet::new()
+    } else {
+        reduce::implied_edges(snapshot).into_iter().collect()
+    };
     let mut tasks: Vec<_> = snapshot.tasks.iter().collect();
     tasks.sort_by_key(|task| task.id);
     let mut edges = Vec::new();
@@ -226,22 +247,83 @@ fn edges(snapshot: &Snapshot) -> Vec<Edge> {
             let mut from = list.clone();
             from.sort_unstable();
             from.dedup();
-            edges.extend(from.into_iter().map(|from| Edge {
-                from,
-                to: task.id,
-                kind,
-            }));
+            edges.extend(
+                from.into_iter()
+                    .filter(|&from| {
+                        kind == EdgeKind::Coupling || !hidden.contains(&(from, task.id))
+                    })
+                    .map(|from| Edge {
+                        from,
+                        to: task.id,
+                        kind,
+                    }),
+            );
         }
     }
     edges
 }
 
-fn layout(snapshot: &Snapshot, orientation: Orientation) -> Layout {
+/// `layers` split into its weakly connected components over the edges [`order::order`]
+/// draws, each as the full list of layers restricted to its tasks. The largest comes
+/// first, ties by lowest task id.
+fn components(layers: &[Vec<u32>], edges: &[Edge]) -> Vec<Vec<Vec<u32>>> {
+    let mut layer_of: HashMap<u32, usize> = HashMap::new();
+    for (layer, ids) in layers.iter().enumerate() {
+        for &id in ids {
+            layer_of.entry(id).or_insert(layer);
+        }
+    }
+    let mut parent: HashMap<u32, u32> = layer_of.keys().map(|&id| (id, id)).collect();
+    fn root(parent: &mut HashMap<u32, u32>, mut id: u32) -> u32 {
+        while parent[&id] != id {
+            let up = parent[&parent[&id]];
+            parent.insert(id, up);
+            id = up;
+        }
+        id
+    }
+    for edge in edges {
+        let (Some(a), Some(b)) = (layer_of.get(&edge.from), layer_of.get(&edge.to)) else {
+            continue;
+        };
+        if a != b {
+            let (x, y) = (root(&mut parent, edge.from), root(&mut parent, edge.to));
+            parent.insert(x.max(y), x.min(y));
+        }
+    }
+    let mut members: BTreeMap<u32, HashSet<u32>> = BTreeMap::new();
+    let ids: Vec<u32> = layer_of.keys().copied().collect();
+    for id in ids {
+        let r = root(&mut parent, id);
+        members.entry(r).or_default().insert(id);
+    }
+    let mut groups: Vec<(u32, HashSet<u32>)> = members.into_iter().collect();
+    groups.sort_by_key(|(first, set)| (std::cmp::Reverse(set.len()), *first));
+    groups
+        .into_iter()
+        .map(|(_, set)| {
+            layers
+                .iter()
+                .map(|ids| ids.iter().copied().filter(|id| set.contains(id)).collect())
+                .collect()
+        })
+        .collect()
+}
+
+fn layout(snapshot: &Snapshot, orientation: Orientation, show_implied: bool) -> Layout {
     let horizontal = orientation == Orientation::Horizontal;
-    let edges = edges(snapshot);
-    let ordered = order::order(&layers(snapshot), &edges);
+    let edges = edges(snapshot, show_implied);
     // Horizontally a label runs along the layer axis, so it takes one cross-axis cell.
-    let positions = position::position(&ordered, |id| if horizontal { 1 } else { label_width(id) });
+    let cross = |id| if horizontal { 1 } else { label_width(id) };
+    let parts = components(&layers(snapshot), &edges)
+        .into_iter()
+        .map(|layers| {
+            let ordered = order::order(&layers, &edges);
+            let positions = position::position(&ordered, cross);
+            (ordered, positions)
+        })
+        .collect();
+    let (ordered, positions) = position::pack(parts);
     let routed = route::route(&ordered, &positions);
 
     let task_ids = |row: &[Slot]| -> Vec<u32> {
@@ -467,6 +549,123 @@ mod tests {
         assert_eq!(cache.computations(), 3, "a topology change recomputes");
     }
 
+    /// The fixture plus the needs edge 1 -> 7, which 1 -> 4 -> 7 implies.
+    fn shortcut() -> Snapshot {
+        let mut snap = fixture();
+        snap.tasks[6].needs.push(1);
+        snap
+    }
+
+    fn has_edge(layout: &Layout, from: u32, to: u32) -> bool {
+        layout.edges.iter().any(|e| (e.from, e.to) == (from, to))
+    }
+
+    #[test]
+    fn implied_edges_are_hidden_until_the_toggle_shows_them() {
+        let snap = shortcut();
+        let index = snap.index();
+        let mut cache = DiagramCache::default();
+        assert!(!has_edge(
+            cache.layout(&snap, &index, Orientation::Vertical),
+            1,
+            7
+        ));
+        assert!(has_edge(
+            cache.layout(&snap, &index, Orientation::Vertical),
+            1,
+            4
+        ));
+        assert_eq!(cache.computations(), 1);
+
+        cache.scroll = (3, 4);
+        cache.set_implied(true);
+        assert!(has_edge(
+            cache.layout(&snap, &index, Orientation::Vertical),
+            1,
+            7
+        ));
+        assert_eq!(cache.computations(), 2, "showing implied edges recomputes");
+        assert_eq!(cache.scroll, (0, 0), "a re-layout resets the scroll");
+
+        let mut moved = snap.clone();
+        moved.tasks[3].status = TaskStatus::Done;
+        cache.set_implied(true);
+        cache.layout(&moved, &moved.index(), Orientation::Vertical);
+        assert_eq!(cache.computations(), 2, "status alone keeps the layout");
+
+        cache.set_implied(false);
+        assert!(!has_edge(
+            cache.layout(&moved, &moved.index(), Orientation::Vertical),
+            1,
+            7
+        ));
+        assert_eq!(cache.computations(), 3, "hiding them again recomputes");
+    }
+
+    /// Two components: a chain that widens at the bottom, and a two-task chain beside
+    /// its narrow top.
+    fn two_components() -> Snapshot {
+        let task = |id: u32, needs: &[u32]| Task {
+            id,
+            needs: needs.to_vec(),
+            ..Task::default()
+        };
+        Snapshot {
+            tasks: vec![
+                task(1, &[]),
+                task(2, &[1]),
+                task(3, &[2]),
+                task(4, &[2]),
+                task(5, &[2]),
+                task(6, &[2]),
+                task(7, &[]),
+                task(8, &[7]),
+            ],
+            layers: vec![vec![1, 7], vec![2, 8], vec![3, 4, 5, 6]],
+            ..Snapshot::default()
+        }
+    }
+
+    #[test]
+    fn components_sit_side_by_side_and_tuck_into_free_rows() {
+        let snap = two_components();
+        for orientation in BOTH {
+            let layout = layout(&snap, orientation, false);
+            let cross = |id: u32| {
+                let node = layout.node(id).expect("drawn");
+                match orientation {
+                    Orientation::Vertical => (node.x, node.x + node.width),
+                    Orientation::Horizontal => (node.y, node.y + 1),
+                }
+            };
+            // The small component follows the large one in every row it shares.
+            assert_eq!(layout.rows[0], vec![1, 7], "{orientation:?}");
+            assert_eq!(layout.rows[1], vec![2, 8], "{orientation:?}");
+            let big_end = [1, 2, 3, 4, 5, 6].map(|id| cross(id).1).into_iter().max();
+            let small_start = [7, 8].map(|id| cross(id).0).into_iter().min().unwrap();
+            let top_end = [1, 2].map(|id| cross(id).1).into_iter().max().unwrap();
+            let big_end = big_end.unwrap();
+            assert!(small_start > top_end, "{orientation:?}");
+            assert!(
+                small_start < big_end,
+                "{orientation:?}: [7] and [8] tuck in above the wide row"
+            );
+            // No stroke of one component strays into the other's cells.
+            let small_strokes = layout.strokes.iter().filter(|s| {
+                s.edges
+                    .iter()
+                    .any(|&e| layout.edges[e].from == 7 || layout.edges[e].to == 7)
+            });
+            for stroke in small_strokes {
+                let at = match orientation {
+                    Orientation::Vertical => stroke.x,
+                    Orientation::Horizontal => stroke.y,
+                };
+                assert!(at >= small_start, "{orientation:?}");
+            }
+        }
+    }
+
     #[test]
     fn right_and_down_reach_every_task() {
         for snap in [fixture(), wide()] {
@@ -522,7 +721,7 @@ mod tests {
     fn every_edge_connects_its_labels_in_both_orientations() {
         let snap = wide();
         for orientation in BOTH {
-            let layout = layout(&snap, orientation);
+            let layout = layout(&snap, orientation, false);
             for (id, edge) in layout.edges.iter().enumerate() {
                 let label_cells = |task: u32| -> Vec<(u16, u16)> {
                     let node = layout.node(task).expect("every task is drawn");
@@ -566,7 +765,7 @@ mod tests {
     fn glyph_arms_point_at_drawn_cells_in_both_orientations() {
         let snap = wide();
         for orientation in BOTH {
-            let layout = layout(&snap, orientation);
+            let layout = layout(&snap, orientation, false);
             let mut drawn: HashSet<(u16, u16)> =
                 layout.strokes.iter().map(|s| (s.x, s.y)).collect();
             for node in &layout.nodes {
@@ -608,10 +807,10 @@ mod tests {
     #[test]
     fn layers_run_down_the_rows_or_across_the_columns() {
         let snap = fixture();
-        let vertical = layout(&snap, Orientation::Vertical);
+        let vertical = layout(&snap, Orientation::Vertical, false);
         let (one, four) = (vertical.node(1).unwrap(), vertical.node(4).unwrap());
         assert!(one.y < four.y);
-        let horizontal = layout(&snap, Orientation::Horizontal);
+        let horizontal = layout(&snap, Orientation::Horizontal, false);
         let (one, four) = (horizontal.node(1).unwrap(), horizontal.node(4).unwrap());
         assert!(one.x < four.x);
         assert!(horizontal.strokes.iter().any(|s| s.ch == '▶'));

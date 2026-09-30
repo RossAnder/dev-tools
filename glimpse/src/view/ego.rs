@@ -5,8 +5,9 @@
 //! puts upstream above and downstream below. Upstream is the task's own
 //! `needs`, then its `coupling`; downstream is the rows naming it in theirs.
 //! Coupling entries are drawn dashed. Every band is as long as its content and
-//! the whole stands at the top of the pane; rows left over go to the card's
-//! action summary, then to each side's second hop.
+//! the whole stands at the top of the pane. Rows left over go to the card's
+//! action summary, a few at first, then to each side's second hop, and at
+//! comfortable density whatever remains goes back to the summary and files.
 //!
 //! Moving across selects that side's first entry and records the crossing in
 //! `App::trail`. Moving along then walks the entries of the side just entered,
@@ -19,7 +20,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Paragraph};
+use ratatui::widgets::{Block, BorderType, Padding, Paragraph};
 
 use super::layers::Target;
 use crate::app::{App, Crossing, Dir, Navigator, Side};
@@ -28,14 +29,14 @@ use crate::model::{AgentStatus, Index, Snapshot};
 
 /// Blank columns between a first-hop column and its second-hop column.
 const GAP: u16 = 2;
-/// Most rows the card's action summary and files take, by density.
-const SUMMARY_COMPACT: u16 = 3;
-const SUMMARY_COMFORTABLE: u16 = 8;
-/// Widest the vertical stack grows at comfortable density; compact takes the full width.
-const STACK_MAX: u16 = 72;
-/// Widest the horizontal card grows, by density.
+/// Summary rows the card takes before the second hops get theirs; compact stops there,
+/// comfortable takes every row still spare.
+const SUMMARY_FIRST: u16 = 3;
+/// Widest the horizontal card grows, by density; it takes what the side columns leave.
 const CARD_MAX_COMPACT: u16 = 32;
-const CARD_MAX_COMFORTABLE: u16 = 44;
+const CARD_MAX_COMFORTABLE: u16 = 80;
+/// Rows the card's title wraps over before it is cut.
+const TITLE_ROWS: usize = 3;
 const HOP_HEADING: &str = "2 hops";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -322,18 +323,16 @@ impl Draw<'_, '_, '_> {
 
     fn task_style(&self, id: u32) -> Style {
         let app = self.app;
-        if app.is_flashing(id, self.now) {
-            return app.theme.flash;
+        let task = app.index.task(&app.snapshot, id);
+        match task {
+            Some(task) if app.is_flashing(id, self.now) => app.theme.flash(task.status),
+            Some(task) => app.theme.status(task.status.as_str()),
+            None => app.theme.pending,
         }
-        app.index
-            .task(&app.snapshot, id)
-            .map_or(app.theme.pending, |task| {
-                app.theme.status(task.status.as_str())
-            })
     }
 
-    fn pending(&self) -> Style {
-        self.app.theme.pending
+    fn secondary(&self) -> Style {
+        self.app.theme.secondary
     }
 }
 
@@ -420,21 +419,48 @@ fn wrap(text: &str, width: usize, rows: usize) -> Vec<String> {
     out
 }
 
-/// Markdown emphasis and code marks dropped, for a one-glance summary.
-fn plain(markdown: &str) -> String {
-    markdown.replace("**", "").replace('`', "")
+/// The action's markdown rendered and wrapped to `width`, keeping its list items and
+/// paragraphs, in at most `rows` rows; the last row ends in `…` when rows were left over.
+fn action_rows(app: &App, action: &str, width: usize, rows: usize) -> Vec<Line<'static>> {
+    let text = super::markdown::to_text(action, &app.theme);
+    let mut lines: Vec<Line<'static>> =
+        super::details::wrap(text, u16::try_from(width).unwrap_or(u16::MAX))
+            .into_iter()
+            .skip_while(|line| line.width() == 0)
+            .collect();
+    if lines.len() <= rows {
+        return lines;
+    }
+    lines.truncate(rows);
+    if let Some(last) = lines.pop() {
+        let text: String = last.spans.iter().map(|s| s.content.as_ref()).collect();
+        let kept: String = text
+            .trim_end()
+            .chars()
+            .take(width.saturating_sub(1))
+            .collect();
+        lines.push(Line::raw(format!("{kept}…")));
+    }
+    lines
 }
 
-fn summary_max(compact: bool) -> u16 {
+/// Summary rows out of `spare`: [`SUMMARY_FIRST`], then at comfortable density all
+/// the rest but the `reserved` ones the second hops need.
+fn summary_budget(spare: u16, reserved: u16, compact: bool) -> u16 {
+    let first = spare.min(SUMMARY_FIRST);
     if compact {
-        SUMMARY_COMPACT
+        first
     } else {
-        SUMMARY_COMFORTABLE
+        first + (spare - first).saturating_sub(reserved)
     }
 }
 
-/// The card's rows inside its border: status, the title over at most two rows,
-/// the newest agent, then up to `summary` rows of action text and files.
+/// Columns a card spends on its border and the padding cell inside each side.
+const CARD_CHROME: u16 = 4;
+
+/// The card's rows inside its border: status, the title over at most
+/// [`TITLE_ROWS`] rows, the newest agent, then up to `summary` rows of action text
+/// and files, the files keeping at least one row and taking what the action leaves.
 fn card_lines(app: &App, id: u32, width: usize, summary: u16) -> Vec<Line<'static>> {
     let Some(task) = app.index.task(&app.snapshot, id) else {
         return Vec::new();
@@ -445,14 +471,17 @@ fn card_lines(app: &App, id: u32, width: usize, summary: u16) -> Vec<Line<'stati
         theme.status(task.status.as_str()),
     )];
     if !task.effort.is_empty() {
-        status.push(Span::raw(format!("  {}", task.effort)));
+        status.push(Span::styled(format!("  {}", task.effort), theme.effort));
     }
     if !task.checkpoint.is_empty() {
-        status.push(Span::raw(format!("  cp {}", task.checkpoint)));
+        status.push(Span::styled(
+            format!("  ◆ {}", task.checkpoint),
+            theme.checkpoint,
+        ));
     }
     let mut lines = vec![Line::from(status)];
     lines.extend(
-        wrap(&task.title, width, 2)
+        wrap(&task.title, width, TITLE_ROWS)
             .into_iter()
             .map(|row| Line::styled(row, theme.badge)),
     );
@@ -466,27 +495,27 @@ fn card_lines(app: &App, id: u32, width: usize, summary: u16) -> Vec<Line<'stati
             AgentStatus::Stopped => "stopped",
             AgentStatus::Unknown => "unknown",
         };
-        lines.push(Line::styled(
-            format!(" {} {state} ", agent.agent_type),
-            if live {
-                theme.agent_chip
-            } else {
-                theme.pending
-            },
-        ));
+        let text = format!("{} {state}", agent.agent_type);
+        lines.push(Line::from(if live {
+            super::chip(&text, theme.agent_chip)
+        } else {
+            Span::styled(format!(" {text} "), theme.secondary)
+        }));
     }
 
     let summary = usize::from(summary);
-    let action = plain(&task.action);
     let files = (!task.files.is_empty()).then(|| format!("files {}", task.files.join(", ")));
-    let files_row = files.is_some() && summary > 0 && (summary >= 2 || action.trim().is_empty());
-    lines.extend(
-        wrap(&action, width, summary - usize::from(files_row))
-            .into_iter()
-            .map(Line::raw),
-    );
+    let files_row =
+        files.is_some() && summary > 0 && (summary >= 2 || task.action.trim().is_empty());
+    let action = action_rows(app, &task.action, width, summary - usize::from(files_row));
+    let files_rows = summary - action.len();
+    lines.extend(action);
     if let Some(files) = files.filter(|_| files_row) {
-        lines.push(Line::styled(truncate(&files, width), theme.pending));
+        lines.extend(
+            wrap(&files, width, files_rows)
+                .into_iter()
+                .map(|row| Line::styled(row, theme.secondary)),
+        );
     }
     lines
 }
@@ -498,22 +527,19 @@ fn draw_card(draw: &mut Draw, rect: Rect, traversal: &Traversal, lines: Vec<Line
     }
     let theme = &draw.app.theme;
     let id = traversal.centre;
-    let border = if draw.app.is_flashing(id, draw.now) {
-        theme.flash
-    } else {
-        draw.app
-            .index
-            .task(&draw.app.snapshot, id)
-            .map_or(theme.pending, |task| theme.status(task.status.as_str()))
-    };
+    let border = draw.task_style(id);
     let mut block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(border)
-        .title(Line::from(Span::styled(format!(" {id} "), theme.selection)));
+        .padding(Padding::horizontal(1))
+        .title(Line::from(Span::styled(
+            format!(" {id} "),
+            theme.selection.patch(theme.selection_mark),
+        )));
     let axis = traversal.axis_label();
     if !axis.is_empty() {
         block =
-            block.title_bottom(Line::styled(format!(" {axis} "), theme.pending).right_aligned());
+            block.title_bottom(Line::styled(format!(" {axis} "), theme.secondary).right_aligned());
     }
     draw.frame
         .render_widget(Paragraph::new(lines).block(block), rect);
@@ -550,17 +576,12 @@ fn share(spare: u16, a: usize, b: usize) -> (u16, u16) {
 }
 
 /// Needs, card, a row for the along-axis neighbours and dependents, stacked
-/// from the top. Compact spans the full width; comfortable is capped and
-/// centred.
+/// from the top across the full width.
 fn vertical(draw: &mut Draw, traversal: &Traversal, compact: bool) {
     let area = draw.area;
-    let width = if compact {
-        area.width
-    } else {
-        area.width.min(STACK_MAX)
-    };
-    let x = area.x + (area.width - width) / 2;
-    let inner = usize::from(width.saturating_sub(2));
+    let width = area.width;
+    let x = area.x;
+    let inner = usize::from(width.saturating_sub(CARD_CHROME));
     let app = draw.app;
     let base = count(card_lines(app, traversal.centre, inner, 0).len()) + 2;
     let along = u16::from(traversal.axis.len() > 1);
@@ -572,11 +593,12 @@ fn vertical(draw: &mut Draw, traversal: &Traversal, compact: bool) {
         traversal.down.len().max(1),
     );
     spare -= need_rows + dep_rows;
+    let hops = u16::from(!traversal.up2.is_empty()) + u16::from(!traversal.down2.is_empty());
     let lines = card_lines(
         app,
         traversal.centre,
         inner,
-        spare.min(summary_max(compact)),
+        summary_budget(spare, hops, compact),
     );
     let card_h = count(lines.len()) + 2;
     spare = spare.saturating_sub(card_h - base);
@@ -589,7 +611,7 @@ fn vertical(draw: &mut Draw, traversal: &Traversal, compact: bool) {
         hop_row(draw, x, y, width, &traversal.up2);
         y = y.saturating_add(1);
     }
-    draw.line(x, y, width, Line::styled("needs", draw.pending()));
+    draw.line(x, y, width, Line::styled("needs", draw.secondary()));
     y = y.saturating_add(1);
     list(draw, x, y, width, &traversal.up, need_rows);
     y = y.saturating_add(need_rows);
@@ -599,7 +621,7 @@ fn vertical(draw: &mut Draw, traversal: &Traversal, compact: bool) {
         along_row(draw, traversal, x, y, width);
         y = y.saturating_add(1);
     }
-    draw.line(x, y, width, Line::styled("dependents", draw.pending()));
+    draw.line(x, y, width, Line::styled("dependents", draw.secondary()));
     y = y.saturating_add(1);
     list(draw, x, y, width, &traversal.down, dep_rows);
     y = y.saturating_add(dep_rows);
@@ -615,7 +637,7 @@ fn list(draw: &mut Draw, x: u16, y: u16, width: u16, entries: &[Entry], slots: u
         return;
     }
     if entries.is_empty() {
-        draw.line(x, y, width, Line::styled("none", draw.pending()));
+        draw.line(x, y, width, Line::styled("none", draw.secondary()));
         return;
     }
     let text_w = usize::from(width.saturating_sub(2));
@@ -638,7 +660,7 @@ fn list(draw: &mut Draw, x: u16, y: u16, width: u16, entries: &[Entry], slots: u
             x,
             row,
             width,
-            Line::styled(format!("+{hidden} more"), draw.pending()),
+            Line::styled(format!("+{hidden} more"), draw.secondary()),
         );
     }
 }
@@ -647,7 +669,7 @@ fn list(draw: &mut Draw, x: u16, y: u16, width: u16, entries: &[Entry], slots: u
 fn hop_row(draw: &mut Draw, x: u16, y: u16, width: u16, ids: &[u32]) {
     let lead = format!("{HOP_HEADING} ");
     let mut used = cells(&lead);
-    let mut spans = vec![Span::styled(lead, draw.pending())];
+    let mut spans = vec![Span::styled(lead, draw.secondary())];
     for (at, id) in ids.iter().enumerate() {
         let sep = if at > 0 { 2 } else { 0 };
         let chip = chip(draw.app, *id);
@@ -655,7 +677,7 @@ fn hop_row(draw: &mut Draw, x: u16, y: u16, width: u16, ids: &[u32]) {
         if used.saturating_add(sep + chip_w) > width {
             spans.push(Span::styled(
                 format!("  +{}", ids.len() - at),
-                draw.pending(),
+                draw.secondary(),
             ));
             break;
         }
@@ -667,9 +689,15 @@ fn hop_row(draw: &mut Draw, x: u16, y: u16, width: u16, ids: &[u32]) {
     draw.line(x, y, width, Line::from(spans));
 }
 
-/// The previous and next task along the axis, at either end of one row.
+/// The previous and next task along the axis, at either end of one row; either one
+/// alone takes the whole row.
 fn along_row(draw: &mut Draw, traversal: &Traversal, x: u16, y: u16, width: u16) {
-    let half = width.saturating_sub(1) / 2;
+    let both = traversal.along(false).is_some() && traversal.along(true).is_some();
+    let half = if both {
+        width.saturating_sub(1) / 2
+    } else {
+        width
+    };
     let text_w = usize::from(half);
     let label_w = text_w.saturating_sub(2);
     if let Some(prev) = traversal.along(false) {
@@ -692,8 +720,9 @@ fn along_row(draw: &mut Draw, traversal: &Traversal, x: u16, y: u16, width: u16)
 
 /// The card centred across the pane at its top, the along-axis neighbours
 /// above and below it, and each side's columns hugging it, sized to their
-/// longest entry. A second hop gets its own column beyond the first where
-/// there is room.
+/// longest entry. The card is as wide as the wider column leaves on both
+/// sides, at least a quarter of the pane and at most its density's cap. A second hop gets
+/// its own column beyond the first where there is room.
 fn horizontal(draw: &mut Draw, traversal: &Traversal, compact: bool) {
     let area = draw.area;
     let app = draw.app;
@@ -702,14 +731,21 @@ fn horizontal(draw: &mut Draw, traversal: &Traversal, compact: bool) {
     } else {
         CARD_MAX_COMFORTABLE
     };
-    let card_w = (area.width / 3).clamp(16, card_max).min(area.width);
-    let inner = usize::from(card_w.saturating_sub(2));
+    let sides = column_width(app, &traversal.up, "needs").max(column_width(
+        app,
+        &traversal.down,
+        "dependents",
+    ));
+    let card_min = (area.width / 4).clamp(16, card_max);
+    let card_w = area
+        .width
+        .saturating_sub(sides.saturating_mul(2))
+        .clamp(card_min, card_max)
+        .min(area.width);
+    let inner = usize::from(card_w.saturating_sub(CARD_CHROME));
     let above = u16::from(traversal.axis.len() > 1);
     let base = count(card_lines(app, traversal.centre, inner, 0).len()) + 2;
-    let summary = area
-        .height
-        .saturating_sub(base + 2 * above)
-        .min(summary_max(compact));
+    let summary = summary_budget(area.height.saturating_sub(base + 2 * above), 0, compact);
     let lines = card_lines(app, traversal.centre, inner, summary);
     let card_h = (count(lines.len()) + 2).min(area.height.saturating_sub(above));
     let left_room = (area.width - card_w) / 2;
@@ -720,7 +756,7 @@ fn horizontal(draw: &mut Draw, traversal: &Traversal, compact: bool) {
     if let Some(prev) = traversal.along(false)
         && card.y > area.y
     {
-        let text = truncate(&format!("▲ {}", label(app, prev)), inner + 2);
+        let text = truncate(&format!("▲ {}", label(app, prev)), usize::from(card_w));
         draw.line(
             card.x,
             card.y - 1,
@@ -732,7 +768,7 @@ fn horizontal(draw: &mut Draw, traversal: &Traversal, compact: bool) {
     if let Some(next) = traversal.along(true)
         && card.bottom() < area.bottom()
     {
-        let text = truncate(&format!("▼ {}", label(app, next)), inner + 2);
+        let text = truncate(&format!("▼ {}", label(app, next)), usize::from(card_w));
         draw.line(
             card.x,
             card.bottom(),
@@ -803,14 +839,14 @@ fn side_column(draw: &mut Draw, rect: Rect, heading: &str, entries: &[Entry], le
         rect.x,
         rect.y,
         rect.width,
-        Line::styled(align(heading.to_string()), draw.pending()),
+        Line::styled(align(heading.to_string()), draw.secondary()),
     );
     if entries.is_empty() {
         draw.line(
             rect.x,
             rect.y + 1,
             rect.width,
-            Line::styled(align("none".to_string()), draw.pending()),
+            Line::styled(align("none".to_string()), draw.secondary()),
         );
         return;
     }
@@ -840,7 +876,7 @@ fn side_column(draw: &mut Draw, rect: Rect, heading: &str, entries: &[Entry], le
             rect.x,
             row,
             rect.width,
-            Line::styled(align(format!("+{hidden} more")), draw.pending()),
+            Line::styled(align(format!("+{hidden} more")), draw.secondary()),
         );
     }
 }
@@ -862,7 +898,7 @@ fn hop_column(draw: &mut Draw, rect: Rect, ids: &[u32], left: bool) {
         rect.x,
         rect.y,
         rect.width,
-        Line::styled(align(HOP_HEADING.to_string()), draw.pending()),
+        Line::styled(align(HOP_HEADING.to_string()), draw.secondary()),
     );
     let (shown, hidden) = visible(ids, usize::from(rect.height - 1));
     for (row, id) in (rect.y + 1..).zip(shown) {
@@ -881,7 +917,7 @@ fn hop_column(draw: &mut Draw, rect: Rect, ids: &[u32], left: bool) {
             rect.x,
             row,
             rect.width,
-            Line::styled(align(format!("+{hidden} more")), draw.pending()),
+            Line::styled(align(format!("+{hidden} more")), draw.secondary()),
         );
     }
 }
@@ -1024,9 +1060,9 @@ mod tests {
     }
 
     #[test]
-    fn density_bounds_the_summary_and_the_stack_width() {
+    fn comfortable_gives_the_summary_every_spare_row_and_the_full_width() {
         let mut snap = fixture();
-        snap.tasks[3].action = "word ".repeat(200);
+        snap.tasks[3].action = "word ".repeat(2000);
         let mut app = App::new(snap, &Config::default());
         app.selected = Some(4);
         let rows = |app: &App| {
@@ -1035,15 +1071,45 @@ mod tests {
                 .filter(|row| row.contains("word"))
                 .count()
         };
-        assert_eq!(rows(&app), usize::from(SUMMARY_COMFORTABLE) - 1);
+        let comfortable = rows(&app);
+        assert!(
+            comfortable > 30,
+            "the summary fills the pane: {comfortable}"
+        );
         app.resolved_density = Density::Compact;
-        assert_eq!(rows(&app), usize::from(SUMMARY_COMPACT) - 1);
+        assert_eq!(rows(&app), usize::from(SUMMARY_FIRST) - 1);
 
-        let rows = draw(&app, 120, 50, Orientation::Vertical);
-        assert!(find(&rows, "╭").1 == 0, "compact spans the width");
         app.resolved_density = Density::Comfortable;
         let rows = draw(&app, 120, 50, Orientation::Vertical);
-        assert_eq!(find(&rows, "╭").1, usize::from((120 - STACK_MAX) / 2));
+        assert_eq!(find(&rows, "╭").1, 0, "the stack spans the width");
+
+        let mut snap = fixture();
+        snap.tasks[6].action = "word ".repeat(2000);
+        let mut app = App::new(snap, &Config::default());
+        app.selected = Some(7);
+        let rows = draw(&app, 120, 50, Orientation::Vertical);
+        assert!(
+            rows.iter().any(|row| row.contains(HOP_HEADING)),
+            "a long summary still leaves the second hop its row"
+        );
+    }
+
+    #[test]
+    fn the_horizontal_card_takes_what_the_columns_leave() {
+        let mut snap = fixture();
+        snap.tasks[3].action = "word ".repeat(400);
+        let mut app = App::new(snap, &Config::default());
+        app.selected = Some(4);
+        let rows = draw(&app, 200, 30, Orientation::Horizontal);
+        let top = rows.iter().find(|row| row.contains('╭')).expect("the card");
+        let left = top.chars().position(|c| c == '╭').expect("left corner");
+        let right = top.chars().position(|c| c == '╮').expect("right corner");
+        assert!(
+            right - left + 1 > 200 / 3,
+            "wider than a third: {}",
+            right - left + 1
+        );
+        assert!(row_of(&rows, "Scaffold the store").contains("Scaffold the store"));
     }
 
     #[test]

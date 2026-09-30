@@ -2,15 +2,19 @@
 //!
 //! Scroll state belongs to the caller: [`render`] takes the offset to draw
 //! at and returns the content height, which the caller clamps its offset
-//! against on the next key press.
+//! against on the next key press. Lines are wrapped here rather than by the
+//! paragraph, so a wrapped list item or indented line continues under its text
+//! instead of at the panel's edge, and the height is exact.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ratatui::Frame;
 use ratatui::layout::{Margin, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap};
+use ratatui::widgets::{
+    Block, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+};
 
 use crate::app::App;
 use crate::hook::parse_utc;
@@ -23,30 +27,36 @@ const INDENT: &str = "  ";
 /// Draws the details of `app.selected` into `area`, scrolled down `scroll`
 /// rows, and returns the wrapped content height in rows. An offset past the
 /// end is drawn as the last full page. Overflowing content gets a scrollbar
-/// on the right border and a `row/total` count on the bottom one.
+/// on the right border and a `row/total` count on the bottom one. The border
+/// names only the id; the first content row carries the whole title.
 pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, scroll: u16) -> u16 {
-    let text = content(app, SystemTime::now());
+    let theme = &app.theme;
     let title = match app
         .selected
         .and_then(|id| app.index.task(&app.snapshot, id))
     {
-        Some(task) => format!(" #{} {} ", task.id, task.title),
-        None => " Details ".to_string(),
+        Some(task) => format!(" #{} ", task.id),
+        None => " details ".to_string(),
     };
-    let block = Block::bordered().title(Line::from(title));
+    let block = Block::bordered()
+        .border_style(theme.border)
+        .title(Line::styled(title, theme.border_title))
+        .padding(Padding::horizontal(1));
     let inner = block.inner(area);
-    let height = wrapped_height(&text, inner.width);
+    let lines = wrap(content(app, SystemTime::now()), inner.width);
+    let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
     let scroll = scroll.min(height.saturating_sub(inner.height));
 
     let overflows = scroll > 0 || scroll + inner.height < height;
     let mut block = block;
     if overflows {
-        block =
-            block.title_bottom(Line::from(format!(" {}/{} ", scroll + 1, height)).right_aligned());
+        block = block.title_bottom(
+            Line::styled(format!(" {}/{} ", scroll + 1, height), theme.border_title)
+                .right_aligned(),
+        );
     }
-    let paragraph = Paragraph::new(text)
+    let paragraph = Paragraph::new(Text::from(lines))
         .block(block)
-        .wrap(Wrap { trim: false })
         .scroll((scroll, 0));
     frame.render_widget(paragraph, area);
     if overflows {
@@ -76,20 +86,20 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
     let mut out: Vec<Line<'static>> = Vec::new();
     out.push(Line::styled(
         format!("#{} {}", task.id, task.title),
-        theme.badge,
+        theme.slug,
     ));
 
     let mut facts = vec![Span::styled(
         format!("{} {}", task.status.glyph(), task.status.as_str()),
         theme.status(task.status.as_str()),
     )];
-    let mut fact = |label: &str, value: String| {
+    let mut fact = |label: &str, value: String, style: Style| {
         if !value.is_empty() {
-            facts.push(Span::raw(format!("  {label} ")));
-            facts.push(Span::styled(value, theme.badge));
+            facts.push(Span::styled(format!("  {label} "), theme.secondary));
+            facts.push(Span::styled(value, style));
         }
     };
-    fact("effort", task.effort.clone());
+    fact("effort", task.effort.clone(), theme.badge);
     let checkpoint = match index.checkpoint(snapshot, task.id) {
         Some(group) => match &group.verification {
             Some(v) if !v.outcome.is_empty() => format!("{} ({})", group.id, v.outcome),
@@ -97,13 +107,17 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
         },
         None => task.checkpoint.clone(),
     };
-    fact("checkpoint", checkpoint);
-    fact("phase", task.phase.clone());
+    fact("checkpoint", checkpoint, theme.checkpoint);
+    fact("phase", task.phase.clone(), theme.badge);
     out.push(Line::from(facts));
 
     if !task.files.is_empty() {
         section(&mut out, "Files", theme);
-        out.extend(task.files.iter().map(|f| Line::raw(format!("{INDENT}{f}"))));
+        out.extend(
+            task.files
+                .iter()
+                .map(|f| Line::styled(format!("{INDENT}{f}"), theme.secondary)),
+        );
     }
 
     let mut coupled: Vec<u32> = task
@@ -114,10 +128,11 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
         .collect();
     coupled.sort_unstable();
     coupled.dedup();
-    for (label, ids) in [
-        ("Needs", task.needs.as_slice()),
-        ("Coupling", coupled.as_slice()),
-        ("Dependents", index.dependents(task.id)),
+    for (label, ids, needs) in [
+        ("Needs", task.needs.as_slice(), true),
+        ("Coupling", coupled.as_slice(), false),
+        ("Dependents", index.dependents(task.id), false),
+        ("Shares files with", index.overlaps(task.id), false),
     ] {
         if ids.is_empty() {
             continue;
@@ -125,14 +140,20 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
         section(&mut out, label, theme);
         for id in ids {
             out.push(match index.task(snapshot, *id) {
-                Some(peer) => Line::from(vec![
-                    Span::raw(INDENT),
-                    Span::styled(
-                        format!("{} {}", peer.status.glyph(), peer.id),
-                        theme.status(peer.status.as_str()),
-                    ),
-                    Span::raw(format!(" {}", peer.title)),
-                ]),
+                Some(peer) => {
+                    let mut spans = vec![
+                        Span::raw(INDENT),
+                        Span::styled(
+                            format!("{} {}", peer.status.glyph(), peer.id),
+                            theme.status(peer.status.as_str()),
+                        ),
+                        Span::raw(format!(" {}", peer.title)),
+                    ];
+                    if needs && app.implied.contains(&(peer.id, task.id)) {
+                        spans.push(Span::styled("  implied", theme.secondary));
+                    }
+                    Line::from(spans)
+                }
                 None => Line::styled(format!("{INDENT}? {id} (not in the store)"), theme.warning),
             });
         }
@@ -172,10 +193,7 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
 
 fn section(out: &mut Vec<Line<'static>>, label: &str, theme: &Theme) {
     out.push(Line::default());
-    out.push(Line::styled(
-        label.to_string(),
-        theme.badge.add_modifier(Modifier::UNDERLINED),
-    ));
+    out.push(Line::styled(label.to_string(), theme.section));
 }
 
 fn indented(text: Text<'static>) -> impl Iterator<Item = Line<'static>> {
@@ -199,7 +217,7 @@ fn record_lines(out: &mut Vec<Line<'static>>, entry: &RecordEntry, theme: &Theme
         Span::styled(entry.entry_type.clone(), type_style),
         Span::raw(format!(" {}  {}", entry.date, entry.summary)),
     ]));
-    let detail = Style::new().add_modifier(Modifier::DIM);
+    let detail = theme.secondary;
     for (label, value) in [
         ("intended", &entry.original_intent),
         ("because", &entry.rationale),
@@ -227,7 +245,7 @@ fn agent_lines(out: &mut Vec<Line<'static>>, agent: &Agent, theme: &Theme, now: 
     };
     let mut head = vec![
         Span::raw(INDENT),
-        Span::styled(format!(" {} ", agent.agent_type), theme.agent_chip),
+        super::chip(&agent.agent_type, theme.agent_chip),
     ];
     if !agent.name.is_empty() {
         head.push(Span::raw(format!(" {}", agent.name)));
@@ -269,7 +287,7 @@ fn agent_lines(out: &mut Vec<Line<'static>>, agent: &Agent, theme: &Theme, now: 
     if !agent.summary.is_empty() {
         out.push(Line::styled(
             format!("{INDENT}{INDENT}{}", agent.summary),
-            Style::new().add_modifier(Modifier::DIM),
+            theme.secondary,
         ));
     }
 }
@@ -302,38 +320,112 @@ fn duration(seconds: u64) -> String {
     }
 }
 
-/// Rows `text` occupies when word-wrapped to `width` columns. Greedy
-/// wrapping on spaces approximates `Paragraph::wrap`, whose own count is
-/// behind an unstable ratatui feature.
-fn wrapped_height(text: &Text<'_>, width: u16) -> u16 {
+/// `text` word-wrapped to `width` cells, one output line per drawn row. A wrapped
+/// line continues at its [`hanging_indent`]; a word wider than a row is split.
+pub(crate) fn wrap(text: Text<'static>, width: u16) -> Vec<Line<'static>> {
     let width = usize::from(width.max(1));
-    let rows: usize = text
-        .lines
-        .iter()
-        .map(|line| {
-            let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            let mut rows = 1;
-            let mut used = 0;
-            for (i, word) in content.split(' ').enumerate() {
-                let w = Span::raw(word).width();
-                let sep = usize::from(i > 0);
-                if used + sep + w <= width {
-                    used += sep + w;
-                    continue;
-                }
-                if used > 0 {
-                    rows += 1;
-                }
-                used = w;
-                while used > width {
-                    rows += 1;
-                    used -= width;
-                }
+    text.lines
+        .into_iter()
+        .flat_map(|line| wrap_line(line, width))
+        .collect()
+}
+
+fn wrap_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
+    if line.width() <= width {
+        return vec![line];
+    }
+    let plain: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+    let indent = hanging_indent(&plain).min(width / 2);
+    let mut rows = Vec::new();
+    let mut row: Vec<Span<'static>> = Vec::new();
+    let mut used = 0;
+    let mut has_word = false;
+    let mut pending: Vec<Span<'static>> = Vec::new();
+    for (piece, style) in pieces(&line) {
+        if piece.starts_with(' ') {
+            pending.push(Span::styled(piece, style));
+            continue;
+        }
+        let w = Span::raw(piece.as_str()).width();
+        let gap: usize = pending.iter().map(Span::width).sum();
+        if has_word && used + gap + w > width {
+            rows.push(Line::from(std::mem::take(&mut row)).style(line.style));
+            row.push(Span::raw(" ".repeat(indent)));
+            used = indent;
+            pending.clear();
+        }
+        used += pending.iter().map(Span::width).sum::<usize>();
+        row.append(&mut pending);
+        // Only a word that starts a row can overflow it; it is split across rows.
+        let mut rest = piece.as_str();
+        while !rest.is_empty() {
+            let room = width.saturating_sub(used).max(1);
+            let (head, tail) = split_at_width(rest, room);
+            used += Span::raw(head).width();
+            row.push(Span::styled(head.to_string(), style));
+            rest = tail;
+            if !rest.is_empty() {
+                rows.push(Line::from(std::mem::take(&mut row)).style(line.style));
+                row.push(Span::raw(" ".repeat(indent)));
+                used = indent;
             }
-            rows
-        })
-        .sum();
-    u16::try_from(rows).unwrap_or(u16::MAX)
+        }
+        has_word = true;
+    }
+    rows.push(Line::from(row).style(line.style));
+    rows
+}
+
+/// The line's text as alternating runs of spaces and non-spaces, each with its style.
+fn pieces(line: &Line<'static>) -> Vec<(String, Style)> {
+    let mut out: Vec<(String, Style)> = Vec::new();
+    for span in &line.spans {
+        let mut run = String::new();
+        let mut spaces = None;
+        for c in span.content.chars() {
+            let is_space = c == ' ';
+            if spaces.is_some_and(|s| s != is_space) {
+                out.push((std::mem::take(&mut run), span.style));
+            }
+            spaces = Some(is_space);
+            run.push(c);
+        }
+        if !run.is_empty() {
+            out.push((run, span.style));
+        }
+    }
+    out
+}
+
+/// The longest prefix of `s` at most `room` cells wide, at least one character.
+fn split_at_width(s: &str, room: usize) -> (&str, &str) {
+    let mut used = 0;
+    for (at, c) in s.char_indices() {
+        let w = Span::raw(c.encode_utf8(&mut [0; 4]).to_string()).width();
+        if used + w > room && at > 0 {
+            return s.split_at(at);
+        }
+        used += w;
+    }
+    (s, "")
+}
+
+/// Cells a continuation row is indented by: the line's leading spaces plus any list
+/// marker (`• `, `- `, `* `, `1. `) after them, so a wrapped item lines up under its text.
+fn hanging_indent(text: &str) -> usize {
+    let rest = text.trim_start_matches(' ');
+    let spaces = text.len() - rest.len();
+    let marker = if ["• ", "- ", "* "].iter().any(|m| rest.starts_with(m)) {
+        2
+    } else {
+        let digits = rest.chars().take_while(char::is_ascii_digit).count();
+        if digits > 0 && rest[digits..].starts_with(". ") {
+            digits + 2
+        } else {
+            0
+        }
+    };
+    spaces + marker
 }
 
 #[cfg(test)]
@@ -487,7 +579,7 @@ mod tests {
 
         let (height, title, first, bottom) = draw(0);
         assert!(height > 6, "content overflows the 6 inner rows");
-        assert!(title.contains("#3 Load the config"));
+        assert!(title.contains(" #3 ") && !title.contains("Load the config"));
         assert!(first.contains("#3 Load the config"));
         assert!(bottom.contains(&format!(" 1/{height} ")));
 
@@ -512,15 +604,65 @@ mod tests {
         assert_eq!(tokens(61_872), "61.9k");
     }
 
+    fn rows(text: Vec<Line<'static>>, width: u16) -> Vec<String> {
+        wrap(Text::from(text), width)
+            .iter()
+            .map(|line| line.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect()
+    }
+
     #[test]
-    fn wrapped_height_counts_wrapped_rows() {
-        let text = Text::from(vec![
-            Line::raw("aaaa bbbb cccc"),
-            Line::raw(""),
-            Line::raw("x"),
+    fn wrap_counts_rows_and_splits_long_words() {
+        let text = || vec![Line::raw("aaaa bbbb cccc"), Line::raw(""), Line::raw("x")];
+        assert_eq!(rows(text(), 20).len(), 3);
+        assert_eq!(rows(text(), 9), ["aaaa bbbb", "cccc", "", "x"]);
+        assert_eq!(rows(text(), 4).len(), 5);
+        assert_eq!(rows(vec![Line::raw("abcdefgh")], 3), ["abc", "def", "gh"]);
+    }
+
+    #[test]
+    fn wrap_continues_under_the_text_of_an_indented_or_listed_line() {
+        assert_eq!(
+            rows(vec![Line::raw("  • alpha beta gamma")], 12),
+            ["  • alpha", "    beta", "    gamma"]
+        );
+        assert_eq!(
+            rows(vec![Line::raw("  src/a/very/long/path.rs")], 12),
+            ["  src/a/very", "  /long/path", "  .rs"]
+        );
+        let styled = Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                "red words here",
+                Style::new().fg(ratatui::style::Color::Red),
+            ),
         ]);
-        assert_eq!(wrapped_height(&text, 20), 3);
-        assert_eq!(wrapped_height(&text, 9), 4);
-        assert_eq!(wrapped_height(&text, 4), 5);
+        let wrapped = wrap(Text::from(vec![styled]), 12);
+        assert_eq!(wrapped.len(), 2);
+        assert!(
+            wrapped[1]
+                .spans
+                .iter()
+                .any(|s| s.content == "here" && s.style.fg == Some(ratatui::style::Color::Red)),
+            "a word keeps its style across the break: {wrapped:?}"
+        );
+    }
+
+    #[test]
+    fn implied_needs_are_marked_and_overlaps_listed() {
+        let mut app = app_on(5);
+        app.implied.insert((1, 5));
+        let lines = plain(&content(&app, at("2026-09-28T12:00:00Z")));
+        assert!(lines.contains(&"  ✓ 1 Scaffold the store  implied".to_string()));
+        assert!(lines.contains(&"  ✓ 2 Define the schema".to_string()));
+        let at = lines
+            .iter()
+            .position(|l| l == "Shares files with")
+            .expect("an overlap section");
+        assert!(
+            lines[at + 1].ends_with("4 Render the rows"),
+            "{}",
+            lines[at + 1]
+        );
     }
 }

@@ -19,8 +19,10 @@ USAGE
 VIEW OPTIONS
         --slug <S>              open flow S; without it glimpse opens the freshest
                                 flow and follows whichever flow changes next
-        --view <V>              layers, ego or diagram (default: from the config)
-        --orientation <O>       auto, vertical or horizontal (default: from the config)
+        --view <V>              layers, ego or diagram (default: the last run's, else
+                                the config's)
+        --orientation <O>       auto, vertical or horizontal (default: the last run's
+                                flip, else the config's)
         --once                  render one frame as plain text to stdout and exit
         --size <WxH>            --once only: frame size in cells (default: 120x40)
         --snapshot <FILE>       --once only: render a `tomlctl tasks snapshot` JSON

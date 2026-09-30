@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 
 use crate::app::App;
 use crate::hook::parse_utc;
@@ -28,22 +28,31 @@ pub(crate) fn agent(app: &App) -> Option<&Agent> {
         .find(|agent| agent.status == AgentStatus::Running)
 }
 
+/// The panel's frame: themed border and title, a cell of padding inside each side.
+fn panel(app: &App, title: String) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(app.theme.border)
+        .title(Line::styled(title, app.theme.border_title))
+        .padding(Padding::horizontal(1))
+}
+
 pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, tail: &TailState, now: SystemTime) {
     let Some(agent) = agent(app) else {
         let message = match app.selected {
             Some(id) => format!("no running agent on task {id}"),
             None => "no task selected".to_string(),
         };
-        let block = Block::default().borders(Borders::ALL).title(" activity ");
+        let block = panel(app, " activity ".to_string());
         frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(message, app.theme.pending))).block(block),
+            Paragraph::new(Line::from(Span::styled(message, app.theme.secondary))).block(block),
             area,
         );
         return;
     };
 
     let title = format!(" {} {} ", agent.agent_type, agent.id);
-    let block = Block::default().borders(Borders::ALL).title(title);
+    let block = panel(app, title);
 
     let mut status = Vec::new();
     if let Some(elapsed) = parse_utc(&agent.started_at).and_then(|start| {
@@ -76,7 +85,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, tail: &TailState,
     } else if tail.entries.is_empty() {
         lines.push(Line::from(Span::styled(
             "no activity yet",
-            app.theme.pending,
+            app.theme.secondary,
         )));
     }
     let inner_rows = usize::from(area.height.saturating_sub(3));
@@ -85,11 +94,11 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, tail: &TailState,
     for entry in &tail.entries[skip..] {
         let mut spans = vec![Span::styled(
             format!("{} ", clock(&entry.ts)),
-            app.theme.pending,
+            app.theme.secondary,
         )];
         match &entry.kind {
             EntryKind::ToolUse { name, detail } => {
-                spans.push(Span::styled(format!("▸ {name}"), app.theme.badge));
+                spans.push(Span::styled(format!("▸ {name}"), app.theme.section));
                 if !detail.is_empty() {
                     spans.push(Span::raw(format!("  {detail}")));
                 }

@@ -14,6 +14,7 @@ mod pane;
 mod runtime;
 mod setup;
 mod source;
+mod state;
 mod theme;
 mod transcript;
 mod view;
@@ -82,6 +83,8 @@ fn run_view(args: ViewArgs) -> Result<(), String> {
         slug: args.slug,
         config,
         warning,
+        keep_view: args.view.is_some(),
+        keep_orientation: args.orientation.is_some(),
     };
     match args.once {
         None => runtime::run(opts),

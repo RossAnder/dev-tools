@@ -1,6 +1,11 @@
-//! User configuration, its defaults, and the orientation, density and view-kind enums
-//! shared across views.
+//! User configuration, its defaults, and the orientation, split, density and view-kind
+//! enums shared across views.
+//!
+//! Shape thresholds compare aspect ratios in pixels, not cells: a cell is roughly twice
+//! as tall as it is wide, by a factor that depends on the font. The runtime measures it
+//! when the terminal reports its pixel size and falls back to `cell_aspect`.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// The axis layers are laid out along, once `auto` has been resolved.
@@ -15,6 +20,13 @@ impl Orientation {
         match self {
             Orientation::Vertical => Orientation::Horizontal,
             Orientation::Horizontal => Orientation::Vertical,
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Orientation::Vertical => "vertical",
+            Orientation::Horizontal => "horizontal",
         }
     }
 }
@@ -36,14 +48,86 @@ impl OrientationPref {
         }
     }
 
-    /// `Auto` goes horizontal when `width >= threshold * height`, measured in cells.
-    pub(crate) fn resolve(self, width: u16, height: u16, threshold: f64) -> Orientation {
+    /// `Auto` goes horizontal when the area's pixel [`aspect`] is at least `threshold`.
+    pub(crate) fn resolve(self, aspect: f64, threshold: f64) -> Orientation {
         match self {
             OrientationPref::Fixed(o) => o,
-            OrientationPref::Auto if f64::from(width) >= threshold * f64::from(height) => {
-                Orientation::Horizontal
-            }
+            OrientationPref::Auto if aspect >= threshold => Orientation::Horizontal,
             OrientationPref::Auto => Orientation::Vertical,
+        }
+    }
+}
+
+/// Width over height, in pixels, of `width` x `height` cells that are each `cell_aspect`
+/// times as tall as they are wide. No height counts as very wide.
+pub(crate) fn aspect(width: u16, height: u16, cell_aspect: f64) -> f64 {
+    if height == 0 {
+        return f64::INFINITY;
+    }
+    f64::from(width) / (f64::from(height) * cell_aspect)
+}
+
+/// Where docked panels sit relative to the view, once `auto` has been resolved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Split {
+    Beside,
+    Below,
+}
+
+impl Split {
+    pub(crate) fn flip(self) -> Self {
+        match self {
+            Split::Beside => Split::Below,
+            Split::Below => Split::Beside,
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Split::Beside => "beside",
+            Split::Below => "below",
+        }
+    }
+
+    pub(crate) fn parse(s: &str) -> Option<Self> {
+        match s {
+            "beside" => Some(Split::Beside),
+            "below" => Some(Split::Below),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SplitPref {
+    Auto,
+    Fixed(Split),
+}
+
+/// How far past the threshold, as a factor either way, the aspect must move before
+/// `auto` changes its mind, so a pane resized near the threshold does not flicker.
+const SPLIT_BAND: f64 = 1.1;
+
+impl SplitPref {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
+        match s {
+            "auto" => Some(SplitPref::Auto),
+            other => Split::parse(other).map(SplitPref::Fixed),
+        }
+    }
+
+    /// `Auto` puts panels beside a landscape body and below a portrait one, keeping
+    /// `previous` while the aspect is within [`SPLIT_BAND`] of `threshold`.
+    pub(crate) fn resolve(self, aspect: f64, threshold: f64, previous: Option<Split>) -> Split {
+        match self {
+            SplitPref::Fixed(s) => s,
+            SplitPref::Auto if aspect >= threshold * SPLIT_BAND => Split::Beside,
+            SplitPref::Auto if aspect <= threshold / SPLIT_BAND => Split::Below,
+            SplitPref::Auto => previous.unwrap_or(if aspect >= threshold {
+                Split::Beside
+            } else {
+                Split::Below
+            }),
         }
     }
 }
@@ -125,6 +209,14 @@ impl ViewKind {
         }
     }
 
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            ViewKind::Layers => "layers",
+            ViewKind::Ego => "ego",
+            ViewKind::Diagram => "diagram",
+        }
+    }
+
     fn index(self) -> usize {
         Self::ALL.iter().position(|&v| v == self).unwrap_or(0)
     }
@@ -141,7 +233,13 @@ impl ViewKind {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Config {
     pub(crate) orientation: OrientationPref,
+    /// Pixel aspect at or above which `auto` lays layers out horizontally.
     pub(crate) orientation_threshold: f64,
+    pub(crate) panel_split: SplitPref,
+    /// Pixel aspect around which `auto` moves docked panels between below and beside.
+    pub(crate) panel_split_threshold: f64,
+    /// A cell's height over its width, for when the terminal does not report pixels.
+    pub(crate) cell_aspect: f64,
     pub(crate) split_threshold: f64,
     pub(crate) pane_ratio: f64,
     pub(crate) poll_ms: u64,
@@ -158,13 +256,20 @@ pub(crate) struct Config {
     pub(crate) column_max: u16,
     /// Mouse capture blocks the terminal's own text selection while glimpse runs.
     pub(crate) mouse: bool,
+    /// Theme token overrides, already checked by [`crate::theme::validate`].
+    pub(crate) theme: HashMap<String, String>,
+    /// Set from the environment by [`Config::load`], never from the file.
+    pub(crate) no_color: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             orientation: OrientationPref::Auto,
-            orientation_threshold: 2.0,
+            orientation_threshold: 0.9,
+            panel_split: SplitPref::Auto,
+            panel_split_threshold: 1.0,
+            cell_aspect: 2.2,
             split_threshold: 2.2,
             pane_ratio: 0.4,
             poll_ms: 500,
@@ -176,6 +281,8 @@ impl Default for Config {
             panel_percent: 40,
             column_max: 40,
             mouse: true,
+            theme: HashMap::new(),
+            no_color: false,
         }
     }
 }
@@ -197,6 +304,15 @@ impl Config {
                 "orientation_threshold" => {
                     cfg.orientation_threshold = positive_float(key, value)?;
                 }
+                "panel_split" => {
+                    cfg.panel_split = SplitPref::parse(str_value(key, value)?)
+                        .ok_or_else(|| "`panel_split` must be auto, beside or below".to_string())?;
+                }
+                "panel_split_threshold" => {
+                    cfg.panel_split_threshold = positive_float(key, value)?;
+                }
+                "cell_aspect" => cfg.cell_aspect = positive_float(key, value)?,
+                "theme" => cfg.theme = theme_table(value)?,
                 "split_threshold" => cfg.split_threshold = positive_float(key, value)?,
                 "pane_ratio" => {
                     let r = positive_float(key, value)?;
@@ -258,12 +374,30 @@ impl Config {
         }
     }
 
+    /// Also reads `NO_COLOR`, which drops every theme colour when set and non-empty.
     pub(crate) fn load() -> (Config, Option<String>) {
-        match config_path() {
+        let (mut cfg, warning) = match config_path() {
             Some(path) => Config::load_from(&path),
             None => (Config::default(), None),
-        }
+        };
+        cfg.no_color = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
+        (cfg, warning)
     }
+}
+
+fn theme_table(value: &toml::Value) -> Result<HashMap<String, String>, String> {
+    let table = value
+        .as_table()
+        .ok_or_else(|| "`theme` must be a table".to_string())?;
+    let mut out = HashMap::new();
+    for (token, value) in table {
+        let v = value
+            .as_str()
+            .ok_or_else(|| format!("theme token `{token}` must be a string"))?;
+        out.insert(token.clone(), v.to_string());
+    }
+    crate::theme::validate(&out)?;
+    Ok(out)
 }
 
 fn str_value<'a>(key: &str, value: &'a toml::Value) -> Result<&'a str, String> {
@@ -373,7 +507,10 @@ mod tests {
         let cfg = Config::parse("").expect("empty parses");
         assert_eq!(cfg, Config::default());
         assert_eq!(cfg.orientation, OrientationPref::Auto);
-        assert_eq!(cfg.orientation_threshold, 2.0);
+        assert_eq!(cfg.orientation_threshold, 0.9);
+        assert_eq!(cfg.panel_split, SplitPref::Auto);
+        assert_eq!(cfg.cell_aspect, 2.2);
+        assert!(cfg.theme.is_empty());
         assert_eq!(cfg.split_threshold, 2.2);
         assert_eq!(cfg.pane_ratio, 0.4);
         assert_eq!(cfg.poll_ms, 500);
@@ -505,11 +642,57 @@ mod tests {
     #[test]
     fn auto_orientation_turns_horizontal_at_the_threshold() {
         let auto = OrientationPref::Auto;
-        assert_eq!(auto.resolve(80, 40, 2.0), Orientation::Horizontal);
-        assert_eq!(auto.resolve(79, 40, 2.0), Orientation::Vertical);
+        assert_eq!(
+            auto.resolve(aspect(80, 20, 2.0), 2.0),
+            Orientation::Horizontal
+        );
+        assert_eq!(
+            auto.resolve(aspect(79, 20, 2.0), 2.0),
+            Orientation::Vertical
+        );
         let fixed = OrientationPref::Fixed(Orientation::Vertical);
-        assert_eq!(fixed.resolve(200, 10, 2.0), Orientation::Vertical);
+        assert_eq!(fixed.resolve(10.0, 2.0), Orientation::Vertical);
         assert_eq!(Orientation::Vertical.flip(), Orientation::Horizontal);
+    }
+
+    #[test]
+    fn auto_split_follows_the_pixel_aspect_with_a_dead_band() {
+        let auto = SplitPref::Auto;
+        assert_eq!(
+            auto.resolve(aspect(160, 72, 2.6), 1.0, None),
+            Split::Below,
+            "tall cells make a 160x72 body portrait"
+        );
+        assert_eq!(auto.resolve(aspect(240, 60, 2.6), 1.0, None), Split::Beside);
+        assert_eq!(auto.resolve(1.05, 1.0, Some(Split::Below)), Split::Below);
+        assert_eq!(auto.resolve(1.05, 1.0, Some(Split::Beside)), Split::Beside);
+        assert_eq!(auto.resolve(1.05, 1.0, None), Split::Beside);
+        let fixed = SplitPref::Fixed(Split::Below);
+        assert_eq!(fixed.resolve(5.0, 1.0, None), Split::Below);
+        assert_eq!(Split::Below.flip(), Split::Beside);
+    }
+
+    #[test]
+    fn theme_overrides_parse_and_bad_tokens_are_rejected() {
+        let cfg = Config::parse("[theme]\ncheckpoint = \"#112233\"\nsuccess = \"green\"\n")
+            .expect("theme parses");
+        assert_eq!(
+            cfg.theme.get("checkpoint").map(String::as_str),
+            Some("#112233")
+        );
+        for bad in [
+            "theme = 1",
+            "[theme]\nnope = \"red\"",
+            "[theme]\naccent = \"not-a-colour\"",
+            "[theme]\naccent = 3",
+            "panel_split = \"left\"",
+            "cell_aspect = 0",
+        ] {
+            assert!(Config::parse(bad).is_err(), "{bad:?} should be rejected");
+        }
+        let cfg = Config::parse("panel_split = \"below\"\ncell_aspect = 2.6\n").expect("parses");
+        assert_eq!(cfg.panel_split, SplitPref::Fixed(Split::Below));
+        assert_eq!(cfg.cell_aspect, 2.6);
     }
 
     #[test]

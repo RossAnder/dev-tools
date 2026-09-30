@@ -6,13 +6,13 @@
 //! app's `column_max` (or to `column_override`), showing only the layers that
 //! fit. A checkpoint row follows the layer that completes the checkpoint's group.
 //! With a selection, every row is marked by its relation to it and unrelated rows
-//! are dimmed.
+//! are faded, all but their status mark, which always keeps its colour.
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::app::{App, Dir, Navigator};
@@ -239,7 +239,7 @@ fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) ->
     let mut selected_row = None;
     for group in groups {
         rows.push(Row {
-            line: rule(&format!("── {} ", group.label), '─', width, dim()),
+            line: layer_rule(ctx, "── ", &group.label, width),
             overlay: None,
             task: None,
         });
@@ -252,7 +252,7 @@ fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) ->
             }
             rows.push(Row {
                 line: task_line(ctx, task, width, Some(id_width)),
-                overlay: ctx.overlay(*id),
+                overlay: ctx.overlay(task),
                 task: Some(*id),
             });
         }
@@ -288,13 +288,9 @@ fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) 
     let mut targets = Vec::new();
     for (slot, group) in groups.iter().skip(first).take(visible).enumerate() {
         let x = area.x + column * u16::try_from(slot).unwrap_or(0);
-        let label = if slot == 0 && first > 0 {
-            format!("‹ {} ", group.label)
-        } else {
-            format!("{} ", group.label)
-        };
+        let lead = if slot == 0 && first > 0 { "‹ " } else { "" };
         let mut rows = vec![Row {
-            line: rule(&label, '─', cell, dim()),
+            line: layer_rule(ctx, lead, &group.label, cell),
             overlay: None,
             task: None,
         }];
@@ -308,7 +304,7 @@ fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) 
             }
             rows.push(Row {
                 line: task_line(ctx, task, cell, None),
-                overlay: ctx.overlay(*id),
+                overlay: ctx.overlay(task),
                 task: Some(*id),
             });
         }
@@ -373,6 +369,7 @@ struct Focus {
     dependents: Vec<u32>,
     coupling: Vec<u32>,
     coupled: Vec<u32>,
+    overlaps: Vec<u32>,
 }
 
 struct Ctx<'a> {
@@ -393,6 +390,7 @@ impl<'a> Ctx<'a> {
                 dependents: app.index.dependents(task.id).to_vec(),
                 coupling: task.coupling.clone(),
                 coupled: app.index.coupled(task.id).to_vec(),
+                overlaps: app.index.overlaps(task.id).to_vec(),
             });
         Ctx {
             app,
@@ -407,12 +405,12 @@ impl<'a> Ctx<'a> {
     }
 
     /// `↑` a prerequisite of the selection, `↓` a dependent, `⇡`/`⇣` the
-    /// coupling peers before and after it.
+    /// coupling peers before and after it, `≈` a row sharing a file with it.
     fn mark(&self, id: u32) -> Option<(&'static str, Style)> {
         let focus = self.focus.as_ref()?;
         let theme = &self.app.theme;
         if focus.id == id {
-            Some(("▸", theme.badge))
+            Some(("▸", theme.selection_mark))
         } else if focus.needs.contains(&id) {
             Some(("↑", theme.needs_edge))
         } else if focus.dependents.contains(&id) {
@@ -421,21 +419,37 @@ impl<'a> Ctx<'a> {
             Some(("⇡", theme.coupling_edge))
         } else if focus.coupled.contains(&id) {
             Some(("⇣", theme.coupling_edge))
+        } else if focus.overlaps.contains(&id) {
+            Some(("≈", theme.overlap))
         } else {
             None
         }
     }
 
-    fn overlay(&self, id: u32) -> Option<Style> {
+    /// With a selection, a row with no relation to it.
+    fn unrelated(&self, id: u32) -> bool {
+        self.focus.is_some() && self.mark(id).is_none()
+    }
+
+    /// The style laid over a whole row: the selection's tint, or a status change's flash
+    /// in the colour of the new status.
+    fn overlay(&self, task: &Task) -> Option<Style> {
         let theme = &self.app.theme;
-        if self.is_selected(id) {
+        if self.is_selected(task.id) {
             Some(theme.selection)
-        } else if self.app.is_flashing(id, self.now) {
-            Some(theme.flash)
-        } else if self.focus.is_some() && self.mark(id).is_none() {
-            Some(dim())
+        } else if self.app.is_flashing(task.id, self.now) {
+            Some(theme.flash(task.status))
         } else {
             None
+        }
+    }
+
+    /// The id and title style: faded when the row is unrelated to the selection.
+    fn text_style(&self, id: u32) -> Style {
+        if self.unrelated(id) {
+            self.app.theme.unrelated
+        } else {
+            Style::new()
         }
     }
 
@@ -464,12 +478,12 @@ impl<'a> Ctx<'a> {
             .map(|age| format!(" {}", format_elapsed(age)))
             .unwrap_or_default();
         let style = if self.app.stale_agents.contains(&agent.id) {
-            self.app.theme.agent_chip.add_modifier(Modifier::DIM)
+            self.app.theme.agent_chip_stale
         } else {
             self.app.theme.agent_chip
         };
-        Some(Span::styled(
-            format!(" {}{elapsed} ", initials(&agent.agent_type)),
+        Some(super::chip(
+            &format!("{}{elapsed}", initials(&agent.agent_type)),
             style,
         ))
     }
@@ -490,22 +504,24 @@ impl<'a> Ctx<'a> {
     }
 }
 
-fn dim() -> Style {
-    Style::new().add_modifier(Modifier::DIM)
-}
-
-/// One task row. `id_width` right-aligns the id in a full row; `None` gives
-/// the compact `◐14 title…` cell with no effort column.
+/// One task row. `id_width` right-aligns the id in a full row, which keeps its last
+/// cell blank so a highlight is padded on both sides; `None` gives the compact
+/// `◐14 title…` cell with no effort column.
 fn task_line(ctx: &Ctx, task: &Task, width: usize, id_width: Option<usize>) -> Line<'static> {
     let (mut left, right) = task_parts(ctx, task, id_width);
+    let width = width.saturating_sub(usize::from(id_width.is_some()));
     let used = parts_width(&left, &right);
     let room = width.saturating_sub(used);
     let title = truncate(&task.title, room);
     let pad = room.saturating_sub(text_width(&title));
-    left.push(Span::raw(format!("{title}{}", " ".repeat(pad))));
+    left.push(Span::styled(title, ctx.text_style(task.id)));
+    left.push(Span::raw(" ".repeat(pad)));
     if !right.is_empty() {
         left.push(Span::raw(" "));
         left.extend(right);
+    }
+    if id_width.is_some() {
+        left.push(Span::raw(" "));
     }
     Line::from(left)
 }
@@ -513,7 +529,7 @@ fn task_line(ctx: &Ctx, task: &Task, width: usize, id_width: Option<usize>) -> L
 /// Cells [`task_line`] needs to show `task`'s whole title.
 fn natural_width(ctx: &Ctx, task: &Task, id_width: Option<usize>) -> usize {
     let (left, right) = task_parts(ctx, task, id_width);
-    parts_width(&left, &right) + text_width(&task.title)
+    parts_width(&left, &right) + text_width(&task.title) + usize::from(id_width.is_some())
 }
 
 fn parts_width(left: &[Span], right: &[Span]) -> usize {
@@ -526,18 +542,20 @@ fn task_parts(
     task: &Task,
     id_width: Option<usize>,
 ) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
-    let status = ctx.app.theme.status(task.status.as_str());
+    let theme = &ctx.app.theme;
+    let status = theme.status(task.status.as_str());
+    let text = ctx.text_style(task.id);
     let (mark, mark_style) = ctx.mark(task.id).unwrap_or((" ", Style::new()));
     let mut left = vec![Span::styled(mark, mark_style)];
     match id_width {
         Some(w) => {
             left.push(Span::raw(" "));
             left.push(Span::styled(task.status.glyph(), status));
-            left.push(Span::raw(format!(" {:>w$} ", task.id)));
+            left.push(Span::styled(format!(" {:>w$} ", task.id), text));
         }
         None => {
             left.push(Span::styled(task.status.glyph(), status));
-            left.push(Span::raw(format!("{} ", task.id)));
+            left.push(Span::styled(format!("{} ", task.id), text));
         }
     }
 
@@ -552,7 +570,7 @@ fn task_parts(
         if !right.is_empty() {
             right.push(Span::raw(" "));
         }
-        right.push(Span::styled(task.effort.clone(), dim()));
+        right.push(Span::styled(task.effort.clone(), theme.effort));
     }
     (left, right)
 }
@@ -561,10 +579,14 @@ fn task_parts(
 /// short commits. A full row is closed with a rule out to `width`.
 fn checkpoint_line(ctx: &Ctx, checkpoint: &Checkpoint, width: usize, ruled: bool) -> Line<'static> {
     let theme = &ctx.app.theme;
-    let mut spans = vec![Span::styled(
-        format!("{}◆ {}", if ruled { "╌╌ " } else { "" }, checkpoint.id),
-        theme.badge,
-    )];
+    let mut spans = Vec::new();
+    if ruled {
+        spans.push(Span::styled("╌╌ ", theme.layer_rule));
+    }
+    spans.push(Span::styled(
+        format!("◆ {}", checkpoint.id),
+        theme.checkpoint,
+    ));
     match checkpoint.verification.as_ref().map(|v| v.outcome.as_str()) {
         Some("pass") => spans.push(Span::styled(" ✓", theme.done)),
         Some(_) => spans.push(Span::styled(" ✗", theme.failed)),
@@ -576,25 +598,30 @@ fn checkpoint_line(ctx: &Ctx, checkpoint: &Checkpoint, width: usize, ruled: bool
         .map(|sha| sha.get(..7).unwrap_or(sha))
         .collect();
     if !commits.is_empty() {
-        spans.push(Span::styled(format!(" {}", commits.join(" ")), dim()));
+        spans.push(Span::styled(
+            format!(" {}", commits.join(" ")),
+            theme.commit,
+        ));
     }
     let used: usize = spans.iter().map(Span::width).sum();
     if ruled && used + 1 < width {
         spans.push(Span::styled(
             format!(" {}", "╌".repeat(width - used - 1)),
-            dim(),
+            theme.layer_rule,
         ));
     }
     Line::from(spans)
 }
 
-/// `prefix` followed by `fill` out to `width` cells.
-fn rule(prefix: &str, fill: char, width: usize, style: Style) -> Line<'static> {
-    let rest = width.saturating_sub(text_width(prefix));
-    Line::from(Span::styled(
-        format!("{prefix}{}", fill.to_string().repeat(rest)),
-        style,
-    ))
+/// `lead`, the layer's `label` and a rule out to `width` cells.
+fn layer_rule(ctx: &Ctx, lead: &str, label: &str, width: usize) -> Line<'static> {
+    let theme = &ctx.app.theme;
+    let rest = width.saturating_sub(text_width(lead) + text_width(label) + 1);
+    Line::from(vec![
+        Span::styled(lead.to_string(), theme.layer_rule),
+        Span::styled(label.to_string(), theme.layer_label),
+        Span::styled(format!(" {}", "─".repeat(rest)), theme.layer_rule),
+    ])
 }
 
 fn text_width(s: &str) -> usize {
@@ -654,6 +681,7 @@ mod tests {
     use crate::model::{RecordEntry, fixture};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use ratatui::style::Modifier;
 
     fn app() -> App {
         App::new(fixture(), &Config::default())
@@ -749,6 +777,7 @@ mod tests {
         assert_eq!(mark("Define the schema"), Some('↑'));
         assert_eq!(mark("Assemble the app"), Some('↓'));
         assert_eq!(mark("Wire the entry point"), Some('⇣'));
+        assert_eq!(mark("Render the rows"), Some('≈'), "shares a file with 5");
         assert_eq!(mark("Bind the keys"), Some(' '));
 
         app.selected = Some(6);
@@ -759,18 +788,42 @@ mod tests {
     }
 
     #[test]
-    fn unrelated_rows_are_dimmed() {
+    fn unrelated_rows_fade_but_keep_their_status_colour() {
         let app = app();
         assert_eq!(app.selected, Some(4));
         let buf = draw(&app, Orientation::Vertical, 100, 30);
         let lines = lines(&buf);
-        let modifier = |title: &str| {
+        let cell = |title: &str, x: u16| {
             let y = u16::try_from(row_of(&lines, title).0).expect("fits");
-            buf[(3, y)].modifier
+            buf[(x, y)].clone()
         };
-        assert!(modifier("Define the schema").contains(Modifier::DIM));
-        assert!(!modifier("Scaffold the store").contains(Modifier::DIM));
-        assert!(modifier("Render the rows").contains(Modifier::REVERSED));
+        let theme = &app.theme;
+        // Column 2 holds the status mark, column 4 the id.
+        let unrelated = cell("Define the schema", 4);
+        assert_eq!(unrelated.fg, theme.unrelated.fg.expect("a colour"));
+        assert!(!unrelated.modifier.contains(Modifier::DIM));
+        let mark = cell("Define the schema", 2);
+        assert_eq!(mark.symbol(), "✓");
+        assert_eq!(mark.fg, theme.done.fg.expect("a colour"));
+        assert_ne!(cell("Scaffold the store", 4).fg, unrelated.fg);
+        let selected = cell("Render the rows", 4);
+        assert_eq!(selected.bg, theme.selection.bg.expect("a colour"));
+        assert!(!selected.modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn a_flash_takes_the_new_status_colour_and_a_row_ends_padded() {
+        let mut app = app();
+        app.selected = Some(1);
+        app.flashes.insert(4, Instant::now());
+        let buf = draw(&app, Orientation::Vertical, 100, 30);
+        let lines = lines(&buf);
+        let y = u16::try_from(row_of(&lines, "Render the rows").0).expect("fits");
+        assert_eq!(
+            buf[(10, y)].bg,
+            app.theme.flash(TaskStatus::InProgress).bg.unwrap()
+        );
+        assert_eq!(buf[(99, y)].symbol(), " ", "the last cell is padding");
     }
 
     #[test]
