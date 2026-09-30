@@ -342,7 +342,7 @@ fn handle(
         }
         Event::Flows(Ok(entries)) => {
             flows_listed(app, entries, host, freshest);
-            Step::Redraw
+            redraw_if(app.selector_open)
         }
         Event::Flows(Err(message)) => {
             app.source_error = Some(message);
@@ -350,7 +350,7 @@ fn handle(
         }
         Event::FlowMtimes(mtimes) => {
             flow_mtimes_moved(app, &mtimes, host, freshest);
-            Step::Redraw
+            redraw_if(app.selector_open)
         }
         Event::Tail(tail) => {
             if tail_target(app).as_deref() != Some(tail.path.as_str()) {
@@ -386,6 +386,10 @@ fn handle(
         }
         Event::Input(_) => Step::Nothing,
     }
+}
+
+fn redraw_if(needed: bool) -> Step {
+    if needed { Step::Redraw } else { Step::Nothing }
 }
 
 /// Takes a fresh flow list from the poller.
@@ -612,6 +616,34 @@ mod tests {
         drop(tx);
         run_loop(&mut screen, &rx, &mut host).expect("loop");
         assert_eq!(host.draws, 1, "only the first frame");
+    }
+
+    #[test]
+    fn a_flow_list_redraws_only_while_the_selector_is_open() {
+        let mut screen = idle_screen("demo-flow");
+        let mut host = FakeHost::default();
+        let listed = || Event::Flows(Ok(vec![flow("a", 1)]));
+        let moved = || Event::FlowMtimes(BTreeMap::new());
+
+        screen.app.selector_open = false;
+        assert!(matches!(
+            handle(&mut screen, listed(), &mut host, &mut None),
+            Step::Nothing
+        ));
+        assert!(matches!(
+            handle(&mut screen, moved(), &mut host, &mut None),
+            Step::Nothing
+        ));
+
+        screen.app.selector_open = true;
+        assert!(matches!(
+            handle(&mut screen, listed(), &mut host, &mut None),
+            Step::Redraw
+        ));
+        assert!(matches!(
+            handle(&mut screen, moved(), &mut host, &mut None),
+            Step::Redraw
+        ));
     }
 
     #[test]
