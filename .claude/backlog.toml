@@ -4395,3 +4395,184 @@ evidence = [
 ]
 resolved = 2026-09-30
 resolution = "store.rs takes STORE_FILE from SNAPSHOT_INPUTS[0] and resolve_store_path calls flow::validate_slug; its private slug regex is gone"
+
+[[backlog]]
+id = "B-5f1ec4ff"
+kind = "debt"
+summary = "agents record parses every flow's agents.toml on each Stop hook and dispatch-less Start, though only rows with the event's session_id can matter"
+area = "tomlctl/src/agents/record.rs"
+tags = [
+    "perf",
+    "hook",
+    "glimpse",
+]
+status = "resolved"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "5f1ec4ff645f7980"
+origin = "optimise"
+flow = "polymorphic-wondering-magpie"
+context = "load_flows (record.rs:357-376) reads and fully TOML-parses every .claude/flows/*/agents.toml for Kind::Stop, Idle, and Start without a dispatch; every consumer (choose_flow's latest, the Idle transcript lookup) then filters on row.session_id == session_id. Stores are never pruned (30 KB after one flow here), so per-hook cost grows with flow history. Cheap fix: read raw bytes and skip parsing when memchr::memmem finds no session_id (guard: session_id non-empty and only [A-Za-z0-9_-], which TOML never escapes); memchr is already a dependency. Found by /optimise on polymorphic-wondering-magpie; outside that flow's scope."
+base_sha = "d9e96d675fad19b2c6cca2f05ddcf9548ef98a9b"
+evidence = [
+    "tomlctl/src/agents/record.rs:357",
+    "tomlctl/src/agents/record.rs:469",
+]
+resolved = 2026-09-30
+resolution = "load_flows prefilters stores on the raw session_id bytes before parsing (uncommitted, optimise-apply on polymorphic-wondering-magpie)"
+
+[[backlog]]
+id = "B-11359954"
+kind = "question"
+summary = "tomlctl mutate_doc rewrites byte-identical documents, so a no-op set bumps the mtime, rewrites the sidecar and wakes every watcher"
+area = "tomlctl/src/io.rs"
+tags = [
+    "perf",
+    "glimpse",
+    "watcher",
+]
+status = "resolved"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "11359954d3b7ce96"
+origin = "optimise"
+flow = "polymorphic-wondering-magpie"
+context = "mutate_doc (io.rs:814-848) always calls write_toml_with_sidecar. The execution-record idiom's same-day `tomlctl set <record> last_updated <date>` therefore rewrites identical bytes (confirmed on a scratch copy: same hash, new mtime), costing two fsyncs, a sidecar rewrite, a glimpse wake + fetch, and (for context.toml) a glimpse flow relist. Skipping the write when the serialised bytes equal the on-disk bytes removes the trigger at the source, but changes the 'mutating verbs always bump mtime' behaviour for every caller, and glimpse ranks flows by tasks.toml mtime — needs a decision. Optimise O2 (revision early-out in glimpse) mitigates the glimpse side without this."
+base_sha = "d9e96d675fad19b2c6cca2f05ddcf9548ef98a9b"
+evidence = ["tomlctl/src/io.rs:846"]
+resolved = 2026-09-30
+resolution = "mutate_doc, mutate_doc_conditional and mutate_doc_plan skip the write when the serialised bytes and the sidecar already match (uncommitted)"
+
+[[backlog]]
+id = "B-ad940fc4"
+kind = "debt"
+summary = "agents record reads the whole subagent transcript, up to 4 MiB, on every SubagentStop hook"
+area = "tomlctl/src/agents/correlate.rs"
+tags = [
+    "perf",
+    "hook",
+]
+status = "open"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "ad940fc4796fa8e8"
+origin = "optimise"
+flow = "polymorphic-wondering-magpie"
+context = "correlate::dispatch_and_tokens reads the transcript via read_tail capped at 4 MiB on each SubagentStop; local subagent transcripts measured 1.6-2.0 MB, so each Stop hook reads ~2 MB. The hook is async so no user-visible stall, but it is on the per-event path glimpse now runs in-process. Worth checking whether the needed fields sit in a bounded head/tail window. Reported by the /optimise serialization lens on polymorphic-wondering-magpie; not measured."
+base_sha = "d9e96d675fad19b2c6cca2f05ddcf9548ef98a9b"
+
+[[backlog]]
+id = "B-d6d58ce9"
+kind = "debt"
+summary = "glimpse docs say an idle glimpse does no work, but notify 8.2's Windows backend wakes every 100 ms and never reports errors or rescans"
+area = "glimpse/README.md"
+tags = [
+    "glimpse",
+    "watcher",
+    "docs",
+    "windows",
+]
+status = "resolved"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "d6d58ce9868efb98"
+origin = "optimise"
+flow = "polymorphic-wondering-magpie"
+context = "notify-8.2.0 src/windows.rs server loop waits on WaitForSingleObjectEx(wakeup_sem, 100, 1), so its thread wakes 10x/s even when idle; and its ReadDirectoryChangesW handler never sends Err or a Rescan flag (errors unwatch silently), so watch::classify's Wake::Rewatch/Wake::All arms cannot fire on Windows. glimpse/README.md ('an idle glimpse does no work beyond the safety pass'), glimpse/CLAUDE.md and the plan's silent-watch-death mitigations assume otherwise. Fix is a doc correction (notify 9 is out of scope); the functional consequence is optimise O1."
+base_sha = "d9e96d675fad19b2c6cca2f05ddcf9548ef98a9b"
+evidence = ["glimpse/src/watch.rs:30"]
+resolved = 2026-09-30
+resolution = "glimpse README and CLAUDE.md corrected: notify's Windows thread wakes ~10x/s and drops failed watches silently; the safety tick is the only dead-watch detector there (uncommitted)"
+
+[[backlog]]
+id = "B-2a526918"
+kind = "question"
+summary = "flows_fingerprint caches on the DirEntry mtime, which on Windows can lag a non-rename file creation, so a safety tick may miss it"
+area = "glimpse/src/source.rs"
+tags = [
+    "glimpse",
+    "watcher",
+    "windows",
+]
+status = "resolved"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "2a5269187a9984ba"
+origin = "optimise"
+flow = "polymorphic-wondering-magpie"
+context = "flows_fingerprint reuses a flow's cached FlowStat while entry.metadata().modified() (from the parent's directory index on Windows) is unchanged. A scratch probe showed the enumerated mtime still at the directory's creation time 1.5 s after a file was created inside it, while a direct stat had moved; a rename updated both at once. So a safety tick could miss a non-rename creation (e.g. a first tasks.toml written in place) that no wake reported. Correctness of the missed-change detector, not perf; check whether any writer creates a snapshot input without a rename."
+base_sha = "d9e96d675fad19b2c6cca2f05ddcf9548ef98a9b"
+evidence = ["glimpse/src/source.rs:115"]
+resolved = 2026-09-30
+resolution = "flows_fingerprint re-stats task-bearing flows every scan; the dir-mtime cache gates only store-less flows (uncommitted)"
+
+[[backlog]]
+id = "B-09b72bac"
+kind = "debt"
+summary = "App::refresh_stale stats each running agent's transcript on every 1 s tick on the UI thread, not only at the 30 s stale recheck"
+area = "glimpse/src/app.rs"
+tags = [
+    "glimpse",
+    "perf",
+]
+status = "resolved"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "09b72bac2e564ebc"
+origin = "optimise"
+flow = "polymorphic-wondering-magpie"
+context = "While needs_tick holds (a non-stale running agent), refresh_stale runs every 1 s TICK and stats each running agent's transcript on the UI thread — 8-12 stats/s during a parallel /implement. A non-stale agent cannot go stale before last_mtime + stale_after, so the stat could wait until then. The polymorphic-wondering-magpie plan scoped out the 30 s refresh_stale stat but not this 1 s case."
+base_sha = "d9e96d675fad19b2c6cca2f05ddcf9548ef98a9b"
+evidence = [
+    "glimpse/src/app.rs:483",
+    "glimpse/src/app.rs:587",
+]
+resolved = 2026-09-30
+resolution = "App caches per-agent stale deadlines; the tick path skips the transcript stat until the deadline passes (uncommitted)"
+
+[[backlog]]
+id = "B-b58537a5"
+kind = "debt"
+summary = "flow active, doctor and init write paths rewrite their TOML unconditionally, bypassing mutate_doc's unchanged-bytes skip"
+area = "tomlctl/src/flow"
+tags = [
+    "perf",
+    "watcher",
+]
+status = "open"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "b58537a53e0c52cf"
+origin = "optimise-apply"
+flow = "polymorphic-wondering-magpie"
+context = "mutate_doc and its variants in io.rs now skip a write whose serialised bytes and sidecar already match, so a no-op mutation no longer bumps the mtime or wakes watchers. flow/active.rs, flow/doctor.rs and flow/init.rs call write_toml_with_sidecar directly and still always rewrite. None is known to be on a hot path; route them through the same skip only if one turns out to run repeatedly (e.g. a registry write per flow command)."
+base_sha = "d9e96d675fad19b2c6cca2f05ddcf9548ef98a9b"
+evidence = ["tomlctl/src/io.rs:836"]
+
+[[backlog]]
+id = "B-f010d1ce"
+kind = "direction"
+summary = "agents record re-derives the dispatch from the whole transcript on Stop instead of taking it from the live agents.toml row, which blocks bounding the transcript read"
+area = "tomlctl/src/agents/correlate.rs"
+tags = [
+    "perf",
+    "hook",
+]
+status = "open"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "f010d1ce9e62e5c1"
+origin = "optimise-apply"
+flow = "polymorphic-wondering-magpie"
+context = "dispatch_in walks the transcript newest-first for the latest user-authored `tasks show <id> --slug <slug>` line, because a re-tasked teammate's newest dispatch can sit mid-file (test a_teammate_retask_supersedes_the_earlier_dispatch). So the whole file (up to 4 MiB) is read on every SubagentStop, and a head+tail window would report the wrong task; transcripts over 4 MiB already lose a mid-file re-task (head_dispatch reads only line 1). Token counts need only the tail (tokens_in returns the newest usage line). Taking the dispatch from the agent's live record segment (updated at start/re-task time) instead of re-deriving it would let Stop read only a bounded tail and make dispatch resolution independent of transcript size. Needs a decision on where re-tasks are recorded."
+base_sha = "d9e96d675fad19b2c6cca2f05ddcf9548ef98a9b"
+evidence = ["tomlctl/src/agents/correlate.rs:402"]
+related = ["B-ad940fc4"]

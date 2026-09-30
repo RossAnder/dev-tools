@@ -1005,3 +1005,25 @@ summary = "Event::Tail carries a read-only TailView rather than the poller's Tai
 original_intent = "the poller sends its TailState to the runtime as Event::Tail"
 rationale = "Sending the live reader let the UI thread call refresh(), leaving 'the UI thread does no file I/O' enforced only by comment; TailView (path, entries, tokens, rejected) makes it a type rule. The runtime also ignores a queued tail whose path no longer matches the selected agent, so the old transcript is never drawn under the new one."
 dedup_id = "e656107f4ac24651"
+
+[[items]]
+id = "E77"
+type = "deviation"
+date = 2026-09-30
+agent = "plan-update"
+task_ref = "drive-the-poller-from-the-watcher"
+summary = "Watcher safety rules tightened after /optimise: miss streak resets only on a wake, watch-start retries back off, task-store flows re-stat every scan"
+original_intent = "Two consecutive safety ticks with unreported changes abandon the watch, a wake (and in practice a clean safety tick) resets the count; a failed watch start is retried on every polling tick; flows_fingerprint re-stats a flow's files only when its directory mtime moves or a wake evicts it"
+rationale = "notify 8.2's Windows backend drops a failed watch without an Err or Rescan, so the missed-change counter is the only dead-watch detector there, and a clean safety tick resetting it meant sparse writes never tripped it (up to 10 s latency for the session). On Linux a MaxFilesWatch error made the per-tick retry rebuild a watcher (thread + tree walk) twice a second. On Windows the enumerated directory mtime can lag a non-rename file creation, so the dir-mtime cache could hide a change from a safety tick. Now: only a wake resets the streak and a fresh watch starts with a fresh one; failed starts back off from poll_ms to 60 s; task-store flows are re-stat'd every scan and the dir-mtime cache gates only store-less flows."
+dedup_id = "9d765c00ef310b4c"
+
+[[items]]
+id = "E78"
+type = "deviation"
+date = 2026-09-30
+agent = "plan-update"
+task_ref = "expose-the-in-process-facade"
+summary = "Facade gained snapshot_if_changed and flow_list_matching after /optimise"
+original_intent = "A three-function facade: snapshot, flow_list (unfiltered) and record_agent"
+rationale = "snapshot_if_changed returns None straight after the revision hash when it matches the caller's last revision, so an identical-bytes rewrite (e.g. a same-day set last_updated) no longer costs glimpse a full parse, graph and JSON build. flow_list_matching applies a slug predicate before any context.toml read, so glimpse's relist parses only the flows that have a task store (7 of 46 here) and takes tasks mtimes from the poller's scan. snapshot and flow_list keep their signatures and output; the CLI JSON contracts are unchanged."
+dedup_id = "13466e1e36b5b1a4"

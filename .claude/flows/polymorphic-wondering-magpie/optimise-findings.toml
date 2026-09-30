@@ -1,0 +1,367 @@
+schema_version = 1
+last_updated = 2026-09-30
+
+[[items]]
+id = "O1"
+file = "glimpse/src/source.rs"
+line = 352
+symbol = "MissedChanges::on_tick"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "A dead Windows watch is never detected when writes are sparse: a clean safety tick resets the miss streak, and notify 8.2.0's Windows backend reports no error or rescan when it drops a watch"
+description = """
+Now: on_tick increments the streak on a safety tick that finds a change and resets it to 0 on a clean safety tick; the watch is abandoned only after two consecutive safety windows each hold an unreported write. On Windows the missed-change counter is glimpse's only way to learn the watch died: notify 8.2.0's ReadDirectoryChangesW backend never sends Err or a Rescan event to the handler; on any completion error other than ABORTED/ACCESS_DENIED it logs and unwatches silently (a deleted root is also unwatched silently). So Wake::Rewatch and Wake::All in watch::classify can never fire on Windows. After a silent death, flow writes more than ~10 s apart (usual between agent completions) give a streak of 1,0,0,1,0... that never reaches MISS_LIMIT, so glimpse stays in Mode::Watching with a dead watcher and every change waits for the next safety tick (up to 10 s, ~5 s mean, instead of ~50 ms) for the rest of the session, with nothing on screen to say so. Change (one file): (1) only a wake resets the streak:
+  TickCause::Wake => self.streak = 0,
+  TickCause::Safety if changed => self.streak = self.streak.saturating_add(1),
+  TickCause::Safety | TickCause::Other => {}
+(2) in Poller::run reset `misses = MissedChanges::default()` whenever the mode moves into Watching, so a new watcher does not inherit the old streak; (3) flip the 'a clean safety tick breaks the run' assertion in two_unreported_changes_abandon_the_watch_and_a_wake_resets_the_count. Safety: a healthy watch that races a safety tick is reset by the queued wake on the next pass. Tradeoff: two separate lost-event episodes with no reported change between now abandon a live watch (cost: switch to poll_ms polling). Optional: first abandonment moves to Retrying (re-create the watch), only a second is sticky. Update the source.rs module doc, glimpse/CLAUDE.md 'A silent watch falls back to polling for good', and glimpse/README.md 'two safety passes in a row' in the same change."""
+evidence = [
+    "~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/notify-8.2.0/src/windows.rs:339-368 — handle_event `_ =>` arm logs + request.unwatch() + returns; no event_handler call",
+    "notify-8.2.0/src/windows.rs — grep 'Rescan' → no match (only fsevent.rs / inotify.rs set Flag::Rescan)",
+    "https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-readdirectorychangesw — page updated 2025-07-01, fetched 2026-09-30: overflow discards the buffer; changes to the watched directory itself are not reported",
+    "glimpse/src/source.rs:352-360 on_tick resets on a clean safety tick; run() creates `misses` once and never resets it on a mode change",
+]
+first_flagged = 2026-09-30
+rounds = 1
+related = ["O8"]
+status = "applied"
+flow = "polymorphic-wondering-magpie"
+dedup_id = "1759648810dd3dee"
+resolved = 2026-09-30
+resolution = "Uncommitted: on_tick resets the streak only on a wake; Poller::run resets misses when a watch starts; test renamed and flipped; module doc, glimpse/CLAUDE.md and README say 'no wake between'."
+
+[[items]]
+id = "O2"
+file = "glimpse/src/source.rs"
+line = 550
+symbol = "Poller::poll_snapshot"
+severity = "warning"
+effort = "small"
+category = "serialization"
+summary = "An mtime-only change (e.g. a same-day `tomlctl set last_updated` rewriting identical bytes) triggers a full snapshot parse, graph build, JSON build and from_value that is then discarded on a matching revision; tomlctl already hashes the raw bytes before parsing and could return early"
+description = "Now: poll_snapshot fetches whenever the (mtime,len) fingerprint moves, and compares snapshot.revision with last_revision only after InProcessFetcher has run tasks::snapshot to completion and serde_json::from_value into Snapshot. tasks::snapshot computes revision from the four raw files at snapshot.rs:47-50, before any TOML parse. mutate_doc (io.rs:814-848, used by `set`) always rewrites, so the execution-record two-call idiom (items add, then set last_updated <today>) yields an identical-bytes rewrite on every same-day append — confirmed on a scratch copy (same sha256 prefix, new mtime). That second write usually lands outside the 50 ms COALESCE_QUIET window and costs a full wasted fetch; Wake::All/Rewatch and retries also force fetches. Change: tomlctl/src/tasks/snapshot.rs — add `known: Option<&str>` (or a snapshot_unless variant) returning Ok(None) right after the revision hash when known == Some(revision); the CLI passes None, so the tasks snapshot JSON contract is untouched. tomlctl/src/lib.rs — add `pub fn snapshot_if_changed(root, slug, known_revision: Option<&str>) -> anyhow::Result<Option<serde_json::Value>>`, keeping `snapshot` for the library_facade test. glimpse/src/source.rs — Fetcher::fetch gains `known` and returns Result<Option<Snapshot>, String>; poll_snapshot passes self.last_revision.as_deref() and treats Ok(None) like the equal-revision branch (clear failed_at, return Some(changed)); keep the post-fetch compare as a backstop; FakeFetcher ignores `known`. glimpse/src/main.rs once_snapshot passes None. Tradeoff: the 4 reads + one SHA-256 still run; only parse/graph/JSON work is skipped. set_slug already clears last_revision, and a missing store still errors."
+evidence = [
+    "tomlctl/src/tasks/snapshot.rs:46-50 — read_raw of all four inputs then `revision(...)` before any parse; parse/graph/JSON at :52-156",
+    "glimpse/src/source.rs:550-557 — revision compared only after a completed fetch",
+    "tomlctl/src/io.rs:814-848 — mutate_doc calls write_toml_with_sidecar unconditionally; cli/dispatch.rs:259 `set` routes through it",
+    "command (scratch copy): tomlctl set er.toml last_updated 2026-09-30 on a file already holding that value → sha256 prefix 339baaee74ab84fe before and after, mtime moved",
+]
+instances = [
+    "tomlctl/src/tasks/snapshot.rs:snapshot",
+    "tomlctl/src/lib.rs:snapshot",
+    "glimpse/src/source.rs:Fetcher::fetch",
+    "glimpse/src/source.rs:InProcessFetcher::fetch",
+    "glimpse/src/source.rs:Poller::poll_snapshot",
+    "glimpse/src/main.rs:once_snapshot",
+]
+sweep = ['tasks::snapshot\(|tomlctl::snapshot\(|fn fetch\(|\.fetch\(']
+enumeration = "complete"
+first_flagged = 2026-09-30
+rounds = 1
+related = ["O4"]
+status = "applied"
+flow = "polymorphic-wondering-magpie"
+dedup_id = "5f804e95b15fb2ca"
+resolved = 2026-09-30
+resolution = "Uncommitted: tasks::snapshot takes a known revision and returns None right after the hash; new tomlctl::snapshot_if_changed; Fetcher::fetch returns Option and poll_snapshot passes last_revision. Deviation: the re-exported tasks::snapshot gained the parameter (CLI passes None) instead of a sibling fn, since tasks/mod.rs was outside the file set; CLI JSON unchanged."
+
+[[items]]
+id = "O3"
+file = "tomlctl/src/io.rs"
+line = 2064
+symbol = "atomic_write"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "atomic_write renames via tempfile::persist (bare MoveFileExW), which fails with os error 5 while any other handle — even glimpse's access-0 metadata stat — is open on the target; std::fs::rename falls back to POSIX-semantics rename and succeeds"
+description = "Now: atomic_write stages through NamedTempFile::new_in and renames with tmp.persist(path). On Windows tempfile 3.27.0 implements persist as SetFileAttributesW(NORMAL) + MoveFileExW(MOVEFILE_REPLACE_EXISTING) with no fallback, and a replace-rename fails ERROR_ACCESS_DENIED whenever another handle is open on the target (even with FILE_SHARE_DELETE). glimpse now opens such handles in-process on every poller tick (fingerprint stats all four SNAPSHOT_INPUTS; flows_fingerprint stats evicted flows' files; the fetcher reads all four), right after a wake — i.e. inside tomlctl write bursts (hook agents.toml writes during parallel subagent starts, items add + set). is_transient_rename_error treats os error 5 as transient: each collision costs a 50 ms sleep and three in a row fail the write. This is a likely cause of the intermittent 'atomic rename … Access is denied (os error 5)' previously attributed to AV. std::fs::rename on Windows (Rust 1.98.1) retries ACCESS_DENIED via SetFileInformationByHandle(FileRenameInfoEx, REPLACE_IF_EXISTS|POSIX_SEMANTICS), which succeeds over an open reader (scratch probe confirmed). Change (io.rs only): stage with tempfile::Builder::new().make_in(parent, |p| OpenOptions::new().write(true).create_new(true).open(p)) so no FILE_ATTRIBUTE_TEMPORARY is set; keep write_all + sync_data; `let staged = tmp.into_temp_path();` and in the existing retry loop `fs::rename(&staged, path)` then `staged.keep()` on success. Keep the unix parent fsync. Risks: POSIX rename needs Win10 1709+ NTFS (std falls back to the original error elsewhere, so no regression); sharing violations (32) remain possible, so keep the retry; unix behaviour unchanged (same rename(2)). Do not call std::fs::rename only after persist fails: a failed persist re-marks the source FILE_ATTRIBUTE_TEMPORARY."
+evidence = [
+    "~/.cargo/registry/src/*/tempfile-3.27.0/src/file/imp/windows.rs:92-115 — persist = SetFileAttributesW(NORMAL) + MoveFileExW(MOVEFILE_REPLACE_EXISTING), no POSIX fallback",
+    "rustc 1.98.1 library/std/src/sys/fs/windows.rs:1321-1372 — rename retries ACCESS_DENIED via FileRenameInfoEx with FILE_RENAME_FLAG_POSIX_SEMANTICS",
+    "scratch probe (Windows 11 26200): MoveFileExW replace over a target held by an access-0 or read handle → err=5; std::fs::rename over the same → Ok",
+    "tomlctl/src/io.rs:2001-2021 — PERSIST_ATTEMPTS=3, 50 ms retry, PermissionDenied treated as transient",
+    "glimpse/src/source.rs fingerprint — std::fs::metadata on every SNAPSHOT_INPUTS file per tick",
+]
+instances = ["tomlctl/src/io.rs:atomic_write"]
+sweep = ['\.persist\(|persist_noclobber|MoveFileEx']
+enumeration = "complete"
+first_flagged = 2026-09-30
+rounds = 1
+status = "applied"
+flow = "polymorphic-wondering-magpie"
+dedup_id = "f5d139fad2ffa697"
+resolved = 2026-09-30
+resolution = "Uncommitted: atomic_write stages via tempfile::Builder::make_in with plain OpenOptions (unix mode 0600 kept) and replaces with std::fs::rename inside the existing retry loop, disarming via TempPath::disable_cleanup (keep() would SetFileAttributesW the moved path). New #[cfg(windows)] test holds a reader open on the target."
+
+[[items]]
+id = "O4"
+file = "glimpse/src/flows.rs"
+line = 85
+symbol = "list"
+severity = "warning"
+effort = "medium"
+category = "query"
+summary = "A relist reads and TOML-parses every flow's context.toml (46 here) and re-stats every tasks.toml, then keeps only the 7 flows with a task store whose mtimes the poller's scan already holds"
+description = "Now: flows::list → tomlctl::flow_list (lib.rs:82) → flow::list_all → enumerate_flows: for every directory under .claude/flows, is_dir, ctx_path.exists, read + TOML parse + FlowProjection, then FlowRecord::to_json cloning every string. glimpse then deserialises the envelope and parse_flows stats <slug>/tasks.toml for all 46, dropping the 39 without one. Poller::last_flows already holds exactly the task-bearing slugs and their tasks.toml mtimes from the same tick's flows_fingerprint. A relist runs on the first scan (the auto-flow start-up path with no --slug: first frame waits for Relist → Event::Flows → follow_freshest → set_slug → fetch), whenever a task-bearing flow's context.toml mtime moves (including identical-bytes `set` rewrites), and after a failed list. Two same-run CLI timings (three agents flagged this independently): `flow list` ~57 ms above process start vs ~32 ms for a full `tasks snapshot`. Change: (a) tomlctl — a slug-restricted listing, e.g. lib.rs `pub fn flow_list_of(root, slugs)` or `flow_list_matching(root, keep: impl FnMut(&str) -> bool)` over a list.rs helper that skips read_context_record for unwanted slugs (keep `flow_list` so the library_facade CLI-equality test holds); (b) glimpse — Fetcher::list_flows takes the scan's map (send_flows passes self.last_flows) and flows::list builds tasks_mtime from it instead of re-statting; (c) main.rs once_snapshot with no --slug picks the freshest by tasks.toml mtime from a directory scan and skips context reads. Tradeoffs: a new pub facade fn (the pre-commit glimpse clippy gate covers lib.rs and flow/list.rs); FakeFetcher gains a parameter; `skipped` stops reporting malformed context.toml in flows without a task store (glimpse's Envelope never reads it). Magnitude in-process is unmeasured (CLI timings include process start and JSON print)."
+evidence = [
+    "glimpse/src/flows.rs:85-95 — tomlctl::flow_list then per-slug std::fs::metadata(<slug>/tasks.toml)",
+    "tomlctl/src/flow/list.rs:110-115 list_all + :167-227 enumerate_flows — per entry is_dir, exists, read_context_record (read + TOML parse)",
+    "glimpse/src/source.rs:499-534 — scan_flows holds slug → (tasks mtime, context mtime) for task-store flows only; send_flows Relist calls list_flows(&self.root)",
+    "command: ls -d .claude/flows/*/ | wc -l → 46; ls .claude/flows/*/tasks.toml | wc -l → 7",
+    "command: interleaved Measure-Command x30, same run → version median 32.0 ms / tasks snapshot 63.9 ms / flow list 88.9 ms",
+]
+instances = [
+    "glimpse/src/flows.rs:list",
+    "glimpse/src/source.rs:Poller::send_flows",
+    "glimpse/src/source.rs:InProcessFetcher::list_flows",
+    "glimpse/src/main.rs:once_snapshot",
+    "tomlctl/src/lib.rs:flow_list",
+    "tomlctl/src/flow/list.rs:list_all",
+]
+sweep = ["flow_list|flows::list|list_flows"]
+enumeration = "complete"
+first_flagged = 2026-09-30
+rounds = 1
+related = [
+    "O2",
+    "O9",
+]
+status = "applied"
+flow = "polymorphic-wondering-magpie"
+dedup_id = "f61280c3725690ca"
+resolved = 2026-09-30
+resolution = "Uncommitted: enumerate_flows/list_all take a slug predicate checked before any context.toml read; new tomlctl::flow_list_matching; glimpse list_flows/flows::list take the poller's slug->tasks mtime map (no re-stat); main.rs once_snapshot uses source::task_store_mtimes. flow_list and the CLI are unchanged."
+
+[[items]]
+id = "O5"
+file = "glimpse/Cargo.toml"
+line = 0
+symbol = "crt-static (new glimpse/.cargo/config.toml)"
+severity = "warning"
+effort = "trivial"
+category = "memory"
+summary = "glimpse links the dynamic MSVC CRT, so every `glimpse hook` process loads VCRUNTIME140 + 5 api-ms-win-crt DLLs that tomlctl avoids with +crt-static"
+description = """
+Now: glimpse has no cargo config, so the Windows build links the dynamic CRT; the installed glimpse.exe imports VCRUNTIME140.dll and api-ms-win-crt-{heap,locale,math,runtime,stdio}. tomlctl gets +crt-static from tomlctl/.cargo/config.toml. Now that the hook runs tomlctl in-process, glimpse is the one process started per subagent event, and pays extra module loads that Sophos slows. Change: add glimpse/.cargo/config.toml with only
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+Windows-MSVC only; `cargo install --path glimpse` reads it and cargo joins arrays with ~/.cargo/config.toml rustflags. glimpse's Cargo.lock has no `cc` crate, so no C objects conflict over the CRT. Tradeoffs: the file applies only when cargo runs from glimpse/ or via install --path — the pre-commit `--manifest-path glimpse/Cargo.toml` build from the repo root runs without it, so glimpse/target rebuilds when a session alternates the two (same as tomlctl today). Copying tomlctl's target-cpu=x86-64-v3 is a separate decision. Verify with `llvm-readobj --coff-imports` after install: no VCRUNTIME140/api-ms-win-crt entries, then time `glimpse --help` interleaved (>=100 runs) against the current binary."""
+evidence = [
+    "llvm-readobj --coff-imports ~/.cargo/bin/glimpse.exe → KERNEL32, USER32, VCRUNTIME140, api-ms-win-crt-{heap,locale,math,runtime,stdio}-l1-1-0, …",
+    "llvm-readobj --coff-imports ~/.cargo/bin/tomlctl.exe → no CRT DLLs",
+    "tomlctl/.cargo/config.toml:14-18 — target-feature=+crt-static; no glimpse/.cargo/",
+    "scratch benchmark (rustc -O hello-world, dynamic vs +crt-static, 120 interleaved runs x2): median 52.03 vs 45.15 ms and 40.18 vs 36.81 ms (stand-in binaries, not glimpse)",
+    "https://doc.rust-lang.org/cargo/commands/cargo-install.html (fetched 2026-09-30) — install --path uses $PATH/.cargo/config.toml",
+]
+first_flagged = 2026-09-30
+rounds = 1
+related = ["O6"]
+status = "applied"
+flow = "polymorphic-wondering-magpie"
+dedup_id = "66d28273660de218"
+resolved = 2026-09-30
+resolution = "Uncommitted: new glimpse/.cargo/config.toml sets +crt-static for x86_64-pc-windows-msvc. Release build imports no VCRUNTIME140 / api-ms-win-crt DLLs (llvm-readobj)."
+
+[[items]]
+id = "O6"
+file = "glimpse/Cargo.toml"
+line = 0
+symbol = "user32 delay-load (new glimpse/build.rs)"
+severity = "warning"
+effort = "small"
+category = "memory"
+summary = "USER32.dll is eagerly imported only for crossterm's key translation, so every `glimpse hook` process loads it; delay-load it for the bin"
+description = """
+Now: glimpse.exe imports four USER32 symbols (GetForegroundWindow, GetKeyboardLayout, GetWindowThreadProcessId, ToUnicodeEx), all from crossterm-0.29.0 src/event/sys/windows/parse.rs, used only when the TUI parses a key. The loader still maps user32 (expensive: GUI-process setup) at start-up for every hook, ensure-pane and --once process. Change: add glimpse/build.rs (picked up with no Cargo.toml edit):
+fn main() {
+    println!("cargo::rerun-if-changed=build.rs");
+    let os = std::env::var("CARGO_CFG_TARGET_OS");
+    let env = std::env::var("CARGO_CFG_TARGET_ENV");
+    if os.as_deref() == Ok("windows") && env.as_deref() == Ok("msvc") {
+        println!("cargo::rustc-link-arg-bins=/DELAYLOAD:user32.dll");
+        println!("cargo::rustc-link-arg-bins=delayimp.lib");
+    }
+}
+A build script works from any cwd (unlike a .cargo config) and changes only the final link. Risks: user32 now loads on the first key event (one-off cost on the first keypress); a failed delay-load raises at that first call. Verify: llvm-readobj --coff-imports shows USER32 only under DelayImport, and an interleaved >=100-run timing shows a gain."""
+evidence = [
+    "llvm-readobj --coff-imports glimpse/target/release/glimpse.exe USER32 block → only GetForegroundWindow, GetKeyboardLayout, GetWindowThreadProcessId, ToUnicodeEx",
+    "~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/crossterm-0.29.0/src/event/sys/windows/parse.rs:8 — imports those four; used in key-char translation",
+    "scratch benchmark (static-CRT hello-world: eager user32 vs none vs /DELAYLOAD, 120 interleaved runs x2): median 52.01 / 45.15 / 46.73 ms and 43.17 / 36.81 / 34.92 ms (stand-in binaries); delay-load build linked cleanly with USER32 under DelayImport",
+]
+first_flagged = 2026-09-30
+rounds = 1
+related = ["O5"]
+status = "applied"
+flow = "polymorphic-wondering-magpie"
+dedup_id = "73c2ba1e8b2cf3dc"
+resolved = 2026-09-30
+resolution = "Uncommitted: new glimpse/build.rs adds /DELAYLOAD:user32.dll + delayimp.lib for bins on Windows MSVC. Release build lists USER32.dll only under DelayImport (llvm-readobj)."
+
+[[items]]
+id = "O7"
+file = "glimpse/src/runtime.rs"
+line = 343
+symbol = "handle"
+severity = "suggestion"
+effort = "trivial"
+category = "algorithm"
+summary = "Event::FlowMtimes and Event::Flows(Ok) always redraw the full frame, though only the selector overlay draws the flow list: another flow's write repaints an unchanged screen, and a write to the viewed flow draws twice"
+description = """
+Now: handle returns Step::Redraw for Event::Flows(Ok(_)) and Event::FlowMtimes(_) unconditionally. app.flows is drawn only by view::selector, rendered only while app.selector_open. So any tasks.toml/context.toml write in any flow of the repo (including a parallel session's) wakes the UI for a full render; for the viewed flow, Poller::step sends Snapshot then Flows/FlowMtimes, often in separate UI wakes → two draws. Change:
+Event::Flows(Ok(entries)) => { flows_listed(app, entries, host, freshest); if app.selector_open { Step::Redraw } else { Step::Nothing } }
+Event::FlowMtimes(mtimes) => { flow_mtimes_moved(app, &mtimes, host, freshest); if app.selector_open { Step::Redraw } else { Step::Nothing } }
+An auto-flow switch still calls host.set_slug and the following Snapshot redraws; Flows(Err) keeps its redraw (sets source_error). Risk: if a view outside the selector starts showing app.flows or the freshest rank it would go stale — none does today."""
+evidence = [
+    "glimpse/src/runtime.rs:343-354 — unconditional Step::Redraw",
+    "glimpse/src/view/mod.rs:116-117 — `if app.selector_open { selector::render(frame, area, app); }`",
+    '''grep '\.flows' glimpse/src → only app.rs selector key handling and view/selector.rs read it''',
+]
+first_flagged = 2026-09-30
+rounds = 1
+status = "applied"
+flow = "polymorphic-wondering-magpie"
+dedup_id = "e25d2bcf1b5b6483"
+resolved = 2026-09-30
+resolution = "Uncommitted: Event::Flows(Ok) and Event::FlowMtimes redraw only while the selector is open (redraw_if helper); new test a_flow_list_redraws_only_while_the_selector_is_open."
+
+[[items]]
+id = "O8"
+file = "glimpse/src/source.rs"
+line = 212
+symbol = "Mode::start"
+severity = "suggestion"
+effort = "small"
+category = "concurrency"
+summary = "On Linux an inotify MaxFilesWatch error drops a working watch, then rebuilds a watcher that cannot start on every poll_ms tick (500 ms): a thread spawn plus a full tree walk each time"
+description = "Now: watch::classify maps any notify Err to Wake::Rewatch. On Linux notify's inotify loop sends Err(MaxFilesWatch) when a newly created flow dir cannot be watched because the inotify limit is spent, while the existing recursive watch still delivers for every other directory. glimpse drops it (Watching + Woken{rewatch} → Poll{retry_watch:true}), then Mode::start runs before every poll tick: a new INotifyWatcher (inotify_init + mio Poll + eventfd + a spawned event-loop thread), a WalkDir add_watch per directory until ENOSPC, then drop — twice a second for the session, briefly consuming inotify slots other processes compete for. Change (one file): keep the cheap `!flows_root.is_dir()` probe every tick, but back off real start attempts after a failure (e.g. `next_start_at: Instant` in Mode::Polling, doubling from poll_ms to ~60 s, cleared on success). Optionally map notify::ErrorKind::MaxFilesWatch to Wake::All in classify to keep the partly working watcher and let the missed-change counter decide. Linux-only (the Windows backend emits no Err); not exercised on this host."
+evidence = [
+    "~/.cargo/registry/src/*/notify-8.2.0/src/inotify.rs:383-395 — add_watch failure with MaxFilesWatch → handle_event(Err(..)); :400-417 recursive add walks and fails on the first add error; :447-451 ENOSPC → MaxFilesWatch",
+    "notify-8.2.0/src/inotify.rs:122-126 — every EventLoop::run spawns a thread",
+    "glimpse/src/watch.rs:30 — `Err(_) => return Some(Wake::Rewatch)`; glimpse/src/source.rs:212-223 Mode::start, :278-289 mode_change (Retrying + Tick → Start)",
+]
+first_flagged = 2026-09-30
+rounds = 1
+related = ["O1"]
+status = "applied"
+flow = "polymorphic-wondering-magpie"
+dedup_id = "ecd44c5fdfb5c607"
+resolved = 2026-09-30
+resolution = "Uncommitted: Mode::Polling carries a Backoff; failed watch starts back off from poll_ms doubling to a 60 s cap, cleared on success/abandon/rewatch; the missing-root probe still runs every tick. Two new tests."
+
+[[items]]
+id = "O9"
+file = "glimpse/src/source.rs"
+line = 118
+symbol = "flows_fingerprint"
+severity = "suggestion"
+effort = "trivial"
+category = "query"
+summary = "flows_fingerprint stats context.toml for flows with no tasks.toml and then discards the result: 39 wasted file opens per full rescan here"
+description = 'Now: on a cache miss (first scan, Wake::All, Wake::Rewatch, or a moved dir mtime) FlowStat stats both tasks.toml and context.toml; the result filter keeps a flow only when stat.tasks is Some, so a context stat for a flow without a task store is never read. On Windows each stat is a CreateFileW failing NOT_FOUND through the AV minifilter stack. With 46 flow dirs and 7 task stores that is 39 wasted opens per full rescan. Change: `let tasks = modified(&path.join("tasks.toml")); FlowStat { dir, tasks, context: tasks.and_then(|_| modified(&path.join("context.toml"))) }`. A later tasks.toml creation moves the dir mtime or arrives as a wake that evicts the entry, so the context stat still happens once it matters.'
+evidence = [
+    "glimpse/src/source.rs:112-134 — both files statted on a miss; filter_map keeps only stat.tasks.is_some()",
+    "rustc 1.98.1 library/std/src/sys/fs/windows.rs metadata → File::open_native + file_attr (an open per stat)",
+    "command: 46 flow dirs, 7 with tasks.toml",
+]
+first_flagged = 2026-09-30
+rounds = 1
+related = ["O4"]
+status = "applied"
+flow = "polymorphic-wondering-magpie"
+dedup_id = "05ec6bcad65d2609"
+resolved = 2026-09-30
+resolution = "Uncommitted: flows_fingerprint stats context.toml only when tasks.toml exists."
+
+[[items]]
+id = "O10"
+file = "glimpse/src/hook.rs"
+line = 218
+symbol = "handle"
+severity = "suggestion"
+effort = "trivial"
+category = "query"
+summary = "`glimpse hook` reads and parses the user config (and logs any config warning to hook.log) on every hook event, though since this flow only the EnsurePane arm uses it"
+description = """
+Now: handle() calls Config::load() (read_to_string + TOML parse + theme validation) right after parsing the payload, before the flowless early return and before recording, and appends any warning to hook.log. Before this flow config supplied the tomlctl binary path to record(&config, …); the in-process change removed that, so the only consumer is crate::pane::ensure in the HookAction::EnsurePane arm (a recorded `start` inside herdr). Stops, idles, flowless cwds and non-herdr sessions pay a file read + parse for nothing, and a stale config logs one warning line per event (hook.log shows five identical `unknown key cell_aspect` lines in three minutes). Change: delete hook.rs:218-221 and load inside the arm:
+HookAction::EnsurePane { origin_pane, slug, cwd } => {
+    let (config, warning) = Config::load();
+    if let Some(w) = warning { log_error(&w); }
+    crate::pane::ensure(&Herdr::from_env(), &origin_pane, slug.as_deref(), Some(&cwd), false, &config)
+        .map(drop)
+        .map_err(|e| format!("cannot open the glimpse pane: {e}"))
+}
+Tradeoff: a bad config is reported only when a pane opens — the only time it takes effect. No test in glimpse/tests/cli.rs asserts a per-event config warning. Flagged independently by the memory, serialization, queries and algorithm lenses."""
+evidence = [
+    "glimpse/src/hook.rs:216-248 — Config::load at 218, flowless return at 224-227, config used only in the EnsurePane arm",
+    "git diff f640b6a..HEAD -- glimpse/src/hook.rs — removed `record(&config, harness, &payload, cwd.as_deref())` (config fed the tomlctl spawn)",
+    "glimpse/src/config.rs:351-376 — load/load_from: read_to_string + Config::parse + validation",
+    "~/.claude/glimpse/hook.log — five identical config-warning lines 07:53-07:56Z 2026-09-30",
+]
+first_flagged = 2026-09-30
+rounds = 1
+status = "applied"
+flow = "polymorphic-wondering-magpie"
+dedup_id = "004a13940499c7bd"
+resolved = 2026-09-30
+resolution = "Uncommitted: Config::load and its warning log moved into the HookAction::EnsurePane arm of hook::handle."
+
+[[vet_events]]
+timestamp = "2026-09-30T18:00:00Z"
+command = "optimise"
+agent_index = 1
+lens = "memory"
+tier = "deep"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Import tables re-read with llvm-readobj (VCRUNTIME140/api-ms-win-crt/USER32 confirmed), crossterm parse.rs:8 user32 imports confirmed, no glimpse/.cargo or build.rs. Config::load finding merged into O10."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T18:00:00Z"
+command = "optimise"
+agent_index = 2
+lens = "serialization"
+tier = "deep"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "snapshot.rs:46-50 hash-before-parse, source.rs:550-557 post-fetch compare, io.rs mutate_doc unconditional write confirmed. load_flows finding routed to backlog (tomlctl/src/agents/record.rs outside flow scope); relist and hook-config findings merged into O4/O10."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T18:00:00Z"
+command = "optimise"
+agent_index = 3
+lens = "queries"
+tier = "deep"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "tempfile-3.27.0 windows persist (bare MoveFileExW) and std rename POSIX_SEMANTICS fallback confirmed in installed sources; lockfiles pin tempfile 3.27.0; flows_fingerprint double stat confirmed at source.rs:112-134. Pattern sweeps for O2/O3/O4 re-run: instance sets match."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T18:00:00Z"
+command = "optimise"
+agent_index = 4
+lens = "algorithm"
+tier = "deep"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Relist, load_flows and hook config anchors confirmed; 46 flow dirs / 7 task stores re-counted. A provisional severity downgrade on the relist finding was reverted after Agent-3's same-run timing corroborated it. load_flows routed to backlog (outside flow scope)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T18:00:00Z"
+command = "optimise"
+agent_index = 5
+lens = "async"
+tier = "deep"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "on_tick clean-safety reset (source.rs:352-360), notify-8.2.0 windows.rs:339-368 silent unwatch and absence of Rescan, runtime.rs:343-354 unconditional redraws, watch.rs:30 Err->Rewatch all confirmed."
+dedup_id = "45ca31c3315a5978"
