@@ -1,8 +1,9 @@
 //! Query engine for `tomlctl items list`.
 //!
 //! Pure-function module: takes a parsed `toml::Value` document plus a
-//! `Query` spec (built by `main.rs` clap dispatch) and returns a
-//! `serde_json::Value` shaped per the requested output.
+//! `Query` spec (built from the CLI's `QueryInput` via
+//! `Query::from_query_input`) and returns a `serde_json::Value` shaped per
+//! the requested output.
 //!
 //! Pipeline order:
 //!   filter → distinct → sort → offset/limit → aggregate OR project → shape
@@ -379,7 +380,7 @@ impl ShapeDispatch for OutputShape {
     }
 }
 
-/// Full query spec handed to `run`. `main.rs` builds this from clap args.
+/// Full query spec handed to `run`, built from clap args via `QueryInput`.
 /// Field names mirror the CLI flags for easy mental mapping.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Query {
@@ -489,7 +490,7 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
             "--raw and --lines/--ndjson cannot be combined on row output: --raw is the single-value form, --lines/--ndjson the one-row-per-line form — pass one, or add --pluck <f> for one bare value per line"
         );
     }
-    // Cross-shape pairs. `main.rs` is expected to pick exactly one of the
+    // Cross-shape pairs. The CLI dispatch is expected to pick exactly one of the
     // below shapes, but we still double-check so callers with programmatic
     // builders can't accidentally set two.
     // (The clap layer normally collapses these by priority; this is belt

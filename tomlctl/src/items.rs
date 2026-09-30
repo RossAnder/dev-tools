@@ -2865,9 +2865,9 @@ summary = "design finding"
     #[test]
     fn items_next_id_on_empty_doc_returns_prefix_one() {
         // Stand-in for a ledger that exists but has no items yet. The
-        // handler's pre-existence check in main.rs covers the "file missing"
-        // case without invoking items_next_id at all; this test pins the
-        // direct-call behaviour for an empty doc.
+        // `items next-id` handler in cli/dispatch.rs covers the "file
+        // missing" case by passing its own empty table; this test pins the
+        // direct-call behaviour for a doc that has only a header.
         let empty: TomlValue = toml::from_str("schema_version = 1\n").unwrap();
         assert_eq!(items_next_id(&empty, "R").unwrap(), "R1");
     }

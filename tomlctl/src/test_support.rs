@@ -1,8 +1,8 @@
 //! Shared test helpers.
 //!
 //! The `env_lock()` mutex serialises env-var-mutating tests in any module.
-//! Tests in `io.rs`, `main.rs`, and `cli.rs` can share it through a single
-//! `OnceLock<Mutex<()>>` anchored here.
+//! Tests in any library module (today `io.rs` and `items.rs`) share it
+//! through a single `OnceLock<Mutex<()>>` anchored here.
 //!
 //! `RootGuard` is the only place that sets `TOMLCTL_ROOT`, and `with_root()`
 //! is the closure form of it. A per-module copy is how one module ends up

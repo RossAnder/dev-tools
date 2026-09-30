@@ -14,9 +14,9 @@
 //!   [`crate::output`] module — sibling of `cli`, not child — because they
 //!   don't touch clap types and shouldn't carry a CLI-scoped path.
 //!
-//! External callers (`main.rs`) see the same import surface they saw
-//! pre-split: `use crate::cli::{Cli, ErrorFormat}` and `cli::run(cli)`. The
-//! `pub(crate) use` re-exports below keep that stable.
+//! The external caller, the library root's `run` in `lib.rs`, imports
+//! `crate::cli::{Cli, ErrorFormat}` and calls `cli::run(cli)`; the
+//! `pub(crate) use` re-exports below keep that surface stable.
 
 mod dispatch;
 mod types;

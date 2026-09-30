@@ -156,14 +156,14 @@ fn refuse_json_extension_for_toml_writers(file: &std::path::Path) -> Result<()> 
     Ok(())
 }
 
-/// Top-level dispatch entrypoint. `main.rs` is a one-line wrapper over
-/// this; splitting lets the binary target stay trivially small while all
-/// the parsing/dispatch/output plumbing lives in a normal module.
+/// Top-level dispatch entrypoint, called by the library root's `run` (which
+/// the binary's `main` wraps); all the dispatch/output plumbing lives in a
+/// normal module rather than the crate root.
 ///
-/// The `Cli` is parsed once in `main.rs` and threaded in here. A second
-/// parse here (a `try_parse()` peek for `--error-format`, then a full
-/// `Cli::parse()` on entry) would silently swallow errors on the peek path
-/// and risk double `--help` rendering.
+/// The `Cli` is parsed once in the library root's `run` and threaded in
+/// here. A second parse here (a `try_parse()` peek for `--error-format`,
+/// then a full `Cli::parse()` on entry) would silently swallow errors on
+/// the peek path and risk double `--help` rendering.
 pub(crate) fn run(cli: Cli) -> Result<()> {
     match cli.cmd {
         Cmd::Parse { file, integrity } => {

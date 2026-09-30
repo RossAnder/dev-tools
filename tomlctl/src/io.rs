@@ -793,7 +793,7 @@ pub(crate) fn warn_if_created(file: &Path, created: bool) {
 /// Classify a `read_toml` failure as "the file is missing" (the
 /// `NotFound`-tagged error `read_toml` raises) vs anything else. Inspects the
 /// attached `TaggedError` via anyhow's inherent `downcast_ref` (the same
-/// taxonomy `main.rs` reads for `--error-format json`), NOT the message text —
+/// taxonomy `lib.rs`'s error reporter reads for `--error-format json`), NOT the message text —
 /// a `Parse` error or any other I/O failure returns `false` so an
 /// existing-but-unreadable file is NEVER overwritten by a seed.
 fn is_not_found(err: &anyhow::Error) -> bool {

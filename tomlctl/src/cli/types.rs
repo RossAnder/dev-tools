@@ -135,7 +135,7 @@ pub(crate) struct Cli {
 }
 
 /// Stderr-format selector surfaced via `--error-format`. `pub(crate)` so
-/// `main.rs` can pattern-match on the variant before dispatching to `run()`.
+/// the library root's `run` can match on the variant when reporting an error.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ErrorFormat {
     /// Default — the plain `tomlctl: <anyhow chain>` line.
