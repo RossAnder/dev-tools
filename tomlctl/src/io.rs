@@ -472,6 +472,12 @@ pub(crate) fn strict_read_check(file: &Path, strict_read: bool) -> Result<()> {
 }
 
 pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
+    read_toml_with_source(path).map(|(doc, _)| doc)
+}
+
+/// `read_toml` that also hands back the source text it parsed, so a writer
+/// can tell whether re-serialising the document would change the file.
+fn read_toml_with_source(path: &Path) -> Result<(TomlValue, String)> {
     // Split the two failure modes so each gets the correct tag. A
     // `fs::read_to_string` failure whose inner `io::Error` is `NotFound` is
     // tagged `NotFound`; any other I/O error is untagged and falls through
@@ -494,7 +500,8 @@ pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
                 .with_context(|| format!("reading {}", path.display()));
         }
     };
-    parse_toml_source(path, &s)
+    let doc = parse_toml_source(path, &s)?;
+    Ok((doc, s))
 }
 
 /// `read_toml` over bytes the caller already read from `path`, for a caller
@@ -826,13 +833,14 @@ where
         // the canonical leaf-symlink and parent-containment checks observe the
         // post-wait filesystem state. Guarding only before the lock leaves a
         // window where a process competing for the lock could swap a leaf
-        // symlink between the guard and `persist()`; running the guard inside
-        // the critical section closes that window for any actor that respects
-        // our lock.
+        // symlink between the guard and the final rename; running the guard
+        // inside the critical section closes that window for any actor that
+        // respects our lock.
         guard_write_path(file, allow_outside)?;
         // Read, or seed on a NotFound miss. `read_or_seed` resolves the
-        // `on_missing` policy and reports whether the doc was seeded.
-        let (mut doc, created) = read_or_seed(file, on_missing)?;
+        // `on_missing` policy; no source text means the doc was seeded.
+        let (mut doc, on_disk) = read_or_seed(file, on_missing)?;
+        let created = on_disk.is_none();
         f(&mut doc)?;
         // TOCTOU narrowing: re-canonicalise target parent immediately before
         // the atomic persist and re-check that it still lies under `.claude/`.
@@ -843,27 +851,56 @@ where
         if !allow_outside {
             recheck_claude_containment(file)?;
         }
-        write_toml_with_sidecar(file, &doc, integrity)?;
+        write_doc_unless_unchanged(file, &doc, integrity, on_disk.as_deref())?;
         Ok(created)
     })
 }
 
 /// Shared read-or-seed step for the `mutate_doc*` family. Attempts
 /// `read_toml(file)`; on a `NotFound`-tagged miss it consults `on_missing`:
-/// `Create(seed)` returns `(seed, created=true)`, `Error` re-propagates the
+/// `Create(seed)` returns `(seed, None)`, `Error` re-propagates the
 /// original error. A non-`NotFound` read error (e.g. a `Parse` failure on an
 /// existing-but-corrupt file) ALWAYS propagates — `on_missing` is irrelevant
 /// there, so a seed can never clobber a file that exists but won't parse. A
-/// successful read returns `(doc, created=false)`.
-fn read_or_seed(file: &Path, on_missing: OnMissing) -> Result<(TomlValue, bool)> {
-    match read_toml(file) {
-        Ok(doc) => Ok((doc, false)),
+/// successful read returns the doc with `Some(source)`, the text it parsed.
+fn read_or_seed(file: &Path, on_missing: OnMissing) -> Result<(TomlValue, Option<String>)> {
+    match read_toml_with_source(file) {
+        Ok((doc, source)) => Ok((doc, Some(source))),
         Err(e) if is_not_found(&e) => match on_missing {
-            OnMissing::Create(seed) => Ok((seed, true)),
+            OnMissing::Create(seed) => Ok((seed, None)),
             OnMissing::Error => Err(e),
         },
         Err(e) => Err(e),
     }
+}
+
+/// `write_toml_with_sidecar` that skips the write when it would change
+/// nothing: `on_disk` (the text the doc was read from, `None` when seeded)
+/// equals the serialised doc and, if this call writes a sidecar, the sidecar
+/// already holds exactly what it would write. A skipped write leaves the
+/// mtime alone, so file watchers are not woken by a no-op mutation.
+fn write_doc_unless_unchanged(
+    path: &Path,
+    value: &TomlValue,
+    integrity: IntegrityOpts,
+    on_disk: Option<&str>,
+) -> Result<()> {
+    let serialized = toml::to_string_pretty(value).context("serialising TOML")?;
+    let unchanged = on_disk == Some(serialized.as_str())
+        && (!integrity.write_sidecar || sidecar_covers(path, serialized.as_bytes()));
+    if unchanged {
+        return Ok(());
+    }
+    write_serialized_with_sidecar(path, serialized.as_bytes(), integrity)
+}
+
+/// Whether `path`'s sidecar holds byte-for-byte what `write_sidecar_for`
+/// would write for `bytes`. Any read failure counts as "not covered".
+fn sidecar_covers(path: &Path, bytes: &[u8]) -> bool {
+    let Ok(expected) = sidecar_contents(path, bytes) else {
+        return false;
+    };
+    fs::read(sidecar_path(path)).is_ok_and(|current| current == expected.as_bytes())
 }
 
 /// Sibling of `mutate_doc` whose closure returns `Result<bool>`. When
@@ -904,7 +941,8 @@ where
         // Read, or seed on a NotFound miss. `seeded` tracks whether the
         // doc started from the seed; it only graduates to a reported
         // `created=true` if the closure also asks to persist (below).
-        let (mut doc, seeded) = read_or_seed(file, on_missing)?;
+        let (mut doc, on_disk) = read_or_seed(file, on_missing)?;
+        let seeded = on_disk.is_none();
         let mutated = f(&mut doc)?;
         if !mutated {
             // Skip the write — the caller signalled no-op (e.g. dedupe hit).
@@ -918,7 +956,7 @@ where
         if !allow_outside {
             recheck_claude_containment(file)?;
         }
-        write_toml_with_sidecar(file, &doc, integrity)?;
+        write_doc_unless_unchanged(file, &doc, integrity, on_disk.as_deref())?;
         Ok(seeded)
     })
 }
@@ -956,7 +994,8 @@ where
         // In-lock guard, same as `mutate_doc`.
         guard_write_path(file, allow_outside)?;
         // Read, or seed on a NotFound miss.
-        let (doc, created) = read_or_seed(file, on_missing)?;
+        let (doc, on_disk) = read_or_seed(file, on_missing)?;
+        let created = on_disk.is_none();
         // The closure failing here short-circuits BEFORE the persist below
         // (`?`), so a no-match compute against a freshly-seeded doc writes
         // nothing — the transactional "write-only-on-closure-success" property
@@ -971,7 +1010,7 @@ where
         // sibling implementation so the sidecar + tempfile semantics are
         // shared between the in-lock wrapper path and any future caller
         // that holds the plan outside the lock.
-        write_toml_with_sidecar(file, &plan.new_doc, integrity)?;
+        write_doc_unless_unchanged(file, &plan.new_doc, integrity, on_disk.as_deref())?;
         Ok(created)
     })
 }
@@ -1910,6 +1949,14 @@ pub(crate) fn warn_if_read_outside_claude(file: &Path) {
 /// bytes in hand. Used by both `write_toml_with_sidecar` (first persist and
 /// its recovery branch) and `integrity::refresh_sidecar`.
 pub(crate) fn write_sidecar_for(file: &Path, bytes: &[u8]) -> Result<()> {
+    atomic_write(
+        &sidecar_path(file),
+        sidecar_contents(file, bytes)?.as_bytes(),
+    )
+}
+
+/// The `<hex>  <basename>\n` text a sidecar for `bytes` at `file` holds.
+fn sidecar_contents(file: &Path, bytes: &[u8]) -> Result<String> {
     let hex = hex_lower(&Sha256::digest(bytes));
     // Keep the basename as the borrowed `Cow<str>` returned by
     // `to_string_lossy()` rather than forcing an owned `String` via
@@ -1926,8 +1973,7 @@ pub(crate) fn write_sidecar_for(file: &Path, bytes: &[u8]) -> Result<()> {
             )
         })?
         .to_string_lossy();
-    let sidecar_contents = format!("{}  {}\n", hex, basename);
-    atomic_write(&sidecar_path(file), sidecar_contents.as_bytes())
+    Ok(format!("{}  {}\n", hex, basename))
 }
 
 /// Write the TOML document and (unless suppressed) also write the `<file>.sha256`
@@ -1965,8 +2011,16 @@ pub(crate) fn write_toml_with_sidecar(
     integrity: IntegrityOpts,
 ) -> Result<()> {
     let serialized = toml::to_string_pretty(value).context("serialising TOML")?;
-    let bytes = serialized.as_bytes();
+    write_serialized_with_sidecar(path, serialized.as_bytes(), integrity)
+}
 
+/// The persist half of `write_toml_with_sidecar`, over already-serialised
+/// bytes.
+fn write_serialized_with_sidecar(
+    path: &Path,
+    bytes: &[u8],
+    integrity: IntegrityOpts,
+) -> Result<()> {
     if !integrity.write_sidecar {
         return atomic_write(path, bytes);
     }
@@ -2588,6 +2642,115 @@ arr = [1, 2]
                 Some(true),
                 "closure mutation must be persisted atop the seed"
             );
+        });
+    }
+
+    fn backdate(path: &Path) -> std::time::SystemTime {
+        let past = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
+        past
+    }
+
+    fn mtime(path: &Path) -> std::time::SystemTime {
+        fs::metadata(path).unwrap().modified().unwrap()
+    }
+
+    /// A mutation that leaves the serialised document byte-identical writes
+    /// nothing — neither the file nor its sidecar is touched — while a real
+    /// change still rewrites both.
+    #[test]
+    fn mutate_doc_skips_the_write_when_nothing_changes() {
+        with_root(|root| {
+            let claude = root.join(".claude");
+            fs::create_dir_all(&claude).unwrap();
+            let target = claude.join("ledger.toml");
+            let sidecar = sidecar_path(&target);
+            write_toml_with_sidecar(&target, &led(), integrity_write_only()).unwrap();
+            let past = backdate(&target);
+            backdate(&sidecar);
+
+            let created = mutate_doc(
+                &target,
+                false,
+                integrity_write_only(),
+                OnMissing::Error,
+                |doc| {
+                    let table = doc.as_table_mut().unwrap();
+                    table.insert("schema_version".to_string(), TomlValue::Integer(1));
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert!(!created);
+            assert_eq!(mtime(&target), past, "no-op must not rewrite the file");
+            assert_eq!(mtime(&sidecar), past, "no-op must not rewrite the sidecar");
+
+            mutate_doc(
+                &target,
+                false,
+                integrity_write_only(),
+                OnMissing::Error,
+                |doc| {
+                    let table = doc.as_table_mut().unwrap();
+                    table.insert("schema_version".to_string(), TomlValue::Integer(2));
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert_ne!(mtime(&target), past, "a real change must rewrite the file");
+            assert_ne!(
+                mtime(&sidecar),
+                past,
+                "a real change must rewrite the sidecar"
+            );
+            verify_integrity(&target).unwrap();
+        });
+    }
+
+    /// An unchanged document whose sidecar is missing or stale is still
+    /// written, so the mutation regenerates a verifiable sidecar.
+    #[test]
+    fn mutate_doc_rewrites_an_unchanged_document_with_a_stale_sidecar() {
+        with_root(|root| {
+            let claude = root.join(".claude");
+            fs::create_dir_all(&claude).unwrap();
+            let target = claude.join("ledger.toml");
+            write_toml_with_sidecar(&target, &led(), integrity_write_only()).unwrap();
+            fs::write(
+                sidecar_path(&target),
+                format!("{}  ledger.toml\n", "0".repeat(64)),
+            )
+            .unwrap();
+            assert!(
+                verify_integrity(&target).is_err(),
+                "precondition: stale sidecar"
+            );
+
+            mutate_doc(
+                &target,
+                false,
+                integrity_write_only(),
+                OnMissing::Error,
+                |_| Ok(()),
+            )
+            .unwrap();
+            verify_integrity(&target).unwrap();
+
+            fs::remove_file(sidecar_path(&target)).unwrap();
+            mutate_doc(
+                &target,
+                false,
+                integrity_write_only(),
+                OnMissing::Error,
+                |_| Ok(()),
+            )
+            .unwrap();
+            verify_integrity(&target).unwrap();
         });
     }
 
