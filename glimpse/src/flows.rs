@@ -1,5 +1,6 @@
 //! Discovery of the repo's flows and selection of the freshest one.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
@@ -81,15 +82,15 @@ pub(crate) fn flows_root(root: &Path) -> PathBuf {
     root.join(".claude").join("flows")
 }
 
-/// Lists the repo's flows that have a `tasks.toml`, freshest first.
-pub(crate) fn list(root: &Path) -> Result<Vec<FlowEntry>, String> {
-    let value = tomlctl::flow_list(root).map_err(|e| format!("{e:#}"))?;
-    let flows = flows_root(root);
-    let mut entries = parse_flows(&value, |slug| {
-        std::fs::metadata(flows.join(slug).join("tasks.toml"))
-            .and_then(|m| m.modified())
-            .ok()
-    })?;
+/// Lists the repo's flows named in `task_stores`, the `tasks.toml` mtime of every flow that
+/// has one, freshest first. No other flow's `context.toml` is read.
+pub(crate) fn list(
+    root: &Path,
+    task_stores: &BTreeMap<String, SystemTime>,
+) -> Result<Vec<FlowEntry>, String> {
+    let value = tomlctl::flow_list_matching(root, |slug| task_stores.contains_key(slug))
+        .map_err(|e| format!("{e:#}"))?;
+    let mut entries = parse_flows(&value, |slug| task_stores.get(slug).copied())?;
     rank(&mut entries);
     Ok(entries)
 }

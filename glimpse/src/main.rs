@@ -114,7 +114,7 @@ fn once_snapshot(opts: &RunOpts, once: &Once) -> Result<Snapshot, String> {
     let slug = match &opts.slug {
         Some(slug) => slug.clone(),
         None => {
-            let entries = flows::list(&opts.root)?;
+            let entries = flows::list(&opts.root, &source::task_store_mtimes(&opts.root))?;
             flows::freshest(&entries)
                 .map(|f| f.slug.clone())
                 .ok_or_else(|| {
@@ -125,7 +125,9 @@ fn once_snapshot(opts: &RunOpts, once: &Once) -> Result<Snapshot, String> {
                 })?
         }
     };
-    InProcessFetcher.fetch(&opts.root, &slug)
+    InProcessFetcher
+        .fetch(&opts.root, &slug, None)
+        .map(|built| built.expect("no known revision always builds"))
 }
 
 fn read_snapshot(path: &Path) -> Result<Snapshot, String> {

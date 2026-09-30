@@ -255,13 +255,17 @@ Claude Code / Codex hook ─► glimpse hook (records in-process) ─► .claude
   compares the `(mtime, length)` of the viewed flow's four files and builds a
   snapshot in-process only when one moved, so in-place edits are seen as well as
   tomlctl's renames. A safety pass runs every 10 s regardless. If the watch cannot
-  be set up, glimpse polls every `poll_ms` and keeps trying to watch; if two safety
-  passes in a row find a change the watch never reported, it gives up on the
-  watch and polls every `poll_ms` for the rest of the session. A snapshot with an
-  unchanged revision is dropped, and a status-only change repaints over the cached
-  diagram layout. The activity panel's transcript is re-read once a second on the
-  poller thread while the panel is open. With nothing animating the event loop
-  blocks, so an idle glimpse does no work beyond the safety pass.
+  be set up, glimpse polls every `poll_ms` and keeps trying to watch, backing off
+  from `poll_ms` to once a minute; if two safety passes find a change the watch
+  never reported, with no watch event between them, it gives up on the watch and
+  polls every `poll_ms` for the rest of the session. Files whose bytes still hash
+  to the shown revision are not rebuilt, and a status-only change repaints over
+  the cached diagram layout. The activity panel's transcript is re-read once a
+  second on the poller thread while the panel is open. With nothing animating the
+  event loop blocks, so glimpse's own threads do no periodic work beyond the
+  safety pass. On Windows the watch library's backend thread still wakes about ten
+  times a second, and it drops a failed watch without reporting it, so there the
+  safety pass is the only thing that notices a dead watch.
 
 `agents.toml` is local telemetry and gitignored; the execution record remains the
 durable history.
