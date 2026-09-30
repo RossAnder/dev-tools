@@ -61,7 +61,27 @@ pub(crate) struct TailState {
     root: Option<PathBuf>,
 }
 
+/// What the activity panel draws of a tail: its fields, without the means to read the
+/// file, so the UI thread cannot do file I/O through it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct TailView {
+    pub(crate) path: String,
+    pub(crate) entries: Vec<Entry>,
+    pub(crate) tokens: Option<u64>,
+    pub(crate) rejected: bool,
+}
+
 impl TailState {
+    /// A copy of the fields the panel draws.
+    pub(crate) fn view(&self) -> TailView {
+        TailView {
+            path: self.path.clone(),
+            entries: self.entries.clone(),
+            tokens: self.tokens,
+            rejected: self.rejected,
+        }
+    }
+
     /// A tail confined to the Claude config directory.
     pub(crate) fn new(path: &str) -> TailState {
         TailState::within(path, claude_dir())

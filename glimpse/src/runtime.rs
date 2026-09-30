@@ -27,7 +27,7 @@ use crate::keys;
 use crate::model::Snapshot;
 use crate::source::{Event, Source};
 use crate::state::State;
-use crate::transcript::TailState;
+use crate::transcript::TailView;
 use crate::view;
 
 /// What the live view and the one-shot render start from.
@@ -81,7 +81,7 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
     spawn_input(events.clone());
     let source = Source::start(root, slug, &config, events);
 
-    let mut screen = Screen::new(app, config, TailState::default());
+    let mut screen = Screen::new(app, config, TailView::default());
     let mut host = TerminalHost {
         terminal: &mut terminal,
         source: &source,
@@ -139,7 +139,7 @@ pub(crate) fn render_once(
         app.selected = select;
         app.follow = false;
     }
-    let mut screen = Screen::new(app, opts.config.clone(), TailState::default());
+    let mut screen = Screen::new(app, opts.config.clone(), TailView::default());
     let Ok(mut terminal) = Terminal::new(TestBackend::new(width, height));
     let Ok(_) = terminal.draw(|frame| screen.render(frame));
     let buffer = terminal.backend().buffer();
@@ -188,11 +188,11 @@ struct Screen {
     app: App,
     config: Config,
     cache: DiagramCache,
-    tail: TailState,
+    tail: TailView,
 }
 
 impl Screen {
-    fn new(app: App, config: Config, tail: TailState) -> Screen {
+    fn new(app: App, config: Config, tail: TailView) -> Screen {
         Screen {
             app,
             config,
@@ -225,7 +225,7 @@ fn tail_target(app: &App) -> Option<String> {
 fn follow_tail(screen: &mut Screen, host: &mut impl Host, sent: &mut Option<String>) {
     let target = tail_target(&screen.app);
     if target != *sent {
-        screen.tail = TailState::default();
+        screen.tail = TailView::default();
         host.set_tail(target.clone());
         *sent = target;
     }
@@ -353,6 +353,9 @@ fn handle(
             Step::Redraw
         }
         Event::Tail(tail) => {
+            if tail_target(app).as_deref() != Some(tail.path.as_str()) {
+                return Step::Nothing;
+            }
             screen.tail = *tail;
             Step::Redraw
         }
@@ -480,7 +483,7 @@ mod tests {
             ..Snapshot::default()
         };
         let config = Config::default();
-        Screen::new(App::new(snapshot, &config), config, TailState::default())
+        Screen::new(App::new(snapshot, &config), config, TailView::default())
     }
 
     fn resize() -> Event {
@@ -529,7 +532,7 @@ mod tests {
     #[test]
     fn the_activity_tail_follows_the_selected_agent() {
         let config = Config::default();
-        let mut screen = Screen::new(App::new(fixture(), &config), config, TailState::default());
+        let mut screen = Screen::new(App::new(fixture(), &config), config, TailView::default());
         let expected = view::activity::agent(&screen.app)
             .map(|agent| agent.transcript_path.clone())
             .expect("task 4 has a running agent");
@@ -543,9 +546,11 @@ mod tests {
         follow_tail(&mut screen, &mut host, &mut tailing);
         assert_eq!(host.tails, [Some(expected.clone())], "sent once on opening");
 
-        let mut tail = TailState::default();
-        tail.path = expected.clone();
-        tail.tokens = Some(42);
+        let tail = TailView {
+            path: expected.clone(),
+            tokens: Some(42),
+            ..TailView::default()
+        };
         let step = handle(
             &mut screen,
             Event::Tail(Box::new(tail.clone())),
@@ -554,6 +559,21 @@ mod tests {
         );
         assert!(matches!(step, Step::Redraw));
         assert_eq!(screen.tail, tail, "the poller's tail is drawn");
+
+        let mut stale = tail.clone();
+        stale.path = format!("{expected}.other");
+        stale.tokens = Some(7);
+        let step = handle(
+            &mut screen,
+            Event::Tail(Box::new(stale)),
+            &mut host,
+            &mut None,
+        );
+        assert!(matches!(step, Step::Nothing));
+        assert_eq!(
+            screen.tail, tail,
+            "a tail for another transcript is dropped"
+        );
 
         screen.app.apply(Action::ToggleActivity);
         follow_tail(&mut screen, &mut host, &mut tailing);

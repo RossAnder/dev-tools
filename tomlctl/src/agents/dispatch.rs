@@ -15,15 +15,25 @@ pub(crate) fn dispatch_record(
     payload_arg: &str,
     write_args: &WriteIntegrityArgs,
 ) -> Result<()> {
+    let payload = io::read_json_value_from_arg(payload_arg).context("parsing PAYLOAD")?;
+    print_json_compact(&record_value(harness, &payload, write_args)?)
+}
+
+/// Record one already-parsed hook payload under the named harness and return
+/// the outcome the CLI prints. Shared by `agents record` and the library's
+/// `record_agent`, so both reject an unknown harness with the same message.
+pub(crate) fn record_value(
+    harness: &str,
+    payload: &serde_json::Value,
+    write_args: &WriteIntegrityArgs,
+) -> Result<serde_json::Value> {
     let harness = Harness::parse(harness).ok_or_else(|| {
         anyhow!(
             "agents record: unknown harness `{harness}` — expected one of {}",
             Harness::VOCABULARY.join(", ")
         )
     })?;
-    let payload = io::read_json_value_from_arg(payload_arg).context("parsing PAYLOAD")?;
-    let outcome = super::record::record(harness, &payload, write_args)?;
-    print_json_compact(&outcome)
+    super::record::record(harness, payload, write_args)
 }
 
 /// Print the flow's agent records as a JSON array.

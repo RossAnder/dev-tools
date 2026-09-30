@@ -24,9 +24,11 @@ use crate::integrity::hex_lower;
 use crate::io::{items_array, parse_toml_bytes, read_doc_owned};
 
 const SCHEMA: u32 = 1;
-const RECORD_FILE: &str = "execution-record.toml";
-const AGENTS_FILE: &str = "agents.toml";
-const CONTEXT_FILE: &str = "context.toml";
+// The store's siblings, named once in `SNAPSHOT_INPUTS` so a viewer's
+// fingerprint covers the same files this reads.
+const RECORD_FILE: &str = crate::SNAPSHOT_INPUTS[1];
+const AGENTS_FILE: &str = crate::SNAPSHOT_INPUTS[2];
+const CONTEXT_FILE: &str = crate::SNAPSHOT_INPUTS[3];
 const REVISION_HEX_LEN: usize = 16;
 
 /// The snapshot of the flow whose store is `store_path`; its siblings are
@@ -378,6 +380,15 @@ needs = [1]
             snap["agents"],
             json!([{ "id": "A1", "agent_id": "x", "future_key": 7 }])
         );
+    }
+
+    #[test]
+    fn the_first_snapshot_input_is_the_store_a_slug_resolves_to() {
+        crate::test_support::with_root(|_root| {
+            let store = store::resolve_store_path(Some("demo"), None).unwrap();
+            let name = store.file_name().unwrap().to_str().unwrap();
+            assert_eq!(name, crate::SNAPSHOT_INPUTS[0]);
+        });
     }
 
     #[test]

@@ -25,7 +25,7 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 use crate::app::{App, Navigator, Regions};
 use crate::config::{Config, Density, Orientation, Split, ViewKind, aspect};
 use crate::diagram::{self, DiagramCache};
-use crate::transcript::TailState;
+use crate::transcript::TailView;
 
 /// Rows an activity-only modal needs: borders, the status row and every shown entry.
 const ACTIVITY_ROWS: u16 = activity::SHOWN_ENTRIES as u16 + 3;
@@ -48,7 +48,7 @@ pub(crate) fn render(
     app: &mut App,
     config: &Config,
     cache: &mut DiagramCache,
-    tail: &TailState,
+    tail: &TailView,
 ) {
     let area = frame.area();
     let density = app.density.resolve(area.width, config.compact_below);
@@ -216,7 +216,7 @@ fn draw_panels(
     frame: &mut Frame,
     area: Rect,
     app: &App,
-    tail: &TailState,
+    tail: &TailView,
     modal: bool,
 ) -> Option<(Rect, u16)> {
     let now = SystemTime::now();
@@ -356,7 +356,7 @@ mod tests {
     fn draw(app: &mut App, width: u16, height: u16) -> Vec<String> {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
         let mut cache = DiagramCache::default();
-        let tail = TailState::default();
+        let tail = TailView::default();
         terminal
             .draw(|frame| render(frame, app, &Config::default(), &mut cache, &tail))
             .expect("draw");

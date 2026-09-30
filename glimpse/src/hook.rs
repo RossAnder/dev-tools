@@ -15,9 +15,12 @@ use serde_json::Value;
 
 use crate::cli::Harness;
 use crate::config::{Config, claude_dir};
+use crate::flows::flows_root;
 use crate::herdr::Herdr;
+use crate::source::with_reinstall_hint;
 
-/// Matches the cap `tomlctl` applies to a stdin payload.
+/// A sanity cap on the hook's stdin: a real hook payload is a few kilobytes, so anything
+/// past this is not one and is refused before it is buffered whole.
 const MAX_PAYLOAD: u64 = 32 * 1024 * 1024;
 const LOG_CAP: u64 = 1024 * 1024;
 
@@ -63,10 +66,10 @@ pub(crate) fn parse_record_result(value: Value) -> Result<RecordResult, String> 
     serde_json::from_value(value).map_err(|e| format!("invalid agents record result: {e}"))
 }
 
-/// The payload's `cwd`, or `None` when it is absent, not a string, or not valid JSON.
-pub(crate) fn payload_cwd(payload: &[u8]) -> Option<String> {
-    let v: Value = serde_json::from_slice(payload).ok()?;
-    v.get("cwd")
+/// The payload's `cwd`, or `None` when it is absent, empty or not a string.
+pub(crate) fn payload_cwd(payload: &Value) -> Option<String> {
+    payload
+        .get("cwd")
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
@@ -200,24 +203,29 @@ pub(crate) fn log_error(message: &str) {
 
 /// Handles one hook payload. Never fails and never prints; errors go to the hook log.
 pub(crate) fn run_hook(stdin: impl Read, harness: Harness) {
+    // Release builds abort on panic, so the message has to be logged from the hook itself;
+    // replacing the default hook also keeps it off stderr.
+    std::panic::set_hook(Box::new(|info| {
+        log_error(&format!("hook panicked: {info}"))
+    }));
     if let Err(e) = handle(stdin, harness) {
         log_error(&e);
     }
 }
 
 fn handle(stdin: impl Read, harness: Harness) -> Result<(), String> {
-    let payload = read_capped(stdin)?;
+    let payload = parse_payload(&read_capped(stdin)?);
     let (config, warning) = Config::load();
     if let Some(w) = warning {
         log_error(&w);
     }
-    let cwd = payload_cwd(&payload);
+    let cwd = payload.as_ref().ok().and_then(payload_cwd);
     let root_override = std::env::var_os("TOMLCTL_ROOT").is_some_and(|r| !r.is_empty());
     let flowless = cwd.as_deref().is_some_and(outside_any_flow);
     if flowless && !root_override {
         return Ok(());
     }
-    let result = record(harness, &payload)?;
+    let result = record(harness, &payload?)?;
     let herdr_pane = std::env::var("HERDR_PANE_ID").ok();
     let cwd = cwd.unwrap_or_else(|| ".".to_string());
     match decide(&result, herdr_pane.as_deref(), &cwd) {
@@ -243,10 +251,7 @@ fn handle(stdin: impl Read, harness: Harness) -> Result<(), String> {
 /// directory, so recording the event could only answer that there is no flow.
 pub(crate) fn outside_any_flow(dir: impl AsRef<Path>) -> bool {
     let dir = dir.as_ref();
-    dir.is_dir()
-        && !dir
-            .ancestors()
-            .any(|a| a.join(".claude").join("flows").is_dir())
+    dir.is_dir() && !dir.ancestors().any(|a| flows_root(a).is_dir())
 }
 
 fn read_capped(stdin: impl Read) -> Result<Vec<u8>, String> {
@@ -261,13 +266,15 @@ fn read_capped(stdin: impl Read) -> Result<Vec<u8>, String> {
     Ok(payload)
 }
 
+fn parse_payload(payload: &[u8]) -> Result<Value, String> {
+    serde_json::from_slice(payload).map_err(|e| format!("invalid hook payload: {e}"))
+}
+
 /// Records the payload in-process. `record_agent` moves this process into the payload's
 /// `cwd` and fixes the repo root, which is safe only because a hook process records once.
-fn record(harness: Harness, payload: &[u8]) -> Result<RecordResult, String> {
-    let value: Value =
-        serde_json::from_slice(payload).map_err(|e| format!("invalid hook payload: {e}"))?;
-    let result = tomlctl::record_agent(harness.as_str(), &value)
-        .map_err(|e| format!("agents record failed: {e:#}"))?;
+fn record(harness: Harness, payload: &Value) -> Result<RecordResult, String> {
+    let result = tomlctl::record_agent(harness.as_str(), payload)
+        .map_err(|e| with_reinstall_hint(format!("agents record failed: {e:#}")))?;
     parse_record_result(result)
 }
 
@@ -344,19 +351,21 @@ mod tests {
 
     #[test]
     fn an_invalid_payload_fails_before_recording() {
-        let err = record(Harness::Codex, b"not json").expect_err("invalid JSON");
+        let err = parse_payload(b"not json").expect_err("invalid JSON");
         assert!(err.starts_with("invalid hook payload: "), "{err}");
     }
 
     #[test]
     fn payload_cwd_is_read_tolerantly() {
+        use serde_json::json;
         assert_eq!(
-            payload_cwd(br#"{"cwd":"C:/dev/x","other":1}"#).as_deref(),
+            payload_cwd(&json!({"cwd": "C:/dev/x", "other": 1})).as_deref(),
             Some("C:/dev/x")
         );
-        assert_eq!(payload_cwd(br#"{"cwd":""}"#), None);
-        assert_eq!(payload_cwd(b"{}"), None);
-        assert_eq!(payload_cwd(b"not json"), None);
+        assert_eq!(payload_cwd(&json!({"cwd": ""})), None);
+        assert_eq!(payload_cwd(&json!({"cwd": 7})), None);
+        assert_eq!(payload_cwd(&json!({})), None);
+        assert_eq!(payload_cwd(&json!("not an object")), None);
     }
 
     #[test]

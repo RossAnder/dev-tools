@@ -217,6 +217,109 @@ fn once_renders_a_live_flow_in_process() {
     assert!(text.contains("1 Seed"), "{text}");
 }
 
+/// Writes a flow's `tasks.toml` and `context.toml` under the sandbox's `cwd`.
+fn stage_flow(sb: &Sandbox, slug: &str, store: &str) -> PathBuf {
+    let flow = sb.path(&format!("cwd/.claude/flows/{slug}"));
+    std::fs::create_dir_all(&flow).expect("the sandbox is writable");
+    std::fs::write(flow.join("tasks.toml"), store).expect("the sandbox is writable");
+    std::fs::write(flow.join("context.toml"), "status = \"in-progress\"\n")
+        .expect("the sandbox is writable");
+    flow
+}
+
+/// Without `--slug`, the flow comes from glimpse's in-process flow list: the one whose task
+/// store changed last.
+#[test]
+fn once_without_a_slug_renders_the_freshest_flow() {
+    let sb = Sandbox::new("once-freshest");
+    let stale = stage_flow(
+        &sb,
+        "stale-flow-demo",
+        &LIVE_STORE
+            .replace("seed-the-store", "retire-the-store")
+            .replace("Seed the store", "Retire the store"),
+    );
+    std::fs::File::options()
+        .write(true)
+        .open(stale.join("tasks.toml"))
+        .and_then(|f| {
+            f.set_modified(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(100))
+        })
+        .expect("the stale store can be backdated");
+    stage_flow(&sb, "live-flow-demo", LIVE_STORE);
+    std::fs::create_dir_all(sb.path("cwd/nested")).expect("the sandbox is writable");
+    let out = sb.run_without_path("cwd/nested", &["--once", "--size", "100x30"], "");
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.contains("live-flow-demo"), "{text}");
+    assert!(text.contains("1 Seed"), "{text}");
+    assert!(!text.contains("1 Retire"), "{text}");
+}
+
+/// A `SubagentStart` whose transcript names a task is recorded by the in-process recorder
+/// into the flow's `agents.toml`, found from a payload `cwd` below the repo root. The
+/// hand-made `.git` holds just what git itself requires of a repository, so the root is
+/// found without a `git init`.
+#[test]
+fn a_hook_start_records_a_running_agent_in_process() {
+    let sb = Sandbox::new("hook-record");
+    let flow = stage_flow(&sb, "hook-flow-demo", LIVE_STORE);
+    let git = sb.path("cwd/.git");
+    for dir in ["objects", "refs"] {
+        std::fs::create_dir_all(git.join(dir)).expect("the sandbox is writable");
+    }
+    std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").expect("the sandbox is writable");
+    std::fs::write(git.join("config"), "").expect("the sandbox is writable");
+    let nested = sb.path("cwd/nested");
+    std::fs::create_dir_all(&nested).expect("the sandbox is writable");
+
+    // Claude Code's layout: the session transcript beside `<session>/subagents/`, which
+    // holds the agent's transcript and its meta file.
+    let projects = sb.path("claude/projects/p");
+    let subagents = projects.join("s1").join("subagents");
+    std::fs::create_dir_all(&subagents).expect("the sandbox is writable");
+    std::fs::write(projects.join("s1.jsonl"), "").expect("the sandbox is writable");
+    let dispatch = serde_json::json!({
+        "parentUuid": null,
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": "DISPATCH: implement-deep\nFetch it: `tomlctl tasks show 1 --slug hook-flow-demo --with body,files,deps`"
+        }
+    });
+    std::fs::write(subagents.join("agent-a1.jsonl"), format!("{dispatch}\n"))
+        .expect("the sandbox is writable");
+    std::fs::write(
+        subagents.join("agent-a1.meta.json"),
+        r#"{"agentType": "implement-deep", "description": "seed work"}"#,
+    )
+    .expect("the sandbox is writable");
+
+    let payload = serde_json::json!({
+        "hook_event_name": "SubagentStart",
+        "session_id": "s1",
+        "agent_id": "a1",
+        "agent_type": "implement-deep",
+        "transcript_path": projects.join("s1.jsonl").to_string_lossy(),
+        "cwd": nested.to_string_lossy(),
+    });
+    let out = sb.run(&["hook"], &payload.to_string());
+    assert_eq!(out.status.code(), Some(0));
+    assert!(stdout(&out).is_empty(), "stdout: {}", stdout(&out));
+    assert!(stderr(&out).is_empty(), "stderr: {}", stderr(&out));
+    let log = sb.path("claude/glimpse/hook.log");
+    assert!(
+        !log.exists(),
+        "{}",
+        std::fs::read_to_string(&log).unwrap_or_default()
+    );
+    let agents = std::fs::read_to_string(flow.join("agents.toml"))
+        .expect("the recorder wrote the flow's agents store");
+    assert!(agents.contains("agent_id = \"a1\""), "{agents}");
+    assert!(agents.contains("status = \"running\""), "{agents}");
+    assert!(!nested.join(".claude").exists());
+}
+
 #[test]
 fn setup_dry_run_writes_nothing() {
     let sb = Sandbox::new("setup");

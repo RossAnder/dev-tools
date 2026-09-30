@@ -110,9 +110,29 @@ fn snapshot_matches_the_cli() {
     fs::write(flow.join("execution-record.toml"), RECORD).unwrap();
     fs::write(flow.join("agents.toml"), AGENTS).unwrap();
 
-    let facade = tomlctl::snapshot(TASKS_SLUG, &store).expect("facade snapshot");
+    let facade = tomlctl::snapshot(&root, TASKS_SLUG).expect("facade snapshot");
     let verb = cli_json(&root, &["tasks", "snapshot", "--slug", TASKS_SLUG]);
     assert_eq!(facade, verb);
+    assert_eq!(
+        store.file_name().and_then(|name| name.to_str()),
+        Some(tomlctl::SNAPSHOT_INPUTS[0])
+    );
+}
+
+#[test]
+fn snapshot_refuses_a_slug_the_cli_would_refuse() {
+    let (_dir, root) = sandbox();
+    seed_tasks(&root, STORE);
+    for slug in ["../x", "Foo"] {
+        let err = tomlctl::snapshot(&root, slug).expect_err("the slug is invalid");
+        let message = format!("{err:#}");
+        assert!(
+            message.contains(&format!("invalid slug: {slug}")),
+            "unexpected error for {slug}: {message}"
+        );
+        assert!(tomlctl::validate_slug(slug).is_err(), "{slug} validates");
+    }
+    tomlctl::validate_slug("live-flow-demo").expect("a valid slug passes");
 }
 
 #[test]
@@ -134,6 +154,43 @@ fn record_agent_refuses_a_harness_without_an_adapter() {
     assert!(
         message.contains("manual payload adapter is not implemented"),
         "unexpected error: {message}"
+    );
+}
+
+/// A `#[global_allocator]` in the library compiles cleanly and silently
+/// becomes the allocator of every crate that links it, so only the binary's
+/// `main.rs` may name one.
+#[test]
+fn only_the_binary_declares_a_global_allocator() {
+    fn walk(dir: &Path, found: &mut Vec<std::path::PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, found);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                found.push(path);
+            }
+        }
+    }
+
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let main = src.join("main.rs");
+    let mut files = Vec::new();
+    walk(&src, &mut files);
+    assert!(files.contains(&main), "the walk must reach src/main.rs");
+
+    let offenders: Vec<_> = files
+        .iter()
+        .filter(|path| **path != main)
+        .filter(|path| {
+            fs::read_to_string(path)
+                .unwrap()
+                .contains("global_allocator")
+        })
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "only src/main.rs may declare a global allocator; also found in {offenders:?}"
     );
 }
 

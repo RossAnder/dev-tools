@@ -76,11 +76,17 @@ pub(crate) fn freshest(entries: &[FlowEntry]) -> Option<&FlowEntry> {
     })
 }
 
+/// `<root>/.claude/flows`, the directory holding one subdirectory per flow.
+pub(crate) fn flows_root(root: &Path) -> PathBuf {
+    root.join(".claude").join("flows")
+}
+
 /// Lists the repo's flows that have a `tasks.toml`, freshest first.
 pub(crate) fn list(root: &Path) -> Result<Vec<FlowEntry>, String> {
     let value = tomlctl::flow_list(root).map_err(|e| format!("{e:#}"))?;
+    let flows = flows_root(root);
     let mut entries = parse_flows(&value, |slug| {
-        std::fs::metadata(root.join(".claude/flows").join(slug).join("tasks.toml"))
+        std::fs::metadata(flows.join(slug).join("tasks.toml"))
             .and_then(|m| m.modified())
             .ok()
     })?;
@@ -103,7 +109,7 @@ pub(crate) fn repo_root(cwd: &Path) -> Option<PathBuf> {
         return Some(PathBuf::from(top));
     }
     cwd.ancestors()
-        .find(|dir| dir.join(".claude").join("flows").is_dir())
+        .find(|dir| flows_root(dir).is_dir())
         .map(Path::to_path_buf)
 }
 

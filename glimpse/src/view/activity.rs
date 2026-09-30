@@ -1,6 +1,6 @@
 //! The activity panel for the selected task's newest running agent.
 //!
-//! The panel draws from the [`TailState`] the poller thread last sent; it
+//! The panel draws from the [`TailView`] the poller thread last sent; it
 //! reads no files itself. [`agent`] names the row whose transcript the
 //! runtime asks the poller to tail.
 
@@ -14,7 +14,7 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 use crate::app::App;
 use crate::hook::parse_utc;
 use crate::model::{Agent, AgentStatus};
-use crate::transcript::{EntryKind, TailState};
+use crate::transcript::{EntryKind, TailView};
 
 /// Entries shown at most, newest last.
 pub(crate) const SHOWN_ENTRIES: usize = 10;
@@ -37,7 +37,7 @@ fn panel(app: &App, title: String) -> Block<'static> {
         .padding(Padding::horizontal(1))
 }
 
-pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, tail: &TailState, now: SystemTime) {
+pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, tail: &TailView, now: SystemTime) {
     let Some(agent) = agent(app) else {
         let message = match app.selected {
             Some(id) => format!("no running agent on task {id}"),
@@ -145,7 +145,7 @@ mod tests {
     use ratatui::backend::TestBackend;
     use std::time::Duration;
 
-    fn draw(app: &App, tail: &TailState, now: SystemTime, height: u16) -> Vec<String> {
+    fn draw(app: &App, tail: &TailView, now: SystemTime, height: u16) -> Vec<String> {
         let width = 80;
         let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
         terminal
@@ -167,8 +167,8 @@ mod tests {
         UNIX_EPOCH + Duration::from_secs(parse_utc(ts).expect("timestamp"))
     }
 
-    fn tail_with(count: usize) -> TailState {
-        let mut tail = TailState::within("", None);
+    fn tail_with(count: usize) -> TailView {
+        let mut tail = TailView::default();
         for n in 0..count {
             tail.entries.push(Entry {
                 ts: format!("2026-09-28T11:{:02}:00Z", 5 + n),

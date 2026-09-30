@@ -2,7 +2,7 @@
 // dispatch and error-report cycle the binary's `main` delegates to. CLI
 // parsing, dispatch and output plumbing belong in `cli.rs`, per-subcommand
 // behaviour in sibling modules. Modules stay private; anything a library
-// consumer needs is exposed as a `pub fn` wrapper here.
+// consumer needs is exposed as a `pub` wrapper or constant here.
 
 mod agents;
 mod anchor;
@@ -37,22 +37,44 @@ use std::io::Write;
 use std::path::Path;
 use std::process::ExitCode;
 
-use anyhow::anyhow;
 use clap::Parser;
 
-use crate::agents::schema::Harness;
 use crate::cli::{Cli, ErrorFormat, ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::TaggedError;
 
-/// The `tasks snapshot` document for the flow whose store is `store_path`,
-/// read without integrity checks. Advisories are silenced for the process.
-pub fn snapshot(slug: &str, store_path: &Path) -> anyhow::Result<serde_json::Value> {
+/// The files of a flow directory that [`snapshot`] reads, store first. Its
+/// `revision` hashes them in this order, so a poller fingerprinting exactly
+/// these files sees every change the snapshot can.
+pub const SNAPSHOT_INPUTS: [&str; 4] = [
+    "tasks.toml",
+    "execution-record.toml",
+    "agents.toml",
+    "context.toml",
+];
+
+/// Refuses a flow slug the CLI's `--slug` would refuse, so a consumer can
+/// reject one up front rather than on every [`snapshot`] call.
+pub fn validate_slug(slug: &str) -> anyhow::Result<()> {
+    flow::validate_slug(slug)
+}
+
+/// The `tasks snapshot --slug <slug>` document for the flow under
+/// `<root>/.claude/flows`, read without integrity checks. Refuses a slug the
+/// CLI would refuse, so it can never name a path outside that directory.
+/// Advisories are silenced for the process.
+pub fn snapshot(root: &Path, slug: &str) -> anyhow::Result<serde_json::Value> {
     io::silence_advisories();
+    flow::validate_slug(slug)?;
+    let store_path = root
+        .join(".claude")
+        .join("flows")
+        .join(slug)
+        .join(SNAPSHOT_INPUTS[0]);
     let read_opts = ReadIntegrityArgs {
         verify_integrity: false,
         strict_read: false,
     };
-    tasks::snapshot(slug, store_path, &read_opts)
+    tasks::snapshot(slug, &store_path, &read_opts)
 }
 
 /// The unfiltered `flow list` envelope for every flow under
@@ -70,12 +92,6 @@ pub fn record_agent(
     payload: &serde_json::Value,
 ) -> anyhow::Result<serde_json::Value> {
     io::silence_advisories();
-    let harness = Harness::parse(harness).ok_or_else(|| {
-        anyhow!(
-            "agents record: unknown harness `{harness}` — expected one of {}",
-            Harness::VOCABULARY.join(", ")
-        )
-    })?;
     let write_opts = WriteIntegrityArgs {
         allow_outside: false,
         no_write_integrity: false,
@@ -83,7 +99,7 @@ pub fn record_agent(
         strict_integrity: false,
         no_create: false,
     };
-    agents::record::record(harness, payload, &write_opts)
+    agents::dispatch::record_value(harness, payload, &write_opts)
 }
 
 /// Parses the process arguments, runs the selected verb and reports any error

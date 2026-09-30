@@ -6,10 +6,8 @@
 //! mutation restamps `last_updated`; nothing else writes it.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 use anyhow::Result;
-use regex::Regex;
 
 use super::schema::{self, Store};
 use crate::cli::{
@@ -21,16 +19,8 @@ use crate::io::{
 };
 
 /// Basename of the per-flow store, and the key `io::seed_doc_for` matches on.
-const STORE_FILE: &str = "tasks.toml";
-
-/// Anchored, ASCII-only, and identical to the flow-init slug rule: a slug
-/// that satisfies it can contribute neither a separator nor a `..` to the
-/// join below, which is the only thing keeping `--slug` from reaching outside
-/// `.claude/flows/`.
-fn slug_regex() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^[a-z0-9][a-z0-9-]{0,63}$").expect("slug regex compiles"))
-}
+/// The snapshot reads the store first, so its input list owns the name.
+const STORE_FILE: &str = crate::SNAPSHOT_INPUTS[0];
 
 /// Resolve the store a `tasks` verb targets. `--file` passes through
 /// verbatim — the write guard still holds it under `.claude/` unless
@@ -47,13 +37,9 @@ pub(crate) fn resolve_store_path(slug: Option<&str>, file: Option<&Path>) -> Res
             "no task store target: pass --slug <SLUG> or --file <PATH>".to_string(),
         ));
     };
-    if !slug_regex().is_match(slug) {
-        return Err(tagged_err(
-            ErrorKind::Validation,
-            None,
-            format!("invalid slug: {slug} (must match ^[a-z0-9][a-z0-9-]{{0,63}}$)"),
-        ));
-    }
+    // The flow-init slug rule admits neither a separator nor a `..`, which is
+    // the only thing keeping `--slug` from reaching outside `.claude/flows/`.
+    crate::flow::validate_slug(slug)?;
     Ok(repo_or_cwd_root()?
         .join(".claude")
         .join("flows")

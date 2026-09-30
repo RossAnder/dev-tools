@@ -22,7 +22,7 @@ use notify::RecommendedWatcher;
 use crate::app::TICK;
 use crate::flows::{self, FlowEntry};
 use crate::model::Snapshot;
-use crate::transcript::TailState;
+use crate::transcript::{TailState, TailView};
 use crate::watch::{self, Wake};
 
 /// Everything the runtime's main loop receives, from the poller and the input thread alike.
@@ -36,7 +36,7 @@ pub(crate) enum Event {
     /// Only `tasks.toml` mtimes moved: the new mtime of every flow with a task store.
     FlowMtimes(BTreeMap<String, SystemTime>),
     /// The targeted transcript's tail, sent on a retarget and whenever a refresh changed it.
-    Tail(Box<TailState>),
+    Tail(Box<TailView>),
     Input(ratatui::crossterm::event::Event),
 }
 
@@ -66,24 +66,17 @@ const COALESCE_MAX: Duration = Duration::from_millis(250);
 /// Consecutive safety ticks with an unreported change before the watch is abandoned.
 const MISS_LIMIT: u8 = 2;
 
-/// The four files a snapshot is built from, in a fixed order.
-const FLOW_FILES: [&str; 4] = [
-    "tasks.toml",
-    "execution-record.toml",
-    "agents.toml",
-    "context.toml",
-];
-
-/// `(mtime, len)` per flow file; `None` for a file that is absent or cannot be statted.
-pub(crate) type Fingerprint = [Option<(SystemTime, u64)>; 4];
+/// `(mtime, len)` per file a snapshot reads, in [`tomlctl::SNAPSHOT_INPUTS`] order; `None`
+/// for a file that is absent or cannot be statted.
+pub(crate) type Fingerprint = [Option<(SystemTime, u64)>; tomlctl::SNAPSHOT_INPUTS.len()];
 
 fn flow_dir(root: &Path, slug: &str) -> PathBuf {
-    root.join(".claude").join("flows").join(slug)
+    flows::flows_root(root).join(slug)
 }
 
 pub(crate) fn fingerprint(root: &Path, slug: &str) -> Fingerprint {
     let dir = flow_dir(root, slug);
-    FLOW_FILES.map(|name| {
+    tomlctl::SNAPSHOT_INPUTS.map(|name| {
         let meta = std::fs::metadata(dir.join(name)).ok()?;
         Some((meta.modified().ok()?, meta.len()))
     })
@@ -112,7 +105,7 @@ fn flows_fingerprint(
     root: &Path,
     cache: &mut BTreeMap<String, FlowStat>,
 ) -> BTreeMap<String, FlowTimes> {
-    let Ok(entries) = std::fs::read_dir(root.join(".claude").join("flows")) else {
+    let Ok(entries) = std::fs::read_dir(flows::flows_root(root)) else {
         cache.clear();
         return BTreeMap::new();
     };
@@ -158,13 +151,26 @@ pub(crate) struct InProcessFetcher;
 
 impl Fetcher for InProcessFetcher {
     fn fetch(&mut self, root: &Path, slug: &str) -> Result<Snapshot, String> {
-        let store = flow_dir(root, slug).join("tasks.toml");
-        let value = tomlctl::snapshot(slug, &store).map_err(|e| format!("{e:#}"))?;
+        let value =
+            tomlctl::snapshot(root, slug).map_err(|e| with_reinstall_hint(format!("{e:#}")))?;
         serde_json::from_value(value).map_err(|e| format!("bad `tasks snapshot` document: {e}"))
     }
 
     fn list_flows(&mut self, root: &Path) -> Result<Vec<FlowEntry>, String> {
         flows::list(root)
+    }
+}
+
+/// Adds the fix to a tomlctl "newer than the supported" schema error. tomlctl's own advice is
+/// to upgrade tomlctl, but glimpse reads through the copy linked into it, so the binary to
+/// rebuild is glimpse.
+pub(crate) fn with_reinstall_hint(message: String) -> String {
+    if message.contains("newer than the supported") {
+        format!(
+            "{message} (glimpse embeds its own tomlctl: reinstall it with `cargo install --path glimpse`)"
+        )
+    } else {
+        message
     }
 }
 
@@ -219,6 +225,67 @@ impl Mode {
     fn is_watching(&self) -> bool {
         matches!(self, Mode::Watching { .. })
     }
+
+    fn state(&self) -> WatchState {
+        match self {
+            Mode::Watching { .. } => WatchState::Watching,
+            Mode::Polling { retry_watch: true } => WatchState::Retrying,
+            Mode::Polling { retry_watch: false } => WatchState::Abandoned,
+        }
+    }
+
+    /// Applies whatever [`mode_change`] decides at `phase`. Replacing a `Watching` mode drops
+    /// its watcher.
+    fn advance(&mut self, phase: Phase, flows_root: &Path, control: &Sender<Control>) {
+        match mode_change(self.state(), phase) {
+            Some(ModeChange::Start) => *self = Mode::start(flows_root, control),
+            Some(ModeChange::Poll { retry_watch }) => *self = Mode::Polling { retry_watch },
+            None => {}
+        }
+    }
+}
+
+/// A [`Mode`] without its watcher.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WatchState {
+    Watching,
+    /// Polling because the last watch start failed or a rewatch dropped the watcher.
+    Retrying,
+    /// Polling for good: the watch missed changes.
+    Abandoned,
+}
+
+/// The points in the poller's loop at which its mode may change.
+#[derive(Debug, Clone, Copy)]
+enum Phase {
+    /// Before a tick.
+    Tick,
+    /// After a tick; `abandon` when the missed-change count gave up on the watch.
+    Ticked { abandon: bool },
+    /// After a wait; `rewatch` when a wake asked for a fresh watch.
+    Woken { rewatch: bool },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModeChange {
+    Start,
+    Poll { retry_watch: bool },
+}
+
+/// Whether the watch starts, stops or stays at `phase`: a failed start is retried before
+/// every tick, a watch that missed changes is abandoned for good, and a rewatch drops the
+/// watcher so the next tick starts a fresh one.
+fn mode_change(state: WatchState, phase: Phase) -> Option<ModeChange> {
+    match (state, phase) {
+        (WatchState::Retrying, Phase::Tick) => Some(ModeChange::Start),
+        (WatchState::Watching, Phase::Ticked { abandon: true }) => {
+            Some(ModeChange::Poll { retry_watch: false })
+        }
+        (WatchState::Watching, Phase::Woken { rewatch: true }) => {
+            Some(ModeChange::Poll { retry_watch: true })
+        }
+        _ => None,
+    }
 }
 
 /// How long the poller goes between ticks when nothing wakes it.
@@ -263,6 +330,17 @@ fn next_wait(now: Instant, deadlines: &Deadlines) -> Duration {
         .map_or(Duration::ZERO, |at| at.saturating_duration_since(now))
 }
 
+/// What set off a tick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TickCause {
+    /// A watch wake.
+    Wake,
+    /// The safety deadline.
+    Safety,
+    /// Anything else: the first tick, a slug change, a fetch retry.
+    Other,
+}
+
 /// Counts consecutive safety ticks that found a change no wake had reported.
 #[derive(Debug, Default)]
 struct MissedChanges {
@@ -271,15 +349,12 @@ struct MissedChanges {
 
 impl MissedChanges {
     /// Records one tick; `true` means the watch has missed enough to be abandoned.
-    fn on_tick(&mut self, safety: bool, changed: bool, woke: bool) -> bool {
-        if woke {
-            self.streak = 0;
-        } else if safety {
-            self.streak = if changed {
-                self.streak.saturating_add(1)
-            } else {
-                0
-            };
+    fn on_tick(&mut self, cause: TickCause, changed: bool) -> bool {
+        match cause {
+            TickCause::Wake => self.streak = 0,
+            TickCause::Safety if changed => self.streak = self.streak.saturating_add(1),
+            TickCause::Safety => self.streak = 0,
+            TickCause::Other => {}
         }
         self.streak >= MISS_LIMIT
     }
@@ -303,9 +378,14 @@ struct Poller {
     /// Set when the last flow list failed, so the next change lists again.
     relist_pending: bool,
     retry_after: Duration,
-    /// The transcript the runtime asked to tail, and when it is next re-read.
-    tail: Option<TailState>,
-    tail_at: Option<Instant>,
+    /// The transcript the runtime asked to tail.
+    tail: Option<Tail>,
+}
+
+/// A targeted transcript and when it is next re-read.
+struct Tail {
+    state: TailState,
+    due: Instant,
 }
 
 impl Poller {
@@ -328,8 +408,12 @@ impl Poller {
             relist_pending: false,
             retry_after: RETRY_AFTER,
             tail: None,
-            tail_at: None,
         }
+    }
+
+    /// When the targeted transcript is next re-read.
+    fn tail_at(&self) -> Option<Instant> {
+        self.tail.as_ref().map(|tail| tail.due)
     }
 
     /// Points the tail at `path`, reads it and always sends the result; `None` drops the tail.
@@ -337,14 +421,16 @@ impl Poller {
     fn set_tail(&mut self, path: Option<String>) -> bool {
         let Some(path) = path else {
             self.tail = None;
-            self.tail_at = None;
             return true;
         };
-        let tail = self.tail.get_or_insert_with(|| TailState::new(&path));
-        tail.retarget(&path);
-        tail.refresh();
-        let event = Event::Tail(Box::new(tail.clone()));
-        self.tail_at = Instant::now().checked_add(TICK);
+        let tail = self.tail.get_or_insert_with(|| Tail {
+            state: TailState::new(&path),
+            due: Instant::now(),
+        });
+        tail.state.retarget(&path);
+        tail.state.refresh();
+        tail.due = Instant::now() + TICK;
+        let event = Event::Tail(Box::new(tail.state.view()));
         self.events.send(event).is_ok()
     }
 
@@ -352,14 +438,13 @@ impl Poller {
     /// `false` once the receiver has gone.
     fn refresh_tail(&mut self) -> bool {
         let Some(tail) = &mut self.tail else {
-            self.tail_at = None;
             return true;
         };
-        self.tail_at = Instant::now().checked_add(TICK);
-        if !tail.refresh() {
+        tail.due = Instant::now() + TICK;
+        if !tail.state.refresh() {
             return true;
         }
-        let event = Event::Tail(Box::new(tail.clone()));
+        let event = Event::Tail(Box::new(tail.state.view()));
         self.events.send(event).is_ok()
     }
 
@@ -410,7 +495,8 @@ impl Poller {
 
     /// Compares the flows on disk with the last scan. A new or vanished task store, a moved
     /// `context.toml` (the selector shows its status and date), the first scan, or a failed
-    /// last list ask for a relist; moved `tasks.toml` mtimes alone need no process.
+    /// last list ask for a relist; moved `tasks.toml` mtimes alone are sent as they are,
+    /// with no relist.
     fn scan_flows(&mut self) -> Option<FlowsChange> {
         let flows = flows_fingerprint(&self.root, &mut self.flow_stats);
         let last = self.last_flows.replace(flows.clone());
@@ -455,9 +541,7 @@ impl Poller {
         };
         let current = fingerprint(&self.root, &slug);
         let changed = self.last_fingerprint != Some(current);
-        let retry_due = self
-            .failed_at
-            .is_some_and(|at| at.elapsed() >= self.retry_after);
+        let retry_due = self.retry_at().is_some_and(|at| Instant::now() >= at);
         if !changed && !retry_due {
             return Some(false);
         }
@@ -518,21 +602,21 @@ impl Poller {
     /// it, until told to stop. `control` is the sending half of the poller's own channel,
     /// which the watcher's callback posts wakes onto.
     fn run(mut self, poll: Duration, messages: &Receiver<Control>, control: &Sender<Control>) {
-        let flows_root = self.root.join(".claude").join("flows");
+        let flows_root = flows::flows_root(&self.root);
         let mut mode = Mode::start(&flows_root, control);
         let mut misses = MissedChanges::default();
         let mut wakes = Wakes::default();
-        let mut safety = false;
+        let mut cause = TickCause::Other;
         loop {
-            if matches!(mode, Mode::Polling { retry_watch: true }) {
-                mode = Mode::start(&flows_root, control);
-            }
+            mode.advance(Phase::Tick, &flows_root, control);
             let Some(changed) = self.step() else {
                 return;
             };
-            if mode.is_watching() && misses.on_tick(safety, changed, !wakes.is_empty()) {
-                mode = Mode::Polling { retry_watch: false };
+            if !wakes.is_empty() {
+                cause = TickCause::Wake;
             }
+            let abandon = mode.is_watching() && misses.on_tick(cause, changed);
+            mode.advance(Phase::Ticked { abandon }, &flows_root, control);
             let now = Instant::now();
             let period = safety_period(mode.is_watching(), poll);
             let next_safety_at = now.checked_add(period).unwrap_or(now + SAFETY_TICK);
@@ -541,7 +625,7 @@ impl Poller {
                 let deadlines = Deadlines {
                     safety: next_safety_at,
                     retry: self.retry_at(),
-                    tail: self.tail_at,
+                    tail: self.tail_at(),
                 };
                 match messages.recv_timeout(next_wait(Instant::now(), &deadlines)) {
                     Ok(message) => {
@@ -556,7 +640,7 @@ impl Poller {
                         if retail {
                             continue;
                         }
-                        safety = false;
+                        cause = TickCause::Other;
                         break;
                     }
                     Err(RecvTimeoutError::Disconnected) => return,
@@ -565,7 +649,11 @@ impl Poller {
                         if due.tail && !self.refresh_tail() {
                             return;
                         }
-                        safety = due.safety;
+                        cause = if due.safety {
+                            TickCause::Safety
+                        } else {
+                            TickCause::Other
+                        };
                         if due.safety || due.retry {
                             break;
                         }
@@ -573,10 +661,10 @@ impl Poller {
                 }
             }
             self.evict(&wakes);
-            // Dropping the old watcher here lets the next pass start a fresh one.
-            if wakes.rewatch && mode.is_watching() {
-                mode = Mode::Polling { retry_watch: true };
-            }
+            let woken = Phase::Woken {
+                rewatch: wakes.rewatch,
+            };
+            mode.advance(woken, &flows_root, control);
         }
     }
 }
@@ -743,20 +831,24 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("flow dir");
 
         let absent = fingerprint(&root, "f");
-        assert_eq!(absent, [None; 4], "absent files read as None");
+        assert!(
+            absent.iter().all(Option::is_none),
+            "absent files read as None"
+        );
 
-        std::fs::write(dir.join("tasks.toml"), "a = 1\n").expect("write");
-        let first = fingerprint(&root, "f");
-        assert!(first[0].is_some());
-        assert_ne!(first, absent);
-        assert_eq!(fingerprint(&root, "f"), first, "stable while untouched");
-
-        std::fs::write(dir.join("agents.toml"), "x").expect("write");
-        let second = fingerprint(&root, "f");
-        assert_ne!(second, first);
+        // Every file the snapshot reads moves its own slot.
+        let mut last = absent;
+        for (slot, name) in tomlctl::SNAPSHOT_INPUTS.iter().enumerate() {
+            std::fs::write(dir.join(name), "x").expect("write");
+            let next = fingerprint(&root, "f");
+            assert!(next[slot].is_some(), "{name} is fingerprinted");
+            assert_ne!(next, last, "{name} moves the fingerprint");
+            last = next;
+        }
+        assert_eq!(fingerprint(&root, "f"), last, "stable while untouched");
 
         std::fs::write(dir.join("tasks.toml"), "a = 12345\n").expect("rewrite");
-        assert_ne!(fingerprint(&root, "f"), second);
+        assert_ne!(fingerprint(&root, "f"), last);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1021,7 +1113,10 @@ mod tests {
         let (fetcher, _calls) = fake(vec![Ok(with_revision("r1"))]);
         let (tx, rx) = mpsc::channel();
         let mut poller = Poller::new(root.clone(), None, fetcher, tx);
-        poller.tail = Some(TailState::within("", Some(root.clone())));
+        poller.tail = Some(Tail {
+            state: TailState::within("", Some(root.clone())),
+            due: Instant::now(),
+        });
         let texts = |events: Vec<Event>| -> Vec<Vec<String>> {
             events
                 .into_iter()
@@ -1036,7 +1131,7 @@ mod tests {
         assert!(poller.handle(Control::Tail(Some(path.clone())), &mut wakes));
         assert!(wakes.is_empty());
         assert_eq!(texts(drain(&rx)), [["one"]]);
-        assert!(poller.tail_at.is_some());
+        assert!(poller.tail_at().is_some());
 
         assert!(poller.refresh_tail());
         assert!(drain(&rx).is_empty(), "nothing appended, nothing sent");
@@ -1051,7 +1146,7 @@ mod tests {
         assert_eq!(texts(drain(&rx)), [["one", "two"]]);
 
         assert!(poller.handle(Control::Tail(None), &mut wakes));
-        assert!(poller.tail.is_none() && poller.tail_at.is_none());
+        assert!(poller.tail.is_none() && poller.tail_at().is_none());
         assert!(poller.refresh_tail());
         assert!(drain(&rx).is_empty(), "no tail, nothing read");
         let _ = std::fs::remove_dir_all(&root);
@@ -1174,25 +1269,61 @@ mod tests {
 
     #[test]
     fn two_unreported_changes_abandon_the_watch_and_a_wake_resets_the_count() {
+        use TickCause::{Other, Safety, Wake};
         let mut misses = MissedChanges::default();
-        assert!(!misses.on_tick(true, true, false), "one miss");
-        assert!(misses.on_tick(true, true, false), "the second in a row");
+        assert!(!misses.on_tick(Safety, true), "one miss");
+        assert!(misses.on_tick(Safety, true), "the second in a row");
 
         let mut misses = MissedChanges::default();
-        assert!(!misses.on_tick(true, true, false));
-        assert!(!misses.on_tick(false, true, true), "a wake resets");
-        assert!(!misses.on_tick(true, true, false), "counting starts over");
+        assert!(!misses.on_tick(Safety, true));
+        assert!(!misses.on_tick(Wake, true), "a wake resets");
+        assert!(!misses.on_tick(Safety, true), "counting starts over");
 
         let mut misses = MissedChanges::default();
-        assert!(!misses.on_tick(true, true, false));
+        assert!(!misses.on_tick(Safety, true));
+        assert!(!misses.on_tick(Other, true), "only safety ticks count");
         assert!(
-            !misses.on_tick(false, true, false),
-            "only safety ticks count"
-        );
-        assert!(
-            !misses.on_tick(true, false, false),
+            !misses.on_tick(Safety, false),
             "a clean safety tick breaks the run"
         );
-        assert!(!misses.on_tick(true, true, false));
+        assert!(!misses.on_tick(Safety, true));
+    }
+
+    #[test]
+    fn the_watch_is_retried_abandoned_and_restarted_at_the_right_phases() {
+        use WatchState::{Abandoned, Retrying, Watching};
+        let start = Some(ModeChange::Start);
+        let poll = |retry_watch| Some(ModeChange::Poll { retry_watch });
+
+        assert_eq!(mode_change(Retrying, Phase::Tick), start, "a failed start");
+        assert_eq!(mode_change(Watching, Phase::Tick), None);
+        assert_eq!(mode_change(Abandoned, Phase::Tick), None, "never again");
+
+        let abandon = Phase::Ticked { abandon: true };
+        assert_eq!(mode_change(Watching, abandon), poll(false));
+        assert_eq!(
+            mode_change(Watching, Phase::Ticked { abandon: false }),
+            None
+        );
+        assert_eq!(mode_change(Retrying, abandon), None, "no watch to drop");
+
+        let rewatch = Phase::Woken { rewatch: true };
+        assert_eq!(
+            mode_change(Watching, rewatch),
+            poll(true),
+            "the watcher is dropped and the next tick starts a fresh one"
+        );
+        assert_eq!(mode_change(Watching, Phase::Woken { rewatch: false }), None);
+        assert_eq!(mode_change(Retrying, rewatch), None);
+        assert_eq!(mode_change(Abandoned, rewatch), None);
+    }
+
+    #[test]
+    fn only_a_schema_too_new_error_gains_the_reinstall_hint() {
+        let too_new = "tasks store schema_version 9 is newer than the supported 1 — upgrade";
+        let hinted = with_reinstall_hint(too_new.to_string());
+        assert!(hinted.starts_with(too_new), "{hinted}");
+        assert!(hinted.contains("cargo install --path glimpse"), "{hinted}");
+        assert_eq!(with_reinstall_hint("boom".into()), "boom");
     }
 }

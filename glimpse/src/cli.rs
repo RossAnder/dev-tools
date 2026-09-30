@@ -165,6 +165,7 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
                 if v.is_empty() {
                     return Err("--slug must not be empty".to_string());
                 }
+                tomlctl::validate_slug(&v).map_err(|e| format!("--slug: {e:#}"))?;
                 slug = Some(v);
                 true
             }
@@ -369,6 +370,8 @@ mod tests {
         assert!(fails(&["--orientation", "diagonal"]).contains("unknown orientation"));
         assert!(fails(&["--bogus"]).contains("unknown argument"));
         assert!(fails(&["--slug"]).contains("needs a value"));
+        assert!(fails(&["--slug", "../x"]).contains("invalid slug: ../x"));
+        assert!(fails(&["ensure-pane", "--slug", "Foo"]).contains("invalid slug: Foo"));
         assert!(fails(&["--once=yes"]).contains("takes no value"));
     }
 
