@@ -48,7 +48,7 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Regenerate PROGRESS-LOG.md from the execution record | `tomlctl flow render-progress-log --slug <s> [--stdout] [--verify-integrity]` |
 | Import a plan's tasks into the flow's task DAG | `tomlctl tasks import-plan --slug <s> [--plan <p>] [--reconcile-record] [--dry-run]` |
 | Query, mutate or gate that DAG (`.claude/flows/<slug>/tasks.toml`) | `tomlctl tasks add\|add-many\|update\|remove\|show\|list\|edges\|ready\|batches\|closure\|check\|render\|snapshot --slug <s>` |
-| List a flow's agent records (`.claude/flows/<slug>/agents.toml`; `agents record` is hook-only) | `tomlctl agents list --slug <s>` |
+| List a flow's agent records (`.claude/flows/<slug>/agents.toml`; `agents record` is written by harness hooks, never by a carrier) | `tomlctl agents list --slug <s>` |
 | Refresh integrity sidecar | `tomlctl integrity refresh <file>` |
 
 <a id="flow-bootstrap-agent-entrypoint"></a>**`flow-bootstrap` agent entrypoint**: per-command pre-flight is delegated to the `flow-bootstrap` sub-agent (`claude/agents/flow-bootstrap.md`), which composes `tomlctl flow resolve --with-staleness`, `tomlctl flow doctor`, and (for `plan-new` / `plan-update` / `review-plan`) `tomlctl json get .claude/settings.json plansDirectory` into a single JSON envelope. Each carrier's `## Step 0: Pre-flight (flow resolution + doctor)` section dispatches via `Task` with `subagent_type: "flow-bootstrap"` and a JSON-encoded input envelope; downstream phases consume `envelope.resolved.{slug,context_path,artifacts.*,status,plan_path,scope,stale}` plus `envelope.doctor.ok` instead of running the resolve / doctor primitives inline. The agent is read-only — never passes `--fix` to doctor — so auto-repair stays an orchestrator decision.
@@ -65,7 +65,7 @@ The per-verb flag tables, recipes, and contract prose live in the sibling files 
 - [references/tasks.md](references/tasks.md) — the `tasks` group's read verbs (`show` through `render`, and `snapshot`) with their flag tables, the `--slug` / `--file` target group, and the `check` finding classes. What the fields mean and which verb a carrier reaches for is the `flow-contract-task-store` skill's call, not this one's.
 - [references/tasks-write.md](references/tasks-write.md) — the `tasks` group's mutating verbs: `import-plan`, `add`, `add-many`, `update`, `remove`.
 - [references/tasks-store.md](references/tasks-store.md) — the `.claude/flows/<slug>/tasks.toml` store shape, `ref` derivation, the derived graph products, the 512-node cap, and the frozen contracts.
-- [references/agents.md](references/agents.md) — the `agents` group: `agents record` (run only by harness hooks) and `agents list`, the gitignored `.claude/flows/<slug>/agents.toml` store shape, the start / stop / idle events, flow selection, and the `record` output and its not-recorded reasons.
+- [references/agents.md](references/agents.md) — the `agents` group: `agents record` (the CLI entry point for what the harness hooks write in-process) and `agents list`, the gitignored `.claude/flows/<slug>/agents.toml` store shape, the start / stop / idle events, flow selection, and the `record` output and its not-recorded reasons.
 
 To find a section without reading a whole file:
 

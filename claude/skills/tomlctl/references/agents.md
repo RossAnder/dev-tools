@@ -6,12 +6,16 @@ runs dispatched, one row per agent with one segment per assignment. The rows are
 harness hooks as agents start, idle and stop, and read back by `agents list` and by
 `tasks snapshot`, which carries them verbatim beside the task rows for a viewer.
 
-**Writer rule.** `agents record` is run only from harness hooks — the async
+**Writer rule.** The store is written only from harness hooks — the async
 `SubagentStart`, `SubagentStop` and `TeammateIdle` hooks that `glimpse setup` installs in the
 user's Claude Code settings, and the `SubagentStart` and `SubagentStop` hooks it installs in
-`<CODEX_HOME>/hooks.json`, which pass `--harness codex`. No carrier, orchestrator or sub-agent calls it, and nothing else
+`<CODEX_HOME>/hooks.json`, which pass `--harness codex`. Those hooks run `glimpse hook`, which
+writes `agents.toml` in-process through `tomlctl::record_agent`; `agents record` stays the CLI
+entry point for the same code. No carrier, orchestrator or sub-agent calls either, and nothing else
 writes the store: `items`, `set` and `set-json` are never pointed at it. A flow that needs to
 know what an agent did reads the execution record, which stays the durable audit trail.
+glimpse compiles in its own copy of tomlctl, so an `agents.toml` schema change needs
+`cargo install --path glimpse` as well as `cargo install --path tomlctl`.
 
 **Local telemetry.** `agents.toml` and its `.sha256` sidecar are gitignored by the targeted
 pattern `.claude/flows/*/agents.toml*`, so the store never churns a commit and is not shared
