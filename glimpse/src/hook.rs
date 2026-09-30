@@ -215,10 +215,6 @@ pub(crate) fn run_hook(stdin: impl Read, harness: Harness) {
 
 fn handle(stdin: impl Read, harness: Harness) -> Result<(), String> {
     let payload = parse_payload(&read_capped(stdin)?);
-    let (config, warning) = Config::load();
-    if let Some(w) = warning {
-        log_error(&w);
-    }
     let cwd = payload.as_ref().ok().and_then(payload_cwd);
     let root_override = std::env::var_os("TOMLCTL_ROOT").is_some_and(|r| !r.is_empty());
     let flowless = cwd.as_deref().is_some_and(outside_any_flow);
@@ -234,16 +230,22 @@ fn handle(stdin: impl Read, harness: Harness) -> Result<(), String> {
             origin_pane,
             slug,
             cwd,
-        } => crate::pane::ensure(
-            &Herdr::from_env(),
-            &origin_pane,
-            slug.as_deref(),
-            Some(&cwd),
-            false,
-            &config,
-        )
-        .map(drop)
-        .map_err(|e| format!("cannot open the glimpse pane: {e}")),
+        } => {
+            let (config, warning) = Config::load();
+            if let Some(w) = warning {
+                log_error(&w);
+            }
+            crate::pane::ensure(
+                &Herdr::from_env(),
+                &origin_pane,
+                slug.as_deref(),
+                Some(&cwd),
+                false,
+                &config,
+            )
+            .map(drop)
+            .map_err(|e| format!("cannot open the glimpse pane: {e}"))
+        }
     }
 }
 
