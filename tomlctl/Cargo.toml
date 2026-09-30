@@ -16,10 +16,10 @@ doctest = false
 name = "tomlctl"
 path = "src/main.rs"
 
-# `mimalloc` only sets the binary's global allocator; a library consumer turns
-# it off with `default-features = false` and keeps its own allocator.
+# `mimalloc` only sets the binary's global allocator and is opt-in; a library
+# consumer never gets it, since the static lives in `src/main.rs`.
 [features]
-default = ["mimalloc"]
+default = []
 
 [dependencies]
 toml = { version = "^1.1", features = ["preserve_order"] }
@@ -43,13 +43,10 @@ anyhow = "^1"
 globset = "^0.4"
 jiff = "^0.2"
 tempfile = "^3"
-# mimalloc as the global allocator. tomlctl's hot paths are
-# small-allocation-heavy — TomlValue/JsonValue tree clones plus per-item
-# serde_json::Map allocations during ledger reads and parity hashing. Microsoft's
-# benchmarks show ~5.3× faster small-allocation throughput vs glibc malloc, and
-# rust-analyzer adopted mimalloc as default for the same profile (PR #19603).
-# `default-features = false` skips the optional `secure` mode; we want raw speed,
-# not the ~10% guard-page/encrypted-free-list overhead.
+# Opt-in (`--features mimalloc`). Measured 2026-09-30, release, Windows: median
+# `tasks snapshot` 46.9 ms with vs 43.4 ms without, `sweep -e 'fn '` 1023 vs
+# 1040 ms (noise); hyperfine -N, 20 alternating rounds of 10 (sweep 12 of 5).
+# `default-features = false` skips mimalloc's `secure` mode.
 mimalloc = { version = "0.1", default-features = false, optional = true }
 sha2 = "^0.11"
 # Default features trimmed: no Unicode classes — query predicates target ASCII identifiers/paths

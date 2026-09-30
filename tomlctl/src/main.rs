@@ -3,9 +3,9 @@
 // declared here and nowhere else: one declared in the lib would silently
 // become the allocator of every crate that depends on it.
 
-// mimalloc, because the workload is dominated by small allocations —
-// TomlValue/JsonValue tree clones, per-item serde_json::Map insertions
-// during ledger reads, and per-line Vec<u8> churn in parity hashing.
+// mimalloc is opt-in (`--features mimalloc`): tomlctl is a one-shot CLI, and
+// the allocator's start-up cost outweighed its allocation speed-up when
+// measured, so the system allocator is the default.
 #[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
