@@ -2,8 +2,9 @@
 
 A live terminal view of a flow's task graph, checkpoints and running agents,
 meant to sit in a herdr pane beside the Claude Code session running `/implement`.
-It is read-only: everything it draws comes from `tomlctl`, plus the transcript
-tail of the agent you are looking at.
+It is read-only: everything it draws comes from the flow's files, read through
+tomlctl's own code compiled into glimpse, plus the transcript tail of the agent
+you are looking at.
 
 ## Install
 
@@ -14,9 +15,10 @@ glimpse setup --dry-run
 glimpse setup
 ```
 
-glimpse needs a `tomlctl` new enough to have `tasks snapshot` and `agents record`
-(≥ 0.12.0); it checks `tomlctl capabilities` at start-up and says so when the
-installed binary is older.
+glimpse never runs the `tomlctl` binary: it builds snapshots, lists flows and
+records hook events with a copy of tomlctl's code linked in at build time. That
+copy changes only when glimpse is rebuilt, so rerun `cargo install --path glimpse`
+whenever tomlctl changes, not just `cargo install --path tomlctl`.
 
 `glimpse setup` makes up to three edits, each only if it is not already there, and prints
 what it did. `--dry-run` prints the same report and writes nothing.
@@ -71,7 +73,7 @@ error; `hook` always exits 0, logging even a usage error. `--harness` is
 
 `--once` renders through ratatui's test backend with no terminal and no escape
 sequences, at 120x40 unless `--size` says otherwise. With `--snapshot` it draws a
-saved `tomlctl tasks snapshot` document and never runs tomlctl.
+saved `tasks snapshot` document instead of reading the flow's files.
 
 ## Views and keys
 
@@ -182,8 +184,7 @@ optional:
 | `cell_aspect` | `2.2` | a cell's height ÷ width, used when the terminal does not report pixels |
 | `split_threshold` | `2.2` | width ÷ height at which a new pane splits right rather than down |
 | `pane_ratio` | `0.4` | share of the origin pane a new glimpse pane takes, between 0 and 1 |
-| `poll_ms` | `500` | how often the flow's files are checked for changes |
-| `tomlctl` | `"tomlctl"` | the tomlctl binary to run |
+| `poll_ms` | `500` | the fallback polling interval, used only while no filesystem watch can be set up or after one has been found missing changes |
 | `default_view` | `"layers"` | `layers`, `ego` or `diagram` |
 | `stale_after_s` | `300` | seconds of transcript silence before a running agent shows stale |
 | `density` | `"auto"` | `auto`, `compact` or `comfortable` |
@@ -229,16 +230,18 @@ video.
 ## How it works
 
 ```
-Claude Code / Codex hook ─► glimpse hook ─► tomlctl agents record ─► .claude/flows/<slug>/agents.toml
+Claude Code / Codex hook ─► glimpse hook (records in-process) ─► .claude/flows/<slug>/agents.toml
                         │
                         └─ on a recorded start inside herdr ─► glimpse pane::ensure
 
-tasks.toml + execution-record.toml + agents.toml + context.toml
-        ─► tomlctl tasks snapshot ─► glimpse
+.claude/flows/** change ─► watcher ─► poller ─► in-process snapshot ─► glimpse
+                                        ▲
+                     10 s safety tick ──┘  (every poll_ms instead, if the watch fails)
 ```
 
-- **Hook.** `glimpse hook` forwards the payload to `tomlctl agents record --harness <H>`, which
-  works out the flow from the agent's dispatch prompt and writes the agent's row.
+- **Hook.** `glimpse hook` records the payload in-process with the same code as
+  `tomlctl agents record --harness <H>`: it works out the flow from the agent's
+  dispatch prompt and writes the agent's row.
   On a recorded `SubagentStart` with `HERDR_PANE_ID` set, it opens the glimpse pane
   next to the Claude pane if that tab has none. It never prints; failures go to
   `<claude dir>/glimpse/hook.log`, which is emptied once it passes 1 MiB.
@@ -247,11 +250,18 @@ tasks.toml + execution-record.toml + agents.toml + context.toml
   shell. `ensure-pane` (the keybinding) does the same from the active pane, and
   with `--focus` moves focus to an existing pane when it sits next to the origin;
   herdr has no focus-by-id, so a pane elsewhere in the tab is reused unfocused.
-- **Live view.** A poller checks the `(mtime, length)` of the flow's four files
-  every `poll_ms` and runs `tomlctl tasks snapshot` only when one moves. A snapshot
-  with an unchanged revision is dropped, a status-only change repaints over the
-  cached diagram layout, and with nothing animating the event loop blocks, so an
-  idle glimpse does no work.
+- **Live view.** One recursive filesystem watch on `.claude/flows` only wakes a
+  poller thread; a burst of writes is gathered into one pass. The poller then
+  compares the `(mtime, length)` of the viewed flow's four files and builds a
+  snapshot in-process only when one moved, so in-place edits are seen as well as
+  tomlctl's renames. A safety pass runs every 10 s regardless. If the watch cannot
+  be set up, glimpse polls every `poll_ms` and keeps trying to watch; if two safety
+  passes in a row find a change the watch never reported, it gives up on the
+  watch and polls every `poll_ms` for the rest of the session. A snapshot with an
+  unchanged revision is dropped, and a status-only change repaints over the cached
+  diagram layout. The activity panel's transcript is re-read once a second on the
+  poller thread while the panel is open. With nothing animating the event loop
+  blocks, so an idle glimpse does no work beyond the safety pass.
 
 `agents.toml` is local telemetry and gitignored; the execution record remains the
 durable history.
