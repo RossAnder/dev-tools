@@ -102,7 +102,20 @@ pub(crate) fn dispatch(
         out.push(rec.to_json());
     }
 
-    print_json(&serde_json::json!({"ok": true, "flows": out, "skipped": skipped}))
+    print_json(&envelope(out, skipped))
+}
+
+/// Every flow under `<root>/.claude/flows` in the `flow list` envelope, with
+/// no filters and no integrity checks.
+pub(crate) fn list_all(root: &Path) -> Result<JsonValue> {
+    let flows_dir = root.join(".claude").join("flows");
+    let (records, skipped) = enumerate_flows(root, &flows_dir, false, false)?;
+    let flows = records.iter().map(FlowRecord::to_json).collect();
+    Ok(envelope(flows, skipped))
+}
+
+fn envelope(flows: Vec<JsonValue>, skipped: Vec<JsonValue>) -> JsonValue {
+    serde_json::json!({"ok": true, "flows": flows, "skipped": skipped})
 }
 
 /// One flow's listed projection — not a full `context.toml` deserialisation,
@@ -267,4 +280,29 @@ fn load_active_slug_set(root: &Path) -> Result<std::collections::HashSet<String>
         set.insert(entry.slug);
     }
     Ok(set)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_all_reports_flows_and_skips() {
+        let tmp = tempfile::tempdir().unwrap();
+        let flows = tmp.path().join(".claude").join("flows");
+        fs::create_dir_all(flows.join("good")).unwrap();
+        fs::create_dir_all(flows.join("bad")).unwrap();
+        fs::write(
+            flows.join("good").join("context.toml"),
+            "status = \"in-progress\"\n",
+        )
+        .unwrap();
+        fs::write(flows.join("bad").join("context.toml"), "status = \"oops\n").unwrap();
+
+        let out = list_all(tmp.path()).unwrap();
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["flows"].as_array().unwrap().len(), 1);
+        assert_eq!(out["flows"][0]["slug"], "good");
+        assert_eq!(out["skipped"].as_array().unwrap().len(), 1);
+    }
 }

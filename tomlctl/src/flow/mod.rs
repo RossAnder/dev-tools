@@ -21,4 +21,5 @@ pub(crate) use dispatch::dispatch;
 #[cfg(test)]
 pub(crate) use envelope::{VALID_ARTIFACTS, VALID_COMMANDS};
 pub(crate) use init::validate_slug;
+pub(crate) use list::list_all;
 pub(crate) use schema::FlowProjection;
