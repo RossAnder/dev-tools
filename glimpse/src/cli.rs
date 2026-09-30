@@ -26,7 +26,7 @@ VIEW OPTIONS
         --once                  render one frame as plain text to stdout and exit
         --size <WxH>            --once only: frame size in cells (default: 120x40)
         --snapshot <FILE>       --once only: render a `tomlctl tasks snapshot` JSON
-                                file instead of running tomlctl
+                                file instead of reading the flow
         --select <ID>           --once only: select task ID instead of the frontier
 
 HOOK OPTIONS
@@ -68,7 +68,8 @@ pub(crate) struct ViewArgs {
     pub(crate) once: Option<Once>,
 }
 
-/// The harness a hook payload came from, passed to `tomlctl agents record --harness`.
+/// The harness a hook payload came from; it selects the in-process recorder's payload
+/// adapter.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum Harness {
     #[default]

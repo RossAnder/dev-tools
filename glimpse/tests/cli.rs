@@ -4,8 +4,9 @@
 //! Every case runs in its own temp sandbox: the Claude config directory, `CODEX_HOME`, the
 //! glimpse config, herdr's config and the home directories all point inside it, and the
 //! herdr pane variables are removed, so no case reads or writes the user's real files.
-//! `CODEX_HOME` is left uncreated unless a case creates it. The sandbox
-//! names a tomlctl and a herdr that do not exist, so neither installed binary ever runs.
+//! `CODEX_HOME` is left uncreated unless a case creates it. The sandbox names a herdr that
+//! does not exist and removes `TOMLCTL_ROOT`, so no installed herdr runs and the in-process
+//! recorder resolves flows from the sandbox's `cwd` alone.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -25,11 +26,7 @@ impl Sandbox {
         for sub in ["claude", "home", "appdata", "xdg", "cwd"] {
             std::fs::create_dir_all(dir.join(sub)).expect("the sandbox is writable");
         }
-        std::fs::write(
-            dir.join("glimpse.toml"),
-            "tomlctl = \"glimpse-test-no-such-tomlctl\"\n",
-        )
-        .expect("the sandbox config is writable");
+        std::fs::write(dir.join("glimpse.toml"), "").expect("the sandbox config is writable");
         Sandbox { dir }
     }
 
@@ -40,6 +37,21 @@ impl Sandbox {
     /// Runs the binary in the sandbox's `cwd`, writes `stdin` and closes it so the
     /// child sees EOF.
     fn run(&self, argv: &[&str], stdin: &str) -> Output {
+        Self::finish(self.command(argv), stdin)
+    }
+
+    /// As [`Sandbox::run`] but in the sandbox directory `cwd`, with `PATH` naming only an
+    /// empty directory, so the binary can start no other program by name.
+    fn run_without_path(&self, cwd: &str, argv: &[&str], stdin: &str) -> Output {
+        let bin = self.path("empty-bin");
+        std::fs::create_dir_all(&bin).expect("the sandbox is writable");
+        let mut cmd = self.command(argv);
+        cmd.env("PATH", bin).current_dir(self.path(cwd));
+        Self::finish(cmd, stdin)
+    }
+
+    /// The binary, by absolute path, with every config location inside the sandbox.
+    fn command(&self, argv: &[&str]) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_glimpse"));
         cmd.args(argv)
             .current_dir(self.path("cwd"))
@@ -53,12 +65,17 @@ impl Sandbox {
             .env("HOME", self.path("home"))
             .env_remove("HERDR_PANE_ID")
             .env_remove("HERDR_ACTIVE_PANE_ID")
+            .env_remove("TOMLCTL_ROOT")
             // Set rather than removed: unset falls back to the `herdr` on PATH, which a
             // regressed `setup --dry-run` would ask to reload its config.
             .env("HERDR_BIN_PATH", self.path("no-such-herdr"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        cmd
+    }
+
+    fn finish(mut cmd: Command, stdin: &str) -> Output {
         let mut child = cmd.spawn().expect("the binary spawns");
         {
             let mut pipe = child.stdin.take().expect("stdin was piped");
@@ -119,7 +136,7 @@ fn an_unknown_flag_is_a_usage_error() {
     assert!(stderr(&out).contains("--no-such-flag"), "{}", stderr(&out));
 }
 
-/// With a tomlctl that cannot run, the hook fails, and that failure must reach the log
+/// An empty payload is not JSON, so the hook fails, and that failure must reach the log
 /// and nowhere else.
 #[test]
 fn hook_is_silent_and_logs_one_line() {
@@ -173,6 +190,31 @@ fn once_renders_the_diagram_view() {
     );
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert!(stdout(&out).contains("[1]"), "{}", stdout(&out));
+}
+
+const LIVE_STORE: &str = "schema_version = 1\n\n[[items]]\nid = 1\nref = \"seed-the-store\"\ntitle = \"Seed the store\"\neffort = \"S\"\nstatus = \"pending\"\nfiles = [\"src/a.rs\"]\n";
+
+/// The only case that reads a real flow: with no `PATH`, the frame can come only from
+/// glimpse's own in-process snapshot of the store, and the root, one level above the
+/// working directory, only from the ancestor walk, since `git` cannot start.
+#[test]
+fn once_renders_a_live_flow_in_process() {
+    let sb = Sandbox::new("once-live");
+    let flow = sb.path("cwd/.claude/flows/live-flow-demo");
+    std::fs::create_dir_all(&flow).expect("the sandbox is writable");
+    std::fs::create_dir_all(sb.path("cwd/nested")).expect("the sandbox is writable");
+    std::fs::write(flow.join("tasks.toml"), LIVE_STORE).expect("the sandbox is writable");
+    std::fs::write(flow.join("context.toml"), "status = \"in-progress\"\n")
+        .expect("the sandbox is writable");
+    let out = sb.run_without_path(
+        "cwd/nested",
+        &["--once", "--slug", "live-flow-demo", "--size", "100x30"],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(text.contains("live-flow-demo"), "{text}");
+    assert!(text.contains("1 Seed"), "{text}");
 }
 
 #[test]
@@ -251,13 +293,26 @@ fn setup_dry_run_leaves_an_installed_codex_hook_alone() {
 #[test]
 fn a_codex_hook_is_silent_and_logs_one_line() {
     let sb = Sandbox::new("hook-codex");
-    let out = sb.run(&["hook", "--harness", "codex"], "{}");
+    let out = sb.run(&["hook", "--harness", "codex"], "not json");
     assert_eq!(out.status.code(), Some(0));
     assert!(stdout(&out).is_empty(), "stdout: {}", stdout(&out));
     assert!(stderr(&out).is_empty(), "stderr: {}", stderr(&out));
     let log = std::fs::read_to_string(sb.path("claude/glimpse/hook.log"))
         .expect("the hook wrote its log in the sandbox");
     assert_eq!(log.lines().count(), 1, "{log}");
+}
+
+/// An event neither harness adapter handles is answered as not recorded: no failure to
+/// log and no store created.
+#[test]
+fn a_hook_for_an_unsupported_event_records_nothing() {
+    let sb = Sandbox::new("hook-unsupported");
+    let out = sb.run(&["hook", "--harness", "codex"], "{}");
+    assert_eq!(out.status.code(), Some(0));
+    assert!(stdout(&out).is_empty(), "stdout: {}", stdout(&out));
+    assert!(stderr(&out).is_empty(), "stderr: {}", stderr(&out));
+    assert!(!sb.path("claude/glimpse/hook.log").exists());
+    assert!(!sb.path("cwd/.claude").exists());
 }
 
 /// A mistyped hook entry in a harness config must land in the log like any other failure.

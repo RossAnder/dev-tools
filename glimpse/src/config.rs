@@ -243,7 +243,6 @@ pub(crate) struct Config {
     pub(crate) split_threshold: f64,
     pub(crate) pane_ratio: f64,
     pub(crate) poll_ms: u64,
-    pub(crate) tomlctl: String,
     pub(crate) default_view: ViewKind,
     /// A `running` agent whose transcript is untouched this long is shown stale.
     pub(crate) stale_after_s: u64,
@@ -273,7 +272,6 @@ impl Default for Config {
             split_threshold: 2.2,
             pane_ratio: 0.4,
             poll_ms: 500,
-            tomlctl: "tomlctl".to_string(),
             default_view: ViewKind::Layers,
             stale_after_s: 300,
             density: DensityPref::Auto,
@@ -322,13 +320,6 @@ impl Config {
                     cfg.pane_ratio = r;
                 }
                 "poll_ms" => cfg.poll_ms = positive_int(key, value)?,
-                "tomlctl" => {
-                    let s = str_value(key, value)?;
-                    if s.is_empty() {
-                        return Err("`tomlctl` must not be empty".to_string());
-                    }
-                    cfg.tomlctl = s.to_string();
-                }
                 "default_view" => {
                     cfg.default_view =
                         ViewKind::parse(str_value(key, value)?).ok_or_else(|| {
@@ -514,7 +505,6 @@ mod tests {
         assert_eq!(cfg.split_threshold, 2.2);
         assert_eq!(cfg.pane_ratio, 0.4);
         assert_eq!(cfg.poll_ms, 500);
-        assert_eq!(cfg.tomlctl, "tomlctl");
         assert_eq!(cfg.default_view, ViewKind::Layers);
         assert_eq!(cfg.stale_after_s, 300);
         assert_eq!(cfg.density, DensityPref::Auto);
@@ -570,7 +560,6 @@ mod tests {
         assert_eq!(cfg.default_view, ViewKind::Diagram);
         assert_eq!(cfg.orientation_threshold, 3.0, "an integer is accepted");
         assert_eq!(cfg.poll_ms, 500);
-        assert_eq!(cfg.tomlctl, "tomlctl");
     }
 
     #[test]
@@ -581,11 +570,17 @@ mod tests {
             "poll_ms = \"fast\"",
             "poll_ms = 0",
             "pane_ratio = 1.5",
-            "tomlctl = \"\"",
             "pollms = 100",
         ] {
             assert!(Config::parse(bad).is_err(), "{bad:?} should be rejected");
         }
+    }
+
+    /// glimpse reads flows in-process, so a config still naming a tomlctl binary is stale.
+    #[test]
+    fn the_retired_tomlctl_key_is_unknown() {
+        let err = Config::parse("tomlctl = \"x\"").expect_err("the key is gone");
+        assert_eq!(err, "unknown key `tomlctl`");
     }
 
     #[test]

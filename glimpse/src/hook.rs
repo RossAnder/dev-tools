@@ -1,5 +1,5 @@
-//! Claude Code and Codex hook handler: records agent events and opens the glimpse pane on
-//! subagent start.
+//! Claude Code and Codex hook handler: records agent events through the in-process
+//! `tomlctl::record_agent` and opens the glimpse pane on subagent start.
 //!
 //! Neither harness waits for nor reads an async hook, so a failure here would vanish
 //! silently. Every error is appended instead to `<claude_dir>/glimpse/hook.log`, and nothing
@@ -8,7 +8,6 @@
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
@@ -21,9 +20,8 @@ use crate::herdr::Herdr;
 /// Matches the cap `tomlctl` applies to a stdin payload.
 const MAX_PAYLOAD: u64 = 32 * 1024 * 1024;
 const LOG_CAP: u64 = 1024 * 1024;
-const OLD_TOMLCTL: &str = "tomlctl ≥0.12.0 required — cargo install --path tomlctl";
 
-/// The one JSON line `tomlctl agents record` prints. Unknown keys are ignored.
+/// The JSON object `tomlctl::record_agent` returns. Unknown keys are ignored.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub(crate) struct RecordResult {
@@ -61,27 +59,8 @@ pub(crate) fn decide(result: &RecordResult, herdr_pane_id: Option<&str>, cwd: &s
     }
 }
 
-/// Reads the last non-empty line, so a stray line printed before the result does not hide it.
-pub(crate) fn parse_record_result(stdout: &str) -> Result<RecordResult, String> {
-    let line = stdout
-        .lines()
-        .map(str::trim)
-        .rfind(|l| !l.is_empty())
-        .ok_or("tomlctl agents record printed nothing")?;
-    serde_json::from_str(line).map_err(|e| format!("invalid tomlctl agents record output: {e}"))
-}
-
-/// Turns a failed `tomlctl` run into the line logged for it.
-pub(crate) fn failure_message(status: &str, stderr: &str) -> String {
-    let lower = stderr.to_ascii_lowercase();
-    if lower.contains("unrecognized subcommand") || lower.contains("unknown subcommand") {
-        return OLD_TOMLCTL.to_string();
-    }
-    let first = stderr.lines().map(str::trim).find(|l| !l.is_empty());
-    match first {
-        Some(line) => format!("tomlctl agents record failed ({status}): {line}"),
-        None => format!("tomlctl agents record failed ({status})"),
-    }
+pub(crate) fn parse_record_result(value: Value) -> Result<RecordResult, String> {
+    serde_json::from_value(value).map_err(|e| format!("invalid agents record result: {e}"))
 }
 
 /// The payload's `cwd`, or `None` when it is absent, not a string, or not valid JSON.
@@ -238,7 +217,7 @@ fn handle(stdin: impl Read, harness: Harness) -> Result<(), String> {
     if flowless && !root_override {
         return Ok(());
     }
-    let result = record(&config, harness, &payload, cwd.as_deref())?;
+    let result = record(harness, &payload)?;
     let herdr_pane = std::env::var("HERDR_PANE_ID").ok();
     let cwd = cwd.unwrap_or_else(|| ".".to_string());
     match decide(&result, herdr_pane.as_deref(), &cwd) {
@@ -261,7 +240,7 @@ fn handle(stdin: impl Read, harness: Harness) -> Result<(), String> {
 }
 
 /// True when `dir` exists and neither it nor any ancestor holds a `.claude/flows`
-/// directory, so `tomlctl agents record` could only answer that there is no flow.
+/// directory, so recording the event could only answer that there is no flow.
 pub(crate) fn outside_any_flow(dir: impl AsRef<Path>) -> bool {
     let dir = dir.as_ref();
     dir.is_dir()
@@ -282,48 +261,14 @@ fn read_capped(stdin: impl Read) -> Result<Vec<u8>, String> {
     Ok(payload)
 }
 
-pub(crate) fn record_args(harness: Harness) -> [&'static str; 5] {
-    ["agents", "record", "--harness", harness.as_str(), "-"]
-}
-
-/// Runs `tomlctl agents record` in the payload's `cwd` when that directory exists, so
-/// tomlctl resolves the worktree the agent ran in.
-fn record(
-    config: &Config,
-    harness: Harness,
-    payload: &[u8],
-    cwd: Option<&str>,
-) -> Result<RecordResult, String> {
-    let mut cmd = Command::new(&config.tomlctl);
-    cmd.args(record_args(harness))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(dir) = cwd.filter(|d| Path::new(d).is_dir()) {
-        cmd.current_dir(dir);
-    }
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("cannot run {}: {e}", config.tomlctl))?;
-    let mut input = child.stdin.take().ok_or("tomlctl stdin was not piped")?;
-    let payload = payload.to_vec();
-    // Written from a thread so a child that fills its output pipe before draining stdin
-    // cannot deadlock against us.
-    let writer = std::thread::spawn(move || input.write_all(&payload));
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("tomlctl agents record: {e}"))?;
-    let written = writer.join();
-    if !output.status.success() {
-        return Err(failure_message(
-            &output.status.to_string(),
-            &String::from_utf8_lossy(&output.stderr),
-        ));
-    }
-    if let Ok(Err(e)) = written {
-        return Err(format!("cannot send the hook payload to tomlctl: {e}"));
-    }
-    parse_record_result(&String::from_utf8_lossy(&output.stdout))
+/// Records the payload in-process. `record_agent` moves this process into the payload's
+/// `cwd` and fixes the repo root, which is safe only because a hook process records once.
+fn record(harness: Harness, payload: &[u8]) -> Result<RecordResult, String> {
+    let value: Value =
+        serde_json::from_slice(payload).map_err(|e| format!("invalid hook payload: {e}"))?;
+    let result = tomlctl::record_agent(harness.as_str(), &value)
+        .map_err(|e| format!("agents record failed: {e:#}"))?;
+    parse_record_result(result)
 }
 
 #[cfg(test)]
@@ -331,9 +276,9 @@ mod tests {
     use super::*;
 
     fn start(slug: &str) -> RecordResult {
-        parse_record_result(&format!(
-            r#"{{"recorded":true,"slug":"{slug}","event":"start","id":"s1:a1","task_ids":[16,17]}}"#
-        ))
+        parse_record_result(serde_json::json!({
+            "recorded": true, "slug": slug, "event": "start", "id": "A1", "task_ids": [16, 17]
+        }))
         .expect("parses")
     }
 
@@ -378,49 +323,29 @@ mod tests {
     #[test]
     fn decide_does_nothing_when_not_recorded() {
         let result =
-            parse_record_result(r#"{"recorded":false,"reason":"unknown-flow"}"#).expect("parses");
+            parse_record_result(serde_json::json!({"recorded": false, "reason": "unknown-flow"}))
+                .expect("parses");
         assert_eq!(result.reason.as_deref(), Some("unknown-flow"));
         assert_eq!(decide(&result, Some("w1:p2"), "."), HookAction::Nothing);
     }
 
     #[test]
-    fn the_result_parse_ignores_unknown_keys_and_leading_noise() {
+    fn the_result_parse_ignores_unknown_keys_and_rejects_a_non_object() {
         let result = parse_record_result(
-            "warning: something\n{\"recorded\":true,\"slug\":\"s\",\"event\":\"start\",\"extra\":1}\n\n",
+            serde_json::json!({"recorded": true, "slug": "s", "event": "start", "extra": 1}),
         )
         .expect("parses");
         assert!(result.recorded);
         assert_eq!(result.slug.as_deref(), Some("s"));
         assert!(result.task_ids.is_empty());
-        assert!(parse_record_result("").is_err());
-        assert!(parse_record_result("not json").is_err());
+        assert!(parse_record_result(Value::Null).is_err());
+        assert!(parse_record_result(serde_json::json!("not an object")).is_err());
     }
 
     #[test]
-    fn an_old_tomlctl_is_named_in_the_failure() {
-        assert_eq!(
-            failure_message(
-                "exit code: 2",
-                "error: unrecognized subcommand 'agents'\n\nUsage: …"
-            ),
-            OLD_TOMLCTL
-        );
-        assert_eq!(
-            failure_message("exit code: 1", "\nerror: lock held\nmore"),
-            "tomlctl agents record failed (exit code: 1): error: lock held"
-        );
-    }
-
-    #[test]
-    fn the_harness_reaches_the_tomlctl_arguments() {
-        assert_eq!(
-            record_args(Harness::ClaudeCode),
-            ["agents", "record", "--harness", "claude-code", "-"]
-        );
-        assert_eq!(
-            record_args(Harness::Codex),
-            ["agents", "record", "--harness", "codex", "-"]
-        );
+    fn an_invalid_payload_fails_before_recording() {
+        let err = record(Harness::Codex, b"not json").expect_err("invalid JSON");
+        assert!(err.starts_with("invalid hook payload: "), "{err}");
     }
 
     #[test]
