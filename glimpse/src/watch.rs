@@ -70,11 +70,17 @@ pub(crate) fn start(
 ) -> notify::Result<RecommendedWatcher> {
     let root = canonical_root(flows_root);
     let classify_root = root.clone();
-    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
-        if let Some(wake) = classify(&event, &classify_root) {
-            on_wake(wake);
-        }
-    })?;
+    // `.claude/flows` is repo content, so a link below the root must not pull the watch
+    // outside the flows tree.
+    let config = notify::Config::default().with_follow_symlinks(false);
+    let mut watcher = RecommendedWatcher::new(
+        move |event: notify::Result<notify::Event>| {
+            if let Some(wake) = classify(&event, &classify_root) {
+                on_wake(wake);
+            }
+        },
+        config,
+    )?;
     watcher.watch(&root, RecursiveMode::Recursive)?;
     Ok(watcher)
 }
