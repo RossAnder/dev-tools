@@ -34,14 +34,13 @@ struct RawFlow {
     plan_path: String,
 }
 
-/// Parses `tomlctl flow list` output, keeping only flows for which `mtime`
-/// yields a `tasks.toml` modification time.
+/// Parses a `flow list` envelope, keeping only flows for which `mtime` yields a
+/// `tasks.toml` modification time.
 pub(crate) fn parse_flows(
-    json: &str,
+    value: &serde_json::Value,
     mtime: impl Fn(&str) -> Option<SystemTime>,
 ) -> Result<Vec<FlowEntry>, String> {
-    let env: Envelope =
-        serde_json::from_str(json).map_err(|e| format!("bad `flow list` output: {e}"))?;
+    let env = Envelope::deserialize(value).map_err(|e| format!("bad `flow list` envelope: {e}"))?;
     Ok(env
         .flows
         .into_iter()
@@ -78,21 +77,9 @@ pub(crate) fn freshest(entries: &[FlowEntry]) -> Option<&FlowEntry> {
 }
 
 /// Lists the repo's flows that have a `tasks.toml`, freshest first.
-pub(crate) fn list(root: &Path, tomlctl: &str) -> Result<Vec<FlowEntry>, String> {
-    let out = Command::new(tomlctl)
-        .args(["flow", "list"])
-        .current_dir(root)
-        .env("TOMLCTL_ROOT", root)
-        .output()
-        .map_err(|e| format!("cannot run `{tomlctl} flow list`: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "`{tomlctl} flow list` failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
-    let json = String::from_utf8_lossy(&out.stdout);
-    let mut entries = parse_flows(&json, |slug| {
+pub(crate) fn list(root: &Path) -> Result<Vec<FlowEntry>, String> {
+    let value = tomlctl::flow_list(root).map_err(|e| format!("{e:#}"))?;
+    let mut entries = parse_flows(&value, |slug| {
         std::fs::metadata(root.join(".claude/flows").join(slug).join("tasks.toml"))
             .and_then(|m| m.modified())
             .ok()
@@ -144,9 +131,13 @@ mod tests {
         {"slug":"b","status":"in-progress","updated":"2026-09-29","plan_path":"docs/plans/b.md","scope":[]}
     ],"skipped":[]}"#;
 
+    fn sample() -> serde_json::Value {
+        serde_json::from_str(SAMPLE).expect("sample is JSON")
+    }
+
     #[test]
     fn parse_keeps_only_flows_with_a_task_store() {
-        let got = parse_flows(SAMPLE, |slug| (slug == "b").then(|| at(5))).unwrap();
+        let got = parse_flows(&sample(), |slug| (slug == "b").then(|| at(5))).unwrap();
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].slug, "b");
         assert_eq!(got[0].status, "in-progress");
@@ -155,8 +146,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_rejects_malformed_json() {
-        assert!(parse_flows("not json", |_| Some(at(1))).is_err());
+    fn parse_rejects_a_malformed_envelope() {
+        let bad = serde_json::json!({"flows": [{"status": "review"}]});
+        assert!(parse_flows(&bad, |_| Some(at(1))).is_err());
+        assert!(parse_flows(&serde_json::json!("not an envelope"), |_| Some(at(1))).is_err());
     }
 
     #[test]

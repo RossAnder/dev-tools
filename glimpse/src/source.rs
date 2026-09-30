@@ -6,12 +6,9 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
-
-use serde::Deserialize;
 
 use crate::flows::{self, FlowEntry};
 use crate::model::Snapshot;
@@ -36,10 +33,6 @@ enum Control {
     SetSlug(String),
     Stop,
 }
-
-/// The capability a tomlctl must advertise before the poller will use it.
-const REQUIRED_FEATURE: &str = "tasks_snapshot";
-pub(crate) const REQUIRED_MESSAGE: &str = "tomlctl ≥0.12.0 required — cargo install --path tomlctl";
 
 /// How long a failed fetch waits before retrying when no file has changed.
 const RETRY_AFTER: Duration = Duration::from_secs(5);
@@ -127,68 +120,25 @@ enum FlowsChange {
 }
 
 /// Produces a snapshot for one flow and lists the repo's flows. The production implementation
-/// shells out to tomlctl; tests substitute a fake.
+/// reads the flow's files in-process through the tomlctl library; tests substitute a fake.
 pub(crate) trait Fetcher: Send {
     fn fetch(&mut self, root: &Path, slug: &str) -> Result<Snapshot, String>;
     fn list_flows(&mut self, root: &Path) -> Result<Vec<FlowEntry>, String>;
 }
 
-/// Runs `<tomlctl> tasks snapshot --slug <slug>` in the repository root.
-pub(crate) struct TomlctlFetcher {
-    pub(crate) tomlctl: String,
-}
+/// Builds the `tasks snapshot` document in-process from `<root>/.claude/flows/<slug>`.
+pub(crate) struct InProcessFetcher;
 
-impl Fetcher for TomlctlFetcher {
+impl Fetcher for InProcessFetcher {
     fn fetch(&mut self, root: &Path, slug: &str) -> Result<Snapshot, String> {
-        let tomlctl = &self.tomlctl;
-        let out = Command::new(tomlctl)
-            .args(["tasks", "snapshot", "--slug", slug])
-            .current_dir(root)
-            .env("TOMLCTL_ROOT", root)
-            .output()
-            .map_err(|e| format!("cannot run `{tomlctl} tasks snapshot`: {e}"))?;
-        if !out.status.success() {
-            return Err(format!(
-                "`{tomlctl} tasks snapshot` failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            ));
-        }
-        serde_json::from_slice(&out.stdout).map_err(|e| format!("bad `tasks snapshot` output: {e}"))
+        let store = flow_dir(root, slug).join("tasks.toml");
+        let value = tomlctl::snapshot(slug, &store).map_err(|e| format!("{e:#}"))?;
+        serde_json::from_value(value).map_err(|e| format!("bad `tasks snapshot` document: {e}"))
     }
 
     fn list_flows(&mut self, root: &Path) -> Result<Vec<FlowEntry>, String> {
-        flows::list(root, &self.tomlctl)
+        flows::list(root)
     }
-}
-
-#[derive(Deserialize)]
-struct Capabilities {
-    #[serde(default)]
-    features: Vec<String>,
-}
-
-/// Checks `tomlctl capabilities` output for the snapshot verb.
-fn check_capabilities(json: &[u8]) -> Result<(), String> {
-    let caps: Capabilities =
-        serde_json::from_slice(json).map_err(|e| format!("bad `capabilities` output: {e}"))?;
-    if caps.features.iter().any(|f| f == REQUIRED_FEATURE) {
-        Ok(())
-    } else {
-        Err(REQUIRED_MESSAGE.to_string())
-    }
-}
-
-/// Runs `<tomlctl> capabilities` once and confirms the installed binary has the snapshot verb.
-pub(crate) fn probe_tomlctl(tomlctl: &str, root: &Path) -> Result<(), String> {
-    let out = Command::new(tomlctl)
-        .arg("capabilities")
-        .current_dir(root)
-        .output()
-        .map_err(|e| format!("cannot run `{tomlctl} capabilities`: {e} — {REQUIRED_MESSAGE}"))?;
-    if !out.status.success() {
-        return Err(REQUIRED_MESSAGE.to_string());
-    }
-    check_capabilities(&out.stdout)
 }
 
 /// The poller's state between ticks. Kept apart from the thread so a test can drive it one
@@ -209,13 +159,7 @@ struct Poller {
     /// Set when the last flow list failed, so the next change lists again.
     relist_pending: bool,
     retry_after: Duration,
-    /// Run once, on the first failed fetch, to tell an old tomlctl from a transient failure.
-    probe: Option<Probe>,
-    /// Set when the probe failed: the poller stops fetching and only waits to be stopped.
-    halted: bool,
 }
-
-type Probe = Box<dyn FnOnce() -> Result<(), String> + Send>;
 
 impl Poller {
     fn new(
@@ -236,8 +180,6 @@ impl Poller {
             flow_stats: BTreeMap::new(),
             relist_pending: false,
             retry_after: RETRY_AFTER,
-            probe: None,
-            halted: false,
         }
     }
 
@@ -326,13 +268,7 @@ impl Poller {
             }
             Err(e) => {
                 self.failed_at = Some(Instant::now());
-                match self.probe.take().map(|probe| probe()) {
-                    Some(Err(probe_error)) => {
-                        self.halted = true;
-                        Event::SourceError(probe_error)
-                    }
-                    _ => Event::SourceError(e),
-                }
+                Event::SourceError(e)
             }
         };
         self.events.send(event).is_ok()
@@ -343,10 +279,6 @@ impl Poller {
     fn run(mut self, interval: Duration, control: &Receiver<Control>) {
         loop {
             if !self.tick() {
-                return;
-            }
-            if self.halted {
-                while let Ok(Control::SetSlug(_)) = control.recv() {}
                 return;
             }
             match control.recv_timeout(interval) {
@@ -365,45 +297,33 @@ pub(crate) struct Source {
 }
 
 impl Source {
-    /// Starts the production poller: fetches through the configured tomlctl, probing it only
-    /// after the first failed fetch.
+    /// Starts the production poller, reading flows in-process every `poll_ms`.
     pub(crate) fn start(
         root: PathBuf,
         slug: Option<String>,
         config: &crate::config::Config,
         events: Sender<Event>,
     ) -> Source {
-        let tomlctl = config.tomlctl.clone();
-        let probe_root = root.clone();
-        let fetcher = Box::new(TomlctlFetcher {
-            tomlctl: tomlctl.clone(),
-        });
         Source::spawn(
             root,
             slug,
             Duration::from_millis(config.poll_ms),
-            fetcher,
-            move || probe_tomlctl(&tomlctl, &probe_root),
+            Box::new(InProcessFetcher),
             events,
         )
     }
 
-    /// Runs `probe` on the poller thread after the first failed fetch; if it fails, its message
-    /// is sent as a `SourceError` in place of the fetch error and the thread idles until
-    /// stopped instead of polling.
+    /// Runs a poller over `fetcher` on its own thread.
     pub(crate) fn spawn(
         root: PathBuf,
         slug: Option<String>,
         interval: Duration,
         fetcher: Box<dyn Fetcher>,
-        probe: impl FnOnce() -> Result<(), String> + Send + 'static,
         events: Sender<Event>,
     ) -> Source {
         let (control, control_rx) = mpsc::channel();
         let handle = std::thread::spawn(move || {
-            let mut poller = Poller::new(root, slug, fetcher, events);
-            poller.probe = Some(Box::new(probe));
-            poller.run(interval, &control_rx);
+            Poller::new(root, slug, fetcher, events).run(interval, &control_rx);
         });
         Source {
             control,
@@ -697,58 +617,11 @@ mod tests {
     }
 
     #[test]
-    fn capabilities_without_the_snapshot_feature_are_rejected() {
-        assert_eq!(
-            check_capabilities(br#"{"version":"0.12.0","features":["tasks_snapshot"]}"#),
-            Ok(())
-        );
-        assert_eq!(
-            check_capabilities(br#"{"version":"0.11.0","features":["flow_list"]}"#),
-            Err(REQUIRED_MESSAGE.to_string())
-        );
-        assert!(check_capabilities(b"not json").is_err());
-    }
-
-    #[test]
-    fn a_failed_probe_reports_and_never_polls() {
-        let root = temp_root("probe");
-        let (fetcher, calls) = fake(vec![Err("raw failure".into())]);
-        let (tx, rx) = mpsc::channel();
-        let source = Source::spawn(
-            root.clone(),
-            Some("f".into()),
-            Duration::from_millis(10),
-            fetcher,
-            || Err(REQUIRED_MESSAGE.to_string()),
-            tx,
-        );
-        let first = rx.recv_timeout(Duration::from_secs(5)).expect("an event");
-        assert!(matches!(&first, Event::SourceError(m) if m == REQUIRED_MESSAGE));
-        source.set_slug("g".into());
-        source.stop();
-        assert!(
-            !drain(&rx)
-                .iter()
-                .any(|e| matches!(e, Event::SourceError(_) | Event::Snapshot(_))),
-            "nothing polled after the probe failure"
-        );
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "only the first fetch ran");
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
     fn the_thread_fetches_on_set_slug_and_stops_on_request() {
         let root = temp_root("thread");
         let (fetcher, _calls) = fake(vec![Ok(with_revision("r1"))]);
         let (tx, rx) = mpsc::channel();
-        let source = Source::spawn(
-            root.clone(),
-            None,
-            Duration::from_millis(20),
-            fetcher,
-            || Ok(()),
-            tx,
-        );
+        let source = Source::spawn(root.clone(), None, Duration::from_millis(20), fetcher, tx);
         source.set_slug("f".into());
         let deadline = Instant::now() + Duration::from_secs(5);
         let got = loop {

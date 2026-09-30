@@ -18,6 +18,7 @@ mod state;
 mod theme;
 mod transcript;
 mod view;
+mod watch;
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -27,7 +28,7 @@ use crate::config::Config;
 use crate::herdr::Herdr;
 use crate::model::Snapshot;
 use crate::runtime::RunOpts;
-use crate::source::{Fetcher, TomlctlFetcher};
+use crate::source::{Fetcher, InProcessFetcher};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -104,25 +105,16 @@ fn run_view(args: ViewArgs) -> Result<(), String> {
     }
 }
 
-/// A `--snapshot` file is read as-is and never touches tomlctl; otherwise the slug is the
-/// explicit one or the freshest flow's, fetched once.
+/// A `--snapshot` file is read as-is; otherwise the flow's files are read once, for the
+/// explicit slug or the freshest flow's.
 fn once_snapshot(opts: &RunOpts, once: &Once) -> Result<Snapshot, String> {
     if let Some(path) = &once.snapshot {
         return read_snapshot(path);
     }
-    let tomlctl = &opts.config.tomlctl;
-    fetch_once(opts, tomlctl).map_err(|fetch_error| {
-        source::probe_tomlctl(tomlctl, &opts.root)
-            .err()
-            .unwrap_or(fetch_error)
-    })
-}
-
-fn fetch_once(opts: &RunOpts, tomlctl: &str) -> Result<Snapshot, String> {
     let slug = match &opts.slug {
         Some(slug) => slug.clone(),
         None => {
-            let entries = flows::list(&opts.root, tomlctl)?;
+            let entries = flows::list(&opts.root)?;
             flows::freshest(&entries)
                 .map(|f| f.slug.clone())
                 .ok_or_else(|| {
@@ -133,10 +125,7 @@ fn fetch_once(opts: &RunOpts, tomlctl: &str) -> Result<Snapshot, String> {
                 })?
         }
     };
-    TomlctlFetcher {
-        tomlctl: tomlctl.to_owned(),
-    }
-    .fetch(&opts.root, &slug)
+    InProcessFetcher.fetch(&opts.root, &slug)
 }
 
 fn read_snapshot(path: &Path) -> Result<Snapshot, String> {
