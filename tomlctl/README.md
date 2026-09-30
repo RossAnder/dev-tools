@@ -65,7 +65,7 @@ tomlctl backlog evidence audit [--strict] [--max-bytes N]   # unowned dirs, poli
 tomlctl backlog cluster --by all                       # group open items into candidate work scopes
 tomlctl backlog compact [--older-than 90d] [--dry-run]  # ages resolved and dismissed items into [[compacted]]; open and promoted items never move
 tomlctl tasks snapshot --slug <s>                      # one consistent read of a flow: rows, graph products, joined execution record, agent records
-tomlctl agents record --harness claude-code|codex|manual [-]   # one hook payload from stdin into the dispatching flow's agents.toml; driven only by harness hooks (`glimpse hook` writes the same file in-process)
+tomlctl agents record --harness claude-code|codex|manual [-]   # one hook payload from stdin into the dispatching flow's agents.toml; the manual form of what the harness hooks do by running `glimpse hook`, which writes the same file in-process
 tomlctl agents list --slug <s>                         # a flow's agent lifecycle records as a JSON array
 
 # Integrity flags (accepted after the subcommand name on any TOML-touching command):
@@ -387,7 +387,7 @@ Feature meanings:
 | `tasks_check` | `tasks check --in-flight <N1,N2,...>` — the store's invariant checks; any `error`-class finding exits 1, and `--plan` reports render drift as a warning, so gate drift on `tasks render --check` |
 | `tasks_render` | `tasks render` — rewrite the plan's `## Execution Policy`, `## Tasks` and `## Dependency Graph` from the store; `--stdout` previews and `--check` reports drift without writing |
 | `tasks_snapshot` | `tasks snapshot --slug <SLUG>` — one read-only JSON view of a flow for a viewer: rows, Kahn layers, the `tasks ready` frontier, edges, checkpoints, the execution record joined to its rows, and the agent records; absent sibling files read as empty, and `revision` fingerprints the raw input bytes |
-| `agents_record` | `agents record --harness <HARNESS> [PAYLOAD]` — record one hook payload (an agent starting, idling or stopping) into the dispatching flow's `.claude/flows/<SLUG>/agents.toml`; run by harness hooks, never by carriers or sub-agents |
+| `agents_record` | `agents record --harness <HARNESS> [PAYLOAD]` — record one hook payload (an agent starting, idling or stopping) into the dispatching flow's `.claude/flows/<SLUG>/agents.toml`; the manual form of what `glimpse hook` does in-process; never run by carriers or sub-agents |
 | `agents_list` | `agents list --slug <SLUG>` — a flow's agent lifecycle records as a JSON array |
 | `sweep` | `sweep -e <REGEX>...` — regex hits over the repo's tracked files as sorted `file:line` sites, with `skipped` counts, `truncated` and `coverage_complete`; `.claude/**` and `docs/plans/**` are excluded by default |
 | `items_sweep` | `items sweep <file>` — re-run each item's stored `sweep` patterns and diff the hits against its `instances` (`new` / `gone` / `kept` / `unverified`); `--update` rewrites an open item's `instances` in listed order, appending new sites, and refuses while the run is truncated or an anchor is unverified for any reason but `excluded` |

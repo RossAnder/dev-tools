@@ -239,7 +239,7 @@ segment is left alone rather than re-attributed.
 
 ## Output
 
-`record` prints exactly one compact JSON line on stdout, the form a hook's log captures whole:
+`record` prints exactly one compact JSON line on stdout, for manual and CLI callers (`glimpse hook` receives the same result in-process and prints nothing):
 
 ```json
 {"recorded":true,"slug":"lively-twirling-babbage","event":"start","id":"A3","task_ids":[16]}

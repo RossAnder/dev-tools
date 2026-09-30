@@ -370,7 +370,7 @@ Only the orchestrating carrier writes to the store. `import-plan`, `add`, `add-m
 
 An implementing agent reports its outcome in its return payload, exactly as it does today. The orchestrator moves the row (`--status in-progress` at dispatch, `--status done` or `--status failed` on return) and appends the execution-record entry. Two writers on one store means a row's status and the record's `task-completion` entries can disagree, and the store has no supersession mechanism to reconcile them.
 
-`agents.toml`, beside the store in the flow directory, is not the task store and no carrier writes it. Its only writers are the `tomlctl agents record` CLI and `glimpse hook`'s in-process `tomlctl::record_agent`, both driven only by the harness hooks as agents start and stop; `tasks snapshot` reads it and nothing else in the task-store contract touches it.
+`agents.toml`, beside the store in the flow directory, is not the task store and no carrier writes it. It is written by `glimpse hook`'s in-process `tomlctl::record_agent`, which the harness hooks run as agents start and stop; `tomlctl agents record` is the manual entry point to the same code; `tasks snapshot` reads it and nothing else in the task-store contract touches it.
 
 ### 12. Fetch by id at dispatch
 
