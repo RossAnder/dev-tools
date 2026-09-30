@@ -2074,19 +2074,25 @@ fn is_transient_rename_error(err: &std::io::Error) -> bool {
     false
 }
 
-/// Atomic-replace pattern: write `bytes` to a tempfile in the same directory as
-/// `path`, `sync_data()` to flush content to disk, then `persist()` to
-/// rename into place. The data fsync is load-bearing — without it, a crash
-/// between rename and fsync can leave the target empty on some filesystems.
-/// See the tempfile crate docs (`/stebalien/tempfile`) for the canonical
-/// pattern; the parent-directory `sync_all()` below covers the dirent update
-/// that makes the rename durable.
+/// Atomic-replace pattern: write `bytes` to a staged file in the same
+/// directory as `path`, `sync_data()` to flush content to disk, then
+/// `std::fs::rename` it into place. The data fsync is load-bearing — without
+/// it, a crash between rename and fsync can leave the target empty on some
+/// filesystems; the parent-directory `sync_all()` below covers the dirent
+/// update that makes the rename durable.
 ///
-/// The tempfile is sited under the CANONICALISED parent so a symlinked
+/// The rename is `std::fs::rename` rather than `NamedTempFile::persist`
+/// because on Windows std falls back to a POSIX-semantics rename when the
+/// target is held open by a reader (a stat or read handle), where `persist`
+/// fails with os error 5. The staged file is opened with plain
+/// `OpenOptions` so it never carries `FILE_ATTRIBUTE_TEMPORARY` onto the
+/// target.
+///
+/// The staged file is sited under the CANONICALISED parent so a symlinked
 /// parent directory pointing to a different mount can't trigger EXDEV at
-/// `persist()` time. Falls back to the raw parent when canonicalisation fails
-/// (e.g. parent missing — `NamedTempFile::new_in` then surfaces the same
-/// underlying ENOENT with a clearer-context error message).
+/// rename time. Falls back to the raw parent when canonicalisation fails
+/// (e.g. parent missing — staging then surfaces the same underlying ENOENT
+/// with a clearer-context error message).
 pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let raw_parent = path
         .parent()
@@ -2096,14 +2102,26 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         .canonicalize()
         .unwrap_or_else(|_| raw_parent.to_path_buf());
     let parent: &Path = &parent_buf;
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+    let mut tmp = tempfile::Builder::new()
+        .make_in(parent, |staged| {
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true).create_new(true);
+            // The staged file's mode becomes the target's; keep the 0600
+            // `NamedTempFile` would have used.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600);
+            }
+            opts.open(staged)
+        })
         .with_context(|| format!("creating temp file in {}", parent.display()))?;
     tmp.as_file_mut()
         .write_all(bytes)
         .with_context(|| format!("writing temp file for {}", path.display()))?;
     // `sync_data()` (fdatasync) suffices on a freshly created
     // tempfile — only the data needs to reach stable storage before
-    // `persist()` renames it into place. Tempfile metadata (owner,
+    // the rename moves it into place. Tempfile metadata (owner,
     // mode, mtime) is not load-bearing for the post-rename target,
     // and the parent-directory `sync_all()` below still flushes the
     // dirent update that makes the rename durable. Skipping the
@@ -2111,30 +2129,31 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     tmp.as_file()
         .sync_data()
         .with_context(|| format!("fsync temp file for {}", path.display()))?;
-    // `persist` hands the tempfile back inside its error, so a retry renames
-    // the same staged bytes rather than re-staging them.
+    // Closes the handle so the rename is not blocked by our own open file;
+    // dropping `staged` on an error path deletes the staged file.
+    let mut staged = tmp.into_temp_path();
     let mut attempt: u32 = 1;
     loop {
-        match tmp.persist(path) {
-            Ok(_) => break,
-            Err(e) if attempt < PERSIST_ATTEMPTS && is_transient_rename_error(&e.error) => {
-                tmp = e.file;
+        match std::fs::rename(&staged, path) {
+            Ok(()) => {
+                // The staged name no longer exists; stop the drop from
+                // removing whatever may later appear under it.
+                staged.disable_cleanup(true);
+                break;
+            }
+            Err(e) if attempt < PERSIST_ATTEMPTS && is_transient_rename_error(&e) => {
                 attempt += 1;
                 std::thread::sleep(PERSIST_RETRY);
             }
             Err(e) => {
-                return Err(anyhow!(
-                    "atomic rename to {} failed: {}",
-                    path.display(),
-                    e.error
-                ));
+                return Err(anyhow!("atomic rename to {} failed: {}", path.display(), e));
             }
         }
     }
-    // Fsync the parent directory so the dirent update made by `persist()`
-    // is durable across power loss. `tempfile::NamedTempFile::persist` performs
-    // the rename but does NOT sync the parent — without this call a crash
-    // between rename and the kernel's eventual writeback can leave the target
+    // Fsync the parent directory so the dirent update made by the rename
+    // is durable across power loss. The rename does NOT sync the parent —
+    // without this call a crash between rename and the kernel's eventual
+    // writeback can leave the target
     // looking unchanged on the next boot. Gated to unix because Windows NTFS
     // already journals dirent updates aggressively (the directory-handle
     // sync_all() pattern there is awkward and largely a no-op).
@@ -2752,6 +2771,31 @@ arr = [1, 2]
             .unwrap();
             verify_integrity(&target).unwrap();
         });
+    }
+
+    /// Windows refuses a plain replace while another handle is open on the
+    /// target; the write must still land, and atomically.
+    #[cfg(windows)]
+    #[test]
+    fn atomic_write_replaces_a_target_held_open_by_a_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("held.toml");
+        fs::write(&target, b"old = 1\n").unwrap();
+        let reader = fs::File::open(&target).unwrap();
+
+        atomic_write(&target, b"new = 2\n").unwrap();
+
+        assert_eq!(fs::read(&target).unwrap(), b"new = 2\n");
+        drop(reader);
+        let leftovers: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .filter(|n| n != "held.toml")
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "staged file left behind: {leftovers:?}"
+        );
     }
 
     /// `mutate_doc` against a missing path with `OnMissing::Error`
