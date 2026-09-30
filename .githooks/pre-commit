@@ -32,7 +32,7 @@ fi
 
 # Carrier, flag-table, finding-class and skill gates over claude/ and the CLI.
 if grep -Eq '^(claude/.*\.md|tomlctl/src/.*)$' <<<"$STAGED"; then
-  gate cargo test --manifest-path "$ROOT/tomlctl/Cargo.toml" --bin tomlctl -- cli::dispatch::tests
+  gate cargo test --manifest-path "$ROOT/tomlctl/Cargo.toml" --lib -- cli::dispatch::tests
 fi
 
 # The plan corpus test is #[ignore]d so plan edits cannot fail `cargo test`.
@@ -43,4 +43,9 @@ fi
 # glimpse is a separate crate, so the tomlctl fmt check above never covers it.
 if grep -Eq '^glimpse/.*\.rs$' <<<"$STAGED"; then
   gate cargo fmt --manifest-path "$ROOT/glimpse/Cargo.toml" -- --check
+fi
+
+# glimpse compiles tomlctl in as a library, so a facade change can break glimpse's build.
+if grep -Eq '^tomlctl/(Cargo\.toml|src/(lib|io)\.rs|src/tasks/.*|src/flow/list\.rs|src/agents/.*)$' <<<"$STAGED"; then
+  gate cargo clippy --manifest-path "$ROOT/glimpse/Cargo.toml" --locked
 fi
