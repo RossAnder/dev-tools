@@ -65,7 +65,7 @@ tomlctl backlog evidence audit [--strict] [--max-bytes N]   # unowned dirs, poli
 tomlctl backlog cluster --by all                       # group open items into candidate work scopes
 tomlctl backlog compact [--older-than 90d] [--dry-run]  # ages resolved and dismissed items into [[compacted]]; open and promoted items never move
 tomlctl tasks snapshot --slug <s>                      # one consistent read of a flow: rows, graph products, joined execution record, agent records
-tomlctl agents record --harness claude-code|codex|manual [-]   # one hook payload from stdin into the dispatching flow's agents.toml; run by harness hooks only
+tomlctl agents record --harness claude-code|codex|manual [-]   # one hook payload from stdin into the dispatching flow's agents.toml; driven only by harness hooks (`glimpse hook` writes the same file in-process)
 tomlctl agents list --slug <s>                         # a flow's agent lifecycle records as a JSON array
 
 # Integrity flags (accepted after the subcommand name on any TOML-touching command):
