@@ -354,20 +354,29 @@ fn choose_flow(
 /// Every flow's `agents.toml` under `<root>/.claude/flows/`. A store that
 /// cannot be read is skipped: a hook has nobody to report the error to, and
 /// the chosen store is read again under its lock before any write.
-fn load_flows(root: &Path) -> Vec<(String, AgentsStore)> {
+///
+/// Every consumer keeps only rows of `session_id`, so when that id is made of
+/// bytes TOML never escapes, a store whose raw bytes lack it is skipped
+/// without being parsed.
+fn load_flows(root: &Path, session_id: &str) -> Vec<(String, AgentsStore)> {
     let Ok(entries) = std::fs::read_dir(root.join(".claude").join("flows")) else {
         return Vec::new();
     };
+    let exact = !session_id.is_empty()
+        && session_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
     let mut flows: Vec<(String, AgentsStore)> = entries
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let slug = entry.file_name().into_string().ok()?;
             crate::flow::validate_slug(&slug).ok()?;
             let path = entry.path().join(STORE_FILE);
-            if !path.is_file() {
+            let bytes = std::fs::read(&path).ok()?;
+            if exact && memchr::memmem::find(&bytes, session_id.as_bytes()).is_none() {
                 return None;
             }
-            let store = schema::from_toml(&io::read_toml(&path).ok()?).ok()?;
+            let store = schema::from_toml(&io::parse_toml_bytes(&path, bytes).ok()?).ok()?;
             Some((slug, store))
         })
         .collect();
@@ -425,7 +434,7 @@ pub(crate) fn record(
     let agent_id = field(payload, "agent_id");
     let name = field(payload, "teammate_name");
     let root = io::repo_or_cwd_root()?;
-    let idle_flows = (kind == Kind::Idle).then(|| load_flows(&root));
+    let idle_flows = (kind == Kind::Idle).then(|| load_flows(&root, session_id));
 
     let transcript: Option<PathBuf> = match kind {
         Kind::Idle => idle_flows
@@ -468,7 +477,7 @@ pub(crate) fn record(
     // A start that names its flow never consults the other stores.
     let flows = match (kind, &dispatch) {
         (Kind::Start, Some(_)) => Vec::new(),
-        _ => idle_flows.unwrap_or_else(|| load_flows(&root)),
+        _ => idle_flows.unwrap_or_else(|| load_flows(&root, session_id)),
     };
 
     let Some(slug) = choose_flow(kind, &flows, session_id, agent_id, name, dispatch.as_ref())
@@ -870,6 +879,62 @@ mod tests {
     }
 
     const REAP_NOW: &str = "2026-09-29T12:00:00Z";
+
+    fn write_store(root: &Path, slug: &str, session: &str) {
+        let mut store = AgentsStore::default();
+        apply(&mut store, start("a1", &[1]), "t0");
+        store.agents[0].session_id = session.into();
+        let dir = root.join(".claude").join("flows").join(slug);
+        std::fs::create_dir_all(&dir).expect("flow dir");
+        let text = toml::to_string(&schema::to_toml(&store)).expect("store serialises");
+        std::fs::write(dir.join(STORE_FILE), text).expect("store written");
+    }
+
+    fn loaded_slugs(root: &Path, session_id: &str) -> Vec<String> {
+        load_flows(root, session_id)
+            .into_iter()
+            .map(|(slug, _)| slug)
+            .collect()
+    }
+
+    #[test]
+    fn load_flows_skips_a_store_lacking_the_session_id() {
+        crate::test_support::with_root(|root| {
+            write_store(root, "has-it", "s1");
+            write_store(root, "other", "s2");
+            let broken = root.join(".claude").join("flows").join("broken");
+            std::fs::create_dir_all(&broken).expect("flow dir");
+            std::fs::write(broken.join(STORE_FILE), "not = [valid").expect("store written");
+
+            assert_eq!(loaded_slugs(root, "s1"), vec!["has-it".to_string()]);
+        });
+    }
+
+    #[test]
+    fn load_flows_with_an_empty_session_id_parses_every_store() {
+        crate::test_support::with_root(|root| {
+            write_store(root, "has-it", "s1");
+            write_store(root, "other", "s2");
+
+            assert_eq!(
+                loaded_slugs(root, ""),
+                vec!["has-it".to_string(), "other".to_string()]
+            );
+        });
+    }
+
+    #[test]
+    fn load_flows_parses_every_store_for_a_session_id_with_escapable_bytes() {
+        crate::test_support::with_root(|root| {
+            write_store(root, "has-it", "s1");
+            write_store(root, "other", "s2");
+
+            assert_eq!(
+                loaded_slugs(root, "s\"1"),
+                vec!["has-it".to_string(), "other".to_string()]
+            );
+        });
+    }
 
     #[test]
     fn a_running_row_whose_transcript_went_quiet_is_reaped() {
