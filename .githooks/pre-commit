@@ -46,6 +46,9 @@ if grep -Eq '^glimpse/.*\.rs$' <<<"$STAGED"; then
 fi
 
 # glimpse compiles tomlctl in as a library, so a facade change can break glimpse's build.
+# A tomlctl version bump or dependency change also needs glimpse/Cargo.lock
+# refreshed and staged in the same commit:
+# `cargo tree --manifest-path glimpse/Cargo.toml >/dev/null` rewrites it.
 if grep -Eq '^tomlctl/(Cargo\.toml|src/(lib|io)\.rs|src/tasks/.*|src/flow/list\.rs|src/agents/.*)$' <<<"$STAGED"; then
   gate cargo clippy --manifest-path "$ROOT/glimpse/Cargo.toml" --locked
 fi
