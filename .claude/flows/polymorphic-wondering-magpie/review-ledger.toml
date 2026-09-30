@@ -1,0 +1,659 @@
+schema_version = 1
+last_updated = 2026-09-30
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R1"
+file = "tomlctl/src/lib.rs"
+line = 49
+symbol = "snapshot"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "tomlctl::snapshot takes a redundant (slug, store_path) pair and no longer validates the slug"
+description = """Before the flow glimpse ran `tomlctl tasks snapshot --slug`, which rejected bad slugs via resolve_store_path (^[a-z0-9][a-z0-9-]{0,63}$). Now InProcessFetcher::fetch builds flow_dir(root, slug)/tasks.toml itself and the facade reads it as given: `glimpse --slug ../../x` reads outside .claude/flows and `--slug Foo` fails with file-not-found instead of `invalid slug`. The slug only labels the output, so snapshot("a", <b's path>) returns b's rows labelled a. Fix: facade takes (root, slug), validates with flow::validate_slug (no root lookup, so the plan's reason for avoiding resolve_store_path holds) and builds the store path; update library_facade.rs::snapshot_matches_the_cli."""
+evidence = [
+    "tomlctl/src/lib.rs:49-55",
+    "glimpse/src/source.rs:160-162",
+    "tomlctl/src/tasks/store.rs:50 slug_regex check",
+    "git show 5f866a6~1:glimpse/src/source.rs:145 old --slug args",
+    "glimpse/src/cli.rs:166 only a non-empty check",
+]
+instances = [
+    "tomlctl/src/lib.rs:snapshot",
+    "glimpse/src/source.rs:InProcessFetcher::fetch",
+    "tomlctl/tests/library_facade.rs:snapshot_matches_the_cli",
+]
+dedup_id = "d341d3d6add91110"
+resolved = 2026-09-30
+resolution = "uncommitted: tomlctl::snapshot is now (root, slug), validates the slug via flow::validate_slug and builds the store path itself; glimpse InProcessFetcher::fetch updated; library_facade tests pass the root and pin the invalid-slug refusal (user-confirmed API change)"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R2"
+file = "glimpse/src/runtime.rs"
+line = 355
+symbol = "handle"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "A queued Event::Tail for the previous agent is drawn under the newly selected agent, contrary to follow_tail's doc"
+description = "follow_tail (runtime.rs:224) resets screen.tail and sends Control::Tail(new), promising the old tail is never drawn under the new agent. The poller's 1 s refresh_tail can already have queued Event::Tail(old); the Event::Tail arm assigns it without checking tail.path, so the old transcript shows until Tail(new) arrives. Fix: drop an Event::Tail whose path differs from tail_target(&screen.app), with a test for the stale case."
+evidence = [
+    "glimpse/src/runtime.rs:222-232",
+    "glimpse/src/runtime.rs:355-358",
+    "glimpse/src/source.rs:351-364",
+]
+dedup_id = "a9b9264b5b75fc39"
+resolved = 2026-09-30
+resolution = "uncommitted: runtime.rs handle drops an Event::Tail whose path differs from tail_target; test extended with a stale-path case"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R3"
+file = "glimpse/src/hook.rs"
+line = 266
+symbol = "record"
+severity = "warning"
+effort = "medium"
+category = "testability"
+summary = "No test drives a successful recording through the in-process tomlctl::record_agent path"
+description = "glimpse/tests/cli.rs only feeds failing or skipped payloads, and tomlctl/tests/library_facade.rs covers only record_agent's two refusals, despite that file's header promising CLI parity for each wrapper. record_agent sets the cwd and fixes a process-wide root, so it needs a binary-level test: a sandbox flow with tasks.toml, a projects transcript naming a task (reuse dispatch_line/Projects from tomlctl/tests/agents_record.rs) and a SubagentStart payload with cwd = <sandbox>/nested; assert agents.toml gains a running row and hook.log stays absent. The hook never prints and exits 0, so a regression is otherwise visible only in hook.log."
+evidence = [
+    "tomlctl/tests/library_facade.rs:131,141 only refusal cases",
+    "tomlctl/src/agents/record.rs:406-411 set_current_dir",
+]
+instances = [
+    "glimpse/tests/cli.rs",
+    "tomlctl/tests/library_facade.rs",
+]
+related = ["R4"]
+dedup_id = "7637c3be3aad0b2c"
+resolved = 2026-09-30
+resolution = "uncommitted: glimpse/tests/cli.rs a_hook_start_records_a_running_agent_in_process drives a SubagentStart through the binary into agents.toml (sandbox needs a minimal hand-made .git so tomlctl root discovery resolves from cwd/nested)"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R4"
+file = "tomlctl/src/lib.rs"
+line = 68
+symbol = "record_agent"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "record_agent copies dispatch_record's harness parse and error text, and takes the harness as a string glimpse must re-spell"
+description = """The other facade wrappers delegate to the function their CLI verb uses; record_agent repeats dispatch_record's Harness::parse + error text verbatim (agents/dispatch.rs:18-23) and builds its own WriteIntegrityArgs, so the 14 CLI record tests never cover it. Fix: extract pub(crate) record_value(harness, payload, write_args) in agents/dispatch.rs that both call. Optionally also expose a typed pub enum of the recordable harnesses so glimpse/src/cli.rs stops re-spelling "claude-code"/"codex" (plan line 109 chose &str to mirror dispatch_record; no further rationale)."""
+evidence = [
+    "tomlctl/src/lib.rs:73-79",
+    "tomlctl/src/agents/dispatch.rs:18-23",
+    "glimpse/src/cli.rs:83-91",
+]
+instances = [
+    "tomlctl/src/lib.rs:record_agent",
+    "tomlctl/src/agents/dispatch.rs:dispatch_record",
+]
+sweep = ['Harness::parse\(harness\)']
+enumeration = "complete"
+related = ["R3"]
+dedup_id = "9231244fcccf3de9"
+resolved = 2026-09-30
+resolution = "uncommitted: agents/dispatch.rs record_value shared by dispatch_record and record_agent; public signature unchanged per user decision. Side effect: with both an unknown harness and an unparseable payload the CLI now reports the payload error first"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R5"
+file = "glimpse/src/source.rs"
+line = 162
+symbol = "InProcessFetcher::fetch"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "A store newer than glimpse's embedded tomlctl reports 'upgrade tomlctl', but the fix is reinstalling glimpse"
+description = "tasks/schema.rs:402 and agents/schema.rs:300 say '... upgrade tomlctl to read this store'. glimpse now compiles in its own copy of tomlctl, so that text in the header or hook.log sends the user to the wrong binary. Fix: at both map_err sites (source.rs:162, hook.rs:269-270) append a hint when the message carries 'newer than the supported': glimpse embeds its own tomlctl, run `cargo install --path glimpse`. Optionally print the embedded tomlctl version in --version."
+evidence = [
+    "tomlctl/src/tasks/schema.rs:402",
+    "tomlctl/src/agents/schema.rs:300",
+    "glimpse/src/source.rs:162",
+    "glimpse/src/hook.rs:269-270",
+]
+instances = [
+    "glimpse/src/source.rs:InProcessFetcher::fetch",
+    "glimpse/src/hook.rs:record",
+]
+dedup_id = "bdaab10fd96dad45"
+resolved = 2026-09-30
+resolution = "uncommitted: source.rs with_reinstall_hint appends a reinstall-glimpse hint to 'newer than the supported' errors at the fetch and hook record sites; unit-tested"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R6"
+file = "glimpse/src/watch.rs"
+line = 73
+symbol = "watch::start"
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "The recursive flows watch follows symlinks, so a symlinked flow dir can exhaust inotify watches and retry every poll tick"
+description = "notify::recommended_watcher uses Config::default() with follow_symlinks: true, and the inotify backend walks recursively with WalkDir::follow_links. A .claude/flows/x -> / (repo content) makes glimpse add a watch per directory, exhaust fs.inotify.max_user_watches (breaking IDE/cargo-watch watchers), then Mode::start retries the walk every poll_ms tick. Linux/BSD only. Fix: RecommendedWatcher::new(handler, Config::default().with_follow_symlinks(false)); canonical_root already resolves a symlinked root. CWE-59 -> CWE-400."
+evidence = [
+    "notify-8.2.0 src/lib.rs:437-443 recommended_watcher uses Config::default()",
+    "notify-8.2.0 src/config.rs:118-123 follow_symlinks: true",
+    "notify-8.2.0 src/inotify.rs:407-414 WalkDir follow_links",
+    "glimpse/src/source.rs:208,215,527-528 retry on every tick",
+    "OSV querybatch over 20 new glimpse lock entries, fetched 2026-09-30: no advisories",
+]
+dedup_id = "b8d0240fede24f4b"
+resolved = 2026-09-30
+resolution = "uncommitted: watch::start builds RecommendedWatcher with Config::default().with_follow_symlinks(false)"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R7"
+file = "glimpse/src/hook.rs"
+line = 202
+symbol = "run_hook"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "A panic in the in-process recorder aborts the hook without a hook.log line"
+description = """The old child-process path logged a crashed tomlctl as a nonzero exit. In-process, glimpse's release profile has panic = "abort" and the hook path installs no panic hook (the only set_hook is the TUI's at runtime.rs:104), so a recorder panic goes to a stderr no harness reads, breaking glimpse/CLAUDE.md's 'every failure is one timestamped line' rule. Fix: run_hook installs a panic hook that calls log_error with the panic message. No reachable data-driven panic was found; the gap is in the contract."""
+evidence = [
+    'glimpse/Cargo.toml:31 panic = "abort"',
+    "glimpse/src/runtime.rs:104 only set_hook",
+    "glimpse/CLAUDE.md async hooks are silent gotcha",
+]
+dedup_id = "0e026194f8967d21"
+resolved = 2026-09-30
+resolution = "uncommitted: run_hook installs a panic hook that logs 'hook panicked: <info>' to hook.log"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R8"
+file = "glimpse/src/source.rs"
+line = 70
+symbol = "FLOW_FILES"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "glimpse hand-copies the set of files tasks::snapshot reads; tomlctl could now own it"
+description = "FLOW_FILES must match the four inputs tasks::snapshot reads and hashes into revision. A fifth input added to snapshot would be woken on but never refetched, since the fingerprint would not move, leaving the view stale with no error. The process boundary forced the copy before; the lib link removes the reason. Fix: expose the input set from tomlctl (pub const or snapshot_inputs(store_path)), build snapshot.rs's paths and glimpse's fingerprint from it."
+evidence = [
+    "glimpse/src/source.rs:70-75",
+    "tomlctl/src/tasks/snapshot.rs:27-29,44",
+]
+instances = [
+    "glimpse/src/source.rs:FLOW_FILES",
+    "tomlctl/src/tasks/snapshot.rs:RECORD_FILE",
+    "tomlctl/src/lib.rs",
+]
+dedup_id = "5d0113c844a43ae0"
+resolved = 2026-09-30
+resolution = "uncommitted: tomlctl exposes pub const SNAPSHOT_INPUTS; tasks/snapshot.rs derives its sibling names from it (hash order unchanged); glimpse fingerprint maps over it and FLOW_FILES is gone. store.rs STORE_FILE duplication captured as B-8c75360d"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R9"
+file = ".githooks/pre-commit"
+line = 50
+symbol = "glimpse clippy gate"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "The glimpse --locked gate blocks every tomlctl version-bump commit, which neither the docs nor the failure hint say"
+description = "glimpse/Cargo.lock pins tomlctl's own version (0.12.0), so a release commit staging tomlctl/Cargo.toml fails `cargo clippy --manifest-path glimpse/Cargo.toml --locked` until glimpse/Cargo.lock is regenerated; the gate's hint only says to rerun the same command. Probe in scratch: unchanged version passes the lock check, bump to 0.13.0 fails with 'cannot update the lock file ... because --locked was passed'. Fix: one sentence in CLAUDE.md (Developer setup) and in the gate hint: regenerate and stage glimpse/Cargo.lock with the bump."
+evidence = [
+    ".githooks/pre-commit:49-51",
+    "glimpse/Cargo.lock:1843-1844 tomlctl 0.12.0",
+    "CLAUDE.md:13 describes only a dependency change",
+]
+dedup_id = "eb1e63b6888e0dab"
+resolved = 2026-09-30
+resolution = "uncommitted: pre-commit comment and CLAUDE.md Developer setup name the version-bump case and the glimpse/Cargo.lock refresh command"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R10"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 159
+symbol = "run"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Comments still say main.rs parses Cli and renders --error-format, and glimpse comments still describe the tomlctl child process"
+description = "Parsing and emit_error moved to lib.rs::run (lib.rs:92,108). dispatch.rs:163 'The Cli is parsed once in main.rs' is literally false now. Same class in glimpse: source.rs:413 'mtimes alone need no process' and hook.rs:20 MAX_PAYLOAD 'Matches the cap tomlctl applies to a stdin payload' (no stdin pipe any more). query.rs:4,382,492 and items.rs:2868 were already stale before the flow and take the same edit."
+evidence = [
+    "git show 5f866a6~1:tomlctl/src/main.rs had fn main and emit_error",
+    "tomlctl/src/lib.rs:92,108",
+]
+instances = [
+    "tomlctl/src/cli/dispatch.rs:159",
+    "tomlctl/src/cli/dispatch.rs:163",
+    "tomlctl/src/cli/types.rs:138",
+    "tomlctl/src/cli/mod.rs:17",
+    "tomlctl/src/io.rs:796",
+    "tomlctl/src/test_support.rs:4",
+    "glimpse/src/source.rs:413",
+    "glimpse/src/hook.rs:20",
+    "tomlctl/src/query.rs:4",
+    "tomlctl/src/query.rs:382",
+    "tomlctl/src/query.rs:492",
+    "tomlctl/src/items.rs:2868",
+]
+sweep = [
+    'main\.rs|crate root|CARGO_BIN_EXE',
+    "(?i)spawn|process|TomlctlFetcher|probe_tomlctl",
+]
+enumeration = "complete"
+dedup_id = "b7daa758a2d84775"
+resolved = 2026-09-30
+resolution = "uncommitted: stale main.rs / child-process comments reworded across tomlctl (cli/dispatch, cli/types, cli/mod, io, test_support, query, items) and glimpse (source.rs, hook.rs MAX_PAYLOAD)"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R11"
+file = "claude/skills/flow-contract-task-store/SKILL.md"
+line = 373
+symbol = "agents.toml writer rule"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Four docs still say harness hooks run the tomlctl agents record CLI; hooks now run glimpse hook in-process"
+description = "glimpse setup installs only `glimpse hook` (no tomlctl in glimpse/src/setup.rs), which calls tomlctl::record_agent; `tomlctl agents record` is now only a manual entry point. SKILL.md:373 says both writers are 'driven only by the harness hooks'; tomlctl SKILL.md:51 says '`agents record` is written by harness hooks' (also garbled: a verb is not written); tomlctl/README.md:68 and :390 say the same. They contradict references/agents.md:12-14 and glimpse/README.md:242-243. Suggested: agents.toml is written by `glimpse hook` in-process; `tomlctl agents record` is the same code as a manual command; no carrier calls either."
+evidence = [
+    "glimpse/src/setup.rs: 0 matches for tomlctl",
+    "glimpse/src/hook.rs:269",
+]
+instances = [
+    "claude/skills/flow-contract-task-store/SKILL.md:373",
+    "claude/skills/tomlctl/SKILL.md:51",
+    "tomlctl/README.md:68",
+    "tomlctl/README.md:390",
+]
+sweep = ["agents record"]
+enumeration = "complete"
+dedup_id = "e4045c962b850c2b"
+resolved = 2026-09-30
+resolution = "uncommitted: task-store SKILL.md, tomlctl SKILL.md and tomlctl/README.md (x2) now say the hooks run glimpse hook and agents record is the manual form"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R12"
+file = "claude/skills/tomlctl/references/agents.md"
+line = 242
+symbol = "## Output"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "agents.md Output says the JSON line is 'the form a hook's log captures whole', but the hook path no longer prints it"
+description = "glimpse hook receives record_agent's result as a value; it never reaches stdout or hook.log, which records failures only. The clause could send someone looking in hook.log for successful records. Drop it or say the line is for manual/CLI callers."
+evidence = [
+    "claude/skills/tomlctl/references/agents.md:242",
+    "glimpse/src/hook.rs:201 never prints; errors go to the hook log",
+]
+dedup_id = "59a005556d5ee654"
+resolved = 2026-09-30
+resolution = "uncommitted: agents.md Output clause now says the line is for manual and CLI callers"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R13"
+file = "glimpse/src/hook.rs"
+line = 214
+symbol = "payload_cwd"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The hook parses the (up to 32 MiB) JSON payload twice, once for cwd and again in record"
+description = "payload_cwd (hook.rs:67) and record (hook.rs:267) each serde_json::from_slice the same bytes; the second parse is new in this flow (record used to pipe raw bytes to the child). Parse once in handle, pass &Value to both; keep the 'invalid hook payload:' error that an_invalid_payload_fails_before_recording asserts."
+evidence = [
+    "glimpse/src/hook.rs:67-68",
+    "glimpse/src/hook.rs:214",
+    "glimpse/src/hook.rs:266-268",
+]
+dedup_id = "8aa1f1a427a80a6a"
+resolved = 2026-09-30
+resolution = "uncommitted: hook handle parses the payload once (parse_payload); payload_cwd and record take &Value"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R14"
+file = "glimpse/src/source.rs"
+line = 274
+symbol = "MissedChanges::on_tick"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "on_tick(safety, changed, woke) takes three positional bools and admits the impossible safety-and-woke case"
+description = "A tick's cause is a closed set (wake, safety deadline, other); the run loop never sets safety on the wake arm. An enum TickCause { Wake, Safety, Other } replacing two bools makes calls read on_tick(cause, changed) instead of on_tick(true, true, false). Only source.rs changes."
+evidence = [
+    "glimpse/src/source.rs:274-285",
+    "glimpse/src/source.rs:533,568",
+]
+dedup_id = "52b461d1c250271a"
+resolved = 2026-09-30
+resolution = "uncommitted: MissedChanges::on_tick(cause, changed) with private TickCause enum"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R15"
+file = "glimpse/src/source.rs"
+line = 307
+symbol = "Poller::tail_at"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Poller keeps tail and tail_at as two Options that must be Some together"
+description = "refresh_tail clears tail_at defensively because the type allows mixed states; the test at :1024 builds exactly that mixed state, and checked_add returning None leaves a tail never refreshed. Hold Option<(TailState, Instant)> or a small Tailing struct."
+evidence = [
+    "glimpse/src/source.rs:307-308",
+    "glimpse/src/source.rs:337-364",
+]
+dedup_id = "50547deb2d457093"
+resolved = 2026-09-30
+resolution = "uncommitted: Poller tail and tail_at folded into Option<Tail { state, due }>; due uses Instant + TICK in place of checked_add"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R16"
+file = "glimpse/src/source.rs"
+line = 39
+symbol = "Event::Tail"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "Event::Tail hands the poller's live TailState reader to the UI thread"
+description = "The view reads only entries, tokens and rejected, but receives the full TailState with offset, root and a callable refresh(), so 'the UI thread does no file I/O' (glimpse/CLAUDE.md) is enforced only by comment. Sending a read-only TailView { path, entries, tokens, rejected } would put the rule in the type system. Touches transcript.rs, source.rs, runtime.rs, view/activity.rs."
+evidence = [
+    "glimpse/src/source.rs:39,346,362",
+    "glimpse/src/runtime.rs:191,356",
+    "glimpse/src/view/activity.rs:40,71-94",
+]
+related = ["R2"]
+dedup_id = "d157e08a21832223"
+resolved = 2026-09-30
+resolution = "uncommitted: Event::Tail carries a read-only TailView; Screen.tail and view::render/activity take &TailView (widened to view/mod.rs after a cross-cut escalation)"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R17"
+file = "glimpse/src/source.rs"
+line = 458
+symbol = "Poller::poll_snapshot"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The fetch-retry deadline is computed two ways: retry_at() for the wait loop and elapsed() in poll_snapshot"
+description = "retry_at uses failed_at.checked_add(retry_after); poll_snapshot uses failed_at.elapsed() >= retry_after. They agree today, but editing one alone lets the loop wake for a retry poll_snapshot refuses. Use self.retry_at().is_some_and(|at| Instant::now() >= at)."
+evidence = [
+    "glimpse/src/source.rs:406-409",
+    "glimpse/src/source.rs:458-460",
+]
+dedup_id = "a7eed6e85f1900ef"
+resolved = 2026-09-30
+resolution = "uncommitted: poll_snapshot retry_due uses retry_at()"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R18"
+file = "glimpse/src/source.rs"
+line = 81
+symbol = "flow_dir"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The .claude/flows root is rebuilt by hand at six glimpse sites despite a flow_dir helper"
+description = "A flows_root(root) helper that flow_dir and the other sites call would give the path one owner; flows.rs:83 also rebuilds <flow>/tasks.toml. tomlctl itself writes the path out at several sites, so this is consistency-within-glimpse only."
+evidence = ["glimpse/src/source.rs:81"]
+instances = [
+    "glimpse/src/source.rs:flow_dir",
+    "glimpse/src/source.rs:flows_fingerprint",
+    "glimpse/src/source.rs:Poller::run",
+    "glimpse/src/flows.rs:list",
+    "glimpse/src/flows.rs:repo_root",
+    "glimpse/src/hook.rs:outside_any_flow",
+]
+sweep = [
+    'join\("\.claude"\)',
+    '\.claude/flows',
+    'join\("flows"\)',
+]
+enumeration = "complete"
+dedup_id = "abded2a6e75493be"
+resolved = 2026-09-30
+resolution = "uncommitted: flows.rs flows_root helper used by flow_dir, flows_fingerprint, Poller::run, flows::list, repo_root and hook outside_any_flow"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R19"
+file = "glimpse/src/source.rs"
+line = 520
+symbol = "Poller::run"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "The watch/poll mode transitions in Poller::run are untested"
+description = "The pure pieces (MissedChanges, Deadlines, drain/evict, set_tail) are unit-tested, but watching -> polling after misses, retry of a failed start, and Rewatch rebuilding the watcher live in run, which calls watch::start directly and owns Instant::now() and recv_timeout. Extract a pure next_mode decision (as MissedChanges was) or inject the watcher factory."
+evidence = [
+    "glimpse/src/source.rs:206",
+    "glimpse/src/source.rs:520-580",
+]
+dedup_id = "63b5efe6cdbe47d5"
+resolved = 2026-09-30
+resolution = "uncommitted: Poller::run mode transitions go through pure mode_change(WatchState, Phase) with a unit test covering retry, abandon and rewatch"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R20"
+file = "tomlctl/tests/library_facade.rs"
+line = 1
+symbol = "library_facade"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Nothing enforces that the library declares no #[global_allocator]"
+description = "The plan's guard grep ran once at acceptance; a lib-declared allocator compiles and silently becomes glimpse's allocator. Add a test walking CARGO_MANIFEST_DIR/src asserting global_allocator appears only in main.rs."
+evidence = [
+    "docs/plans/polymorphic-wondering-magpie.md:203,241",
+    "tomlctl/src/main.rs:10 only occurrence",
+]
+dedup_id = "4e5aa22ea5931da2"
+resolved = 2026-09-30
+resolution = "uncommitted: library_facade.rs only_the_binary_declares_a_global_allocator walks src/"
+
+[[items]]
+first_flagged = 2026-09-30
+rounds = 1
+status = "fixed"
+flow = "polymorphic-wondering-magpie"
+id = "R21"
+file = "glimpse/src/flows.rs"
+line = 80
+symbol = "list"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "glimpse's flow-list parsing is tested only against a hand-written JSON copy of tomlctl's output"
+description = "once_renders_a_live_flow_in_process always passes --slug, so flows::list -> tomlctl::flow_list -> parse_flows never runs on real output; a FlowRecord::to_json shape change goes uncaught. Add a variant without --slug so it picks the freshest flow."
+evidence = [
+    "glimpse/src/flows.rs:129 SAMPLE",
+    "glimpse/tests/cli.rs:201-218",
+]
+dedup_id = "f01898df57f686ce"
+resolved = 2026-09-30
+resolution = "uncommitted: glimpse/tests/cli.rs once_without_a_slug_renders_the_freshest_flow exercises flows::list through tomlctl::flow_list"
+
+[[vet_events]]
+timestamp = "2026-09-30T15:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+tier = "deep"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "F2,F3,F5,F6,F9 confirmed at cited lines. F1 merged into R1 (with Agent-4 F1), F2 into R2, F3 into R8, F4 into R4. Tangentials: repo_root git spawn not minted (Agent-3 confirms success criterion keeps it deliberately); transcript.rs bools not minted (style, no observed consequence); record_agent success-path gap merged into R3."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T15:00:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+tier = "deep"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "Symlink-follow confirmed in installed notify 8.2.0 source (config.rs default, inotify.rs WalkDir follow_links) and glimpse retry path (source.rs:527-528). Tangential panic-abort confirmed (panic = abort, no hook-path set_hook) and minted as R7 with Agent-3 F3, since hook.rs is in scope."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T15:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+tier = "deep"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "All five checked: record_agent/dispatch_record identical parse text; pre-commit --locked gate and glimpse/Cargo.lock tomlctl 0.12.0 pin; F2 merged into R2, F3 into R7, F4 into R8."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T15:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+tier = "lite"
+sampled_count = 4
+dropped_count = 1
+downgraded_count = 0
+rationale = "F1 (slug validation) confirmed via tasks/store.rs:50 and old glimpse args, merged into R1. F3 stale-comment pattern confirmed at dispatch.rs:159-163, types.rs:138 (R10). F4 merged into R2. F2 (safety tick blind to in-place edits of non-viewed flows) dropped before minting: pre-existing behaviour per the agent itself, and Agent-3 ruled it out because tomlctl writes by rename, which moves the dir mtime."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T15:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+tier = "lite"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "F1 (no success-path record test), F2 ('upgrade tomlctl' text at tasks/schema.rs:402, agents/schema.rs:300 surfaced via source.rs:162) and F6 (Event::Tail arm unchecked) confirmed. F6 merged into R2."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T15:00:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+tier = "lite"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Both confirmed: SKILL.md:373, tomlctl SKILL.md:51, README.md:68,390 still name the CLI as the hook path; glimpse/src/setup.rs has no tomlctl reference. agents.md:242 clause confirmed against hook.rs:201."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T17:00:00Z"
+command = "review-apply"
+agent_index = 2
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R2 path guard and test extension read in full; correct."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T17:00:00Z"
+command = "review-apply"
+agent_index = 4
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R9 read in full; content correct. Orchestrator re-wrapped the long pre-commit comment line to the file's width (style only)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T17:00:00Z"
+command = "review-apply"
+agent_index = 5
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R11 all four sites read; correct. Orchestrator fixed a dangling 'never by a carrier' clause in the tomlctl SKILL.md table cell (wording only)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-09-30T17:00:00Z"
+command = "review-apply"
+agent_index = 6
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R12 clause replacement read; correct."
+dedup_id = "45ca31c3315a5978"

@@ -4,7 +4,7 @@ round = 1
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P1"
 severity = "critical"
 category = "risk"
@@ -19,7 +19,7 @@ dedup_id = "57e53bf004e83efa"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P2"
 severity = "critical"
 category = "executability"
@@ -32,7 +32,7 @@ dedup_id = "85ea474a57de650a"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P3"
 severity = "warning"
 category = "feasibility"
@@ -45,7 +45,7 @@ dedup_id = "12409ee6a7f30880"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P4"
 severity = "warning"
 category = "executability"
@@ -56,7 +56,7 @@ dedup_id = "d1851545ec6fc10d"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P5"
 severity = "warning"
 category = "feasibility"
@@ -69,7 +69,7 @@ dedup_id = "44700b378e2a0e0d"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P6"
 severity = "warning"
 category = "executability"
@@ -82,7 +82,7 @@ dedup_id = "dcf3c5c5803d9249"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P7"
 severity = "warning"
 category = "feasibility"
@@ -95,7 +95,7 @@ dedup_id = "36d851591f175e17"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P8"
 severity = "warning"
 category = "risk"
@@ -108,7 +108,7 @@ dedup_id = "2b26072f495a7afd"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P9"
 severity = "warning"
 category = "feasibility"
@@ -123,7 +123,7 @@ dedup_id = "b28dda66b232717f"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P10"
 severity = "warning"
 category = "feasibility"
@@ -136,7 +136,7 @@ dedup_id = "aaedbac6248cb03f"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P11"
 severity = "warning"
 category = "risk"
@@ -149,7 +149,7 @@ dedup_id = "46dac666fa2b78c9"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P12"
 severity = "warning"
 category = "executability"
@@ -164,7 +164,7 @@ dedup_id = "dc977256c261bb78"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P13"
 severity = "warning"
 category = "executability"
@@ -177,7 +177,7 @@ dedup_id = "af9aa2c5c2938726"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P14"
 severity = "warning"
 category = "executability"
@@ -190,7 +190,7 @@ dedup_id = "712d507979617b84"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P15"
 severity = "warning"
 category = "completeness"
@@ -201,7 +201,7 @@ dedup_id = "8e0ad5ac6b307862"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P16"
 severity = "warning"
 category = "completeness"
@@ -216,7 +216,7 @@ dedup_id = "cd2d1b6c0897a0d4"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P17"
 severity = "warning"
 category = "completeness"
@@ -227,7 +227,7 @@ dedup_id = "9ba6739489325a31"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P18"
 severity = "warning"
 category = "executability"
@@ -243,7 +243,7 @@ dedup_id = "04cc9480cfdc5788"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P19"
 severity = "warning"
 category = "risk"
@@ -254,7 +254,7 @@ dedup_id = "7e81e7f4035f4824"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P20"
 severity = "warning"
 category = "risk"
@@ -269,7 +269,7 @@ dedup_id = "b5cab37bfe4636d2"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P21"
 severity = "suggestion"
 category = "completeness"
@@ -282,7 +282,7 @@ dedup_id = "437d8a3c3b77895e"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P22"
 severity = "suggestion"
 category = "completeness"
@@ -295,7 +295,7 @@ dedup_id = "43f8558821a1fa11"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P23"
 severity = "warning"
 category = "executability"
@@ -308,7 +308,7 @@ dedup_id = "878393180918aad6"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P24"
 severity = "suggestion"
 category = "risk"
@@ -319,7 +319,7 @@ dedup_id = "9bd58933c65e2a6c"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P25"
 severity = "suggestion"
 category = "executability"
@@ -332,7 +332,7 @@ dedup_id = "d1baf34c6f4238d1"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P26"
 severity = "suggestion"
 category = "risk"
@@ -345,7 +345,7 @@ dedup_id = "4884f4110b1dbc94"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P27"
 severity = "suggestion"
 category = "risk"
@@ -358,7 +358,7 @@ dedup_id = "9fa66a28d1bb31ee"
 
 [[items]]
 review_round = 1
-status = "open"
+status = "merged"
 id = "P28"
 severity = "suggestion"
 category = "completeness"

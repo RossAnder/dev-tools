@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-29
+last_updated = 2026-09-30
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -4294,3 +4294,104 @@ evidence = [
 ]
 resolved = 2026-09-29
 resolution = "implement-lite step 2 and implement-deep's pre-edit reading paragraph now explain file_notes, new_files and deleted_files (uncommitted)"
+
+[[backlog]]
+id = "B-bcb545a2"
+kind = "question"
+summary = "pre-commit glimpse clippy gate does not trigger on tomlctl/src/flow/mod.rs or shared store/integrity modules the facade calls into"
+area = ".githooks/pre-commit"
+tags = [
+    "glimpse",
+    "tomlctl-facade",
+]
+status = "open"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "bcb545a2ede76884"
+origin = "implement"
+flow = "polymorphic-wondering-magpie"
+context = "The gate regex covers Cargo.toml, lib.rs, io.rs, tasks/**, flow/list.rs and agents/**. flow/mod.rs holds the list_all re-export, so removing it breaks glimpse without firing the gate; store and integrity code the facade reaches is also uncovered. The plan chose a narrow gate deliberately; widening is a one-line regex edit. Arrived cheap-in-file but deferred: nothing in the run's verification exercises the hook, and how wide to go is a judgement call."
+base_sha = "c8949f0cb8c49e969149bcf15de75de720ad8d7d"
+evidence = [".githooks/pre-commit:49"]
+related = ["B-b19668cb"]
+
+[[backlog]]
+id = "B-f4bd798a"
+kind = "debt"
+summary = "glimpse poll_ms config value has no upper bound, so a typo can make the fallback poll effectively never run"
+area = "glimpse/src/config.rs"
+tags = [
+    "glimpse",
+    "watcher",
+]
+status = "open"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "f4bd798ac13489b2"
+origin = "implement"
+flow = "polymorphic-wondering-magpie"
+context = "poll_ms is now only the fallback interval used when the notify watch cannot start or is judged dead. positive_int accepts any value; the poller guards Instant arithmetic with checked_add, so a huge value does not panic, it just disables the fallback. Clamping or rejecting values above a few seconds would fix it."
+base_sha = "c8949f0cb8c49e969149bcf15de75de720ad8d7d"
+related = ["B-f0b743fe"]
+
+[[backlog]]
+id = "B-5c699ce5"
+kind = "debt"
+summary = "glimpse header test fixture uses the error text 'tomlctl failed', which no longer matches any error glimpse produces"
+area = "glimpse/src/view/header.rs"
+tags = [
+    "glimpse",
+    "tests",
+]
+status = "open"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "5c699ce56b91a493"
+origin = "implement"
+flow = "polymorphic-wondering-magpie"
+context = "glimpse no longer spawns tomlctl; source errors now come from the in-process snapshot read or its deserialisation. The fixture string still renders fine but misdescribes the error path; swap it for a representative read or parse error message."
+base_sha = "c8949f0cb8c49e969149bcf15de75de720ad8d7d"
+
+[[backlog]]
+id = "B-7057d219"
+kind = "debt"
+summary = "glimpse accepts any non-empty --slug and keeps polling a flow the in-process snapshot refuses as an invalid slug"
+area = "glimpse/src/cli.rs"
+tags = ["glimpse"]
+status = "resolved"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "7057d219232ff984"
+origin = "review-apply"
+flow = "polymorphic-wondering-magpie"
+context = "tomlctl::snapshot now validates the slug, so a bad --slug (../x, Foo) shows an 'invalid slug' error in the header instead of reading outside .claude/flows. But cli.rs only checks the slug is non-empty, and source.rs fingerprint/flow_dir still stat files under the unvalidated path each tick. Rejecting the slug at CLI parse would need tomlctl to expose its slug validator (flow::validate_slug is pub(crate)). Arrived cheap-in-file from the apply agent but deferred: the clean fix needs a new public tomlctl item."
+base_sha = "c8949f0cb8c49e969149bcf15de75de720ad8d7d"
+evidence = ["glimpse/src/cli.rs:166"]
+resolved = 2026-09-30
+resolution = "tomlctl exposes validate_slug and glimpse rejects an invalid --slug at argument parse, before any poll"
+
+[[backlog]]
+id = "B-8c75360d"
+kind = "debt"
+summary = "tomlctl store.rs STORE_FILE and its slug regex duplicate SNAPSHOT_INPUTS[0] and flow::validate_slug"
+area = "tomlctl/src/tasks/store.rs"
+tags = ["tomlctl-facade"]
+status = "resolved"
+created = 2026-09-30
+last_seen = 2026-09-30
+seen_count = 1
+dedup_id = "8c75360d2ce50efe"
+origin = "review-apply"
+flow = "polymorphic-wondering-magpie"
+context = "The library root now owns SNAPSHOT_INPUTS, and snapshot.rs derives its sibling names from it, but store.rs keeps a private STORE_FILE = tasks.toml and its own slug regex beside flow::validate_slug. A snapshot.rs test catches store-name drift; nothing catches regex drift. Point STORE_FILE at crate::SNAPSHOT_INPUTS[0] and have resolve_store_path call flow::validate_slug."
+base_sha = "c8949f0cb8c49e969149bcf15de75de720ad8d7d"
+evidence = [
+    "tomlctl/src/tasks/store.rs:24",
+    "tomlctl/src/tasks/store.rs:50",
+]
+resolved = 2026-09-30
+resolution = "store.rs takes STORE_FILE from SNAPSHOT_INPUTS[0] and resolve_store_path calls flow::validate_slug; its private slug regex is gone"

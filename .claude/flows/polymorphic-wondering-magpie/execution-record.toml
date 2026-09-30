@@ -1,2 +1,1007 @@
 schema_version = 1
 last_updated = 2026-09-30
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-09-30
+agent = "implement"
+summary = "draft -> in-progress at /implement start"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "5f59db45bfced9a5"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "split-tomlctl-into-a-library-and-a-thin-binary"
+status = "done"
+summary = "tomlctl split into lib+bin: modules, test_support, emit_error and run() moved to lib.rs; main.rs is the cfg(feature=mimalloc) allocator + tomlctl::run(); mimalloc optional default feature"
+files = [
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/main.rs",
+    "tomlctl/Cargo.toml",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "a6276718065db153"
+
+[[items]]
+id = "E3"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "split-tomlctl-into-a-library-and-a-thin-binary"
+summary = "checkpoint A build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 16
+dedup_id = "d8debbc0cbc13f15"
+
+[[items]]
+id = "E4"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "split-tomlctl-into-a-library-and-a-thin-binary"
+summary = "checkpoint A tests: 1452 passed, 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 103
+dedup_id = "5f4baff524590b8c"
+
+[[items]]
+id = "E5"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "split-tomlctl-into-a-library-and-a-thin-binary"
+summary = "checkpoint A fmt"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 2
+dedup_id = "82428a3d066bfb90"
+
+[[items]]
+id = "E6"
+type = "checkpoint"
+date = 2026-09-30
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint A: 5f866a6 -> split-tomlctl-into-a-library-and-a-thin-binary"
+commits = ["5f866a6"]
+dedup_id = "a4913702922cefe7"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "point-the-pre-commit-gates-at-the-library"
+status = "done"
+summary = "pre-commit tomlctl unit-test gate switched to --lib; added narrow glimpse clippy --locked gate triggered by facade-backing tomlctl paths"
+files = [".githooks/pre-commit"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "ba6d1dd3b777b0ba"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "add-a-root-taking-flow-listing"
+status = "done"
+summary = "added flow::list::list_all(root) with shared envelope helper used by dispatch, re-exported from flow/mod.rs; unit test list_all_reports_flows_and_skips"
+files = [
+    "tomlctl/src/flow/list.rs",
+    "tomlctl/src/flow/mod.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "9fbd94642d6e9f49"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "expose-the-in-process-facade"
+status = "done"
+summary = "added pub fn snapshot/flow_list/record_agent facade in lib.rs, io::silence_advisories with module-scope VISIBLE, and tests/library_facade.rs comparing facade vs CLI (4 tests)"
+files = [
+    "tomlctl/src/lib.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/tests/library_facade.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "4706ed4782252d24"
+
+[[items]]
+id = "E10"
+type = "deviation"
+date = 2026-09-30
+agent = "implement"
+task_ref = "expose-the-in-process-facade"
+summary = "falsifier run by adding --verify-integrity to the CLI side of the flow_list comparison in tomlctl/tests/library_facade.rs"
+original_intent = "falsifier: make flow_list pass verify = true"
+rationale = "list_all takes no verify parameter; flipping it needs an edit to tomlctl/src/flow/list.rs, outside the task files. Verifying one side only shows the same divergence and it fired."
+dedup_id = "6962b47adf6b9a40"
+
+[[items]]
+id = "E11"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "expose-the-in-process-facade"
+summary = "checkpoint B build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 20
+dedup_id = "a2ea8af224ccbfe9"
+
+[[items]]
+id = "E12"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "expose-the-in-process-facade"
+summary = "checkpoint B tests: 1457 passed, 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 171
+dedup_id = "3fdf8527d84d78b7"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "expose-the-in-process-facade"
+summary = "checkpoint B fmt"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 5
+dedup_id = "86e9b964bb8cbd42"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "expose-the-in-process-facade"
+summary = "checkpoint B hook syntax"
+command = "bash -n .githooks/pre-commit"
+outcome = "pass"
+duration_s = 0
+dedup_id = "aae38df64654fe2f"
+
+[[items]]
+id = "E15"
+type = "checkpoint"
+date = 2026-09-30
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint B: a483efa -> add-a-root-taking-flow-listing; c0c978e -> point-the-pre-commit-gates-at-the-library; fc13dff -> expose-the-in-process-facade"
+commits = [
+    "a483efa",
+    "c0c978e",
+    "fc13dff",
+]
+dedup_id = "d10c666251119fec"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "add-the-tomlctl-path-dependency-to-glimpse"
+status = "done"
+summary = "glimpse depends on tomlctl by path with default-features = false; description updated; Cargo.lock regenerated resolve-only (no pin moved, no mimalloc)"
+files = [
+    "glimpse/Cargo.toml",
+    "glimpse/Cargo.lock",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+dedup_id = "17a334246cb77a34"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "add-the-notify-dependency-to-glimpse"
+status = "done"
+summary = "added notify = 8.2.0 with default features to glimpse/Cargo.toml; lock regenerated resolve-only, no pin moved"
+files = [
+    "glimpse/Cargo.toml",
+    "glimpse/Cargo.lock",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "1ecde48a73368ec3"
+
+[[items]]
+id = "E18"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "fetch-snapshots-and-flow-lists-in-process"
+status = "done"
+summary = "InProcessFetcher replaces TomlctlFetcher; probe/halted/probe param removed; flows::list calls tomlctl::flow_list with parse_flows(&Value); --once fetches in-process"
+files = [
+    "glimpse/src/source.rs",
+    "glimpse/src/flows.rs",
+    "glimpse/src/main.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "40fa65fda118c06e"
+
+[[items]]
+id = "E19"
+type = "deviation"
+date = 2026-09-30
+agent = "implement"
+task_ref = "fetch-snapshots-and-flow-lists-in-process"
+summary = "falsifier retargeted to the poller revision comparison in glimpse/src/source.rs"
+original_intent = "falsifier: an_unchanged_revision_is_not_sent_twice goes red if the fetcher stops deserialising revision"
+rationale = "the test uses FakeFetcher and never reaches InProcessFetcher or serde, so blanking revision in the fetcher left it green (0 failures); disabling the last_revision comparison fails it (1 failure). InProcessFetcher is exercised only by task 8s once_renders_a_live_flow_in_process."
+dedup_id = "8ee21088f79f336e"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "record-hook-events-in-process"
+status = "done"
+summary = "glimpse hook records via tomlctl::record_agent; spawn helpers, OLD_TOMLCTL and stdin thread removed; cli sandbox names no tomlctl, removes TOMLCTL_ROOT; codex case sends not json; added a_hook_for_an_unsupported_event_records_nothing"
+files = [
+    "glimpse/src/hook.rs",
+    "glimpse/tests/cli.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "fa4f88cf5925637e"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "update-root-claudemd-for-the-library-split"
+status = "done"
+summary = "root CLAUDE.md: --lib dispatch tests, glimpse clippy --locked gate and trigger paths, cargo doc --document-private-items, rustfmt example on lib.rs, glimpse links tomlctl as a library"
+files = ["CLAUDE.md"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+dedup_id = "87c371532b480dff"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "add-the-watch-module"
+status = "done"
+summary = "glimpse/src/watch.rs: Wake, pure classify, start with canonical root and recursive watch; mod watch in main.rs; 6 classify unit tests + live NTFS test; module-level cfg_attr(not(test), allow(dead_code)) until the poller uses it"
+files = [
+    "glimpse/src/watch.rs",
+    "glimpse/src/main.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "954c5e41f09709c6"
+
+[[items]]
+id = "E23"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "update-the-remaining-agentstoml-writer-docs"
+status = "done"
+summary = "tomlctl/README.md and flow-contract-task-store SKILL.md s11 name both agents.toml writers (agents record CLI and glimpse hook in-process record_agent)"
+files = [
+    "tomlctl/README.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "1fad221f51b1a23b"
+
+[[items]]
+id = "E24"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "update-the-tomlctl-skills-agentstoml-writer-rule"
+status = "done"
+summary = "tomlctl skill agents.md writer rule and SKILL.md hook-only mentions reworded for glimpse hook in-process record_agent; reinstall-glimpse note added"
+files = [
+    "claude/skills/tomlctl/references/agents.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+dedup_id = "d680767d479f9040"
+
+[[items]]
+id = "E25"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-tomlctl-config-key"
+status = "done"
+summary = "removed glimpse tomlctl config key (+ the_retired_tomlctl_key_is_unknown test), reworded cli.rs help/Harness doc, added once_renders_a_live_flow_in_process with PATH emptied"
+files = [
+    "glimpse/src/config.rs",
+    "glimpse/src/cli.rs",
+    "glimpse/tests/cli.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "3e3aae33d5d9bbae"
+
+[[items]]
+id = "E26"
+type = "deviation"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-tomlctl-config-key"
+summary = "once_renders_a_live_flow_in_process in glimpse/tests/cli.rs uses slug live-flow-demo and runs from cwd/nested, asserting the task row too"
+original_intent = "run --once --slug x from <sandbox>/cwd and assert the slug on stdout"
+rationale = "from cwd the repo_root unwrap_or(cwd) fallback passes without the ancestor walk, so the test proved nothing about it; a one-letter slug is too weak to assert on stdout. Falsifier cutting the ancestor walk to take(1) now fails it."
+dedup_id = "6c53ee6e06381729"
+
+[[items]]
+id = "E27"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-tomlctl-config-key"
+summary = "checkpoint C fmt: diff in glimpse/src/watch.rs; fixed with rustfmt"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "fail"
+duration_s = 2
+dedup_id = "7592976cd92f214e"
+
+[[items]]
+id = "E28"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-tomlctl-config-key"
+summary = "checkpoint C build"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 11
+dedup_id = "5dfc36f689b46625"
+
+[[items]]
+id = "E29"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-tomlctl-config-key"
+summary = "checkpoint C tests: 291 passed, 0 failed"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 18
+dedup_id = "33cdd90e77e4774a"
+
+[[items]]
+id = "E30"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-tomlctl-config-key"
+summary = "checkpoint C skill gates: 34 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests"
+outcome = "pass"
+duration_s = 20
+dedup_id = "4126b682bed943b5"
+
+[[items]]
+id = "E31"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-tomlctl-config-key"
+summary = "checkpoint C clippy"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets --locked"
+outcome = "pass"
+duration_s = 6
+dedup_id = "13b7eea6ddaefea1"
+
+[[items]]
+id = "E32"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-tomlctl-config-key"
+summary = "checkpoint C fmt after rustfmt fix"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 1
+supersedes_entry = "E27"
+dedup_id = "5c35b1c7924a4575"
+
+[[items]]
+id = "E33"
+type = "deviation"
+date = 2026-09-30
+agent = "implement"
+task_ref = "add-the-watch-module"
+summary = "tasks 9 and 10 (checkpoint D) committed in checkpoint C train; task 11 dispatch held until C committed"
+original_intent = "checkpoint D commits tasks 9, 10, 11"
+rationale = "task 9 shares glimpse/Cargo.toml and Cargo.lock with task 5, and task 10 shares glimpse/src/main.rs with task 6, so their edits are not separable in the tree; overlapping groups merge per the commit-train rule. Task 11 (source.rs, owned by C member 6) was held so the poller rewrite stays out of C."
+dedup_id = "47689c8343d39d79"
+
+[[items]]
+id = "E34"
+type = "checkpoint"
+date = 2026-09-30
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint C: 6c2b815 -> add-the-tomlctl-path-dependency-to-glimpse, add-the-notify-dependency-to-glimpse; fe76011 -> fetch-snapshots-and-flow-lists-in-process, add-the-watch-module; 33088df -> record-hook-events-in-process, remove-the-tomlctl-config-key; 4b8ae69 -> update-root-claudemd-for-the-library-split; c1f8420 -> update-the-tomlctl-skills-agentstoml-writer-rule; 11ea3bc -> update-the-remaining-agentstoml-writer-docs"
+commits = [
+    "6c2b815",
+    "fe76011",
+    "33088df",
+    "4b8ae69",
+    "c1f8420",
+    "11ea3bc",
+]
+dedup_id = "eaa1e301b8abb04c"
+
+[[items]]
+id = "E35"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "drive-the-poller-from-the-watcher"
+status = "done"
+summary = "Poller::run driven by the notify watcher: Mode Watching/Polling, Control::Wake, 10 s safety tick, 50/250 ms coalescing drain, per-flow eviction, deadline-based next_wait, sticky missed-change fallback; step() -> Option<bool> change signal"
+files = ["glimpse/src/source.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "61285e2ba735c6ca"
+
+[[items]]
+id = "E36"
+type = "deviation"
+date = 2026-09-30
+agent = "implement"
+task_ref = "drive-the-poller-from-the-watcher"
+summary = "Mode::Watching { _watcher } struct variant in glimpse/src/source.rs"
+original_intent = "Mode::Watching(RecommendedWatcher)"
+rationale = "the watcher is held only so dropping it stops the watch; the unread tuple field was flagged as dead code"
+dedup_id = "f25f54143f64bc9c"
+
+[[items]]
+id = "E37"
+type = "deviation"
+date = 2026-09-30
+agent = "implement"
+task_ref = "drive-the-poller-from-the-watcher"
+summary = "new step() -> Option<bool> in glimpse/src/source.rs with tick() kept as a test-only wrapper"
+original_intent = "have tick() return a changed bool"
+rationale = "tick() already returns a receiver-alive bool that existing tests assert on"
+dedup_id = "05aeb489410b8feb"
+
+[[items]]
+id = "E38"
+type = "deviation"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-watch-modules-dead-code-allowance"
+summary = "minted task 18 to remove the module-level allow(dead_code) from glimpse/src/watch.rs"
+original_intent = "plan carries no task for removing the watch module dead-code allowance"
+rationale = "task 10 added the allowance only because nothing used watch yet; task 11 wired it in, so the attribute now only hides future dead code. Cheap, in a file this run touched, covered by clippy."
+dedup_id = "cf775880b051f7e4"
+
+[[items]]
+id = "E39"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-watch-modules-dead-code-allowance"
+status = "done"
+summary = "removed the module-level cfg_attr(not(test), allow(dead_code)) from glimpse/src/watch.rs; clippy clean"
+files = ["glimpse/src/watch.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "39db1743b020d8bd"
+
+[[items]]
+id = "E40"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-watch-modules-dead-code-allowance"
+summary = "checkpoint D build"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 9
+dedup_id = "fd4a6123c75b7cc1"
+
+[[items]]
+id = "E41"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-watch-modules-dead-code-allowance"
+summary = "checkpoint D tests: 296 passed, 0 failed"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 18
+dedup_id = "5bcfa4382acddeac"
+
+[[items]]
+id = "E42"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-watch-modules-dead-code-allowance"
+summary = "checkpoint D clippy"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets --locked"
+outcome = "pass"
+duration_s = 3
+dedup_id = "8d38fd65935cc564"
+
+[[items]]
+id = "E43"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "remove-the-watch-modules-dead-code-allowance"
+summary = "checkpoint D fmt"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 1
+dedup_id = "d89bddd37a7cb785"
+
+[[items]]
+id = "E44"
+type = "checkpoint"
+date = 2026-09-30
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint D: a7103bc -> drive-the-poller-from-the-watcher; bad0772 -> remove-the-watch-modules-dead-code-allowance"
+commits = [
+    "a7103bc",
+    "bad0772",
+]
+dedup_id = "7f8198ccc9ee9158"
+
+[[items]]
+id = "E45"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "move-the-transcript-tail-onto-the-poller-thread"
+status = "done"
+summary = "transcript tail on the poller thread: Control::Tail / Event::Tail, poller-owned TailState with 1 s tail_at deadline that never runs a tick; runtime follow_tail + Host::set_tail, refresh_tail and activity TICK override removed"
+files = [
+    "glimpse/src/source.rs",
+    "glimpse/src/runtime.rs",
+    "glimpse/src/view/activity.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "5354be642406d9f0"
+
+[[items]]
+id = "E46"
+type = "deviation"
+date = 2026-09-30
+agent = "implement"
+task_ref = "move-the-transcript-tail-onto-the-poller-thread"
+summary = "runtime resets screen.tail to TailState::default() when the tail target changes, and run() starts with TailState::default() (glimpse/src/runtime.rs)"
+original_intent = "send the new target when it changes; Event::Tail replaces screen.tail"
+rationale = "without the reset the previous agent entries draw under a newly selected agent until the first Event::Tail; the runtime tail is display-only since the poller owns the confined TailState"
+dedup_id = "2eb1b4e8440468f0"
+
+[[items]]
+id = "E47"
+type = "deviation"
+date = 2026-09-30
+agent = "implement"
+task_ref = "move-the-transcript-tail-onto-the-poller-thread"
+summary = "added Deadlines::due(now) -> Due in glimpse/src/source.rs beside next_wait"
+original_intent = "extend next_wait with a tail deadline"
+rationale = "the run loop and the new test share one decision function instead of the test re-implementing the loop"
+dedup_id = "cd1a2c35e9c19cd3"
+
+[[items]]
+id = "E48"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "update-glimpses-readme-and-claudemd"
+status = "done"
+summary = "glimpse README and CLAUDE.md rewritten for the in-process, watcher-driven design: reinstall rule, poll_ms as fallback, no tomlctl key, watch.rs in structure, eviction/fallback/Windows-rename gotchas, tail on poller"
+files = [
+    "glimpse/README.md",
+    "glimpse/CLAUDE.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "5ace45932ef20c1d"
+
+[[items]]
+id = "E49"
+type = "task-completion"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+status = "done"
+summary = "measured mimalloc vs system allocator (hyperfine 1.20.0 -N, 20 alternating rounds): snapshot median 46.86 vs 43.38 ms (+3.5 ms with mimalloc, slower 17/20 rounds), count 38.29 vs 38.43, sweep 1022.8 vs 1040.5 (noise, +-100 ms spread); decision default = [] with mimalloc kept optional; Cargo.toml comment records medians, date and method; main.rs comment says opt-in"
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/src/main.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "d571609a5b0bb3d8"
+
+[[items]]
+id = "E50"
+type = "deviation"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "tomlctl mimalloc is now opt-in (default = []) and the [features] comment in tomlctl/Cargo.toml was reworded"
+original_intent = "plan Summary/Scope/Approach describe mimalloc as an optional default feature"
+rationale = "the task decision rule fired: typical-call loss ~3 ms (>1 ms) and no demonstrated heavy-verb gain. The [features] comment told library consumers to turn mimalloc off, which is no longer needed. glimpse default-features = false is now redundant but harmless."
+dedup_id = "39498ba7e3b6b9ba"
+
+[[items]]
+id = "E51"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "phase 3 build"
+command = "cargo build tomlctl && cargo build glimpse"
+outcome = "pass"
+duration_s = 44
+dedup_id = "b3d8965ab632f9ec"
+
+[[items]]
+id = "E52"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "phase 3 tomlctl tests: 1457 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 148
+dedup_id = "79604461cf2d3265"
+
+[[items]]
+id = "E53"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "phase 3 glimpse tests: 298 passed"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 20
+dedup_id = "6135fe1c96ddab32"
+
+[[items]]
+id = "E54"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "success criterion 1"
+command = "success-1 (plan Verification Commands)"
+outcome = "pass"
+duration_s = 1
+dedup_id = "66cdc2f1faf9a990"
+
+[[items]]
+id = "E55"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "success criterion 2"
+command = "success-2 (plan Verification Commands)"
+outcome = "pass"
+duration_s = 1
+dedup_id = "50e26e43324283ca"
+
+[[items]]
+id = "E56"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "success criterion 3"
+command = "success-3 (plan Verification Commands)"
+outcome = "pass"
+duration_s = 1
+dedup_id = "b346426cb25ce0ff"
+
+[[items]]
+id = "E57"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "success criterion 4"
+command = "success-4 (plan Verification Commands)"
+outcome = "pass"
+duration_s = 1
+dedup_id = "a2c237c6e8df21f3"
+
+[[items]]
+id = "E58"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "success criterion 5"
+command = "success-5 (plan Verification Commands)"
+outcome = "pass"
+duration_s = 1
+dedup_id = "9bff5c6aeeb69eb0"
+
+[[items]]
+id = "E59"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "success criterion 6"
+command = "success-6 (plan Verification Commands)"
+outcome = "pass"
+duration_s = 1
+dedup_id = "a7bd3675c662b4c9"
+
+[[items]]
+id = "E60"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "success criterion 7"
+command = "success-7 (plan Verification Commands)"
+outcome = "pass"
+duration_s = 1
+dedup_id = "126bf72cf39492af"
+
+[[items]]
+id = "E61"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "success criterion 8"
+command = "success-8 (plan Verification Commands)"
+outcome = "pass"
+duration_s = 1
+dedup_id = "c25572a16da8473e"
+
+[[items]]
+id = "E62"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "success criterion 9"
+command = "success-9 (plan Verification Commands)"
+outcome = "pass"
+duration_s = 1
+dedup_id = "14b70f74c0a2cf90"
+
+[[items]]
+id = "E63"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "clippy tomlctl"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 19
+dedup_id = "92f921513be8eb03"
+
+[[items]]
+id = "E64"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "clippy tomlctl no-default-features"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets --no-default-features"
+outcome = "pass"
+duration_s = 2
+dedup_id = "1fd75fa266eb845d"
+
+[[items]]
+id = "E65"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "clippy tomlctl features mimalloc"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets --features mimalloc"
+outcome = "pass"
+duration_s = 10
+dedup_id = "1765d90a9948cbd3"
+
+[[items]]
+id = "E66"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "clippy glimpse"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets --locked"
+outcome = "pass"
+duration_s = 4
+dedup_id = "14e32bcc250e1c11"
+
+[[items]]
+id = "E67"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "fmt tomlctl"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 1
+dedup_id = "ccdc8a1cf3b4c5e2"
+
+[[items]]
+id = "E68"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "fmt glimpse"
+command = "cargo fmt --manifest-path glimpse/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 1
+dedup_id = "810764502757b54d"
+
+[[items]]
+id = "E69"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "rustdoc deny lints"
+command = "cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items"
+outcome = "pass"
+duration_s = 8
+dedup_id = "d7079cf15f055220"
+
+[[items]]
+id = "E70"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "audit tomlctl"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+duration_s = 13
+dedup_id = "9edd04565d269dda"
+
+[[items]]
+id = "E71"
+type = "verification"
+date = 2026-09-30
+agent = "implement"
+task_ref = "measure-mimalloc-against-the-system-allocator-for-tomlctl"
+summary = "audit glimpse"
+command = "cargo audit --file glimpse/Cargo.lock"
+outcome = "pass"
+duration_s = 13
+dedup_id = "b37dcfe67213920a"
+
+[[items]]
+id = "E72"
+type = "checkpoint"
+date = 2026-09-30
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint E / final train (gated by the Phase 3 full pass): d7d9f38 -> move-the-transcript-tail-onto-the-poller-thread; 575cd6c -> update-glimpses-readme-and-claudemd; c8949f0 -> measure-mimalloc-against-the-system-allocator-for-tomlctl"
+commits = [
+    "d7d9f38",
+    "575cd6c",
+    "c8949f0",
+]
+dedup_id = "9a6c1b71414794d0"
+
+[[items]]
+id = "E73"
+type = "status-transition"
+date = 2026-09-30
+agent = "plan-update"
+summary = "all 18 tasks done after /implement; in-progress -> review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "77aae3d2d65486cb"
+
+[[items]]
+id = "E74"
+type = "deviation"
+date = 2026-09-30
+agent = "plan-update"
+task_ref = "expose-the-in-process-facade"
+summary = "tomlctl::snapshot is now (root, slug) with slug validation; SNAPSHOT_INPUTS is public; record_agent shares record_value with the CLI"
+original_intent = "facade snapshot(slug, store_path) reading the store path as given, and record_agent mirroring dispatch_record with its own harness parse"
+rationale = "/review found the in-process path had dropped the CLI's slug validation (glimpse --slug ../../x read outside .claude/flows) and that glimpse hand-copied the snapshot's input-file set. The user confirmed the signature change; the facade validates via flow::validate_slug, owns SNAPSHOT_INPUTS, and record_agent now runs the same record_value the CLI tests cover (the CLI reads the payload before rejecting an unknown harness)."
+dedup_id = "232c7e4e090c53b8"
+
+[[items]]
+id = "E75"
+type = "deviation"
+date = 2026-09-30
+agent = "plan-update"
+task_ref = "add-the-watch-module"
+summary = "the flows watch no longer follows symlinks below the flows root"
+original_intent = "watch::start via notify::recommended_watcher with notify's default config"
+rationale = "notify's default follows symlinks, so on inotify/kqueue a repo-content link under .claude/flows (e.g. to /) made the recursive watch walk the target tree, exhaust max_user_watches and retry every poll tick. The watcher now uses Config::default().with_follow_symlinks(false); canonical_root still resolves a symlinked root."
+dedup_id = "18c42c890e5afbff"
+
+[[items]]
+id = "E76"
+type = "deviation"
+date = 2026-09-30
+agent = "plan-update"
+task_ref = "move-the-transcript-tail-onto-the-poller-thread"
+summary = "Event::Tail carries a read-only TailView rather than the poller's TailState, and a tail for a stale path is dropped"
+original_intent = "the poller sends its TailState to the runtime as Event::Tail"
+rationale = "Sending the live reader let the UI thread call refresh(), leaving 'the UI thread does no file I/O' enforced only by comment; TailView (path, entries, tokens, rejected) makes it a type rule. The runtime also ignores a queued tail whose path no longer matches the selected agent, so the old transcript is never drawn under the new one."
+dedup_id = "e656107f4ac24651"

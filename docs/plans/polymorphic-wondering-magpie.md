@@ -52,7 +52,7 @@ The intended outcome:
   - `app.rs` `refresh_stale` transcript mtime stats (one `stat` every 30 s).
   - Upgrading to notify 9.0 (still at rc).
   - Any change to the `tasks snapshot` JSON contract or its docs.
-- **Affected areas**: `tomlctl/Cargo.toml`, `tomlctl/src/main.rs`, `tomlctl/src/lib.rs`, `tomlctl/src/io.rs`, `tomlctl/src/flow/list.rs`, `tomlctl/tests/library_facade.rs`, `.githooks/pre-commit`, `glimpse/`, `CLAUDE.md`
+- **Affected areas**: `tomlctl/Cargo.toml`, `tomlctl/src/main.rs`, `tomlctl/src/lib.rs`, `tomlctl/src/io.rs`, `tomlctl/src/flow/list.rs`, `tomlctl/src/flow/mod.rs`, `tomlctl/tests/library_facade.rs`, `tomlctl/README.md`, `claude/skills/tomlctl/SKILL.md`, `claude/skills/tomlctl/references/agents.md`, `.githooks/pre-commit`, `glimpse/`, `CLAUDE.md`
 
 ## User Decisions
 
@@ -72,7 +72,7 @@ Phase 4 directed questions:
 | Hook `tomlctl agents record` in-process? | **Yes, in-process.** One process start per hook event; `OLD_TOMLCTL` check goes; accepts glimpse as a second `agents.toml` writer that must be reinstalled when tomlctl changes. | Research Notes → "Hook start-up is dominated by the tomlctl child" (28 ms median) |
 | Watcher safety policy? | **Watch + ~10 s safety tick + auto-fallback** to `poll_ms` polling when a watch cannot be established or two consecutive safety ticks catch unreported changes; retry the watch. No config switch. | Research Notes → "Silent watch death" |
 | Guard against tomlctl changes breaking glimpse? | **Narrow pre-commit gate**: `cargo clippy --manifest-path glimpse/Cargo.toml` only when the facade or the modules behind it are staged. | Exploration Notes → "No pre-commit step builds glimpse when only `tomlctl/src/**` is staged" |
-| glimpse `tomlctl` config key? | **Remove it outright** — a config still setting it fails with `unknown key` until the line is deleted. | `glimpse/src/config.rs:352` rejects unknown keys |
+| glimpse `tomlctl` config key? | **Remove it outright** — a config still setting it is rejected with `unknown key` (glimpse then falls back to the default config) until the line is deleted. | `glimpse/src/config.rs:352` rejects unknown keys |
 | Checkpoint cadence? | **milestones** — after the tomlctl lib + facade, after glimpse goes in-process, after watcher + tail. | ~20 files across two crates + hook |
 | Transcript tail driver? | **Keep the 1 s tick**, moved to the poller thread; runtime sends the target path, poller sends `Event::Tail`. No transcript watch. | `glimpse/src/runtime.rs:274-278` |
 
@@ -94,7 +94,7 @@ Skipped. Every answer is either covered by `## Research Notes` (mimalloc, agents
 **`main.rs`** shrinks to the allocator static and `fn main() -> ExitCode { tomlctl::run() }`. The allocator static is now guarded by `#[cfg(feature = "mimalloc")]`.
 
 **`tomlctl/Cargo.toml`**:
-- adds `[lib] name = "tomlctl"`, `path = "src/lib.rs"`, `doctest = false` (all 11 fences in `tomlctl/src` are non-Rust);
+- adds `[lib] name = "tomlctl"`, `path = "src/lib.rs"`, `doctest = false` (every code fence in `tomlctl/src` is json, toml or text: ``grep -rnE '^\s*//[/!]\s*```[a-z]+' tomlctl/src``);
 - makes `mimalloc` `optional = true`, with `[features] default = ["mimalloc"]`;
 - does **not** use `required-features` on the bin.
 
@@ -105,10 +105,10 @@ Private modules keep dead-code reporting intact. The unit tests keep their modul
 Three `pub fn` wrappers in `tomlctl/src/lib.rs`. They are wrappers, not `pub use`: re-exporting a `pub(crate)` fn is E0364. No clap type appears in any public signature. Their doc comments must not intra-doc-link private items, or `cargo doc` fails under `private_intra_doc_links = "deny"`.
 
 - `pub fn snapshot(slug: &str, store_path: &Path) -> anyhow::Result<serde_json::Value>` calls `tasks::snapshot` with `ReadIntegrityArgs { verify_integrity: false, strict_read: false }`. That path is pure file reads: no `repo_or_cwd_root`, no locks.
-- `pub fn flow_list(root: &Path) -> anyhow::Result<serde_json::Value>` calls the new `flow::list::list_all(root)`. It returns the `{ok, flows, skipped}` envelope unfiltered, with no integrity checks.
+- `pub fn flow_list(root: &Path) -> anyhow::Result<serde_json::Value>` calls the new `flow::list_all(root)`, re-exported from the private `flow::list` module by `tomlctl/src/flow/mod.rs`. It returns the `{ok, flows, skipped}` envelope unfiltered, with no integrity checks.
 - `pub fn record_agent(harness: &str, payload: &serde_json::Value) -> anyhow::Result<serde_json::Value>` mirrors `agents::dispatch::dispatch_record`:
   - it parses the harness with `Harness::parse`, using the same unknown-harness error;
-  - it calls `agents::record::record` with every `WriteIntegrityArgs` flag false, the CLI's no-flag defaults;
+  - it calls `agents::record::record` with all five `WriteIntegrityArgs` flags false (including `no_create`), the CLI's no-flag defaults;
   - its doc states that it changes the process's working directory and fixes the repo root for the rest of the process, so it is called once per process.
 
 Each wrapper first calls a new `io::silence_advisories()`. That function pins the `advisories_visible` cache to `false`, so an `advise!` can never write into glimpse's alternate screen. The static moves to module scope in `tomlctl/src/io.rs` so both functions can reach it.
@@ -135,11 +135,13 @@ Anyhow errors are rendered with `{e:#}` wherever glimpse turns them into `String
 - **Dependency**: `notify = "8.2.0"` with its default features. Never set `default-features = false`: `mod fsevent` compiles on macOS whatever the features are, so dropping the defaults breaks the macOS build invisibly from Windows.
 
 - **New module `glimpse/src/watch.rs`**, which never imports `source.rs`:
-  - `pub(crate) enum Wake { Flow(String), All }`.
+  - `pub(crate) enum Wake { Flow(String), All, Rewatch }`.
   - `pub(crate) fn classify(event: &notify::Result<notify::Event>, flows_root: &Path) -> Option<Wake>`:
     - `None` for `EventKind::Access(_)`. inotify's `OPEN` mask would otherwise wake glimpse on its own snapshot reads.
     - `Wake::Flow(slug)` when the first path component is found via `strip_prefix(flows_root)`.
-    - `Wake::All` for an `Err`, a `need_rescan()` event, a `Remove` of `flows_root` itself, or a path outside `flows_root`. The last covers macOS reporting canonical `/private/...` paths.
+    - `Wake::Rewatch` for an `Err` or a `Remove` of `flows_root` itself: evict everything, and drop and re-create the watcher (Windows unwatches a deleted root silently).
+    - `Wake::All` for a `need_rescan()` event or a path outside `flows_root`: evict everything, keep the watcher. Re-creating on these would restart FSEvents from "now" and lose the gap.
+  - **Canonical root**: `flows_root` is canonicalised once, falling back to the given path if that fails, and the same path is passed to both `watch` and `classify`. FSEvents reports canonical paths (macOS temp dirs sit under the `/var` → `/private/var` symlink), while Windows and inotify join event names onto the watched path as given, so one consistent root serves all three.
   - `pub(crate) fn start(flows_root: &Path, on_wake: impl Fn(Wake) + Send + 'static) -> notify::Result<notify::RecommendedWatcher>`: one `RecursiveMode::Recursive` watch on `<root>/.claude/flows`. The callback only classifies and calls `on_wake`, which must never block. The Windows backend drops events silently when its callback stalls, and on macOS dropping the watcher joins the callback's thread.
 
 - **Changes to `Poller` in `glimpse/src/source.rs`**:
@@ -148,9 +150,9 @@ Anyhow errors are rendered with `{e:#}` wherever glimpse turns them into `String
   - A new `Mode`:
     - `Watching(RecommendedWatcher)`: safety wait `SAFETY_TICK = 10 s`.
     - `Polling`: wait `poll_ms`. The watch is retried on each tick while its last start attempt *errored*, for example `.claude/flows` did not exist yet.
-  - Each wait is `min(mode interval, time left until a pending retry_after)`. Today `retry_due` is only checked on a tick, which would stretch the 5 s retry to the safety interval.
-  - **Coalescing**: after a wake, keep draining the control channel with `recv_timeout(50 ms)` until it goes quiet or 250 ms have passed, then run one `tick()`. A tomlctl write is ~18 raw events.
-  - **Cache eviction**: `Wake::Flow(slug)` removes `flow_stats[slug]` before the tick, so an in-place edit is re-statted. `Wake::All` clears `flow_stats` and forces a snapshot fetch. A `Wake::All` caused by a watcher error drops and re-creates the watcher.
+  - **Deadline-based waits**: the poller keeps absolute deadlines — `next_safety_at` (the mode interval after the last tick; reset only when a tick runs), the pending `retry_after`, and (with a targeted tail) `tail_at` — and each wait runs until the earliest. Only reaching `next_safety_at` is a *safety* tick. Today `retry_due` is only checked on a tick, which would stretch the 5 s retry to the safety interval; a now-relative `min(...)` would instead let a 1 s tail deadline keep postponing the safety tick forever.
+  - **Coalescing**: after a wake, keep draining the control channel with `recv_timeout(50 ms)` until it goes quiet or 250 ms have passed, then run one `tick()`. A tomlctl write is ~18 raw events. The drain combines, it doesn't filter: every drained `Wake` is merged (`Flow` slugs unioned; any `All` or `Rewatch` wins, `Rewatch` over `All`), and any other message is handled as in the main loop — `SetSlug` and `Tail` retarget, `Stop` returns at once.
+  - **Cache eviction**: `Wake::Flow(slug)` removes `flow_stats[slug]` before the tick, so an in-place edit is re-statted. `Wake::All` and `Wake::Rewatch` clear `flow_stats` and force a snapshot fetch; `Wake::Rewatch` also drops and re-creates the watcher.
   - **Missed-change detector**: a *safety* tick (a timeout, not a wake) that finds a fingerprint or flow-list change with no wake since the previous tick counts one miss. Two consecutive misses drop the watcher and switch to `Polling` for the rest of the session: sticky, so a filesystem that accepts a watch but delivers nothing cannot flap. A wake resets the count.
   - **Shutdown**: `Control::Stop` stays the shutdown signal. The callback's cloned `Sender` keeps the channel alive, so `Disconnected` no longer fires.
   - `tick()` and the fingerprint logic stay the decider, so the existing synchronous tests keep working.
@@ -161,24 +163,26 @@ Anyhow errors are rendered with `{e:#}` wherever glimpse turns them into `String
   - A new `Control::Tail(Option<String>)` and `Event::Tail(Box<TailState>)`.
   - The poller owns an `Option<TailState>`. `TailState` is already `Clone`, and the poller builds it with `TailState::new`, which confines reads to `claude_dir()`.
   - On `Control::Tail(Some(path))` it retargets and refreshes at once and always sends; `None` clears the tail.
-  - While a tail is targeted, the poller's wait is additionally capped at `app::TICK` (1 s). Each tail refresh that returns `true` sends a clone.
+  - While a tail is targeted, the poller sets a `tail_at` deadline `app::TICK` (1 s) ahead. Reaching it refreshes the tail and runs no `tick()`, so the safety deadline is unaffected. Each tail refresh that returns `true` sends a clone.
 - **Runtime side**:
   - `Host` gains `set_tail(Option<String>)`.
   - After each handled batch the runtime computes the target: `view::activity::agent(&app)`'s `transcript_path` while `activity_open`, else `None`. It sends it only when it differs from the last one sent.
   - `Event::Tail` replaces `Screen.tail` and redraws.
   - `Screen::refresh_tail` and the activity-specific `TICK` override in `run_loop` go. App clocks keep using `App::tick_interval`.
-  - `render_once` (`--once`) keeps a synchronous one-shot read.
+  - `render_once` (`--once`) is unchanged: it draws with `TailState::default()` and reads no transcript, since `--once` never opens the activity panel.
 
 ## Success Criteria
 
 - forward: glimpse's data path starts no tomlctl process. The only `Command::new` left in `glimpse/src/source.rs`, `glimpse/src/flows.rs` and `glimpse/src/hook.rs` is `flows::repo_root`'s `git` (count 1; today: 5).
 - forward: the probe and version-drift machinery is gone. No `probe_tomlctl`, `TomlctlFetcher`, `REQUIRED_MESSAGE` or `OLD_TOMLCTL` is left in `glimpse/src` (today: present).
 - forward: `glimpse/Cargo.lock` has `notify` and no `mimalloc` (today: no notify).
-- forward: the pre-commit tomlctl test gate still runs tests. `.githooks/pre-commit` has no `--bin tomlctl` (today: 1). **predicted, unverified**: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` reports a non-zero `running N tests`.
-- forward: the `tomlctl` config key is gone from `glimpse/src/config.rs` (today: 8 mentions).
+- forward: the pre-commit tomlctl test gate still runs tests. `.githooks/pre-commit` has no `--bin tomlctl` (today: 1) and carries `--lib -- cli::dispatch::tests` (today: 0). **predicted, unverified**: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` reports a non-zero `running N tests` (baseline under `--bin tomlctl`: 34).
+- forward: the `tomlctl` config key is gone from `glimpse/src/config.rs`: no field, parse arm or `cfg.tomlctl` read (`tomlctl:|"tomlctl" =>|cfg\.tomlctl` matches today: 6). The new unknown-key test's literal is not counted.
+- forward: the UI thread no longer reads transcripts: `glimpse/src/runtime.rs` has no `refresh_tail` (today: 6).
+- forward: notify keeps the default features the macOS build needs: `glimpse/Cargo.toml`'s `notify` line carries no `default-features` (today: no notify line).
 - guard: `#[global_allocator]` appears only in `tomlctl/src/main.rs` (today: holds).
-- **predicted, unverified**: `glimpse --once --slug <slug>` renders a live flow with no `tomlctl` on `PATH`.
-- **predicted, unverified**: an idle glimpse wakes at most every 10 s while a watch is healthy. An in-place edit (not a rename) to another flow's `context.toml` refreshes its selector row within ~1 s.
+- forward: **predicted, unverified**: `glimpse --once --slug <slug>` renders a live flow with no `tomlctl` on `PATH` (task 8 automates this as `once_renders_a_live_flow_in_process`).
+- forward: **predicted, unverified**: an idle glimpse wakes at most every 10 s while a watch is healthy. An in-place edit (not a rename) to another flow's `context.toml` refreshes its selector row within ~1 s.
 
 ## Verification Commands
 
@@ -189,10 +193,13 @@ test.timeout: 1200
 lint: cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets && cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets --no-default-features && cargo clippy --manifest-path glimpse/Cargo.toml --all-targets && cargo fmt --manifest-path tomlctl/Cargo.toml -- --check && cargo fmt --manifest-path glimpse/Cargo.toml -- --check && cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items
 transient: rust-lld: failed to write output.*[Pp]ermission denied
 success: test "$(grep -c -- '--bin tomlctl' .githooks/pre-commit)" -eq 0
+success: grep -q -- '--lib -- cli::dispatch::tests' .githooks/pre-commit
 success: ! grep -rqE 'probe_tomlctl|TomlctlFetcher|REQUIRED_MESSAGE|OLD_TOMLCTL' glimpse/src
 success: test "$(cat glimpse/src/source.rs glimpse/src/flows.rs glimpse/src/hook.rs | grep -c 'Command::new')" -eq 1
 success: grep -q '^name = "notify"' glimpse/Cargo.lock && ! grep -q '^name = "mimalloc"' glimpse/Cargo.lock
-success: ! grep -q 'tomlctl' glimpse/src/config.rs
+success: ! grep -qE 'tomlctl:|"tomlctl" =>|cfg\.tomlctl' glimpse/src/config.rs
+success: test "$(grep -c 'refresh_tail' glimpse/src/runtime.rs)" -eq 0
+success: grep -E '^notify' glimpse/Cargo.toml | grep -vq 'default-features'
 success: test "$(grep -rl 'global_allocator' tomlctl/src)" = "tomlctl/src/main.rs"
 ```
 
@@ -203,7 +210,7 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
 ## Execution Policy
 
 - **Checkpoints**: milestones
-- **Checkpoint after**: tasks 3, 4, 8, 13, 14, 15
+- **Checkpoint after**: tasks 1, 3, 4, 8, 13, 14, 15, 16, 17, 18
 - **Max parallel agents**: 6
 - **Commit granularity**: per-task
 
@@ -226,6 +233,7 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
     - add `[features] default = ["mimalloc"]`;
     - leave `[[bin]]` without `required-features`.
   - Keep the existing module-order comments with their modules. Never put `#[global_allocator]` in `lib.rs`: a lib-declared allocator compiles and silently becomes every dependent's allocator.
+  - Rewrite `main.rs`'s header comment ("Keep `fn main()` a thin wrapper over `cli::run()`"): `main` is now a thin wrapper over `tomlctl::run()`, and module and dispatch plumbing lives in `lib.rs`.
 - **Acceptance**:
   - forward: `grep -c '^mod ' tomlctl/src/main.rs` prints `0` (today: `27`).
   - forward: `grep -c 'cfg(feature = "mimalloc")' tomlctl/src/main.rs` prints `1` (today: `0`).
@@ -235,31 +243,35 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
   - forward: **predicted, unverified**: `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets --no-default-features` compiles with no new warnings.
 
 ### 2. Add a root-taking flow listing [S]
-- **Files**: `tomlctl/src/flow/list.rs`
-- **Depends on**: —
-- **Action**: Add `pub(crate) fn list_all(root: &Path) -> Result<JsonValue>` to `tomlctl/src/flow/list.rs`. It returns the `{"ok": true, "flows": [...], "skipped": [...]}` envelope for `<root>/.claude/flows` with no filters and no integrity checks. Build `dispatch`'s output through the same envelope helper so the two cannot diverge.
+- **Files**: `tomlctl/src/flow/list.rs`, `tomlctl/src/flow/mod.rs`
+- **Depends on**: 1 (the new unit test must land in the lib target, which task 1 creates)
+- **Action**: Add `pub(crate) fn list_all(root: &Path) -> Result<JsonValue>` to `tomlctl/src/flow/list.rs`, and re-export it from `tomlctl/src/flow/mod.rs` with `pub(crate) use list::list_all;` (`mod list;` is private there, so `lib.rs` could not otherwise reach it). It returns the `{"ok": true, "flows": [...], "skipped": [...]}` envelope for `<root>/.claude/flows` with no filters and no integrity checks. Build `dispatch`'s output through the same envelope helper so the two cannot diverge.
 - **Detail**:
   - `list_all` calls `enumerate_flows(root, &root.join(".claude").join("flows"), false, false)` and never calls `repo_or_cwd_root`.
   - Factor the `serde_json::json!({"ok": true, "flows": …, "skipped": …})` construction into a private helper used by both `dispatch` and `list_all`.
-  - Add a unit test `list_all_reports_flows_and_skips` in `tomlctl/src/flow/list.rs`. It uses a temp dir with one valid and one malformed `context.toml`, and asserts one flow and one skip.
+  - Add a unit test `list_all_reports_flows_and_skips` in `tomlctl/src/flow/list.rs`. It uses a temp dir with one valid and one malformed `context.toml`, both written with `std::fs::write` (so neither has a `.sha256` sidecar), and asserts one flow and one skip.
 - **Acceptance**:
   - forward: `grep -c 'pub(crate) fn list_all' tomlctl/src/flow/list.rs` prints `1` (today: `0`).
+  - forward: `grep -c 'pub(crate) use list::list_all;' tomlctl/src/flow/mod.rs` prints `1` (today: `0`).
+  - forward: **predicted, unverified**: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- flow::list::` runs `list_all_reports_flows_and_skips` and passes. Falsifier: `list_all` passing `verify = true` reports the sidecar-less valid flow as a second skip.
   - guard: **predicted, unverified**: `cargo test --manifest-path tomlctl/Cargo.toml --test flow_list` passes. Falsifier: changing the shared envelope helper's key from `skipped` to `skip` turns it red.
 
-### 3. Point the pre-commit gates at the library [S]
+### 3. Point the pre-commit gates at the library [M]
 - **Files**: `.githooks/pre-commit`
 - **Depends on**: 1
 - **Action**:
   - Change the tomlctl unit-test gate from `--bin tomlctl` to `--lib`.
-  - Add a gate that runs `cargo clippy --manifest-path "$ROOT/glimpse/Cargo.toml"` when the staged set contains any of `tomlctl/Cargo.toml`, `tomlctl/src/lib.rs`, `tomlctl/src/io.rs`, `tomlctl/src/tasks/**`, `tomlctl/src/flow/list.rs` or `tomlctl/src/agents/**`.
+  - Add a gate that runs `cargo clippy --manifest-path "$ROOT/glimpse/Cargo.toml" --locked` when the staged set contains any of `tomlctl/Cargo.toml`, `tomlctl/src/lib.rs`, `tomlctl/src/io.rs`, `tomlctl/src/tasks/**`, `tomlctl/src/flow/list.rs` or `tomlctl/src/agents/**`.
 - **Detail**:
+  - Tagged M, not S: the file is an unsandboxed hook every commit executes, which makes the edit security-sensitive.
   - The test gate becomes `gate cargo test --manifest-path "$ROOT/tomlctl/Cargo.toml" --lib -- cli::dispatch::tests`.
-  - New block: `if grep -Eq '^tomlctl/(Cargo\.toml|src/(lib|io)\.rs|src/tasks/.*|src/flow/list\.rs|src/agents/.*)$' <<<"$STAGED"; then gate cargo clippy --manifest-path "$ROOT/glimpse/Cargo.toml"; fi`.
+  - New block: `if grep -Eq '^tomlctl/(Cargo\.toml|src/(lib|io)\.rs|src/tasks/.*|src/flow/list\.rs|src/agents/.*)$' <<<"$STAGED"; then gate cargo clippy --manifest-path "$ROOT/glimpse/Cargo.toml" --locked; fi`. `--locked` makes a tomlctl dependency change that `glimpse/Cargo.lock` does not yet reflect block the commit, instead of the hook rewriting the lockfile unstaged.
   - Put it after the existing glimpse fmt gate. Its one-line comment says glimpse compiles tomlctl in as a library, so a facade change can break glimpse's build.
   - Follow the file's existing `gate` / `$STAGED` idiom. The file is an unsandboxed hook: change nothing else.
 - **Acceptance**:
   - forward: `grep -c -- '--bin tomlctl' .githooks/pre-commit` prints `0` (today: `1`).
-  - forward: `grep -c 'cargo clippy --manifest-path "$ROOT/glimpse/Cargo.toml"' .githooks/pre-commit` prints `1` (today: `0`).
+  - forward: `grep -c 'cargo clippy --manifest-path "$ROOT/glimpse/Cargo.toml" --locked' .githooks/pre-commit` prints `1` (today: `0`).
+  - forward: `grep -c -- '--lib -- cli::dispatch::tests' .githooks/pre-commit` prints `1` (today: `0`).
   - guard: `bash -n .githooks/pre-commit` exits 0.
 
 ### 4. Expose the in-process facade [M]
@@ -272,12 +284,14 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
 - **Detail**:
   - See Approach, "Library facade" for the signatures and semantics.
   - In `io.rs`, move `advisories_visible`'s `static VISIBLE: OnceLock<bool>` to module scope. `silence_advisories` does `let _ = VISIBLE.set(false);`.
-  - `record_agent` builds `WriteIntegrityArgs { allow_outside: false, no_write_integrity: false, verify_integrity: false, strict_integrity: false }`.
+  - `record_agent` builds `WriteIntegrityArgs { allow_outside: false, no_write_integrity: false, verify_integrity: false, strict_integrity: false, no_create: false }` (all five fields; the struct derives no `Default`).
+  - `flow_list` calls `flow::list_all` (re-exported by task 2).
   - Doc comments: at most four lines each, and no intra-doc links to private items.
   - `tomlctl/tests/library_facade.rs`:
-    - set up a flow in a temp root with `assert_cmd` (`tomlctl flow init` plus `tasks add`, or copying a fixture from `tomlctl/tests/fixtures`);
-    - assert `tomlctl::snapshot(slug, &store)` equals the parsed stdout of `tomlctl tasks snapshot --slug <slug>` run with `TOMLCTL_ROOT=<root>`;
-    - assert `tomlctl::flow_list(&root)` equals the parsed stdout of `tomlctl flow list`;
+    - reuse `tomlctl/tests/common/mod.rs` (`mod common;`): `common::sandbox()` for a canonicalised temp root, `common::seed_tasks` / `common::stage_tasks_flow` to write a flow with `context.toml` and a store, and `common::cli(&root)`, which sets `TOMLCTL_ROOT`, for every CLI call;
+    - add one extra flow whose `context.toml` is written with `std::fs::write` and has no `.sha256` sidecar, so the falsifier below can fire;
+    - assert `tomlctl::snapshot(slug, &store)` equals the parsed stdout of `common::cli(&root).args(["tasks", "snapshot", "--slug", slug])`;
+    - assert `tomlctl::flow_list(&root)` equals the parsed stdout of `common::cli(&root).args(["flow", "list"])`;
     - assert `tomlctl::record_agent("manual", &json!({}))` is an `Err` naming the unimplemented adapter.
   - Drop any field that depends on the current time before comparing.
 - **Acceptance**:
@@ -292,10 +306,11 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
 - **Action**:
   - Add `tomlctl = { path = "../tomlctl", default-features = false }` to `glimpse/Cargo.toml` `[dependencies]`, with a one-line comment: in-process snapshot, flow list and hook recording, without tomlctl's allocator.
   - Update the package `description` to "Live terminal view of a flow's task graph, checkpoints and running agents, built on tomlctl's snapshot code".
-  - Let cargo regenerate `glimpse/Cargo.lock`.
+  - Regenerate `glimpse/Cargo.lock` with a resolve-only command such as `cargo tree --manifest-path glimpse/Cargo.toml > /dev/null`, which adds the new packages without re-resolving existing pins. Never run `cargo update` or `cargo generate-lockfile`.
 - **Acceptance**:
   - forward: `grep -c 'path = "../tomlctl"' glimpse/Cargo.toml` prints `1` (today: `0`).
   - guard: `grep -c '^name = "mimalloc"' glimpse/Cargo.lock` prints `0` after the lock regenerates (today: `0`).
+  - guard: `git diff -U0 glimpse/Cargo.lock | grep -c '^-version'` prints `0`: no existing pin moved (today: `0`).
 
 ### 6. Fetch snapshots and flow lists in-process [M]
 - **Files**: `glimpse/src/source.rs`, `glimpse/src/flows.rs`, `glimpse/src/main.rs`
@@ -318,7 +333,7 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
     - `once_snapshot` / `fetch_once` drop the `tomlctl` binding and the probe fallback;
     - update the `use crate::source::…` import;
     - keep the doc comment accurate: a `--snapshot` file is read as-is, otherwise the flow's files are read.
-  - Update `source.rs`'s module doc and the `Fetcher` doc ("shells out to tomlctl").
+  - Update `source.rs`'s module doc, the `Fetcher` doc ("shells out to tomlctl"), and the `Source::start` / `Source::spawn` docs that describe fetching "through the configured tomlctl, probing it".
 - **Acceptance**:
   - forward: `grep -rcE 'probe_tomlctl|TomlctlFetcher|REQUIRED_MESSAGE|check_capabilities' glimpse/src/source.rs glimpse/src/main.rs glimpse/src/flows.rs` prints `0` for each file (today: `17` / `3` / `0`).
   - forward: `grep -c 'Command::new' glimpse/src/source.rs glimpse/src/flows.rs` prints `0` and `1` (today: `2` and `2`).
@@ -339,10 +354,10 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
   - `handle` no longer passes `config` to `record`.
   - Delete `record_args`, `failure_message`, `OLD_TOMLCTL`, the stdin-writer thread, the `current_dir` handling (`record_agent` sets the cwd itself) and their unit tests.
   - `parse_record_result` becomes a `from_value` conversion. Keep its tests, adapted.
-  - Update the module doc and the `RecordResult` doc ("The one JSON line `tomlctl agents record` prints").
+  - Update the module doc, the `RecordResult` doc ("The one JSON line `tomlctl agents record` prints") and the `outside_any_flow` doc ("so `tomlctl agents record` could only answer…").
   - `glimpse/tests/cli.rs`:
-    - stop writing `tomlctl = "glimpse-test-no-such-tomlctl"` into the sandbox config (write an empty file), and drop the module doc's "names a tomlctl" clause;
-    - `hook_is_silent_and_logs_one_line` stays as is: an empty payload is invalid JSON, so one log line;
+    - stop writing `tomlctl = "glimpse-test-no-such-tomlctl"` into the sandbox config (write an empty file), add `.env_remove("TOMLCTL_ROOT")` to `Sandbox::run` (the in-process recorder and `handle`'s `root_override` both honour it), and reword the module doc's "names a tomlctl" clause to say so;
+    - `hook_is_silent_and_logs_one_line` keeps its body: an empty payload is invalid JSON, so one log line. Reword its doc comment ("With a tomlctl that cannot run, the hook fails") to say the invalid payload is what fails;
     - `a_codex_hook_is_silent_and_logs_one_line` sends `not json` instead of `{}`;
     - add `a_hook_for_an_unsupported_event_records_nothing`: `hook --harness codex` with `{}` exits 0 with empty stdout and stderr, and writes no `claude/glimpse/hook.log` and no `cwd/.claude`.
 - **Acceptance**:
@@ -350,25 +365,34 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
   - forward: `grep -c 'glimpse-test-no-such-tomlctl' glimpse/tests/cli.rs` prints `0` (today: `1`).
   - forward: **predicted, unverified**: `cargo test --manifest-path glimpse/Cargo.toml --test cli` passes. Falsifier: with the codex case still sending `{}`, `a_codex_hook_is_silent_and_logs_one_line` fails with zero log lines.
 
-### 8. Remove the `tomlctl` config key [S]
-- **Files**: `glimpse/src/config.rs`, `glimpse/src/cli.rs`
+### 8. Remove the `tomlctl` config key [M]
+- **Files**: `glimpse/src/config.rs`, `glimpse/src/cli.rs`, `glimpse/tests/cli.rs`
 - **Depends on**: 6, 7
 - **Action**:
   - Delete the `tomlctl` field, its default, its parse arm and its assertions from `glimpse/src/config.rs`. Add a test that a config setting `tomlctl` fails with `unknown key`.
-  - In `glimpse/src/cli.rs`, reword the `--snapshot` help line "instead of running tomlctl" to "instead of reading the flow".
+  - In `glimpse/src/cli.rs`, reword the `--snapshot` help line "instead of running tomlctl" to "instead of reading the flow", and the `Harness` doc "passed to `tomlctl agents record --harness`" to say the harness selects the in-process recorder's payload adapter.
+  - Add `once_renders_a_live_flow_in_process` to `glimpse/tests/cli.rs`: the first automated test of glimpse's real in-process data path.
+- **Detail**:
+  - The unknown-key test lives in `config.rs`'s `mod tests` beside the existing rejection cases, so the file keeps one `tomlctl` literal; the acceptance below counts only the field, the parse arm and `cfg.tomlctl` reads.
+  - `once_renders_a_live_flow_in_process`: seed `<sandbox>/cwd/.claude/flows/x/tasks.toml` (a minimal store) and `context.toml`, run `--once --slug x` with `PATH` emptied, and assert exit 0 with the slug on stdout. `flows::repo_root` falls back to the nearest ancestor holding `.claude/flows` when `git` cannot run. Every other `source.rs` test uses `FakeFetcher`, so nothing else exercises `InProcessFetcher`, the hand-built store path or `serde_json::from_value::<Snapshot>`.
+  - This task depends on 7, which also edits `glimpse/tests/cli.rs`, so the two edits are serialised.
 - **Acceptance**:
-  - forward: `grep -c 'tomlctl' glimpse/src/config.rs` prints `0` (today: `8`).
+  - forward: `grep -cE 'tomlctl:|"tomlctl" =>|cfg\.tomlctl' glimpse/src/config.rs` prints `0` (today: `6`). The new unknown-key test's `tomlctl = "x"` literal does not match it.
   - forward: `grep -c 'instead of running tomlctl' glimpse/src/cli.rs` prints `0` (today: `1`).
+  - forward: `grep -c 'fn once_renders_a_live_flow_in_process' glimpse/tests/cli.rs` prints `1` (today: `0`).
   - forward: **predicted, unverified**: `cargo test --manifest-path glimpse/Cargo.toml -- config::` passes, including the new unknown-key test.
+  - forward: **predicted, unverified**: `cargo test --manifest-path glimpse/Cargo.toml --test cli -- once_renders_a_live_flow_in_process` passes. Falsifier: pointing `InProcessFetcher` at `<root>/.claude/flows/<slug>` instead of its `tasks.toml` turns it red.
 
 ### 9. Add the notify dependency to glimpse [S]
 - **Files**: `glimpse/Cargo.toml`, `glimpse/Cargo.lock`
 - **Depends on**: 5
-- **Action**: Add `notify = "8.2.0"` with default features to `glimpse/Cargo.toml`. The line gets a one-line comment: defaults kept because macOS's FSEvents backend needs `macos_fsevent`. Let cargo regenerate `glimpse/Cargo.lock`.
+- **Action**: Add `notify = "8.2.0"` with default features to `glimpse/Cargo.toml`. The line gets a one-line comment: defaults kept because macOS's FSEvents backend needs `macos_fsevent`. Regenerate `glimpse/Cargo.lock` with a resolve-only command such as `cargo tree --manifest-path glimpse/Cargo.toml > /dev/null`; never `cargo update` or `cargo generate-lockfile`.
 - **Detail**: Do not add `notify-debouncer-mini`/`-full`. They key events by path and drop the pathless rescan events.
 - **Acceptance**:
   - forward: `grep -c '^notify' glimpse/Cargo.toml` prints `1` (today: `0`).
   - forward: `grep -c '^name = "notify"' glimpse/Cargo.lock` prints `1` (today: `0`).
+  - guard: `grep -E '^notify' glimpse/Cargo.toml | grep -c 'default-features'` prints `0`.
+  - guard: `git diff -U0 glimpse/Cargo.lock | grep -c '^-version'` prints `0`: no existing pin moved.
 
 ### 10. Add the watch module [M]
 - **Files**: `glimpse/src/watch.rs` (new), `glimpse/src/main.rs`
@@ -381,9 +405,10 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
     - a `Modify(Name(To))` on `<flows>/a/tasks.toml` yields `Flow("a")`;
     - a path outside the root yields `All`;
     - a rescan flag yields `All`;
-    - an `Err` yields `All`;
-    - a `Remove` of the root itself yields `All`.
-  - Add one live test that watches a temp `flows` dir. Write `a/tasks.toml` by temp file plus rename, and separately in place. Expect a `Wake::Flow("a")` within 5 s for each, received on an mpsc channel. The generous timeout absorbs FSEvents latency.
+    - an `Err` yields `Rewatch`;
+    - a `Remove` of the root itself yields `Rewatch`.
+  - `start` canonicalises `flows_root` once (keeping the given path if that fails) and passes the same path to `watch` and to `classify`, per Approach, "Watcher as a wake-up signal".
+  - Add one live test that watches a temp `flows` dir, canonicalised the same way: macOS temp dirs sit under the `/var` → `/private/var` symlink and FSEvents reports canonical paths, so an uncanonicalised root classifies every event as `All`. Write `a/tasks.toml` by temp file plus rename, and separately in place. Expect a `Wake::Flow("a")` within 5 s for each, received on an mpsc channel. The generous timeout absorbs FSEvents latency. Between the two writes, drain the channel until it is quiet for 500 ms, so the in-place assertion cannot be met by the rename's trailing events.
   - The module doc (≤15 lines) states the non-blocking callback rule and why `Access` is ignored.
   - `watch` stays unused until task 11. That dead-code window is internal to checkpoint C.
 - **Acceptance**:
@@ -398,16 +423,19 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
 - **Detail**:
   - Implement Approach, "Watcher as a wake-up signal", exactly.
   - Create the watcher inside the spawned thread with `watch::start(&flows_root, move |w| { let _ = tx.send(Control::Wake(w)); })`, where `tx` is a clone of the control `Sender`. The send is unbounded and never blocks.
-  - Factor the wait computation into a pure `fn next_wait(...) -> Duration` and unit-test it:
+  - Factor the wait computation into a pure, deadline-based `fn next_wait(now, deadlines) -> Duration` over `next_safety_at` (reset only when a tick runs) and the retry deadline; task 12 adds a `tail_at` deadline to the same function. Unit-test it:
     - `Watching` with no failure gives 10 s;
     - `Watching` with a retry due in 2 s gives 2 s;
     - `Polling` gives `poll_ms`.
+  - Only reaching `next_safety_at` counts as a safety tick for the missed-change detector.
+  - Handle `Wake::Rewatch` by clearing `flow_stats`, forcing a snapshot fetch, and dropping and re-creating the watcher; `Wake::All` evicts the same way but keeps the watcher.
+  - The coalescing drain merges every drained `Wake` and handles any other message as the main loop does (Approach, "Watcher as a wake-up signal"). Unit-test that a `SetSlug` sent mid-drain is applied and a `Stop` sent mid-drain ends the thread.
   - Unit-test eviction deterministically without a real watcher:
     1. `tick()` once;
     2. write `.claude/flows/b/context.toml` in place, restoring the directory's mtime if the platform moved it;
     3. assert the next `tick()` sends no `Flows` event;
     4. apply `Wake::Flow("b")` and assert the following `tick()` relists.
-  - Unit-test the missed-change detector: two safety ticks that each find a change with no wake switch the mode to `Polling`, and a wake in between resets the count.
+  - Factor the missed-change detector into a pure counter (`fn on_tick(&mut self, safety: bool, changed: bool, woke: bool) -> bool`, true meaning switch to `Polling`), so its test needs no real watcher. Unit-test it: two safety ticks that each find a change with no wake return true on the second, and a wake in between resets the count.
   - Keep all existing tick-driven tests passing unchanged.
   - Update the `flows_fingerprint` doc comment: in-place writes are caught by the watcher's eviction, not by the directory mtime. Note that the cache gap exists on ext4 too.
 - **Acceptance**:
@@ -429,7 +457,8 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
     - opening the activity panel on a running agent sends `Some(path)`;
     - closing it sends `None`;
     - an `Event::Tail` updates `screen.tail`.
-  - `render_once` keeps its one-shot synchronous `TailState` read.
+  - `render_once` is unchanged: it draws with `TailState::default()` and reads no transcript.
+  - Add the `tail_at` deadline to task 11's `next_wait` and extend its test: a tail deadline 1 s away with `next_safety_at` 3 s away gives 1 s, and after three tail refreshes the safety tick still fires.
   - Update the `runtime.rs` module doc (thread list) and the `run_loop` doc.
 - **Acceptance**:
   - forward: `grep -c 'refresh_tail' glimpse/src/runtime.rs` prints `0` (today: `6`).
@@ -445,15 +474,18 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
     - the intro saying data comes from `tomlctl`, and the ≥0.12.0 / `tomlctl capabilities` requirement. Replace it with: glimpse compiles tomlctl in and must be reinstalled after tomlctl changes.
     - the `poll_ms` row: now the fallback polling interval, used when a watch can't be set up or has been detected as dead;
     - delete the `tomlctl` row;
-    - the data-flow diagram and the "Live view" paragraph: watcher → poller → in-process snapshot; the 10 s safety tick; the fallback rules.
+    - the data-flow diagram and the "Live view" paragraph: watcher → poller → in-process snapshot; the 10 s safety tick; the fallback rules;
+    - the "**Hook.**" bullet (`glimpse hook` "forwards the payload to `tomlctl agents record --harness <H>`"): it now records in-process;
+    - the "never runs tomlctl" phrase near the `--once` description: glimpse never runs tomlctl at all now.
   - `glimpse/CLAUDE.md`:
     - the intro line and the structure line (`source.rs`: watcher-woken fingerprint poller; add `watch.rs`);
-    - the sandbox line (no tomlctl named);
+    - the sandbox line (no tomlctl named) and the hook line "including a `tomlctl` too old to know `agents record`";
     - the torn-read gotcha: retried on the next wake or safety tick;
     - replace the "flow scan sees renames, not in-place edits" gotcha with the watcher's cache-eviction rule, plus the rule that the callback must never block;
     - the idle-loop gotcha: the tail tick now lives on the poller thread;
     - the `--once` "no tomlctl" command note;
-    - add a gotcha: glimpse links tomlctl's code, so a tomlctl change needs `cargo install --path glimpse` too.
+    - add a gotcha: glimpse links tomlctl's code, so a tomlctl change needs `cargo install --path glimpse` too;
+    - add a gotcha: on Windows the recursive watch handle blocks renaming or moving the repo, its `.claude` directory or a worktree while glimpse runs ("Access denied"; deleting still works), so close the glimpse pane first.
   - Find the stale passages with `grep -nE 'tomlctl|poll|in-place|capabilit|refresh_tail' glimpse/README.md glimpse/CLAUDE.md`.
 - **Acceptance**:
   - forward: `grep -cE 'tomlctl capabilities|sees renames, not in-place' glimpse/README.md glimpse/CLAUDE.md` prints `0` for each file (today: `1` / `1`).
@@ -463,16 +495,19 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
 - **Files**: `CLAUDE.md`
 - **Depends on**: 1, 3, 6, 7
 - **Action**: In root `CLAUDE.md`:
-  - change the Developer-setup hook paragraph's `--bin tomlctl` to `--lib`, and describe the new glimpse clippy gate and the paths that trigger it;
+  - change the Developer-setup hook paragraph's `--bin tomlctl` to `--lib`, and describe the new glimpse clippy gate (`--locked`, so a tomlctl dependency change blocks until `glimpse/Cargo.lock` is updated in the same commit) and the paths that trigger it;
   - add `cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items` to Build & test as the only complete run of the rustdoc deny lints;
+  - in the Build tuning bare-`rustfmt` bullet, change the example path `tomlctl/src/main.rs` to `tomlctl/src/lib.rs`, since the module tree now hangs off the lib root;
   - reword the Sibling crates `glimpse/` bullet to say it links tomlctl as a library (snapshot, flow list, agent recording) and needs a reinstall after tomlctl changes.
 - **Acceptance**:
   - forward: `grep -c -- '--bin tomlctl' CLAUDE.md` prints `0` (today: `1`).
+  - forward: `grep -c -- '--lib -- cli::dispatch::tests' CLAUDE.md` prints `1` (today: `0`).
   - forward: `grep -c -- '--document-private-items' CLAUDE.md` prints `1` (today: `0`).
+  - forward: `grep -c 'rustfmt --edition 2024 --check tomlctl/src/lib.rs' CLAUDE.md` prints `1` (today: `0`).
 
 ### 15. Measure mimalloc against the system allocator for tomlctl [M]
-- **Files**: `tomlctl/Cargo.toml`
-- **Depends on**: 3, 4
+- **Files**: `tomlctl/Cargo.toml`, `tomlctl/src/main.rs`
+- **Depends on**: 3, 4, 12, 14 (12 and 14 only so no sibling cargo build runs beside the timing loop)
 - **Action**: Time tomlctl built with and without its `mimalloc` feature on a typical call and on a heavy verb. Then keep or drop `mimalloc` from the default features, and record the measurement in the `tomlctl/Cargo.toml` comment above the dependency.
 - **Detail**:
   - The research that dropped mimalloc from glimpse measured a stand-in binary on this machine:
@@ -483,47 +518,81 @@ Prefix full runs with `CARGO_INCREMENTAL=0` (sccache). Final manual smoke steps 
     - with default features;
     - with `--no-default-features`.
     Run both builds from inside `tomlctl/` (`cd tomlctl && cargo build --release --target-dir <scratch>/…`). Cargo finds `tomlctl/.cargo/config.toml` (x86-64-v3, `+crt-static`) from the working directory, so a build started from the repo root measures the wrong binary.
-  - **Timing.** Interleave the two binaries, ≥100 runs each per command, and report median and p90. No hyperfine is installed; use a PowerShell `Stopwatch` loop or a bash loop over `date +%s%N`. Run everything within one session: machine load swings up to 6×, so only compare numbers taken in the same run.
+  - **Timing.** Interleave the two binaries, ≥100 runs each per command, and report median and p90. No hyperfine is installed; use a PowerShell `Stopwatch` loop or a bash loop over `date +%s%N`. Run everything within one session: machine load swings up to 6×, so only compare numbers taken in the same run. The dependency edges leave only docs-only task 13 able to run beside this one; sibling compiles on the same cores would add more noise than the 1 ms threshold.
   - **Commands to time**, all read-only, against this repo:
     1. a typical call: `tomlctl tasks snapshot --slug polymorphic-wondering-magpie`;
     2. a small ledger read: `tomlctl items list .claude/backlog.toml --array backlog --count`;
     3. a heavy verb: `tomlctl sweep -e 'fn '` over the git-tracked files.
   - **Decision.** Keep `default = ["mimalloc"]` only if the heavy verb's median gain is larger than the typical call's median loss, and the typical-call loss is under 1 ms. Otherwise set `default = []`, keeping the optional dependency so `--features mimalloc` still works.
   - **Record the result.** Replace the Microsoft-benchmark / rust-analyzer rationale comment above the `mimalloc` dependency in `tomlctl/Cargo.toml` with the measured medians, the date and the timing command, per the documentation rule that a measurement carries value, date and producing command. Keep the comment to four lines or fewer.
-  - **No other file changes.** `main.rs`'s `#[cfg(feature = "mimalloc")]` works either way.
+  - **`tomlctl/src/main.rs`.** Its `#[cfg(feature = "mimalloc")]` works either way. If the decision is `default = []`, rewrite the allocator-rationale comment above the static (small-allocation workload) to say mimalloc is opt-in and why; if it stays default, leave the comment alone. No other file changes.
   - **Report the numbers.** Put them in the task's return so the orchestrator can record them in the execution record.
 - **Acceptance**:
   - forward: `grep -c 'Microsoft' tomlctl/Cargo.toml` prints `0` (today: `1`), because the benchmark-citation comment has been replaced.
   - forward: `grep -B4 '^mimalloc' tomlctl/Cargo.toml | grep -cE '20[0-9]{2}-[0-9]{2}-[0-9]{2}'` prints `1` (today: `0`), i.e. the comment carries the measurement date.
-  - forward: `grep -cE '^default = \[("mimalloc")?\]' tomlctl/Cargo.toml` prints `1`, recording the decision either way (today: `0`, since task 1 adds the line).
+  - guard: `grep -cE '^default = \[("mimalloc")?\]' tomlctl/Cargo.toml` prints `1` (at dispatch: already `1`, since task 1 adds the line).
   - guard: **predicted, unverified**: `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets --no-default-features` stays clean.
+
+### 16. Update the tomlctl skill's `agents.toml` writer rule [S]
+- **Files**: `claude/skills/tomlctl/references/agents.md`, `claude/skills/tomlctl/SKILL.md`
+- **Depends on**: 7
+- **Action**: Reword the "`agents record` is run only from harness hooks" writer rule in `claude/skills/tomlctl/references/agents.md`, and the two "hook-only" / "run only by harness hooks" mentions in `claude/skills/tomlctl/SKILL.md`, to match task 7. The hooks `glimpse setup` installs now run `glimpse hook`, which writes `agents.toml` in-process through `tomlctl::record_agent`. `agents record` stays the CLI entry point for the same code, and no carrier, orchestrator or sub-agent calls either.
+- **Detail**:
+  - Add one sentence to the writer rule: glimpse compiles in its own copy of tomlctl, so an `agents.toml` schema change needs `cargo install --path glimpse` as well.
+  - Edit `claude/` only. `.github/skills/tomlctl` is a symlink mirror of it; never stage its deletion.
+- **Acceptance**:
+  - forward: `grep -cE 'hook-only|run only by harness hooks' claude/skills/tomlctl/SKILL.md` prints `0` (today: `2`).
+  - forward: `grep -c 'run only from harness hooks' claude/skills/tomlctl/references/agents.md` prints `0` (today: `1`).
+  - forward: `grep -c 'record_agent' claude/skills/tomlctl/references/agents.md` prints ≥ `1` (today: `0`).
+
+### 17. Update the remaining `agents.toml` writer docs [S]
+- **Files**: `tomlctl/README.md`, `claude/skills/flow-contract-task-store/SKILL.md`
+- **Depends on**: 7
+- **Action**: Reword the `agents record` line in `tomlctl/README.md` ("run by harness hooks only"), and the "Its only writer is `tomlctl agents record`, run by the harness hooks" sentence in `claude/skills/flow-contract-task-store/SKILL.md` (§11), to name both writers. They are the `agents record` CLI and `glimpse hook`'s in-process `tomlctl::record_agent`, both driven only by the harness hooks.
+- **Detail**: Keep the rest of §11's sentence as it is: no carrier writes `agents.toml`, and `tasks snapshot` only reads it.
+- **Acceptance**:
+  - forward: `grep -c 'run by harness hooks only' tomlctl/README.md` prints `0` (today: `1`).
+  - forward: `grep -c 'Its only writer is' claude/skills/flow-contract-task-store/SKILL.md` prints `0` (today: `1`).
+  - forward: `grep -c 'record_agent' claude/skills/flow-contract-task-store/SKILL.md` prints ≥ `1` (today: `0`).
+
+### 18. Remove the watch module's dead-code allowance [S]
+- **Files**: `glimpse/src/watch.rs`
+- **Depends on**: 11
+- **Action**: Delete the module-level #![cfg_attr(not(test), allow(dead_code))] attribute and its one-line reason comment from glimpse/src/watch.rs; the poller now reaches start, classify and canonical_root.
+- **Acceptance**: grep -c 'allow(dead_code)' glimpse/src/watch.rs prints 0; cargo clippy --manifest-path glimpse/Cargo.toml --all-targets reports no dead-code warning in watch.rs.
 
 ## Dependency Graph
 
 Per-task `Depends on` lines are authoritative; this section states only the checkpoint cuts.
 
-— CHECKPOINT A after tasks 3, 4 — dependency closure: 1, 2, 3, 4. Tomlctl is lib+bin with the facade, and the hook gate runs the lib tests. The tomlctl crate is green on its own, and nothing consumes the facade yet.
+— CHECKPOINT A after tasks 1 — dependency closure: 1. Tomlctl is lib+bin with every test still green; committed on its own so a later failure in `tomlctl/src/lib.rs` cannot roll back into the split.
 
-— CHECKPOINT B after tasks 8, 14, 15 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 14, 15. Glimpse fetches, lists and records in-process. The probe and the config key are gone, and root docs match. A buildable glimpse still polls every `poll_ms`.
+— CHECKPOINT B after tasks 3, 4 — dependency closure: 1, 2, 3, 4. The facade exists, and the hook gate runs the lib tests. The tomlctl crate is green on its own, and nothing consumes the facade yet.
 
-— CHECKPOINT C after tasks 13 — dependency closure: 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13. The watcher drives the poller, the tail runs on the poller thread, and glimpse's docs are current.
+— CHECKPOINT C after tasks 8, 14, 16, 17 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 14, 16, 17. Glimpse fetches, lists and records in-process. The probe and the config key are gone, and the root and tomlctl docs match. A buildable glimpse still polls every `poll_ms`.
+
+— CHECKPOINT D after tasks 18 — dependency closure: 1, 2, 4, 5, 6, 9, 10, 11, 18. The watcher drives the poller. Committed before the tail work, so a failed task 12 cannot roll `glimpse/src/source.rs` back past the poller rewrite.
+
+— CHECKPOINT E after tasks 13, 15 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15. The tail runs on the poller thread, glimpse's docs are current, and the mimalloc default is measured and recorded.
 
 ## Risks
 
+- **Precondition: a clean glimpse tree.** At planning time the working tree carried uncommitted glimpse UI work (20 modified files plus untracked `glimpse/src/state.rs`, `glimpse/src/diagram/reduce.rs`, `glimpse/src/view/legend.rs`) in files tasks 6, 8, 10, 12 and 13 edit, and `glimpse/src/main.rs` already declared `mod state;`. `/implement` stages whole files and rolls failed tasks back to HEAD, so that work must be committed as its own change first: confirm `git status --porcelain glimpse/` is empty before starting.
 - **glimpse carries its own copy of tomlctl.** A tomlctl change to the snapshot, flow list or `agents.toml` schema reaches glimpse only on reinstall, and a stale glimpse hook becomes a second writer of `agents.toml`. Mitigations:
   - the narrow pre-commit clippy gate (task 3) catches build breaks;
   - a CLAUDE.md gotcha plus an After Merge step to reinstall both.
 - **Advisories into the TUI.** tomlctl's `advise!` writes to stderr when stderr is a terminal, and glimpse's is. Mitigation: `silence_advisories()` runs first in every facade fn (task 4).
 - **Process-global state from `record_agent`.** It calls `set_current_dir` and fixes the repo-root `OnceLock`. Mitigation: it is called only from the one-shot `glimpse hook` process and documented as once-per-process. The TUI never calls it.
 - **notify 8.2.0 silent watch failures.** Windows overflow, a deleted watch root, read-start failures, and mounts that deliver no events. Mitigation: the 10 s safety tick, the sticky missed-change fallback, and re-creating the watcher on a `Wake::All` caused by an error. The design treats notify 9.0's rescan events as a later improvement, not a requirement.
-- **Linux inotify drop panics.** `Drop` `.unwrap()`s, and glimpse builds with `panic = "abort"`. Mitigation: the watcher lives on the poller thread and `detach` never joins it. A panic there aborts only at exit, when inotify's own thread has already died. Accepted as low probability.
+- **Windows: the watch handle blocks renaming its ancestors.** While glimpse runs, renaming or moving the repo, its `.claude` directory or a worktree fails with "Access denied" (deleting still works, as do renames under `flows/`). Polling held no handles, so this is new. Mitigation: a `glimpse/CLAUDE.md` gotcha (task 13): close the glimpse pane first.
+- **Linux inotify drop panics.** `Drop` `.unwrap()`s, and glimpse builds with `panic = "abort"`. Mitigation: the watcher lives on the poller thread and `detach` never joins it. The watcher is also dropped mid-session (`Wake::Rewatch`, the sticky fallback). That drop is safe too: the `.unwrap()`s fail only when inotify's loop thread is gone, and it exits only on `Shutdown` or its own `poll failed` panic, which has already aborted. glimpse's panic hook restores the terminal first. Accepted as low probability.
 - **macOS and Linux event shapes are read from source, not observed.** Mitigation: `classify` treats any non-`Access` event as a wake, and any path it can't place as `All`. The live watch test in task 10 runs on whatever OS runs the suite.
 - **The lib target narrows the rustdoc deny lints.** A same-named lib+bin documents only the lib's public items. Mitigation: the `--document-private-items` command in `lint:` and root `CLAUDE.md`.
 
 ## After Merge
 
 - `cargo install --path tomlctl` then `cargo install --path glimpse`: glimpse now embeds tomlctl code, so reinstall both after any future tomlctl change as well.
-- Delete any `tomlctl = …` line from your glimpse config (`GLIMPSE_CONFIG` / the default config path), or glimpse reports `unknown key`.
+- Delete any `tomlctl = …` line from your glimpse config (`GLIMPSE_CONFIG` / the default config path), or glimpse ignores the whole file and runs on defaults: the TUI shows an `unknown key` warning, and `glimpse hook` only logs it to `hook.log` while opening panes with default settings.
 - Restart running glimpse panes so they pick up the new binary.
 - Run the **predicted, unverified** success criteria by hand:
   - `glimpse --once --slug <slug>` in a shell whose `PATH` has no `tomlctl`;
@@ -536,17 +605,17 @@ Per-task `Depends on` lines are authoritative; this section states only the chec
 - Snapshot entry: `tasks::snapshot(slug: &str, store_path: &Path, read_opts: &ReadIntegrityArgs) -> anyhow::Result<serde_json::Value>` (`tomlctl/src/tasks/snapshot.rs:35`). Key order `schema, revision, slug, plan_path, flow_status, policy, tasks, layers, frontier, edges, checkpoints, record, agents`; `schema` = `const SCHEMA: u32 = 1` (`:26`). With both integrity flags false it is pure `std::fs::read` + parse: no `repo_or_cwd_root`, no locks, no stderr. The verify path takes `with_shared_lock` → `repo_or_cwd_root()` (process `OnceLock`, `TOMLCTL_ROOT` re-read per call; `io.rs:1555-1580`). glimpse must build `<root>/.claude/flows/<slug>/tasks.toml` itself, not call `store::resolve_store_path` (slug regex + root lookup).
 - Clap leaks: `ReadIntegrityArgs` (`#[derive(Args)]`, two bools) + `read_integrity_opts` from `crate::cli`; `edges::edge_list_with(.., Option<EdgeKind>)` where `EdgeKind: ValueEnum`; `convert.rs`, `dedup.rs` derive `ValueEnum`. Removing clap from the closure is not realistic; a clap-free facade signature is.
 - `flow list`: only `flow/list.rs:60 dispatch(status, branch, active_only, integrity) -> Result<()>` which prints; worker `enumerate_flows(root, flows_dir, verify, strict_read) -> Result<(Vec<FlowRecord>, Vec<JsonValue>)>` is private, `FlowRecord` private. Needs a root-taking, value-returning function.
-- **lib+bin trap**: `.githooks/pre-commit` runs `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- cli::dispatch::tests`; root `CLAUDE.md` documents it (Developer setup paragraph, Build & test bullet). Once modules live in `lib.rs`, `--bin tomlctl` matches 0 tests and exits 0 — a silent no-op. Must switch to `--lib`. Module path `cli::dispatch::tests` (`cli/dispatch.rs:1373-1374`; `tests/lint.rs:261` command_lint, `tests/skills.rs:1193`) is unchanged. `tomlctl/tests/*.rs` are all black-box `assert_cmd` (224 `cargo_bin`), unaffected. `test_support` moves as-is. `emit_error` + the `TaggedError`/`ErrorFormat`/`Cli` readers should move into one `pub fn` in the lib so nothing else needs widening; modules stay private (dead-code warnings preserved). `[lints.rustdoc] private_intra_doc_links = "deny"` bites any new `pub` item doc-linking a `pub(crate)` one.
+- **lib+bin trap**: `.githooks/pre-commit` runs `cargo test --manifest-path tomlctl/Cargo.toml --bin tomlctl -- cli::dispatch::tests`; root `CLAUDE.md` documents it (Developer setup paragraph, Build & test bullet). Once modules live in `lib.rs`, `--bin tomlctl` matches 0 tests and exits 0 — a silent no-op. Must switch to `--lib`. Module path `cli::dispatch::tests` (`cli/dispatch.rs:1373-1374`; `cli/dispatch/tests/lint.rs:262` command_lint, `cli/dispatch/tests/skills.rs:1194`) is unchanged. `tomlctl/tests/*.rs` are all black-box `assert_cmd` (228 `cargo_bin`: `grep -rc cargo_bin tomlctl/tests`, summed), unaffected. `test_support` moves as-is. `emit_error` + the `TaggedError`/`ErrorFormat`/`Cli` readers should move into one `pub fn` in the lib so nothing else needs widening; modules stay private (dead-code warnings preserved). `[lints.rustdoc] private_intra_doc_links = "deny"` bites any new `pub` item doc-linking a `pub(crate)` one.
 - Capabilities `FEATURES` (`cli/types.rs:21`) has `tasks_snapshot`, `flow_list`.
 - Dep weight: snapshot needs toml, serde_json, anyhow, sha2, clap (derives), regex (store slug regex); compiled-but-unneeded: mimalloc (C build), globset, memchr, jiff, tempfile; windows-sys/libc only on the verify lock path (already target-gated in tomlctl `Cargo.toml`). Feature unification turns on `toml/preserve_order` in glimpse (both lock toml 1.1.6). No pre-commit step builds glimpse when only `tomlctl/src/**` is staged — a tomlctl change can break glimpse unseen.
 
 **glimpse data path** (working tree has uncommitted UI edits in 20 files; `source.rs`, `flows.rs`, `transcript.rs`, `hook.rs`, `tests/cli.rs` untouched).
-- `source.rs`: `Event` (:21) {Snapshot, SourceError, Flows, FlowMtimes, Input}; `REQUIRED_FEATURE`/`REQUIRED_MESSAGE` (:41-42); `RETRY_AFTER` 5 s; `FLOW_FILES` = tasks, execution-record, agents, context (:48); `fingerprint` (:62); `flows_fingerprint` (:91, dir-mtime gated → the in-place-edit gap); `trait Fetcher: Send { fetch(root, slug) -> Result<Snapshot,String>; list_flows(root) -> Result<Vec<FlowEntry>,String> }` (:131); `TomlctlFetcher` (:137, spawns with `TOMLCTL_ROOT`, `serde_json::from_slice`); `check_capabilities`/`probe_tomlctl` (:171/:182); `Poller` (:196) with `retry_after`, `probe`, `halted`; `run` uses `recv_timeout(interval)` (:343); `Source::start(root, slug, &Config, events)` (:370) reads `poll_ms`; `Source::spawn(.., interval, fetcher, probe, events)` (:394).
+- `source.rs`: `Event` (:21) {Snapshot, SourceError, Flows, FlowMtimes, Input}; `REQUIRED_FEATURE`/`REQUIRED_MESSAGE` (:41-42); `RETRY_AFTER` 5 s; `FLOW_FILES` = tasks, execution-record, agents, context (:48); `fingerprint` (:62); `flows_fingerprint` (:91, dir-mtime gated → the in-place-edit gap); `trait Fetcher: Send { fetch(root, slug) -> Result<Snapshot,String>; list_flows(root) -> Result<Vec<FlowEntry>,String> }` (:131); `TomlctlFetcher` (:137, spawns with `TOMLCTL_ROOT`, `serde_json::from_slice`); `check_capabilities`/`probe_tomlctl` (:171/:182); `Poller` (:196) with `retry_after`, `probe`, `halted`; `run` (:343) uses `recv_timeout(interval)` (:352); `Source::start(root, slug, &Config, events)` (:370) reads `poll_ms`; `Source::spawn(.., interval, fetcher, probe, events)` (:394).
 - Callers: `main.rs:30` imports `Fetcher`/`TomlctlFetcher`; `main.rs:109-140` `--once` path (`once_snapshot` probes on failure, `fetch_once`); `runtime.rs:81` `Source::start`; `hook.rs:24` duplicates the message as `OLD_TOMLCTL`.
 - Tests: tick-driven fingerprint tests :545, :567, :628, :664 (break under a watcher); :521 tests `fingerprint`; timing tests :593 (`retry_after`), :713 (10 ms interval), :740 (20 ms interval); :700 capabilities.
 - `flows.rs`: `FlowEntry {slug,status,updated,plan_path,tasks_mtime}` (:11); `parse_flows(json: &str, mtime)` (:39); `list(root, tomlctl)` (:81) spawns `flow list`; `repo_root` (:106) spawns `git`.
 - `model.rs:15` `Snapshot` derives Deserialize, all `#[serde(default)]` → `serde_json::from_value` works as-is.
-- `runtime.rs`: `run_loop` (:262) waits `TICK` while activity has a running agent (:274-278) else `app.tick_interval()` (1 s / 30 s, `app.rs:506`), blocks on `recv` when none (:287). Transcript tail runs on the main thread: `Screen::refresh_tail` (:215) → `tail.retarget(agent.transcript_path)` + `tail.refresh()`, called :270 (first frame) and :314 (before each redraw); test :514. `Screen.tail: TailState` (:190), built :83 / `render_once` :141. `view::render`/`activity::render` borrow `&TailState` (`view/mod.rs:51,219`; `activity.rs:40`). `app.rs:587 refresh_stale` stats transcripts via `transcript_mtime` (:665) on the main thread too.
+- `runtime.rs`: `run_loop` (:262) waits `TICK` while activity has a running agent (:274-278) else `app.tick_interval()` (1 s / 30 s, `app.rs:506`), blocks on `recv` when none (:287). Transcript tail runs on the main thread: `Screen::refresh_tail` (:215) → `tail.retarget(agent.transcript_path)` + `tail.refresh()`, called :270 (first frame) and :314 (before each redraw); test :514. `Screen.tail: TailState` (:190), built :83 / `render_once` (:128, `TailState::default()` at :141, no tail read). `view::render`/`activity::render` borrow `&TailState` (`view/mod.rs:51,219`; `activity.rs:40`). `app.rs:587 refresh_stale` stats transcripts via `transcript_mtime` (:665) on the main thread too.
 - `transcript.rs`: `TailState {path, offset, entries, tokens, rejected, accepted, root}` (:47); `new` (:66) confines to `claude_dir()`; `retarget` (:82), `refresh() -> bool` (:95); `READ_MAX` 64 KiB, `KEEP_ENTRIES` 64. Tails ONE transcript — newest running agent on the selected task (`view/activity.rs:23`), path from snapshot `Agent.transcript_path`; retarget resets.
 - `config.rs`: `poll_ms` (:245, default 500 :275, `positive_int` :324), `tomlctl` (:246, default "tomlctl" :276); tests :516-517, :572-573, :581-585, :596. `hook.rs:291-327` spawns `tomlctl agents record` (a separate short-lived process). `flows.rs:82` also spawns.
 - `glimpse/tests/cli.rs`: sandbox names `glimpse-test-no-such-tomlctl` (:30); only the two hook cases (:125, :252) depend on the spawn failing; `--once` cases use `--snapshot`.
@@ -584,6 +653,6 @@ Searched: OSV (mimalloc 0.1.52, libmimalloc-sys 0.1.49), deps.dev, OpenSSF Score
 - **`#[global_allocator]` in a lib is legal and wins silently** (high) when the dependent declares none; conflict only errors if both declare. *Impact*: acceptance check that `global_allocator` appears only in `tomlctl/src/main.rs`.
 - **Do not adopt mimalloc in glimpse** (medium — Windows+Sophos only). Start-up +3.8–6 ms median per process; parse+serialise of the fixture snapshot 79–89 µs → 35–41 µs (~40 µs saved per changed snapshot, invisible). Would add the `cc` chain + C++ compile and a VCRUNTIME140_1 import (dynamic CRT). Scorecard Maintained 0, Code-Review 2. Counter: a Linux/macOS or real `--once` measurement showing a visible win.
 - **Facade via wrapper fns in `lib.rs`, not `pub use`** (high). Re-exporting a `pub(crate)` fn is E0364; a `pub fn` naming a `pub(crate)` type warns `private_interfaces`. Shape: `pub fn snapshot(slug: &str, store_path: &Path) -> anyhow::Result<serde_json::Value>` building `ReadIntegrityArgs { verify_integrity: false, strict_read: false }` (the verify path hits the process-wide `repo_or_cwd_root` `OnceLock` and glimpse must never verify). Flow list follows the same root-taking, no-integrity shape. Facade doc comments must not intra-doc-link private items (`cargo doc` fails; build/clippy silent). Private-module dead code is still reported.
-- **lib target narrows rustdoc lints and adds doctests** (high mechanism, low impact). Same-named lib+bin → `cargo doc` documents the lib only, without private items, so broken links in private docs pass; full check is `cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items`. All 11 fences in `tomlctl/src` are non-Rust → `[lib] doctest = false`.
+- **lib target narrows rustdoc lints and adds doctests** (high mechanism, low impact). Same-named lib+bin → `cargo doc` documents the lib only, without private items, so broken links in private docs pass; full check is `cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items`. All 12 fences in `tomlctl/src` are non-Rust (re-derived at review) → `[lib] doctest = false`.
 - **Hook start-up is dominated by the tomlctl child** (medium, needs-plan): `tomlctl --version` 28 ms median / 38 ms p90 here vs the allocator's 4–6 ms. `agents::record` (`agents/record.rs:391`) already `set_current_dir`s for a one-shot process, safe in the short-lived hook but not in the TUI. Needs its own clap-free facade. Counter: two writers of `agents.toml` (glimpse's compiled-in tomlctl vs the installed CLI) under a schema change.
 - **Harmless**: `toml/preserve_order` unification (glimpse never serialises a `toml::Table`); path dep needs no `version` key; tomlctl's `.cargo/config.toml` rustflags don't apply when compiled into glimpse (not a defect).

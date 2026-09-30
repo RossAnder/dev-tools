@@ -1,6 +1,6 @@
 slug = "polymorphic-wondering-magpie"
 plan_path = "docs/plans/polymorphic-wondering-magpie.md"
-status = "draft"
+status = "review"
 created = 2026-09-30
 updated = 2026-09-30
 branch = "main"
@@ -10,15 +10,20 @@ scope = [
     "tomlctl/src/lib.rs",
     "tomlctl/src/io.rs",
     "tomlctl/src/flow/list.rs",
+    "tomlctl/src/flow/mod.rs",
     "tomlctl/tests/library_facade.rs",
+    "tomlctl/README.md",
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/agents.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
     ".githooks/pre-commit",
     "glimpse/**",
     "CLAUDE.md",
 ]
 
 [tasks]
-total = 0
-completed = 0
+total = 18
+completed = 18
 in_progress = 0
 
 [artifacts]
