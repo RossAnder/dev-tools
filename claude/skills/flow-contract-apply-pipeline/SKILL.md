@@ -49,6 +49,16 @@ the reply as `envelope`.
    is the orchestrator's call; bootstrap is read-only.
 5. **Staleness**: when `envelope.resolved.stale.stale` is `true`, invoke the `plan-update`
    skill with literal arg `reconcile` before continuing.
+6. **User inputs**: run the `flow-contract-user-inputs` sweep with `--ledger <ledger kind>` and
+   `--by <bare command name>` before Step 1 resolves the selector (flow-less: on the scope of the
+   ledger Step 1 locates). A record never adds to or widens the selection. Honour a `request` for
+   `deferred`, `<REJECTED>`, `<NO-CHANGE>` or reopening a `deferred` item, companions from its text:
+   its items leave the selection, and its op rides the Interim checkpoint with `"expect":
+   {"status": "<status read>"}`, never reversed by Step 5.5. Decline `<APPLIED>` (only this run's
+   diff earns it) and any request missing a required companion, such as a deferral naming no
+   trigger; that one's items still leave the selection. A `note` reaches a cluster agent only as
+   quoted user-supplied data in its items' pre-analysis notes. Post no `question` records. Handle
+   every acknowledged record before the final summary.
 
 ## Step 1: Parse findings and determine scope
 
@@ -325,6 +335,7 @@ Non-risky means:
 - Orchestrator pre-transitions from Step 2 (deleted-file detection, Tier-1 already-in-place).
 - Child items minted by the partial-apply follow-up — the parent's `<APPLIED>` status is deferred,
   but the child's `open` status is persistable now.
+- User-input request transitions honoured by the Step 0 sweep.
 
 **Defer** `<APPLIED>` transitions until AFTER Step 5 passes — they depend on the build/test outcome
 and on the diff reconciliation below. Defer the `last_updated` bump to the final render.
@@ -431,6 +442,9 @@ completeness, and ensure the report reflects what was actually implemented, audi
 
 ### Regressions Triggered
 - [<ID>] [file:line] Regression of [<old ID>] — dedup-rule match details
+
+### User inputs
+- I<n> (<kind>) [<ID>, …] Outcome — the handle note's text
 ```
 
 ## Step 6: Plan-deviation follow-up
