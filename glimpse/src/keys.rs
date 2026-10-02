@@ -71,6 +71,9 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
         KeyCode::Char('e') => Action::OpenClassify,
         KeyCode::Char('u') => Action::Undo,
         KeyCode::Char('/') => Action::OpenFilter,
+        KeyCode::Char('n') => Action::OpenCapture,
+        KeyCode::Char('r') => Action::OpenRequest,
+        KeyCode::Char('w') => Action::Withdraw,
         _ => return None,
     };
     Some(action)
@@ -369,6 +372,18 @@ mod tests {
             ('e', Action::OpenClassify),
             ('u', Action::Undo),
             ('/', Action::OpenFilter),
+        ];
+        for (ch, action) in cases {
+            assert_eq!(map(press(KeyCode::Char(ch))), Some(action), "{ch:?}");
+        }
+    }
+
+    #[test]
+    fn n_r_and_w_map_to_input_actions() {
+        let cases = [
+            ('n', Action::OpenCapture),
+            ('r', Action::OpenRequest),
+            ('w', Action::Withdraw),
         ];
         for (ch, action) in cases {
             assert_eq!(map(press(KeyCode::Char(ch))), Some(action), "{ch:?}");

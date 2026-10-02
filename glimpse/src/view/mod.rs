@@ -248,11 +248,7 @@ fn draw_surface(
 ) -> (Vec<layers::Target>, Vec<items::Target>) {
     match app.surface {
         Surface::Tasks => (draw_view(frame, area, app, orientation, cache), Vec::new()),
-        Surface::Inbox => {
-            let line = Line::from(Span::styled("no input records yet", app.theme.secondary));
-            frame.render_widget(Paragraph::new(line), area);
-            (Vec::new(), Vec::new())
-        }
+        Surface::Inbox => (Vec::new(), inbox::render(frame.buffer_mut(), area, app)),
         Surface::Review | Surface::Optimise | Surface::PlanReview | Surface::Backlog => {
             let targets = items::render(frame.buffer_mut(), area, app);
             if let Some(at) = items::prompt_cursor(area, app) {
@@ -435,6 +431,9 @@ fn footer(app: &App, now: Instant) -> Line<'static> {
 /// An item surface's hints; Esc reads "clear marks" while any are set, since that is
 /// what it does first.
 fn surface_hints(app: &App, compact: bool) -> Vec<(&'static str, String)> {
+    if app.surface == Surface::Inbox {
+        return inbox_hints(app, compact);
+    }
     let Some(state) = app.current_items() else {
         return vec![
             ("1-6", "surface".to_string()),
@@ -459,6 +458,8 @@ fn surface_hints(app: &App, compact: bool) -> Vec<(&'static str, String)> {
         hints.push(("e", "classify".to_string()));
     }
     hints.extend([
+        ("r", "request".to_string()),
+        ("n", "capture".to_string()),
         ("u", "undo".to_string()),
         ("/", "filter".to_string()),
         ("V", "mark all".to_string()),
@@ -469,6 +470,28 @@ fn surface_hints(app: &App, compact: bool) -> Vec<(&'static str, String)> {
         ("s", "flows".to_string()),
         ("q", "back".to_string()),
     ]);
+    hints
+}
+
+/// Enter answers the cursor question and opens details on any other record; `w` shows
+/// only while the cursor is on a record the user may withdraw.
+fn inbox_hints(app: &App, compact: bool) -> Vec<(&'static str, String)> {
+    let inbox = &app.inbox;
+    let enter = if inbox.cursor_question().is_some() {
+        "answer"
+    } else {
+        "details"
+    };
+    let mut hints = vec![("j/k", "move".to_string()), ("enter", enter.to_string())];
+    if inbox.cursor_withdrawable().is_some() {
+        hints.push(("w", "withdraw".to_string()));
+    }
+    hints.push(("n", "capture".to_string()));
+    hints.push(("c", "closed".to_string()));
+    if !compact {
+        hints.extend([("1-6", "surface".to_string()), ("s", "flows".to_string())]);
+    }
+    hints.push(("q", "back".to_string()));
     hints
 }
 
@@ -812,8 +835,34 @@ mod tests {
 
         app.apply(Action::SwitchSurface(Surface::Inbox));
         let inbox = draw(&mut app, 120, 30).join("\n");
-        assert!(inbox.contains("no input records yet"), "{inbox}");
+        assert!(inbox.contains("reading the input store"), "{inbox}");
         assert!(app.regions.items.is_empty());
+        app.apply_inputs(
+            crate::ledger::Inputs {
+                path: ".claude/inputs.toml".to_string(),
+                revision: Some("v1".to_string()),
+                rows: vec![crate::ledger::InputRow {
+                    id: "I1".to_string(),
+                    kind: "question".to_string(),
+                    author: "review".to_string(),
+                    status: "new".to_string(),
+                    prompt: "Keep the guard?".to_string(),
+                    ..crate::ledger::InputRow::default()
+                }],
+            },
+            Instant::now(),
+        );
+        let inbox = draw(&mut app, 120, 30);
+        let (row, _) = find(&inbox, "Keep the guard?").expect("the question");
+        assert_eq!(app.regions.items.len(), 1);
+        assert_eq!(usize::from(app.regions.items[0].0.y), row);
+        assert!(
+            inbox.last().is_some_and(|row| row.contains("enter answer")
+                && row.contains("n capture")
+                && row.contains("c closed")),
+            "{:?}",
+            inbox.last()
+        );
 
         app.apply(Action::SwitchSurface(Surface::Tasks));
         let tasks = draw(&mut app, 120, 30);

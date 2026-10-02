@@ -241,6 +241,7 @@ pub(crate) enum Purpose {
     Confirm(Selection, Transition),
     Transition(Selection, Transition),
     Classify(Selection),
+    Input(Box<InputForm>),
 }
 
 /// The modal on top of the surfaces. While one is open it takes every key.
@@ -607,15 +608,26 @@ pub(crate) fn classify_plan(
     plan
 }
 
-/// One submitted edit on the undo stack. `outstanding` holds the requests not yet reported;
-/// `applied` the ids the reported ones changed, the only rows undo puts back.
+/// One submitted write on the undo stack. `outstanding` holds the requests not yet reported;
+/// `applied` the ids the reported ones changed or created, the only ones undo touches.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct UndoEntry {
     pub(crate) surface: Surface,
-    pub(crate) ledger: LedgerRef,
-    pub(crate) rows: Vec<RowUndo>,
+    pub(crate) kind: UndoKind,
     pub(crate) outstanding: BTreeSet<RequestId>,
     pub(crate) applied: BTreeSet<String>,
+}
+
+/// How an entry is undone.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum UndoKind {
+    /// A control edit, put back row by row.
+    Rows {
+        ledger: LedgerRef,
+        rows: Vec<RowUndo>,
+    },
+    /// An input record the write created, undone by withdrawing it.
+    Input,
 }
 
 /// The backlog kinds a capture can hint at; `/backlog` settles the real kind and area.
@@ -634,10 +646,6 @@ const NOTE_KINDS: [&str; 2] = ["request", "note"];
 
 /// A form whose submission appends to, answers in or withdraws from the input store.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(
-    dead_code,
-    reason = "the item surfaces and Inbox open these once their keys are wired in"
-)]
 pub(crate) enum InputForm {
     /// A new backlog item in the user's words.
     Capture,
@@ -649,10 +657,6 @@ pub(crate) enum InputForm {
     Withdraw(InputRow),
 }
 
-#[allow(
-    dead_code,
-    reason = "the item surfaces and Inbox open these once their keys are wired in"
-)]
 impl InputForm {
     pub(crate) fn form(&self) -> Form {
         match self {
@@ -786,10 +790,6 @@ impl InputForm {
 
 /// Withdraws `ids`: the `w` action, and the undo of an input write, whose outcome names the
 /// record it created.
-#[allow(
-    dead_code,
-    reason = "the Inbox and undo submit it once their keys are wired in"
-)]
 pub(crate) fn withdraw(ids: Vec<String>, next: &mut RequestId) -> WriteRequest {
     WriteRequest::InputWithdraw {
         request: take(next),

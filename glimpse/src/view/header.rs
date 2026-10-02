@@ -65,17 +65,12 @@ fn rows(app: &App, compact: bool) -> Vec<Line<'static>> {
     lines
 }
 
-/// Unanswered agent questions; `None` while glimpse holds no input records.
-fn inbox_pending(_app: &App) -> Option<usize> {
-    None
-}
-
 /// A tab's count text: open rows, `—` while the surface has no ledger file read,
 /// and Inbox's unanswered questions marked `?`. Tasks has none.
 fn tab_count(app: &App, surface: Surface) -> Option<String> {
     let count = match surface {
         Surface::Tasks => return None,
-        Surface::Inbox => inbox_pending(app).map(|n| {
+        Surface::Inbox => app.inbox_unanswered().map(|n| {
             if n > 0 {
                 format!("{n}?")
             } else {
@@ -107,10 +102,13 @@ fn tab_style(app: &App, surface: Surface) -> Style {
 
 /// The `+N` arrivals since the surface was last on screen, when there are any.
 fn arrival_badge(app: &App, surface: Surface) -> Option<Span<'static>> {
-    let arrived = app
-        .items
-        .get(&surface)
-        .map_or(0, |state| state.new_since_view);
+    let arrived = match surface {
+        Surface::Inbox => app.inbox.new_since_view,
+        _ => app
+            .items
+            .get(&surface)
+            .map_or(0, |state| state.new_since_view),
+    };
     (arrived > 0).then(|| Span::styled(format!("+{arrived}"), app.theme.arrival_badge))
 }
 
@@ -380,6 +378,39 @@ mod tests {
             buffer[(column("+3"), 1)].fg,
             app.theme.arrival_badge.fg.expect("a colour")
         );
+    }
+
+    #[test]
+    fn apply_inputs_updates_the_inbox_badge() {
+        use crate::ledger::{InputRow, Inputs};
+        let record = |id: &str, kind: &str, status: &str| InputRow {
+            id: id.to_string(),
+            kind: kind.to_string(),
+            status: status.to_string(),
+            ..InputRow::default()
+        };
+        let inputs = |revision: &str, rows: Vec<InputRow>| Inputs {
+            path: ".claude/inputs.toml".to_string(),
+            revision: Some(revision.to_string()),
+            rows,
+        };
+        let mut app = App::new(fixture(), &Config::default());
+        let t0 = std::time::Instant::now();
+        app.apply_inputs(inputs("v1", vec![record("I1", "note", "new")]), t0);
+        assert!(draw(&app)[1].ends_with("Inbox 0"), "{:?}", draw(&app)[1]);
+
+        let rows = vec![
+            record("I1", "note", "new"),
+            record("I2", "question", "new"),
+            record("I3", "question", "handled"),
+        ];
+        app.apply_inputs(inputs("v2", rows), t0);
+        assert!(
+            draw(&app)[1].ends_with("Inbox 1? +2"),
+            "{:?}",
+            draw(&app)[1]
+        );
+        assert!(draw_as(&app, true)[0].ends_with(" I1?+2"));
     }
 
     #[test]

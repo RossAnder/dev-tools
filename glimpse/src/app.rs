@@ -6,7 +6,7 @@
 //! never spawns; the runtime feeds it actions and snapshots and carries out
 //! the few actions `apply` hands back.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime};
 
 use ratatui::crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyEventKind};
@@ -15,17 +15,19 @@ use tomlctl::LedgerKind;
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
-use crate::actions::{self, Overlay, Plan, Purpose, Selection, Transition, UndoEntry};
+use crate::actions::{
+    self, InputForm, Overlay, Plan, Purpose, Selection, Transition, UndoEntry, UndoKind,
+};
 use crate::config::{
     COLUMN_RANGE, Config, Density, DensityPref, Orientation, OrientationPref, PANEL_PERCENT_RANGE,
     Split, ViewKind,
 };
 use crate::diff::{Changes, diff};
 use crate::flows::{FlowEntry, ScopeEntry, Scopes};
-use crate::form::{FieldValue, FormOutcome};
-use crate::ledger::{ItemRow, Ledger};
+use crate::form::{FieldValue, Form, FormOutcome};
+use crate::ledger::{InputRow, Inputs, ItemRow, Ledger};
 use crate::model::{AgentStatus, Index, Snapshot, TaskStatus};
-use crate::surface::{ItemsState, Surface};
+use crate::surface::{InboxState, ItemsState, Surface};
 use crate::theme::Theme;
 use crate::writer::{RequestId, WriteOutcome, WriteRequest};
 
@@ -138,7 +140,8 @@ pub(crate) enum Action {
     SelectorPrev,
     /// Opens details, then makes them full-screen, then closes them; compact
     /// density skips the full-screen step, since its modal already fills the body.
-    /// With the selector open it switches to the flow under the cursor instead.
+    /// With the selector open it switches to the flow under the cursor instead, and on an
+    /// Inbox question it opens the answer form.
     Details,
     ScrollDetails(Scroll),
     /// Scrolls the view by `(columns, rows)` without touching the selection, which pins
@@ -169,6 +172,12 @@ pub(crate) enum Action {
     OpenMenu,
     /// Opens the severity, effort and category form; review and optimise only.
     OpenClassify,
+    /// Opens the form that captures a new backlog item as an input record.
+    OpenCapture,
+    /// Opens a request or note on the marks, else the cursor row; item surfaces only.
+    OpenRequest,
+    /// Asks before withdrawing the Inbox cursor record, the user's own and still `new`.
+    Withdraw,
     /// Puts back the rows glimpse's last applied write changed.
     Undo,
     OpenFilter,
@@ -268,6 +277,7 @@ pub(crate) struct App {
     pub(crate) surface: Surface,
     /// One state per item surface, present from the start and empty until its ledger is read.
     pub(crate) items: HashMap<Surface, ItemsState>,
+    pub(crate) inbox: InboxState,
     /// The flow-less ledger the item surfaces show in place of the flow's, once picked
     /// in the selector.
     pub(crate) scope: Option<(LedgerKind, String)>,
@@ -279,7 +289,7 @@ pub(crate) struct App {
     ledger_paths: HashMap<Surface, String>,
     /// The menu, form or filter prompt on top; while set it takes every key.
     pub(crate) overlay: Option<Overlay>,
-    /// One entry per submitted control edit, newest last.
+    /// One entry per submitted control edit or created input record, newest last.
     pub(crate) undo: Vec<UndoEntry>,
     /// Requests made and not yet taken by the runtime, in submission order.
     writes: Vec<WriteRequest>,
@@ -355,6 +365,7 @@ impl App {
                 .filter(|surface| surface.ledger_kind().is_some())
                 .map(|surface| (surface, ItemsState::new(surface)))
                 .collect(),
+            inbox: InboxState::default(),
             scope: None,
             ledger_flow: None,
             ledger_paths: HashMap::new(),
@@ -490,15 +501,13 @@ impl App {
                 };
                 self.apply(picked)
             }
-            Action::Details
-                if self.surface != Surface::Tasks
-                    && self
-                        .current_items()
-                        .and_then(ItemsState::cursor_row)
-                        .is_none() =>
-            {
+            Action::Details if self.inbox_question().is_some() => {
+                if let Some(question) = self.inbox_question().cloned() {
+                    self.open_input(InputForm::Answer(question));
+                }
                 None
             }
+            Action::Details if self.surface != Surface::Tasks && !self.has_cursor_row() => None,
             Action::Details => {
                 let compact = self.resolved_density == Density::Compact;
                 if !self.details_open {
@@ -597,6 +606,9 @@ impl App {
                 if let Some(state) = self.items.get_mut(&surface) {
                     state.viewed();
                 }
+                if surface == Surface::Inbox {
+                    self.inbox.viewed();
+                }
                 None
             }
             Action::ItemMove(dir) => {
@@ -605,7 +617,19 @@ impl App {
                     Dir::Down => 1,
                     Dir::Left | Dir::Right => return None,
                 };
-                self.edit_items(|state| state.move_cursor(delta));
+                if self.surface == Surface::Inbox {
+                    self.edit_inbox(|inbox| inbox.move_cursor(delta));
+                } else {
+                    self.edit_items(|state| state.move_cursor(delta));
+                }
+                None
+            }
+            Action::SelectItem(id) if self.surface == Surface::Inbox => {
+                self.edit_inbox(|inbox| {
+                    if inbox.row(&id).is_some() {
+                        inbox.cursor = Some(id);
+                    }
+                });
                 None
             }
             Action::SelectItem(id) => {
@@ -638,6 +662,19 @@ impl App {
                     let label = state.sort.label();
                     self.notify(format!("sort by {label}"));
                 }
+                None
+            }
+            Action::ToggleClosed if self.surface == Surface::Inbox => {
+                self.edit_inbox(|inbox| {
+                    inbox.show_closed = !inbox.show_closed;
+                    inbox.move_cursor(0);
+                });
+                let shown = if self.inbox.show_closed {
+                    "shown"
+                } else {
+                    "hidden"
+                };
+                self.notify(format!("closed items {shown}"));
                 None
             }
             Action::ToggleClosed => {
@@ -678,6 +715,27 @@ impl App {
                 }
                 None
             }
+            Action::OpenCapture => {
+                self.open_input(InputForm::Capture);
+                None
+            }
+            Action::OpenRequest => {
+                if let Some(selection) = self.selection() {
+                    self.open_input(InputForm::Request(selection));
+                }
+                None
+            }
+            Action::Withdraw if self.surface == Surface::Inbox => {
+                match self.inbox.cursor_withdrawable().cloned() {
+                    Some(record) => self.open_input(InputForm::Withdraw(record)),
+                    None if self.inbox.cursor_row().is_some() => {
+                        self.notify("only your own new records can be withdrawn".to_owned());
+                    }
+                    None => {}
+                }
+                None
+            }
+            Action::Withdraw => None,
             Action::OpenFilter => {
                 if let Some(state) = self.current_items() {
                     let before = state.filter.clone();
@@ -781,6 +839,47 @@ impl App {
         state.apply_ledger(ledger.rows, ledger.revision, viewing, now);
     }
 
+    /// Hands an input store read to the Inbox. Off screen, its arrivals count toward the
+    /// Inbox badge.
+    pub(crate) fn apply_inputs(&mut self, inputs: Inputs, now: Instant) {
+        let viewing = self.surface == Surface::Inbox;
+        self.inbox
+            .apply_inputs(inputs.rows, inputs.revision, viewing, now);
+    }
+
+    /// The questions waiting on an answer; `None` until the input store is first read.
+    pub(crate) fn inbox_unanswered(&self) -> Option<usize> {
+        self.inbox
+            .revision
+            .is_some()
+            .then(|| self.inbox.unanswered())
+    }
+
+    /// The Inbox cursor record while the Inbox is shown and it is an answerable question.
+    fn inbox_question(&self) -> Option<&InputRow> {
+        (self.surface == Surface::Inbox)
+            .then(|| self.inbox.cursor_question())
+            .flatten()
+    }
+
+    /// Whether the current item surface or the Inbox has a row under its cursor.
+    fn has_cursor_row(&self) -> bool {
+        if self.surface == Surface::Inbox {
+            return self.inbox.cursor_row().is_some();
+        }
+        self.current_items()
+            .and_then(ItemsState::cursor_row)
+            .is_some()
+    }
+
+    fn open_input(&mut self, input: InputForm) {
+        let form = input.form();
+        self.overlay = Some(Overlay::Form {
+            purpose: Purpose::Input(Box::new(input)),
+            form,
+        });
+    }
+
     /// Takes a new ledger scope listing. The selector cursor stays in range, and a picked
     /// scope or ledger-only flow that vanished stays picked until something else is.
     pub(crate) fn apply_scopes(&mut self, scopes: Scopes) {
@@ -833,6 +932,15 @@ impl App {
         }
     }
 
+    /// [`App::edit_items`] for the Inbox.
+    fn edit_inbox(&mut self, edit: impl FnOnce(&mut InboxState)) {
+        let before = self.inbox.cursor.clone();
+        edit(&mut self.inbox);
+        if self.inbox.cursor != before {
+            self.details_scroll = 0;
+        }
+    }
+
     /// Sends a key to the open overlay. Returns false when none is open, so the key takes
     /// its usual meaning.
     pub(crate) fn overlay_key(&mut self, key: KeyEvent) -> bool {
@@ -873,7 +981,7 @@ impl App {
             Overlay::Form { purpose, mut form } => match form.handle_key(key) {
                 FormOutcome::Pending => Some(Overlay::Form { purpose, form }),
                 FormOutcome::Cancel => None,
-                FormOutcome::Submit(values) => self.submitted(purpose, &values),
+                FormOutcome::Submit(values) => self.submitted(purpose, form, &values),
             },
         };
         true
@@ -896,14 +1004,14 @@ impl App {
             .iter()
             .map(|s| s.id.as_str())
             .collect();
-        if let Some(state) = self.items.get_mut(&flight.surface) {
+        if let Some(saving) = self.saving_mut(flight.surface) {
             if outcome.error.is_some() {
                 flight.ids.iter().for_each(|id| {
-                    state.saving.remove(id);
+                    saving.remove(id);
                 });
             } else {
                 stale.iter().for_each(|id| {
-                    state.saving.remove(*id);
+                    saving.remove(*id);
                 });
             }
         }
@@ -984,8 +1092,29 @@ impl App {
         })
     }
 
-    fn submitted(&mut self, purpose: Purpose, values: &[FieldValue]) -> Option<Overlay> {
+    /// The overlay after `form` submitted `values`: `None` once its writes are queued, or the
+    /// form again carrying the error when an input record cannot be made from them.
+    fn submitted(
+        &mut self,
+        purpose: Purpose,
+        mut form: Form,
+        values: &[FieldValue],
+    ) -> Option<Overlay> {
         match purpose {
+            Purpose::Input(input) => match input.submit(values, &mut self.next_request) {
+                Ok(Some(request)) => {
+                    self.dispatch_input(&input, request);
+                    None
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    form.error = Some(error);
+                    Some(Overlay::Form {
+                        purpose: Purpose::Input(input),
+                        form,
+                    })
+                }
+            },
             Purpose::Confirm(selection, transition) => {
                 let yes = matches!(values, [FieldValue::One(answer)] if answer == "yes");
                 yes.then(|| {
@@ -1021,31 +1150,62 @@ impl App {
 
     /// Queues `plan`'s requests, marks their rows saving and pushes its undo entry.
     fn dispatch(&mut self, selection: &Selection, plan: Plan) {
-        let mut outstanding = std::collections::BTreeSet::new();
+        let mut outstanding = BTreeSet::new();
         for (request, ids) in plan.requests {
             outstanding.insert(request.request());
             self.track(selection.surface, request, ids, false);
         }
         self.undo.push(UndoEntry {
             surface: selection.surface,
-            ledger: selection.ledger.clone(),
-            rows: plan.undo,
+            kind: UndoKind::Rows {
+                ledger: selection.ledger.clone(),
+                rows: plan.undo,
+            },
             outstanding,
             applied: Default::default(),
         });
     }
 
+    /// Queues an input store write. A record it creates is undone by withdrawing it; a
+    /// withdrawal has no undo. The Inbox rows it changes are marked saving.
+    fn dispatch_input(&mut self, input: &InputForm, request: WriteRequest) {
+        let (surface, ids) = match input {
+            InputForm::Answer(row) | InputForm::Withdraw(row) => {
+                (Surface::Inbox, vec![row.id.clone()])
+            }
+            InputForm::Capture | InputForm::Request(_) => (self.surface, Vec::new()),
+        };
+        if !matches!(input, InputForm::Withdraw(_)) {
+            self.undo.push(UndoEntry {
+                surface: Surface::Inbox,
+                kind: UndoKind::Input,
+                outstanding: [request.request()].into(),
+                applied: Default::default(),
+            });
+        }
+        self.track(surface, request, ids, false);
+    }
+
+    /// The saving set of an item surface or the Inbox.
+    fn saving_mut(&mut self, surface: Surface) -> Option<&mut BTreeSet<String>> {
+        if surface == Surface::Inbox {
+            return Some(&mut self.inbox.saving);
+        }
+        self.items.get_mut(&surface).map(|state| &mut state.saving)
+    }
+
     fn track(&mut self, surface: Surface, request: WriteRequest, ids: Vec<String>, undo: bool) {
-        if let Some(state) = self.items.get_mut(&surface) {
-            state.saving.extend(ids.iter().cloned());
+        if let Some(saving) = self.saving_mut(surface) {
+            saving.extend(ids.iter().cloned());
         }
         self.in_flight
             .insert(request.request(), InFlight { surface, ids, undo });
         self.writes.push(request);
     }
 
-    /// Pops the newest undo entry into one restore per row its write applied. An entry still
-    /// awaiting an outcome stays, since which rows to put back is not yet known.
+    /// Pops the newest undo entry into one restore per row its write applied, or one
+    /// withdrawal of the records it created. An entry still awaiting an outcome stays, since
+    /// what to put back is not yet known.
     fn undo_last(&mut self) {
         let Some(top) = self.undo.last() else {
             self.notify("nothing to undo".to_owned());
@@ -1058,17 +1218,26 @@ impl App {
         let Some(entry) = self.undo.pop() else {
             return;
         };
-        let rows: Vec<_> = entry
-            .rows
-            .iter()
-            .filter(|row| entry.applied.contains(&row.id))
-            .collect();
-        for row in &rows {
-            let request = row.restore(self.next_request, &entry.ledger);
-            self.next_request += 1;
-            self.track(entry.surface, request, vec![row.id.clone()], true);
-        }
-        let ids: Vec<&str> = rows.iter().map(|row| row.id.as_str()).collect();
+        let ids: Vec<String> = match &entry.kind {
+            UndoKind::Rows { ledger, rows } => {
+                let rows: Vec<_> = rows
+                    .iter()
+                    .filter(|row| entry.applied.contains(&row.id))
+                    .collect();
+                for row in &rows {
+                    let request = row.restore(self.next_request, ledger);
+                    self.next_request += 1;
+                    self.track(entry.surface, request, vec![row.id.clone()], true);
+                }
+                rows.iter().map(|row| row.id.clone()).collect()
+            }
+            UndoKind::Input => {
+                let ids: Vec<String> = entry.applied.iter().cloned().collect();
+                let request = actions::withdraw(ids.clone(), &mut self.next_request);
+                self.track(entry.surface, request, ids.clone(), true);
+                ids
+            }
+        };
         self.notify(format!("undoing {}", ids.join(", ")));
     }
 
@@ -1087,6 +1256,7 @@ impl App {
         for state in self.items.values_mut() {
             state.expire_flashes(now);
         }
+        self.inbox.expire_flashes(now);
         if self.live_notice(now).is_none() {
             self.notice = None;
         }
@@ -1102,6 +1272,7 @@ impl App {
                 .items
                 .values()
                 .any(|state| state.flashes.values().any(live))
+            || self.inbox.flashes.values().any(live)
             || self.live_notice(now).is_some()
             || self.snapshot.agents.iter().any(|agent| {
                 agent.status == AgentStatus::Running && !self.stale_agents.contains(&agent.id)
@@ -2410,6 +2581,236 @@ mod tests {
             "Back closed the prompt, not the marks"
         );
         assert!(!app.overlay_key(KeyEvent::from(KeyCode::Char('x'))));
+    }
+
+    fn record(id: &str, kind: &str, author: &str, status: &str) -> InputRow {
+        InputRow {
+            id: id.to_string(),
+            kind: kind.to_string(),
+            author: author.to_string(),
+            status: status.to_string(),
+            prompt: "which first?".to_string(),
+            choice: "single".to_string(),
+            options: vec!["R1".to_string(), "R2".to_string()],
+            ..InputRow::default()
+        }
+    }
+
+    /// An app on the Inbox holding a question `I1` and the user's own note `I2`.
+    fn inbox_app() -> App {
+        let mut app = app();
+        app.apply(Action::SwitchSurface(Surface::Inbox));
+        let rows = vec![
+            record("I1", "question", "review", "new"),
+            record("I2", "note", "user", "new"),
+        ];
+        let inputs = Inputs {
+            path: ".claude/inputs.toml".to_string(),
+            revision: Some("v1".to_string()),
+            rows,
+        };
+        app.apply_inputs(inputs, Instant::now());
+        app
+    }
+
+    #[test]
+    fn toggling_closed_on_the_inbox_shows_handled_and_withdrawn_records() {
+        let mut app = inbox_app();
+        let mut rows = app.inbox.rows.clone();
+        rows.push(record("I3", "note", "user", "handled"));
+        rows.push(record("I4", "note", "user", "withdrawn"));
+        app.apply_inputs(
+            Inputs {
+                path: ".claude/inputs.toml".to_string(),
+                revision: Some("v2".to_string()),
+                rows,
+            },
+            Instant::now(),
+        );
+        let shown = |app: &App| {
+            app.inbox
+                .visible()
+                .iter()
+                .filter(|row| matches!(row, crate::surface::VisibleRow::Item(_)))
+                .count()
+        };
+        assert_eq!(shown(&app), 2);
+        app.apply(Action::ToggleClosed);
+        assert!(app.inbox.show_closed);
+        assert_eq!(shown(&app), 4);
+        assert_eq!(
+            app.notice.as_ref().map(|(text, _)| text.as_str()),
+            Some("closed items shown")
+        );
+        app.inbox.cursor = Some("I3".to_string());
+        app.apply(Action::ToggleClosed);
+        assert!(!app.inbox.show_closed);
+        assert_eq!(shown(&app), 2);
+        assert_ne!(
+            app.inbox.cursor.as_deref(),
+            Some("I3"),
+            "a hidden cursor moves to a shown row"
+        );
+    }
+
+    fn input_purpose(app: &App) -> Option<&InputForm> {
+        match &app.overlay {
+            Some(Overlay::Form {
+                purpose: Purpose::Input(input),
+                ..
+            }) => Some(input.as_ref()),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn apply_inputs_counts_unanswered_questions_once_read() {
+        let mut app = app();
+        assert_eq!(app.inbox_unanswered(), None, "nothing read yet");
+        let inputs = Inputs {
+            path: String::new(),
+            revision: None,
+            rows: Vec::new(),
+        };
+        app.apply_inputs(inputs, Instant::now());
+        assert_eq!(app.inbox_unanswered(), Some(0), "a missing store is a read");
+        assert_eq!(inbox_app().inbox_unanswered(), Some(1));
+    }
+
+    #[test]
+    fn enter_on_a_question_opens_its_answer_form() {
+        let mut app = inbox_app();
+        assert_eq!(app.inbox.cursor.as_deref(), Some("I1"));
+        app.apply(Action::Details);
+        assert!(
+            matches!(input_purpose(&app), Some(InputForm::Answer(q)) if q.id == "I1"),
+            "{:?}",
+            app.overlay
+        );
+        assert!(
+            !app.details_open,
+            "the answer form opens in place of details"
+        );
+
+        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Down);
+        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Tab);
+        key(&mut app, KeyCode::Enter);
+        assert!(app.overlay.is_none(), "{:?}", app.overlay);
+        let writes = app.take_writes();
+        assert!(
+            matches!(
+                writes.as_slice(),
+                [WriteRequest::InputAnswer { question, picked, .. }]
+                    if question == "I1" && picked == &vec!["R2".to_string()]
+            ),
+            "{writes:?}"
+        );
+        assert_eq!(app.inbox.saving.iter().collect::<Vec<_>>(), vec!["I1"]);
+
+        app.apply(Action::Move(Dir::Down));
+        assert_eq!(app.inbox.cursor.as_deref(), Some("I2"));
+        app.apply(Action::Details);
+        assert!(app.overlay.is_none(), "a note has no answer form");
+        assert!(app.details_open);
+    }
+
+    #[test]
+    fn a_refused_input_keeps_its_form_open_with_the_error() {
+        let mut app = inbox_app();
+        app.apply(Action::OpenCapture);
+        assert!(matches!(input_purpose(&app), Some(InputForm::Capture)));
+        let Some(Overlay::Form { purpose, form }) = app.overlay.take() else {
+            panic!("expected the capture form");
+        };
+        let values = [
+            FieldValue::Text("  ".to_string()),
+            FieldValue::One(String::new()),
+            FieldValue::Text(String::new()),
+            FieldValue::Text(String::new()),
+        ];
+        let overlay = app.submitted(purpose, form, &values);
+        let Some(Overlay::Form { form, .. }) = &overlay else {
+            panic!("expected the form to stay open, got {overlay:?}");
+        };
+        assert_eq!(form.error.as_deref(), Some("summary is required"));
+        assert!(app.take_writes().is_empty());
+        assert!(app.undo.is_empty());
+    }
+
+    #[test]
+    fn a_capture_is_undone_by_withdrawing_the_record_it_created() {
+        let mut app = inbox_app();
+        app.apply(Action::OpenCapture);
+        type_text(&mut app, "watch leaks");
+        key(&mut app, KeyCode::Enter);
+        let writes = app.take_writes();
+        let [WriteRequest::InputAdd { request, .. }] = writes.as_slice() else {
+            panic!("expected one input add, got {writes:?}");
+        };
+        app.apply_written(WriteOutcome {
+            request: *request,
+            applied: vec!["I9".to_string()],
+            ..WriteOutcome::default()
+        });
+        app.apply(Action::Undo);
+        let undo = app.take_writes();
+        assert!(
+            matches!(undo.as_slice(), [WriteRequest::InputWithdraw { ids, .. }] if ids == &vec!["I9".to_string()]),
+            "{undo:?}"
+        );
+        assert!(app.undo.is_empty());
+    }
+
+    #[test]
+    fn withdraw_asks_first_and_only_for_the_users_own_new_record() {
+        let mut app = inbox_app();
+        app.apply(Action::Withdraw);
+        assert!(
+            app.overlay.is_none(),
+            "an agent's question is not withdrawable"
+        );
+        assert_eq!(
+            app.live_notice(Instant::now()),
+            Some("only your own new records can be withdrawn")
+        );
+
+        app.apply(Action::Move(Dir::Down));
+        app.apply(Action::Withdraw);
+        assert!(matches!(input_purpose(&app), Some(InputForm::Withdraw(r)) if r.id == "I2"));
+        key(&mut app, KeyCode::Down);
+        key(&mut app, KeyCode::Enter);
+        let writes = app.take_writes();
+        assert!(
+            matches!(writes.as_slice(), [WriteRequest::InputWithdraw { ids, .. }] if ids == &vec!["I2".to_string()]),
+            "{writes:?}"
+        );
+        assert!(app.undo.is_empty(), "a withdrawal has no undo");
+
+        let mut app = writable_review_app();
+        app.apply(Action::Withdraw);
+        assert!(app.overlay.is_none(), "w acts only on the Inbox");
+    }
+
+    #[test]
+    fn a_request_targets_the_marked_rows_and_refuses_a_read_only_ledger() {
+        let mut app = writable_review_app();
+        mark(&mut app, Surface::Review, &["R1", "R3"]);
+        app.apply(Action::OpenRequest);
+        let Some(InputForm::Request(selection)) = input_purpose(&app) else {
+            panic!("expected the request form, got {:?}", app.overlay);
+        };
+        let ids: Vec<&str> = selection.rows.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["R1", "R3"]);
+
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::OpenRequest);
+        assert!(app.overlay.is_none(), "a ledger named by path is read-only");
+        app.apply(Action::SwitchSurface(Surface::Tasks));
+        app.apply(Action::OpenRequest);
+        assert!(app.overlay.is_none(), "Tasks has no rows to target");
     }
 
     #[test]
