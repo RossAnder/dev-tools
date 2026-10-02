@@ -67,6 +67,10 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
         KeyCode::Char('g') => Action::CycleGroup,
         KeyCode::Char('S') => Action::CycleSort,
         KeyCode::Char('c') => Action::ToggleClosed,
+        KeyCode::Char('m') => Action::OpenMenu,
+        KeyCode::Char('e') => Action::OpenClassify,
+        KeyCode::Char('u') => Action::Undo,
+        KeyCode::Char('/') => Action::OpenFilter,
         _ => return None,
     };
     Some(action)
@@ -77,7 +81,8 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
 /// drag that left-button motion continues and the release ends. Only the press edge of
 /// a click acts, the mouse counterpart of dropping key `Release`. Every other kind,
 /// including the motion reports capture turns on, maps to nothing. With the selector,
-/// the legend or the compact modal up, nothing outside the details panel reacts.
+/// the legend, a form or the filter prompt up, nothing reacts; with the compact modal up,
+/// nothing outside the details panel does.
 pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
     if app.dragging {
         return match event.kind {
@@ -88,7 +93,7 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
             _ => None,
         };
     }
-    if app.selector_open || app.legend_open {
+    if app.selector_open || app.legend_open || app.overlay.is_some() {
         return None;
     }
     let at = Position::new(event.column, event.row);
@@ -360,6 +365,10 @@ mod tests {
             ('g', Action::CycleGroup),
             ('S', Action::CycleSort),
             ('c', Action::ToggleClosed),
+            ('m', Action::OpenMenu),
+            ('e', Action::OpenClassify),
+            ('u', Action::Undo),
+            ('/', Action::OpenFilter),
         ];
         for (ch, action) in cases {
             assert_eq!(map(press(KeyCode::Char(ch))), Some(action), "{ch:?}");
@@ -389,5 +398,13 @@ mod tests {
         app.regions.modal = None;
         app.selector_open = true;
         assert_eq!(mouse(event(left, 5, 4), &app), None);
+
+        app.selector_open = false;
+        app.overlay = Some(crate::actions::Overlay::Prompt {
+            input: tui_input::Input::default(),
+            before: String::new(),
+        });
+        assert_eq!(mouse(event(left, 5, 4), &app), None, "an open prompt");
+        assert_eq!(mouse(event(MouseEventKind::ScrollDown, 70, 10), &app), None);
     }
 }

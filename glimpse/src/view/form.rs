@@ -1,5 +1,4 @@
 //! The form overlay, drawn as a centred modal over the active view.
-#![allow(dead_code, reason = "the runtime draws the form once it is wired in")]
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Position, Rect};
@@ -111,7 +110,7 @@ fn draw_field(
         rect.height,
     );
     match field {
-        Field::Text { input, .. } => Some(draw_input(frame, body, 0, input)).filter(|_| focused),
+        Field::Text { input, .. } => focused.then_some(draw_input(frame, body, 0, input)),
         Field::Select {
             options,
             cursor,
@@ -138,7 +137,7 @@ fn draw_field(
                 let label = format!("{OTHER} ");
                 let prefix = label.chars().count() as u16;
                 frame.render_widget(Paragraph::new(Span::styled(label, theme.secondary)), body);
-                return Some(draw_input(frame, body, prefix, free)).filter(|_| focused);
+                return focused.then_some(draw_input(frame, body, prefix, free));
             }
             let shown = options.get(*cursor).map_or("", String::as_str);
             frame.render_widget(

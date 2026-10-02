@@ -25,6 +25,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph};
 
+use crate::actions::Overlay;
 use crate::app::{App, Navigator, Regions};
 use crate::config::{Config, Density, Orientation, Split, ViewKind, aspect};
 use crate::diagram::{self, DiagramCache};
@@ -122,6 +123,10 @@ pub(crate) fn render(
     }
     if app.legend_open {
         legend::render(frame, area, app);
+    }
+    // The filter prompt is drawn in the item list's facet row, not as a modal.
+    if let Some(form) = app.overlay.as_ref().and_then(Overlay::form) {
+        form::render(frame, area, form, &app.theme);
     }
 
     let nav = navigator(app, orientation, cache);
@@ -249,7 +254,11 @@ fn draw_surface(
             (Vec::new(), Vec::new())
         }
         Surface::Review | Surface::Optimise | Surface::PlanReview | Surface::Backlog => {
-            (Vec::new(), items::render(frame.buffer_mut(), area, app))
+            let targets = items::render(frame.buffer_mut(), area, app);
+            if let Some(at) = items::prompt_cursor(area, app) {
+                frame.set_cursor_position(at);
+            }
+            (Vec::new(), targets)
         }
     }
 }
@@ -340,7 +349,19 @@ fn footer(app: &App, now: Instant) -> Line<'static> {
     }
     let on_off = |flag: bool| if flag { "on" } else { "off" };
     let compact = app.resolved_density == Density::Compact;
-    let hints: Vec<(&str, String)> = if app.legend_open {
+    let hints: Vec<(&str, String)> = if let Some(overlay) = &app.overlay {
+        match overlay {
+            Overlay::Prompt { .. } => vec![
+                ("enter", "keep filter".to_string()),
+                ("esc", "cancel".to_string()),
+            ],
+            Overlay::Menu { .. } | Overlay::Form { .. } => vec![
+                ("tab", "next field".to_string()),
+                ("enter", "choose/submit".to_string()),
+                ("esc", "cancel".to_string()),
+            ],
+        }
+    } else if app.legend_open {
         vec![("?", "close legend".to_string())]
     } else if app.selector_open {
         vec![
@@ -429,11 +450,17 @@ fn surface_hints(app: &App, compact: bool) -> Vec<(&'static str, String)> {
     if !state.marks.is_empty() {
         hints.push(("esc", format!("clear {} marks", state.marks.len())));
     }
+    hints.push(("m", "actions".to_string()));
     if compact {
         hints.extend([("g", "group".to_string()), ("q", "back".to_string())]);
         return hints;
     }
+    if matches!(app.surface, Surface::Review | Surface::Optimise) {
+        hints.push(("e", "classify".to_string()));
+    }
     hints.extend([
+        ("u", "undo".to_string()),
+        ("/", "filter".to_string()),
         ("V", "mark all".to_string()),
         ("g", "group".to_string()),
         ("S", "sort".to_string()),
@@ -638,7 +665,10 @@ mod tests {
 
         let wide = draw(&mut app, 120, 30);
         let (row, col) = find(&wide, "#4 Render the rows").expect("details title, wide");
-        assert!(row <= 4, "beside: the panel starts under the header, row {row}");
+        assert!(
+            row <= 4,
+            "beside: the panel starts under the header, row {row}"
+        );
         assert!(col > 60, "beside: the panel is on the right, column {col}");
 
         let tall = draw(&mut app, 60, 50);
@@ -773,6 +803,12 @@ mod tests {
         assert_eq!(usize::from(app.regions.items[1].0.y), row);
         assert!(app.regions.tasks.is_empty());
         assert!(rows.last().is_some_and(|row| row.contains("space mark")));
+        assert!(
+            rows.last()
+                .is_some_and(|row| row.contains("m actions") && row.contains("e classify")),
+            "{:?}",
+            rows.last()
+        );
 
         app.apply(Action::SwitchSurface(Surface::Inbox));
         let inbox = draw(&mut app, 120, 30).join("\n");
@@ -783,6 +819,76 @@ mod tests {
         let tasks = draw(&mut app, 120, 30);
         assert!(find(&tasks, "Render the rows").is_some());
         assert!(tasks.last().is_some_and(|row| row.contains("tab view")));
+    }
+
+    #[test]
+    fn an_open_form_draws_over_the_surface_and_takes_the_footer() {
+        use crate::ledger::{ItemRow, Kind, Ledger, StatusClass};
+
+        let mut app = app();
+        let ledger = Ledger {
+            kind: Kind::Review,
+            path: ".claude/flows/demo-flow/review-ledger.toml".to_string(),
+            revision: Some("v1".to_string()),
+            rows: vec![ItemRow {
+                id: "R1".to_string(),
+                status: "open".to_string(),
+                class: StatusClass::Live,
+                summary: "finding R1".to_string(),
+                ..ItemRow::default()
+            }],
+        };
+        app.apply_ledger(ledger, Instant::now());
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::OpenMenu);
+        assert!(app.overlay.is_some(), "the menu opens on the cursor row");
+        let rows = draw(&mut app, 120, 30);
+        let screen = rows.join("\n");
+        assert!(screen.contains("move to"), "{screen}");
+        assert!(screen.contains("wontfix"), "{screen}");
+        assert!(rows.last().is_some_and(|row| row.contains("esc cancel")));
+    }
+
+    #[test]
+    fn the_filter_prompt_places_the_terminal_cursor_after_its_text() {
+        use crate::ledger::{ItemRow, Kind, Ledger, StatusClass};
+        use ratatui::crossterm::event::{KeyCode, KeyEvent};
+
+        let mut app = app();
+        let ledger = Ledger {
+            kind: Kind::Review,
+            path: "review-ledger.toml".to_string(),
+            revision: Some("v1".to_string()),
+            rows: vec![ItemRow {
+                id: "R1".to_string(),
+                status: "open".to_string(),
+                class: StatusClass::Live,
+                ..ItemRow::default()
+            }],
+        };
+        app.apply_ledger(ledger, Instant::now());
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::OpenFilter);
+        for c in "R1".chars() {
+            app.overlay_key(KeyEvent::from(KeyCode::Char(c)));
+        }
+        let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("terminal");
+        let mut cache = DiagramCache::default();
+        let tail = TailView::default();
+        terminal
+            .draw(|frame| render(frame, &mut app, &Config::default(), &mut cache, &tail))
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        let rows: Vec<String> = (0..30)
+            .map(|y| (0..120).map(|x| buffer[(x, y)].symbol()).collect())
+            .collect();
+        let (row, col) = find(&rows, "/R1").expect("the filter prompt");
+        let at = terminal.get_cursor_position().expect("cursor");
+        assert_eq!(
+            (usize::from(at.y), usize::from(at.x)),
+            (row, col + 3),
+            "{rows:#?}"
+        );
     }
 
     #[test]

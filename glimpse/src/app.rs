@@ -9,19 +9,25 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime};
 
+use ratatui::crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::Rect;
 use tomlctl::LedgerKind;
+use tui_input::Input;
+use tui_input::backend::crossterm::EventHandler;
 
+use crate::actions::{self, Overlay, Plan, Purpose, Selection, Transition, UndoEntry};
 use crate::config::{
     COLUMN_RANGE, Config, Density, DensityPref, Orientation, OrientationPref, PANEL_PERCENT_RANGE,
     Split, ViewKind,
 };
 use crate::diff::{Changes, diff};
 use crate::flows::{FlowEntry, ScopeEntry, Scopes};
-use crate::ledger::Ledger;
+use crate::form::{FieldValue, FormOutcome};
+use crate::ledger::{ItemRow, Ledger};
 use crate::model::{AgentStatus, Index, Snapshot, TaskStatus};
 use crate::surface::{ItemsState, Surface};
 use crate::theme::Theme;
+use crate::writer::{RequestId, WriteOutcome, WriteRequest};
 
 /// How long a task stays highlighted after its status changes.
 pub(crate) const FLASH: Duration = Duration::from_millis(1500);
@@ -159,8 +165,15 @@ pub(crate) enum Action {
     CycleSort,
     /// Shows or hides the done and declined rows of the current item surface.
     ToggleClosed,
-    /// Clears the current item surface's marks, else closes the topmost overlay, or
-    /// quits when none is open.
+    /// Opens the status moves offered for the marks, else the cursor row.
+    OpenMenu,
+    /// Opens the severity, effort and category form; review and optimise only.
+    OpenClassify,
+    /// Puts back the rows glimpse's last applied write changed.
+    Undo,
+    OpenFilter,
+    /// Closes an open form or prompt, else clears the current item surface's marks, else
+    /// closes the topmost panel, or quits when none is open.
     Back,
     Quit,
 }
@@ -264,6 +277,23 @@ pub(crate) struct App {
     /// The ledger file each item surface last read, so a read of another file starts
     /// the surface over rather than flashing every row as an arrival.
     ledger_paths: HashMap<Surface, String>,
+    /// The menu, form or filter prompt on top; while set it takes every key.
+    pub(crate) overlay: Option<Overlay>,
+    /// One entry per submitted control edit, newest last.
+    pub(crate) undo: Vec<UndoEntry>,
+    /// Requests made and not yet taken by the runtime, in submission order.
+    writes: Vec<WriteRequest>,
+    in_flight: HashMap<RequestId, InFlight>,
+    next_request: RequestId,
+}
+
+/// A submitted request awaiting its outcome: the rows it marked saving, and whether it is
+/// an undo, which pushes no undo entry of its own.
+#[derive(Debug, Clone)]
+struct InFlight {
+    surface: Surface,
+    ids: Vec<String>,
+    undo: bool,
 }
 
 impl App {
@@ -328,6 +358,11 @@ impl App {
             scope: None,
             ledger_flow: None,
             ledger_paths: HashMap::new(),
+            overlay: None,
+            undo: Vec::new(),
+            writes: Vec::new(),
+            in_flight: HashMap::new(),
+            next_request: 0,
         };
         app.refresh_stale();
         app.reselect();
@@ -617,6 +652,52 @@ impl App {
                 }
                 None
             }
+            Action::OpenMenu => {
+                if let Some(selection) = self.selection() {
+                    if selection.transitions().is_empty() {
+                        let statuses: Vec<&str> = selection.statuses().into_iter().collect();
+                        self.notify(format!(
+                            "no move is offered from {}",
+                            statuses.join(" and ")
+                        ));
+                    } else {
+                        self.overlay = Some(actions::menu(selection));
+                    }
+                }
+                None
+            }
+            Action::OpenClassify => {
+                if matches!(self.surface, Surface::Review | Surface::Optimise)
+                    && let Some(selection) = self.selection()
+                {
+                    let form = actions::classify_form(&selection);
+                    self.overlay = Some(Overlay::Form {
+                        purpose: Purpose::Classify(selection),
+                        form,
+                    });
+                }
+                None
+            }
+            Action::OpenFilter => {
+                if let Some(state) = self.current_items() {
+                    let before = state.filter.clone();
+                    self.overlay = Some(Overlay::Prompt {
+                        input: Input::new(before.clone()),
+                        before,
+                    });
+                }
+                None
+            }
+            Action::Undo => {
+                self.undo_last();
+                None
+            }
+            Action::Back if self.overlay.is_some() => {
+                if let Some(Overlay::Prompt { before, .. }) = self.overlay.take() {
+                    self.set_filter(before);
+                }
+                None
+            }
             Action::Back => {
                 if let Some(state) = self.items.get_mut(&self.surface)
                     && !state.marks.is_empty()
@@ -750,6 +831,253 @@ impl App {
         if state.cursor != before {
             self.details_scroll = 0;
         }
+    }
+
+    /// Sends a key to the open overlay. Returns false when none is open, so the key takes
+    /// its usual meaning.
+    pub(crate) fn overlay_key(&mut self, key: KeyEvent) -> bool {
+        let Some(overlay) = self.overlay.take() else {
+            return false;
+        };
+        self.overlay = match overlay {
+            prompt @ Overlay::Prompt { .. } if key.kind == KeyEventKind::Release => Some(prompt),
+            Overlay::Prompt { before, .. } if key.code == KeyCode::Esc => {
+                self.set_filter(before);
+                None
+            }
+            Overlay::Prompt { .. } if key.code == KeyCode::Enter => None,
+            Overlay::Prompt { mut input, before } => {
+                input.handle_event(&TermEvent::Key(key));
+                self.set_filter(input.value().to_owned());
+                Some(Overlay::Prompt { input, before })
+            }
+            Overlay::Menu {
+                selection,
+                choices,
+                mut form,
+            } => match form.handle_key(key) {
+                FormOutcome::Pending => Some(Overlay::Menu {
+                    selection,
+                    choices,
+                    form,
+                }),
+                FormOutcome::Cancel => None,
+                FormOutcome::Submit(values) => {
+                    let picked = match values.as_slice() {
+                        [FieldValue::One(to)] => choices.iter().find(|t| t.to == to).copied(),
+                        _ => None,
+                    };
+                    picked.and_then(|transition| self.picked(selection, transition))
+                }
+            },
+            Overlay::Form { purpose, mut form } => match form.handle_key(key) {
+                FormOutcome::Pending => Some(Overlay::Form { purpose, form }),
+                FormOutcome::Cancel => None,
+                FormOutcome::Submit(values) => self.submitted(purpose, &values),
+            },
+        };
+        true
+    }
+
+    /// The write requests made since the last call, for the runtime to hand to the writer.
+    pub(crate) fn take_writes(&mut self) -> Vec<WriteRequest> {
+        std::mem::take(&mut self.writes)
+    }
+
+    /// Takes a writer outcome. An error clears every row the request marked saving and a
+    /// stale skip clears that row, each with a footer notice; applied rows stay saving until
+    /// a ledger read shows them changed.
+    pub(crate) fn apply_written(&mut self, outcome: WriteOutcome) {
+        let Some(flight) = self.in_flight.remove(&outcome.request) else {
+            return;
+        };
+        let stale: Vec<&str> = outcome
+            .skipped_stale
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        if let Some(state) = self.items.get_mut(&flight.surface) {
+            if outcome.error.is_some() {
+                flight.ids.iter().for_each(|id| {
+                    state.saving.remove(id);
+                });
+            } else {
+                stale.iter().for_each(|id| {
+                    state.saving.remove(*id);
+                });
+            }
+        }
+        if !flight.undo
+            && let Some(at) = self
+                .undo
+                .iter()
+                .position(|entry| entry.outstanding.contains(&outcome.request))
+        {
+            let entry = &mut self.undo[at];
+            entry.outstanding.remove(&outcome.request);
+            entry.applied.extend(outcome.applied.iter().cloned());
+            if entry.outstanding.is_empty() && entry.applied.is_empty() {
+                self.undo.remove(at);
+            }
+        }
+        let what = if flight.undo { "undo" } else { "write" };
+        if let Some(error) = &outcome.error {
+            self.notify(format!("{what} failed: {error}"));
+        } else if !stale.is_empty() {
+            let ids = stale.join(", ");
+            self.notify(format!("{what} skipped {ids}: changed since shown"));
+        }
+    }
+
+    /// The current item surface's targets as an action sees them, or `None` with a notice
+    /// when nothing there can be written.
+    fn selection(&mut self) -> Option<Selection> {
+        let surface = self.surface;
+        let kind = surface.ledger_kind()?;
+        let state = self.items.get(&surface)?;
+        let rows: Vec<ItemRow> = state
+            .targets()
+            .iter()
+            .filter_map(|id| state.row(id).cloned())
+            .collect();
+        let refusal = if rows.is_empty() {
+            Some("nothing selected".to_owned())
+        } else {
+            rows.iter()
+                .find(|r| r.read_only)
+                .map(|row| format!("{} has no ledger id, so it cannot be changed", row.id))
+        };
+        if let Some(refusal) = refusal {
+            self.notify(refusal);
+            return None;
+        }
+        let Some(ledger) = self
+            .ledger_paths
+            .get(&surface)
+            .and_then(|path| actions::ledger_ref(kind, path))
+        else {
+            self.notify("this ledger is read-only".to_owned());
+            return None;
+        };
+        Some(Selection {
+            surface,
+            kind,
+            ledger,
+            rows,
+        })
+    }
+
+    /// The overlay after a move is picked from the menu: a confirmation when it declines a
+    /// critical row, else the move's form.
+    fn picked(&mut self, selection: Selection, transition: Transition) -> Option<Overlay> {
+        if !selection.critical_declines(transition.to).is_empty() {
+            let form = actions::confirm_form(&selection, transition.to);
+            return Some(Overlay::Form {
+                purpose: Purpose::Confirm(selection, transition),
+                form,
+            });
+        }
+        let form = actions::transition_form(&selection, transition);
+        Some(Overlay::Form {
+            purpose: Purpose::Transition(selection, transition),
+            form,
+        })
+    }
+
+    fn submitted(&mut self, purpose: Purpose, values: &[FieldValue]) -> Option<Overlay> {
+        match purpose {
+            Purpose::Confirm(selection, transition) => {
+                let yes = matches!(values, [FieldValue::One(answer)] if answer == "yes");
+                yes.then(|| {
+                    let form = actions::transition_form(&selection, transition);
+                    Overlay::Form {
+                        purpose: Purpose::Transition(selection, transition),
+                        form,
+                    }
+                })
+            }
+            Purpose::Transition(selection, transition) => {
+                let fields = actions::companions(transition, values);
+                let plan = actions::transition_plan(
+                    &selection,
+                    transition,
+                    &fields,
+                    &mut self.next_request,
+                );
+                self.dispatch(&selection, plan);
+                None
+            }
+            Purpose::Classify(selection) => {
+                let plan = actions::classify_plan(&selection, values, &mut self.next_request);
+                if plan.requests.is_empty() {
+                    self.notify("nothing to change".to_owned());
+                } else {
+                    self.dispatch(&selection, plan);
+                }
+                None
+            }
+        }
+    }
+
+    /// Queues `plan`'s requests, marks their rows saving and pushes its undo entry.
+    fn dispatch(&mut self, selection: &Selection, plan: Plan) {
+        let mut outstanding = std::collections::BTreeSet::new();
+        for (request, ids) in plan.requests {
+            outstanding.insert(request.request());
+            self.track(selection.surface, request, ids, false);
+        }
+        self.undo.push(UndoEntry {
+            surface: selection.surface,
+            ledger: selection.ledger.clone(),
+            rows: plan.undo,
+            outstanding,
+            applied: Default::default(),
+        });
+    }
+
+    fn track(&mut self, surface: Surface, request: WriteRequest, ids: Vec<String>, undo: bool) {
+        if let Some(state) = self.items.get_mut(&surface) {
+            state.saving.extend(ids.iter().cloned());
+        }
+        self.in_flight
+            .insert(request.request(), InFlight { surface, ids, undo });
+        self.writes.push(request);
+    }
+
+    /// Pops the newest undo entry into one restore per row its write applied. An entry still
+    /// awaiting an outcome stays, since which rows to put back is not yet known.
+    fn undo_last(&mut self) {
+        let Some(top) = self.undo.last() else {
+            self.notify("nothing to undo".to_owned());
+            return;
+        };
+        if !top.outstanding.is_empty() {
+            self.notify("the last write is still saving".to_owned());
+            return;
+        }
+        let Some(entry) = self.undo.pop() else {
+            return;
+        };
+        let rows: Vec<_> = entry
+            .rows
+            .iter()
+            .filter(|row| entry.applied.contains(&row.id))
+            .collect();
+        for row in &rows {
+            let request = row.restore(self.next_request, &entry.ledger);
+            self.next_request += 1;
+            self.track(entry.surface, request, vec![row.id.clone()], true);
+        }
+        let ids: Vec<&str> = rows.iter().map(|row| row.id.as_str()).collect();
+        self.notify(format!("undoing {}", ids.join(", ")));
+    }
+
+    /// Sets the current surface's filter, moving a cursor it hides to the first shown row.
+    fn set_filter(&mut self, filter: String) {
+        self.edit_items(|state| {
+            state.filter = filter;
+            state.move_cursor(0);
+        });
     }
 
     /// Called on each timed wake-up: drops expired flashes and re-reads the
@@ -1737,6 +2065,351 @@ mod tests {
         assert!(state.marks.is_empty());
         assert_eq!(state.group, Group::Severity, "the user's arrangement stays");
         assert_eq!(cursor(&app), Some("R7"));
+    }
+
+    const REVIEW_PATH: &str = ".claude/flows/demo/review-ledger.toml";
+
+    /// A ledger whose rows carry their raw form, as a real read does.
+    fn ledger(kind: Kind, path: &str, rows: &[(&str, &str, &str)]) -> Ledger {
+        Ledger {
+            kind,
+            path: path.to_string(),
+            revision: Some("v1".to_string()),
+            rows: rows
+                .iter()
+                .map(|(id, status, severity)| ItemRow {
+                    id: id.to_string(),
+                    read_only: id.starts_with('#'),
+                    status: status.to_string(),
+                    class: StatusClass::of(status),
+                    severity: severity.to_string(),
+                    raw: serde_json::json!({"id": id, "status": status, "severity": severity}),
+                    ..ItemRow::default()
+                })
+                .collect(),
+        }
+    }
+
+    fn writable_review_app() -> App {
+        let mut app = app();
+        let rows = [
+            ("R1", "open", "warning"),
+            ("R2", "open", "critical"),
+            ("R3", "deferred", "warning"),
+        ];
+        app.apply_ledger(ledger(Kind::Review, REVIEW_PATH, &rows), Instant::now());
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app
+    }
+
+    fn mark(app: &mut App, surface: Surface, ids: &[&str]) {
+        let state = app.items.get_mut(&surface).expect("an item surface");
+        state.marks = ids.iter().map(|id| id.to_string()).collect();
+    }
+
+    fn key(app: &mut App, code: KeyCode) {
+        let event = KeyEvent::new(code, ratatui::crossterm::event::KeyModifiers::NONE);
+        assert!(app.overlay_key(event), "an overlay is open for {code:?}");
+    }
+
+    fn type_text(app: &mut App, text: &str) {
+        text.chars().for_each(|c| key(app, KeyCode::Char(c)));
+    }
+
+    fn menu_choices(app: &App) -> Vec<&'static str> {
+        match &app.overlay {
+            Some(Overlay::Menu { choices, .. }) => choices.iter().map(|t| t.to).collect(),
+            other => panic!("expected the menu, got {other:?}"),
+        }
+    }
+
+    fn saving(app: &App) -> Vec<&str> {
+        app.items[&app.surface]
+            .saving
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    /// Marks R1 and R2 and defers them through the menu and its form.
+    fn defer_r1_r2(app: &mut App) {
+        mark(app, Surface::Review, &["R1", "R2"]);
+        app.apply(Action::OpenMenu);
+        assert_eq!(
+            menu_choices(app),
+            vec!["deferred", "wontfix", "verified-clean"]
+        );
+        key(app, KeyCode::Enter);
+        type_text(app, "later");
+        key(app, KeyCode::Tab);
+        type_text(app, "v2");
+        key(app, KeyCode::Enter);
+        assert!(app.overlay.is_none(), "submitting closes the form");
+    }
+
+    #[test]
+    fn deferring_two_marked_findings_submits_one_transition() {
+        let mut app = writable_review_app();
+        defer_r1_r2(&mut app);
+        let writes = app.take_writes();
+        assert_eq!(writes.len(), 1, "{writes:?}");
+        let WriteRequest::Transition {
+            ledger,
+            ids,
+            to,
+            fields,
+            expect_status,
+            ..
+        } = &writes[0]
+        else {
+            panic!("expected a transition, got {:?}", writes[0]);
+        };
+        assert_eq!(
+            ledger,
+            &tomlctl::LedgerRef::Flow {
+                slug: "demo".to_string(),
+                kind: LedgerKind::Review
+            }
+        );
+        assert_eq!(ids, &vec!["R1".to_string(), "R2".to_string()]);
+        assert_eq!((to.as_str(), expect_status.as_str()), ("deferred", "open"));
+        assert_eq!(fields["defer_reason"], "later");
+        assert_eq!(fields["defer_trigger"], "v2");
+        assert_eq!(saving(&app), vec!["R1", "R2"]);
+        assert!(app.take_writes().is_empty(), "taken once");
+    }
+
+    #[test]
+    fn a_mixed_status_selection_offers_only_common_transitions() {
+        let mut app = writable_review_app();
+        mark(&mut app, Surface::Review, &["R1", "R3"]);
+        app.apply(Action::OpenMenu);
+        assert!(app.overlay.is_none(), "open and deferred share no move");
+        assert_eq!(
+            app.live_notice(Instant::now()),
+            Some("no move is offered from deferred and open")
+        );
+
+        let rows = [
+            ("B-1", "open", ""),
+            ("B-2", "dismissed", ""),
+            ("B-3", "resolved", ""),
+        ];
+        app.apply_ledger(
+            ledger(Kind::Backlog, ".claude/backlog.toml", &rows),
+            Instant::now(),
+        );
+        app.apply(Action::SwitchSurface(Surface::Backlog));
+        mark(&mut app, Surface::Backlog, &["B-2", "B-3"]);
+        app.apply(Action::OpenMenu);
+        assert_eq!(menu_choices(&app), vec!["open"]);
+        key(&mut app, KeyCode::Enter);
+        type_text(&mut app, "again");
+        key(&mut app, KeyCode::Enter);
+        let from: Vec<String> = app
+            .take_writes()
+            .into_iter()
+            .map(|write| match write {
+                WriteRequest::BacklogTriage { expect_status, .. } => expect_status,
+                other => panic!("expected a backlog triage, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            from,
+            vec!["dismissed", "resolved"],
+            "one request per status"
+        );
+    }
+
+    #[test]
+    fn undo_submits_a_restore_with_the_written_values() {
+        let mut app = writable_review_app();
+        defer_r1_r2(&mut app);
+        let request = app.take_writes()[0].request();
+        app.apply(Action::Undo);
+        assert!(
+            app.take_writes().is_empty(),
+            "nothing is undone before the outcome"
+        );
+        app.apply_written(WriteOutcome {
+            request,
+            applied: vec!["R1".to_string(), "R2".to_string()],
+            ..WriteOutcome::default()
+        });
+
+        app.apply(Action::Undo);
+        let restores = app.take_writes();
+        assert_eq!(restores.len(), 2, "one restore per applied id");
+        let WriteRequest::Restore {
+            ledger,
+            id,
+            set,
+            unset,
+            expect,
+            ..
+        } = &restores[0]
+        else {
+            panic!("expected a restore, got {:?}", restores[0]);
+        };
+        assert_eq!(id, "R1");
+        assert!(matches!(ledger, tomlctl::LedgerRef::Flow { .. }));
+        assert_eq!(
+            set,
+            serde_json::json!({"status": "open"}).as_object().unwrap()
+        );
+        assert_eq!(
+            unset,
+            &vec!["defer_reason".to_string(), "defer_trigger".to_string()]
+        );
+        assert_eq!(
+            expect,
+            serde_json::json!({"status": "deferred", "defer_reason": "later", "defer_trigger": "v2"})
+                .as_object()
+                .unwrap()
+        );
+        assert!(app.undo.is_empty());
+        app.apply(Action::Undo);
+        assert_eq!(app.live_notice(Instant::now()), Some("nothing to undo"));
+    }
+
+    #[test]
+    fn a_stale_outcome_clears_saving_and_notices() {
+        let mut app = writable_review_app();
+        defer_r1_r2(&mut app);
+        let request = app.take_writes()[0].request();
+        app.apply_written(WriteOutcome {
+            request,
+            applied: vec!["R1".to_string()],
+            skipped_stale: vec![crate::writer::Stale {
+                id: "R2".to_string(),
+                field: "status".to_string(),
+                expected: "open".into(),
+                found: "fixed".into(),
+            }],
+            error: None,
+        });
+        assert_eq!(
+            saving(&app),
+            vec!["R1"],
+            "the applied row waits for the read"
+        );
+        assert_eq!(
+            app.live_notice(Instant::now()),
+            Some("write skipped R2: changed since shown")
+        );
+        app.apply(Action::Undo);
+        let ids: Vec<String> = app
+            .take_writes()
+            .into_iter()
+            .map(|write| match write {
+                WriteRequest::Restore { id, .. } => id,
+                other => panic!("expected a restore, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(ids, vec!["R1"], "only what the write applied is put back");
+    }
+
+    #[test]
+    fn a_failed_write_clears_every_row_it_marked() {
+        let mut app = writable_review_app();
+        defer_r1_r2(&mut app);
+        let request = app.take_writes()[0].request();
+        app.apply_written(WriteOutcome {
+            request,
+            error: Some("root mismatch".to_string()),
+            ..WriteOutcome::default()
+        });
+        assert!(saving(&app).is_empty());
+        assert!(
+            app.undo.is_empty(),
+            "a write that changed nothing leaves no undo"
+        );
+        assert_eq!(
+            app.live_notice(Instant::now()),
+            Some("write failed: root mismatch")
+        );
+    }
+
+    #[test]
+    fn declining_a_critical_finding_asks_first() {
+        let mut app = writable_review_app();
+        mark(&mut app, Surface::Review, &["R2"]);
+        app.apply(Action::OpenMenu);
+        key(&mut app, KeyCode::Down);
+        key(&mut app, KeyCode::Enter);
+        assert!(
+            matches!(
+                &app.overlay,
+                Some(Overlay::Form {
+                    purpose: Purpose::Confirm(..),
+                    ..
+                })
+            ),
+            "wontfix on a critical row asks first"
+        );
+        key(&mut app, KeyCode::Enter);
+        assert!(app.overlay.is_none(), "the default answer is no");
+        assert!(app.take_writes().is_empty());
+
+        app.apply(Action::OpenMenu);
+        key(&mut app, KeyCode::Down);
+        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Down);
+        key(&mut app, KeyCode::Enter);
+        assert!(matches!(
+            &app.overlay,
+            Some(Overlay::Form {
+                purpose: Purpose::Transition(..),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn a_read_only_cursor_row_is_refused() {
+        let mut app = app();
+        let rows = [("#1", "open", "")];
+        app.apply_ledger(ledger(Kind::Review, REVIEW_PATH, &rows), Instant::now());
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::OpenMenu);
+        assert!(app.overlay.is_none());
+        assert_eq!(
+            app.live_notice(Instant::now()),
+            Some("#1 has no ledger id, so it cannot be changed")
+        );
+
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::OpenMenu);
+        assert!(app.overlay.is_none(), "a ledger named by path is read-only");
+    }
+
+    #[test]
+    fn the_filter_prompt_filters_live_and_back_closes_it_first() {
+        let mut app = writable_review_app();
+        app.apply(Action::ToggleMark);
+        app.apply(Action::OpenFilter);
+        type_text(&mut app, "R3");
+        assert_eq!(app.items[&Surface::Review].filter, "R3");
+        assert_eq!(
+            cursor(&app),
+            Some("R3"),
+            "a hidden cursor moves to a shown row"
+        );
+        key(&mut app, KeyCode::Esc);
+        assert!(app.overlay.is_none());
+        assert_eq!(app.items[&Surface::Review].filter, "", "cancel restores");
+
+        app.apply(Action::OpenFilter);
+        type_text(&mut app, "R");
+        app.apply(Action::Back);
+        assert!(app.overlay.is_none());
+        assert_eq!(
+            app.items[&Surface::Review].marks.len(),
+            1,
+            "Back closed the prompt, not the marks"
+        );
+        assert!(!app.overlay_key(KeyEvent::from(KeyCode::Char('x'))));
     }
 
     #[test]

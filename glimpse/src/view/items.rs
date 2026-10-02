@@ -8,10 +8,13 @@
 use std::time::Instant;
 
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
+use ratatui::widgets::{Paragraph, Widget};
+use tui_input::Input;
 
+use crate::actions::Overlay;
 use crate::app::App;
 use crate::ledger::{Anchor, ItemRow, StatusClass};
 use crate::model::{AgentStatus, TaskStatus};
@@ -36,6 +39,16 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
     };
     let width = usize::from(area.width);
     buf.set_line(area.x, area.y, &facet_line(app, state), area.width);
+    if let Some(input) = prompt_input(app) {
+        let field = prompt_field(app, state, area);
+        if field.width > 0 {
+            let scroll = input.visual_scroll(usize::from(field.width.saturating_sub(1)));
+            Paragraph::new(input.value())
+                .style(app.theme.facet)
+                .scroll((0, u16::try_from(scroll).unwrap_or(u16::MAX)))
+                .render(field, buf);
+        }
+    }
     let list = Rect::new(
         area.x,
         area.y + 1,
@@ -136,6 +149,7 @@ fn window(at: Option<usize>, len: usize, view: usize) -> usize {
 }
 
 /// `group severity · sort id · closed hidden · /cache`; the filter shows only when set.
+/// While the filter prompt is open the row ends in `/` and the prompt draws after it.
 fn facet_line(app: &App, state: &ItemsState) -> Line<'static> {
     let closed = if state.show_closed { "shown" } else { "hidden" };
     let mut text = format!(
@@ -143,10 +157,42 @@ fn facet_line(app: &App, state: &ItemsState) -> Line<'static> {
         state.group.label(),
         state.sort.label()
     );
-    if !state.filter.is_empty() {
+    if prompt_input(app).is_some() {
+        text.push_str(" · /");
+    } else if !state.filter.is_empty() {
         text.push_str(&format!(" · /{}", state.filter));
     }
     Line::from(Span::styled(text, app.theme.facet))
+}
+
+fn prompt_input(app: &App) -> Option<&Input> {
+    match &app.overlay {
+        Some(Overlay::Prompt { input, .. }) => Some(input),
+        _ => None,
+    }
+}
+
+/// The cells after the facet text that the filter prompt's input fills.
+fn prompt_field(app: &App, state: &ItemsState, area: Rect) -> Rect {
+    let used = u16::try_from(facet_line(app, state).width()).unwrap_or(u16::MAX);
+    let x = area.x.saturating_add(used).min(area.right());
+    Rect::new(x, area.y, area.right() - x, 1)
+}
+
+/// Where the terminal cursor goes while the filter prompt is open on `area`.
+pub(crate) fn prompt_cursor(area: Rect, app: &App) -> Option<Position> {
+    let input = prompt_input(app)?;
+    let state = app.current_items()?;
+    let field = prompt_field(app, state, area);
+    if field.width == 0 || area.height == 0 {
+        return None;
+    }
+    let scroll = input.visual_scroll(usize::from(field.width.saturating_sub(1)));
+    let col = u16::try_from(input.visual_cursor().saturating_sub(scroll)).unwrap_or(u16::MAX);
+    Some(Position::new(
+        field.x.saturating_add(col).min(field.right() - 1),
+        field.y,
+    ))
 }
 
 /// Widths of the aligned columns over the drawn rows; a column no row fills is zero
@@ -445,6 +491,33 @@ mod tests {
         let ids: Vec<&str> = targets.iter().map(|(_, id)| id.as_str()).collect();
         assert_eq!(ids, ["R2", "R1", "R3"]);
         assert_eq!(targets[0].0.y, u16::try_from(r2).expect("row"));
+    }
+
+    #[test]
+    fn the_filter_prompt_renders_in_the_facet_row() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent};
+
+        let mut app = review_app();
+        app.apply(Action::OpenFilter);
+        for c in "R3".chars() {
+            app.overlay_key(KeyEvent::from(KeyCode::Char(c)));
+        }
+        let (rows, _) = draw(&app, 60, 6);
+        assert!(
+            rows[0].starts_with("group none · sort id · closed hidden · /R3"),
+            "{:?}",
+            rows[0]
+        );
+        let at = prompt_cursor(Rect::new(0, 0, 60, 6), &app).expect("cursor");
+        assert_eq!((at.x, at.y), (42, 0), "after the typed text");
+
+        let (narrow, _) = draw(&app, 42, 6);
+        assert!(narrow[0].trim_end().ends_with("/3"), "{:?}", narrow[0]);
+        let at = prompt_cursor(Rect::new(0, 0, 42, 6), &app).expect("cursor");
+        assert_eq!(at.x, 41, "kept inside the row");
+
+        app.apply(Action::Back);
+        assert!(prompt_cursor(Rect::new(0, 0, 60, 6), &app).is_none());
     }
 
     #[test]

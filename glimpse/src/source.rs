@@ -66,10 +66,6 @@ pub(crate) enum Event {
     Tail(Box<TailView>),
     Input(ratatui::crossterm::event::Event),
     /// What became of one write; sent by the writer thread, never the poller.
-    #[allow(
-        dead_code,
-        reason = "the runtime routes outcomes to the item surfaces once wired in"
-    )]
     Written(WriteOutcome),
 }
 

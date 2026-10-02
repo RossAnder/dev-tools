@@ -7,7 +7,9 @@
 //! the flow or flow-less ledger on show changes, the loop re-subscribes the poller's ledger
 //! feeds and drops any read still in flight for a feed it let go. The main loop reads no
 //! files. With no running agent and nothing on screen changing over time it blocks without
-//! a timeout, so an idle glimpse does no work at all.
+//! a timeout, so an idle glimpse does no work at all. While a form or the filter prompt is
+//! open it takes every key ahead of the key map, and the write requests an input makes go to
+//! the writer before the next event is handled.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -16,7 +18,8 @@ use std::time::{Instant, SystemTime};
 
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{
-    self as term_event, DisableMouseCapture, EnableMouseCapture, Event as TermEvent,
+    self as term_event, DisableMouseCapture, EnableMouseCapture, Event as TermEvent, KeyCode,
+    KeyEvent, KeyEventKind, KeyModifiers,
 };
 use ratatui::crossterm::execute;
 use ratatui::text::Span;
@@ -261,10 +264,6 @@ trait Host {
     fn set_slug(&mut self, slug: String);
     fn subscribe(&mut self, feeds: Vec<Feed>);
     fn set_tail(&mut self, path: Option<String>);
-    #[allow(
-        dead_code,
-        reason = "the item surfaces submit requests once their forms are wired in"
-    )]
     fn submit(&mut self, request: WriteRequest);
 }
 
@@ -426,6 +425,7 @@ fn handle(screen: &mut Screen, event: Event, host: &mut impl Host, pointed: &mut
             screen.tail = *tail;
             Step::Redraw
         }
+        Event::Input(TermEvent::Key(key)) if app.overlay.is_some() => overlay_input(app, key, host),
         Event::Input(input @ (TermEvent::Key(_) | TermEvent::Mouse(_))) => {
             let action = match input {
                 TermEvent::Key(key) => keys::map(key),
@@ -436,6 +436,7 @@ fn handle(screen: &mut Screen, event: Event, host: &mut impl Host, pointed: &mut
                 return Step::Nothing;
             };
             let handed_back = app.apply(action);
+            submit_writes(app, host);
             carry_out(app, handed_back, host, pointed)
         }
         Event::Input(TermEvent::Resize(..)) => {
@@ -446,12 +447,35 @@ fn handle(screen: &mut Screen, event: Event, host: &mut impl Host, pointed: &mut
             Step::Redraw
         }
         Event::Input(_) => Step::Nothing,
-        Event::Written(_) => Step::Nothing,
+        Event::Written(outcome) => {
+            app.apply_written(outcome);
+            Step::Redraw
+        }
     }
 }
 
 fn redraw_if(needed: bool) -> Step {
     if needed { Step::Redraw } else { Step::Nothing }
+}
+
+/// Hands a key to the open overlay rather than the key map, so a letter typed into a field
+/// never moves or quits. `Ctrl+C` still quits.
+fn overlay_input(app: &mut App, key: KeyEvent, host: &mut impl Host) -> Step {
+    if key.kind == KeyEventKind::Release {
+        return Step::Nothing;
+    }
+    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+        return Step::Quit;
+    }
+    app.overlay_key(key);
+    submit_writes(app, host);
+    Step::Redraw
+}
+
+fn submit_writes(app: &mut App, host: &mut impl Host) {
+    for request in app.take_writes() {
+        host.submit(request);
+    }
 }
 
 /// Carries out what [`App::apply`] handed back after an input changed the app.
@@ -627,9 +651,9 @@ fn follow_freshest(app: &mut App, host: &mut impl Host, pointed: &mut Pointed) {
 mod tests {
     use super::*;
     use crate::config::ViewKind;
+    use crate::form::FieldValue;
     use crate::model::fixture;
-    use crate::writer::FakeWriter;
-    use ratatui::crossterm::event::{KeyCode, KeyEvent};
+    use crate::writer::{FakeWriter, WriteOutcome};
     use std::time::Duration;
 
     fn opts(view: ViewKind) -> RunOpts {
@@ -1019,6 +1043,111 @@ mod tests {
             "leaving the scope re-points the feeds"
         );
         assert_eq!(host.subscriptions.len(), 4);
+    }
+
+    /// A screen on the Review surface with R1 and R2 open and the cursor on R1.
+    fn review_screen() -> (Screen, FakeHost, Pointed) {
+        let mut screen = idle_screen("demo-flow");
+        let mut host = FakeHost::default();
+        let mut pointed = Pointed::starting(&screen.app);
+        resubscribe(&screen.app, &mut host, &mut pointed);
+        let rows = serde_json::json!([finding("R1", "a"), finding("R2", "b")]);
+        let read = review_read(&review_feed("demo-flow"), "r1", rows);
+        handle(&mut screen, read, &mut host, &mut pointed);
+        let mut review = (screen, host, pointed);
+        press(&mut review, KeyCode::Char('2'));
+        assert_eq!(review.0.app.surface, Surface::Review);
+        review
+    }
+
+    fn press(review: &mut (Screen, FakeHost, Pointed), code: KeyCode) -> Step {
+        let (screen, host, pointed) = review;
+        let key = Event::Input(TermEvent::Key(KeyEvent::from(code)));
+        handle(screen, key, host, pointed)
+    }
+
+    fn form_text(screen: &Screen) -> FieldValue {
+        let form = screen.app.overlay.as_ref().and_then(|o| o.form());
+        form.expect("a form is open").fields[0].value()
+    }
+
+    #[test]
+    fn typing_q_in_a_form_does_not_quit() {
+        let mut review = review_screen();
+        press(&mut review, KeyCode::Char('m'));
+        press(&mut review, KeyCode::Enter);
+        for letter in ['j', 'q'] {
+            let step = press(&mut review, KeyCode::Char(letter));
+            assert!(matches!(step, Step::Redraw), "{letter} is typed");
+        }
+        assert_eq!(form_text(&review.0), FieldValue::Text("jq".to_string()));
+        assert_eq!(
+            review
+                .0
+                .app
+                .current_items()
+                .and_then(|s| s.cursor.as_deref()),
+            Some("R1"),
+            "j never moved the cursor"
+        );
+
+        let (screen, host, pointed) = &mut review;
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let step = handle(screen, Event::Input(TermEvent::Key(ctrl_c)), host, pointed);
+        assert!(matches!(step, Step::Quit), "Ctrl+C still quits");
+    }
+
+    #[test]
+    fn submitting_a_form_reaches_the_writer() {
+        let mut review = review_screen();
+        press(&mut review, KeyCode::Char('m'));
+        press(&mut review, KeyCode::Down);
+        press(&mut review, KeyCode::Enter);
+        for letter in "noise".chars() {
+            press(&mut review, KeyCode::Char(letter));
+        }
+        assert!(
+            review.1.writer.submitted.is_empty(),
+            "nothing before submit"
+        );
+        press(&mut review, KeyCode::Enter);
+        assert!(review.0.app.overlay.is_none(), "submitting closes the form");
+
+        let submitted = std::mem::take(&mut review.1.writer.submitted);
+        let [
+            WriteRequest::Transition {
+                request,
+                ids,
+                to,
+                fields,
+                ..
+            },
+        ] = submitted.as_slice()
+        else {
+            panic!("expected one transition, got {submitted:?}");
+        };
+        assert_eq!(
+            (ids.as_slice(), to.as_str()),
+            (&["R1".to_string()][..], "wontfix")
+        );
+        assert_eq!(fields["wontfix_rationale"], "noise");
+
+        let failed = Event::Written(WriteOutcome {
+            request: *request,
+            error: Some("root mismatch".to_string()),
+            ..WriteOutcome::default()
+        });
+        let (screen, host, pointed) = &mut review;
+        assert!(matches!(
+            handle(screen, failed, host, pointed),
+            Step::Redraw
+        ));
+        assert!(screen.app.items[&Surface::Review].saving.is_empty());
+        assert_eq!(
+            screen.app.live_notice(Instant::now()),
+            Some("write failed: root mismatch"),
+            "the outcome reaches the app"
+        );
     }
 
     #[test]

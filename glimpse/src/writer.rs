@@ -19,10 +19,6 @@ pub(crate) type RequestId = u64;
 
 /// One control edit, carrying the compare-and-set values glimpse displayed.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(
-    dead_code,
-    reason = "the item surfaces submit requests once their forms are wired in"
-)]
 pub(crate) enum WriteRequest {
     Transition {
         request: RequestId,
@@ -53,6 +49,18 @@ pub(crate) enum WriteRequest {
         triage: BacklogTriage,
         expect_status: String,
     },
+    /// Appends `record` to the input store as a `new` record.
+    InputAdd { request: RequestId, record: Value },
+    InputAnswer {
+        request: RequestId,
+        question: String,
+        picked: Vec<String>,
+        text: Option<String>,
+    },
+    InputWithdraw {
+        request: RequestId,
+        ids: Vec<String>,
+    },
 }
 
 impl WriteRequest {
@@ -61,7 +69,10 @@ impl WriteRequest {
             WriteRequest::Transition { request, .. }
             | WriteRequest::Classify { request, .. }
             | WriteRequest::Restore { request, .. }
-            | WriteRequest::BacklogTriage { request, .. } => *request,
+            | WriteRequest::BacklogTriage { request, .. }
+            | WriteRequest::InputAdd { request, .. }
+            | WriteRequest::InputAnswer { request, .. }
+            | WriteRequest::InputWithdraw { request, .. } => *request,
         }
     }
 }
@@ -77,10 +88,6 @@ pub(crate) struct Stale {
 
 /// What became of one request. With `error` set, nothing was written.
 #[derive(Debug, Clone, PartialEq, Default)]
-#[allow(
-    dead_code,
-    reason = "the runtime routes outcomes to the item surfaces once wired in"
-)]
 pub(crate) struct WriteOutcome {
     pub(crate) request: RequestId,
     pub(crate) applied: Vec<String>,
@@ -148,10 +155,6 @@ impl Writer {
         Writer { requests }
     }
 
-    #[allow(
-        dead_code,
-        reason = "the item surfaces submit requests once their forms are wired in"
-    )]
     pub(crate) fn submit(&self, request: WriteRequest) {
         let _ = self.requests.send(request);
     }
@@ -189,8 +192,21 @@ fn perform(root: &Path, request: WriteRequest) -> Result<Value, String> {
             expect_status,
             ..
         } => tomlctl::backlog_triage(root, &ids, triage, &expect_status),
+        WriteRequest::InputAdd { record, .. } => tomlctl::inputs_add(root, &record).map(created),
+        WriteRequest::InputAnswer {
+            question,
+            picked,
+            text,
+            ..
+        } => tomlctl::inputs_answer(root, &question, &picked, text.as_deref()).map(created),
+        WriteRequest::InputWithdraw { ids, .. } => tomlctl::inputs_withdraw(root, &ids),
     };
     result.map_err(|e| with_reinstall_hint(format!("{e:#}")))
+}
+
+/// Reports the record an input write created as its one applied id, the id undo withdraws.
+fn created(value: Value) -> Value {
+    serde_json::json!({"applied": [value["id"].clone()]})
 }
 
 /// Records what the loop submitted, for tests that drive the runtime without a thread.
@@ -202,10 +218,6 @@ pub(crate) struct FakeWriter {
 
 #[cfg(test)]
 impl FakeWriter {
-    #[allow(
-        dead_code,
-        reason = "runtime tests submit through it once writes are routed"
-    )]
     pub(crate) fn submit(&mut self, request: WriteRequest) {
         self.submitted.push(request);
     }
@@ -291,6 +303,13 @@ mod tests {
                 found: Value::from("fixed"),
             }]
         );
+    }
+
+    #[test]
+    fn an_input_write_reports_the_record_it_created() {
+        let answered = serde_json::json!({"id": "I5", "question": "I2"});
+        let outcome = WriteOutcome::from_result(3, Ok(created(answered)));
+        assert_eq!(outcome.applied, vec!["I5".to_string()]);
     }
 
     #[test]
