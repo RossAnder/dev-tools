@@ -1,10 +1,11 @@
 # glimpse
 
-A live terminal view of a flow's task graph, checkpoints and running agents,
-meant to sit in a herdr pane beside the Claude Code session running `/implement`.
-It is read-only: everything it draws comes from the flow's files, read through
-tomlctl's own code compiled into glimpse, plus the transcript tail of the agent
-you are looking at.
+A live terminal view of a flow's task graph, checkpoints and running agents, and
+of its review, optimise, plan-review and backlog items, meant to sit in a herdr
+pane beside the Claude Code session running `/implement`. It is read-only:
+everything it draws comes from the flow's files and the repo's ledgers, read
+through tomlctl's own code compiled into glimpse, plus the transcript tail of the
+agent you are looking at.
 
 ## Install
 
@@ -57,8 +58,9 @@ start.
 ## Usage
 
 ```
-glimpse [--slug S] [--view V] [--orientation O]   open the live view
-glimpse --once [--size WxH] [--snapshot FILE] [--select ID]
+glimpse [--slug S] [--view V] [--orientation O] [--surface U]
+                                                  open the live view
+glimpse --once [--size WxH] [--snapshot FILE] [--select ID] [--ledger FILE]
                                                   render one frame as plain text
 glimpse hook [--harness H]                        handle one hook payload on stdin
 glimpse ensure-pane [--slug S] [--focus]          open or reuse this tab's glimpse pane
@@ -69,11 +71,64 @@ glimpse setup [--dry-run]                         install the hooks and keybindi
 whose `tasks.toml` changed most recently and keeps following whichever flow
 changes next. Exit status is 0 on success, 1 on a runtime failure and 2 on a usage
 error; `hook` always exits 0, logging even a usage error. `--harness` is
-`claude-code` (the default) or `codex`.
+`claude-code` (the default) or `codex`. `--surface` is `tasks`, `review`,
+`optimise`, `plan-review`, `backlog` or `inbox`, the surface to open on; without
+it glimpse opens on the one it was left on.
 
 `--once` renders through ratatui's test backend with no terminal and no escape
 sequences, at 120x40 unless `--size` says otherwise. With `--snapshot` it draws a
-saved `tasks snapshot` document instead of reading the flow's files.
+saved `tasks snapshot` document instead of reading the flow's files. With
+`--ledger` it shows that review, optimise, plan-review or backlog ledger file on
+its surface; without `--snapshot` or `--slug` the task graph is left empty.
+
+## Surfaces
+
+Six surfaces, switched with `1`–`6`: **Tasks** (the task graph, in the views
+below), **Review**, **Optimise**, **Plan-review**, **Backlog** and **Inbox**. The
+four item surfaces list the viewed flow's `review-ledger.toml`,
+`optimise-findings.toml` and `plan-review-findings.toml`, and the repo's
+`.claude/backlog.toml`, and follow them live. Inbox draws `no input records yet`.
+
+The header's second row holds the surface tabs, the current one highlighted:
+`Tasks  Review 12 +3  Optimise 4  Plan-review —  Backlog 6  Inbox —`. Each count
+is the surface's open items, `—` while it has no ledger file. `+N` counts the items
+that appeared or changed status since you last had that surface on screen, and
+clears when you switch to it; glimpse never switches surface by itself. A compact
+header folds the tabs into its one row by initial, as `R12+3 O4 P— B6 I—`.
+
+An item surface opens with a facet row, `group severity · sort id · closed hidden`,
+then one row per item:
+
+```
+▸● ○ R12 warning correctness small Lock held across await…  ↻ ID src/a.rs:12
+```
+
+cursor, mark, status glyph, id, severity (the kind, on Backlog), category, effort
+and summary, then the saving mark, the chip of a running agent whose dispatch
+names the item, and the item's `file:line` (its heading or area where it has no
+file), which gives way first in a narrow pane. The status glyph is `○` open, `⏸`
+deferred or promoted, `✓` fixed, applied, merged, resolved or verified-clean, and
+`✗` wontfix, wontapply, discarded or dismissed. An item that appears or changes
+status flashes, and the cursor stays where it was.
+
+`j`/`k` move the cursor and `Enter` opens the item's details. `Space` marks the
+cursor row and moves on, `V` marks every visible row, and `Esc` clears the marks
+before it closes anything. `g` cycles the grouping, each group under a
+`▾ <label> (n)` header: none, severity, category, effort, file and status on
+Review and Optimise; none, severity, category and status on Plan-review; none,
+kind, area and status on Backlog. `S` cycles the sort: id, severity, effort and
+newest on Review and Optimise; id, severity and newest on Plan-review; id and
+newest on Backlog. `c` shows or hides the closed (done and declined) items. The
+surface and each surface's grouping and sort are saved on exit with the other
+layout choices.
+
+The flow selector (`s`) also lists flows that hold a ledger but no `tasks.toml`,
+marked `no tasks`; picking one shows its ledgers on the item surfaces. After a
+separator come the flow-less ledgers, `.claude/reviews/<scope>.toml`,
+`.claude/optimise-findings/<scope>.toml` and
+`.claude/plan-review-findings/<scope>.toml`, as `review: <scope>`,
+`optimise: <scope>` and `plan-review: <scope>`. Picking one shows it on its
+surface in place of the flow's ledger of that kind and turns auto-flow off.
 
 ## Views and keys
 
@@ -153,17 +208,23 @@ timed-out check, and `danger` when it failed.
 | `-` / `=` (or `+`) | narrow / widen the horizontal layers columns by 4 cells |
 | `s` | flow selector; `j`/`k` move and `Enter` switches, which turns auto-flow off |
 | `a` | toggle auto-flow (switch to the freshest flow as flows change) |
-| `q` / `Esc` | close the topmost overlay, or quit when none is open |
+| `1`–`6` | switch surface: Tasks, Review, Optimise, Plan-review, Backlog, Inbox |
+| `Space` | item surfaces: mark the cursor row and move to the next |
+| `V` | item surfaces: mark every visible row |
+| `g` | item surfaces: cycle the grouping |
+| `S` | item surfaces: cycle the sort |
+| `c` | item surfaces: show or hide closed items |
+| `q` / `Esc` | clear the marks, else close the topmost overlay, or quit when none is open |
 | `Ctrl+C` | quit |
 
 The details scroll goes back to the top whenever the selection changes. With the
 mouse on, the wheel scrolls whatever is under the pointer and never the selection:
 the details panel, the layer list (a layer per notch across horizontal columns) or
 the diagram, which stays where it was left until the selection changes. A left
-click on a task in the layers or ego view selects it; the diagram view takes the
-wheel but not clicks. Mouse capture stops the
-terminal's own text selection while glimpse runs; most terminals still select
-with `Shift` held, or set `mouse = false`.
+click on a task in the layers or ego view, or on an item row, selects it; the
+diagram view takes the wheel but not clicks. Mouse capture stops the terminal's
+own text selection while glimpse runs; most terminals still select with `Shift`
+held, or set `mouse = false`.
 
 The view, a flipped orientation or panel side, the panel's share and the implied
 edge toggle are saved on exit to `<claude dir>/glimpse/state.toml` and restored at
@@ -193,7 +254,7 @@ optional:
 | `cell_aspect` | `2.2` | a cell's height ÷ width, used when the terminal does not report pixels |
 | `split_threshold` | `2.2` | width ÷ height at which a new pane splits right rather than down |
 | `pane_ratio` | `0.4` | share of the origin pane a new glimpse pane takes, between 0 and 1 |
-| `poll_ms` | `500` | the fallback polling interval, used only while no filesystem watch can be set up or after one has been found missing changes |
+| `poll_ms` | `500` | the fallback polling interval in milliseconds, 50 to 10000, used only while no filesystem watch can be set up or after one has been found missing changes |
 | `default_view` | `"layers"` | `layers`, `ego` or `diagram` |
 | `stale_after_s` | `300` | seconds of transcript silence before a running agent shows stale |
 | `density` | `"auto"` | `auto`, `compact` or `comfortable` |
@@ -231,6 +292,9 @@ key = "#7FB4CA"         # the footer's key names
 | Chrome | `border` `border_title` `layer_rule` `layer_label` `section` `secondary` `slug` |
 | Chips and rows | `checkpoint` `commit` `agent_bg` `agent_fg` `effort` `effort_warning` `effort_danger` `code` `warning_text` |
 | Footer | `key` `key_label` `key_separator` `notice` |
+| Items | `severity_critical` `severity_warning` `severity_suggestion`, `item_live` `item_parked` `item_done` `item_declined` for the status glyphs, `item_mark` `item_saving` `facet` `group_header` |
+| Surface tabs | `surface_tab` `surface_tab_active`, and `badge` for the `+N` arrival count |
+| Inbox and forms | `input_new` `input_acknowledged` `input_handled` `question` `form_label` `form_focus` `form_error` |
 
 The defaults are the Kanso Zen palette. `?` shows the legend in the live theme.
 With `NO_COLOR` set, every colour is dropped and highlights fall back to reverse

@@ -6,7 +6,9 @@ use ratatui::layout::{Constraint, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 
+use super::items;
 use crate::app::App;
+use crate::ledger::StatusClass;
 use crate::model::TaskStatus;
 use crate::theme::Theme;
 
@@ -27,7 +29,15 @@ const KEYS: &[(&str, &str)] = &[
     ("f", "follow the frontier"),
     ("s  a", "flows / auto-follow flows"),
     ("d", "density: auto, compact, comfortable"),
-    ("q esc", "back, then quit"),
+    (
+        "1-6",
+        "surface: tasks review optimise plan-review backlog inbox",
+    ),
+    ("space", "mark the item and move on"),
+    ("V", "mark every visible item"),
+    ("g  S", "items: next group-by / sort"),
+    ("c", "items: show / hide closed"),
+    ("q esc", "clear marks, then back, then quit"),
 ];
 
 pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App) {
@@ -133,6 +143,51 @@ fn lines(theme: &Theme) -> Vec<Line<'static>> {
         out.push(row(Span::styled("M", style), text));
     }
 
+    heading(&mut out, "Items");
+    for (class, text) in [
+        (StatusClass::Live, "open"),
+        (StatusClass::Parked, "deferred, promoted"),
+        (
+            StatusClass::Done,
+            "fixed, applied, merged, resolved, verified-clean",
+        ),
+        (
+            StatusClass::Declined,
+            "wontfix, wontapply, discarded, dismissed",
+        ),
+    ] {
+        out.push(row(
+            Span::styled(
+                items::glyph(class),
+                theme.item_status(items::class_name(class)),
+            ),
+            text,
+        ));
+    }
+    for severity in ["critical", "warning", "suggestion"] {
+        out.push(row(
+            Span::styled(severity, theme.severity(severity)),
+            "severity",
+        ));
+    }
+    out.push(row(Span::styled("●", theme.item_mark), "marked"));
+    out.push(row(
+        Span::styled("↻", theme.item_saving),
+        "saving: not yet in the ledger",
+    ));
+    out.push(row(
+        super::chip("ID", theme.agent_chip),
+        "running agent whose dispatch names the item",
+    ));
+    out.push(row(
+        Span::styled("▾ warning (2)", theme.group_header),
+        "a group and its count",
+    ));
+    out.push(row(
+        Span::styled("+3", theme.arrival_badge),
+        "on a surface tab: changes since you last viewed it",
+    ));
+
     heading(&mut out, "Keys");
     for (key, text) in KEYS {
         out.push(row(Span::styled(*key, theme.key), text));
@@ -172,6 +227,41 @@ mod tests {
             .map(|c| c.symbol())
             .collect();
         assert!(screen.contains("legend") && screen.contains("shares a file"));
+    }
+
+    #[test]
+    fn the_legend_draws_item_glyphs_and_severities_in_their_colours() {
+        let theme = Theme::default();
+        let lines = lines(&theme);
+        let sample = |text: &str| {
+            lines
+                .iter()
+                .find(|l| l.spans.last().is_some_and(|s| s.content == text))
+                .map(|l| (l.spans[0].content.to_string(), l.spans[0].style))
+                .expect(text)
+        };
+        assert_eq!(
+            sample("deferred, promoted"),
+            ("⏸".to_string(), theme.item_parked)
+        );
+        assert_eq!(
+            sample("wontfix, wontapply, discarded, dismissed"),
+            ("✗".to_string(), theme.item_declined)
+        );
+        assert_eq!(sample("marked"), ("●".to_string(), theme.item_mark));
+        let severities: Vec<_> = lines
+            .iter()
+            .filter(|l| l.spans.last().is_some_and(|s| s.content == "severity"))
+            .map(|l| l.spans[0].style)
+            .collect();
+        assert_eq!(
+            severities,
+            [
+                theme.severity_critical,
+                theme.severity_warning,
+                theme.severity_suggestion
+            ]
+        );
     }
 
     #[test]
