@@ -280,6 +280,12 @@ fn item_line(
     if state.saving.contains(&row.id) {
         right.push(Span::styled("↻", theme.item_saving));
     }
+    if let Some(mark) = pending_mark(app, &row.id) {
+        if !right.is_empty() {
+            right.push(Span::raw(" "));
+        }
+        right.push(mark);
+    }
     if let Some(chip) = agent_chip(app, &row.id) {
         if !right.is_empty() {
             right.push(Span::raw(" "));
@@ -318,6 +324,18 @@ fn anchor_text(anchor: &Anchor) -> String {
         Anchor::Section(text) | Anchor::Area(text) => text.clone(),
         Anchor::None => String::new(),
     }
+}
+
+/// `✉`, coloured by the newest pending input record that names `id`.
+fn pending_mark(app: &App, id: &str) -> Option<Span<'static>> {
+    let kind = app.surface.ledger_kind()?;
+    let newest = *app.inbox.pending_for(kind, id).last()?;
+    let style = if newest.status == "new" {
+        app.theme.input_new
+    } else {
+        app.theme.input_acknowledged
+    };
+    Some(Span::styled("✉", style))
 }
 
 /// The type initials of a running agent whose dispatch names `id`, dimmed once its
@@ -540,6 +558,30 @@ mod tests {
         let (rows, _) = draw(&app, 100, 8);
         assert!(row_of(&rows, "R3").1.contains("↻ src/c.rs:7"));
         assert!(!row_of(&rows, "R1").1.contains('↻'));
+    }
+
+    #[test]
+    fn a_row_with_a_pending_request_shows_the_mark() {
+        use crate::ledger::InputRow;
+
+        let mut app = review_app();
+        let request = |id: &str, status: &str| InputRow {
+            id: id.to_string(),
+            kind: "request".to_string(),
+            status: status.to_string(),
+            ledger: "review".to_string(),
+            items: vec!["R3".to_string()],
+            ..InputRow::default()
+        };
+        app.inbox.apply_inputs(
+            vec![request("I1", "new"), request("I2", "handled")],
+            Some("v1".to_string()),
+            true,
+            Instant::now(),
+        );
+        let (rows, _) = draw(&app, 100, 8);
+        assert!(row_of(&rows, "R3").1.contains("✉ src/c.rs:7"));
+        assert!(!row_of(&rows, "R1").1.contains('✉'));
     }
 
     #[test]

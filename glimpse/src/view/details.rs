@@ -20,7 +20,7 @@ use serde_json::Value;
 
 use crate::app::App;
 use crate::hook::parse_utc;
-use crate::ledger::{Anchor, ItemRow, StatusClass};
+use crate::ledger::{Anchor, InputRow, ItemRow, StatusClass};
 use crate::model::{Agent, AgentKind, AgentStatus, RecordEntry};
 use crate::surface::{ItemsState, Surface};
 use crate::theme::Theme;
@@ -44,9 +44,14 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, scroll: u16) -> u
         _ => match app.current_items().and_then(ItemsState::cursor_row) {
             Some(row) => {
                 let agents = app.index.agents_for_item(&app.snapshot, &row.id);
+                let inputs = app
+                    .surface
+                    .ledger_kind()
+                    .map(|kind| app.inbox.pending_for(kind, &row.id))
+                    .unwrap_or_default();
                 (
                     Some(row.id.clone()),
-                    item_content(row, &agents, &app.theme, now),
+                    item_content(row, &agents, &inputs, &app.theme, now),
                 )
             }
             None => (
@@ -225,10 +230,12 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
 }
 
 /// The panel's lines for one ledger row, unwrapped. `agents` are those working
-/// the row; `now` dates their open segments.
+/// the row; `inputs` are the pending input records naming it; `now` dates their
+/// open segments.
 pub(crate) fn item_content(
     row: &ItemRow,
     agents: &[&Agent],
+    inputs: &[&InputRow],
     theme: &Theme,
     now: SystemTime,
 ) -> Text<'static> {
@@ -327,6 +334,22 @@ pub(crate) fn item_content(
     if !dates.is_empty() {
         out.push(Line::default());
         out.push(Line::styled(dates.join("  "), theme.secondary));
+    }
+
+    if !inputs.is_empty() {
+        section(&mut out, "Inputs", theme);
+        for input in inputs {
+            let style = if input.status == "new" {
+                theme.input_new
+            } else {
+                theme.input_acknowledged
+            };
+            out.push(Line::from(vec![
+                Span::raw(INDENT),
+                Span::styled(format!("{} {}", input.kind, input.status), style),
+                Span::raw(format!("  {}", input.text)),
+            ]));
+        }
     }
 
     if !agents.is_empty() {
@@ -829,7 +852,7 @@ mod tests {
             .and_then(ItemsState::cursor_row)
             .expect("a cursor row");
         let agents = app.index.agents_for_item(&app.snapshot, &row.id);
-        plain(&item_content(row, &agents, &app.theme, now))
+        plain(&item_content(row, &agents, &[], &app.theme, now))
     }
 
     #[test]
