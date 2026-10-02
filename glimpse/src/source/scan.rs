@@ -9,7 +9,7 @@ use tomlctl::{LedgerKind, LedgerRef};
 
 use super::Feed;
 use crate::flows::{self, FlowEntry};
-use crate::ledger::Ledger;
+use crate::ledger::{Inputs, Ledger};
 use crate::model::Snapshot;
 use crate::watch::{LedgerScopeDir, RepoFile};
 
@@ -205,6 +205,8 @@ pub(crate) trait Fetcher: Send {
     ) -> Result<Vec<FlowEntry>, String>;
     /// One ledger; a missing file reads as an empty ledger with no revision.
     fn fetch_ledger(&mut self, root: &Path, ledger: &LedgerRef) -> Result<Ledger, String>;
+    /// The input store; a missing file reads as no records with no revision.
+    fn fetch_inputs(&mut self, root: &Path) -> Result<Inputs, String>;
     /// The `tomlctl::ledger_scopes` document.
     fn list_scopes(&mut self, root: &Path) -> Result<serde_json::Value, String>;
 }
@@ -243,6 +245,12 @@ impl Fetcher for InProcessFetcher {
         Ledger::from_value(value)
     }
 
+    fn fetch_inputs(&mut self, root: &Path) -> Result<Inputs, String> {
+        let value =
+            tomlctl::inputs_read(root).map_err(|e| with_reinstall_hint(format!("{e:#}")))?;
+        Inputs::from_value(value)
+    }
+
     fn list_scopes(&mut self, root: &Path) -> Result<serde_json::Value, String> {
         tomlctl::ledger_scopes(root).map_err(|e| format!("{e:#}"))
     }
@@ -278,13 +286,16 @@ pub(super) mod tests {
 
     /// Returns each queued result in turn, then repeats the last, as `None` when its revision
     /// is the known one; counts its calls. Lists no flows, counting those calls apart. Ledger
-    /// reads step through `ledgers` the same way, an empty queue reading as a missing file.
+    /// reads step through `ledgers` and input reads through `inputs` the same way, an empty
+    /// queue reading as a missing file.
     pub(in crate::source) struct FakeFetcher {
         results: Vec<Result<Snapshot, String>>,
         calls: Arc<AtomicUsize>,
         lists: Arc<AtomicUsize>,
         ledgers: Vec<Result<Ledger, String>>,
         ledger_reads: Arc<AtomicUsize>,
+        inputs: Vec<Result<Inputs, String>>,
+        input_reads: Arc<AtomicUsize>,
     }
 
     impl Fetcher for FakeFetcher {
@@ -316,6 +327,14 @@ pub(super) mod tests {
             }
         }
 
+        fn fetch_inputs(&mut self, _root: &Path) -> Result<Inputs, String> {
+            let n = self.input_reads.fetch_add(1, Ordering::SeqCst);
+            match self.inputs.len() {
+                0 => Ok(inputs_with_revision(None)),
+                len => self.inputs[n.min(len - 1)].clone(),
+            }
+        }
+
         fn list_scopes(&mut self, _root: &Path) -> Result<serde_json::Value, String> {
             Ok(serde_json::json!({"flows": [], "scopes": []}))
         }
@@ -338,6 +357,15 @@ pub(super) mod tests {
         .expect("ledger")
     }
 
+    pub(in crate::source) fn inputs_with_revision(revision: Option<&str>) -> Inputs {
+        Inputs::from_value(serde_json::json!({
+            "path": ".claude/inputs.toml",
+            "revision": revision,
+            "inputs": [],
+        }))
+        .expect("inputs")
+    }
+
     /// A fake whose ledger reads step through `ledgers`, and the count of those reads.
     pub(in crate::source) fn fake_ledgers(
         ledgers: Vec<Result<Ledger, String>>,
@@ -345,13 +373,36 @@ pub(super) mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let ledger_reads = Arc::new(AtomicUsize::new(0));
         let fetcher = FakeFetcher {
-            results: vec![Ok(with_revision("r1"))],
-            calls: Arc::clone(&calls),
-            lists: Arc::new(AtomicUsize::new(0)),
             ledgers,
             ledger_reads: Arc::clone(&ledger_reads),
+            ..empty_fake(Arc::clone(&calls), vec![Ok(with_revision("r1"))])
         };
         (Box::new(fetcher), calls, ledger_reads)
+    }
+
+    /// A fake whose input store reads step through `inputs`, and the count of those reads.
+    pub(in crate::source) fn fake_inputs(
+        inputs: Vec<Result<Inputs, String>>,
+    ) -> (Box<dyn Fetcher>, Arc<AtomicUsize>) {
+        let input_reads = Arc::new(AtomicUsize::new(0));
+        let fetcher = FakeFetcher {
+            inputs,
+            input_reads: Arc::clone(&input_reads),
+            ..empty_fake(Arc::new(AtomicUsize::new(0)), vec![Ok(with_revision("r1"))])
+        };
+        (Box::new(fetcher), input_reads)
+    }
+
+    fn empty_fake(calls: Arc<AtomicUsize>, results: Vec<Result<Snapshot, String>>) -> FakeFetcher {
+        FakeFetcher {
+            results,
+            calls,
+            lists: Arc::new(AtomicUsize::new(0)),
+            ledgers: Vec::new(),
+            ledger_reads: Arc::new(AtomicUsize::new(0)),
+            inputs: Vec::new(),
+            input_reads: Arc::new(AtomicUsize::new(0)),
+        }
     }
 
     pub(in crate::source) fn fake(
@@ -367,11 +418,8 @@ pub(super) mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let lists = Arc::new(AtomicUsize::new(0));
         let fetcher = FakeFetcher {
-            results,
-            calls: Arc::clone(&calls),
             lists: Arc::clone(&lists),
-            ledgers: Vec::new(),
-            ledger_reads: Arc::new(AtomicUsize::new(0)),
+            ..empty_fake(Arc::clone(&calls), results)
         };
         (Box::new(fetcher), calls, lists)
     }

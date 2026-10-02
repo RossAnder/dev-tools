@@ -385,14 +385,12 @@ impl InputRow {
 
 /// The input store document. `revision` is `None` when the store does not exist.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(dead_code, reason = "loaded once the inputs feed is wired in")]
 pub(crate) struct Inputs {
     pub(crate) path: String,
     pub(crate) revision: Option<String>,
     pub(crate) rows: Vec<InputRow>,
 }
 
-#[allow(dead_code, reason = "loaded once the inputs feed is wired in")]
 impl Inputs {
     /// Loads a `tomlctl::inputs_read` document. Fails only on an `inputs` that
     /// is not an array.

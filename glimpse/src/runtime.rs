@@ -1,10 +1,9 @@
 //! The terminal event loop and one-shot frame rendering.
 //!
 //! Three threads feed one channel: the input thread owns the blocking terminal read, the
-//! source poller sends snapshots, flow changes, the subscribed ledgers and the activity panel's
-//! transcript tail, and the writer thread sends each write's outcome. The main loop drains
-//! whatever has queued before drawing once. Whenever
-//! the flow or flow-less ledger on show changes, the loop re-subscribes the poller's ledger
+//! source poller sends snapshots, flow changes, the subscribed ledgers, the input records and
+//! the activity panel's transcript tail, and the writer thread sends each write's outcome. The
+//! main loop drains whatever has queued before drawing once. Whenever the flow or flow-less ledger on show changes, the loop re-subscribes the poller's ledger
 //! feeds and drops any read still in flight for a feed it let go. The main loop reads no
 //! files. With no running agent and nothing on screen changing over time it blocks without
 //! a timeout, so an idle glimpse does no work at all. While a form or the filter prompt is
@@ -31,7 +30,7 @@ use crate::config::Config;
 use crate::diagram::DiagramCache;
 use crate::flows::{self, FlowEntry, Scopes};
 use crate::keys;
-use crate::ledger::{Kind, Ledger, StatusClass};
+use crate::ledger::{Inputs, Kind, Ledger, StatusClass};
 use crate::model::Snapshot;
 use crate::source::{Event, Feed, Source};
 use crate::state::State;
@@ -408,6 +407,7 @@ fn handle(screen: &mut Screen, event: Event, host: &mut impl Host, pointed: &mut
             redraw_if(app.selector_open)
         }
         Event::Ledger { feed, ledger } => ledger_read(app, &feed, ledger, pointed),
+        Event::InputRecords(inputs) => inputs_read(app, inputs),
         Event::Scopes(scopes) => match scopes.and_then(|value| Scopes::from_value(&value)) {
             Ok(scopes) => {
                 app.apply_scopes(scopes);
@@ -518,8 +518,8 @@ fn resubscribe(app: &App, host: &mut impl Host, pointed: &mut Pointed) {
 }
 
 /// The ledgers of the flow on show, whether picked as a ledger-only flow or as the slug
-/// the poller follows, plus the backlog. A picked flow-less ledger stands in for the
-/// flow's ledger of its kind; the flow's other ledgers stay live.
+/// the poller follows, plus the backlog and the input store. A picked flow-less ledger
+/// stands in for the flow's ledger of its kind; the flow's other ledgers stay live.
 fn feeds_for(app: &App, slug: Option<&str>) -> Vec<Feed> {
     let slug = app
         .ledger_flow
@@ -542,6 +542,7 @@ fn feeds_for(app: &App, slug: Option<&str>) -> Vec<Feed> {
         .map(Feed::Ledger)
         .collect();
     feeds.push(Feed::Ledger(LedgerRef::Backlog));
+    feeds.push(Feed::Inputs);
     feeds
 }
 
@@ -595,6 +596,24 @@ fn ledger_read(
             let before = tab_state(app, surface);
             app.apply_ledger(ledger, Instant::now());
             redraw_if(showing || tab_state(app, surface) != before)
+        }
+        Err(message) if showing => {
+            app.notice = Some((message, Instant::now()));
+            Step::Redraw
+        }
+        Err(_) => Step::Nothing,
+    }
+}
+
+/// Hands an input store read to the Inbox, on the same redraw terms as [`ledger_read`].
+fn inputs_read(app: &mut App, inputs: Result<Inputs, String>) -> Step {
+    let showing = app.surface == Surface::Inbox;
+    let tab = |app: &App| (app.inbox_unanswered(), app.inbox.new_since_view);
+    match inputs {
+        Ok(inputs) => {
+            let before = tab(app);
+            app.apply_inputs(inputs, Instant::now());
+            redraw_if(showing || tab(app) != before)
         }
         Err(message) if showing => {
             app.notice = Some((message, Instant::now()));
@@ -927,6 +946,7 @@ mod tests {
             })
             .collect();
         feeds.push(Feed::Ledger(LedgerRef::Backlog));
+        feeds.push(Feed::Inputs);
         feeds
     }
 
@@ -1007,6 +1027,49 @@ mod tests {
             2,
             "a read for a feed let go is dropped"
         );
+    }
+
+    fn inputs_read_event(revision: &str, records: serde_json::Value) -> Event {
+        let inputs = Inputs::from_value(serde_json::json!({
+            "path": ".claude/inputs.toml",
+            "revision": revision,
+            "inputs": records,
+        }))
+        .expect("inputs");
+        Event::InputRecords(Ok(inputs))
+    }
+
+    fn question(id: &str) -> serde_json::Value {
+        serde_json::json!({"id": id, "kind": "question", "status": "new", "prompt": "which?"})
+    }
+
+    #[test]
+    fn an_inputs_read_reaches_the_inbox_and_redraws_only_when_seen() {
+        let mut screen = idle_screen("demo-flow");
+        let mut host = FakeHost::default();
+        let mut pointed = Pointed::starting(&screen.app);
+        resubscribe(&screen.app, &mut host, &mut pointed);
+        assert_eq!(host.subscriptions[0].last(), Some(&Feed::Inputs));
+        let mut step =
+            |screen: &mut Screen, event: Event| handle(screen, event, &mut host, &mut pointed);
+
+        let first = inputs_read_event("r1", serde_json::json!([question("I1")]));
+        assert!(
+            matches!(step(&mut screen, first), Step::Redraw),
+            "the Inbox tab's count appears"
+        );
+        assert_eq!(screen.app.inbox_unanswered(), Some(1));
+        let same = inputs_read_event("r2", serde_json::json!([question("I1")]));
+        assert!(matches!(step(&mut screen, same), Step::Nothing));
+        let failed = Event::InputRecords(Err("torn read".to_string()));
+        assert!(matches!(step(&mut screen, failed), Step::Nothing));
+
+        screen.app.apply(Action::SwitchSurface(Surface::Inbox));
+        let failed = Event::InputRecords(Err("torn read".to_string()));
+        assert!(matches!(step(&mut screen, failed), Step::Redraw));
+        assert_eq!(screen.app.live_notice(Instant::now()), Some("torn read"));
+        let shown = inputs_read_event("r3", serde_json::json!([question("I1")]));
+        assert!(matches!(step(&mut screen, shown), Step::Redraw));
     }
 
     #[test]

@@ -1,5 +1,5 @@
-//! Watches a repo's flows and ledgers for changes and fetches fresh snapshots and ledgers onto
-//! the event channel.
+//! Watches a repo's flows, ledgers and input store for changes and fetches fresh snapshots,
+//! ledgers and input records onto the event channel.
 //!
 //! A filesystem watch only wakes the poller; the fingerprints below still decide what changed.
 //! A safety tick every [`SAFETY_TICK`], on its own schedule whatever wakes arrive, catches what
@@ -28,7 +28,7 @@ use tomlctl::LedgerRef;
 
 use crate::app::TICK;
 use crate::flows::{self, FlowEntry};
-use crate::ledger::Ledger;
+use crate::ledger::{Inputs, Ledger};
 use crate::model::Snapshot;
 use crate::transcript::{TailState, TailView};
 use crate::watch::{LedgerScopeDir, RepoFile, Wake};
@@ -59,6 +59,9 @@ pub(crate) enum Event {
         feed: Feed,
         ledger: Result<Ledger, String>,
     },
+    /// The [`Feed::Inputs`] read, sent on the same terms as [`Event::Ledger`]. Not to be
+    /// confused with [`Event::Input`], a terminal event.
+    InputRecords(Result<Inputs, String>),
     /// The `tomlctl::ledger_scopes` document, sent with every flow list and whenever a
     /// flow-less ledger appears or goes.
     Scopes(Result<serde_json::Value, String>),
@@ -73,12 +76,39 @@ pub(crate) enum Event {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum Feed {
     Ledger(LedgerRef),
-    /// `.claude/inputs.toml`; subscribed but not yet read.
-    #[allow(
-        dead_code,
-        reason = "the runtime subscribes once the Inbox is wired in"
-    )]
+    /// `.claude/inputs.toml`.
     Inputs,
+}
+
+/// One successful feed read.
+enum FeedRead {
+    Ledger(Ledger),
+    Inputs(Inputs),
+}
+
+impl FeedRead {
+    fn revision(&self) -> &Option<String> {
+        match self {
+            FeedRead::Ledger(ledger) => &ledger.revision,
+            FeedRead::Inputs(inputs) => &inputs.revision,
+        }
+    }
+}
+
+/// The event carrying `read` of `feed`.
+fn feed_event(feed: &Feed, read: Result<FeedRead, String>) -> Event {
+    match read {
+        Ok(FeedRead::Inputs(inputs)) => Event::InputRecords(Ok(inputs)),
+        Ok(FeedRead::Ledger(ledger)) => Event::Ledger {
+            feed: feed.clone(),
+            ledger: Ok(ledger),
+        },
+        Err(e) if *feed == Feed::Inputs => Event::InputRecords(Err(e)),
+        Err(e) => Event::Ledger {
+            feed: feed.clone(),
+            ledger: Err(e),
+        },
+    }
 }
 
 impl Feed {
@@ -321,15 +351,12 @@ impl Poller {
         }
     }
 
-    /// Re-reads every subscribed ledger whose file moved or was evicted, sending it when its
+    /// Re-reads every subscribed feed whose file moved or was evicted, sending it when its
     /// revision differs from the last one sent. Returns the scopes of the feeds that moved, or
     /// `None` once the receiver has gone.
     fn poll_feeds(&mut self) -> Option<BTreeSet<WatchScope>> {
         let mut changed = BTreeSet::new();
         for (feed, state) in &mut self.feeds {
-            let Feed::Ledger(ledger) = feed else {
-                continue;
-            };
             let current = stat(&feed_path(&self.root, feed));
             if state.stat == Some(current) {
                 continue;
@@ -340,13 +367,20 @@ impl Poller {
             // Recorded before the read, as for snapshots: a write landing during it moves
             // the stat again.
             state.stat = Some(current);
-            let read = match self.fetcher.fetch_ledger(&self.root, ledger) {
+            let fetched = match feed {
+                Feed::Ledger(ledger) => self
+                    .fetcher
+                    .fetch_ledger(&self.root, ledger)
+                    .map(FeedRead::Ledger),
+                Feed::Inputs => self.fetcher.fetch_inputs(&self.root).map(FeedRead::Inputs),
+            };
+            let read = match fetched {
                 Ok(read) => {
                     state.failing = false;
-                    if state.sent.as_ref() == Some(&read.revision) {
+                    if state.sent.as_ref() == Some(read.revision()) {
                         continue;
                     }
-                    state.sent = Some(read.revision.clone());
+                    state.sent = Some(read.revision().clone());
                     Ok(read)
                 }
                 Err(e) => {
@@ -359,11 +393,7 @@ impl Poller {
                     Err(e)
                 }
             };
-            let event = Event::Ledger {
-                feed: feed.clone(),
-                ledger: read,
-            };
-            self.events.send(event).ok()?;
+            self.events.send(feed_event(feed, read)).ok()?;
         }
         Some(changed)
     }
@@ -637,8 +667,8 @@ impl Source {
         let _ = self.control.send(Control::SetSlug(slug));
     }
 
-    /// Replaces the poller's feeds, sending [`Event::Ledger`] for each new one at once and for
-    /// any feed whenever its revision moves.
+    /// Replaces the poller's feeds, sending [`Event::Ledger`] or [`Event::InputRecords`] for
+    /// each new one at once and for any feed whenever its revision moves.
     pub(crate) fn subscribe(&self, feeds: Vec<Feed>) {
         let _ = self.control.send(Control::Subscribe(feeds));
     }
@@ -680,8 +710,8 @@ impl Drop for Source {
 mod tests {
     use super::scan::flow_dir;
     use super::scan::tests::{
-        fake, fake_counting_lists, fake_ledgers, ledger_with_revision, temp_root, with_revision,
-        write_in_place, write_renamed,
+        fake, fake_counting_lists, fake_inputs, fake_ledgers, inputs_with_revision,
+        ledger_with_revision, temp_root, with_revision, write_in_place, write_renamed,
     };
     use super::*;
     use std::collections::BTreeSet;
@@ -1086,6 +1116,54 @@ mod tests {
         assert!(poller.tick());
         assert_eq!(ledger_revisions(drain(&rx)), [Some("r2".into())]);
         assert_eq!(ledger_reads.load(Ordering::SeqCst), 3);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn input_revisions(events: Vec<Event>) -> Vec<Option<String>> {
+        events
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::InputRecords(read) => Some(read.expect("read").revision),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_inputs_change_posts_one_event() {
+        let root = temp_root("inputs-change");
+        let reads = ["r1", "r1", "r2"].map(|r| Ok(inputs_with_revision(Some(r))));
+        let (fetcher, input_reads) = fake_inputs(reads.into());
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        let write = |body: &str| {
+            std::fs::write(root.join(".claude").join("inputs.toml"), body).expect("inputs");
+        };
+        write("a");
+        poller.subscribe(vec![Feed::Inputs]);
+
+        assert!(poller.tick());
+        assert_eq!(input_revisions(drain(&rx)), [Some("r1".into())]);
+        assert!(poller.tick());
+        assert_eq!(
+            input_reads.load(Ordering::SeqCst),
+            1,
+            "an idle tick reads nothing"
+        );
+
+        let mut wakes = Wakes::default();
+        wakes.add(Wake::Repo(RepoFile::Inputs));
+        poller.evict(&wakes);
+        assert!(poller.tick());
+        assert!(
+            input_revisions(drain(&rx)).is_empty(),
+            "a woken read of an unchanged revision is not sent"
+        );
+
+        write("ab");
+        assert!(poller.tick());
+        assert_eq!(input_revisions(drain(&rx)), [Some("r2".into())]);
+        assert_eq!(input_reads.load(Ordering::SeqCst), 3);
         let _ = std::fs::remove_dir_all(&root);
     }
 
