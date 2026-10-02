@@ -12,6 +12,7 @@ use ratatui::layout::Position;
 
 use crate::app::{Action, App, Dir, Scroll};
 use crate::config::{Orientation, ViewKind};
+use crate::surface::Surface;
 
 /// Rows one wheel notch scrolls the details panel, the layer list or the diagram.
 const WHEEL_ROWS: u16 = 3;
@@ -60,6 +61,12 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
         KeyCode::Char('-') => Action::ResizeColumns(false),
         KeyCode::Char('=' | '+') => Action::ResizeColumns(true),
         KeyCode::Char('q') | KeyCode::Esc => Action::Back,
+        KeyCode::Char(digit @ '1'..='6') => Action::SwitchSurface(Surface::from_digit(digit)?),
+        KeyCode::Char(' ') => Action::ToggleMark,
+        KeyCode::Char('V') => Action::MarkVisible,
+        KeyCode::Char('g') => Action::CycleGroup,
+        KeyCode::Char('S') => Action::CycleSort,
+        KeyCode::Char('c') => Action::ToggleClosed,
         _ => return None,
     };
     Some(action)
@@ -95,6 +102,18 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
     let over_details = regions.details.is_some_and(|r| r.contains(at));
     let over_view = regions.modal.is_none() && regions.view.is_some_and(|r| r.contains(at));
     match event.kind {
+        MouseEventKind::Down(MouseButton::Left) if regions.modal.is_none() => regions
+            .items
+            .iter()
+            .find(|(rect, _)| rect.contains(at))
+            .map(|(_, id)| Action::SelectItem(id.clone()))
+            .or_else(|| {
+                regions
+                    .tasks
+                    .iter()
+                    .find(|(rect, _)| over_view && rect.contains(at))
+                    .map(|(_, id)| Action::Select(*id))
+            }),
         MouseEventKind::ScrollDown if over_details => {
             Some(Action::ScrollDetails(Scroll::Down(WHEEL_ROWS)))
         }
@@ -105,11 +124,6 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
         MouseEventKind::ScrollUp if over_view => scroll_view(app, 0, -1),
         MouseEventKind::ScrollRight if over_view => scroll_view(app, 1, 0),
         MouseEventKind::ScrollLeft if over_view => scroll_view(app, -1, 0),
-        MouseEventKind::Down(MouseButton::Left) if over_view => regions
-            .tasks
-            .iter()
-            .find(|(rect, _)| rect.contains(at))
-            .map(|(_, id)| Action::Select(*id)),
         _ => None,
     }
 }
@@ -322,6 +336,46 @@ mod tests {
         ] {
             assert_eq!(mouse(event(kind, 5, 4), &app), None, "{kind:?}");
         }
+    }
+
+    #[test]
+    fn digits_switch_surfaces_and_space_marks() {
+        for (digit, surface) in [
+            ('1', Surface::Tasks),
+            ('2', Surface::Review),
+            ('3', Surface::Optimise),
+            ('4', Surface::PlanReview),
+            ('5', Surface::Backlog),
+            ('6', Surface::Inbox),
+        ] {
+            assert_eq!(
+                map(press(KeyCode::Char(digit))),
+                Some(Action::SwitchSurface(surface))
+            );
+        }
+        assert_eq!(map(press(KeyCode::Char('7'))), None);
+        let cases = [
+            (' ', Action::ToggleMark),
+            ('V', Action::MarkVisible),
+            ('g', Action::CycleGroup),
+            ('S', Action::CycleSort),
+            ('c', Action::ToggleClosed),
+        ];
+        for (ch, action) in cases {
+            assert_eq!(map(press(KeyCode::Char(ch))), Some(action), "{ch:?}");
+        }
+    }
+
+    #[test]
+    fn a_click_on_an_item_row_selects_it() {
+        let mut app = app_with_regions();
+        app.regions.items = vec![(Rect::new(0, 3, 60, 1), "R1".to_string())];
+        let left = MouseEventKind::Down(MouseButton::Left);
+        assert_eq!(
+            mouse(event(left, 5, 3), &app),
+            Some(Action::SelectItem("R1".to_string()))
+        );
+        assert_eq!(mouse(event(left, 5, 15), &app), None, "no row there");
     }
 
     #[test]
