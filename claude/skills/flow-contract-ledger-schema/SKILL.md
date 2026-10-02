@@ -74,7 +74,7 @@ related = []
 - `depends_on` — array of ledger IDs (e.g. `["O7", "R12"]`) this item must apply AFTER. Consumed by the topological sort in `/review-apply` and `/optimise-apply` Step 3, which `tomlctl items clusters` performs (layering the selection over these edges before clustering and refusing a cycle). Forward references to non-existent IDs are harmless — the topo sort restricts the DAG to the selected set and lists the dropped edges under `dropped_deps` — but `tomlctl items orphans <ledger>` surfaces dangling refs for hygiene (emits `{"id":...,"class":"dangling-dep","dangling_deps":[...]}` records alongside the `missing-file`, `symbol-missing` and `instance-missing` classes).
 - `fingerprint` — opaque string computed by `tomlctl` (not hand-authored). Produced by `tomlctl items find-duplicates --tier B` as a 16-char SHA-256 truncation over `file|summary|severity|category|symbol`; current ledgers leave this field absent. Consumers treat absence as "fingerprint not yet computed".
 - `rollback_rationale` — string; present on items whose transition was reverted by a Step 5.5 rollback in `/review-apply` or `/optimise-apply`. Set when a rollback flips an item from `fixed`/`applied` back to `open`. Preserved across subsequent rounds so the rollback history surfaces in future reports.
-- `reopen_rationale` — string; present on items whose status was transitioned from `deferred` back to `open` via the deferred-trigger reopen sweep (`/review` and `/optimise` Step 1). Captures the trigger event that fired.
+- `reopen_rationale` — string; present on items whose status was transitioned from `deferred` back to `open`, either by the deferred-trigger reopen sweep (`/review` and `/optimise` Step 1), where it captures the trigger event that fired, or by the user through glimpse, where it holds the user's reason.
 
 #### Disposition-specific fields (required only when status matches)
 
@@ -84,10 +84,14 @@ related = []
 - `status = "deferred"`:
   - `defer_reason` (string, required)
   - `defer_trigger` (string, required) — concrete re-evaluation condition.
-- `status = "wontfix"` / `status = "wontapply"`:
+- `status = "wontfix"`:
   - `wontfix_rationale` (string, required).
+- `status = "wontapply"`:
+  - `wontapply_rationale` (string, required).
 - `status = "verified-clean"`:
   - `verified_note` (string, required) — the audit note (e.g. "Round 2 (2026-04-14) — migrations.rs idioms already match").
+- `status = "discarded"` (plan-review ledgers, `plan-review-findings.toml`):
+  - `discard_reason` (string, optional) — why the finding was dropped; glimpse writes it when the user discards an open finding.
 
 #### Category vocabularies
 
@@ -182,7 +186,7 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
 - `tomlctl items add <ledger> --json '{...}'` — append a new item.
 - `tomlctl items update <ledger> <id> --json '{...}'` — patch fields on an existing item matched by `id`.
 - `tomlctl items remove <ledger> <id>` — delete by id.
-- `tomlctl items apply <ledger> --ops -` (stdin heredoc — preferred) or `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` (argv; small fixed-string batches only) — batch multiple **heterogeneous** ops (mixed add/update/remove, or non-uniform field sets) in one atomic, all-or-nothing file rewrite. Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N. Feed the ops array via heredoc — the same `<<'EOF' … EOF` pattern as the `add-many` example below, except the payload is a JSON array of op objects piped into `--ops -` instead of NDJSON. Never stage the ops payload via a tempfile; the `-` sentinel is the agent-native replacement for that round-trip.
+- `tomlctl items apply <ledger> --ops -` (stdin heredoc — preferred) or `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` (argv; small fixed-string batches only) — batch multiple **heterogeneous** ops (mixed add/update/remove, or non-uniform field sets) in one atomic, all-or-nothing file rewrite. An `update` / `remove` op may carry `"expect": {"<field>": <value>}` (`null` = field absent), a compare-and-set on the values the caller read; every late status write carries `"expect": {"status": "<status it read>"}` and passes `--on-stale skip`, which drops a stale op, applies the rest, and lists it under the envelope's `skipped_stale` — report those ids as changed during the run and never retry them. Always pair `expect` with `--on-stale`: an older tomlctl silently ignores `expect` but rejects the flag (see the `tomlctl` skill's `references/write.md`, `items apply`). Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N. Feed the ops array via heredoc — the same `<<'EOF' … EOF` pattern as the `add-many` example below, except the payload is a JSON array of op objects piped into `--ops -` instead of NDJSON. Never stage the ops payload via a tempfile; the `-` sentinel is the agent-native replacement for that round-trip.
 - `tomlctl items add-many <ledger> --ndjson - [--defaults-json '{...}']` — batch-append **homogeneous** new items via newline-delimited JSON on stdin; shared fields go in `--defaults-json` and per-row keys win. Prefer this over a hand-rolled `--ops` array when every op is `"add"`. Example:
   ```bash
   tomlctl items add-many <ledger> \
@@ -203,7 +207,9 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
   - `--where KEY=VAL`, `--where-in KEY=V1,V2`, `--where-has KEY`, `--where-gte KEY=@date:YYYY-MM-DD`, `--where-regex KEY=PAT` — filter composition. Typed RHS via `@date:` / `@int:` / `@float:` / `@bool:` prefixes; bare strings otherwise.
 - **Stdin for `--ops` / `--json` / `--ndjson`**: every JSON-accepting flag above treats `-` as a sentinel meaning "read JSON from stdin" — e.g. `printf '%s' "$OPS" | tomlctl items apply <ledger> --ops -`. Prefer this for large batches or payloads containing shell metacharacters (embedded quotes, `$`, backticks, or newlines in agent-produced `resolution` / `wontfix_rationale` / `verified_note` strings); avoids the tempfile round-trip and eliminates the argv-level quoting surface entirely. Empty stdin errors clearly.
 
-`tomlctl` writes go through `tempfile::NamedTempFile::persist` (atomic rename) and hold an exclusive advisory lock on a sidecar `.lock` file, so concurrent invocations are safe and an interrupted write cannot corrupt the ledger.
+`tomlctl` writes go through `tempfile::NamedTempFile::persist` (atomic rename) and hold an exclusive advisory lock on a sidecar `.lock` file, so concurrent invocations are safe and an interrupted write cannot corrupt the ledger. That safety is per call, not per run: the lock spans one read-modify-write, so a carrier that read an item at run start and writes its transition later can overwrite a change made in between unless the write carries `expect`.
+
+**Writers.** The orchestrator of the running carrier is the only *agent* writer; sub-agents never write a ledger. The user is the other writer: glimpse writes control fields directly — status dispositions with their companion field (the transitions above, `reopen_rationale` and `discard_reason` included) and review/optimise `severity`, `effort` and `category` — each guarded by the same compare-and-set. glimpse never writes item content, ids, `rounds`, `dedup_id`, `first_flagged` or `depends_on`, and never bumps a ledger's `last_updated`.
 
 If `tomlctl` is unavailable, install it: `cargo install --path tomlctl`.
 

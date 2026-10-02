@@ -218,7 +218,7 @@ tomlctl items remove .claude/flows/foo/review-ledger.toml R17
 
 ### `items apply`
 
-Runs a mixed add/update/remove batch against one array in a single parse + rewrite. Each op is `{"op": "add|update|remove", ...}` with the single-op payload shape: `json` for add/update (the patch key is `json`, not `set`), `id` for update/remove, and on update an optional `unset` array of field names applied after the `json` merge, as `--unset` is. Ops run in order; any op error aborts the whole batch and the file is left unchanged.
+Runs a mixed add/update/remove batch against one array in a single parse + rewrite. Each op is `{"op": "add|update|remove", ...}` with the single-op payload shape: `json` for add/update (the patch key is `json`, not `set`), `id` for update/remove, on update an optional `unset` array of field names applied after the `json` merge, as `--unset` is, and on update/remove an optional `expect` precondition (below). Ops run in order; any op error aborts the whole batch and the file is left unchanged.
 
 ```bash
 tomlctl items apply .claude/flows/foo/review-ledger.toml --ops - <<'EOF'
@@ -237,6 +237,25 @@ printf '%s\n' '{"op":"update","id":"R22","json":{"status":"applied"}}' '{"op":"r
 | `--ops` | JSON array or NDJSON, `-` or `@<path>` | The batch. A payload whose first non-whitespace character is `{` is read as NDJSON, one op per line: blank lines are skipped and a malformed line aborts the batch naming its 1-based line number. | required |
 | `--array` | name | Run the batch against another array-of-tables, e.g. `rollback_events`. | `items` |
 | `--no-remove` | — | Reject any `remove` op. The apply flows pass it so an agent-generated payload cannot erase audit history. | off |
+| `--on-stale` | `abort` \| `skip` | What to do with an op whose `expect` no longer matches its row. `abort` fails the batch and writes nothing; `skip` drops the stale ops and applies the rest. | `abort` |
+
+#### Stale-write precondition (`expect`)
+
+An `update` or `remove` op may carry `"expect": {"<field>": <json>, ...}`, checked against the row's current values before the op runs. It is a compare-and-set for a caller that read the ledger earlier and writes later, while a human (glimpse) or another run may have changed the row in between.
+
+- **Comparison.** JSON equality after the TOML→JSON conversion, so a date compares as its `YYYY-MM-DD` string. `null` means the field must be absent. Fields are checked in order and the first mismatch is the one reported.
+- **Errors.** `expect` on an `add` op is an error, as is a non-object `expect`. An `expect` naming an id that does not exist passes; the op itself then fails on the unknown id.
+- **`--on-stale abort`** (default) runs the whole batch first, then fails naming every stale op — ``op[N] id = R3: `status` expected "open" but found "deferred"`` — and writes nothing.
+- **`--on-stale skip`** drops the stale ops, applies the rest, and the envelope always carries a `skipped_stale` array (empty when nothing was stale), on `--dry-run` as well:
+
+```bash
+printf '%s\n' '{"op":"update","id":"R22","json":{"status":"wontfix","wontfix_rationale":"..."},"expect":{"status":"open"}}' | tomlctl items apply .claude/flows/foo/review-ledger.toml --ops - --on-stale skip
+# → {"ok":true,"created":false,"path":"...","skipped_stale":[{"id":"R22","field":"status","expected":"open","found":"deferred"}]}
+```
+
+Report the `skipped_stale` ids as changed during the run and do not retry them; the current value wins.
+
+> **Old-binary hazard.** A tomlctl that predates `expect` ignores unknown op keys, so `expect` alone is silently dropped and the write lands unguarded. Always pass `--on-stale skip` (or `--on-stale abort`) together with `expect`: an older binary rejects the unknown flag loudly instead. That failure surfaces at the write, so a carrier that cannot afford it late in a run checks that `tomlctl capabilities` lists the `items_apply_expect` feature up front.
 
 Prefer this over looping single-op invocations — one parse + one write instead of N. For homogeneous add-only batches prefer `items add-many` (simpler input shape). For append-only non-`items` arrays prefer `array-append`.
 

@@ -613,7 +613,88 @@ pub(crate) fn items_apply_to_opts(
     let ops: JsonValue = serde_json::from_str(ops_json).context(
         "parsing --ops (expected JSON array of op objects, e.g. `[{\"op\":\"update\",\"id\":\"R1\",\"json\":{\"status\":\"resolved\"}}]`)"
     )?;
-    items_apply_parsed_to_opts(doc, ops, array_name, no_remove)
+    items_apply_parsed_to_opts(doc, ops, array_name, no_remove, StalePolicy::Abort).map(|_| ())
+}
+
+/// What `items apply` does with an `update` / `remove` op whose `expect`
+/// precondition no longer matches its row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum StalePolicy {
+    /// Fail the whole batch, naming every stale op.
+    #[default]
+    Abort,
+    /// Drop the stale ops and apply the rest.
+    Skip,
+}
+
+/// One op dropped by its `expect` precondition: the first expected field
+/// whose current value differed. `Null` stands for an absent field on
+/// either side.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct StaleOp {
+    pub(crate) id: String,
+    pub(crate) field: String,
+    pub(crate) expected: JsonValue,
+    pub(crate) found: JsonValue,
+}
+
+impl StaleOp {
+    pub(crate) fn to_json(&self) -> JsonValue {
+        serde_json::json!({
+            "id": self.id,
+            "field": self.field,
+            "expected": self.expected,
+            "found": self.found,
+        })
+    }
+}
+
+/// Parse an op's optional `expect` object; `null` means no precondition.
+fn take_expect(expect: Option<JsonValue>) -> Result<Option<serde_json::Map<String, JsonValue>>> {
+    match expect {
+        None | Some(JsonValue::Null) => Ok(None),
+        Some(JsonValue::Object(m)) => Ok(Some(m)),
+        Some(other) => bail!(
+            "op `expect` must be a JSON object of field to expected value (e.g. `{{\"status\":\"open\"}}`, `null` for an absent field), got JSON {}",
+            json_type_name(&other)
+        ),
+    }
+}
+
+/// Check `expect` against the row `id`, looked up at `idx` when that slot
+/// still holds it and by linear scan otherwise. A missing row passes, so
+/// the op itself reports the unknown id.
+fn stale_against(
+    doc: &TomlValue,
+    array_name: &str,
+    id: &str,
+    idx: Option<usize>,
+    expect: &serde_json::Map<String, JsonValue>,
+) -> Option<StaleOp> {
+    let arr = items_array(doc, array_name);
+    let row = idx
+        .and_then(|i| arr.get(i))
+        .filter(|r| item_id(r) == Some(id))
+        .or_else(|| arr.iter().find(|r| item_id(r) == Some(id)))?
+        .as_table()?;
+    expect.iter().find_map(|(field, expected)| {
+        let found = row.get(field).map(toml_to_json).unwrap_or(JsonValue::Null);
+        (&found != expected).then(|| StaleOp {
+            id: id.to_string(),
+            field: field.clone(),
+            expected: expected.clone(),
+            found,
+        })
+    })
+}
+
+fn reject_add_expect(obj: &serde_json::Map<String, JsonValue>) -> Result<()> {
+    if obj.contains_key("expect") {
+        bail!(
+            "add op does not take `expect`; a precondition applies only to update and remove ops"
+        );
+    }
+    Ok(())
 }
 
 /// Post-parse sibling of `items_apply_to_opts`. Takes already-parsed
@@ -623,12 +704,16 @@ pub(crate) fn items_apply_to_opts(
 /// (after the `MAX_OPS_PER_APPLY` length check) — can avoid a second parse.
 /// All validation gates (`--no-remove`, op-shape errors, missing ids) and
 /// error surfaces are byte-identical to the string-parsing path.
+///
+/// Returns the ops `policy` skipped as stale, keyed by op index. Under
+/// `Abort` the batch runs to the end so the error names every stale op.
 pub(crate) fn items_apply_parsed_to_opts(
     doc: &mut TomlValue,
     ops: JsonValue,
     array_name: &str,
     no_remove: bool,
-) -> Result<()> {
+    policy: StalePolicy,
+) -> Result<Vec<(usize, StaleOp)>> {
     let got_type = crate::convert::json_type_name(&ops);
     let JsonValue::Array(arr) = ops else {
         bail!(
@@ -658,6 +743,7 @@ pub(crate) fn items_apply_parsed_to_opts(
         .filter(|op| op.get("op").and_then(|v| v.as_str()) == Some("update"))
         .count();
 
+    let mut stale: Vec<(usize, StaleOp)> = Vec::new();
     if update_count > ID_INDEX_BUILD_THRESHOLD {
         // Fast path: build the id→index map once, then dispatch each op
         // through `apply_op_indexed`, which performs O(1) lookups for
@@ -665,15 +751,38 @@ pub(crate) fn items_apply_parsed_to_opts(
         // in sync (or invalidated on remove) by the helper.
         let mut id_index: Option<HashMap<String, usize>> = Some(build_id_index(doc, array_name)?);
         for (i, op) in arr.into_iter().enumerate() {
-            apply_op_indexed(doc, op, array_name, &mut id_index)
-                .with_context(|| format!("op[{}] failed", i))?;
+            if let Some(s) = apply_op_indexed(doc, op, array_name, &mut id_index)
+                .with_context(|| format!("op[{}] failed", i))?
+            {
+                stale.push((i, s));
+            }
         }
     } else {
         for (i, op) in arr.into_iter().enumerate() {
-            apply_single_op(doc, op, array_name).with_context(|| format!("op[{}] failed", i))?;
+            if let Some(s) =
+                apply_single_op(doc, op, array_name).with_context(|| format!("op[{}] failed", i))?
+            {
+                stale.push((i, s));
+            }
         }
     }
-    Ok(())
+    if policy == StalePolicy::Abort && !stale.is_empty() {
+        let listed: Vec<String> = stale
+            .iter()
+            .map(|(i, s)| {
+                format!(
+                    "op[{}] id = {}: `{}` expected {} but found {}",
+                    i, s.id, s.field, s.expected, s.found
+                )
+            })
+            .collect();
+        bail!(
+            "{} op(s) failed their `expect` precondition, nothing was written (pass `--on-stale skip` to apply the rest): {}",
+            stale.len(),
+            listed.join("; ")
+        );
+    }
+    Ok(stale)
 }
 
 /// Build an `id → array_index` map for `array_name` inside `doc`.
@@ -694,13 +803,13 @@ fn build_id_index(doc: &TomlValue, array_name: &str) -> Result<HashMap<String, u
 /// (and same error messages) but routes `update` / `remove` through the
 /// id-index for O(1) target resolution. The `id_index` is `Option` so
 /// `remove` can drop it (`.take()`); the next op that needs it rebuilds
-/// before lookup.
+/// before lookup. Returns `Some` for an op skipped by its `expect`.
 fn apply_op_indexed(
     doc: &mut TomlValue,
     op: JsonValue,
     array_name: &str,
     id_index: &mut Option<HashMap<String, usize>>,
-) -> Result<()> {
+) -> Result<Option<StaleOp>> {
     let got_type = crate::convert::json_type_name(&op);
     let JsonValue::Object(mut obj) = op else {
         bail!(
@@ -726,6 +835,7 @@ fn apply_op_indexed(
                         "add op missing `json` field; required shape is {{\"op\":\"add\",\"json\":{{<row fields>}}}}"
                     )
                 })?;
+            reject_add_expect(&obj)?;
             // Capture the new entry's id (if present + a string) before the
             // value is consumed; on success append it to the index so a
             // later update/remove in the same batch can find it. Route
@@ -744,7 +854,7 @@ fn apply_op_indexed(
             if let (Some(id), Some(map)) = (new_id, id_index.as_mut()) {
                 map.insert(id, len_before);
             }
-            Ok(())
+            Ok(None)
         }
         "update" => {
             let id = obj
@@ -764,6 +874,7 @@ fn apply_op_indexed(
                     )
                 })?;
             let unset = take_unset(obj.remove("unset"))?;
+            let expect = take_expect(obj.remove("expect"))?;
             // Lazy-rebuild the index if a previous remove invalidated it.
             if id_index.is_none() {
                 *id_index = Some(build_id_index(doc, array_name)?);
@@ -775,9 +886,14 @@ fn apply_op_indexed(
                     id
                 );
             };
+            if let Some(expect) = expect
+                && let Some(stale) = stale_against(doc, array_name, &id, Some(idx), &expect)
+            {
+                return Ok(Some(stale));
+            }
             // Update honours --array. Direct-index update bypasses the
             // linear scan in `items_update_value_to`.
-            update_at_index(doc, array_name, idx, &id, json, &unset)
+            update_at_index(doc, array_name, idx, &id, json, &unset).map(|()| None)
         }
         "remove" => {
             let id = obj
@@ -801,6 +917,11 @@ fn apply_op_indexed(
             // which shouldn't happen but is defensively allowed) falls
             // through to the full-rebuild path on the next op needing the map.
             let removed_idx = id_index.as_ref().and_then(|m| m.get(id).copied());
+            if let Some(expect) = take_expect(obj.get("expect").cloned())?
+                && let Some(stale) = stale_against(doc, array_name, id, removed_idx, &expect)
+            {
+                return Ok(Some(stale));
+            }
             items_remove_from(doc, array_name, id)?;
             match (id_index.as_mut(), removed_idx) {
                 (Some(map), Some(idx)) => {
@@ -818,7 +939,7 @@ fn apply_op_indexed(
                     *id_index = None;
                 }
             }
-            Ok(())
+            Ok(None)
         }
         other => bail!(
             "unknown op `{}`; expected one of: add, update, remove",
@@ -915,7 +1036,12 @@ fn update_at_index(
 /// `json` payload to `items_add_value_to` / `items_update_value_to` by
 /// value, avoiding a per-row patch clone. Caller (`items_apply_to_opts`)
 /// iterates the parsed ops array via `.into_iter()` to feed owned values here.
-pub(crate) fn apply_single_op(doc: &mut TomlValue, op: JsonValue, array_name: &str) -> Result<()> {
+/// Returns `Some` for an op skipped by its `expect`.
+pub(crate) fn apply_single_op(
+    doc: &mut TomlValue,
+    op: JsonValue,
+    array_name: &str,
+) -> Result<Option<StaleOp>> {
     let got_type = crate::convert::json_type_name(&op);
     let JsonValue::Object(mut obj) = op else {
         bail!(
@@ -939,7 +1065,8 @@ pub(crate) fn apply_single_op(doc: &mut TomlValue, op: JsonValue, array_name: &s
                         "add op missing `json` field; required shape is {{\"op\":\"add\",\"json\":{{<row fields>}}}}"
                     )
                 })?;
-            items_add_value_to(doc, json, array_name)
+            reject_add_expect(&obj)?;
+            items_add_value_to(doc, json, array_name).map(|()| None)
         }
         "update" => {
             let id = obj
@@ -962,10 +1089,15 @@ pub(crate) fn apply_single_op(doc: &mut TomlValue, op: JsonValue, array_name: &s
             // `take_unset` helper so the two dispatch paths can't drift on
             // shape errors or `null` handling.
             let unset = take_unset(obj.remove("unset"))?;
+            if let Some(expect) = take_expect(obj.remove("expect"))?
+                && let Some(stale) = stale_against(doc, array_name, &id, None, &expect)
+            {
+                return Ok(Some(stale));
+            }
             // Update honours the apply-op's --array parameter so a batch
             // targeting e.g. `rollback_events` can update entries there,
             // not just in `[[items]]`.
-            items_update_value_to(doc, array_name, &id, json, &unset)
+            items_update_value_to(doc, array_name, &id, json, &unset).map(|()| None)
         }
         "remove" => {
             let id = obj
@@ -976,8 +1108,13 @@ pub(crate) fn apply_single_op(doc: &mut TomlValue, op: JsonValue, array_name: &s
                         "remove op missing `id` field; required shape is {{\"op\":\"remove\",\"id\":\"<id>\"}}"
                     )
                 })?;
+            if let Some(expect) = take_expect(obj.get("expect").cloned())?
+                && let Some(stale) = stale_against(doc, array_name, id, None, &expect)
+            {
+                return Ok(Some(stale));
+            }
             // Remove also follows the --array parameter.
-            items_remove_from(doc, array_name, id)
+            items_remove_from(doc, array_name, id).map(|()| None)
         }
         other => bail!(
             "unknown op `{}`; expected one of: add, update, remove",
@@ -1310,6 +1447,27 @@ pub(crate) fn compute_apply_mutation(
     ops: &JsonValue,
     no_remove: bool,
 ) -> Result<MutationPlan> {
+    compute_apply_mutation_with(doc, array_name, ops, no_remove, StalePolicy::Abort)
+        .map(|guarded| guarded.plan)
+}
+
+/// A `MutationPlan` together with the ops its `StalePolicy::Skip` dropped;
+/// a skipped op's id appears in none of the plan's id vectors.
+#[derive(Debug, Clone)]
+pub(crate) struct GuardedPlan {
+    pub(crate) plan: MutationPlan,
+    pub(crate) skipped_stale: Vec<StaleOp>,
+}
+
+/// `compute_apply_mutation` with each op's `expect` precondition resolved
+/// by `policy`.
+pub(crate) fn compute_apply_mutation_with(
+    doc: &TomlValue,
+    array_name: &str,
+    ops: &JsonValue,
+    no_remove: bool,
+    policy: StalePolicy,
+) -> Result<GuardedPlan> {
     // Caller hands us an already-parsed `JsonValue`. The dispatch
     // layer already parsed the `--ops` payload to enforce
     // `MAX_OPS_PER_APPLY`; threading the parsed value through here (and
@@ -1325,10 +1483,10 @@ pub(crate) fn compute_apply_mutation(
     // and remove ops carry `id`; add ops carry `json.id`. An op that
     // doesn't declare an id still counts as "touched" (represented by
     // an empty string) so counts stay faithful to the live behaviour.
-    let mut added: Vec<String> = Vec::new();
-    let mut updated: Vec<String> = Vec::new();
-    let mut removed: Vec<String> = Vec::new();
-    for op in arr {
+    let mut added: Vec<(usize, String)> = Vec::new();
+    let mut updated: Vec<(usize, String)> = Vec::new();
+    let mut removed: Vec<(usize, String)> = Vec::new();
+    for (i, op) in arr.iter().enumerate() {
         let Some(obj) = op.as_object() else { continue };
         let op_name = obj.get("op").and_then(|v| v.as_str()).unwrap_or("");
         match op_name {
@@ -1340,7 +1498,7 @@ pub(crate) fn compute_apply_mutation(
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                added.push(id);
+                added.push((i, id));
             }
             "update" => {
                 let id = obj
@@ -1348,7 +1506,7 @@ pub(crate) fn compute_apply_mutation(
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                updated.push(id);
+                updated.push((i, id));
             }
             "remove" => {
                 let id = obj
@@ -1356,7 +1514,7 @@ pub(crate) fn compute_apply_mutation(
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                removed.push(id);
+                removed.push((i, id));
             }
             _ => {}
         }
@@ -1370,13 +1528,24 @@ pub(crate) fn compute_apply_mutation(
     // signature stays ergonomic for the dispatch layer; the clone is over
     // the parsed JSON tree, not a re-parse of the source bytes.
     let mut new_doc = doc.clone();
-    items_apply_parsed_to_opts(&mut new_doc, ops.clone(), array_name, no_remove)?;
-    Ok(MutationPlan {
+    let stale =
+        items_apply_parsed_to_opts(&mut new_doc, ops.clone(), array_name, no_remove, policy)?;
+    let landed = |ids: Vec<(usize, String)>| -> Vec<String> {
+        ids.into_iter()
+            .filter(|(i, _)| !stale.iter().any(|(s, _)| s == i))
+            .map(|(_, id)| id)
+            .collect()
+    };
+    let plan = MutationPlan {
         new_doc,
-        added,
-        updated,
-        removed,
+        added: landed(added),
+        updated: landed(updated),
+        removed: landed(removed),
         skipped: Vec::new(),
+    };
+    Ok(GuardedPlan {
+        plan,
+        skipped_stale: stale.into_iter().map(|(_, s)| s).collect(),
     })
 }
 
@@ -1815,7 +1984,8 @@ impl Item {
     /// `## Ledger Schema → Disposition-specific fields`:
     ///   - `fixed` / `applied`           → `resolved`, `resolution`
     ///   - `deferred`                    → `defer_reason`, `defer_trigger`
-    ///   - `wontfix` / `wontapply`       → `wontfix_rationale`
+    ///   - `wontfix`                     → `wontfix_rationale`
+    ///   - `wontapply`                   → `wontapply_rationale`
     ///   - `verified-clean`              → `verified_note`
     ///
     /// "Missing" means absent OR present with an empty value (`""`, `[]`,
@@ -1837,7 +2007,8 @@ impl Item {
         let required: &[&'static str] = match status {
             "fixed" | "applied" => &["resolved", "resolution"],
             "deferred" => &["defer_reason", "defer_trigger"],
-            "wontfix" | "wontapply" => &["wontfix_rationale"],
+            "wontfix" => &["wontfix_rationale"],
+            "wontapply" => &["wontapply_rationale"],
             "verified-clean" => &["verified_note"],
             // "open" and any forward-compat unknown status: no companion fields.
             _ => &[],
@@ -2186,6 +2357,162 @@ optimise_findings = ".claude/flows/x/optimise-findings.toml"
         let s_batch = toml::to_string_pretty(&doc_batch).unwrap();
         let s_seq = toml::to_string_pretty(&doc_seq).unwrap();
         assert_eq!(s_batch, s_seq);
+    }
+
+    // ----- items apply `expect` --------------------------------------------
+
+    const EXPECT_LEDGER: &str = r#"schema_version = 1
+
+[[items]]
+id = "R1"
+status = "open"
+first_flagged = 2026-04-17
+
+[[items]]
+id = "R2"
+status = "fixed"
+
+[[items]]
+id = "R3"
+status = "open"
+
+[[items]]
+id = "R4"
+status = "open"
+"#;
+
+    fn expect_doc() -> TomlValue {
+        toml::from_str(EXPECT_LEDGER).unwrap()
+    }
+
+    fn status_of(doc: &TomlValue, id: &str) -> String {
+        items_get(doc, id).unwrap()["status"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn an_expect_mismatch_aborts_the_batch() {
+        let doc = expect_doc();
+        let ops: JsonValue = serde_json::from_str(
+            r#"[
+                {"op":"update","id":"R1","expect":{"status":"open","first_flagged":"2026-04-17"},"json":{"status":"wontfix"}},
+                {"op":"update","id":"R2","expect":{"status":"open"},"json":{"status":"deferred"}},
+                {"op":"remove","id":"R3","expect":{"status":"deferred"}}
+            ]"#,
+        )
+        .unwrap();
+        let err = compute_apply_mutation(&doc, "items", &ops, false).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(msg.contains("2 op(s) failed"), "{msg}");
+        assert!(
+            msg.contains(r#"op[1] id = R2: `status` expected "open" but found "fixed""#),
+            "{msg}"
+        );
+        assert!(
+            msg.contains(r#"op[2] id = R3: `status` expected "deferred" but found "open""#),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn an_expect_mismatch_is_skipped_under_skip() {
+        let doc = expect_doc();
+        let ops: JsonValue = serde_json::from_str(
+            r#"[
+                {"op":"update","id":"R1","expect":{"status":"open"},"json":{"status":"wontfix"}},
+                {"op":"update","id":"R2","expect":{"status":"open"},"json":{"status":"deferred"}},
+                {"op":"remove","id":"R3","expect":{"status":"deferred"}},
+                {"op":"remove","id":"R4","expect":{"status":"open"}}
+            ]"#,
+        )
+        .unwrap();
+        let guarded =
+            compute_apply_mutation_with(&doc, "items", &ops, false, StalePolicy::Skip).unwrap();
+        assert_eq!(guarded.plan.updated, vec!["R1".to_string()]);
+        assert_eq!(guarded.plan.removed, vec!["R4".to_string()]);
+        let stale: Vec<JsonValue> = guarded.skipped_stale.iter().map(StaleOp::to_json).collect();
+        assert_eq!(
+            stale,
+            vec![
+                serde_json::json!({"id":"R2","field":"status","expected":"open","found":"fixed"}),
+                serde_json::json!({"id":"R3","field":"status","expected":"deferred","found":"open"}),
+            ]
+        );
+        let new_doc = &guarded.plan.new_doc;
+        assert_eq!(status_of(new_doc, "R1"), "wontfix");
+        assert_eq!(status_of(new_doc, "R2"), "fixed");
+        assert_eq!(status_of(new_doc, "R3"), "open");
+        assert!(items_get(new_doc, "R4").is_err());
+    }
+
+    #[test]
+    fn a_null_expect_requires_the_field_absent() {
+        let doc = expect_doc();
+        let ops: JsonValue = serde_json::from_str(
+            r#"[
+                {"op":"update","id":"R1","expect":{"resolution":null},"json":{"resolution":"done"}},
+                {"op":"update","id":"R2","expect":{"status":null},"json":{"status":"open"}}
+            ]"#,
+        )
+        .unwrap();
+        let guarded =
+            compute_apply_mutation_with(&doc, "items", &ops, false, StalePolicy::Skip).unwrap();
+        assert_eq!(guarded.plan.updated, vec!["R1".to_string()]);
+        assert_eq!(guarded.skipped_stale.len(), 1);
+        assert_eq!(guarded.skipped_stale[0].id, "R2");
+        assert_eq!(
+            guarded.skipped_stale[0].found,
+            JsonValue::String("fixed".into())
+        );
+    }
+
+    #[test]
+    fn the_indexed_path_honours_expect() {
+        let doc = expect_doc();
+        // Three updates clear `ID_INDEX_BUILD_THRESHOLD`, routing every op
+        // through `apply_op_indexed`.
+        let ops: JsonValue = serde_json::from_str(
+            r#"[
+                {"op":"update","id":"R1","expect":{"status":"open"},"json":{"status":"wontfix"}},
+                {"op":"update","id":"R2","expect":{"status":"open"},"json":{"status":"deferred"}},
+                {"op":"update","id":"R3","expect":{"status":"open"},"json":{"status":"wontfix"}},
+                {"op":"remove","id":"R4","expect":{"status":"fixed"}}
+            ]"#,
+        )
+        .unwrap();
+        let guarded =
+            compute_apply_mutation_with(&doc, "items", &ops, false, StalePolicy::Skip).unwrap();
+        assert_eq!(
+            guarded.plan.updated,
+            vec!["R1".to_string(), "R3".to_string()]
+        );
+        assert!(guarded.plan.removed.is_empty());
+        let ids: Vec<&str> = guarded
+            .skipped_stale
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(ids, ["R2", "R4"]);
+        assert_eq!(status_of(&guarded.plan.new_doc, "R2"), "fixed");
+        assert!(items_get(&guarded.plan.new_doc, "R4").is_ok());
+        assert!(compute_apply_mutation(&doc, "items", &ops, false).is_err());
+    }
+
+    #[test]
+    fn an_expect_on_an_add_op_is_rejected() {
+        let doc = expect_doc();
+        let ops: JsonValue = serde_json::from_str(
+            r#"[{"op":"add","expect":{"status":null},"json":{"id":"R9","status":"open"}}]"#,
+        )
+        .unwrap();
+        let err =
+            compute_apply_mutation_with(&doc, "items", &ops, false, StalePolicy::Skip).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("add op does not take `expect`"),
+            "{err:#}"
+        );
     }
 
     // ----- items update --unset -------------------------------------------
@@ -4127,7 +4454,7 @@ note = "baseline"
             err,
             DispositionError::MissingDispositionField {
                 status: "wontapply".to_string(),
-                field: "wontfix_rationale"
+                field: "wontapply_rationale"
             }
         );
     }
