@@ -14,6 +14,11 @@ external-docs rule, the verification limits, and the report lines (`deviation:`,
 of that method, and MUST include:
 
 - The exact files to read and modify: the cluster's `files[]`, which is the union of each item's `file`, its `instances` files and the files its `description` names, plus any growth the pre-analysis re-sweep found. For a pattern item, list every site as `file:symbol` so the agent works the set rather than rediscovering it.
+- A line of its own at column 0, below the `DISPATCH:` header and any `FILE-BUDGET:` line, in the form
+  `ledger: <repo-relative ledger path> items: <comma-separated ids>` — the cluster's ledger and
+  every item id it carries, e.g. `ledger: .claude/flows/<slug>/review-ledger.toml items: R3,R7`,
+  with no space after a comma. Agent recording reads this line to attribute the agent to the flow
+  and its items; a flow-less ledger gets the line too and simply goes unattributed.
 - Each finding's ledger `id` alongside its `file`, `line`, `symbol`, `category`, `severity`, and
   `summary`, plus an instruction that the agent MUST include the `id` in every result tag.
 - The Step-2 pre-analysed reasoning, including the carrier's narration for the categories that

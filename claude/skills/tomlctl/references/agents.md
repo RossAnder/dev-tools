@@ -30,6 +30,7 @@ that.
 - [Events](#events)
 - [Flow selection](#flow-selection)
 - [Task attribution](#task-attribution)
+- [Ledger attribution](#ledger-attribution)
 - [Output](#output)
 
 `agents record` carries the shared write bundle — `--allow-outside`, `--no-create`,
@@ -112,6 +113,12 @@ context_tokens = 48213
 task_ids = [16]
 started_at = "2026-09-28T04:44:22Z"
 ended_at = "2026-09-28T04:52:08Z"
+
+[[agents.segments]]
+task_ids = []
+item_ids = ["R3", "R7"]
+started_at = "2026-09-28T05:01:40Z"
+ended_at = ""
 ```
 
 | Key | Value | Meaning |
@@ -152,7 +159,8 @@ An unknown `harness`, `kind` or `status` value refuses the whole store, naming t
 
 | Field | Value | Meaning |
 |---|---|---|
-| `task_ids` | task ids | The flow tasks the assignment covered, sorted and deduplicated. More than one id is a cluster dispatch; `[]` is an agent with no task-level dispatch, such as a verification agent attached by session affinity. |
+| `task_ids` | task ids | The flow tasks the assignment covered, sorted and deduplicated. More than one id is a cluster dispatch; `[]` is an agent with no task-level dispatch, such as a verification agent attached by session affinity or a [ledger dispatch](#ledger-attribution). |
+| `item_ids` | ledger item ids | The findings the assignment covered, from the dispatch's [ledger line](#ledger-attribution), deduplicated in first-seen order — a lexical sort would put `R10` before `R3`. Omitted from the store when empty, and absent reads as `[]`. |
 | `started_at` | RFC 3339 UTC | When the assignment opened. |
 | `ended_at` | RFC 3339 UTC or `""` | When it closed. At most one segment is open — the last, while its `ended_at` is `""`. |
 
@@ -197,12 +205,19 @@ accepted only when its canonical file name is `rollout-*.jsonl` and carries the 
 `agent_id`. Either path may be `null`, which leaves the event with no transcript.
 
 The **dispatch** is the newest user-authored line in that transcript carrying at least one
-`tasks show <id> --slug <slug>` command — the fetch line every flow dispatch prompt contains.
-In a Codex rollout that is a user-role `response_item` message's `input_text`, or an
-`inter_agent_communication` item's `content`.
-Its ids become the segment's task set. A line whose `tasks show` commands name two different
-slugs yields no dispatch, and a line that is a tool result echoing such a command is not a
-prompt and is skipped.
+`tasks show <id> --slug <slug>` command — the fetch line every task dispatch prompt contains —
+or a [ledger line](#ledger-attribution), which review, optimise, plan-review and apply
+dispatches carry. In a Codex rollout that is a user-role `response_item` message's
+`input_text`, or an `inter_agent_communication` item's `content`.
+Its task ids become the segment's task set and its item ids the segment's item set. A line
+whose `tasks show` commands and ledger lines name two different slugs yields no dispatch, and
+a line that is a tool result echoing such a command is not a prompt and is skipped.
+
+**How much is read.** A start or idle event reads a transcript up to 4 MiB whole; past that
+it reads the last 1 MiB, then falls back to the first line, where a long run's spawn prompt
+sits. A stop reads only the last 1 MiB, whatever the size, and never falls back to the head:
+the same read yields the context size, and the segment it closes already carries the ids
+recorded at start or at the previous idle.
 
 Every flow's `agents.toml` under `<root>/.claude/flows/` is then scanned, and the owner is
 chosen per event:
@@ -235,14 +250,38 @@ The transcript can lag the hook that names it, so a start may still see the agen
 dispatch. The stop and idle paths read the dispatch again and, when one resolves for this
 flow, overwrite the closing segment's `task_ids` with it. A teammate's follow-up message that
 carries no `tasks show` line resolves to the same latest dispatch it already holds, so the open
-segment is left alone rather than re-attributed.
+segment is left alone rather than re-attributed. A stop whose last 1 MiB holds no dispatch
+leaves the closing segment's `task_ids` and `item_ids` as they were; a dispatch found there —
+a re-task — overwrites both.
+
+## Ledger attribution
+
+A dispatch prompt that works a flow's findings ledger carries one line of its own, at column 0
+and anywhere in the prompt, in the form:
+
+```text
+ledger: .claude/flows/<slug>/<ledger>.toml
+ledger: .claude/flows/<slug>/<ledger>.toml items: R3,R7
+```
+
+`<ledger>` is `review-ledger`, `optimise-findings` or `plan-review-findings`. The lens agents of
+`/review`, `/optimise` and `/review-plan` carry the path only; apply implementers append
+` items: ` and their comma-separated item ids, each an `R`, `O` or `P` followed by digits. The
+line's slug selects the flow as a `tasks show` slug does, and its ids land in the segment's
+`item_ids`, deduplicated in first-seen order; several ledger lines in one prompt pool their ids.
+A ledger dispatch names no task, so its segment's `task_ids` is `[]`.
+
+Only a flow-local path matches. A flow-less ledger — `.claude/reviews/<scope>.toml`,
+`.claude/optimise-findings/<scope>.toml`, `.claude/plan-review-findings/<scope>.toml` — has no
+`agents.toml` to write to, so carriers still emit the line for it and it goes unattributed: the
+agent falls back to session affinity, or to `no-flow`.
 
 ## Output
 
 `record` prints exactly one compact JSON line on stdout, for manual and CLI callers (`glimpse hook` receives the same result in-process and prints nothing):
 
 ```json
-{"recorded":true,"slug":"lively-twirling-babbage","event":"start","id":"A3","task_ids":[16]}
+{"recorded":true,"slug":"lively-twirling-babbage","event":"start","id":"A3","task_ids":[16],"item_ids":[]}
 {"recorded":false,"reason":"no-flow"}
 ```
 
@@ -253,6 +292,7 @@ segment is left alone rather than re-attributed.
 | `event` | `start` \| `stop` \| `idle` | The [event](#events) applied. Only when `recorded`. |
 | `id` | `A<n>` | The row touched. Only when `recorded`. |
 | `task_ids` | task ids | The row's last segment's task set after the event. Only when `recorded`. |
+| `item_ids` | ledger item ids | The row's last segment's item set after the event, `[]` when it has none. Only when `recorded`. |
 | `reason` | `internal-agent` \| `no-flow` \| `unknown-flow` \| `unknown-agent` \| `stale-start` \| `unsupported-event` | Why nothing was recorded. Only when not `recorded`. |
 
 A `recorded: false` line exits `0` — declining an event is not an error. A malformed payload,
