@@ -15,15 +15,16 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde_json::{Map, Value as JsonValue, json};
 use sha2::{Digest, Sha256};
-use toml::Value as TomlValue;
+use toml::de::{DeTable, DeValue};
 
 use crate::backlog::schema as backlog_schema;
-use crate::convert::toml_to_json;
+use crate::convert::{devalue_to_json, toml_to_json};
+use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::validate_slug;
 use crate::integrity::{IntegrityOpts, hex_lower};
 use crate::io::{
-    OnMissing, item_id, items_array, mutate_doc_conditional, parse_toml_bytes, read_dir_sorted,
-    relativise_under, repo_or_cwd_root,
+    OnMissing, item_id, items_array, mutate_doc_conditional, read_dir_sorted, relativise_under,
+    repo_or_cwd_root,
 };
 use crate::items::{
     Item, STATUS_COMPANIONS, StaleOp, StalePolicy, compute_apply_mutation_with, status_companions,
@@ -102,8 +103,13 @@ impl LedgerRef {
 
 /// `{"path", "kind", "revision", "items"}` for one ledger, where `revision`
 /// is the hex sha256 of the bytes read. A missing file reads as no items and
-/// a null revision.
-pub(crate) fn read(root: &Path, ledger: &LedgerRef) -> Result<JsonValue> {
+/// a null revision. Returns `None`, parsing nothing, when the bytes hash to
+/// `known`.
+pub(crate) fn read(
+    root: &Path,
+    ledger: &LedgerRef,
+    known: Option<&str>,
+) -> Result<Option<JsonValue>> {
     let path = ledger.path(root)?;
     let shown = relativise_under(root, &path).unwrap_or_else(|| path.display().to_string());
     let bytes = match fs::read(&path) {
@@ -114,28 +120,65 @@ pub(crate) fn read(root: &Path, ledger: &LedgerRef) -> Result<JsonValue> {
         }
     };
     let Some(bytes) = bytes else {
-        let kind = kind_of(ledger, &path, None)?;
-        return Ok(json!({"path": shown, "kind": kind, "revision": null, "items": []}));
+        let kind = kind_of(ledger, &path, false)?;
+        return Ok(Some(
+            json!({"path": shown, "kind": kind, "revision": null, "items": []}),
+        ));
     };
     let revision = hex_lower(&Sha256::digest(&bytes));
-    let doc = parse_toml_bytes(&path, bytes)?;
-    let kind = kind_of(ledger, &path, Some(&doc))?;
-    let array = if kind == "backlog" {
-        "backlog"
-    } else {
-        "items"
-    };
-    let items = match doc.get(array) {
-        None => Vec::new(),
-        Some(TomlValue::Array(rows)) => rows.iter().map(toml_to_json).collect(),
-        Some(_) => bail!("{}: `{array}` is not an array", path.display()),
-    };
-    Ok(json!({"path": shown, "kind": kind, "revision": revision, "items": items}))
+    if known == Some(revision.as_str()) {
+        return Ok(None);
+    }
+    let (kind, items) = with_borrowed_doc(&path, bytes, |doc| {
+        let kind = kind_of(ledger, &path, doc.contains_key("backlog"))?;
+        let array = if kind == "backlog" {
+            "backlog"
+        } else {
+            "items"
+        };
+        let items = match doc.get(array).map(|v| v.get_ref()) {
+            None => Vec::new(),
+            Some(DeValue::Array(rows)) => rows
+                .iter()
+                .map(|row| devalue_to_json(row.get_ref()))
+                .collect(),
+            Some(_) => bail!("{}: `{array}` is not an array", path.display()),
+        };
+        Ok((kind, items))
+    })?;
+    Ok(Some(
+        json!({"path": shown, "kind": kind, "revision": revision, "items": items}),
+    ))
+}
+
+/// Parses `bytes`, read from `path`, without the owned `toml::Value` tree,
+/// failing a non-UTF-8 or malformed file with the error and `parse` tag
+/// `parse_toml_bytes` gives it.
+pub(crate) fn with_borrowed_doc<R>(
+    path: &Path,
+    bytes: Vec<u8>,
+    f: impl FnOnce(&DeTable<'_>) -> Result<R>,
+) -> Result<R> {
+    let source = String::from_utf8(bytes).map_err(|_| {
+        anyhow::Error::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "stream did not contain valid UTF-8",
+        ))
+        .context(format!("reading {}", path.display()))
+    })?;
+    let doc = DeTable::parse(&source).map_err(|e| {
+        tagged_err(
+            ErrorKind::Parse,
+            Some(path.to_owned()),
+            format!("parsing {}: {}", path.display(), e),
+        )
+    })?;
+    f(doc.get_ref())
 }
 
 /// A `File` ledger's kind comes from its basename, then its parent directory,
-/// then the array it holds.
-fn kind_of(ledger: &LedgerRef, path: &Path, doc: Option<&TomlValue>) -> Result<&'static str> {
+/// then whether it holds a `backlog` key.
+fn kind_of(ledger: &LedgerRef, path: &Path, has_backlog: bool) -> Result<&'static str> {
     match ledger {
         LedgerRef::Flow { kind, .. } | LedgerRef::Scope { kind, .. } => return Ok(kind.as_str()),
         LedgerRef::Backlog => return Ok("backlog"),
@@ -156,7 +199,7 @@ fn kind_of(ledger: &LedgerRef, path: &Path, doc: Option<&TomlValue>) -> Result<&
     if let Some(kind) = LedgerKind::ALL.iter().find(|k| k.scope_dir() == parent) {
         return Ok(kind.as_str());
     }
-    if doc.is_some_and(|d| d.get("backlog").is_some()) {
+    if has_backlog {
         return Ok("backlog");
     }
     bail!(
@@ -515,50 +558,141 @@ pub(crate) fn classify(
     write_guarded(root, ledger, edits, |_| Ok(()))
 }
 
-/// Puts back what one glimpse write changed on `id`: `set` restores values
-/// and `unset` removes fields the write added, provided the row still holds
-/// `expect`. Only the fields and from-statuses glimpse writes are accepted.
-/// The result is not re-validated, so a row that was malformed before the
-/// write can still be returned to exactly that state.
-pub(crate) fn restore(
-    root: &Path,
-    ledger: &LedgerRef,
-    id: &str,
-    set: Map<String, JsonValue>,
-    unset: Vec<String>,
-    expect: Map<String, JsonValue>,
-) -> Result<JsonValue> {
+/// What to put back on one row: `set` restores values and `unset` removes
+/// fields the write added, provided the row still holds `expect`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RestoreRow {
+    pub id: String,
+    pub set: Map<String, JsonValue>,
+    pub unset: Vec<String>,
+    pub expect: Map<String, JsonValue>,
+}
+
+/// Puts back what one glimpse write changed on each of `rows`, in one locked
+/// write; each row is guarded on its own `expect`. Only the fields and
+/// from-statuses glimpse writes are accepted, and one refused row refuses the
+/// call. The result is not re-validated, so a row that was malformed before
+/// the write can still be returned to exactly that state.
+pub(crate) fn restore(root: &Path, ledger: &LedgerRef, rows: Vec<RestoreRow>) -> Result<JsonValue> {
     let (statuses, fields) = restorable(ledger)?;
-    if expect.is_empty() {
-        bail!("restore needs an `expect` precondition");
-    }
-    for (field, value) in &set {
-        if field == "status" {
-            if !value.as_str().is_some_and(|s| statuses.contains(&s)) {
-                bail!(
-                    "restore cannot set status {value}; expected one of {}",
-                    statuses.join(", ")
-                );
+    let mut ids = BTreeSet::new();
+    for row in &rows {
+        let RestoreRow {
+            id,
+            set,
+            unset,
+            expect,
+        } = row;
+        if !ids.insert(id.as_str()) {
+            bail!("restore names `{id}` more than once");
+        }
+        if expect.is_empty() {
+            bail!("restore needs an `expect` precondition");
+        }
+        for (field, value) in set {
+            if field == "status" {
+                if !value.as_str().is_some_and(|s| statuses.contains(&s)) {
+                    bail!(
+                        "restore cannot set status {value}; expected one of {}",
+                        statuses.join(", ")
+                    );
+                }
+            } else if !fields.contains(&field.as_str()) {
+                bail!("restore does not write `{field}`");
+            } else if is_empty(value) {
+                bail!("restore cannot set `{field}` to an empty value; unset it instead");
             }
-        } else if !fields.contains(&field.as_str()) {
-            bail!("restore does not write `{field}`");
-        } else if is_empty(value) {
-            bail!("restore cannot set `{field}` to an empty value; unset it instead");
+        }
+        for field in unset {
+            if !fields.contains(&field.as_str()) {
+                bail!("restore does not remove `{field}`");
+            }
+            if set.contains_key(field) {
+                bail!("restore both sets and removes `{field}`");
+            }
         }
     }
-    for field in &unset {
-        if !fields.contains(&field.as_str()) {
-            bail!("restore does not remove `{field}`");
-        }
-        if set.contains_key(field) {
-            bail!("restore both sets and removes `{field}`");
-        }
+    let edits = rows
+        .into_iter()
+        .map(|row| RowEdit {
+            id: row.id,
+            set: row.set,
+            unset: row.unset,
+            expect: row.expect,
+        })
+        .collect();
+    write_guarded(root, ledger, edits, |_| Ok(()))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_support::with_root;
+
+    #[test]
+    fn a_matching_known_revision_reads_nothing_and_another_reads_in_full() {
+        with_root(|root| {
+            let ledger = super::LedgerRef::Backlog;
+            let path = ledger.path(root).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "[[backlog]]\nid = \"B1\"\n").unwrap();
+            let full = crate::ledger_read(root, &ledger).unwrap();
+            let revision = full["revision"].as_str().unwrap().to_string();
+            assert_eq!(full["items"].as_array().unwrap().len(), 1);
+
+            let same = crate::ledger_read_if_changed(root, &ledger, Some(&revision)).unwrap();
+            assert!(same.is_none());
+
+            let other = crate::ledger_read_if_changed(root, &ledger, Some("0000")).unwrap();
+            assert_eq!(other.unwrap(), full);
+        });
     }
-    let edit = RowEdit {
-        id: id.to_string(),
-        set,
-        unset,
-        expect,
-    };
-    write_guarded(root, ledger, vec![edit], |_| Ok(()))
+
+    #[test]
+    fn items_read_as_the_owned_toml_conversion_renders_them() {
+        with_root(|root| {
+            let ledger = super::LedgerRef::Scope {
+                kind: super::LedgerKind::Review,
+                scope: "parity".into(),
+            };
+            let path = ledger.path(root).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let source = r#"schema_version = 1
+last_updated = 2026-10-02
+
+[[items]]
+id = "R1"
+first_flagged = 2026-10-02
+seen_at = 2026-10-02T08:30:00Z
+local = 2026-10-02T08:30:00.125
+time = 08:30:00
+count = 42
+hex = 0xff
+ratio = 0.5
+escaped = "a \"quoted\" é line\n"
+nested = [[1, 2], ["a"], []]
+inline = { k = "v", n = -7 }
+
+[[items.vet_events]]
+at = 2026-10-02
+verdict = "kept"
+"#;
+            std::fs::write(&path, source).unwrap();
+            let doc = toml::from_str::<toml::Value>(source).unwrap();
+            let expected = crate::convert::toml_to_json(&doc)["items"].clone();
+            let read = crate::ledger_read(root, &ledger).unwrap();
+            assert_eq!(read["items"], expected);
+            assert_eq!(
+                serde_json::to_string(&read["items"]).unwrap(),
+                serde_json::to_string(&expected).unwrap()
+            );
+
+            std::fs::write(&path, "[[items]]\nid = \n").unwrap();
+            let err = crate::ledger_read(root, &ledger).unwrap_err();
+            let shown = format!("{err:#}");
+            assert!(
+                shown.starts_with(&format!("parsing {}:", path.display())),
+                "{shown}"
+            );
+        });
+    }
 }

@@ -632,6 +632,69 @@ fn ledger_restore_undoes_a_transition() {
 }
 
 #[test]
+fn ledger_restore_many_restores_rows_in_one_write_and_skips_a_stale_one() {
+    let (_dir, root) = sandbox();
+    let (ledger, path) = flow_ledger(&root, tomlctl::LedgerKind::Review, REVIEW_WRITE);
+    let _env = pin_root(&root);
+    let original = row(&root, &ledger, "R1");
+    let deferral = json!({"defer_reason": "out of scope", "defer_trigger": "next round"});
+    tomlctl::ledger_transition(
+        &root,
+        &ledger,
+        &strings(&["R1", "R2"]),
+        "deferred",
+        obj(deferral.clone()),
+        "open",
+    )
+    .expect("defer");
+    tomlctl::ledger_transition(
+        &root,
+        &ledger,
+        &strings(&["R2"]),
+        "open",
+        obj(json!({"reopen_rationale": "changed elsewhere"})),
+        "deferred",
+    )
+    .expect("someone else reopens R2");
+
+    let undo = |id: &str| {
+        let mut expect = obj(deferral.clone());
+        expect.insert("status".into(), json!("deferred"));
+        tomlctl::RestoreRow {
+            id: id.to_string(),
+            set: obj(json!({"status": "open"})),
+            unset: strings(&["defer_reason", "defer_trigger"]),
+            expect,
+        }
+    };
+    let mut refused = undo("R2");
+    refused.set.insert("status".into(), json!("fixed"));
+    let before = fs::read(&path).unwrap();
+    let err = tomlctl::ledger_restore_many(&root, &ledger, vec![undo("R1"), refused])
+        .expect_err("one refused row refuses the call");
+    assert!(format!("{err:#}").contains("cannot set status"));
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        before,
+        "a refused call writes nothing"
+    );
+
+    let out = tomlctl::ledger_restore_many(&root, &ledger, vec![undo("R1"), undo("R2")])
+        .expect("restore");
+    assert_eq!(out["applied"], json!(["R1"]));
+    let stale = out["skipped_stale"].as_array().unwrap();
+    assert_eq!(stale.len(), 1, "{stale:?}");
+    assert_eq!(stale[0]["id"], "R2");
+    assert_eq!(row(&root, &ledger, "R1"), original);
+    assert_eq!(
+        row(&root, &ledger, "R2")["reopen_rationale"],
+        "changed elsewhere"
+    );
+    assert_eq!(last_updated(&path), "2026-09-30");
+    assert_sidecar_matches(&path);
+}
+
+#[test]
 fn ledger_writes_refuse_a_mismatched_root() {
     let (_pinned_dir, pinned) = sandbox();
     let (_dir, root) = sandbox();

@@ -47,7 +47,7 @@ use crate::ledgers::FACADE_WRITE;
 
 pub use crate::backlog::triage::BacklogTriage;
 pub use crate::items::STATUS_COMPANIONS;
-pub use crate::ledgers::{LedgerKind, LedgerRef};
+pub use crate::ledgers::{LedgerKind, LedgerRef, RestoreRow};
 
 /// The files of a flow directory that [`snapshot`] reads, store first. Its
 /// `revision` hashes them in this order, so a poller fingerprinting exactly
@@ -115,8 +115,19 @@ pub fn flow_list_matching(
 /// integrity checks. `revision` is the hex sha256 of the file's bytes, and a
 /// missing file reads as no items with a null revision.
 pub fn ledger_read(root: &Path, ledger: &LedgerRef) -> anyhow::Result<serde_json::Value> {
+    let read = ledger_read_if_changed(root, ledger, None)?;
+    Ok(read.expect("no known revision always reads"))
+}
+
+/// [`ledger_read`], or `None` when the file still hashes to `known_revision`,
+/// in which case nothing past the hash is parsed.
+pub fn ledger_read_if_changed(
+    root: &Path,
+    ledger: &LedgerRef,
+    known_revision: Option<&str>,
+) -> anyhow::Result<Option<serde_json::Value>> {
     io::silence_advisories();
-    ledgers::read(root, ledger)
+    ledgers::read(root, ledger, known_revision)
 }
 
 /// Every flow under `<root>/.claude/flows` holding a task store or a ledger,
@@ -168,8 +179,24 @@ pub fn ledger_restore(
     unset: Vec<String>,
     expect: serde_json::Map<String, serde_json::Value>,
 ) -> anyhow::Result<serde_json::Value> {
+    let row = RestoreRow {
+        id: id.to_string(),
+        set,
+        unset,
+        expect,
+    };
+    ledger_restore_many(root, ledger, vec![row])
+}
+
+/// [`ledger_restore`] for several rows in one locked write, each guarded on
+/// its own `expect`. Any refused row refuses the whole call, writing nothing.
+pub fn ledger_restore_many(
+    root: &Path,
+    ledger: &LedgerRef,
+    rows: Vec<RestoreRow>,
+) -> anyhow::Result<serde_json::Value> {
     io::silence_advisories();
-    ledgers::restore(root, ledger, id, set, unset, expect)
+    ledgers::restore(root, ledger, rows)
 }
 
 /// Applies `triage` to each of `ids` in `<root>/.claude/backlog.toml` whose
@@ -208,8 +235,18 @@ pub fn inputs_path(root: &Path) -> PathBuf {
 /// `{"path", "revision", "inputs"}`, read without integrity checks. A missing
 /// store reads as no records with a null revision.
 pub fn inputs_read(root: &Path) -> anyhow::Result<serde_json::Value> {
+    let read = inputs_read_if_changed(root, None)?;
+    Ok(read.expect("no known revision always reads"))
+}
+
+/// [`inputs_read`], or `None` when the store still hashes to `known_revision`,
+/// in which case nothing past the hash is parsed.
+pub fn inputs_read_if_changed(
+    root: &Path,
+    known_revision: Option<&str>,
+) -> anyhow::Result<Option<serde_json::Value>> {
     io::silence_advisories();
-    inputs::list(root, &inputs::Filter::default())
+    inputs::list_if_changed(root, &inputs::Filter::default(), known_revision)
 }
 
 /// Appends `record` as a `new` input, as `inputs add --json` does, and returns

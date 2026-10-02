@@ -77,8 +77,15 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
     }
 
     let columns = Columns::measure(state, &visible);
-    let rows: Vec<Row> = visible
+    let view = usize::from(list.height);
+    let offset = window(
+        cursor_at(&visible, state.cursor.as_deref()),
+        visible.len(),
+        view,
+    );
+    let rows: Vec<Row> = visible[offset..]
         .iter()
+        .take(view)
         .filter_map(|entry| match entry {
             VisibleRow::Header { label, count } => Some(Row {
                 line: Line::from(Span::styled(
@@ -102,11 +109,15 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
             }
         })
         .collect();
-    let at = rows
+    draw_rows(buf, list, &rows)
+}
+
+/// The position in `visible` of the item row `cursor` names.
+pub(crate) fn cursor_at(visible: &[VisibleRow], cursor: Option<&str>) -> Option<usize> {
+    let cursor = cursor?;
+    visible
         .iter()
-        .position(|row| row.id.is_some() && row.id == state.cursor);
-    let offset = window(at, rows.len(), usize::from(list.height));
-    draw_rows(buf, list, &rows[offset..])
+        .position(|entry| matches!(entry, VisibleRow::Item(id) if id == cursor))
 }
 
 /// A drawn row, the styles laid under and over its full width, and the item it shows.
@@ -594,5 +605,33 @@ mod tests {
         assert!(rows[2].starts_with("▸"), "{rows:#?}");
         assert_eq!(window(Some(9), 10, 4), 6);
         assert_eq!(window(Some(1), 10, 4), 0);
+    }
+
+    #[test]
+    fn a_list_taller_than_the_pane_draws_the_tail_around_the_cursor() {
+        let mut app = App::new(fixture(), &Config::default());
+        let rows = (1..=9)
+            .map(|n| finding(&format!("R{n}"), "warning", "Summary", "src/a.rs", n))
+            .collect();
+        app.apply_ledger(
+            Ledger {
+                kind: Kind::Review,
+                path: "review-ledger.toml".to_string(),
+                revision: Some("v1".to_string()),
+                rows,
+            },
+            Instant::now(),
+        );
+        app.apply(Action::SwitchSurface(Surface::Review));
+        for _ in 0..7 {
+            app.apply(Action::ItemMove(crate::app::Dir::Down));
+        }
+        let (rows, targets) = draw(&app, 80, 5);
+        let ids: Vec<&str> = targets.iter().map(|(_, id)| id.as_str()).collect();
+        assert_eq!(ids, ["R6", "R7", "R8", "R9"]);
+        let ys: Vec<u16> = targets.iter().map(|(rect, _)| rect.y).collect();
+        assert_eq!(ys, [1, 2, 3, 4]);
+        assert!(rows[3].starts_with("▸  ○ R8"), "{rows:#?}");
+        assert!(rows[4].contains("R9 warning"), "{rows:#?}");
     }
 }

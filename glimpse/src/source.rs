@@ -40,7 +40,7 @@ use mode::{
 pub(crate) use scan::{Fetcher, InProcessFetcher, task_store_mtimes, with_reinstall_hint};
 use scan::{
     FileStat, Fingerprint, FlowStat, FlowTimes, FlowsChange, feed_path, fingerprint,
-    flows_fingerprint, has_task_store, scope_files, stat, task_stores,
+    flows_fingerprint, has_task_store, scope_files, scopes_document, stat, task_stores,
 };
 
 /// Everything the runtime's main loop receives, from the poller and the input thread alike.
@@ -62,8 +62,8 @@ pub(crate) enum Event {
     /// The [`Feed::Inputs`] read, sent on the same terms as [`Event::Ledger`]. Not to be
     /// confused with [`Event::Input`], a terminal event.
     InputRecords(Result<Inputs, String>),
-    /// The `tomlctl::ledger_scopes` document, sent with every flow list and whenever a
-    /// flow-less ledger appears or goes.
+    /// A document shaped as `tomlctl::ledger_scopes` returns it, built from the poller's own
+    /// scan; sent with every flow list and whenever a flow-less ledger appears or goes.
     Scopes(Result<serde_json::Value, String>),
     /// The targeted transcript's tail, sent on a retarget and whenever a refresh changed it.
     Tail(Box<TailView>),
@@ -127,7 +127,9 @@ impl Feed {
             return true;
         }
         match self {
-            Feed::Ledger(LedgerRef::Flow { slug, .. }) => wakes.flows.contains(slug),
+            Feed::Ledger(LedgerRef::Flow { slug, kind }) => {
+                wakes.woke_flow_file(slug, kind.flow_file())
+            }
             Feed::Ledger(LedgerRef::Scope { kind, .. }) => wakes.scopes.contains(kind),
             Feed::Ledger(LedgerRef::Backlog) => wakes.repo.contains(&RepoFile::Backlog),
             Feed::Inputs => wakes.repo.contains(&RepoFile::Inputs),
@@ -331,8 +333,8 @@ impl Poller {
     }
 
     /// Drops the cached state `wakes` invalidates, so the next tick re-reads it. Only flow
-    /// wakes touch the flow caches and the task fingerprint; repo and scope wakes re-read
-    /// just their own feeds.
+    /// wakes touch the flow caches and the task fingerprint, and a flow wake naming one file
+    /// re-reads only that file's ledger feed; repo and scope wakes re-read just their own feeds.
     fn evict(&mut self, wakes: &Wakes) {
         if wakes.all || wakes.rewatch {
             self.flow_stats.clear();
@@ -365,15 +367,26 @@ impl Poller {
             // Recorded before the read, as for snapshots: a write landing during it moves
             // the stat again.
             state.stat = Some(current);
+            let known = match &state.sent {
+                Seen::At(revision) => Some(revision.as_str()),
+                Seen::Unread | Seen::Missing => None,
+            };
             let fetched = match feed {
                 Feed::Ledger(ledger) => self
                     .fetcher
-                    .fetch_ledger(&self.root, ledger)
-                    .map(FeedRead::Ledger),
-                Feed::Inputs => self.fetcher.fetch_inputs(&self.root).map(FeedRead::Inputs),
+                    .fetch_ledger(&self.root, ledger, known)
+                    .map(|read| read.map(FeedRead::Ledger)),
+                Feed::Inputs => self
+                    .fetcher
+                    .fetch_inputs(&self.root, known)
+                    .map(|read| read.map(FeedRead::Inputs)),
             };
             let read = match fetched {
-                Ok(read) => {
+                Ok(None) => {
+                    state.failing = false;
+                    continue;
+                }
+                Ok(Some(read)) => {
                     state.failing = false;
                     let revision = read.revision().as_deref();
                     if state.sent.is(revision) {
@@ -459,8 +472,11 @@ impl Poller {
         if !relisted && !rescope {
             return true;
         }
-        let scopes = self.fetcher.list_scopes(&self.root);
-        self.events.send(Event::Scopes(scopes)).is_ok()
+        let scopes = scopes_document(
+            self.last_flows.as_ref().unwrap_or(&BTreeMap::new()),
+            self.last_scope_files.as_ref().unwrap_or(&BTreeSet::new()),
+        );
+        self.events.send(Event::Scopes(Ok(scopes))).is_ok()
     }
 
     /// Fetches the viewed flow when its files moved or a failed fetch is due a retry. A flow
@@ -718,6 +734,13 @@ mod tests {
 
     fn drain(rx: &Receiver<Event>) -> Vec<Event> {
         rx.try_iter().collect()
+    }
+
+    fn flow_wake(slug: &str, file: Option<&str>) -> Wake {
+        Wake::Flow {
+            slug: slug.into(),
+            file: file.map(Into::into),
+        }
     }
 
     /// Creates flow `slug` holding only a task store, and returns its directory.
@@ -1010,7 +1033,7 @@ mod tests {
         );
 
         let mut wakes = Wakes::default();
-        wakes.add(Wake::Flow("c".into()));
+        wakes.add(flow_wake("c", Some("tasks.toml")));
         poller.evict(&wakes);
         assert!(poller.tick());
         let events = drain(&rx);
@@ -1034,14 +1057,14 @@ mod tests {
         let (control, messages) = mpsc::channel();
         control.send(Control::SetSlug("f".into())).expect("send");
         control
-            .send(Control::Wake(Wake::Flow("a".into())))
+            .send(Control::Wake(flow_wake("a", None)))
             .expect("send");
         control
-            .send(Control::Wake(Wake::Flow("b".into())))
+            .send(Control::Wake(flow_wake("b", Some("agents.toml"))))
             .expect("send");
 
         let mut wakes = Wakes::default();
-        wakes.add(Wake::Flow("a".into()));
+        wakes.add(flow_wake("a", Some("tasks.toml")));
         assert!(poller.drain(&messages, &mut wakes));
         assert_eq!(poller.slug.as_deref(), Some("f"));
         assert_eq!(wakes.flows, BTreeSet::from(["a".into(), "b".into()]));
@@ -1219,6 +1242,53 @@ mod tests {
     }
 
     #[test]
+    fn a_flow_wake_rereads_only_the_ledger_it_names() {
+        let root = temp_root("flow-file-wake");
+        let dir = with_task_store(&root, "f");
+        write_renamed(&dir, "review-ledger.toml", 100);
+        let (fetcher, _calls, ledger_reads) = fake_ledgers(Vec::new());
+        let (tx, _rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        poller.subscribe(vec![Feed::Ledger(LedgerRef::Flow {
+            slug: "f".into(),
+            kind: LedgerKind::Review,
+        })]);
+        assert!(poller.tick());
+        assert_eq!(ledger_reads.load(Ordering::SeqCst), 1);
+
+        let mut wakes = Wakes::default();
+        wakes.add(flow_wake("f", Some("agents.toml")));
+        poller.evict(&wakes);
+        assert!(poller.tick());
+        assert_eq!(
+            ledger_reads.load(Ordering::SeqCst),
+            1,
+            "another file's wake leaves an unchanged ledger alone"
+        );
+
+        let mut wakes = Wakes::default();
+        wakes.add(flow_wake("f", Some("review-ledger.toml")));
+        poller.evict(&wakes);
+        assert!(poller.tick());
+        assert_eq!(
+            ledger_reads.load(Ordering::SeqCst),
+            2,
+            "the ledger's own wake re-reads it"
+        );
+
+        let mut wakes = Wakes::default();
+        wakes.add(flow_wake("f", None));
+        poller.evict(&wakes);
+        assert!(poller.tick());
+        assert_eq!(
+            ledger_reads.load(Ordering::SeqCst),
+            3,
+            "a whole-flow wake re-reads it"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn a_ledger_only_flow_posts_its_scopes() {
         let root = temp_root("ledger-only");
         let (fetcher, _calls, lists) = fake_counting_lists(vec![Ok(with_revision("r1"))]);
@@ -1299,6 +1369,54 @@ mod tests {
         write_renamed(&dir, "tasks.toml", 300);
         assert!(poller.tick());
         assert_eq!(calls.load(Ordering::SeqCst), 1, "a task store is fetched");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_scopes_sent_match_tomlctl_ledger_scopes() {
+        let root = temp_root("scopes-parity");
+        let store = with_task_store(&root, "b-store");
+        write_renamed(&store, "context.toml", 100);
+        write_renamed(&store, "plan-review-findings.toml", 100);
+        let ledgers = flow_dir(&root, "a-ledgers");
+        std::fs::create_dir_all(&ledgers).expect("flow dir");
+        write_renamed(&ledgers, "optimise-findings.toml", 100);
+        write_renamed(&ledgers, "review-ledger.toml", 100);
+        std::fs::create_dir_all(flow_dir(&root, "c-bare")).expect("flow dir");
+        with_task_store(&root, "Not_A_Slug");
+        std::fs::create_dir_all(flow_dir(&root, "d-dir-store").join("tasks.toml"))
+            .expect("store dir");
+        let claude = root.join(".claude");
+        for kind in LedgerKind::ALL.into_iter().rev() {
+            let dir = claude.join(kind.scope_dir());
+            std::fs::create_dir_all(dir.join("dir.toml")).expect("scope dir");
+            for name in [
+                "main.toml",
+                "alpha.toml",
+                "Bad_Name.toml",
+                "notes.txt",
+                ".toml",
+            ] {
+                std::fs::write(dir.join(name), "x").expect("scope ledger");
+            }
+        }
+
+        let (fetcher, _calls) = fake(vec![Ok(with_revision("r1"))]);
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        assert!(poller.tick());
+        let sent = drain(&rx)
+            .into_iter()
+            .find_map(|e| match e {
+                Event::Scopes(scopes) => Some(scopes.expect("scopes")),
+                _ => None,
+            })
+            .expect("a scopes event");
+
+        let walked = tomlctl::ledger_scopes(&root).expect("ledger_scopes");
+        assert_eq!(sent, walked);
+        assert_eq!(walked["flows"].as_array().map(Vec::len), Some(2));
+        assert_eq!(walked["scopes"].as_array().map(Vec::len), Some(6));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

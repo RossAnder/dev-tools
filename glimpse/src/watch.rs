@@ -23,8 +23,10 @@ use tomlctl::{LedgerKind, LedgerRef};
 /// How much of the poller's cache a filesystem event invalidates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Wake {
-    /// Only the named flow changed.
-    Flow(String),
+    /// Only the named flow changed. `file` is the entry directly under the flow directory
+    /// that changed, `None` when the flow directory itself arrived or departed, or when the
+    /// event named several entries.
+    Flow { slug: String, file: Option<String> },
     /// A repo-level file directly under `.claude` changed.
     Repo(RepoFile),
     /// A ledger in the flow-less ledger directory of a kind changed.
@@ -140,12 +142,23 @@ pub(crate) fn classify(event: &notify::Result<notify::Event>, roots: &Roots) -> 
         if wake == Wake::Rewatch {
             return Some(Wake::Rewatch);
         }
-        match &placed {
-            Some(prev) if *prev != wake => placed = Some(Wake::All),
-            _ => placed = Some(wake),
-        }
+        placed = Some(match placed {
+            Some(prev) if prev != wake => merge(prev, wake),
+            _ => wake,
+        });
     }
     placed
+}
+
+/// Two different wakes from one event: entries of one flow widen to the whole flow, and
+/// anything else is unplaceable.
+fn merge(a: Wake, b: Wake) -> Wake {
+    match (a, b) {
+        (Wake::Flow { slug, .. }, Wake::Flow { slug: other, .. }) if slug == other => {
+            Wake::Flow { slug, file: None }
+        }
+        _ => Wake::All,
+    }
 }
 
 /// The wake one event path calls for, by the allowlist.
@@ -158,9 +171,20 @@ fn place(path: &Path, motion: Motion, roots: &Roots) -> Option<Wake> {
         return None;
     }
     if let Ok(rel) = path.strip_prefix(&roots.flows) {
-        return match rel.components().next()? {
-            Component::Normal(slug) => slug.to_str().map(|s| Wake::Flow(s.to_owned())),
-            _ => None,
+        let mut parts = rel.components();
+        let Component::Normal(slug) = parts.next()? else {
+            return None;
+        };
+        let slug = slug.to_str()?.to_owned();
+        return match parts.next() {
+            Some(Component::Normal(entry)) => Some(Wake::Flow {
+                slug,
+                file: entry.to_str().map(str::to_owned),
+            }),
+            Some(_) => None,
+            // The flow directory's own in-place change is a dir-entry modify that each
+            // changed entry also reports, as for a flow-less ledger dir.
+            None => (motion != Motion::Change).then_some(Wake::Flow { slug, file: None }),
         };
     }
     let rel = path.strip_prefix(&roots.claude).ok()?;
@@ -276,7 +300,66 @@ mod tests {
     fn rename_into_a_flow_names_that_flow() {
         let to = EventKind::Modify(ModifyKind::Name(RenameMode::To));
         let got = classify(&event(to, root().join("a").join("tasks.toml")), &roots());
-        assert_eq!(got, Some(Wake::Flow("a".into())));
+        assert_eq!(got, Some(flow("a", Some("tasks.toml"))));
+    }
+
+    fn flow(slug: &str, file: Option<&str>) -> Wake {
+        Wake::Flow {
+            slug: slug.into(),
+            file: file.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn a_flow_wake_names_the_entry_under_the_flow_dir() {
+        assert_eq!(
+            classify(
+                &event(write(), root().join("a").join("agents.toml")),
+                &roots()
+            ),
+            Some(flow("a", Some("agents.toml")))
+        );
+        assert_eq!(
+            classify(
+                &event(write(), root().join("a").join("sub").join("x.toml")),
+                &roots()
+            ),
+            Some(flow("a", Some("sub"))),
+            "a deeper path names its top entry"
+        );
+        let both = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+            .add_path(root().join("a").join("one.toml"))
+            .add_path(root().join("a").join("two.toml"));
+        assert_eq!(
+            classify(&Ok(both), &roots()),
+            Some(flow("a", None)),
+            "two entries of one flow widen to the flow"
+        );
+        let across = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+            .add_path(root().join("a").join("one.toml"))
+            .add_path(root().join("b").join("one.toml"));
+        assert_eq!(classify(&Ok(across), &roots()), Some(Wake::All));
+    }
+
+    #[test]
+    fn the_flow_dir_itself_wakes_the_whole_flow_only_when_it_moves() {
+        let dir = root().join("a");
+        let created = EventKind::Create(CreateKind::Folder);
+        assert_eq!(
+            classify(&event(created, dir.clone()), &roots()),
+            Some(flow("a", None))
+        );
+        let removed = EventKind::Remove(RemoveKind::Folder);
+        assert_eq!(
+            classify(&event(removed, dir.clone()), &roots()),
+            Some(flow("a", None))
+        );
+        let any = EventKind::Modify(ModifyKind::Any);
+        assert_eq!(
+            classify(&event(any, dir), &roots()),
+            None,
+            "a dir-entry modify"
+        );
     }
 
     #[test]
@@ -449,9 +532,9 @@ mod tests {
         .unwrap();
         assert!(scopes.is_empty(), "no flow-less dir exists");
         let tasks = flows.join("a").join("tasks.toml");
-        let flow_a = Wake::Flow("a".into());
+        let flow_a = flow("a", Some("tasks.toml"));
 
-        let tmp = flows.join("a").join("tasks.toml.tmp");
+        let tmp = flows.join("a").join(".tmpAb12");
         fs::write(&tmp, "x = 1\n").unwrap();
         fs::rename(&tmp, &tasks).unwrap();
         expect_wake(&rx, &flow_a, "a rename");

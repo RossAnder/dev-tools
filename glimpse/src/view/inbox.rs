@@ -13,7 +13,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use super::items::Target;
+use super::items::{Target, cursor_at};
 use crate::app::App;
 use crate::ledger::{InputRow, Seen};
 use crate::model::TaskStatus;
@@ -61,8 +61,15 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
     }
 
     let columns = Columns::measure(state, &visible);
-    let rows: Vec<Row> = visible
+    let view = usize::from(list.height);
+    let offset = window(
+        cursor_at(&visible, state.cursor.as_deref()),
+        visible.len(),
+        view,
+    );
+    let rows: Vec<Row> = visible[offset..]
         .iter()
+        .take(view)
         .filter_map(|entry| match entry {
             VisibleRow::Header { label, count } => Some(Row {
                 line: Line::from(Span::styled(
@@ -91,11 +98,7 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
             }
         })
         .collect();
-    let at = rows
-        .iter()
-        .position(|row| row.id.is_some() && row.id == state.cursor);
-    let offset = window(at, rows.len(), usize::from(list.height));
-    draw_rows(buf, list, &rows[offset..])
+    draw_rows(buf, list, &rows)
 }
 
 /// A drawn row, the styles laid under and over its full width, and the record it shows.
@@ -532,6 +535,22 @@ mod tests {
             "{line:?}"
         );
         assert!(row_of(&rows, "I1").1.trim_end().ends_with('↻'));
+    }
+
+    #[test]
+    fn a_list_taller_than_the_pane_draws_the_tail_around_the_cursor() {
+        let rows = (1..=9)
+            .map(|n| record(&format!("I{n}"), "note", "user", "new"))
+            .collect();
+        let mut app = inbox_app(rows);
+        app.inbox.move_cursor(7);
+        assert_eq!(app.inbox.cursor.as_deref(), Some("I8"));
+        let (rows, targets) = draw(&app, 60, 5);
+        let ids: Vec<&str> = targets.iter().map(|(_, id)| id.as_str()).collect();
+        assert_eq!(ids, ["I6", "I7", "I8", "I9"], "the header scrolled off");
+        let ys: Vec<u16> = targets.iter().map(|(rect, _)| rect.y).collect();
+        assert_eq!(ys, [1, 2, 3, 4]);
+        assert!(rows[3].starts_with("▸ ● I8"), "{rows:#?}");
     }
 
     #[test]

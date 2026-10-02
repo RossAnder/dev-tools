@@ -254,7 +254,7 @@ pub(crate) fn detable_to_json(table: &toml::de::DeTable<'_>) -> JsonValue {
 
 /// `DeValue` → `JsonValue`. Mirrors `toml_to_json`'s arm shape so
 /// JSON output for a borrowed parse is byte-identical to the owned parse.
-fn devalue_to_json(v: &toml::de::DeValue<'_>) -> JsonValue {
+pub(crate) fn devalue_to_json(v: &toml::de::DeValue<'_>) -> JsonValue {
     use toml::de::DeValue;
     match v {
         DeValue::String(s) => {

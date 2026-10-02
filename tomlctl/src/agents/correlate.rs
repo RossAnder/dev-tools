@@ -206,7 +206,7 @@ fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Disp
     for line in text.lines().rev() {
         // A cheap rejection before a JSON parse: a line that cannot match is
         // skipped whatever its shape.
-        if !line.contains("tasks show") && !line.contains("ledger: ") {
+        if !line.contains("tasks show") && !line.contains("ledger: .claude/flows/") {
             continue;
         }
         let Some(prompt) = prompt_of(line) else {
@@ -270,7 +270,7 @@ fn same_slug<'a>(slug: &mut Option<&'a str>, s: &'a str) -> bool {
 /// `tool_result` block is a tool's output echoed back, not a prompt, and
 /// yields `None` even when it quotes a dispatch command.
 fn user_text(line: &str) -> Option<String> {
-    if !line.contains("\"user\"") {
+    if !line.contains("\"user\"") || line.contains("\"tool_result\"") {
         return None;
     }
     let value: JsonValue = serde_json::from_str(line).ok()?;

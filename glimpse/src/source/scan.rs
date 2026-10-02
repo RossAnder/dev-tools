@@ -80,11 +80,18 @@ fn modified(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
+/// [`modified`], but `None` unless `path` is a file, as tomlctl requires of a task store.
+fn file_modified(path: &Path) -> Option<SystemTime> {
+    let meta = std::fs::metadata(path).ok()?;
+    meta.is_file().then(|| meta.modified().ok()).flatten()
+}
+
 /// The [`FlowTimes`] of every `<root>/.claude/flows/*` that has a `tasks.toml` or a ledger,
-/// keyed by directory name. A flow cached with either is re-statted on every scan: an in-place
-/// write never moves the directory's mtime, and on Windows the mtime the enumeration reports
-/// can lag even a file created in the directory. Any other flow is re-statted only when that
-/// mtime moved, which a file arriving by rename does at once, or when a wake evicted it.
+/// keyed by directory name. A flow cached with a task store has its `tasks.toml` and
+/// `context.toml` re-statted on every scan: an in-place write never moves the directory's
+/// mtime, and on Windows the mtime the enumeration reports can lag even a file created in the
+/// directory. Ledger presence, and every flow without a task store, is re-statted only when
+/// that mtime moved, which a file arriving by rename does at once, or when a wake evicted it.
 pub(super) fn flows_fingerprint(
     root: &Path,
     cache: &mut BTreeMap<String, FlowStat>,
@@ -98,16 +105,20 @@ pub(super) fn flows_fingerprint(
         let name = entry.file_name().to_string_lossy().into_owned();
         let dir = entry.metadata().and_then(|m| m.modified()).ok();
         let stat = match cache.get(&name) {
-            Some(old) if !old.times.has_artifact() && dir.is_some() && old.dir == dir => *old,
-            _ => {
+            Some(old) if old.times.tasks.is_none() && dir.is_some() && old.dir == dir => *old,
+            old => {
                 let path = entry.path();
-                let tasks = modified(&path.join("tasks.toml"));
+                let tasks = file_modified(&path.join("tasks.toml"));
+                let ledgers = match old {
+                    Some(old) if dir.is_some() && old.dir == dir => old.times.ledgers,
+                    _ => LedgerKind::ALL.map(|kind| path.join(kind.flow_file()).is_file()),
+                };
                 FlowStat {
                     dir,
                     times: FlowTimes {
                         tasks,
                         context: tasks.and_then(|_| modified(&path.join("context.toml"))),
-                        ledgers: LedgerKind::ALL.map(|kind| path.join(kind.flow_file()).is_file()),
+                        ledgers,
                     },
                 }
             }
@@ -122,8 +133,9 @@ pub(super) fn flows_fingerprint(
         .collect()
 }
 
-/// The `*.toml` files in every flow-less ledger directory. Names are read fresh on every scan:
-/// only the directory mtime lags on Windows, not the entries.
+/// The `*.toml` files in every flow-less ledger directory, a symlink counting when it leads to
+/// a file. Names are read fresh on every scan: only the directory mtime lags on Windows, not
+/// the entries.
 pub(super) fn scope_files(root: &Path) -> BTreeSet<(LedgerKind, String)> {
     let claude = root.join(".claude");
     let mut files = BTreeSet::new();
@@ -133,12 +145,59 @@ pub(super) fn scope_files(root: &Path) -> BTreeSet<(LedgerKind, String)> {
         };
         for entry in entries.filter_map(Result::ok) {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.ends_with(".toml") {
+            let is_file = match entry.file_type() {
+                Ok(kind) if kind.is_symlink() => entry.path().is_file(),
+                Ok(kind) => kind.is_file(),
+                Err(_) => false,
+            };
+            if is_file && name.ends_with(".toml") {
                 files.insert((dir, name));
             }
         }
     }
     files
+}
+
+/// The `tomlctl::ledger_scopes` document rebuilt from a scan's results, with no second walk:
+/// `flows` as [`flows_fingerprint`] returns them and `files` as [`scope_files`] does. Keeps
+/// the same flows and scopes, in the same order, under the same slug and scope-name rules.
+pub(super) fn scopes_document(
+    flows: &BTreeMap<String, FlowTimes>,
+    files: &BTreeSet<(LedgerKind, String)>,
+) -> serde_json::Value {
+    let flows: Vec<serde_json::Value> = flows
+        .iter()
+        .filter(|(slug, times)| times.has_artifact() && tomlctl::validate_slug(slug).is_ok())
+        .map(|(slug, times)| {
+            let ledgers: Vec<&str> = LedgerKind::ALL
+                .iter()
+                .zip(times.ledgers)
+                .filter(|(_, held)| *held)
+                .map(|(kind, _)| kind.as_str())
+                .collect();
+            serde_json::json!({
+                "slug": slug,
+                "has_tasks": times.tasks.is_some(),
+                "ledgers": ledgers,
+            })
+        })
+        .collect();
+    let mut scopes = Vec::new();
+    for kind in LedgerKind::ALL {
+        for (_, name) in files.iter().filter(|(dir, _)| *dir == kind) {
+            let path = Path::new(name);
+            if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+                continue;
+            }
+            let Some(scope) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if tomlctl::validate_slug(scope).is_ok() {
+                scopes.push(serde_json::json!({"kind": kind.as_str(), "scope": scope}));
+            }
+        }
+    }
+    serde_json::json!({"flows": flows, "scopes": scopes})
 }
 
 /// What a flow scan asks the poller to send.
@@ -160,9 +219,8 @@ pub(crate) fn task_store_mtimes(root: &Path) -> BTreeMap<String, SystemTime> {
     task_stores(&flows_fingerprint(root, &mut BTreeMap::new()))
 }
 
-/// Produces a snapshot for one flow, reads ledgers and lists the repo's flows and ledger
-/// scopes. The production implementation reads in-process through the tomlctl library; tests
-/// substitute a fake.
+/// Produces a snapshot for one flow, reads ledgers and lists the repo's flows. The production
+/// implementation reads in-process through the tomlctl library; tests substitute a fake.
 pub(crate) trait Fetcher: Send {
     /// The flow's snapshot, or `Ok(None)` when its inputs still hash to `known`.
     fn fetch(
@@ -177,12 +235,17 @@ pub(crate) trait Fetcher: Send {
         root: &Path,
         task_stores: &BTreeMap<String, SystemTime>,
     ) -> Result<Vec<FlowEntry>, String>;
-    /// One ledger; a missing file reads as an empty ledger with no revision.
-    fn fetch_ledger(&mut self, root: &Path, ledger: &LedgerRef) -> Result<Ledger, String>;
-    /// The input store; a missing file reads as no records with no revision.
-    fn fetch_inputs(&mut self, root: &Path) -> Result<Inputs, String>;
-    /// The `tomlctl::ledger_scopes` document.
-    fn list_scopes(&mut self, root: &Path) -> Result<serde_json::Value, String>;
+    /// One ledger, or `Ok(None)` when it still hashes to `known`; a missing file reads as an
+    /// empty ledger with no revision.
+    fn fetch_ledger(
+        &mut self,
+        root: &Path,
+        ledger: &LedgerRef,
+        known: Option<&str>,
+    ) -> Result<Option<Ledger>, String>;
+    /// The input store, or `Ok(None)` when it still hashes to `known`; a missing file reads as
+    /// no records with no revision.
+    fn fetch_inputs(&mut self, root: &Path, known: Option<&str>) -> Result<Option<Inputs>, String>;
 }
 
 /// Builds the `tasks snapshot` document in-process from `<root>/.claude/flows/<slug>`.
@@ -213,20 +276,23 @@ impl Fetcher for InProcessFetcher {
         flows::list(root, task_stores)
     }
 
-    fn fetch_ledger(&mut self, root: &Path, ledger: &LedgerRef) -> Result<Ledger, String> {
-        let value = tomlctl::ledger_read(root, ledger)
-            .map_err(|e| with_reinstall_hint(format!("{e:#}")))?;
-        Ledger::from_value(value)
+    fn fetch_ledger(
+        &mut self,
+        root: &Path,
+        ledger: &LedgerRef,
+        known: Option<&str>,
+    ) -> Result<Option<Ledger>, String> {
+        tomlctl::ledger_read_if_changed(root, ledger, known)
+            .map_err(|e| with_reinstall_hint(format!("{e:#}")))?
+            .map(Ledger::from_value)
+            .transpose()
     }
 
-    fn fetch_inputs(&mut self, root: &Path) -> Result<Inputs, String> {
-        let value =
-            tomlctl::inputs_read(root).map_err(|e| with_reinstall_hint(format!("{e:#}")))?;
-        Inputs::from_value(value)
-    }
-
-    fn list_scopes(&mut self, root: &Path) -> Result<serde_json::Value, String> {
-        tomlctl::ledger_scopes(root).map_err(|e| format!("{e:#}"))
+    fn fetch_inputs(&mut self, root: &Path, known: Option<&str>) -> Result<Option<Inputs>, String> {
+        tomlctl::inputs_read_if_changed(root, known)
+            .map_err(|e| with_reinstall_hint(format!("{e:#}")))?
+            .map(Inputs::from_value)
+            .transpose()
     }
 }
 
@@ -293,24 +359,31 @@ pub(super) mod tests {
             Ok(Vec::new())
         }
 
-        fn fetch_ledger(&mut self, _root: &Path, _ledger: &LedgerRef) -> Result<Ledger, String> {
+        fn fetch_ledger(
+            &mut self,
+            _root: &Path,
+            _ledger: &LedgerRef,
+            known: Option<&str>,
+        ) -> Result<Option<Ledger>, String> {
             let n = self.ledger_reads.fetch_add(1, Ordering::SeqCst);
-            match self.ledgers.len() {
-                0 => Ok(ledger_with_revision(None)),
-                len => self.ledgers[n.min(len - 1)].clone(),
-            }
+            let ledger = match self.ledgers.len() {
+                0 => ledger_with_revision(None),
+                len => self.ledgers[n.min(len - 1)].clone()?,
+            };
+            Ok((known.is_none() || known != ledger.revision.as_deref()).then_some(ledger))
         }
 
-        fn fetch_inputs(&mut self, _root: &Path) -> Result<Inputs, String> {
+        fn fetch_inputs(
+            &mut self,
+            _root: &Path,
+            known: Option<&str>,
+        ) -> Result<Option<Inputs>, String> {
             let n = self.input_reads.fetch_add(1, Ordering::SeqCst);
-            match self.inputs.len() {
-                0 => Ok(inputs_with_revision(None)),
-                len => self.inputs[n.min(len - 1)].clone(),
-            }
-        }
-
-        fn list_scopes(&mut self, _root: &Path) -> Result<serde_json::Value, String> {
-            Ok(serde_json::json!({"flows": [], "scopes": []}))
+            let inputs = match self.inputs.len() {
+                0 => inputs_with_revision(None),
+                len => self.inputs[n.min(len - 1)].clone()?,
+            };
+            Ok((known.is_none() || known != inputs.revision.as_deref()).then_some(inputs))
         }
     }
 
@@ -472,6 +545,30 @@ pub(super) mod tests {
 
         std::fs::write(dir.join("tasks.toml"), "a = 12345\n").expect("rewrite");
         assert_ne!(fingerprint(&root, "f"), last);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_ledger_only_flow_with_an_unmoved_directory_is_served_from_the_cache() {
+        let root = temp_root("ledger-only-cache");
+        let dir = flow_dir(&root, "f");
+        std::fs::create_dir_all(&dir).expect("flow dir");
+
+        let cached = FlowStat {
+            dir: modified(&dir),
+            times: FlowTimes {
+                tasks: None,
+                context: None,
+                ledgers: [true, false, false],
+            },
+        };
+        let mut cache = BTreeMap::from([("f".to_string(), cached)]);
+
+        let flows = flows_fingerprint(&root, &mut cache);
+        assert_eq!(
+            flows.get("f").map(|t| t.ledgers),
+            Some([true, false, false])
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

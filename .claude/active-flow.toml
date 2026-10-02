@@ -667,3 +667,20 @@ scope = [
     "glimpse/**",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "temporal-snuggling-pnueli"
+last_used = "2026-10-02T10:08:41.8926441Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "glimpse/**",
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "claude/commands/**",
+    "claude/skills/**",
+    "CLAUDE.md",
+    ".gitignore",
+]

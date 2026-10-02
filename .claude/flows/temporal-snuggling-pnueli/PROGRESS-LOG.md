@@ -155,6 +155,7 @@
 | E170 | inputs ack skips questions, targets need a ledger and one of flow or scope, and answers stamp answered_by | 2026-10-02 | | An acknowledged question became unanswerable, contradictory targets were unselectable, and a prose note was the machine link; answered_by is matched first with the note as fallback for older records | — |
 | E171 | Apply carriers' Step-0 input sweep consolidated into the apply-pipeline skill | 2026-10-02 | | The two carriers had drifted on write site, reopen, companions and summary; the pipeline now owns one contract (interim-checkpoint write with expect on the status read, reopen honoured) and review-apply honours verified-clean to match /review and glimpse | — |
 | E172 | Write bookkeeping lives in glimpse/src/writes.rs and root conflicts surface as a persistent header warning | 2026-10-02 | | App had doubled in size with write state beside selection logic, and a TOMLCTL_ROOT conflict failed every write one at a time with a misleading hint | — |
+| E173 | Undo sends one batched Restore per undo entry instead of one Restore per applied id (optimise O10) | 2026-10-02 | | Each Restore was a full locked ledger rewrite (read, parse, serialise, sidecar, two renames) plus a poller wake; tomlctl's guarded write already batches row edits with per-row expect and skipped_stale. New tomlctl::RestoreRow + ledger_restore_many make an entry one write, keeping per-row guards and stale reporting, and shrink the window a quit can cut short. Tradeoff: a row the facade refuses outright now fails the whole undo. | — |
 
 ---
 
@@ -170,4 +171,4 @@
 
 | Date | Changes | Commits |
 |------|---------|---------|
-| 2026-10-02 | 172 entries: status-transition × 2, task-completion × 60, deviation × 80, verification × 27, checkpoint × 3 | 10949cb, 25b0cb3, 298d394, 31c381d, 368f085, 3ebb6b8, 48aced0, 5afeec6, 70e4b99, 77ac000, 8174572, 8b48625, 90213de, 90e8cc2, 9788411, c470942, c7aa288, da9cb8c, dd2c0a7, e05b836, ea83d8a, ee19924, ef834dc, efd5d9c, f83299b |
+| 2026-10-02 | 173 entries: status-transition × 2, task-completion × 60, deviation × 81, verification × 27, checkpoint × 3 | 10949cb, 25b0cb3, 298d394, 31c381d, 368f085, 3ebb6b8, 48aced0, 5afeec6, 70e4b99, 77ac000, 8174572, 8b48625, 90213de, 90e8cc2, 9788411, c470942, c7aa288, da9cb8c, dd2c0a7, e05b836, ea83d8a, ee19924, ef834dc, efd5d9c, f83299b |

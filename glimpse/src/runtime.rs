@@ -13,7 +13,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{
@@ -110,14 +110,22 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
         writer: &writer,
     };
     let result = run_loop(&mut screen, &rx, &mut host);
+    let drained = writer.finish(WRITE_DRAIN);
     State::capture(&screen.app).save();
     if mouse {
         release_mouse();
     }
     ratatui::restore();
     source.detach();
+    if !drained {
+        eprintln!("glimpse: a write was still waiting for its ledger lock and was not saved");
+    }
     result
 }
+
+/// How long quitting waits for queued writes: long enough for each to finish both renames,
+/// short of the ledger-lock wait, which a write still running past it is stuck in.
+const WRITE_DRAIN: Duration = Duration::from_secs(2);
 
 /// Turns mouse reporting on and chains a panic hook that turns it off again ahead of
 /// ratatui's own restore, so a panic cannot leave the shell receiving mouse escapes.
@@ -675,7 +683,6 @@ mod tests {
     use crate::form::FieldValue;
     use crate::model::fixture;
     use crate::writer::{FakeWriter, WriteOutcome};
-    use std::time::Duration;
 
     fn opts(view: ViewKind) -> RunOpts {
         RunOpts {

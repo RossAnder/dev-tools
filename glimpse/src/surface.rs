@@ -211,6 +211,8 @@ pub(crate) struct Tracking<R> {
     pub(crate) new_since_view: usize,
     /// Ids with a write in flight, cleared when a read shows the row changed.
     pub(crate) saving: BTreeSet<String>,
+    /// Row id to its first position in `rows`, rebuilt by [`Tracking::refresh`].
+    index: HashMap<String, usize>,
 }
 
 impl<R: Tracked> Tracking<R> {
@@ -233,6 +235,10 @@ impl<R: Tracked> Tracking<R> {
         let (arrived, changed) = arrivals(&self.rows, &rows);
 
         self.rows = rows;
+        self.index.clear();
+        for (i, row) in self.rows.iter().enumerate() {
+            self.index.entry(row.id().to_string()).or_insert(i);
+        }
         self.revision = Seen::read(revision.as_deref());
         let present: BTreeSet<&str> = self.rows.iter().map(|r| r.id()).collect();
         self.saving
@@ -271,8 +277,14 @@ impl<R: Tracked> Tracking<R> {
             .retain(|_, at| now.saturating_duration_since(*at) < FLASH);
     }
 
+    /// `rows` is public and some callers assign it without a refresh, so an index hit
+    /// is checked against the row's id and anything else falls back to a scan.
     pub(crate) fn row(&self, id: &str) -> Option<&R> {
-        self.rows.iter().find(|row| row.id() == id)
+        self.index
+            .get(id)
+            .and_then(|&i| self.rows.get(i))
+            .filter(|row| row.id() == id)
+            .or_else(|| self.rows.iter().find(|row| row.id() == id))
     }
 
     pub(crate) fn cursor_row(&self) -> Option<&R> {
@@ -363,7 +375,12 @@ impl ItemsState {
     /// The rows the list draws, after the filter and the closed toggle, grouped
     /// and sorted. Group headers appear only when grouping is on.
     pub(crate) fn visible(&self) -> Vec<VisibleRow> {
-        let mut shown: Vec<&ItemRow> = self.rows.iter().filter(|r| self.shows(r)).collect();
+        let needle = self.filter.to_lowercase();
+        let mut shown: Vec<&ItemRow> = self
+            .rows
+            .iter()
+            .filter(|r| self.shows(r, &needle))
+            .collect();
         shown.sort_by(|a, b| compare(self.sort, a, b));
         if self.group == Group::None {
             return shown
@@ -371,7 +388,7 @@ impl ItemsState {
                 .map(|r| VisibleRow::Item(r.id.clone()))
                 .collect();
         }
-        let mut groups: BTreeMap<(GroupRank, String), Vec<&ItemRow>> = BTreeMap::new();
+        let mut groups: BTreeMap<(GroupRank, &str), Vec<&ItemRow>> = BTreeMap::new();
         for row in shown {
             groups
                 .entry(group_key(self.group, row))
@@ -381,7 +398,7 @@ impl ItemsState {
         let mut out = Vec::new();
         for ((_, label), members) in groups {
             out.push(VisibleRow::Header {
-                label,
+                label: label.to_owned(),
                 count: members.len(),
             });
             out.extend(members.into_iter().map(|r| VisibleRow::Item(r.id.clone())));
@@ -441,14 +458,14 @@ impl ItemsState {
         self.sort = next_of(self.surface.sorts(), self.sort);
     }
 
-    fn shows(&self, row: &ItemRow) -> bool {
+    /// `needle` is the lowercased filter.
+    fn shows(&self, row: &ItemRow, needle: &str) -> bool {
         if !self.show_closed && matches!(row.class, StatusClass::Done | StatusClass::Declined) {
             return false;
         }
         if self.filter.is_empty() {
             return true;
         }
-        let needle = self.filter.to_lowercase();
         let place = match &row.anchor {
             Anchor::Code { file, .. } => file.as_str(),
             Anchor::Area(area) => area.as_str(),
@@ -456,7 +473,7 @@ impl ItemsState {
         };
         [row.id.as_str(), row.summary.as_str(), place]
             .iter()
-            .any(|field| field.to_lowercase().contains(&needle))
+            .any(|field| field.to_lowercase().contains(needle))
     }
 
     fn visible_ids(&self) -> Vec<String> {
@@ -477,6 +494,9 @@ pub(crate) struct InboxState {
     pub(crate) tracking: Tracking<InputRow>,
     /// Shows `handled` and `withdrawn` records.
     pub(crate) show_closed: bool,
+    /// `(ledger, item id)` to the indices in `rows` of the pending records naming it, in
+    /// id order; rebuilt by [`InboxState::apply_inputs`].
+    pending: HashMap<(Kind, String), Vec<usize>>,
 }
 
 impl Deref for InboxState {
@@ -508,9 +528,31 @@ impl InboxState {
             return;
         }
         let old_position = self.cursor_position();
-        if self.tracking.refresh(rows, revision, viewing, now) {
+        let cursor_lost = self.tracking.refresh(rows, revision, viewing, now);
+        self.index_pending();
+        if cursor_lost {
             self.tracking.cursor = reposition(self.visible_ids(), old_position);
         }
+    }
+
+    fn index_pending(&mut self) {
+        let mut pending: HashMap<(Kind, String), Vec<usize>> = HashMap::new();
+        for (i, row) in self.tracking.rows.iter().enumerate() {
+            let Some(kind) = row.ledger_kind().filter(|_| row.is_pending()) else {
+                continue;
+            };
+            for (n, item) in row.items.iter().enumerate() {
+                if !row.items[..n].contains(item) {
+                    pending.entry((kind, item.clone())).or_default().push(i);
+                }
+            }
+        }
+        for indices in pending.values_mut() {
+            indices.sort_by(|&a, &b| {
+                id_key(&self.tracking.rows[a].id).cmp(&id_key(&self.tracking.rows[b].id))
+            });
+        }
+        self.pending = pending;
     }
 
     /// The questions still waiting on the user, for the Inbox tab's count.
@@ -525,17 +567,10 @@ impl InboxState {
     /// Records carry no flow or scope match here, so an id shared by two flows'
     /// ledgers finds both flows' records.
     pub(crate) fn pending_for(&self, ledger: Kind, item: &str) -> Vec<&InputRow> {
-        let mut found: Vec<&InputRow> = self
-            .rows
-            .iter()
-            .filter(|r| {
-                r.is_pending()
-                    && r.ledger_kind() == Some(ledger)
-                    && r.items.iter().any(|id| id == item)
-            })
-            .collect();
-        found.sort_by(|a, b| id_key(&a.id).cmp(&id_key(&b.id)));
-        found
+        self.pending
+            .get(&(ledger, item.to_owned()))
+            .map(|indices| indices.iter().map(|&i| &self.tracking.rows[i]).collect())
+            .unwrap_or_default()
     }
 
     /// The cursor record when it is a question the user can answer.
@@ -552,7 +587,7 @@ impl InboxState {
 
     /// The rows the Inbox draws, each section under a header.
     pub(crate) fn visible(&self) -> Vec<VisibleRow> {
-        let mut groups: BTreeMap<(u8, String), Vec<&InputRow>> = BTreeMap::new();
+        let mut groups: BTreeMap<(u8, &str), Vec<&InputRow>> = BTreeMap::new();
         for row in &self.rows {
             if !self.show_closed && matches!(row.status.as_str(), "handled" | "withdrawn") {
                 continue;
@@ -563,7 +598,7 @@ impl InboxState {
         for ((_, label), mut members) in groups {
             members.sort_by(|a, b| id_key(&a.id).cmp(&id_key(&b.id)));
             out.push(VisibleRow::Header {
-                label,
+                label: label.to_owned(),
                 count: members.len(),
             });
             out.extend(members.into_iter().map(|r| VisibleRow::Item(r.id.clone())));
@@ -587,19 +622,19 @@ impl InboxState {
 
 /// The Inbox section a record falls in, ordered by rank; an unknown status
 /// sorts after the known ones under its own label.
-fn inbox_section(row: &InputRow) -> (u8, String) {
+fn inbox_section(row: &InputRow) -> (u8, &str) {
     if row.is_unanswered_question() {
-        return (0, QUESTIONS_LABEL.to_owned());
+        return (0, QUESTIONS_LABEL);
     }
     let rank = match row.status.as_str() {
         "new" => 1,
         "acknowledged" => 2,
         "handled" => 3,
         "withdrawn" => 4,
-        "" => return (u8::MAX, EMPTY_LABEL.to_owned()),
+        "" => return (u8::MAX, EMPTY_LABEL),
         _ => 5,
     };
-    (rank, row.status.clone())
+    (rank, row.status.as_str())
 }
 
 /// A row whose arrival or status change an item list flashes.
@@ -675,7 +710,7 @@ type GroupRank = u8;
 
 const EMPTY_LABEL: &str = "(none)";
 
-fn group_key(group: Group, row: &ItemRow) -> (GroupRank, String) {
+fn group_key(group: Group, row: &ItemRow) -> (GroupRank, &str) {
     let file = match &row.anchor {
         Anchor::Code { file, .. } => file.as_str(),
         _ => "",
@@ -695,9 +730,9 @@ fn group_key(group: Group, row: &ItemRow) -> (GroupRank, String) {
         Group::Area => (0, area),
     };
     if value.is_empty() {
-        (u8::MAX, EMPTY_LABEL.to_owned())
+        (u8::MAX, EMPTY_LABEL)
     } else {
-        (rank, value.to_owned())
+        (rank, value)
     }
 }
 
@@ -768,6 +803,25 @@ mod tests {
         let mut state = ItemsState::new(Surface::Review);
         state.apply_ledger(rows, rev(0), true, Instant::now());
         state
+    }
+
+    #[test]
+    fn row_finds_the_first_row_with_an_id_even_after_a_direct_assignment() {
+        let mut state = loaded(vec![
+            item("R1", "open", "warning"),
+            item("R2", "open", "critical"),
+            item("R2", "fixed", "minor"),
+        ]);
+        assert_eq!(state.row("R2").map(|r| r.status.as_str()), Some("open"));
+        assert!(state.row("R9").is_none());
+
+        state.rows = vec![
+            item("R2", "deferred", "minor"),
+            item("R3", "open", "warning"),
+        ];
+        assert_eq!(state.row("R2").map(|r| r.status.as_str()), Some("deferred"));
+        assert_eq!(state.row("R3").map(|r| r.status.as_str()), Some("open"));
+        assert!(state.row("R1").is_none());
     }
 
     #[test]
@@ -1103,6 +1157,27 @@ mod tests {
         assert_eq!(ids(Kind::Review, "R4"), ["I1"]);
         assert_eq!(ids(Kind::Optimise, "R3"), ["I5"]);
         assert!(ids(Kind::Backlog, "R3").is_empty());
+    }
+
+    #[test]
+    fn pending_inputs_naming_one_item_come_back_in_id_order() {
+        let on = |id: &str, status: &str, ledger: &str| InputRow {
+            ledger: ledger.to_owned(),
+            items: vec!["R3".to_owned(), "R3".to_owned()],
+            ..input(id, "note", "user", status)
+        };
+        let state = inbox(vec![
+            on("I10", "new", "review"),
+            on("I3", "handled", "review"),
+            on("I2", "acknowledged", "review"),
+            on("I4", "new", "optimise"),
+        ]);
+        let ids: Vec<&str> = state
+            .pending_for(Kind::Review, "R3")
+            .into_iter()
+            .map(|r| r.id.as_str())
+            .collect();
+        assert_eq!(ids, ["I2", "I10"]);
     }
 
     #[test]

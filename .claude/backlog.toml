@@ -5002,3 +5002,104 @@ origin = "review-apply"
 flow = "temporal-snuggling-pnueli"
 context = "The spawn-order rule is stated only in a doc comment; reordering runtime::run could reintroduce write-by-write root-mismatch failures. A public tomlctl probe of its process root would make the check exact."
 base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
+
+[[backlog]]
+id = "B-9e85dc77"
+kind = "question"
+summary = "glimpse --once costs about 50 ms more than bare process start even with an empty snapshot and empty ledger, cause unexplored"
+area = "glimpse/src/main.rs"
+tags = [
+    "perf",
+    "glimpse",
+]
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "9e85dc779b2fc3f5"
+origin = "optimise"
+flow = "temporal-snuggling-pnueli"
+context = "Measured during the temporal-snuggling-pnueli optimise run: glimpse --help 78-94 ms vs --once with an empty snapshot and ledger 130-148 ms. Suspects not yet profiled: Config/state load, console queries in run_view. --once is the documented headless check used by tests, so its fixed overhead adds up; profile run_view before guessing."
+base_sha = "8076c637c4bb408afdeba23375ac5fb10e2ddeb2"
+evidence = ["glimpse/src/main.rs:140"]
+related = ["B-87dce4f2"]
+
+[[backlog]]
+id = "B-a18d4c82"
+kind = "direction"
+summary = "inputs handle takes one --note per call, so a sweep with N distinct outcomes costs N process spawns and N rewrites of inputs.toml"
+area = "tomlctl/src/inputs.rs"
+tags = [
+    "inputs",
+    "harness",
+]
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "a18d4c821be2ade4"
+origin = "optimise"
+flow = "temporal-snuggling-pnueli"
+context = "The user-inputs skill's Step-0 handle lets rows sharing an outcome share one call, but /backlog's capture notes each name a different minted id, so they cannot share. A per-id-note batch form (e.g. --ndjson of {id,note}) would make the handle step one locked write, matching the one-batched-write rule the ledgers follow. Until then, group rows by identical note where possible."
+base_sha = "8076c637c4bb408afdeba23375ac5fb10e2ddeb2"
+related = ["B-efc86277"]
+
+[[backlog]]
+id = "B-b976c4f9"
+kind = "debt"
+summary = "glimpse/CLAUDE.md says woken repo and scope feeds are re-read only when their (mtime, len) moves, but Poller::evict nulls the stat so every woken feed is re-read"
+area = "glimpse/src/source"
+tags = [
+    "glimpse",
+    "docs",
+]
+status = "resolved"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "b976c4f91684396b"
+origin = "optimise"
+flow = "temporal-snuggling-pnueli"
+context = "The watch gotcha's 'each feed is re-read only when its (mtime, len) moves' is wrong for woken feeds: evict sets state.stat = None, forcing a read (test an_inputs_change_posts_one_event asserts it). Fix the doc sentence; optimise O2/O3 in temporal-snuggling-pnueli change the same mechanism, so align the doc when those land."
+base_sha = "8076c637c4bb408afdeba23375ac5fb10e2ddeb2"
+evidence = ["glimpse/src/source.rs:345"]
+related = ["B-8146329e"]
+resolved = 2026-10-02
+resolution = "glimpse/CLAUDE.md watch gotcha rewritten during the temporal-snuggling-pnueli optimise apply to describe file-scoped flow wakes and the read-hash-parse rule"
+
+[[backlog]]
+id = "B-907701ae"
+kind = "debt"
+summary = "Tracking::rows is pub(crate) and writable through DerefMut, so a caller can skip refresh and leave the row index, flashes and saving set out of step"
+area = "glimpse/src/surface.rs"
+tags = ["glimpse"]
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "907701ae2752172e"
+origin = "optimise-apply"
+flow = "temporal-snuggling-pnueli"
+context = "Two test helpers (view/details.rs review_app_on, view/header.rs load) assign state.rows directly. Tracking::row therefore validates index hits and falls back to a linear scan. Making rows private with a test-only setter that calls refresh would make the index exact and let the fallback go."
+base_sha = "8076c637c4bb408afdeba23375ac5fb10e2ddeb2"
+evidence = ["glimpse/src/surface.rs:280"]
+
+[[backlog]]
+id = "B-d7742765"
+kind = "bug"
+summary = "devalue_to_json returns JSON null for an integer outside i64 or an overflowing float, where the owned toml parse fails the read"
+area = "tomlctl/src/convert.rs"
+tags = [
+    "tomlctl",
+    "toml",
+]
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "d774276558f6d24a"
+origin = "optimise-apply"
+flow = "temporal-snuggling-pnueli"
+context = "Every borrowed fast path (tomlctl parse, items find-duplicates --across, and ledger/inputs reads since the temporal-snuggling-pnueli optimise apply) silently nulls a value the owned path rejects; the TOML spec requires an error for an integer not representable losslessly. tomlctl writers never produce such values, so only hand-edited files are affected. Make devalue_to_json fallible, or validate ranges in the borrowed paths."
+base_sha = "8076c637c4bb408afdeba23375ac5fb10e2ddeb2"
+evidence = ["tomlctl/src/convert.rs:257"]

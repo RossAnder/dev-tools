@@ -2378,3 +2378,14 @@ summary = "Write bookkeeping lives in glimpse/src/writes.rs and root conflicts s
 original_intent = "App holds the undo stack, request queue and in-flight map; Writer::spawn discards a set_current_dir failure and root mismatches surface per write as footer notices"
 rationale = "App had doubled in size with write state beside selection logic, and a TOMLCTL_ROOT conflict failed every write one at a time with a misleading hint"
 dedup_id = "f3a73d4ae6a404df"
+
+[[items]]
+id = "E173"
+type = "deviation"
+date = 2026-10-02
+agent = "plan-update"
+task_ref = "add-the-action-menu-control-edit-forms-bulk-edits-and-undo"
+summary = "Undo sends one batched Restore per undo entry instead of one Restore per applied id (optimise O10)"
+original_intent = "u turns the top undo entry into one Restore per id that write applied, reporting any that come back stale"
+rationale = "Each Restore was a full locked ledger rewrite (read, parse, serialise, sidecar, two renames) plus a poller wake; tomlctl's guarded write already batches row edits with per-row expect and skipped_stale. New tomlctl::RestoreRow + ledger_restore_many make an entry one write, keeping per-row guards and stale reporting, and shrink the window a quit can cut short. Tradeoff: a row the facade refuses outright now fails the whole undo."
+dedup_id = "3de1d1e0970027aa"

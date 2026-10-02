@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde_json::{Map, Value};
-use tomlctl::{BacklogTriage, LedgerRef, STATUS_COMPANIONS};
+use tomlctl::{BacklogTriage, LedgerRef, RestoreRow, STATUS_COMPANIONS};
 use tui_input::Input;
 
 use crate::form::{Field, FieldValue, Form};
@@ -400,15 +400,27 @@ impl RowUndo {
         }
     }
 
-    pub(crate) fn restore(&self, request: RequestId, ledger: &LedgerRef) -> WriteRequest {
-        WriteRequest::Restore {
-            request,
-            ledger: ledger.clone(),
+    fn restore_row(&self) -> RestoreRow {
+        RestoreRow {
             id: self.id.clone(),
             set: self.set.clone(),
             unset: self.unset.clone(),
             expect: self.expect.clone(),
         }
+    }
+}
+
+/// Puts back every one of `rows` in `ledger` as one request, each row still guarded on its
+/// own `expect`. The facade refuses a batch naming one id twice.
+pub(crate) fn restore<'a>(
+    rows: impl IntoIterator<Item = &'a RowUndo>,
+    ledger: &LedgerRef,
+    next: &mut RequestId,
+) -> WriteRequest {
+    WriteRequest::Restore {
+        request: take(next),
+        ledger: ledger.clone(),
+        rows: rows.into_iter().map(RowUndo::restore_row).collect(),
     }
 }
 
@@ -619,7 +631,7 @@ pub(crate) struct UndoEntry {
 /// How an entry is undone.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum UndoKind {
-    /// A control edit, put back row by row.
+    /// A control edit, put back in one write that guards each row on its own values.
     Rows {
         ledger: LedgerRef,
         rows: Vec<RowUndo>,

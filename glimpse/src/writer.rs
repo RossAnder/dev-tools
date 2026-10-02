@@ -7,11 +7,12 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use tomlctl::{BacklogTriage, LedgerRef};
+use tomlctl::{BacklogTriage, LedgerRef, RestoreRow};
 
 use crate::source::{Event, with_reinstall_hint};
 
@@ -36,13 +37,11 @@ pub(crate) enum WriteRequest {
         fields: Map<String, Value>,
         expect: Map<String, Value>,
     },
+    /// Puts back every row of one undo entry in a single guarded write.
     Restore {
         request: RequestId,
         ledger: LedgerRef,
-        id: String,
-        set: Map<String, Value>,
-        unset: Vec<String>,
-        expect: Map<String, Value>,
+        rows: Vec<RestoreRow>,
     },
     BacklogTriage {
         request: RequestId,
@@ -124,10 +123,13 @@ impl WriteOutcome {
     }
 }
 
-/// The handle to the writer thread. Dropping it lets the thread finish what is queued and
-/// end; it is never joined, so exit never waits out a lock.
+/// The handle to the writer thread. [`Writer::finish`] closes the queue and waits, up to a
+/// bound, for the thread to perform every queued write, so quitting never strands a write
+/// between its sidecar and TOML renames yet never waits out a ledger lock.
 pub(crate) struct Writer {
     requests: Sender<WriteRequest>,
+    /// Signalled, or disconnected, once the thread has drained the closed queue.
+    done: Receiver<()>,
 }
 
 impl Writer {
@@ -151,20 +153,32 @@ impl Writer {
         F: FnMut(&Path, WriteRequest) -> Result<Value, String> + Send + 'static,
     {
         let (requests, queue) = mpsc::channel::<WriteRequest>();
+        let (finished, done) = mpsc::channel::<()>();
         std::thread::spawn(move || {
             for request in queue {
                 let id = request.request();
                 let outcome = WriteOutcome::from_result(id, perform(&root, request));
-                if events.send(Event::Written(outcome)).is_err() {
-                    return;
-                }
+                // A closed event channel loses only the report; the queued writes still run.
+                let _ = events.send(Event::Written(outcome));
             }
+            let _ = finished.send(());
         });
-        Writer { requests }
+        Writer { requests, done }
     }
 
     pub(crate) fn submit(&self, request: WriteRequest) {
         let _ = self.requests.send(request);
+    }
+
+    /// Closes the queue and waits up to `within` for every queued write to finish. False
+    /// means a write was still running at the bound; past it a facade call is waiting for
+    /// the ledger lock, holding nothing and having written nothing.
+    pub(crate) fn finish(self, within: Duration) -> bool {
+        drop(self.requests);
+        !matches!(
+            self.done.recv_timeout(within),
+            Err(RecvTimeoutError::Timeout)
+        )
     }
 }
 
@@ -203,14 +217,9 @@ fn perform(root: &Path, request: WriteRequest) -> Result<Value, String> {
             expect,
             ..
         } => tomlctl::ledger_classify(root, &ledger, &ids, fields, expect),
-        WriteRequest::Restore {
-            ledger,
-            id,
-            set,
-            unset,
-            expect,
-            ..
-        } => tomlctl::ledger_restore(root, &ledger, &id, set, unset, expect),
+        WriteRequest::Restore { ledger, rows, .. } => {
+            tomlctl::ledger_restore_many(root, &ledger, rows)
+        }
         WriteRequest::BacklogTriage {
             ids,
             triage,
@@ -251,9 +260,8 @@ impl FakeWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::mpsc::Receiver;
     use std::sync::{Arc, Mutex};
-    use std::time::Duration;
+    use std::time::Instant;
     use tomlctl::LedgerKind;
 
     use crate::actions::{self, Selection};
@@ -299,6 +307,46 @@ mod tests {
         let order: Vec<RequestId> = (0..3).map(|_| outcome(&rx).request).collect();
         assert_eq!(order, vec![0, 1, 2]);
         assert_eq!(*ran.lock().expect("log"), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn finishing_performs_every_queued_write_even_with_no_one_listening() {
+        let (tx, rx) = mpsc::channel();
+        drop(rx);
+        let ran = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&ran);
+        let writer = Writer::spawn_with(PathBuf::new(), tx, move |_, request| {
+            std::thread::sleep(Duration::from_millis(20));
+            log.lock().expect("log").push(request.request());
+            Ok(serde_json::json!({"applied": []}))
+        });
+        for id in 0..3 {
+            writer.submit(transition(id));
+        }
+        assert!(writer.finish(Duration::from_secs(10)), "the queue drains");
+        assert_eq!(*ran.lock().expect("log"), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn finishing_gives_up_on_a_write_still_running_at_the_bound() {
+        let (tx, _rx) = mpsc::channel();
+        let (release, held) = mpsc::channel::<()>();
+        let writer = Writer::spawn_with(PathBuf::new(), tx, move |_, _| {
+            let _ = held.recv();
+            Ok(serde_json::json!({"applied": []}))
+        });
+        writer.submit(transition(0));
+        let start = Instant::now();
+        assert!(!writer.finish(Duration::from_millis(50)));
+        assert!(start.elapsed() < Duration::from_secs(5), "bounded");
+        drop(release);
+    }
+
+    #[test]
+    fn finishing_an_idle_writer_is_prompt() {
+        let (tx, _rx) = mpsc::channel();
+        let writer = Writer::spawn_with(PathBuf::new(), tx, |_, _| Ok(Value::Null));
+        assert!(writer.finish(Duration::from_secs(10)));
     }
 
     #[test]
@@ -397,10 +445,17 @@ mod tests {
         }
     }
 
-    /// Moves `id` to `to` through the real plan builder and facade, then undoes it through
-    /// the plan's own restore, and checks the row came back exactly as it was read.
-    fn round_trip(sandbox: &Sandbox, kind: Kind, ledger: LedgerRef, id: &str, to: &str) {
-        let before = sandbox.row(&ledger, id);
+    /// Moves `id` to `to` through the real plan builder and facade, returning the row as it
+    /// was read and the plan's undo of it.
+    fn moved(
+        sandbox: &Sandbox,
+        kind: Kind,
+        ledger: &LedgerRef,
+        id: &str,
+        to: &str,
+        next: &mut RequestId,
+    ) -> (ItemRow, actions::RowUndo) {
+        let before = sandbox.row(ledger, id);
         let transition = *actions::offered(kind, &before.status)
             .iter()
             .find(|t| t.to == to)
@@ -416,29 +471,47 @@ mod tests {
             ledger: ledger.clone(),
             rows: vec![before.clone()],
         };
-        let mut next = 0;
-        let plan = actions::transition_plan(&selection, transition, &fields, &mut next);
+        let plan = actions::transition_plan(&selection, transition, &fields, next);
         let [(request, _)] = plan.requests.as_slice() else {
             panic!("expected one request, got {:?}", plan.requests);
         };
-        let moved = WriteOutcome::from_result(0, perform(&sandbox.root, request.clone()));
-        assert_eq!((moved.applied, moved.error), (vec![id.to_owned()], None));
-        assert_eq!(sandbox.row(&ledger, id).status, to);
-
+        let outcome =
+            WriteOutcome::from_result(request.request(), perform(&sandbox.root, request.clone()));
+        assert_eq!(
+            (outcome.applied, outcome.error),
+            (vec![id.to_owned()], None)
+        );
+        assert_eq!(sandbox.row(ledger, id).status, to);
         let [undo] = plan.undo.as_slice() else {
             panic!("expected one undo, got {:?}", plan.undo);
         };
-        let restore = undo.restore(next, &ledger);
-        let restored = WriteOutcome::from_result(next, perform(&sandbox.root, restore));
+        (before, undo.clone())
+    }
+
+    /// Makes each move, then undoes them all through one restore, and checks every row came
+    /// back exactly as it was read.
+    fn round_trip(sandbox: &Sandbox, kind: Kind, ledger: LedgerRef, moves: &[(&str, &str)]) {
+        let mut next = 0;
+        let (before, undos): (Vec<ItemRow>, Vec<actions::RowUndo>) = moves
+            .iter()
+            .map(|(id, to)| moved(sandbox, kind, &ledger, id, to, &mut next))
+            .unzip();
+        let restore = actions::restore(&undos, &ledger, &mut next);
+        let restored =
+            WriteOutcome::from_result(restore.request(), perform(&sandbox.root, restore));
+        let ids: Vec<String> = moves.iter().map(|(id, _)| (*id).to_owned()).collect();
         assert_eq!(
             (restored.applied, restored.skipped_stale, restored.error),
-            (vec![id.to_owned()], Vec::new(), None)
+            (ids, Vec::new(), None)
         );
-        assert_eq!(
-            sandbox.row(&ledger, id).raw,
-            before.raw,
-            "undo puts it back"
-        );
+        for row in before {
+            assert_eq!(
+                sandbox.row(&ledger, &row.id).raw,
+                row.raw,
+                "undo puts {} back",
+                row.id
+            );
+        }
     }
 
     #[test]
@@ -448,7 +521,48 @@ mod tests {
             slug: "demo".to_string(),
             kind: LedgerKind::Review,
         };
-        round_trip(&sandbox, Kind::Review, ledger, "R1", "deferred");
+        round_trip(&sandbox, Kind::Review, ledger, &[("R1", "deferred")]);
+    }
+
+    #[test]
+    fn one_restore_puts_back_rows_moved_from_different_statuses() {
+        let sandbox = Sandbox::new("restore-many");
+        let ledger = LedgerRef::Flow {
+            slug: "demo".to_string(),
+            kind: LedgerKind::Review,
+        };
+        round_trip(
+            &sandbox,
+            Kind::Review,
+            ledger,
+            &[("R1", "wontfix"), ("R2", "open")],
+        );
+    }
+
+    #[test]
+    fn a_stale_row_in_a_restore_is_skipped_and_the_rest_put_back() {
+        let sandbox = Sandbox::new("restore-stale");
+        let ledger = LedgerRef::Flow {
+            slug: "demo".to_string(),
+            kind: LedgerKind::Review,
+        };
+        let mut next = 0;
+        let (r1, undo1) = moved(&sandbox, Kind::Review, &ledger, "R1", "deferred", &mut next);
+        let (_, undo2) = moved(&sandbox, Kind::Review, &ledger, "R2", "open", &mut next);
+        moved(&sandbox, Kind::Review, &ledger, "R2", "wontfix", &mut next);
+        let restore = actions::restore([&undo1, &undo2], &ledger, &mut next);
+        let restored =
+            WriteOutcome::from_result(restore.request(), perform(&sandbox.root, restore));
+        assert_eq!(restored.error, None);
+        assert_eq!(restored.applied, vec!["R1".to_string()]);
+        let stale: Vec<&str> = restored
+            .skipped_stale
+            .iter()
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(stale, vec!["R2"], "never retried");
+        assert_eq!(sandbox.row(&ledger, "R1").raw, r1.raw);
+        assert_eq!(sandbox.row(&ledger, "R2").status, "wontfix");
     }
 
     #[test]
@@ -458,8 +572,7 @@ mod tests {
             &sandbox,
             Kind::Backlog,
             LedgerRef::Backlog,
-            "B-0a1b2c3d",
-            "dismissed",
+            &[("B-0a1b2c3d", "dismissed")],
         );
     }
 

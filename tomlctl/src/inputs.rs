@@ -15,18 +15,16 @@ use anyhow::{Context, Result};
 use serde_json::{Map, Value as JsonValue, json};
 use sha2::{Digest, Sha256};
 use toml::Value as TomlValue;
+use toml::de::DeValue;
 use toml::value::Datetime;
 
 use crate::backlog::schema as backlog_schema;
-use crate::convert::{json_to_toml, toml_to_json};
+use crate::convert::{devalue_to_json, json_to_toml};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::validate_slug;
 use crate::integrity::{IntegrityOpts, hex_lower};
-use crate::io::{
-    OnMissing, item_id, items_array, items_array_mut, mutate_doc_conditional, parse_toml_bytes,
-    relativise_under,
-};
-use crate::ledgers::ensure_process_root;
+use crate::io::{OnMissing, item_id, items_array_mut, mutate_doc_conditional, relativise_under};
+use crate::ledgers::{ensure_process_root, with_borrowed_doc};
 
 pub(crate) const ARRAY: &str = "inputs";
 
@@ -148,26 +146,46 @@ impl Filter {
 /// the bytes read and `inputs` the rows `filter` keeps, unvalidated. A
 /// missing store reads as no rows and a null revision.
 pub(crate) fn list(root: &Path, filter: &Filter) -> Result<JsonValue> {
+    Ok(list_if_changed(root, filter, None)?.expect("no known revision always reads"))
+}
+
+/// [`list`], or `None`, parsing nothing, when the store's bytes hash to
+/// `known`.
+pub(crate) fn list_if_changed(
+    root: &Path,
+    filter: &Filter,
+    known: Option<&str>,
+) -> Result<Option<JsonValue>> {
     filter.check()?;
     let path = path(root);
     let shown = relativise_under(root, &path).unwrap_or_else(|| path.display().to_string());
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(json!({"path": shown, "revision": null, "inputs": []}));
+            return Ok(Some(json!({"path": shown, "revision": null, "inputs": []})));
         }
         Err(e) => {
             return Err(anyhow::Error::new(e).context(format!("reading {}", path.display())));
         }
     };
     let revision = hex_lower(&Sha256::digest(&bytes));
-    let doc = parse_toml_bytes(&path, bytes)?;
-    let rows: Vec<JsonValue> = items_array(&doc, ARRAY)
-        .iter()
-        .map(toml_to_json)
-        .filter(|row| filter.matches(row))
-        .collect();
-    Ok(json!({"path": shown, "revision": revision, "inputs": rows}))
+    if known == Some(revision.as_str()) {
+        return Ok(None);
+    }
+    let rows: Vec<JsonValue> = with_borrowed_doc(&path, bytes, |doc| {
+        let rows = match doc.get(ARRAY).map(|v| v.get_ref()) {
+            Some(DeValue::Array(rows)) => rows.as_ref(),
+            _ => &[],
+        };
+        Ok(rows
+            .iter()
+            .map(|row| devalue_to_json(row.get_ref()))
+            .filter(|row| filter.matches(row))
+            .collect())
+    })?;
+    Ok(Some(
+        json!({"path": shown, "revision": revision, "inputs": rows}),
+    ))
 }
 
 /// Appends one record as `new`, assigning its `id` and `created`; `author`

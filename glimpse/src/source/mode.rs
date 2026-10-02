@@ -15,7 +15,12 @@ use crate::watch::{self, RepoFile, Wake};
 /// A new scope dir is also listed in `scopes`, so it is rescanned once.
 #[derive(Debug, Default)]
 pub(super) struct Wakes {
+    /// Every flow woken at all; drives the flow caches and the watch-scope accounting.
     pub(super) flows: BTreeSet<String>,
+    /// The flows woken as a whole, whose every ledger feed is re-read.
+    pub(super) whole_flows: BTreeSet<String>,
+    /// The `(slug, entry)` pairs woken, each re-reading only the ledger feed of that file.
+    pub(super) flow_files: BTreeSet<(String, String)>,
     pub(super) repo: BTreeSet<RepoFile>,
     pub(super) scopes: BTreeSet<LedgerKind>,
     pub(super) new_scopes: BTreeSet<LedgerKind>,
@@ -26,8 +31,12 @@ pub(super) struct Wakes {
 impl Wakes {
     pub(super) fn add(&mut self, wake: Wake) {
         match wake {
-            Wake::Flow(slug) => {
-                self.flows.insert(slug);
+            Wake::Flow { slug, file } => {
+                self.flows.insert(slug.clone());
+                match file {
+                    Some(file) => self.flow_files.insert((slug, file)),
+                    None => self.whole_flows.insert(slug),
+                };
             }
             Wake::Repo(file) => {
                 self.repo.insert(file);
@@ -51,6 +60,12 @@ impl Wakes {
             && self.new_scopes.is_empty()
             && !self.all
             && !self.rewatch
+    }
+
+    /// Whether these wakes name `file` of flow `slug`, alone or as part of the whole flow.
+    pub(super) fn woke_flow_file(&self, slug: &str, file: &str) -> bool {
+        self.whole_flows.contains(slug)
+            || self.flow_files.iter().any(|(s, f)| s == slug && f == file)
     }
 
     /// The scopes these wakes prove alive. An `All` or `Rewatch` names none, since neither
@@ -579,7 +594,10 @@ mod tests {
     #[test]
     fn wakes_name_the_scopes_they_prove_alive() {
         let mut wakes = Wakes::default();
-        wakes.add(Wake::Flow("a".into()));
+        wakes.add(Wake::Flow {
+            slug: "a".into(),
+            file: Some("agents.toml".into()),
+        });
         wakes.add(Wake::Repo(RepoFile::Inputs));
         wakes.add(Wake::NewScope(LedgerKind::Optimise));
         assert_eq!(
@@ -595,6 +613,24 @@ mod tests {
         wakes.add(Wake::All);
         wakes.add(Wake::Rewatch);
         assert!(wakes.woken().is_empty(), "untraceable to one watch");
+    }
+
+    #[test]
+    fn a_flow_file_wake_names_that_file_and_a_whole_flow_wake_every_file() {
+        let mut wakes = Wakes::default();
+        wakes.add(Wake::Flow {
+            slug: "a".into(),
+            file: Some("agents.toml".into()),
+        });
+        wakes.add(Wake::Flow {
+            slug: "b".into(),
+            file: None,
+        });
+        assert_eq!(wakes.flows, BTreeSet::from(["a".into(), "b".into()]));
+        assert!(wakes.woke_flow_file("a", "agents.toml"));
+        assert!(!wakes.woke_flow_file("a", "review-ledger.toml"));
+        assert!(wakes.woke_flow_file("b", "review-ledger.toml"));
+        assert!(!wakes.woke_flow_file("c", "agents.toml"));
     }
 
     #[test]

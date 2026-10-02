@@ -1147,6 +1147,8 @@ impl App {
 
     /// True while something on screen changes with time alone: a live task or item
     /// flash or notice, or a running agent whose elapsed counter is still advancing.
+    /// The agent clause applies only where an elapsed counter is drawn: the Tasks
+    /// surface, the details panel and the activity panel.
     pub(crate) fn needs_tick(&self, now: Instant) -> bool {
         let live = |at: &Instant| now.saturating_duration_since(*at) < FLASH;
         self.flashes.values().any(live)
@@ -1156,9 +1158,10 @@ impl App {
                 .any(|state| state.flashes.values().any(live))
             || self.inbox.flashes.values().any(live)
             || self.live_notice(now).is_some()
-            || self.snapshot.agents.iter().any(|agent| {
-                agent.status == AgentStatus::Running && !self.stale_agents.contains(&agent.id)
-            })
+            || ((self.surface == Surface::Tasks || self.details_open || self.activity_open)
+                && self.snapshot.agents.iter().any(|agent| {
+                    agent.status == AgentStatus::Running && !self.stale_agents.contains(&agent.id)
+                }))
     }
 
     /// How long the runtime may wait before the next [`App::tick`]: [`TICK`] while
@@ -1574,6 +1577,14 @@ mod tests {
         app.flashes.clear();
         app.stale_agents.clear();
         assert!(app.needs_tick(t0), "A2 is running and not stale");
+
+        app.surface = Surface::Review;
+        app.details_open = false;
+        app.activity_open = false;
+        assert!(!app.needs_tick(t0), "no elapsed clock is drawn here");
+        assert_eq!(app.tick_interval(t0), Some(STALE_RECHECK));
+        app.details_open = true;
+        assert!(app.needs_tick(t0));
     }
 
     #[test]
@@ -2292,34 +2303,42 @@ mod tests {
 
         app.apply(Action::Undo);
         let restores = app.take_writes();
-        assert_eq!(restores.len(), 2, "one restore per applied id");
-        let WriteRequest::Restore {
-            ledger,
-            id,
-            set,
-            unset,
-            expect,
-            ..
-        } = &restores[0]
-        else {
+        assert_eq!(restores.len(), 1, "one restore for the whole entry");
+        let WriteRequest::Restore { ledger, rows, .. } = &restores[0] else {
             panic!("expected a restore, got {:?}", restores[0]);
         };
-        assert_eq!(id, "R1");
         assert!(matches!(ledger, tomlctl::LedgerRef::Flow { .. }));
-        assert_eq!(
-            set,
-            serde_json::json!({"status": "open"}).as_object().unwrap()
-        );
-        assert_eq!(
-            unset,
-            &vec!["defer_reason".to_string(), "defer_trigger".to_string()]
-        );
-        assert_eq!(
-            expect,
-            serde_json::json!({"status": "deferred", "defer_reason": "later", "defer_trigger": "v2"})
-                .as_object()
-                .unwrap()
-        );
+        let ids: Vec<&str> = rows.iter().map(|row| row.id.as_str()).collect();
+        assert_eq!(ids, vec!["R1", "R2"]);
+        for row in rows {
+            assert_eq!(
+                row.set,
+                *serde_json::json!({"status": "open"}).as_object().unwrap(),
+                "{}",
+                row.id
+            );
+            assert_eq!(
+                row.unset,
+                vec!["defer_reason".to_string(), "defer_trigger".to_string()],
+                "{}",
+                row.id
+            );
+            assert_eq!(
+                row.expect,
+                *serde_json::json!({"status": "deferred", "defer_reason": "later", "defer_trigger": "v2"})
+                    .as_object()
+                    .unwrap(),
+                "{}",
+                row.id
+            );
+        }
+        assert_eq!(saving(&app), vec!["R1", "R2"]);
+        app.apply_written(WriteOutcome {
+            request: restores[0].request(),
+            error: Some("locked".to_string()),
+            ..WriteOutcome::default()
+        });
+        assert!(saving(&app).is_empty(), "a failed restore clears both rows");
         assert!(app.writes.undo.is_empty());
         app.apply(Action::Undo);
         assert_eq!(app.live_notice(Instant::now()), Some("nothing to undo"));
@@ -2351,15 +2370,19 @@ mod tests {
             Some("write skipped R2: changed since shown")
         );
         app.apply(Action::Undo);
-        let ids: Vec<String> = app
+        let ids: Vec<Vec<String>> = app
             .take_writes()
             .into_iter()
             .map(|write| match write {
-                WriteRequest::Restore { id, .. } => id,
+                WriteRequest::Restore { rows, .. } => rows.into_iter().map(|row| row.id).collect(),
                 other => panic!("expected a restore, got {other:?}"),
             })
             .collect();
-        assert_eq!(ids, vec!["R1"], "only what the write applied is put back");
+        assert_eq!(
+            ids,
+            vec![vec!["R1".to_string()]],
+            "only what the write applied is put back"
+        );
     }
 
     #[test]
@@ -2399,15 +2422,19 @@ mod tests {
 
         app.apply(Action::Undo);
         let restores = app.take_writes();
-        assert_eq!(restores.len(), 2, "the restores still go out");
-        assert!(
-            restores.iter().all(|write| matches!(
-                write,
-                WriteRequest::Restore { ledger: tomlctl::LedgerRef::Flow { slug, .. }, .. }
-                    if slug == "demo"
-            )),
-            "{restores:?}"
-        );
+        let [
+            WriteRequest::Restore {
+                ledger: tomlctl::LedgerRef::Flow { slug, .. },
+                rows,
+                ..
+            },
+        ] = restores.as_slice()
+        else {
+            panic!("expected one restore to the written ledger, got {restores:?}");
+        };
+        assert_eq!(slug, "demo", "the restore still goes out");
+        let ids: Vec<&str> = rows.iter().map(|row| row.id.as_str()).collect();
+        assert_eq!(ids, vec!["R1", "R2"]);
         assert!(
             saving(&app).is_empty(),
             "the other ledger's rows are untouched"

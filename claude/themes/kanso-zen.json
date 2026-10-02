@@ -1,0 +1,11 @@
+{
+  "name": "Kanso Zen (readable)",
+  "base": "dark-ansi",
+  "overrides": {
+    "userMessageBackground": "#252E37",
+    "userMessageBackgroundHover": "#2C3640",
+    "composerSidebarBackground": "#1F272F",
+    "memoryBackgroundColor": "#252E37",
+    "selectionBg": "#33403F"
+  }
+}

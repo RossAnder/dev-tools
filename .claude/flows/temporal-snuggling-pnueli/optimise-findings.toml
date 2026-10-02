@@ -1,0 +1,488 @@
+schema_version = 1
+last_updated = 2026-10-02
+
+[[vet_events]]
+timestamp = "2026-10-02T14:30:00Z"
+command = "optimise"
+agent_index = 1
+lens = "memory"
+tier = "deep"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 4 anchors re-read at HEAD 8076c63: app.rs needs_tick agent clause, watch.rs place Wake::Flow slug-only + source.rs woken_by/evict, items.rs render_at builds all rows then windows, surface.rs shows/group_key per-row allocation. F2 merged with Agent 3 F3 and Agent 2 F1 context; F3 merged with Agent 4 F2; F4 merged with Agent 4 F5."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T14:30:00Z"
+command = "optimise"
+agent_index = 2
+lens = "serialization"
+tier = "deep"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 4 anchors confirmed: ledgers.rs:120-130 hash then unconditional parse; inputs.rs:164-169 owned parse; read_doc_borrowed (io.rs:581) and devalue_to_json (convert.rs:257, private) exist; toml pinned 1.1.6 in glimpse/Cargo.lock; correlate.rs:209 needle `ledger: ` and user_text full serde_json parse at :275; inputs.rs next_id max over present rows."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T14:30:00Z"
+command = "optimise"
+agent_index = 3
+lens = "queries"
+tier = "deep"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 3 anchors confirmed: scan.rs:101 guard uses has_artifact (tasks or any ledger), :110 per-scan is_file x3; 47 flow dirs / 8 task stores on disk; source.rs send_flows calls list_scopes after every relist. F1 merged with Agent 4 F1; F3 merged into the flow-wide re-parse pair."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T14:30:00Z"
+command = "optimise"
+agent_index = 4
+lens = "algorithm"
+tier = "deep"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "All 5 anchors confirmed: Tracking::row linear find (surface.rs:274), pending_for filter+collect+sort per call (surface.rs:527) called per row from items.rs pending_mark, undo_last one Restore per row (writes.rs:194), ledgers::restore single-id wrapper over write_guarded(Vec<RowEdit>). F4 merged with Agent 5 F2. Severity of F2/F3 lowered to suggestion at consolidation (sub-ms at real sizes; inputs store absent) - a calibration, not a vet downgrade."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T14:30:00Z"
+command = "optimise"
+agent_index = 5
+lens = "async"
+tier = "deep"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Both anchors confirmed: Writer holds only a Sender and is never joined (writer.rs:127), runtime::run returns after restore/detach with no writer drain (runtime.rs:112-119), io.rs write_serialized_with_sidecar persists the sidecar before the TOML, so a process exit between the renames leaves NEW sidecar + OLD TOML."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T15:40:00Z"
+command = "optimise-apply"
+agent_index = 5
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "c5 O5: needle tightened to the regex-anchored literal and user_text rejects quote-delimited tool_result before the parse; escaped quotes inside JSON strings cannot form the token, so prompts are unaffected; codex_user_text correctly left alone (Codex uses function_call_output)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T15:55:00Z"
+command = "optimise-apply"
+agent_index = 1
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "c1 O1: guard restored to tasks.is_none(); re-stat branch reuses ledger flags while the dir mtime is unchanged; tasks/context still re-statted every scan; new cache test added."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T15:55:00Z"
+command = "optimise-apply"
+agent_index = 6
+lens = "implement-lite"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "c6+c9 (merged): O6 agent clause gated on Tasks surface / details / activity, STALE_RECHECK fallback asserted; O9 needle hoisted to visible(), group_key and inbox_section borrow labels, allocation only on header push; ordering unchanged."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T16:10:00Z"
+command = "optimise-apply"
+agent_index = 7
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "c7 O7: pending index rebuilt in apply_inputs after refresh, deduped per record, sorted by id_key; pending_for keeps its signature; no direct InboxState row writers outside tests."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O1"
+file = "glimpse/src/source/scan.rs"
+line = 101
+symbol = "flows_fingerprint"
+severity = "warning"
+effort = "trivial"
+category = "query"
+summary = "Every poll scan re-stats each ledger-only flow and all three ledger files of every artifact flow, ~11x the stats per scan before this flow"
+description = "Lenses: queries, algorithm. The cache guard changed from `old.tasks.is_none()` (4972696) to `!old.times.has_artifact()`, and this flow widened has_artifact to include ledger presence, so 43 of 47 flow dirs skip the cache and pay tasks.toml + context.toml + 3x is_file per scan (~180 stats vs 16; each std::fs::metadata on Windows opens a handle). Scans run on every coalesced wake (every agents.toml write), every 10 s safety tick, and every poll_ms once polling. Ledger existence only changes by tomlctl's rename or a delete, both of which move the dir mtime, and a flow wake evicts that flow's entry anyway. Fix: restore `Some(old) if old.times.tasks.is_none() && dir.is_some() && old.dir == dir => *old`; in the re-stat branch reuse `old.times.ledgers` while `old.dir == dir`, running the 3 is_file checks only when the dir mtime moved or there is no entry. Risk: an in-place (non-rename) ledger creation in polling mode on Windows appears only once the lagging dir mtime catches up (the latency glimpse/CLAUDE.md already accepts for store-less flows). Measured ~1-4 ms/scan saved on this repo."
+evidence = [
+    "glimpse/src/source/scan.rs:101 and :110 (guard and per-scan is_file)",
+    "git show 4972696:glimpse/src/source.rs - old guard `old.tasks.is_none()`",
+    "glimpse/CLAUDE.md 'The watch only wakes; the fingerprints decide'",
+    "Rust 1.98.1 std library/std/src/sys/fs/windows.rs:1500-1510 - metadata() opens the file",
+    "scratch rustc -O bench on .claude/flows: old 0.86-1.16 ms vs current 4.17-5.04 ms per scan (Agent 3); python replica 0.11 vs 1.16 ms (Agent 4)",
+]
+dedup_id = "bab1d482ae39a6b8"
+depends_on = ["O3"]
+resolved = 2026-10-02
+resolution = "Uncommitted: flows_fingerprint reuses the cached entry for store-less flows with an unmoved dir mtime and reuses ledger flags on re-stat; tasks/context still re-statted every scan; cache test added."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O2"
+file = "glimpse/src/source.rs"
+line = 345
+symbol = "Poller::evict"
+severity = "warning"
+effort = "small"
+category = "query"
+summary = "Any write in a flow directory (agents.toml on every subagent event) evicts and fully re-reads all three of that flow's ledger feeds"
+description = "Lenses: memory, queries, serialization. watch::place (watch.rs:160-164) maps every non-sidecar path under flows/<slug>/ to Wake::Flow(slug), dropping the file name; Feed::woken_by (source.rs:130) matches every Flow ledger feed of that slug and evict nulls its stat, defeating the (mtime,len) check in poll_feeds. So each glimpse hook write to agents.toml, and every execution-record/tasks/context write, forces fs::read + sha256 + TOML parse + toml_to_json + Ledger decode of review, optimise and plan-review ledgers, all discarded because the revision is unchanged. Fix: carry the file name in the flow wake (e.g. Wake::Flow { slug, file: Option<String> }); Wakes keeps its slug set for flow_stats eviction and adds flow_files: BTreeSet<(String,String)>; woken_by for a Flow ledger checks (slug, kind.flow_file()). Files: glimpse/src/watch.rs, glimpse/src/source/mode.rs, glimpse/src/source.rs. Complementary to O3 (which makes the remaining woken reads skip the parse). Cost today: a few ms per agent event on the poller thread."
+evidence = [
+    "glimpse/src/watch.rs:160-164 (place -> Wake::Flow keeps slug only)",
+    "glimpse/src/source.rs:130 (woken_by Flow arm) and :345-349 (evict nulls stat)",
+    "docs/plans/temporal-snuggling-pnueli.md:224 - feeds re-read only when (mtime,len) changes",
+    "glimpse --once timings: 256 KB backlog parse within ~10 ms",
+]
+instances = [
+    "glimpse/src/source.rs:Feed::woken_by",
+    "glimpse/src/source.rs:Poller::evict",
+    "glimpse/src/watch.rs:place",
+    "glimpse/src/source/mode.rs:Wakes::add",
+]
+sweep = [
+    "Wake::Flow",
+    "wakes.flows",
+]
+enumeration = "complete"
+related = ["O3"]
+dedup_id = "3e0c13b365abcbb4"
+depends_on = ["O3"]
+resolved = 2026-10-02
+resolution = "Uncommitted: Wake::Flow carries the changed entry name; Wakes adds whole_flows and flow_files; woken_by force-reads only the named ledger feed. Deviation: the flow dir's own in-place change event is ignored (Windows reports it for every rename inside), and a multi-entry event wakes the whole flow. glimpse/CLAUDE.md updated."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O3"
+file = "tomlctl/src/ledgers.rs"
+line = 120
+symbol = "read"
+severity = "warning"
+effort = "small"
+category = "serialization"
+summary = "ledger_read always parses the whole ledger after hashing it; add a known-revision short-circuit like snapshot_if_changed"
+description = "Lenses: serialization, queries. ledgers::read computes revision = sha256(bytes) at :120, then unconditionally runs parse_toml_bytes and toml_to_json per row; glimpse's poll_feeds (source.rs:368-381) drops the result when state.sent.is(revision). Every woken read (see O2, plus Wake::All/Rewatch and glimpse's own writes) pays the parse. Fix, mirroring snapshot_if_changed (lib.rs:79-96 / tasks/snapshot.rs:52-55): `pub fn ledger_read_if_changed(root, ledger, known: Option<&str>) -> Result<Option<Value>>` returning Ok(None) right after the hash when known matches; keep ledger_read as a wrapper; Fetcher::fetch_ledger takes `known` and returns Option<Ledger>; poll_feeds passes Seen::At(r) as Some(r) and treats Ok(None) like the same-revision branch. Same shape for inputs::list / inputs_read / fetch_inputs. Woken feeds are still read and hashed, so `an_inputs_change_posts_one_event` keeps its meaning. Glimpse needs a reinstall after the tomlctl change."
+evidence = [
+    "tomlctl/src/ledgers.rs:120-130 (hash then unconditional parse/convert)",
+    "tomlctl/src/tasks/snapshot.rs:52-55 and tomlctl/src/lib.rs:79-96 (known-revision precedent)",
+    "glimpse/src/source.rs:368-381 (unchanged revision dropped after full read)",
+    "tomlctl get timing 2026-10-02: ~15 ms parse per MB (2 MB scratch ledger 108-110 ms vs 77-80 ms for a 1-line file)",
+]
+instances = [
+    "tomlctl/src/ledgers.rs:read",
+    "tomlctl/src/inputs.rs:list",
+    "tomlctl/src/lib.rs:ledger_read",
+    "tomlctl/src/lib.rs:inputs_read",
+    "glimpse/src/source/scan.rs:Fetcher::fetch_ledger",
+    "glimpse/src/source/scan.rs:Fetcher::fetch_inputs",
+    "glimpse/src/source.rs:Poller::poll_feeds",
+]
+sweep = ['ledger_read\(|inputs_read\(|fn fetch_ledger|fn fetch_inputs|\.fetch_ledger\(|\.fetch_inputs\(']
+enumeration = "complete"
+related = [
+    "O2",
+    "O11",
+]
+dedup_id = "3eb8c0628c7d460a"
+resolved = 2026-10-02
+resolution = "Uncommitted: ledgers::read takes a known revision and returns early after the hash; new ledger_read_if_changed / inputs_read_if_changed (old functions kept as wrappers); glimpse Fetcher fetch_ledger/fetch_inputs pass Seen::At and treat Ok(None) as unchanged."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O4"
+file = "glimpse/src/writer.rs"
+line = 127
+symbol = "Writer"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "Quitting never drains or joins the writer thread, dropping queued writes and able to kill a write between the sidecar and TOML renames"
+description = "Lens: async (cross-cutting with tomlctl write order and carrier integrity reads). Writer holds only a Sender and is documented as never joined; runtime::run (runtime.rs:112-119) saves state, restores the terminal, detaches the poller and returns, and process exit kills the writer thread. Queued requests are lost silently, and an in-flight facade write can die after write_sidecar_for and before the TOML atomic_write (io.rs write_serialized_with_sidecar persists the sidecar first), leaving NEW sidecar + OLD TOML plus stray .tmp files; carriers reading with --verify-integrity (/optimise Step 1, the apply pipeline) then fail until the next write or `tomlctl integrity refresh`. A write takes ~12-16 ms on the 256 KB backlog, and an N-row undo (O10) queues N of them, so `u` then `q` can land inside the window. Fix: bounded drain that keeps the never-wait-out-a-lock intent - `struct Writer { requests: Sender<WriteRequest>, done: Receiver<()> }`, the thread sends on done after its loop, `fn finish(self, within: Duration) -> bool { drop(self.requests); self.done.recv_timeout(within).is_ok() }`; call writer.finish(Duration::from_secs(2)) in runtime::run before ratatui::restore() and print one line after restore when it returns false. A call still running at 2 s is inside the lock retry loop holding nothing, so exiting then is safe."
+evidence = [
+    "https://doc.rust-lang.org/std/thread/index.html - Rust std, fetched 2026-10-02: when main terminates the program shuts down and destructors on other threads may not run",
+    "tomlctl/src/io.rs:2019 write_serialized_with_sidecar (sidecar persist, then TOML persist)",
+    "glimpse/src/runtime.rs:112-119 (no writer handling between run_loop and return)",
+    "scratch backlog timing: 8 single in-process writes 849 ms vs 8 spawns 752 ms (~12-16 ms per write)",
+]
+related = ["O10"]
+dedup_id = "7d65dfa36d85ae69"
+resolved = 2026-10-02
+resolution = "Uncommitted: Writer::finish closes the queue and waits up to WRITE_DRAIN (2 s) for it to drain; runtime::run calls it before restore and prints one stderr line on timeout; the thread keeps performing queued writes when the event channel is closed. A write that only acquires the lock after the bound can still race exit (window narrowed, not closed)."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O5"
+file = "tomlctl/src/agents/correlate.rs"
+line = 209
+symbol = "dispatch_in"
+severity = "warning"
+effort = "trivial"
+category = "serialization"
+summary = "The new `ledger: ` pre-parse needle passes tool-result lines, so each hook stop JSON-parses 100-440 KB of transcript it then rejects"
+description = '''Lens: serialization. The cheap rejection before a JSON parse is now `!line.contains("tasks show") && !line.contains("ledger: ")`, far broader than the anchored regex `^ledger: \.claude/flows/<slug>/(review-ledger|optimise-findings|plan-review-findings)\.toml` it guards. user_text (:272-276) checks only `"user"` then serde_json::from_str's the whole line, and tool_result lines (user-role in Claude Code transcripts) pass both. dispatch_and_tokens reads the last 1 MB on every stop/idle, so on the hook hot path (every subagent event) it builds full Value trees for every quoting tool result. Fix: tighten the needle to `ledger: .claude/flows/`; optionally reject `line.contains("\"tool_result\"")` in user_text and codex_user_text before the parse (a quote-delimited token can only be JSON structure). Risk: a writer escaping `/` as `\/` would make the anchored needle miss; serde_json and Node JSON.stringify do not.'''
+evidence = [
+    "tomlctl/src/agents/correlate.rs:207-209 (needle) and :272-276 (full DOM parse)",
+    "awk over the last 1 MiB of this flow's five largest subagent transcripts: `ledger: ` needle matched 101-442 KB of user-role lines per transcript, all or nearly all tool results; anchored `ledger: .claude/flows/` needle matched 0/0/0/0/3 lines",
+]
+dedup_id = "29ed2fd38948e8bd"
+resolved = 2026-10-02
+resolution = "Uncommitted: dispatch_in pre-filter tightened to the anchored `ledger: .claude/flows/` literal; user_text rejects quote-delimited tool_result before the JSON parse (codex_user_text unchanged: Codex uses function_call_output)."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O6"
+file = "glimpse/src/app.rs"
+line = 1159
+symbol = "App::needs_tick"
+severity = "warning"
+effort = "trivial"
+category = "concurrency"
+summary = "A running agent forces a 1 s full-frame redraw on item and Inbox surfaces, which draw no elapsed clock"
+description = "Lens: memory. needs_tick returns true whenever any non-stale agent is Running, whatever the surface. Before this flow Tasks was the only surface; now a glimpse parked on Review/Optimise/Plan-review/Backlog/Inbox rebuilds and diffs a frame every second for the length of a flow while nothing on screen changes. Elapsed counters are drawn only in view/layers.rs, view/activity.rs and view/details.rs agent_lines; item rows show agent initials only and the header a count. Fix: gate the agent clause, e.g. `|| (self.surface == Surface::Tasks || self.details_open || self.activity_open) && self.snapshot.agents.iter().any(...)` (adjust to the actual field names); tick_interval then falls back to STALE_RECHECK (30 s). Tradeoff: an item-row agent chip's stale dimming can lag up to 30 s against the 300 s default stale_after_s. Add an item-surface assertion to needs_tick_tracks_flashes_and_live_agents. Sibling of B-8444d6ee (the flash clause of the same function)."
+evidence = [
+    "glimpse/src/app.rs:1150-1162 (needs_tick)",
+    "git show 4972696:glimpse/src/app.rs:497-505 (same clause, Tasks the only surface)",
+    "glimpse/CLAUDE.md idle-glimpse rule: no periodic work beyond the safety tick",
+]
+dedup_id = "1e2eb77e9d58bbb1"
+depends_on = ["O8"]
+resolved = 2026-10-02
+resolution = "Uncommitted: needs_tick's running-agent clause gated on Surface::Tasks, details_open or activity_open; STALE_RECHECK fallback asserted in the test."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O7"
+file = "glimpse/src/surface.rs"
+line = 527
+symbol = "InboxState::pending_for"
+severity = "suggestion"
+effort = "small"
+category = "algorithm"
+summary = "pending_for filters, collects and sorts every input record once per drawn item row per frame"
+description = "Lens: algorithm. items.rs pending_mark (:330-332) and details.rs:50 call app.inbox.pending_for(kind, id) per row; each call scans all input rows (is_pending, ledger_kind() reparse, linear items.any), collects and sorts - O(visible rows x all inputs) per frame over an append-only store. Fix: in InboxState::apply_inputs after refresh, rebuild `pending: HashMap<(Kind, String), Vec<usize>>` of pending record indices per named item, sorted by id_key; pending_for becomes a lookup mapping indices back to &InputRow. Precedent: Index::item_agents (model.rs:362-382). Severity lowered from warning at consolidation: inputs.toml does not exist yet in this repo and handled rows reject on one compare; matters once hundreds of records accumulate (see O13). O8's window-first render also shrinks the call count."
+evidence = [
+    "glimpse/src/surface.rs:527-539",
+    "glimpse/src/view/items.rs:330-332 and glimpse/src/view/details.rs:50",
+    "glimpse/src/model.rs:362-382 (precomputed per-item agent index)",
+]
+related = [
+    "O8",
+    "O13",
+]
+dedup_id = "ade192098789634e"
+depends_on = ["O9"]
+resolved = 2026-10-02
+resolution = "Uncommitted: InboxState keeps a (Kind, item) -> pending-record index rebuilt in apply_inputs, deduped and sorted by id_key; pending_for is a lookup with the same signature."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O8"
+file = "glimpse/src/view/items.rs"
+line = 80
+symbol = "render_at"
+severity = "suggestion"
+effort = "small"
+category = "algorithm"
+summary = "Item and Inbox lists build a styled Line for every visible row and look rows up by linear scan, then draw only a window"
+description = "Lenses: memory, algorithm. render_at (items.rs:79-109, inbox.rs:63-98) builds a Row (~12 spans, 4-6 format!, truncate, padding, id clone) for every VisibleRow, then draws rows[offset..] for list.height; Tracking::row (surface.rs:274-276) is a linear rows.iter().find called twice per visible row (render and Columns::measure), making a frame O(V*N). Backlog with closed shown: 233 rows, ~85% of row building discarded in a 30-row pane. Fix (two independent parts): (a) Tracking keeps `index: HashMap<String, usize>` rebuilt in refresh right after `self.rows = rows` (the only assignment), row() becomes an index lookup - also fixes mark_visible and App::selection; (b) find the cursor's position in `visible` first, compute offset = window(...), build Rows only for visible[offset..offset+height]; keep Columns::measure over all visible so widths don't shift. Overlaps B-7d66028d (per-surface scroll offset rewrites the same lines - land together) and B-12a278ac. Sub-ms today; the Inbox with closed shown is the unbounded case."
+evidence = [
+    "glimpse/src/view/items.rs:79-109",
+    "glimpse/src/view/inbox.rs:63-98",
+    "glimpse/src/surface.rs:274-276 (Tracking::row linear find)",
+    "backlog.toml: 233 rows (25 open, 207 resolved)",
+]
+instances = [
+    "glimpse/src/view/items.rs:render_at",
+    "glimpse/src/view/items.rs:Columns::measure",
+    "glimpse/src/view/inbox.rs:render_at",
+    "glimpse/src/view/inbox.rs:Columns::measure",
+    "glimpse/src/surface.rs:Tracking::row",
+    "glimpse/src/surface.rs:ItemsState::mark_visible",
+    "glimpse/src/app.rs:App::selection",
+]
+sweep = [
+    '\.row\(',
+    'window\(at, rows.len\(\)',
+]
+enumeration = "complete"
+related = ["O7"]
+dedup_id = "ed16f806ec4ad3d6"
+resolved = 2026-10-02
+resolution = "Uncommitted: Tracking keeps an id index rebuilt in refresh; item and Inbox render_at compute the window from the visible list and build rows only for it (columns still measured over all visible). Deviation: row() validates index hits and falls back to a scan, because rows is pub(crate) and two test helpers assign it directly."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O9"
+file = "glimpse/src/surface.rs"
+line = 451
+symbol = "ItemsState::shows"
+severity = "suggestion"
+effort = "trivial"
+category = "memory"
+summary = "visible() lowercases the filter needle per row and allocates an owned group-label String per row"
+description = "Lenses: memory, algorithm. shows() runs self.filter.to_lowercase() inside the per-row predicate (surface.rs:451) plus to_lowercase on id/summary/place; group_key (:678-702) and inbox_section return (rank, String) per row as BTreeMap keys. visible() runs once per frame and again per move_cursor/set_filter keystroke. Fix: lowercase the needle once in visible() and pass it in; optionally match ASCII fields with eq_ignore_ascii_case windows, keeping to_lowercase for non-ASCII needles; key groups on (rank, &str) borrowed from rows and allocate the label once per pushed header. Microseconds per call - worth it only because the edit is mechanical, one file, no behaviour change."
+evidence = [
+    "glimpse/src/surface.rs:444-460 (shows), :590-603 (inbox_section), :678-702 (group_key)",
+    "glimpse/src/app.rs:1127-1132 (set_filter -> move_cursor -> visible())",
+]
+instances = [
+    "glimpse/src/surface.rs:ItemsState::shows",
+    "glimpse/src/surface.rs:group_key",
+    "glimpse/src/surface.rs:inbox_section",
+]
+sweep = [
+    'to_lowercase\(\)',
+    '-> \(u8, String\)|-> \(GroupRank, String\)',
+]
+enumeration = "complete"
+dedup_id = "a566f279d76ac37c"
+depends_on = ["O8"]
+resolved = 2026-10-02
+resolution = "Uncommitted: visible() lowercases the needle once; group_key and inbox_section return borrowed labels, allocated only when a header is pushed."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O10"
+file = "glimpse/src/writes.rs"
+line = 194
+symbol = "Writes::undo_last"
+severity = "suggestion"
+effort = "medium"
+category = "algorithm"
+summary = "Undo sends one locked whole-ledger rewrite per row, though the facade's write_guarded already batches row edits"
+description = "Lenses: algorithm, async. undo_last loops one WriteRequest::Restore per applied id; each runs ledger_restore -> write_guarded(vec![edit]) = lock + read + parse + serialise + sha256 sidecar + two renames, plus one poller wake per write, and the forward edit was one request per displayed status. write_guarded already takes Vec<RowEdit> with per-row set/unset/expect and reports per-row skipped_stale. Fix: add a batch restore (ledger_restore_many(root, &LedgerRef, Vec<RowRestore{id,set,unset,expect}>) or widen restore to a vec) running the existing per-row checks then one write_guarded; WriteRequest::Restore carries rows; undo_last emits one request per undo entry tracked as one InFlight with all ids (apply_written already clears per-row stale ids). Files: tomlctl/src/ledgers.rs, tomlctl/src/lib.rs, glimpse/src/writer.rs, glimpse/src/writes.rs, glimpse/src/actions.rs (RowUndo::restore), plus a tomlctl/tests/library_facade.rs case; reinstall glimpse. Tradeoff: one malformed row refuses the whole undo (glimpse builds the values, so a programming error). The plan specified one Restore per id (docs/plans/temporal-snuggling-pnueli.md:286, :857) without a reason that rules out batching. Shrinks O4's quit window. Same code path as review R2; does not change guard semantics."
+evidence = [
+    "glimpse/src/writes.rs:194-203 (per-row loop)",
+    "tomlctl/src/ledgers.rs:341 write_guarded(edits: Vec<RowEdit>) and :523-564 restore single-edit wrap",
+    "scratch backlog timing: 8 single writes 849 ms vs 1 batched 8-id write 185 ms",
+]
+related = ["O4"]
+dedup_id = "3fc8c1b37ae075b5"
+depends_on = [
+    "O11",
+    "O4",
+]
+resolved = 2026-10-02
+resolution = "Uncommitted: new tomlctl::RestoreRow + ledger_restore_many (per-row checks, one guarded write; ledger_restore is a wrapper; a batch naming one id twice is refused); glimpse WriteRequest::Restore carries rows and undo_last sends one request per entry. Behaviour change: a row the facade refuses outright now fails the whole undo. Needed a cross-cut re-dispatch for glimpse/src/app.rs tests."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O11"
+file = "tomlctl/src/ledgers.rs"
+line = 121
+symbol = "read"
+severity = "suggestion"
+effort = "small"
+category = "serialization"
+summary = "ledgers::read and inputs::list build an owned toml::Value tree then copy it to JSON, skipping the crate's borrowed DeTable fast path"
+description = "Lens: serialization. In toml 1.1.6 from_str::<Value> is DeTable::parse plus deserialising into an owned Value, so parse_toml_bytes does the same parse and validation as the borrowed path, then allocates every string twice (Value, then toml_to_json). tomlctl already has io::read_doc_borrowed + convert::detable_to_json/devalue_to_json (adopted in fdb8cb3 for Cmd::Parse and find-duplicates --across). Fix: replace ledgers.rs:121-131 with String::from_utf8(bytes) + read_doc_borrowed, map devalue_to_json(row.get_ref()) over t.get(array) (also stops building owned trees for [[vet_events]]/[[compacted]] which are parsed but never returned); make devalue_to_json pub(crate); change kind_of's doc param to a has_backlog bool; same edit in inputs::list (inputs.rs:164-169). Parity guard: convert.rs:616 detable_to_json_matches_toml_to_json_shape_for_every_scalar. Independent of O3 (O3 removes unchanged parses; this cheapens the rest). ~1-2 ms per 256 KB read, timing confounded."
+evidence = [
+    "~/.cargo/registry toml-1.1.6+spec-1.1.0 src/de/mod.rs:72-76 and src/de/deserializer/mod.rs:37-38 (from_str = DeTable::parse + deserialize)",
+    "tomlctl/src/io.rs:581 read_doc_borrowed; tomlctl/src/convert.rs:244 detable_to_json, :257 devalue_to_json (private)",
+    "tomlctl parse x15 on a 2 MB scratch ledger: borrowed 110-118 ms vs owned 123-149 ms (confounded by owned path's sidecar hash)",
+]
+instances = [
+    "tomlctl/src/ledgers.rs:read",
+    "tomlctl/src/inputs.rs:list",
+    "tomlctl/src/convert.rs:devalue_to_json",
+]
+sweep = ['parse_toml_bytes\(']
+enumeration = "complete"
+related = ["O3"]
+dedup_id = "236c335eec084faf"
+depends_on = ["O3"]
+resolved = 2026-10-02
+resolution = "Uncommitted: ledger and inputs reads parse into a borrowed DeTable via a local with_borrowed_doc helper (errors byte-identical to parse_toml_bytes) and convert rows with devalue_to_json (now pub(crate)); kind_of takes has_backlog. Behaviour change: an out-of-range integer or overflowing float in a row now reads as null instead of failing the read."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "applied"
+flow = "temporal-snuggling-pnueli"
+id = "O12"
+file = "glimpse/src/source.rs"
+line = 462
+symbol = "Poller::send_flows"
+severity = "suggestion"
+effort = "small"
+category = "query"
+summary = "Each relist calls tomlctl::ledger_scopes, re-walking every flow and scope dir the poller scanned moments earlier"
+description = "Lens: queries. After each Relist or rescope, send_flows calls fetcher.list_scopes -> ledgers::scopes (tomlctl/src/ledgers.rs:172-216): a sorted read_dir of flows, per flow is_dir + tasks.toml is_file + 3 ledger is_file, then three scope-dir read_dirs. The poller already holds the same facts in last_flows (FlowTimes{tasks, ledgers}) and last_scope_files. Fix: build the {flows:[{slug,has_tasks,ledgers}], scopes:[{kind,scope}]} value from those maps (filter with tomlctl::validate_slug, kind strings via LedgerKind::as_str), drop list_scopes from Fetcher/InProcessFetcher/FakeFetcher; BTreeMap/BTreeSet order matches ledgers::scopes' order. Bonus: flow list and Scopes come from one scan, so they cannot disagree. Counter: relists are infrequent (~5 ms each on the poller), and glimpse becomes a second owner of tomlctl's 'what counts as a scope' rule (cf. B-e6f7d10d), though FlowTimes.ledgers already duplicates it."
+evidence = [
+    "tomlctl/src/ledgers.rs:172-216 (scopes)",
+    "glimpse/src/source.rs:442-464 (send_flows)",
+    "glimpse/src/source/scan.rs:83-142 (flows_fingerprint, scope_files)",
+    "scratch bench of the ledgers::scopes stat pattern on this repo: 5.34-5.93 ms per call",
+]
+dedup_id = "94c7da34586dcdc6"
+depends_on = [
+    "O2",
+    "O1",
+]
+resolved = 2026-10-02
+resolution = "Uncommitted: the poller builds the Scopes document from last_flows and last_scope_files; list_scopes removed from Fetcher; parity test against tomlctl::ledger_scopes. Deviation: flows_fingerprint and scope_files now require regular files (no extra stats), matching ledgers::scopes."
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "open"
+flow = "temporal-snuggling-pnueli"
+id = "O13"
+file = "tomlctl/src/inputs.rs"
+line = 691
+symbol = "next_id"
+severity = "suggestion"
+effort = "medium"
+category = "serialization"
+summary = "inputs.toml only grows, and next_id's max-over-present-rows scheme would reuse ids if it were ever compacted"
+description = "[needs-plan] Lens: serialization (also raised as tangentials by memory and queries). Every record is kept forever (withdraw sets a status; InputsOp has only list/add/ack/handle/withdraw/answer), so every glimpse woken read, every carrier Step-0 `inputs list --pending` (six carriers, converting every row before filtering) and every write parses, converts, hashes and rewrites the whole history. next_id mints I{max+1} over present rows, so trimming the highest closed records would re-mint ids referenced by answers, answered_by, handled_note and glimpse undo. Decisions for a plan: (1) persist a top-level id high-water mark read/written by next_id - cheap now, while no store exists; (2) an `inputs compact --older-than` moving closed records to an archive file so the hot file shrinks; (3) move a closed question with its answer; (4) which carrier runs it (probably /backlog). Today the store does not exist in this repo; the cost is future and linear."
+evidence = [
+    "tomlctl/src/inputs.rs:691-699 (next_id max over live rows) and :276-321 (withdraw keeps rows)",
+    "tomlctl/src/cli/dispatch.rs:1325-1366 (full InputsOp set)",
+    "Grep compact|retention|prune|archiv over inputs.rs, flow-contract-user-inputs/SKILL.md, tomlctl references/inputs.md: no hits",
+]
+dedup_id = "cb3e9870eab37a75"

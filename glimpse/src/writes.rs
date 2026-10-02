@@ -162,7 +162,7 @@ impl Writes {
         self.queue.push(request);
     }
 
-    /// Pops the newest undo entry into one restore per row its write applied, or one
+    /// Pops the newest undo entry into one restore of the rows its write applied, or one
     /// withdrawal of the records it created, and returns the notice. An entry still awaiting
     /// an outcome stays, since what to put back is not yet known.
     ///
@@ -191,17 +191,13 @@ impl Writes {
                     .filter(|row| entry.applied.contains(&row.id))
                     .collect();
                 elsewhere = shown(entry.surface).as_ref() != Some(ledger);
-                for row in &rows {
-                    let request = row.restore(self.next_request, ledger);
-                    self.next_request += 1;
-                    let marked = if elsewhere {
-                        Vec::new()
-                    } else {
-                        vec![row.id.clone()]
-                    };
+                let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
+                if !rows.is_empty() {
+                    let request = actions::restore(rows, ledger, &mut self.next_request);
+                    let marked = if elsewhere { Vec::new() } else { ids.clone() };
                     self.track(&mut saving, entry.surface, request, marked, true);
                 }
-                rows.iter().map(|row| row.id.clone()).collect()
+                ids
             }
             UndoKind::Input => {
                 let ids: Vec<String> = entry.applied.iter().cloned().collect();
