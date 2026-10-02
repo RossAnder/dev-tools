@@ -5,7 +5,7 @@
 //! schema_version = 1
 //! last_updated = 2026-09-28
 //! [[agents]]            # one row per (session_id, agent_id)
-//! [[agents.segments]]   # one per assignment: task_ids, started_at, ended_at
+//! [[agents.segments]]   # one per assignment: task_ids, item_ids, started_at, ended_at
 //! ```
 //!
 //! `to_toml` inserts keys in declaration order and `preserve_order` holds it,
@@ -64,11 +64,14 @@ pub(crate) struct AgentRecord {
     pub(crate) segments: Vec<Segment>,
 }
 
-/// One assignment: the tasks an agent was dispatched on and when. The open
-/// segment is the last one, while its `ended_at` is `""`.
+/// One assignment: the tasks or ledger items an agent was dispatched on, and
+/// when. The open segment is the last one, while its `ended_at` is `""`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct Segment {
     pub(crate) task_ids: Vec<u32>,
+    /// Ledger item ids (`R3`, `O5`) in dispatch order; omitted from the TOML
+    /// when empty.
+    pub(crate) item_ids: Vec<String>,
     pub(crate) started_at: String,
     pub(crate) ended_at: String,
 }
@@ -163,21 +166,24 @@ impl AgentRecord {
             .filter(|segment| segment.ended_at.is_empty())
     }
 
-    /// Start an assignment on `task_ids` at `at`, closing any open one first.
-    /// Returns `false` and changes nothing when the open segment already
-    /// covers the same set, which is what makes a repeated start event
-    /// idempotent. Ids are stored sorted and deduplicated.
-    pub(crate) fn open_segment(&mut self, task_ids: &[u32], at: &str) -> bool {
+    /// Start an assignment on `task_ids` and `item_ids` at `at`, closing any
+    /// open one first. Returns `false` and changes nothing when the open
+    /// segment already covers the same ids, which is what makes a repeated
+    /// start event idempotent. Task ids are stored sorted, item ids in first-
+    /// seen order, both deduplicated.
+    pub(crate) fn open_segment(&mut self, task_ids: &[u32], item_ids: &[String], at: &str) -> bool {
         let task_ids = id_set(task_ids);
+        let item_ids = item_set(item_ids);
         if self
             .open_segment_ref()
-            .is_some_and(|open| open.task_ids == task_ids)
+            .is_some_and(|open| open.task_ids == task_ids && open.item_ids == item_ids)
         {
             return false;
         }
         self.close_segment(at);
         self.segments.push(Segment {
             task_ids,
+            item_ids,
             started_at: at.to_string(),
             ended_at: String::new(),
         });
@@ -196,10 +202,22 @@ impl AgentRecord {
     }
 }
 
-fn id_set(task_ids: &[u32]) -> Vec<u32> {
+pub(crate) fn id_set(task_ids: &[u32]) -> Vec<u32> {
     let mut ids = task_ids.to_vec();
     ids.sort_unstable();
     ids.dedup();
+    ids
+}
+
+/// Deduplicated in first-seen order: a lexical sort would put `R10` before
+/// `R3`.
+pub(crate) fn item_set(item_ids: &[String]) -> Vec<String> {
+    let mut ids: Vec<String> = Vec::with_capacity(item_ids.len());
+    for id in item_ids {
+        if !ids.contains(id) {
+            ids.push(id.clone());
+        }
+    }
     ids
 }
 
@@ -467,8 +485,24 @@ fn segment_from_toml(value: &TomlValue, position: usize, context: &str) -> Resul
             })
             .collect::<Result<Vec<_>>>()?,
     };
+    let item_ids = match table.get("item_ids") {
+        None => Vec::new(),
+        Some(raw) => raw
+            .as_array()
+            .ok_or_else(|| anyhow!("{context}: segments[{position}].item_ids is not an array"))?
+            .iter()
+            .map(|entry| {
+                entry.as_str().map(str::to_string).ok_or_else(|| {
+                    anyhow!(
+                        "{context}: segments[{position}].item_ids holds a non-string entry `{entry}`"
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+    };
     Ok(Segment {
         task_ids,
+        item_ids,
         started_at: str_or(table, "started_at", ""),
         ended_at: str_or(table, "ended_at", ""),
     })
@@ -477,6 +511,7 @@ fn segment_from_toml(value: &TomlValue, position: usize, context: &str) -> Resul
 fn segment_to_toml(segment: &Segment) -> TomlValue {
     let Segment {
         task_ids,
+        item_ids,
         started_at,
         ended_at,
     } = segment;
@@ -490,6 +525,12 @@ fn segment_to_toml(segment: &Segment) -> TomlValue {
                 .collect(),
         ),
     );
+    if !item_ids.is_empty() {
+        table.insert(
+            "item_ids".to_string(),
+            TomlValue::Array(item_ids.iter().cloned().map(TomlValue::String).collect()),
+        );
+    }
     table.insert(
         "started_at".to_string(),
         TomlValue::String(started_at.clone()),
@@ -593,6 +634,7 @@ mod tests {
                     context_tokens: 48_213,
                     segments: vec![Segment {
                         task_ids: vec![16],
+                        item_ids: Vec::new(),
                         started_at: "2026-09-28T04:44:22Z".to_string(),
                         ended_at: "2026-09-28T04:52:08Z".to_string(),
                     }],
@@ -607,11 +649,13 @@ mod tests {
                     segments: vec![
                         Segment {
                             task_ids: vec![3, 4],
+                            item_ids: Vec::new(),
                             started_at: "t1".to_string(),
                             ended_at: "t2".to_string(),
                         },
                         Segment {
-                            task_ids: vec![7],
+                            task_ids: Vec::new(),
+                            item_ids: vec!["R7".to_string(), "R3".to_string()],
                             started_at: "t3".to_string(),
                             ended_at: String::new(),
                         },
@@ -667,6 +711,25 @@ mod tests {
                 "context_tokens",
                 "segments",
             ]
+        );
+        let segments = &doc["agents"][1]["segments"];
+        assert!(segments[0].get("item_ids").is_none(), "{first}");
+        let segment_keys: Vec<&str> = segments[1]
+            .as_table()
+            .expect("segment table")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            segment_keys,
+            ["task_ids", "item_ids", "started_at", "ended_at"]
+        );
+        assert_eq!(
+            segments[1]["item_ids"],
+            TomlValue::Array(vec![
+                TomlValue::String("R7".to_string()),
+                TomlValue::String("R3".to_string()),
+            ])
         );
     }
 
@@ -735,13 +798,13 @@ mod tests {
     #[test]
     fn open_segment_is_idempotent_on_the_same_set() {
         let mut row = record("A1", "a");
-        assert!(row.open_segment(&[5, 2], "t0"));
-        assert!(!row.open_segment(&[2, 5, 5], "t1"));
+        assert!(row.open_segment(&[5, 2], &[], "t0"));
+        assert!(!row.open_segment(&[2, 5, 5], &[], "t1"));
         assert_eq!(row.segments.len(), 1);
         assert_eq!(row.segments[0].task_ids, vec![2, 5]);
         assert_eq!(row.segments[0].started_at, "t0");
 
-        assert!(row.open_segment(&[9], "t2"));
+        assert!(row.open_segment(&[9], &[], "t2"));
         assert_eq!(row.segments.len(), 2);
         assert_eq!(row.segments[0].ended_at, "t2");
         assert_eq!(
@@ -754,8 +817,24 @@ mod tests {
         assert_eq!(row.segments[1].ended_at, "t3");
         assert!(row.open_segment_ref().is_none());
 
-        assert!(row.open_segment(&[9], "t5"));
+        assert!(row.open_segment(&[9], &[], "t5"));
         assert_eq!(row.segments.len(), 3);
+    }
+
+    #[test]
+    fn a_changed_item_set_opens_a_new_segment() {
+        let items = |ids: &[&str]| ids.iter().map(|id| id.to_string()).collect::<Vec<_>>();
+        let mut row = record("A1", "a");
+        assert!(row.open_segment(&[], &items(&["R3", "R7", "R3"]), "t0"));
+        assert_eq!(row.segments[0].item_ids, items(&["R3", "R7"]));
+        assert!(!row.open_segment(&[], &items(&["R3", "R7"]), "t1"));
+        assert_eq!(row.segments.len(), 1);
+
+        assert!(row.open_segment(&[], &items(&["R9"]), "t2"));
+        assert_eq!(row.segments.len(), 2);
+        assert_eq!(row.segments[0].ended_at, "t2");
+        assert_eq!(row.segments[1].item_ids, items(&["R9"]));
+        assert!(row.segments[1].task_ids.is_empty());
     }
 
     #[test]

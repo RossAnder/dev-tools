@@ -32,12 +32,15 @@ const MAX_META_BYTES: u64 = 16 * 1024;
 const RETRY_ATTEMPTS: u32 = 10;
 const RETRY_DELAY: Duration = Duration::from_millis(100);
 
-/// The flow and tasks named by an agent's latest dispatch prompt. `task_ids`
-/// is sorted and deduplicated; more than one id means a cluster dispatch.
+/// The flow, tasks and ledger items named by an agent's latest dispatch
+/// prompt. `task_ids` is sorted and deduplicated, and more than one id means a
+/// cluster dispatch; `item_ids` is deduplicated in first-seen order. Either
+/// may be empty: a ledger dispatch names no task, a task dispatch no item.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Dispatch {
     pub(crate) slug: String,
     pub(crate) task_ids: Vec<u32>,
+    pub(crate) item_ids: Vec<String>,
 }
 
 /// What the sibling `.meta.json` says about an agent. A missing or unreadable
@@ -96,8 +99,8 @@ fn subagent_transcript_with(
 }
 
 /// The latest dispatch in `path`: the newest user-authored line carrying at
-/// least one `tasks show <id> --slug <slug>` command. `None` when there is no
-/// such line, or when that line's slugs disagree.
+/// least one `tasks show <id> --slug <slug>` command or `ledger: <path>` line.
+/// `None` when there is no such line, or when that line's slugs disagree.
 pub(crate) fn latest_dispatch(path: &Path) -> Option<Dispatch> {
     if !wait_for_file(path, RETRY_ATTEMPTS) {
         return None;
@@ -124,8 +127,9 @@ fn head_dispatch(path: &Path, prompt_of: fn(&str) -> Option<String>) -> Option<D
     dispatch_in(&into_text(bytes), prompt_of)
 }
 
-/// [`latest_dispatch`] and the context size at the last assistant turn, from
-/// one read of `path`, for a stop that needs both.
+/// The dispatch and the context size at the last assistant turn, from one read
+/// of the last `TAIL_BYTES` of `path`, for a stop that needs both. A dispatch
+/// outside that window, such as the spawn prompt of a long run, gives `None`.
 pub(crate) fn dispatch_and_tokens(path: &Path) -> (Option<Dispatch>, u64) {
     dispatch_and_tokens_with(path, user_text, tokens_in)
 }
@@ -141,11 +145,11 @@ fn dispatch_and_tokens_with(
     tokens_of: fn(&str) -> u64,
 ) -> (Option<Dispatch>, u64) {
     let present = wait_for_file(path, RETRY_ATTEMPTS);
-    let Some(text) = read_tail(path) else {
+    let Some(text) = read_last(path, TAIL_BYTES) else {
         return (None, 0);
     };
     let dispatch = if present {
-        dispatch_in(&text, prompt_of).or_else(|| head_dispatch(path, prompt_of))
+        dispatch_in(&text, prompt_of)
     } else {
         None
     };
@@ -190,11 +194,19 @@ fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Disp
         Regex::new(r"tasks show ([0-9]+) --slug ([a-z0-9][a-z0-9-]{0,63})")
             .expect("dispatch pattern compiles")
     });
+    static LEDGER: OnceLock<Regex> = OnceLock::new();
+    // Multi-line: the line sits below a prompt's `DISPATCH:` header.
+    let ledger = LEDGER.get_or_init(|| {
+        Regex::new(
+            r"(?m)^ledger: \.claude/flows/([a-z0-9][a-z0-9-]{0,63})/(?:review-ledger|optimise-findings|plan-review-findings)\.toml(?: items: ([ROP][0-9]+(?:,[ROP][0-9]+)*))?",
+        )
+        .expect("ledger dispatch pattern compiles")
+    });
 
     for line in text.lines().rev() {
         // A cheap rejection before a JSON parse: a line that cannot match is
         // skipped whatever its shape.
-        if !line.contains("tasks show") {
+        if !line.contains("tasks show") && !line.contains("ledger: ") {
             continue;
         }
         let Some(prompt) = prompt_of(line) else {
@@ -209,11 +221,24 @@ fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Disp
             let Ok(id) = id.as_str().parse::<u32>() else {
                 continue;
             };
-            match slug {
-                Some(prev) if prev != s.as_str() => return None,
-                _ => slug = Some(s.as_str()),
+            if !same_slug(&mut slug, s.as_str()) {
+                return None;
             }
             task_ids.push(id);
+        }
+        let mut item_ids: Vec<String> = Vec::new();
+        for caps in ledger.captures_iter(&prompt) {
+            let Some(s) = caps.get(1) else {
+                continue;
+            };
+            if !same_slug(&mut slug, s.as_str()) {
+                return None;
+            }
+            for id in caps.get(2).map_or("", |m| m.as_str()).split(',') {
+                if !id.is_empty() && !item_ids.iter().any(|seen| seen == id) {
+                    item_ids.push(id.to_string());
+                }
+            }
         }
         if let Some(slug) = slug {
             task_ids.sort_unstable();
@@ -221,10 +246,23 @@ fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Disp
             return Some(Dispatch {
                 slug: slug.to_string(),
                 task_ids,
+                item_ids,
             });
         }
     }
     None
+}
+
+/// Record `s` as the dispatch's slug; `false` when a different one is already
+/// recorded.
+fn same_slug<'a>(slug: &mut Option<&'a str>, s: &'a str) -> bool {
+    match slug {
+        Some(prev) if *prev != s => false,
+        _ => {
+            *slug = Some(s);
+            true
+        }
+    }
 }
 
 /// The prose of a user-role transcript line: a string `message.content`, or
@@ -400,15 +438,28 @@ fn codex_tokens_in(text: &str) -> u64 {
 /// The whole file up to `WHOLE_READ_MAX`, else its last `TAIL_BYTES` from the
 /// first line boundary on, so no partial line is ever parsed.
 fn read_tail(path: &Path) -> Option<String> {
+    let len = std::fs::metadata(path).ok()?.len();
+    let cap = if len <= WHOLE_READ_MAX {
+        WHOLE_READ_MAX
+    } else {
+        TAIL_BYTES
+    };
+    read_last(path, cap)
+}
+
+/// The file's last `cap` bytes from the first line boundary on, or the whole
+/// file when it is no larger than `cap`.
+fn read_last(path: &Path, cap: u64) -> Option<String> {
     let mut file = std::fs::File::open(path).ok()?;
     let len = file.metadata().ok()?.len();
     let mut bytes = Vec::new();
-    if len <= WHOLE_READ_MAX {
-        file.take(WHOLE_READ_MAX + 1).read_to_end(&mut bytes).ok()?;
+    if len <= cap {
+        file.take(cap + 1).read_to_end(&mut bytes).ok()?;
         return Some(into_text(bytes));
     }
-    file.seek(SeekFrom::Start(len - TAIL_BYTES)).ok()?;
-    file.take(TAIL_BYTES).read_to_end(&mut bytes).ok()?;
+    // One byte early, so a window that opens on a line start keeps that line.
+    file.seek(SeekFrom::Start(len - cap - 1)).ok()?;
+    file.take(cap + 1).read_to_end(&mut bytes).ok()?;
     let start = memchr::memchr(b'\n', &bytes).map_or(bytes.len(), |i| i + 1);
     bytes.drain(..start);
     Some(into_text(bytes))
@@ -479,6 +530,7 @@ mod tests {
             Some(Dispatch {
                 slug: "my-flow".into(),
                 task_ids: vec![16],
+                item_ids: Vec::new(),
             })
         );
     }
@@ -507,6 +559,7 @@ mod tests {
             Some(Dispatch {
                 slug: "my-flow".into(),
                 task_ids: vec![5, 12],
+                item_ids: Vec::new(),
             })
         );
     }
@@ -541,6 +594,7 @@ mod tests {
             Some(Dispatch {
                 slug: "real-flow".into(),
                 task_ids: vec![4],
+                item_ids: Vec::new(),
             })
         );
     }
@@ -584,6 +638,7 @@ mod tests {
             Some(Dispatch {
                 slug: "my-flow".into(),
                 task_ids: vec![16],
+                item_ids: Vec::new(),
             })
         );
         // Claude's reader finds nothing in a Codex rollout.
@@ -800,5 +855,96 @@ mod tests {
         }
         std::fs::write(&agent, &body).expect("large transcript");
         assert_eq!(latest_dispatch(&agent), None);
+    }
+
+    #[test]
+    fn a_stop_reads_only_the_tail_of_a_large_transcript() {
+        let (_tmp, _, agent) = session_tree(&[]);
+        let filler = user_line(&"x".repeat(1000));
+        let mut body = user_line("tasks show 1 --slug old-flow");
+        body.push('\n');
+        while (body.len() as u64) <= WHOLE_READ_MAX {
+            body.push_str(&filler);
+            body.push('\n');
+        }
+        std::fs::write(&agent, &body).expect("large transcript");
+        assert_eq!(dispatch_and_tokens(&agent).0, None);
+        // The start path still finds the spawn prompt on the first line.
+        assert_eq!(
+            latest_dispatch(&agent).map(|d| d.slug),
+            Some("old-flow".to_string())
+        );
+    }
+
+    #[test]
+    fn a_ledger_line_names_its_flow() {
+        let text = user_line("ledger: .claude/flows/my-flow/review-ledger.toml");
+        assert_eq!(
+            dispatch_in(&text, user_text),
+            Some(Dispatch {
+                slug: "my-flow".into(),
+                task_ids: Vec::new(),
+                item_ids: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_ledger_line_with_items_collects_the_item_ids() {
+        let text = user_line(
+            "ledger: .claude/flows/my-flow/optimise-findings.toml items: O5,O2,O5\n\
+             ledger: .claude/flows/my-flow/optimise-findings.toml items: O9,O2",
+        );
+        assert_eq!(
+            dispatch_in(&text, user_text),
+            Some(Dispatch {
+                slug: "my-flow".into(),
+                task_ids: Vec::new(),
+                item_ids: vec!["O5".into(), "O2".into(), "O9".into()],
+            })
+        );
+    }
+
+    #[test]
+    fn a_ledger_line_and_a_task_dispatch_must_name_the_same_flow() {
+        let agreeing = user_line(
+            "tomlctl tasks show 4 --slug my-flow\n\
+             ledger: .claude/flows/my-flow/plan-review-findings.toml items: P1",
+        );
+        assert_eq!(
+            dispatch_in(&agreeing, user_text),
+            Some(Dispatch {
+                slug: "my-flow".into(),
+                task_ids: vec![4],
+                item_ids: vec!["P1".into()],
+            })
+        );
+        let disagreeing = user_line(
+            "tomlctl tasks show 4 --slug my-flow\n\
+             ledger: .claude/flows/other-flow/review-ledger.toml",
+        );
+        assert_eq!(dispatch_in(&disagreeing, user_text), None);
+    }
+
+    #[test]
+    fn a_flowless_ledger_line_is_not_a_dispatch() {
+        let text = [
+            user_line("ledger: .claude/reviews/my-scope.toml items: R1"),
+            user_line("ledger: .claude/flows/my-flow/tasks.toml"),
+        ]
+        .join("\n");
+        assert_eq!(dispatch_in(&text, user_text), None);
+    }
+
+    #[test]
+    fn a_ledger_line_below_other_prompt_text_is_still_a_dispatch() {
+        let text = user_line(
+            "DISPATCH: implement-deep\n\
+             ledger: .claude/flows/my-flow/review-ledger.toml items: R3,R7",
+        );
+        assert_eq!(
+            dispatch_in(&text, user_text).map(|d| d.item_ids),
+            Some(vec!["R3".to_string(), "R7".to_string()])
+        );
     }
 }

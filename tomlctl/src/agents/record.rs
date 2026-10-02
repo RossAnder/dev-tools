@@ -5,8 +5,9 @@
 //! file; [`record`] resolves the flow, the transcript and the dispatch around
 //! it and writes the result under the store's exclusive lock.
 //!
-//! Output is one JSON object: `{"recorded":true,"slug","event","id","task_ids"}`
-//! with `event` one of `start`, `stop`, `idle`, or
+//! Output is one JSON object:
+//! `{"recorded":true,"slug","event","id","task_ids","item_ids"}` with `event`
+//! one of `start`, `stop`, `idle`, or
 //! `{"recorded":false,"reason"}` when the payload names nothing to record.
 
 use std::path::{Path, PathBuf};
@@ -23,9 +24,10 @@ use crate::io;
 /// Longest summary kept, in chars.
 const SUMMARY_MAX_CHARS: usize = 600;
 
-/// One lifecycle event, already correlated. `task_ids` on `Stop` and `Idle`
-/// is the dispatch read again at close time, `None` when none resolved; the
-/// transcript lags the hook, so it can correct what the start recorded.
+/// One lifecycle event, already correlated. `task_ids` and `item_ids` on
+/// `Stop` and `Idle` are the dispatch read again at close time, `None` when
+/// none resolved; the transcript lags the hook, so it can correct what the
+/// start recorded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Event {
     Start {
@@ -38,6 +40,7 @@ pub(crate) enum Event {
         team: String,
         transcript_path: String,
         task_ids: Vec<u32>,
+        item_ids: Vec<String>,
     },
     Stop {
         harness: Harness,
@@ -51,11 +54,13 @@ pub(crate) enum Event {
         context_tokens: u64,
         transcript_path: String,
         task_ids: Option<Vec<u32>>,
+        item_ids: Option<Vec<String>>,
     },
     Idle {
         session_id: String,
         name: String,
         task_ids: Option<Vec<u32>>,
+        item_ids: Option<Vec<String>>,
     },
 }
 
@@ -77,6 +82,7 @@ pub(crate) enum Outcome {
         event: &'static str,
         id: String,
         task_ids: Vec<u32>,
+        item_ids: Vec<String>,
         changed: bool,
     },
     NotRecorded(&'static str),
@@ -96,6 +102,7 @@ pub(crate) fn apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome
             team,
             transcript_path,
             task_ids,
+            item_ids,
         } => {
             // Hooks arrive unordered: a start older than the row's recorded
             // stop must not reopen it. A resume, started after the stop, does.
@@ -119,7 +126,7 @@ pub(crate) fn apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome
             let row = store
                 .find_mut(&session_id, &agent_id)
                 .expect("row exists: found or just pushed");
-            let opened = row.open_segment(&task_ids, now);
+            let opened = row.open_segment(&task_ids, &item_ids, now);
             let changed = opened || row.status != AgentStatus::Running;
             if changed {
                 fill(&mut row.agent_type, agent_type);
@@ -147,6 +154,7 @@ pub(crate) fn apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome
             context_tokens,
             transcript_path,
             task_ids,
+            item_ids,
         } => {
             if store.find_mut(&session_id, &agent_id).is_none() {
                 // A stop that outran its own start: only its dispatch placed
@@ -167,13 +175,13 @@ pub(crate) fn apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome
                     started_at: now.to_string(),
                     ..AgentRecord::default()
                 };
-                row.open_segment(ids, now);
+                row.open_segment(ids, item_ids.as_deref().unwrap_or_default(), now);
                 store.agents.push(row);
             }
             let row = store
                 .find_mut(&session_id, &agent_id)
                 .expect("row exists: found or just pushed");
-            close(row, task_ids.as_deref(), now);
+            close(row, task_ids.as_deref(), item_ids.as_deref(), now);
             row.status = match row.kind {
                 AgentKind::Teammate => AgentStatus::Idle,
                 AgentKind::Subagent => AgentStatus::Stopped,
@@ -196,11 +204,12 @@ pub(crate) fn apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome
             session_id,
             name,
             task_ids,
+            item_ids,
         } => {
             let Some(row) = store.find_teammate_mut(&session_id, &name) else {
                 return Outcome::NotRecorded("unknown-agent");
             };
-            close(row, task_ids.as_deref(), now);
+            close(row, task_ids.as_deref(), item_ids.as_deref(), now);
             row.status = AgentStatus::Idle;
             row.updated_at = now.to_string();
             recorded(label, row, true)
@@ -209,18 +218,19 @@ pub(crate) fn apply(store: &mut AgentsStore, event: Event, now: &str) -> Outcome
 }
 
 /// Close the open segment and, when a dispatch was read at close time, make
-/// the closed segment carry its task set.
-fn close(row: &mut AgentRecord, task_ids: Option<&[u32]>, now: &str) {
+/// the closed segment carry its ids. `None` keeps what the segment holds.
+fn close(row: &mut AgentRecord, task_ids: Option<&[u32]>, item_ids: Option<&[String]>, now: &str) {
     if !row.close_segment(now) {
         return;
     }
-    if let (Some(ids), Some(last)) = (task_ids, row.segments.last_mut()) {
-        let mut ids = ids.to_vec();
-        ids.sort_unstable();
-        ids.dedup();
-        if last.task_ids != ids {
-            last.task_ids = ids;
-        }
+    let Some(last) = row.segments.last_mut() else {
+        return;
+    };
+    if let Some(ids) = task_ids {
+        last.task_ids = schema::id_set(ids);
+    }
+    if let Some(ids) = item_ids {
+        last.item_ids = schema::item_set(ids);
     }
 }
 
@@ -283,13 +293,15 @@ fn stopped_after(ended_at: &str, now: &str) -> bool {
 }
 
 fn recorded(event: &'static str, row: &AgentRecord, changed: bool) -> Outcome {
+    let last = row.segments.last();
     Outcome::Recorded {
         event,
         id: row.id.clone(),
-        task_ids: row
-            .segments
-            .last()
+        task_ids: last
             .map(|segment| segment.task_ids.clone())
+            .unwrap_or_default(),
+        item_ids: last
+            .map(|segment| segment.item_ids.clone())
             .unwrap_or_default(),
         changed,
     }
@@ -495,8 +507,13 @@ pub(crate) fn record(
         return Ok(not_recorded("unknown-flow"));
     }
 
-    // A dispatch for another flow says nothing about this flow's tasks.
-    let task_ids = dispatch.filter(|d| d.slug == slug).map(|d| d.task_ids);
+    // A dispatch for another flow says nothing about this flow's tasks or
+    // items. On a stop, a dispatch the tail read missed leaves both `None`,
+    // so the live segment keeps what start or the last idle recorded.
+    let (task_ids, item_ids) = match dispatch.filter(|d| d.slug == slug) {
+        Some(d) => (Some(d.task_ids), Some(d.item_ids)),
+        None => (None, None),
+    };
     let transcript_path = transcript
         .as_deref()
         .map(|path| path.to_string_lossy().into_owned())
@@ -519,6 +536,7 @@ pub(crate) fn record(
             team: meta.team,
             transcript_path,
             task_ids: task_ids.unwrap_or_default(),
+            item_ids: item_ids.unwrap_or_default(),
         },
         Kind::Stop => Event::Stop {
             harness,
@@ -532,11 +550,13 @@ pub(crate) fn record(
             context_tokens: stop_tokens,
             transcript_path,
             task_ids,
+            item_ids,
         },
         Kind::Idle => Event::Idle {
             session_id: session_id.to_string(),
             name: name.to_string(),
             task_ids,
+            item_ids,
         },
     };
 
@@ -576,6 +596,7 @@ pub(crate) fn record(
             event,
             id,
             task_ids,
+            item_ids,
             ..
         }) => json!({
             "recorded": true,
@@ -583,6 +604,7 @@ pub(crate) fn record(
             "event": event,
             "id": id,
             "task_ids": task_ids,
+            "item_ids": item_ids,
         }),
         Some(Outcome::NotRecorded(reason)) => not_recorded(reason),
         None => bail!("agents record reached the write path without an outcome"),
@@ -605,7 +627,28 @@ mod tests {
             team: String::new(),
             transcript_path: format!("/p/agent-{agent_id}.jsonl"),
             task_ids: task_ids.to_vec(),
+            item_ids: Vec::new(),
         }
+    }
+
+    fn items(ids: &[&str]) -> Vec<String> {
+        ids.iter().map(|id| id.to_string()).collect()
+    }
+
+    fn ledger_start(agent_id: &str, item_ids: &[&str]) -> Event {
+        let mut event = start(agent_id, &[]);
+        if let Event::Start { item_ids: slot, .. } = &mut event {
+            *slot = items(item_ids);
+        }
+        event
+    }
+
+    fn ledger_stop(agent_id: &str, item_ids: Option<&[&str]>) -> Event {
+        let mut event = stop(agent_id, item_ids.map(|_| &[][..]));
+        if let Event::Stop { item_ids: slot, .. } = &mut event {
+            *slot = item_ids.map(items);
+        }
+        event
     }
 
     fn teammate_start(agent_id: &str, name: &str, task_ids: &[u32]) -> Event {
@@ -619,6 +662,7 @@ mod tests {
             team: "pool".into(),
             transcript_path: String::new(),
             task_ids: task_ids.to_vec(),
+            item_ids: Vec::new(),
         }
     }
 
@@ -635,6 +679,7 @@ mod tests {
             context_tokens: 1234,
             transcript_path: String::new(),
             task_ids: task_ids.map(<[u32]>::to_vec),
+            item_ids: task_ids.map(|_| Vec::new()),
         }
     }
 
@@ -655,6 +700,7 @@ mod tests {
                 event: "start",
                 id: "A1".into(),
                 task_ids: vec![16],
+                item_ids: Vec::new(),
                 changed: true,
             }
         );
@@ -667,6 +713,7 @@ mod tests {
             row.segments,
             vec![Segment {
                 task_ids: vec![16],
+                item_ids: Vec::new(),
                 started_at: "t0".into(),
                 ended_at: String::new(),
             }]
@@ -762,6 +809,7 @@ mod tests {
                 session_id: "s1".into(),
                 name: "worker-2".into(),
                 task_ids: None,
+                item_ids: None,
             },
             "t1",
         );
@@ -776,6 +824,7 @@ mod tests {
                 session_id: "s2".into(),
                 name: "worker-1".into(),
                 task_ids: None,
+                item_ids: None,
             },
             "t2",
         );
@@ -796,6 +845,66 @@ mod tests {
     }
 
     #[test]
+    fn a_ledger_dispatch_opens_a_segment_on_its_items_alone() {
+        let mut store = AgentsStore::default();
+        let outcome = apply(&mut store, ledger_start("a1", &["R3", "R7"]), "t0");
+        assert_eq!(
+            outcome,
+            Outcome::Recorded {
+                event: "start",
+                id: "A1".into(),
+                task_ids: Vec::new(),
+                item_ids: items(&["R3", "R7"]),
+                changed: true,
+            }
+        );
+        let again = apply(&mut store, ledger_start("a1", &["R3", "R7"]), "t1");
+        assert!(matches!(again, Outcome::Recorded { changed: false, .. }));
+
+        apply(&mut store, ledger_stop("a1", None), "t2");
+        assert_eq!(
+            store.agents[0].segments,
+            vec![Segment {
+                task_ids: Vec::new(),
+                item_ids: items(&["R3", "R7"]),
+                started_at: "t0".into(),
+                ended_at: "t2".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_stop_carrying_a_different_ledger_dispatch_rewrites_the_closing_items() {
+        let mut store = AgentsStore::default();
+        apply(&mut store, ledger_start("a1", &["R3"]), "t0");
+        let outcome = apply(&mut store, ledger_stop("a1", Some(&["R9", "R4"])), "t1");
+        assert!(matches!(
+            &outcome,
+            Outcome::Recorded { item_ids, task_ids, .. }
+                if item_ids == &items(&["R9", "R4"]) && task_ids.is_empty()
+        ));
+        assert_eq!(store.agents[0].segments.len(), 1);
+    }
+
+    #[test]
+    fn a_teammate_retask_from_items_to_a_task_opens_a_second_segment() {
+        let mut store = AgentsStore::default();
+        let mut first = ledger_start("a1", &["O5"]);
+        if let Event::Start { kind, name, .. } = &mut first {
+            *kind = AgentKind::Teammate;
+            *name = "worker-1".into();
+        }
+        apply(&mut store, first, "t0");
+        apply(&mut store, teammate_start("a1", "worker-1", &[7]), "t1");
+        let segments = &store.agents[0].segments;
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].item_ids, items(&["O5"]));
+        assert_eq!(segments[0].ended_at, "t1");
+        assert_eq!(segments[1].task_ids, vec![7]);
+        assert!(segments[1].item_ids.is_empty());
+    }
+
+    #[test]
     fn a_stop_for_an_unknown_agent_with_a_flow_writes_a_stopped_row() {
         let mut store = AgentsStore::default();
         apply(&mut store, start("a0", &[1]), "t0");
@@ -809,6 +918,7 @@ mod tests {
             row.segments,
             vec![Segment {
                 task_ids: vec![5],
+                item_ids: Vec::new(),
                 started_at: "t1".into(),
                 ended_at: "t1".into(),
             }]
@@ -841,6 +951,7 @@ mod tests {
         let dispatch = Dispatch {
             slug: "named".into(),
             task_ids: vec![4],
+            item_ids: Vec::new(),
         };
 
         let pick =
@@ -1050,7 +1161,7 @@ mod tests {
             assert_eq!(
                 record(Harness::ClaudeCode, &payload, &args).expect("records"),
                 json!({"recorded": true, "slug": "live-flow", "event": "start",
-                       "id": "A1", "task_ids": [6]})
+                       "id": "A1", "task_ids": [6], "item_ids": []})
             );
             let written = schema::from_toml(
                 &io::read_toml(&flow_dir.join(STORE_FILE)).expect("store written"),
@@ -1142,7 +1253,7 @@ mod tests {
             assert_eq!(
                 record(Harness::Codex, &start, &args).expect("records"),
                 json!({"recorded": true, "slug": "codex-flow", "event": "start",
-                       "id": "A1", "task_ids": [6]})
+                       "id": "A1", "task_ids": [6], "item_ids": []})
             );
 
             let stop = json!({
@@ -1161,7 +1272,7 @@ mod tests {
             assert_eq!(
                 record(Harness::Codex, &stop, &args).expect("records"),
                 json!({"recorded": true, "slug": "codex-flow", "event": "stop",
-                       "id": "A1", "task_ids": [6]})
+                       "id": "A1", "task_ids": [6], "item_ids": []})
             );
 
             let store = schema::from_toml(

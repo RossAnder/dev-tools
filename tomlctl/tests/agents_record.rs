@@ -166,7 +166,7 @@ fn a_start_records_a_running_row_on_the_dispatched_task() {
     assert_eq!(
         out,
         json!({"recorded": true, "slug": TASKS_SLUG, "event": "start",
-               "id": "A1", "task_ids": [2]})
+               "id": "A1", "task_ids": [2], "item_ids": []})
     );
 
     let rows = list(&root, TASKS_SLUG);
@@ -226,7 +226,7 @@ fn a_stop_marks_the_subagent_stopped_with_its_summary() {
     assert_eq!(
         out,
         json!({"recorded": true, "slug": TASKS_SLUG, "event": "stop",
-               "id": "A1", "task_ids": [2]})
+               "id": "A1", "task_ids": [2], "item_ids": []})
     );
 
     let row = &list(&root, TASKS_SLUG)[0];
@@ -236,6 +236,75 @@ fn a_stop_marks_the_subagent_stopped_with_its_summary() {
     assert_ne!(row["ended_at"], "");
     let segments = row["segments"].as_array().unwrap();
     assert_eq!(segments.len(), 1);
+    assert_ne!(segments[0]["ended_at"], "");
+}
+
+fn ledger_line(slug: &str, items: &str) -> String {
+    user_line(&format!(
+        "ledger: .claude/flows/{slug}/review-ledger.toml items: {items}\nApply them."
+    ))
+}
+
+#[test]
+fn a_ledger_dispatch_records_its_flow_and_items() {
+    let (_dir, root) = flow();
+    let projects = Projects::new();
+    projects.agent("a1", &[ledger_line(TASKS_SLUG, "R3,R7")], &subagent_meta());
+
+    let out = record(&root, &payload("SubagentStart", &root, &projects, "a1"));
+    assert_eq!(
+        out,
+        json!({"recorded": true, "slug": TASKS_SLUG, "event": "start",
+               "id": "A1", "task_ids": [], "item_ids": ["R3", "R7"]})
+    );
+
+    let text = fs::read_to_string(store(&root)).unwrap();
+    let doc: toml::Value = toml::from_str(&text).unwrap();
+    let written = doc["agents"][0]["segments"][0]["item_ids"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        written
+            .iter()
+            .map(|id| id.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["R3", "R7"],
+        "{text}"
+    );
+    let row = &list(&root, TASKS_SLUG)[0];
+    assert_eq!(row["status"], "running");
+    let segments = row["segments"].as_array().unwrap();
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0]["item_ids"], json!(["R3", "R7"]));
+    assert_eq!(task_ids(&segments[0]), [] as [u64; 0]);
+    assert_eq!(segments[0]["ended_at"], "");
+}
+
+#[test]
+fn a_stop_without_a_tail_dispatch_keeps_the_live_segment() {
+    let (_dir, root) = flow();
+    let projects = Projects::new();
+    projects.agent("a1", &[ledger_line(TASKS_SLUG, "R3,R7")], &subagent_meta());
+    record(&root, &payload("SubagentStart", &root, &projects, "a1"));
+
+    // More than the stop read's 1 MiB tail, so the dispatch falls outside it.
+    let filler =
+        json!({"type": "assistant", "message": {"content": "x".repeat(64 * 1024)}}).to_string();
+    for _ in 0..20 {
+        projects.append("a1", &filler);
+    }
+    let out = record(&root, &payload("SubagentStop", &root, &projects, "a1"));
+    assert_eq!(
+        out,
+        json!({"recorded": true, "slug": TASKS_SLUG, "event": "stop",
+               "id": "A1", "task_ids": [], "item_ids": ["R3", "R7"]})
+    );
+
+    let row = &list(&root, TASKS_SLUG)[0];
+    assert_eq!(row["status"], "stopped");
+    let segments = row["segments"].as_array().unwrap();
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0]["item_ids"], json!(["R3", "R7"]));
     assert_ne!(segments[0]["ended_at"], "");
 }
 
@@ -303,7 +372,7 @@ fn a_teammate_idle_event_marks_the_teammate_idle() {
     assert_eq!(
         out,
         json!({"recorded": true, "slug": TASKS_SLUG, "event": "idle",
-               "id": "A1", "task_ids": [2]})
+               "id": "A1", "task_ids": [2], "item_ids": []})
     );
 
     let row = &list(&root, TASKS_SLUG)[0];
@@ -365,7 +434,7 @@ fn a_second_agent_without_a_dispatch_is_attached_by_session_affinity() {
     assert_eq!(
         record(&root, &start),
         json!({"recorded": true, "slug": TASKS_SLUG, "event": "start",
-               "id": "A2", "task_ids": []})
+               "id": "A2", "task_ids": [], "item_ids": []})
     );
 
     let rows = list(&root, TASKS_SLUG);
