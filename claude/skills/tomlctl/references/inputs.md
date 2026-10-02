@@ -87,11 +87,13 @@ printf '%s' '{"kind":"question","author":"review","ledger":"review","flow":"<slu
   question, plus non-empty distinct `options` unless `choice` is `text`, which refuses
   `options`. `capture_kind` must be a backlog kind. `flow` and `scope` must match
   `^[a-z0-9][a-z0-9-]{0,63}$`; `items` must be a non-empty array of non-empty strings.
+- **Target:** `flow`, `scope` and `items` each need `ledger`, and `flow` and `scope` are
+  refused together.
 
 ## `inputs ack`
 
 Moves each `new` record to `acknowledged`, stamping `acknowledged` (now) and
-`acknowledged_by`. Prints `{"applied": [ids], "skipped": [{"id", "status"}]}`.
+`acknowledged_by`. Prints `{"applied": [ids], "skipped": [{"id", "kind", "status"}]}`.
 
 ```bash
 tomlctl inputs ack I3 I4 --by review
@@ -102,7 +104,9 @@ tomlctl inputs ack I3 I4 --by review
 | *(positional)* | id… | Records to acknowledge. Duplicates collapse. | required |
 | `--by` | command | Command acknowledging the records. Must not be empty. | required |
 
-A record past `new` is skipped and reported; an unknown id fails the whole call.
+A record past `new` is skipped and reported, and so is every `question`, whatever its status:
+a question waits on the user, and `inputs answer` needs it `new`. An unknown id fails the
+whole call.
 
 ## `inputs handle`
 
@@ -135,9 +139,9 @@ tomlctl inputs withdraw I5 I6
 | *(positional)* | id… | Records to withdraw. Duplicates collapse. | required |
 
 Withdrawing an `answer` returns the question it closed to `new`, dropping the question's
-`handled` fields, but only when the question still carries exactly what that answer wrote
-(`handled_by = "user"`, `handled_note = "answered by <answer id>"`). The withdrawn record keeps
-its id.
+`handled` fields and `answered_by`, but only when the question is still `handled` by `user`
+with `answered_by` naming that answer. A question closed before `answered_by` existed matches
+on `handled_note = "answered by <answer id>"` instead. The withdrawn record keeps its id.
 
 ## `inputs answer`
 
@@ -160,7 +164,9 @@ tomlctl inputs answer I9 --text "Only the parser module"
 - A `single` question takes at most one `--pick`; a `text` question takes none.
 - The `answer` record copies the question's `ledger`, `flow`, `scope` and `items`, and stores
   `answers` (the question id), `picked` and `text`. The question becomes `handled` with
-  `handled_by = "user"` and `handled_note = "answered by <answer id>"`.
+  `handled_by = "user"`, `handled_note = "answered by <answer id>"` and
+  `answered_by = "<answer id>"`.
+- A refused pick names the question, and an unknown pick lists the question's options.
 
 ## Store shape
 
@@ -182,6 +188,7 @@ options = ["merge", "persist only"]
 handled = 2026-10-02T10:40:12Z
 handled_by = "user"
 handled_note = "answered by I10"
+answered_by = "I10"
 
 [[inputs]]
 id = "I10"

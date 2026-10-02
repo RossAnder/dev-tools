@@ -76,7 +76,7 @@ const ADDABLE: [&str; 12] = [
     "options",
 ];
 
-const ASSIGNED: [&str; 10] = [
+const ASSIGNED: [&str; 11] = [
     "id",
     "status",
     "created",
@@ -87,6 +87,7 @@ const ASSIGNED: [&str; 10] = [
     "handled",
     "handled_by",
     "handled_note",
+    ANSWERED_BY,
 ];
 
 const CAPTURE_ONLY: [&str; 2] = ["capture_kind", "area"];
@@ -95,6 +96,8 @@ const ANSWER_ONLY: [&str; 2] = ["answers", "picked"];
 const ACK_FIELDS: [&str; 2] = ["acknowledged", "acknowledged_by"];
 const HANDLED_FIELDS: [&str; 3] = ["handled", "handled_by", "handled_note"];
 const TARGET_FIELDS: [&str; 4] = ["ledger", "flow", "scope", "items"];
+/// The answer that closed a handled question; dropped when that answer is withdrawn.
+const ANSWERED_BY: &str = "answered_by";
 
 pub(crate) fn path(root: &Path) -> PathBuf {
     root.join(".claude").join("inputs.toml")
@@ -216,8 +219,9 @@ pub(crate) fn add(root: &Path, record: &JsonValue, integrity: IntegrityOpts) -> 
 }
 
 /// Moves each `new` record of `ids` to `acknowledged`, stamped with `by`.
-/// Returns `{"applied", "skipped": [{id, status}]}`; a record past `new` is
-/// skipped, and an unknown id fails the whole call.
+/// Returns `{"applied", "skipped": [{id, kind, status}]}`; a record past `new`
+/// is skipped, and so is a question, which waits on the user — `answer` needs
+/// it `new`. An unknown id fails the whole call.
 pub(crate) fn ack(
     root: &Path,
     ids: &[String],
@@ -225,11 +229,18 @@ pub(crate) fn ack(
     integrity: IntegrityOpts,
 ) -> Result<JsonValue> {
     non_empty("--by", by)?;
-    lifecycle(root, ids, integrity, &[STATUS_NEW], |row, now| {
-        set_str(row, "status", STATUS_ACKNOWLEDGED);
-        row.insert("acknowledged".into(), TomlValue::Datetime(now));
-        set_str(row, "acknowledged_by", by);
-    })
+    lifecycle(
+        root,
+        ids,
+        integrity,
+        &[STATUS_NEW],
+        &[KIND_QUESTION],
+        |row, now| {
+            set_str(row, "status", STATUS_ACKNOWLEDGED);
+            row.insert("acknowledged".into(), TomlValue::Datetime(now));
+            set_str(row, "acknowledged_by", by);
+        },
+    )
 }
 
 /// Moves each `new` or `acknowledged` record of `ids` to `handled`, with
@@ -249,6 +260,7 @@ pub(crate) fn handle(
         ids,
         integrity,
         &[STATUS_NEW, STATUS_ACKNOWLEDGED],
+        &[],
         |row, now| {
             set_str(row, "status", STATUS_HANDLED);
             row.insert("handled".into(), TomlValue::Datetime(now));
@@ -275,23 +287,28 @@ pub(crate) fn withdraw(root: &Path, ids: &[String], integrity: IntegrityOpts) ->
                 )));
             }
             if str_of(row, "kind") == KIND_ANSWER {
-                questions.push((str_of(row, "answers").to_string(), answered_note(id)));
+                questions.push((str_of(row, "answers").to_string(), id.clone()));
             }
         }
         for id in &ids {
             set_str(find_mut(rows, id)?, "status", STATUS_WITHDRAWN);
         }
         let mut touched = ids.clone();
-        for (question, note) in questions {
+        for (question, answer) in questions {
             let Ok(row) = find_mut(rows, &question) else {
                 continue;
             };
+            // A question closed before `answered_by` existed carries only the note.
+            let names_it = match row.get(ANSWERED_BY) {
+                Some(by) => by.as_str() == Some(answer.as_str()),
+                None => str_of(row, "handled_note") == answered_note(&answer),
+            };
             let closed_by_it = str_of(row, "status") == STATUS_HANDLED
                 && str_of(row, "handled_by") == AUTHOR_USER
-                && str_of(row, "handled_note") == note;
+                && names_it;
             if closed_by_it {
-                for field in HANDLED_FIELDS {
-                    row.remove(field);
+                for field in HANDLED_FIELDS.iter().chain(&[ANSWERED_BY]) {
+                    row.remove(*field);
                 }
                 set_str(row, "status", STATUS_NEW);
                 reopened.push(question.clone());
@@ -329,7 +346,7 @@ pub(crate) fn answer(
                 "{question} is {status}; only a new question can be answered"
             )));
         }
-        check_picks(asked, picked)?;
+        check_picks(question, asked, picked)?;
         let id = next_id(rows);
         let mut row = toml::Table::new();
         row.insert("id".into(), TomlValue::String(id.clone()));
@@ -355,6 +372,7 @@ pub(crate) fn answer(
         asked.insert("handled".into(), TomlValue::Datetime(now));
         set_str(asked, "handled_by", AUTHOR_USER);
         set_str(asked, "handled_note", &answered_note(&id));
+        set_str(asked, ANSWERED_BY, &id);
         rows.push(TomlValue::Table(row));
         Ok(vec![id, question.to_string()])
     })?;
@@ -365,13 +383,15 @@ fn answered_note(answer: &str) -> String {
     format!("answered by {answer}")
 }
 
-fn check_picks(question: &toml::Table, picked: &[String]) -> Result<()> {
+fn check_picks(id: &str, question: &toml::Table, picked: &[String]) -> Result<()> {
     let choice = str_of(question, "choice");
     if choice == "text" && !picked.is_empty() {
-        return Err(invalid("this question takes a text answer, not options"));
+        return Err(invalid(format!(
+            "question {id} takes a text answer, not options"
+        )));
     }
     if choice == "single" && picked.len() > 1 {
-        return Err(invalid("this question takes a single option"));
+        return Err(invalid(format!("question {id} takes a single option")));
     }
     let options: Vec<&str> = question
         .get("options")
@@ -382,7 +402,8 @@ fn check_picks(question: &toml::Table, picked: &[String]) -> Result<()> {
     for pick in picked {
         if !options.contains(&pick.as_str()) {
             return Err(invalid(format!(
-                "`{pick}` is not an option of this question"
+                "`{pick}` is not an option of question {id}; options: {}",
+                options.join(", ")
             )));
         }
         if !seen.insert(pick.as_str()) {
@@ -392,13 +413,14 @@ fn check_picks(question: &toml::Table, picked: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// Applies `edit` to each record of `ids` whose status is in `from`, skipping
-/// the rest and failing on an unknown id.
+/// Applies `edit` to each record of `ids` whose status is in `from` and whose
+/// kind is not in `exempt`, skipping the rest and failing on an unknown id.
 fn lifecycle(
     root: &Path,
     ids: &[String],
     integrity: IntegrityOpts,
     from: &[&str],
+    exempt: &[&str],
     edit: impl Fn(&mut toml::Table, Datetime),
 ) -> Result<JsonValue> {
     let ids = unique(ids);
@@ -408,11 +430,12 @@ fn lifecycle(
         for id in &ids {
             let row = find_mut(rows, id)?;
             let status = str_of(row, "status").to_string();
-            if from.contains(&status.as_str()) {
+            let kind = str_of(row, "kind").to_string();
+            if from.contains(&status.as_str()) && !exempt.contains(&kind.as_str()) {
                 edit(row, now);
                 applied.push(id.clone());
             } else {
-                skipped.push(json!({"id": id, "status": status}));
+                skipped.push(json!({"id": id, "kind": kind, "status": status}));
             }
         }
         Ok(applied)
@@ -482,6 +505,16 @@ pub(crate) fn validate(row: &toml::Table) -> Result<()> {
     }
     if row.contains_key("items") {
         string_list(row, "items")?;
+    }
+    if row.contains_key("flow") && row.contains_key("scope") {
+        return Err(invalid("a record targets a `flow` or a `scope`, not both"));
+    }
+    if !row.contains_key("ledger")
+        && let Some(field) = ["flow", "scope", "items"]
+            .into_iter()
+            .find(|f| row.contains_key(*f))
+    {
+        return Err(invalid(format!("`{field}` needs a `ledger` to target")));
     }
     optional_str(row, "text")?;
 
@@ -566,6 +599,24 @@ pub(crate) fn validate(row: &toml::Table) -> Result<()> {
         datetime(row, "handled", true)?;
         required_str(row, "handled_by")?;
         optional_str(row, "handled_note")?;
+    }
+    if row.contains_key(ANSWERED_BY) {
+        if kind != KIND_QUESTION {
+            return Err(invalid(format!(
+                "`{ANSWERED_BY}` does not belong on a {kind} record"
+            )));
+        }
+        if status != STATUS_HANDLED {
+            return Err(invalid(format!(
+                "a {status} record carries no `{ANSWERED_BY}`"
+            )));
+        }
+        let answer = required_str(row, ANSWERED_BY)?;
+        if !is_input_id(answer) {
+            return Err(invalid(format!(
+                "`{ANSWERED_BY}` must name an answer id, not `{answer}`"
+            )));
+        }
     }
     Ok(())
 }
@@ -806,8 +857,15 @@ mod tests {
     fn answer_refuses_a_pick_outside_the_options() {
         with_root(|root| {
             let asked = question(root);
-            assert!(answer(root, &asked, &ids(&["maybe"]), None, OPTS).is_err());
-            assert!(answer(root, &asked, &ids(&["yes", "no"]), None, OPTS).is_err());
+            let err = answer(root, &asked, &ids(&["maybe"]), None, OPTS).unwrap_err();
+            assert!(
+                format!("{err:#}").contains(&format!(
+                    "`maybe` is not an option of question {asked}; options: yes, no"
+                )),
+                "{err:#}"
+            );
+            let err = answer(root, &asked, &ids(&["yes", "no"]), None, OPTS).unwrap_err();
+            assert!(format!("{err:#}").contains(&format!("question {asked}")));
             assert!(answer(root, &asked, &[], None, OPTS).is_err());
             assert_eq!(row(root, &asked)["status"], "new");
         });
@@ -818,12 +876,122 @@ mod tests {
         with_root(|root| {
             let asked = question(root);
             answer(root, &asked, &[], Some("only after the release"), OPTS).unwrap();
+            assert_eq!(row(root, &asked)["answered_by"], "I2");
             let out = withdraw(root, &ids(&["I2"]), OPTS).unwrap();
             assert_eq!(out["reopened"], json!([asked]));
             let reopened = row(root, &asked);
             assert_eq!(reopened["status"], "new");
             assert!(reopened.get("handled_by").is_none());
+            assert!(reopened.get("answered_by").is_none());
         });
+    }
+
+    #[test]
+    fn withdrawing_an_answer_reopens_a_question_closed_by_note_alone() {
+        with_root(|root| {
+            let store = path(root);
+            fs::create_dir_all(store.parent().unwrap()).unwrap();
+            fs::write(
+                &store,
+                r#"schema_version = 1
+last_updated = 2026-10-02
+
+[[inputs]]
+id = "I1"
+kind = "question"
+author = "review"
+status = "handled"
+created = 2026-10-02T08:00:00Z
+prompt = "Why?"
+choice = "text"
+handled = 2026-10-02T09:00:00Z
+handled_by = "user"
+handled_note = "answered by I2"
+
+[[inputs]]
+id = "I2"
+kind = "answer"
+author = "user"
+status = "new"
+created = 2026-10-02T09:00:00Z
+answers = "I1"
+text = "because"
+"#,
+            )
+            .unwrap();
+            let out = withdraw(root, &ids(&["I2"]), OPTS).unwrap();
+            assert_eq!(out["reopened"], json!(["I1"]));
+            assert_eq!(row(root, "I1")["status"], "new");
+        });
+    }
+
+    #[test]
+    fn ack_skips_a_question() {
+        with_root(|root| {
+            let asked = question(root);
+            let out = ack(root, &ids(&[&asked]), "review", OPTS).unwrap();
+            assert_eq!(out["applied"], json!([]));
+            assert_eq!(
+                out["skipped"],
+                json!([{"id": asked, "kind": "question", "status": "new"}])
+            );
+            assert_eq!(row(root, &asked)["status"], "new");
+            assert!(answer(root, &asked, &ids(&["yes"]), None, OPTS).is_ok());
+        });
+    }
+
+    #[test]
+    fn a_target_needs_its_ledger_and_one_of_flow_or_scope() {
+        with_root(|root| {
+            for record in [
+                json!({"kind": "note", "text": "x", "flow": "f", "items": ["R1"]}),
+                json!({"kind": "note", "text": "x", "scope": "s"}),
+                json!({"kind": "note", "text": "x", "items": ["R1"]}),
+                json!({"kind": "note", "text": "x", "ledger": "review", "flow": "f", "scope": "s"}),
+            ] {
+                assert!(
+                    add(root, &record, OPTS).is_err(),
+                    "{record} must be refused"
+                );
+            }
+            assert!(!path(root).exists(), "a refused add writes nothing");
+        });
+    }
+
+    #[test]
+    fn answered_by_belongs_only_on_a_handled_question() {
+        let mut closed = toml::Table::new();
+        for (key, value) in [
+            ("id", "I1"),
+            ("kind", "question"),
+            ("author", "review"),
+            ("status", "handled"),
+            ("prompt", "Why?"),
+            ("choice", "text"),
+            ("handled_by", "user"),
+            ("answered_by", "I2"),
+        ] {
+            set_str(&mut closed, key, value);
+        }
+        let at: Datetime = "2026-10-02T08:00:00Z".parse().unwrap();
+        closed.insert("created".into(), TomlValue::Datetime(at));
+        closed.insert("handled".into(), TomlValue::Datetime(at));
+        validate(&closed).unwrap();
+
+        let mut open = closed.clone();
+        set_str(&mut open, "status", "new");
+        for field in HANDLED_FIELDS {
+            open.remove(field);
+        }
+        assert!(validate(&open).is_err(), "a new question carries no answer");
+
+        let mut note = closed.clone();
+        for field in QUESTION_ONLY {
+            note.remove(field);
+        }
+        set_str(&mut note, "kind", "note");
+        set_str(&mut note, "text", "x");
+        assert!(validate(&note).is_err(), "only a question is answered");
     }
 
     #[test]
@@ -849,7 +1017,7 @@ mod tests {
             let again = ack(root, &ids(&[&id]), "review", OPTS).unwrap();
             assert_eq!(
                 again["skipped"],
-                json!([{"id": id, "status": "acknowledged"}])
+                json!([{"id": id, "kind": "request", "status": "acknowledged"}])
             );
             handle(
                 root,

@@ -137,6 +137,7 @@ fn inputs_answer_marks_the_question_handled() {
     assert_eq!(closed["status"], "handled");
     assert_eq!(closed["handled_by"], "user");
     assert_eq!(closed["handled_note"], format!("answered by {reply}"));
+    assert_eq!(closed["answered_by"], reply);
     let answer = record(&root, &reply);
     assert_eq!(answer["kind"], "answer");
     assert_eq!(answer["answers"], asked);
@@ -163,17 +164,25 @@ fn inputs_ack_skips_and_withdraw_reopens() {
     let again = inputs(&root, &["ack", &id, "--by", "review"]);
     assert_eq!(
         again["skipped"],
-        json!([{"id": id, "status": "acknowledged"}])
+        json!([{"id": id, "kind": "note", "status": "acknowledged"}])
     );
     assert_eq!(record(&root, &id)["acknowledged_by"], "review");
 
     let question = r#"{"kind": "question", "prompt": "Why?", "choice": "text"}"#;
     let asked = minted(&inputs(&root, &["add", "--json", question]));
+    let held = inputs(&root, &["ack", &asked, "--by", "review"]);
+    assert_eq!(
+        held["skipped"],
+        json!([{"id": asked, "kind": "question", "status": "new"}]),
+        "a question waits on the user"
+    );
     let reply = minted(&inputs(&root, &["answer", &asked, "--text", "because"]));
     let out = inputs(&root, &["withdraw", &reply]);
     assert_eq!(out["applied"], json!([reply]));
     assert_eq!(out["reopened"], json!([asked]));
-    assert_eq!(record(&root, &asked)["status"], "new");
+    let reopened = record(&root, &asked);
+    assert_eq!(reopened["status"], "new");
+    assert!(reopened.get("answered_by").is_none(), "{reopened}");
 }
 
 #[test]
@@ -193,16 +202,26 @@ fn inputs_refusals_exit_nonzero_with_a_tagged_error() {
         "a refused add writes nothing"
     );
 
-    cli(&root)
-        .args(["inputs", "ack", "I9", "--by", "review"])
+    let out = cli(&root)
+        .args([
+            "--error-format",
+            "json",
+            "inputs",
+            "ack",
+            "I9",
+            "--by",
+            "review",
+        ])
         .write_stdin("")
         .assert()
         .failure();
-    cli(&root)
-        .args(["inputs", "ack", "I9"])
-        .write_stdin("")
-        .assert()
-        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let error = parse_json_error_envelope(&stderr);
+    assert_eq!(error["kind"], "validation", "{stderr}");
+    assert!(
+        error.to_string().contains("I9"),
+        "the refusal names the unknown id: {stderr}"
+    );
 }
 
 #[test]
