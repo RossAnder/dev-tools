@@ -1,4 +1,4 @@
-//! The scrollable details panel for the selected task.
+//! The scrollable details panel for the selected task or the cursor's ledger item.
 //!
 //! Scroll state belongs to the caller: [`render`] takes the offset to draw
 //! at and returns the content height, which the caller clamps its offset
@@ -16,34 +16,66 @@ use ratatui::widgets::{
     Block, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
 };
 
+use serde_json::Value;
+
 use crate::app::App;
 use crate::hook::parse_utc;
+use crate::ledger::{Anchor, ItemRow, StatusClass};
 use crate::model::{Agent, AgentKind, AgentStatus, RecordEntry};
+use crate::surface::{ItemsState, Surface};
 use crate::theme::Theme;
 use crate::view::markdown;
 
 const INDENT: &str = "  ";
 
-/// Draws the details of `app.selected` into `area`, scrolled down `scroll`
-/// rows, and returns the wrapped content height in rows. An offset past the
-/// end is drawn as the last full page. Overflowing content gets a scrollbar
-/// on the right border and a `row/total` count on the bottom one. The border
-/// names only the id; the first content row carries the whole title.
+/// Draws the details of `app.selected`, or of the cursor row on an item
+/// surface, into `area` scrolled down `scroll` rows, and returns the wrapped
+/// content height in rows. The border names only the id; the first content
+/// row carries the whole title.
 pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, scroll: u16) -> u16 {
-    let theme = &app.theme;
-    let title = match app
-        .selected
-        .and_then(|id| app.index.task(&app.snapshot, id))
-    {
-        Some(task) => format!(" #{} ", task.id),
-        None => " details ".to_string(),
+    let now = SystemTime::now();
+    let (id, text) = match app.surface {
+        Surface::Tasks => (
+            app.selected
+                .and_then(|id| app.index.task(&app.snapshot, id))
+                .map(|task| format!("#{}", task.id)),
+            content(app, now),
+        ),
+        _ => match app.current_items().and_then(ItemsState::cursor_row) {
+            Some(row) => {
+                let agents = app.index.agents_for_item(&app.snapshot, &row.id);
+                (
+                    Some(row.id.clone()),
+                    item_content(row, &agents, &app.theme, now),
+                )
+            }
+            None => (
+                None,
+                Text::from(Line::styled("No item selected.", app.theme.pending)),
+            ),
+        },
     };
+    let title = id.map_or_else(|| " details ".to_string(), |id| format!(" {id} "));
+    render_text(frame, area, &app.theme, title, text, scroll)
+}
+
+/// Draws `text` wrapped inside a bordered panel titled `title`. An offset past
+/// the end is drawn as the last full page; overflowing content gets a scrollbar
+/// on the right border and a `row/total` count on the bottom one.
+fn render_text(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    title: String,
+    text: Text<'static>,
+    scroll: u16,
+) -> u16 {
     let block = Block::bordered()
         .border_style(theme.border)
         .title(Line::styled(title, theme.border_title))
         .padding(Padding::horizontal(1));
     let inner = block.inner(area);
-    let lines = wrap(content(app, SystemTime::now()), inner.width);
+    let lines = wrap(text, inner.width);
     let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
     let scroll = scroll.min(height.saturating_sub(inner.height));
 
@@ -192,6 +224,130 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
     Text::from(out)
 }
 
+/// The panel's lines for one ledger row, unwrapped. `agents` are those working
+/// the row; `now` dates their open segments.
+pub(crate) fn item_content(
+    row: &ItemRow,
+    agents: &[&Agent],
+    theme: &Theme,
+    now: SystemTime,
+) -> Text<'static> {
+    let mut out: Vec<Line<'static>> = Vec::new();
+    out.push(Line::styled(
+        format!("{} {}", row.id, row.summary),
+        theme.slug,
+    ));
+
+    let status = if row.status.is_empty() {
+        "no status"
+    } else {
+        row.status.as_str()
+    };
+    out.push(Line::styled(
+        status.to_string(),
+        class_style(row.class, theme),
+    ));
+    for (field, value) in &row.companions {
+        out.push(Line::from(vec![
+            Span::styled(
+                format!("{INDENT}{}: ", field.replace('_', " ")),
+                theme.secondary,
+            ),
+            Span::raw(value.clone()),
+        ]));
+    }
+
+    let mut facts: Vec<Span<'static>> = Vec::new();
+    let mut fact = |label: &str, value: &str, style: Style| {
+        if !value.is_empty() {
+            if !facts.is_empty() {
+                facts.push(Span::raw("  "));
+            }
+            facts.push(Span::styled(format!("{label} "), theme.secondary));
+            facts.push(Span::styled(value.to_string(), style));
+        }
+    };
+    fact("kind", &row.kind, theme.facet);
+    fact("severity", &row.severity, theme.severity(&row.severity));
+    fact("category", &row.category, theme.facet);
+    fact("effort", &row.effort, theme.effort);
+    fact("tags", &row.tags.join(", "), theme.facet);
+    if !facts.is_empty() {
+        out.push(Line::from(facts));
+    }
+
+    let anchor = match &row.anchor {
+        Anchor::Code { .. } => Some("at"),
+        Anchor::Section(_) => Some("section"),
+        Anchor::Area(_) => Some("area"),
+        Anchor::None => None,
+    };
+    if let Some(label) = anchor {
+        out.push(Line::from(vec![
+            Span::styled(format!("{label} "), theme.secondary),
+            Span::styled(row.anchor.to_string(), theme.facet),
+        ]));
+    }
+
+    if !row.description.trim().is_empty() {
+        section(&mut out, "Description", theme);
+        out.extend(indented(markdown::to_text(&row.description, theme)));
+    }
+    for (label, list) in [("Evidence", &row.evidence), ("Instances", &row.instances)] {
+        if list.is_empty() {
+            continue;
+        }
+        section(&mut out, label, theme);
+        out.extend(
+            list.iter()
+                .map(|entry| Line::styled(format!("{INDENT}{entry}"), theme.secondary)),
+        );
+    }
+
+    let flagged = if row.raw.get("first_flagged").is_some() {
+        "flagged"
+    } else {
+        "created"
+    };
+    let rounds = row
+        .raw
+        .get("rounds")
+        .and_then(Value::as_u64)
+        .map(|n| n.to_string())
+        .unwrap_or_default();
+    let dates: Vec<String> = [
+        (flagged, row.created.clone()),
+        ("closed", row.closed.clone()),
+        ("rounds", rounds),
+    ]
+    .into_iter()
+    .filter(|(_, value)| !value.is_empty())
+    .map(|(label, value)| format!("{label} {value}"))
+    .collect();
+    if !dates.is_empty() {
+        out.push(Line::default());
+        out.push(Line::styled(dates.join("  "), theme.secondary));
+    }
+
+    if !agents.is_empty() {
+        section(&mut out, "Agents", theme);
+        for agent in agents {
+            agent_lines(&mut out, agent, theme, now);
+        }
+    }
+
+    Text::from(out)
+}
+
+fn class_style(class: StatusClass, theme: &Theme) -> Style {
+    match class {
+        StatusClass::Live => theme.item_live,
+        StatusClass::Parked => theme.item_parked,
+        StatusClass::Done => theme.item_done,
+        StatusClass::Declined => theme.item_declined,
+    }
+}
+
 fn section(out: &mut Vec<Line<'static>>, label: &str, theme: &Theme) {
     out.push(Line::default());
     out.push(Line::styled(label.to_string(), theme.section));
@@ -267,6 +423,7 @@ fn agent_lines(out: &mut Vec<Line<'static>>, agent: &Agent, theme: &Theme, now: 
             .task_ids
             .iter()
             .map(|id| format!("#{id}"))
+            .chain(segment.item_ids.iter().cloned())
             .collect::<Vec<_>>()
             .join(" ");
         let end = if segment.ended_at.is_empty() {
@@ -647,6 +804,123 @@ mod tests {
                 .any(|s| s.content == "here" && s.style.fg == Some(ratatui::style::Color::Red)),
             "a word keeps its style across the break: {wrapped:?}"
         );
+    }
+
+    fn review_app_on(id: &str) -> App {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let path = root
+            .join("tests")
+            .join("fixtures")
+            .join("review-ledger.toml");
+        let value =
+            tomlctl::ledger_read(root, &tomlctl::LedgerRef::File(path)).expect("fixture reads");
+        let ledger = crate::ledger::Ledger::from_value(value).expect("fixture loads");
+        let mut app = app_on(1);
+        app.surface = Surface::Review;
+        let state = app.items.get_mut(&Surface::Review).expect("review state");
+        state.rows = ledger.rows;
+        state.cursor = Some(id.to_string());
+        app
+    }
+
+    fn item_lines(app: &App, now: SystemTime) -> Vec<String> {
+        let row = app
+            .current_items()
+            .and_then(ItemsState::cursor_row)
+            .expect("a cursor row");
+        let agents = app.index.agents_for_item(&app.snapshot, &row.id);
+        plain(&item_content(row, &agents, &app.theme, now))
+    }
+
+    #[test]
+    fn item_details_show_the_wontfix_rationale() {
+        let lines = item_lines(&review_app_on("R4"), SystemTime::now());
+        assert_eq!(
+            lines,
+            [
+                "R4 map could match on a tuple instead of nesting",
+                "wontfix",
+                "  wontfix rationale: the nesting mirrors the key table",
+                "severity suggestion  category idiom  effort trivial",
+                "at src/keys.rs",
+                "",
+                "flagged 2026-09-21  rounds 1",
+            ]
+        );
+
+        let lines = item_lines(&review_app_on("R3"), SystemTime::now());
+        let after = |label: &str| {
+            let at = lines.iter().position(|l| l == label).expect(label);
+            lines[at + 1..]
+                .iter()
+                .take_while(|l| !l.is_empty())
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(lines[2], "  resolution: fixed in abc1234");
+        assert_eq!(lines[4], "at src/io.rs:7:read_all");
+        assert_eq!(
+            after("Evidence"),
+            ["  src/io.rs:7 — the Err arm returns Ok(Vec::new())"]
+        );
+        assert_eq!(
+            after("Instances"),
+            ["  src/io.rs:read_all", "  src/net.rs:fetch"]
+        );
+        assert_eq!(
+            lines.last().map(String::as_str),
+            Some("flagged 2026-09-20  closed 2026-09-25  rounds 2")
+        );
+    }
+
+    #[test]
+    fn item_details_render_the_description_and_running_agents() {
+        let mut app = review_app_on("R2");
+        app.snapshot.agents[0].segments = vec![crate::model::Segment {
+            item_ids: vec!["R2".to_string()],
+            started_at: "2026-09-28T11:04:22Z".to_string(),
+            ..crate::model::Segment::default()
+        }];
+        app.index = app.snapshot.index();
+        let lines = item_lines(&app, at("2026-09-28T12:04:22Z"));
+        let at = lines
+            .iter()
+            .position(|l| l == "Description")
+            .expect("Description");
+        assert_eq!(
+            lines[at + 1],
+            "  The hit path clones a Vec of rows; a borrow would do."
+        );
+        assert!(lines.contains(&"    R2  2026-09-28T11:04:22Z → now  1h00m".to_string()));
+    }
+
+    #[test]
+    fn render_titles_the_item_surface_by_the_cursor_row() {
+        let draw = |app: &App| {
+            let mut terminal = Terminal::new(TestBackend::new(60, 12)).expect("terminal");
+            terminal
+                .draw(|frame| {
+                    render(frame, frame.area(), app, 0);
+                })
+                .expect("draw");
+            let buffer = terminal.backend().buffer().clone();
+            (0..buffer.area.height)
+                .map(|y| {
+                    (0..buffer.area.width)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut app = review_app_on("R4");
+        let rows = draw(&app);
+        assert!(rows[0].contains(" R4 "), "{}", rows[0]);
+        assert!(rows[1].contains("R4 map could match"), "{}", rows[1]);
+
+        app.items.get_mut(&Surface::Review).expect("state").cursor = None;
+        let rows = draw(&app);
+        assert!(rows[0].contains(" details "), "{}", rows[0]);
+        assert!(rows[1].contains("No item selected."), "{}", rows[1]);
     }
 
     #[test]
