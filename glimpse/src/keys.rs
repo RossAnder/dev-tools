@@ -11,8 +11,9 @@ use ratatui::crossterm::event::{
 use ratatui::layout::Position;
 
 use crate::app::{Action, App, Dir, Scroll};
+use crate::config::{Orientation, ViewKind};
 
-/// Rows one wheel notch scrolls the details panel.
+/// Rows one wheel notch scrolls the details panel, the layer list or the diagram.
 const WHEEL_ROWS: u16 = 3;
 
 /// `Release` events are dropped: Windows reports both edges of every key,
@@ -64,8 +65,8 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
     Some(action)
 }
 
-/// The wheel scrolls the details panel under the pointer, else moves the selection over
-/// the view; a left press on a task row selects it, and one on the divider starts a
+/// The wheel scrolls the details panel or the view under the pointer, never the
+/// selection; a left press on a task row selects it, and one on the divider starts a
 /// drag that left-button motion continues and the release ends. Only the press edge of
 /// a click acts, the mouse counterpart of dropping key `Release`. Every other kind,
 /// including the motion reports capture turns on, maps to nothing. With the selector,
@@ -100,14 +101,28 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
         MouseEventKind::ScrollUp if over_details => {
             Some(Action::ScrollDetails(Scroll::Up(WHEEL_ROWS)))
         }
-        MouseEventKind::ScrollDown if over_view => Some(Action::Move(Dir::Down)),
-        MouseEventKind::ScrollUp if over_view => Some(Action::Move(Dir::Up)),
+        MouseEventKind::ScrollDown if over_view => scroll_view(app, 0, 1),
+        MouseEventKind::ScrollUp if over_view => scroll_view(app, 0, -1),
+        MouseEventKind::ScrollRight if over_view => scroll_view(app, 1, 0),
+        MouseEventKind::ScrollLeft if over_view => scroll_view(app, -1, 0),
         MouseEventKind::Down(MouseButton::Left) if over_view => regions
             .tasks
             .iter()
             .find(|(rect, _)| rect.contains(at))
             .map(|(_, id)| Action::Select(*id)),
         _ => None,
+    }
+}
+
+/// One wheel notch over the view, as `(across, down)` in notches. Horizontal layers
+/// scroll a whole layer per notch whichever way the wheel turns; the traversal view
+/// fits its area and takes no wheel.
+fn scroll_view(app: &App, across: i32, down: i32) -> Option<Action> {
+    let rows = i32::from(WHEEL_ROWS);
+    match (app.view, app.resolved_orientation) {
+        (ViewKind::Ego, _) => None,
+        (ViewKind::Layers, Orientation::Horizontal) => Some(Action::ScrollView(across + down, 0)),
+        _ => Some(Action::ScrollView(across * rows, down * rows)),
     }
 }
 
@@ -260,13 +275,37 @@ mod tests {
         );
         assert_eq!(
             mouse(event(MouseEventKind::ScrollDown, 10, 10), &app),
-            Some(Action::Move(Dir::Down))
+            Some(Action::ScrollView(0, i32::from(WHEEL_ROWS))),
+            "the wheel scrolls the list, not the selection"
         );
         assert_eq!(
             mouse(event(MouseEventKind::ScrollDown, 10, 0), &app),
             None,
             "the header is neither"
         );
+    }
+
+    #[test]
+    fn the_wheel_scrolls_layers_across_and_skips_the_traversal_view() {
+        let mut app = app_with_regions();
+        app.resolved_orientation = Orientation::Horizontal;
+        let at = |kind| mouse(event(kind, 10, 10), &app);
+        assert_eq!(
+            at(MouseEventKind::ScrollDown),
+            Some(Action::ScrollView(1, 0))
+        );
+        assert_eq!(
+            at(MouseEventKind::ScrollUp),
+            Some(Action::ScrollView(-1, 0))
+        );
+        app.view = ViewKind::Diagram;
+        let at = |kind| mouse(event(kind, 10, 10), &app);
+        assert_eq!(
+            at(MouseEventKind::ScrollRight),
+            Some(Action::ScrollView(i32::from(WHEEL_ROWS), 0))
+        );
+        app.view = ViewKind::Ego;
+        assert_eq!(mouse(event(MouseEventKind::ScrollDown, 10, 10), &app), None);
     }
 
     #[test]

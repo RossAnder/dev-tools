@@ -471,7 +471,8 @@ fn card_lines(app: &App, id: u32, width: usize, summary: u16) -> Vec<Line<'stati
         theme.status(task.status.as_str()),
     )];
     if !task.effort.is_empty() {
-        status.push(Span::styled(format!("  {}", task.effort), theme.effort));
+        let effort = super::notice_style(app, task).unwrap_or(theme.effort);
+        status.push(Span::styled(format!("  {}", task.effort), effort));
     }
     if !task.checkpoint.is_empty() {
         status.push(Span::styled(

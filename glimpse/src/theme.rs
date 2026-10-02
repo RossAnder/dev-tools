@@ -64,6 +64,8 @@ pub(crate) const TOKENS: &[(&str, &str)] = &[
     ("section", "info"),
     ("code", "accent"),
     ("effort", "muted"),
+    ("effort_warning", "warning"),
+    ("effort_danger", "danger"),
     ("warning_text", "warning"),
 ];
 
@@ -160,6 +162,11 @@ pub(crate) struct Theme {
     pub(crate) notice: Style,
     pub(crate) section: Style,
     pub(crate) effort: Style,
+    /// The effort mark of a task whose record holds a warning: a deviation, a deferral,
+    /// an escalation or a retry.
+    pub(crate) effort_warning: Style,
+    /// The effort mark of a task that failed, or whose record holds a failure.
+    pub(crate) effort_danger: Style,
 }
 
 impl Default for Theme {
@@ -244,6 +251,8 @@ impl Theme {
             notice: fg("notice").add_modifier(bold),
             section: fg("section").add_modifier(bold),
             effort: fg("effort"),
+            effort_warning: fg("effort_warning").add_modifier(bold),
+            effort_danger: fg("effort_danger").add_modifier(bold),
         }
     }
 

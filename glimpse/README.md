@@ -128,6 +128,13 @@ In the horizontal layers view each column is as wide as the longest task cell,
 within `column_max`, and only the layers that fit are drawn, scrolling to follow
 the selection. `‹` and `›` on the top row mark layers off-screen to either side.
 
+The layers view leads with what comes next: with follow on, the selection sits a
+third of the way in, so twice as much of the list after it shows as before it; a
+manual move scrolls only once the selection comes within a couple of rows of the
+top or a third of the view from the bottom. A task's effort mark (`S`/`M`/`L`)
+turns `warning` when its record holds a deviation, deferral, retry, escalation or
+timed-out check, and `danger` when it failed.
+
 | Key | Action |
 |---|---|
 | `h` `j` `k` `l` / arrows | move the selection; this turns follow off |
@@ -150,9 +157,11 @@ the selection. `‹` and `›` on the top row mark layers off-screen to either s
 | `Ctrl+C` | quit |
 
 The details scroll goes back to the top whenever the selection changes. With the
-mouse on, the wheel scrolls the details panel under the pointer and moves the
-selection over the view, and a left click on a task in the layers or ego view
-selects it; the diagram view takes the wheel but not clicks. Mouse capture stops the
+mouse on, the wheel scrolls whatever is under the pointer and never the selection:
+the details panel, the layer list (a layer per notch across horizontal columns) or
+the diagram, which stays where it was left until the selection changes. A left
+click on a task in the layers or ego view selects it; the diagram view takes the
+wheel but not clicks. Mouse capture stops the
 terminal's own text selection while glimpse runs; most terminals still select
 with `Shift` held, or set `mouse = false`.
 
@@ -220,7 +229,7 @@ key = "#7FB4CA"         # the footer's key names
 | Selection | `selection_bg` `selection_mark` `unrelated` |
 | Edges | `edge` `edge_faded` `edge_needs` `edge_out` `edge_coupling` `edge_overlap` |
 | Chrome | `border` `border_title` `layer_rule` `layer_label` `section` `secondary` `slug` |
-| Chips and rows | `checkpoint` `commit` `agent_bg` `agent_fg` `effort` `code` `warning_text` |
+| Chips and rows | `checkpoint` `commit` `agent_bg` `agent_fg` `effort` `effort_warning` `effort_danger` `code` `warning_text` |
 | Footer | `key` `key_label` `key_separator` `notice` |
 
 The defaults are the Kanso Zen palette. `?` shows the legend in the live theme.

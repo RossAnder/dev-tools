@@ -109,7 +109,7 @@ fn lines(theme: &Theme) -> Vec<Line<'static>> {
         out.push(row(Span::styled(sample, style), text));
     }
 
-    heading(&mut out, "Chips");
+    heading(&mut out, "Chips and marks");
     out.push(row(
         super::chip("ID 12m", theme.agent_chip),
         "running agent: type initials, elapsed",
@@ -122,6 +122,16 @@ fn lines(theme: &Theme) -> Vec<Line<'static>> {
         Span::styled("◆ A", theme.checkpoint),
         "checkpoint, its verdict and commits",
     ));
+    for (style, text) in [
+        (theme.effort, "effort S/M/L"),
+        (
+            theme.effort_warning,
+            "effort: a deviation, deferral, retry or escalation",
+        ),
+        (theme.effort_danger, "effort: a failure"),
+    ] {
+        out.push(row(Span::styled("M", style), text));
+    }
 
     heading(&mut out, "Keys");
     for (key, text) in KEYS {

@@ -78,6 +78,15 @@ pub(crate) enum Scroll {
     Bottom,
 }
 
+/// Where the layers view was scrolled to in the last frame it drew.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ListScroll {
+    /// The first row drawn vertically, or the first layer drawn horizontally.
+    pub(crate) offset: usize,
+    /// Horizontally, the first row drawn in the selected layer's column.
+    pub(crate) rows: usize,
+}
+
 /// Where the last frame put each thing the mouse can hit.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Regions {
@@ -121,6 +130,9 @@ pub(crate) enum Action {
     /// With the selector open it switches to the flow under the cursor instead.
     Details,
     ScrollDetails(Scroll),
+    /// Scrolls the view by `(columns, rows)` without touching the selection, which pins
+    /// it there until the selection changes.
+    ScrollView(i32, i32),
     /// Selects a task directly, as a click does; this turns follow off.
     Select(u32),
     CycleDensity,
@@ -198,6 +210,14 @@ pub(crate) struct App {
     /// The furthest `details_scroll` can go and the panel's page height, from the last frame.
     pub(crate) details_max_scroll: u16,
     pub(crate) details_page: u16,
+    /// Set by the wheel over the view: the view stays where the wheel left it rather than
+    /// following the selection. Any selection change, a new view or orientation, or
+    /// turning follow on clears it.
+    pub(crate) scroll_pinned: bool,
+    /// Wheel scrolling the next frame applies, as `(columns, rows)`.
+    pub(crate) scroll_nudge: (i32, i32),
+    /// Written back by each layers frame.
+    pub(crate) layers_scroll: ListScroll,
     pub(crate) regions: Regions,
     /// A short message the footer shows until [`NOTICE`] has passed.
     pub(crate) notice: Option<(String, Instant)>,
@@ -250,6 +270,9 @@ impl App {
             details_scroll: 0,
             details_max_scroll: 0,
             details_page: 1,
+            scroll_pinned: false,
+            scroll_nudge: (0, 0),
+            layers_scroll: ListScroll::default(),
             regions: Regions::default(),
             notice: None,
         };
@@ -274,11 +297,13 @@ impl App {
             Action::NextView => {
                 self.view = self.view.next();
                 self.nav = None;
+                self.scroll_pinned = false;
                 None
             }
             Action::PrevView => {
                 self.view = self.view.prev();
                 self.nav = None;
+                self.scroll_pinned = false;
                 None
             }
             Action::FlipOrientation => {
@@ -287,6 +312,7 @@ impl App {
                     .unwrap_or(self.resolved_orientation);
                 self.orientation_override = Some(current.flip());
                 self.nav = None;
+                self.scroll_pinned = false;
                 None
             }
             Action::FlipSplit => {
@@ -328,6 +354,7 @@ impl App {
                 self.follow = !self.follow;
                 if self.follow {
                     self.pending_changes = 0;
+                    self.scroll_pinned = false;
                     self.reselect();
                 }
                 None
@@ -382,6 +409,12 @@ impl App {
                 if self.details_open {
                     self.scroll_details(scroll);
                 }
+                None
+            }
+            Action::ScrollView(columns, rows) => {
+                self.scroll_pinned = true;
+                self.scroll_nudge.0 = self.scroll_nudge.0.saturating_add(columns);
+                self.scroll_nudge.1 = self.scroll_nudge.1.saturating_add(rows);
                 None
             }
             Action::Select(id) => {
@@ -558,11 +591,13 @@ impl App {
             percent.clamp(*PANEL_PERCENT_RANGE.start(), *PANEL_PERCENT_RANGE.end());
     }
 
-    /// Every selection change goes through here so the details scroll starts over
-    /// and the traversal trail, which no longer leads here, is dropped.
+    /// Every selection change goes through here so the details scroll starts over,
+    /// the view follows the selection again, and the traversal trail, which no longer
+    /// leads here, is dropped.
     fn select(&mut self, id: Option<u32>) {
         if id != self.selected {
             self.details_scroll = 0;
+            self.scroll_pinned = false;
             self.trail.clear();
         }
         self.selected = id;
@@ -792,6 +827,21 @@ mod tests {
         next.tasks[6].status = TaskStatus::InProgress;
         app.apply_snapshot(next, Instant::now());
         assert_eq!(app.selected, Some(5), "the lower layer wins over task 7");
+    }
+
+    #[test]
+    fn the_wheel_pins_the_view_until_the_selection_moves() {
+        let mut app = app();
+        let selected = app.selected;
+        app.apply(Action::ScrollView(0, 3));
+        app.apply(Action::ScrollView(0, 3));
+        assert_eq!(app.selected, selected, "the wheel never selects");
+        assert!(app.scroll_pinned);
+        assert_eq!(app.scroll_nudge, (0, 6));
+        app.apply_snapshot(fixture(), Instant::now());
+        assert!(app.scroll_pinned, "the same selection keeps the pin");
+        app.apply(Action::Select(1));
+        assert!(!app.scroll_pinned);
     }
 
     #[test]

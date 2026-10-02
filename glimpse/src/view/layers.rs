@@ -15,13 +15,21 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use crate::app::{App, Dir, Navigator};
+use crate::app::{App, Dir, ListScroll, Navigator};
 use crate::config::{COLUMN_RANGE, Orientation};
 use crate::hook::parse_utc;
 use crate::model::{AgentStatus, Checkpoint, Index, Snapshot, Task, TaskStatus};
 
 /// A task row's on-screen rect, for mouse hits.
 pub(crate) type Target = (Rect, u32);
+
+/// What a frame hands back for `App` to keep.
+pub(crate) struct Drawn {
+    pub(crate) targets: Vec<Target>,
+    pub(crate) scroll: ListScroll,
+    /// The column width a horizontal frame chose, before it met the pane.
+    pub(crate) column: Option<u16>,
+}
 
 /// One layer, plus the checkpoints whose last member sits in it.
 struct Group {
@@ -152,14 +160,9 @@ impl Navigator for LayerNav {
     }
 }
 
-/// Draws the layer list into `area` of `buf` and returns where each task row landed; a
-/// `Frame` caller passes `frame.buffer_mut()`.
-pub(crate) fn render(
-    buf: &mut Buffer,
-    area: Rect,
-    app: &App,
-    orientation: Orientation,
-) -> Vec<Target> {
+/// Draws the layer list into `area` of `buf`; a `Frame` caller passes
+/// `frame.buffer_mut()`.
+pub(crate) fn render(buf: &mut Buffer, area: Rect, app: &App, orientation: Orientation) -> Drawn {
     render_at(
         buf,
         area,
@@ -174,11 +177,6 @@ pub(crate) fn render(
 /// override when set, else the widest task cell clamped to `COLUMN_RANGE` and
 /// `app.column_max`. Every layer counts, not just the visible ones, so the width holds
 /// still while the view scrolls.
-pub(crate) fn column_width(app: &App) -> u16 {
-    let ctx = Ctx::new(app, SystemTime::now(), Instant::now());
-    column_for(&ctx)
-}
-
 fn column_for(ctx: &Ctx) -> u16 {
     if let Some(width) = ctx.app.column_override {
         return width;
@@ -206,9 +204,13 @@ fn render_at(
     orientation: Orientation,
     wall: SystemTime,
     now: Instant,
-) -> Vec<Target> {
+) -> Drawn {
     if area.width == 0 || area.height == 0 {
-        return Vec::new();
+        return Drawn {
+            targets: Vec::new(),
+            scroll: app.layers_scroll,
+            column: None,
+        };
     }
     let ctx = Ctx::new(app, wall, now);
     let groups = groups(&app.snapshot, &app.index);
@@ -218,14 +220,44 @@ fn render_at(
     }
 }
 
-/// A drawn row, the style laid over its full width, and the task it shows.
+/// A drawn row, the styles laid under and over its full width, and the task it shows.
 struct Row {
     line: Line<'static>,
+    fill: Option<Style>,
     overlay: Option<Style>,
     task: Option<u32>,
 }
 
-fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) -> Vec<Target> {
+impl Row {
+    fn plain(line: Line<'static>) -> Row {
+        Row {
+            line,
+            fill: None,
+            overlay: None,
+            task: None,
+        }
+    }
+
+    fn task(ctx: &Ctx, task: &Task, line: Line<'static>) -> Row {
+        Row {
+            line,
+            fill: ctx.fill(task),
+            overlay: ctx.overlay(task),
+            task: Some(task.id),
+        }
+    }
+}
+
+/// How a frame scrolls the list: as the wheel left it, with the selection a third of
+/// the way in (follow), or as little as keeps the selection clear of the edges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Place {
+    Pinned,
+    Jump,
+    Step,
+}
+
+fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) -> Drawn {
     let width = usize::from(area.width);
     let id_width = ctx
         .app
@@ -238,11 +270,7 @@ fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) ->
     let mut rows = Vec::new();
     let mut selected_row = None;
     for group in groups {
-        rows.push(Row {
-            line: layer_rule(ctx, "── ", &group.label, width),
-            overlay: None,
-            task: None,
-        });
+        rows.push(Row::plain(layer_rule(ctx, "── ", &group.label, width)));
         for id in &group.ids {
             let Some(task) = ctx.app.index.task(&ctx.app.snapshot, *id) else {
                 continue;
@@ -250,38 +278,51 @@ fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) ->
             if ctx.is_selected(*id) {
                 selected_row = Some(rows.len());
             }
-            rows.push(Row {
-                line: task_line(ctx, task, width, Some(id_width)),
-                overlay: ctx.overlay(task),
-                task: Some(*id),
-            });
+            rows.push(Row::task(
+                ctx,
+                task,
+                task_line(ctx, task, width, Some(id_width)),
+            ));
         }
         for pos in &group.closes {
-            rows.push(Row {
-                line: checkpoint_line(ctx, &ctx.app.snapshot.checkpoints[*pos], width, true),
-                overlay: None,
-                task: None,
-            });
+            let checkpoint = &ctx.app.snapshot.checkpoints[*pos];
+            rows.push(Row::plain(checkpoint_line(ctx, checkpoint, width, true)));
         }
     }
     let height = usize::from(area.height);
-    let offset = scroll(selected_row, rows.len(), height);
-    draw_rows(buf, area, &rows[offset..])
+    let from = nudged(ctx.app.layers_scroll.offset, ctx.app.scroll_nudge.1);
+    let offset = place(from, selected_row, rows.len(), height, ctx.place());
+    Drawn {
+        targets: draw_rows(buf, area, &rows[offset..]),
+        scroll: ListScroll { offset, rows: 0 },
+        column: None,
+    }
 }
 
 /// Columns keep the width [`column_for`] picks and only as many layers as fit are drawn,
-/// scrolled so the selected layer is the last one on screen. `‹` on the first column's
-/// rule and `›` at the right edge mark layers scrolled off either side.
-fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) -> Vec<Target> {
+/// scrolled across by [`place`] and down within the selected layer's column the same way;
+/// the wheel scrolls across. `‹` on the first column's rule and `›` at the right edge
+/// mark layers scrolled off either side.
+fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) -> Drawn {
     if groups.is_empty() {
-        return Vec::new();
+        return Drawn {
+            targets: Vec::new(),
+            scroll: ListScroll::default(),
+            column: None,
+        };
     }
-    let column = column_for(ctx).min(area.width).max(1);
+    let natural = column_for(ctx);
+    let column = natural.min(area.width).max(1);
     let visible = usize::from(area.width / column).max(1);
     let selected_column = groups
         .iter()
         .position(|group| group.ids.iter().any(|id| ctx.is_selected(*id)));
-    let first = selected_column.map_or(0, |at| at.saturating_sub(visible - 1));
+    let from = nudged(ctx.app.layers_scroll.offset, ctx.app.scroll_nudge.0);
+    let first = place(from, selected_column, groups.len(), visible, ctx.place());
+    let mut scroll = ListScroll {
+        offset: first,
+        rows: 0,
+    };
     let height = usize::from(area.height);
     // The last cell of a column is left blank as the gutter to the next one.
     let cell = usize::from(column).saturating_sub(1).max(1);
@@ -289,11 +330,7 @@ fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) 
     for (slot, group) in groups.iter().skip(first).take(visible).enumerate() {
         let x = area.x + column * u16::try_from(slot).unwrap_or(0);
         let lead = if slot == 0 && first > 0 { "‹ " } else { "" };
-        let mut rows = vec![Row {
-            line: layer_rule(ctx, lead, &group.label, cell),
-            overlay: None,
-            task: None,
-        }];
+        let mut rows = vec![Row::plain(layer_rule(ctx, lead, &group.label, cell))];
         let mut selected_row = None;
         for id in &group.ids {
             let Some(task) = ctx.app.index.task(&ctx.app.snapshot, *id) else {
@@ -302,20 +339,19 @@ fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) 
             if ctx.is_selected(*id) {
                 selected_row = Some(rows.len());
             }
-            rows.push(Row {
-                line: task_line(ctx, task, cell, None),
-                overlay: ctx.overlay(task),
-                task: Some(*id),
-            });
+            rows.push(Row::task(ctx, task, task_line(ctx, task, cell, None)));
         }
         for pos in &group.closes {
-            rows.push(Row {
-                line: checkpoint_line(ctx, &ctx.app.snapshot.checkpoints[*pos], cell, false),
-                overlay: None,
-                task: None,
-            });
+            let checkpoint = &ctx.app.snapshot.checkpoints[*pos];
+            rows.push(Row::plain(checkpoint_line(ctx, checkpoint, cell, false)));
         }
-        let offset = scroll(selected_row, rows.len(), height);
+        let offset = if selected_row.is_some() {
+            let from = ctx.app.layers_scroll.rows;
+            scroll.rows = place(from, selected_row, rows.len(), height, ctx.place());
+            scroll.rows
+        } else {
+            0
+        };
         let width = u16::try_from(cell)
             .unwrap_or(u16::MAX)
             .min(area.right().saturating_sub(x));
@@ -329,13 +365,21 @@ fn render_horizontal(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) 
         let x = area.right().saturating_sub(2).max(area.x);
         buf.set_string(x, area.y, " ›", ctx.app.theme.badge);
     }
-    targets
+    Drawn {
+        targets,
+        scroll,
+        column: Some(natural),
+    }
 }
 
 fn draw_rows(buf: &mut Buffer, area: Rect, rows: &[Row]) -> Vec<Target> {
     let mut targets = Vec::new();
     for (row, y) in rows.iter().zip(area.y..area.bottom()) {
         let rect = Rect::new(area.x, y, area.width, 1);
+        // The fill goes under the spans so a chip keeps its own background.
+        if let Some(style) = row.fill {
+            buf.set_style(rect, style);
+        }
         buf.set_line(area.x, y, &row.line, area.width);
         if let Some(style) = row.overlay {
             buf.set_style(rect, style);
@@ -347,19 +391,31 @@ fn draw_rows(buf: &mut Buffer, area: Rect, rows: &[Row]) -> Vec<Target> {
     targets
 }
 
-/// First row to draw so that the selected one sits on screen, kept a couple
-/// of rows clear of the bottom edge when the pane allows.
-fn scroll(selected: Option<usize>, len: usize, height: usize) -> usize {
-    let Some(selected) = selected else {
-        return 0;
-    };
-    if len <= height || height == 0 {
+/// First entry of a `view`-long window over `len` entries, starting from `offset`. A
+/// jump puts `at` a third of the way in, so twice as much of what follows it shows as of
+/// what precedes it; a step moves only as far as keeps a couple of entries behind `at`
+/// and a third of the window ahead of it.
+fn place(offset: usize, at: Option<usize>, len: usize, view: usize, how: Place) -> usize {
+    if view == 0 || len <= view {
         return 0;
     }
-    let margin = (height / 4).min(2);
-    selected
-        .saturating_sub(height - 1 - margin)
-        .min(len - height)
+    let max = len - view;
+    let start = match (at, how) {
+        (Some(at), Place::Jump) => at.saturating_sub(view / 3),
+        (Some(at), Place::Step) => {
+            let behind = (view / 4).min(2);
+            let ahead = view / 3;
+            let low = (at + ahead + 1).saturating_sub(view);
+            let high = at.saturating_sub(behind).max(low);
+            offset.clamp(low, high)
+        }
+        (None, _) | (_, Place::Pinned) => offset,
+    };
+    start.min(max)
+}
+
+fn nudged(offset: usize, by: i32) -> usize {
+    offset.saturating_add_signed(isize::try_from(by).unwrap_or(0))
 }
 
 /// The selection and the rows related to it.
@@ -431,17 +487,26 @@ impl<'a> Ctx<'a> {
         self.focus.is_some() && self.mark(id).is_none()
     }
 
-    /// The style laid over a whole row: the selection's tint, or a status change's flash
-    /// in the colour of the new status.
-    fn overlay(&self, task: &Task) -> Option<Style> {
-        let theme = &self.app.theme;
-        if self.is_selected(task.id) {
-            Some(theme.selection)
-        } else if self.app.is_flashing(task.id, self.now) {
-            Some(theme.flash(task.status))
+    fn place(&self) -> Place {
+        if self.app.scroll_pinned {
+            Place::Pinned
+        } else if self.app.follow {
+            Place::Jump
         } else {
-            None
+            Place::Step
         }
+    }
+
+    /// The selection's tint, laid under the row's spans.
+    fn fill(&self, task: &Task) -> Option<Style> {
+        self.is_selected(task.id)
+            .then_some(self.app.theme.selection)
+    }
+
+    /// A status change's flash in the colour of the new status, laid over the whole row.
+    fn overlay(&self, task: &Task) -> Option<Style> {
+        (!self.is_selected(task.id) && self.app.is_flashing(task.id, self.now))
+            .then(|| self.app.theme.flash(task.status))
     }
 
     /// The id and title style: faded when the row is unrelated to the selection.
@@ -491,8 +556,8 @@ impl<'a> Ctx<'a> {
     /// A deferral record is badged only while the status does not already
     /// say deferred, since both draw the same pause glyph.
     fn badges(&self, task: &Task) -> Vec<Span<'static>> {
-        let record = self.app.index.record_for(&self.app.snapshot, task.id);
-        let has = |kind: &str| record.iter().any(|entry| entry.entry_type == kind);
+        let record = self.app.index.record_entries(&self.app.snapshot, task.id);
+        let has = |kind: &str| record.clone().any(|entry| entry.entry_type == kind);
         let mut badges = Vec::new();
         if task.status != TaskStatus::Deferred && has("deferral") {
             badges.push(Span::styled(
@@ -570,7 +635,8 @@ fn task_parts(
         if !right.is_empty() {
             right.push(Span::raw(" "));
         }
-        right.push(Span::styled(task.effort.clone(), theme.effort));
+        let effort = super::notice_style(ctx.app, task).unwrap_or(theme.effort);
+        right.push(Span::styled(task.effort.clone(), effort));
     }
     (left, right)
 }
@@ -847,6 +913,45 @@ mod tests {
     }
 
     #[test]
+    fn the_selection_tint_leaves_the_agent_chip_its_background() {
+        let app = app();
+        let buf = draw(&app, Orientation::Vertical, 100, 30);
+        let lines = lines(&buf);
+        let (y, row) = row_of(&lines, "Render the rows");
+        let x = row.chars().position(|c| c == 'I').expect("chip initials");
+        let (x, y) = (u16::try_from(x).unwrap(), u16::try_from(y).unwrap());
+        assert_eq!(buf[(x, y)].bg, app.theme.agent_chip.bg.expect("a colour"));
+        assert_eq!(buf[(10, y)].bg, app.theme.selection.bg.expect("a colour"));
+    }
+
+    #[test]
+    fn effort_takes_the_colour_of_the_worst_notice() {
+        let mut snap = fixture();
+        let wire = snap.tasks.iter_mut().find(|t| t.id == 8).expect("task 8");
+        wire.status = TaskStatus::Failed;
+        let mut app = App::new(snap, &Config::default());
+        app.selected = None;
+        let buf = draw(&app, Orientation::Vertical, 100, 30);
+        let lines = lines(&buf);
+        // The effort sits in the last cell before the row's padding.
+        let effort = |title: &str| {
+            let y = u16::try_from(row_of(&lines, title).0).expect("fits");
+            buf[(98, y)].clone()
+        };
+        let theme = &app.theme;
+        assert_eq!(Some(effort("Define the schema").fg), theme.effort.fg);
+        assert_eq!(
+            Some(effort("Load the config").fg),
+            theme.effort_warning.fg,
+            "a deviation"
+        );
+        assert_eq!(
+            Some(effort("Wire the entry point").fg),
+            theme.effort_danger.fg
+        );
+    }
+
+    #[test]
     fn a_deviation_is_not_badged_on_its_row() {
         let mut app = app();
         app.selected = None;
@@ -914,6 +1019,40 @@ mod tests {
         app.selected = Some(1);
         let lines = self::lines(&draw(&app, Orientation::Vertical, 60, 6));
         assert!(lines[0].contains("── L1 "));
+    }
+
+    #[test]
+    fn follow_leads_with_what_comes_next_and_a_step_moves_only_as_needed() {
+        assert_eq!(place(0, Some(20), 30, 9, Place::Jump), 17, "a third in");
+        assert_eq!(place(0, Some(28), 30, 9, Place::Jump), 21, "clamped");
+        assert_eq!(place(10, Some(12), 30, 9, Place::Step), 10, "no need");
+        assert_eq!(place(10, Some(16), 30, 9, Place::Step), 11, "3 ahead");
+        assert_eq!(place(10, Some(10), 30, 9, Place::Step), 8, "2 behind");
+        assert_eq!(place(25, Some(3), 30, 9, Place::Pinned), 21);
+        assert_eq!(place(4, Some(3), 5, 9, Place::Jump), 0, "all fits");
+    }
+
+    #[test]
+    fn a_pinned_list_stays_where_the_wheel_left_it() {
+        let mut app = app();
+        app.selected = Some(1);
+        app.scroll_pinned = true;
+        app.scroll_nudge = (0, 4);
+        let area = Rect::new(0, 0, 60, 6);
+        let mut buf = Buffer::empty(area);
+        let Drawn {
+            targets, scroll, ..
+        } = render_at(
+            &mut buf,
+            area,
+            &app,
+            Orientation::Vertical,
+            wall(),
+            Instant::now(),
+        );
+        assert_eq!(scroll.offset, 4);
+        assert!(targets.iter().all(|(_, id)| *id != 1), "1 scrolled off");
+        assert_eq!(app.selected, Some(1));
     }
 
     #[test]
@@ -1005,7 +1144,8 @@ mod tests {
                     Orientation::Vertical,
                     wall(),
                     Instant::now(),
-                );
+                )
+                .targets;
             })
             .expect("draw");
         assert_eq!(targets.len(), app.snapshot.tasks.len());

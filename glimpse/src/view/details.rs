@@ -99,7 +99,8 @@ pub(crate) fn content(app: &App, now: SystemTime) -> Text<'static> {
             facts.push(Span::styled(value, style));
         }
     };
-    fact("effort", task.effort.clone(), theme.badge);
+    let effort = super::notice_style(app, task).unwrap_or(theme.badge);
+    fact("effort", task.effort.clone(), effort);
     let checkpoint = match index.checkpoint(snapshot, task.id) {
         Some(group) => match &group.verification {
             Some(v) if !v.outcome.is_empty() => format!("{} ({})", group.id, v.outcome),

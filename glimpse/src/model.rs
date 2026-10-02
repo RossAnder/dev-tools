@@ -417,12 +417,20 @@ impl Index {
 
     /// Record entries whose `task_ref` resolved to `id`, in record order.
     pub(crate) fn record_for<'s>(&self, snapshot: &'s Snapshot, id: u32) -> Vec<&'s RecordEntry> {
-        self.record.get(&id).map_or_else(Vec::new, |positions| {
-            positions
-                .iter()
-                .filter_map(|pos| snapshot.record.get(*pos))
-                .collect()
-        })
+        self.record_entries(snapshot, id).collect()
+    }
+
+    /// [`Index::record_for`] without the allocation, for the per-row, per-frame callers.
+    pub(crate) fn record_entries<'s>(
+        &self,
+        snapshot: &'s Snapshot,
+        id: u32,
+    ) -> impl Iterator<Item = &'s RecordEntry> + Clone {
+        self.record
+            .get(&id)
+            .map_or(&[][..], Vec::as_slice)
+            .iter()
+            .filter_map(|pos| snapshot.record.get(*pos))
     }
 
     /// The checkpoint group listing `id` as a member.

@@ -3,7 +3,7 @@
 //! Density decides where the panels go. Comfortable docks them beside or below the view
 //! at `app.panel_percent` of the body, and the panel's near border is the drag handle;
 //! compact gives the view the whole body and draws the panels as a centred modal over
-//! it. Each frame records its density, split, layers column width, the details
+//! it. Each frame records its density, split, layers column width and scroll, the details
 //! scroll bounds and the mouse regions back into `app`.
 
 pub(crate) mod activity;
@@ -25,6 +25,7 @@ use ratatui::widgets::{Block, Clear, Paragraph};
 use crate::app::{App, Navigator, Regions};
 use crate::config::{Config, Density, Orientation, Split, ViewKind, aspect};
 use crate::diagram::{self, DiagramCache};
+use crate::model::{Task, TaskStatus};
 use crate::transcript::TailView;
 
 /// Rows an activity-only modal needs: borders, the status row and every shown entry.
@@ -74,9 +75,6 @@ pub(crate) fn render(
         )
     });
     app.resolved_orientation = orientation;
-    if app.view == ViewKind::Layers && orientation == Orientation::Horizontal {
-        app.resolved_column = layers::column_width(app);
-    }
 
     header::render(frame, head, app, compact);
     cache.set_implied(app.show_implied);
@@ -84,6 +82,7 @@ pub(crate) fn render(
         Some(view_area) => draw_view(frame, view_area, app, orientation, cache),
         None => Vec::new(),
     };
+    app.scroll_nudge = (0, 0);
     let (panel_area, modal, divider) = match panels {
         Panels::None => (None, None, None),
         Panels::Docked(rect, divider) => (Some(rect), None, divider),
@@ -191,15 +190,60 @@ pub(crate) fn chip(text: &str, style: ratatui::style::Style) -> Span<'static> {
     Span::styled(format!(" {text} "), style)
 }
 
+/// How loud a task's effort mark is: the worst notice its status or record holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Notice {
+    /// A deviation, a deferral, an escalated or retried completion, a timed-out check.
+    Warning,
+    /// A failed status, completion or verification.
+    Danger,
+}
+
+pub(crate) fn notice(app: &App, task: &Task) -> Option<Notice> {
+    let mut worst = (task.status == TaskStatus::Failed).then_some(Notice::Danger);
+    for entry in app.index.record_entries(&app.snapshot, task.id) {
+        let level = match entry.entry_type.as_str() {
+            "deviation" | "deferral" => Some(Notice::Warning),
+            "verification" => match entry.outcome.as_str() {
+                "fail" => Some(Notice::Danger),
+                "timeout" => Some(Notice::Warning),
+                _ => None,
+            },
+            "task-completion" if entry.status == "failed" => Some(Notice::Danger),
+            "task-completion" if !entry.escalation_reason.is_empty() || entry.retries > 0 => {
+                Some(Notice::Warning)
+            }
+            _ => None,
+        };
+        worst = worst.max(level);
+    }
+    worst
+}
+
+/// The effort mark's colour when [`notice`] finds one.
+pub(crate) fn notice_style(app: &App, task: &Task) -> Option<ratatui::style::Style> {
+    notice(app, task).map(|level| match level {
+        Notice::Warning => app.theme.effort_warning,
+        Notice::Danger => app.theme.effort_danger,
+    })
+}
+
 fn draw_view(
     frame: &mut Frame,
     area: Rect,
-    app: &App,
+    app: &mut App,
     orientation: Orientation,
     cache: &mut DiagramCache,
 ) -> Vec<layers::Target> {
     match app.view {
-        ViewKind::Layers => layers::render(frame.buffer_mut(), area, app, orientation),
+        ViewKind::Layers => {
+            let drawn = layers::render(frame.buffer_mut(), area, app, orientation);
+            app.layers_scroll = drawn.scroll;
+            if let Some(column) = drawn.column {
+                app.resolved_column = column;
+            }
+            drawn.targets
+        }
         ViewKind::Ego => ego::render(frame, area, app, orientation),
         ViewKind::Diagram => {
             diagram::paint::render(frame.buffer_mut(), area, app, orientation, cache);
@@ -372,6 +416,17 @@ mod tests {
             row.find(needle)
                 .map(|byte| (y, row[..byte].chars().count()))
         })
+    }
+
+    #[test]
+    fn a_horizontal_layers_frame_records_the_column_width_it_drew() {
+        let mut app = app();
+        app.orientation_override = Some(Orientation::Horizontal);
+        assert_eq!(app.resolved_column, 40, "column_max until a frame is drawn");
+        draw(&mut app, 160, 30);
+        assert!(app.resolved_column < 40, "sized to the titles");
+        app.apply(crate::app::Action::ResizeColumns(true));
+        assert_eq!(app.column_override, Some(app.resolved_column + 4));
     }
 
     #[test]

@@ -14,8 +14,8 @@ use crate::app::App;
 use crate::config::Orientation;
 use crate::theme::Theme;
 
-/// Draws the diagram into `area` of `buf`, scrolled so the selection is on screen; a
-/// `Frame` caller passes `frame.buffer_mut()`.
+/// Draws the diagram into `area` of `buf`, scrolled so the selection is on screen unless
+/// the wheel has panned it; a `Frame` caller passes `frame.buffer_mut()`.
 pub(crate) fn render(
     buf: &mut Buffer,
     area: Rect,
@@ -44,7 +44,13 @@ fn render_at(
     };
     let focus = app.selected.and_then(|id| layout.node(id));
     let (x, y) = cache.scroll;
+    let (dx, dy) = app.scroll_nudge;
     let scroll = match focus {
+        // The wheel pans the canvas and leaves it there until the selection changes.
+        _ if app.scroll_pinned => (
+            pan(x, dx, area.width, layout.width),
+            pan(y, dy, area.height, layout.height),
+        ),
         Some(node) => (
             follow(x, node.x, node.width, area.width, layout.width),
             follow(y, node.y, 1, area.height, layout.height),
@@ -114,6 +120,13 @@ fn put(buf: &mut Buffer, area: Rect, scroll: (u16, u16), at: (u16, u16), ch: cha
     if let Some(cell) = buf.cell_mut((area.x + dx, area.y + dy)) {
         cell.set_char(ch).set_style(style);
     }
+}
+
+fn pan(offset: u16, by: i32, view: u16, total: u16) -> u16 {
+    let by = i16::try_from(by).unwrap_or(if by < 0 { i16::MIN } else { i16::MAX });
+    offset
+        .saturating_add_signed(by)
+        .min(total.saturating_sub(view))
 }
 
 /// The scroll offset along one axis that keeps `start..start + len` on screen, moving
