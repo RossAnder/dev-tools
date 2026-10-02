@@ -36,7 +36,15 @@ const KEYS: &[(&str, &str)] = &[
     ("space", "mark the item and move on"),
     ("V", "mark every visible item"),
     ("g  S", "items: next group-by / sort"),
-    ("c", "items: show / hide closed"),
+    ("c", "items, inbox: show / hide closed"),
+    ("m  e", "items: action menu / classify"),
+    ("r  n", "request or note on the items / capture one"),
+    ("u  /", "undo glimpse's last write / filter items"),
+    ("w  enter", "inbox: withdraw your record / answer"),
+    (
+        "tab enter esc",
+        "in a form: field, choose or submit, cancel",
+    ),
     ("q esc", "clear marks, then back, then quit"),
 ];
 
@@ -66,14 +74,7 @@ fn lines(theme: &Theme) -> Vec<Line<'static>> {
         }
         out.push(Line::styled(text.to_string(), theme.section));
     };
-    let row = |sample: Span<'static>, text: &str| {
-        let pad = SAMPLE.saturating_sub(sample.width());
-        Line::from(vec![
-            sample,
-            Span::raw(" ".repeat(pad)),
-            Span::styled(text.to_string(), theme.key_label),
-        ])
-    };
+    let row = |sample: Span<'static>, text: &str| glyphs(theme, vec![sample], text);
 
     heading(&mut out, "Status");
     for status in [
@@ -187,12 +188,46 @@ fn lines(theme: &Theme) -> Vec<Line<'static>> {
         Span::styled("+3", theme.arrival_badge),
         "on a surface tab: changes since you last viewed it",
     ));
+    out.push(glyphs(
+        theme,
+        vec![
+            Span::styled("✉", theme.input_new),
+            Span::styled("✉", theme.input_acknowledged),
+        ],
+        "an input names it: new / acknowledged",
+    ));
+    out.push(glyphs(
+        theme,
+        vec![
+            Span::styled("?", theme.question),
+            Span::styled("●", theme.input_new),
+            Span::styled("◐", theme.input_acknowledged),
+            Span::styled("✓", theme.input_handled),
+            Span::styled("✗", theme.secondary),
+        ],
+        "inbox: question, new, acknowledged, handled, withdrawn",
+    ));
 
     heading(&mut out, "Keys");
     for (key, text) in KEYS {
         out.push(row(Span::styled(*key, theme.key), text));
     }
     out
+}
+
+/// One legend row: `samples` a space apart, padded to the [`SAMPLE`] column, then `text`.
+fn glyphs(theme: &Theme, samples: Vec<Span<'static>>, text: &str) -> Line<'static> {
+    let mut spans = Vec::with_capacity(samples.len() * 2 + 1);
+    for sample in samples {
+        if !spans.is_empty() {
+            spans.push(Span::raw(" "));
+        }
+        spans.push(sample);
+    }
+    let used: usize = spans.iter().map(Span::width).sum();
+    spans.push(Span::raw(" ".repeat(SAMPLE.saturating_sub(used))));
+    spans.push(Span::styled(text.to_string(), theme.key_label));
+    Line::from(spans)
 }
 
 #[cfg(test)]
@@ -267,9 +302,53 @@ mod tests {
     #[test]
     fn samples_share_one_column() {
         let theme = Theme::default();
-        for line in lines(&theme).iter().filter(|l| l.spans.len() == 3) {
-            let sample = line.spans[0].width() + line.spans[1].width();
+        for line in lines(&theme).iter().filter(|l| l.spans.len() >= 3) {
+            let (_, samples) = line.spans.split_last().expect("a row");
+            let sample: usize = samples.iter().map(Span::width).sum();
             assert_eq!(sample, SAMPLE, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn the_legend_draws_input_marks_in_their_colours() {
+        let theme = Theme::default();
+        let lines = lines(&theme);
+        let samples = |text: &str| -> Vec<(String, ratatui::style::Style)> {
+            let line = lines
+                .iter()
+                .find(|l| l.spans.last().is_some_and(|s| s.content == text))
+                .expect(text);
+            let (_, samples) = line.spans.split_last().expect("a row");
+            samples
+                .iter()
+                .filter(|s| !s.content.trim().is_empty())
+                .map(|s| (s.content.to_string(), s.style))
+                .collect()
+        };
+        assert_eq!(
+            samples("an input names it: new / acknowledged"),
+            [
+                ("✉".to_string(), theme.input_new),
+                ("✉".to_string(), theme.input_acknowledged),
+            ]
+        );
+        assert_eq!(
+            samples("inbox: question, new, acknowledged, handled, withdrawn"),
+            [
+                ("?".to_string(), theme.question),
+                ("●".to_string(), theme.input_new),
+                ("◐".to_string(), theme.input_acknowledged),
+                ("✓".to_string(), theme.input_handled),
+                ("✗".to_string(), theme.secondary),
+            ]
+        );
+    }
+
+    #[test]
+    fn every_bound_letter_key_has_a_legend_row() {
+        let keys: String = KEYS.iter().map(|(key, _)| format!(" {key} ")).collect();
+        for key in ["m", "e", "r", "n", "u", "/", "w", "c", "enter"] {
+            assert!(keys.contains(&format!(" {key} ")), "{key} is missing");
         }
     }
 }

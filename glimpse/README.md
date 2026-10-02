@@ -1,11 +1,23 @@
 # glimpse
 
-A live terminal view of a flow's task graph, checkpoints and running agents, and
-of its review, optimise, plan-review and backlog items, meant to sit in a herdr
-pane beside the Claude Code session running `/implement`. It is read-only:
-everything it draws comes from the flow's files and the repo's ledgers, read
-through tomlctl's own code compiled into glimpse, plus the transcript tail of the
-agent you are looking at.
+A live terminal view of a flow's task graph, checkpoints and running agents, of
+its review, optimise, plan-review and backlog items, and of an Inbox of your input
+records and agents' questions, meant to sit in a herdr pane beside the Claude Code
+session running `/implement`. Everything it draws comes from the flow's files, the
+repo's ledgers and `.claude/inputs.toml`, read through tomlctl's own code compiled
+into glimpse, plus the transcript tail of the agent you are looking at.
+
+glimpse writes two things and nothing else (see [Writing](#writing)):
+
+- **Control fields**, through forms: status dispositions with their companion
+  text, and review/optimise severity, effort and category. Each write is
+  compare-and-set guarded on the values glimpse showed, so one that changed
+  underneath is skipped and reported, never overwritten.
+- **Input records** in the git-ignored `.claude/inputs.toml`: new-item captures,
+  requests, notes and answers to agent questions, which agents act on.
+
+It never writes item content and never bumps a review, optimise or plan-review
+ledger's `last_updated`.
 
 ## Install
 
@@ -16,8 +28,9 @@ glimpse setup --dry-run
 glimpse setup
 ```
 
-glimpse never runs the `tomlctl` binary: it builds snapshots, lists flows and
-records hook events with a copy of tomlctl's code linked in at build time. That
+glimpse never runs the `tomlctl` binary: it builds snapshots, lists flows, reads
+and writes ledgers and input records, and records hook events with a copy of
+tomlctl's code linked in at build time. That
 copy changes only when glimpse is rebuilt, so rerun `cargo install --path glimpse`
 whenever tomlctl changes, not just `cargo install --path tomlctl`.
 
@@ -87,11 +100,13 @@ Six surfaces, switched with `1`–`6`: **Tasks** (the task graph, in the views
 below), **Review**, **Optimise**, **Plan-review**, **Backlog** and **Inbox**. The
 four item surfaces list the viewed flow's `review-ledger.toml`,
 `optimise-findings.toml` and `plan-review-findings.toml`, and the repo's
-`.claude/backlog.toml`, and follow them live. Inbox draws `no input records yet`.
+`.claude/backlog.toml`, and follow them live. Inbox lists `.claude/inputs.toml`
+(see [Inbox](#inbox)).
 
 The header's second row holds the surface tabs, the current one highlighted:
-`Tasks  Review 12 +3  Optimise 4  Plan-review —  Backlog 6  Inbox —`. Each count
-is the surface's open items, `—` while it has no ledger file. `+N` counts the items
+`Tasks  Review 12 +3  Optimise 4  Plan-review —  Backlog 6  Inbox 2?`. Each count
+is the surface's open items, `—` while it has no ledger file; Inbox counts the
+questions waiting on an answer, marked `?` when there are any. `+N` counts the items
 that appeared or changed status since you last had that surface on screen, and
 clears when you switch to it; glimpse never switches surface by itself. A compact
 header folds the tabs into its one row by initial, as `R12+3 O4 P— B6 I—`.
@@ -100,13 +115,16 @@ An item surface opens with a facet row, `group severity · sort id · closed hid
 then one row per item:
 
 ```
-▸● ○ R12 warning correctness small Lock held across await…  ↻ ID src/a.rs:12
+▸● ○ R12 warning correctness small Lock held across await…  ↻ ✉ ID src/a.rs:12
 ```
 
 cursor, mark, status glyph, id, severity (the kind, on Backlog), category, effort
-and summary, then the saving mark, the chip of a running agent whose dispatch
-names the item, and the item's `file:line` (its heading or area where it has no
-file), which gives way first in a narrow pane. The status glyph is `○` open, `⏸`
+and summary, then the saving mark, the pending-input mark, the chip of a running
+agent whose dispatch names the item, and the item's `file:line` (its heading or
+area where it has no file), which gives way first in a narrow pane. `✉` means an
+input record not yet handled names the item, in the `input_new` colour while the
+newest such record is `new` and `input_acknowledged` once an agent has read it;
+the item's details list those records under **Inputs**. The status glyph is `○` open, `⏸`
 deferred or promoted, `✓` fixed, applied, merged, resolved or verified-clean, and
 `✗` wontfix, wontapply, discarded or dismissed. An item that appears or changes
 status flashes, and the cursor stays where it was.
@@ -118,9 +136,11 @@ before it closes anything. `g` cycles the grouping, each group under a
 Review and Optimise; none, severity, category and status on Plan-review; none,
 kind, area and status on Backlog. `S` cycles the sort: id, severity, effort and
 newest on Review and Optimise; id, severity and newest on Plan-review; id and
-newest on Backlog. `c` shows or hides the closed (done and declined) items. The
-surface and each surface's grouping and sort are saved on exit with the other
-layout choices.
+newest on Backlog. `c` shows or hides the closed (done and declined) items. `/`
+opens a filter prompt in the facet row that narrows the list as you type, matching
+the id, summary, file or area without regard to case; `Enter` keeps the filter
+and `Esc` restores the one before. The surface and each surface's grouping and
+sort are saved on exit with the other layout choices.
 
 The flow selector (`s`) also lists flows that hold a ledger but no `tasks.toml`,
 marked `no tasks`; picking one shows its ledgers on the item surfaces. After a
@@ -129,6 +149,63 @@ separator come the flow-less ledgers, `.claude/reviews/<scope>.toml`,
 `.claude/plan-review-findings/<scope>.toml`, as `review: <scope>`,
 `optimise: <scope>` and `plan-review: <scope>`. Picking one shows it on its
 surface in place of the flow's ledger of that kind and turns auto-flow off.
+
+## Writing
+
+Actions on an item surface take the marked rows, or the cursor row when none is
+marked:
+
+- `m` opens the action menu: the status moves glimpse offers, limited to those
+  every target shares, then a form for the move's companion text. Declining a
+  `critical` item (wontfix, wontapply, discarded or dismissed) asks first.
+
+  | Ledger | Moves |
+  |---|---|
+  | Review | open → deferred, wontfix or verified-clean; deferred → open |
+  | Optimise | open → deferred or wontapply; deferred → open |
+  | Plan-review | open → discarded |
+  | Backlog | open → dismissed or resolved; dismissed or resolved → open |
+
+  `fixed`, `applied` and `merged` stay with the apply flows and the plan merge.
+- `e` (Review and Optimise only) opens the classify form: severity, effort and
+  category, prefilled with the value every target shares, else `(unchanged)`.
+  Category also takes a value of your own through `other…`.
+- `r` files a request or note on the targets as an input record.
+- `n` files a capture, a new backlog item in your words with an optional kind
+  hint, area and note, from any surface.
+- `u` undoes glimpse's own last write: it puts back exactly the fields that write
+  changed, only where they still hold what glimpse wrote, and reports any it skips
+  as changed since. An input record is undone by withdrawing it.
+
+An open form takes every key first, so `j` or `q` typed into a field never moves
+or quits; `Ctrl+C` still quits. `Tab` / `Shift+Tab` move between fields. `Enter`
+opens or confirms a dropdown, otherwise submits once the required fields are
+filled. `Esc` closes an open dropdown, otherwise cancels. `j`/`k` or the arrows
+move inside a dropdown or checklist, and `Space` ticks a checklist option.
+
+A submitted write marks its rows `↻` and the rows change only when the ledger's
+next read shows the change; nothing is updated ahead of the file. A value that
+changed since glimpse showed it is skipped, never overwritten, and the footer
+names the skipped ids, as it does any error. A write is refused with
+`root mismatch` when tomlctl's repo root differs from glimpse's, since the two
+must agree on the lock directory. Item content, ids and every backlog field but
+its triage status are left to agents, who edit them in response to input records.
+
+## Inbox
+
+The Inbox lists `.claude/inputs.toml`, under a facet row such as
+`2 unanswered · closed hidden`. Questions awaiting your answer come first, under
+`▾ questions (n)`, each marked `?` with its author, target, prompt and options.
+The other records follow grouped by status: `●` new, `◐` acknowledged, `✓`
+handled (with the handling agent's note after `→`) and `✗` withdrawn. `c` shows or
+hides the handled and withdrawn ones.
+
+`Enter` on a question opens its answer form, a pick from its options or free text
+as the question asks; on any other record it opens details. `w` withdraws the
+record under the cursor, after a confirmation, when it is your own and still
+`new`. The store's schema, lifecycle and which carrier consumes which record are
+the [`flow-contract-user-inputs`](../claude/skills/flow-contract-user-inputs/SKILL.md)
+skill's.
 
 ## Views and keys
 
@@ -213,9 +290,19 @@ timed-out check, and `danger` when it failed.
 | `V` | item surfaces: mark every visible row |
 | `g` | item surfaces: cycle the grouping |
 | `S` | item surfaces: cycle the sort |
-| `c` | item surfaces: show or hide closed items |
+| `c` | item surfaces and Inbox: show or hide closed items |
+| `/` | item surfaces: filter as you type; `Enter` keeps it, `Esc` restores the one before |
+| `m` | item surfaces: action menu, the status moves every target shares |
+| `e` | Review and Optimise: classify severity, effort and category |
+| `r` | item surfaces: file a request or note on the marked or cursor items |
+| `n` | capture a new item into the input store |
+| `u` | undo glimpse's own last write |
+| `Enter` | Inbox: answer the question under the cursor |
+| `w` | Inbox: withdraw your own `new` record |
 | `q` / `Esc` | clear the marks, else close the topmost overlay, or quit when none is open |
-| `Ctrl+C` | quit |
+| `Ctrl+C` | quit, even with a form open |
+
+While a form is open it takes every key; see [Writing](#writing).
 
 The details scroll goes back to the top whenever the selection changes. With the
 mouse on, the wheel scrolls whatever is under the pointer and never the selection:
@@ -307,9 +394,12 @@ Claude Code / Codex hook ─► glimpse hook (records in-process) ─► .claude
                         │
                         └─ on a recorded start inside herdr ─► glimpse pane::ensure
 
-.claude/flows/** change ─► watcher ─► poller ─► in-process snapshot ─► glimpse
-                                        ▲
-                     10 s safety tick ──┘  (every poll_ms instead, if the watch fails)
+.claude/flows/**, .claude/{backlog,inputs}.toml, flow-less ledger dirs
+    change ─► watcher ─► poller ─► in-process snapshot, ledger and input reads ─► glimpse
+                           ▲
+        10 s safety tick ──┘  (every poll_ms instead, if the watch fails)
+
+glimpse form ─► writer thread ─► tomlctl ledger facade (CAS-guarded) ─► ledger or inputs.toml
 ```
 
 - **Hook.** `glimpse hook` records the payload in-process with the same code as
@@ -323,15 +413,20 @@ Claude Code / Codex hook ─► glimpse hook (records in-process) ─► .claude
   shell. `ensure-pane` (the keybinding) does the same from the active pane, and
   with `--focus` moves focus to an existing pane when it sits next to the origin;
   herdr has no focus-by-id, so a pane elsewhere in the tab is reused unfocused.
-- **Live view.** One recursive filesystem watch on `.claude/flows` only wakes a
+- **Live view.** One filesystem watcher covers `.claude/flows` recursively, and
+  `.claude` and each existing flow-less ledger dir (`.claude/reviews`,
+  `.claude/optimise-findings`, `.claude/plan-review-findings`) non-recursively; a
+  ledger dir created later is added when it appears. The watch only wakes a
   poller thread; a burst of writes is gathered into one pass. The poller then
   compares the `(mtime, length)` of the viewed flow's four files and builds a
   snapshot in-process only when one moved, so in-place edits are seen as well as
-  tomlctl's renames. A safety pass runs every 10 s regardless. If the watch cannot
-  be set up, glimpse polls every `poll_ms` and keeps trying to watch, backing off
-  from `poll_ms` to once a minute; if two safety passes find a change the watch
-  never reported, with no watch event between them, it gives up on the watch and
-  polls every `poll_ms` for the rest of the session. Files whose bytes still hash
+  tomlctl's renames. The shown ledgers, the backlog and the input store are feeds
+  fingerprinted the same way, each re-read only when its own file moved. A safety
+  pass runs every 10 s regardless. If the watch cannot be set up, glimpse polls
+  every `poll_ms` and keeps trying to watch, backing off from `poll_ms` to once a
+  minute; if two passes find a change in one watched scope that its watch never
+  reported, with no event from that scope between them, it gives up on the watch
+  and polls every `poll_ms` for the rest of the session. Files whose bytes still hash
   to the shown revision are not rebuilt, and a status-only change repaints over
   the cached diagram layout. The activity panel's transcript is re-read once a
   second on the poller thread while the panel is open. With nothing animating the
@@ -339,6 +434,13 @@ Claude Code / Codex hook ─► glimpse hook (records in-process) ─► .claude
   safety pass. On Windows the watch library's backend thread still wakes about ten
   times a second, and it drops a failed watch without reporting it, so there the
   safety pass is the only thing that notices a dead watch.
+- **Writer.** Every write runs on one serial writer thread, in the order you made
+  them, because a call into tomlctl's ledger facade can wait up to 30 s for the
+  ledger lock. The facade writes through tomlctl's locked mutation path, which
+  keeps the integrity sidecars current, and checks each target against the values
+  glimpse showed before writing it. glimpse never edits a ledger, `backlog.toml`
+  or `inputs.toml` any other way, so beside the orchestrator it is the one other
+  writer of those files.
 
-`agents.toml` is local telemetry and gitignored; the execution record remains the
-durable history.
+`agents.toml` is local telemetry and gitignored, as is `inputs.toml`; the
+execution record remains the durable history.
