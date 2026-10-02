@@ -1,6 +1,6 @@
 ---
 name: tomlctl
-description: "Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml, tasks.toml, agents.toml, .claude/backlog.toml — and their per-row [[items]] arrays; also the regex enumerator over git-tracked files (`sweep`, the preferred `file:line` enumerator for review and optimise findings) and the ledger-driven `items sweep` / `items clusters` that re-verify and batch findings for the apply flow. Verb groups: get/query/set/set-json/append, items, flow (resolve, doctor, envelope-build, render-progress-log), tasks (import-plan, check, render, snapshot), backlog (add, check, reconcile), agents (hook-written record, list), validate, integrity, dedupe. Use this for any TOML mutation in a flow command — never line-edit ledger arrays-of-tables. Outputs JSON; supports stdin via `-` sentinel for ops/json/ndjson payloads. Single agent-native CLI for all flow-TOML I/O on Windows and Linux."
+description: "Read, write, query, batch-edit, and validate TOML files used by Claude Code flows — context.toml, review-ledger.toml, optimise-findings.toml, execution-record.toml, plan-review-findings.toml, tasks.toml, agents.toml, .claude/backlog.toml, .claude/inputs.toml — and their per-row [[items]] arrays; also the regex enumerator over git-tracked files (`sweep`, the preferred `file:line` enumerator for review and optimise findings) and the ledger-driven `items sweep` / `items clusters` that re-verify and batch findings for the apply flow. Verb groups: get/query/set/set-json/append, items, flow (resolve, doctor, envelope-build, render-progress-log), tasks (import-plan, check, render, snapshot), backlog (add, check, reconcile), inputs (add, list, ack, handle, answer, withdraw), agents (hook-written record, list), validate, integrity, dedupe. Use this for any TOML mutation in a flow command — never line-edit ledger arrays-of-tables. Outputs JSON; supports stdin via `-` sentinel for ops/json/ndjson payloads."
 ---
 
 # tomlctl
@@ -95,7 +95,7 @@ tomlctl --version
 
 ```bash
 tomlctl capabilities
-# {"version":"0.12.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
+# {"version":"0.13.0","features":["raw","lines","dedupe_by","dry_run","agent_context",...],"commands":{...}}
 ```
 
 Representative entries:
