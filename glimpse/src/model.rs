@@ -264,6 +264,8 @@ pub(crate) enum AgentStatus {
 #[serde(default)]
 pub(crate) struct Segment {
     pub(crate) task_ids: Vec<u32>,
+    /// Ledger item ids (`R3`, `O7`) a review or apply dispatch named.
+    pub(crate) item_ids: Vec<String>,
     pub(crate) started_at: String,
     pub(crate) ended_at: String,
 }
@@ -280,6 +282,7 @@ pub(crate) struct Index {
     overlaps: HashMap<u32, Vec<u32>>,
     agents: HashMap<u32, Vec<usize>>,
     record: HashMap<u32, Vec<usize>>,
+    item_agents: HashMap<String, Vec<usize>>,
     checkpoint: HashMap<u32, usize>,
     topology: u64,
 }
@@ -356,6 +359,28 @@ impl Snapshot {
             }
         }
 
+        let mut item_hits: HashMap<&str, Vec<(&str, usize)>> = HashMap::new();
+        for (pos, agent) in self.agents.iter().enumerate() {
+            if let Some(newest) = agent.segments.last().filter(|s| s.ended_at.is_empty()) {
+                for id in &newest.item_ids {
+                    item_hits
+                        .entry(id.as_str())
+                        .or_default()
+                        .push((newest.started_at.as_str(), pos));
+                }
+            }
+        }
+        let item_agents = item_hits
+            .into_iter()
+            .map(|(id, mut hits)| {
+                hits.sort_unstable_by(|a, b| b.cmp(a));
+                (
+                    id.to_string(),
+                    hits.into_iter().map(|(_, pos)| pos).collect(),
+                )
+            })
+            .collect();
+
         let mut checkpoint = HashMap::new();
         for (pos, group) in self.checkpoints.iter().enumerate() {
             for id in &group.members {
@@ -371,6 +396,7 @@ impl Snapshot {
             overlaps,
             agents,
             record,
+            item_agents,
             checkpoint,
             topology: topology_hash(&self.tasks),
         }
@@ -408,6 +434,17 @@ impl Index {
     /// Agents with a segment on `id`, newest assignment first.
     pub(crate) fn agents_for<'s>(&self, snapshot: &'s Snapshot, id: u32) -> Vec<&'s Agent> {
         self.agents.get(&id).map_or_else(Vec::new, |positions| {
+            positions
+                .iter()
+                .filter_map(|pos| snapshot.agents.get(*pos))
+                .collect()
+        })
+    }
+
+    /// Agents whose newest segment is still open and names the ledger item
+    /// `id`, newest assignment first.
+    pub(crate) fn agents_for_item<'s>(&self, snapshot: &'s Snapshot, id: &str) -> Vec<&'s Agent> {
+        self.item_agents.get(id).map_or_else(Vec::new, |positions| {
             positions
                 .iter()
                 .filter_map(|pos| snapshot.agents.get(*pos))
@@ -659,6 +696,7 @@ mod tests {
                 task_ids: vec![3],
                 started_at: "2026-09-28T09:00:00Z".to_string(),
                 ended_at: "2026-09-28T09:50:00Z".to_string(),
+                ..Segment::default()
             },
         );
         let ids: Vec<&str> = snap
@@ -668,5 +706,37 @@ mod tests {
             .map(|a| a.id.as_str())
             .collect();
         assert_eq!(ids, ["A1", "A2"]);
+    }
+
+    #[test]
+    fn running_agents_are_found_by_item_id() {
+        let mut snap = fixture();
+        let open = |started: &str, ids: &[&str]| Segment {
+            item_ids: ids.iter().map(|s| s.to_string()).collect(),
+            started_at: started.to_string(),
+            ..Segment::default()
+        };
+        snap.agents[0].segments = vec![open("2026-09-28T10:00:00Z", &["R3", "R7"])];
+        snap.agents[1].segments = vec![open("2026-09-28T11:00:00Z", &["R3"])];
+        let index = snap.index();
+        let ids = |item: &str| -> Vec<&str> {
+            index
+                .agents_for_item(&snap, item)
+                .iter()
+                .map(|a| a.id.as_str())
+                .collect()
+        };
+        assert_eq!(ids("R3"), ["A2", "A1"]);
+        assert_eq!(ids("R7"), ["A1"]);
+        assert!(ids("R9").is_empty());
+
+        snap.agents[1].segments[0].ended_at = "2026-09-28T11:30:00Z".to_string();
+        let index = snap.index();
+        let after: Vec<&str> = index
+            .agents_for_item(&snap, "R3")
+            .iter()
+            .map(|a| a.id.as_str())
+            .collect();
+        assert_eq!(after, ["A1"]);
     }
 }

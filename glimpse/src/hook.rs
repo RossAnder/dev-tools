@@ -34,6 +34,7 @@ pub(crate) struct RecordResult {
     /// Kept as raw JSON: the record's id shape is tomlctl's to choose.
     pub(crate) id: Option<Value>,
     pub(crate) task_ids: Vec<u64>,
+    pub(crate) item_ids: Vec<String>,
     pub(crate) reason: Option<String>,
 }
 
