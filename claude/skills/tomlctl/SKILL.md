@@ -66,6 +66,7 @@ The per-verb flag tables, recipes, and contract prose live in the sibling files 
 - [references/tasks-write.md](references/tasks-write.md) — the `tasks` group's mutating verbs: `import-plan`, `add`, `add-many`, `update`, `remove`.
 - [references/tasks-store.md](references/tasks-store.md) — the `.claude/flows/<slug>/tasks.toml` store shape, `ref` derivation, the derived graph products, the 512-node cap, and the frozen contracts.
 - [references/agents.md](references/agents.md) — the `agents` group: `agents record` (the CLI entry point for what the harness hooks write in-process) and `agents list`, the gitignored `.claude/flows/<slug>/agents.toml` store shape, the start / stop / idle events, flow selection, and the `record` output and its not-recorded reasons.
+- [references/inputs.md](references/inputs.md) — the `inputs` group over the git-ignored user-input store `.claude/inputs.toml`: `list`, `add`, `ack`, `handle`, `withdraw`, `answer`, their flag tables and output shapes, and the store shape. What a record means, who may write it, and its trust boundary are the `flow-contract-user-inputs` skill's call, not this one's.
 
 To find a section without reading a whole file:
 
