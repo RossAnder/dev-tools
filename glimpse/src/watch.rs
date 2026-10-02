@@ -18,6 +18,7 @@ use std::path::{Component, Path, PathBuf};
 
 use notify::event::{ModifyKind, RenameMode};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use tomlctl::{LedgerKind, LedgerRef};
 
 /// How much of the poller's cache a filesystem event invalidates.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,10 +27,10 @@ pub(crate) enum Wake {
     Flow(String),
     /// A repo-level file directly under `.claude` changed.
     Repo(RepoFile),
-    /// A ledger in a flow-less ledger directory changed.
-    Scope(LedgerScopeDir),
-    /// A flow-less ledger directory appeared and needs a watch of its own.
-    NewScope(LedgerScopeDir),
+    /// A ledger in the flow-less ledger directory of a kind changed.
+    Scope(LedgerKind),
+    /// The flow-less ledger directory of a kind appeared and needs a watch of its own.
+    NewScope(LedgerKind),
     /// Something unplaceable changed: evict everything, keep the watcher.
     All,
     /// The watch itself is suspect: evict everything and re-create the watcher.
@@ -46,46 +47,27 @@ pub(crate) enum RepoFile {
 impl RepoFile {
     pub(crate) const ALL: [RepoFile; 2] = [RepoFile::Backlog, RepoFile::Inputs];
 
-    pub(crate) fn file_name(self) -> &'static str {
+    /// The file's path relative to the repo root, where tomlctl keeps it.
+    fn path(self) -> Option<PathBuf> {
         match self {
-            RepoFile::Backlog => "backlog.toml",
-            RepoFile::Inputs => "inputs.toml",
+            RepoFile::Backlog => LedgerRef::Backlog.path(Path::new("")).ok(),
+            RepoFile::Inputs => Some(tomlctl::inputs_path(Path::new(""))),
         }
     }
 
     fn named(name: &str) -> Option<RepoFile> {
-        RepoFile::ALL.into_iter().find(|f| f.file_name() == name)
+        RepoFile::ALL.into_iter().find(|f| {
+            f.path()
+                .is_some_and(|path| path.file_name().is_some_and(|n| n == name))
+        })
     }
 }
 
-/// The directories under `.claude` holding flow-less ledgers, one file per scope.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) enum LedgerScopeDir {
-    Reviews,
-    OptimiseFindings,
-    PlanReviewFindings,
-}
-
-impl LedgerScopeDir {
-    pub(crate) const ALL: [LedgerScopeDir; 3] = [
-        LedgerScopeDir::Reviews,
-        LedgerScopeDir::OptimiseFindings,
-        LedgerScopeDir::PlanReviewFindings,
-    ];
-
-    pub(crate) fn dir_name(self) -> &'static str {
-        match self {
-            LedgerScopeDir::Reviews => "reviews",
-            LedgerScopeDir::OptimiseFindings => "optimise-findings",
-            LedgerScopeDir::PlanReviewFindings => "plan-review-findings",
-        }
-    }
-
-    fn named(name: &str) -> Option<LedgerScopeDir> {
-        LedgerScopeDir::ALL
-            .into_iter()
-            .find(|d| d.dir_name() == name)
-    }
+/// The flow-less ledger kind whose directory under `.claude` is `name`.
+fn scope_named(name: &str) -> Option<LedgerKind> {
+    LedgerKind::ALL
+        .into_iter()
+        .find(|kind| kind.scope_dir() == name)
 }
 
 /// The watched directories as notify reports them: canonical when possible, so event paths
@@ -104,8 +86,8 @@ impl Roots {
         }
     }
 
-    pub(crate) fn scope_dir(&self, dir: LedgerScopeDir) -> PathBuf {
-        self.claude.join(dir.dir_name())
+    pub(crate) fn scope_dir(&self, kind: LedgerKind) -> PathBuf {
+        self.claude.join(kind.scope_dir())
     }
 }
 
@@ -191,7 +173,7 @@ fn place(path: &Path, motion: Motion, roots: &Roots) -> Option<Wake> {
             if let Some(file) = RepoFile::named(entry) {
                 return Some(Wake::Repo(file));
             }
-            let dir = LedgerScopeDir::named(entry)?;
+            let dir = scope_named(entry)?;
             match motion {
                 Motion::Arrive => Some(Wake::NewScope(dir)),
                 Motion::Depart => Some(Wake::Rewatch),
@@ -199,7 +181,7 @@ fn place(path: &Path, motion: Motion, roots: &Roots) -> Option<Wake> {
             }
         }
         (entry, Some(Some(file)), None) if file.ends_with(".toml") => {
-            LedgerScopeDir::named(entry).map(Wake::Scope)
+            scope_named(entry).map(Wake::Scope)
         }
         _ => None,
     }
@@ -216,11 +198,11 @@ pub(crate) fn add_scope(watcher: &mut RecommendedWatcher, dir: &Path) -> notify:
 }
 
 /// Starts the watch over `claude_dir`, whose `flows` directory must exist, and returns the
-/// flow-less ledger directories it covers; the watcher stops when dropped.
+/// kinds whose flow-less ledger directories it covers; the watcher stops when dropped.
 pub(crate) fn start(
     claude_dir: &Path,
     on_wake: impl Fn(Wake) + Send + 'static,
-) -> notify::Result<(RecommendedWatcher, BTreeSet<LedgerScopeDir>)> {
+) -> notify::Result<(RecommendedWatcher, BTreeSet<LedgerKind>)> {
     let roots = Roots::new(claude_dir);
     let classify_roots = roots.clone();
     // `.claude/flows` is repo content, so a link below the root must not pull the watch
@@ -237,7 +219,7 @@ pub(crate) fn start(
     watcher.watch(&roots.flows, RecursiveMode::Recursive)?;
     watcher.watch(&roots.claude, RecursiveMode::NonRecursive)?;
     let mut scopes = BTreeSet::new();
-    for dir in LedgerScopeDir::ALL {
+    for dir in LedgerKind::ALL {
         if add_scope(&mut watcher, &roots.scope_dir(dir))? {
             scopes.insert(dir);
         }
@@ -352,7 +334,7 @@ mod tests {
                 &event(write(), claude().join("reviews").join("main.toml")),
                 &roots()
             ),
-            Some(Wake::Scope(LedgerScopeDir::Reviews))
+            Some(Wake::Scope(LedgerKind::Review))
         );
         assert_eq!(
             classify(&event(write(), claude().join("settings.json")), &roots()),
@@ -413,7 +395,7 @@ mod tests {
         for kind in created {
             assert_eq!(
                 classify(&event(kind, claude().join("optimise-findings")), &roots()),
-                Some(Wake::NewScope(LedgerScopeDir::OptimiseFindings)),
+                Some(Wake::NewScope(LedgerKind::Optimise)),
                 "{kind:?}"
             );
         }
@@ -497,13 +479,13 @@ mod tests {
         let reviews = claude.join("reviews");
         assert!(!add_scope(&mut watcher, &reviews).unwrap(), "missing");
         fs::create_dir(&reviews).unwrap();
-        let new_scope = Wake::NewScope(LedgerScopeDir::Reviews);
+        let new_scope = Wake::NewScope(LedgerKind::Review);
         expect_wake(&rx, &new_scope, "creating the dir");
         assert!(add_scope(&mut watcher, &reviews).unwrap());
 
         drain_until_quiet(&rx);
         fs::write(reviews.join("main.toml"), "x = 1\n").unwrap();
-        let scope = Wake::Scope(LedgerScopeDir::Reviews);
+        let scope = Wake::Scope(LedgerKind::Review);
         expect_wake(&rx, &scope, "a scope write");
 
         drop(watcher);

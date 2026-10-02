@@ -4,22 +4,19 @@
 //! edit records how to put each row back, so undo restores exactly the fields a write touched.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use serde_json::{Map, Value};
-use tomlctl::{BacklogTriage, LedgerKind, LedgerRef};
+use tomlctl::{BacklogTriage, LedgerRef, STATUS_COMPANIONS};
 use tui_input::Input;
 
 use crate::form::{Field, FieldValue, Form};
-use crate::ledger::{InputRow, ItemRow, Kind};
+use crate::ledger::{EFFORTS, InputRow, ItemRow, Kind, SEVERITIES};
 use crate::surface::Surface;
 use crate::writer::{RequestId, WriteRequest};
 
-/// One companion text field of a transition's form.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Companion {
-    pub(crate) field: &'static str,
-    pub(crate) required: bool,
-}
+/// One companion text field of a transition's form, as `(field, required)`.
+pub(crate) type Companion = (&'static str, bool);
 
 /// A status a row can be moved to, with the fields its form asks for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,47 +25,62 @@ pub(crate) struct Transition {
     pub(crate) fields: &'static [Companion],
 }
 
-const fn required(field: &'static str) -> Companion {
-    Companion {
-        field,
-        required: true,
+/// The companions tomlctl's status table gives `status`, empty for a status it does not list.
+const fn owned_by(status: &str) -> &'static [Companion] {
+    let mut i = 0;
+    while i < STATUS_COMPANIONS.len() {
+        let (listed, fields) = STATUS_COMPANIONS[i];
+        if same(listed, status) {
+            return fields;
+        }
+        i += 1;
     }
+    &[]
 }
 
-const DEFER: Transition = Transition {
-    to: "deferred",
-    fields: &[required("defer_reason"), required("defer_trigger")],
-};
-const WONTFIX: Transition = Transition {
-    to: "wontfix",
-    fields: &[required("wontfix_rationale")],
-};
-const VERIFIED: Transition = Transition {
-    to: "verified-clean",
-    fields: &[required("verified_note")],
-};
-const WONTAPPLY: Transition = Transition {
-    to: "wontapply",
-    fields: &[required("wontapply_rationale")],
-};
-const DISCARD: Transition = Transition {
-    to: "discarded",
-    fields: &[Companion {
-        field: "discard_reason",
-        required: false,
-    }],
-};
+/// String equality usable in a `const fn`.
+const fn same(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// A move to a status the table lists, asking for exactly the fields it owns.
+const fn disposition(to: &'static str) -> Transition {
+    let fields = owned_by(to);
+    assert!(
+        !fields.is_empty(),
+        "the status table owns no companions for this status"
+    );
+    Transition { to, fields }
+}
+
+const DEFER: Transition = disposition("deferred");
+const WONTFIX: Transition = disposition("wontfix");
+const VERIFIED: Transition = disposition("verified-clean");
+const WONTAPPLY: Transition = disposition("wontapply");
+const DISCARD: Transition = disposition("discarded");
+/// `open` owns no companions, so the reopen rationale is named here rather than in the table.
 const REOPEN: Transition = Transition {
     to: "open",
-    fields: &[required("reopen_rationale")],
+    fields: &[("reopen_rationale", true)],
 };
 const DISMISS: Transition = Transition {
     to: "dismissed",
-    fields: &[required("dismiss_reason")],
+    fields: &[("dismiss_reason", true)],
 };
 const RESOLVE: Transition = Transition {
     to: "resolved",
-    fields: &[required("resolution")],
+    fields: &[("resolution", true)],
 };
 
 /// The transitions glimpse offers away from `from` on a `kind` ledger. The apply flows and
@@ -107,15 +119,8 @@ const DECLINED: [&str; 4] = ["wontfix", "wontapply", "discarded", "dismissed"];
 
 /// The companion fields a transition away from `status` removes, as the facade drops them,
 /// so undo knows every field a transition can take away.
-fn leaves(status: &str) -> &'static [&'static str] {
-    match status {
-        "deferred" => &["defer_reason", "defer_trigger"],
-        "wontfix" => &["wontfix_rationale"],
-        "wontapply" => &["wontapply_rationale"],
-        "verified-clean" => &["verified_note"],
-        "discarded" => &["discard_reason"],
-        _ => &[],
-    }
+fn leaves(status: &str) -> impl Iterator<Item = &'static str> {
+    owned_by(status).iter().map(|&(field, _)| field)
 }
 
 /// Every field a backlog triage rewrites; a move clears the ones the new status does not own.
@@ -141,8 +146,6 @@ fn backlog_stamp(to: &str) -> Option<&'static str> {
     }
 }
 
-const SEVERITIES: [&str; 3] = ["critical", "warning", "suggestion"];
-const EFFORTS: [&str; 3] = ["trivial", "small", "medium"];
 const REVIEW_CATEGORIES: [&str; 7] = [
     "quality",
     "security",
@@ -166,27 +169,22 @@ pub(crate) const KEEP: &str = "(unchanged)";
 /// The ledger behind a displayed `path`, or `None` for one named by path (`--once`), which
 /// is read-only. Writes go to exactly the file whose rows are on screen.
 pub(crate) fn ledger_ref(kind: Kind, path: &str) -> Option<LedgerRef> {
-    let kind = match kind {
-        Kind::Backlog => return (path == ".claude/backlog.toml").then_some(LedgerRef::Backlog),
-        Kind::Review => LedgerKind::Review,
-        Kind::Optimise => LedgerKind::Optimise,
-        Kind::PlanReview => LedgerKind::PlanReview,
-    };
-    let (flow_file, scope_dir) = match kind {
-        LedgerKind::Review => ("review-ledger.toml", "reviews"),
-        LedgerKind::Optimise => ("optimise-findings.toml", "optimise-findings"),
-        LedgerKind::PlanReview => ("plan-review-findings.toml", "plan-review-findings"),
+    let Some(kind) = kind.ledger_kind() else {
+        let backlog = LedgerRef::Backlog.path(Path::new(""));
+        return backlog
+            .is_ok_and(|backlog| Path::new(path) == backlog)
+            .then_some(LedgerRef::Backlog);
     };
     if let Some(rest) = path.strip_prefix(".claude/flows/") {
         let (slug, file) = rest.split_once('/')?;
-        return (file == flow_file).then(|| LedgerRef::Flow {
+        return (file == kind.flow_file()).then(|| LedgerRef::Flow {
             slug: slug.to_owned(),
             kind,
         });
     }
     let scope = path
         .strip_prefix(".claude/")?
-        .strip_prefix(scope_dir)?
+        .strip_prefix(kind.scope_dir())?
         .strip_prefix('/')?
         .strip_suffix(".toml")?;
     (!scope.is_empty() && !scope.contains('/')).then(|| LedgerRef::Scope {
@@ -309,9 +307,9 @@ pub(crate) fn transition_form(selection: &Selection, transition: Transition) -> 
     let fields = transition
         .fields
         .iter()
-        .map(|c| {
-            let field = Field::text(c.field);
-            if c.required { field.required() } else { field }
+        .map(|&(name, required)| {
+            let field = Field::text(name);
+            if required { field.required() } else { field }
         })
         .collect();
     Form::new(format!("{} → {}", selection.label(), transition.to), fields)
@@ -443,9 +441,9 @@ pub(crate) fn companions(transition: Transition, values: &[FieldValue]) -> Map<S
         .fields
         .iter()
         .zip(values)
-        .filter_map(|(c, value)| match value {
+        .filter_map(|(&(field, _), value)| match value {
             FieldValue::Text(text) if !text.is_empty() => {
-                Some((c.field.to_owned(), Value::String(text.clone())))
+                Some((field.to_owned(), Value::String(text.clone())))
             }
             _ => None,
         })
@@ -513,7 +511,7 @@ pub(crate) fn transition_plan(
             let mut all: Vec<&str> = vec!["status"];
             all.extend(fields.keys().map(String::as_str));
             for field in leaves(status) {
-                if !all.contains(field) {
+                if !all.contains(&field) {
                     all.push(field);
                 }
             }
@@ -800,22 +798,17 @@ pub(crate) fn withdraw(ids: Vec<String>, next: &mut RequestId) -> WriteRequest {
 /// The `ledger` and `flow` or `scope` naming `ledger` as an input record's target; `None`
 /// for a ledger named only by path.
 fn input_target(ledger: &LedgerRef) -> Option<Map<String, Value>> {
-    let name = |kind: &LedgerKind| match kind {
-        LedgerKind::Review => "review",
-        LedgerKind::Optimise => "optimise",
-        LedgerKind::PlanReview => "plan-review",
-    };
     let mut target = Map::new();
     match ledger {
         LedgerRef::Backlog => {
             target.insert("ledger".into(), "backlog".into());
         }
         LedgerRef::Flow { slug, kind } => {
-            target.insert("ledger".into(), name(kind).into());
+            target.insert("ledger".into(), kind.as_str().into());
             target.insert("flow".into(), slug.clone().into());
         }
         LedgerRef::Scope { kind, scope } => {
-            target.insert("ledger".into(), name(kind).into());
+            target.insert("ledger".into(), kind.as_str().into());
             target.insert("scope".into(), scope.clone().into());
         }
         LedgerRef::File(_) => return None,
@@ -830,6 +823,7 @@ mod tests {
     use crate::ledger::StatusClass;
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use serde_json::json;
+    use tomlctl::LedgerKind;
 
     fn row(id: &str, status: &str, raw: Value) -> ItemRow {
         ItemRow {

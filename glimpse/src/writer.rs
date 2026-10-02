@@ -5,6 +5,7 @@
 //! next, so two writes to the same rows land in the order the user made them. A facade error,
 //! a `root mismatch` included, comes back as [`WriteOutcome::error`]; it never ends the thread.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 
@@ -132,10 +133,17 @@ pub(crate) struct Writer {
 impl Writer {
     /// Starts the thread writing under `root`. Moves the process into `root` first, so the
     /// process root tomlctl resolves lazily agrees with it and the facade's root check passes;
-    /// spawn it before anything else calls into tomlctl.
-    pub(crate) fn spawn(root: PathBuf, events: Sender<Event>) -> Writer {
-        let _ = std::env::set_current_dir(&root);
-        Writer::spawn_with(root, events, perform)
+    /// spawn it before anything else calls into tomlctl. Also returns, for the header, why
+    /// every write would be refused, when that is already known.
+    pub(crate) fn spawn(root: PathBuf, events: Sender<Event>) -> (Writer, Option<String>) {
+        let warning = match std::env::set_current_dir(&root) {
+            Err(e) => Some(format!(
+                "writes will fail: cannot enter {}: {e}",
+                root.display()
+            )),
+            Ok(()) => root_conflict(&root, std::env::var_os("TOMLCTL_ROOT")),
+        };
+        (Writer::spawn_with(root, events, perform), warning)
     }
 
     fn spawn_with<F>(root: PathBuf, events: Sender<Event>, mut perform: F) -> Writer
@@ -158,6 +166,23 @@ impl Writer {
     pub(crate) fn submit(&self, request: WriteRequest) {
         let _ = self.requests.send(request);
     }
+}
+
+/// Why tomlctl's process root cannot be `root`: once the process sits in `root`, only a
+/// non-empty `TOMLCTL_ROOT` (`pinned`) naming another directory can move it elsewhere.
+fn root_conflict(root: &Path, pinned: Option<OsString>) -> Option<String> {
+    let pinned = PathBuf::from(pinned.filter(|value| !value.is_empty())?);
+    let same = match (pinned.canonicalize(), root.canonicalize()) {
+        (Ok(pinned), Ok(root)) => pinned == root,
+        _ => false,
+    };
+    (!same).then(|| {
+        format!(
+            "writes will fail: TOMLCTL_ROOT is {}, not glimpse's root {}",
+            pinned.display(),
+            root.display()
+        )
+    })
 }
 
 /// Runs one request through the tomlctl facade.
@@ -230,6 +255,10 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use tomlctl::LedgerKind;
+
+    use crate::actions::{self, Selection};
+    use crate::ledger::{ItemRow, Kind, Ledger};
+    use crate::surface::Surface;
 
     fn transition(request: RequestId) -> WriteRequest {
         WriteRequest::Transition {
@@ -312,8 +341,146 @@ mod tests {
         assert_eq!(outcome.applied, vec!["I5".to_string()]);
     }
 
+    /// Serialises every test that reads or sets `TOMLCTL_ROOT`, which tomlctl reads live on
+    /// each facade call.
+    static ROOT_ENV: Mutex<()> = Mutex::new(());
+
+    fn root_env() -> std::sync::MutexGuard<'static, ()> {
+        ROOT_ENV
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// A throwaway repo root exported as `TOMLCTL_ROOT` until dropped, holding a review
+    /// ledger for flow `demo` and a backlog seeded from the test fixtures.
+    struct Sandbox {
+        root: PathBuf,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl Sandbox {
+        fn new(name: &str) -> Sandbox {
+            let lock = root_env();
+            let root =
+                std::env::temp_dir().join(format!("glimpse-writer-{name}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            let flow = root.join(".claude").join("flows").join("demo");
+            std::fs::create_dir_all(&flow).expect("flow dir");
+            let review = include_str!("../tests/fixtures/review-ledger.toml");
+            std::fs::write(flow.join("review-ledger.toml"), review).expect("review ledger");
+            let backlog = include_str!("../tests/fixtures/backlog.toml");
+            std::fs::write(root.join(".claude").join("backlog.toml"), backlog).expect("backlog");
+            // SAFETY: every test here that reads or sets TOMLCTL_ROOT holds `ROOT_ENV`, and
+            // no other test in this binary touches it.
+            unsafe { std::env::set_var("TOMLCTL_ROOT", &root) };
+            Sandbox { root, _lock: lock }
+        }
+
+        fn rows(&self, ledger: &LedgerRef) -> Vec<ItemRow> {
+            let value = tomlctl::ledger_read(&self.root, ledger).expect("ledger read");
+            Ledger::from_value(value).expect("ledger loads").rows
+        }
+
+        fn row(&self, ledger: &LedgerRef, id: &str) -> ItemRow {
+            self.rows(ledger)
+                .into_iter()
+                .find(|row| row.id == id)
+                .expect("the row is present")
+        }
+    }
+
+    impl Drop for Sandbox {
+        fn drop(&mut self) {
+            // SAFETY: `_lock` is still held; fields drop after this body.
+            unsafe { std::env::remove_var("TOMLCTL_ROOT") };
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    /// Moves `id` to `to` through the real plan builder and facade, then undoes it through
+    /// the plan's own restore, and checks the row came back exactly as it was read.
+    fn round_trip(sandbox: &Sandbox, kind: Kind, ledger: LedgerRef, id: &str, to: &str) {
+        let before = sandbox.row(&ledger, id);
+        let transition = *actions::offered(kind, &before.status)
+            .iter()
+            .find(|t| t.to == to)
+            .expect("the move is offered");
+        let fields: Map<String, Value> = transition
+            .fields
+            .iter()
+            .map(|&(field, _)| (field.to_owned(), Value::from(format!("{field} text"))))
+            .collect();
+        let selection = Selection {
+            surface: Surface::of_kind(kind).expect("an item surface"),
+            kind,
+            ledger: ledger.clone(),
+            rows: vec![before.clone()],
+        };
+        let mut next = 0;
+        let plan = actions::transition_plan(&selection, transition, &fields, &mut next);
+        let [(request, _)] = plan.requests.as_slice() else {
+            panic!("expected one request, got {:?}", plan.requests);
+        };
+        let moved = WriteOutcome::from_result(0, perform(&sandbox.root, request.clone()));
+        assert_eq!((moved.applied, moved.error), (vec![id.to_owned()], None));
+        assert_eq!(sandbox.row(&ledger, id).status, to);
+
+        let [undo] = plan.undo.as_slice() else {
+            panic!("expected one undo, got {:?}", plan.undo);
+        };
+        let restore = undo.restore(next, &ledger);
+        let restored = WriteOutcome::from_result(next, perform(&sandbox.root, restore));
+        assert_eq!(
+            (restored.applied, restored.skipped_stale, restored.error),
+            (vec![id.to_owned()], Vec::new(), None)
+        );
+        assert_eq!(
+            sandbox.row(&ledger, id).raw,
+            before.raw,
+            "undo puts it back"
+        );
+    }
+
+    #[test]
+    fn a_review_deferral_and_its_undo_leave_the_row_as_it_was() {
+        let sandbox = Sandbox::new("defer");
+        let ledger = LedgerRef::Flow {
+            slug: "demo".to_string(),
+            kind: LedgerKind::Review,
+        };
+        round_trip(&sandbox, Kind::Review, ledger, "R1", "deferred");
+    }
+
+    #[test]
+    fn a_backlog_dismissal_and_its_undo_leave_the_row_as_it_was() {
+        let sandbox = Sandbox::new("dismiss");
+        round_trip(
+            &sandbox,
+            Kind::Backlog,
+            LedgerRef::Backlog,
+            "B-0a1b2c3d",
+            "dismissed",
+        );
+    }
+
+    #[test]
+    fn a_tomlctl_root_naming_another_directory_is_a_conflict() {
+        let root = std::env::temp_dir();
+        assert_eq!(root_conflict(&root, None), None);
+        assert_eq!(
+            root_conflict(&root, Some(OsString::new())),
+            None,
+            "empty is unset"
+        );
+        assert_eq!(root_conflict(&root, Some(root.clone().into())), None);
+        let elsewhere = root.join("glimpse-no-such-root");
+        let conflict = root_conflict(&root, Some(elsewhere.into())).expect("a conflict");
+        assert!(conflict.contains("TOMLCTL_ROOT"), "{conflict}");
+    }
+
     #[test]
     fn a_root_other_than_the_process_root_is_refused_as_an_outcome() {
+        let _env = root_env();
         let elsewhere = std::env::temp_dir();
         let (tx, rx) = mpsc::channel();
         let writer = Writer::spawn_with(elsewhere, tx, perform);

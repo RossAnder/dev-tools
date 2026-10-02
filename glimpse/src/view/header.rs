@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use crate::app::App;
-use crate::ledger::StatusClass;
+use crate::ledger::{Seen, StatusClass};
 use crate::model::{AgentStatus, RecordEntry, TaskStatus};
 use crate::surface::Surface;
 
@@ -80,7 +80,7 @@ fn tab_count(app: &App, surface: Surface) -> Option<String> {
         _ => app
             .items
             .get(&surface)
-            .filter(|state| matches!(state.revision, Some(Some(_))))
+            .filter(|state| matches!(state.revision, Seen::At(_)))
             .map(|state| {
                 let open = state
                     .rows
@@ -317,10 +317,10 @@ mod tests {
             .collect()
     }
 
-    fn load(app: &mut App, surface: Surface, rows: Vec<ItemRow>, revision: Option<Option<&str>>) {
+    fn load(app: &mut App, surface: Surface, rows: Vec<ItemRow>, revision: Option<&str>) {
         let state = app.items.get_mut(&surface).expect("an item surface");
         state.rows = rows;
-        state.revision = revision.map(|r| r.map(str::to_string));
+        state.revision = Seen::read(revision);
     }
 
     #[test]
@@ -330,19 +330,14 @@ mod tests {
             &mut app,
             Surface::Review,
             rows_of(&["open", "open", "fixed", "deferred"]),
-            Some(Some("r1")),
+            Some("r1"),
         );
         app.items
             .get_mut(&Surface::Review)
             .expect("review")
             .new_since_view = 3;
-        load(
-            &mut app,
-            Surface::Optimise,
-            rows_of(&["open"]),
-            Some(Some("o1")),
-        );
-        load(&mut app, Surface::Backlog, Vec::new(), Some(None));
+        load(&mut app, Surface::Optimise, rows_of(&["open"]), Some("o1"));
+        load(&mut app, Surface::Backlog, Vec::new(), None);
         app.surface = Surface::Optimise;
 
         let rows = draw(&app);

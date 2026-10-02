@@ -15,7 +15,7 @@ use ratatui::text::{Line, Span};
 
 use super::items::Target;
 use crate::app::App;
-use crate::ledger::InputRow;
+use crate::ledger::{InputRow, Seen};
 use crate::model::TaskStatus;
 use crate::surface::{InboxState, VisibleRow};
 use crate::theme::Theme;
@@ -47,9 +47,9 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
     let visible = state.visible();
     if visible.is_empty() {
         let text = match &state.revision {
-            None => "reading the input store…",
-            Some(_) if state.rows.is_empty() => "no input records yet",
-            Some(_) => "no open records",
+            Seen::Unread => "reading the input store…",
+            _ if state.rows.is_empty() => "no input records yet",
+            _ => "no open records",
         };
         buf.set_line(
             list.x,

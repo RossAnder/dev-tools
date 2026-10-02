@@ -11,7 +11,6 @@ use super::Feed;
 use crate::flows::{self, FlowEntry};
 use crate::ledger::{Inputs, Ledger};
 use crate::model::Snapshot;
-use crate::watch::{LedgerScopeDir, RepoFile};
 
 /// `(mtime, len)` of one file; `None` when it is absent or cannot be statted.
 pub(crate) type FileStat = Option<(SystemTime, u64)>;
@@ -38,37 +37,12 @@ pub(super) fn has_task_store(fingerprint: &Fingerprint) -> bool {
     fingerprint[0].is_some()
 }
 
-/// The file a flow keeps its `kind` ledger in.
-fn ledger_file(kind: LedgerKind) -> &'static str {
-    match kind {
-        LedgerKind::Review => "review-ledger.toml",
-        LedgerKind::Optimise => "optimise-findings.toml",
-        LedgerKind::PlanReview => "plan-review-findings.toml",
-    }
-}
-
-/// The directory under `.claude` holding the flow-less ledgers of `kind`.
-pub(super) fn scope_dir(kind: LedgerKind) -> LedgerScopeDir {
-    match kind {
-        LedgerKind::Review => LedgerScopeDir::Reviews,
-        LedgerKind::Optimise => LedgerScopeDir::OptimiseFindings,
-        LedgerKind::PlanReview => LedgerScopeDir::PlanReviewFindings,
-    }
-}
-
-/// The file a feed reads, at the paths `tomlctl::ledger_read` uses.
-pub(super) fn feed_path(root: &Path, feed: &Feed) -> PathBuf {
-    let claude = root.join(".claude");
+/// The file a feed reads, at the path tomlctl reads it from. `None` for a flow slug or scope
+/// name tomlctl refuses: the feed then stats as unreadable, and its read reports the refusal.
+pub(super) fn feed_path(root: &Path, feed: &Feed) -> Option<PathBuf> {
     match feed {
-        Feed::Inputs => claude.join(RepoFile::Inputs.file_name()),
-        Feed::Ledger(LedgerRef::Flow { slug, kind }) => {
-            flow_dir(root, slug).join(ledger_file(*kind))
-        }
-        Feed::Ledger(LedgerRef::Scope { kind, scope }) => claude
-            .join(scope_dir(*kind).dir_name())
-            .join(format!("{scope}.toml")),
-        Feed::Ledger(LedgerRef::Backlog) => claude.join(RepoFile::Backlog.file_name()),
-        Feed::Ledger(LedgerRef::File(path)) => path.clone(),
+        Feed::Inputs => Some(tomlctl::inputs_path(root)),
+        Feed::Ledger(ledger) => ledger.path(root).ok(),
     }
 }
 
@@ -133,7 +107,7 @@ pub(super) fn flows_fingerprint(
                     times: FlowTimes {
                         tasks,
                         context: tasks.and_then(|_| modified(&path.join("context.toml"))),
-                        ledgers: LedgerKind::ALL.map(|kind| path.join(ledger_file(kind)).is_file()),
+                        ledgers: LedgerKind::ALL.map(|kind| path.join(kind.flow_file()).is_file()),
                     },
                 }
             }
@@ -150,11 +124,11 @@ pub(super) fn flows_fingerprint(
 
 /// The `*.toml` files in every flow-less ledger directory. Names are read fresh on every scan:
 /// only the directory mtime lags on Windows, not the entries.
-pub(super) fn scope_files(root: &Path) -> BTreeSet<(LedgerScopeDir, String)> {
+pub(super) fn scope_files(root: &Path) -> BTreeSet<(LedgerKind, String)> {
     let claude = root.join(".claude");
     let mut files = BTreeSet::new();
-    for dir in LedgerScopeDir::ALL {
-        let Ok(entries) = std::fs::read_dir(claude.join(dir.dir_name())) else {
+    for dir in LedgerKind::ALL {
+        let Ok(entries) = std::fs::read_dir(claude.join(dir.scope_dir())) else {
             continue;
         };
         for entry in entries.filter_map(Result::ok) {

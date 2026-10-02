@@ -1,8 +1,4 @@
 //! A modal form of text, single-select and multi-select fields, with its key routing and submitted values.
-#![allow(
-    dead_code,
-    reason = "the overlay and action menu build forms and read every field"
-)]
 
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tui_input::Input;

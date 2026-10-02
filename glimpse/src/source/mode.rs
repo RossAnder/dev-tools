@@ -6,9 +6,10 @@ use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
 use notify::RecommendedWatcher;
+use tomlctl::LedgerKind;
 
 use super::{Control, MISS_LIMIT, SAFETY_TICK, WATCH_RETRY_MAX};
-use crate::watch::{self, LedgerScopeDir, RepoFile, Wake};
+use crate::watch::{self, RepoFile, Wake};
 
 /// Every wake gathered before one tick, merged: an `All` or `Rewatch` covers every flow.
 /// A new scope dir is also listed in `scopes`, so it is rescanned once.
@@ -16,8 +17,8 @@ use crate::watch::{self, LedgerScopeDir, RepoFile, Wake};
 pub(super) struct Wakes {
     pub(super) flows: BTreeSet<String>,
     pub(super) repo: BTreeSet<RepoFile>,
-    pub(super) scopes: BTreeSet<LedgerScopeDir>,
-    pub(super) new_scopes: BTreeSet<LedgerScopeDir>,
+    pub(super) scopes: BTreeSet<LedgerKind>,
+    pub(super) new_scopes: BTreeSet<LedgerKind>,
     pub(super) all: bool,
     pub(super) rewatch: bool,
 }
@@ -73,26 +74,25 @@ pub(super) enum WatchScope {
     Flows,
     /// The repo-level files directly under `.claude`.
     Repo,
-    /// One flow-less ledger directory.
-    Ledgers(LedgerScopeDir),
+    /// The flow-less ledger directory of one kind.
+    Ledgers(LedgerKind),
 }
 
 /// Whether a watch is feeding the poller. The watcher lives here, on the poller thread.
 pub(super) enum Mode {
-    /// The watch lives until the mode changes; `scopes` are the flow-less ledger dirs it
-    /// already covers, so none is watched twice.
+    /// The watch lives until the mode changes; `scopes` are the kinds whose flow-less ledger
+    /// dirs it already covers, so none is watched twice.
     Watching {
         watcher: RecommendedWatcher,
         claude_dir: PathBuf,
-        scopes: BTreeSet<LedgerScopeDir>,
+        scopes: BTreeSet<LedgerKind>,
     },
-    /// Polling every `poll_ms`; `retry_watch` while the last watch start failed, cleared once
-    /// the watch was abandoned for missing changes. `backoff` is set once `watch::start`
-    /// itself has failed, and holds further attempts off until it allows one.
-    Polling {
-        retry_watch: bool,
-        backoff: Option<Backoff>,
-    },
+    /// Polling every `poll_ms` and retrying the watch at ticks, because the last start failed
+    /// or a rewatch dropped the watcher. `backoff` is set once `watch::start` itself has
+    /// failed, and holds further attempts off until it allows one.
+    Retrying { backoff: Option<Backoff> },
+    /// Polling every `poll_ms` for good: the watch missed changes.
+    Abandoned,
 }
 
 /// When a watch that failed to start may be tried again.
@@ -130,10 +130,7 @@ impl Mode {
         poll: Duration,
         prior: Option<Backoff>,
     ) -> Mode {
-        let retrying = |backoff| Mode::Polling {
-            retry_watch: true,
-            backoff,
-        };
+        let retrying = |backoff| Mode::Retrying { backoff };
         if !flows_root.is_dir() {
             return retrying(prior);
         }
@@ -158,7 +155,7 @@ impl Mode {
     /// Adds a watch on a flow-less ledger dir that appeared after the watch started. A dir
     /// already covered, a missing one, or a failed watch leaves the mode as it is; the
     /// safety tick still sees that scope's changes.
-    pub(super) fn add_scope(&mut self, dir: LedgerScopeDir) {
+    pub(super) fn add_scope(&mut self, dir: LedgerKind) {
         let Mode::Watching {
             watcher,
             claude_dir,
@@ -180,25 +177,6 @@ impl Mode {
         matches!(self, Mode::Watching { .. })
     }
 
-    fn state(&self) -> WatchState {
-        match self {
-            Mode::Watching { .. } => WatchState::Watching,
-            Mode::Polling {
-                retry_watch: true, ..
-            } => WatchState::Retrying,
-            Mode::Polling {
-                retry_watch: false, ..
-            } => WatchState::Abandoned,
-        }
-    }
-
-    fn backoff(&self) -> Option<Backoff> {
-        match self {
-            Mode::Polling { backoff, .. } => *backoff,
-            Mode::Watching { .. } => None,
-        }
-    }
-
     /// Applies whatever [`mode_change`] decides at `phase`. Replacing a `Watching` mode drops
     /// its watcher.
     pub(super) fn advance(
@@ -208,29 +186,15 @@ impl Mode {
         control: &Sender<Control>,
         poll: Duration,
     ) {
-        match mode_change(self.state(), phase) {
-            Some(ModeChange::Start) => {
-                *self = Mode::start(flows_root, control, poll, self.backoff());
+        match mode_change(self, phase) {
+            Some(ModeChange::Start { prior }) => {
+                *self = Mode::start(flows_root, control, poll, prior);
             }
-            Some(ModeChange::Poll { retry_watch }) => {
-                *self = Mode::Polling {
-                    retry_watch,
-                    backoff: None,
-                };
-            }
+            Some(ModeChange::Retry) => *self = Mode::Retrying { backoff: None },
+            Some(ModeChange::Abandon) => *self = Mode::Abandoned,
             None => {}
         }
     }
-}
-
-/// A [`Mode`] without its watcher.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WatchState {
-    Watching,
-    /// Polling because the last watch start failed or a rewatch dropped the watcher.
-    Retrying,
-    /// Polling for good: the watch missed changes.
-    Abandoned,
 }
 
 /// The points in the poller's loop at which its mode may change.
@@ -246,22 +210,22 @@ pub(super) enum Phase {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ModeChange {
-    Start,
-    Poll { retry_watch: bool },
+    /// Try a watch start, held off by the retrying mode's `prior` backoff.
+    Start {
+        prior: Option<Backoff>,
+    },
+    Retry,
+    Abandon,
 }
 
 /// Whether the watch starts, stops or stays at `phase`: a failed start is retried before a
 /// tick once its [`Backoff`] allows, a watch that missed changes is abandoned for good, and a
 /// rewatch drops the watcher so the next tick starts a fresh one.
-fn mode_change(state: WatchState, phase: Phase) -> Option<ModeChange> {
-    match (state, phase) {
-        (WatchState::Retrying, Phase::Tick) => Some(ModeChange::Start),
-        (WatchState::Watching, Phase::Ticked { abandon: true }) => {
-            Some(ModeChange::Poll { retry_watch: false })
-        }
-        (WatchState::Watching, Phase::Woken { rewatch: true }) => {
-            Some(ModeChange::Poll { retry_watch: true })
-        }
+fn mode_change(mode: &Mode, phase: Phase) -> Option<ModeChange> {
+    match (mode, phase) {
+        (Mode::Retrying { backoff }, Phase::Tick) => Some(ModeChange::Start { prior: *backoff }),
+        (Mode::Watching { .. }, Phase::Ticked { abandon: true }) => Some(ModeChange::Abandon),
+        (Mode::Watching { .. }, Phase::Woken { rewatch: true }) => Some(ModeChange::Retry),
         _ => None,
     }
 }
@@ -590,7 +554,7 @@ mod tests {
     #[test]
     fn a_wake_vouches_only_for_its_own_scope_and_a_reported_change_is_no_miss() {
         use TickCause::Safety;
-        let reviews = WatchScope::Ledgers(LedgerScopeDir::Reviews);
+        let reviews = WatchScope::Ledgers(LedgerKind::Review);
         let both = scopes([WatchScope::Flows, reviews]);
         let mut misses = MissedChanges::default();
         for _ in 0..3 {
@@ -617,13 +581,13 @@ mod tests {
         let mut wakes = Wakes::default();
         wakes.add(Wake::Flow("a".into()));
         wakes.add(Wake::Repo(RepoFile::Inputs));
-        wakes.add(Wake::NewScope(LedgerScopeDir::OptimiseFindings));
+        wakes.add(Wake::NewScope(LedgerKind::Optimise));
         assert_eq!(
             wakes.woken(),
             scopes([
                 WatchScope::Flows,
                 WatchScope::Repo,
-                WatchScope::Ledgers(LedgerScopeDir::OptimiseFindings)
+                WatchScope::Ledgers(LedgerKind::Optimise)
             ])
         );
 
@@ -663,13 +627,17 @@ mod tests {
         let missing = root.join("absent");
         let prior = Backoff::after_failure(None, Instant::now(), Duration::from_secs(3600));
         let mode = Mode::start(&missing, &control, Duration::from_millis(500), Some(prior));
-        assert_eq!(mode.state(), WatchState::Retrying);
-        assert_eq!(mode.backoff(), Some(prior), "no attempt, no longer wait");
+        assert!(
+            matches!(mode, Mode::Retrying { backoff: Some(b) } if b == prior),
+            "no attempt, no longer wait"
+        );
 
         let present = flows::flows_root(&root);
         let mode = Mode::start(&present, &control, Duration::from_millis(500), Some(prior));
-        assert_eq!(mode.state(), WatchState::Retrying, "held off until due");
-        assert_eq!(mode.backoff(), Some(prior));
+        assert!(
+            matches!(mode, Mode::Retrying { backoff: Some(b) } if b == prior),
+            "held off until due"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -681,11 +649,11 @@ mod tests {
         assert!(wakes.flows.is_empty() && !wakes.all, "no flow is evicted");
 
         let mut wakes = Wakes::default();
-        wakes.add(Wake::NewScope(LedgerScopeDir::Reviews));
-        assert_eq!(wakes.new_scopes, BTreeSet::from([LedgerScopeDir::Reviews]));
+        wakes.add(Wake::NewScope(LedgerKind::Review));
+        assert_eq!(wakes.new_scopes, BTreeSet::from([LedgerKind::Review]));
         assert_eq!(
             wakes.scopes,
-            BTreeSet::from([LedgerScopeDir::Reviews]),
+            BTreeSet::from([LedgerKind::Review]),
             "a new scope is rescanned once"
         );
     }
@@ -698,22 +666,22 @@ mod tests {
         let mut mode = Mode::start(&flows_root, &control, Duration::from_millis(500), None);
         let covered = |mode: &Mode| match mode {
             Mode::Watching { scopes, .. } => scopes.clone(),
-            Mode::Polling { .. } => panic!("not watching"),
+            Mode::Retrying { .. } | Mode::Abandoned => panic!("not watching"),
         };
         assert!(covered(&mode).is_empty());
 
-        mode.add_scope(LedgerScopeDir::Reviews);
+        mode.add_scope(LedgerKind::Review);
         assert!(covered(&mode).is_empty(), "missing dir");
 
         std::fs::create_dir(root.join(".claude").join("reviews")).expect("reviews dir");
-        mode.add_scope(LedgerScopeDir::Reviews);
-        mode.add_scope(LedgerScopeDir::Reviews);
-        assert_eq!(covered(&mode), BTreeSet::from([LedgerScopeDir::Reviews]));
+        mode.add_scope(LedgerKind::Review);
+        mode.add_scope(LedgerKind::Review);
+        assert_eq!(covered(&mode), BTreeSet::from([LedgerKind::Review]));
 
         let restarted = Mode::start(&flows_root, &control, Duration::from_millis(500), None);
         assert_eq!(
             covered(&restarted),
-            BTreeSet::from([LedgerScopeDir::Reviews]),
+            BTreeSet::from([LedgerKind::Review]),
             "an existing dir is covered from the start"
         );
         drop((mode, restarted));
@@ -722,30 +690,50 @@ mod tests {
 
     #[test]
     fn the_watch_is_retried_abandoned_and_restarted_at_the_right_phases() {
-        use WatchState::{Abandoned, Retrying, Watching};
-        let start = Some(ModeChange::Start);
-        let poll = |retry_watch| Some(ModeChange::Poll { retry_watch });
+        let root = temp_root("phases");
+        let (control, _messages) = mpsc::channel();
+        let watching = Mode::start(
+            &flows::flows_root(&root),
+            &control,
+            Duration::from_millis(500),
+            None,
+        );
+        assert!(watching.is_watching());
+        let prior = Backoff::after_failure(None, Instant::now(), Duration::from_millis(500));
+        let retrying = Mode::Retrying {
+            backoff: Some(prior),
+        };
+        let abandoned = Mode::Abandoned;
 
-        assert_eq!(mode_change(Retrying, Phase::Tick), start, "a failed start");
-        assert_eq!(mode_change(Watching, Phase::Tick), None);
-        assert_eq!(mode_change(Abandoned, Phase::Tick), None, "never again");
+        assert_eq!(
+            mode_change(&retrying, Phase::Tick),
+            Some(ModeChange::Start { prior: Some(prior) }),
+            "a failed start, under its backoff"
+        );
+        assert_eq!(mode_change(&watching, Phase::Tick), None);
+        assert_eq!(mode_change(&abandoned, Phase::Tick), None, "never again");
 
         let abandon = Phase::Ticked { abandon: true };
-        assert_eq!(mode_change(Watching, abandon), poll(false));
+        assert_eq!(mode_change(&watching, abandon), Some(ModeChange::Abandon));
         assert_eq!(
-            mode_change(Watching, Phase::Ticked { abandon: false }),
+            mode_change(&watching, Phase::Ticked { abandon: false }),
             None
         );
-        assert_eq!(mode_change(Retrying, abandon), None, "no watch to drop");
+        assert_eq!(mode_change(&retrying, abandon), None, "no watch to drop");
 
         let rewatch = Phase::Woken { rewatch: true };
         assert_eq!(
-            mode_change(Watching, rewatch),
-            poll(true),
+            mode_change(&watching, rewatch),
+            Some(ModeChange::Retry),
             "the watcher is dropped and the next tick starts a fresh one"
         );
-        assert_eq!(mode_change(Watching, Phase::Woken { rewatch: false }), None);
-        assert_eq!(mode_change(Retrying, rewatch), None);
-        assert_eq!(mode_change(Abandoned, rewatch), None);
+        assert_eq!(
+            mode_change(&watching, Phase::Woken { rewatch: false }),
+            None
+        );
+        assert_eq!(mode_change(&retrying, rewatch), None);
+        assert_eq!(mode_change(&abandoned, rewatch), None);
+        drop(watching);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -10,6 +10,7 @@
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
+use tomlctl::LedgerKind;
 
 /// Which ledger a document came from, from its `kind` string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -30,7 +31,64 @@ impl Kind {
             _ => return None,
         })
     }
+
+    /// The flow-scoped ledger kind; `None` for the backlog, which has none.
+    pub(crate) fn ledger_kind(self) -> Option<LedgerKind> {
+        Some(match self {
+            Self::Review => LedgerKind::Review,
+            Self::Optimise => LedgerKind::Optimise,
+            Self::PlanReview => LedgerKind::PlanReview,
+            Self::Backlog => return None,
+        })
+    }
 }
+
+impl From<LedgerKind> for Kind {
+    fn from(kind: LedgerKind) -> Kind {
+        match kind {
+            LedgerKind::Review => Self::Review,
+            LedgerKind::Optimise => Self::Optimise,
+            LedgerKind::PlanReview => Self::PlanReview,
+        }
+    }
+}
+
+/// What a reader last saw of a revisioned file.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) enum Seen {
+    #[default]
+    Unread,
+    /// Read, and the file did not exist.
+    Missing,
+    At(String),
+}
+
+impl Seen {
+    /// A read's revision, `None` for a missing file.
+    pub(crate) fn read(revision: Option<&str>) -> Seen {
+        revision.map_or(Seen::Missing, |r| Seen::At(r.to_owned()))
+    }
+
+    /// Whether this is the read of `revision`, so a second read of it is no news.
+    pub(crate) fn is(&self, revision: Option<&str>) -> bool {
+        match (self, revision) {
+            (Seen::Missing, None) => true,
+            (Seen::At(seen), Some(revision)) => seen == revision,
+            _ => false,
+        }
+    }
+
+    /// Whether any read has landed, a missing file included.
+    pub(crate) fn is_read(&self) -> bool {
+        *self != Seen::Unread
+    }
+}
+
+/// A finding's severities, most severe first; group-by and sort rank by position.
+pub(crate) const SEVERITIES: [&str; 3] = ["critical", "warning", "suggestion"];
+
+/// A finding's efforts, cheapest first; group-by and sort rank by position.
+pub(crate) const EFFORTS: [&str; 3] = ["trivial", "small", "medium"];
 
 /// The glyph and closed-filter bucket of a status. An unknown status is `Live`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]

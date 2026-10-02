@@ -76,13 +76,6 @@ pub(crate) struct ViewArgs {
     pub(crate) once: Option<Once>,
 }
 
-/// A surface by its lower-cased label, as `--surface` spells it.
-fn parse_surface(s: &str) -> Option<Surface> {
-    Surface::ALL
-        .into_iter()
-        .find(|surface| surface.label().to_ascii_lowercase() == s)
-}
-
 /// The harness a hook payload came from; it selects the in-process recorder's payload
 /// adapter.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -222,7 +215,7 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
             }
             (None, "--surface") => {
                 let v = value("--surface")?;
-                surface = Some(parse_surface(&v).ok_or_else(|| {
+                surface = Some(Surface::from_key(&v).ok_or_else(|| {
                     format!(
                         "unknown surface `{v}`: expected tasks, review, optimise, plan-review, \
                          backlog or inbox"

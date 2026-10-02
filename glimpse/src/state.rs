@@ -26,17 +26,6 @@ pub(crate) struct State {
     pub(crate) arrangements: Vec<(Surface, Group, Sort)>,
 }
 
-/// The key a surface is saved under: its label, lowercased.
-fn surface_key(surface: Surface) -> String {
-    surface.label().to_ascii_lowercase()
-}
-
-fn parse_surface(text: &str) -> Option<Surface> {
-    Surface::ALL
-        .into_iter()
-        .find(|surface| surface_key(*surface) == text)
-}
-
 /// The surfaces whose group-by and sort are saved.
 fn item_surfaces() -> impl Iterator<Item = Surface> {
     Surface::ALL
@@ -49,10 +38,10 @@ fn item_surfaces() -> impl Iterator<Item = Surface> {
 fn parse_arrangement(surface: Surface, table: &toml::Table) -> (Surface, Group, Sort) {
     let text = |key: &str| table.get(key).and_then(toml::Value::as_str);
     let group = text("group")
-        .and_then(|g| surface.groups().iter().copied().find(|o| o.label() == g))
+        .and_then(|g| surface.groups().iter().copied().find(|o| o.key() == g))
         .unwrap_or_default();
     let sort = text("sort")
-        .and_then(|s| surface.sorts().iter().copied().find(|o| o.label() == s))
+        .and_then(|s| surface.sorts().iter().copied().find(|o| o.key() == s))
         .unwrap_or_default();
     (surface, group, sort)
 }
@@ -77,11 +66,11 @@ impl State {
                 .and_then(|v| u16::try_from(v).ok())
                 .filter(|v| PANEL_PERCENT_RANGE.contains(v)),
             show_implied: table.get("show_implied").and_then(toml::Value::as_bool),
-            surface: text("surface").and_then(parse_surface),
+            surface: text("surface").and_then(Surface::from_key),
             arrangements: match table.get("items").and_then(toml::Value::as_table) {
                 Some(items) => item_surfaces()
                     .filter_map(|surface| {
-                        let saved = items.get(&surface_key(surface))?.as_table()?;
+                        let saved = items.get(surface.key())?.as_table()?;
                         Some(parse_arrangement(surface, saved))
                     })
                     .collect(),
@@ -108,15 +97,15 @@ impl State {
             out.push_str(&format!("show_implied = {show}\n"));
         }
         if let Some(surface) = self.surface {
-            out.push_str(&format!("surface = \"{}\"\n", surface_key(surface)));
+            out.push_str(&format!("surface = \"{}\"\n", surface.key()));
         }
         // Tables come after every top-level key, or TOML would read those keys into them.
         for (surface, group, sort) in &self.arrangements {
             out.push_str(&format!(
                 "\n[items.{}]\ngroup = \"{}\"\nsort = \"{}\"\n",
-                surface_key(*surface),
-                group.label(),
-                sort.label()
+                surface.key(),
+                group.key(),
+                sort.key()
             ));
         }
         out

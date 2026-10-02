@@ -30,7 +30,7 @@ use crate::config::Config;
 use crate::diagram::DiagramCache;
 use crate::flows::{self, FlowEntry, Scopes};
 use crate::keys;
-use crate::ledger::{Inputs, Kind, Ledger, StatusClass};
+use crate::ledger::{Inputs, Kind, Ledger, Seen, StatusClass};
 use crate::model::Snapshot;
 use crate::source::{Event, Feed, Source};
 use crate::state::State;
@@ -84,7 +84,13 @@ pub(crate) fn run(opts: RunOpts) -> Result<(), String> {
     }
 
     let (events, rx) = mpsc::channel();
-    let writer = Writer::spawn(root.clone(), events.clone());
+    let (writer, refused) = Writer::spawn(root.clone(), events.clone());
+    if let Some(refused) = refused {
+        app.warning = Some(match app.warning.take() {
+            Some(config) => format!("{config}; {refused}"),
+            None => refused,
+        });
+    }
     // `try_init` installs the panic hook that restores the terminal before anything else runs.
     let mut terminal = ratatui::try_init().map_err(|e| {
         ratatui::restore();
@@ -549,23 +555,19 @@ fn feeds_for(app: &App, slug: Option<&str>) -> Vec<Feed> {
 /// The item surface that lists a feed's ledger.
 fn feed_surface(feed: &Feed) -> Option<Surface> {
     let kind = match feed {
-        Feed::Ledger(LedgerRef::Flow { kind, .. } | LedgerRef::Scope { kind, .. }) => match kind {
-            LedgerKind::Review => Kind::Review,
-            LedgerKind::Optimise => Kind::Optimise,
-            LedgerKind::PlanReview => Kind::PlanReview,
-        },
+        Feed::Ledger(LedgerRef::Flow { kind, .. } | LedgerRef::Scope { kind, .. }) => {
+            Kind::from(*kind)
+        }
         Feed::Ledger(LedgerRef::Backlog) => Kind::Backlog,
         Feed::Ledger(LedgerRef::File(_)) | Feed::Inputs => return None,
     };
-    Surface::ALL
-        .into_iter()
-        .find(|surface| surface.ledger_kind() == Some(kind))
+    Surface::of_kind(kind)
 }
 
 /// What a surface's header tab shows: its open count once a file is read, and its badge.
 fn tab_state(app: &App, surface: Surface) -> (Option<usize>, usize) {
     app.items.get(&surface).map_or((None, 0), |state| {
-        let open = matches!(state.revision, Some(Some(_))).then(|| {
+        let open = matches!(state.revision, Seen::At(_)).then(|| {
             state
                 .rows
                 .iter()

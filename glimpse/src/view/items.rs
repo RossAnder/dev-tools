@@ -16,7 +16,7 @@ use tui_input::Input;
 
 use crate::actions::Overlay;
 use crate::app::App;
-use crate::ledger::{Anchor, ItemRow, StatusClass};
+use crate::ledger::{Anchor, ItemRow, Seen, StatusClass};
 use crate::model::{AgentStatus, TaskStatus};
 use crate::surface::{ItemsState, VisibleRow};
 
@@ -62,10 +62,10 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
     let visible = state.visible();
     if visible.is_empty() {
         let text = match &state.revision {
-            None => "reading the ledger…",
-            Some(None) => "no ledger file",
-            Some(Some(_)) if state.rows.is_empty() => "no items",
-            Some(Some(_)) => "no items match",
+            Seen::Unread => "reading the ledger…",
+            Seen::Missing => "no ledger file",
+            Seen::At(_) if state.rows.is_empty() => "no items",
+            Seen::At(_) => "no items match",
         };
         buf.set_line(
             list.x,

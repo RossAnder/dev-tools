@@ -24,6 +24,7 @@ mod transcript;
 mod view;
 mod watch;
 mod writer;
+mod writes;
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -163,11 +164,7 @@ fn read_ledger(opts: &RunOpts, path: &Path) -> Result<(Surface, Ledger), String>
     let ledger = Ledger::from_value(value)?;
     let surface = opts
         .surface
-        .or_else(|| {
-            Surface::ALL
-                .into_iter()
-                .find(|surface| surface.ledger_kind() == Some(ledger.kind))
-        })
+        .or_else(|| Surface::of_kind(ledger.kind))
         .unwrap_or_default();
     Ok((surface, ledger))
 }

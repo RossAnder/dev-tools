@@ -24,14 +24,14 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
-use tomlctl::LedgerRef;
+use tomlctl::{LedgerKind, LedgerRef};
 
 use crate::app::TICK;
 use crate::flows::{self, FlowEntry};
-use crate::ledger::{Inputs, Ledger};
+use crate::ledger::{Inputs, Ledger, Seen};
 use crate::model::Snapshot;
 use crate::transcript::{TailState, TailView};
-use crate::watch::{LedgerScopeDir, RepoFile, Wake};
+use crate::watch::{RepoFile, Wake};
 use crate::writer::WriteOutcome;
 use mode::{
     Deadlines, MissedChanges, Mode, Phase, SafetyClock, TickCause, Wakes, WatchScope, next_wait,
@@ -40,7 +40,7 @@ use mode::{
 pub(crate) use scan::{Fetcher, InProcessFetcher, task_store_mtimes, with_reinstall_hint};
 use scan::{
     FileStat, Fingerprint, FlowStat, FlowTimes, FlowsChange, feed_path, fingerprint,
-    flows_fingerprint, has_task_store, scope_dir, scope_files, stat, task_stores,
+    flows_fingerprint, has_task_store, scope_files, stat, task_stores,
 };
 
 /// Everything the runtime's main loop receives, from the poller and the input thread alike.
@@ -116,9 +116,7 @@ impl Feed {
     fn scope(&self) -> Option<WatchScope> {
         match self {
             Feed::Ledger(LedgerRef::Flow { .. }) => Some(WatchScope::Flows),
-            Feed::Ledger(LedgerRef::Scope { kind, .. }) => {
-                Some(WatchScope::Ledgers(scope_dir(*kind)))
-            }
+            Feed::Ledger(LedgerRef::Scope { kind, .. }) => Some(WatchScope::Ledgers(*kind)),
             Feed::Ledger(LedgerRef::Backlog) | Feed::Inputs => Some(WatchScope::Repo),
             Feed::Ledger(LedgerRef::File(_)) => None,
         }
@@ -130,7 +128,7 @@ impl Feed {
         }
         match self {
             Feed::Ledger(LedgerRef::Flow { slug, .. }) => wakes.flows.contains(slug),
-            Feed::Ledger(LedgerRef::Scope { kind, .. }) => wakes.scopes.contains(&scope_dir(*kind)),
+            Feed::Ledger(LedgerRef::Scope { kind, .. }) => wakes.scopes.contains(kind),
             Feed::Ledger(LedgerRef::Backlog) => wakes.repo.contains(&RepoFile::Backlog),
             Feed::Inputs => wakes.repo.contains(&RepoFile::Inputs),
             Feed::Ledger(LedgerRef::File(_)) => false,
@@ -143,8 +141,8 @@ impl Feed {
 struct FeedState {
     /// The stat the last read was taken against; `None` forces the next read.
     stat: Option<FileStat>,
-    /// The revision last sent, `Some(None)` for a missing file; `None` until a read is sent.
-    sent: Option<Option<String>>,
+    /// The revision last sent.
+    sent: Seen,
     /// Set while reads fail, so a failure is sent once rather than on every retry.
     failing: bool,
 }
@@ -202,7 +200,7 @@ struct Poller {
     /// Set when the last flow list failed, so the next change lists again.
     relist_pending: bool,
     /// The flow-less ledger files the last scan found; `None` before the first.
-    last_scope_files: Option<BTreeSet<(LedgerScopeDir, String)>>,
+    last_scope_files: Option<BTreeSet<(LedgerKind, String)>>,
     /// Set once the viewed flow's missing task store has been reported.
     no_store_reported: bool,
     retry_after: Duration,
@@ -357,7 +355,7 @@ impl Poller {
     fn poll_feeds(&mut self) -> Option<BTreeSet<WatchScope>> {
         let mut changed = BTreeSet::new();
         for (feed, state) in &mut self.feeds {
-            let current = stat(&feed_path(&self.root, feed));
+            let current = feed_path(&self.root, feed).and_then(|path| stat(&path));
             if state.stat == Some(current) {
                 continue;
             }
@@ -377,16 +375,17 @@ impl Poller {
             let read = match fetched {
                 Ok(read) => {
                     state.failing = false;
-                    if state.sent.as_ref() == Some(read.revision()) {
+                    let revision = read.revision().as_deref();
+                    if state.sent.is(revision) {
                         continue;
                     }
-                    state.sent = Some(read.revision().clone());
+                    state.sent = Seen::read(revision);
                     Ok(read)
                 }
                 Err(e) => {
                     // Unrecorded, so the next tick retries a read that failed on a stable file.
                     state.stat = None;
-                    state.sent = None;
+                    state.sent = Seen::Unread;
                     if std::mem::replace(&mut state.failing, true) {
                         continue;
                     }
@@ -400,7 +399,7 @@ impl Poller {
 
     /// Compares the flow-less ledger files with the last scan, returning the directories
     /// whose files came or went; the first scan returns none.
-    fn scan_scope_files(&mut self) -> BTreeSet<LedgerScopeDir> {
+    fn scan_scope_files(&mut self) -> BTreeSet<LedgerKind> {
         let files = scope_files(&self.root);
         let Some(last) = self.last_scope_files.replace(files.clone()) else {
             return BTreeSet::new();

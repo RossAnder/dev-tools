@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 
 use super::items;
 use crate::app::App;
-use crate::ledger::StatusClass;
+use crate::ledger::{SEVERITIES, StatusClass};
 use crate::model::TaskStatus;
 use crate::theme::Theme;
 
@@ -165,7 +165,7 @@ fn lines(theme: &Theme) -> Vec<Line<'static>> {
             text,
         ));
     }
-    for severity in ["critical", "warning", "suggestion"] {
+    for severity in SEVERITIES {
         out.push(row(
             Span::styled(severity, theme.severity(severity)),
             "severity",

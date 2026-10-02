@@ -6,7 +6,7 @@
 //! never spawns; the runtime feeds it actions and snapshots and carries out
 //! the few actions `apply` hands back.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime};
 
 use ratatui::crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyEventKind};
@@ -15,9 +15,7 @@ use tomlctl::LedgerKind;
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
-use crate::actions::{
-    self, InputForm, Overlay, Plan, Purpose, Selection, Transition, UndoEntry, UndoKind,
-};
+use crate::actions::{self, InputForm, Overlay, Plan, Purpose, Selection, Transition};
 use crate::config::{
     COLUMN_RANGE, Config, Density, DensityPref, Orientation, OrientationPref, PANEL_PERCENT_RANGE,
     Split, ViewKind,
@@ -29,7 +27,8 @@ use crate::ledger::{InputRow, Inputs, ItemRow, Ledger};
 use crate::model::{AgentStatus, Index, Snapshot, TaskStatus};
 use crate::surface::{InboxState, ItemsState, Surface};
 use crate::theme::Theme;
-use crate::writer::{RequestId, WriteOutcome, WriteRequest};
+use crate::writer::{WriteOutcome, WriteRequest};
+use crate::writes::{Saving, Writes};
 
 /// How long a task stays highlighted after its status changes.
 pub(crate) const FLASH: Duration = Duration::from_millis(1500);
@@ -289,21 +288,8 @@ pub(crate) struct App {
     ledger_paths: HashMap<Surface, String>,
     /// The menu, form or filter prompt on top; while set it takes every key.
     pub(crate) overlay: Option<Overlay>,
-    /// One entry per submitted control edit or created input record, newest last.
-    pub(crate) undo: Vec<UndoEntry>,
-    /// Requests made and not yet taken by the runtime, in submission order.
-    writes: Vec<WriteRequest>,
-    in_flight: HashMap<RequestId, InFlight>,
-    next_request: RequestId,
-}
-
-/// A submitted request awaiting its outcome: the rows it marked saving, and whether it is
-/// an undo, which pushes no undo entry of its own.
-#[derive(Debug, Clone)]
-struct InFlight {
-    surface: Surface,
-    ids: Vec<String>,
-    undo: bool,
+    /// Queued and in-flight writes and the undo stack.
+    pub(crate) writes: Writes,
 }
 
 impl App {
@@ -370,10 +356,7 @@ impl App {
             ledger_flow: None,
             ledger_paths: HashMap::new(),
             overlay: None,
-            undo: Vec::new(),
-            writes: Vec::new(),
-            in_flight: HashMap::new(),
-            next_request: 0,
+            writes: Writes::default(),
         };
         app.refresh_stale();
         app.reselect();
@@ -815,10 +798,7 @@ impl App {
     /// Hands a ledger read to the item surface that lists its kind. Off screen,
     /// its arrivals count toward the surface's badge.
     pub(crate) fn apply_ledger(&mut self, ledger: Ledger, now: Instant) {
-        let Some(surface) = Surface::ALL
-            .into_iter()
-            .find(|surface| surface.ledger_kind() == Some(ledger.kind))
-        else {
+        let Some(surface) = Surface::of_kind(ledger.kind) else {
             return;
         };
         let viewing = self.surface == surface;
@@ -851,7 +831,7 @@ impl App {
     pub(crate) fn inbox_unanswered(&self) -> Option<usize> {
         self.inbox
             .revision
-            .is_some()
+            .is_read()
             .then(|| self.inbox.unanswered())
     }
 
@@ -989,51 +969,17 @@ impl App {
 
     /// The write requests made since the last call, for the runtime to hand to the writer.
     pub(crate) fn take_writes(&mut self) -> Vec<WriteRequest> {
-        std::mem::take(&mut self.writes)
+        self.writes.take()
     }
 
-    /// Takes a writer outcome. An error clears every row the request marked saving and a
-    /// stale skip clears that row, each with a footer notice; applied rows stay saving until
-    /// a ledger read shows them changed.
+    /// Takes a writer outcome; see [`Writes::apply_written`]. Its notice goes to the footer.
     pub(crate) fn apply_written(&mut self, outcome: WriteOutcome) {
-        let Some(flight) = self.in_flight.remove(&outcome.request) else {
-            return;
+        let saving = Saving {
+            items: &mut self.items,
+            inbox: &mut self.inbox,
         };
-        let stale: Vec<&str> = outcome
-            .skipped_stale
-            .iter()
-            .map(|s| s.id.as_str())
-            .collect();
-        if let Some(saving) = self.saving_mut(flight.surface) {
-            if outcome.error.is_some() {
-                flight.ids.iter().for_each(|id| {
-                    saving.remove(id);
-                });
-            } else {
-                stale.iter().for_each(|id| {
-                    saving.remove(*id);
-                });
-            }
-        }
-        if !flight.undo
-            && let Some(at) = self
-                .undo
-                .iter()
-                .position(|entry| entry.outstanding.contains(&outcome.request))
-        {
-            let entry = &mut self.undo[at];
-            entry.outstanding.remove(&outcome.request);
-            entry.applied.extend(outcome.applied.iter().cloned());
-            if entry.outstanding.is_empty() && entry.applied.is_empty() {
-                self.undo.remove(at);
-            }
-        }
-        let what = if flight.undo { "undo" } else { "write" };
-        if let Some(error) = &outcome.error {
-            self.notify(format!("{what} failed: {error}"));
-        } else if !stale.is_empty() {
-            let ids = stale.join(", ");
-            self.notify(format!("{what} skipped {ids}: changed since shown"));
+        if let Some(notice) = self.writes.apply_written(saving, outcome) {
+            self.notify(notice);
         }
     }
 
@@ -1101,9 +1047,14 @@ impl App {
         values: &[FieldValue],
     ) -> Option<Overlay> {
         match purpose {
-            Purpose::Input(input) => match input.submit(values, &mut self.next_request) {
+            Purpose::Input(input) => match input.submit(values, &mut self.writes.next_request) {
                 Ok(Some(request)) => {
-                    self.dispatch_input(&input, request);
+                    let saving = Saving {
+                        items: &mut self.items,
+                        inbox: &mut self.inbox,
+                    };
+                    self.writes
+                        .dispatch_input(saving, self.surface, &input, request);
                     None
                 }
                 Ok(None) => None,
@@ -1131,13 +1082,14 @@ impl App {
                     &selection,
                     transition,
                     &fields,
-                    &mut self.next_request,
+                    &mut self.writes.next_request,
                 );
                 self.dispatch(&selection, plan);
                 None
             }
             Purpose::Classify(selection) => {
-                let plan = actions::classify_plan(&selection, values, &mut self.next_request);
+                let plan =
+                    actions::classify_plan(&selection, values, &mut self.writes.next_request);
                 if plan.requests.is_empty() {
                     self.notify("nothing to change".to_owned());
                 } else {
@@ -1148,97 +1100,27 @@ impl App {
         }
     }
 
-    /// Queues `plan`'s requests, marks their rows saving and pushes its undo entry.
     fn dispatch(&mut self, selection: &Selection, plan: Plan) {
-        let mut outstanding = BTreeSet::new();
-        for (request, ids) in plan.requests {
-            outstanding.insert(request.request());
-            self.track(selection.surface, request, ids, false);
-        }
-        self.undo.push(UndoEntry {
-            surface: selection.surface,
-            kind: UndoKind::Rows {
-                ledger: selection.ledger.clone(),
-                rows: plan.undo,
-            },
-            outstanding,
-            applied: Default::default(),
-        });
-    }
-
-    /// Queues an input store write. A record it creates is undone by withdrawing it; a
-    /// withdrawal has no undo. The Inbox rows it changes are marked saving.
-    fn dispatch_input(&mut self, input: &InputForm, request: WriteRequest) {
-        let (surface, ids) = match input {
-            InputForm::Answer(row) | InputForm::Withdraw(row) => {
-                (Surface::Inbox, vec![row.id.clone()])
-            }
-            InputForm::Capture | InputForm::Request(_) => (self.surface, Vec::new()),
+        let saving = Saving {
+            items: &mut self.items,
+            inbox: &mut self.inbox,
         };
-        if !matches!(input, InputForm::Withdraw(_)) {
-            self.undo.push(UndoEntry {
-                surface: Surface::Inbox,
-                kind: UndoKind::Input,
-                outstanding: [request.request()].into(),
-                applied: Default::default(),
-            });
-        }
-        self.track(surface, request, ids, false);
+        self.writes.dispatch(saving, selection, plan);
     }
 
-    /// The saving set of an item surface or the Inbox.
-    fn saving_mut(&mut self, surface: Surface) -> Option<&mut BTreeSet<String>> {
-        if surface == Surface::Inbox {
-            return Some(&mut self.inbox.saving);
-        }
-        self.items.get_mut(&surface).map(|state| &mut state.saving)
-    }
-
-    fn track(&mut self, surface: Surface, request: WriteRequest, ids: Vec<String>, undo: bool) {
-        if let Some(saving) = self.saving_mut(surface) {
-            saving.extend(ids.iter().cloned());
-        }
-        self.in_flight
-            .insert(request.request(), InFlight { surface, ids, undo });
-        self.writes.push(request);
-    }
-
-    /// Pops the newest undo entry into one restore per row its write applied, or one
-    /// withdrawal of the records it created. An entry still awaiting an outcome stays, since
-    /// what to put back is not yet known.
+    /// Undoes the newest write; see [`Writes::undo_last`].
     fn undo_last(&mut self) {
-        let Some(top) = self.undo.last() else {
-            self.notify("nothing to undo".to_owned());
-            return;
+        let paths = &self.ledger_paths;
+        let shown = |surface: Surface| {
+            let kind = surface.ledger_kind()?;
+            actions::ledger_ref(kind, paths.get(&surface)?)
         };
-        if !top.outstanding.is_empty() {
-            self.notify("the last write is still saving".to_owned());
-            return;
-        }
-        let Some(entry) = self.undo.pop() else {
-            return;
+        let saving = Saving {
+            items: &mut self.items,
+            inbox: &mut self.inbox,
         };
-        let ids: Vec<String> = match &entry.kind {
-            UndoKind::Rows { ledger, rows } => {
-                let rows: Vec<_> = rows
-                    .iter()
-                    .filter(|row| entry.applied.contains(&row.id))
-                    .collect();
-                for row in &rows {
-                    let request = row.restore(self.next_request, ledger);
-                    self.next_request += 1;
-                    self.track(entry.surface, request, vec![row.id.clone()], true);
-                }
-                rows.iter().map(|row| row.id.clone()).collect()
-            }
-            UndoKind::Input => {
-                let ids: Vec<String> = entry.applied.iter().cloned().collect();
-                let request = actions::withdraw(ids.clone(), &mut self.next_request);
-                self.track(entry.surface, request, ids.clone(), true);
-                ids
-            }
-        };
-        self.notify(format!("undoing {}", ids.join(", ")));
+        let notice = self.writes.undo_last(saving, shown);
+        self.notify(notice);
     }
 
     /// Sets the current surface's filter, moving a cursor it hides to the first shown row.
@@ -2438,7 +2320,7 @@ mod tests {
                 .as_object()
                 .unwrap()
         );
-        assert!(app.undo.is_empty());
+        assert!(app.writes.undo.is_empty());
         app.apply(Action::Undo);
         assert_eq!(app.live_notice(Instant::now()), Some("nothing to undo"));
     }
@@ -2492,12 +2374,47 @@ mod tests {
         });
         assert!(saving(&app).is_empty());
         assert!(
-            app.undo.is_empty(),
+            app.writes.undo.is_empty(),
             "a write that changed nothing leaves no undo"
         );
         assert_eq!(
             app.live_notice(Instant::now()),
             Some("write failed: root mismatch")
+        );
+    }
+
+    #[test]
+    fn undo_after_the_surface_moved_to_another_ledger_marks_nothing_there() {
+        let mut app = writable_review_app();
+        defer_r1_r2(&mut app);
+        let request = app.take_writes()[0].request();
+        app.apply_written(WriteOutcome {
+            request,
+            applied: vec!["R1".to_string(), "R2".to_string()],
+            ..WriteOutcome::default()
+        });
+        let rows = [("R1", "open", "warning"), ("R2", "open", "critical")];
+        let other = ".claude/flows/other/review-ledger.toml";
+        app.apply_ledger(ledger(Kind::Review, other, &rows), Instant::now());
+
+        app.apply(Action::Undo);
+        let restores = app.take_writes();
+        assert_eq!(restores.len(), 2, "the restores still go out");
+        assert!(
+            restores.iter().all(|write| matches!(
+                write,
+                WriteRequest::Restore { ledger: tomlctl::LedgerRef::Flow { slug, .. }, .. }
+                    if slug == "demo"
+            )),
+            "{restores:?}"
+        );
+        assert!(
+            saving(&app).is_empty(),
+            "the other ledger's rows are untouched"
+        );
+        assert_eq!(
+            app.live_notice(Instant::now()),
+            Some("undoing R1, R2 in another ledger")
         );
     }
 
@@ -2736,7 +2653,7 @@ mod tests {
         };
         assert_eq!(form.error.as_deref(), Some("summary is required"));
         assert!(app.take_writes().is_empty());
-        assert!(app.undo.is_empty());
+        assert!(app.writes.undo.is_empty());
     }
 
     #[test]
@@ -2760,7 +2677,7 @@ mod tests {
             matches!(undo.as_slice(), [WriteRequest::InputWithdraw { ids, .. }] if ids == &vec!["I9".to_string()]),
             "{undo:?}"
         );
-        assert!(app.undo.is_empty());
+        assert!(app.writes.undo.is_empty());
     }
 
     #[test]
@@ -2786,7 +2703,7 @@ mod tests {
             matches!(writes.as_slice(), [WriteRequest::InputWithdraw { ids, .. }] if ids == &vec!["I2".to_string()]),
             "{writes:?}"
         );
-        assert!(app.undo.is_empty(), "a withdrawal has no undo");
+        assert!(app.writes.undo.is_empty(), "a withdrawal has no undo");
 
         let mut app = writable_review_app();
         app.apply(Action::Withdraw);
