@@ -189,6 +189,8 @@ pub(crate) const PANEL_PERCENT_RANGE: std::ops::RangeInclusive<u16> = 20..=70;
 /// Bounds of a horizontal layers column, in cells; the low end is the narrowest that
 /// still shows a status, an id and a few characters of title.
 pub(crate) const COLUMN_RANGE: std::ops::RangeInclusive<u16> = 18..=120;
+/// Bounds of the polling interval, in milliseconds.
+pub(crate) const POLL_MS_RANGE: std::ops::RangeInclusive<u64> = 50..=10_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ViewKind {
@@ -319,7 +321,17 @@ impl Config {
                     }
                     cfg.pane_ratio = r;
                 }
-                "poll_ms" => cfg.poll_ms = positive_int(key, value)?,
+                "poll_ms" => {
+                    let ms = positive_int(key, value)?;
+                    if !POLL_MS_RANGE.contains(&ms) {
+                        return Err(format!(
+                            "`poll_ms` must be between {} and {}",
+                            POLL_MS_RANGE.start(),
+                            POLL_MS_RANGE.end()
+                        ));
+                    }
+                    cfg.poll_ms = ms;
+                }
                 "default_view" => {
                     cfg.default_view =
                         ViewKind::parse(str_value(key, value)?).ok_or_else(|| {
@@ -535,6 +547,30 @@ mod tests {
         ] {
             assert!(Config::parse(bad).is_err(), "{bad:?} should be rejected");
         }
+    }
+
+    #[test]
+    fn poll_ms_out_of_range_is_rejected() {
+        for bad in ["poll_ms = 49", "poll_ms = 10001"] {
+            let err = Config::parse(bad).expect_err(bad);
+            assert_eq!(err, "`poll_ms` must be between 50 and 10000", "{bad:?}");
+        }
+        assert_eq!(Config::parse("poll_ms = 50").expect("low edge").poll_ms, 50);
+        assert_eq!(
+            Config::parse("poll_ms = 10000").expect("high edge").poll_ms,
+            10_000
+        );
+        let (cfg, warning) = {
+            let dir = std::env::temp_dir().join(format!("glimpse-poll-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).expect("temp dir");
+            let path = dir.join("config.toml");
+            std::fs::write(&path, "pane_ratio = 0.5\npoll_ms = 20000\n").expect("write");
+            let out = Config::load_from(&path);
+            let _ = std::fs::remove_dir_all(&dir);
+            out
+        };
+        assert_eq!(cfg, Config::default(), "the whole file falls back");
+        assert!(warning.expect("warns").contains("poll_ms"));
     }
 
     #[test]
