@@ -1,0 +1,92 @@
+schema_version = 1
+last_updated = 2026-09-30
+
+[[items]]
+id = "R1"
+file = "src/app.rs"
+line = 120
+symbol = "App::select"
+severity = "critical"
+effort = "small"
+category = "correctness"
+summary = "select keeps a stale trail after a snapshot drops the selected task"
+first_flagged = 2026-09-18
+rounds = 1
+status = "open"
+dedup_id = "1a2b3c4d5e6f7081"
+
+[[items]]
+id = "R2"
+file = "src/cache.rs"
+line = 42
+symbol = "Cache::get"
+severity = "warning"
+effort = "medium"
+category = "performance"
+summary = "get clones the whole entry on every hit"
+description = "The hit path clones a Vec of rows; a borrow would do."
+first_flagged = 2026-09-20
+rounds = 1
+status = "deferred"
+defer_reason = "waits on the cache rewrite"
+defer_trigger = "the LRU lands"
+dedup_id = "2b3c4d5e6f708192"
+
+[[items]]
+id = "R3"
+file = "src/io.rs"
+line = 7
+symbol = "read_all"
+severity = "warning"
+effort = "small"
+category = "error-handling"
+summary = "read_all swallows a permission error as an empty file"
+first_flagged = 2026-09-20
+rounds = 2
+status = "fixed"
+resolved = 2026-09-25
+resolution = "fixed in abc1234"
+instances = ["src/io.rs:read_all", "src/net.rs:fetch"]
+evidence = ["src/io.rs:7 — the Err arm returns Ok(Vec::new())"]
+dedup_id = "3c4d5e6f708192a3"
+
+[[items]]
+id = "R4"
+file = "src/keys.rs"
+line = 0
+severity = "suggestion"
+effort = "trivial"
+category = "idiom"
+summary = "map could match on a tuple instead of nesting"
+first_flagged = 2026-09-21
+rounds = 1
+status = "wontfix"
+wontfix_rationale = "the nesting mirrors the key table"
+dedup_id = "4d5e6f708192a3b4"
+
+[[items]]
+id = "R5"
+file = "src/lib.rs"
+line = 0
+severity = "suggestion"
+effort = "trivial"
+category = "security"
+summary = "no unsafe outside the FFI shim"
+first_flagged = 2026-09-21
+rounds = 1
+status = "verified-clean"
+verified_note = "audited every unsafe block"
+dedup_id = "5e6f708192a3b4c5"
+
+[[items]]
+id = "R6"
+file = "src/view/mod.rs"
+line = 33
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "render recomputes the header width per row"
+first_flagged = 2026-09-22
+rounds = 1
+status = "triaged"
+dedup_id = "6f708192a3b4c5d6"

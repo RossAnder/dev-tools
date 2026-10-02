@@ -57,6 +57,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "backlog_show",
     "backlog_relate",
     "backlog_triage",
+    "backlog_triage_expect", // `triage --expect-status`
     "backlog_reconcile",
     // Per-flow task DAG store: the `tasks` subcommand cluster.
     "tasks_import_plan",
@@ -76,6 +77,10 @@ pub(crate) const FEATURES: &[&str] = &[
     // Hook-written agent lifecycle records: the `agents` subcommand cluster.
     "agents_record",
     "agents_list",
+    // Repo-scoped input store: the `inputs` subcommand cluster.
+    "inputs",
+    // Per-op `expect` precondition and `--on-stale` on `items apply`.
+    "items_apply_expect",
     // Regex sweep over tracked files and the ledger verbs built on it.
     "sweep",
     "items_sweep",
@@ -105,6 +110,7 @@ pub(crate) const SUBCOMMANDS: &[&str] = &[
     "backlog",
     "tasks",
     "agents",
+    "inputs",
     "sweep",
 ];
 
@@ -673,6 +679,13 @@ pub(crate) enum Cmd {
     Agents {
         #[command(subcommand)]
         op: AgentsOp,
+    },
+
+    /// The user-input store `.claude/inputs.toml` — captures, change requests
+    /// and notes filed against the ledgers, agent questions and their answers.
+    Inputs {
+        #[command(subcommand)]
+        op: InputsOp,
     },
 
     /// Regex hits over the repo's tracked files, as sorted `file:line`
@@ -1255,6 +1268,10 @@ pub(crate) enum BacklogOp {
         resolution: Option<String>,
         #[arg(long, value_name = "TEXT", help = "Companion to --reopen")]
         rationale: Option<String>,
+        /// Move only the ids still at this status; the rest are reported
+        /// under `skipped_stale` and left untouched.
+        #[arg(long = "expect-status", value_name = "STATUS")]
+        expect_status: Option<String>,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
@@ -1424,6 +1441,16 @@ pub(crate) enum OnDuplicate {
     Skip,
     /// Error.
     Fail,
+}
+
+/// What `items apply` does with an op whose `expect` precondition no longer
+/// matches its row.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum OnStale {
+    /// Fail the whole batch, naming every stale op; nothing is written.
+    Abort,
+    /// Drop the stale ops, apply the rest, and report the dropped ones.
+    Skip,
 }
 
 /// Typed relation written by `backlog relate`.
@@ -1773,10 +1800,17 @@ pub(crate) enum ItemsOp {
         /// legitimate batch deletions from trusted callers.
         #[arg(long = "no-remove")]
         no_remove: bool,
+        #[arg(
+            long = "on-stale",
+            value_enum,
+            default_value_t = OnStale::Abort,
+            help = "What to do with an update/remove op whose `expect` no longer matches its row: abort the batch, or skip the op and list it under skipped_stale"
+        )]
+        on_stale: OnStale,
         /// Preview the batch without writing. Runs every validation
         /// gate (`--no-remove`, op-shape, missing-id, dedup_id auto-populate)
         /// so an agent can rehearse the batch shape before committing.
-        /// Emits `{"ok":true,"dry_run":true,"would_change":{...}}`.
+        /// Emits `{"ok":true,"dry_run":true,"would_change":{...},"skipped_stale":[...]}`.
         #[arg(
             long = "dry-run",
             help = "Preview the batch without writing. Emits a would_change summary; no file or sidecar touch."
@@ -2374,6 +2408,100 @@ pub(crate) enum AgentsOp {
         slug: String,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
+    },
+}
+
+/// `inputs` subcommand cluster. Every op resolves `.claude/inputs.toml` under
+/// the repo root and emits JSON; a write never touches any other file.
+#[derive(Subcommand)]
+pub(crate) enum InputsOp {
+    /// Print `{path, revision, inputs}`; every given filter must hold.
+    List {
+        #[arg(long, help = "Keep only `new` and `acknowledged` records")]
+        pending: bool,
+        #[arg(
+            long = "kind",
+            value_name = "KIND",
+            help = "capture|request|note|question|answer (repeatable; any may match)"
+        )]
+        kind: Vec<String>,
+        #[arg(long, help = "review|optimise|plan-review|backlog")]
+        ledger: Option<String>,
+        #[arg(long, value_name = "SLUG")]
+        flow: Option<String>,
+        #[arg(long, value_name = "SLUG")]
+        scope: Option<String>,
+        #[arg(long, value_name = "ID", help = "Keep records targeting this item id")]
+        item: Option<String>,
+        #[command(flatten)]
+        integrity: ReadIntegrityArgs,
+    },
+
+    /// Append one record as `new` and print its assigned `{id}`.
+    Add {
+        #[arg(
+            long,
+            value_name = "JSON",
+            help = "The record as a JSON object; pass `-` to read from stdin or `@<path>` to read a file"
+        )]
+        json: String,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Move `new` records to `acknowledged`; records past `new` are skipped.
+    Ack {
+        #[arg(value_name = "ID", required = true)]
+        ids: Vec<String>,
+        #[arg(
+            long,
+            value_name = "COMMAND",
+            help = "Command acknowledging the records"
+        )]
+        by: String,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Move `new` or `acknowledged` records to `handled`.
+    Handle {
+        #[arg(value_name = "ID", required = true)]
+        ids: Vec<String>,
+        #[arg(
+            long,
+            value_name = "COMMAND",
+            help = "Command that acted on the records"
+        )]
+        by: String,
+        #[arg(long, help = "What was done, or why it was declined")]
+        note: String,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Withdraw `new` records, all or none; withdrawing an answer reopens
+    /// the question it closed.
+    Withdraw {
+        #[arg(value_name = "ID", required = true)]
+        ids: Vec<String>,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
+    },
+
+    /// Answer a `new` question and mark it handled.
+    Answer {
+        #[arg(value_name = "QUESTION_ID")]
+        question: String,
+        #[arg(
+            long = "pick",
+            value_name = "OPTION",
+            help = "Chosen option (repeatable)"
+        )]
+        pick: Vec<String>,
+        #[arg(long, help = "Free-text answer")]
+        text: Option<String>,
+        #[command(flatten)]
+        integrity: WriteIntegrityArgs,
     },
 }
 

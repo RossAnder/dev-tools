@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use crate::config::{OrientationPref, ViewKind};
+use crate::surface::Surface;
 
 pub(crate) const HELP: &str = "\
 glimpse — live terminal view of a flow's task graph, checkpoints and running agents
@@ -23,11 +24,16 @@ VIEW OPTIONS
                                 the config's)
         --orientation <O>       auto, vertical or horizontal (default: the last run's
                                 flip, else the config's)
+        --surface <S>           tasks, review, optimise, plan-review, backlog or inbox:
+                                the surface to open on (default: the last run's)
         --once                  render one frame as plain text to stdout and exit
         --size <WxH>            --once only: frame size in cells (default: 120x40)
         --snapshot <FILE>       --once only: render a `tomlctl tasks snapshot` JSON
                                 file instead of reading the flow
         --select <ID>           --once only: select task ID instead of the frontier
+        --ledger <FILE>         --once only: show this review, optimise, plan-review
+                                or backlog ledger on its surface; without --snapshot
+                                or --slug the task graph is left empty
 
 HOOK OPTIONS
         --harness <H>           claude-code or codex: which harness sent the payload
@@ -58,6 +64,7 @@ pub(crate) struct Once {
     pub(crate) height: u16,
     pub(crate) snapshot: Option<PathBuf>,
     pub(crate) select: Option<u32>,
+    pub(crate) ledger: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,7 +72,15 @@ pub(crate) struct ViewArgs {
     pub(crate) slug: Option<String>,
     pub(crate) view: Option<ViewKind>,
     pub(crate) orientation: Option<OrientationPref>,
+    pub(crate) surface: Option<Surface>,
     pub(crate) once: Option<Once>,
+}
+
+/// A surface by its lower-cased label, as `--surface` spells it.
+fn parse_surface(s: &str) -> Option<Surface> {
+    Surface::ALL
+        .into_iter()
+        .find(|surface| surface.label().to_ascii_lowercase() == s)
 }
 
 /// The harness a hook payload came from; it selects the in-process recorder's payload
@@ -139,6 +154,8 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
     let mut size = None;
     let mut snapshot = None;
     let mut select = None;
+    let mut surface = None;
+    let mut ledger = None;
     let mut focus = false;
     let mut dry_run = false;
     let mut harness = Harness::default();
@@ -203,6 +220,20 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
                 );
                 true
             }
+            (None, "--surface") => {
+                let v = value("--surface")?;
+                surface = Some(parse_surface(&v).ok_or_else(|| {
+                    format!(
+                        "unknown surface `{v}`: expected tasks, review, optimise, plan-review, \
+                         backlog or inbox"
+                    )
+                })?);
+                true
+            }
+            (None, "--ledger") => {
+                ledger = Some(PathBuf::from(value("--ledger")?));
+                true
+            }
             (Some("ensure-pane"), "--focus") => {
                 focus = true;
                 true
@@ -236,8 +267,10 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
         Some("ensure-pane") => Command::EnsurePane { slug, focus },
         Some(_) => Command::Setup { dry_run },
         None => {
-            if !once && (size.is_some() || snapshot.is_some() || select.is_some()) {
-                return Err("--size, --snapshot and --select need --once".to_string());
+            if !once
+                && (size.is_some() || snapshot.is_some() || select.is_some() || ledger.is_some())
+            {
+                return Err("--size, --snapshot, --select and --ledger need --once".to_string());
             }
             let once = once.then(|| {
                 let (width, height) = size.unwrap_or(DEFAULT_SIZE);
@@ -246,12 +279,14 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
                     height,
                     snapshot,
                     select,
+                    ledger,
                 }
             });
             Command::View(ViewArgs {
                 slug,
                 view,
                 orientation,
+                surface,
                 once,
             })
         }
@@ -304,9 +339,29 @@ mod tests {
                 slug: None,
                 view: None,
                 orientation: None,
+                surface: None,
                 once: None,
             }
         );
+    }
+
+    #[test]
+    fn surface_and_ledger_parse() {
+        assert_eq!(
+            view(&["--surface", "plan-review"]).surface,
+            Some(Surface::PlanReview)
+        );
+        assert_eq!(view(&["--surface=inbox"]).surface, Some(Surface::Inbox));
+        let v = view(&["--once", "--ledger", "r.toml", "--surface", "review"]);
+        assert_eq!(v.surface, Some(Surface::Review));
+        assert_eq!(
+            v.once.expect("--once parsed").ledger,
+            Some(PathBuf::from("r.toml"))
+        );
+        assert!(fails(&["--surface", "Review"]).contains("unknown surface"));
+        assert!(fails(&["--surface", "ledger"]).contains("unknown surface"));
+        assert!(fails(&["--ledger", "r.toml"]).contains("--once"));
+        assert!(fails(&["ensure-pane", "--surface", "review"]).contains("for `ensure-pane`"));
     }
 
     #[test]
@@ -337,6 +392,7 @@ mod tests {
                 height: 30,
                 snapshot: Some(PathBuf::from("s.json")),
                 select: None,
+                ledger: None,
             })
         );
         let v = view(&["--once", "--select", "7"]);

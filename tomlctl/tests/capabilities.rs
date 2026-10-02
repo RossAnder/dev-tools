@@ -59,6 +59,7 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         &["tasks", "render", "--help"],
         &["tasks", "snapshot", "--help"],
         &["agents", "list", "--help"],
+        &["inputs", "list", "--help"],
     ];
     for path in read_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();
@@ -113,6 +114,11 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["backlog", "compact", "--help"],
         &["backlog", "reconcile", "--help"],
         &["agents", "record", "--help"],
+        &["inputs", "add", "--help"],
+        &["inputs", "ack", "--help"],
+        &["inputs", "handle", "--help"],
+        &["inputs", "withdraw", "--help"],
+        &["inputs", "answer", "--help"],
     ];
     for path in write_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();
@@ -1611,6 +1617,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "backlog_show",
         "backlog_relate",
         "backlog_triage",
+        "backlog_triage_expect", // `triage --expect-status`
         "backlog_reconcile",
         // Per-flow task DAG store: the `tasks` subcommand cluster.
         "tasks_import_plan",
@@ -1630,6 +1637,10 @@ fn capabilities_features_contains_every_plan_feature() {
         // Hook-written agent lifecycle store: the `agents` subcommand cluster.
         "agents_record",
         "agents_list",
+        // Repo-scoped input store: the `inputs` subcommand cluster.
+        "inputs",
+        // Per-op `expect` precondition and `--on-stale` on `items apply`.
+        "items_apply_expect",
         // Regex sweep over tracked files and the ledger verbs built on it.
         "sweep",
         "items_sweep",
@@ -1669,8 +1680,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.12.0",
-        "expected version `0.12.0` (the minor bump for `agents` and `tasks snapshot`); got `{version}`"
+        version, "0.13.0",
+        "expected version `0.13.0` (the minor bump for `items apply` expect/`--on-stale`, `backlog triage --expect-status`, the `inputs` group, and the ledger and inputs library facade); got `{version}`"
     );
 }
 

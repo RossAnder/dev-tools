@@ -10,14 +10,17 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant, SystemTime};
 
 use ratatui::layout::Rect;
+use tomlctl::LedgerKind;
 
 use crate::config::{
     COLUMN_RANGE, Config, Density, DensityPref, Orientation, OrientationPref, PANEL_PERCENT_RANGE,
     Split, ViewKind,
 };
 use crate::diff::{Changes, diff};
-use crate::flows::FlowEntry;
+use crate::flows::{FlowEntry, ScopeEntry, Scopes};
+use crate::ledger::Ledger;
 use crate::model::{AgentStatus, Index, Snapshot, TaskStatus};
+use crate::surface::{ItemsState, Surface};
 use crate::theme::Theme;
 
 /// How long a task stays highlighted after its status changes.
@@ -96,6 +99,8 @@ pub(crate) struct Regions {
     pub(crate) modal: Option<Rect>,
     /// One rect per clickable task. The layers and traversal views fill this.
     pub(crate) tasks: Vec<(Rect, u32)>,
+    /// One rect per item row the mouse can hit, keyed by item id.
+    pub(crate) items: Vec<(Rect, String)>,
     /// The body the docked panel shares with the view; a drag measures against it.
     pub(crate) body: Rect,
     /// The strip between the view and a docked panel that a drag resizes from.
@@ -141,9 +146,32 @@ pub(crate) enum Action {
     /// Widens (`true`) or narrows horizontal layer columns by [`COLUMN_STEP`].
     ResizeColumns(bool),
     SwitchFlow(String),
-    /// Closes the topmost overlay, or quits when none is open.
+    /// Shows a flow-less ledger on the item surfaces in place of the flow's.
+    SwitchScope(LedgerKind, String),
+    SwitchSurface(Surface),
+    /// Moves the item cursor on the current item surface; `Move` becomes this off Tasks.
+    ItemMove(Dir),
+    /// Puts the item cursor on a row directly, as a click does.
+    SelectItem(String),
+    ToggleMark,
+    MarkVisible,
+    CycleGroup,
+    CycleSort,
+    /// Shows or hides the done and declined rows of the current item surface.
+    ToggleClosed,
+    /// Clears the current item surface's marks, else closes the topmost overlay, or
+    /// quits when none is open.
     Back,
     Quit,
+}
+
+/// One row the selector cursor can rest on, in display order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SelectorEntry<'a> {
+    Flow(&'a FlowEntry),
+    /// A flow holding ledgers but no task store.
+    LedgerOnly(&'a str),
+    Scope(&'a ScopeEntry),
 }
 
 pub(crate) struct App {
@@ -181,6 +209,9 @@ pub(crate) struct App {
     pub(crate) activity_open: bool,
     pub(crate) selector_open: bool,
     pub(crate) flows: Vec<FlowEntry>,
+    /// The ledger-only flows and flow-less ledgers the selector lists after `flows`.
+    pub(crate) scopes: Scopes,
+    /// An index into [`App::selector_entries`].
     pub(crate) selector_cursor: usize,
     /// Task id to the instant its status last changed; live for [`FLASH`].
     pub(crate) flashes: HashMap<u32, Instant>,
@@ -221,6 +252,18 @@ pub(crate) struct App {
     pub(crate) regions: Regions,
     /// A short message the footer shows until [`NOTICE`] has passed.
     pub(crate) notice: Option<(String, Instant)>,
+    pub(crate) surface: Surface,
+    /// One state per item surface, present from the start and empty until its ledger is read.
+    pub(crate) items: HashMap<Surface, ItemsState>,
+    /// The flow-less ledger the item surfaces show in place of the flow's, once picked
+    /// in the selector.
+    pub(crate) scope: Option<(LedgerKind, String)>,
+    /// The ledger-only flow picked in the selector. No snapshot of it ever arrives, so
+    /// `snapshot.slug` still names the flow before it.
+    pub(crate) ledger_flow: Option<String>,
+    /// The ledger file each item surface last read, so a read of another file starts
+    /// the surface over rather than flashing every row as an arrival.
+    ledger_paths: HashMap<Surface, String>,
 }
 
 impl App {
@@ -251,6 +294,7 @@ impl App {
             activity_open: false,
             selector_open: false,
             flows: Vec::new(),
+            scopes: Scopes::default(),
             selector_cursor: 0,
             flashes: HashMap::new(),
             pending_changes: 0,
@@ -275,6 +319,15 @@ impl App {
             layers_scroll: ListScroll::default(),
             regions: Regions::default(),
             notice: None,
+            surface: Surface::Tasks,
+            items: Surface::ALL
+                .into_iter()
+                .filter(|surface| surface.ledger_kind().is_some())
+                .map(|surface| (surface, ItemsState::new(surface)))
+                .collect(),
+            scope: None,
+            ledger_flow: None,
+            ledger_paths: HashMap::new(),
         };
         app.refresh_stale();
         app.reselect();
@@ -290,6 +343,9 @@ impl App {
                 Dir::Down => self.apply(Action::SelectorNext),
                 Dir::Left | Dir::Right => None,
             },
+            Action::Move(dir) if self.surface != Surface::Tasks => {
+                self.apply(Action::ItemMove(dir))
+            }
             Action::Move(dir) => {
                 self.move_selection(dir);
                 None
@@ -371,27 +427,43 @@ impl App {
                 self.selector_open = !self.selector_open;
                 if self.selector_open {
                     self.selector_cursor = self
-                        .flows
+                        .selector_entries()
                         .iter()
-                        .position(|flow| flow.slug == self.snapshot.slug)
+                        .position(|entry| self.is_current(*entry))
                         .unwrap_or(0);
                 }
                 None
             }
             Action::SelectorNext => {
-                let last = self.flows.len().saturating_sub(1);
+                let last = self.selector_entries().len().saturating_sub(1);
                 self.selector_cursor = (self.selector_cursor + 1).min(last);
                 None
             }
             Action::SelectorPrev => {
-                let last = self.flows.len().saturating_sub(1);
+                let last = self.selector_entries().len().saturating_sub(1);
                 self.selector_cursor = self.selector_cursor.saturating_sub(1).min(last);
                 None
             }
-            Action::Details if self.selector_open => match self.flows.get(self.selector_cursor) {
-                Some(flow) => self.apply(Action::SwitchFlow(flow.slug.clone())),
-                None => None,
-            },
+            Action::Details if self.selector_open => {
+                let picked = match self.selector_entries().get(self.selector_cursor) {
+                    Some(SelectorEntry::Flow(flow)) => Action::SwitchFlow(flow.slug.clone()),
+                    Some(SelectorEntry::LedgerOnly(slug)) => Action::SwitchFlow(slug.to_string()),
+                    Some(SelectorEntry::Scope(entry)) => {
+                        Action::SwitchScope(entry.kind, entry.scope.clone())
+                    }
+                    None => return None,
+                };
+                self.apply(picked)
+            }
+            Action::Details
+                if self.surface != Surface::Tasks
+                    && self
+                        .current_items()
+                        .and_then(ItemsState::cursor_row)
+                        .is_none() =>
+            {
+                None
+            }
             Action::Details => {
                 let compact = self.resolved_density == Density::Compact;
                 if !self.details_open {
@@ -458,16 +530,99 @@ impl App {
             }
             Action::SwitchFlow(slug) => {
                 self.selector_open = false;
-                if slug == self.snapshot.slug {
+                // Leaving a flow-less ledger for the current flow still needs the runtime,
+                // which re-points the item feeds.
+                let left_scope = self.scope.take().is_some();
+                let left_ledger_flow = self.ledger_flow.take().is_some();
+                if slug == self.snapshot.slug && !left_scope && !left_ledger_flow {
                     return None;
+                }
+                if !self.flows.iter().any(|flow| flow.slug == slug)
+                    && self.scopes.ledger_only.contains(&slug)
+                {
+                    self.ledger_flow = Some(slug.clone());
                 }
                 // A hand-picked flow would be switched away from at the next
                 // flow change otherwise.
                 self.auto_flow = false;
                 Some(Action::SwitchFlow(slug))
             }
+            Action::SwitchScope(kind, scope) => {
+                self.selector_open = false;
+                if self.scope.as_ref() == Some(&(kind, scope.clone())) {
+                    return None;
+                }
+                self.auto_flow = false;
+                self.scope = Some((kind, scope.clone()));
+                self.apply(Action::SwitchSurface(surface_of(kind)));
+                Some(Action::SwitchScope(kind, scope))
+            }
+            Action::SwitchSurface(surface) => {
+                self.surface = surface;
+                if let Some(state) = self.items.get_mut(&surface) {
+                    state.viewed();
+                }
+                None
+            }
+            Action::ItemMove(dir) => {
+                let delta = match dir {
+                    Dir::Up => -1,
+                    Dir::Down => 1,
+                    Dir::Left | Dir::Right => return None,
+                };
+                self.edit_items(|state| state.move_cursor(delta));
+                None
+            }
+            Action::SelectItem(id) => {
+                self.edit_items(|state| {
+                    if state.row(&id).is_some() {
+                        state.cursor = Some(id);
+                    }
+                });
+                None
+            }
+            Action::ToggleMark => {
+                self.edit_items(ItemsState::toggle_mark);
+                None
+            }
+            Action::MarkVisible => {
+                self.edit_items(ItemsState::mark_visible);
+                None
+            }
+            Action::CycleGroup => {
+                self.edit_items(ItemsState::cycle_group);
+                if let Some(state) = self.current_items() {
+                    let label = state.group.label();
+                    self.notify(format!("group by {label}"));
+                }
+                None
+            }
+            Action::CycleSort => {
+                self.edit_items(ItemsState::cycle_sort);
+                if let Some(state) = self.current_items() {
+                    let label = state.sort.label();
+                    self.notify(format!("sort by {label}"));
+                }
+                None
+            }
+            Action::ToggleClosed => {
+                // A cursor on a row the toggle hid moves to the first visible one.
+                self.edit_items(|state| {
+                    state.show_closed = !state.show_closed;
+                    state.move_cursor(0);
+                });
+                if let Some(state) = self.current_items() {
+                    let shown = if state.show_closed { "shown" } else { "hidden" };
+                    self.notify(format!("closed items {shown}"));
+                }
+                None
+            }
             Action::Back => {
-                if self.legend_open {
+                if let Some(state) = self.items.get_mut(&self.surface)
+                    && !state.marks.is_empty()
+                {
+                    state.clear_marks();
+                } else if self.legend_open {
                     self.legend_open = false;
                 } else if self.selector_open {
                     self.selector_open = false;
@@ -491,6 +646,9 @@ impl App {
     /// snapshot of a different flow replaces the old one without flashes.
     pub(crate) fn apply_snapshot(&mut self, snapshot: Snapshot, now: Instant) {
         let old_topology = self.index.topology_hash();
+        if self.ledger_flow.as_ref() == Some(&snapshot.slug) {
+            self.ledger_flow = None;
+        }
         if snapshot.slug == self.snapshot.slug {
             let changes = diff(&self.snapshot, &snapshot);
             for (id, _, _) in &changes.status_changed {
@@ -515,22 +673,107 @@ impl App {
         self.reselect();
     }
 
+    /// Hands a ledger read to the item surface that lists its kind. Off screen,
+    /// its arrivals count toward the surface's badge.
+    pub(crate) fn apply_ledger(&mut self, ledger: Ledger, now: Instant) {
+        let Some(surface) = Surface::ALL
+            .into_iter()
+            .find(|surface| surface.ledger_kind() == Some(ledger.kind))
+        else {
+            return;
+        };
+        let viewing = self.surface == surface;
+        let state = self
+            .items
+            .entry(surface)
+            .or_insert_with(|| ItemsState::new(surface));
+        if self.ledger_paths.get(&surface) != Some(&ledger.path) {
+            *state = ItemsState {
+                filter: std::mem::take(&mut state.filter),
+                group: state.group,
+                sort: state.sort,
+                show_closed: state.show_closed,
+                ..ItemsState::new(surface)
+            };
+            self.ledger_paths.insert(surface, ledger.path);
+        }
+        state.apply_ledger(ledger.rows, ledger.revision, viewing, now);
+    }
+
+    /// Takes a new ledger scope listing. The selector cursor stays in range, and a picked
+    /// scope or ledger-only flow that vanished stays picked until something else is.
+    pub(crate) fn apply_scopes(&mut self, scopes: Scopes) {
+        self.scopes = scopes;
+        let last = self.selector_entries().len().saturating_sub(1);
+        self.selector_cursor = self.selector_cursor.min(last);
+    }
+
+    /// The selector's rows: flows with a task store, ledger-only flows, then flow-less
+    /// ledgers. A ledger-only slug the flow list already holds is listed once, as a flow.
+    pub(crate) fn selector_entries(&self) -> Vec<SelectorEntry<'_>> {
+        let flows = self.flows.iter().map(SelectorEntry::Flow);
+        let ledger_only = self
+            .scopes
+            .ledger_only
+            .iter()
+            .filter(|slug| !self.flows.iter().any(|flow| &flow.slug == *slug))
+            .map(|slug| SelectorEntry::LedgerOnly(slug.as_str()));
+        let scopes = self.scopes.scopes.iter().map(SelectorEntry::Scope);
+        flows.chain(ledger_only).chain(scopes).collect()
+    }
+
+    /// Whether `entry` is what the item surfaces and the task view show now.
+    pub(crate) fn is_current(&self, entry: SelectorEntry<'_>) -> bool {
+        match (entry, &self.scope) {
+            (SelectorEntry::Scope(e), Some((kind, scope))) => e.kind == *kind && e.scope == *scope,
+            (SelectorEntry::Scope(_), None) | (_, Some(_)) => false,
+            (SelectorEntry::LedgerOnly(slug), None) => self.ledger_flow.as_deref() == Some(slug),
+            (SelectorEntry::Flow(flow), None) => {
+                self.ledger_flow.is_none() && flow.slug == self.snapshot.slug
+            }
+        }
+    }
+
+    /// The current surface's item state; `None` on Tasks and Inbox.
+    pub(crate) fn current_items(&self) -> Option<&ItemsState> {
+        self.items.get(&self.surface)
+    }
+
+    /// Edits the current surface's item state; a cursor the edit moved starts the
+    /// details scroll over, as a new task selection does.
+    fn edit_items(&mut self, edit: impl FnOnce(&mut ItemsState)) {
+        let Some(state) = self.items.get_mut(&self.surface) else {
+            return;
+        };
+        let before = state.cursor.clone();
+        edit(state);
+        if state.cursor != before {
+            self.details_scroll = 0;
+        }
+    }
+
     /// Called on each timed wake-up: drops expired flashes and re-reads the
     /// transcript ages that are due, since an agent goes stale without any snapshot.
     pub(crate) fn tick(&mut self, now: Instant) {
         self.expire_flashes(now);
+        for state in self.items.values_mut() {
+            state.expire_flashes(now);
+        }
         if self.live_notice(now).is_none() {
             self.notice = None;
         }
         self.recheck_stale(SystemTime::now(), transcript_mtime);
     }
 
-    /// True while something on screen changes with time alone: a live flash or
-    /// notice, or a running agent whose elapsed counter is still advancing.
+    /// True while something on screen changes with time alone: a live task or item
+    /// flash or notice, or a running agent whose elapsed counter is still advancing.
     pub(crate) fn needs_tick(&self, now: Instant) -> bool {
-        self.flashes
-            .values()
-            .any(|at| now.saturating_duration_since(*at) < FLASH)
+        let live = |at: &Instant| now.saturating_duration_since(*at) < FLASH;
+        self.flashes.values().any(live)
+            || self
+                .items
+                .values()
+                .any(|state| state.flashes.values().any(live))
             || self.live_notice(now).is_some()
             || self.snapshot.agents.iter().any(|agent| {
                 agent.status == AgentStatus::Running && !self.stale_agents.contains(&agent.id)
@@ -728,6 +971,14 @@ fn transcript_mtime(path: &str) -> Option<SystemTime> {
         .ok()
 }
 
+fn surface_of(kind: LedgerKind) -> Surface {
+    match kind {
+        LedgerKind::Review => Surface::Review,
+        LedgerKind::Optimise => Surface::Optimise,
+        LedgerKind::PlanReview => Surface::PlanReview,
+    }
+}
+
 /// `running` agents whose transcript `mtime` is older than `stale_after`.
 /// A transcript with no readable mtime counts as stale; one dated after
 /// `wall_now` (clock skew) counts as fresh. An agent not in `previous` whose
@@ -775,7 +1026,9 @@ pub(crate) fn stale_agents(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ledger::{ItemRow, Kind, StatusClass};
     use crate::model::fixture;
+    use crate::surface::{Group, Sort};
 
     /// Steps through ids by one, as a stand-in for a view's layout.
     struct Step;
@@ -1266,6 +1519,224 @@ mod tests {
         assert!(!app.selector_open);
         assert!(!app.auto_flow, "a hand-picked flow turns auto-flow off");
         assert_eq!(app.apply(Action::SwitchFlow("demo-flow".to_string())), None);
+    }
+
+    fn scopes() -> Scopes {
+        Scopes {
+            ledger_only: vec!["loose".to_string(), "other".to_string()],
+            scopes: vec![ScopeEntry {
+                kind: LedgerKind::Optimise,
+                scope: "core".to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn the_selector_picks_ledger_only_flows_and_flowless_scopes() {
+        let mut app = app();
+        app.flows = vec![flow("other"), flow("demo-flow")];
+        app.apply_scopes(scopes());
+        let entries = app.selector_entries();
+        assert_eq!(entries.len(), 4, "`other` is listed once, as a flow");
+        assert_eq!(entries[2], SelectorEntry::LedgerOnly("loose"));
+
+        app.apply(Action::ToggleSelector);
+        app.apply(Action::Move(Dir::Down));
+        assert_eq!(
+            app.apply(Action::Details),
+            Some(Action::SwitchFlow("loose".to_string())),
+            "a ledger-only flow switches like any flow"
+        );
+        assert_eq!(app.ledger_flow.as_deref(), Some("loose"));
+
+        app.apply(Action::ToggleSelector);
+        assert_eq!(
+            app.selector_cursor, 2,
+            "the cursor starts on the picked flow"
+        );
+        app.apply(Action::Move(Dir::Down));
+        app.apply(Action::Move(Dir::Down));
+        assert_eq!(
+            app.selector_cursor, 3,
+            "the cursor clamps on the last scope"
+        );
+        assert_eq!(
+            app.apply(Action::Details),
+            Some(Action::SwitchScope(
+                LedgerKind::Optimise,
+                "core".to_string()
+            ))
+        );
+        assert!(!app.selector_open);
+        assert_eq!(app.scope, Some((LedgerKind::Optimise, "core".to_string())));
+        assert_eq!(
+            app.surface,
+            Surface::Optimise,
+            "the scope's surface is shown"
+        );
+        assert_eq!(
+            app.apply(Action::SwitchScope(
+                LedgerKind::Optimise,
+                "core".to_string()
+            )),
+            None
+        );
+
+        assert_eq!(
+            app.apply(Action::SwitchFlow("demo-flow".to_string())),
+            Some(Action::SwitchFlow("demo-flow".to_string())),
+            "the current flow is switched back to from a scope"
+        );
+        assert_eq!(app.scope, None);
+        assert_eq!(app.ledger_flow, None);
+
+        app.selector_cursor = 3;
+        app.apply_scopes(Scopes::default());
+        assert_eq!(
+            app.selector_cursor, 1,
+            "a shorter listing clamps the cursor"
+        );
+    }
+
+    fn review(path: &str, revision: &str, rows: &[(&str, &str)]) -> Ledger {
+        Ledger {
+            kind: Kind::Review,
+            path: path.to_string(),
+            revision: Some(revision.to_string()),
+            rows: rows
+                .iter()
+                .map(|(id, status)| ItemRow {
+                    id: id.to_string(),
+                    status: status.to_string(),
+                    class: StatusClass::of(status),
+                    ..ItemRow::default()
+                })
+                .collect(),
+        }
+    }
+
+    fn review_app() -> App {
+        let mut app = app();
+        let rows = [("R1", "open"), ("R2", "open"), ("R3", "fixed")];
+        app.apply_ledger(review("r.toml", "v1", &rows), Instant::now());
+        app
+    }
+
+    fn cursor(app: &App) -> Option<&str> {
+        app.current_items()?.cursor.as_deref()
+    }
+
+    #[test]
+    fn switching_surface_keeps_the_task_selection() {
+        let mut app = review_app();
+        app.nav = Some(Box::new(Step));
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::Move(Dir::Down));
+        assert_eq!(cursor(&app), Some("R2"), "a move goes to the item cursor");
+        assert_eq!(app.selected, Some(4), "the task selection is untouched");
+        assert!(app.follow, "an item move does not pause follow");
+
+        app.apply(Action::SwitchSurface(Surface::Tasks));
+        assert_eq!(app.selected, Some(4));
+        app.apply(Action::Move(Dir::Down));
+        assert_eq!(app.selected, Some(5));
+        app.apply(Action::SwitchSurface(Surface::Review));
+        assert_eq!(
+            cursor(&app),
+            Some("R2"),
+            "each surface keeps its own cursor"
+        );
+    }
+
+    #[test]
+    fn back_clears_marks_before_closing_details() {
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.legend_open = true;
+        app.apply(Action::Details);
+        app.apply(Action::ToggleMark);
+        assert_eq!(app.current_items().map(|s| s.marks.len()), Some(1));
+
+        assert_eq!(app.apply(Action::Back), None);
+        assert!(app.current_items().is_some_and(|s| s.marks.is_empty()));
+        assert!(app.legend_open && app.details_open, "nothing closed yet");
+        app.apply(Action::Back);
+        app.apply(Action::Back);
+        assert!(!app.legend_open && !app.details_open);
+    }
+
+    #[test]
+    fn details_on_an_item_surface_needs_a_cursor_row() {
+        let mut app = app();
+        app.apply(Action::SwitchSurface(Surface::Optimise));
+        app.apply(Action::Details);
+        assert!(!app.details_open, "an empty surface has nothing to detail");
+        app.apply(Action::SwitchSurface(Surface::Inbox));
+        app.apply(Action::Move(Dir::Down));
+        assert_eq!(app.selected, Some(4), "Inbox moves never reach the tasks");
+    }
+
+    #[test]
+    fn item_actions_reach_only_the_current_surface() {
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::ToggleClosed);
+        app.apply(Action::SelectItem("R3".to_string()));
+        assert_eq!(cursor(&app), Some("R3"));
+        app.apply(Action::SelectItem("R9".to_string()));
+        assert_eq!(cursor(&app), Some("R3"), "an unknown id is not selected");
+        app.apply(Action::ToggleClosed);
+        assert_eq!(
+            cursor(&app),
+            Some("R1"),
+            "a hidden cursor moves to a shown row"
+        );
+
+        app.apply(Action::CycleGroup);
+        app.apply(Action::CycleSort);
+        app.apply(Action::MarkVisible);
+        let review = &app.items[&Surface::Review];
+        assert_eq!(
+            (review.group, review.sort),
+            (Group::Severity, Sort::Severity)
+        );
+        assert_eq!(review.marks.len(), 2);
+        let backlog = &app.items[&Surface::Backlog];
+        assert_eq!((backlog.group, backlog.sort), (Group::None, Sort::Id));
+    }
+
+    #[test]
+    fn item_flashes_keep_the_clock_running_and_arrivals_badge_off_screen() {
+        let mut app = review_app();
+        let mut snap = fixture();
+        snap.agents
+            .retain(|agent| agent.status != AgentStatus::Running);
+        app.apply_snapshot(snap, Instant::now());
+        let t0 = Instant::now();
+        let rows = [("R1", "deferred"), ("R2", "open"), ("R3", "fixed")];
+        app.apply_ledger(review("r.toml", "v2", &rows), t0);
+        assert_eq!(app.items[&Surface::Review].new_since_view, 1);
+        assert_eq!(app.tick_interval(t0), Some(TICK), "R1 is flashing");
+        app.tick(t0 + FLASH);
+        assert_eq!(app.tick_interval(t0 + FLASH), None);
+
+        app.apply(Action::SwitchSurface(Surface::Review));
+        assert_eq!(app.items[&Surface::Review].new_since_view, 0);
+    }
+
+    #[test]
+    fn a_ledger_from_another_file_starts_its_surface_over() {
+        let mut app = review_app();
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::CycleGroup);
+        app.apply(Action::ToggleMark);
+        let t0 = Instant::now();
+        app.apply_ledger(review("other.toml", "v1", &[("R7", "open")]), t0);
+        let state = &app.items[&Surface::Review];
+        assert!(state.flashes.is_empty(), "a new file is a first read");
+        assert!(state.marks.is_empty());
+        assert_eq!(state.group, Group::Severity, "the user's arrangement stays");
+        assert_eq!(cursor(&app), Some("R7"));
     }
 
     #[test]

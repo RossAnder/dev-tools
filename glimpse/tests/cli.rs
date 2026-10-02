@@ -192,6 +192,59 @@ fn once_renders_the_diagram_view() {
     assert!(stdout(&out).contains("[1]"), "{}", stdout(&out));
 }
 
+const REVIEW_LEDGER: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/review-ledger.toml"
+);
+
+/// The sandbox holds no flow, so the frame can come only from the ledger file, over an
+/// empty task graph.
+#[test]
+fn once_renders_a_review_ledger() {
+    let sb = Sandbox::new("once-ledger");
+    let out = sb.run_without_path(
+        "cwd",
+        &["--once", "--ledger", REVIEW_LEDGER, "--size", "120x30"],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(
+        text.contains("group none · sort id · closed hidden"),
+        "{text}"
+    );
+    assert!(
+        text.contains("R1 critical correctness"),
+        "an open finding is listed:\n{text}"
+    );
+    assert!(!text.contains("R3 "), "a fixed finding is hidden:\n{text}");
+    assert!(!text.contains('\u{1b}'), "no escape sequences");
+}
+
+#[test]
+fn ledger_without_once_is_a_usage_error() {
+    let sb = Sandbox::new("ledger-no-once");
+    let out = sb.run(&["--ledger", REVIEW_LEDGER], "");
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stdout(&out).is_empty(), "{}", stdout(&out));
+    assert!(stderr(&out).contains("--once"), "{}", stderr(&out));
+}
+
+#[test]
+fn a_ledger_of_unknown_kind_is_a_runtime_error() {
+    let sb = Sandbox::new("ledger-unknown");
+    let path = sb.path("cwd/notes.toml");
+    std::fs::write(&path, "[[items]]\nid = \"R1\"\n").expect("the sandbox is writable");
+    let out = sb.run(&["--once", "--ledger", "notes.toml"], "");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stdout(&out).is_empty(), "{}", stdout(&out));
+    assert!(
+        stderr(&out).contains("cannot infer the ledger kind"),
+        "{}",
+        stderr(&out)
+    );
+}
+
 const LIVE_STORE: &str = "schema_version = 1\n\n[[items]]\nid = 1\nref = \"seed-the-store\"\ntitle = \"Seed the store\"\neffort = \"S\"\nstatus = \"pending\"\nfiles = [\"src/a.rs\"]\n";
 
 /// The only case that reads a real flow: with no `PATH`, the frame can come only from

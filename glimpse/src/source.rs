@@ -1,10 +1,12 @@
-//! Watches a repo's flows for changes and fetches fresh snapshots onto the event channel.
+//! Watches a repo's flows and ledgers for changes and fetches fresh snapshots and ledgers onto
+//! the event channel.
 //!
 //! A filesystem watch only wakes the poller; the fingerprints below still decide what changed.
-//! A safety tick every [`SAFETY_TICK`] catches what the watch missed, and two safety ticks
-//! that find an unreported change with no wake between them switch to polling every
-//! `poll_ms` for good; a clean safety tick neither counts nor resets. A failed watch start
-//! is retried with a backoff doubling from `poll_ms` to [`WATCH_RETRY_MAX`].
+//! A safety tick every [`SAFETY_TICK`], on its own schedule whatever wakes arrive, catches what
+//! the watch missed. A change found in a watch scope that did not wake counts a miss against
+//! that scope, and two misses with no wake of its own between them switch to polling every
+//! `poll_ms` for good; a clean tick neither counts nor resets. A failed watch start is retried
+//! with a backoff doubling from `poll_ms` to [`WATCH_RETRY_MAX`].
 //!
 //! The poller never reads integrity sidecars: tomlctl writes the sidecar and the TOML as two
 //! separate renames, so a check from here could catch them mid-update. A torn read instead
@@ -13,33 +15,112 @@
 //! The poller also tails the activity panel's transcript, re-reading it every [`TICK`] while
 //! the runtime has one targeted; a tail refresh never counts as a tick.
 
+mod mode;
+mod scan;
+
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime};
 
-use notify::RecommendedWatcher;
+use tomlctl::LedgerRef;
 
 use crate::app::TICK;
 use crate::flows::{self, FlowEntry};
+use crate::ledger::Ledger;
 use crate::model::Snapshot;
 use crate::transcript::{TailState, TailView};
-use crate::watch::{self, Wake};
+use crate::watch::{LedgerScopeDir, RepoFile, Wake};
+use crate::writer::WriteOutcome;
+use mode::{
+    Deadlines, MissedChanges, Mode, Phase, SafetyClock, TickCause, Wakes, WatchScope, next_wait,
+    safety_period,
+};
+pub(crate) use scan::{Fetcher, InProcessFetcher, task_store_mtimes, with_reinstall_hint};
+use scan::{
+    FileStat, Fingerprint, FlowStat, FlowTimes, FlowsChange, feed_path, fingerprint,
+    flows_fingerprint, has_task_store, scope_dir, scope_files, stat, task_stores,
+};
 
 /// Everything the runtime's main loop receives, from the poller and the input thread alike.
 #[derive(Debug)]
 pub(crate) enum Event {
     Snapshot(Box<Snapshot>),
     SourceError(String),
-    /// A fresh flow list, taken because the set of flows with a `tasks.toml` or one of their
-    /// `context.toml` files moved, or on the first scan.
+    /// A fresh flow list, taken because the set of flows with a `tasks.toml` or a ledger, one
+    /// of their `context.toml` files, or the ledgers a flow holds moved, or on the first scan.
     Flows(Result<Vec<FlowEntry>, String>),
     /// Only `tasks.toml` mtimes moved: the new mtime of every flow with a task store.
     FlowMtimes(BTreeMap<String, SystemTime>),
+    /// A subscribed feed's read: sent once it is first read, then only when the revision moves
+    /// or a read fails.
+    Ledger {
+        feed: Feed,
+        ledger: Result<Ledger, String>,
+    },
+    /// The `tomlctl::ledger_scopes` document, sent with every flow list and whenever a
+    /// flow-less ledger appears or goes.
+    Scopes(Result<serde_json::Value, String>),
     /// The targeted transcript's tail, sent on a retarget and whenever a refresh changed it.
     Tail(Box<TailView>),
     Input(ratatui::crossterm::event::Event),
+    /// What became of one write; sent by the writer thread, never the poller.
+    #[allow(
+        dead_code,
+        reason = "the runtime routes outcomes to the item surfaces once wired in"
+    )]
+    Written(WriteOutcome),
+}
+
+/// A file the runtime asked the poller to keep reading.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) enum Feed {
+    Ledger(LedgerRef),
+    /// `.claude/inputs.toml`; subscribed but not yet read.
+    #[allow(
+        dead_code,
+        reason = "the runtime subscribes once the Inbox is wired in"
+    )]
+    Inputs,
+}
+
+impl Feed {
+    /// The watch scope whose wakes report this feed's writes; `None` for a file no scope covers.
+    fn scope(&self) -> Option<WatchScope> {
+        match self {
+            Feed::Ledger(LedgerRef::Flow { .. }) => Some(WatchScope::Flows),
+            Feed::Ledger(LedgerRef::Scope { kind, .. }) => {
+                Some(WatchScope::Ledgers(scope_dir(*kind)))
+            }
+            Feed::Ledger(LedgerRef::Backlog) | Feed::Inputs => Some(WatchScope::Repo),
+            Feed::Ledger(LedgerRef::File(_)) => None,
+        }
+    }
+
+    fn woken_by(&self, wakes: &Wakes) -> bool {
+        if wakes.all || wakes.rewatch {
+            return true;
+        }
+        match self {
+            Feed::Ledger(LedgerRef::Flow { slug, .. }) => wakes.flows.contains(slug),
+            Feed::Ledger(LedgerRef::Scope { kind, .. }) => wakes.scopes.contains(&scope_dir(*kind)),
+            Feed::Ledger(LedgerRef::Backlog) => wakes.repo.contains(&RepoFile::Backlog),
+            Feed::Inputs => wakes.repo.contains(&RepoFile::Inputs),
+            Feed::Ledger(LedgerRef::File(_)) => false,
+        }
+    }
+}
+
+/// What the poller last saw of one feed.
+#[derive(Debug, Default)]
+struct FeedState {
+    /// The stat the last read was taken against; `None` forces the next read.
+    stat: Option<FileStat>,
+    /// The revision last sent, `Some(None)` for a missing file; `None` until a read is sent.
+    sent: Option<Option<String>>,
+    /// Set while reads fail, so a failure is sent once rather than on every retry.
+    failing: bool,
 }
 
 /// Messages from the runtime to the poller thread.
@@ -47,6 +128,8 @@ pub(crate) enum Event {
 enum Control {
     /// Switch to another flow and fetch it at once.
     SetSlug(String),
+    /// Keep exactly these feeds from now on, reading the new ones at once.
+    Subscribe(Vec<Feed>),
     /// Tail this transcript from now on, reading it at once; `None` stops tailing.
     Tail(Option<String>),
     /// The watcher saw something change; sent from notify's event thread.
@@ -56,6 +139,9 @@ enum Control {
 
 /// How long a failed fetch waits before retrying when no file has changed.
 const RETRY_AFTER: Duration = Duration::from_secs(5);
+
+/// Reported once for a viewed flow with no `tasks.toml`, which has no snapshot to fetch.
+const NO_TASK_STORE: &str = "no task store";
 
 /// How often a healthy watch is double-checked by a full tick.
 const SAFETY_TICK: Duration = Duration::from_secs(10);
@@ -71,404 +157,6 @@ const MISS_LIMIT: u8 = 2;
 
 /// The longest a failed watch start waits before it is tried again.
 const WATCH_RETRY_MAX: Duration = Duration::from_secs(60);
-
-/// `(mtime, len)` per file a snapshot reads, in [`tomlctl::SNAPSHOT_INPUTS`] order; `None`
-/// for a file that is absent or cannot be statted.
-pub(crate) type Fingerprint = [Option<(SystemTime, u64)>; tomlctl::SNAPSHOT_INPUTS.len()];
-
-fn flow_dir(root: &Path, slug: &str) -> PathBuf {
-    flows::flows_root(root).join(slug)
-}
-
-pub(crate) fn fingerprint(root: &Path, slug: &str) -> Fingerprint {
-    let dir = flow_dir(root, slug);
-    tomlctl::SNAPSHOT_INPUTS.map(|name| {
-        let meta = std::fs::metadata(dir.join(name)).ok()?;
-        Some((meta.modified().ok()?, meta.len()))
-    })
-}
-
-/// `(tasks.toml mtime, context.toml mtime)` of one flow.
-type FlowTimes = (SystemTime, Option<SystemTime>);
-
-/// What the last scan saw of one flow directory.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct FlowStat {
-    dir: Option<SystemTime>,
-    tasks: Option<SystemTime>,
-    context: Option<SystemTime>,
-}
-
-fn modified(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path).and_then(|m| m.modified()).ok()
-}
-
-/// The [`FlowTimes`] of every `<root>/.claude/flows/*` that has a `tasks.toml`, keyed by
-/// directory name. A flow cached with a task store is re-statted on every scan: an in-place
-/// write never moves the directory's mtime, and on Windows the mtime the enumeration reports
-/// can lag even a file created in the directory. Any other flow is re-statted only when that
-/// mtime moved, which a store arriving by rename does at once, or when a wake evicted it.
-fn flows_fingerprint(
-    root: &Path,
-    cache: &mut BTreeMap<String, FlowStat>,
-) -> BTreeMap<String, FlowTimes> {
-    let Ok(entries) = std::fs::read_dir(flows::flows_root(root)) else {
-        cache.clear();
-        return BTreeMap::new();
-    };
-    let mut next = BTreeMap::new();
-    for entry in entries.filter_map(Result::ok) {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let dir = entry.metadata().and_then(|m| m.modified()).ok();
-        let stat = match cache.get(&name) {
-            Some(old) if old.tasks.is_none() && dir.is_some() && old.dir == dir => *old,
-            _ => {
-                let path = entry.path();
-                let tasks = modified(&path.join("tasks.toml"));
-                FlowStat {
-                    dir,
-                    tasks,
-                    context: tasks.and_then(|_| modified(&path.join("context.toml"))),
-                }
-            }
-        };
-        next.insert(name, stat);
-    }
-    *cache = next;
-    cache
-        .iter()
-        .filter_map(|(slug, stat)| Some((slug.clone(), (stat.tasks?, stat.context))))
-        .collect()
-}
-
-/// What a flow scan asks the poller to send.
-enum FlowsChange {
-    Relist,
-    Mtimes(BTreeMap<String, SystemTime>),
-}
-
-/// The `tasks.toml` mtime of every flow under `root` that has one, from one fresh scan.
-pub(crate) fn task_store_mtimes(root: &Path) -> BTreeMap<String, SystemTime> {
-    flows_fingerprint(root, &mut BTreeMap::new())
-        .into_iter()
-        .map(|(slug, (tasks, _))| (slug, tasks))
-        .collect()
-}
-
-/// Produces a snapshot for one flow and lists the repo's flows. The production implementation
-/// reads the flow's files in-process through the tomlctl library; tests substitute a fake.
-pub(crate) trait Fetcher: Send {
-    /// The flow's snapshot, or `Ok(None)` when its inputs still hash to `known`.
-    fn fetch(
-        &mut self,
-        root: &Path,
-        slug: &str,
-        known: Option<&str>,
-    ) -> Result<Option<Snapshot>, String>;
-    /// The flows among `task_stores` (slug to `tasks.toml` mtime), freshest first.
-    fn list_flows(
-        &mut self,
-        root: &Path,
-        task_stores: &BTreeMap<String, SystemTime>,
-    ) -> Result<Vec<FlowEntry>, String>;
-}
-
-/// Builds the `tasks snapshot` document in-process from `<root>/.claude/flows/<slug>`.
-pub(crate) struct InProcessFetcher;
-
-impl Fetcher for InProcessFetcher {
-    fn fetch(
-        &mut self,
-        root: &Path,
-        slug: &str,
-        known: Option<&str>,
-    ) -> Result<Option<Snapshot>, String> {
-        let Some(value) = tomlctl::snapshot_if_changed(root, slug, known)
-            .map_err(|e| with_reinstall_hint(format!("{e:#}")))?
-        else {
-            return Ok(None);
-        };
-        serde_json::from_value(value)
-            .map(Some)
-            .map_err(|e| format!("bad `tasks snapshot` document: {e}"))
-    }
-
-    fn list_flows(
-        &mut self,
-        root: &Path,
-        task_stores: &BTreeMap<String, SystemTime>,
-    ) -> Result<Vec<FlowEntry>, String> {
-        flows::list(root, task_stores)
-    }
-}
-
-/// Adds the fix to a tomlctl "newer than the supported" schema error. tomlctl's own advice is
-/// to upgrade tomlctl, but glimpse reads through the copy linked into it, so the binary to
-/// rebuild is glimpse.
-pub(crate) fn with_reinstall_hint(message: String) -> String {
-    if message.contains("newer than the supported") {
-        format!(
-            "{message} (glimpse embeds its own tomlctl: reinstall it with `cargo install --path glimpse`)"
-        )
-    } else {
-        message
-    }
-}
-
-/// Every wake gathered before one tick, merged: an `All` or `Rewatch` covers every flow.
-#[derive(Debug, Default)]
-struct Wakes {
-    flows: BTreeSet<String>,
-    all: bool,
-    rewatch: bool,
-}
-
-impl Wakes {
-    fn add(&mut self, wake: Wake) {
-        match wake {
-            Wake::Flow(slug) => {
-                self.flows.insert(slug);
-            }
-            Wake::All => self.all = true,
-            Wake::Rewatch => self.rewatch = true,
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.flows.is_empty() && !self.all && !self.rewatch
-    }
-}
-
-/// Whether a watch is feeding the poller. The watcher lives here, on the poller thread.
-enum Mode {
-    /// Held only so the watch lives until the mode changes.
-    Watching { _watcher: RecommendedWatcher },
-    /// Polling every `poll_ms`; `retry_watch` while the last watch start failed, cleared once
-    /// the watch was abandoned for missing changes. `backoff` is set once `watch::start`
-    /// itself has failed, and holds further attempts off until it allows one.
-    Polling {
-        retry_watch: bool,
-        backoff: Option<Backoff>,
-    },
-}
-
-/// When a watch that failed to start may be tried again.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Backoff {
-    at: Instant,
-    delay: Duration,
-}
-
-impl Backoff {
-    /// The wait after a failure at `now`: `poll` after the first, then double the last
-    /// wait, capped at [`WATCH_RETRY_MAX`].
-    fn after_failure(prior: Option<Backoff>, now: Instant, poll: Duration) -> Backoff {
-        let delay = prior
-            .map_or(poll, |b| b.delay.saturating_mul(2))
-            .min(WATCH_RETRY_MAX);
-        Backoff {
-            at: now.checked_add(delay).unwrap_or(now),
-            delay,
-        }
-    }
-
-    fn allows(&self, now: Instant) -> bool {
-        now >= self.at
-    }
-}
-
-impl Mode {
-    /// Watches `flows_root`, forwarding every wake onto the poller's own control channel.
-    /// A missing `flows_root` is probed on every call; an actual start is attempted only
-    /// once `prior` allows it, and its failure lengthens the backoff.
-    fn start(
-        flows_root: &Path,
-        control: &Sender<Control>,
-        poll: Duration,
-        prior: Option<Backoff>,
-    ) -> Mode {
-        let retrying = |backoff| Mode::Polling {
-            retry_watch: true,
-            backoff,
-        };
-        if !flows_root.is_dir() {
-            return retrying(prior);
-        }
-        let now = Instant::now();
-        if prior.is_some_and(|b| !b.allows(now)) {
-            return retrying(prior);
-        }
-        let tx = control.clone();
-        match watch::start(flows_root, move |wake| {
-            let _ = tx.send(Control::Wake(wake));
-        }) {
-            Ok(watcher) => Mode::Watching { _watcher: watcher },
-            Err(_) => retrying(Some(Backoff::after_failure(prior, now, poll))),
-        }
-    }
-
-    fn is_watching(&self) -> bool {
-        matches!(self, Mode::Watching { .. })
-    }
-
-    fn state(&self) -> WatchState {
-        match self {
-            Mode::Watching { .. } => WatchState::Watching,
-            Mode::Polling {
-                retry_watch: true, ..
-            } => WatchState::Retrying,
-            Mode::Polling {
-                retry_watch: false, ..
-            } => WatchState::Abandoned,
-        }
-    }
-
-    fn backoff(&self) -> Option<Backoff> {
-        match self {
-            Mode::Polling { backoff, .. } => *backoff,
-            Mode::Watching { .. } => None,
-        }
-    }
-
-    /// Applies whatever [`mode_change`] decides at `phase`. Replacing a `Watching` mode drops
-    /// its watcher.
-    fn advance(
-        &mut self,
-        phase: Phase,
-        flows_root: &Path,
-        control: &Sender<Control>,
-        poll: Duration,
-    ) {
-        match mode_change(self.state(), phase) {
-            Some(ModeChange::Start) => {
-                *self = Mode::start(flows_root, control, poll, self.backoff());
-            }
-            Some(ModeChange::Poll { retry_watch }) => {
-                *self = Mode::Polling {
-                    retry_watch,
-                    backoff: None,
-                };
-            }
-            None => {}
-        }
-    }
-}
-
-/// A [`Mode`] without its watcher.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WatchState {
-    Watching,
-    /// Polling because the last watch start failed or a rewatch dropped the watcher.
-    Retrying,
-    /// Polling for good: the watch missed changes.
-    Abandoned,
-}
-
-/// The points in the poller's loop at which its mode may change.
-#[derive(Debug, Clone, Copy)]
-enum Phase {
-    /// Before a tick.
-    Tick,
-    /// After a tick; `abandon` when the missed-change count gave up on the watch.
-    Ticked { abandon: bool },
-    /// After a wait; `rewatch` when a wake asked for a fresh watch.
-    Woken { rewatch: bool },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ModeChange {
-    Start,
-    Poll { retry_watch: bool },
-}
-
-/// Whether the watch starts, stops or stays at `phase`: a failed start is retried before a
-/// tick once its [`Backoff`] allows, a watch that missed changes is abandoned for good, and a
-/// rewatch drops the watcher so the next tick starts a fresh one.
-fn mode_change(state: WatchState, phase: Phase) -> Option<ModeChange> {
-    match (state, phase) {
-        (WatchState::Retrying, Phase::Tick) => Some(ModeChange::Start),
-        (WatchState::Watching, Phase::Ticked { abandon: true }) => {
-            Some(ModeChange::Poll { retry_watch: false })
-        }
-        (WatchState::Watching, Phase::Woken { rewatch: true }) => {
-            Some(ModeChange::Poll { retry_watch: true })
-        }
-        _ => None,
-    }
-}
-
-/// How long the poller goes between ticks when nothing wakes it.
-fn safety_period(watching: bool, poll: Duration) -> Duration {
-    if watching { SAFETY_TICK } else { poll }
-}
-
-/// The instants at which the poller wakes of its own accord.
-struct Deadlines {
-    /// The next safety tick; moves only when a tick runs.
-    safety: Instant,
-    /// When a failed fetch is due another try.
-    retry: Option<Instant>,
-    /// When the targeted transcript is next re-read.
-    tail: Option<Instant>,
-}
-
-/// Which deadlines had been reached when a wait ran out.
-struct Due {
-    safety: bool,
-    retry: bool,
-    tail: bool,
-}
-
-impl Deadlines {
-    fn due(&self, now: Instant) -> Due {
-        let reached = |at: Option<Instant>| at.is_some_and(|at| now >= at);
-        Due {
-            safety: now >= self.safety,
-            retry: reached(self.retry),
-            tail: reached(self.tail),
-        }
-    }
-}
-
-/// How long to wait for a message before the earliest deadline; zero once one has passed.
-fn next_wait(now: Instant, deadlines: &Deadlines) -> Duration {
-    [Some(deadlines.safety), deadlines.retry, deadlines.tail]
-        .into_iter()
-        .flatten()
-        .min()
-        .map_or(Duration::ZERO, |at| at.saturating_duration_since(now))
-}
-
-/// What set off a tick.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TickCause {
-    /// A watch wake.
-    Wake,
-    /// The safety deadline.
-    Safety,
-    /// Anything else: the first tick, a slug change, a fetch retry.
-    Other,
-}
-
-/// Counts the safety ticks since the last wake that found a change no wake had reported. Only
-/// a wake proves the watch alive, so a clean safety tick leaves the count alone: a dead watch
-/// under sparse writes still reaches the limit.
-#[derive(Debug, Default)]
-struct MissedChanges {
-    streak: u8,
-}
-
-impl MissedChanges {
-    /// Records one tick; `true` means the watch has missed enough to be abandoned.
-    fn on_tick(&mut self, cause: TickCause, changed: bool) -> bool {
-        match cause {
-            TickCause::Wake => self.streak = 0,
-            TickCause::Safety if changed => self.streak = self.streak.saturating_add(1),
-            TickCause::Safety | TickCause::Other => {}
-        }
-        self.streak >= MISS_LIMIT
-    }
-}
 
 /// The poller's state between ticks. Kept apart from the thread so a test can drive it one
 /// tick at a time.
@@ -487,9 +175,14 @@ struct Poller {
     flow_stats: BTreeMap<String, FlowStat>,
     /// Set when the last flow list failed, so the next change lists again.
     relist_pending: bool,
+    /// The flow-less ledger files the last scan found; `None` before the first.
+    last_scope_files: Option<BTreeSet<(LedgerScopeDir, String)>>,
+    /// Set once the viewed flow's missing task store has been reported.
+    no_store_reported: bool,
     retry_after: Duration,
     /// The transcript the runtime asked to tail.
     tail: Option<Tail>,
+    feeds: BTreeMap<Feed, FeedState>,
 }
 
 /// A targeted transcript and when it is next re-read.
@@ -516,8 +209,11 @@ impl Poller {
             last_flows: None,
             flow_stats: BTreeMap::new(),
             relist_pending: false,
+            last_scope_files: None,
+            no_store_reported: false,
             retry_after: RETRY_AFTER,
             tail: None,
+            feeds: BTreeMap::new(),
         }
     }
 
@@ -563,6 +259,20 @@ impl Poller {
         self.last_fingerprint = None;
         self.last_revision = None;
         self.failed_at = None;
+        self.no_store_reported = false;
+    }
+
+    /// Keeps the state of every feed still subscribed, so it is not sent again; the rest
+    /// start unread.
+    fn subscribe(&mut self, feeds: Vec<Feed>) {
+        let mut old = std::mem::take(&mut self.feeds);
+        self.feeds = feeds
+            .into_iter()
+            .map(|feed| {
+                let state = old.remove(&feed).unwrap_or_default();
+                (feed, state)
+            })
+            .collect();
     }
 
     /// One poll. Returns `false` once the receiver has gone.
@@ -571,21 +281,34 @@ impl Poller {
         self.step().is_some()
     }
 
-    /// One poll: whether the flow scan or the viewed flow's fingerprint changed, or `None`
-    /// once the receiver has gone, which ends the thread.
+    /// One poll: the watch scopes in which a re-stat found a change since the last poll, or
+    /// `None` once the receiver has gone, which ends the thread. A read forced by an eviction,
+    /// a slug change or a first scan is no evidence of a missed change, so it names no scope.
     ///
     /// With no flow chosen yet the flow list goes first, since the runtime picks a flow from
     /// it; otherwise the viewed flow's snapshot does.
-    fn step(&mut self) -> Option<bool> {
+    fn step(&mut self) -> Option<BTreeSet<WatchScope>> {
+        let rescan = self.last_flows.is_some();
         let change = self.scan_flows();
-        let mut changed = change.is_some();
-        if self.slug.is_some() {
-            changed |= self.poll_snapshot()?;
+        let mut changed = BTreeSet::new();
+        if rescan && change.is_some() {
+            changed.insert(WatchScope::Flows);
         }
-        self.send_flows(change).then_some(changed)
+        let scopes_moved = self.scan_scope_files();
+        changed.extend(scopes_moved.iter().copied().map(WatchScope::Ledgers));
+        if self.slug.is_some() && self.poll_snapshot()? {
+            changed.insert(WatchScope::Flows);
+        }
+        if !self.send_flows(change, !scopes_moved.is_empty()) {
+            return None;
+        }
+        changed.extend(self.poll_feeds()?);
+        Some(changed)
     }
 
-    /// Drops the cached state `wakes` invalidates, so the next tick re-reads it.
+    /// Drops the cached state `wakes` invalidates, so the next tick re-reads it. Only flow
+    /// wakes touch the flow caches and the task fingerprint; repo and scope wakes re-read
+    /// just their own feeds.
     fn evict(&mut self, wakes: &Wakes) {
         if wakes.all || wakes.rewatch {
             self.flow_stats.clear();
@@ -595,6 +318,70 @@ impl Poller {
                 self.flow_stats.remove(slug);
             }
         }
+        for (feed, state) in &mut self.feeds {
+            if feed.woken_by(wakes) {
+                state.stat = None;
+            }
+        }
+    }
+
+    /// Re-reads every subscribed ledger whose file moved or was evicted, sending it when its
+    /// revision differs from the last one sent. Returns the scopes of the feeds that moved, or
+    /// `None` once the receiver has gone.
+    fn poll_feeds(&mut self) -> Option<BTreeSet<WatchScope>> {
+        let mut changed = BTreeSet::new();
+        for (feed, state) in &mut self.feeds {
+            let Feed::Ledger(ledger) = feed else {
+                continue;
+            };
+            let current = stat(&feed_path(&self.root, feed));
+            if state.stat == Some(current) {
+                continue;
+            }
+            if state.stat.is_some() {
+                changed.extend(feed.scope());
+            }
+            // Recorded before the read, as for snapshots: a write landing during it moves
+            // the stat again.
+            state.stat = Some(current);
+            let read = match self.fetcher.fetch_ledger(&self.root, ledger) {
+                Ok(read) => {
+                    state.failing = false;
+                    if state.sent.as_ref() == Some(&read.revision) {
+                        continue;
+                    }
+                    state.sent = Some(read.revision.clone());
+                    Ok(read)
+                }
+                Err(e) => {
+                    // Unrecorded, so the next tick retries a read that failed on a stable file.
+                    state.stat = None;
+                    state.sent = None;
+                    if std::mem::replace(&mut state.failing, true) {
+                        continue;
+                    }
+                    Err(e)
+                }
+            };
+            let event = Event::Ledger {
+                feed: feed.clone(),
+                ledger: read,
+            };
+            self.events.send(event).ok()?;
+        }
+        Some(changed)
+    }
+
+    /// Compares the flow-less ledger files with the last scan, returning the directories
+    /// whose files came or went; the first scan returns none.
+    fn scan_scope_files(&mut self) -> BTreeSet<LedgerScopeDir> {
+        let files = scope_files(&self.root);
+        let Some(last) = self.last_scope_files.replace(files.clone()) else {
+            return BTreeSet::new();
+        };
+        last.symmetric_difference(&files)
+            .map(|(dir, _)| *dir)
+            .collect()
     }
 
     /// When a failed fetch is next due a retry.
@@ -603,10 +390,10 @@ impl Poller {
             .and_then(|at| at.checked_add(self.retry_after))
     }
 
-    /// Compares the flows on disk with the last scan. A new or vanished task store, a moved
-    /// `context.toml` (the selector shows its status and date), the first scan, or a failed
-    /// last list ask for a relist; moved `tasks.toml` mtimes alone are sent as they are,
-    /// with no relist.
+    /// Compares the flows on disk with the last scan. A task store or ledger arriving or
+    /// leaving, a moved `context.toml` (the selector shows its status and date), the first
+    /// scan, or a failed last list ask for a relist; moved `tasks.toml` mtimes alone are sent
+    /// as they are, with no relist.
     fn scan_flows(&mut self) -> Option<FlowsChange> {
         let flows = flows_fingerprint(&self.root, &mut self.flow_stats);
         let last = self.last_flows.replace(flows.clone());
@@ -616,47 +403,51 @@ impl Poller {
         let relist = self.relist_pending
             || last.is_none_or(|last| {
                 !last.keys().eq(flows.keys())
-                    || last.values().zip(flows.values()).any(|(a, b)| a.1 != b.1)
+                    || last.values().zip(flows.values()).any(|(a, b)| a.relists(b))
             });
         Some(if relist {
             FlowsChange::Relist
         } else {
-            FlowsChange::Mtimes(
-                flows
-                    .into_iter()
-                    .map(|(slug, (tasks, _))| (slug, tasks))
-                    .collect(),
-            )
+            FlowsChange::Mtimes(task_stores(&flows))
         })
     }
 
-    fn send_flows(&mut self, change: Option<FlowsChange>) -> bool {
+    /// Sends what a flow scan found, with the ledger scopes after every relist, or alone when
+    /// only the flow-less ledgers moved (`rescope`).
+    fn send_flows(&mut self, change: Option<FlowsChange>, rescope: bool) -> bool {
+        let relisted = matches!(change, Some(FlowsChange::Relist));
         let event = match change {
-            None => return true,
+            None => None,
             Some(FlowsChange::Relist) => {
-                let task_stores: BTreeMap<String, SystemTime> = self
-                    .last_flows
-                    .iter()
-                    .flatten()
-                    .map(|(slug, (tasks, _))| (slug.clone(), *tasks))
-                    .collect();
-                let listed = self.fetcher.list_flows(&self.root, &task_stores);
+                let stores = task_stores(self.last_flows.as_ref().unwrap_or(&BTreeMap::new()));
+                let listed = self.fetcher.list_flows(&self.root, &stores);
                 self.relist_pending = listed.is_err();
-                Event::Flows(listed)
+                Some(Event::Flows(listed))
             }
-            Some(FlowsChange::Mtimes(mtimes)) => Event::FlowMtimes(mtimes),
+            Some(FlowsChange::Mtimes(mtimes)) => Some(Event::FlowMtimes(mtimes)),
         };
-        self.events.send(event).is_ok()
+        if let Some(event) = event
+            && self.events.send(event).is_err()
+        {
+            return false;
+        }
+        if !relisted && !rescope {
+            return true;
+        }
+        let scopes = self.fetcher.list_scopes(&self.root);
+        self.events.send(Event::Scopes(scopes)).is_ok()
     }
 
-    /// Fetches the viewed flow when its files moved or a failed fetch is due a retry. Returns
-    /// whether the files moved, or `None` once the receiver has gone.
+    /// Fetches the viewed flow when its files moved or a failed fetch is due a retry. A flow
+    /// with no task store is reported once and never fetched or retried. Returns whether the
+    /// files moved since a recorded fingerprint, or `None` once the receiver has gone.
     fn poll_snapshot(&mut self) -> Option<bool> {
         let Some(slug) = self.slug.clone() else {
             return Some(false);
         };
         let current = fingerprint(&self.root, &slug);
         let changed = self.last_fingerprint != Some(current);
+        let moved = self.last_fingerprint.is_some() && changed;
         let retry_due = self.retry_at().is_some_and(|at| Instant::now() >= at);
         if !changed && !retry_due {
             return Some(false);
@@ -664,16 +455,26 @@ impl Poller {
         // Recorded before the fetch: a write that lands during it moves the fingerprint again
         // and is picked up next tick.
         self.last_fingerprint = Some(current);
+        if !has_task_store(&current) {
+            self.failed_at = None;
+            self.last_revision = None;
+            if std::mem::replace(&mut self.no_store_reported, true) {
+                return Some(moved);
+            }
+            let event = Event::SourceError(NO_TASK_STORE.into());
+            return self.events.send(event).ok().map(|()| moved);
+        }
+        self.no_store_reported = false;
         let known = self.last_revision.as_deref();
         let event = match self.fetcher.fetch(&self.root, &slug, known) {
             Ok(None) => {
                 self.failed_at = None;
-                return Some(changed);
+                return Some(moved);
             }
             Ok(Some(snapshot)) => {
                 self.failed_at = None;
                 if self.last_revision.as_deref() == Some(snapshot.revision.as_str()) {
-                    return Some(changed);
+                    return Some(moved);
                 }
                 self.last_revision = Some(snapshot.revision.clone());
                 Event::Snapshot(Box::new(snapshot))
@@ -683,13 +484,14 @@ impl Poller {
                 Event::SourceError(e)
             }
         };
-        self.events.send(event).ok().map(|()| changed)
+        self.events.send(event).ok().map(|()| moved)
     }
 
     /// Applies one control message, merging a wake into `wakes`; `false` means stop.
     fn handle(&mut self, message: Control, wakes: &mut Wakes) -> bool {
         match message {
             Control::SetSlug(slug) => self.set_slug(slug),
+            Control::Subscribe(feeds) => self.subscribe(feeds),
             Control::Wake(wake) => wakes.add(wake),
             Control::Tail(path) => return self.set_tail(path),
             Control::Stop => return false,
@@ -727,7 +529,7 @@ impl Poller {
         let mut mode = Mode::start(&flows_root, control, poll, None);
         let mut misses = MissedChanges::default();
         let mut wakes = Wakes::default();
-        let mut cause = TickCause::Other;
+        let mut clock = SafetyClock::new(Instant::now(), safety_period(mode.is_watching(), poll));
         loop {
             // Only this phase can start a watch; a fresh one owes nothing to the last.
             let was_watching = mode.is_watching();
@@ -735,21 +537,20 @@ impl Poller {
             if mode.is_watching() && !was_watching {
                 misses = MissedChanges::default();
             }
+            let safety_due = clock.is_due(Instant::now());
+            let cause = TickCause::of(&wakes, safety_due);
             let Some(changed) = self.step() else {
                 return;
             };
-            if !wakes.is_empty() {
-                cause = TickCause::Wake;
-            }
-            let abandon = mode.is_watching() && misses.on_tick(cause, changed);
+            let abandon =
+                mode.is_watching() && misses.on_scoped_tick(cause, &wakes.woken(), &changed);
             mode.advance(Phase::Ticked { abandon }, &flows_root, control, poll);
-            let now = Instant::now();
             let period = safety_period(mode.is_watching(), poll);
-            let next_safety_at = now.checked_add(period).unwrap_or(now + SAFETY_TICK);
+            clock.ticked(Instant::now(), safety_due, period);
             wakes = Wakes::default();
             loop {
                 let deadlines = Deadlines {
-                    safety: next_safety_at,
+                    safety: clock.at(),
                     retry: self.retry_at(),
                     tail: self.tail_at(),
                 };
@@ -766,7 +567,6 @@ impl Poller {
                         if retail {
                             continue;
                         }
-                        cause = TickCause::Other;
                         break;
                     }
                     Err(RecvTimeoutError::Disconnected) => return,
@@ -775,11 +575,6 @@ impl Poller {
                         if due.tail && !self.refresh_tail() {
                             return;
                         }
-                        cause = if due.safety {
-                            TickCause::Safety
-                        } else {
-                            TickCause::Other
-                        };
                         if due.safety || due.retry {
                             break;
                         }
@@ -787,6 +582,9 @@ impl Poller {
                 }
             }
             self.evict(&wakes);
+            for dir in &wakes.new_scopes {
+                mode.add_scope(*dir);
+            }
             let woken = Phase::Woken {
                 rewatch: wakes.rewatch,
             };
@@ -843,6 +641,12 @@ impl Source {
         let _ = self.control.send(Control::SetSlug(slug));
     }
 
+    /// Replaces the poller's feeds, sending [`Event::Ledger`] for each new one at once and for
+    /// any feed whenever its revision moves.
+    pub(crate) fn subscribe(&self, feeds: Vec<Feed>) {
+        let _ = self.control.send(Control::Subscribe(feeds));
+    }
+
     /// Tails the transcript at `path`, sending [`Event::Tail`] at once and on every change;
     /// `None` stops tailing.
     pub(crate) fn set_tail(&self, path: Option<String>) {
@@ -878,114 +682,25 @@ impl Drop for Source {
 
 #[cfg(test)]
 mod tests {
+    use super::scan::flow_dir;
+    use super::scan::tests::{
+        fake, fake_counting_lists, fake_ledgers, ledger_with_revision, temp_root, with_revision,
+        write_in_place, write_renamed,
+    };
     use super::*;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    fn temp_root(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("glimpse-source-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join(".claude").join("flows")).expect("temp root");
-        dir
-    }
-
-    /// Returns each queued result in turn, then repeats the last, as `None` when its revision
-    /// is the known one; counts its calls. Lists no flows, counting those calls apart.
-    struct FakeFetcher {
-        results: Vec<Result<Snapshot, String>>,
-        calls: Arc<AtomicUsize>,
-        lists: Arc<AtomicUsize>,
-    }
-
-    impl Fetcher for FakeFetcher {
-        fn fetch(
-            &mut self,
-            _root: &Path,
-            _slug: &str,
-            known: Option<&str>,
-        ) -> Result<Option<Snapshot>, String> {
-            let n = self.calls.fetch_add(1, Ordering::SeqCst);
-            let result = self.results[n.min(self.results.len() - 1)].clone()?;
-            Ok((known != Some(result.revision.as_str())).then_some(result))
-        }
-
-        fn list_flows(
-            &mut self,
-            _root: &Path,
-            _task_stores: &BTreeMap<String, SystemTime>,
-        ) -> Result<Vec<FlowEntry>, String> {
-            self.lists.fetch_add(1, Ordering::SeqCst);
-            Ok(Vec::new())
-        }
-    }
-
-    fn with_revision(revision: &str) -> Snapshot {
-        Snapshot {
-            revision: revision.to_string(),
-            ..crate::model::fixture()
-        }
-    }
-
-    fn fake(results: Vec<Result<Snapshot, String>>) -> (Box<dyn Fetcher>, Arc<AtomicUsize>) {
-        let (fetcher, calls, _lists) = fake_counting_lists(results);
-        (fetcher, calls)
-    }
-
-    fn fake_counting_lists(
-        results: Vec<Result<Snapshot, String>>,
-    ) -> (Box<dyn Fetcher>, Arc<AtomicUsize>, Arc<AtomicUsize>) {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let lists = Arc::new(AtomicUsize::new(0));
-        let fetcher = FakeFetcher {
-            results,
-            calls: Arc::clone(&calls),
-            lists: Arc::clone(&lists),
-        };
-        (Box::new(fetcher), calls, lists)
-    }
-
-    /// Writes `name` the way tomlctl does, through a temporary file renamed into place,
-    /// stamped with `secs` past the epoch.
-    fn write_renamed(dir: &Path, name: &str, secs: u64) {
-        let tmp = dir.join(format!("{name}.tmp"));
-        let file = std::fs::File::create(&tmp).expect("create");
-        file.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(secs))
-            .expect("stamp");
-        drop(file);
-        std::fs::rename(&tmp, dir.join(name)).expect("rename");
-    }
+    use std::collections::BTreeSet;
+    use std::sync::atomic::Ordering;
 
     fn drain(rx: &Receiver<Event>) -> Vec<Event> {
         rx.try_iter().collect()
     }
 
-    #[test]
-    fn fingerprint_changes_when_a_flow_file_changes() {
-        let root = temp_root("fingerprint");
-        let dir = flow_dir(&root, "f");
+    /// Creates flow `slug` holding only a task store, and returns its directory.
+    fn with_task_store(root: &std::path::Path, slug: &str) -> PathBuf {
+        let dir = flow_dir(root, slug);
         std::fs::create_dir_all(&dir).expect("flow dir");
-
-        let absent = fingerprint(&root, "f");
-        assert!(
-            absent.iter().all(Option::is_none),
-            "absent files read as None"
-        );
-
-        // Every file the snapshot reads moves its own slot.
-        let mut last = absent;
-        for (slot, name) in tomlctl::SNAPSHOT_INPUTS.iter().enumerate() {
-            std::fs::write(dir.join(name), "x").expect("write");
-            let next = fingerprint(&root, "f");
-            assert!(next[slot].is_some(), "{name} is fingerprinted");
-            assert_ne!(next, last, "{name} moves the fingerprint");
-            last = next;
-        }
-        assert_eq!(fingerprint(&root, "f"), last, "stable while untouched");
-
-        std::fs::write(dir.join("tasks.toml"), "a = 12345\n").expect("rewrite");
-        assert_ne!(fingerprint(&root, "f"), last);
-        let _ = std::fs::remove_dir_all(&root);
+        write_renamed(&dir, "tasks.toml", 100);
+        dir
     }
 
     #[test]
@@ -995,9 +710,8 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let mut poller = Poller::new(root.clone(), Some("f".into()), fetcher, tx);
 
+        let dir = with_task_store(&root, "f");
         assert!(poller.tick());
-        let dir = flow_dir(&root, "f");
-        std::fs::create_dir_all(&dir).expect("flow dir");
         std::fs::write(dir.join("context.toml"), "x").expect("write");
         assert!(poller.tick());
 
@@ -1016,12 +730,11 @@ mod tests {
         let (fetcher, calls) = fake(vec![Ok(with_revision("r1")), Ok(with_revision("r2"))]);
         let (tx, rx) = mpsc::channel();
         let mut poller = Poller::new(root.clone(), Some("f".into()), fetcher, tx);
+        let dir = with_task_store(&root, "f");
         assert!(poller.tick());
         assert!(poller.tick());
         assert_eq!(calls.load(Ordering::SeqCst), 1);
 
-        let dir = flow_dir(&root, "f");
-        std::fs::create_dir_all(&dir).expect("flow dir");
         std::fs::write(dir.join("execution-record.toml"), "x").expect("write");
         assert!(poller.tick());
         assert_eq!(calls.load(Ordering::SeqCst), 2, "a file change refetches");
@@ -1043,6 +756,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let mut poller = Poller::new(root.clone(), Some("f".into()), fetcher, tx);
         poller.retry_after = Duration::ZERO;
+        with_task_store(&root, "f");
 
         assert!(poller.tick());
         let events = drain(&rx);
@@ -1081,7 +795,10 @@ mod tests {
         assert!(poller.tick());
         let events = drain(&rx);
         assert!(
-            matches!(events.as_slice(), [Event::Flows(Ok(_))]),
+            matches!(
+                events.as_slice(),
+                [Event::Flows(Ok(_)), Event::Scopes(Ok(_))]
+            ),
             "the first scan reports the flows found: {events:?}"
         );
         assert!(poller.tick());
@@ -1099,7 +816,10 @@ mod tests {
         assert!(poller.tick());
         let events = drain(&rx);
         assert!(
-            matches!(events.as_slice(), [Event::Flows(Ok(_))]),
+            matches!(
+                events.as_slice(),
+                [Event::Flows(Ok(_)), Event::Scopes(Ok(_))]
+            ),
             "{events:?}"
         );
         assert_eq!(lists.load(Ordering::SeqCst), 2);
@@ -1136,7 +856,10 @@ mod tests {
         assert!(poller.tick());
         let events = drain(&rx);
         assert!(
-            matches!(events.as_slice(), [Event::Flows(Ok(_))]),
+            matches!(
+                events.as_slice(),
+                [Event::Flows(Ok(_)), Event::Scopes(Ok(_))]
+            ),
             "{events:?}"
         );
         assert_eq!(lists.load(Ordering::SeqCst), 2);
@@ -1148,6 +871,7 @@ mod tests {
         let root = temp_root("thread");
         let (fetcher, _calls) = fake(vec![Ok(with_revision("r1"))]);
         let (tx, rx) = mpsc::channel();
+        with_task_store(&root, "f");
         let source = Source::spawn(root.clone(), None, Duration::from_millis(20), fetcher, tx);
         source.set_slug("f".into());
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -1167,68 +891,6 @@ mod tests {
             Err(RecvTimeoutError::Disconnected)
         ));
         let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn the_wait_runs_to_the_earliest_deadline() {
-        let now = Instant::now();
-        let poll = Duration::from_millis(500);
-        let watching = Deadlines {
-            safety: now + safety_period(true, poll),
-            retry: None,
-            tail: None,
-        };
-        assert_eq!(next_wait(now, &watching), SAFETY_TICK);
-        assert_eq!(SAFETY_TICK, Duration::from_secs(10));
-
-        let retrying = Deadlines {
-            retry: Some(now + Duration::from_secs(2)),
-            ..watching
-        };
-        assert_eq!(next_wait(now, &retrying), Duration::from_secs(2));
-
-        let polling = Deadlines {
-            safety: now + safety_period(false, poll),
-            retry: None,
-            tail: None,
-        };
-        assert_eq!(next_wait(now, &polling), poll);
-
-        let late = now + Duration::from_secs(20);
-        assert_eq!(
-            next_wait(late, &polling),
-            Duration::ZERO,
-            "a passed deadline"
-        );
-    }
-
-    #[test]
-    fn tail_refreshes_do_not_hold_off_the_safety_tick() {
-        let now = Instant::now();
-        let mut deadlines = Deadlines {
-            safety: now + Duration::from_secs(3),
-            retry: None,
-            tail: Some(now + TICK),
-        };
-        assert_eq!(next_wait(now, &deadlines), Duration::from_secs(1));
-
-        // Walks the poller's wait loop: each tail refresh moves only the tail deadline.
-        let mut at = now;
-        let mut refreshes = 0;
-        for _ in 0..10 {
-            at += next_wait(at, &deadlines);
-            let due = deadlines.due(at);
-            assert!(!due.retry);
-            if due.tail {
-                refreshes += 1;
-                deadlines.tail = Some(at + TICK);
-            }
-            if due.safety {
-                break;
-            }
-        }
-        assert_eq!(refreshes, 3);
-        assert_eq!(at, now + Duration::from_secs(3), "safety on time");
     }
 
     #[test]
@@ -1288,44 +950,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// Writes `name` in place, creating it if absent, stamped with `secs` past the epoch, and
-    /// puts the directory's mtime back if the write moved it.
-    fn write_in_place(dir: &Path, name: &str, secs: u64) {
-        let before = modified(dir).expect("dir mtime");
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(dir.join(name))
-            .expect("open");
-        std::io::Write::write_all(&mut file, b"status = \"done\"\n").expect("write");
-        file.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(secs))
-            .expect("stamp");
-        drop(file);
-        if modified(dir) != Some(before) {
-            open_dir_for_stamp(dir)
-                .set_modified(before)
-                .expect("restore");
-        }
-    }
-
-    #[cfg(windows)]
-    fn open_dir_for_stamp(dir: &Path) -> std::fs::File {
-        use std::os::windows::fs::OpenOptionsExt;
-        const FILE_WRITE_ATTRIBUTES: u32 = 0x100;
-        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
-        std::fs::OpenOptions::new()
-            .access_mode(FILE_WRITE_ATTRIBUTES)
-            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
-            .open(dir)
-            .expect("open dir")
-    }
-
-    #[cfg(not(windows))]
-    fn open_dir_for_stamp(dir: &Path) -> std::fs::File {
-        std::fs::File::open(dir).expect("open dir")
-    }
-
     #[test]
     fn a_task_store_flow_is_restatted_every_scan_and_a_wake_evicts_a_bare_flow() {
         let root = temp_root("evict");
@@ -1345,7 +969,10 @@ mod tests {
         assert!(poller.tick());
         let events = drain(&rx);
         assert!(
-            matches!(events.as_slice(), [Event::Flows(Ok(_))]),
+            matches!(
+                events.as_slice(),
+                [Event::Flows(Ok(_)), Event::Scopes(Ok(_))]
+            ),
             "an in-place write beside a task store is seen with no wake: {events:?}"
         );
         assert_eq!(lists.load(Ordering::SeqCst), 2);
@@ -1363,7 +990,10 @@ mod tests {
         assert!(poller.tick());
         let events = drain(&rx);
         assert!(
-            matches!(events.as_slice(), [Event::Flows(Ok(_))]),
+            matches!(
+                events.as_slice(),
+                [Event::Flows(Ok(_)), Event::Scopes(Ok(_))]
+            ),
             "{events:?}"
         );
         assert_eq!(lists.load(Ordering::SeqCst), 3);
@@ -1415,106 +1045,187 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    #[test]
-    fn two_unreported_changes_with_no_wake_between_abandon_the_watch() {
-        use TickCause::{Other, Safety, Wake};
-        let mut misses = MissedChanges::default();
-        assert!(!misses.on_tick(Safety, true), "one miss");
-        assert!(misses.on_tick(Safety, true), "the second in a row");
+    fn backlog_feed() -> Feed {
+        Feed::Ledger(LedgerRef::Backlog)
+    }
 
-        let mut misses = MissedChanges::default();
-        assert!(!misses.on_tick(Safety, true));
-        assert!(!misses.on_tick(Wake, true), "a wake resets");
-        assert!(!misses.on_tick(Safety, true), "counting starts over");
+    fn write_backlog(root: &std::path::Path, body: &str) {
+        std::fs::write(root.join(".claude").join("backlog.toml"), body).expect("backlog");
+    }
 
-        let mut misses = MissedChanges::default();
-        assert!(!misses.on_tick(Safety, true));
-        assert!(!misses.on_tick(Other, true), "only safety ticks count");
-        assert!(
-            !misses.on_tick(Safety, false),
-            "a clean safety tick neither counts nor resets"
-        );
-        assert!(
-            misses.on_tick(Safety, true),
-            "the second miss since the last wake"
-        );
+    fn ledger_revisions(events: Vec<Event>) -> Vec<Option<String>> {
+        events
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::Ledger { feed, ledger } => {
+                    assert_eq!(feed, backlog_feed());
+                    Some(ledger.expect("read").revision)
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
-    fn a_failed_watch_start_backs_off_from_the_poll_interval_to_the_cap() {
-        let now = Instant::now();
-        let poll = Duration::from_millis(500);
-        let mut backoff = None;
-        let mut delays = Vec::new();
-        for _ in 0..10 {
-            let next = Backoff::after_failure(backoff, now, poll);
-            delays.push(next.delay.as_millis());
-            backoff = Some(next);
-        }
-        assert_eq!(
-            delays,
-            [
-                500, 1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000, 60000
-            ]
+    fn a_ledger_change_posts_one_event() {
+        let root = temp_root("ledger-change");
+        let reads = ["r1", "r1", "r2"].map(|r| Ok(ledger_with_revision(Some(r))));
+        let (fetcher, _calls, ledger_reads) = fake_ledgers(reads.into());
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        write_backlog(&root, "a");
+        poller.subscribe(vec![backlog_feed()]);
+
+        assert!(poller.tick());
+        assert_eq!(ledger_revisions(drain(&rx)), [Some("r1".into())]);
+
+        write_backlog(&root, "ab");
+        assert!(poller.tick());
+        assert!(
+            ledger_revisions(drain(&rx)).is_empty(),
+            "an unchanged revision is not sent"
         );
 
-        let first = Backoff::after_failure(None, now, poll);
-        assert!(!first.allows(now), "no second attempt at once");
-        assert!(first.allows(now + poll));
-    }
-
-    #[test]
-    fn a_pending_backoff_holds_off_a_start_and_a_missing_root_leaves_it_alone() {
-        let root = temp_root("backoff");
-        let (control, _messages) = mpsc::channel();
-        let missing = root.join("absent");
-        let prior = Backoff::after_failure(None, Instant::now(), Duration::from_secs(3600));
-        let mode = Mode::start(&missing, &control, Duration::from_millis(500), Some(prior));
-        assert_eq!(mode.state(), WatchState::Retrying);
-        assert_eq!(mode.backoff(), Some(prior), "no attempt, no longer wait");
-
-        let present = flows::flows_root(&root);
-        let mode = Mode::start(&present, &control, Duration::from_millis(500), Some(prior));
-        assert_eq!(mode.state(), WatchState::Retrying, "held off until due");
-        assert_eq!(mode.backoff(), Some(prior));
+        write_backlog(&root, "abc");
+        assert!(poller.tick());
+        assert_eq!(ledger_revisions(drain(&rx)), [Some("r2".into())]);
+        assert_eq!(ledger_reads.load(Ordering::SeqCst), 3);
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn the_watch_is_retried_abandoned_and_restarted_at_the_right_phases() {
-        use WatchState::{Abandoned, Retrying, Watching};
-        let start = Some(ModeChange::Start);
-        let poll = |retry_watch| Some(ModeChange::Poll { retry_watch });
+    fn an_unchanged_ledger_is_not_refetched() {
+        let root = temp_root("ledger-idle");
+        let (fetcher, _calls, ledger_reads) = fake_ledgers(Vec::new());
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        write_backlog(&root, "a");
+        poller.subscribe(vec![backlog_feed()]);
+        for _ in 0..3 {
+            assert!(poller.tick());
+        }
+        assert_eq!(ledger_reads.load(Ordering::SeqCst), 1);
+        assert_eq!(ledger_revisions(drain(&rx)), [None]);
 
-        assert_eq!(mode_change(Retrying, Phase::Tick), start, "a failed start");
-        assert_eq!(mode_change(Watching, Phase::Tick), None);
-        assert_eq!(mode_change(Abandoned, Phase::Tick), None, "never again");
-
-        let abandon = Phase::Ticked { abandon: true };
-        assert_eq!(mode_change(Watching, abandon), poll(false));
+        poller.subscribe(vec![backlog_feed()]);
+        assert!(poller.tick());
         assert_eq!(
-            mode_change(Watching, Phase::Ticked { abandon: false }),
-            None
+            ledger_reads.load(Ordering::SeqCst),
+            1,
+            "a kept feed keeps its stat"
         );
-        assert_eq!(mode_change(Retrying, abandon), None, "no watch to drop");
-
-        let rewatch = Phase::Woken { rewatch: true };
-        assert_eq!(
-            mode_change(Watching, rewatch),
-            poll(true),
-            "the watcher is dropped and the next tick starts a fresh one"
-        );
-        assert_eq!(mode_change(Watching, Phase::Woken { rewatch: false }), None);
-        assert_eq!(mode_change(Retrying, rewatch), None);
-        assert_eq!(mode_change(Abandoned, rewatch), None);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn only_a_schema_too_new_error_gains_the_reinstall_hint() {
-        let too_new = "tasks store schema_version 9 is newer than the supported 1 — upgrade";
-        let hinted = with_reinstall_hint(too_new.to_string());
-        assert!(hinted.starts_with(too_new), "{hinted}");
-        assert!(hinted.contains("cargo install --path glimpse"), "{hinted}");
-        assert_eq!(with_reinstall_hint("boom".into()), "boom");
+    fn a_backlog_wake_keeps_the_task_fingerprint() {
+        let root = temp_root("backlog-wake");
+        with_task_store(&root, "f");
+        write_backlog(&root, "a");
+        let (fetcher, calls, ledger_reads) = fake_ledgers(Vec::new());
+        let (tx, _rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), Some("f".into()), fetcher, tx);
+        poller.subscribe(vec![backlog_feed()]);
+        assert!(poller.tick());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(ledger_reads.load(Ordering::SeqCst), 1);
+
+        let mut wakes = Wakes::default();
+        wakes.add(Wake::Repo(RepoFile::Backlog));
+        poller.evict(&wakes);
+        assert!(poller.last_fingerprint.is_some());
+        assert!(poller.flow_stats.contains_key("f"));
+        assert!(poller.tick());
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "no snapshot refetch");
+        assert_eq!(
+            ledger_reads.load(Ordering::SeqCst),
+            2,
+            "the woken feed is re-read"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_ledger_only_flow_posts_its_scopes() {
+        let root = temp_root("ledger-only");
+        let (fetcher, _calls, lists) = fake_counting_lists(vec![Ok(with_revision("r1"))]);
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        assert!(poller.tick());
+        drain(&rx);
+
+        let dir = flow_dir(&root, "l");
+        std::fs::create_dir_all(&dir).expect("flow dir");
+        write_renamed(&dir, "review-ledger.toml", 100);
+        assert!(poller.tick());
+        let events = drain(&rx);
+        assert!(
+            matches!(
+                events.as_slice(),
+                [Event::Flows(Ok(_)), Event::Scopes(Ok(_))]
+            ),
+            "{events:?}"
+        );
+        assert_eq!(lists.load(Ordering::SeqCst), 2);
+
+        write_in_place(&dir, "review-ledger.toml", 200);
+        assert!(poller.tick());
+        assert!(
+            drain(&rx).is_empty(),
+            "a ledger write alone does not relist"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_new_flowless_ledger_posts_the_scopes() {
+        let root = temp_root("flowless");
+        let (fetcher, _calls) = fake(vec![Ok(with_revision("r1"))]);
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), None, fetcher, tx);
+        assert!(poller.tick());
+        drain(&rx);
+
+        let reviews = root.join(".claude").join("reviews");
+        std::fs::create_dir_all(&reviews).expect("reviews dir");
+        std::fs::write(reviews.join("main.toml"), "x").expect("ledger");
+        assert!(poller.step().is_some());
+        let events = drain(&rx);
+        assert!(
+            matches!(events.as_slice(), [Event::Scopes(Ok(_))]),
+            "{events:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_flow_without_a_task_store_is_not_snapshotted() {
+        let root = temp_root("no-store");
+        let dir = flow_dir(&root, "l");
+        std::fs::create_dir_all(&dir).expect("flow dir");
+        write_renamed(&dir, "review-ledger.toml", 100);
+        let (fetcher, calls) = fake(vec![Ok(with_revision("r1"))]);
+        let (tx, rx) = mpsc::channel();
+        let mut poller = Poller::new(root.clone(), Some("l".into()), fetcher, tx);
+        poller.retry_after = Duration::ZERO;
+        let errors = |events: Vec<Event>| {
+            events
+                .iter()
+                .filter(|e| matches!(e, Event::SourceError(m) if m == NO_TASK_STORE))
+                .count()
+        };
+
+        assert!(poller.tick());
+        assert_eq!(errors(drain(&rx)), 1);
+        assert!(poller.retry_at().is_none(), "no retry loop");
+        write_renamed(&dir, "context.toml", 200);
+        assert!(poller.tick());
+        assert_eq!(errors(drain(&rx)), 0, "reported once");
+        assert_eq!(calls.load(Ordering::SeqCst), 0, "never fetched");
+
+        write_renamed(&dir, "tasks.toml", 300);
+        assert!(poller.tick());
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "a task store is fetched");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -11,8 +11,10 @@
 //! row validated before the first is stored, so one unknown id leaves the
 //! file and its sidecar untouched.
 
+use std::path::Path;
+
 use anyhow::Result;
-use serde_json::json;
+use serde_json::{Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use super::schema::{self, FIELD_LAST_UPDATED};
@@ -21,15 +23,16 @@ use crate::cli::{TriageMode, WriteIntegrityArgs, write_integrity_opts};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_arg_err, tagged_err};
 use crate::io::{
-    item_id, items_array, items_array_mut, mutate_doc, on_missing_for, relativise,
+    item_id, items_array, items_array_mut, mutate_doc_conditional, on_missing_for, relativise,
     repo_or_cwd_root, warn_if_created,
 };
+use crate::items::StaleOp;
 use crate::output::print_json_compact;
 
 /// The chosen mode with its companion value already resolved, so the write
 /// path can no longer be handed a `--promote` without a `--to`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Transition {
+pub(crate) enum Transition {
     Promote(String),
     Dismiss(String),
     Resolve(String),
@@ -112,6 +115,25 @@ impl Transition {
                 None,
                 "`backlog triage` takes exactly one of --promote, --dismiss, --resolve, --reopen",
             )),
+        }
+    }
+}
+
+/// A backlog transition the library facade offers, with the companion text
+/// it writes. Promotion stays CLI-only: its target needs flow resolution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BacklogTriage {
+    Dismiss { reason: String },
+    Reopen { rationale: String },
+    Resolve { resolution: String },
+}
+
+impl From<BacklogTriage> for Transition {
+    fn from(t: BacklogTriage) -> Self {
+        match t {
+            BacklogTriage::Dismiss { reason } => Self::Dismiss(reason),
+            BacklogTriage::Reopen { rationale } => Self::Reopen(rationale),
+            BacklogTriage::Resolve { resolution } => Self::Resolve(resolution),
         }
     }
 }
@@ -267,6 +289,99 @@ fn promotion_target(
     Ok(target.stored_value())
 }
 
+/// The ids `expect_status` lets through, plus one stale record per id that
+/// is gone (on `id`, found `null`) or no longer at `expect_status`. Every row
+/// carrying a repeated id must match for that id to pass.
+fn filter_on_status(
+    doc: &TomlValue,
+    ids: &[String],
+    expect_status: &str,
+) -> (Vec<String>, Vec<StaleOp>) {
+    let mut passed: Vec<String> = Vec::new();
+    let mut stale: Vec<StaleOp> = Vec::new();
+    for id in ids {
+        if passed.contains(id) || stale.iter().any(|s| &s.id == id) {
+            continue;
+        }
+        let rows: Vec<&TomlValue> = items_array(doc, schema::ARRAY_BACKLOG)
+            .iter()
+            .filter(|item| item_id(item) == Some(id.as_str()))
+            .collect();
+        if rows.is_empty() {
+            stale.push(StaleOp {
+                id: id.clone(),
+                field: "id".into(),
+                expected: JsonValue::String(id.clone()),
+                found: JsonValue::Null,
+            });
+            continue;
+        }
+        let mismatch = rows.iter().find_map(|row| {
+            let found = row.get(schema::FIELD_STATUS).and_then(TomlValue::as_str);
+            (found != Some(expect_status)).then(|| found.map_or(JsonValue::Null, |s| json!(s)))
+        });
+        match mismatch {
+            Some(found) => stale.push(StaleOp {
+                id: id.clone(),
+                field: schema::FIELD_STATUS.into(),
+                expected: json!(expect_status),
+                found,
+            }),
+            None => passed.push(id.clone()),
+        }
+    }
+    (passed, stale)
+}
+
+/// Applies `transition` to the store under `root` and returns the envelope
+/// the CLI prints. With `expect_status`, only the ids still at that status
+/// move, the envelope gains `applied` and `skipped_stale`, and nothing is
+/// written when none move; without it the call is all-or-nothing.
+pub(crate) fn triage_value(
+    root: &Path,
+    ids: &[String],
+    transition: &Transition,
+    expect_status: Option<&str>,
+    integrity: &WriteIntegrityArgs,
+) -> Result<JsonValue> {
+    let path = root.join(".claude").join("backlog.toml");
+    let today = crate::time::today_toml_date()?;
+    let opts = write_integrity_opts(integrity);
+    let on_missing = on_missing_for(&path, integrity.no_create)?;
+    let mut applied: Vec<String> = Vec::new();
+    let mut stale: Vec<StaleOp> = Vec::new();
+    let created =
+        mutate_doc_conditional(&path, integrity.allow_outside, opts, on_missing, |doc| {
+            let Some(expected) = expect_status else {
+                apply_transition(doc, ids, transition, today)?;
+                return Ok(true);
+            };
+            let (passed, skipped) = filter_on_status(doc, ids, expected);
+            stale = skipped;
+            if passed.is_empty() {
+                return Ok(false);
+            }
+            apply_transition(doc, &passed, transition, today)?;
+            applied = passed;
+            Ok(true)
+        })?;
+    warn_if_created(&path, created);
+    let mut out = json!({
+        "ok": true,
+        "transition": transition.name(),
+        "ids": ids,
+        "path": relativise(root, &path),
+    });
+    if let Transition::Promote(to) = transition {
+        out["to"] = json!(to);
+    }
+    if expect_status.is_some() {
+        out["applied"] = json!(applied);
+        out["skipped_stale"] = stale.iter().map(StaleOp::to_json).collect();
+    }
+    Ok(out)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn dispatch(
     ids: Vec<String>,
@@ -277,6 +392,7 @@ pub(crate) fn dispatch(
     rationale: Option<String>,
     external: bool,
     allow_closed: bool,
+    expect_status: Option<String>,
     integrity: WriteIntegrityArgs,
 ) -> Result<()> {
     let transition = Transition::from_cli(mode, to, reason, resolution, rationale)?;
@@ -291,23 +407,13 @@ pub(crate) fn dispatch(
         }
         other => other,
     };
-    let path = schema::backlog_path()?;
-    let today = crate::time::today_toml_date()?;
-    let opts = write_integrity_opts(&integrity);
-    let on_missing = on_missing_for(&path, integrity.no_create)?;
-    let created = mutate_doc(&path, integrity.allow_outside, opts, on_missing, |doc| {
-        apply_transition(doc, &ids, &transition, today)
-    })?;
-    warn_if_created(&path, created);
-    let mut out = json!({
-        "ok": true,
-        "transition": transition.name(),
-        "ids": ids,
-        "path": relativise(&root, &path),
-    });
-    if let Transition::Promote(to) = &transition {
-        out["to"] = json!(to);
-    }
+    let out = triage_value(
+        &root,
+        &ids,
+        &transition,
+        expect_status.as_deref(),
+        &integrity,
+    )?;
     print_json_compact(&out)
 }
 
@@ -844,6 +950,7 @@ compacted_on = 2026-06-01
                 None,
                 false,
                 false,
+                None,
                 write_args(),
             )
             .unwrap_err();
@@ -871,6 +978,7 @@ compacted_on = 2026-06-01
                 None,
                 false,
                 false,
+                None,
                 write_args(),
             )
             .unwrap_err();
@@ -893,6 +1001,7 @@ compacted_on = 2026-06-01
                 None,
                 false,
                 false,
+                None,
                 write_args(),
             )
             .unwrap();
@@ -914,6 +1023,96 @@ compacted_on = 2026-06-01
         assert!(sidecar);
     }
 
+    #[test]
+    fn expect_status_moves_only_the_rows_still_at_it() {
+        let (out, text) = with_root(|root| {
+            let file = seed(root);
+            triage_value(
+                root,
+                &ids(&["B-aaaaaaaa"]),
+                &Transition::Dismiss("first pass".into()),
+                None,
+                &write_args(),
+            )
+            .unwrap();
+            let out = triage_value(
+                root,
+                &ids(&["B-aaaaaaaa", "B-bbbbbbbb", "B-nosuchid"]),
+                &Transition::Resolve("fixed".into()),
+                Some(schema::STATUS_OPEN),
+                &write_args(),
+            )
+            .unwrap();
+            (out, std::fs::read_to_string(&file).unwrap())
+        });
+        assert_eq!(out["applied"], json!(["B-bbbbbbbb"]));
+        assert_eq!(
+            out["skipped_stale"],
+            json!([
+                {"id": "B-aaaaaaaa", "field": "status", "expected": "open", "found": "dismissed"},
+                {"id": "B-nosuchid", "field": "id", "expected": "B-nosuchid", "found": null},
+            ])
+        );
+        let doc: TomlValue = toml::from_str(&text).unwrap();
+        assert_eq!(
+            field(&doc, "B-aaaaaaaa", schema::FIELD_STATUS).as_deref(),
+            Some("\"dismissed\"")
+        );
+        assert_eq!(
+            field(&doc, "B-bbbbbbbb", schema::FIELD_STATUS).as_deref(),
+            Some("\"resolved\"")
+        );
+        assert_valid(&doc, "B-bbbbbbbb");
+    }
+
+    #[test]
+    fn expect_status_with_nothing_to_move_writes_nothing() {
+        let (out, bytes, sidecar) = with_root(|root| {
+            let file = seed(root);
+            let out = triage_value(
+                root,
+                &ids(&["B-aaaaaaaa", "B-nosuchid"]),
+                &Transition::Reopen("back".into()),
+                Some(schema::STATUS_DISMISSED),
+                &write_args(),
+            )
+            .unwrap();
+            (
+                out,
+                std::fs::read(&file).unwrap(),
+                file.with_file_name("backlog.toml.sha256").exists(),
+            )
+        });
+        assert_eq!(out["applied"], json!([]));
+        assert_eq!(out["skipped_stale"].as_array().map(Vec::len), Some(2));
+        assert_eq!(bytes, STORE.as_bytes());
+        assert!(!sidecar);
+    }
+
+    #[test]
+    fn without_expect_status_the_envelope_is_unchanged() {
+        let out = with_root(|root| {
+            seed(root);
+            triage_value(
+                root,
+                &ids(&["B-aaaaaaaa"]),
+                &Transition::Dismiss("dropped".into()),
+                None,
+                &write_args(),
+            )
+            .unwrap()
+        });
+        assert_eq!(
+            out,
+            json!({
+                "ok": true,
+                "transition": "dismiss",
+                "ids": ["B-aaaaaaaa"],
+                "path": ".claude/backlog.toml",
+            })
+        );
+    }
+
     fn seed_flow(root: &Path, slug: &str, status: &str) {
         crate::test_support::write(
             root,
@@ -933,6 +1132,7 @@ compacted_on = 2026-06-01
             None,
             external,
             allow_closed,
+            None,
             write_args(),
         )?;
         let text = std::fs::read_to_string(root.join(".claude").join("backlog.toml")).unwrap();

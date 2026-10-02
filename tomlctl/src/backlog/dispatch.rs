@@ -114,6 +114,7 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             rationale,
             external,
             allow_closed,
+            expect_status,
             integrity,
         } => crate::backlog::triage::dispatch(
             ids,
@@ -124,6 +125,7 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             rationale,
             external,
             allow_closed,
+            expect_status,
             integrity,
         ),
         BacklogOp::Reconcile {

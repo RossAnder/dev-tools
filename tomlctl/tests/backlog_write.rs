@@ -565,6 +565,58 @@ fn triage_with_two_mode_flags_is_a_parser_error() {
     );
 }
 
+#[test]
+fn backlog_triage_expect_status_skips_a_changed_row() {
+    let (_tmp, root) = sandbox();
+    let drift = add_drift(&root);
+    let flake = backlog(
+        &root,
+        &[
+            "add",
+            "--summary",
+            FLAKE_SUMMARY,
+            "--kind",
+            "flaky-test",
+            "--area",
+            FLAKE_AREA,
+        ],
+    )["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let reason = "already gone";
+    backlog(&root, &["triage", &flake, "--dismiss", "--reason", reason]);
+
+    let resolution = "fixed upstream";
+    let out = backlog(
+        &root,
+        &[
+            "triage",
+            &drift,
+            &flake,
+            "--resolve",
+            "--resolution",
+            resolution,
+            "--expect-status",
+            "open",
+        ],
+    );
+    assert_eq!(out["applied"], json!([drift]));
+    assert_eq!(
+        out["skipped_stale"],
+        json!([{"id": flake, "field": "status", "expected": "open", "found": "dismissed"}])
+    );
+
+    let doc = read_store(&root);
+    let resolved = row(&doc, "backlog", &drift);
+    assert_eq!(field(resolved, "status"), Some("resolved"));
+    assert_eq!(field(resolved, "resolution"), Some(resolution));
+    let skipped = row(&doc, "backlog", &flake);
+    assert_eq!(field(skipped, "status"), Some("dismissed"));
+    assert_eq!(field(skipped, "dismiss_reason"), Some(reason));
+    assert_sidecar_matches(&store_path(&root));
+}
+
 fn add_drift(root: &Path) -> String {
     let added = backlog(
         root,

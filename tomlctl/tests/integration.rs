@@ -506,6 +506,96 @@ fn items_apply_ndjson_malformed_line_names_it_and_writes_nothing() {
     );
 }
 
+/// R1 is `open` in `APPLY_FIXTURE`, so its `expect` is stale; R2's op is fresh.
+const STALE_OPS: &str = r#"[
+    {"op":"update","id":"R1","expect":{"status":"fixed"},"json":{"status":"wontfix"}},
+    {"op":"update","id":"R2","expect":{"status":"open"},"json":{"status":"fixed"}}
+]"#;
+
+fn apply_stale_ops(dir: &Path, ledger: &Path, extra: &[&str]) -> assert_cmd::assert::Assert {
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir)
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .args(["items", "apply"])
+        .arg(ledger)
+        .args(["--ops", "-"])
+        .args(extra)
+        .write_stdin(STALE_OPS)
+        .assert()
+}
+
+fn expected_skipped_r1() -> serde_json::Value {
+    serde_json::json!([{"id": "R1", "field": "status", "expected": "fixed", "found": "open"}])
+}
+
+#[test]
+fn items_apply_stale_expect_fails_by_default() {
+    let (dir, ledger) = seed_ledger(APPLY_FIXTURE);
+    let out = apply_stale_ops(dir.path(), &ledger, &[]).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("id = R1") && stderr.contains("--on-stale skip"),
+        "abort must name the stale id and the skip remedy; got stderr:\n{stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(&ledger).unwrap(),
+        APPLY_FIXTURE,
+        "an aborted batch must write nothing, fresh ops included"
+    );
+}
+
+#[test]
+fn items_apply_on_stale_skip_reports_skipped_ids() {
+    let (dir, ledger) = seed_ledger(APPLY_FIXTURE);
+    let out = apply_stale_ops(dir.path(), &ledger, &["--on-stale", "skip"]).success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v = parse_write_envelope(&stdout);
+    assert_eq!(v["ok"], serde_json::json!(true), "got: {stdout}");
+    assert_eq!(v["skipped_stale"], expected_skipped_r1(), "got: {stdout}");
+
+    let on_disk = fs::read_to_string(&ledger).unwrap();
+    let doc: toml::Value = toml::from_str(&on_disk).unwrap();
+    let statuses: Vec<(&str, &str)> = doc["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| (row["id"].as_str().unwrap(), row["status"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        statuses,
+        [("R1", "open"), ("R2", "fixed")],
+        "only the fresh op may land; got:\n{on_disk}"
+    );
+}
+
+#[test]
+fn items_apply_dry_run_reports_skipped_stale_and_writes_nothing() {
+    let (dir, ledger) = seed_ledger(APPLY_FIXTURE);
+    let out = apply_stale_ops(dir.path(), &ledger, &["--on-stale", "skip", "--dry-run"]).success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("dry-run stdout must be JSON: {e}; stdout:\n{stdout}"));
+    assert_eq!(v["dry_run"], serde_json::json!(true), "got: {stdout}");
+    assert_eq!(
+        v["would_change"]["ids"],
+        serde_json::json!(["R2"]),
+        "got: {stdout}"
+    );
+    assert_eq!(v["skipped_stale"], expected_skipped_r1(), "got: {stdout}");
+    assert_eq!(fs::read_to_string(&ledger).unwrap(), APPLY_FIXTURE);
+}
+
+#[test]
+fn items_apply_help_lists_on_stale() {
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .args(["items", "apply", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--on-stale").and(predicate::str::contains("skip")));
+}
+
 /// `get --raw` on an array points at remedies `get` actually has, not at the
 /// list verbs' `--lines`.
 #[test]

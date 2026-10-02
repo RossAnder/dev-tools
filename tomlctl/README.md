@@ -33,7 +33,7 @@ tomlctl items add-many <file> --defaults-json '{...}' --ndjson -    # batched ND
 tomlctl items update <file> <id> --json '{"status":"fixed"}' [--unset key]...
 tomlctl items remove <file> <id>
 tomlctl items next-id <file> --prefix R|O|E             # prefix is required — no default
-tomlctl items apply  <file> --ops '[{"op":"add|update|remove", ...}, ...]' [--array NAME]
+tomlctl items apply  <file> --ops '[{"op":"add|update|remove", ...}, ...]' [--array NAME] [--on-stale abort|skip]   # an update/remove op's `expect` object must still match its row; skip lists the stale ops under skipped_stale
 tomlctl items find-duplicates <file> [--tier A|B|C] [--across <other>]   # dedup hygiene (read-only JSON array); --across runs tier A or B over the union of two ledgers
 tomlctl items fingerprint <file> <id>                  # tier-B dedup_id of one stored row + the five fields that produced it
 tomlctl items orphans  <file>                          # missing-file / symbol-missing / io-error / outside-repo / dangling-dep / instance-missing
@@ -59,6 +59,7 @@ tomlctl backlog list   [--open|--live] [--kind K] [--tag T]... [--area-prefix PA
 tomlctl backlog show   <id>                            # one item + its one-hop relations + its evidence listing
 tomlctl backlog relate B7 --to B3 --as relates-to|duplicates|supersedes   # duplicates dismisses B7, supersedes dismisses B3
 tomlctl backlog triage --promote --to <flow-slug> B7   # --to must name a flow or plan (see --external / --allow-closed); or --dismiss --reason / --resolve --resolution / --reopen --rationale
+tomlctl backlog triage --dismiss --reason <r> --expect-status open B7 B9   # move only ids still at that status; the rest land in skipped_stale
 tomlctl backlog reconcile [--flow <s>] [--adopt] [--apply]   # bucket promoted items by their closing tasks; --adopt links by id mention, --apply resolves the ready ones
 tomlctl backlog evidence dir <id>                      # per-item .claude/backlog-evidence/<id>/, created on demand
 tomlctl backlog evidence audit [--strict] [--max-bytes N]   # unowned dirs, policy breaches, stale references
@@ -67,6 +68,12 @@ tomlctl backlog compact [--older-than 90d] [--dry-run]  # ages resolved and dism
 tomlctl tasks snapshot --slug <s>                      # one consistent read of a flow: rows, graph products, joined execution record, agent records
 tomlctl agents record --harness claude-code|codex|manual [-]   # one hook payload from stdin into the dispatching flow's agents.toml; the manual form of what the harness hooks do by running `glimpse hook`, which writes the same file in-process
 tomlctl agents list --slug <s>                         # a flow's agent lifecycle records as a JSON array
+tomlctl inputs list [--pending] [--kind K]... [--ledger L] [--flow <s>] [--scope <s>] [--item <id>]   # .claude/inputs.toml as {path, revision, inputs}
+tomlctl inputs add --json '{"kind":"note",...}'        # append one record as `new`; prints its {id}
+tomlctl inputs ack <id>... --by <command>              # new → acknowledged
+tomlctl inputs handle <id>... --by <command> --note <text>   # new or acknowledged → handled
+tomlctl inputs withdraw <id>...                        # withdraw new records, all or none
+tomlctl inputs answer <question-id> [--pick <option>]... [--text <text>]   # answer a new question and mark it handled
 
 # Integrity flags (accepted after the subcommand name on any TOML-touching command):
 #   --allow-outside           bypass the best-effort .claude/ containment guard (not a sandbox)
@@ -273,7 +280,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.12.0",
+  "version": "0.13.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -286,18 +293,19 @@ downstream flow-command templates can feature-gate at boot without parsing
                "backlog_check",
                "backlog_cluster", "backlog_compact", "backlog_evidence",
                "backlog_list", "backlog_show", "backlog_relate",
-               "backlog_triage", "backlog_reconcile",
+               "backlog_triage", "backlog_triage_expect",
+               "backlog_reconcile",
                "tasks_import_plan", "tasks_add",
                "tasks_add_many", "tasks_update", "tasks_remove",
                "tasks_show", "tasks_list", "tasks_edges", "tasks_ready",
                "tasks_batches", "tasks_closure", "tasks_check",
                "tasks_render", "tasks_snapshot", "agents_record",
-               "agents_list", "sweep", "items_sweep", "items_clusters",
-               "orphans_instances"],
+               "agents_list", "inputs", "items_apply_expect", "sweep",
+               "items_sweep", "items_clusters", "orphans_instances"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
-                  "agents", "sweep"],
+                  "agents", "inputs", "sweep"],
   "commands": {
     "items": {
       "subcommands": {
@@ -372,6 +380,7 @@ Feature meanings:
 | `backlog_show` | `backlog show <ID>` — one item with its one-hop relation neighbourhood and evidence listing |
 | `backlog_relate` | `backlog relate <A> --to <ID> --as <KIND>` — write a typed edge between two items |
 | `backlog_triage` | `backlog triage <ID>... --promote` / `--dismiss` / `--resolve` / `--reopen` — transition items out of (or back into) `open`; `--promote --to` must name an existing flow or plan and stores a plan some flow binds as that flow's slug, `--external` stores `external:<REF>` unresolved, and `--allow-closed` accepts a flow at `review` or `complete`. Resolving or dismissing a promoted item keeps its `promoted` / `promoted_to` claim |
+| `backlog_triage_expect` | `backlog triage --expect-status <STATUS>` — move only the ids still at that status; the envelope lists the moved ids under `applied` and each other id under `skipped_stale` with its expected and found status |
 | `backlog_reconcile` | `backlog reconcile [--flow <SLUG>]` — join each `promoted` item to the tasks that close it in its flow's `tasks.toml` and bucket it as `ready`, `in-progress`, `stalled`, `unlinked`, `orphaned`, `dangling` or `external`, each entry with a `reason`; read-only by default. `--adopt` links an item no task links yet to the tasks whose prose names its id and lists the flows in `render_needed`, which must be re-rendered with `tasks render` before the next import; `--apply` resolves the `ready` items, recording `resolved_flow`, `resolved_tasks` and `resolved_commits` |
 | `tasks_import_plan` | `tasks import-plan --slug <SLUG>` — upsert a plan's `## Tasks`, `## Execution Policy` and `## Dependency Graph` into the store, keyed on each row's `ref`; `--reconcile-record` adopts the execution record's completions |
 | `tasks_add` | `tasks add --title <TEXT> --effort <S\|M\|L>` — append one row, refusing a dangling dependency target or a cycle before writing |
@@ -389,6 +398,8 @@ Feature meanings:
 | `tasks_snapshot` | `tasks snapshot --slug <SLUG>` — one read-only JSON view of a flow for a viewer: rows, Kahn layers, the `tasks ready` frontier, edges, checkpoints, the execution record joined to its rows, and the agent records; absent sibling files read as empty, and `revision` fingerprints the raw input bytes |
 | `agents_record` | `agents record --harness <HARNESS> [PAYLOAD]` — record one hook payload (an agent starting, idling or stopping) into the dispatching flow's `.claude/flows/<SLUG>/agents.toml`; the manual form of what `glimpse hook` does in-process; never run by carriers or sub-agents |
 | `agents_list` | `agents list --slug <SLUG>` — a flow's agent lifecycle records as a JSON array |
+| `inputs` | `inputs list` / `add` / `ack` / `handle` / `withdraw` / `answer` — the repo-scoped `.claude/inputs.toml` store of captures, requests, notes, questions and answers, each moving `new` → `acknowledged` → `handled` (or withdrawn while `new`) |
+| `items_apply_expect` | a per-op `expect` object on `items apply` update and remove ops, mapping field to expected value (`null` for an absent field), checked against the row as stored; `--on-stale abort` (the default) fails the whole batch naming every stale op, `--on-stale skip` applies the rest and lists the dropped ops under `skipped_stale` |
 | `sweep` | `sweep -e <REGEX>...` — regex hits over the repo's tracked files as sorted `file:line` sites, with `skipped` counts, `truncated` and `coverage_complete`; `.claude/**` and `docs/plans/**` are excluded by default |
 | `items_sweep` | `items sweep <file>` — re-run each item's stored `sweep` patterns and diff the hits against its `instances` (`new` / `gone` / `kept` / `unverified`); `--update` rewrites an open item's `instances` in listed order, appending new sites, and refuses while the run is truncated or an anchor is unverified for any reason but `excluded` |
 | `items_clusters` | `items clusters <file> --ids <R1,R7,...>` — file-disjoint clusters over `file` plus `instances`, layered by `depends_on` into batches, each cluster carrying `lite_file_scope`; out-of-selection dependencies land in `dropped_deps` and a cycle is refused |

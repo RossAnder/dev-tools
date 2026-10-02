@@ -9,7 +9,10 @@
 pub(crate) mod activity;
 pub(crate) mod details;
 pub(crate) mod ego;
+pub(crate) mod form;
 pub(crate) mod header;
+pub(crate) mod inbox;
+pub(crate) mod items;
 pub(crate) mod layers;
 pub(crate) mod legend;
 pub(crate) mod markdown;
@@ -26,6 +29,7 @@ use crate::app::{App, Navigator, Regions};
 use crate::config::{Config, Density, Orientation, Split, ViewKind, aspect};
 use crate::diagram::{self, DiagramCache};
 use crate::model::{Task, TaskStatus};
+use crate::surface::Surface;
 use crate::transcript::TailView;
 
 /// Rows an activity-only modal needs: borders, the status row and every shown entry.
@@ -78,9 +82,9 @@ pub(crate) fn render(
 
     header::render(frame, head, app, compact);
     cache.set_implied(app.show_implied);
-    let tasks = match view_area {
-        Some(view_area) => draw_view(frame, view_area, app, orientation, cache),
-        None => Vec::new(),
+    let (tasks, items) = match view_area {
+        Some(view_area) => draw_surface(frame, view_area, app, orientation, cache),
+        None => (Vec::new(), Vec::new()),
     };
     app.scroll_nudge = (0, 0);
     let (panel_area, modal, divider) = match panels {
@@ -108,6 +112,7 @@ pub(crate) fn render(
         details: details.map(|(rect, _)| rect),
         modal,
         tasks,
+        items,
         body,
         divider,
     };
@@ -228,6 +233,27 @@ pub(crate) fn notice_style(app: &App, task: &Task) -> Option<ratatui::style::Sty
     })
 }
 
+/// The current surface's body: Tasks draws the active view, an item surface its list.
+fn draw_surface(
+    frame: &mut Frame,
+    area: Rect,
+    app: &mut App,
+    orientation: Orientation,
+    cache: &mut DiagramCache,
+) -> (Vec<layers::Target>, Vec<items::Target>) {
+    match app.surface {
+        Surface::Tasks => (draw_view(frame, area, app, orientation, cache), Vec::new()),
+        Surface::Inbox => {
+            let line = Line::from(Span::styled("no input records yet", app.theme.secondary));
+            frame.render_widget(Paragraph::new(line), area);
+            (Vec::new(), Vec::new())
+        }
+        Surface::Review | Surface::Optimise | Surface::PlanReview | Surface::Backlog => {
+            (Vec::new(), items::render(frame.buffer_mut(), area, app))
+        }
+    }
+}
+
 fn draw_view(
     frame: &mut Frame,
     area: Rect,
@@ -330,6 +356,8 @@ fn footer(app: &App, now: Instant) -> Line<'static> {
             ("enter", "close".to_string()),
             ("t", "activity".to_string()),
         ]
+    } else if app.surface != Surface::Tasks {
+        surface_hints(app, compact)
     } else if compact {
         vec![
             ("enter", "details".to_string()),
@@ -381,6 +409,40 @@ fn footer(app: &App, now: Instant) -> Line<'static> {
         spans.push(Span::styled(format!(" {label}"), app.theme.key_label));
     }
     Line::from(spans)
+}
+
+/// An item surface's hints; Esc reads "clear marks" while any are set, since that is
+/// what it does first.
+fn surface_hints(app: &App, compact: bool) -> Vec<(&'static str, String)> {
+    let Some(state) = app.current_items() else {
+        return vec![
+            ("1-6", "surface".to_string()),
+            ("s", "flows".to_string()),
+            ("q", "back".to_string()),
+        ];
+    };
+    let mut hints = vec![
+        ("j/k", "move".to_string()),
+        ("space", "mark".to_string()),
+        ("enter", "details".to_string()),
+    ];
+    if !state.marks.is_empty() {
+        hints.push(("esc", format!("clear {} marks", state.marks.len())));
+    }
+    if compact {
+        hints.extend([("g", "group".to_string()), ("q", "back".to_string())]);
+        return hints;
+    }
+    hints.extend([
+        ("V", "mark all".to_string()),
+        ("g", "group".to_string()),
+        ("S", "sort".to_string()),
+        ("c", "closed".to_string()),
+        ("1-6", "surface".to_string()),
+        ("s", "flows".to_string()),
+        ("q", "back".to_string()),
+    ]);
+    hints
 }
 
 #[cfg(test)]
@@ -576,7 +638,7 @@ mod tests {
 
         let wide = draw(&mut app, 120, 30);
         let (row, col) = find(&wide, "#4 Render the rows").expect("details title, wide");
-        assert!(row <= 3, "beside: the panel starts at the top, row {row}");
+        assert!(row <= 4, "beside: the panel starts under the header, row {row}");
         assert!(col > 60, "beside: the panel is on the right, column {col}");
 
         let tall = draw(&mut app, 60, 50);
@@ -675,6 +737,52 @@ mod tests {
             app.nav.is_some(),
             "moves still work under full-screen details"
         );
+    }
+
+    #[test]
+    fn an_item_surface_replaces_the_view_and_records_its_rows() {
+        use crate::ledger::{ItemRow, Kind, Ledger, StatusClass};
+
+        let mut app = app();
+        let row = |id: &str| ItemRow {
+            id: id.to_string(),
+            status: "open".to_string(),
+            class: StatusClass::Live,
+            summary: format!("finding {id}"),
+            ..ItemRow::default()
+        };
+        let ledger = Ledger {
+            kind: Kind::Review,
+            path: "review-ledger.toml".to_string(),
+            revision: Some("v1".to_string()),
+            rows: vec![row("R1"), row("R2")],
+        };
+        app.apply_ledger(ledger, Instant::now());
+        app.apply(Action::SwitchSurface(Surface::Review));
+        let rows = draw(&mut app, 120, 30);
+        let screen = rows.join("\n");
+        assert!(!screen.contains("Render the rows"), "{screen}");
+        let (row, _) = find(&rows, "finding R2").expect("the item list");
+        let ids: Vec<&str> = app
+            .regions
+            .items
+            .iter()
+            .map(|(_, id)| id.as_str())
+            .collect();
+        assert_eq!(ids, ["R1", "R2"]);
+        assert_eq!(usize::from(app.regions.items[1].0.y), row);
+        assert!(app.regions.tasks.is_empty());
+        assert!(rows.last().is_some_and(|row| row.contains("space mark")));
+
+        app.apply(Action::SwitchSurface(Surface::Inbox));
+        let inbox = draw(&mut app, 120, 30).join("\n");
+        assert!(inbox.contains("no input records yet"), "{inbox}");
+        assert!(app.regions.items.is_empty());
+
+        app.apply(Action::SwitchSurface(Surface::Tasks));
+        let tasks = draw(&mut app, 120, 30);
+        assert!(find(&tasks, "Render the rows").is_some());
+        assert!(tasks.last().is_some_and(|row| row.contains("tab view")));
     }
 
     #[test]

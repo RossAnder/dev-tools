@@ -11,8 +11,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value as JsonValue;
 
 use super::types::{
-    AgentsOp, BlocksOp, Cli, Cmd, FEATURES, IntegrityOp, ItemsOp, LegacyShortcuts,
-    ReadIntegrityArgs, SUBCOMMANDS, WriteIntegrityArgs,
+    AgentsOp, BlocksOp, Cli, Cmd, FEATURES, InputsOp, IntegrityOp, ItemsOp, LegacyShortcuts,
+    OnStale, ReadIntegrityArgs, SUBCOMMANDS, WriteIntegrityArgs,
 };
 
 use crate::blocks::blocks_verify;
@@ -33,18 +33,18 @@ use crate::io::{
     strict_read_check, warn_if_created, warn_if_read_outside_claude, with_exclusive_lock,
 };
 use crate::items::{
-    AddManyOutcome, AddOutcome, array_append, compute_add_many_mutation, compute_add_mutation,
-    compute_apply_mutation, compute_array_append_mutation, compute_backfill_mutation,
-    compute_remove_mutation, compute_update_mutation, dedup_id_disabled, items_add_many,
-    items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to, items_fingerprint,
-    items_get_from, items_get_from_json, items_infer_and_next_id, items_next_id, items_update_to,
-    parse_apply_ops, parse_ndjson,
+    AddManyOutcome, AddOutcome, StaleOp, StalePolicy, array_append, compute_add_many_mutation,
+    compute_add_mutation, compute_apply_mutation_with, compute_array_append_mutation,
+    compute_backfill_mutation, compute_remove_mutation, compute_update_mutation, dedup_id_disabled,
+    items_add_many, items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to,
+    items_fingerprint, items_get_from, items_get_from_json, items_infer_and_next_id, items_next_id,
+    items_update_to, parse_apply_ops, parse_ndjson,
 };
 use crate::items_sweep::{items_sweep, outcome_json, update_plan};
 use crate::orphans::items_orphans;
 use crate::output::{
-    emit_dry_run_plan, emit_dry_run_scalar, emit_list_raw, print_json, print_json_compact,
-    print_raw_value,
+    build_dry_run_plan_envelope, emit_dry_run_plan, emit_dry_run_scalar, emit_list_raw, print_json,
+    print_json_compact, print_raw_value,
 };
 use crate::query::{self, Query, ShapeDispatch};
 use crate::sweep::{self, SweepOptions};
@@ -130,6 +130,10 @@ fn write_envelope(file: &std::path::Path, created: bool) -> Result<()> {
         "created": created,
         "path": file.display().to_string(),
     }))
+}
+
+fn skipped_stale_json(skipped: &[StaleOp]) -> JsonValue {
+    JsonValue::Array(skipped.iter().map(StaleOp::to_json).collect())
 }
 
 /// TOML write subcommands (`set`, `set-json`, `array-append`) refuse `.json`
@@ -394,6 +398,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 crate::agents::dispatch::dispatch_list(&slug, &integrity)?
             }
         },
+        Cmd::Inputs { op } => inputs_dispatch(op)?,
         Cmd::Sweep {
             pattern,
             max_file_bytes,
@@ -890,13 +895,18 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             ops,
             array,
             no_remove,
+            on_stale,
             dry_run,
             integrity,
         } => {
             let opts = write_integrity_opts(&integrity);
+            let policy = match on_stale {
+                OnStale::Abort => StalePolicy::Abort,
+                OnStale::Skip => StalePolicy::Skip,
+            };
             // Parse `--ops` ONCE at the CLI boundary and thread the parsed
             // `JsonValue` through both the `MAX_OPS_PER_APPLY` length check
-            // and `compute_apply_mutation`. An NDJSON payload arrives here
+            // and `compute_apply_mutation_with`. An NDJSON payload arrives here
             // already folded into the array form, so everything below is
             // shared by both encodings.
             let parsed_ops: JsonValue = read_json_arg(&ops)
@@ -931,29 +941,45 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // side via `guard_write_path`.
                 warn_if_read_outside_claude(&file);
                 // Same compute phase as the live path, but we stop
-                // before the I/O stage. `compute_apply_mutation` runs
+                // before the I/O stage. `compute_apply_mutation_with` runs
                 // `items_apply_parsed_to_opts` on a cloned doc, so every
                 // validation gate — `--no-remove`, op-shape, missing id,
-                // dedup_id auto-populate — fires with a byte-identical
-                // error surface.
+                // dedup_id auto-populate, `expect` under `--on-stale` — fires
+                // with a byte-identical error surface.
                 let read_opts = dry_run_read_opts(integrity.verify_integrity);
-                let plan = read_doc(&file, read_opts, |doc| {
-                    compute_apply_mutation(doc, &array, &parsed_ops, no_remove)
+                let guarded = read_doc(&file, read_opts, |doc| {
+                    compute_apply_mutation_with(doc, &array, &parsed_ops, no_remove, policy)
                 })?;
-                emit_dry_run_plan(&plan)?;
+                let mut envelope = build_dry_run_plan_envelope(&guarded.plan);
+                envelope["skipped_stale"] = skipped_stale_json(&guarded.skipped_stale);
+                print_json_compact(&envelope)?;
             } else {
                 // Auto-create policy. An all-`update`/all-`remove` batch
                 // against a freshly-seeded missing file errors in
-                // `compute_apply_mutation` (no matching id) BEFORE the persist,
-                // so nothing is written. Batches with `add` ops seed-then-append
-                // into the new file as expected — `created=true` on that path.
+                // `compute_apply_mutation_with` (no matching id) BEFORE the
+                // persist, so nothing is written. Batches with `add` ops
+                // seed-then-append into the new file — `created=true` there.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
-                // Surface `created` + `path`.
+                let mut skipped_stale = Vec::new();
                 let created =
                     mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                        compute_apply_mutation(doc, &array, &parsed_ops, no_remove)
+                        let guarded = compute_apply_mutation_with(
+                            doc,
+                            &array,
+                            &parsed_ops,
+                            no_remove,
+                            policy,
+                        )?;
+                        skipped_stale = guarded.skipped_stale;
+                        Ok(guarded.plan)
                     })?;
-                write_envelope(&file, created)?;
+                warn_if_created(&file, created);
+                print_json_compact(&serde_json::json!({
+                    "ok": true,
+                    "created": created,
+                    "path": file.display().to_string(),
+                    "skipped_stale": skipped_stale_json(&skipped_stale),
+                }))?;
             }
         }
         ItemsOp::NextId {
@@ -1290,6 +1316,67 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn inputs_dispatch(op: InputsOp) -> Result<()> {
+    use crate::inputs;
+    let root = repo_or_cwd_root()?;
+    let out = match op {
+        InputsOp::List {
+            pending,
+            kind,
+            ledger,
+            flow,
+            scope,
+            item,
+            integrity,
+        } => {
+            let path = inputs::path(&root);
+            strict_read_check(&path, integrity.strict_read)?;
+            // A missing store lists as empty, so there is no sidecar to check.
+            if integrity.verify_integrity && path.exists() {
+                verify_integrity(&path)?;
+            }
+            let filter = inputs::Filter {
+                pending,
+                kinds: kind,
+                ledger,
+                flow,
+                scope,
+                item,
+            };
+            return print_json(&inputs::list(&root, &filter)?);
+        }
+        InputsOp::Add { json, integrity } => {
+            let record = read_json_value_from_arg(&json).context("parsing --json")?;
+            inputs::add(&root, &record, write_integrity_opts(&integrity))?
+        }
+        InputsOp::Ack { ids, by, integrity } => {
+            inputs::ack(&root, &ids, &by, write_integrity_opts(&integrity))?
+        }
+        InputsOp::Handle {
+            ids,
+            by,
+            note,
+            integrity,
+        } => inputs::handle(&root, &ids, &by, &note, write_integrity_opts(&integrity))?,
+        InputsOp::Withdraw { ids, integrity } => {
+            inputs::withdraw(&root, &ids, write_integrity_opts(&integrity))?
+        }
+        InputsOp::Answer {
+            question,
+            pick,
+            text,
+            integrity,
+        } => inputs::answer(
+            &root,
+            &question,
+            &pick,
+            text.as_deref(),
+            write_integrity_opts(&integrity),
+        )?,
+    };
+    print_json_compact(&out)
 }
 
 fn blocks_dispatch(op: BlocksOp) -> Result<()> {

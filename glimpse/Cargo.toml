@@ -21,6 +21,8 @@ serde_json = { version = "1", features = ["preserve_order"] }
 toml = "1"
 # Default features kept: macOS's FSEvents backend needs `macos_fsevent`.
 notify = "8.2.0"
+# Default features: its `ratatui-crossterm` backend imports through `ratatui::crossterm`.
+tui-input = "0.15.5"
 # In-process snapshot, flow list and hook recording, without tomlctl's allocator.
 tomlctl = { path = "../tomlctl", default-features = false }
 

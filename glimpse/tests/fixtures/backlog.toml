@@ -1,0 +1,62 @@
+schema_version = 1
+last_updated = 2026-09-30
+
+[[backlog]]
+id = "B-0a1b2c3d"
+kind = "bug"
+summary = "a watch on a deleted flow dir is never dropped"
+area = "glimpse/src/watch.rs"
+tags = ["watch"]
+status = "open"
+created = 2026-09-10
+last_seen = 2026-09-12
+seen_count = 2
+dedup_id = "0a1b2c3d4e5f6071"
+origin = "implement"
+flow = "glimpse-live"
+
+[[backlog]]
+id = "B-1b2c3d4e"
+kind = "debt"
+summary = "compute_apply_mutation is one 200-line function"
+area = "tomlctl/src/items.rs"
+tags = []
+status = "promoted"
+created = 2026-09-11
+last_seen = 2026-09-11
+seen_count = 1
+dedup_id = "1b2c3d4e5f607182"
+origin = "review"
+promoted = 2026-09-20
+promoted_to = "docs/plans/items-split.md"
+
+[[backlog]]
+id = "B-2c3d4e5f"
+kind = "annoyance"
+summary = "the legend overlay hides the footer"
+area = "glimpse"
+tags = ["ui"]
+status = "dismissed"
+created = 2026-09-12
+last_seen = 2026-09-12
+seen_count = 1
+dedup_id = "2c3d4e5f60718293"
+origin = "user"
+dismissed = 2026-09-30
+dismiss_reason = "works as intended"
+
+[[backlog]]
+id = "B-3d4e5f60"
+kind = "flaky-test"
+summary = "evidence_audit leaves its temp dir behind"
+area = "tomlctl/tests"
+tags = ["tests"]
+status = "resolved"
+created = 2026-09-13
+last_seen = 2026-09-13
+seen_count = 1
+dedup_id = "3d4e5f6071829304"
+origin = "implement"
+context = "The next run in the same tree fails on the leftover."
+resolved = 2026-09-28
+resolution = "fixed in def5678"

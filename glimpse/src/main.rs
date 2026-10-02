@@ -1,24 +1,29 @@
 //! glimpse: a live terminal view of a flow's task graph, checkpoints and running agents.
 
+mod actions;
 mod app;
 mod cli;
 mod config;
 mod diagram;
 mod diff;
 mod flows;
+mod form;
 mod herdr;
 mod hook;
 mod keys;
+mod ledger;
 mod model;
 mod pane;
 mod runtime;
 mod setup;
 mod source;
 mod state;
+mod surface;
 mod theme;
 mod transcript;
 mod view;
 mod watch;
+mod writer;
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -26,9 +31,12 @@ use std::process::ExitCode;
 use crate::cli::{Command, Once, Parsed, ViewArgs};
 use crate::config::Config;
 use crate::herdr::Herdr;
+use crate::ledger::Ledger;
 use crate::model::Snapshot;
 use crate::runtime::RunOpts;
 use crate::source::{Fetcher, InProcessFetcher};
+use crate::surface::Surface;
+use tomlctl::LedgerRef;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -86,10 +94,15 @@ fn run_view(args: ViewArgs) -> Result<(), String> {
         warning,
         keep_view: args.view.is_some(),
         keep_orientation: args.orientation.is_some(),
+        surface: args.surface,
     };
     match args.once {
         None => runtime::run(opts),
         Some(once) => {
+            let ledger = match &once.ledger {
+                Some(path) => Some(read_ledger(&opts, path)?),
+                None => None,
+            };
             let snapshot = once_snapshot(&opts, &once)?;
             if let Some(id) = once.select
                 && !snapshot.tasks.iter().any(|task| task.id == id)
@@ -98,7 +111,14 @@ fn run_view(args: ViewArgs) -> Result<(), String> {
             }
             print!(
                 "{}",
-                runtime::render_once(&opts, snapshot, once.select, once.width, once.height)
+                runtime::render_once(
+                    &opts,
+                    snapshot,
+                    once.select,
+                    ledger,
+                    once.width,
+                    once.height
+                )
             );
             Ok(())
         }
@@ -106,13 +126,15 @@ fn run_view(args: ViewArgs) -> Result<(), String> {
 }
 
 /// A `--snapshot` file is read as-is; otherwise the flow's files are read once, for the
-/// explicit slug or the freshest flow's.
+/// explicit slug or the freshest flow's. With `--ledger` and no slug, the task graph is
+/// left empty rather than taken from whichever flow is freshest.
 fn once_snapshot(opts: &RunOpts, once: &Once) -> Result<Snapshot, String> {
     if let Some(path) = &once.snapshot {
         return read_snapshot(path);
     }
     let slug = match &opts.slug {
         Some(slug) => slug.clone(),
+        None if once.ledger.is_some() => return Ok(Snapshot::default()),
         None => {
             let entries = flows::list(&opts.root, &source::task_store_mtimes(&opts.root))?;
             flows::freshest(&entries)
@@ -128,6 +150,26 @@ fn once_snapshot(opts: &RunOpts, once: &Once) -> Result<Snapshot, String> {
     InProcessFetcher
         .fetch(&opts.root, &slug, None)
         .map(|built| built.expect("no known revision always builds"))
+}
+
+/// Reads a `--ledger` file and pairs it with `--surface`, or else with the surface that
+/// lists its kind. A missing file is an error here, though a ledger feed reads it as empty.
+fn read_ledger(opts: &RunOpts, path: &Path) -> Result<(Surface, Ledger), String> {
+    if !path.is_file() {
+        return Err(format!("--ledger {}: no such file", path.display()));
+    }
+    let value = tomlctl::ledger_read(&opts.root, &LedgerRef::File(path.to_path_buf()))
+        .map_err(|e| format!("--ledger {}: {e:#}", path.display()))?;
+    let ledger = Ledger::from_value(value)?;
+    let surface = opts
+        .surface
+        .or_else(|| {
+            Surface::ALL
+                .into_iter()
+                .find(|surface| surface.ledger_kind() == Some(ledger.kind))
+        })
+        .unwrap_or_default();
+    Ok((surface, ledger))
 }
 
 fn read_snapshot(path: &Path) -> Result<Snapshot, String> {

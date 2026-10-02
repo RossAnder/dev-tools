@@ -23,7 +23,7 @@ mod reconcile;
 mod relate;
 pub(crate) mod schema;
 mod target;
-mod triage;
+pub(crate) mod triage;
 
 // `pub(crate)` because the caller is `cli::dispatch::run`, which is not a
 // descendant of this module and so cannot see the private leaves above.

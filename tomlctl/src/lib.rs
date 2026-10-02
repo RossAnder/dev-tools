@@ -15,11 +15,13 @@ mod convert;
 mod dedup;
 mod errors;
 mod flow;
+mod inputs;
 mod integrity;
 mod io;
 mod items;
 mod items_sweep;
 mod json;
+mod ledgers;
 mod orphans;
 mod output;
 mod owner;
@@ -41,6 +43,9 @@ use clap::Parser;
 
 use crate::cli::{Cli, ErrorFormat, ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::TaggedError;
+
+pub use crate::backlog::triage::BacklogTriage;
+pub use crate::ledgers::{LedgerKind, LedgerRef};
 
 /// The files of a flow directory that [`snapshot`] reads, store first. Its
 /// `revision` hashes them in this order, so a poller fingerprinting exactly
@@ -102,6 +107,137 @@ pub fn flow_list_matching(
 ) -> anyhow::Result<serde_json::Value> {
     io::silence_advisories();
     flow::list_all(root, keep)
+}
+
+/// One ledger's `{"path", "kind", "revision", "items"}`, read without
+/// integrity checks. `revision` is the hex sha256 of the file's bytes, and a
+/// missing file reads as no items with a null revision.
+pub fn ledger_read(root: &Path, ledger: &LedgerRef) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    ledgers::read(root, ledger)
+}
+
+/// Every flow under `<root>/.claude/flows` holding a task store or a ledger,
+/// and every flow-less review, optimise and plan-review ledger.
+pub fn ledger_scopes(root: &Path) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    ledgers::scopes(root)
+}
+
+/// Moves each of `ids` whose status is still `expect_status` to `to`, writing
+/// the transition's form `fields` and dropping the companions of the status
+/// it leaves. Returns `{"applied": [ids], "skipped_stale": [{id, field,
+/// expected, found}]}`. Refuses with `root mismatch` unless `root` is the
+/// process root, and refuses any transition the write model does not offer.
+pub fn ledger_transition(
+    root: &Path,
+    ledger: &LedgerRef,
+    ids: &[String],
+    to: &str,
+    fields: serde_json::Map<String, serde_json::Value>,
+    expect_status: &str,
+) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    ledgers::transition(root, ledger, ids, to, fields, expect_status)
+}
+
+/// Sets `severity`, `effort` and `category` on each of `ids` whose fields
+/// still match `expect`, on a review or optimise ledger; returns what
+/// [`ledger_transition`] does, and refuses a mismatched root the same way.
+pub fn ledger_classify(
+    root: &Path,
+    ledger: &LedgerRef,
+    ids: &[String],
+    fields: serde_json::Map<String, serde_json::Value>,
+    expect: serde_json::Map<String, serde_json::Value>,
+) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    ledgers::classify(root, ledger, ids, fields, expect)
+}
+
+/// Undoes one write on `id`: restores `set`, removes `unset`, provided the
+/// row still holds `expect`. Returns what [`ledger_transition`] does, and
+/// refuses a mismatched root the same way.
+pub fn ledger_restore(
+    root: &Path,
+    ledger: &LedgerRef,
+    id: &str,
+    set: serde_json::Map<String, serde_json::Value>,
+    unset: Vec<String>,
+    expect: serde_json::Map<String, serde_json::Value>,
+) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    ledgers::restore(root, ledger, id, set, unset, expect)
+}
+
+/// Applies `triage` to each of `ids` in `<root>/.claude/backlog.toml` whose
+/// status is still `expect_status`, as `backlog triage` does. Returns what
+/// [`ledger_transition`] does, refuses a mismatched root the same way, and
+/// refuses a missing store rather than creating one.
+pub fn backlog_triage(
+    root: &Path,
+    ids: &[String],
+    triage: BacklogTriage,
+    expect_status: &str,
+) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    ledgers::ensure_process_root(root)?;
+    let write_opts = WriteIntegrityArgs {
+        allow_outside: false,
+        no_write_integrity: false,
+        verify_integrity: false,
+        strict_integrity: false,
+        no_create: true,
+    };
+    let out =
+        backlog::triage::triage_value(root, ids, &triage.into(), Some(expect_status), &write_opts)?;
+    Ok(serde_json::json!({
+        "applied": out["applied"],
+        "skipped_stale": out["skipped_stale"],
+    }))
+}
+
+/// Every facade write keeps the sidecar current and never verifies it.
+const FACADE_WRITE: integrity::IntegrityOpts = integrity::IntegrityOpts {
+    write_sidecar: true,
+    verify_on_read: false,
+    strict: false,
+};
+
+/// Every record of `<root>/.claude/inputs.toml` as `inputs list` prints it:
+/// `{"path", "revision", "inputs"}`, read without integrity checks. A missing
+/// store reads as no records with a null revision.
+pub fn inputs_read(root: &Path) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    inputs::list(root, &inputs::Filter::default())
+}
+
+/// Appends `record` as a `new` input, as `inputs add --json` does, and returns
+/// `{"id"}`. Refuses with `root mismatch` unless `root` is the process root.
+pub fn inputs_add(root: &Path, record: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    inputs::add(root, record, FACADE_WRITE)
+}
+
+/// Answers the `new` question `question` with `picked` options and/or `text`,
+/// closing it, as `inputs answer` does; returns `{"id", "question"}` and
+/// refuses a mismatched root the same way as [`inputs_add`].
+pub fn inputs_answer(
+    root: &Path,
+    question: &str,
+    picked: &[String],
+    text: Option<&str>,
+) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    inputs::answer(root, question, picked, text, FACADE_WRITE)
+}
+
+/// Withdraws `ids`, all of which must be `new`, as `inputs withdraw` does;
+/// returns `{"applied", "reopened"}` and refuses a mismatched root the same
+/// way as [`inputs_add`].
+pub fn inputs_withdraw(root: &Path, ids: &[String]) -> anyhow::Result<serde_json::Value> {
+    io::silence_advisories();
+    inputs::withdraw(root, ids, FACADE_WRITE)
 }
 
 /// Record one hook payload as `agents record <harness>` does. Changes the

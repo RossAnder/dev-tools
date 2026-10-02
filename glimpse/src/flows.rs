@@ -6,6 +6,7 @@ use std::process::Command;
 use std::time::SystemTime;
 
 use serde::Deserialize;
+use tomlctl::LedgerKind;
 
 /// One flow that has a task store on disk.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +76,76 @@ pub(crate) fn freshest(entries: &[FlowEntry]) -> Option<&FlowEntry> {
             .cmp(&b.tasks_mtime)
             .then_with(|| b.slug.cmp(&a.slug))
     })
+}
+
+/// One flow-less ledger file, `.claude/<kind dir>/<scope>.toml`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ScopeEntry {
+    pub(crate) kind: LedgerKind,
+    pub(crate) scope: String,
+}
+
+/// What the selector lists beyond [`FlowEntry`]: flows holding ledgers but no task store,
+/// and the flow-less ledgers. Never consulted when choosing the freshest flow.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Scopes {
+    pub(crate) ledger_only: Vec<String>,
+    pub(crate) scopes: Vec<ScopeEntry>,
+}
+
+#[derive(Deserialize)]
+struct RawScopes {
+    #[serde(default)]
+    flows: Vec<RawScopeFlow>,
+    #[serde(default)]
+    scopes: Vec<RawScope>,
+}
+
+#[derive(Deserialize)]
+struct RawScopeFlow {
+    slug: String,
+    has_tasks: bool,
+}
+
+#[derive(Deserialize)]
+struct RawScope {
+    kind: String,
+    scope: String,
+}
+
+impl Scopes {
+    /// Parses a `tomlctl::ledger_scopes` document. A scope of an unknown kind is an error,
+    /// since it could be neither shown nor read.
+    pub(crate) fn from_value(value: &serde_json::Value) -> Result<Scopes, String> {
+        let raw = RawScopes::deserialize(value)
+            .map_err(|e| format!("bad ledger scopes document: {e}"))?;
+        let mut ledger_only: Vec<String> = raw
+            .flows
+            .into_iter()
+            .filter(|flow| !flow.has_tasks)
+            .map(|flow| flow.slug)
+            .collect();
+        ledger_only.sort();
+        let mut scopes = raw
+            .scopes
+            .into_iter()
+            .map(|raw| {
+                let kind = LedgerKind::ALL
+                    .into_iter()
+                    .find(|kind| kind.as_str() == raw.kind)
+                    .ok_or_else(|| format!("unknown ledger kind `{}`", raw.kind))?;
+                Ok(ScopeEntry {
+                    kind,
+                    scope: raw.scope,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        scopes.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.scope.cmp(&b.scope)));
+        Ok(Scopes {
+            ledger_only,
+            scopes,
+        })
+    }
 }
 
 /// `<root>/.claude/flows`, the directory holding one subdirectory per flow.
@@ -165,6 +236,46 @@ mod tests {
         rank(&mut v);
         let slugs: Vec<_> = v.iter().map(|e| e.slug.as_str()).collect();
         assert_eq!(slugs, ["a", "z", "old"]);
+    }
+
+    #[test]
+    fn flows_without_a_task_store_are_listed() {
+        let value = serde_json::json!({
+            "flows": [
+                {"slug": "tracked", "has_tasks": true, "ledgers": ["review"]},
+                {"slug": "zeta", "has_tasks": false, "ledgers": ["optimise"]},
+                {"slug": "alpha", "has_tasks": false, "ledgers": ["review", "plan-review"]}
+            ],
+            "scopes": [
+                {"kind": "plan-review", "scope": "p"},
+                {"kind": "review", "scope": "b"},
+                {"kind": "optimise", "scope": "a"},
+                {"kind": "review", "scope": "a"}
+            ]
+        });
+        let got = Scopes::from_value(&value).unwrap();
+        assert_eq!(got.ledger_only, ["alpha", "zeta"]);
+        let scopes: Vec<_> = got
+            .scopes
+            .iter()
+            .map(|s| (s.kind.as_str(), s.scope.as_str()))
+            .collect();
+        assert_eq!(
+            scopes,
+            [
+                ("review", "a"),
+                ("review", "b"),
+                ("optimise", "a"),
+                ("plan-review", "p")
+            ]
+        );
+
+        let bad = serde_json::json!({"scopes": [{"kind": "backlog", "scope": "x"}]});
+        assert!(Scopes::from_value(&bad).is_err());
+        assert_eq!(
+            Scopes::from_value(&serde_json::json!({})).unwrap(),
+            Scopes::default()
+        );
     }
 
     #[test]

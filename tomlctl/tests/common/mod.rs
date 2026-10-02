@@ -14,6 +14,31 @@
 use assert_cmd::Command;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+static ROOT_ENV: Mutex<()> = Mutex::new(());
+
+/// Holds `TOMLCTL_ROOT` at a sandbox for an in-process facade write, and the
+/// lock that serialises every such test in this binary; dropping it removes
+/// the variable before releasing the lock.
+pub struct RootEnv {
+    _lock: MutexGuard<'static, ()>,
+}
+
+pub fn pin_root(root: &Path) -> RootEnv {
+    let lock = ROOT_ENV.lock().unwrap_or_else(PoisonError::into_inner);
+    // SAFETY: every test in this binary that touches TOMLCTL_ROOT does so
+    // through this guard, so no other thread reads or writes it meanwhile.
+    unsafe { std::env::set_var("TOMLCTL_ROOT", root) };
+    RootEnv { _lock: lock }
+}
+
+impl Drop for RootEnv {
+    fn drop(&mut self) {
+        // SAFETY: the lock is still held here; fields drop after this body.
+        unsafe { std::env::remove_var("TOMLCTL_ROOT") };
+    }
+}
 
 /// Create a tempdir, seed `<tempdir>/.claude/ledger.toml` with `initial`,
 /// and return both the tempdir (RAII cleanup) and the ledger path.
