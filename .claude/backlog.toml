@@ -4882,3 +4882,123 @@ flow = "temporal-snuggling-pnueli"
 context = "Let Enter submit when a closed Select is focused and every required field is filled."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-d6cf24e5"]
+
+[[backlog]]
+id = "B-c9ecc917"
+kind = "debt"
+summary = "The pre-commit glimpse clippy gate does not fire for tomlctl ledgers.rs, inputs.rs, items.rs or backlog/**, which glimpse now links"
+area = ".githooks/pre-commit"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "c9ecc9178447aefc"
+origin = "review"
+flow = "temporal-snuggling-pnueli"
+context = "The glimpse item-surfaces flow made glimpse link the ledger facade (ledgers.rs), inputs.rs, items.rs (compute_apply_mutation_with, StaleOp) and backlog/triage.rs (BacklogTriage), none covered by the gate regex. Extend it to to cover lib, io, ledgers, inputs, items and backlog/** and update the path list in CLAUDE.md Developer setup. Extends B-bcb545a2 (same gate, flow/mod.rs and store/integrity modules)."
+base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
+evidence = [".githooks/pre-commit:52"]
+related = ["B-bcb545a2"]
+
+[[backlog]]
+id = "B-27a5c3b6"
+kind = "bug"
+summary = "/plan-new promotes folded backlog items without --expect-status open, so a glimpse dismiss or resolve made after its read is overwritten"
+area = "claude/commands/plan-new.md"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "27a5c3b6c3b63b9a"
+origin = "review"
+flow = "temporal-snuggling-pnueli"
+context = "backlog triage without expect_status does not check the from-status, so promote overwrites a dismissed or resolved row. The step already reads statuses; add --expect-status open as /backlog does. Surfaced by /review of temporal-snuggling-pnueli, outside its scope."
+base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
+evidence = [
+    "claude/commands/plan-new.md:208",
+    "tomlctl/src/backlog/triage.rs:355",
+]
+
+[[backlog]]
+id = "B-c892985a"
+kind = "debt"
+summary = "ensure_process_root is a process-root IO guard living in ledgers.rs and imported by inputs.rs and lib.rs; it belongs beside repo_or_cwd_root in io.rs"
+area = "tomlctl/src/ledgers.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "c892985a7ec647a3"
+origin = "review"
+flow = "temporal-snuggling-pnueli"
+context = "Small move: relocate ensure_process_root to io.rs next to repo_or_cwd_root and update the inputs.rs and lib.rs imports."
+base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
+evidence = ["tomlctl/src/ledgers.rs:214"]
+
+[[backlog]]
+id = "B-ada06976"
+kind = "debt"
+summary = "The apply-pipeline skill body sits exactly at the 500-line skill ceiling, so any addition fails skill_bodies_under_line_ceiling"
+area = "claude/skills/flow-contract-apply-pipeline/SKILL.md"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "ada069768e39b0b1"
+origin = "review-apply"
+flow = "temporal-snuggling-pnueli"
+context = "Move a section (the final-summary skeleton or Step 4 dispatch discipline) into references/ before the next edit to this skill."
+base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
+
+[[backlog]]
+id = "B-e66b6b41"
+kind = "question"
+summary = "is_terminal_status leaves out discarded, which STATUS_COMPANIONS and the plan-review transition treat as a disposition"
+area = "tomlctl/src/items.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "e66b6b41b4e252b1"
+origin = "review-apply"
+flow = "temporal-snuggling-pnueli"
+context = "Arrived cheap-in-file and was deferred because it needs a decision: whether items clusters / items sweep should treat a discarded plan-review item as terminal if they ever read plan-review ledgers."
+base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
+
+[[backlog]]
+id = "B-e6f7d10d"
+kind = "debt"
+summary = "Scopes::from_value parses a ledger kind string with its own LedgerKind::ALL lookup instead of a shared parse"
+area = "glimpse/src/flows.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "e6f7d10dfd276cba"
+origin = "review-apply"
+flow = "temporal-snuggling-pnueli"
+context = "Last inline LedgerKind conversion in glimpse; a LedgerKind::parse in tomlctl (or a glimpse helper beside Kind::ledger_kind) would remove it."
+base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
+related = ["B-4aecefff"]
+
+[[backlog]]
+id = "B-2cc7096a"
+kind = "debt"
+summary = "glimpse's write-root conflict check covers only TOMLCTL_ROOT and relies on Writer::spawn running before any tomlctl call caches its process root"
+area = "glimpse/src/writer.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "2cc7096af82e8e18"
+origin = "review-apply"
+flow = "temporal-snuggling-pnueli"
+context = "The spawn-order rule is stated only in a doc comment; reordering runtime::run could reintroduce write-by-write root-mismatch failures. A public tomlctl probe of its process root would make the check exact."
+base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"

@@ -2334,3 +2334,47 @@ summary = "all 60 tasks complete; implementation finished, awaiting review"
 from_status = "in-progress"
 to_status = "review"
 dedup_id = "cccdf393f9e0af99"
+
+[[items]]
+id = "E169"
+type = "deviation"
+date = 2026-10-02
+agent = "review-apply"
+task_ref = "add-the-ledger-control-edit-facade"
+summary = "Facade exports the status-companion table and ledger path layout; classify validates severity and effort"
+original_intent = "A narrow facade with private companion/transition tables and private ledger path derivation; classify checks only non-empty values"
+rationale = "Review found the companion table restated in four places and glimpse re-encoding the path layout; one pub STATUS_COMPANIONS table plus pub LedgerKind::flow_file/scope_dir, LedgerRef::path and inputs_path remove the copies, and classify now owns its vocabulary validation"
+dedup_id = "1fa66cf8eac5ced6"
+
+[[items]]
+id = "E170"
+type = "deviation"
+date = 2026-10-02
+agent = "review-apply"
+task_ref = "add-the-inputs-store-module"
+summary = "inputs ack skips questions, targets need a ledger and one of flow or scope, and answers stamp answered_by"
+original_intent = "ack moves any new record; target fields validated independently; answer-question link carried by handled_note text"
+rationale = "An acknowledged question became unanswerable, contradictory targets were unselectable, and a prose note was the machine link; answered_by is matched first with the note as fallback for older records"
+dedup_id = "dc4b79add6409d33"
+
+[[items]]
+id = "E171"
+type = "deviation"
+date = 2026-10-02
+agent = "review-apply"
+task_ref = "sweep-inputs-at-step-0-of-optimise-apply-review-plan-and-backlog"
+summary = "Apply carriers' Step-0 input sweep consolidated into the apply-pipeline skill"
+original_intent = "Each apply carrier states its own sweep; optimise-apply writes request transitions in Step 5 with expect open and does not honour reopen; review-apply declines verified-clean"
+rationale = "The two carriers had drifted on write site, reopen, companions and summary; the pipeline now owns one contract (interim-checkpoint write with expect on the status read, reopen honoured) and review-apply honours verified-clean to match /review and glimpse"
+dedup_id = "acd547818f49b263"
+
+[[items]]
+id = "E172"
+type = "deviation"
+date = 2026-10-02
+agent = "review-apply"
+task_ref = "run-writes-on-a-serial-writer-thread"
+summary = "Write bookkeeping lives in glimpse/src/writes.rs and root conflicts surface as a persistent header warning"
+original_intent = "App holds the undo stack, request queue and in-flight map; Writer::spawn discards a set_current_dir failure and root mismatches surface per write as footer notices"
+rationale = "App had doubled in size with write state beside selection logic, and a TOMLCTL_ROOT conflict failed every write one at a time with a misleading hint"
+dedup_id = "f3a73d4ae6a404df"

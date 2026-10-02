@@ -1,0 +1,848 @@
+schema_version = 1
+last_updated = 2026-10-02
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R1"
+file = "glimpse/src/app.rs"
+line = 1209
+symbol = "App::undo_last"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Undo after the surface switches ledger marks a same-id row of the new ledger saving, and nothing ever clears it"
+description = "The undo stack is global and never pruned. apply_ledger replaces a surface's ItemsState when ledger.path changes (auto-flow can do this unprompted). undo_last then track()s the entry's ids onto whatever ledger the surface now shows; ids like R3 recur across flows, so an unrelated row gets the saving mark. apply_written keeps applied rows saving until a read shows them changed, which never happens because the restore landed in the old, off-screen ledger. Fix: carry the ledger path/LedgerRef in UndoEntry and only mark rows saving while ledger_paths[surface] still matches (or drop Rows entries whose ledger left the screen)."
+evidence = [
+    "glimpse/src/app.rs:1197 track extends the saving set with no ledger check",
+    "glimpse/src/app.rs:829 ItemsState replaced on ledger.path change; self.undo untouched",
+    "glimpse/src/app.rs:995 apply_written: applied rows stay saving until a ledger read shows them changed",
+    'Grep undo\.(clear|retain|truncate) in glimpse/src: no matches',
+]
+dedup_id = "0f8d72164f986755"
+resolved = 2026-10-02
+resolution = "Undo marks rows saving only while the surface still shows the write's LedgerRef; otherwise the restore still goes to the original ledger and the notice says 'in another ledger'. Test added. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "open"
+flow = "temporal-snuggling-pnueli"
+id = "R2"
+file = "glimpse/src/actions.rs"
+line = 457
+symbol = "transition_plan"
+severity = "warning"
+effort = "medium"
+category = "architecture"
+summary = "Undo restores companion fields from the displayed row, but the transition is guarded on status only, so a concurrent companion edit is silently reverted"
+description = "[needs-plan] ledgers::transition expects only {status}, then overwrites target companions and unsets the leaving status's companions. RowUndo::of builds `set` from Selection.rows[*].raw, copied when the menu opened (possibly minutes earlier). E.g. deferred->open drops defer_trigger that another writer changed T1->T2 after display; undo writes T1 back and T2 is lost. Backlog undo is wider still (every BACKLOG_MANAGED field vs a status-only filter_on_status). Classify is sound (its expect covers every changed field). Fix needs a decision: widen the transition/triage expect to the displayed values of every field they change, or have the facade return true before-values in `applied` and build undo from those. Files: tomlctl/src/ledgers.rs, tomlctl/src/backlog/triage.rs, tomlctl/src/lib.rs, glimpse/src/writer.rs, glimpse/src/actions.rs. Likelihood low (no carrier edits companions without status), mechanism certain."
+evidence = [
+    "tomlctl/src/ledgers.rs:455 expect map holds status only",
+    "glimpse/src/actions.rs:381 RowUndo::of restores from row.raw (display-time copy)",
+    "glimpse/src/actions.rs:941 test a_reopen_undo_puts_back_the_dropped_trigger asserts the displayed value is restored",
+]
+dedup_id = "fcc1865f8ff067f8"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R3"
+file = "tomlctl/src/inputs.rs"
+line = 221
+symbol = "ack"
+severity = "warning"
+effort = "trivial"
+category = "db"
+summary = "inputs ack accepts question records, after which answer (needs `new`) and withdraw both refuse them"
+description = "lifecycle() moves any `new` record to acknowledged regardless of kind, and Filter::matches counts an open question as pending, so `inputs list --pending --ledger <x>` returns the carrier's own questions. Only one prose sentence in the user-inputs skill (Step-0 sweep, 'Drop every question row') stops six carriers from stranding them. Fix: make ack skip kind == question (report it under skipped), optionally exclude questions from --pending unless --kind question; update claude/skills/tomlctl/references/inputs.md."
+evidence = [
+    "tomlctl/src/inputs.rs:228 lifecycle(root, ids, integrity, &[STATUS_NEW], ...) has no kind check",
+    "tomlctl/src/inputs.rs:326 answer refuses a non-new question",
+    "claude/skills/flow-contract-user-inputs/SKILL.md:129",
+]
+dedup_id = "39b675aadde109c5"
+resolved = 2026-10-02
+resolution = "inputs ack skips question records (skipped entries now carry kind); skill lifecycle and inputs reference updated; tests added. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R4"
+file = "claude/commands/review-plan.md"
+line = 66
+symbol = "Step 0.7 Q3 answer"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "An async Q3 `Accept` answer makes the next /review-plan overwrite the plan and re-import the task store with no live confirmation"
+description = "The file's own rule (line 65, and the pre-change invariant) is that overwriting the original plan needs a live selection; B7 calls Accept irreversible. B7 now posts Q3 with Accept as an option, and Step 0.7 runs B8 (Write over <plan> + tasks import-plan) on any answer, silently in auto/headless mode. The user-inputs skill says a record is never consent and author is self-declared; `inputs answer` always stamps author=user, so any process that can write .claude/ can forge it. Fix (one file): at Step 0.7 re-ask Q3 live before B8 when the answer picked Accept (empty reply -> Keep both), or omit Accept from the posted options."
+evidence = [
+    "claude/commands/review-plan.md:65 'Manual merge + accept overwrites the original and needs a live selection'",
+    "claude/commands/review-plan.md:217 B7 'Accept is irreversible'",
+    "claude/skills/flow-contract-user-inputs/SKILL.md:108 'A record is never the user's approval for anything a carrier would otherwise ask about interactively'",
+]
+dedup_id = "6561db7e25f58fb8"
+resolved = 2026-10-02
+resolution = "review-plan Step 0.7 re-asks Q3 live before running B8 on an async Accept answer; empty live reply = Keep both, no re-post. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R5"
+file = "claude/commands/backlog.md"
+line = 75
+symbol = "Step 2 Empty-answer rule"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "/backlog posts a question offering `promote` with a --to target, but the drain refuses to promote from a record, so headless runs re-post it forever"
+description = "Line 75 posts options promote/dismiss/resolve/keep open asking for the --to target in the answer text. Line 38 acts on answers 'the same way as a request', and line 37 says a promotion is not applied from the record but offered in Step 2 - which in a headless run is empty again, so a fresh question is posted (the old one is closed, so the dedupe check misses). Fix (backlog.md only): let an answer to a question that offered promote, carrying a --to slug, promote directly; or drop promote from the posted options."
+evidence = [
+    "claude/commands/backlog.md:37",
+    "claude/commands/backlog.md:38",
+    "claude/commands/backlog.md:75",
+]
+dedup_id = "ef49ea17d6eb0987"
+resolved = 2026-10-02
+resolution = "backlog: an answer to its own question picking promote with a target in its text promotes via triage --promote --expect-status open; unusable target declines without re-posting. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R6"
+file = "claude/commands/review.md"
+line = 33
+symbol = "User inputs"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "/review honours a `verified-clean` request that /review-apply declines on the same ledger"
+description = "review.md's sweep honours deferred, wontfix, verified-clean or reopen; review-apply.md:57 declines fixed or verified-clean as claims only this run's evidence can make. The same record gets opposite outcomes depending on which carrier drains it first. Pick one rule and apply it to both review.md and review-apply.md."
+evidence = [
+    "claude/commands/review.md:33",
+    "claude/commands/review-apply.md:57",
+]
+dedup_id = "a7aaa6952cda2788"
+resolved = 2026-10-02
+resolution = "review-apply now honours verified-clean requests (verified_note from the record), matching /review; fixed stays declined. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R7"
+file = "claude/commands/optimise-apply.md"
+line = 57
+symbol = "Step 0 input sweep"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "The two apply carriers describe the Step-0 input sweep differently (write site, reopen, defer_trigger rule, questions, summary section)"
+description = "optimise-apply has its own section and writes request transitions in Step 5's two-call write; review-apply has an inline paragraph writing them in the Interim checkpoint batch (the pipeline's non-risky list names neither). review-apply honours reopen of a deferred item; optimise-apply does not mention it. Only optimise-apply has the missing-defer_trigger rule, the posts-no-questions rule, and a `### User inputs` summary section that the pipeline's final-summary skeleton lacks. Fix: move the shared sweep wording into flow-contract-apply-pipeline/SKILL.md and keep only vocabulary deltas in the carriers."
+evidence = [
+    "claude/commands/optimise-apply.md:57",
+    "claude/commands/review-apply.md:57",
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md:321",
+]
+instances = [
+    "claude/commands/optimise-apply.md:57",
+    "claude/commands/review-apply.md:57",
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md:321",
+]
+dedup_id = "5922bfc1548ca63d"
+resolved = 2026-10-02
+resolution = "Shared Step-0 user-inputs contract moved into the apply-pipeline skill (Step 0 item 6, non-risky checkpoint list, User inputs summary section); review-apply and optimise-apply reduced to bindings. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R8"
+file = "glimpse/src/actions.rs"
+line = 110
+symbol = "leaves"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "No glimpse test round-trips a write and its undo through the real tomlctl facade, so drift in glimpse's copied companion tables breaks undo silently"
+description = "Undo builds set/unset/expect from glimpse's copies (leaves mirrors ledgers::companions; BACKLOG_MANAGED; backlog_stamp). actions/app tests check plan shape only; every writer.rs test but one swaps in a fake perform, and the one real-facade test asserts a refusal. Add a round-trip test (transition -> restore -> row byte-identical) for a review deferral and a backlog dismiss via Writer::spawn_with against a temp ledger, pinning TOMLCTL_ROOT under a mutex as tomlctl/tests/common/mod.rs pin_root does (the root-mismatch test must share that mutex). Complements backlog B-ef123d09 (the duplication itself)."
+evidence = [
+    "glimpse/src/actions.rs:110 fn leaves mirrors tomlctl/src/ledgers.rs:247 fn companions",
+    "glimpse/src/writer.rs:316 only real-facade test, refusal only",
+]
+dedup_id = "91937edd04737b2f"
+resolved = 2026-10-02
+resolution = "writer.rs round-trip tests run a real review deferral and backlog dismiss plus their undo through the tomlctl facade and assert the row is restored exactly; TOMLCTL_ROOT pinned under a shared mutex. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R9"
+file = "claude/skills/flow-contract-user-inputs/SKILL.md"
+line = 122
+symbol = "The Step-0 sweep"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Five carriers now need tomlctl 0.13 (inputs, --on-stale) but only /backlog gates on it; flow-bootstrap still checks 0.7"
+description = "On a pre-0.13 binary `inputs list` is the first call to fail; if the orchestrator reads that as an empty sweep it continues until the late --on-stale write is rejected after the work is done. One edit covers all six carriers: add to the sweep that it needs 0.13+ and a usage error halts with the `cargo install --path tomlctl` hint (as backlog.md:30 does). Alternative single site: raise flow-bootstrap's version gate (claude/agents/flow-bootstrap.md:52) to 0.13 or check `tomlctl capabilities` for items_apply_expect."
+evidence = [
+    "claude/commands/backlog.md:30 the only 0.13 gate",
+    "claude/agents/flow-bootstrap.md:52 gate is 0.7",
+    "claude/skills/tomlctl/references/write.md:258 suggests a capabilities check up front",
+]
+dedup_id = "1f7f6519de039caa"
+resolved = 2026-10-02
+resolution = "User-inputs Step-0 sweep states it needs tomlctl 0.13+ and halts with the cargo install hint on an unknown-subcommand failure. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R10"
+file = "claude/commands/review.md"
+line = 82
+symbol = "Step 3 persist"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "/review Step 3 merge updates (rounds, line) carry no expect / --on-stale skip, unlike its twin in optimise.md"
+description = """A glimpse disposition or reclassify between Step 1 and Step 3 is overwritten by /review's merge. Copy optimise.md:99's sentence: every update op on an existing item carries {"expect":{"status":"open"}}, the batch passes --on-stale skip, stale ids are reported."""
+evidence = [
+    "claude/commands/review.md:82",
+    "claude/commands/optimise.md:99",
+]
+dedup_id = "3ac94b9186de2f61"
+resolved = 2026-10-02
+resolution = "review.md Step 3 update ops carry expect status=open with --on-stale skip; skipped_stale ids reported, not retried. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R11"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 3
+symbol = "frontmatter description"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "tomlctl skill description omits the inputs group and .claude/inputs.toml, and its capabilities example still prints 0.12.0"
+description = "The description is the skill trigger and lists every verb group and TOML file but not inputs; only the reference index (line 69) was updated. The `tomlctl capabilities` example at line 98 still shows version 0.12.0 though the crate is 0.13.0."
+evidence = [
+    "claude/skills/tomlctl/SKILL.md:3",
+    "claude/skills/tomlctl/SKILL.md:98",
+]
+dedup_id = "833f1ecb4f33909d"
+resolved = 2026-10-02
+resolution = "tomlctl skill description lists inputs group and .claude/inputs.toml (closing sentence dropped for the 1024-char cap); capabilities example shows 0.13.0. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R12"
+file = "tomlctl/src/items.rs"
+line = 1983
+symbol = "Item::validate"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Item::validate's edited doc comment still cites review.md '## Ledger Schema' (gone), and the neighbouring is_terminal_status prose sits inside its doc block"
+description = "This change edited the comment (adding wontapply_rationale) but left the pointer to claude/commands/review.md '## Ledger Schema', which no longer exists (schema lives in the flow-contract-ledger-schema skill; better to cite nothing per the comment rules). Adjacent: is_terminal_status's doc prose sits inside Item::validate's doc block, DispositionError's doc starts mid-sentence, and the moved paragraph says 'no existing call site is wired through it yet', which ledgers::transition made false."
+evidence = [
+    "tomlctl/src/items.rs:1983",
+    "grep -c 'Ledger Schema' claude/commands/review.md -> 0",
+]
+dedup_id = "832d668ad251f14f"
+resolved = 2026-10-02
+resolution = "Item::validate / is_terminal_status / DispositionError docs repaired: stray prose moved back, stale claims and the review.md pointer removed. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R13"
+file = "claude/skills/flow-contract-user-inputs/SKILL.md"
+line = 1
+symbol = ".github skills mirror"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The new flow-contract-user-inputs skill has no .github/skills symlink mirror, unlike every other skill the review/optimise/apply carriers invoke"
+description = "git ls-tree d8fd964 .github/skills/ lists 17 mode-120000 entries, none for this skill. On a core.symlinks=false checkout add it with `git update-index --add --cacheinfo 120000,<blob>,.github/skills/flow-contract-user-inputs`. (Locally, ~/.claude/skills also lacks its junction, so carriers cannot load it by name.)"
+evidence = ["git ls-tree d8fd964 .github/skills/"]
+dedup_id = "0b649d8620ae092c"
+resolved = 2026-10-02
+resolution = "Staged the .github/skills/flow-contract-user-inputs symlink entry (mode 120000, same absolute-target convention as the other mirrors). (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R14"
+file = "glimpse/src/writer.rs"
+line = 137
+symbol = "Writer::spawn"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "With TOMLCTL_ROOT set elsewhere every glimpse write fails one at a time with a backwards hint, and a failed set_current_dir is discarded"
+description = "glimpse's root comes from flows::repo_root(cwd) (main.rs), ignoring TOMLCTL_ROOT, while tomlctl's process root honours it first (io.rs repo_or_cwd_root). Reads work, every write is refused with '... set TOMLCTL_ROOT to it' although setting it is the cause, shown only as a 1.5 s footer notice. `let _ = std::env::set_current_dir(&root)` also drops its error. Fix: check the process root once at spawn and surface failure via app.warning, or make glimpse's root follow TOMLCTL_ROOT; fix the hint text in tomlctl/src/ledgers.rs."
+evidence = [
+    "glimpse/src/main.rs:89",
+    "glimpse/src/writer.rs:137",
+    "tomlctl/src/io.rs:1605",
+    "tomlctl/src/ledgers.rs:222",
+]
+dedup_id = "f3b095521bfa26c9"
+resolved = 2026-10-02
+resolution = "Root-mismatch message names the root source (TOMLCTL_ROOT or the working directory's repo); Writer::spawn reports set_current_dir failure and a TOMLCTL_ROOT conflict as a persistent header warning. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R15"
+file = "tomlctl/tests/inputs.rs"
+line = 180
+symbol = "inputs_refusals_exit_nonzero_with_a_tagged_error"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Two of three refusal cases assert only the exit code, and one fails in clap before any inputs code runs"
+description = "`inputs ack I9` without --by is rejected by clap (by: String is required), exercising no inputs logic; `ack I9 --by review` asserts only .failure(). Nothing asserts the `no input record {id}` message. Assert the tagged validation kind and the id, and drop or re-label the clap-only case."
+evidence = [
+    "tomlctl/src/cli/types.rs:2461 by: String required",
+    "Grep 'no input record' in tests: no assertion",
+]
+dedup_id = "89c4d4ee965496e5"
+resolved = 2026-10-02
+resolution = "inputs refusal test drops the clap-only case and asserts the validation kind and the id for an unknown-id ack. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R16"
+file = "tomlctl/src/inputs.rs"
+line = 384
+symbol = "check_picks"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "`inputs answer` refusal for a bad pick names neither the valid options nor the question id"
+description = "`options` is in hand two lines above the '`{pick}` is not an option of this question' error; list it, and add the question id to this and the single/text refusals so the glimpse footer notice is actionable."
+evidence = ["tomlctl/src/inputs.rs:376-386"]
+dedup_id = "de657daf7ed10f1a"
+resolved = 2026-10-02
+resolution = "check_picks errors name the question id and list the valid options. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R17"
+file = "tomlctl/src/ledgers.rs"
+line = 233
+symbol = "offered"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "The status -> companion-field table is restated in Item::validate, ledgers::companions, ledgers::offered/restorable and glimpse's actions consts"
+description = "offered is a non-iterable match, so restorable hard-codes target statuses and glimpse's actions.rs restates the transition table; Item::validate holds a third copy of required companions (discard_reason in two of three). The plan's own User Decision fixed a wontapply->wontfix_rationale drift of exactly this kind. Fix: one pub table of (status, [(field, required)]) in tomlctl, re-exported from lib.rs; derive validate, companions, offered, restorable and glimpse's menu from it. Related to backlog B-ef123d09 (the glimpse companion copy)."
+evidence = [
+    "tomlctl/src/ledgers.rs:233 offered",
+    "tomlctl/src/ledgers.rs:247 companions",
+    "tomlctl/src/ledgers.rs:281 restorable hard-coded targets",
+    "tomlctl/src/items.rs:2007 Item::validate clusters",
+    "glimpse/src/actions.rs:38-86",
+]
+instances = [
+    "tomlctl/src/ledgers.rs:offered",
+    "tomlctl/src/ledgers.rs:companions",
+    "tomlctl/src/ledgers.rs:restorable",
+    "tomlctl/src/items.rs:Item::validate",
+    "glimpse/src/actions.rs:offered",
+    "tomlctl/src/lib.rs",
+]
+sweep = [
+    "fn offered",
+    "wontapply_rationale",
+    "discard_reason",
+]
+enumeration = "complete"
+dedup_id = "9d05fc05f593dc3d"
+resolved = 2026-10-02
+resolution = "Single STATUS_COMPANIONS table in tomlctl items.rs drives Item::validate, companions, offered and restorable, re-exported from lib.rs; glimpse transition forms and leaves derive from it. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R18"
+file = "glimpse/src/source/scan.rs"
+line = 42
+symbol = "ledger_file"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "glimpse re-encodes tomlctl's ledger file/dir layout (and LedgerScopeDir mirrors LedgerKind) because tomlctl keeps them private"
+description = "feed_path's doc says it builds 'the paths tomlctl::ledger_read uses' and re-implements LedgerRef::path; ledger_file copies LedgerKind::flow_file; watch::LedgerScopeDir maps 1:1 onto LedgerKind and dir_name copies scope_dir; actions::ledger_ref has a third copy. A tomlctl rename makes glimpse silently watch the wrong file. Precedent: tomlctl::SNAPSHOT_INPUTS is exported for this purpose. Fix: make LedgerRef::path, LedgerKind::flow_file/scope_dir and the inputs path pub and derive glimpse's mappings; optionally replace LedgerScopeDir with LedgerKind. Related: B-4aecefff."
+evidence = [
+    "glimpse/src/source/scan.rs:42-73",
+    "glimpse/src/watch.rs:62-89",
+    "tomlctl/src/ledgers.rs:50-93",
+]
+instances = [
+    "glimpse/src/source/scan.rs:ledger_file",
+    "glimpse/src/source/scan.rs:scope_dir",
+    "glimpse/src/source/scan.rs:feed_path",
+    "glimpse/src/watch.rs:LedgerScopeDir::dir_name",
+    "glimpse/src/actions.rs:ledger_ref",
+    "tomlctl/src/ledgers.rs:LedgerRef::path",
+    "tomlctl/src/inputs.rs:path",
+]
+sweep = [
+    "review-ledger.toml",
+    "optimise-findings.toml",
+    "plan-review-findings",
+    '"reviews"',
+]
+enumeration = "complete"
+dedup_id = "cf7e59bdb133d858"
+resolved = 2026-10-02
+resolution = "LedgerKind::flow_file/scope_dir, LedgerRef::path made pub and tomlctl::inputs_path added; glimpse derives every ledger/inputs path from them and LedgerScopeDir is replaced by LedgerKind. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R19"
+file = "glimpse/src/runtime.rs"
+line = 550
+symbol = "feed_surface"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Kind / LedgerKind / Surface conversions are re-inlined at several sites, one a closure identical to the public LedgerKind::as_str"
+description = "feed_surface maps LedgerKind->Kind, actions::ledger_ref the reverse; actions::input_target's name closure equals LedgerKind::as_str(); 'the surface listing kind K' is written at app.rs, main.rs and runtime.rs. Add From<LedgerKind> for Kind, Kind::ledger_kind(), Surface::of_kind(Kind); call kind.as_str() in input_target."
+evidence = [
+    "glimpse/src/runtime.rs:550-563",
+    "glimpse/src/actions.rs:169-174",
+    "glimpse/src/actions.rs:802-808",
+    "glimpse/src/app.rs:818",
+    "glimpse/src/main.rs:166",
+    "tomlctl/src/ledgers.rs:42 pub fn as_str",
+]
+instances = [
+    "glimpse/src/runtime.rs:feed_surface",
+    "glimpse/src/actions.rs:ledger_ref",
+    "glimpse/src/actions.rs:input_target",
+    "glimpse/src/app.rs:App::apply_ledger",
+    "glimpse/src/main.rs:166",
+]
+sweep = [
+    "surface.ledger_kind() == Some",
+    'LedgerKind::PlanReview => "plan-review"',
+]
+enumeration = "complete"
+dedup_id = "1f0f5e8fe5023f0d"
+resolved = 2026-10-02
+resolution = "Added Kind::ledger_kind, From<LedgerKind> for Kind and Surface::of_kind; inline conversions replaced, input_target uses LedgerKind::as_str. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R20"
+file = "tomlctl/src/ledgers.rs"
+line = 486
+symbol = "classify"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The classify facade verb accepts any non-empty severity/effort although the schema closes both sets"
+description = """glimpse/CLAUDE.md says the facade verb owns validation, yet classify writes {"severity":"high"} with a no-op row validator; only glimpse's select lists keep values valid. Check severity against critical|warning|suggestion and effort against trivial|small|medium; leave category free deliberately."""
+evidence = [
+    "tomlctl/src/ledgers.rs:486-506",
+    "claude/skills/flow-contract-ledger-schema/SKILL.md severity/effort vocabularies",
+]
+dedup_id = "df635a96d171bb7f"
+resolved = 2026-10-02
+resolution = "classify refuses severity/effort outside the schema vocabularies; category stays free; refusal test added. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R21"
+file = "glimpse/src/form.rs"
+line = 2
+symbol = "module allow(dead_code)"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "form.rs and surface.rs keep module-wide allow(dead_code) whose scaffolding reasons are no longer true"
+description = "form.rs ('the overlay and action menu build forms...') and surface.rs ('the App switches surfaces once it is wired in') are both wired in; the module-wide allow hides future dead code and props up the clean clippy baseline. Remove both; keep a narrow allow only where clippy still reports."
+evidence = [
+    "glimpse/src/form.rs:2-5",
+    "glimpse/src/surface.rs:3",
+]
+instances = [
+    "glimpse/src/form.rs:2",
+    "glimpse/src/surface.rs:3",
+]
+sweep = ["allow(dead_code"]
+enumeration = "complete"
+dedup_id = "a870b1ae549476b5"
+resolved = 2026-10-02
+resolution = "Removed module-wide allow(dead_code) from form.rs and surface.rs; one test-only item carries a narrow cfg_attr allow. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R22"
+file = "glimpse/src/surface.rs"
+line = 385
+symbol = "InboxState::apply_inputs"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "ItemsState and InboxState duplicate ~80 lines of refresh, flash and cursor logic despite the existing Tracked trait"
+description = "apply_inputs repeats apply_ledger line for line (its doc says so); viewed, is_flashing, expire_flashes, row, cursor_row, move_cursor, visible_ids, cursor_position and the revision/cursor/flashes/new_since_view/saving fields are duplicated. Extract a generic Tracking<R: Tracked>."
+evidence = [
+    "glimpse/src/surface.rs:185-245",
+    "glimpse/src/surface.rs:385-468",
+    "glimpse/src/surface.rs:538 Tracked trait",
+]
+dedup_id = "e9fb813c5550ff0e"
+resolved = 2026-10-02
+resolution = "Shared Tracking<R> struct holds the refresh, flash and cursor logic for ItemsState and InboxState (via Deref). (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R23"
+file = "glimpse/src/surface.rs"
+line = 657
+symbol = "severity_rank"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Severity and effort vocabularies are spelled as string literals in actions, surface ranks, theme and legend"
+description = "One ordered pub(crate) const per set in ledger.rs; compute ranks as position; have the legend and classify form read it."
+evidence = [
+    "glimpse/src/actions.rs:144-145",
+    "glimpse/src/surface.rs:657-673",
+    "glimpse/src/theme.rs:327-333",
+    "glimpse/src/view/legend.rs:168",
+]
+instances = [
+    "glimpse/src/actions.rs:SEVERITIES",
+    "glimpse/src/surface.rs:severity_rank",
+    "glimpse/src/surface.rs:effort_rank",
+    "glimpse/src/theme.rs:Theme::severity",
+    "glimpse/src/view/legend.rs:168",
+]
+sweep = [
+    '"critical"',
+    '"trivial"',
+]
+enumeration = "complete"
+dedup_id = "61de6eeb35808773"
+resolved = 2026-10-02
+resolution = "SEVERITIES/EFFORTS consts in glimpse ledger.rs drive surface ranks, the classify form and the legend. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R24"
+file = "glimpse/src/surface.rs"
+line = 158
+symbol = "ItemsState::revision"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Option<Option<String>> encodes unread / missing / revision in three places, each needing an explanatory comment"
+description = "ItemsState::revision, InboxState::revision and FeedState::sent; App::inbox_unanswered tests .is_some() to mean 'read once'. Replace with enum Seen { Unread, Missing, At(String) } plus is_read()."
+evidence = [
+    "glimpse/src/surface.rs:157",
+    "glimpse/src/surface.rs:369",
+    "glimpse/src/source.rs:146",
+]
+instances = [
+    "glimpse/src/surface.rs:ItemsState",
+    "glimpse/src/surface.rs:InboxState",
+    "glimpse/src/source.rs:FeedState",
+]
+sweep = ["Option<Option<"]
+enumeration = "complete"
+dedup_id = "24a847e5138e1655"
+resolved = 2026-10-02
+resolution = "Seen { Unread, Missing, At } replaces Option<Option<String>> for FeedState::sent and Tracking::revision across runtime and views. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R25"
+file = "glimpse/src/source/mode.rs"
+line = 92
+symbol = "Mode::Polling"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Mode::Polling { retry_watch, backoff } admits a never-built state; WatchState exists only to recover the real three states"
+description = "retry_watch: false with backoff: Some is never constructed but representable; WatchState plus Mode::state()/backoff() project it back out. Use enum Mode { Watching{..}, Retrying { backoff: Option<Backoff> }, Abandoned } and match on Mode directly."
+evidence = [
+    "glimpse/src/source/mode.rs:81-96",
+    "glimpse/src/source/mode.rs:183-267",
+]
+dedup_id = "bceb9c7095a634a2"
+resolved = 2026-10-02
+resolution = "Mode is Watching | Retrying | Abandoned; WatchState and the projection accessors removed. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R26"
+file = "tomlctl/src/inputs.rs"
+line = 475
+symbol = "validate"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Input record validation accepts flow and scope together, and flow/scope/items without a ledger"
+description = "The contract's target is ledger plus a flow slug OR a scope name. A record with both is ambiguous under the Step-0 selection rule; one with flow/scope/items but no ledger can never be selected by a --ledger-filtered sweep. Reject flow+scope; require ledger when flow, scope or items is present. Related backlog: B-efc86277, B-28a3b63d."
+evidence = [
+    "tomlctl/src/inputs.rs:475-485",
+    "claude/skills/flow-contract-user-inputs/SKILL.md:58",
+]
+dedup_id = "1a1bff1dcbb9530a"
+resolved = 2026-10-02
+resolution = "inputs validate refuses flow together with scope, and flow/scope/items without a ledger; test added. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R27"
+file = "tomlctl/src/ledgers.rs"
+line = 350
+symbol = "write_guarded"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "lib.rs FACADE_WRITE is documented as every facade write's integrity policy, but write_guarded builds an identical IntegrityOpts inline"
+description = "Move the const to pub(crate) in ledgers.rs or integrity.rs and use it at both sites."
+evidence = [
+    "tomlctl/src/lib.rs:201",
+    "tomlctl/src/ledgers.rs:350-354",
+]
+instances = [
+    "tomlctl/src/lib.rs:FACADE_WRITE",
+    "tomlctl/src/ledgers.rs:write_guarded",
+]
+sweep = ["IntegrityOpts {"]
+enumeration = "complete"
+dedup_id = "010b570223a06e73"
+resolved = 2026-10-02
+resolution = "FACADE_WRITE is one pub(crate) const in ledgers.rs used by write_guarded and the inputs facade calls. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R28"
+file = "glimpse/src/state.rs"
+line = 30
+symbol = "surface_key"
+severity = "suggestion"
+effort = "trivial"
+category = "db"
+summary = "The display label is lowercased into the --surface CLI value and the state.toml key, so renaming a tab label silently resets saved state"
+description = "Surface::label() (header text) becomes the CLI value (cli.rs:83) and the saved key; group and sort display labels are saved as values too; the lowercase parse is written twice. Add stable key() methods on Surface, Group and Sort in surface.rs and use them in state.rs and cli.rs."
+evidence = [
+    "glimpse/src/state.rs:30-38",
+    "glimpse/src/cli.rs:83",
+]
+dedup_id = "07d3c672b90c49c4"
+resolved = 2026-10-02
+resolution = "Surface/Group/Sort gain stable key() (and Surface::from_key) used by state.rs and cli.rs; keys pinned by a test. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R29"
+file = "tomlctl/src/inputs.rs"
+line = 289
+symbol = "withdraw"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "withdraw links an answer back to its question by matching the prose handled_note 'answered by I{n}'"
+description = "If the note wording changes, older answers silently stop reopening their questions. Store an answered_by id on the handled question (in ASSIGNED), match on it, fall back to the note for existing records; update the user-inputs skill and inputs reference."
+evidence = [
+    "tomlctl/src/inputs.rs:278",
+    "tomlctl/src/inputs.rs:289-291",
+    "claude/skills/flow-contract-user-inputs/SKILL.md:88",
+]
+dedup_id = "42fa0e0f67078dd3"
+resolved = 2026-10-02
+resolution = "answer stamps answered_by on the closed question; withdraw matches it first, falls back to the note, and clears it on reopen; documented and tested. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "fixed"
+flow = "temporal-snuggling-pnueli"
+id = "R30"
+file = "glimpse/src/app.rs"
+line = 991
+symbol = "App write bookkeeping"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "About 250 lines of write request / undo state machine and four fields have accumulated in App, doubling its production code"
+description = "App went from ~775 to ~1525 production lines; undo, writes, in_flight, next_request plus take_writes/apply_written/dispatch/dispatch_input/track/undo_last sit beside selection and follow logic, outside glimpse/CLAUDE.md's description of app.rs. Move them into a Writes struct (new module or actions.rs, which already owns UndoEntry and Plan); App keeps saving_mut access and notify."
+evidence = [
+    "glimpse/src/app.rs:292-297",
+    "glimpse/src/app.rs:991-1243",
+]
+dedup_id = "4f39520db3e4cc53"
+resolved = 2026-10-02
+resolution = "Write bookkeeping (undo, queue, in-flight, request ids) moved from App into Writes in glimpse/src/writes.rs; App keeps thin wrappers. (uncommitted; review-apply 2026-10-02)"
+
+[[items]]
+first_flagged = 2026-10-02
+rounds = 1
+status = "open"
+flow = "temporal-snuggling-pnueli"
+id = "R31"
+file = "tomlctl/src/lib.rs"
+line = 122
+symbol = "ledger_transition"
+severity = "suggestion"
+effort = "medium"
+category = "architecture"
+summary = "The new ledger facade functions return untyped JSON though no CLI shares their output, so glimpse re-parses types tomlctl already exports"
+description = "[needs-plan] snapshot/flow_list return JSON because they mirror CLI envelopes; ledger_scopes/transition/classify/restore and backlog_triage have no CLI twin. glimpse turns kind strings back into LedgerKind (flows.rs), has Kind::parse, and converts StaleOp JSON into a copy struct while silently dropping entries that fail to parse (writer.rs filter_map ok). Return typed results (e.g. WriteResult { applied, skipped_stale: Vec<StaleOp> }, a scopes struct). The plan specifies Result<Value> without a reason; if that was for consistency with snapshot, this becomes a question."
+evidence = [
+    "tomlctl/src/lib.rs:122",
+    "glimpse/src/writer.rs:109-114",
+    "glimpse/src/flows.rs:133-136",
+]
+dedup_id = "729601fe0e963bce"
+
+[[vet_events]]
+timestamp = "2026-10-02T16:30:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+tier = "deep"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled undo_last (R1), classify (R20), form/surface dead_code allows (R21), inputs validate (R26), write_guarded (R27); all anchors confirmed. Merged: offered-table finding into R17, path-layout into R18, enum conversions into R19; is_terminal_status doc tangential folded into R12."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T16:30:00Z"
+command = "review"
+agent_index = 2
+lens = "security"
+tier = "deep"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "Single finding (R4) confirmed at review-plan.md:65-66 and B7/B8."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T16:30:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+tier = "deep"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled ack (R3), transition expect + RowUndo::of (R2), withdraw note link (R29), surface_key (R28), offered/companions (R17); all confirmed. F4/F6 merged into R18/R19; F3 merged into R17. ensure_process_root placement tangential routed to backlog."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T16:30:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+tier = "lite"
+sampled_count = 6
+dropped_count = 0
+downgraded_count = 0
+rationale = "All six anchors confirmed. Pre-commit glimpse gate regex and plan-new.md promote-without-expect are outside the review scope and routed to the backlog; version-gate finding merged with package-quality into R9."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T16:30:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+tier = "lite"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "All four anchors confirmed (main.rs root derivation, writer.rs set_current_dir, ledgers.rs hint, check_picks message)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-02T16:30:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+tier = "lite"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "All five anchors confirmed. needs-plan tag on the apply-carrier drift dropped (breadth, not decisions). .github mirror finding re-anchored on the skill file; tomlctl SKILL.md version-example tangential folded into R11."
+dedup_id = "45ca31c3315a5978"
