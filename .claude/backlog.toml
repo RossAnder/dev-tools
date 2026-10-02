@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-09-30
+last_updated = 2026-10-02
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -4325,7 +4325,7 @@ tags = [
     "glimpse",
     "watcher",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-30
 last_seen = 2026-09-30
 seen_count = 1
@@ -4335,6 +4335,13 @@ flow = "polymorphic-wondering-magpie"
 context = "poll_ms is now only the fallback interval used when the notify watch cannot start or is judged dead. positive_int accepts any value; the poller guards Instant arithmetic with checked_add, so a huge value does not panic, it just disables the fallback. Clamping or rejecting values above a few seconds would fix it."
 base_sha = "c8949f0cb8c49e969149bcf15de75de720ad8d7d"
 related = ["B-f0b743fe"]
+promoted = 2026-10-02
+promoted_to = "temporal-snuggling-pnueli"
+resolved = 2026-10-02
+resolution = "resolved by flow `temporal-snuggling-pnueli` (tasks bound-the-poll_ms-setting)"
+resolved_flow = "temporal-snuggling-pnueli"
+resolved_tasks = ["bound-the-poll_ms-setting"]
+resolved_commits = ["ef834dc"]
 
 [[backlog]]
 id = "B-5c699ce5"
@@ -4345,7 +4352,7 @@ tags = [
     "glimpse",
     "tests",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-30
 last_seen = 2026-09-30
 seen_count = 1
@@ -4354,6 +4361,13 @@ origin = "implement"
 flow = "polymorphic-wondering-magpie"
 context = "glimpse no longer spawns tomlctl; source errors now come from the in-process snapshot read or its deserialisation. The fixture string still renders fine but misdescribes the error path; swap it for a representative read or parse error message."
 base_sha = "c8949f0cb8c49e969149bcf15de75de720ad8d7d"
+promoted = 2026-10-02
+promoted_to = "temporal-snuggling-pnueli"
+resolved = 2026-10-02
+resolution = "resolved by flow `temporal-snuggling-pnueli` (tasks show-surface-tabs-and-arrival-badges-in-the-header)"
+resolved_flow = "temporal-snuggling-pnueli"
+resolved_tasks = ["show-surface-tabs-and-arrival-badges-in-the-header"]
+resolved_commits = ["9788411"]
 
 [[backlog]]
 id = "B-7057d219"
@@ -4454,7 +4468,7 @@ tags = [
     "perf",
     "hook",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-30
 last_seen = 2026-09-30
 seen_count = 1
@@ -4463,6 +4477,16 @@ origin = "optimise"
 flow = "polymorphic-wondering-magpie"
 context = "correlate::dispatch_and_tokens reads the transcript via read_tail capped at 4 MiB on each SubagentStop; local subagent transcripts measured 1.6-2.0 MB, so each Stop hook reads ~2 MB. The hook is async so no user-visible stall, but it is on the per-event path glimpse now runs in-process. Worth checking whether the needed fields sit in a bounded head/tail window. Reported by the /optimise serialization lens on polymorphic-wondering-magpie; not measured."
 base_sha = "d9e96d675fad19b2c6cca2f05ddcf9548ef98a9b"
+promoted = 2026-10-02
+promoted_to = "temporal-snuggling-pnueli"
+resolved = 2026-10-02
+resolution = "resolved by flow `temporal-snuggling-pnueli` (tasks attribute-ledger-dispatches-and-bound-the-stop-time-transcript-read, record-item-ids-on-agent-segments)"
+resolved_flow = "temporal-snuggling-pnueli"
+resolved_tasks = [
+    "attribute-ledger-dispatches-and-bound-the-stop-time-transcript-read",
+    "record-item-ids-on-agent-segments",
+]
+resolved_commits = ["368f085"]
 
 [[backlog]]
 id = "B-d6d58ce9"
@@ -4565,7 +4589,7 @@ tags = [
     "perf",
     "hook",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-30
 last_seen = 2026-09-30
 seen_count = 1
@@ -4576,3 +4600,285 @@ context = "dispatch_in walks the transcript newest-first for the latest user-aut
 base_sha = "d9e96d675fad19b2c6cca2f05ddcf9548ef98a9b"
 evidence = ["tomlctl/src/agents/correlate.rs:402"]
 related = ["B-ad940fc4"]
+promoted = 2026-10-02
+promoted_to = "temporal-snuggling-pnueli"
+resolved = 2026-10-02
+resolution = "resolved by flow `temporal-snuggling-pnueli` (tasks attribute-ledger-dispatches-and-bound-the-stop-time-transcript-read, record-item-ids-on-agent-segments)"
+resolved_flow = "temporal-snuggling-pnueli"
+resolved_tasks = [
+    "attribute-ledger-dispatches-and-bound-the-stop-time-transcript-read",
+    "record-item-ids-on-agent-segments",
+]
+resolved_commits = ["368f085"]
+
+[[backlog]]
+id = "B-3e883351"
+kind = "debt"
+summary = "Item and impl Item still carry allow(dead_code) although ledgers::transition now calls Item::validate"
+area = "tomlctl/src/items.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "3e883351ded56b49"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Remove the allows and drop or use any DispositionError variant clippy then reports. Arrived cheap-in-file during the glimpse item-surfaces flow and was deferred to avoid reopening its verified final pass."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-bae678a7"]
+
+[[backlog]]
+id = "B-8146329e"
+kind = "debt"
+summary = "A test label and the MISS_LIMIT doc still say only safety ticks count misses, but misses are per watch scope and counted on safety and wake ticks"
+area = "glimpse/src/source"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "8146329ec852b1c0"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "glimpse/CLAUDE.md states the current rule; align the test label in source/mode.rs and the MISS_LIMIT doc comment in source.rs with it. Arrived cheap-in-file and was deferred to avoid reopening a verified final pass."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-2a526918"]
+
+[[backlog]]
+id = "B-12a278ac"
+kind = "debt"
+summary = "Row helpers (truncate, text_width, initials, window) are private in layers.rs and copied into items.rs and inbox.rs"
+area = "glimpse/src/view"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "12a278ac2b34bc25"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Hoist them into view/mod.rs as pub(crate) and delete the copies so the three list views share one implementation."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-e2458ee6"]
+
+[[backlog]]
+id = "B-7d66028d"
+kind = "direction"
+summary = "ItemsState has no scroll offset, so item lists cannot be wheel-scrolled and re-scroll from the cursor every frame"
+area = "glimpse/src/surface.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "7d66028df012c662"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Add a per-surface scroll offset written back by the items view, as layers does with ListScroll, and let the wheel drive it."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-1eb0eeac"]
+
+[[backlog]]
+id = "B-b2574f41"
+kind = "debt"
+summary = "Item details keep their own status-class colour mapping and show no status glyph, separate from the item list's glyph helper"
+area = "glimpse/src/view/details.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "b2574f419361f88c"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Reuse the item list's glyph and style helper so the list and details cannot drift on how a status class looks."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-5c5da7b8"]
+
+[[backlog]]
+id = "B-efc86277"
+kind = "question"
+summary = "inputs validation accepts a handled record with no handled_note although the CLI handle verb requires --note"
+area = "tomlctl/src/inputs.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "efc86277c62ad2c9"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Decide whether handled_note is required by the schema; the user-inputs skill assumes every handled record says what was done."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-134c1b36"]
+
+[[backlog]]
+id = "B-28a3b63d"
+kind = "bug"
+summary = "inputs add accepts kind question with author user and never checks that a question's author is a command name"
+area = "tomlctl/src/inputs.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "28a3b63dd55b3512"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "The writers table in the user-inputs skill says only the orchestrator posts questions; nothing in the store enforces it. Refuse a user-authored question in add, or document that the rule is advisory."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-c49565c6"]
+
+[[backlog]]
+id = "B-8444d6ee"
+kind = "debt"
+summary = "App needs_tick counts flashes on every item surface, so arrivals on a hidden surface cause tick redraws nobody sees"
+area = "glimpse/src/app.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "8444d6ee6df4cb12"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Count only the current surface's (and the Inbox's, when shown) flashes in needs_tick."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-f0b743fe"]
+
+[[backlog]]
+id = "B-87dce4f2"
+kind = "direction"
+summary = "glimpse --once cannot set group-by, sort or show-closed, so headless frames never show group headers or closed rows"
+area = "glimpse/src/cli.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "87dce4f282d55cbd"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Add --group / --sort / --closed for --once so headless checks can cover grouping."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-f0b743fe"]
+
+[[backlog]]
+id = "B-aba92409"
+kind = "debt"
+summary = "Lib unit tests that build the clap command run on libtest's 2 MB stack while the debug clap builder already needs about 1 MB"
+area = "tomlctl/src/lib.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "aba924095ffa5bf2"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "The binary now runs on an 8 MB thread; set RUST_MIN_STACK for tests or spawn a larger thread in those tests before further CLI growth overflows them."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-8c1c1ecd"]
+
+[[backlog]]
+id = "B-20481746"
+kind = "annoyance"
+summary = "The legend overlay is about 73 rows tall and does not scroll, so its Items and Keys sections are cut off in a 40-row pane"
+area = "glimpse/src/view/legend.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "20481746ca77c37f"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Make the legend scrollable or split it into pages; the README key table is the complete reference meanwhile."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-1eb0eeac"]
+
+[[backlog]]
+id = "B-4aecefff"
+kind = "debt"
+summary = "feeds_for derives each surface's ledger from scope and slug while actions::ledger_ref parses the read path, and they can disagree mid flow-switch"
+area = "glimpse/src/runtime.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "4aecefffb4c7d16e"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Carry the feed's LedgerRef on each Ledger so the App uses it directly instead of parsing paths."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-2a526918"]
+
+[[backlog]]
+id = "B-eeed730f"
+kind = "annoyance"
+summary = "Footer notices last 1.5 s, too short to read a write-error message such as a root mismatch"
+area = "glimpse/src/app.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "eeed730f17393661"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Hold error notices longer than informational ones, or until the next key."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-5c699ce5"]
+
+[[backlog]]
+id = "B-ef123d09"
+kind = "debt"
+summary = "glimpse duplicates tomlctl's private ledger companion table and the backlog managed-field list to build undo entries"
+area = "glimpse/src/actions.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "ef123d09a899f608"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "A change to either table in tomlctl needs the matching glimpse change; expose them from the tomlctl library instead."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-5c5da7b8"]
+
+[[backlog]]
+id = "B-a7c4198b"
+kind = "debt"
+summary = "The backlog triage flag table lacks --expect-status and its applied/skipped_stale envelope"
+area = "claude/skills/tomlctl/references/backlog.md"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "a7c4198bb5f77675"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Document the flag (carriers already pass it); the reference is near its 600-line cap, so it may need splitting."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-e74d4650"]
+
+[[backlog]]
+id = "B-d3bec364"
+kind = "annoyance"
+summary = "Enter on a focused closed Select always reopens it, so a multi-field form such as a single-choice answer needs Tab before Enter submits"
+area = "glimpse/src/form.rs"
+tags = []
+status = "open"
+created = 2026-10-02
+last_seen = 2026-10-02
+seen_count = 1
+dedup_id = "d3bec364f7c2695e"
+origin = "implement"
+flow = "temporal-snuggling-pnueli"
+context = "Let Enter submit when a closed Select is focused and every required field is filled."
+base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
+related = ["B-d6cf24e5"]

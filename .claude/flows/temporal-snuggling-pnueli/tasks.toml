@@ -1,0 +1,2181 @@
+schema_version = 1
+last_updated = 2026-10-02
+plan_path = "docs/plans/temporal-snuggling-pnueli.md"
+last_import_refs = [
+    "scaffold-the-new-glimpse-modules",
+    "split-glimpses-source-module-into-scan-and-mode-submodules",
+    "add-the-tomlctl-ledger-read-facade",
+    "attribute-ledger-dispatches-and-bound-the-stop-time-transcript-read",
+    "record-item-ids-on-agent-segments",
+    "emit-the-ledger-line-in-review-and-optimise-lens-dispatches",
+    "emit-the-ledger-line-in-review-plan-and-apply-dispatches-and-document-attribution",
+    "watch-repo-level-ledger-scopes",
+    "count-missed-changes-per-watch-scope",
+    "add-the-glimpse-ledger-model",
+    "feed-ledgers-through-the-poller",
+    "list-ledger-only-flows-and-flow-less-scopes-in-the-selector",
+    "add-item-input-and-form-theme-tokens",
+    "add-the-surface-and-item-list-state-machine",
+    "integrate-surfaces-into-the-app",
+    "map-the-surface-keys",
+    "mirror-item-ids-in-glimpses-agent-model",
+    "render-the-item-list-view",
+    "show-surface-tabs-and-arrival-badges-in-the-header",
+    "render-item-details",
+    "wire-surfaces-through-the-runtime",
+    "add-the-surface-and-ledger-flags-for-headless-rendering",
+    "bound-the-poll_ms-setting",
+    "document-milestone-a-in-the-legend-and-readme",
+    "add-the-expect-precondition-to-items-apply",
+    "expose-on-stale-on-the-items-apply-cli",
+    "name-the-optimise-wontapply-companion-wontapply_rationale",
+    "add-the-ledger-control-edit-facade",
+    "add-the-backlog-triage-facade",
+    "build-the-form-framework",
+    "render-forms-as-a-modal",
+    "run-writes-on-a-serial-writer-thread",
+    "add-the-action-menu-control-edit-forms-bulk-edits-and-undo",
+    "route-keys-to-open-forms-and-prompts",
+    "render-the-inline-filter-prompt-and-closed-toggle",
+    "guard-the-apply-pipelines-late-writes-with-expect",
+    "guard-review-optimise-and-disposition-sweep-writes-with-expect",
+    "guard-review-plans-merge-writes-and-record-discard-reasons",
+    "document-expect-and-the-human-writer-in-the-items-references",
+    "add-the-inputs-store-module",
+    "add-the-tomlctl-inputs-verb-group",
+    "export-the-inputs-library-facade",
+    "write-the-user-inputs-contract-skill-and-reference",
+    "sweep-inputs-at-step-0-of-review-review-apply-and-optimise",
+    "sweep-inputs-at-step-0-of-optimise-apply-review-plan-and-backlog",
+    "gate-the-six-carriers-on-the-inputs-skill",
+    "name-the-human-writer-and-the-input-store-in-policy-docs",
+    "model-input-records-and-the-inbox-state-in-glimpse",
+    "feed-input-records-through-the-poller",
+    "render-the-inbox-surface",
+    "add-capture-request-note-and-answer-forms",
+    "mark-item-rows-and-details-with-pending-inputs",
+    "document-milestones-b-and-c-in-the-legend-and-readme",
+    "wire-the-inbox-and-input-forms-through-the-app-and-keys",
+    "expose-the-triage-precondition-on-the-backlog-cli",
+    "advertise-the-new-verbs-and-flags-in-tomlctl-capabilities",
+    "release-tomlctl-0130",
+    "fix-the-debug-build-stack-overflow-in-tomlctl-capabilities",
+    "wire-the-filter-prompt-cursor-and-drop-stale-dead-code-allows",
+    "toggle-closed-inbox-records-with-c",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 8
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "Read-only item surfaces, flow-less scopes, multi-scope watching and ledger-dispatch attribution; glimpse still writes nothing (buildable increment)"
+
+[[checkpoints]]
+id = "B"
+rationale = "The stale-write precondition and its carrier adoption, the ledger and backlog control-edit facade, forms, writer thread, action menu and undo (buildable increment)"
+
+[[checkpoints]]
+id = "C"
+rationale = "The input store, its verbs, facade and skill, carrier Step-0 sweeps, async agent questions, the Inbox surface, the backlog triage precondition, and the 0.13.0 release (buildable increment)"
+
+[[file_notes]]
+ref = "scaffold-the-new-glimpse-modules"
+file = "glimpse/src/ledger.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-new-glimpse-modules"
+file = "glimpse/src/surface.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-new-glimpse-modules"
+file = "glimpse/src/writer.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-new-glimpse-modules"
+file = "glimpse/src/form.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-new-glimpse-modules"
+file = "glimpse/src/actions.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-new-glimpse-modules"
+file = "glimpse/src/view/items.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-new-glimpse-modules"
+file = "glimpse/src/view/form.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "scaffold-the-new-glimpse-modules"
+file = "glimpse/src/view/inbox.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "split-glimpses-source-module-into-scan-and-mode-submodules"
+file = "glimpse/src/source/scan.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "split-glimpses-source-module-into-scan-and-mode-submodules"
+file = "glimpse/src/source/mode.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-tomlctl-ledger-read-facade"
+file = "tomlctl/src/ledgers.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "attribute-ledger-dispatches-and-bound-the-stop-time-transcript-read"
+file = "tomlctl/src/agents/record.rs"
+note = "— only the test-only `Dispatch { .. }` literal, which the new field breaks"
+
+[[file_notes]]
+ref = "add-the-glimpse-ledger-model"
+file = "glimpse/tests/fixtures/review-ledger.toml"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-glimpse-ledger-model"
+file = "glimpse/tests/fixtures/backlog.toml"
+note = "(new)"
+
+[[file_notes]]
+ref = "feed-ledgers-through-the-poller"
+file = "glimpse/src/runtime.rs"
+note = "— placeholder `Event::Ledger` / `Event::Scopes` arms only; task 21 replaces them"
+
+[[file_notes]]
+ref = "add-the-surface-and-ledger-flags-for-headless-rendering"
+file = "glimpse/src/runtime.rs"
+note = "— the `RunOpts.surface` field and the initial surface in `runtime::run` only"
+
+[[file_notes]]
+ref = "add-the-ledger-control-edit-facade"
+file = "tomlctl/tests/common/mod.rs"
+note = "— an env-locked `TOMLCTL_ROOT` guard every facade write test holds"
+
+[[file_notes]]
+ref = "add-the-inputs-store-module"
+file = "tomlctl/src/inputs.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-tomlctl-inputs-verb-group"
+file = "tomlctl/tests/inputs.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-user-inputs-contract-skill-and-reference"
+file = "claude/skills/flow-contract-user-inputs/SKILL.md"
+note = "(new)"
+
+[[file_notes]]
+ref = "write-the-user-inputs-contract-skill-and-reference"
+file = "claude/skills/tomlctl/references/inputs.md"
+note = "(new)"
+
+[[backlog_links]]
+ref = "attribute-ledger-dispatches-and-bound-the-stop-time-transcript-read"
+closes = [
+    "B-ad940fc4",
+    "B-f010d1ce",
+]
+refs = []
+
+[[backlog_links]]
+ref = "record-item-ids-on-agent-segments"
+closes = [
+    "B-ad940fc4",
+    "B-f010d1ce",
+]
+refs = []
+
+[[backlog_links]]
+ref = "show-surface-tabs-and-arrival-badges-in-the-header"
+closes = ["B-5c699ce5"]
+refs = []
+
+[[backlog_links]]
+ref = "bound-the-poll_ms-setting"
+closes = ["B-f4bd798a"]
+refs = []
+
+[[items]]
+id = 1
+ref = "scaffold-the-new-glimpse-modules"
+title = "Scaffold the new glimpse modules"
+effort = "L"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/main.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/ledger.rs",
+    "glimpse/src/surface.rs",
+    "glimpse/src/writer.rs",
+    "glimpse/src/form.rs",
+    "glimpse/src/actions.rs",
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/form.rs",
+    "glimpse/src/view/inbox.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create each new module file holding only a one-line module doc comment. Declare the top-level ones in `glimpse/src/main.rs` (`mod actions; mod form; mod ledger; mod surface; mod writer;`, in alphabetical order among the existing declarations) and the view ones in `glimpse/src/view/mod.rs` (`pub(crate) mod form; pub(crate) mod inbox; pub(crate) mod items;`)."
+detail = """Edits are inseparable: a `mod` line without its file does not compile. Each doc comment states the module's purpose from Approach, "Surfaces and interaction", "Forms" and "Writer thread", in one line. This scaffold exists so that later tasks own disjoint files."""
+acceptance = """
+- forward: `grep -cE '^mod (actions|form|ledger|surface|writer);' glimpse/src/main.rs` prints `5` (today: `0`).
+- guard: `cargo clippy --manifest-path glimpse/Cargo.toml --all-targets` reports no warning in a new file. **predicted, unverified**."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 2
+ref = "split-glimpses-source-module-into-scan-and-mode-submodules"
+title = "Split glimpse's source module into scan and mode submodules"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/source.rs",
+    "glimpse/src/source/scan.rs",
+    "glimpse/src/source/mode.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+Move, without behaviour change, two groups out of `glimpse/src/source.rs`, keeping `source.rs` as the module root:
+- **Into `source/scan.rs`:** the flow-file scanning and fetching code (`Fingerprint`, `flow_dir`, `fingerprint`, `FlowStat`, `modified`, `flows_fingerprint`, `FlowsChange`, `task_store_mtimes`, the `Fetcher` trait, `InProcessFetcher`, `with_reinstall_hint`).
+- **Into `source/mode.rs`:** the watch-mode machinery (`Wakes`, `Mode`, `Backoff`, `WatchState`, `Phase`, `ModeChange`, `mode_change`, `safety_period`, `Deadlines`, `Due`, `next_wait`, `TickCause`, `MissedChanges`).
+
+`Event`, `Control`, `Poller` and `Source` stay in `source.rs`."""
+detail = "Each unit test moves with the item it tests. `FakeFetcher` and the temp-root helpers go to `scan.rs` tests and are re-exported to `source.rs` tests as `pub(super)` test helpers. Visibility rises only as far as `pub(super)`. Every existing test name survives."
+acceptance = """
+- forward: `test -f glimpse/src/source/scan.rs && test -f glimpse/src/source/mode.rs && echo ok` prints `ok` (today: nothing).
+- guard: `cargo test --manifest-path glimpse/Cargo.toml source::` passes, and `cargo test --manifest-path glimpse/Cargo.toml source:: -- --list | grep -c ': test$'` prints the same count before and after the move. **predicted, unverified**.
+- falsifier: dropping a moved test (rather than moving it) lowers that count."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 3
+ref = "add-the-tomlctl-ledger-read-facade"
+title = "Add the tomlctl ledger read facade"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/ledgers.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/tests/library_facade.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Create `tomlctl/src/ledgers.rs` with `LedgerKind`, `LedgerRef`, path resolution, `read(root, &LedgerRef)` and `scopes(root)`. Declare the module and export `LedgerKind`, `LedgerRef`, `ledger_read` and `ledger_scopes` from `tomlctl/src/lib.rs`, following the existing wrappers (`io::silence_advisories()` first, explicit `root`)."
+detail = """
+Shapes and paths are in Approach, "Ledger contract".
+- `LedgerKind` and `LedgerRef` derive `Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord`; glimpse tasks cannot add derives to tomlctl.
+- Use the crate's existing TOML→JSON conversion so dates come out as `YYYY-MM-DD` strings.
+- `revision` is the sha256 of the bytes read.
+- `LedgerRef::File(path)` reads any path, and is used by glimpse `--once --ledger`.
+- The backlog's array is `backlog`; every other ledger's is `items`.
+- `scopes` lists `.claude/flows/*/` that hold any of `tasks.toml`, `review-ledger.toml`, `optimise-findings.toml` or `plan-review-findings.toml`, plus each `*.toml` (not `*.sha256`) under the three flow-less dirs."""
+acceptance = """
+- forward: `library_facade.rs` gains:
+  - `ledger_read_returns_rows_and_revision` (a fixture review ledger round-trips its ids and a stable revision);
+  - `ledger_read_of_a_missing_file_is_empty`;
+  - `ledger_scopes_lists_ledger_only_flows_and_flowless_scopes`.
+
+  All three pass. **predicted, unverified**.
+- falsifier: returning `items` from the `backlog` array makes the backlog case of `ledger_read_returns_rows_and_revision` fail."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 4
+ref = "attribute-ledger-dispatches-and-bound-the-stop-time-transcript-read"
+title = "Attribute ledger dispatches and bound the stop-time transcript read"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/agents/record.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+- Extend `Dispatch` with `item_ids: Vec<String>` and teach `dispatch_in` the `ledger:` line from Approach, "Agent attribution".
+- Widen the cheap pre-filter.
+- Make `dispatch_and_tokens` (and its Codex twin) read only the last `TAIL_BYTES` of the transcript, whatever the file's size, with no `head_dispatch` fallback."""
+detail = """
+- A `tasks show` dispatch and a `ledger:` dispatch on the same line must name the same slug, or the line gives `None`, as for disagreeing slugs today.
+- Item ids are deduplicated and kept in first-seen order.
+- Compile the `ledger:` pattern with `(?m)`: `dispatch_in` runs it over the whole prompt, and an apply prompt opens with its `DISPATCH:` header, so the line is never at offset 0.
+- Add `item_ids: Vec::new()` to the test-only `Dispatch` literal in `tomlctl/src/agents/record.rs` so the crate's tests still compile; task 5 threads the field.
+- Add a bounded `read_last(path, TAIL_BYTES)` that seeks to `len - TAIL_BYTES` when larger and drops the partial first line. Leave `latest_dispatch` (the start path) on `read_tail` with its head fallback."""
+acceptance = """
+- forward: new unit tests pass. **predicted, unverified**:
+  - `a_ledger_line_names_its_flow`;
+  - `a_ledger_line_with_items_collects_the_item_ids`;
+  - `a_flowless_ledger_line_is_not_a_dispatch`;
+  - `a_ledger_line_below_other_prompt_text_is_still_a_dispatch`;
+  - `a_stop_reads_only_the_tail_of_a_large_transcript` (a transcript larger than `WHOLE_READ_MAX` with its dispatch only on line 1 gives `None` on Stop);
+- guard: `a_teammate_retask_supersedes_the_earlier_dispatch` and `a_spawn_prompt_names_its_flow_and_task` still pass.
+- falsifier: restoring the `head_dispatch` fallback in `dispatch_and_tokens_with` makes `a_stop_reads_only_the_tail_of_a_large_transcript` fail.
+- falsifier: dropping `(?m)` from the `ledger:` pattern makes `a_ledger_line_below_other_prompt_text_is_still_a_dispatch` fail."""
+agent = "implement-deep"
+commit = "368f085"
+
+[[items]]
+id = 5
+ref = "record-item-ids-on-agent-segments"
+title = "Record item ids on agent segments"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/agents/schema.rs",
+    "tomlctl/src/agents/record.rs",
+    "tomlctl/tests/agents_record.rs",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = """
+- Add `item_ids: Vec<String>` to `Segment` in `tomlctl/src/agents/schema.rs`: TOML read and write, omitted when empty, and `segment_from_toml` accepting a string array.
+- Thread `Dispatch.item_ids` through `Event::Start`, `Stop` and `Idle` and `apply` in `tomlctl/src/agents/record.rs`, as `task_ids` is. A changed id set closes and opens a segment exactly as a changed task set does.
+- Add `item_ids` to the `record` output JSON."""
+detail = """
+- `choose_flow` already prefers the dispatch slug.
+- The `task_ids`-drop rule (dispatch slug ≠ chosen flow) applies to `item_ids` too.
+- A Stop whose bounded read found no dispatch passes `None` and keeps the live segment (Approach, "Agent attribution")."""
+acceptance = """
+- forward: `tomlctl/tests/agents_record.rs` gains two tests that pass. **predicted, unverified**:
+  - `a_ledger_dispatch_records_its_flow_and_items`: a SubagentStart whose transcript's first user line is `ledger: .claude/flows/<slug>/review-ledger.toml items: R3,R7` writes a running row with segment `item_ids = ["R3","R7"]` in that flow's `agents.toml`;
+  - `a_stop_without_a_tail_dispatch_keeps_the_live_segment`.
+- guard: `a_start_records_a_running_row_on_the_dispatched_task` still passes.
+- falsifier: omitting `item_ids` from `Segment`'s TOML write makes `a_ledger_dispatch_records_its_flow_and_items` fail."""
+agent = "implement-deep"
+commit = "368f085"
+
+[[items]]
+id = 6
+ref = "emit-the-ledger-line-in-review-and-optimise-lens-dispatches"
+title = "Emit the ledger line in review and optimise lens dispatches"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = """In each carrier's per-lens dispatch preamble (`claude/commands/review.md` near the "the ledger path" preamble text; `claude/commands/optimise.md` where it supplies "the ledger path"), require the canonical line `ledger: <ledger path>` on a line of its own at the top of every lens prompt. For a flow-less ledger, the line is still emitted; it simply goes unattributed."""
+detail = 'The format is fixed by Approach, "Agent attribution". Do not add item ids for lens agents. Keep each existing `Invoke the \`…\` skill` phrase intact, because `carrier_invokes_required_skills` gates them.'
+acceptance = "forward: `grep -c 'ledger: <' claude/commands/review.md claude/commands/optimise.md` prints a count of 1 or more after each path (`claude/commands/review.md:N`, `claude/commands/optimise.md:N`; today: `0` each)."
+agent = "implement-lite"
+commit = "77ac000"
+
+[[items]]
+id = 7
+ref = "emit-the-ledger-line-in-review-plan-and-apply-dispatches-and-document-attribution"
+title = "Emit the ledger line in review-plan and apply dispatches, and document attribution"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/commands/review-plan.md",
+    "claude/skills/flow-contract-apply-pipeline/references/agent-prompt-contract.md",
+    "claude/skills/tomlctl/references/agents.md",
+]
+needs = [
+    4,
+    5,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add the `ledger: <findings path>` line to `/review-plan`'s lens prompts.
+- Add `ledger: <ledger path> items: <comma-separated ids>` to the apply agent prompt contract's required preamble.
+- Document in `claude/skills/tomlctl/references/agents.md`:
+  - the ledger-line attribution key;
+  - the `item_ids` segment field and output key;
+  - the bounded stop-time read;
+  - the rule that flow-less ledgers go unattributed."""
+detail = 'Follow Approach, "Agent attribution". The agents.md reference must stay under 600 lines. Any bash-fenced `tomlctl` line must parse under `command_lint`.'
+acceptance = """
+- forward: `grep -c 'ledger: ' claude/skills/flow-contract-apply-pipeline/references/agent-prompt-contract.md` prints `1` or more (today: `0`).
+- forward: `grep -c 'item_ids' claude/skills/tomlctl/references/agents.md` prints `1` or more (today: `0`)."""
+agent = "implement-deep"
+commit = "dd2c0a7"
+
+[[items]]
+id = 8
+ref = "watch-repo-level-ledger-scopes"
+title = "Watch repo-level ledger scopes"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/watch.rs",
+    "glimpse/src/source/mode.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = """
+- Change `watch::start` to register the scopes and the allowlist `classify` from Approach, "Watching and feeds".
+- Add `Wake::Repo(RepoFile)` (with `RepoFile::{Backlog, Inputs}`), `Wake::Scope(LedgerScopeDir)` and `Wake::NewScope(LedgerScopeDir)`, plus a `watch::add_scope(&mut RecommendedWatcher, &Path)` helper.
+- In `glimpse/src/source/mode.rs`, move the consumers onto the new watch: `Wakes` gains repo and scope fields with `Wakes::add` / `is_empty` arms for the new variants (the match is exhaustive), `Mode::start` calls the multi-scope `watch::start`, and `Mode::Watching` keeps its watcher usable so `Wake::NewScope` adds one watch to it."""
+detail = """
+- Keep the callback non-blocking: it only posts a wake.
+- Match on the final file name. Ignore `*.sha256`, `.tmp*`, the `.locks` and `worktrees` entries, and a bare `Modify` on the `.claude/flows` directory entry.
+- Never call `watch` twice on one path.
+- A missing flow-less dir is skipped and is not an error.
+- The Windows backend reports a missing path as a generic error rather than `PathNotFound`, so check existence first."""
+acceptance = """
+- forward: new `watch.rs` unit tests pass. **predicted, unverified**:
+  - `a_backlog_write_wakes_the_repo_scope_not_all`;
+  - `a_lock_file_event_is_ignored`;
+  - `a_sidecar_or_temp_name_is_ignored`;
+  - `creating_a_flowless_dir_asks_for_a_new_scope`.
+- guard: the existing `classify` tests for flow paths still pass.
+- falsifier: mapping a non-flow path to `Wake::All` (today's `classify`) makes `a_backlog_write_wakes_the_repo_scope_not_all` fail."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 9
+ref = "count-missed-changes-per-watch-scope"
+title = "Count missed changes per watch scope"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/source/mode.rs"]
+needs = [
+    2,
+    8,
+]
+coupling = []
+deps_note = ""
+action = "Make `MissedChanges` keep one streak per scope (flows, repo, each flow-less dir). A wake resets only its own scope's streak, and a safety-tick change counts against the scope it was found in. `on_tick` reports abandonment when any scope reaches `MISS_LIMIT`."
+detail = 'Approach, "Watching and feeds". Keep `TickCause` semantics. The poller (task 11) supplies which scopes woke and which scopes a safety tick found changed.'
+acceptance = """
+- forward: unit test `a_busy_scope_does_not_mask_a_dead_one` passes: repo wakes keep arriving while the flows scope misses twice, and that abandons. **predicted, unverified**.
+- falsifier: resetting every scope on any wake (today's behaviour) makes that test fail."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 10
+ref = "add-the-glimpse-ledger-model"
+title = "Add the glimpse ledger model"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/ledger.rs",
+    "glimpse/tests/fixtures/review-ledger.toml",
+    "glimpse/tests/fixtures/backlog.toml",
+]
+needs = [
+    1,
+    3,
+]
+coupling = []
+deps_note = ""
+action = """
+Implement lenient `#[serde(default)]` row types for review, optimise, plan-review and backlog rows, parsed from the `ledger_read` JSON. Add a unified `ItemRow` view model with:
+- id, summary, description, status and status class;
+- severity, or kind for backlog; category; effort;
+- anchor: `file:line:symbol`, `plan_section` or `area`;
+- dates, rationale and companion fields;
+- tags, evidence, instances;
+- the raw JSON, kept for details.
+
+Add a `Ledger { kind, revision, rows }` loader over a `serde_json::Value`."""
+detail = """
+- Unknown statuses keep their text with the status class `live`.
+- Rows without an `id` (plan-review) get a synthetic `#<index>` id, flagged read-only.
+- Fixtures are real-shaped TOML: about 6 review rows covering every status, and about 4 backlog rows. Tests load them through `tomlctl::ledger_read(root, &LedgerRef::File(..))`."""
+acceptance = """
+forward: unit tests pass. **predicted, unverified**:
+- `review_fixture_maps_every_status_to_its_class`;
+- `a_plan_review_row_without_an_id_is_read_only`;
+- `backlog_rows_carry_kind_and_area`."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 11
+ref = "feed-ledgers-through-the-poller"
+title = "Feed ledgers through the poller"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/source.rs",
+    "glimpse/src/source/scan.rs",
+    "glimpse/src/runtime.rs",
+    "glimpse/src/source/mode.rs",
+]
+needs = [
+    2,
+    3,
+    9,
+    10,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add `Feed`, `Control::Subscribe(Vec<Feed>)` with a `pub(crate) fn subscribe(&self, feeds: Vec<Feed>)` on `Source` beside `set_slug` / `set_tail` (`Control` stays private), `Event::Ledger { feed, ledger }` and `Fetcher::fetch_ledger` (`InProcessFetcher` calls `tomlctl::ledger_read`).
+- Track per-feed `(mtime, len)` fingerprints, re-read on change, and post an event only when the revision differs.
+- Route `Wake::Repo` and `Wake::Scope` to their feeds, and feed the per-scope miss counter.
+- Make `flows_fingerprint` stat any artifact, and with each flow listing post `Event::Scopes(value)` from a new `Fetcher::list_scopes` (`tomlctl::ledger_scopes`).
+- Skip the snapshot fetch for a flow with no `tasks.toml`: post one `Event::SourceError("no task store")` and do not enter the `RETRY_AFTER` loop.
+- Add `Event::Ledger { .. } | Event::Scopes(_) => Step::Nothing` to `runtime::handle` in `glimpse/src/runtime.rs` so the crate compiles; task 21 routes them."""
+detail = """
+- Approach, "Watching and feeds".
+- `Wake::Repo` and `Wake::Scope` never evict the flow caches.
+- Every new detector is reachable from `Poller::evict` or the per-scan re-stat.
+- Extend `FakeFetcher` with scripted ledger results.
+- `Feed::Inputs` is declared but unfetched until task 49."""
+acceptance = """
+- forward: unit tests pass. **predicted, unverified**:
+  - `a_ledger_change_posts_one_event`;
+  - `an_unchanged_ledger_is_not_refetched`;
+  - `a_backlog_wake_keeps_the_task_fingerprint`;
+  - `a_ledger_only_flow_posts_its_scopes`;
+  - `a_flow_without_a_task_store_is_not_snapshotted`.
+- guard: `fingerprint_changes_when_a_flow_file_changes` and `an_unchanged_fingerprint_does_not_refetch` still pass.
+- falsifier: re-reading every feed on every tick makes `an_unchanged_ledger_is_not_refetched` fail."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 12
+ref = "list-ledger-only-flows-and-flow-less-scopes-in-the-selector"
+title = "List ledger-only flows and flow-less scopes in the selector"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/flows.rs",
+    "glimpse/src/view/selector.rs",
+    "glimpse/src/app.rs",
+]
+needs = [
+    3,
+    11,
+    15,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add `flows::Scopes::from_value(&Value)`, parsing the `tomlctl::ledger_scopes` output into ledger-only flow slugs and flow-less `ScopeEntry { kind, scope }` rows. `flows::list`, `FlowEntry`, `rank` and `freshest` stay task-store-only.
+- Render the selector as flows with a task store, then ledger-only flows, then a separator, then `review: <scope>` / `optimise: <scope>` / `plan-review: <scope>` rows.
+- In `glimpse/src/app.rs`, hold the `Scopes` beside `flows` with an `App::apply_scopes`. Enter on a ledger-only flow returns `SwitchFlow` as today; Enter on a scope entry returns a new `Action::SwitchScope(kind, scope)` from `App::apply`, as `SwitchFlow` is returned today, and sets `App.scope`."""
+detail = 'User Decision 12; Approach, "Watching and feeds" (Flow listing). A ledger-only flow shows a muted "no tasks" marker and is never chosen as the freshest flow, so startup, `--once` and auto-flow keep ranking only flows with a task store. Cursor movement skips the separator. The runtime routes `Event::Scopes` and `SwitchScope` in task 21.'
+acceptance = """
+- forward: unit tests `flows_without_a_task_store_are_listed` and `the_selector_lists_flowless_scopes_after_a_separator` pass. **predicted, unverified**.
+- guard: `freshest` still ignores a flow without `tasks.toml` (existing `flows.rs` ranking tests pass)."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 13
+ref = "add-item-input-and-form-theme-tokens"
+title = "Add item, input and form theme tokens"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/theme.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+Add element tokens to `TOKENS`, each defaulting to a palette token, plus `Theme::severity(&str)` and `Theme::item_status(class)` helpers:
+- `severity_critical`→`danger`, `severity_warning`→`warning`, `severity_suggestion`→`info`;
+- `item_live`→`fg`, `item_parked`→`idle`, `item_done`→`success`, `item_declined`→`muted`;
+- `item_mark`→`accent`, `item_saving`→`warning`;
+- `badge`→`accent`, `surface_tab`→`secondary`, `surface_tab_active`→`accent`;
+- `facet`→`muted`, `group_header`→`section`;
+- `input_new`→`info`, `input_acknowledged`→`warning`, `input_handled`→`success`;
+- `question`→`violet`;
+- `form_label`→`secondary`, `form_focus`→`accent`, `form_error`→`danger`."""
+detail = "glimpse's rule is that colours come only from `TOKENS`. The README token rows are added by tasks 24 and 53."
+acceptance = """
+- forward: `grep -c '"severity_critical"' glimpse/src/theme.rs` prints `1` (today: `0`).
+- guard: theme unit tests pass. **predicted, unverified**."""
+agent = "implement-lite"
+commit = "8174572"
+
+[[items]]
+id = 14
+ref = "add-the-surface-and-item-list-state-machine"
+title = "Add the surface and item-list state machine"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/surface.rs"]
+needs = [
+    1,
+    10,
+]
+coupling = []
+deps_note = ""
+action = """
+Implement `Surface` (with `ALL`, digit mapping and labels), `ItemsState`, `Group`, `Sort`, `VisibleRow::{Header{label,count}, Item(id)}`, plus:
+- `apply_ledger(rows, revision, viewing)`: computes flashes for new or changed-status ids, bumps `new_since_view` when not viewing, keeps the cursor id, and clears `saving` ids whose rows changed;
+- `visible()`: filter, closed toggle, group, sort;
+- `move_cursor`, `toggle_mark` (marks and advances), `mark_visible`, `clear_marks`, `targets()` (marks, or the cursor row);
+- `cycle_group` and `cycle_sort` (per-surface option lists)."""
+detail = 'Approach, "Surfaces and interaction". Pure code: no IO and no ratatui. `Surface::Inbox` exists from the start with an empty state.'
+acceptance = """
+forward: unit tests pass. **predicted, unverified**:
+- `a_new_row_flashes_and_keeps_the_cursor`;
+- `marks_survive_a_ledger_refresh_but_drop_vanished_ids`;
+- `grouping_by_severity_orders_critical_first`;
+- `closed_rows_are_hidden_until_toggled`;
+- `targets_fall_back_to_the_cursor_row`.
+- falsifier: moving the cursor to the first new row in `apply_ledger` makes `a_new_row_flashes_and_keeps_the_cursor` fail."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 15
+ref = "integrate-surfaces-into-the-app"
+title = "Integrate surfaces into the App"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/state.rs",
+    "glimpse/src/view/mod.rs",
+]
+needs = [14]
+coupling = []
+deps_note = ""
+action = """
+- Add `surface`, a per-surface `ItemsState` map, and `scope: Option<(LedgerKind, String)>` to `App`.
+- Add the actions `SwitchSurface(Surface)`, `ItemMove(Dir)`, `SelectItem(String)`, `ToggleMark`, `MarkVisible`, `CycleGroup`, `CycleSort`, `ToggleClosed`.
+- Add `items: Vec<(Rect, String)>` to `Regions`, so task 18 can record item-row hit regions and task 16 can map a click on one to `SelectItem`.
+- Add `App::apply_ledger(kind, ledger)`.
+- Route `Move` and `Details` by surface.
+- Make `Back` clear marks after closing any form or prompt and before the existing overlay chain.
+- Persist `surface`, plus `group` and `sort` per surface, in `glimpse/src/state.rs`."""
+detail = """
+- The task selection model and `App::new(Snapshot, &Config)` stay unchanged.
+- The surfaces start with empty states.
+- Details on an item surface shows the cursor row.
+- `state.rs` field lists are hand-maintained in parse/render/capture/apply/save, so update all five."""
+acceptance = """
+forward: unit tests pass. **predicted, unverified**:
+- `switching_surface_keeps_the_task_selection`;
+- `back_clears_marks_before_closing_details`;
+- `state_round_trips_surface_group_and_sort`."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 16
+ref = "map-the-surface-keys"
+title = "Map the surface keys"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/keys.rs"]
+needs = [15]
+coupling = []
+deps_note = ""
+action = """
+Map the following in `keys::map`, keeping it context-free and dropping `Release` events as today:
+- `1`–`6` → `SwitchSurface`;
+- `Space` → `ToggleMark`;
+- `V` → `MarkVisible`;
+- `g` → `CycleGroup`;
+- `S` → `CycleSort`;
+- `c` → `ToggleClosed`.
+
+In `keys::mouse`, map a left click inside a `Regions.items` rect to `SelectItem(id)`."""
+detail = "No existing binding collides. `s` stays the flow selector and `a` stays auto-flow."
+acceptance = """
+- forward: unit tests `digits_switch_surfaces_and_space_marks` and `a_click_on_an_item_row_selects_it` pass. **predicted, unverified**.
+- guard: existing key tests pass."""
+agent = "implement-lite"
+commit = "c7aa288"
+
+[[items]]
+id = 17
+ref = "mirror-item-ids-in-glimpses-agent-model"
+title = "Mirror item ids in glimpse's agent model"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/model.rs",
+    "glimpse/src/hook.rs",
+]
+needs = [5]
+coupling = []
+deps_note = ""
+action = """
+- Add `item_ids: Vec<String>` (serde default) to `Segment` in `glimpse/src/model.rs`, plus an `Index` lookup returning the running agents whose newest segment names a given item id.
+- Add `item_ids: Vec<String>` to `RecordResult` in `glimpse/src/hook.rs`."""
+detail = 'Approach, "Agent attribution".'
+acceptance = "forward: unit test `running_agents_are_found_by_item_id` passes. **predicted, unverified**."
+agent = "implement-lite"
+commit = "c470942"
+
+[[items]]
+id = 18
+ref = "render-the-item-list-view"
+title = "Render the item list view"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/mod.rs",
+]
+needs = [
+    1,
+    13,
+    15,
+    17,
+]
+coupling = []
+deps_note = ""
+action = """
+- Implement `view::items::render`:
+  - a facet row (`group <g> · sort <s> · closed shown|hidden · /<filter>`);
+  - group header rows `▾ warning (5)`;
+  - item rows: mark, status glyph in the status-class token, id, severity chip (or kind), category, effort, summary, dimmed `file:line` right-aligned;
+  - a running-agent mark from the item-id lookup;
+  - a saving mark;
+  - row flashes.
+- Windowing follows `layers.rs`'s row helpers.
+- In `glimpse/src/view/mod.rs`, dispatch the body by surface (Tasks unchanged) and add per-surface footer hints.
+- Fill `app.regions.items` (added by task 15) with each drawn item row's rect and id; task 16 maps the click."""
+detail = 'Approach, "Surfaces and interaction". The Inbox surface draws a placeholder line until task 50. Keep frame tests in the substring style.'
+acceptance = "forward: view tests `the_review_surface_lists_rows_grouped_by_severity` and `a_marked_row_shows_its_mark` pass. **predicted, unverified**."
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 19
+ref = "show-surface-tabs-and-arrival-badges-in-the-header"
+title = "Show surface tabs and arrival badges in the header"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/header.rs"]
+needs = [
+    13,
+    15,
+]
+coupling = []
+deps_note = ""
+action = """
+- Render surface tabs (`Tasks  Review 12 +3  Optimise 4  Plan-review —  Backlog 6  Inbox 2?`): live counts, a `+N` badge from `new_since_view`, the active tab in `surface_tab_active`, and Inbox's unanswered-question count with `?`.
+- Replace the stale `"tomlctl failed"` fixture text in the header tests with a representative in-process read/parse error message."""
+detail = "In compact density, tabs collapse to `R12+3 O4 P— B6 I2?`."
+acceptance = """
+- forward: `grep -c 'tomlctl failed' glimpse/src/view/header.rs` prints `0` (today: `2`).
+- forward: header test `surface_tabs_show_counts_and_badges` passes. **predicted, unverified**."""
+agent = "implement-deep"
+commit = "9788411"
+
+[[items]]
+id = 20
+ref = "render-item-details"
+title = "Render item details"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/details.rs"]
+needs = [
+    10,
+    15,
+    17,
+]
+coupling = []
+deps_note = ""
+action = """
+- Split `render` so the scroll and wrap frame takes a `Text`.
+- Keep `content(app, now)` for tasks, and add `item_content(row, agents)`:
+  - a summary heading;
+  - the status and its companion fields;
+  - classification;
+  - the anchor;
+  - the description through `markdown::to_text`;
+  - evidence and instances lists;
+  - dates and rounds;
+  - running agents.
+- Choose by surface."""
+detail = "The pending-input list joins in task 52."
+acceptance = """
+- forward: test `item_details_show_the_wontfix_rationale` passes. **predicted, unverified**.
+- guard: existing details tests pass."""
+agent = "implement-deep"
+commit = "ea83d8a"
+
+[[items]]
+id = 21
+ref = "wire-surfaces-through-the-runtime"
+title = "Wire surfaces through the runtime"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/runtime.rs",
+    "glimpse/src/main.rs",
+]
+needs = [
+    11,
+    12,
+    15,
+    18,
+    19,
+    20,
+]
+coupling = []
+deps_note = ""
+action = """
+- On flow switch, scope switch and start, call `Source::subscribe` with the current flow's (or scope's) three ledgers, plus the backlog.
+- Route `Event::Ledger` to `App::apply_ledger`, redrawing only when the event's surface is the one showing or a badge changed, replacing task 11's placeholder arm.
+- Route `Event::Scopes` to `App::apply_scopes`, redrawing only while the selector is open, and route `SwitchScope`.
+- Extend `render_once` to take an optional `(Surface, Ledger)`, and update its caller in `glimpse/src/main.rs` to pass `None`."""
+detail = "Follow the 9ed739b redraw-gating pattern. Update `App::tick_interval` if flashes need ticks while not following."
+acceptance = """
+- forward: runtime tests `a_ledger_event_for_a_hidden_surface_does_not_redraw` and `switching_flow_resubscribes_its_ledgers` pass. **predicted, unverified**.
+- guard: existing runtime tests pass."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 22
+ref = "add-the-surface-and-ledger-flags-for-headless-rendering"
+title = "Add the --surface and --ledger flags for headless rendering"
+effort = "L"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/cli.rs",
+    "glimpse/src/main.rs",
+    "glimpse/tests/cli.rs",
+    "glimpse/src/runtime.rs",
+]
+needs = [
+    1,
+    10,
+    21,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add `--surface <tasks|review|optimise|plan-review|backlog|inbox>` and `--ledger FILE` (only with `--once`) to `glimpse/src/cli.rs` (`ViewArgs`, `HELP`, parse arms, the test literal).
+- Wire them through `main.rs::run_view` to `render_once`; the ledger is loaded via `LedgerRef::File`.
+- Add `RunOpts.surface` in `glimpse/src/runtime.rs` and start the live App on it.
+- Add sandboxed `glimpse/tests/cli.rs` cases."""
+detail = "`--ledger` without `--once` is a usage error (exit 2); `--once --ledger` with neither `--snapshot` nor `--slug` renders over `Snapshot::default()` instead of resolving the freshest flow, so the sandboxed test needs no flow on disk. `--surface` without `--once` opens the live view on that surface. The edits are inseparable: the flag, its parse arm and its two consumers land together."
+acceptance = """
+- forward: `once_renders_a_review_ledger` passes. It renders `glimpse/tests/fixtures/review-ledger.toml` and finds an id and a group header. **predicted, unverified**.
+- forward: `ledger_without_once_is_a_usage_error` passes. **predicted, unverified**.
+- falsifier: resolving the freshest flow when `--ledger` is given makes `once_renders_a_review_ledger` fail in its empty sandbox."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 23
+ref = "bound-the-poll_ms-setting"
+title = "Bound the poll_ms setting"
+effort = "S"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/config.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = "Reject `poll_ms` outside 50–10000. The out-of-range value names the key and the range, and the whole file falls back to defaults, as for any invalid value."
+detail = "Follow the existing range validation style used for `panel_percent` and `column_max`."
+acceptance = "forward: config test `poll_ms_out_of_range_is_rejected` passes. **predicted, unverified**."
+agent = "implement-lite"
+commit = "ef834dc"
+
+[[items]]
+id = 24
+ref = "document-milestone-a-in-the-legend-and-readme"
+title = "Document Milestone A in the legend and README"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone A — read-only surfaces and attribution"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/legend.rs",
+    "glimpse/README.md",
+]
+needs = [
+    16,
+    18,
+    19,
+    22,
+    23,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add to `legend::KEYS` the keys `1`–`6`, `Space`, `V`, `g`, `S` and `c`.
+- Add to the legend the item status glyphs, the severity chips, the mark, the saving and running marks, and the badge.
+- In `glimpse/README.md`, add:
+  - a "Surfaces" section (the item surfaces, the selector's flow-less scopes, arrivals and badges);
+  - the key table rows;
+  - the new token table rows (task 13);
+  - the `--surface` / `--ledger` usage;
+  - the `poll_ms` range."""
+detail = "glimpse is still read-only in this milestone, so keep README line 5. No test enforces sync, so cross-check the legend `KEYS`, the README table and the footer hints by hand."
+acceptance = "forward: `grep -c 'severity_critical' glimpse/README.md` prints `1` or more (today: `0`)."
+agent = "implement-deep"
+commit = "10949cb"
+
+[[items]]
+id = 25
+ref = "add-the-expect-precondition-to-items-apply"
+title = "Add the expect precondition to items apply"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/items.rs"]
+needs = []
+coupling = []
+deps_note = ""
+action = """
+- Parse an optional `expect` object per op in both `apply_op_indexed` and `apply_single_op`, and check it against the current row before an update or remove. JSON equality applies, and `null` means the field is absent.
+- Add `StalePolicy { Abort, Skip }` and `compute_apply_mutation_with(…, StalePolicy)`. It returns the plan plus `skipped_stale: Vec<StaleOp { id, field, expected, found }>`.
+- Keep `compute_apply_mutation` as a delegating wrapper with `Abort`."""
+detail = """
+Approach, "Stale-write precondition".
+- `Abort` errors with every stale op listed, not just the first.
+- An `expect` on an `add` op is an error.
+- Dates compare as their TOML string form."""
+acceptance = """
+- forward: unit tests pass. **predicted, unverified**:
+  - `an_expect_mismatch_aborts_the_batch`;
+  - `an_expect_mismatch_is_skipped_under_skip`;
+  - `a_null_expect_requires_the_field_absent`;
+  - `the_indexed_path_honours_expect` (more than 2 updates).
+- guard: `items_apply_runs_batch_atomically` still passes.
+- falsifier: checking `expect` only in `apply_single_op` makes `the_indexed_path_honours_expect` fail."""
+agent = "implement-deep"
+commit = "3ebb6b8"
+
+[[items]]
+id = 26
+ref = "expose-on-stale-on-the-items-apply-cli"
+title = "Expose --on-stale on the items apply CLI"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/integration.rs",
+]
+needs = [25]
+coupling = []
+deps_note = ""
+action = "Add `--on-stale <abort|skip>` (default `abort`) to `ItemsOp::Apply`. Pass it to `compute_apply_mutation_with`, and add `skipped_stale` to the output envelope, `--dry-run` included."
+detail = "The flag must appear in `items apply --help`. Integration tests run the binary against a temp ledger."
+acceptance = """
+- forward: integration tests `items_apply_on_stale_skip_reports_skipped_ids` and `items_apply_stale_expect_fails_by_default` pass. **predicted, unverified**.
+- guard: `items_apply_reads_ops_from_stdin_dash` still passes.
+- falsifier: defaulting `--on-stale` to `skip` makes `items_apply_stale_expect_fails_by_default` fail."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 27
+ref = "name-the-optimise-wontapply-companion-wontapply_rationale"
+title = "Name the optimise wontapply companion wontapply_rationale"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/items.rs",
+    "claude/skills/flow-contract-ledger-schema/SKILL.md",
+]
+needs = [25]
+coupling = []
+deps_note = ""
+action = """
+- Make `Item::validate` require `wontapply_rationale` for `wontapply` and keep `wontfix_rationale` for `wontfix`. Update its doc comment and the test `item_validate_flags_wontapply_missing_rationale`.
+- In `claude/skills/flow-contract-ledger-schema/SKILL.md`, split the `wontfix` / `wontapply` companion bullet accordingly."""
+detail = "User decision (pre-plan). All five real `wontapply` rows already use `wontapply_rationale`."
+acceptance = '''
+- forward: `grep -c '"wontfix" | "wontapply" => &\["wontfix_rationale"\]' tomlctl/src/items.rs` prints `0` (today: `1`).
+- forward: `grep -c 'wontapply_rationale' claude/skills/flow-contract-ledger-schema/SKILL.md` prints `1` or more (today: `0`).'''
+agent = "implement-lite"
+commit = "3ebb6b8"
+
+[[items]]
+id = 28
+ref = "add-the-ledger-control-edit-facade"
+title = "Add the ledger control-edit facade"
+effort = "L"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/ledgers.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/tests/library_facade.rs",
+    "tomlctl/tests/common/mod.rs",
+]
+needs = [
+    3,
+    25,
+    27,
+]
+coupling = []
+deps_note = ""
+action = """
+- Implement `transition`, `classify` and `restore` in `tomlctl/src/ledgers.rs` per Approach, "Ledger contract". Each writes under `io::mutate_doc_conditional` with `OnMissing::Error`, and none bumps `last_updated`.
+- Export `ledger_transition`, `ledger_classify` and `ledger_restore` from `tomlctl/src/lib.rs`, each with the root-equality check."""
+detail = """
+- Enforce the transition table from Approach, "Ledger contract"; any other transition is an error naming it.
+- Remove the previous status's companions and validate with `Item::validate`.
+- Stale ids are skipped and reported, and the rest are written.
+- `classify` refuses plan-review and backlog.
+- Add to `tomlctl/tests/common/mod.rs` a guard holding one file-static `Mutex` across an `unsafe` `std::env::set_var("TOMLCTL_ROOT", sandbox)` / `remove_var` pair (Approach, "Ledger contract"); every facade write test holds it, and tasks 29 and 42 reuse it."""
+acceptance = """
+- forward: facade tests pass. **predicted, unverified**:
+  - `ledger_transition_defers_an_open_finding`;
+  - `ledger_transition_skips_a_changed_status`;
+  - `ledger_transition_refuses_fixed`;
+  - `ledger_restore_undoes_a_transition`;
+  - `ledger_writes_refuse_a_mismatched_root`;
+  - `ledger_classify_recomputes_dedup_id`;
+  - `ledger_classify_refuses_plan_review_and_backlog`;
+  - `ledger_transition_discards_a_plan_review_finding_with_its_reason`;
+  - `ledger_transition_wontapply_requires_wontapply_rationale`.
+- falsifier: leaving the previous status's companions in place makes `ledger_restore_undoes_a_transition` fail."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 29
+ref = "add-the-backlog-triage-facade"
+title = "Add the backlog triage facade"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/backlog/triage.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/tests/library_facade.rs",
+    "tomlctl/src/backlog/mod.rs",
+]
+needs = [28]
+coupling = []
+deps_note = ""
+action = """
+- Factor `triage::dispatch` into a value-returning `triage_value(root, …)` that the CLI path prints.
+- Add an `expect_status` check.
+- Export `backlog_triage(root, ids, BacklogTriage::{Dismiss{reason}, Reopen{rationale}, Resolve{resolution}}, expect_status)` from `tomlctl/src/lib.rs`."""
+detail = """
+- It reuses the existing private `apply_transition` and `schema::clear_for_transition`, so the validator's companion rules hold. `apply_transition` is all-or-nothing, so filter the ids on `expect_status` before calling it, and keep the `last_updated` stamp it writes.
+- It takes the backlog path from `root`, not from `repo_or_cwd_root()`, after the root-equality check.
+- Facade tests hold task 28's `TOMLCTL_ROOT` guard. The CLI flag `--expect-status` is task 55's."""
+acceptance = """
+- forward: facade tests `backlog_triage_dismisses_with_a_reason` and `backlog_triage_skips_a_changed_status` pass. **predicted, unverified**.
+- falsifier: passing every id to `apply_transition` regardless of `expect_status` makes `backlog_triage_skips_a_changed_status` fail.
+- guard: `tomlctl/tests/backlog_write.rs` still passes."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 30
+ref = "build-the-form-framework"
+title = "Build the form framework"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/form.rs",
+    "glimpse/Cargo.toml",
+    "glimpse/Cargo.lock",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = 'Add `tui-input = "0.15.5"` (default features) to `glimpse/Cargo.toml`, and refresh `glimpse/Cargo.lock` with `cargo tree --manifest-path glimpse/Cargo.toml`. Implement `Field`, `Form`, `FormOutcome`, `FieldValue` and `Form::handle_key` per Approach, "Forms".'
+detail = """
+- Required fields are marked per field.
+- Submitting with an empty required field sets `error` and stays `Pending`.
+- `Select.free` handles the "other…" option.
+- Release events are ignored.
+- The only lockfile addition is `tui-input`. A second `crossterm` version is a stop-and-report."""
+acceptance = """
+- forward: unit tests pass. **predicted, unverified**:
+  - `tab_moves_focus_and_enter_submits`;
+  - `j_typed_into_a_text_field_is_text`;
+  - `space_toggles_a_multi_option`;
+  - `an_empty_required_field_blocks_submit`;
+  - `esc_closes_an_open_dropdown_before_cancelling`.
+- forward: `grep -c '^name = "tui-input"' glimpse/Cargo.lock` prints `1` (today: `0`).
+- guard: `grep -c '^name = "crossterm"' glimpse/Cargo.lock` prints `1`, so there is no second crossterm version."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 31
+ref = "render-forms-as-a-modal"
+title = "Render forms as a modal"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/form.rs"]
+needs = [
+    13,
+    30,
+]
+coupling = []
+deps_note = ""
+action = """
+Render a `Form` as a centred `Clear` + `Block` modal:
+- labels in `form_label`, and the focused field in `form_focus`;
+- an open dropdown drawn with `List` / `ListState`;
+- checkboxes `[x]`;
+- the error line in `form_error`;
+- the text cursor via `Frame::set_cursor_position`."""
+detail = "Follow `glimpse/src/view/selector.rs`'s overlay pattern."
+acceptance = "forward: view test `a_form_shows_its_fields_and_error` passes. **predicted, unverified**."
+agent = "implement-lite"
+commit = "31c381d"
+
+[[items]]
+id = 32
+ref = "run-writes-on-a-serial-writer-thread"
+title = "Run writes on a serial writer thread"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/writer.rs",
+    "glimpse/src/source.rs",
+    "glimpse/src/runtime.rs",
+]
+needs = [
+    11,
+    22,
+    28,
+    29,
+]
+coupling = []
+deps_note = ""
+action = """
+- Implement `Writer::spawn(root, events)` with `submit(WriteRequest)` per Approach, "Writer thread", calling the tomlctl facade. Define only `Transition`, `Classify`, `Restore` and `BacklogTriage` here; task 51 adds the `Input*` variants once the inputs facade (task 42) exists.
+- Add `Event::Written(WriteOutcome)` to `glimpse/src/source.rs`, with a placeholder `Event::Written(_) => Step::Nothing` arm in `runtime::handle` (task 34 routes it).
+- Spawn the writer beside `Source::start` in `runtime::run` (`glimpse/src/runtime.rs`), which owns the event channel, and hold it in `TerminalHost`; `--once` never reaches `runtime::run`, so it never spawns one.
+- Add a `FakeWriter` for tests."""
+detail = "Requests execute in submission order. A facade error becomes `WriteOutcome.error`, and the thread never panics on one."
+acceptance = """
+- forward: unit tests `writes_run_in_submission_order` and `a_facade_error_is_reported_not_panicked` pass. **predicted, unverified**.
+- falsifier: running each request on its own spawned thread makes `writes_run_in_submission_order` fail."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 33
+ref = "add-the-action-menu-control-edit-forms-bulk-edits-and-undo"
+title = "Add the action menu, control-edit forms, bulk edits and undo"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/actions.rs",
+    "glimpse/src/app.rs",
+]
+needs = [
+    15,
+    30,
+    32,
+]
+coupling = []
+deps_note = ""
+action = """
+- **Menu and forms.** Build the action menu for the current surface from the transition table (Approach, "Ledger contract"), and the matching forms: disposition, with its companion fields, and classify, with dropdowns for severity and effort and a free-form category.
+- **Submitting.** On submit, produce one `WriteRequest` covering every target (marks, else the cursor row) with `expect_status` set to each row's displayed status. Mark the targets `saving`.
+- **Undo.** Keep the undo stack, one entry per submitted write; `u` turns the top entry into one `Restore` per id that write applied, reporting any that come back stale (Approach, "Writer thread").
+- **Confirmation.** Ask before moving a `critical` item to `wontfix`, `wontapply`, `discarded` or `dismissed`.
+- **App wiring.** In `glimpse/src/app.rs`, add `overlay: Option<Overlay::{Menu, Form, Prompt}>`, the actions `OpenMenu`, `OpenClassify`, `Undo` and `OpenFilter`, and handling for `Event::Written` outcomes (clear `saving` on error or stale skip, footer notice)."""
+detail = 'A bulk selection that mixes statuses offers only the transitions valid for every target, and splits into one request per displayed from-status (Approach, "Ledger contract"). The filter prompt is an `Overlay::Prompt` holding a `tui_input::Input`. `Back` closes the overlay first.'
+acceptance = """
+forward: unit tests pass. **predicted, unverified**:
+- `deferring_two_marked_findings_submits_one_transition`;
+- `a_mixed_status_selection_offers_only_common_transitions`;
+- `undo_submits_a_restore_with_the_written_values`;
+- `a_stale_outcome_clears_saving_and_notices`.
+- falsifier: submitting one `WriteRequest` per marked row makes `deferring_two_marked_findings_submits_one_transition` fail."""
+agent = "implement-deep"
+commit = "efd5d9c"
+
+[[items]]
+id = 34
+ref = "route-keys-to-open-forms-and-prompts"
+title = "Route keys to open forms and prompts"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/keys.rs",
+    "glimpse/src/runtime.rs",
+    "glimpse/src/view/mod.rs",
+]
+needs = [
+    16,
+    21,
+    31,
+    32,
+    33,
+]
+coupling = []
+deps_note = ""
+action = """
+- In `runtime::handle`, send raw key events to the open overlay before calling `keys::map`.
+- Map `m`, `e`, `u` and `/` in `keys::map`.
+- Submit `WriteRequest`s to the writer through a new `Host::write` on `TerminalHost`, and route `Event::Written`, replacing task 32's placeholder arm.
+- Draw the overlay in `view::render` (`glimpse/src/view/mod.rs`) beside the selector and legend overlays: a `Form` or `Overlay::Menu` through `view::form::render` (the menu renders as a single-`Select` form)."""
+detail = "While an overlay is open, the mouse is blocked, as the selector blocks it today. `Ctrl+C` still quits."
+acceptance = """
+- forward: runtime tests `typing_q_in_a_form_does_not_quit` and `submitting_a_form_reaches_the_writer` pass. **predicted, unverified**.
+- falsifier: calling `keys::map` before the overlay makes `typing_q_in_a_form_does_not_quit` fail."""
+agent = "implement-deep"
+commit = "efd5d9c"
+
+[[items]]
+id = 35
+ref = "render-the-inline-filter-prompt-and-closed-toggle"
+title = "Render the inline filter prompt and closed toggle"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = ["glimpse/src/view/items.rs"]
+needs = [
+    18,
+    33,
+]
+coupling = []
+deps_note = ""
+action = "While `Overlay::Prompt` is open, draw the filter input in the facet row with the cursor, using `visual_scroll`. Show the `closed shown|hidden` state."
+detail = 'Approach, "Surfaces and interaction"; the filter applies as you type.'
+acceptance = "forward: view test `the_filter_prompt_renders_in_the_facet_row` passes. **predicted, unverified**."
+agent = "implement-lite"
+commit = "efd5d9c"
+
+[[items]]
+id = 36
+ref = "guard-the-apply-pipelines-late-writes-with-expect"
+title = "Guard the apply pipeline's late writes with expect"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-apply-pipeline/references/verification.md",
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md",
+    "claude/skills/flow-contract-apply-rollback-protocol/SKILL.md",
+]
+needs = [26]
+coupling = []
+deps_note = ""
+action = """
+- In the two-call write pattern, each status-transition op carries `"expect":{"status":"<status read at Step 1>"}`, and the call passes `--on-stale skip`.
+- The SKILL.md "Interim checkpoint" `items apply` gets the same `expect` and flag (one line), and `verification.md`'s "≤ 3 items → loop of single-item `tomlctl items update`" fallback is withdrawn for status transitions, since `items update` carries no `expect`.
+- Add a "changed during the run" line in the final summary for `skipped_stale` ids, which are never retried.
+- Note in the pipeline SKILL.md's ledger-mutation section that a human may edit through glimpse mid-run.
+- Rollback reversals carry `expect` equal to this run's transition status."""
+detail = "The pipeline SKILL.md is at 479/500 lines, so keep the addition to a few lines and put the detail in `verification.md`. The rollback skill's description is at 1016/1024 characters, so do not touch it. Bash-fenced `tomlctl` lines must parse."
+acceptance = "forward: `grep -l -- '--on-stale skip' claude/skills/flow-contract-apply-pipeline/references/verification.md claude/skills/flow-contract-apply-rollback-protocol/SKILL.md | wc -l` prints `2` (today: `0`)."
+agent = "implement-deep"
+commit = "90e8cc2"
+
+[[items]]
+id = 37
+ref = "guard-review-optimise-and-disposition-sweep-writes-with-expect"
+title = "Guard review, optimise and disposition-sweep writes with expect"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md",
+]
+needs = [
+    6,
+    26,
+]
+coupling = []
+deps_note = ""
+action = """
+Add `expect` and `--on-stale skip` to:
+- `/review` Step 4's disposition batch (`expect` status `open`);
+- `/optimise`'s Interim-checkpoint `items apply` (reopened items carry `expect` status `deferred`) and its Step 3 updates to existing items (`expect` status `open`) — `/optimise` has no disposition step;
+- the disposition sweep's reopen batch (`expect` status `deferred`).
+
+Each reports the `skipped_stale` ids."""
+detail = 'The Step 3 `rounds` patch needs no `expect`. Keep every `Invoke the \`…\` skill` phrase.'
+acceptance = "forward: `grep -l -- '--on-stale skip' claude/commands/review.md claude/commands/optimise.md claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md | wc -l` prints `3` (today: `0`)."
+agent = "implement-deep"
+commit = "e05b836"
+
+[[items]]
+id = 38
+ref = "guard-review-plans-merge-writes-and-record-discard-reasons"
+title = "Guard review-plan's merge writes and record discard reasons"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = ["claude/commands/review-plan.md"]
+needs = [
+    7,
+    26,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add `expect` `{"status":"open"}` and `--on-stale skip` to the `merged` / `discarded` transitions.
+- Replace "`/review-plan` is the sole writer" with: the only agent writer, while the human may discard through glimpse.
+- Add the optional `discard_reason` field to the plan-review schema line."""
+detail = 'Approach, "Ledger contract" and "Stale-write precondition".'
+acceptance = """
+- forward: `grep -c -- '--on-stale skip' claude/commands/review-plan.md` prints `1` or more (today: `0`).
+- forward: `grep -c 'is the sole writer' claude/commands/review-plan.md` prints `0` (today: `1`)."""
+agent = "implement-lite"
+commit = "5afeec6"
+
+[[items]]
+id = 39
+ref = "document-expect-and-the-human-writer-in-the-items-references"
+title = "Document expect and the human writer in the items references"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = "Milestone B — control-edit writes"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/write.md",
+    "claude/skills/flow-contract-ledger-schema/SKILL.md",
+]
+needs = [
+    26,
+    27,
+]
+coupling = []
+deps_note = ""
+action = """
+- In the `items apply` section of `claude/skills/tomlctl/references/write.md`, document:
+  - the per-op `expect` object;
+  - `--on-stale` (a flag-table row);
+  - the `skipped_stale` envelope;
+  - the old-binary hazard.
+- In the ledger-schema skill:
+  - add `expect` to the op shape;
+  - qualify "concurrent invocations are safe" as per-call, not per-run;
+  - name glimpse as a control-field writer;
+  - list `reopen_rationale` and `discard_reason`."""
+detail = "`flag_table_lint` checks that each flag row names a real flag, which is why this task depends on 26."
+acceptance = "forward: `grep -c -- '--on-stale' claude/skills/tomlctl/references/write.md` prints `1` or more (today: `0`)."
+agent = "implement-deep"
+commit = "3ebb6b8"
+
+[[items]]
+id = 40
+ref = "add-the-inputs-store-module"
+title = "Add the inputs store module"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/lib.rs",
+    ".gitignore",
+]
+needs = [29]
+coupling = []
+deps_note = ""
+action = """
+Implement the store per Approach, "Input store", with value-returning functions that never print:
+- the schema and its validation;
+- `list` (filters: pending, kind, ledger, flow, scope, item);
+- `add` (assigns `I{n}` and `created`, status `new`);
+- `ack`, `handle` (`--by`, `--note`), `withdraw` (only `new`), and `answer` (writes the answer record and moves the question to `handled`).
+
+Declare `mod inputs;` in `tomlctl/src/lib.rs`. Add `.claude/inputs.toml*` to `.gitignore` with a one-line comment."""
+detail = """
+- The array is `inputs`.
+- Writes use `mutate_doc` with `OnMissing::Create(seed)`, where the seed carries `schema_version` and `last_updated`.
+- Validation enforces the per-kind required fields: capture needs `text`; question needs `prompt`, `choice`, and `options` unless `choice = "text"`; answer needs `answers` plus `picked` or `text`.
+- An answer to a question that is not `new` is an error."""
+acceptance = """
+- forward: unit tests pass. **predicted, unverified**:
+  - `add_assigns_sequential_ids`;
+  - `answer_handles_its_question`;
+  - `withdraw_refuses_an_acknowledged_record`;
+  - `a_question_without_options_is_invalid`.
+- falsifier: letting `withdraw` move any status makes `withdraw_refuses_an_acknowledged_record` fail.
+- forward: `git check-ignore -q .claude/inputs.toml` exits 0 (today: exits 1)."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 41
+ref = "add-the-tomlctl-inputs-verb-group"
+title = "Add the tomlctl inputs verb group"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/inputs.rs",
+]
+needs = [
+    26,
+    40,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add `Cmd::Inputs { op: InputsOp }`, with `list`, `add`, `ack`, `handle`, `withdraw` and `answer` and their flags (Approach, "Input store"). Write verbs flatten `WriteIntegrityArgs`.
+- Dispatch to `inputs.rs` and print each envelope.
+- Add integration tests."""
+detail = "Follow the `agents` and `backlog` verb-group pattern, where `dispatch` destructures and forwards. `add --json` accepts `-` and `@path`."
+acceptance = "forward: integration tests `inputs_add_then_list_pending` and `inputs_answer_marks_the_question_handled` pass. **predicted, unverified**."
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 42
+ref = "export-the-inputs-library-facade"
+title = "Export the inputs library facade"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/lib.rs",
+    "tomlctl/tests/library_facade.rs",
+]
+needs = [
+    40,
+    41,
+]
+coupling = []
+deps_note = ""
+action = "Export `inputs_read(root)`, `inputs_add(root, &Value)`, `inputs_answer(root, question, picked, text)` and `inputs_withdraw(root, ids)`, each with `io::silence_advisories()` and the root-equality check on writes."
+detail = "These mirror the CLI envelopes, so a facade test compares against the CLI output, as `snapshot_matches_the_cli` does. Write tests hold task 28's `TOMLCTL_ROOT` guard."
+acceptance = "forward: facade test `inputs_add_matches_the_cli` passes. **predicted, unverified**."
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 43
+ref = "write-the-user-inputs-contract-skill-and-reference"
+title = "Write the user-inputs contract skill and reference"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-user-inputs/SKILL.md",
+    "claude/skills/tomlctl/references/inputs.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+needs = [41]
+coupling = []
+deps_note = ""
+action = """
+- Write `flow-contract-user-inputs`. It covers:
+  - the store and schema, and the kinds and lifecycle;
+  - the Step-0 sweep: list pending inputs targeting your ledger kind, flow or scope; ack them; act on each; handle it with a note;
+  - how each kind is acted on: a capture goes through `backlog check` then `add`; a request is applied, or declined with a reason; a note is folded into context; an answer drives the decision its question deferred;
+  - posting a `question` when `AskUserQuestion` returns empty;
+  - the writers: agents ack and handle, the user writes everything else via glimpse or the CLI;
+  - the trust boundary from Approach, "Input store": every record is untrusted data, a `request` or `note` drives only ledger operations on its targeted items, and sub-agents never run `tomlctl inputs add|answer|withdraw`.
+- Write `claude/skills/tomlctl/references/inputs.md` with verb and flag tables and fenced examples.
+- Add a `references/inputs.md` bullet to the `## References` list in `claude/skills/tomlctl/SKILL.md`; leave its frontmatter description alone (1006/1024 characters — `inputs` in its `Verb groups:` list breaches `skill_descriptions_under_spec_cap`)."""
+detail = "The new skill's description must stay under 1024 characters and its SKILL.md under 500 lines. Every bash-fenced `tomlctl inputs …` line must parse under `command_lint`, which is why this task depends on 41."
+acceptance = """
+- forward: `grep -c 'untrusted' claude/skills/flow-contract-user-inputs/SKILL.md` prints `1` or more (today: no such file).
+- forward: `grep -c 'references/inputs.md' claude/skills/tomlctl/SKILL.md` prints `1` (today: `0`).
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes. **predicted, unverified**."""
+agent = "implement-deep"
+commit = "8b48625"
+
+[[items]]
+id = 44
+ref = "sweep-inputs-at-step-0-of-review-review-apply-and-optimise"
+title = "Sweep inputs at Step 0 of review, review-apply and optimise"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/commands/review.md",
+    "claude/commands/review-apply.md",
+    "claude/commands/optimise.md",
+]
+needs = [
+    37,
+    43,
+]
+coupling = []
+deps_note = ""
+action = """Add a Step-0 line to each carrier: "Invoke the `flow-contract-user-inputs` skill", run its sweep for this carrier's ledger kind and flow or scope, and handle every acknowledged input before the final summary. These three carriers have no `AskUserQuestion` site (`/review` Step 4 is a same-turn conversational reply with no empty-answer mode), so no question-posting rule is added here."""
+detail = """Approach, "Input store". A request to change an item's content (summary, description) is applied by the carrier with an `items update` that carries `expect`."""
+acceptance = "forward: `grep -l 'flow-contract-user-inputs' claude/commands/review.md claude/commands/review-apply.md claude/commands/optimise.md | wc -l` prints `3` (today: `0`)."
+agent = "implement-deep"
+commit = "ee19924"
+
+[[items]]
+id = 45
+ref = "sweep-inputs-at-step-0-of-optimise-apply-review-plan-and-backlog"
+title = "Sweep inputs at Step 0 of optimise-apply, review-plan and backlog"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "claude/commands/optimise-apply.md",
+    "claude/commands/review-plan.md",
+    "claude/commands/backlog.md",
+]
+needs = [
+    38,
+    43,
+    55,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add the same Step-0 sweep to `/optimise-apply` and `/review-plan`.
+- In `/backlog`, add a drain step: every pending `capture` goes through check, then add (or a duplicate verdict). Every input targeting a backlog item is acted on.
+- In `/backlog`'s per-cluster triage, pass `--expect-status <the status it displayed>` and report a mismatch under a "changed during the run" line, never retrying it.
+- Add the empty-answer question rule at `/review-plan`'s Q1/Q2/Q3 sites and `/backlog`'s per-cluster offer (`/optimise-apply` has no `AskUserQuestion` site)."""
+detail = "`/backlog` must keep its `backlog-capture` invocation phrase. Kind and area are settled before `check`, and the same values are reused for `add`."
+acceptance = "forward: `grep -l 'flow-contract-user-inputs' claude/commands/optimise-apply.md claude/commands/review-plan.md claude/commands/backlog.md | wc -l` prints `3` (today: `0`)."
+agent = "implement-deep"
+commit = "25b0cb3"
+
+[[items]]
+id = 46
+ref = "gate-the-six-carriers-on-the-inputs-skill"
+title = "Gate the six carriers on the inputs skill"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = ["tomlctl/src/cli/dispatch/tests/skills.rs"]
+needs = [
+    44,
+    45,
+]
+coupling = []
+deps_note = ""
+action = "Add `flow-contract-user-inputs` to the required-skills table of `carrier_invokes_required_skills` for `review.md`, `review-apply.md`, `optimise.md`, `optimise-apply.md`, `review-plan.md` and `backlog.md`."
+detail = "Follow the table's existing entry shape."
+acceptance = """
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::skills::carrier_invokes_required_skills` passes. **predicted, unverified**.
+- falsifier: removing the invocation phrase from `claude/commands/backlog.md` makes it fail."""
+agent = "implement-lite"
+commit = "70e4b99"
+
+[[items]]
+id = 47
+ref = "name-the-human-writer-and-the-input-store-in-policy-docs"
+title = "Name the human writer and the input store in policy docs"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "CLAUDE.md",
+    "claude/skills/backlog-capture/SKILL.md",
+    "glimpse/CLAUDE.md",
+]
+needs = [43]
+coupling = []
+deps_note = ""
+action = """
+- `CLAUDE.md` "Backlog capture": the orchestrator is the only *agent* writer. The human triages via glimpse (dismiss, reopen, resolve). Captures arrive through `.claude/inputs.toml`, which `/backlog` drains.
+- `claude/skills/backlog-capture/SKILL.md`: the same amendment at the "orchestrator is the only writer" and "status is moved only by triage and reconcile" passages, noting that glimpse calls the same triage logic.
+- `glimpse/CLAUDE.md`: update the Structure paragraph (the new modules and the `source/` split; `watch.rs` now watches `.claude`, `.claude/flows` and the flow-less ledger dirs), the watch gotchas (per-scope miss streaks; `Wake::NewScope`) and the `agents.toml` second-writer line (glimpse also writes ledgers, `backlog.toml` and `inputs.toml`), plus new rules:
+  - glimpse writes only through the tomlctl facade on the writer thread;
+  - no optimistic model updates;
+  - control fields only;
+  - free text goes to the input store."""
+detail = "The backlog-capture description is at 844/1024 characters, so leave it alone. The implement-* `backlog-candidates` shared block stays untouched."
+acceptance = "forward: `grep -c 'inputs.toml' CLAUDE.md claude/skills/backlog-capture/SKILL.md glimpse/CLAUDE.md` prints `1` or more per file (today: `0` each)."
+agent = "implement-deep"
+commit = "f83299b"
+
+[[items]]
+id = 48
+ref = "model-input-records-and-the-inbox-state-in-glimpse"
+title = "Model input records and the Inbox state in glimpse"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/ledger.rs",
+    "glimpse/src/surface.rs",
+]
+needs = [
+    14,
+    42,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add `InputRow` (all store fields) and an `Inputs` loader to `glimpse/src/ledger.rs`.
+- Add `InboxState` to `glimpse/src/surface.rs`: unanswered questions first, then your records grouped by status, with flashes on lifecycle changes, plus a `pending_for(ledger, item)` lookup used for item rows and details."""
+detail = 'Approach, "Input store".'
+acceptance = "forward: unit tests `unanswered_questions_sort_first` and `pending_inputs_are_found_by_item` pass. **predicted, unverified**."
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 49
+ref = "feed-input-records-through-the-poller"
+title = "Feed input records through the poller"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/source.rs",
+    "glimpse/src/source/scan.rs",
+    "glimpse/src/runtime.rs",
+    "glimpse/src/ledger.rs",
+]
+needs = [
+    32,
+    34,
+    42,
+    48,
+    54,
+]
+coupling = []
+deps_note = ""
+action = """
+- Fetch `Feed::Inputs` via `tomlctl::inputs_read`, posting `Event::InputRecords` on a revision change.
+- Always subscribe to it.
+- Route `Event::InputRecords` to `App::apply_inputs` (task 54), which updates the Inbox badge and the pending marks."""
+detail = "Driven by `Wake::Repo(Inputs)`, with the same fingerprint discipline as task 11. `Event::InputRecords` is distinct from the existing key-input `Event::Input`."
+acceptance = """
+- forward: test `an_inputs_change_posts_one_event` passes. **predicted, unverified**.
+- falsifier: posting on every safety tick rather than on a revision change makes it fail."""
+agent = "implement-deep"
+commit = "90213de"
+
+[[items]]
+id = 50
+ref = "render-the-inbox-surface"
+title = "Render the Inbox surface"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/inbox.rs",
+    "glimpse/src/view/mod.rs",
+]
+needs = [
+    18,
+    31,
+    34,
+    48,
+    54,
+]
+coupling = []
+deps_note = ""
+action = """
+- Render the Inbox: questions (prompt, author, target, options) in the `question` token, then records with kind, status in the `input_*` tokens, target, a text excerpt, and the handled note.
+- Replace task 18's placeholder in `view/mod.rs`, and add Inbox footer hints (`Enter` answer, `w` withdraw, `n` capture)."""
+detail = 'Approach, "Surfaces and interaction".'
+acceptance = "forward: view test `the_inbox_lists_questions_before_records` passes. **predicted, unverified**."
+agent = "implement-deep"
+commit = "298d394"
+
+[[items]]
+id = 51
+ref = "add-capture-request-note-and-answer-forms"
+title = "Add capture, request, note and answer forms"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/actions.rs",
+    "glimpse/src/writer.rs",
+]
+needs = [
+    33,
+    42,
+    48,
+]
+coupling = []
+deps_note = ""
+action = """
+- **Forms** (`glimpse/src/actions.rs`):
+  - `n` capture: summary, a kind dropdown over the backlog kinds, area, note;
+  - `r` request or note on the targets: a kind select over request and note, plus text;
+  - the answer form, built from a question's `choice` and `options`;
+  - `w` withdraw.
+- **Writer** (`glimpse/src/writer.rs`): add the `InputAdd`, `InputAnswer` and `InputWithdraw` request variants and execute them through the inputs facade."""
+detail = "The capture's `capture_kind` and `area` are hints that `/backlog` settles. Each input write is undone by withdrawing it. The keys and App actions that open these forms are task 54's."
+acceptance = "forward: unit tests `a_capture_form_submits_an_input_add` and `answering_a_multi_question_sends_the_picked_options` pass. **predicted, unverified**."
+agent = "implement-deep"
+commit = "efd5d9c"
+
+[[items]]
+id = 52
+ref = "mark-item-rows-and-details-with-pending-inputs"
+title = "Mark item rows and details with pending inputs"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/details.rs",
+]
+needs = [
+    20,
+    35,
+    48,
+    54,
+]
+coupling = []
+deps_note = ""
+action = "Draw a pending-input mark on item rows that `InboxState::pending_for` (held as `App.inbox`, task 54) matches. List those records (kind, status, text) in item details."
+detail = "Use the `input_new` and `input_acknowledged` tokens."
+acceptance = "forward: view test `a_row_with_a_pending_request_shows_the_mark` passes. **predicted, unverified**."
+agent = "implement-lite"
+commit = "48aced0"
+
+[[items]]
+id = 53
+ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+title = "Document Milestones B and C in the legend and README"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/legend.rs",
+    "glimpse/README.md",
+]
+needs = [
+    24,
+    34,
+    35,
+    49,
+    50,
+    51,
+    52,
+    54,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add `m`, `e`, `r`, `n`, `u`, `/`, `w` and Inbox `Enter` to `legend::KEYS`, plus the input marks and question glyph.
+- In `glimpse/README.md`:
+  - replace "It is read-only" with the write model (control fields via forms, input records via the store);
+  - document forms, undo, the Inbox and the input store;
+  - add the input/form token rows;
+  - update "How it works" with the writer thread and the extra watch scopes."""
+detail = "Hand-sync the legend `KEYS`, the README key table and the footer hints."
+acceptance = "forward: `grep -c 'It is read-only' glimpse/README.md` prints `0` (today: `1`)."
+agent = "implement-deep"
+commit = "da9cb8c"
+
+[[items]]
+id = 54
+ref = "wire-the-inbox-and-input-forms-through-the-app-and-keys"
+title = "Wire the Inbox and input forms through the App and keys"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/actions.rs",
+    "glimpse/src/view/header.rs",
+]
+needs = [
+    34,
+    48,
+    51,
+]
+coupling = []
+deps_note = ""
+action = """
+- In `glimpse/src/app.rs`, add `inbox: InboxState` to `App` with `App::apply_inputs(value)`, and the actions `OpenCapture`, `OpenRequest`, `Withdraw` and `AnswerQuestion` that open task 51's forms in `Overlay::Form` (or submit the withdraw). `Details` on the Inbox surface opens the answer form for a question.
+- In `glimpse/src/keys.rs`, map `n` → `OpenCapture`, `r` → `OpenRequest` and `w` → `Withdraw`, keeping `keys::map` context-free; the App ignores them where they do not apply."""
+detail = 'Approach, "Surfaces and interaction" and "Input store". `r` acts on the marks, or on the cursor row when nothing is marked. `w` withdraws only your own `new` record.'
+acceptance = """
+- forward: unit tests pass. **predicted, unverified**:
+  - `n_r_and_w_map_to_input_actions`;
+  - `enter_on_a_question_opens_its_answer_form`;
+  - `apply_inputs_updates_the_inbox_badge`.
+- falsifier: leaving `n` unmapped makes `n_r_and_w_map_to_input_actions` fail."""
+agent = "implement-deep"
+commit = "298d394"
+
+[[items]]
+id = 55
+ref = "expose-the-triage-precondition-on-the-backlog-cli"
+title = "Expose the triage precondition on the backlog CLI"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/backlog_write.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/backlog/triage.rs",
+]
+needs = [
+    29,
+    41,
+]
+coupling = []
+deps_note = ""
+action = "Add `--expect-status <status>` to `backlog triage` and pass it to task 29's `triage_value`; an id whose status differs is reported under `skipped_stale` in the envelope and left untouched."
+detail = 'Approach, "Ledger contract". Depends on 41 only because both edit `cli/types.rs` and `cli/dispatch.rs`. Without the flag, behaviour is unchanged.'
+acceptance = """
+- forward: integration test `backlog_triage_expect_status_skips_a_changed_row` passes. **predicted, unverified**.
+- guard: the existing `tomlctl/tests/backlog_write.rs` tests pass.
+- falsifier: ignoring `--expect-status` makes `backlog_triage_expect_status_skips_a_changed_row` fail."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 56
+ref = "advertise-the-new-verbs-and-flags-in-tomlctl-capabilities"
+title = "Advertise the new verbs and flags in tomlctl capabilities"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+needs = [
+    26,
+    41,
+    55,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add `"inputs"` to `SUBCOMMANDS`, and `items_apply_expect`, `backlog_triage_expect` and `inputs` to `FEATURES`, in `tomlctl/src/cli/types.rs`.
+- Mirror them in `tomlctl/tests/capabilities.rs` (the expected-features list and the read/write `--help` integrity lists).
+- Add the `inputs` verb lines and the `--on-stale` / `--expect-status` flags to `tomlctl/README.md`."""
+detail = 'Approach, "Stale-write precondition". Follow the existing entry shapes.'
+acceptance = """
+- forward: `grep -c '"items_apply_expect"' tomlctl/src/cli/types.rs` prints `1` (today: `0`).
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes. **predicted, unverified**."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 57
+ref = "release-tomlctl-0130"
+title = "Release tomlctl 0.13.0"
+effort = "M"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+needs = [
+    30,
+    56,
+]
+coupling = []
+deps_note = ""
+action = "Bump `tomlctl/Cargo.toml` to `0.13.0`, then refresh `tomlctl/Cargo.lock` and `glimpse/Cargo.lock` (`cargo tree --manifest-path glimpse/Cargo.toml`), staged in one commit."
+detail = "The pre-commit hook runs glimpse `clippy --locked`, so the glimpse lockfile must land with the bump."
+acceptance = """
+- forward: `grep -c '^version = "0.13.0"' tomlctl/Cargo.toml` prints `1` (today: `0`).
+- guard: `cargo clippy --manifest-path glimpse/Cargo.toml --locked` passes. **predicted, unverified**."""
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 58
+ref = "fix-the-debug-build-stack-overflow-in-tomlctl-capabilities"
+title = "Fix the debug-build stack overflow in tomlctl capabilities"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "tomlctl/src/main.rs",
+    "tomlctl/src/cli/dispatch.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "A debug build of 'tomlctl capabilities' overflows the 1 MB Windows main-thread stack (release passes), failing 9 tests in tomlctl/tests/capabilities.rs. Diagnose whether it reproduces at HEAD (git archive HEAD into the scratchpad, separate target dir) or was introduced by this flow's CLI growth (inputs verb group, items apply --on-stale, backlog triage --expect-status), then fix the root cause, for example by running dispatch on a spawned thread with a larger stack in main.rs or by boxing or shrinking the large dispatch stack frame."
+detail = ""
+acceptance = "cargo test --manifest-path tomlctl/Cargo.toml --test capabilities passes in a debug build (all tests, none failing)."
+agent = "implement-deep"
+commit = "31c381d"
+
+[[items]]
+id = 59
+ref = "wire-the-filter-prompt-cursor-and-drop-stale-dead-code-allows"
+title = "Wire the filter-prompt cursor and drop stale dead-code allows"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/form.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/actions.rs",
+    "glimpse/src/writer.rs",
+    "glimpse/src/source.rs",
+]
+needs = [
+    34,
+    35,
+    51,
+]
+coupling = []
+deps_note = ""
+action = "In view/mod.rs, where the item surface calls items::render(frame.buffer_mut(), area, app), add: if let Some(p) = items::prompt_cursor(area, app) { frame.set_cursor_position(p); } and drop prompt_cursor's dead_code allow. Remove every #[allow(dead_code, reason = ...)] whose item is now used: app.rs OpenMenu/OpenClassify/Undo/OpenFilter, overlay_key, take_writes, apply_written; actions.rs Overlay::form; view/form.rs module-level allow; writer.rs WriteRequest/WriteOutcome/Writer::submit/FakeWriter::submit; source.rs Event::Written payload if read. Keep an allow only where clippy still reports dead code, and say which. Fix the two clippy some_filter warnings in view/form.rs with focused.then(|| draw_input(..))."
+detail = ""
+acceptance = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets reports no warnings; the filter prompt test still passes."
+agent = "implement-deep"
+commit = "efd5d9c"
+
+[[items]]
+id = 60
+ref = "toggle-closed-inbox-records-with-c"
+title = "Toggle closed Inbox records with c"
+effort = "S"
+status = "done"
+checkpoint = "C"
+phase = "Milestone C — user input records, agent questions and the Inbox"
+phase_depth = 3
+heading_depth = 3
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/view/mod.rs",
+]
+needs = [
+    50,
+    54,
+]
+coupling = []
+deps_note = ""
+action = "In app.rs, make Action::ToggleClosed on the Inbox surface flip app.inbox.show_closed (moving the inbox cursor to the first visible row if its record was just hidden, and showing the same footer notice the item surfaces show); add an app test that c on the Inbox shows handled and withdrawn records. In view/mod.rs, add 'c closed' to the Inbox footer hints."
+detail = ""
+acceptance = "An app unit test shows ToggleClosed on the Inbox flips inbox.show_closed and the Inbox footer hints include c closed; cargo clippy --manifest-path glimpse/Cargo.toml --all-targets stays warning-free."
+agent = "implement-lite"
+commit = "298d394"

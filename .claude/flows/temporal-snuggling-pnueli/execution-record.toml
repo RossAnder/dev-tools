@@ -1,0 +1,2336 @@
+schema_version = 1
+last_updated = 2026-10-02
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-10-02
+agent = "implement"
+summary = "implement started"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "8f034318b63e1e2d"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "scaffold-the-new-glimpse-modules"
+status = "done"
+summary = "Scaffolded eight empty glimpse modules and declared them in main.rs and view/mod.rs"
+files = [
+    "glimpse/src/main.rs",
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/ledger.rs",
+    "glimpse/src/surface.rs",
+    "glimpse/src/writer.rs",
+    "glimpse/src/form.rs",
+    "glimpse/src/actions.rs",
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/form.rs",
+    "glimpse/src/view/inbox.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "6e07731dc5ca7ee3"
+
+[[items]]
+id = "E3"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "bound-the-poll_ms-setting"
+status = "done"
+summary = "Rejected poll_ms outside 50-10000 with POLL_MS_RANGE and test poll_ms_out_of_range_is_rejected"
+files = ["glimpse/src/config.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "d23aa9829e2bacdc"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-item-input-and-form-theme-tokens"
+status = "done"
+summary = "Added 21 item, input and form theme tokens plus Theme::severity and Theme::item_status"
+files = ["glimpse/src/theme.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "4d781bdd0b36b015"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-item-input-and-form-theme-tokens"
+summary = "badge token's Theme field is named arrival_badge in glimpse/src/theme.rs"
+original_intent = "a badge style for the arrival +N count"
+rationale = "Theme already has a bold-only badge field used by existing views; renderers of the +N badge read arrival_badge"
+dedup_id = "4b8cbca8461511c6"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-tomlctl-ledger-read-facade"
+status = "done"
+summary = "Added tomlctl ledgers module with LedgerKind/LedgerRef, ledger_read and ledger_scopes exported from lib.rs, with library_facade tests"
+files = [
+    "tomlctl/src/ledgers.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/tests/library_facade.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "ddd4408f8c6c62bb"
+
+[[items]]
+id = "E7"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-tomlctl-ledger-read-facade"
+summary = "LedgerRef::File kind inference checks basename, then parent directory, then backlog array, in tomlctl/src/ledgers.rs"
+original_intent = "File infers its kind from the basename and array"
+rationale = "a flow-less ledger is named <scope>.toml, so its basename never names its kind; the parent directory is the only signal"
+dedup_id = "863b73592aeb4a50"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "split-glimpses-source-module-into-scan-and-mode-submodules"
+status = "done"
+summary = "Split glimpse source.rs into source/scan.rs and source/mode.rs with no behaviour change; 18 source tests unchanged"
+files = [
+    "glimpse/src/source.rs",
+    "glimpse/src/source/scan.rs",
+    "glimpse/src/source/mode.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "081ab034a221447a"
+
+[[items]]
+id = "E9"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "split-glimpses-source-module-into-scan-and-mode-submodules"
+summary = "test helpers in source/scan.rs tests module are pub(in crate::source)"
+original_intent = "test helpers are pub(super)"
+rationale = "inside scan's tests module pub(super) reaches only scan; pub(in crate::source) gives the intended reach"
+dedup_id = "84bcc64c12d0b03f"
+
+[[items]]
+id = "E10"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "split-glimpses-source-module-into-scan-and-mode-submodules"
+summary = "FlowTimes moved into source/scan.rs"
+original_intent = "scan.rs list omitted FlowTimes"
+rationale = "FlowTimes is the return type of flows_fingerprint"
+dedup_id = "bcb1cbfb0c13be96"
+
+[[items]]
+id = "E11"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "split-glimpses-source-module-into-scan-and-mode-submodules"
+summary = "SAFETY_TICK, MISS_LIMIT and WATCH_RETRY_MAX stay in source.rs; mode.rs reads them via super::"
+original_intent = "spec did not place the constants"
+rationale = "keeps tuning knobs together and module-doc links working"
+dedup_id = "e32974f33fd9e76d"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-expect-precondition-to-items-apply"
+status = "done"
+summary = "Added per-op expect precondition to items apply with StalePolicy, StaleOp, GuardedPlan and compute_apply_mutation_with; compute_apply_mutation unchanged"
+files = ["tomlctl/src/items.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "ae67ef28462df937"
+
+[[items]]
+id = "E13"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-expect-precondition-to-items-apply"
+summary = "compute_apply_mutation_with returns GuardedPlan { plan, skipped_stale } in tomlctl/src/items.rs"
+original_intent = "compute_apply_mutation_with returns the plan plus skipped_stale"
+rationale = "MutationPlan is also built in backlog/add.rs and output.rs; a new field would break them"
+dedup_id = "63beedb9a8bdea1f"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "attribute-ledger-dispatches-and-bound-the-stop-time-transcript-read"
+status = "done"
+summary = "Dispatch gains item_ids; dispatch_in matches the ledger: line with (?m); pre-filter widened; Stop reads only the last TAIL_BYTES with no head fallback"
+files = [
+    "tomlctl/src/agents/correlate.rs",
+    "tomlctl/src/agents/record.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "5c979e59f13aaf1d"
+
+[[items]]
+id = "E15"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "attribute-ledger-dispatches-and-bound-the-stop-time-transcript-read"
+summary = "read_last seeks to len - cap - 1 and drops through the first newline in tomlctl/src/agents/correlate.rs"
+original_intent = "seek to len - TAIL_BYTES and drop the partial first line"
+rationale = "a window opening exactly on a line start would otherwise drop that whole line"
+dedup_id = "0eecff14184c8f9c"
+
+[[items]]
+id = "E16"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "build-the-form-framework"
+status = "done"
+summary = "Added tui-input 0.15.5 and the hand-rolled Form/Field/FormOutcome/FieldValue framework with handle_key and 9 unit tests"
+files = [
+    "glimpse/Cargo.toml",
+    "glimpse/Cargo.lock",
+    "glimpse/src/form.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "6055dbf2e389a3ce"
+
+[[items]]
+id = "E17"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "build-the-form-framework"
+summary = "a lone Select form submits when its open dropdown is confirmed in glimpse/src/form.rs"
+original_intent = "Enter opens or confirms a dropdown, otherwise submits"
+rationale = "a single-Select action menu would otherwise need a second Enter"
+dedup_id = "4524c575c27779a6"
+
+[[items]]
+id = "E18"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "build-the-form-framework"
+summary = "each Field variant carries required: bool in glimpse/src/form.rs"
+original_intent = "Field variants without a required flag"
+rationale = "the task detail says required fields are marked per field"
+dedup_id = "488633d847666efb"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "name-the-optimise-wontapply-companion-wontapply_rationale"
+status = "done"
+summary = "Item::validate requires wontapply_rationale for wontapply; ledger-schema SKILL.md companion bullet split"
+files = [
+    "tomlctl/src/items.rs",
+    "claude/skills/flow-contract-ledger-schema/SKILL.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "94a76e5a4adf7a9e"
+
+[[items]]
+id = "E20"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "emit-the-ledger-line-in-review-and-optimise-lens-dispatches"
+status = "done"
+summary = "review.md and optimise.md lens prompts open with the ledger: <path> line"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "d9ebb79724dcee5b"
+
+[[items]]
+id = "E21"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "render-forms-as-a-modal"
+status = "done"
+summary = "view/form.rs renders a Form as a centred Clear+Block modal with labels, dropdown List, checkboxes, error line and cursor placement"
+files = ["glimpse/src/view/form.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "1ab4239a74ad0e9a"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "expose-on-stale-on-the-items-apply-cli"
+status = "done"
+summary = "items apply gains --on-stale <abort|skip>; envelope always carries skipped_stale, dry-run included; four integration tests"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/integration.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "165fa9f09a422c8b"
+
+[[items]]
+id = "E23"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "guard-the-apply-pipelines-late-writes-with-expect"
+summary = "tasks 36 and 37 (carrier stale-guard prose) held until checkpoint A verifies and tomlctl is reinstalled from the verified tree"
+original_intent = "dispatch every ready task immediately; reinstall tomlctl only at checkpoint B"
+rationale = "the carrier files are symlinked live into every session and the installed tomlctl 0.12.0 rejects --on-stale; installing at checkpoint A (25-27 verified in tree) and dispatching 36/37 after it shrinks the window where live carriers call a flag the binary lacks"
+dedup_id = "409b8aa1a296f85e"
+
+[[items]]
+id = "E24"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-glimpse-ledger-model"
+status = "done"
+summary = "Added glimpse ledger model: lenient row types, unified ItemRow with StatusClass/Anchor/companions, Ledger loaded from tomlctl::ledger_read, plus review and backlog fixtures"
+files = [
+    "glimpse/src/ledger.rs",
+    "glimpse/tests/fixtures/review-ledger.toml",
+    "glimpse/tests/fixtures/backlog.toml",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "7e08bda12e4e0754"
+
+[[items]]
+id = "E25"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-glimpse-ledger-model"
+summary = "review and optimise share one FindingRow in glimpse/src/ledger.rs"
+original_intent = "separate row types for review and optimise"
+rationale = "the two ledgers have the same row shape; wontapply_rationale is one more optional companion"
+dedup_id = "6834faab816a0846"
+
+[[items]]
+id = "E26"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "watch-repo-level-ledger-scopes"
+status = "done"
+summary = "watch::start watches .claude/flows, .claude and existing flow-less ledger dirs on one watcher; classify allowlist with Wake::Repo/Scope/NewScope; watch::add_scope; Mode tracks watched scopes"
+files = [
+    "glimpse/src/watch.rs",
+    "glimpse/src/source/mode.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "b4a0edaf617e24e2"
+
+[[items]]
+id = "E27"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "watch-repo-level-ledger-scopes"
+summary = "test a_path_outside_the_root_wakes_everything renamed a_path_outside_every_scope_is_ignored, expects None"
+original_intent = "an unplaced path wakes everything (Wake::All)"
+rationale = "the allowlist requires ignoring an unplaced path"
+dedup_id = "f40147075d99722d"
+
+[[items]]
+id = "E28"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "watch-repo-level-ledger-scopes"
+summary = "removing or renaming away a flow-less ledger dir, or .claude itself, gives Wake::Rewatch"
+original_intent = "spec did not cover a flow-less dir being removed"
+rationale = "rebuild the watcher rather than hold a dead per-dir handle"
+dedup_id = "a768f94089d830c2"
+
+[[items]]
+id = "E29"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "watch-repo-level-ledger-scopes"
+summary = "an event spanning two scopes (cross-directory rename) gives Wake::All; classify still returns Option<Wake>"
+original_intent = "repo-level paths never produce Wake::All"
+rationale = "only a cross-directory rename produces it; tomlctl temps sit beside their target"
+dedup_id = "626d96e7eab3c68e"
+
+[[items]]
+id = "E30"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "record-item-ids-on-agent-segments"
+status = "done"
+summary = "Segment.item_ids recorded through Start/Stop/Idle, apply/close and record output; changed item set opens a new segment; Stop with no tail dispatch keeps the live segment"
+files = [
+    "tomlctl/src/agents/schema.rs",
+    "tomlctl/src/agents/record.rs",
+    "tomlctl/tests/agents_record.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "a593d9cd56518de7"
+
+[[items]]
+id = "E31"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "record-item-ids-on-agent-segments"
+summary = "open_segment(task_ids, item_ids, at) compares both id sets; id_set made pub(crate) and item_set added"
+original_intent = "add the item_ids field"
+rationale = "a changed id set must close and open a segment; item_set keeps first-seen order so R10 does not sort before R3"
+dedup_id = "aff7589c4867261e"
+
+[[items]]
+id = "E32"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-expect-and-the-human-writer-in-the-items-references"
+status = "done"
+summary = "Documented items apply expect, --on-stale, skipped_stale and the old-binary hazard in write.md; ledger-schema skill gains expect op shape, per-call concurrency, glimpse as writer, discard_reason"
+files = [
+    "claude/skills/tomlctl/references/write.md",
+    "claude/skills/flow-contract-ledger-schema/SKILL.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "d1142025adeb6bae"
+
+[[items]]
+id = "E33"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-ledger-control-edit-facade"
+status = "done"
+summary = "ledger_transition, ledger_classify and ledger_restore: root-mismatch refusal, CAS via expect with StalePolicy::Skip, offered-transition table, companion clearing, Item::validate, last_updated untouched; 9 library_facade tests"
+files = [
+    "tomlctl/src/ledgers.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/tests/common/mod.rs",
+    "tomlctl/tests/library_facade.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "0a4d51cff77acf67"
+
+[[items]]
+id = "E34"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-ledger-control-edit-facade"
+summary = "classify requires a non-empty expect and non-empty string values"
+original_intent = "classify(root, ref, ids, fields, expect: Map) with no constraints"
+rationale = "every glimpse write is a compare-and-set; an unguarded classify is refused"
+dedup_id = "a8902cb46e0e2bc6"
+
+[[items]]
+id = "E35"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-ledger-control-edit-facade"
+summary = "a missing id is reported as skipped_stale {field: id, found: null}"
+original_intent = "no missing-row semantics"
+rationale = "items apply would otherwise abort the whole batch over one deleted row"
+dedup_id = "557af8d6a251d65a"
+
+[[items]]
+id = "E36"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-ledger-control-edit-facade"
+summary = "ledger_restore accepts Backlog with a tight allowlist (status open/dismissed/resolved plus MANAGED_FIELDS)"
+original_intent = "ledger_restore restores fields on review/optimise/plan-review ledgers"
+rationale = "undo must reverse glimpse's backlog triage writes too"
+dedup_id = "98f3d28ed25bb01b"
+
+[[items]]
+id = "E37"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "mirror-item-ids-in-glimpses-agent-model"
+status = "done"
+summary = "glimpse Segment and RecordResult mirror item_ids; Index::agents_for_item finds running agents by ledger item id"
+files = [
+    "glimpse/src/model.rs",
+    "glimpse/src/hook.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "47882f66e90a822b"
+
+[[items]]
+id = "E38"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "emit-the-ledger-line-in-review-plan-and-apply-dispatches-and-document-attribution"
+status = "done"
+summary = "review-plan lens prompts and the apply agent-prompt contract carry the ledger: line; tomlctl agents reference documents ledger attribution, item_ids and the bounded stop read"
+files = [
+    "claude/commands/review-plan.md",
+    "claude/skills/flow-contract-apply-pipeline/references/agent-prompt-contract.md",
+    "claude/skills/tomlctl/references/agents.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "6c3846d9fc336b5a"
+
+[[items]]
+id = "E39"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "emit-the-ledger-line-in-review-plan-and-apply-dispatches-and-document-attribution"
+summary = "apply ledger: line placed after the DISPATCH: header and any FILE-BUDGET: line"
+original_intent = "add the line to the required preamble"
+rationale = "the pipeline already puts FILE-BUDGET immediately after DISPATCH; the matcher is (?m) so position is free"
+dedup_id = "663621a3bf66ffc5"
+
+[[items]]
+id = "E40"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "guard-review-plans-merge-writes-and-record-discard-reasons"
+summary = "task 38 (review-plan stale-guard prose) held with 36 and 37 until the checkpoint-A tomlctl reinstall"
+original_intent = "dispatch every ready task immediately"
+rationale = "live carrier would call --on-stale before the installed binary knows it"
+dedup_id = "b4404f1412250f64"
+
+[[items]]
+id = "E41"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-surface-and-item-list-state-machine"
+status = "done"
+summary = "Surface/Group/Sort/VisibleRow and ItemsState in glimpse/src/surface.rs: arrivals flash without moving the cursor, filter, closed toggle, natural-order sort, ranked grouping, marks and targets"
+files = ["glimpse/src/surface.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "b90afecc4bbd158f"
+
+[[items]]
+id = "E42"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-surface-and-item-list-state-machine"
+summary = "apply_ledger takes now: Instant"
+original_intent = "apply_ledger(rows, revision, viewing)"
+rationale = "flashes are timestamped; passing now matches App::apply_snapshot and keeps tests clock-free"
+dedup_id = "93ca461a86c2ceec"
+
+[[items]]
+id = "E43"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-surface-and-item-list-state-machine"
+summary = "group-by and sort options are per-surface, limited to the fields each surface's rows carry"
+original_intent = "group-by cycles none, severity, category, effort, file, status, plus kind and area on Backlog"
+rationale = "backlog rows carry no severity/effort/category/file and plan-review no effort; those options would yield one (none) group"
+dedup_id = "33305a6f33baff90"
+
+[[items]]
+id = "E44"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-surface-and-item-list-state-machine"
+summary = "toggle_mark and mark_visible never mark a read_only (#n) row"
+original_intent = "spec did not say"
+rationale = "no write can address a row without an id"
+dedup_id = "702f05d12989e0a4"
+
+[[items]]
+id = "E45"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "count-missed-changes-per-watch-scope"
+status = "done"
+summary = "MissedChanges keeps a miss streak per WatchScope (Flows/Repo/Ledgers); a wake resets only its own scope; on_scoped_tick abandons when any scope reaches MISS_LIMIT; bool on_tick shim kept for source.rs"
+files = ["glimpse/src/source/mode.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "5cb09e1272963e8c"
+
+[[items]]
+id = "E46"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "feed-ledgers-through-the-poller"
+summary = "files widened with glimpse/src/source/mode.rs before dispatch"
+original_intent = "Files line for feed-ledgers-through-the-poller omits glimpse/src/source/mode.rs"
+rationale = "task 9 left a bool on_tick shim in mode.rs for task 11 to delete once it switches Poller::run to on_scoped_tick, and the safety-deadline fix may touch Deadlines/next_wait in mode.rs"
+dedup_id = "ca42c20c5e09e46e"
+
+[[items]]
+id = "E47"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-backlog-triage-facade"
+summary = "files widened with tomlctl/src/backlog/mod.rs; pending facade export re-dispatched"
+original_intent = "Files line for add-the-backlog-triage-facade omits tomlctl/src/backlog/mod.rs"
+rationale = "mod triage is private in backlog/mod.rs, so lib.rs cannot reach backlog::triage for the backlog_triage export"
+dedup_id = "c58cf5054b268579"
+
+[[items]]
+id = "E48"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-backlog-triage-facade"
+summary = "triage_value takes expect_status: Option<&str>"
+original_intent = "expect_status is required"
+rationale = "the CLI has no --expect-status until task 55; None keeps the all-or-nothing behaviour byte for byte"
+dedup_id = "81637817f32149f9"
+
+[[items]]
+id = "E49"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-backlog-triage-facade"
+status = "done"
+summary = "backlog triage refactored into value-returning triage_value with expect_status filter; tomlctl::backlog_triage(root, ids, BacklogTriage, expect_status) exported with root check; CLI output unchanged"
+files = [
+    "tomlctl/src/backlog/triage.rs",
+    "tomlctl/src/backlog/mod.rs",
+    "tomlctl/src/lib.rs",
+    "tomlctl/tests/library_facade.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 1
+escalation_reason = "cross-cut"
+dedup_id = "971d2b1ecc83f3cb"
+
+[[items]]
+id = "E50"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "integrate-surfaces-into-the-app"
+summary = "files widened with glimpse/src/view/mod.rs for the Regions.items literal"
+original_intent = "Files line for integrate-surfaces-into-the-app omits glimpse/src/view/mod.rs"
+rationale = "Regions is built as a full struct literal in view/mod.rs, so adding Regions.items fails to compile without editing it"
+dedup_id = "9ad6492e8a2d048e"
+
+[[items]]
+id = "E51"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "integrate-surfaces-into-the-app"
+summary = "App::apply_ledger(ledger: Ledger, now: Instant)"
+original_intent = "App::apply_ledger(kind, ledger)"
+rationale = "Ledger already carries kind; now matches apply_snapshot and keeps tests clock-free"
+dedup_id = "7dee4d2c7abe7855"
+
+[[items]]
+id = "E52"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "integrate-surfaces-into-the-app"
+status = "done"
+summary = "App gains surface, per-surface ItemsState, scope, item actions, apply_ledger, surface-routed Move/Details, Back clears marks, item flashes in tick; state.rs persists surface and group/sort; Regions.items added"
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/state.rs",
+    "glimpse/src/view/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 1
+escalation_reason = "cross-cut"
+dedup_id = "bd9bb34c3f8c194b"
+
+[[items]]
+id = "E53"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "map-the-surface-keys"
+status = "done"
+summary = "keys::map maps 1-6, Space, V, g, S, c to the surface actions; a left press on a Regions.items rect selects the item"
+files = ["glimpse/src/keys.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "97385cbcc8062b89"
+
+[[items]]
+id = "E54"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "feed-ledgers-through-the-poller"
+status = "done"
+summary = "Ledger/inputs feeds with stat-gated re-reads and revision dedup; repo/scope wakes re-read only their feeds; per-scope miss counting with a SafetyClock wakes cannot push back; Event::Scopes from flow and flow-less listing; no snapshot for flows without tasks.toml"
+files = [
+    "glimpse/src/source.rs",
+    "glimpse/src/source/scan.rs",
+    "glimpse/src/source/mode.rs",
+    "glimpse/src/runtime.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "808181c1b32befd6"
+
+[[items]]
+id = "E55"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "feed-ledgers-through-the-poller"
+summary = "Event::Scopes and Event::Ledger carry Result<_, String>"
+original_intent = "Event::Scopes(value)"
+rationale = "mirrors Event::Flows so a ledger_scopes or read failure reaches the runtime"
+dedup_id = "77136925eab69d92"
+
+[[items]]
+id = "E56"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "feed-ledgers-through-the-poller"
+summary = "on_scoped_tick counts misses on wake ticks as well as safety ticks (never Other/All/Rewatch)"
+original_intent = "only safety ticks count misses"
+rationale = "with frequent repo wakes the next repo-wake tick picks up every missed flows change, so safety ticks find nothing and a dead flows watch is never detected"
+dedup_id = "9210d77912211c81"
+
+[[items]]
+id = "E57"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "feed-ledgers-through-the-poller"
+summary = "a per-scan read of flow-less ledger dirs (scope_files) posts Event::Scopes when files come or go"
+original_intent = "Event::Scopes posted with each flow listing"
+rationale = "a new flow-less ledger file would otherwise never reach the selector"
+dedup_id = "a78d0915bc375e38"
+
+[[items]]
+id = "E58"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-inputs-store-module"
+status = "done"
+summary = "tomlctl inputs store module: strict schema, list/add/ack/handle/withdraw/answer under the lock with root guard; .claude/inputs.toml* git-ignored"
+files = [
+    "tomlctl/src/inputs.rs",
+    "tomlctl/src/lib.rs",
+    ".gitignore",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "48be2a5b32ee1c39"
+
+[[items]]
+id = "E59"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-inputs-store-module"
+summary = "acknowledged records carry acknowledged_by"
+original_intent = "ack <ids> --by <command> with no stored field"
+rationale = "the row-field list has nowhere to store --by; it would be silently dropped"
+dedup_id = "fecd05d9fa250617"
+
+[[items]]
+id = "E60"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-inputs-store-module"
+summary = "request and note records require text"
+original_intent = "only captures need text"
+rationale = "an empty request or note gives an agent nothing to act on"
+dedup_id = "1ffae3d73c771878"
+
+[[items]]
+id = "E61"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-inputs-store-module"
+summary = "withdrawing an answer returns the question it closed to new"
+original_intent = "withdraw applies only to new records"
+rationale = "glimpse's undo of an answer is a withdraw and must not leave the question closed with no answer"
+dedup_id = "9a1198e5277e45b1"
+
+[[items]]
+id = "E62"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-inputs-store-module"
+summary = "a text question carrying options is refused"
+original_intent = "options required unless choice = text"
+rationale = "options on a free-text question are meaningless"
+dedup_id = "45d1691eff08421f"
+
+[[items]]
+id = "E63"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "show-surface-tabs-and-arrival-badges-in-the-header"
+status = "done"
+summary = "Header surface tabs with live counts, +N arrival badges and active style (own row in normal density, folded into the compact row); stale tomlctl failed fixture replaced"
+files = ["glimpse/src/view/header.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "e905d69ba04909fd"
+
+[[items]]
+id = "E64"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "show-surface-tabs-and-arrival-badges-in-the-header"
+summary = "surface tabs get a dedicated header row in normal density (header height +1)"
+original_intent = "render surface tabs in the header"
+rationale = "the tabs do not fit on the first row at typical pane widths"
+dedup_id = "ee889b0c770efa51"
+
+[[items]]
+id = "E65"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "render-the-item-list-view"
+status = "done"
+summary = "view/items.rs renders the item list (facet row, group headers, marks, status glyphs, severity, saving mark, agent chip, anchor) and view/mod.rs draws it per surface, fills Regions.items and adds surface footer hints"
+files = [
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "6083fafb03fd95c1"
+
+[[items]]
+id = "E66"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "render-the-item-list-view"
+summary = "item-list scroll computed per frame by items::window; wheel does not scroll it"
+original_intent = "windowing follows layers.rs's row helpers"
+rationale = "neither App nor ItemsState carries an item-list scroll offset, and both files were outside the task"
+dedup_id = "5a0a7a4dca12f11c"
+
+[[items]]
+id = "E67"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "render-the-item-list-view"
+summary = "footer hints omit / m e r n u until their actions are wired"
+original_intent = "footer hints for the surface keys"
+rationale = "those keys have no Action yet"
+dedup_id = "cc7229f8ebeff8dd"
+
+[[items]]
+id = "E68"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "render-item-details"
+status = "done"
+summary = "Details panel branches on app.surface: item_content shows id/summary, status, companions, classification, anchor, markdown description, evidence, instances, dates and working agents"
+files = ["glimpse/src/view/details.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "c8a6b2bbd4a0f9e2"
+
+[[items]]
+id = "E69"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "render-item-details"
+summary = "item_content(row, agents, theme, now); agent_lines also print item_ids"
+original_intent = "item_content(row, agents)"
+rationale = "styled output needs the Theme, open-segment durations need now, and a ledger-item segment would otherwise print no ids"
+dedup_id = "c6901286bb5fb472"
+
+[[items]]
+id = "E70"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "list-ledger-only-flows-and-flow-less-scopes-in-the-selector"
+status = "done"
+summary = "Selector lists task flows, ledger-only flows and flow-less review/optimise/plan-review scopes after a separator; Action::SwitchScope; App.scopes/apply_scopes/selector_entries; flows::Scopes::from_value"
+files = [
+    "glimpse/src/flows.rs",
+    "glimpse/src/view/selector.rs",
+    "glimpse/src/app.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "356044ad40dcab92"
+
+[[items]]
+id = "E71"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "list-ledger-only-flows-and-flow-less-scopes-in-the-selector"
+summary = "App gains ledger_flow: Option<String> for a selected ledger-only flow"
+original_intent = "only App.scope tracks the selection"
+rationale = "a ledger-only flow never gets a snapshot, so re-picking the previous flow would otherwise return None"
+dedup_id = "73bfd6f4f5083284"
+
+[[items]]
+id = "E72"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "list-ledger-only-flows-and-flow-less-scopes-in-the-selector"
+summary = "picking a scope also switches to that ledger kind's surface and turns auto-flow off"
+original_intent = "Enter returns SwitchScope and sets App.scope"
+rationale = "otherwise picking a scope from the Tasks surface changes nothing visible; auto-flow off matches a hand-picked flow"
+dedup_id = "d5c836a3d642c821"
+
+[[items]]
+id = "E73"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-tomlctl-inputs-verb-group"
+status = "done"
+summary = "tomlctl inputs verb group (list/add/ack/handle/withdraw/answer) forwarding to crate::inputs, with five integration tests"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/inputs.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "66a63bec05cc57ad"
+
+[[items]]
+id = "E74"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-tomlctl-inputs-verb-group"
+summary = "inputs list also flattens ReadIntegrityArgs (--strict-read, --verify-integrity)"
+original_intent = "list takes only the listed filters"
+rationale = "consistency with the other read verbs"
+dedup_id = "6ab1804a94e753b8"
+
+[[items]]
+id = "E75"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "expose-the-triage-precondition-on-the-backlog-cli"
+summary = "files widened with tomlctl/src/backlog/dispatch.rs and tomlctl/src/backlog/triage.rs"
+original_intent = "Files line for expose-the-triage-precondition-on-the-backlog-cli omits tomlctl/src/backlog/dispatch.rs and triage.rs"
+rationale = "backlog triage's CLI entry is triage.rs dispatch, reached via backlog/dispatch.rs's exhaustive BacklogOp::Triage destructure; cli/dispatch.rs only routes Cmd::Backlog"
+dedup_id = "ae8d68a1c1f2fb19"
+
+[[items]]
+id = "E76"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "write-the-user-inputs-contract-skill-and-reference"
+status = "done"
+summary = "flow-contract-user-inputs skill (schema, lifecycle, writers, trust boundary, Step-0 sweep, questions) and tomlctl inputs reference; tomlctl SKILL.md references list"
+files = [
+    "claude/skills/flow-contract-user-inputs/SKILL.md",
+    "claude/skills/tomlctl/references/inputs.md",
+    "claude/skills/tomlctl/SKILL.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "03ca3b6ea5fe0474"
+
+[[items]]
+id = "E77"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "write-the-user-inputs-contract-skill-and-reference"
+summary = "only the orchestrator runs inputs ack/handle; sub-agents run no inputs write"
+original_intent = "agents ack and handle records; sub-agents never run add/answer/withdraw"
+rationale = "Approach names the orchestrator as the only agent writer"
+dedup_id = "3fe4e197d9919b65"
+
+[[items]]
+id = "E78"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "export-the-inputs-library-facade"
+status = "done"
+summary = "inputs_read/inputs_add/inputs_answer/inputs_withdraw library facade, CLI-equal output, with four facade tests"
+files = [
+    "tomlctl/src/lib.rs",
+    "tomlctl/tests/library_facade.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "00e7b968a1e4c053"
+
+[[items]]
+id = "E79"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "expose-the-triage-precondition-on-the-backlog-cli"
+status = "done"
+summary = "backlog triage --expect-status threaded through backlog/dispatch.rs into triage::dispatch; stale ids reported under skipped_stale; test backlog_triage_expect_status_skips_a_changed_row"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/backlog/triage.rs",
+    "tomlctl/tests/backlog_write.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+escalation_reason = "cross-cut"
+dedup_id = "21f9175a75216c24"
+
+[[items]]
+id = "E80"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "wire-surfaces-through-the-runtime"
+status = "done"
+summary = "Runtime routes Event::Ledger to App::apply_ledger with redraw gating, Event::Scopes to apply_scopes, re-subscribes feeds on flow/scope switch via Pointed; render_once takes an optional (Surface, Ledger)"
+files = [
+    "glimpse/src/runtime.rs",
+    "glimpse/src/main.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "0ebd7e6077261ecc"
+
+[[items]]
+id = "E81"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "wire-surfaces-through-the-runtime"
+summary = "a picked flow-less scope replaces only its own kind's feed; the flow's other two ledgers and the backlog stay subscribed"
+original_intent = "subscribe the selected flow-less scope's ledgers"
+rationale = "the other surfaces would otherwise keep stale rows with nothing updating them"
+dedup_id = "e41b08fbb3d45967"
+
+[[items]]
+id = "E82"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "name-the-human-writer-and-the-input-store-in-policy-docs"
+status = "done"
+summary = "Root CLAUDE.md, backlog-capture skill and glimpse/CLAUDE.md name the orchestrator as the only agent writer and the human as a control-field/input writer; glimpse/CLAUDE.md gains the write model and the per-scope dead-watch rule"
+files = [
+    "CLAUDE.md",
+    "claude/skills/backlog-capture/SKILL.md",
+    "glimpse/CLAUDE.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "e71ef88d78571786"
+
+[[items]]
+id = "E83"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "name-the-human-writer-and-the-input-store-in-policy-docs"
+summary = "glimpse/CLAUDE.md also gains a Write model paragraph and updated watch-only-wakes and sidecar gotchas"
+original_intent = "update Structure, watch gotchas, second-writer line, four rules"
+rationale = "those gotchas would otherwise describe the poller incompletely"
+dedup_id = "4f69261375f2f84b"
+
+[[items]]
+id = "E84"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "model-input-records-and-the-inbox-state-in-glimpse"
+status = "done"
+summary = "InputRow and Inputs loader in ledger.rs; InboxState in surface.rs (unanswered questions first, status groups, flashes, pending_for, unanswered, cursor_question/withdrawable) sharing diff/flash helpers with ItemsState"
+files = [
+    "glimpse/src/ledger.rs",
+    "glimpse/src/surface.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "a5ab9688528084a8"
+
+[[items]]
+id = "E85"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "model-input-records-and-the-inbox-state-in-glimpse"
+summary = "Inbox status groups show every record other than an unanswered question, agent records included"
+original_intent = "your records grouped by status"
+rationale = "keeps agent-written records visible rather than dropping them"
+dedup_id = "e75df1a66c12c513"
+
+[[items]]
+id = "E86"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "model-input-records-and-the-inbox-state-in-glimpse"
+summary = "pending_for matches on ledger kind and item id only"
+original_intent = "pending_for(ledger, item)"
+rationale = "InboxState does not know which flow or scope is on screen"
+dedup_id = "9a89de95ad2ab9b6"
+
+[[items]]
+id = "E87"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "advertise-the-new-verbs-and-flags-in-tomlctl-capabilities"
+status = "done"
+summary = "FEATURES advertises items_apply_expect, backlog_triage_expect and inputs; capabilities test lists and README updated"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "fecda7069cc11dc4"
+
+[[items]]
+id = "E88"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "fix-the-debug-build-stack-overflow-in-tomlctl-capabilities"
+summary = "minted task 58 to fix the debug-build stack overflow in tomlctl capabilities"
+original_intent = "plan carries no task for the tomlctl capabilities debug-build stack overflow"
+rationale = "task 56 found tomlctl capabilities overflows the Windows main-thread stack in debug (release passes), failing 9 capabilities tests and the checkpoint gate"
+dedup_id = "8b8eb032960437e8"
+
+[[items]]
+id = "E89"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "release-tomlctl-0130"
+summary = "files widened with tomlctl/tests/capabilities.rs and tomlctl/README.md"
+original_intent = "Files line for release-tomlctl-0130 omits tomlctl/tests/capabilities.rs and tomlctl/README.md"
+rationale = "capabilities_version_matches_cargo_toml pins the version literal (a deliberate lockstep bump); the README capabilities sample shows the version"
+dedup_id = "119f7c1fa32a5b38"
+
+[[items]]
+id = "E90"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-surface-and-ledger-flags-for-headless-rendering"
+status = "done"
+summary = "glimpse --surface and --ledger FILE flags: headless --once renders a ledger read via LedgerRef::File on its surface; --surface opens the live view on a surface"
+files = [
+    "glimpse/src/cli.rs",
+    "glimpse/src/main.rs",
+    "glimpse/src/runtime.rs",
+    "glimpse/tests/cli.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "2c80b47ef99c97f1"
+
+[[items]]
+id = "E91"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-surface-and-ledger-flags-for-headless-rendering"
+summary = "once_renders_a_review_ledger asserts the facet row and an item row instead of a group header"
+original_intent = "the test finds an id and a group header"
+rationale = "grouping defaults to none and render_once loads no saved state, so --once cannot draw a group header"
+dedup_id = "bf83c88dc83461d9"
+
+[[items]]
+id = "E92"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-surface-and-ledger-flags-for-headless-rendering"
+summary = "render_once applies opts.surface; --ledger checks the path exists"
+original_intent = "edits limited to RunOpts.surface and runtime::run"
+rationale = "--once --surface would otherwise be ignored, and a mistyped --ledger path would silently render an empty ledger"
+dedup_id = "25ac2aa387caf388"
+
+[[items]]
+id = "E93"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "fix-the-debug-build-stack-overflow-in-tomlctl-capabilities"
+status = "done"
+summary = "tomlctl main runs the CLI on an 8 MB thread (panic re-raised, inline fallback); the debug clap command build had tipped past the 1 MB Windows main-thread stack"
+files = ["tomlctl/src/main.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "432b624adf10f009"
+
+[[items]]
+id = "E94"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestone-a-in-the-legend-and-readme"
+status = "done"
+summary = "Legend gains item glyph/severity section and surface key rows; README gains Surfaces section, surface keys, --surface/--ledger, item/surface/inbox/form tokens and the poll_ms range"
+files = [
+    "glimpse/src/view/legend.rs",
+    "glimpse/README.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "ab7c625d82030d4d"
+
+[[items]]
+id = "E95"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "release-tomlctl-0130"
+status = "done"
+summary = "tomlctl bumped to 0.13.0; both lockfiles refreshed by cargo; version test and README sample updated"
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+escalation_reason = "cross-cut"
+dedup_id = "af7afed0e0a409f7"
+
+[[items]]
+id = "E96"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "run-writes-on-a-serial-writer-thread"
+status = "done"
+summary = "glimpse writer thread: Writer::spawn/submit runs Transition/Classify/Restore/BacklogTriage serially via the tomlctl facade, results as Event::Written; root pinned by moving the process into glimpse's root; errors are outcomes"
+files = [
+    "glimpse/src/writer.rs",
+    "glimpse/src/source.rs",
+    "glimpse/src/runtime.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "83d3f6fe561af22c"
+
+[[items]]
+id = "E97"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "run-writes-on-a-serial-writer-thread"
+summary = "writer pins tomlctl's root by set_current_dir(root) at spawn, before anything calls tomlctl"
+original_intent = "the writer passes glimpse's root to the facade"
+rationale = "tomlctl derives its process root lazily from the cwd; moving there makes both agree without unsafe set_var or overriding a user TOMLCTL_ROOT"
+dedup_id = "74b5c96a22f7ae11"
+
+[[items]]
+id = "E98"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "run-writes-on-a-serial-writer-thread"
+summary = "Host gains a submit trait method implemented by TerminalHost and FakeHost"
+original_intent = "hold the writer in TerminalHost"
+rationale = "without a caller the held writer is dead code; this gives the routing task a scriptable path"
+dedup_id = "e799063228ce19ae"
+
+[[items]]
+id = "E99"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestone-a-in-the-legend-and-readme"
+summary = "checkpoint A gate: build pass"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 4
+dedup_id = "10d3515c905957f0"
+
+[[items]]
+id = "E100"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestone-a-in-the-legend-and-readme"
+summary = "checkpoint A gate: build pass"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 6
+dedup_id = "10d3515c905957f0"
+
+[[items]]
+id = "E101"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestone-a-in-the-legend-and-readme"
+summary = "checkpoint A gate: 1525 passed; 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 100
+dedup_id = "2c67e6e0a619b972"
+
+[[items]]
+id = "E102"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestone-a-in-the-legend-and-readme"
+summary = "checkpoint A gate: 401 passed; 0 failed"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 10
+dedup_id = "79d9d9ca39cf289e"
+
+[[items]]
+id = "E103"
+type = "checkpoint"
+date = 2026-10-02
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint A train: 3ebb6b8=25,27,39; 368f085=4,5; 77ac000=6; dd2c0a7=7; 8174572=13; c470942=17; ef834dc=23; 31c381d=1,2,3,8,9,10,11,12,14,15,18,21,22,26,28,29,30,31,32,40,41,42,48,55,56,57,58; c7aa288=16; 9788411=19; ea83d8a=20; 10949cb=24"
+commits = [
+    "3ebb6b8",
+    "368f085",
+    "77ac000",
+    "dd2c0a7",
+    "8174572",
+    "c470942",
+    "ef834dc",
+    "31c381d",
+    "c7aa288",
+    "9788411",
+    "ea83d8a",
+    "10949cb",
+]
+dedup_id = "5d8a131e18163094"
+
+[[items]]
+id = "E104"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-ledger-control-edit-facade"
+summary = "checkpoint A train also committed done B/C tasks 25-32, 39-42, 48, 55-57 (43 and 47 held for C)"
+original_intent = "each checkpoint group commits only its own members"
+rationale = "their files overlap A tasks' files (lib.rs, ledgers.rs, runtime.rs, source.rs, dispatch.rs, the lockfiles), so path-scoped staging cannot separate them and an A-only commit would not build; all were in the verified tree"
+dedup_id = "dad396ee72e2c6d4"
+
+[[items]]
+id = "E105"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "guard-review-plans-merge-writes-and-record-discard-reasons"
+status = "done"
+summary = "review-plan merged/discarded writes carry expect {status: open} with --on-stale skip; sole-writer wording names the human glimpse writer; discard_reason in the schema line"
+files = ["claude/commands/review-plan.md"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+dedup_id = "73f2db36959b0511"
+
+[[items]]
+id = "E106"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "guard-review-optimise-and-disposition-sweep-writes-with-expect"
+status = "done"
+summary = "review Step 4, optimise interim checkpoint and Step 3 updates, and the disposition-sweep reopen carry expect with --on-stale skip and report changed-during-the-run ids"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "04e44cc2f518add4"
+
+[[items]]
+id = "E107"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "guard-review-optimise-and-disposition-sweep-writes-with-expect"
+summary = "/review's interim-checkpoint items apply also passes --on-stale skip"
+original_intent = "only /review Step 4 for /review"
+rationale = "that call writes the disposition sweep's reopen ops, which now carry expect; without the flag an old binary would silently ignore expect"
+dedup_id = "94a69fd833b1c898"
+
+[[items]]
+id = "E108"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "guard-the-apply-pipelines-late-writes-with-expect"
+status = "done"
+summary = "Apply pipeline two-call write, interim checkpoint and rollback reversals carry expect with --on-stale skip; items update loop fallback withdrawn for status transitions; Changed During the Run summary section"
+files = [
+    "claude/skills/flow-contract-apply-pipeline/references/verification.md",
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md",
+    "claude/skills/flow-contract-apply-rollback-protocol/SKILL.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "bba0acea6487777a"
+
+[[items]]
+id = "E109"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "guard-the-apply-pipelines-late-writes-with-expect"
+summary = "rollback events omit skipped_stale ids from their items array and list them in the Rollback callout"
+original_intent = "reversals carry expect = this run's transition status"
+rationale = "the event would otherwise record items as reverted when they were not"
+dedup_id = "da5aefdd44c16cec"
+
+[[items]]
+id = "E110"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-action-menu-control-edit-forms-bulk-edits-and-undo"
+status = "done"
+summary = "Action menu (common moves only, one request per displayed status), classify form with per-row guarded edits, read-only/no-target/path-ledger refusals, critical-decline confirmation, saving marks cleared by outcomes, per-edit undo via Restore, live filter prompt; App overlay plus take_writes/apply_written/overlay_key"
+files = [
+    "glimpse/src/actions.rs",
+    "glimpse/src/app.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "800cbafa90a5c0e5"
+
+[[items]]
+id = "E111"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-action-menu-control-edit-forms-bulk-edits-and-undo"
+summary = "one write request per displayed status (transitions) and per distinct edit+guard group (classify)"
+original_intent = "submit one WriteRequest covering every target"
+rationale = "the facade takes one expect_status / expect map per call"
+dedup_id = "ab78c8dd9d0ea2bc"
+
+[[items]]
+id = "E112"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-the-action-menu-control-edit-forms-bulk-edits-and-undo"
+summary = "Overlay and Purpose types live in actions.rs; App.overlay field in app.rs"
+original_intent = "Overlay in app.rs"
+rationale = "keeps the form-building logic next to the transition table"
+dedup_id = "287281c5852a0016"
+
+[[items]]
+id = "E113"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "render-the-inline-filter-prompt-and-closed-toggle"
+status = "done"
+summary = "Filter prompt drawn in the item facet row with visual_scroll and closed state; items::prompt_cursor gives the cursor position"
+files = ["glimpse/src/view/items.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "ed39ce89366453e9"
+
+[[items]]
+id = "E114"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-capture-request-note-and-answer-forms"
+status = "done"
+summary = "Capture, request/note, answer and withdraw forms (InputForm) in actions.rs; writer gains InputAdd/InputAnswer/InputWithdraw via the inputs facade with the new id reported as applied"
+files = [
+    "glimpse/src/actions.rs",
+    "glimpse/src/writer.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "b51281505ddfa104"
+
+[[items]]
+id = "E115"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-capture-request-note-and-answer-forms"
+summary = "a capture's note is appended to text as summary, blank line, note"
+original_intent = "capture form submits summary, kind, area and note"
+rationale = "the input record schema has no note field for a capture"
+dedup_id = "49b62ca6519ebf45"
+
+[[items]]
+id = "E116"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-capture-request-note-and-answer-forms"
+summary = "writer reports inputs_add/inputs_answer's returned id as applied: [id]"
+original_intent = "execute the input variants through the facade"
+rationale = "WriteOutcome reads only applied, and undo needs the new record's id"
+dedup_id = "181092099291bc52"
+
+[[items]]
+id = "E117"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "route-keys-to-open-forms-and-prompts"
+status = "done"
+summary = "Keys route to an open form or prompt before keys::map (Ctrl+C still quits, mouse blocked); m/e/u and / mapped; pending writes drained to the writer after each key; Event::Written to apply_written; forms drawn over the view with footer hints"
+files = [
+    "glimpse/src/runtime.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/view/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "df958f34310ba01b"
+
+[[items]]
+id = "E118"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "wire-the-filter-prompt-cursor-and-drop-stale-dead-code-allows"
+summary = "minted task 59 to wire the filter-prompt cursor and drop stale dead-code allows"
+original_intent = "plan carries no task for placing the filter-prompt cursor or removing dead-code allows once their items are wired"
+rationale = "task 35 could not call frame.set_cursor_position from items.rs (view/mod.rs was held by task 34), and tasks 21/32/33/34 left allows that are now stale"
+dedup_id = "677769ee6cf1140b"
+
+[[items]]
+id = "E119"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "wire-the-filter-prompt-cursor-and-drop-stale-dead-code-allows"
+status = "done"
+summary = "Item surface places the filter-prompt cursor via items::prompt_cursor; stale dead_code allows removed; view/form.rs some_filter warnings fixed; glimpse clippy warning-free"
+files = [
+    "glimpse/src/view/mod.rs",
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/form.rs",
+    "glimpse/src/app.rs",
+    "glimpse/src/actions.rs",
+    "glimpse/src/writer.rs",
+    "glimpse/src/source.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "f36f92ba9fbc50f9"
+
+[[items]]
+id = "E120"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "wire-the-filter-prompt-cursor-and-drop-stale-dead-code-allows"
+summary = "view/form.rs uses focused.then_some(draw_input(..)) keeping the draw unconditional"
+original_intent = "focused.then(|| draw_input(..)) with the draw gated on focus"
+rationale = "draw_input draws the field text too; gating it would blank every unfocused text field"
+dedup_id = "5f36cdc234521366"
+
+[[items]]
+id = "E121"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "route-keys-to-open-forms-and-prompts"
+summary = "checkpoint B gate: build pass"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 3
+dedup_id = "2ae2a6a47213d37f"
+
+[[items]]
+id = "E122"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "route-keys-to-open-forms-and-prompts"
+summary = "checkpoint B gate: build pass"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 11
+dedup_id = "2ae2a6a47213d37f"
+
+[[items]]
+id = "E123"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "route-keys-to-open-forms-and-prompts"
+summary = "checkpoint B gate: 1525 passed; 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 92
+dedup_id = "124d113ac4f98054"
+
+[[items]]
+id = "E124"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "route-keys-to-open-forms-and-prompts"
+summary = "checkpoint B gate: 426 passed; 0 failed"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 14
+dedup_id = "6b22de27f723aa03"
+
+[[items]]
+id = "E125"
+type = "checkpoint"
+date = 2026-10-02
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint B train: 90e8cc2=36; e05b836=37; 5afeec6=38; efd5d9c=33,34,35,51,59"
+commits = [
+    "90e8cc2",
+    "e05b836",
+    "5afeec6",
+    "efd5d9c",
+]
+dedup_id = "af3c07505535d06a"
+
+[[items]]
+id = "E126"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "add-capture-request-note-and-answer-forms"
+summary = "checkpoint B train also committed C tasks 51 and 59"
+original_intent = "each checkpoint group commits only its own members"
+rationale = "51 and 59 share actions.rs, writer.rs, view/mod.rs and app.rs with B tasks 33 and 34, so path-scoped staging cannot separate them; all were in the verified tree"
+dedup_id = "94f10ac5cb97f24f"
+
+[[items]]
+id = "E127"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "wire-the-inbox-and-input-forms-through-the-app-and-keys"
+summary = "files widened with glimpse/src/actions.rs and glimpse/src/view/header.rs"
+original_intent = "Files line for wire-the-inbox-and-input-forms-through-the-app-and-keys omits glimpse/src/actions.rs and glimpse/src/view/header.rs"
+rationale = "Purpose lives in actions.rs (the input-form variant and its dead-code allows must change there), and header.rs's inbox_pending stub must read the new App accessor"
+dedup_id = "547f40fdf25bba06"
+
+[[items]]
+id = "E128"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "sweep-inputs-at-step-0-of-review-review-apply-and-optimise"
+status = "done"
+summary = "review, review-apply and optimise run the user-inputs Step-0 sweep for their ledger kind: notes passed as quoted data, honourable requests ride the guarded interim-checkpoint batch, declined statuses named, records handled before the report"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/review-apply.md",
+    "claude/commands/optimise.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "14884eac7aebc133"
+
+[[items]]
+id = "E129"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "sweep-inputs-at-step-0-of-review-review-apply-and-optimise"
+summary = "content-edit requests (summary/description) are declined, not applied"
+original_intent = "a content-edit request is applied with an items update carrying expect"
+rationale = "items update carries no expect, and the user-inputs skill limits requests to status transitions and classification fields"
+dedup_id = "0a6fab974afeb247"
+
+[[items]]
+id = "E130"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "sweep-inputs-at-step-0-of-optimise-apply-review-plan-and-backlog"
+status = "done"
+summary = "optimise-apply, review-plan and backlog run the user-inputs Step-0 sweep; backlog drains captures through check then add and guards triage with --expect-status; review-plan and backlog post question records on empty answers"
+files = [
+    "claude/commands/optimise-apply.md",
+    "claude/commands/review-plan.md",
+    "claude/commands/backlog.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "87f3fd29f8cf6a31"
+
+[[items]]
+id = "E131"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "sweep-inputs-at-step-0-of-optimise-apply-review-plan-and-backlog"
+summary = "review-plan posts a question only for Q1 (Q2 fixed to Mechanical merge) and for Q3"
+original_intent = "post the question at the Q1/Q2/Q3 sites"
+rationale = "an answered Manual merge + accept would overwrite the plan on an untrusted record; Manual merge needs an interactive selection"
+dedup_id = "aee6297ee4616338"
+
+[[items]]
+id = "E132"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "sweep-inputs-at-step-0-of-optimise-apply-review-plan-and-backlog"
+summary = "backlog raises its version gate to 0.13 and also guards Step 3's reopen with --expect-status promoted"
+original_intent = "per-cluster triage only"
+rationale = "inputs and --expect-status need 0.13; every carrier status write carries expect"
+dedup_id = "79a3b99a392abef2"
+
+[[items]]
+id = "E133"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "sweep-inputs-at-step-0-of-optimise-apply-review-plan-and-backlog"
+summary = "orchestrator added to optimise-apply.md that Step 5.5 never reverses a request-driven transition"
+original_intent = "spec did not cover rollback of request-driven transitions in optimise-apply"
+rationale = "parity with review-apply: rollback must not reopen an item the user deferred or rejected"
+dedup_id = "ebb8d444f049083a"
+
+[[items]]
+id = "E134"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "gate-the-six-carriers-on-the-inputs-skill"
+status = "done"
+summary = "carrier_invokes_required_skills requires flow-contract-user-inputs in the six owning carriers"
+files = ["tomlctl/src/cli/dispatch/tests/skills.rs"]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "8761ea6fe34fae11"
+
+[[items]]
+id = "E135"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "wire-the-inbox-and-input-forms-through-the-app-and-keys"
+status = "done"
+summary = "App gains InboxState with apply_inputs and inbox_unanswered; n/r/w open capture, request and withdraw forms; Enter on a question opens its answer form; input writes undo by withdrawing; header Inbox tab shows the count and badge"
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/keys.rs",
+    "glimpse/src/actions.rs",
+    "glimpse/src/view/header.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+escalation_reason = "cross-cut"
+dedup_id = "3d5fd9e07a1d6b31"
+
+[[items]]
+id = "E136"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "wire-the-inbox-and-input-forms-through-the-app-and-keys"
+summary = "Enter/Details on an Inbox question opens the answer form; no AnswerQuestion action"
+original_intent = "add an AnswerQuestion action"
+rationale = "keys::map maps Enter to Details context-free; the dispatch named that route"
+dedup_id = "7792ac73ef0b877c"
+
+[[items]]
+id = "E137"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "wire-the-inbox-and-input-forms-through-the-app-and-keys"
+summary = "Purpose::Input(Box<InputForm>)"
+original_intent = "Purpose::Input(InputForm)"
+rationale = "InputRow is ~544 bytes and tripped clippy large_enum_variant on Purpose and Overlay"
+dedup_id = "f45af7517c68ba2e"
+
+[[items]]
+id = "E138"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "feed-input-records-through-the-poller"
+summary = "files widened with glimpse/src/ledger.rs"
+original_intent = "Files line for feed-input-records-through-the-poller omits glimpse/src/ledger.rs"
+rationale = "the Inputs loader in ledger.rs carries a dead_code allow that must go once the feed constructs it"
+dedup_id = "39dba091528637be"
+
+[[items]]
+id = "E139"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "mark-item-rows-and-details-with-pending-inputs"
+status = "done"
+summary = "Item rows draw a pending-input mark coloured by the newest matching record; item details list matching input records"
+files = [
+    "glimpse/src/view/items.rs",
+    "glimpse/src/view/details.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "ef86b2a6c3a60027"
+
+[[items]]
+id = "E140"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "render-the-inbox-surface"
+status = "done"
+summary = "view/inbox.rs renders the Inbox: questions first with prompt and options, then status groups with glyph, kind, target, excerpt and handled note; facet row, windowing, flashes, saving, click regions and context-aware footer hints"
+files = [
+    "glimpse/src/view/inbox.rs",
+    "glimpse/src/view/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "577d6bcb6616cec6"
+
+[[items]]
+id = "E141"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "render-the-inbox-surface"
+summary = "Inbox footer omits c closed and shows w/Enter hints according to the cursor record"
+original_intent = "hint Enter, w, n, c on the Inbox"
+rationale = "c does not reach InboxState yet, and w/Enter act only on withdrawable records / questions"
+dedup_id = "4e6a7745b568d9ce"
+
+[[items]]
+id = "E142"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "toggle-closed-inbox-records-with-c"
+summary = "minted task 60 to make c toggle closed Inbox records"
+original_intent = "plan carries no task for c on the Inbox surface"
+rationale = "task 50 found ToggleClosed only reaches item surfaces, so handled and withdrawn input records can never be shown"
+dedup_id = "3fc059de660f31cd"
+
+[[items]]
+id = "E143"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "feed-input-records-through-the-poller"
+status = "done"
+summary = "Feed::Inputs read via Fetcher::fetch_inputs with stat gate and revision dedup, posting Event::InputRecords; runtime subscribes it always and routes it to App::apply_inputs with Inbox redraw gating"
+files = [
+    "glimpse/src/source.rs",
+    "glimpse/src/source/scan.rs",
+    "glimpse/src/runtime.rs",
+    "glimpse/src/ledger.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "36194646565b8981"
+
+[[items]]
+id = "E144"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "toggle-closed-inbox-records-with-c"
+status = "done"
+summary = "c on the Inbox flips inbox.show_closed, re-homes the cursor and posts the closed shown/hidden notice; Inbox footer lists c closed"
+files = [
+    "glimpse/src/app.rs",
+    "glimpse/src/view/mod.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "flagged-pass"
+retries = 0
+dedup_id = "2d017b90861b93b3"
+
+[[items]]
+id = "E145"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "toggle-closed-inbox-records-with-c"
+summary = "orchestrator removed the stale dead_code allow on App::apply_inputs"
+original_intent = "allow removed by the task that wires the call"
+rationale = "task 49 wired the call but app.rs was outside its files"
+dedup_id = "c51d85b4dfd7fb92"
+
+[[items]]
+id = "E146"
+type = "task-completion"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+status = "done"
+summary = "Legend gains write/input key rows and input glyph rows; README replaces read-only with the write model and adds Writing and Inbox sections, the filter, the pending mark and updated how-it-works"
+files = [
+    "glimpse/src/view/legend.rs",
+    "glimpse/README.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "fe49fa89fd25e9f4"
+
+[[items]]
+id = "E147"
+type = "deviation"
+date = 2026-10-02
+agent = "implement"
+task_ref = "toggle-closed-inbox-records-with-c"
+summary = "orchestrator added r request and n capture to the item-surface footer hints"
+original_intent = "item-surface footer hints per earlier tasks"
+rationale = "task 53 found the footer omitted keys the legend and README document; the three lists are hand-synced"
+dedup_id = "ac489a208845cab9"
+
+[[items]]
+id = "E148"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): pass"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 3
+dedup_id = "d35b20fa5cbfcf92"
+
+[[items]]
+id = "E149"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): pass"
+command = "cargo build --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 10
+dedup_id = "d35b20fa5cbfcf92"
+
+[[items]]
+id = "E150"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): 1525 passed; 0 failed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 89
+dedup_id = "ae3cf61539945458"
+
+[[items]]
+id = "E151"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): 442 passed; 0 failed"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 13
+dedup_id = "82ad0bfdd204e672"
+
+[[items]]
+id = "E152"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): pass"
+command = "success: wontapply companion grep = 0"
+outcome = "pass"
+duration_s = 0
+dedup_id = "d35b20fa5cbfcf92"
+
+[[items]]
+id = "E153"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): pass"
+command = "success: --on-stale skip in 6 carrier files"
+outcome = "pass"
+duration_s = 0
+dedup_id = "d35b20fa5cbfcf92"
+
+[[items]]
+id = "E154"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): pass"
+command = "success: flow-contract-user-inputs in 6 carriers"
+outcome = "pass"
+duration_s = 0
+dedup_id = "d35b20fa5cbfcf92"
+
+[[items]]
+id = "E155"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): pass"
+command = "git check-ignore -q .claude/inputs.toml"
+outcome = "pass"
+duration_s = 0
+dedup_id = "d35b20fa5cbfcf92"
+
+[[items]]
+id = "E156"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): pass"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 11
+dedup_id = "d35b20fa5cbfcf92"
+
+[[items]]
+id = "E157"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): 1 passed"
+command = "cargo test --manifest-path glimpse/Cargo.toml --test cli once_renders_a_review_ledger"
+outcome = "pass"
+duration_s = 2
+dedup_id = "739c71861450d4d9"
+
+[[items]]
+id = "E158"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): 1 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test agents_record a_ledger_dispatch_records_its_flow_and_items"
+outcome = "pass"
+duration_s = 11
+dedup_id = "739c71861450d4d9"
+
+[[items]]
+id = "E159"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): 1 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test integration items_apply_on_stale_skip_reports_skipped_ids"
+outcome = "pass"
+duration_s = 1
+dedup_id = "739c71861450d4d9"
+
+[[items]]
+id = "E160"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): 1 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test library_facade ledger_transition_skips_a_changed_status"
+outcome = "pass"
+duration_s = 1
+dedup_id = "739c71861450d4d9"
+
+[[items]]
+id = "E161"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): 1 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test inputs inputs_answer_marks_the_question_handled"
+outcome = "pass"
+duration_s = 1
+dedup_id = "739c71861450d4d9"
+
+[[items]]
+id = "E162"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): 1 passed"
+command = "cargo test --manifest-path glimpse/Cargo.toml a_new_row_flashes_and_keeps_the_cursor"
+outcome = "pass"
+duration_s = 2
+dedup_id = "739c71861450d4d9"
+
+[[items]]
+id = "E163"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): 0 warnings"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 28
+dedup_id = "64e46f08212c410a"
+
+[[items]]
+id = "E164"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): 0 warnings"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 5
+dedup_id = "64e46f08212c410a"
+
+[[items]]
+id = "E165"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): pass"
+command = "cargo fmt --check (tomlctl, glimpse)"
+outcome = "pass"
+duration_s = 2
+dedup_id = "d35b20fa5cbfcf92"
+
+[[items]]
+id = "E166"
+type = "verification"
+date = 2026-10-02
+agent = "implement"
+task_ref = "document-milestones-b-and-c-in-the-legend-and-readme"
+summary = "final pass (checkpoint C + Phase 3): no advisories"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+duration_s = 13
+dedup_id = "1fda73fe9abbb6ce"
+
+[[items]]
+id = "E167"
+type = "checkpoint"
+date = 2026-10-02
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint C train: 8b48625=43; ee19924=44; 25b0cb3=45; 70e4b99=46; f83299b=47; 298d394=50,54,60; 90213de=49; 48aced0=52; da9cb8c=53"
+commits = [
+    "8b48625",
+    "ee19924",
+    "25b0cb3",
+    "70e4b99",
+    "f83299b",
+    "298d394",
+    "90213de",
+    "48aced0",
+    "da9cb8c",
+]
+dedup_id = "f5a80d394591fefd"
+
+[[items]]
+id = "E168"
+type = "status-transition"
+date = 2026-10-02
+agent = "plan-update"
+summary = "all 60 tasks complete; implementation finished, awaiting review"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "cccdf393f9e0af99"

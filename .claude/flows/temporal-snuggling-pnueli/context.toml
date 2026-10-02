@@ -1,0 +1,27 @@
+slug = "temporal-snuggling-pnueli"
+plan_path = "docs/plans/temporal-snuggling-pnueli.md"
+status = "review"
+created = 2026-10-02
+updated = 2026-10-02
+branch = "main"
+scope = [
+    "glimpse/**",
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "claude/commands/**",
+    "claude/skills/**",
+    "CLAUDE.md",
+    ".gitignore",
+]
+
+[tasks]
+total = 60
+completed = 60
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/temporal-snuggling-pnueli/review-ledger.toml"
+optimise_findings = ".claude/flows/temporal-snuggling-pnueli/optimise-findings.toml"
+execution_record = ".claude/flows/temporal-snuggling-pnueli/execution-record.toml"
+plan_review_findings = ".claude/flows/temporal-snuggling-pnueli/plan-review-findings.toml"
+tasks = ".claude/flows/temporal-snuggling-pnueli/tasks.toml"
