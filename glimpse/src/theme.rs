@@ -67,6 +67,27 @@ pub(crate) const TOKENS: &[(&str, &str)] = &[
     ("effort_warning", "warning"),
     ("effort_danger", "danger"),
     ("warning_text", "warning"),
+    ("severity_critical", "danger"),
+    ("severity_warning", "warning"),
+    ("severity_suggestion", "info"),
+    ("item_live", "fg"),
+    ("item_parked", "idle"),
+    ("item_done", "success"),
+    ("item_declined", "muted"),
+    ("item_mark", "accent"),
+    ("item_saving", "warning"),
+    ("badge", "accent"),
+    ("surface_tab", "secondary"),
+    ("surface_tab_active", "accent"),
+    ("facet", "muted"),
+    ("group_header", "section"),
+    ("input_new", "info"),
+    ("input_acknowledged", "warning"),
+    ("input_handled", "success"),
+    ("question", "violet"),
+    ("form_label", "secondary"),
+    ("form_focus", "accent"),
+    ("form_error", "danger"),
 ];
 
 /// Tokens reference each other at most this deep, which also stops a cycle.
@@ -167,6 +188,31 @@ pub(crate) struct Theme {
     pub(crate) effort_warning: Style,
     /// The effort mark of a task that failed, or whose record holds a failure.
     pub(crate) effort_danger: Style,
+    pub(crate) severity_critical: Style,
+    pub(crate) severity_warning: Style,
+    pub(crate) severity_suggestion: Style,
+    pub(crate) item_live: Style,
+    pub(crate) item_parked: Style,
+    pub(crate) item_done: Style,
+    pub(crate) item_declined: Style,
+    /// The mark beside an item picked for a bulk action.
+    pub(crate) item_mark: Style,
+    /// An item whose write has not yet shown up in its ledger.
+    pub(crate) item_saving: Style,
+    /// The `+N` arrival count on a surface tab.
+    pub(crate) arrival_badge: Style,
+    pub(crate) surface_tab: Style,
+    pub(crate) surface_tab_active: Style,
+    /// A secondary attribute shown beside an item: kind, area, file.
+    pub(crate) facet: Style,
+    pub(crate) group_header: Style,
+    pub(crate) input_new: Style,
+    pub(crate) input_acknowledged: Style,
+    pub(crate) input_handled: Style,
+    pub(crate) question: Style,
+    pub(crate) form_label: Style,
+    pub(crate) form_focus: Style,
+    pub(crate) form_error: Style,
 }
 
 impl Default for Theme {
@@ -253,6 +299,47 @@ impl Theme {
             effort: fg("effort"),
             effort_warning: fg("effort_warning").add_modifier(bold),
             effort_danger: fg("effort_danger").add_modifier(bold),
+            severity_critical: fg("severity_critical").add_modifier(bold),
+            severity_warning: fg("severity_warning"),
+            severity_suggestion: fg("severity_suggestion"),
+            item_live: fg("item_live"),
+            item_parked: fg("item_parked"),
+            item_done: fg("item_done"),
+            item_declined: fg("item_declined"),
+            item_mark: fg("item_mark").add_modifier(bold),
+            item_saving: fg("item_saving"),
+            arrival_badge: fg("badge").add_modifier(bold),
+            surface_tab: fg("surface_tab"),
+            surface_tab_active: fg("surface_tab_active").add_modifier(bold),
+            facet: fg("facet"),
+            group_header: fg("group_header").add_modifier(bold),
+            input_new: fg("input_new"),
+            input_acknowledged: fg("input_acknowledged"),
+            input_handled: fg("input_handled"),
+            question: fg("question"),
+            form_label: fg("form_label"),
+            form_focus: fg("form_focus").add_modifier(bold),
+            form_error: fg("form_error"),
+        }
+    }
+
+    /// Keyed by a finding's severity; an unknown severity takes the suggestion style.
+    pub(crate) fn severity(&self, severity: &str) -> Style {
+        match severity {
+            "critical" => self.severity_critical,
+            "warning" => self.severity_warning,
+            _ => self.severity_suggestion,
+        }
+    }
+
+    /// Keyed by status class (`live`, `parked`, `done`, `declined`); an unknown class
+    /// takes the live style.
+    pub(crate) fn item_status(&self, class: &str) -> Style {
+        match class {
+            "parked" => self.item_parked,
+            "done" => self.item_done,
+            "declined" => self.item_declined,
+            _ => self.item_live,
         }
     }
 
@@ -306,6 +393,19 @@ mod tests {
             t.pending,
             "status names are case-sensitive"
         );
+    }
+
+    #[test]
+    fn item_tokens_default_to_palette_colours() {
+        let t = Theme::default();
+        assert_eq!(t.severity("critical").fg, Some(rgb("#FF8080")));
+        assert_eq!(t.severity("warning").fg, Some(rgb("#E6C384")));
+        assert_eq!(t.severity("other"), t.severity_suggestion);
+        assert_eq!(t.item_status("done").fg, Some(rgb("#69DB7C")));
+        assert_eq!(t.item_status("parked").fg, Some(rgb("#C5C9C7")));
+        assert_eq!(t.item_status("declined").fg, Some(rgb("#8A8F98")));
+        assert_eq!(t.item_status("live").fg, Some(Color::Reset));
+        assert_eq!(t.question.fg, Some(rgb("#938AA9")));
     }
 
     #[test]
