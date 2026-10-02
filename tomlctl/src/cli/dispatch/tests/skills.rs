@@ -1222,6 +1222,7 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-ledger-disposition-sweep",
                 "flow-contract-vet-research",
                 "backlog-capture",
+                "flow-contract-user-inputs",
             ],
         ),
         (
@@ -1244,6 +1245,7 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-plan-output-format",
                 "flow-contract-task-store",
                 "flow-contract-vet-research",
+                "flow-contract-user-inputs",
             ],
         ),
         (
@@ -1262,6 +1264,7 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-ledger-disposition-sweep",
                 "flow-contract-vet-research",
                 "backlog-capture",
+                "flow-contract-user-inputs",
             ],
         ),
         (
@@ -1274,6 +1277,7 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-apply-vet-implement-lite",
                 "flow-contract-apply-rollback-protocol",
                 "flow-contract-apply-constraints",
+                "flow-contract-user-inputs",
             ],
         ),
         (
@@ -1286,6 +1290,7 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-apply-vet-implement-lite",
                 "flow-contract-apply-rollback-protocol",
                 "flow-contract-apply-constraints",
+                "flow-contract-user-inputs",
             ],
         ),
         (
@@ -1308,7 +1313,10 @@ fn carrier_invokes_required_skills() {
                 "flow-contract-vet-research",
             ],
         ),
-        ("backlog.md", &["backlog-capture"]),
+        (
+            "backlog.md",
+            &["backlog-capture", "flow-contract-user-inputs"],
+        ),
     ];
 
     let mut missing: Vec<String> = Vec::new();
