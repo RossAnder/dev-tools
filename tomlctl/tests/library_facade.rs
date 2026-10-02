@@ -762,6 +762,36 @@ fn ledger_classify_refuses_plan_review_and_backlog() {
 }
 
 #[test]
+fn ledger_classify_refuses_off_vocabulary_severity_and_effort() {
+    let (_dir, root) = sandbox();
+    let (ledger, path) = flow_ledger(&root, tomlctl::LedgerKind::Review, REVIEW_WRITE);
+    let _env = pin_root(&root);
+    let before = fs::read(&path).unwrap();
+    for (fields, expected) in [
+        (
+            json!({"severity": "major"}),
+            "`severity` must be one of critical, warning, suggestion",
+        ),
+        (
+            json!({"effort": "large"}),
+            "`effort` must be one of trivial, small, medium",
+        ),
+    ] {
+        let err = tomlctl::ledger_classify(
+            &root,
+            &ledger,
+            &strings(&["R1"]),
+            obj(fields),
+            obj(json!({"severity": "warning"})),
+        )
+        .expect_err("an off-vocabulary value is refused");
+        let message = format!("{err:#}");
+        assert!(message.contains(expected), "unexpected error: {message}");
+    }
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
 fn ledger_transition_discards_a_plan_review_finding_with_its_reason() {
     let (_dir, root) = sandbox();
     let (ledger, path) = flow_ledger(&root, tomlctl::LedgerKind::PlanReview, PLAN_REVIEW_WRITE);

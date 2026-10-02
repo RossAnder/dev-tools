@@ -36,15 +36,17 @@ mod time;
 mod union_find;
 
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Parser;
 
 use crate::cli::{Cli, ErrorFormat, ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::TaggedError;
+use crate::ledgers::FACADE_WRITE;
 
 pub use crate::backlog::triage::BacklogTriage;
+pub use crate::items::STATUS_COMPANIONS;
 pub use crate::ledgers::{LedgerKind, LedgerRef};
 
 /// The files of a flow directory that [`snapshot`] reads, store first. Its
@@ -197,12 +199,10 @@ pub fn backlog_triage(
     }))
 }
 
-/// Every facade write keeps the sidecar current and never verifies it.
-const FACADE_WRITE: integrity::IntegrityOpts = integrity::IntegrityOpts {
-    write_sidecar: true,
-    verify_on_read: false,
-    strict: false,
-};
+/// The input store, `<root>/.claude/inputs.toml`.
+pub fn inputs_path(root: &Path) -> PathBuf {
+    inputs::path(root)
+}
 
 /// Every record of `<root>/.claude/inputs.toml` as `inputs list` prints it:
 /// `{"path", "revision", "inputs"}`, read without integrity checks. A missing

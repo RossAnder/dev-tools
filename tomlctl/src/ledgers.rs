@@ -25,7 +25,9 @@ use crate::io::{
     OnMissing, item_id, items_array, mutate_doc_conditional, parse_toml_bytes, read_dir_sorted,
     relativise_under, repo_or_cwd_root,
 };
-use crate::items::{Item, StaleOp, StalePolicy, compute_apply_mutation_with};
+use crate::items::{
+    Item, STATUS_COMPANIONS, StaleOp, StalePolicy, compute_apply_mutation_with, status_companions,
+};
 
 /// The flow-scoped item ledgers; the backlog is [`LedgerRef::Backlog`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -38,7 +40,8 @@ pub enum LedgerKind {
 impl LedgerKind {
     pub const ALL: [LedgerKind; 3] = [Self::Review, Self::Optimise, Self::PlanReview];
 
-    /// The `kind` string [`read`] and [`scopes`] report.
+    /// The `kind` string [`crate::ledger_read`] and [`crate::ledger_scopes`]
+    /// report.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Review => "review",
@@ -47,7 +50,8 @@ impl LedgerKind {
         }
     }
 
-    fn flow_file(self) -> &'static str {
+    /// The ledger's file name inside a flow directory.
+    pub fn flow_file(self) -> &'static str {
         match self {
             Self::Review => "review-ledger.toml",
             Self::Optimise => "optimise-findings.toml",
@@ -55,7 +59,8 @@ impl LedgerKind {
         }
     }
 
-    fn scope_dir(self) -> &'static str {
+    /// The directory under `.claude/` holding this kind's flow-less ledgers.
+    pub fn scope_dir(self) -> &'static str {
         match self {
             Self::Review => "reviews",
             Self::Optimise => "optimise-findings",
@@ -76,7 +81,9 @@ pub enum LedgerRef {
 }
 
 impl LedgerRef {
-    pub(crate) fn path(&self, root: &Path) -> Result<PathBuf> {
+    /// The ledger's file under `root`, refusing a `Flow` slug or `Scope` name
+    /// the `--slug` regex rejects.
+    pub fn path(&self, root: &Path) -> Result<PathBuf> {
         let claude = root.join(".claude");
         Ok(match self {
             Self::Flow { slug, kind } => {
@@ -218,8 +225,13 @@ pub(crate) fn ensure_process_root(root: &Path) -> Result<()> {
         .canonicalize()
         .with_context(|| format!("canonicalising root {}", root.display()))?;
     if given != process {
+        let source = if std::env::var_os("TOMLCTL_ROOT").is_some_and(|v| !v.is_empty()) {
+            "taken from TOMLCTL_ROOT"
+        } else {
+            "the working directory's repository, as TOMLCTL_ROOT is unset"
+        };
         bail!(
-            "root mismatch: {} is not tomlctl's process root {}; set TOMLCTL_ROOT to it",
+            "root mismatch: {} is not tomlctl's process root {} ({source})",
             given.display(),
             process.display()
         );
@@ -230,32 +242,33 @@ pub(crate) fn ensure_process_root(root: &Path) -> Result<()> {
 /// The form fields of a transition the write facade offers, or `None` for any
 /// other. `fixed`, `applied` and `merged` belong to the apply flows and the
 /// plan merge, and backlog moves go through backlog triage.
-fn offered(kind: LedgerKind, from: &str, to: &str) -> Option<&'static [&'static str]> {
+fn offered(kind: LedgerKind, from: &str, to: &str) -> Option<Vec<&'static str>> {
     use LedgerKind::{Optimise, PlanReview, Review};
-    Some(match (kind, from, to) {
-        (Review | Optimise, "open", "deferred") => &["defer_reason", "defer_trigger"],
-        (Review, "open", "wontfix") => &["wontfix_rationale"],
-        (Review, "open", "verified-clean") => &["verified_note"],
-        (Review | Optimise, "deferred", "open") => &["reopen_rationale"],
-        (Optimise, "open", "wontapply") => &["wontapply_rationale"],
-        (PlanReview, "open", "discarded") => &["discard_reason"],
-        _ => return None,
-    })
-}
-
-/// The companion fields a status owns, removed when an item leaves it.
-fn companions(status: &str) -> &'static [&'static str] {
-    match status {
-        "deferred" => &["defer_reason", "defer_trigger"],
-        "wontfix" => &["wontfix_rationale"],
-        "wontapply" => &["wontapply_rationale"],
-        "verified-clean" => &["verified_note"],
-        "discarded" => &["discard_reason"],
-        _ => &[],
+    match (kind, from, to) {
+        (Review | Optimise, "open", "deferred")
+        | (Review, "open", "wontfix" | "verified-clean")
+        | (Optimise, "open", "wontapply")
+        | (PlanReview, "open", "discarded") => Some(companions(to).collect()),
+        (Review | Optimise, "deferred", "open") => Some(vec!["reopen_rationale"]),
+        _ => None,
     }
 }
 
+/// The companion fields a status owns, removed when an item leaves it.
+fn companions(status: &str) -> impl Iterator<Item = &'static str> {
+    status_companions(status).iter().map(|(field, _)| *field)
+}
+
 const CLASSIFY_FIELDS: [&str; 3] = ["severity", "effort", "category"];
+const SEVERITIES: [&str; 3] = ["critical", "warning", "suggestion"];
+const EFFORTS: [&str; 3] = ["trivial", "small", "medium"];
+
+/// Every facade write keeps the sidecar current and never verifies it.
+pub(crate) const FACADE_WRITE: IntegrityOpts = IntegrityOpts {
+    write_sidecar: true,
+    verify_on_read: false,
+    strict: false,
+};
 
 /// What a restore may write on each ledger: the status values glimpse can
 /// move an item away from, and the fields its writes touch.
@@ -278,18 +291,12 @@ fn restorable(ledger: &LedgerRef) -> Result<(&'static [&'static str], Vec<&'stat
             if *kind != LedgerKind::PlanReview {
                 fields.extend(CLASSIFY_FIELDS);
             }
-            let forms = [
-                "deferred",
-                "wontfix",
-                "verified-clean",
-                "wontapply",
-                "discarded",
-            ]
-            .into_iter()
-            .filter_map(|to| offered(*kind, "open", to))
-            .chain(offered(*kind, "deferred", "open"));
+            let forms = STATUS_COMPANIONS
+                .iter()
+                .filter_map(|(to, _)| offered(*kind, "open", to))
+                .chain(offered(*kind, "deferred", "open"));
             for field in forms.flatten() {
-                if !fields.contains(field) {
+                if !fields.contains(&field) {
                     fields.push(field);
                 }
             }
@@ -347,14 +354,9 @@ fn write_guarded(
     } else {
         "items"
     };
-    let integrity = IntegrityOpts {
-        write_sidecar: true,
-        verify_on_read: false,
-        strict: false,
-    };
     let mut applied: Vec<String> = Vec::new();
     let mut stale: Vec<StaleOp> = Vec::new();
-    mutate_doc_conditional(&path, false, integrity, OnMissing::Error, |doc| {
+    mutate_doc_conditional(&path, false, FACADE_WRITE, OnMissing::Error, |doc| {
         let present: BTreeSet<&str> = items_array(doc, array).iter().filter_map(item_id).collect();
         let mut ops = Vec::new();
         for edit in edits {
@@ -445,9 +447,8 @@ pub(crate) fn transition(
         }
     }
     let unset: Vec<String> = companions(expect_status)
-        .iter()
-        .filter(|f| !(to == "open" && **f == "defer_reason"))
-        .filter(|f| !fields.contains_key(**f))
+        .filter(|f| !(to == "open" && *f == "defer_reason"))
+        .filter(|f| !fields.contains_key(*f))
         .map(|f| f.to_string())
         .collect();
     let mut set = fields;
@@ -487,8 +488,16 @@ pub(crate) fn classify(
         if !CLASSIFY_FIELDS.contains(&field.as_str()) {
             bail!("classify sets only severity, effort and category, not `{field}`");
         }
-        if !value.as_str().is_some_and(|s| !s.trim().is_empty()) {
+        let Some(value) = value.as_str().filter(|s| !s.trim().is_empty()) else {
             bail!("`{field}` must be a non-empty string");
+        };
+        let allowed: &[&str] = match field.as_str() {
+            "severity" => &SEVERITIES,
+            "effort" => &EFFORTS,
+            _ => continue,
+        };
+        if !allowed.contains(&value) {
+            bail!("`{field}` must be one of {}", allowed.join(", "));
         }
     }
     if expect.is_empty() {

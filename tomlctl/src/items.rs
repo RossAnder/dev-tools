@@ -1906,19 +1906,6 @@ pub(crate) fn compute_array_append_mutation(
     compute_add_many_mutation(doc, array_name, rows, None, &[])
 }
 
-/// Typed error for disposition-specific required-field validation.
-///
-/// The `[[items]]` ledger schema couples `status` to a small cluster of
-/// disposition-specific required fields (see `claude/commands/review.md`
-/// `## Ledger Schema → Disposition-specific fields`). Today every read/write
-/// path in this module reaches into `TomlValue::Table` directly, so without
-/// this check a row with `status = "deferred"` but missing `defer_reason`
-/// parses as valid TOML and only surfaces as malformed at render time.
-///
-/// `Item::validate` (below) is the parse-time check that catches the
-/// missing-disposition-field case. It is intentionally additive — no
-/// existing call site is wired through it yet; callers opt in. The
-/// `#[allow(dead_code)]` annotations match the pattern in `errors.rs`
 /// A status that closes an item: the schema's dispositions other than `open`.
 /// Anything else — an absent status included — reads as `open`, which is the
 /// schema's fail-soft rule and the one selection every ledger verb shares.
@@ -1929,7 +1916,38 @@ pub(crate) fn is_terminal_status(status: &str) -> bool {
     )
 }
 
-/// for `ErrorKind` variants reserved for future wiring.
+/// The companion fields each disposition status owns, as `(field, required)`
+/// pairs. A required field must be present and non-empty under its status;
+/// every listed field is removed when an item leaves that status. A status
+/// absent from the table, `open` included, owns no fields.
+pub const STATUS_COMPANIONS: &[(&str, &[(&str, bool)])] = &[
+    ("fixed", &[("resolved", true), ("resolution", true)]),
+    ("applied", &[("resolved", true), ("resolution", true)]),
+    (
+        "deferred",
+        &[("defer_reason", true), ("defer_trigger", true)],
+    ),
+    ("wontfix", &[("wontfix_rationale", true)]),
+    ("wontapply", &[("wontapply_rationale", true)]),
+    ("verified-clean", &[("verified_note", true)]),
+    ("discarded", &[("discard_reason", false)]),
+];
+
+/// The `(field, required)` pairs [`STATUS_COMPANIONS`] lists for `status`.
+pub(crate) fn status_companions(status: &str) -> &'static [(&'static str, bool)] {
+    STATUS_COMPANIONS
+        .iter()
+        .find(|(s, _)| *s == status)
+        .map_or(&[], |(_, fields)| fields)
+}
+
+/// Typed error for disposition-specific required-field validation.
+///
+/// The `[[items]]` ledger schema couples `status` to the companion fields in
+/// [`STATUS_COMPANIONS`]. Every read/write path in this module reaches into
+/// `TomlValue::Table` directly, so without this check a row with
+/// `status = "deferred"` but missing `defer_reason` parses as valid TOML and
+/// only surfaces as malformed at render time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)]
 pub(crate) enum DispositionError {
@@ -1980,13 +1998,8 @@ impl Item {
     /// the taxonomy here is widened). Items without a `status` field error
     /// with `MissingStatus`.
     ///
-    /// Required-field clusters mirror `claude/commands/review.md`
-    /// `## Ledger Schema → Disposition-specific fields`:
-    ///   - `fixed` / `applied`           → `resolved`, `resolution`
-    ///   - `deferred`                    → `defer_reason`, `defer_trigger`
-    ///   - `wontfix`                     → `wontfix_rationale`
-    ///   - `wontapply`                   → `wontapply_rationale`
-    ///   - `verified-clean`              → `verified_note`
+    /// The required fields are the `required` entries of
+    /// [`STATUS_COMPANIONS`].
     ///
     /// "Missing" means absent OR present with an empty value (`""`, `[]`,
     /// `null`) — matching `is_empty_json` semantics so a placeholder field
@@ -2004,17 +2017,12 @@ impl Item {
             .get("status")
             .and_then(|v| v.as_str())
             .ok_or(DispositionError::MissingStatus)?;
-        let required: &[&'static str] = match status {
-            "fixed" | "applied" => &["resolved", "resolution"],
-            "deferred" => &["defer_reason", "defer_trigger"],
-            "wontfix" => &["wontfix_rationale"],
-            "wontapply" => &["wontapply_rationale"],
-            "verified-clean" => &["verified_note"],
-            // "open" and any forward-compat unknown status: no companion fields.
-            _ => &[],
-        };
+        let required = status_companions(status)
+            .iter()
+            .filter(|(_, required)| *required)
+            .map(|(field, _)| *field);
         for field in required {
-            let present = map.get(*field).is_some_and(|v| !is_empty_json(v));
+            let present = map.get(field).is_some_and(|v| !is_empty_json(v));
             if !present {
                 return Err(DispositionError::MissingDispositionField {
                     status: status.to_string(),
