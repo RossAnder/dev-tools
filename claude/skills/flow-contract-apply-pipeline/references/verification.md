@@ -109,7 +109,7 @@ distinct from any source-diff secret scan: that scans code, this scans the ledge
 **Two-call write pattern** (both required; omitting either leaves the ledger inconsistent — the pattern-item `instances` append above is a third, conditional call that precedes them):
 
 ```bash
-printf '%s' "$OPS_JSON" | tomlctl items apply <ledger> --ops -
+printf '%s' "$OPS_JSON" | tomlctl items apply <ledger> --ops - --on-stale skip
 tomlctl set <ledger> last_updated <YYYY-MM-DD>
 ```
 
@@ -118,10 +118,21 @@ Call 1 batches every per-item transition atomically — valid `op` values are `"
 regression or partial-apply child. Call 2 is required because `items apply` does not touch
 file-level scalars.
 
+**Stale-write guard**: Step 1 reads the ledger long before this write, and in between a human may
+have dispositioned an item through glimpse, or another run may have moved it. Every status-transition
+`update` op therefore carries `"expect": {"status": "<status read at Step 1>"}`, and the call
+always passes `--on-stale skip` — never `expect` alone, which a tomlctl predating the precondition
+silently ignores, while the unknown flag makes it fail loudly. `add` ops carry no `expect` (it is
+an error there). Under `skip` a stale op is dropped, the rest land, and the envelope's
+`skipped_stale` array names each `{id, field, expected, found}`: list those ids under the final
+summary's `### Changed During the Run`, and never retry them — the current value wins. The same
+`expect` and flag go on the Interim checkpoint's `items apply`.
+
 **Atomicity**: `items apply` is all-or-nothing — any failing op (non-existent ID, malformed sub-op)
-exits non-zero with the ledger unchanged. If call 1 fails, do NOT proceed to call 2; the
-`last_updated` bump would create a torn state claiming a fresh update with no transitions landed.
-Correct the failing op (the error names its index and reason) and retry the whole batch.
+exits non-zero with the ledger unchanged; a stale op under `--on-stale skip` is not a failure. If
+call 1 fails, do NOT proceed to call 2; the `last_updated` bump would create a torn state claiming a
+fresh update with no transitions landed. Correct the failing op (the error names its index and
+reason) and retry the whole batch.
 
 **Shell-quoting for agent-supplied JSON**: every agent-produced string in the payload
 (`resolution`, rationale, note) MUST be RFC-8259 JSON-escaped before interpolation — `\`, `"`,
@@ -129,8 +140,9 @@ control chars, and the Unicode line separators (U+2028 / U+2029). **Prefer stdin
 sentinel, as above): the shell
 never sees the payload at argv level, so there is no quoting surface to misquote or exploit, and no
 tempfile permission is needed. Fall back to a tempfile (deleted after the call) only if the calling
-harness cannot pipe stdin. For batches of ≤ 3 items, a loop of single-item `tomlctl items update`
-calls is also reasonable — per-call quoting is easier to audit than one large array.
+harness cannot pipe stdin. Status transitions always go through `items apply`, however few: a loop
+of single-item `tomlctl items update` calls carries no `expect`, so it would write past a mid-run
+human edit.
 
 **Concurrent invocation**: `tomlctl` holds an exclusive advisory lock on `<ledger>.lock` for each
 write. A held lock (parallel apply run, overlapping `<PRODUCER>` + `<CMD>`) fails fast with

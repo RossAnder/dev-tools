@@ -314,7 +314,9 @@ the observation in its prompt. A second `stash-required` for the same item goes 
 ## Interim checkpoint
 
 After the Step 4.5 vet and the Step 4.6 routing (and their re-dispatches), persist non-risky
-transitions in a single atomic `tomlctl items apply --ops -` call. Non-risky means:
+transitions in a single atomic `tomlctl items apply --ops - --on-stale skip` call, each op carrying
+`"expect": {"status": "<status read at Step 1>"}` (the stale-write guard under Ledger mutation).
+Non-risky means:
 
 - `<NO-CHANGE>` transitions where agents wrote no bytes and reported the item already in place
   (from `implement-lite`, only once Step 4.5 has confirmed the cited `file:line`).
@@ -379,8 +381,10 @@ it and mint a new item under `### Regressions Triggered`. See
 Mutate the same ledger file consumed in Step 1, one transition per selected item, scan the
 serialised payload for secrets, and write it with the two-call pattern: `items apply` for the
 per-item ops, then `set` for `last_updated`. A `severity = "critical"` item in a
-`<CRITICAL-CATEGORIES>` category never takes a silent `<REJECTED>`. See
-[Ledger mutation](references/verification.md#ledger-mutation).
+`<CRITICAL-CATEGORIES>` category never takes a silent `<REJECTED>`. The orchestrator is the only
+*agent* writer, but a human may disposition items through glimpse mid-run, so every transition
+carries `expect` on the Step 1 status with `--on-stale skip`, and a stale item is reported, never
+retried. See [Ledger mutation](references/verification.md#ledger-mutation).
 
 ### Final summary
 
@@ -416,6 +420,9 @@ completeness, and ensure the report reflects what was actually implemented, audi
 ### Requires User Confirmation
 - [<ID>] [file:line] [category] [severity] Agent rationale — awaiting explicit disposition before
   the ledger transition.
+
+### Changed During the Run
+- [<ID>] `<field>` expected `<expected>`, found `<found>` — `skipped_stale`; not retried
 
 ### Verification
 - Build: pass/fail/timeout
