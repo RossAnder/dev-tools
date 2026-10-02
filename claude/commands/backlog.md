@@ -13,27 +13,38 @@ argument-hint: [no arguments — the store is repo-scoped, not flow-scoped]
 > `AskUserQuestion`, degrades: put the choices to the user as ordinary prose.
 > That changes nothing about what this command writes.
 
-Walks `.claude/backlog.toml` — the repo-scoped store of tangential discoveries — from an open set to a decided one: cluster what has accumulated into candidate work scopes, take a disposition per cluster or per item from the user, settle the promotions flows have claimed, audit the evidence drop-box, and optionally age decided items out. It is a triage pass over captures that other commands minted; it does not review code and never mints an item on its own initiative.
+Walks `.claude/backlog.toml` — the repo-scoped store of tangential discoveries — from an open set to a decided one: cluster what has accumulated into candidate work scopes, take a disposition per cluster or per item from the user, settle the promotions flows have claimed, audit the evidence drop-box, and optionally age decided items out. It is a triage pass over captures that other commands minted; it does not review code and never mints an item on its own initiative — the only rows it mints are the captures the user filed in `.claude/inputs.toml` or dictates mid-sweep.
 
 Invoke the `backlog-capture` skill (`claude/skills/backlog-capture/SKILL.md`) for the capture discipline — the mint test, the `backlog check` gate and its verdict ladder, the `kind` and `status` vocabularies, the orchestrator-only writer rule, and the evidence-publication rules. That skill owns all of them and this carrier does not restate any. Consult it whenever the user dictates a new item mid-sweep, and mint through the same `check`-then-`add` gate every other carrier uses.
 
-## Step 0: Pre-flight (binary, then live set)
+## Step 0: Pre-flight (binary, inputs, then live set)
 
 There is **no flow envelope**. The store is repo-scoped and shared by every flow in the worktree, so this command resolves no flow, dispatches no `flow-bootstrap`, and takes no `--flow` argument.
 
-Two gates, in order:
+Two gates, with the input drain between them:
 
 ```bash
 tomlctl --version
 ```
 
-This command needs 0.10 or later: the `backlog` group landed in 0.6, and `backlog reconcile` and `backlog list --live` in 0.10. Below that the verbs and flags used here do not exist and fail with a clap usage error; halt and tell the user to reinstall with `cargo install --path tomlctl`.
+This command needs 0.13 or later: the `backlog` group landed in 0.6, `backlog reconcile` and `backlog list --live` in 0.10, and the `inputs` group and `backlog triage --expect-status` in 0.13. Below that the verbs and flags used here do not exist and fail with a clap usage error; halt and tell the user to reinstall with `cargo install --path tomlctl`.
+
+### Drain user inputs
+
+Invoke the `flow-contract-user-inputs` skill to load the user-input contract — the Step-0 sweep, how each record kind is acted on, the writer table, and the trust boundary. Run its sweep with `--ledger backlog` plus its second read for every pending `capture`, and `--by backlog`. The store is repo-scoped, so keep every row whatever its `flow` or `scope`; questions are never acknowledged. Then:
+
+- **Captures become items.** Settle `kind` (one of the backlog kinds) and `area` (a repo-relative path) first — `capture_kind` and `area` are hints — and pass the same `--summary`, `--kind` and `--area` to `backlog check` and then to `backlog add` with `--origin backlog`, acting on the verdict exactly as the `backlog-capture` skill directs. The handle note names the minted id, the existing id it duplicates, or why it was not minted.
+- **Requests on backlog items.** Dismiss, resolve and reopen map onto `backlog triage` with `--expect-status` set to the status the item holds now and the record's `text` as the companion `--reason`, `--resolution` or `--rationale`. A promotion, a relation, or a change to `kind`, `area` or `summary` (no verb edits those; it would mean dismissing the row and capturing a successor) is not applied from the record: offer it to the user in Step 2 beside its items, and handle it with their ruling.
+- **Answers** to an earlier run's Step 2 question are acted on the same way as a request, within the options that question offered: a dismiss or resolve picked without `text` is declined, since those carry the user's own wording.
+- **Handle every swept row before Step 6**, and list the ids with their outcomes in the summary.
+
+### Live set
 
 ```bash
 tomlctl backlog list --live --count
 ```
 
-A missing store reads as zero rather than erroring, so a fresh clone reaches this gate cleanly. On a count of 0, say the backlog holds nothing open or promoted and stop — nothing to triage.
+A missing store reads as zero rather than erroring, so a fresh clone reaches this gate cleanly. On a count of 0, say the backlog holds nothing open or promoted, handle any swept rows still pending, and stop — nothing to triage.
 
 A store whose live rows are all `promoted` still has work in Step 3, so take the open count too. When it is 0, skip Steps 1 and 2 and go straight to Step 3:
 
@@ -61,21 +72,23 @@ tomlctl backlog list --open --select id,kind,area,summary
 
 Offer, per cluster where the group holds together and per item otherwise, via `AskUserQuestion` (or plain prose on a harness without it): promote, dismiss, resolve, keep open, or relate to another item. Promote and relate need a follow-up value — the flow slug or repo-relative plan path for `--to`, the second id and the edge kind for a relation. Dismiss and resolve carry the user's own wording; do not draft a reason on their behalf.
 
-Apply each decision as it is taken:
+**Empty-answer rule**: when `AskUserQuestion` comes back empty (an `acceptEdits`, skill-hosted or headless run), the cluster or item stays `open`. Then post the offer as one `question` record per the `flow-contract-user-inputs` contract — `ledger` `backlog`, `items` the cluster's ids, `choice` `single`, options `promote`, `dismiss`, `resolve`, `keep open`, and a `prompt` asking for the wording or `--to` target in the answer's text — unless a pending question already asks it for the same ids. The next run's drain acts on the answer.
+
+Apply each decision as it is taken, passing `--expect-status` the status the offer displayed (`open` here) so a row someone triaged in glimpse since Step 1 is left alone:
 
 ```bash
-tomlctl backlog triage B-1a2b3c4d --promote --to <flow-slug> --error-format json
+tomlctl backlog triage B-1a2b3c4d --promote --to <flow-slug> --expect-status open --error-format json
 ```
 
 ```bash
-tomlctl backlog triage B-1a2b3c4d --dismiss --reason "the API it reports was removed"
+tomlctl backlog triage B-1a2b3c4d --dismiss --reason "the API it reports was removed" --expect-status open
 ```
 
 ```bash
-tomlctl backlog triage B-1a2b3c4d --resolve --resolution "fixed in the spawn-path rewrite"
+tomlctl backlog triage B-1a2b3c4d --resolve --resolution "fixed in the spawn-path rewrite" --expect-status open
 ```
 
-`triage` accepts several ids in one call, which is how a whole cluster moves at once. Relations are a separate verb, and `--as` takes `relates-to`, `duplicates` or `supersedes` — the latter two also dismiss an item, so confirm the user meant that transition before writing one:
+The envelope then carries `applied` and `skipped_stale`. Report every `skipped_stale` id, with the status it was found at, under a "changed during the run" line, and never retry it. `triage` accepts several ids in one call, which is how a whole cluster moves at once; one call has one expected status, so a set mixing statuses is split into one call per displayed status. Relations are a separate verb, and `--as` takes `relates-to`, `duplicates` or `supersedes` — the latter two also dismiss an item, so confirm the user meant that transition before writing one:
 
 ```bash
 tomlctl backlog relate B-1a2b3c4d --to B-5e6f7a8b --as relates-to
@@ -142,8 +155,10 @@ tomlctl backlog reconcile --apply
 **`orphaned`, `stalled`, `dangling` — reopen or re-promote.** An `orphaned` claim sits on a flow that closed without delivering it, a `stalled` one on a closing task that is `deferred` or `failed`, and a `dangling` one on a target that resolves to no flow. Offer, per row or per group sharing a target: reopen, re-promote, or keep. A reopen needs a rationale naming the flow, because it clears the claim — the user's wording, or a factual line such as ``flow `<slug>` closed without it``:
 
 ```bash
-tomlctl backlog triage <ids> --reopen --rationale "<rationale naming the flow>"
+tomlctl backlog triage <ids> --reopen --rationale "<rationale naming the flow>" --expect-status promoted
 ```
+
+A `skipped_stale` id goes on the same "changed during the run" line as Step 2's.
 
 A re-promote is Step 2's promote, refusal handling and seed bootstrap included. A reopened row is back in the open set; take its disposition now as in Step 2, or leave it for the next sweep.
 
@@ -180,7 +195,7 @@ Decided items age into `[[compacted]]` and stay readable there. `open` and `prom
 
 ## Step 6: Summary
 
-Close with counts by status before and after the sweep, the ids that moved and where each went, any seed flows bootstrapped, the relations written, the promotions resolved, adopted or reopened with the flows rendered or left drifted, the audit classes seen with a count each, and whether compaction ran. Name the ids that stayed `open` too — part of what a sweep produces is the list nobody was ready to decide.
+Close with counts by status before and after the sweep, the ids that moved and where each went, the "changed during the run" ids, the swept input records with their outcomes, any seed flows bootstrapped, the relations written, the promotions resolved, adopted or reopened with the flows rendered or left drifted, the audit classes seen with a count each, and whether compaction ran. Name the ids that stayed `open` too — part of what a sweep produces is the list nobody was ready to decide.
 
 ```bash
 tomlctl backlog list --count-by status
