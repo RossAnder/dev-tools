@@ -43,6 +43,14 @@ Reopen?
   [a] abort sweep (do not inspect further candidates)
 ```
 
-On `[y]`, queue the transition for a single atomic `tomlctl items apply --ops -` at the end of the sweep: set `status = "open"`, preserve `defer_reason` (audit trail), drop `defer_trigger`, set `reopen_rationale = "trigger fired: <matched trigger text>"`. Never auto-transition silently — every reopen passes through the prompt.
+On `[y]`, queue the transition for a single atomic `tomlctl items apply --ops - --on-stale skip` at the end of the sweep: set `status = "open"`, preserve `defer_reason` (audit trail), drop `defer_trigger`, set `reopen_rationale = "trigger fired: <matched trigger text>"`. Never auto-transition silently — every reopen passes through the prompt.
+
+Each reopen op carries `"expect": {"status": "deferred"}`, since a human (glimpse) or another run may have changed the item between the sweep's read and the write:
+
+```bash
+printf '%s\n' '{"op":"update","id":"R7","json":{"status":"open","reopen_rationale":"trigger fired: <matched trigger text>"},"unset":["defer_trigger"],"expect":{"status":"deferred"}}' | tomlctl items apply <ledger> --ops - --on-stale skip
+```
+
+Report any `skipped_stale` ids on a `changed during the run` line and do not retry them — the current value wins. Always pass `--on-stale skip` with `expect`: an older tomlctl ignores `expect` alone and writes unguarded, but rejects the unknown flag loudly.
 
 Non-interactive invocations surface candidates only (`found N deferred items with fired triggers; re-run interactively to reopen`) and do not mutate the ledger.
