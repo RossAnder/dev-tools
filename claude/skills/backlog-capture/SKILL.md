@@ -77,7 +77,8 @@ mints a real but badly-filed row; spell it deliberately.
 history; `reconcile --apply` also records `resolved_flow`, `resolved_tasks` and
 `resolved_commits`. `--reopen` clears the claim. Status is moved only by `triage` and
 `reconcile`, never by re-minting, and `add` never rewrites the `status` or `summary` of a row it
-lands on.
+lands on. glimpse's dismiss, reopen and resolve actions call the same triage logic, guarded on
+the status they displayed.
 
 ## Who writes
 
@@ -99,10 +100,16 @@ cluster already touched. `claude/agents/implement-deep.md` and `implement-lite.m
 hold the emitting half. The agent leaves the thing unfixed either way, because it holds only two
 of the three factors.
 
-**The orchestrator is the only writer.** On receiving a `TANGENTIAL:` line it runs
+**The orchestrator is the only *agent* writer.** On receiving a `TANGENTIAL:` line it runs
 `backlog check`, then mints the ones the verdict allows, tagging provenance with
 `--origin <the command>` and `--flow <the flow slug>`. Concentrating writes in one place is
 what keeps parallel sub-agents from racing on one TOML file and its integrity sidecar.
+
+**The human writes too, without minting.** They triage rows in glimpse (dismiss, reopen,
+resolve) through the same triage logic, and leave new candidates as `capture` records in
+`.claude/inputs.toml`. `/backlog` drains those captures through the same `check` gate before
+any `add`; the [`flow-contract-user-inputs`](../flow-contract-user-inputs/SKILL.md) skill owns
+that store and its writers.
 
 **A `cheap-in-file` line is a fix candidate before it is a mint candidate.** The agent supplied
 two of the three factors; the orchestrator holds the third — whether this run's verification

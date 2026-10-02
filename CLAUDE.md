@@ -98,6 +98,6 @@ Adopting the registry in a repo still on the legacy single-line `.claude/active-
 
 Tangential discoveries land in `.claude/backlog.toml`, with per-item evidence under `.claude/backlog-evidence/<id>/` (contents git-ignored, the directory marker tracked — `git add -f` a file to publish it).
 
-- **The orchestrator is the only writer.** A sub-agent surfaces candidates in its `TANGENTIAL:` report line and never touches the store; the orchestrator runs `backlog check` on each candidate before `backlog add`, so a rephrased rediscovery does not mint a second item.
+- **The orchestrator is the only *agent* writer.** A sub-agent surfaces candidates in its `TANGENTIAL:` report line and never touches the store; the orchestrator runs `backlog check` on each candidate before `backlog add`, so a rephrased rediscovery does not mint a second item. The human triages in glimpse (dismiss, reopen, resolve) and files new captures in `.claude/inputs.toml`, which `/backlog` drains; the `flow-contract-user-inputs` skill owns that store.
 - `/backlog` is the sweep command — triage, cluster, and compact what has accumulated.
 - The `backlog-capture` skill owns the capture discipline (what earns an item, the verdict ladder, evidence policy); `claude/skills/tomlctl/references/backlog.md` is the flag reference.
