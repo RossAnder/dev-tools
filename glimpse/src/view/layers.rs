@@ -15,6 +15,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
+use super::{initials, text_width, truncate};
 use crate::app::{App, Dir, ListScroll, Navigator};
 use crate::config::{COLUMN_RANGE, Orientation};
 use crate::hook::parse_utc;
@@ -688,47 +689,6 @@ fn layer_rule(ctx: &Ctx, lead: &str, label: &str, width: usize) -> Line<'static>
         Span::styled(label.to_string(), theme.layer_label),
         Span::styled(format!(" {}", "─".repeat(rest)), theme.layer_rule),
     ])
-}
-
-fn text_width(s: &str) -> usize {
-    Span::raw(s).width()
-}
-
-/// `s` cut to at most `max` cells, ending in `…` when anything was cut.
-fn truncate(s: &str, max: usize) -> String {
-    if text_width(s) <= max {
-        return s.to_string();
-    }
-    if max == 0 {
-        return String::new();
-    }
-    let mut out = String::new();
-    let mut used = 0;
-    for c in s.chars() {
-        let w = text_width(c.encode_utf8(&mut [0; 4]));
-        if used + w > max - 1 {
-            break;
-        }
-        out.push(c);
-        used += w;
-    }
-    out.push('…');
-    out
-}
-
-/// `implement-deep` gives `ID`, `Explore` gives `E`; at most two letters.
-fn initials(agent_type: &str) -> String {
-    let letters: String = agent_type
-        .split(['-', '_', ' '])
-        .filter_map(|word| word.chars().next())
-        .flat_map(char::to_uppercase)
-        .take(2)
-        .collect();
-    if letters.is_empty() {
-        "?".to_string()
-    } else {
-        letters
-    }
 }
 
 fn format_elapsed(age: Duration) -> String {

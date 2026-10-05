@@ -14,6 +14,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 use tui_input::Input;
 
+use super::{initials, text_width, truncate, window};
 use crate::actions::Overlay;
 use crate::app::App;
 use crate::ledger::{Anchor, ItemRow, Seen, StatusClass};
@@ -145,18 +146,6 @@ fn draw_rows(buf: &mut Buffer, area: Rect, rows: &[Row]) -> Vec<Target> {
         }
     }
     targets
-}
-
-/// The first of `view` rows drawn from `len`: from the top until the cursor `at` would
-/// come within a third of the window of its bottom edge, then as little scrolled as
-/// keeps that third showing below it.
-fn window(at: Option<usize>, len: usize, view: usize) -> usize {
-    if view == 0 || len <= view {
-        return 0;
-    }
-    let ahead = view / 3;
-    let start = at.map_or(0, |at| (at + ahead + 1).saturating_sub(view));
-    start.min(len - view)
 }
 
 /// `group severity · sort id · closed hidden · /cache`; the filter shows only when set.
@@ -365,21 +354,6 @@ fn agent_chip(app: &App, id: &str) -> Option<Span<'static>> {
     Some(super::chip(&initials(&agent.agent_type), style))
 }
 
-/// `implement-deep` gives `ID`, `Explore` gives `E`; at most two letters.
-fn initials(agent_type: &str) -> String {
-    let letters: String = agent_type
-        .split(['-', '_', ' '])
-        .filter_map(|word| word.chars().next())
-        .flat_map(char::to_uppercase)
-        .take(2)
-        .collect();
-    if letters.is_empty() {
-        "?".to_string()
-    } else {
-        letters
-    }
-}
-
 pub(crate) fn glyph(class: StatusClass) -> &'static str {
     match class {
         StatusClass::Live => "○",
@@ -411,32 +385,6 @@ fn flash_status(class: StatusClass) -> TaskStatus {
 
 fn spans_width(spans: &[Span]) -> usize {
     spans.iter().map(Span::width).sum()
-}
-
-fn text_width(s: &str) -> usize {
-    Span::raw(s).width()
-}
-
-/// `s` cut to at most `max` cells, ending in `…` when anything was cut.
-fn truncate(s: &str, max: usize) -> String {
-    if text_width(s) <= max {
-        return s.to_string();
-    }
-    if max == 0 {
-        return String::new();
-    }
-    let mut out = String::new();
-    let mut used = 0;
-    for c in s.chars() {
-        let w = text_width(c.encode_utf8(&mut [0; 4]));
-        if used + w > max - 1 {
-            break;
-        }
-        out.push(c);
-        used += w;
-    }
-    out.push('…');
-    out
 }
 
 #[cfg(test)]

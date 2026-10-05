@@ -14,6 +14,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use super::items::{Target, cursor_at};
+use super::{text_width, truncate, window};
 use crate::app::App;
 use crate::ledger::{InputRow, Seen};
 use crate::model::TaskStatus;
@@ -126,17 +127,6 @@ fn draw_rows(buf: &mut Buffer, area: Rect, rows: &[Row]) -> Vec<Target> {
         }
     }
     targets
-}
-
-/// The first of `view` rows drawn from `len`, scrolled as little as keeps a third of
-/// the window showing below the cursor `at`.
-fn window(at: Option<usize>, len: usize, view: usize) -> usize {
-    if view == 0 || len <= view {
-        return 0;
-    }
-    let ahead = view / 3;
-    let start = at.map_or(0, |at| (at + ahead + 1).saturating_sub(view));
-    start.min(len - view)
 }
 
 /// `2 unanswered · closed hidden`.
@@ -400,32 +390,6 @@ fn flash_status(row: &InputRow) -> TaskStatus {
 
 fn spans_width(spans: &[Span]) -> usize {
     spans.iter().map(Span::width).sum()
-}
-
-fn text_width(s: &str) -> usize {
-    Span::raw(s).width()
-}
-
-/// `s` cut to at most `max` cells, ending in `…` when anything was cut.
-fn truncate(s: &str, max: usize) -> String {
-    if text_width(s) <= max {
-        return s.to_string();
-    }
-    if max == 0 {
-        return String::new();
-    }
-    let mut out = String::new();
-    let mut used = 0;
-    for c in s.chars() {
-        let w = text_width(c.encode_utf8(&mut [0; 4]));
-        if used + w > max - 1 {
-            break;
-        }
-        out.push(c);
-        used += w;
-    }
-    out.push('…');
-    out
 }
 
 #[cfg(test)]

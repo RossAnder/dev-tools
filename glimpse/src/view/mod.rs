@@ -33,6 +33,57 @@ use crate::model::{Task, TaskStatus};
 use crate::surface::Surface;
 use crate::transcript::TailView;
 
+pub(crate) fn text_width(s: &str) -> usize {
+    Span::raw(s).width()
+}
+
+/// `s` cut to at most `max` cells, ending in `…` when anything was cut.
+pub(crate) fn truncate(s: &str, max: usize) -> String {
+    if text_width(s) <= max {
+        return s.to_string();
+    }
+    if max == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for c in s.chars() {
+        let w = text_width(c.encode_utf8(&mut [0; 4]));
+        if used + w > max - 1 {
+            break;
+        }
+        out.push(c);
+        used += w;
+    }
+    out.push('…');
+    out
+}
+
+/// `implement-deep` gives `ID`, `Explore` gives `E`; at most two letters.
+pub(crate) fn initials(agent_type: &str) -> String {
+    let letters: String = agent_type
+        .split(['-', '_', ' '])
+        .filter_map(|word| word.chars().next())
+        .flat_map(char::to_uppercase)
+        .take(2)
+        .collect();
+    if letters.is_empty() {
+        "?".to_string()
+    } else {
+        letters
+    }
+}
+
+/// The first of `view` rows drawn from `len`, keeping a third of the window below `at`.
+pub(crate) fn window(at: Option<usize>, len: usize, view: usize) -> usize {
+    if view == 0 || len <= view {
+        return 0;
+    }
+    let ahead = view / 3;
+    let start = at.map_or(0, |at| (at + ahead + 1).saturating_sub(view));
+    start.min(len - view)
+}
+
 /// Rows an activity-only modal needs: borders, the status row and every shown entry.
 const ACTIVITY_ROWS: u16 = activity::SHOWN_ENTRIES as u16 + 3;
 
