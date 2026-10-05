@@ -18,6 +18,7 @@ pub(crate) enum Field {
         options: Vec<String>,
         cursor: usize,
         open: bool,
+        confirmed: bool,
         free: Option<Input>,
         required: bool,
     },
@@ -70,6 +71,7 @@ impl Field {
             options,
             cursor: 0,
             open: false,
+            confirmed: false,
             free: None,
             required: false,
         }
@@ -202,18 +204,26 @@ impl Field {
     }
 
     fn step(&mut self, down: bool) {
-        let (cursor, len) = match self {
+        let (cursor, len, confirmed) = match self {
             Field::Select {
                 options,
                 cursor,
                 free,
+                confirmed,
                 ..
-            } => (cursor, options.len() + usize::from(free.is_some())),
+            } => (
+                cursor,
+                options.len() + usize::from(free.is_some()),
+                Some(confirmed),
+            ),
             Field::Multi {
                 options, cursor, ..
-            } => (cursor, options.len()),
+            } => (cursor, options.len(), None),
             Field::Text { .. } => return,
         };
+        if let Some(confirmed) = confirmed {
+            *confirmed = false;
+        }
         *cursor = if down {
             (*cursor + 1).min(len.saturating_sub(1))
         } else {
@@ -320,12 +330,19 @@ impl Form {
     /// A lone Select submits on confirm, so a menu needs no second Enter.
     fn enter(&mut self) -> FormOutcome {
         let lone = self.fields.len() == 1;
-        if let Field::Select { open, .. } = &mut self.fields[self.focus] {
+        if let Field::Select {
+            open, confirmed, ..
+        } = &mut self.fields[self.focus]
+        {
             if !*open {
+                if *confirmed && !lone {
+                    return self.submit();
+                }
                 *open = true;
                 return FormOutcome::Pending;
             }
             *open = false;
+            *confirmed = !lone;
             if !lone {
                 return FormOutcome::Pending;
             }
@@ -461,6 +478,47 @@ mod tests {
             form.handle_key(press(KeyCode::Enter)),
             FormOutcome::Submit(vec![FieldValue::One("wontfix".into())])
         );
+    }
+
+    #[test]
+    fn enter_submits_a_multi_field_form_after_confirming_its_select() {
+        let menu = Field::select("choice", options(&["yes", "no"])).required();
+        let note = Field::text("note");
+        let mut form = Form::new("t", vec![menu, note]);
+
+        assert_eq!(form.handle_key(press(KeyCode::Enter)), FormOutcome::Pending);
+        assert!(matches!(form.fields[0], Field::Select { open: true, .. }));
+        form.handle_key(press(KeyCode::Down));
+        assert_eq!(form.handle_key(press(KeyCode::Enter)), FormOutcome::Pending);
+        assert!(matches!(
+            form.fields[0],
+            Field::Select {
+                open: false,
+                confirmed: true,
+                ..
+            }
+        ));
+        assert_eq!(
+            form.handle_key(press(KeyCode::Enter)),
+            FormOutcome::Submit(vec![
+                FieldValue::One("no".into()),
+                FieldValue::Text(String::new())
+            ])
+        );
+    }
+
+    #[test]
+    fn changing_a_confirmed_select_requires_confirmation_again() {
+        let menu = Field::select("choice", options(&["yes", "no"])).required();
+        let mut form = Form::new("t", vec![menu, Field::text("note")]);
+
+        assert_eq!(form.handle_key(press(KeyCode::Enter)), FormOutcome::Pending);
+        form.handle_key(press(KeyCode::Enter));
+        form.handle_key(press(KeyCode::Tab));
+        form.handle_key(press(KeyCode::BackTab));
+        form.handle_key(press(KeyCode::Down));
+        assert_eq!(form.handle_key(press(KeyCode::Enter)), FormOutcome::Pending);
+        assert!(matches!(form.fields[0], Field::Select { open: true, .. }));
     }
 
     #[test]
