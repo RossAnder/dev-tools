@@ -177,8 +177,7 @@ const COALESCE_QUIET: Duration = Duration::from_millis(50);
 /// ...or this long has passed since the wake, whichever comes first.
 const COALESCE_MAX: Duration = Duration::from_millis(250);
 
-/// Safety ticks with an unreported change, and no wake between them, before the watch is
-/// abandoned.
+/// Safety or wake ticks with an unreported change in a scope, before the watch is abandoned.
 const MISS_LIMIT: u8 = 2;
 
 /// The longest a failed watch start waits before it is tried again.

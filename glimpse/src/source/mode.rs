@@ -479,7 +479,7 @@ mod tests {
         assert!(!misses.on_scoped_tick(Safety, &none, &flows));
         assert!(
             !misses.on_scoped_tick(Other, &none, &flows),
-            "only safety ticks count"
+            "a tick with neither a safety deadline nor a wake does not count"
         );
         assert!(
             !misses.on_scoped_tick(Safety, &none, &none),
