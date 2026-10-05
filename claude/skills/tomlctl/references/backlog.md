@@ -246,12 +246,13 @@ tomlctl backlog triage B-a1b2c3d4 --reopen --rationale "flow <flow-slug> closed 
 | `--reason` | text | Companion to `--dismiss`. | none |
 | `--resolution` | text | Companion to `--resolve`. | none |
 | `--rationale` | text | Companion to `--reopen`. | none |
+| `--expect-status` | status | Move only ids still at this status; stale ids are left untouched and reported under `skipped_stale`. | none |
 
 The four mode flags are a required, mutually-exclusive group: exactly one per invocation.
 `--rationale` is enforced at the parser rather than the validator because `reopen_rationale`
 is the only companion an `open` item may carry, so a bare `--reopen` would write a row the
-validator then rejects. Triage does not check a row's current status, so any mode applies to
-any `[[backlog]]` row, and re-promoting a `promoted` row moves its claim.
+validator then rejects. Without `--expect-status` triage ignores a row's current status, so
+any mode applies to any row, and re-promoting a `promoted` row moves its claim.
 
 Each transition clears every managed field its target status does not own — see
 [Store shape](#store-shape). `--resolve` and `--dismiss` keep the promotion claim
@@ -287,6 +288,9 @@ rather than on the message to tell a bad target from a stale id.
 
 `to` appears on `--promote` only, and is the value stored — a slug where `--to` named a bound
 plan path, `external:<REF>` under `--external`.
+
+With `--expect-status` the envelope adds `applied` and `skipped_stale`, each stale entry naming
+its mismatched `status` (or a missing `id`); when no id passes the guard nothing is written.
 
 ## `backlog reconcile`
 
