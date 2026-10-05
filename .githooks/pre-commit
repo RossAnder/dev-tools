@@ -45,10 +45,12 @@ if grep -Eq '^glimpse/.*\.rs$' <<<"$STAGED"; then
   gate cargo fmt --manifest-path "$ROOT/glimpse/Cargo.toml" -- --check
 fi
 
-# glimpse compiles tomlctl in as a library, so a facade change can break glimpse's build.
+# glimpse compiles all of tomlctl's library, with no feature gate narrowing it, so any
+# library source can break glimpse's build; only the binary's main.rs is outside it.
 # A tomlctl version bump or dependency change also needs glimpse/Cargo.lock
 # refreshed and staged in the same commit:
 # `cargo tree --manifest-path glimpse/Cargo.toml >/dev/null` rewrites it.
-if grep -Eq '^tomlctl/(Cargo\.toml|src/(lib|io)\.rs|src/tasks/.*|src/flow/list\.rs|src/agents/.*)$' <<<"$STAGED"; then
+LINKED=$(grep -Ev '^tomlctl/src/main\.rs$' <<<"$STAGED" || true)
+if grep -Eq '^tomlctl/(Cargo\.toml|src/.+\.rs)$' <<<"$LINKED"; then
   gate cargo clippy --manifest-path "$ROOT/glimpse/Cargo.toml" --locked
 fi
