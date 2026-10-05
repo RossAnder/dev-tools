@@ -1949,7 +1949,6 @@ pub(crate) fn status_companions(status: &str) -> &'static [(&'static str, bool)]
 /// `status = "deferred"` but missing `defer_reason` parses as valid TOML and
 /// only surfaces as malformed at render time.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) enum DispositionError {
     /// The payload is not a JSON object — disposition validation only makes
     /// sense over an object payload.
@@ -1986,10 +1985,8 @@ impl std::error::Error for DispositionError {}
 /// operate on `TomlValue::Table` / `JsonValue` directly — `Item` is a
 /// namespace handle, not a parsed-row container — so adding this entry
 /// point does not perturb the existing `items_*` flow.
-#[allow(dead_code)]
 pub(crate) struct Item;
 
-#[allow(dead_code)]
 impl Item {
     /// Validate that a JSON item payload satisfies the disposition-specific
     /// required-field cluster for its `status`. Returns `Ok(())` for the
