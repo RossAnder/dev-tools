@@ -217,6 +217,10 @@ pub(crate) struct App {
     /// Needs edges `(from, to)` another path of needs edges implies.
     pub(crate) implied: HashSet<(u32, u32)>,
     pub(crate) legend_open: bool,
+    /// The legend's first visible line and the bounds the last frame drew.
+    pub(crate) legend_scroll: u16,
+    pub(crate) legend_max_scroll: u16,
+    pub(crate) legend_page: u16,
     /// A drag on the divider is under way.
     pub(crate) dragging: bool,
     pub(crate) selected: Option<u32>,
@@ -313,6 +317,9 @@ impl App {
             cell_aspect: config.cell_aspect,
             show_implied: false,
             legend_open: false,
+            legend_scroll: 0,
+            legend_max_scroll: 0,
+            legend_page: 1,
             dragging: false,
             selected: None,
             trail: Vec::new(),
@@ -371,6 +378,14 @@ impl App {
     /// `SwitchFlow` to a flow other than the current one.
     pub(crate) fn apply(&mut self, action: Action) -> Option<Action> {
         match action {
+            Action::Move(dir) if self.legend_open => {
+                match dir {
+                    Dir::Up => self.scroll_legend(Scroll::Up(1)),
+                    Dir::Down => self.scroll_legend(Scroll::Down(1)),
+                    Dir::Left | Dir::Right => {}
+                }
+                None
+            }
             Action::Move(dir) if self.selector_open => match dir {
                 Dir::Up => self.apply(Action::SelectorPrev),
                 Dir::Down => self.apply(Action::SelectorNext),
@@ -423,6 +438,7 @@ impl App {
             }
             Action::ToggleLegend => {
                 self.legend_open = !self.legend_open;
+                self.legend_scroll = 0;
                 None
             }
             Action::DragStart => {
@@ -509,7 +525,9 @@ impl App {
                 None
             }
             Action::ScrollDetails(scroll) => {
-                if self.details_open {
+                if self.legend_open {
+                    self.scroll_legend(scroll);
+                } else if self.details_open {
                     self.scroll_details(scroll);
                 }
                 None
@@ -1264,6 +1282,21 @@ impl App {
             Scroll::Bottom => u16::MAX,
         };
         self.details_scroll = to.min(self.details_max_scroll);
+    }
+
+    /// Clamped against the bounds the last legend frame recorded.
+    fn scroll_legend(&mut self, scroll: Scroll) {
+        let page = self.legend_page.saturating_sub(1).max(1);
+        let at = self.legend_scroll;
+        let to = match scroll {
+            Scroll::Up(n) => at.saturating_sub(n),
+            Scroll::Down(n) => at.saturating_add(n),
+            Scroll::PageUp => at.saturating_sub(page),
+            Scroll::PageDown => at.saturating_add(page),
+            Scroll::Top => 0,
+            Scroll::Bottom => u16::MAX,
+        };
+        self.legend_scroll = to.min(self.legend_max_scroll);
     }
 
     fn expire_flashes(&mut self, now: Instant) {

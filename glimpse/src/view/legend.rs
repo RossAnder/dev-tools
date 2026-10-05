@@ -2,9 +2,11 @@
 //! customised palette explains itself.
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Rect};
+use ratatui::layout::{Constraint, Margin, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
+use ratatui::widgets::{
+    Block, Borders, Clear, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+};
 
 use super::items;
 use crate::app::App;
@@ -19,7 +21,7 @@ const KEYS: &[(&str, &str)] = &[
     ("hjkl ←↓↑→", "move the selection"),
     ("tab S-tab", "next / previous view"),
     ("enter", "details, full-screen, close"),
-    ("J K PgUp PgDn", "scroll details"),
+    ("J K PgUp PgDn", "scroll details or legend"),
     ("t", "activity panel"),
     ("o", "flip the layer orientation"),
     ("|", "panels beside / below"),
@@ -48,22 +50,51 @@ const KEYS: &[(&str, &str)] = &[
     ("q esc", "clear marks, then back, then quit"),
 ];
 
-pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App) {
+pub(crate) fn render(frame: &mut Frame, area: Rect, app: &mut App) {
     let lines = lines(&app.theme);
     let widest = lines.iter().map(Line::width).max().unwrap_or(0);
-    let width = u16::try_from(widest + 4).unwrap_or(u16::MAX);
+    let width = u16::try_from(widest + 5).unwrap_or(u16::MAX);
     let height = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX);
     let rect = area.centered(
         Constraint::Length(width.min(area.width)),
         Constraint::Length(height.min(area.height)),
     );
-    frame.render_widget(Clear, rect);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(app.theme.border)
         .title(Line::styled(" legend ", app.theme.border_title))
         .padding(Padding::horizontal(1));
-    frame.render_widget(Paragraph::new(lines).block(block), rect);
+    let inner = block.inner(rect);
+    let content_height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+    let max_scroll = content_height.saturating_sub(inner.height);
+    let scroll = app.legend_scroll.min(max_scroll);
+    app.legend_scroll = scroll;
+    app.legend_max_scroll = max_scroll;
+    app.legend_page = inner.height;
+
+    frame.render_widget(Clear, rect);
+    let overflows = max_scroll > 0;
+    let mut block = block;
+    if overflows {
+        block = block.title_bottom(
+            Line::styled(
+                format!(" {}/{} ", scroll.saturating_add(1), content_height),
+                app.theme.border_title,
+            )
+            .right_aligned(),
+        );
+    }
+    frame.render_widget(Paragraph::new(lines).block(block).scroll((scroll, 0)), rect);
+    if overflows {
+        let mut state = ScrollbarState::new(usize::from(max_scroll) + 1)
+            .viewport_content_length(usize::from(inner.height))
+            .position(usize::from(scroll));
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight),
+            rect.inner(Margin::new(0, 1)),
+            &mut state,
+        );
+    }
 }
 
 fn lines(theme: &Theme) -> Vec<Line<'static>> {
@@ -240,7 +271,7 @@ mod tests {
 
     #[test]
     fn the_legend_draws_every_status_in_its_colour() {
-        let app = App::new(fixture(), &Config::default());
+        let mut app = App::new(fixture(), &Config::default());
         let lines = lines(&app.theme);
         for status in ["pending", "in-progress", "done", "failed", "deferred"] {
             let line = lines
@@ -252,7 +283,7 @@ mod tests {
 
         let mut terminal = Terminal::new(TestBackend::new(100, 60)).expect("terminal");
         terminal
-            .draw(|frame| render(frame, frame.area(), &app))
+            .draw(|frame| render(frame, frame.area(), &mut app))
             .expect("draw");
         let screen: String = terminal
             .backend()
@@ -262,6 +293,51 @@ mod tests {
             .map(|c| c.symbol())
             .collect();
         assert!(screen.contains("legend") && screen.contains("shares a file"));
+    }
+
+    #[test]
+    fn the_legend_scrolls_to_its_items_and_keys_sections() {
+        let mut app = App::new(fixture(), &Config::default());
+        app.legend_open = true;
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, frame.area(), &mut app))
+            .expect("draw");
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(!screen.contains("Keys"), "the lower section starts clipped");
+        assert!(app.legend_max_scroll > 0);
+
+        app.apply(crate::app::Action::Move(crate::app::Dir::Down));
+        assert_eq!(app.legend_scroll, 1);
+        app.apply(crate::app::Action::Move(crate::app::Dir::Up));
+        assert_eq!(app.legend_scroll, 0);
+        app.apply(crate::app::Action::ScrollDetails(
+            crate::app::Scroll::PageDown,
+        ));
+        assert!(app.legend_scroll > 0);
+
+        app.apply(crate::app::Action::ScrollDetails(
+            crate::app::Scroll::Bottom,
+        ));
+        terminal
+            .draw(|frame| render(frame, frame.area(), &mut app))
+            .expect("draw");
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(screen.contains("Keys"));
+        assert!(screen.contains("clear marks, then back"));
+        assert!(app.legend_scroll > 0);
     }
 
     #[test]

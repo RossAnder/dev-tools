@@ -277,8 +277,8 @@ timed-out check, and `danger` when it failed.
 | `?` | legend: every mark, colour and key, in the current theme |
 | `f` | toggle follow |
 | `Enter` | details panel, then full-screen details, then close; compact opens and closes a modal |
-| `J` / `K` | scroll the details one row down / up |
-| `PgDn` / `PgUp`, `End` / `Home` | scroll the details a page, or to the bottom / top |
+| `J` / `K` | scroll the details or open legend one row down / up |
+| `PgDn` / `PgUp`, `End` / `Home` | scroll details or the open legend a page, or to the bottom / top |
 | `t` | activity panel for the selected task's newest running agent |
 | `d` | cycle density: auto, compact, comfortable |
 | `[` / `]` | shrink / grow the docked panel by 5% of the body, between 20% and 70%; dragging the divider does the same |
@@ -304,8 +304,10 @@ timed-out check, and `danger` when it failed.
 
 While a form is open it takes every key; see [Writing](#writing).
 
-The details scroll goes back to the top whenever the selection changes. With the
-mouse on, the wheel scrolls whatever is under the pointer and never the selection:
+The legend shows a scrollbar and position when it does not fit; while it is open,
+the detail-scroll keys scroll it instead. The details scroll goes back to the top
+whenever the selection changes. With mouse capture on, the wheel scrolls whatever
+is under the pointer and never the selection:
 the details panel, the layer list (a layer per notch across horizontal columns) or
 the diagram, which stays where it was left until the selection changes. A left
 click on a task in the layers or ego view, or on an item row, selects it; the
