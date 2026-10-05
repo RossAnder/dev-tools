@@ -514,7 +514,12 @@ pub(crate) fn validate(row: &toml::Table) -> Result<()> {
     one_of("kind", kind, &KINDS)?;
     let status = required_str(row, "status")?;
     one_of("status", status, &STATUSES)?;
-    required_str(row, "author")?;
+    let author = required_str(row, "author")?;
+    if kind == KIND_QUESTION && author == AUTHOR_USER {
+        return Err(invalid(
+            "a question's `author` must be the command that posted it, not `user`",
+        ));
+    }
     datetime(row, "created", true)?;
     if let Some(ledger) = optional_str(row, "ledger")? {
         one_of("ledger", ledger, &LEDGERS)?;
@@ -1059,7 +1064,12 @@ text = "because"
     #[test]
     fn a_question_without_options_is_invalid() {
         with_root(|root| {
-            let mut record = json!({"kind": "question", "prompt": "Which?", "choice": "multi"});
+            let mut record = json!({
+                "kind": "question",
+                "author": "review",
+                "prompt": "Which?",
+                "choice": "multi",
+            });
             assert!(add(root, &record, OPTS).is_err());
             record["choice"] = json!("text");
             assert!(

@@ -85,8 +85,10 @@ printf '%s' '{"kind":"question","author":"review","ledger":"review","flow":"<slu
   its question.
 - **Required by kind:** `text` on a capture, request or note; `prompt` and `choice` on a
   question, plus non-empty distinct `options` unless `choice` is `text`, which refuses
-  `options`. `capture_kind` must be a backlog kind. `flow` and `scope` must match
-  `^[a-z0-9][a-z0-9-]{0,63}$`; `items` must be a non-empty array of non-empty strings.
+  `options`. A question's `author` must not be `user`; it names the command that posted the
+  question, but is self-declared and not authenticated. `capture_kind` must be a backlog kind.
+  `flow` and `scope` must match `^[a-z0-9][a-z0-9-]{0,63}$`; `items` must be a non-empty array
+  of non-empty strings.
 - **Target:** `flow`, `scope` and `items` each need `ledger`, and `flow` and `scope` are
   refused together.
 

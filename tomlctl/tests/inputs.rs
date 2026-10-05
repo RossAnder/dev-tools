@@ -168,7 +168,8 @@ fn inputs_ack_skips_and_withdraw_reopens() {
     );
     assert_eq!(record(&root, &id)["acknowledged_by"], "review");
 
-    let question = r#"{"kind": "question", "prompt": "Why?", "choice": "text"}"#;
+    let question =
+        r#"{"kind": "question", "author": "review", "prompt": "Why?", "choice": "text"}"#;
     let asked = minted(&inputs(&root, &["add", "--json", question]));
     let held = inputs(&root, &["ack", &asked, "--by", "review"]);
     assert_eq!(
@@ -200,6 +201,24 @@ fn inputs_refusals_exit_nonzero_with_a_tagged_error() {
     assert!(
         !root.join(".claude").join("inputs.toml").exists(),
         "a refused add writes nothing"
+    );
+
+    let out = cli(&root)
+        .args(["--error-format", "json", "inputs", "add", "--json"])
+        .arg(r#"{"kind": "question", "author": "user", "prompt": "Why?", "choice": "text"}"#)
+        .write_stdin("")
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let error = parse_json_error_envelope(&stderr);
+    assert_eq!(error["kind"], "validation", "{stderr}");
+    assert!(
+        error.to_string().contains("author"),
+        "the refusal explains the invalid author: {stderr}"
+    );
+    assert!(
+        !root.join(".claude").join("inputs.toml").exists(),
+        "a refused question writes nothing"
     );
 
     let out = cli(&root)
