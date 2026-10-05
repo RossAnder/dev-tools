@@ -89,6 +89,8 @@ printf '%s' '{"kind":"question","author":"review","ledger":"review","flow":"<slu
   question, but is self-declared and not authenticated. `capture_kind` must be a backlog kind.
   `flow` and `scope` must match `^[a-z0-9][a-z0-9-]{0,63}$`; `items` must be a non-empty array
   of non-empty strings.
+- **Handled records:** a `handled` record needs `handled`, `handled_by` and a non-empty
+  `handled_note`, and a record at any other status carries none of the three.
 - **Target:** `flow`, `scope` and `items` each need `ledger`, and `flow` and `scope` are
   refused together.
 

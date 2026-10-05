@@ -624,7 +624,7 @@ pub(crate) fn validate(row: &toml::Table) -> Result<()> {
     if status == STATUS_HANDLED {
         datetime(row, "handled", true)?;
         required_str(row, "handled_by")?;
-        optional_str(row, "handled_note")?;
+        required_str(row, "handled_note")?;
     }
     if row.contains_key(ANSWERED_BY) {
         if kind != KIND_QUESTION {
@@ -995,6 +995,7 @@ text = "because"
             ("prompt", "Why?"),
             ("choice", "text"),
             ("handled_by", "user"),
+            ("handled_note", "answered by I2"),
             ("answered_by", "I2"),
         ] {
             set_str(&mut closed, key, value);
@@ -1003,6 +1004,13 @@ text = "because"
         closed.insert("created".into(), TomlValue::Datetime(at));
         closed.insert("handled".into(), TomlValue::Datetime(at));
         validate(&closed).unwrap();
+
+        let mut missing_note = closed.clone();
+        missing_note.remove("handled_note");
+        assert!(
+            validate(&missing_note).is_err(),
+            "a handled question requires a note"
+        );
 
         let mut open = closed.clone();
         set_str(&mut open, "status", "new");
