@@ -49,6 +49,11 @@ pub use crate::backlog::triage::BacklogTriage;
 pub use crate::items::STATUS_COMPANIONS;
 pub use crate::ledgers::{LedgerKind, LedgerRef, RestoreRow};
 
+/// The stack [`run`] needs. Debug builds of clap's derived command tree take
+/// close to 1 MB, the whole of a Windows main thread, so callers run it on a
+/// thread sized like a Linux main thread instead.
+pub const CLI_STACK_BYTES: usize = 8 * 1024 * 1024;
+
 /// The files of a flow directory that [`snapshot`] reads, store first. Its
 /// `revision` hashes them in this order, so a poller fingerprinting exactly
 /// these files sees every change the snapshot can.

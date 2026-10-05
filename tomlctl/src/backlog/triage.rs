@@ -892,18 +892,20 @@ compacted_on = 2026-06-01
     #[test]
     fn two_mode_flags_conflict_at_the_parser() {
         use clap::Parser;
-        let parsed = crate::cli::Cli::try_parse_from([
-            "tomlctl",
-            "backlog",
-            "triage",
-            "B-x",
-            "--dismiss",
-            "--resolve",
-            "--reason",
-            "r",
-            "--resolution",
-            "r",
-        ]);
+        let parsed = crate::test_support::on_cli_stack(|| {
+            crate::cli::Cli::try_parse_from([
+                "tomlctl",
+                "backlog",
+                "triage",
+                "B-x",
+                "--dismiss",
+                "--resolve",
+                "--reason",
+                "r",
+                "--resolution",
+                "r",
+            ])
+        });
         // `Cli` is not `Debug`, so `unwrap_err` is unavailable here.
         let Err(err) = parsed else {
             panic!("two mode flags must not parse");

@@ -179,6 +179,10 @@ fn lint_logical(rel: &str, logical: &str, report: &mut CommandLintReport) {
 
 /// Walk each file's ```bash fences and lint every `tomlctl …` line in them.
 fn command_lint_report(files: &[PathBuf], repo_root: &Path) -> CommandLintReport {
+    crate::test_support::on_cli_stack(|| command_lint_report_inner(files, repo_root))
+}
+
+fn command_lint_report_inner(files: &[PathBuf], repo_root: &Path) -> CommandLintReport {
     let mut report = CommandLintReport::default();
 
     for file in files {
@@ -356,29 +360,32 @@ fn command_lint_scan_set_includes_skill_and_reference_files() {
 /// without `expect`/`unwrap` (which would require `Debug` on the Ok arm).
 #[test]
 fn no_create_flag_on_write_subcommands_only() {
-    use clap::Parser as _;
-    use clap::error::ErrorKind as ClapErrorKind;
+    crate::test_support::on_cli_stack(|| {
+        use clap::Parser as _;
+        use clap::error::ErrorKind as ClapErrorKind;
 
-    // WRITE path (`set`) must accept `--no-create`.
-    let ok = Cli::try_parse_from(["tomlctl", "set", "/tmp/x.toml", "key", "val", "--no-create"]);
-    assert!(
-        ok.is_ok(),
-        "`--no-create` must be accepted on the write subcommand `set`, got: {:?}",
-        ok.err().map(|e| e.kind())
-    );
+        // WRITE path (`set`) must accept `--no-create`.
+        let ok =
+            Cli::try_parse_from(["tomlctl", "set", "/tmp/x.toml", "key", "val", "--no-create"]);
+        assert!(
+            ok.is_ok(),
+            "`--no-create` must be accepted on the write subcommand `set`, got: {:?}",
+            ok.err().map(|e| e.kind())
+        );
 
-    // READ path (`get`) must reject `--no-create` as an unknown argument.
-    // Map to the clap error kind first so we never need `Debug` on `Cli`.
-    let read_err_kind =
-        Cli::try_parse_from(["tomlctl", "get", "/tmp/x.toml", "key", "--no-create"])
-            .map_err(|e| e.kind())
-            .err();
-    assert_eq!(
-        read_err_kind,
-        Some(ClapErrorKind::UnknownArgument),
-        "`--no-create` must NOT exist on the read subcommand `get` \
-         (expected UnknownArgument), got: {read_err_kind:?}"
-    );
+        // READ path (`get`) must reject `--no-create` as an unknown argument.
+        // Map to the clap error kind first so we never need `Debug` on `Cli`.
+        let read_err_kind =
+            Cli::try_parse_from(["tomlctl", "get", "/tmp/x.toml", "key", "--no-create"])
+                .map_err(|e| e.kind())
+                .err();
+        assert_eq!(
+            read_err_kind,
+            Some(ClapErrorKind::UnknownArgument),
+            "`--no-create` must NOT exist on the read subcommand `get` \
+             (expected UnknownArgument), got: {read_err_kind:?}"
+        );
+    });
 }
 
 /// A flag written after a `<placeholder>` still reaches the parser: the
@@ -605,6 +612,10 @@ struct FlagTableReport {
 }
 
 fn flag_table_report(files: &[PathBuf], repo_root: &Path) -> FlagTableReport {
+    crate::test_support::on_cli_stack(|| flag_table_report_inner(files, repo_root))
+}
+
+fn flag_table_report_inner(files: &[PathBuf], repo_root: &Path) -> FlagTableReport {
     use clap::CommandFactory as _;
 
     let mut root = Cli::command();

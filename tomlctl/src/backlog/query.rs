@@ -578,7 +578,7 @@ resolution = "fixed"
     fn parse_list(args: &[&str]) -> Result<crate::cli::Cli, clap::Error> {
         let mut argv = vec!["tomlctl", "backlog", "list"];
         argv.extend_from_slice(args);
-        crate::cli::Cli::try_parse_from(argv)
+        crate::test_support::on_cli_stack(|| crate::cli::Cli::try_parse_from(argv))
     }
 
     #[test]

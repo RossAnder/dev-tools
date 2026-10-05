@@ -84,6 +84,24 @@ pub(crate) fn with_root<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
     f(guard.root())
 }
 
+/// Run `f` on a thread with the binary's CLI stack. Anything that builds or
+/// parses through the clap `Cli` needs it: libtest's 2 MB test threads leave
+/// the debug command tree little headroom. A panic in `f` resumes here, so
+/// the test fails with its own message.
+#[cfg(test)]
+pub(crate) fn on_cli_stack<T: Send>(f: impl FnOnce() -> T + Send) -> T {
+    let name = std::thread::current().name().unwrap_or("cli").to_string();
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name(name)
+            .stack_size(crate::CLI_STACK_BYTES)
+            .spawn_scoped(scope, f)
+            .expect("spawn a CLI-sized test thread")
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
+}
+
 /// A `git` command run in `dir`, stripped of the discovery variables a git
 /// hook exports. Without that, a suite run from inside a hook would have
 /// every fixture `git init` or `git add` land in the outer repository.

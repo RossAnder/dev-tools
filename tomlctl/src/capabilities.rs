@@ -293,10 +293,11 @@ fn describe_mutex_groups(cmd: &Command, sub_path: &str) -> JsonValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::on_cli_stack;
 
     #[test]
     fn build_agent_context_includes_items_list_count_flag() {
-        let ctx = build_agent_context();
+        let ctx = on_cli_stack(build_agent_context);
         let items = ctx.get("items").expect("items subcommand present");
         let subcommands = items.get("subcommands").expect("items has subcommands");
         let list = subcommands.get("list").expect("items list present");
@@ -307,7 +308,7 @@ mod tests {
 
     #[test]
     fn build_agent_context_emits_items_list_mutex_group() {
-        let ctx = build_agent_context();
+        let ctx = on_cli_stack(build_agent_context);
         let list = ctx
             .get("items")
             .and_then(|v| v.get("subcommands"))
@@ -340,7 +341,7 @@ mod tests {
 
     #[test]
     fn build_agent_context_repeatable_where_flag() {
-        let ctx = build_agent_context();
+        let ctx = on_cli_stack(build_agent_context);
         let list = ctx
             .get("items")
             .and_then(|v| v.get("subcommands"))
@@ -357,8 +358,6 @@ mod tests {
 
     #[test]
     fn infer_type_returns_string_for_repeatable_append() {
-        let cmd = <Cli as CommandFactory>::command();
-
         fn walk<'a>(cmd: &'a Command, name: &str) -> Option<&'a Command> {
             if cmd.get_name() == name {
                 return Some(cmd);
@@ -371,15 +370,18 @@ mod tests {
             None
         }
 
-        // `--where` on `items list` is a Vec<String> Append — its inferred
-        // type must be "string".
-        let items = walk(&cmd, "items").expect("items subcommand present");
-        let list = walk(items, "list").expect("items list present");
-        let where_arg = list
-            .get_arguments()
-            .find(|a| a.get_id().as_str() == "where_eq")
-            .expect("--where (id where_eq) flag present");
-        assert_eq!(infer_type(where_arg), "string");
+        on_cli_stack(|| {
+            let cmd = <Cli as CommandFactory>::command();
+            // `--where` on `items list` is a Vec<String> Append — its inferred
+            // type must be "string".
+            let items = walk(&cmd, "items").expect("items subcommand present");
+            let list = walk(items, "list").expect("items list present");
+            let where_arg = list
+                .get_arguments()
+                .find(|a| a.get_id().as_str() == "where_eq")
+                .expect("--where (id where_eq) flag present");
+            assert_eq!(infer_type(where_arg), "string");
+        });
     }
 
     #[test]
@@ -443,26 +445,30 @@ mod tests {
 
     #[test]
     fn scoped_enum_values_name_real_args_clap_cannot_enumerate() {
-        let root = <Cli as CommandFactory>::command();
-        for (path, id, _) in SCOPED_ENUM_VALUES {
-            let sub = path
-                .split(' ')
-                .try_fold(&root, |cmd, name| cmd.find_subcommand(name))
-                .unwrap_or_else(|| panic!("SCOPED_ENUM_VALUES path `{path}` is not a subcommand"));
-            let arg = sub
-                .get_arguments()
-                .find(|a| a.get_id().as_str() == *id)
-                .unwrap_or_else(|| panic!("`{path}` has no argument with clap id `{id}`"));
-            assert!(
-                arg.get_value_parser().possible_values().is_none(),
-                "`{path}` `{id}` is enumerated by clap, so its SCOPED_ENUM_VALUES entry is never read"
-            );
-        }
+        on_cli_stack(|| {
+            let root = <Cli as CommandFactory>::command();
+            for (path, id, _) in SCOPED_ENUM_VALUES {
+                let sub = path
+                    .split(' ')
+                    .try_fold(&root, |cmd, name| cmd.find_subcommand(name))
+                    .unwrap_or_else(|| {
+                        panic!("SCOPED_ENUM_VALUES path `{path}` is not a subcommand")
+                    });
+                let arg = sub
+                    .get_arguments()
+                    .find(|a| a.get_id().as_str() == *id)
+                    .unwrap_or_else(|| panic!("`{path}` has no argument with clap id `{id}`"));
+                assert!(
+                    arg.get_value_parser().possible_values().is_none(),
+                    "`{path}` `{id}` is enumerated by clap, so its SCOPED_ENUM_VALUES entry is never read"
+                );
+            }
+        });
     }
 
     #[test]
     fn build_agent_context_scopes_status_values_per_subcommand() {
-        let ctx = build_agent_context();
+        let ctx = on_cli_stack(build_agent_context);
         let values = |group: &str, verb: &str| -> Vec<String> {
             ctx[group]["subcommands"][verb]["flags"]["--status"]["values"]
                 .as_array()
@@ -489,7 +495,7 @@ mod tests {
 
     #[test]
     fn a_published_vocabulary_reports_the_enum_type() {
-        let ctx = build_agent_context();
+        let ctx = on_cli_stack(build_agent_context);
         let flag = |group: &str, verb: &str, name: &str| {
             ctx[group]["subcommands"][verb]["flags"][name].clone()
         };
@@ -501,8 +507,11 @@ mod tests {
 
     #[test]
     fn mutex_groups_paths_match_real_subcommands() {
-        let cmd = <Cli as CommandFactory>::command();
-        let mut all_paths: Vec<String> = Vec::new();
+        let all_paths = on_cli_stack(|| {
+            let mut all_paths: Vec<String> = Vec::new();
+            walk(&<Cli as CommandFactory>::command(), "", &mut all_paths);
+            all_paths
+        });
 
         fn walk(cmd: &Command, parent: &str, out: &mut Vec<String>) {
             for sub in cmd.get_subcommands() {
@@ -517,8 +526,6 @@ mod tests {
             }
         }
 
-        walk(&cmd, "", &mut all_paths);
-
         for (path, _) in MUTEX_GROUPS {
             assert!(
                 all_paths.iter().any(|p| p == *path),
@@ -529,7 +536,7 @@ mod tests {
 
     #[test]
     fn build_agent_context_emits_enum_typed_flag_with_values() {
-        let ctx = build_agent_context();
+        let ctx = on_cli_stack(build_agent_context);
         // `set` carries `--type` (ScalarType: str|int|float|bool|date|datetime).
         let set = ctx.get("set").expect("set subcommand present");
         let flags = set.get("flags").expect("set flags present");

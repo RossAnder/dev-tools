@@ -10,15 +10,10 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-// Debug builds of clap's derived command tree need close to 1 MB of stack,
-// the whole of a Windows main thread, so the CLI runs on a thread sized like
-// a Linux main thread instead.
-const CLI_STACK_BYTES: usize = 8 * 1024 * 1024;
-
 fn main() -> std::process::ExitCode {
     let spawned = std::thread::Builder::new()
         .name("tomlctl".into())
-        .stack_size(CLI_STACK_BYTES)
+        .stack_size(tomlctl::CLI_STACK_BYTES)
         .spawn(tomlctl::run);
     match spawned {
         Ok(handle) => handle
