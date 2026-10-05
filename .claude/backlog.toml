@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-10-02
+last_updated = 2026-10-05
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -4617,7 +4617,7 @@ kind = "debt"
 summary = "Item and impl Item still carry allow(dead_code) although ledgers::transition now calls Item::validate"
 area = "tomlctl/src/items.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4627,6 +4627,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Remove the allows and drop or use any DispositionError variant clippy then reports. Arrived cheap-in-file during the glimpse item-surfaces flow and was deferred to avoid reopening its verified final pass."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-bae678a7"]
+resolved = 2026-10-05
+resolution = "Removed the obsolete dead_code allowances from Item and DispositionError after production ledger validation began using them"
 
 [[backlog]]
 id = "B-8146329e"
@@ -4634,7 +4636,7 @@ kind = "debt"
 summary = "A test label and the MISS_LIMIT doc still say only safety ticks count misses, but misses are per watch scope and counted on safety and wake ticks"
 area = "glimpse/src/source"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4644,6 +4646,8 @@ flow = "temporal-snuggling-pnueli"
 context = "glimpse/CLAUDE.md states the current rule; align the test label in source/mode.rs and the MISS_LIMIT doc comment in source.rs with it. Arrived cheap-in-file and was deferred to avoid reopening a verified final pass."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-2a526918"]
+resolved = 2026-10-05
+resolution = "Updated the MISS_LIMIT documentation and test assertion label to cover safety and wake ticks, matching the scoped miss counter"
 
 [[backlog]]
 id = "B-12a278ac"
@@ -4651,7 +4655,7 @@ kind = "debt"
 summary = "Row helpers (truncate, text_width, initials, window) are private in layers.rs and copied into items.rs and inbox.rs"
 area = "glimpse/src/view"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4661,6 +4665,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Hoist them into view/mod.rs as pub(crate) and delete the copies so the three list views share one implementation."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-e2458ee6"]
+resolved = 2026-10-05
+resolution = "Centralized the shared text-width, truncation, agent-initial, and item-list window helpers in view/mod.rs; retained the task list's distinct scrolling algorithm"
 
 [[backlog]]
 id = "B-7d66028d"
@@ -4685,7 +4691,7 @@ kind = "debt"
 summary = "Item details keep their own status-class colour mapping and show no status glyph, separate from the item list's glyph helper"
 area = "glimpse/src/view/details.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4695,6 +4701,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Reuse the item list's glyph and style helper so the list and details cannot drift on how a status class looks."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-5c5da7b8"]
+resolved = 2026-10-05
+resolution = "Item details now use the list's shared status class and glyph helpers"
 
 [[backlog]]
 id = "B-efc86277"
@@ -4702,7 +4710,7 @@ kind = "question"
 summary = "inputs validation accepts a handled record with no handled_note although the CLI handle verb requires --note"
 area = "tomlctl/src/inputs.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4712,6 +4720,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Decide whether handled_note is required by the schema; the user-inputs skill assumes every handled record says what was done."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-134c1b36"]
+resolved = 2026-10-05
+resolution = "Input validation now requires a non-empty handled_note for every handled record; unit test and CLI reference updated"
 
 [[backlog]]
 id = "B-28a3b63d"
@@ -4719,7 +4729,7 @@ kind = "bug"
 summary = "inputs add accepts kind question with author user and never checks that a question's author is a command name"
 area = "tomlctl/src/inputs.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4729,6 +4739,8 @@ flow = "temporal-snuggling-pnueli"
 context = "The writers table in the user-inputs skill says only the orchestrator posts questions; nothing in the store enforces it. Refuse a user-authored question in add, or document that the rule is advisory."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-c49565c6"]
+resolved = 2026-10-05
+resolution = "inputs add now refuses a question whose author is user with a tagged validation error; inputs reference and question fixture updated"
 
 [[backlog]]
 id = "B-8444d6ee"
@@ -4736,7 +4748,7 @@ kind = "debt"
 summary = "App needs_tick counts flashes on every item surface, so arrivals on a hidden surface cause tick redraws nobody sees"
 area = "glimpse/src/app.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4746,6 +4758,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Count only the current surface's (and the Inbox's, when shown) flashes in needs_tick."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-f0b743fe"]
+resolved = 2026-10-05
+resolution = "needs_tick counts flashes only on the visible surface; added regression coverage"
 
 [[backlog]]
 id = "B-87dce4f2"
@@ -4821,7 +4835,7 @@ kind = "annoyance"
 summary = "Footer notices last 1.5 s, too short to read a write-error message such as a root mismatch"
 area = "glimpse/src/app.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4831,6 +4845,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Hold error notices longer than informational ones, or until the next key."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-5c699ce5"]
+resolved = 2026-10-05
+resolution = "Write and feed errors remain visible for eight seconds; informational notices keep their 1.5-second duration"
 
 [[backlog]]
 id = "B-ef123d09"
@@ -4855,7 +4871,7 @@ kind = "debt"
 summary = "The backlog triage flag table lacks --expect-status and its applied/skipped_stale envelope"
 area = "claude/skills/tomlctl/references/backlog.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4865,6 +4881,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Document the flag (carriers already pass it); the reference is near its 600-line cap, so it may need splitting."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-e74d4650"]
+resolved = 2026-10-05
+resolution = "Backlog reference now documents --expect-status and the applied/skipped_stale result envelope"
 
 [[backlog]]
 id = "B-d3bec364"
@@ -4872,7 +4890,7 @@ kind = "annoyance"
 summary = "Enter on a focused closed Select always reopens it, so a multi-field form such as a single-choice answer needs Tab before Enter submits"
 area = "glimpse/src/form.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4882,6 +4900,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Let Enter submit when a closed Select is focused and every required field is filled."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-d6cf24e5"]
+resolved = 2026-10-05
+resolution = "Complete multi-field forms now submit with Enter while focus is on a closed Select; incomplete forms retain dropdown interaction"
 
 [[backlog]]
 id = "B-c9ecc917"
@@ -4907,7 +4927,7 @@ kind = "bug"
 summary = "/plan-new promotes folded backlog items without --expect-status open, so a glimpse dismiss or resolve made after its read is overwritten"
 area = "claude/commands/plan-new.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4920,6 +4940,8 @@ evidence = [
     "claude/commands/plan-new.md:208",
     "tomlctl/src/backlog/triage.rs:355",
 ]
+resolved = 2026-10-05
+resolution = "plan-new backlog promotion now uses --expect-status open and reports skipped_stale ids"
 
 [[backlog]]
 id = "B-c892985a"
@@ -4927,7 +4949,7 @@ kind = "debt"
 summary = "ensure_process_root is a process-root IO guard living in ledgers.rs and imported by inputs.rs and lib.rs; it belongs beside repo_or_cwd_root in io.rs"
 area = "tomlctl/src/ledgers.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4937,6 +4959,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Small move: relocate ensure_process_root to io.rs next to repo_or_cwd_root and update the inputs.rs and lib.rs imports."
 base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
 evidence = ["tomlctl/src/ledgers.rs:214"]
+resolved = 2026-10-05
+resolution = "Moved ensure_process_root to io.rs beside repo_or_cwd_root and updated its callers; existing facade root-mismatch tests passed"
 
 [[backlog]]
 id = "B-ada06976"
