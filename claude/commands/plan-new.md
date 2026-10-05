@@ -205,11 +205,11 @@ This phase writes the first execution-record bytes (via `tomlctl flow init`'s sk
    The first prints one JSON array per linking task, and nothing when no task closes an item, which ends this step. Promote the `open` ids in one call, then re-check the store:
 
    ```bash
-   tomlctl backlog triage <ids> --promote --to <slug>
+   tomlctl backlog triage <ids> --promote --to <slug> --expect-status open
    tomlctl tasks check --slug <slug>
    ```
 
-   Only `closes` ids are promoted; a `refs` id names an item this plan does not deliver. Report every other `closes` id rather than promoting it: one already `promoted` to this flow (a seed's items) needs nothing, one `promoted` elsewhere is a competing claim for `/backlog` to settle, and one `resolved`, `dismissed`, or missing from the list because it was compacted is already decided. The triage is all-or-nothing, so a failure writes nothing — surface it verbatim. Afterwards `tasks check` reports no `backlog/unpromoted`; surface any that remains.
+   Only `closes` ids are promoted; a `refs` id names an item this plan does not deliver. Report every other `closes` id rather than promoting it: one already `promoted` to this flow (a seed's items) needs nothing, one `promoted` elsewhere is a competing claim for `/backlog` to settle, and one `resolved`, `dismissed`, or missing from the list because it was compacted is already decided. The status guard leaves any id no longer `open` untouched and reports it under `skipped_stale`; report those alongside the competing claims. Other validation failures remain all-or-nothing — surface them verbatim. Afterwards `tasks check` reports no `backlog/unpromoted`; surface any that remains.
 
 **The store is canonical from this point.** `## Execution Policy`, `## Tasks` and `## Dependency Graph` are rendered from it, and a later hand edit to any of the three is drift that `tomlctl tasks render --check` reports. `/implement`, `/review-plan` and `/plan-update` all read the store rather than re-parsing the markdown.
 
