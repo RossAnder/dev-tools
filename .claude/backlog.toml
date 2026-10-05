@@ -4304,7 +4304,7 @@ tags = [
     "glimpse",
     "tomlctl-facade",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-30
 last_seen = 2026-09-30
 seen_count = 1
@@ -4315,6 +4315,8 @@ context = "The gate regex covers Cargo.toml, lib.rs, io.rs, tasks/**, flow/list.
 base_sha = "c8949f0cb8c49e969149bcf15de75de720ad8d7d"
 evidence = [".githooks/pre-commit:49"]
 related = ["B-b19668cb"]
+resolved = 2026-10-05
+resolution = "The pre-commit glimpse clippy gate now fires for tomlctl/Cargo.toml and every tomlctl/src/**/*.rs path except main.rs; CLAUDE.md updated"
 
 [[backlog]]
 id = "B-f4bd798a"
@@ -4784,7 +4786,7 @@ kind = "debt"
 summary = "Lib unit tests that build the clap command run on libtest's 2 MB stack while the debug clap builder already needs about 1 MB"
 area = "tomlctl/src/lib.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4794,6 +4796,8 @@ flow = "temporal-snuggling-pnueli"
 context = "The binary now runs on an 8 MB thread; set RUST_MIN_STACK for tests or spawn a larger thread in those tests before further CLI growth overflows them."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-8c1c1ecd"]
+resolved = 2026-10-05
+resolution = "Clap-building lib unit tests run through test_support::on_cli_stack on a CLI_STACK_BYTES thread; the constant moved into the library"
 
 [[backlog]]
 id = "B-20481746"
@@ -4801,7 +4805,7 @@ kind = "annoyance"
 summary = "The legend overlay is about 73 rows tall and does not scroll, so its Items and Keys sections are cut off in a 40-row pane"
 area = "glimpse/src/view/legend.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4811,6 +4815,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Make the legend scrollable or split it into pages; the README key table is the complete reference meanwhile."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-1eb0eeac"]
+resolved = 2026-10-05
+resolution = "The legend scrolls with the move and detail-scroll keys while open and shows a scrollbar and position when it overflows"
 
 [[backlog]]
 id = "B-4aecefff"
@@ -4818,7 +4824,7 @@ kind = "debt"
 summary = "feeds_for derives each surface's ledger from scope and slug while actions::ledger_ref parses the read path, and they can disagree mid flow-switch"
 area = "glimpse/src/runtime.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4828,6 +4834,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Carry the feed's LedgerRef on each Ledger so the App uses it directly instead of parsing paths."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-2a526918"]
+resolved = 2026-10-05
+resolution = "Each Ledger carries the LedgerRef it was read through; writes and undo use it instead of parsing the displayed path"
 
 [[backlog]]
 id = "B-eeed730f"
@@ -4854,7 +4862,7 @@ kind = "debt"
 summary = "glimpse duplicates tomlctl's private ledger companion table and the backlog managed-field list to build undo entries"
 area = "glimpse/src/actions.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4864,6 +4872,8 @@ flow = "temporal-snuggling-pnueli"
 context = "A change to either table in tomlctl needs the matching glimpse change; expose them from the tomlctl library instead."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-5c5da7b8"]
+resolved = 2026-10-05
+resolution = "glimpse uses tomlctl's exported BACKLOG_MANAGED_FIELDS; STATUS_COMPANIONS was already shared"
 
 [[backlog]]
 id = "B-a7c4198b"
@@ -4909,7 +4919,7 @@ kind = "debt"
 summary = "The pre-commit glimpse clippy gate does not fire for tomlctl ledgers.rs, inputs.rs, items.rs or backlog/**, which glimpse now links"
 area = ".githooks/pre-commit"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4920,6 +4930,8 @@ context = "The glimpse item-surfaces flow made glimpse link the ledger facade (l
 base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
 evidence = [".githooks/pre-commit:52"]
 related = ["B-bcb545a2"]
+resolved = 2026-10-05
+resolution = "The pre-commit glimpse clippy gate now fires for tomlctl/Cargo.toml and every tomlctl/src/**/*.rs path except main.rs; CLAUDE.md updated"
 
 [[backlog]]
 id = "B-27a5c3b6"
@@ -5117,7 +5129,7 @@ tags = [
     "tomlctl",
     "toml",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -5127,3 +5139,20 @@ flow = "temporal-snuggling-pnueli"
 context = "Every borrowed fast path (tomlctl parse, items find-duplicates --across, and ledger/inputs reads since the temporal-snuggling-pnueli optimise apply) silently nulls a value the owned path rejects; the TOML spec requires an error for an integer not representable losslessly. tomlctl writers never produce such values, so only hand-edited files are affected. Make devalue_to_json fallible, or validate ranges in the borrowed paths."
 base_sha = "8076c637c4bb408afdeba23375ac5fb10e2ddeb2"
 evidence = ["tomlctl/src/convert.rs:257"]
+resolved = 2026-10-05
+resolution = "detable_to_json and devalue_to_json now fail on an integer outside i64 or an overflowing float, naming the literal and key path, matching the owned parse"
+
+[[backlog]]
+id = "B-778163da"
+kind = "annoyance"
+summary = "Borrowed-parse read paths report parse and range errors without naming the file, so items find-duplicates --across cannot say which ledger held the bad value"
+area = "tomlctl/src/io.rs"
+tags = []
+status = "open"
+created = 2026-10-05
+last_seen = 2026-10-05
+seen_count = 1
+dedup_id = "778163da440a5e57"
+context = "read_doc_either, read_doc_borrowed and the dispatch parse / find-duplicates --across arms surface DeTable::parse and detable_to_json errors with a key path but no file, while the owned read_toml names the file. Wrap each with the path the way ledgers.rs and inputs.rs now do. Surfaced while making detable_to_json fallible."
+base_sha = "25cdbff8b086d9b6f7c9be5348b9f351453662f2"
+evidence = ["tomlctl/src/io.rs"]
