@@ -140,8 +140,12 @@ pub(crate) fn read(
             None => Vec::new(),
             Some(DeValue::Array(rows)) => rows
                 .iter()
-                .map(|row| devalue_to_json(row.get_ref()))
-                .collect(),
+                .enumerate()
+                .map(|(i, row)| {
+                    devalue_to_json(row.get_ref())
+                        .with_context(|| format!("{}: `{array}` row {i}", path.display()))
+                })
+                .collect::<Result<_>>()?,
             Some(_) => bail!("{}: `{array}` is not an array", path.display()),
         };
         Ok((kind, items))
@@ -667,6 +671,26 @@ verdict = "kept"
             let shown = format!("{err:#}");
             assert!(
                 shown.starts_with(&format!("parsing {}:", path.display())),
+                "{shown}"
+            );
+        });
+    }
+
+    #[test]
+    fn an_out_of_range_integer_fails_the_read_rather_than_reading_as_null() {
+        with_root(|root| {
+            let ledger = super::LedgerRef::Backlog;
+            let path = ledger.path(root).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(
+                &path,
+                "[[backlog]]\nid = \"B1\"\n\n[[backlog]]\nid = \"B2\"\nline = 99999999999999999999\n",
+            )
+            .unwrap();
+            let shown = format!("{:#}", crate::ledger_read(root, &ledger).unwrap_err());
+            assert!(
+                shown.contains("`backlog` row 1")
+                    && shown.contains("`99999999999999999999` at `line`"),
                 "{shown}"
             );
         });

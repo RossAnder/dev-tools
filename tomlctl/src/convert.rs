@@ -241,62 +241,112 @@ pub(crate) fn toml_to_json(v: &TomlValue) -> JsonValue {
 /// value, so the cheapest parser-faithful path is a single `i64::from_str`
 /// / `f64::from_str` per scalar, which matches what `toml::from_str` does
 /// internally.
-pub(crate) fn detable_to_json(table: &toml::de::DeTable<'_>) -> JsonValue {
+///
+/// Fails, tagged `Parse`, wherever the owned parse fails: on an integer
+/// outside `i64` or a float literal that overflows to infinity.
+pub(crate) fn detable_to_json(table: &toml::de::DeTable<'_>) -> Result<JsonValue> {
+    detable_to_json_at(table).map_err(OutOfRange::into_error)
+}
+
+/// `DeValue` → `JsonValue`. Mirrors `toml_to_json`'s arm shape so
+/// JSON output for a borrowed parse is byte-identical to the owned parse,
+/// and fails on the same out-of-range numbers as `detable_to_json`.
+pub(crate) fn devalue_to_json(v: &toml::de::DeValue<'_>) -> Result<JsonValue> {
+    devalue_to_json_at(v).map_err(OutOfRange::into_error)
+}
+
+/// A number literal the owned parse rejects. `path` is collected leaf-first
+/// as the recursion unwinds, so a successful conversion builds no path.
+struct OutOfRange {
+    literal: String,
+    reason: &'static str,
+    path: Vec<String>,
+}
+
+impl OutOfRange {
+    fn new(literal: String, reason: &'static str) -> Self {
+        Self {
+            literal,
+            reason,
+            path: Vec::new(),
+        }
+    }
+
+    fn at(mut self, segment: impl ToString) -> Self {
+        self.path.push(segment.to_string());
+        self
+    }
+
+    fn into_error(mut self) -> anyhow::Error {
+        self.path.reverse();
+        let msg = if self.path.is_empty() {
+            format!("`{}` {}", self.literal, self.reason)
+        } else {
+            format!(
+                "`{}` at `{}` {}",
+                self.literal,
+                self.path.join("."),
+                self.reason
+            )
+        };
+        crate::errors::tagged_err(crate::errors::ErrorKind::Parse, None, msg)
+    }
+}
+
+fn detable_to_json_at(table: &toml::de::DeTable<'_>) -> Result<JsonValue, OutOfRange> {
     let mut m = serde_json::Map::with_capacity(table.len());
     for (k, v) in table.iter() {
         // `k` is `Spanned<DeString<'_>>` where `DeString = Cow<'_, str>`.
         // `get_ref()` returns the inner `Cow`; deref to `&str` then own once.
         let key: &str = k.get_ref();
-        m.insert(key.to_string(), devalue_to_json(v.get_ref()));
+        let value = devalue_to_json_at(v.get_ref()).map_err(|e| e.at(key))?;
+        m.insert(key.to_string(), value);
     }
-    JsonValue::Object(m)
+    Ok(JsonValue::Object(m))
 }
 
-/// `DeValue` → `JsonValue`. Mirrors `toml_to_json`'s arm shape so
-/// JSON output for a borrowed parse is byte-identical to the owned parse.
-pub(crate) fn devalue_to_json(v: &toml::de::DeValue<'_>) -> JsonValue {
+fn devalue_to_json_at(v: &toml::de::DeValue<'_>) -> Result<JsonValue, OutOfRange> {
     use toml::de::DeValue;
     match v {
         DeValue::String(s) => {
             // `DeString<'i> = Cow<'i, str>`; `.as_ref()` yields `&str`.
-            JsonValue::String((s.as_ref() as &str).to_string())
+            Ok(JsonValue::String((s.as_ref() as &str).to_string()))
         }
         DeValue::Integer(n) => {
-            // `DeInteger` stores the text + radix; parse once per leaf.
-            // Match the existing serde-driven parse path by trusting i64.
-            let txt = n.as_str();
-            let radix = n.radix();
-            // `i64::from_str_radix` doesn't accept a leading `+` or an
-            // underscore separator; `DeInteger::as_str()` strips those per
-            // the crate's own serde deserializer. If parsing fails for any
-            // exotic case, fall back to JsonValue::Null rather than panic —
-            // the owned `toml_to_json` does not crash either, and a test
-            // exercising round-trip against the owned path would catch a
-            // divergence.
-            match i64::from_str_radix(txt, radix) {
-                Ok(i) => JsonValue::from(i),
-                Err(_) => JsonValue::Null,
-            }
+            // `DeInteger::as_str()` has already dropped the sign `+` and the
+            // `_` separators, so it is `from_str_radix`-ready.
+            i64::from_str_radix(n.as_str(), n.radix())
+                .map(JsonValue::from)
+                .map_err(|_| {
+                    OutOfRange::new(
+                        n.to_string(),
+                        "is out of range: TOML integers must fit in a signed 64-bit integer",
+                    )
+                })
         }
         DeValue::Float(f) => {
             let txt = f.as_str();
             match txt.parse::<f64>() {
-                Ok(x) => serde_json::Number::from_f64(x)
-                    .map(JsonValue::Number)
-                    .unwrap_or(JsonValue::Null),
-                Err(_) => JsonValue::Null,
+                // An explicit `inf` / `nan` literal is valid TOML and maps to
+                // null exactly as `toml_to_json` maps it.
+                Ok(x) if !x.is_infinite() || txt.contains("inf") => {
+                    Ok(serde_json::Number::from_f64(x)
+                        .map(JsonValue::Number)
+                        .unwrap_or(JsonValue::Null))
+                }
+                _ => Err(OutOfRange::new(txt.to_string(), "overflows a 64-bit float")),
             }
         }
-        DeValue::Boolean(b) => JsonValue::Bool(*b),
-        DeValue::Datetime(dt) => JsonValue::String(dt.to_string()),
+        DeValue::Boolean(b) => Ok(JsonValue::Bool(*b)),
+        DeValue::Datetime(dt) => Ok(JsonValue::String(dt.to_string())),
         DeValue::Array(arr) => {
             let mut out: Vec<JsonValue> = Vec::with_capacity(arr.len());
-            for item in arr.iter() {
-                out.push(devalue_to_json(item.get_ref()));
+            for (i, item) in arr.iter().enumerate() {
+                out.push(devalue_to_json_at(item.get_ref()).map_err(|e| e.at(i))?);
             }
-            JsonValue::Array(out)
+            Ok(JsonValue::Array(out))
         }
-        DeValue::Table(tbl) => detable_to_json(tbl),
+        DeValue::Table(tbl) => detable_to_json_at(tbl),
     }
 }
 
@@ -642,13 +692,55 @@ count = 3
         let owned_json = toml_to_json(&owned);
 
         let spanned = toml::de::DeTable::parse(src).unwrap();
-        let borrowed_json = detable_to_json(spanned.get_ref());
+        let borrowed_json = detable_to_json(spanned.get_ref()).unwrap();
 
         assert_eq!(
             owned_json, borrowed_json,
             "detable_to_json must match toml_to_json byte-for-byte; \
              owned={owned_json}, borrowed={borrowed_json}"
         );
+    }
+
+    /// Every number the owned parse rejects must fail the borrowed conversion
+    /// too, naming the literal and its dotted path, rather than becoming null.
+    #[test]
+    fn detable_to_json_rejects_numbers_the_owned_parse_rejects() {
+        for (src, literal, path) in [
+            (
+                "[[items]]\nline = 9_223_372_036_854_775_808\n",
+                "9223372036854775808",
+                "items.0.line",
+            ),
+            ("n = 0xffff_ffff_ffff_ffff\n", "0xffffffffffffffff", "n"),
+            (
+                "xs = [1, -9223372036854775809]\n",
+                "-9223372036854775809",
+                "xs.1",
+            ),
+            ("[t]\nf = 1e400\n", "1e400", "t.f"),
+        ] {
+            assert!(
+                toml::from_str::<TomlValue>(src).is_err(),
+                "owned parse must reject {src:?}"
+            );
+            let spanned = toml::de::DeTable::parse(src).unwrap();
+            let err = format!("{:#}", detable_to_json(spanned.get_ref()).unwrap_err());
+            assert!(
+                err.contains(&format!("`{literal}` at `{path}`")),
+                "error must name the literal and its path; got: {err}"
+            );
+        }
+    }
+
+    /// The range boundaries and explicit non-finite floats still convert,
+    /// matching the owned path.
+    #[test]
+    fn detable_to_json_keeps_in_range_extremes() {
+        let src = "max = 9223372036854775807\nmin = -9223372036854775808\n\
+                   big = 1.7976931348623157e308\npos = inf\nnot = nan\n";
+        let owned = toml_to_json(&toml::from_str::<TomlValue>(src).unwrap());
+        let spanned = toml::de::DeTable::parse(src).unwrap();
+        assert_eq!(detable_to_json(spanned.get_ref()).unwrap(), owned);
     }
 
     /// The live backlog row's date fields must serialise as bare TOML date

@@ -189,7 +189,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 read_doc(&file, opts, |doc| Ok(toml_to_json(doc)))?
             } else {
                 let source = read_toml_str(&file)?;
-                read_doc_borrowed(&source, |table| Ok(detable_to_json(table)))?
+                read_doc_borrowed(&source, detable_to_json)?
             };
             print_json(&out)?;
         }
@@ -1097,14 +1097,14 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                         let primary_items: Vec<JsonValue> = {
                             let source = read_toml_str(&file)?;
                             read_doc_borrowed(&source, |table| {
-                                let json = detable_to_json(table);
+                                let json = detable_to_json(table)?;
                                 Ok(crate::io::items_array_json(&json, "items").to_vec())
                             })?
                         };
                         let other_items: Vec<JsonValue> = {
                             let source = read_toml_str(&other_path)?;
                             read_doc_borrowed(&source, |table| {
-                                let json = detable_to_json(table);
+                                let json = detable_to_json(table)?;
                                 Ok(crate::io::items_array_json(&json, "items").to_vec())
                             })?
                         };

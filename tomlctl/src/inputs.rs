@@ -180,11 +180,15 @@ pub(crate) fn list_if_changed(
             Some(DeValue::Array(rows)) => rows.as_ref(),
             _ => &[],
         };
-        Ok(rows
-            .iter()
-            .map(|row| devalue_to_json(row.get_ref()))
-            .filter(|row| filter.matches(row))
-            .collect())
+        let mut out = Vec::new();
+        for (i, row) in rows.iter().enumerate() {
+            let row = devalue_to_json(row.get_ref())
+                .with_context(|| format!("{}: `{ARRAY}` row {i}", path.display()))?;
+            if filter.matches(&row) {
+                out.push(row);
+            }
+        }
+        Ok(out)
     })?;
     Ok(Some(
         json!({"path": shown, "revision": revision, "inputs": rows}),

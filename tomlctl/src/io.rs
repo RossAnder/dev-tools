@@ -678,7 +678,7 @@ where
     } else {
         let source = read_toml_str(file)?;
         read_doc_borrowed(&source, |table| {
-            let json = crate::convert::detable_to_json(table);
+            let json = crate::convert::detable_to_json(table)?;
             borrowed(&json)
         })
     }
