@@ -1160,12 +1160,15 @@ impl App {
     /// surface, the details panel and the activity panel.
     pub(crate) fn needs_tick(&self, now: Instant) -> bool {
         let live = |at: &Instant| now.saturating_duration_since(*at) < FLASH;
-        self.flashes.values().any(live)
-            || self
+        let surface_flashing = match self.surface {
+            Surface::Tasks => self.flashes.values().any(live),
+            Surface::Inbox => self.inbox.flashes.values().any(live),
+            surface => self
                 .items
-                .values()
-                .any(|state| state.flashes.values().any(live))
-            || self.inbox.flashes.values().any(live)
+                .get(&surface)
+                .is_some_and(|state| state.flashes.values().any(live)),
+        };
+        surface_flashing
             || self.live_notice(now).is_some()
             || ((self.surface == Surface::Tasks || self.details_open || self.activity_open)
                 && self.snapshot.agents.iter().any(|agent| {
@@ -2126,12 +2129,48 @@ mod tests {
         let rows = [("R1", "deferred"), ("R2", "open"), ("R3", "fixed")];
         app.apply_ledger(review("r.toml", "v2", &rows), t0);
         assert_eq!(app.items[&Surface::Review].new_since_view, 1);
-        assert_eq!(app.tick_interval(t0), Some(TICK), "R1 is flashing");
+        assert_eq!(
+            app.tick_interval(t0),
+            None,
+            "a hidden surface's flash does not keep the clock running"
+        );
+        app.apply(Action::SwitchSurface(Surface::Review));
+        assert_eq!(app.tick_interval(t0), Some(TICK), "R1 is now visible");
         app.tick(t0 + FLASH);
         assert_eq!(app.tick_interval(t0 + FLASH), None);
 
-        app.apply(Action::SwitchSurface(Surface::Review));
         assert_eq!(app.items[&Surface::Review].new_since_view, 0);
+    }
+
+    #[test]
+    fn only_the_visible_surface_flashes_keep_the_clock_running() {
+        let mut app = review_app();
+        app.snapshot
+            .agents
+            .retain(|agent| agent.status != AgentStatus::Running);
+        let t0 = Instant::now();
+        app.items
+            .get_mut(&Surface::Review)
+            .unwrap()
+            .flashes
+            .insert("R1".to_string(), t0);
+        app.inbox.flashes.insert("I1".to_string(), t0);
+        app.flashes.insert(4, t0);
+
+        app.surface = Surface::Review;
+        assert!(app.needs_tick(t0), "the visible review flash is live");
+
+        app.surface = Surface::Optimise;
+        assert!(
+            !app.needs_tick(t0),
+            "review, Inbox and task flashes are not visible"
+        );
+
+        app.surface = Surface::Inbox;
+        assert!(app.needs_tick(t0), "the visible Inbox flash is live");
+
+        app.surface = Surface::Tasks;
+        assert!(app.needs_tick(t0), "the visible task flash is live");
     }
 
     #[test]
