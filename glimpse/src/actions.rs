@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value};
-use tomlctl::{BacklogTriage, LedgerRef, RestoreRow, STATUS_COMPANIONS};
+use tomlctl::{BACKLOG_MANAGED_FIELDS, BacklogTriage, LedgerRef, RestoreRow, STATUS_COMPANIONS};
 use tui_input::Input;
 
 use crate::form::{Field, FieldValue, Form};
@@ -121,20 +121,6 @@ const DECLINED: [&str; 4] = ["wontfix", "wontapply", "discarded", "dismissed"];
 fn leaves(status: &str) -> impl Iterator<Item = &'static str> {
     owned_by(status).iter().map(|&(field, _)| field)
 }
-
-/// Every field a backlog triage rewrites; a move clears the ones the new status does not own.
-const BACKLOG_MANAGED: [&str; 10] = [
-    "promoted",
-    "promoted_to",
-    "dismissed",
-    "dismiss_reason",
-    "resolved",
-    "resolution",
-    "reopen_rationale",
-    "resolved_flow",
-    "resolved_tasks",
-    "resolved_commits",
-];
 
 /// The terminal date a backlog move stamps, which glimpse cannot predict and so never guards.
 fn backlog_stamp(to: &str) -> Option<&'static str> {
@@ -494,7 +480,9 @@ pub(crate) fn transition_plan(
             },
         };
         let touched: Vec<&str> = if selection.ledger == LedgerRef::Backlog {
-            let mut all: Vec<&str> = BACKLOG_MANAGED.to_vec();
+            // A backlog move rewrites every managed field, clearing those the new status
+            // does not own, so undo has to know the whole set.
+            let mut all: Vec<&str> = BACKLOG_MANAGED_FIELDS.to_vec();
             all.push("status");
             all
         } else {

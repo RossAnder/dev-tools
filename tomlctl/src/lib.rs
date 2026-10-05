@@ -45,6 +45,7 @@ use crate::cli::{Cli, ErrorFormat, ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::errors::TaggedError;
 use crate::ledgers::FACADE_WRITE;
 
+pub use crate::backlog::schema::MANAGED_FIELDS as BACKLOG_MANAGED_FIELDS;
 pub use crate::backlog::triage::BacklogTriage;
 pub use crate::items::STATUS_COMPANIONS;
 pub use crate::ledgers::{LedgerKind, LedgerRef, RestoreRow};

@@ -151,7 +151,7 @@ pub(crate) const RESOLUTION_LINK_FIELDS: &[&str] = &[
 /// Fields a status transition owns outright; `clear_for_transition` decides
 /// which of them survive a move. A field missing here outlives every
 /// transition, so a reopen would leave it stale.
-pub(crate) const MANAGED_FIELDS: &[&str] = &[
+pub const MANAGED_FIELDS: &[&str] = &[
     FIELD_PROMOTED,
     FIELD_PROMOTED_TO,
     FIELD_DISMISSED,
