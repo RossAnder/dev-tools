@@ -39,6 +39,8 @@ pub(crate) const TICK: Duration = Duration::from_secs(1);
 pub(crate) const STALE_RECHECK: Duration = Duration::from_secs(30);
 /// How long a footer notice, such as the density a `d` press resolved to, stays up.
 pub(crate) const NOTICE: Duration = Duration::from_millis(1500);
+/// How long an error notice stays visible so its cause can be read.
+pub(crate) const ERROR_NOTICE: Duration = Duration::from_secs(8);
 /// Step for `[` and `]`, in percent of the body.
 pub(crate) const PANEL_STEP: u16 = 5;
 /// Step for `-` and `=`, in cells.
@@ -271,8 +273,9 @@ pub(crate) struct App {
     /// Written back by each layers frame.
     pub(crate) layers_scroll: ListScroll,
     pub(crate) regions: Regions,
-    /// A short message the footer shows until [`NOTICE`] has passed.
+    /// A short footer message.
     pub(crate) notice: Option<(String, Instant)>,
+    pub(crate) notice_duration: Duration,
     pub(crate) surface: Surface,
     /// One state per item surface, present from the start and empty until its ledger is read.
     pub(crate) items: HashMap<Surface, ItemsState>,
@@ -345,6 +348,7 @@ impl App {
             layers_scroll: ListScroll::default(),
             regions: Regions::default(),
             notice: None,
+            notice_duration: NOTICE,
             surface: Surface::Tasks,
             items: Surface::ALL
                 .into_iter()
@@ -974,12 +978,17 @@ impl App {
 
     /// Takes a writer outcome; see [`Writes::apply_written`]. Its notice goes to the footer.
     pub(crate) fn apply_written(&mut self, outcome: WriteOutcome) {
+        let failed = outcome.error.is_some();
         let saving = Saving {
             items: &mut self.items,
             inbox: &mut self.inbox,
         };
         if let Some(notice) = self.writes.apply_written(saving, outcome) {
-            self.notify(notice);
+            if failed {
+                self.notify_for(notice, ERROR_NOTICE);
+            } else {
+                self.notify(notice);
+            }
         }
     }
 
@@ -1192,12 +1201,21 @@ impl App {
     pub(crate) fn live_notice(&self, now: Instant) -> Option<&str> {
         self.notice
             .as_ref()
-            .filter(|(_, at)| now.saturating_duration_since(*at) < NOTICE)
+            .filter(|(_, at)| now.saturating_duration_since(*at) < self.notice_duration)
             .map(|(text, _)| text.as_str())
     }
 
     fn notify(&mut self, text: String) {
+        self.notify_for(text, NOTICE);
+    }
+
+    pub(crate) fn notify_error(&mut self, text: String) {
+        self.notify_for(text, ERROR_NOTICE);
+    }
+
+    fn notify_for(&mut self, text: String, duration: Duration) {
         self.notice = Some((text, Instant::now()));
+        self.notice_duration = duration;
     }
 
     /// Sets the docked panel's share so its edge follows the pointer, measured against
@@ -2404,6 +2422,13 @@ mod tests {
             app.live_notice(Instant::now()),
             Some("write failed: root mismatch")
         );
+        let (_, shown_at) = app.notice.as_ref().expect("failed write notice");
+        assert_eq!(app.notice_duration, ERROR_NOTICE);
+        assert_eq!(
+            app.live_notice(*shown_at + NOTICE + Duration::from_millis(1)),
+            Some("write failed: root mismatch")
+        );
+        assert_eq!(app.live_notice(*shown_at + ERROR_NOTICE), None);
     }
 
     #[test]

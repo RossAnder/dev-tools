@@ -428,7 +428,7 @@ fn handle(screen: &mut Screen, event: Event, host: &mut impl Host, pointed: &mut
                 redraw_if(app.selector_open)
             }
             Err(message) => {
-                app.notice = Some((message, Instant::now()));
+                app.notify_error(message);
                 Step::Redraw
             }
         },
@@ -608,7 +608,7 @@ fn ledger_read(
             redraw_if(showing || tab_state(app, surface) != before)
         }
         Err(message) if showing => {
-            app.notice = Some((message, Instant::now()));
+            app.notify_error(message);
             Step::Redraw
         }
         Err(_) => Step::Nothing,
@@ -626,7 +626,7 @@ fn inputs_read(app: &mut App, inputs: Result<Inputs, String>) -> Step {
             redraw_if(showing || tab(app) != before)
         }
         Err(message) if showing => {
-            app.notice = Some((message, Instant::now()));
+            app.notify_error(message);
             Step::Redraw
         }
         Err(_) => Step::Nothing,
