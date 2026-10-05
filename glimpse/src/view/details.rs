@@ -24,7 +24,7 @@ use crate::ledger::{Anchor, InputRow, ItemRow, StatusClass};
 use crate::model::{Agent, AgentKind, AgentStatus, RecordEntry};
 use crate::surface::{ItemsState, Surface};
 use crate::theme::Theme;
-use crate::view::markdown;
+use crate::view::{self, markdown};
 
 const INDENT: &str = "  ";
 
@@ -251,7 +251,7 @@ pub(crate) fn item_content(
         row.status.as_str()
     };
     out.push(Line::styled(
-        status.to_string(),
+        format!("{} {status}", view::items::glyph(row.class)),
         class_style(row.class, theme),
     ));
     for (field, value) in &row.companions {
@@ -363,12 +363,7 @@ pub(crate) fn item_content(
 }
 
 fn class_style(class: StatusClass, theme: &Theme) -> Style {
-    match class {
-        StatusClass::Live => theme.item_live,
-        StatusClass::Parked => theme.item_parked,
-        StatusClass::Done => theme.item_done,
-        StatusClass::Declined => theme.item_declined,
-    }
+    theme.item_status(view::items::class_name(class))
 }
 
 fn section(out: &mut Vec<Line<'static>>, label: &str, theme: &Theme) {
@@ -862,7 +857,7 @@ mod tests {
             lines,
             [
                 "R4 map could match on a tuple instead of nesting",
-                "wontfix",
+                "✗ wontfix",
                 "  wontfix rationale: the nesting mirrors the key table",
                 "severity suggestion  category idiom  effort trivial",
                 "at src/keys.rs",
