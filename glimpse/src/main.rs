@@ -159,9 +159,10 @@ fn read_ledger(opts: &RunOpts, path: &Path) -> Result<(Surface, Ledger), String>
     if !path.is_file() {
         return Err(format!("--ledger {}: no such file", path.display()));
     }
-    let value = tomlctl::ledger_read(&opts.root, &LedgerRef::File(path.to_path_buf()))
+    let source = LedgerRef::File(path.to_path_buf());
+    let value = tomlctl::ledger_read(&opts.root, &source)
         .map_err(|e| format!("--ledger {}: {e:#}", path.display()))?;
-    let ledger = Ledger::from_value(value)?;
+    let ledger = Ledger::from_value(value, source)?;
     let surface = opts
         .surface
         .or_else(|| Surface::of_kind(ledger.kind))

@@ -423,7 +423,7 @@ mod tests {
         ];
         let ledger = Ledger {
             kind: Kind::Review,
-            path: "review-ledger.toml".to_string(),
+            source: tomlctl::LedgerRef::File("review-ledger.toml".into()),
             revision: Some("v1".to_string()),
             rows,
         };
@@ -564,7 +564,7 @@ mod tests {
         app.apply_ledger(
             Ledger {
                 kind: Kind::Review,
-                path: "review-ledger.toml".to_string(),
+                source: tomlctl::LedgerRef::File("review-ledger.toml".into()),
                 revision: Some("v1".to_string()),
                 rows,
             },

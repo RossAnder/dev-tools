@@ -4,7 +4,6 @@
 //! edit records how to put each row back, so undo restores exactly the fields a write touched.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
 use serde_json::{Map, Value};
 use tomlctl::{BacklogTriage, LedgerRef, RestoreRow, STATUS_COMPANIONS};
@@ -166,31 +165,10 @@ pub(crate) const CLASSIFY_FIELDS: [&str; 3] = ["severity", "effort", "category"]
 /// Offered first by a classify field the targets disagree on, so submitting leaves each as it is.
 pub(crate) const KEEP: &str = "(unchanged)";
 
-/// The ledger behind a displayed `path`, or `None` for one named by path (`--once`), which
-/// is read-only. Writes go to exactly the file whose rows are on screen.
-pub(crate) fn ledger_ref(kind: Kind, path: &str) -> Option<LedgerRef> {
-    let Some(kind) = kind.ledger_kind() else {
-        let backlog = LedgerRef::Backlog.path(Path::new(""));
-        return backlog
-            .is_ok_and(|backlog| Path::new(path) == backlog)
-            .then_some(LedgerRef::Backlog);
-    };
-    if let Some(rest) = path.strip_prefix(".claude/flows/") {
-        let (slug, file) = rest.split_once('/')?;
-        return (file == kind.flow_file()).then(|| LedgerRef::Flow {
-            slug: slug.to_owned(),
-            kind,
-        });
-    }
-    let scope = path
-        .strip_prefix(".claude/")?
-        .strip_prefix(kind.scope_dir())?
-        .strip_prefix('/')?
-        .strip_suffix(".toml")?;
-    (!scope.is_empty() && !scope.contains('/')).then(|| LedgerRef::Scope {
-        kind,
-        scope: scope.to_owned(),
-    })
+/// The write target for rows read through `source`, or `None` for a ledger named by path
+/// (`--once`), which is read-only.
+pub(crate) fn writable(source: &LedgerRef) -> Option<LedgerRef> {
+    (!matches!(source, LedgerRef::File(_))).then(|| source.clone())
 }
 
 /// The rows an action acts on, copied when it opened, so the guard holds what was on screen then.
@@ -865,31 +843,16 @@ mod tests {
     }
 
     #[test]
-    fn ledger_paths_map_to_the_file_on_screen() {
-        assert_eq!(
-            ledger_ref(Kind::Review, ".claude/flows/demo/review-ledger.toml"),
-            Some(review_ledger())
-        );
-        assert_eq!(
-            ledger_ref(Kind::Optimise, ".claude/optimise-findings/core.toml"),
-            Some(LedgerRef::Scope {
-                kind: LedgerKind::Optimise,
-                scope: "core".into()
-            })
-        );
-        assert_eq!(
-            ledger_ref(Kind::Backlog, ".claude/backlog.toml"),
-            Some(LedgerRef::Backlog)
-        );
-        assert_eq!(
-            ledger_ref(Kind::Review, "elsewhere/review-ledger.toml"),
-            None
-        );
-        assert_eq!(
-            ledger_ref(Kind::Review, ".claude/flows/demo/optimise-findings.toml"),
-            None,
-            "a file of another kind is not this ledger"
-        );
+    fn only_a_ledger_named_by_path_is_read_only() {
+        let scope = LedgerRef::Scope {
+            kind: LedgerKind::Optimise,
+            scope: "core".into(),
+        };
+        for source in [review_ledger(), scope, LedgerRef::Backlog] {
+            assert_eq!(writable(&source), Some(source.clone()));
+        }
+        let by_path = LedgerRef::File(".claude/flows/demo/review-ledger.toml".into());
+        assert_eq!(writable(&by_path), None);
     }
 
     #[test]

@@ -857,7 +857,7 @@ mod tests {
         };
         let ledger = Ledger {
             kind: Kind::Review,
-            path: "review-ledger.toml".to_string(),
+            source: tomlctl::LedgerRef::File("review-ledger.toml".into()),
             revision: Some("v1".to_string()),
             rows: vec![row("R1"), row("R2")],
         };
@@ -928,7 +928,10 @@ mod tests {
         let mut app = app();
         let ledger = Ledger {
             kind: Kind::Review,
-            path: ".claude/flows/demo-flow/review-ledger.toml".to_string(),
+            source: tomlctl::LedgerRef::Flow {
+                slug: "demo-flow".to_string(),
+                kind: tomlctl::LedgerKind::Review,
+            },
             revision: Some("v1".to_string()),
             rows: vec![ItemRow {
                 id: "R1".to_string(),
@@ -957,7 +960,7 @@ mod tests {
         let mut app = app();
         let ledger = Ledger {
             kind: Kind::Review,
-            path: "review-ledger.toml".to_string(),
+            source: tomlctl::LedgerRef::File("review-ledger.toml".into()),
             revision: Some("v1".to_string()),
             rows: vec![ItemRow {
                 id: "R1".to_string(),

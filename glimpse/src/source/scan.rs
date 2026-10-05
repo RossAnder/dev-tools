@@ -284,7 +284,7 @@ impl Fetcher for InProcessFetcher {
     ) -> Result<Option<Ledger>, String> {
         tomlctl::ledger_read_if_changed(root, ledger, known)
             .map_err(|e| with_reinstall_hint(format!("{e:#}")))?
-            .map(Ledger::from_value)
+            .map(|value| Ledger::from_value(value, ledger.clone()))
             .transpose()
     }
 
@@ -395,12 +395,15 @@ pub(super) mod tests {
     }
 
     pub(in crate::source) fn ledger_with_revision(revision: Option<&str>) -> Ledger {
-        Ledger::from_value(serde_json::json!({
-            "path": ".claude/backlog.toml",
-            "kind": "backlog",
-            "revision": revision,
-            "items": [],
-        }))
+        Ledger::from_value(
+            serde_json::json!({
+                "path": ".claude/backlog.toml",
+                "kind": "backlog",
+                "revision": revision,
+                "items": [],
+            }),
+            LedgerRef::Backlog,
+        )
         .expect("ledger")
     }
 

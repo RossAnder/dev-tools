@@ -830,9 +830,9 @@ mod tests {
             .join("tests")
             .join("fixtures")
             .join("review-ledger.toml");
-        let value =
-            tomlctl::ledger_read(root, &tomlctl::LedgerRef::File(path)).expect("fixture reads");
-        let ledger = crate::ledger::Ledger::from_value(value).expect("fixture loads");
+        let source = tomlctl::LedgerRef::File(path);
+        let value = tomlctl::ledger_read(root, &source).expect("fixture reads");
+        let ledger = crate::ledger::Ledger::from_value(value, source).expect("fixture loads");
         let mut app = app_on(1);
         app.surface = Surface::Review;
         let state = app.items.get_mut(&Surface::Review).expect("review state");

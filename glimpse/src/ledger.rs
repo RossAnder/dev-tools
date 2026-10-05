@@ -10,7 +10,7 @@
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
-use tomlctl::LedgerKind;
+use tomlctl::{LedgerKind, LedgerRef};
 
 /// Which ledger a document came from, from its `kind` string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -29,16 +29,6 @@ impl Kind {
             "plan-review" => Self::PlanReview,
             "backlog" => Self::Backlog,
             _ => return None,
-        })
-    }
-
-    /// The flow-scoped ledger kind; `None` for the backlog, which has none.
-    pub(crate) fn ledger_kind(self) -> Option<LedgerKind> {
-        Some(match self {
-            Self::Review => LedgerKind::Review,
-            Self::Optimise => LedgerKind::Optimise,
-            Self::PlanReview => LedgerKind::PlanReview,
-            Self::Backlog => return None,
         })
     }
 }
@@ -242,15 +232,17 @@ pub(crate) struct ItemRow {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Ledger {
     pub(crate) kind: Kind,
-    pub(crate) path: String,
+    /// The ref the document was read through. Writes to its rows go to this same ref, so a
+    /// write can never target a ledger other than the one whose rows are on screen.
+    pub(crate) source: LedgerRef,
     pub(crate) revision: Option<String>,
     pub(crate) rows: Vec<ItemRow>,
 }
 
 impl Ledger {
-    /// Loads a `tomlctl::ledger_read` document. Fails only on an unknown
-    /// `kind` or an `items` that is not an array.
-    pub(crate) fn from_value(value: Value) -> Result<Ledger, String> {
+    /// Loads a `tomlctl::ledger_read` document read through `source`. Fails only on an
+    /// unknown `kind` or an `items` that is not an array.
+    pub(crate) fn from_value(value: Value, source: LedgerRef) -> Result<Ledger, String> {
         let Value::Object(mut doc) = value else {
             return Err("ledger document is not an object".into());
         };
@@ -278,7 +270,7 @@ impl Ledger {
             .collect();
         Ok(Ledger {
             kind,
-            path,
+            source,
             revision,
             rows,
         })
@@ -521,15 +513,19 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use serde_json::json;
-    use tomlctl::LedgerRef;
 
     use super::*;
 
     fn fixture(name: &str) -> Ledger {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         let path: PathBuf = root.join("tests").join("fixtures").join(name);
-        let value = tomlctl::ledger_read(root, &LedgerRef::File(path)).expect("fixture reads");
-        Ledger::from_value(value).expect("fixture loads")
+        let source = LedgerRef::File(path);
+        let value = tomlctl::ledger_read(root, &source).expect("fixture reads");
+        Ledger::from_value(value, source).expect("fixture loads")
+    }
+
+    fn by_path(path: &str) -> LedgerRef {
+        LedgerRef::File(PathBuf::from(path))
     }
 
     fn row<'a>(ledger: &'a Ledger, id: &str) -> &'a ItemRow {
@@ -594,7 +590,8 @@ mod tests {
                 {"status": "merged", "severity": "warning", "summary": "b"},
             ],
         });
-        let ledger = Ledger::from_value(value).expect("loads");
+        let ledger =
+            Ledger::from_value(value, by_path("x/plan-review-findings.toml")).expect("loads");
         assert_eq!(ledger.revision, None);
         let [first, second] = ledger.rows.as_slice() else {
             panic!("two rows expected");
@@ -667,7 +664,7 @@ mod tests {
             "revision": "ab",
             "items": [{"id": "R9", "status": "wontfix", "line": "ten", "summary": "s"}],
         });
-        let ledger = Ledger::from_value(value).expect("loads");
+        let ledger = Ledger::from_value(value, by_path("review-ledger.toml")).expect("loads");
         let row = &ledger.rows[0];
         assert_eq!((row.id.as_str(), row.summary.as_str()), ("R9", "s"));
         assert_eq!(row.anchor, Anchor::None);
@@ -707,6 +704,6 @@ mod tests {
     #[test]
     fn an_unknown_kind_is_an_error() {
         let value = json!({"path": "p", "kind": "tasks", "revision": null, "items": []});
-        assert!(Ledger::from_value(value).is_err());
+        assert!(Ledger::from_value(value, by_path("p")).is_err());
     }
 }

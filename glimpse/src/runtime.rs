@@ -967,12 +967,18 @@ mod tests {
     }
 
     fn review_read(feed: &Feed, revision: &str, items: serde_json::Value) -> Event {
-        let ledger = Ledger::from_value(serde_json::json!({
-            "kind": "review",
-            "path": ".claude/flows/demo-flow/review-ledger.toml",
-            "revision": revision,
-            "items": items,
-        }))
+        let Feed::Ledger(source) = feed else {
+            panic!("a ledger feed");
+        };
+        let ledger = Ledger::from_value(
+            serde_json::json!({
+                "kind": "review",
+                "path": ".claude/flows/demo-flow/review-ledger.toml",
+                "revision": revision,
+                "items": items,
+            }),
+            source.clone(),
+        )
         .expect("ledger");
         Event::Ledger {
             feed: feed.clone(),
@@ -1036,6 +1042,35 @@ mod tests {
             2,
             "a read for a feed let go is dropped"
         );
+    }
+
+    #[test]
+    fn a_write_targets_the_feed_that_read_the_rows_not_the_document_path() {
+        let mut screen = idle_screen("other-flow");
+        let mut host = FakeHost::default();
+        let mut pointed = Pointed::starting(&screen.app);
+        resubscribe(&screen.app, &mut host, &mut pointed);
+        let feed = review_feed("other-flow");
+        let read = review_read(&feed, "r1", serde_json::json!([finding("R1", "a")]));
+        handle(&mut screen, read, &mut host, &mut pointed);
+
+        let app = &mut screen.app;
+        app.apply(Action::SwitchSurface(Surface::Review));
+        app.apply(Action::OpenMenu);
+        let mut key = |code| assert!(app.overlay_key(KeyEvent::from(code)), "{code:?}");
+        key(KeyCode::Enter);
+        key(KeyCode::Char('x'));
+        key(KeyCode::Tab);
+        key(KeyCode::Char('y'));
+        key(KeyCode::Enter);
+        let writes = app.take_writes();
+        let [crate::writer::WriteRequest::Transition { ledger, .. }] = writes.as_slice() else {
+            panic!("expected one transition, got {writes:?}");
+        };
+        let Feed::Ledger(read_through) = &feed else {
+            unreachable!()
+        };
+        assert_eq!(ledger, read_through);
     }
 
     fn inputs_read_event(revision: &str, records: serde_json::Value) -> Event {

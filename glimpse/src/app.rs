@@ -11,7 +11,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use ratatui::crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::layout::Rect;
-use tomlctl::LedgerKind;
+use tomlctl::{LedgerKind, LedgerRef};
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
@@ -290,9 +290,10 @@ pub(crate) struct App {
     /// The ledger-only flow picked in the selector. No snapshot of it ever arrives, so
     /// `snapshot.slug` still names the flow before it.
     pub(crate) ledger_flow: Option<String>,
-    /// The ledger file each item surface last read, so a read of another file starts
-    /// the surface over rather than flashing every row as an arrival.
-    ledger_paths: HashMap<Surface, String>,
+    /// The ledger each item surface last read, so a read of another ledger starts the
+    /// surface over rather than flashing every row as an arrival. It is also the only
+    /// write target for the surface's rows.
+    ledger_sources: HashMap<Surface, LedgerRef>,
     /// The menu, form or filter prompt on top; while set it takes every key.
     pub(crate) overlay: Option<Overlay>,
     /// Queued and in-flight writes and the undo stack.
@@ -365,7 +366,7 @@ impl App {
             inbox: InboxState::default(),
             scope: None,
             ledger_flow: None,
-            ledger_paths: HashMap::new(),
+            ledger_sources: HashMap::new(),
             overlay: None,
             writes: Writes::default(),
         };
@@ -828,7 +829,7 @@ impl App {
             .items
             .entry(surface)
             .or_insert_with(|| ItemsState::new(surface));
-        if self.ledger_paths.get(&surface) != Some(&ledger.path) {
+        if self.ledger_sources.get(&surface) != Some(&ledger.source) {
             *state = ItemsState {
                 filter: std::mem::take(&mut state.filter),
                 group: state.group,
@@ -836,7 +837,7 @@ impl App {
                 show_closed: state.show_closed,
                 ..ItemsState::new(surface)
             };
-            self.ledger_paths.insert(surface, ledger.path);
+            self.ledger_sources.insert(surface, ledger.source);
         }
         state.apply_ledger(ledger.rows, ledger.revision, viewing, now);
     }
@@ -1033,9 +1034,9 @@ impl App {
             return None;
         }
         let Some(ledger) = self
-            .ledger_paths
+            .ledger_sources
             .get(&surface)
-            .and_then(|path| actions::ledger_ref(kind, path))
+            .and_then(actions::writable)
         else {
             self.notify("this ledger is read-only".to_owned());
             return None;
@@ -1137,11 +1138,8 @@ impl App {
 
     /// Undoes the newest write; see [`Writes::undo_last`].
     fn undo_last(&mut self) {
-        let paths = &self.ledger_paths;
-        let shown = |surface: Surface| {
-            let kind = surface.ledger_kind()?;
-            actions::ledger_ref(kind, paths.get(&surface)?)
-        };
+        let sources = &self.ledger_sources;
+        let shown = |surface: Surface| sources.get(&surface).and_then(actions::writable);
         let saving = Saving {
             items: &mut self.items,
             inbox: &mut self.inbox,
@@ -2044,10 +2042,11 @@ mod tests {
         );
     }
 
+    /// A review ledger named by `path`, as `--once` reads one.
     fn review(path: &str, revision: &str, rows: &[(&str, &str)]) -> Ledger {
         Ledger {
             kind: Kind::Review,
-            path: path.to_string(),
+            source: LedgerRef::File(path.into()),
             revision: Some(revision.to_string()),
             rows: rows
                 .iter()
@@ -2221,13 +2220,18 @@ mod tests {
         assert_eq!(cursor(&app), Some("R7"));
     }
 
-    const REVIEW_PATH: &str = ".claude/flows/demo/review-ledger.toml";
+    fn flow_review(slug: &str) -> LedgerRef {
+        LedgerRef::Flow {
+            slug: slug.to_string(),
+            kind: LedgerKind::Review,
+        }
+    }
 
     /// A ledger whose rows carry their raw form, as a real read does.
-    fn ledger(kind: Kind, path: &str, rows: &[(&str, &str, &str)]) -> Ledger {
+    fn ledger(kind: Kind, source: LedgerRef, rows: &[(&str, &str, &str)]) -> Ledger {
         Ledger {
             kind,
-            path: path.to_string(),
+            source,
             revision: Some("v1".to_string()),
             rows: rows
                 .iter()
@@ -2251,7 +2255,8 @@ mod tests {
             ("R2", "open", "critical"),
             ("R3", "deferred", "warning"),
         ];
-        app.apply_ledger(ledger(Kind::Review, REVIEW_PATH, &rows), Instant::now());
+        let read = ledger(Kind::Review, flow_review("demo"), &rows);
+        app.apply_ledger(read, Instant::now());
         app.apply(Action::SwitchSurface(Surface::Review));
         app
     }
@@ -2350,7 +2355,7 @@ mod tests {
             ("B-3", "resolved", ""),
         ];
         app.apply_ledger(
-            ledger(Kind::Backlog, ".claude/backlog.toml", &rows),
+            ledger(Kind::Backlog, LedgerRef::Backlog, &rows),
             Instant::now(),
         );
         app.apply(Action::SwitchSurface(Surface::Backlog));
@@ -2514,7 +2519,7 @@ mod tests {
             ..WriteOutcome::default()
         });
         let rows = [("R1", "open", "warning"), ("R2", "open", "critical")];
-        let other = ".claude/flows/other/review-ledger.toml";
+        let other = flow_review("other");
         app.apply_ledger(ledger(Kind::Review, other, &rows), Instant::now());
 
         app.apply(Action::Undo);
@@ -2581,7 +2586,8 @@ mod tests {
     fn a_read_only_cursor_row_is_refused() {
         let mut app = app();
         let rows = [("#1", "open", "")];
-        app.apply_ledger(ledger(Kind::Review, REVIEW_PATH, &rows), Instant::now());
+        let read = ledger(Kind::Review, flow_review("demo"), &rows);
+        app.apply_ledger(read, Instant::now());
         app.apply(Action::SwitchSurface(Surface::Review));
         app.apply(Action::OpenMenu);
         assert!(app.overlay.is_none());
@@ -2594,6 +2600,27 @@ mod tests {
         app.apply(Action::SwitchSurface(Surface::Review));
         app.apply(Action::OpenMenu);
         assert!(app.overlay.is_none(), "a ledger named by path is read-only");
+    }
+
+    #[test]
+    fn writes_target_the_ledger_read_even_after_the_flow_moves_on() {
+        let mut app = writable_review_app();
+        app.scopes.ledger_only.push("other".to_string());
+        app.apply(Action::SwitchFlow("other".to_string()));
+        assert_eq!(app.ledger_flow.as_deref(), Some("other"));
+        app.apply(Action::SwitchScope(LedgerKind::Review, "loose".to_string()));
+        assert_eq!(app.surface, Surface::Review, "the scope shows its surface");
+
+        defer_r1_r2(&mut app);
+        let writes = app.take_writes();
+        let [WriteRequest::Transition { ledger, .. }] = writes.as_slice() else {
+            panic!("expected one transition, got {writes:?}");
+        };
+        assert_eq!(
+            ledger,
+            &flow_review("demo"),
+            "the rows on screen came from demo, so the write goes there"
+        );
     }
 
     #[test]

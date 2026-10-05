@@ -426,7 +426,9 @@ mod tests {
 
         fn rows(&self, ledger: &LedgerRef) -> Vec<ItemRow> {
             let value = tomlctl::ledger_read(&self.root, ledger).expect("ledger read");
-            Ledger::from_value(value).expect("ledger loads").rows
+            Ledger::from_value(value, ledger.clone())
+                .expect("ledger loads")
+                .rows
         }
 
         fn row(&self, ledger: &LedgerRef, id: &str) -> ItemRow {
