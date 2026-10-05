@@ -23,8 +23,8 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::validate_slug;
 use crate::integrity::{IntegrityOpts, hex_lower};
 use crate::io::{
-    OnMissing, item_id, items_array, mutate_doc_conditional, read_dir_sorted, relativise_under,
-    repo_or_cwd_root,
+    OnMissing, ensure_process_root, item_id, items_array, mutate_doc_conditional, read_dir_sorted,
+    relativise_under,
 };
 use crate::items::{
     Item, STATUS_COMPANIONS, StaleOp, StalePolicy, compute_apply_mutation_with, status_companions,
@@ -256,30 +256,6 @@ pub(crate) fn scopes(root: &Path) -> Result<JsonValue> {
         }
     }
     Ok(json!({"flows": flows, "scopes": scopes}))
-}
-
-/// Refuses `root` unless it names the same directory as tomlctl's process
-/// root, from which the write lock directory and the `.claude/` containment
-/// check derive: two writers that disagree on it would not exclude each other.
-pub(crate) fn ensure_process_root(root: &Path) -> Result<()> {
-    let process = repo_or_cwd_root()?;
-    let process = process.canonicalize().unwrap_or(process);
-    let given = root
-        .canonicalize()
-        .with_context(|| format!("canonicalising root {}", root.display()))?;
-    if given != process {
-        let source = if std::env::var_os("TOMLCTL_ROOT").is_some_and(|v| !v.is_empty()) {
-            "taken from TOMLCTL_ROOT"
-        } else {
-            "the working directory's repository, as TOMLCTL_ROOT is unset"
-        };
-        bail!(
-            "root mismatch: {} is not tomlctl's process root {} ({source})",
-            given.display(),
-            process.display()
-        );
-    }
-    Ok(())
 }
 
 /// The form fields of a transition the write facade offers, or `None` for any

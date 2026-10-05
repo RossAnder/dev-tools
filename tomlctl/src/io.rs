@@ -1627,6 +1627,30 @@ pub(crate) fn repo_or_cwd_root() -> Result<PathBuf> {
     Ok(REPO_ROOT.get_or_init(|| resolved).clone())
 }
 
+/// Refuses `root` unless it names the same directory as tomlctl's process
+/// root, from which the write lock directory and the `.claude/` containment
+/// check derive: two writers that disagree on it would not exclude each other.
+pub(crate) fn ensure_process_root(root: &Path) -> Result<()> {
+    let process = repo_or_cwd_root()?;
+    let process = process.canonicalize().unwrap_or(process);
+    let given = root
+        .canonicalize()
+        .with_context(|| format!("canonicalising root {}", root.display()))?;
+    if given != process {
+        let source = if std::env::var_os("TOMLCTL_ROOT").is_some_and(|v| !v.is_empty()) {
+            "taken from TOMLCTL_ROOT"
+        } else {
+            "the working directory's repository, as TOMLCTL_ROOT is unset"
+        };
+        bail!(
+            "root mismatch: {} is not tomlctl's process root {} ({source})",
+            given.display(),
+            process.display()
+        );
+    }
+    Ok(())
+}
+
 /// `git rev-parse --show-toplevel` run from the process cwd, canonicalised;
 /// the canonical `cwd` when git is missing, fails, or prints nothing.
 fn git_toplevel_or_cwd(cwd: PathBuf) -> PathBuf {

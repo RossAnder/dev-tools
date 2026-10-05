@@ -23,8 +23,11 @@ use crate::convert::{devalue_to_json, json_to_toml};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::validate_slug;
 use crate::integrity::{IntegrityOpts, hex_lower};
-use crate::io::{OnMissing, item_id, items_array_mut, mutate_doc_conditional, relativise_under};
-use crate::ledgers::{ensure_process_root, with_borrowed_doc};
+use crate::io::{
+    OnMissing, ensure_process_root, item_id, items_array_mut, mutate_doc_conditional,
+    relativise_under,
+};
+use crate::ledgers::with_borrowed_doc;
 
 pub(crate) const ARRAY: &str = "inputs";
 

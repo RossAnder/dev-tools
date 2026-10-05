@@ -210,7 +210,7 @@ pub fn backlog_triage(
     expect_status: &str,
 ) -> anyhow::Result<serde_json::Value> {
     io::silence_advisories();
-    ledgers::ensure_process_root(root)?;
+    io::ensure_process_root(root)?;
     let write_opts = WriteIntegrityArgs {
         allow_outside: false,
         no_write_integrity: false,
