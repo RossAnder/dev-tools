@@ -197,12 +197,31 @@ pub(crate) enum VisibleRow {
     Item(String),
 }
 
+/// A list's rows, readable as a slice anywhere but replaceable only by
+/// [`Tracking::refresh`], so the row index, flashes and saving set cannot fall out of
+/// step with them.
+#[derive(Debug, Clone)]
+pub(crate) struct Rows<R>(Vec<R>);
+
+impl<R> Default for Rows<R> {
+    fn default() -> Self {
+        Rows(Vec::new())
+    }
+}
+
+impl<R> Deref for Rows<R> {
+    type Target = [R];
+    fn deref(&self) -> &[R] {
+        &self.0
+    }
+}
+
 /// The rows of a refreshed list and what the user has seen of them: the part
 /// [`ItemsState`] and [`InboxState`] share. Keyed by row id, so a refresh keeps
 /// the cursor and saving set; the owner supplies the visible order.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Tracking<R> {
-    pub(crate) rows: Vec<R>,
+    pub(crate) rows: Rows<R>,
     pub(crate) revision: Seen,
     pub(crate) cursor: Option<String>,
     /// Row id to the instant it appeared or changed status; live for [`FLASH`].
@@ -211,6 +230,11 @@ pub(crate) struct Tracking<R> {
     pub(crate) new_since_view: usize,
     /// Ids with a write in flight, cleared when a read shows the row changed.
     pub(crate) saving: BTreeSet<String>,
+    /// The first visible-list row the last frame drew, written back by the list view.
+    pub(crate) scroll: usize,
+    /// Set by the wheel: the list stays where the wheel left it, even with the cursor
+    /// off screen, until the cursor or the visible order changes.
+    pub(crate) scroll_pinned: bool,
     /// Row id to its first position in `rows`, rebuilt by [`Tracking::refresh`].
     index: HashMap<String, usize>,
 }
@@ -234,7 +258,7 @@ impl<R: Tracked> Tracking<R> {
         let first = !self.revision.is_read();
         let (arrived, changed) = arrivals(&self.rows, &rows);
 
-        self.rows = rows;
+        self.rows = Rows(rows);
         self.index.clear();
         for (i, row) in self.rows.iter().enumerate() {
             self.index.entry(row.id().to_string()).or_insert(i);
@@ -277,14 +301,24 @@ impl<R: Tracked> Tracking<R> {
             .retain(|_, at| now.saturating_duration_since(*at) < FLASH);
     }
 
-    /// `rows` is public and some callers assign it without a refresh, so an index hit
-    /// is checked against the row's id and anything else falls back to a scan.
+    /// The first row with `id`.
     pub(crate) fn row(&self, id: &str) -> Option<&R> {
-        self.index
-            .get(id)
-            .and_then(|&i| self.rows.get(i))
-            .filter(|row| row.id() == id)
-            .or_else(|| self.rows.iter().find(|row| row.id() == id))
+        self.index.get(id).map(|&i| &self.rows[i])
+    }
+
+    /// Loads `rows` as a first read of `revision` would, flashing nothing.
+    #[cfg(test)]
+    pub(crate) fn set_rows(&mut self, rows: Vec<R>, revision: Option<&str>) {
+        self.revision = Seen::Unread;
+        self.refresh(rows, revision.map(str::to_owned), true, Instant::now());
+    }
+
+    /// Scrolls the list `rows` down (negative: up) and pins it there. The view clamps
+    /// the offset to the list it draws.
+    pub(crate) fn scroll_by(&mut self, rows: i32) {
+        let by = isize::try_from(rows).unwrap_or(0);
+        self.scroll = self.scroll.saturating_add_signed(by);
+        self.scroll_pinned = true;
     }
 
     pub(crate) fn cursor_row(&self) -> Option<&R> {
@@ -588,7 +622,7 @@ impl InboxState {
     /// The rows the Inbox draws, each section under a header.
     pub(crate) fn visible(&self) -> Vec<VisibleRow> {
         let mut groups: BTreeMap<(u8, &str), Vec<&InputRow>> = BTreeMap::new();
-        for row in &self.rows {
+        for row in self.rows.iter() {
             if !self.show_closed && matches!(row.status.as_str(), "handled" | "withdrawn") {
                 continue;
             }
@@ -806,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn row_finds_the_first_row_with_an_id_even_after_a_direct_assignment() {
+    fn row_finds_the_first_row_with_an_id_after_every_load() {
         let mut state = loaded(vec![
             item("R1", "open", "warning"),
             item("R2", "open", "critical"),
@@ -815,10 +849,13 @@ mod tests {
         assert_eq!(state.row("R2").map(|r| r.status.as_str()), Some("open"));
         assert!(state.row("R9").is_none());
 
-        state.rows = vec![
-            item("R2", "deferred", "minor"),
-            item("R3", "open", "warning"),
-        ];
+        state.set_rows(
+            vec![
+                item("R2", "deferred", "minor"),
+                item("R3", "open", "warning"),
+            ],
+            Some("rev1"),
+        );
         assert_eq!(state.row("R2").map(|r| r.status.as_str()), Some("deferred"));
         assert_eq!(state.row("R3").map(|r| r.status.as_str()), Some("open"));
         assert!(state.row("R1").is_none());

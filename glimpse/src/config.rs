@@ -232,6 +232,50 @@ impl ViewKind {
     }
 }
 
+/// A column of an item surface's rows, in the order `item_columns` lists them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ItemColumn {
+    Status,
+    Id,
+    /// A finding's severity, or a backlog item's kind.
+    Kind,
+    Category,
+    Effort,
+    /// Takes the width the other columns leave.
+    Summary,
+    /// A finding's `file:line`, a plan-review section or a backlog area, in a
+    /// fixed-width column.
+    Area,
+}
+
+impl ItemColumn {
+    pub(crate) const ALL: [ItemColumn; 7] = [
+        ItemColumn::Status,
+        ItemColumn::Id,
+        ItemColumn::Kind,
+        ItemColumn::Category,
+        ItemColumn::Effort,
+        ItemColumn::Summary,
+        ItemColumn::Area,
+    ];
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            ItemColumn::Status => "status",
+            ItemColumn::Id => "id",
+            ItemColumn::Kind => "kind",
+            ItemColumn::Category => "category",
+            ItemColumn::Effort => "effort",
+            ItemColumn::Summary => "summary",
+            ItemColumn::Area => "area",
+        }
+    }
+
+    pub(crate) fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|column| column.as_str() == s)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Config {
     pub(crate) orientation: OrientationPref,
@@ -257,6 +301,8 @@ pub(crate) struct Config {
     pub(crate) column_max: u16,
     /// Mouse capture blocks the terminal's own text selection while glimpse runs.
     pub(crate) mouse: bool,
+    /// The columns an item row shows, in order; never empty and never repeating one.
+    pub(crate) item_columns: Vec<ItemColumn>,
     /// Theme token overrides, already checked by [`crate::theme::validate`].
     pub(crate) theme: HashMap<String, String>,
     /// Set from the environment by [`Config::load`], never from the file.
@@ -281,6 +327,7 @@ impl Default for Config {
             panel_percent: 40,
             column_max: 40,
             mouse: true,
+            item_columns: ItemColumn::ALL.to_vec(),
             theme: HashMap::new(),
             no_color: false,
         }
@@ -352,6 +399,7 @@ impl Config {
                         .as_bool()
                         .ok_or_else(|| "`mouse` must be true or false".to_string())?;
                 }
+                "item_columns" => cfg.item_columns = item_columns(value)?,
                 other => return Err(format!("unknown key `{other}`")),
             }
         }
@@ -401,6 +449,31 @@ fn theme_table(value: &toml::Value) -> Result<HashMap<String, String>, String> {
     }
     crate::theme::validate(&out)?;
     Ok(out)
+}
+
+fn item_columns(value: &toml::Value) -> Result<Vec<ItemColumn>, String> {
+    let names: Vec<&str> = ItemColumn::ALL.iter().map(|c| c.as_str()).collect();
+    let must = || {
+        format!(
+            "`item_columns` must list column names: {}",
+            names.join(", ")
+        )
+    };
+    let array = value.as_array().ok_or_else(must)?;
+    let mut columns = Vec::with_capacity(array.len());
+    for entry in array {
+        let name = entry.as_str().ok_or_else(must)?;
+        let column = ItemColumn::parse(name)
+            .ok_or_else(|| format!("`item_columns`: unknown column `{name}`; {}", must()))?;
+        if columns.contains(&column) {
+            return Err(format!("`item_columns` lists `{name}` twice"));
+        }
+        columns.push(column);
+    }
+    if columns.is_empty() {
+        return Err("`item_columns` must name at least one column".to_string());
+    }
+    Ok(columns)
 }
 
 fn str_value<'a>(key: &str, value: &'a toml::Value) -> Result<&'a str, String> {
@@ -544,6 +617,35 @@ mod tests {
             "column_max = 10",
             "compact_below = 0",
             "mouse = 1",
+        ] {
+            assert!(Config::parse(bad).is_err(), "{bad:?} should be rejected");
+        }
+    }
+
+    #[test]
+    fn item_columns_parse_in_order_and_reject_unknown_or_repeated_names() {
+        assert_eq!(Config::default().item_columns, ItemColumn::ALL);
+        let cfg =
+            Config::parse("item_columns = [\"status\", \"id\", \"kind\", \"summary\", \"area\"]")
+                .expect("parses");
+        assert_eq!(
+            cfg.item_columns,
+            [
+                ItemColumn::Status,
+                ItemColumn::Id,
+                ItemColumn::Kind,
+                ItemColumn::Summary,
+                ItemColumn::Area
+            ]
+        );
+        let err = Config::parse("item_columns = [\"id\", \"owner\"]").expect_err("unknown");
+        assert!(err.contains("unknown column `owner`"), "{err}");
+        assert!(err.contains("status, id, kind"), "names the choices: {err}");
+        for bad in [
+            "item_columns = []",
+            "item_columns = [\"id\", \"id\"]",
+            "item_columns = \"id\"",
+            "item_columns = [1]",
         ] {
             assert!(Config::parse(bad).is_err(), "{bad:?} should be rejected");
         }

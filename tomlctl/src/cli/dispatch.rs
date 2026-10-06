@@ -17,9 +17,7 @@ use super::types::{
 
 use crate::blocks::blocks_verify;
 use crate::clusters::items_clusters;
-use crate::convert::{
-    detable_to_json, maybe_date_coerce, navigate, parse_scalar, set_at_path, toml_to_json,
-};
+use crate::convert::{maybe_date_coerce, navigate, parse_scalar, set_at_path, toml_to_json};
 use crate::dedup::{
     items_find_duplicates, items_find_duplicates_across, items_find_duplicates_across_json,
     items_find_duplicates_json,
@@ -29,8 +27,8 @@ use crate::io::{
     compute_set_json_mutation, compute_set_mutation, dry_run_read_opts, guard_write_path,
     mutate_doc, mutate_doc_conditional, mutate_doc_plan, on_missing_for, read_doc,
     read_doc_borrowed, read_doc_either, read_json_arg, read_json_value_from_arg,
-    read_ndjson_source, read_toml_str, recheck_claude_containment, repo_or_cwd_root,
-    strict_read_check, warn_if_created, warn_if_read_outside_claude, with_exclusive_lock,
+    read_ndjson_source, recheck_claude_containment, repo_or_cwd_root, strict_read_check,
+    warn_if_created, warn_if_read_outside_claude, with_exclusive_lock,
 };
 use crate::items::{
     AddManyOutcome, AddOutcome, StaleOp, StalePolicy, array_append, compute_add_many_mutation,
@@ -188,8 +186,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             let out = if opts.verify_on_read {
                 read_doc(&file, opts, |doc| Ok(toml_to_json(doc)))?
             } else {
-                let source = read_toml_str(&file)?;
-                read_doc_borrowed(&source, detable_to_json)?
+                read_doc_borrowed(&file)?
             };
             print_json(&out)?;
         }
@@ -1091,23 +1088,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                         )?
                     } else {
                         // Borrowed-DeTable fast-path. Both ledgers go
-                        // through the borrowed parse + detable_to_json
-                        // boundary; the cross-ledger join then runs in
-                        // JsonValue space via items_find_duplicates_across_json.
-                        let primary_items: Vec<JsonValue> = {
-                            let source = read_toml_str(&file)?;
-                            read_doc_borrowed(&source, |table| {
-                                let json = detable_to_json(table)?;
-                                Ok(crate::io::items_array_json(&json, "items").to_vec())
-                            })?
-                        };
-                        let other_items: Vec<JsonValue> = {
-                            let source = read_toml_str(&other_path)?;
-                            read_doc_borrowed(&source, |table| {
-                                let json = detable_to_json(table)?;
-                                Ok(crate::io::items_array_json(&json, "items").to_vec())
-                            })?
-                        };
+                        // through the borrowed parse; the cross-ledger join
+                        // then runs in JsonValue space via
+                        // items_find_duplicates_across_json.
+                        let primary = read_doc_borrowed(&file)?;
+                        let primary_items = crate::io::items_array_json(&primary, "items").to_vec();
+                        let other = read_doc_borrowed(&other_path)?;
+                        let other_items = crate::io::items_array_json(&other, "items").to_vec();
                         items_find_duplicates_across_json(
                             primary_items,
                             &primary_file,
@@ -1358,8 +1345,19 @@ fn inputs_dispatch(op: InputsOp) -> Result<()> {
             ids,
             by,
             note,
+            ndjson,
             integrity,
-        } => inputs::handle(&root, &ids, &by, &note, write_integrity_opts(&integrity))?,
+        } => {
+            let opts = write_integrity_opts(&integrity);
+            match (ndjson, note) {
+                (Some(src), _) => {
+                    let rows = parse_ndjson(&read_ndjson_source(&src)?)?;
+                    inputs::handle_each(&root, &inputs::handle_rows(&rows)?, &by, opts)?
+                }
+                (None, Some(note)) => inputs::handle(&root, &ids, &by, &note, opts)?,
+                (None, None) => unreachable!("clap requires --note without --ndjson"),
+            }
+        }
         InputsOp::Withdraw { ids, integrity } => {
             inputs::withdraw(&root, &ids, write_integrity_opts(&integrity))?
         }

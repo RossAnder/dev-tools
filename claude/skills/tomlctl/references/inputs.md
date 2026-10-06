@@ -119,15 +119,19 @@ Moves each `new` or `acknowledged` record to `handled`, stamping `handled` (now)
 
 ```bash
 tomlctl inputs handle I3 --by review --note "R3 deferred: waits on the writer thread"
+printf '%s\n' '{"id":"I4","note":"minted B-1a2b3c4d"}' '{"id":"I5","note":"duplicate of B-9f8e7d6c"}' | tomlctl inputs handle --by backlog --ndjson -
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| *(positional)* | id… | Records to handle. Duplicates collapse. | required |
+| *(positional)* | id… | Records to handle, all sharing `--note`. Duplicates collapse. | required without `--ndjson` |
 | `--by` | command | Command that acted on the records. Must not be empty. | required |
-| `--note` | text | What was done, or why it was declined. Must not be empty. | required |
+| `--note` | text | What was done, or why it was declined. Must not be empty. | required without `--ndjson` |
+| `--ndjson` | `-` \| path \| `@<path>` | One `{"id", "note"}` object per line, each record with its own note. Excludes the positional ids and `--note`. | none |
 
 A `handled` or `withdrawn` record is skipped and reported; an unknown id fails the whole call.
+The `--ndjson` batch is one write under one lock, and is refused whole when a row carries a
+key other than `id` and `note`, a note is empty, or an id appears twice.
 
 ## `inputs withdraw`
 

@@ -1,5 +1,6 @@
 //! Claude Code and Codex hook handler: records agent events through the in-process
-//! `tomlctl::record_agent` and opens the glimpse pane on subagent start.
+//! `tomlctl::record_agent` and opens the glimpse pane on subagent start, unless a glimpse
+//! is already running for the repo.
 //!
 //! Neither harness waits for nor reads an async hook, so a failure here would vanish
 //! silently. Every error is appended instead to `<claude_dir>/glimpse/hook.log`, and nothing
@@ -15,7 +16,7 @@ use serde_json::Value;
 
 use crate::cli::Harness;
 use crate::config::{Config, claude_dir};
-use crate::flows::flows_root;
+use crate::flows::{flows_root, repo_root};
 use crate::herdr::Herdr;
 use crate::source::with_reinstall_hint;
 
@@ -232,6 +233,9 @@ fn handle(stdin: impl Read, harness: Harness) -> Result<(), String> {
             slug,
             cwd,
         } => {
+            if repo_root(Path::new(&cwd)).is_some_and(|root| crate::presence::is_running(&root)) {
+                return Ok(());
+            }
             let (config, warning) = Config::load();
             if let Some(w) = warning {
                 log_error(&w);

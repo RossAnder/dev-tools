@@ -275,23 +275,9 @@ This makes the gate auditable from console output alone.
 
 ### Dispatch discipline
 
-**File-cluster grouping is the primary conflict-avoidance strategy.** No two agents may edit the
-same file. Findings that cannot be split into non-overlapping clusters get **sequenced, not
-parallelised**; `isolation: "worktree"` is a last resort only — worktree merges are slow and risk
-losing work.
-
-**You MUST make all independent file-cluster Agent calls in a single response message.** Emit one
-message containing every Agent tool-use block so they execute concurrently. **Do NOT reduce the
-agent count** — launch the full complement. Dependent same-file agents run sequentially after the
-parallel batch. Nothing is committed between rounds (the apply-constraints no-auto-commit rule), so
-the Step 5.5 rollback reverts the whole run's work, never one round's.
-
-**Dev server (UI clusters).** When a cluster's items change something visible — a component, a
-style, a template — and the project's `.mcp.json` declares the `playwright` server, probe the dev
-URL the project documents (its CLAUDE.md, or the dev script in its manifest). If nothing answers
-and a dev command is documented, start it once in the background before the round launches;
-stop a server this run started before Step 5. Put `DEV SERVER: <url>` in every cluster prompt, or `DEV SERVER: none`;
-the implementers attach only to that URL and never start a server of their own.
+Before launching a round, read the file-conflict rule, the single-message launch rule and the
+dev-server handling for UI clusters in
+[Dispatch discipline](references/dispatch-discipline.md#dispatch-discipline).
 
 The implementers carry their method in their system prompts; the per-call prompt carries the
 carrier's vocabulary and the Step-2 context. For the mandatory prompt elements and the partial-apply
@@ -403,49 +389,8 @@ retried. See [Ledger mutation](references/verification.md#ledger-mutation).
 completeness, and ensure the report reflects what was actually implemented, audited, and skipped.
 **Omit any sub-section with no entries.**
 
-```
-## <carrier report title>
-
-### Implemented
-- [<ID>] [file:line] [category] Summary of what was changed — (severity)
-  - Tag `(partial)` for partial applies (see `resolution` for the split).
-  - Tag `(chronic)` for items whose pre-apply `rounds >= 3` reached `<APPLIED>` (per the
-    ledger-schema escalation rule).
-
-### Verified Clean          # only where <NO-CHANGE> is a disposition distinct from <REJECTED>
-- [<ID>] [category] Audit note
-
-### Skipped
-- [<ID>] [category] Reason — the ledger's rationale field carries the same text
-
-### Escalated
-- [<ID>] [file:line] <reason word> — evidence and next step (for `spec-stale`, re-run <PRODUCER> on
-  the file); the item stays `open`
-
-### Unknown IDs
-- <ID>: not present in ledger at <path> — check <PRODUCER>'s most recent output
-
-### Downgraded
-- [<ID>] [file:line] Claimed `applied` but no diff detected — transitioned to `<REJECTED>`. Investigate.
-
-### Requires User Confirmation
-- [<ID>] [file:line] [category] [severity] Agent rationale — awaiting explicit disposition before
-  the ledger transition.
-
-### Changed During the Run
-- [<ID>] `<field>` expected `<expected>`, found `<found>` — `skipped_stale`; not retried
-
-### Verification
-- Build: pass/fail/timeout
-- Tests: pass/flaky/fail/timeout/none — with the block's `summary:` count
-- Category-specific: per the carrier's checks, as applicable
-
-### Regressions Triggered
-- [<ID>] [file:line] Regression of [<old ID>] — dedup-rule match details
-
-### User inputs
-- I<n> (<kind>) [<ID>, …] Outcome — the handle note's text
-```
+Read the report skeleton (section order and per-section line shapes) in
+[Final summary](references/final-summary.md#final-summary) before emitting it.
 
 ## Step 6: Plan-deviation follow-up
 

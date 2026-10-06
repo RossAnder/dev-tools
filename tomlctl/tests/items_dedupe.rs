@@ -723,6 +723,53 @@ fn items_find_duplicates_across_tier_c_errors_with_exact_message() {
     );
 }
 
+/// An out-of-range value in the `--across` ledger fails the read naming that
+/// ledger, not the primary, in both the text and the JSON error.
+#[test]
+fn items_find_duplicates_across_bad_value_names_its_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = dir.path().join(".claude");
+    fs::create_dir_all(&claude).unwrap();
+    let primary = claude.join("review.toml");
+    let other = claude.join("optimise.toml");
+    fs::write(&primary, "schema_version = 1\n").unwrap();
+    fs::write(
+        &other,
+        "schema_version = 1\n\n[[items]]\nid = \"O1\"\ncount = 99999999999999999999\n",
+    )
+    .unwrap();
+    let run = |error_format: &str| {
+        let out = Command::cargo_bin("tomlctl")
+            .unwrap()
+            .env("TOMLCTL_ROOT", dir.path())
+            .args(["--error-format", error_format, "items", "find-duplicates"])
+            .arg(&primary)
+            .arg("--across")
+            .arg(&other)
+            .write_stdin("")
+            .assert()
+            .failure();
+        String::from_utf8_lossy(&out.get_output().stderr).to_string()
+    };
+
+    let text = run("text");
+    let other_display = other.display().to_string();
+    assert!(
+        text.contains(&other_display) && !text.contains(&primary.display().to_string()),
+        "text error must name the --across file only; got:\n{text}"
+    );
+
+    let json = run("json");
+    let envelope: serde_json::Value = serde_json::from_str(json.lines().last().unwrap())
+        .unwrap_or_else(|e| panic!("stderr is not a JSON envelope ({e}):\n{json}"));
+    assert_eq!(envelope["error"]["kind"], "parse", "got: {envelope}");
+    assert_eq!(
+        envelope["error"]["file"].as_str(),
+        Some(other_display.as_str()),
+        "got: {envelope}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // `items backfill-dedup-id <file>` — explicit, auditable upgrade path for
 // legacy ledgers whose items lack `dedup_id`. Walks every item, computes

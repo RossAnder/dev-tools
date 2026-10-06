@@ -244,6 +244,43 @@ fn inputs_refusals_exit_nonzero_with_a_tagged_error() {
 }
 
 #[test]
+fn inputs_handle_ndjson_notes_each_record() {
+    let (_dir, root) = sandbox();
+    let first = minted(&inputs(
+        &root,
+        &["add", "--json", r#"{"kind": "capture", "text": "a"}"#],
+    ));
+    let second = minted(&inputs(
+        &root,
+        &["add", "--json", r#"{"kind": "capture", "text": "b"}"#],
+    ));
+    let batch = format!(
+        "{{\"id\":\"{first}\",\"note\":\"minted B-1\"}}\n\n{{\"id\":\"{second}\",\"note\":\"minted B-2\"}}\n"
+    );
+    let out = inputs_with_stdin(
+        &root,
+        &["handle", "--by", "backlog", "--ndjson", "-"],
+        &batch,
+    );
+    assert_eq!(out["applied"], json!([first, second]));
+    assert_eq!(record(&root, &first)["handled_note"], "minted B-1");
+    assert_eq!(record(&root, &second)["handled_note"], "minted B-2");
+
+    for argv in [
+        vec!["handle", &first, "--by", "backlog", "--ndjson", "-"],
+        vec!["handle", "--by", "backlog", "--note", "x", "--ndjson", "-"],
+        vec!["handle", "--by", "backlog"],
+    ] {
+        cli(&root)
+            .arg("inputs")
+            .args(&argv)
+            .write_stdin(batch.as_str())
+            .assert()
+            .failure();
+    }
+}
+
+#[test]
 fn inputs_list_on_a_missing_store() {
     let (_dir, root) = sandbox();
     let out = inputs(&root, &["list", "--verify-integrity"]);

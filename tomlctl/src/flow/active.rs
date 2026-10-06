@@ -13,8 +13,8 @@
 //! scope = ["src/foo/**"]
 //! ```
 //!
-//! Upserts go through `io::with_exclusive_lock` + `read_toml` +
-//! `write_toml_with_sidecar` so the lock-held read+write window matches
+//! Upserts go through `io::with_exclusive_lock` + `read_toml_with_source` +
+//! `write_doc_unless_unchanged` so the lock-held read+write window matches
 //! `io::mutate_doc`'s TOCTOU contract — every mutation observes the
 //! post-lock filesystem state. Bootstrap (file missing) materialises an
 //! empty `schema_version = 1` doc inside the lock so the first `add`
@@ -45,8 +45,8 @@ use crate::flow::schema::{ActiveDoc, ActiveEntry as SchemaEntry};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
 use crate::io::advise;
 use crate::io::{
-    guard_write_path, read_toml, recheck_claude_containment, repo_or_cwd_root, with_exclusive_lock,
-    write_toml_with_sidecar,
+    guard_write_path, read_toml, read_toml_with_source, recheck_claude_containment,
+    repo_or_cwd_root, with_exclusive_lock, write_doc_unless_unchanged,
 };
 use crate::output::print_json_compact;
 use crate::time::now_rfc3339;
@@ -267,7 +267,9 @@ pub(crate) fn build_entry(
 /// Bootstrap-on-missing: when the target file doesn't exist on disk, we
 /// proceed with an empty in-memory doc rather than failing — the closure
 /// adds/removes entries against the empty array and the post-lock
-/// `write_toml_with_sidecar` materialises the file + sidecar atomically.
+/// `write_doc_unless_unchanged` materialises the file + sidecar atomically.
+/// On an existing file that write is skipped when the mutation changed no
+/// bytes, as `io::mutate_doc`'s is.
 /// `guard_write_path` runs unconditionally (even on bootstrap) so the
 /// `.claude/` containment rule is enforced before the first byte hits disk.
 pub(crate) fn mutate_active<F>(file: &Path, integrity_args: &WriteIntegrityArgs, f: F) -> Result<()>
@@ -280,17 +282,18 @@ where
         // In-lock containment guard so a leaf-symlink swap between
         // path-resolution and persist is still caught.
         guard_write_path(file, allow_outside)?;
-        let mut doc = if file.exists() {
+        let (mut doc, on_disk) = if file.exists() {
             maybe_verify_integrity(file, opts)?;
-            read_toml(file)?
+            let (doc, source) = read_toml_with_source(file)?;
+            (doc, Some(source))
         } else {
-            empty_doc()
+            (empty_doc(), None)
         };
         f(&mut doc)?;
         if !allow_outside {
             recheck_claude_containment(file)?;
         }
-        write_toml_with_sidecar(file, &doc, opts)?;
+        write_doc_unless_unchanged(file, &doc, opts, on_disk.as_deref())?;
         Ok(())
     })
 }

@@ -74,14 +74,49 @@ pub(crate) fn initials(agent_type: &str) -> String {
     }
 }
 
-/// The first of `view` rows drawn from `len`, keeping a third of the window below `at`.
-pub(crate) fn window(at: Option<usize>, len: usize, view: usize) -> usize {
+/// How a frame scrolls a list: as the wheel left it, with the selection a third of
+/// the way in (follow), or as little as keeps the selection clear of the edges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Place {
+    Pinned,
+    Jump,
+    Step,
+}
+
+impl Place {
+    /// An item list has no follow, so it only steps or stays pinned.
+    pub(crate) fn of_list(pinned: bool) -> Place {
+        if pinned { Place::Pinned } else { Place::Step }
+    }
+}
+
+/// First entry of a `view`-long window over `len` entries, starting from `offset`. A
+/// jump puts `at` a third of the way in, so twice as much of what follows it shows as of
+/// what precedes it; a step moves only as far as keeps a couple of entries behind `at`
+/// and a third of the window ahead of it.
+pub(crate) fn place(
+    offset: usize,
+    at: Option<usize>,
+    len: usize,
+    view: usize,
+    how: Place,
+) -> usize {
     if view == 0 || len <= view {
         return 0;
     }
-    let ahead = view / 3;
-    let start = at.map_or(0, |at| (at + ahead + 1).saturating_sub(view));
-    start.min(len - view)
+    let max = len - view;
+    let start = match (at, how) {
+        (Some(at), Place::Jump) => at.saturating_sub(view / 3),
+        (Some(at), Place::Step) => {
+            let behind = (view / 4).min(2);
+            let ahead = view / 3;
+            let low = (at + ahead + 1).saturating_sub(view);
+            let high = at.saturating_sub(behind).max(low);
+            offset.clamp(low, high)
+        }
+        (None, _) | (_, Place::Pinned) => offset,
+    };
+    start.min(max)
 }
 
 /// Rows an activity-only modal needs: borders, the status row and every shown entry.
@@ -132,7 +167,7 @@ pub(crate) fn render(
     });
     app.resolved_orientation = orientation;
 
-    header::render(frame, head, app, compact);
+    let tabs = header::render(frame, head, app, compact);
     cache.set_implied(app.show_implied);
     let (tasks, items) = match view_area {
         Some(view_area) => draw_surface(frame, view_area, app, orientation, cache),
@@ -165,6 +200,7 @@ pub(crate) fn render(
         modal,
         tasks,
         items,
+        tabs,
         body,
         divider,
     };
@@ -299,11 +335,18 @@ fn draw_surface(
 ) -> (Vec<layers::Target>, Vec<items::Target>) {
     match app.surface {
         Surface::Tasks => (draw_view(frame, area, app, orientation, cache), Vec::new()),
-        Surface::Inbox => (Vec::new(), inbox::render(frame.buffer_mut(), area, app)),
+        Surface::Inbox => {
+            let (targets, scroll) = inbox::render(frame.buffer_mut(), area, app);
+            app.inbox.scroll = scroll;
+            (Vec::new(), targets)
+        }
         Surface::Review | Surface::Optimise | Surface::PlanReview | Surface::Backlog => {
-            let targets = items::render(frame.buffer_mut(), area, app);
+            let (targets, scroll) = items::render(frame.buffer_mut(), area, app);
             if let Some(at) = items::prompt_cursor(area, app) {
                 frame.set_cursor_position(at);
+            }
+            if let Some(state) = app.items.get_mut(&app.surface) {
+                state.scroll = scroll;
             }
             (Vec::new(), targets)
         }

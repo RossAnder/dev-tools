@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-10-05
+last_updated = 2026-10-06
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -4571,7 +4571,7 @@ tags = [
     "perf",
     "watcher",
 ]
-status = "open"
+status = "resolved"
 created = 2026-09-30
 last_seen = 2026-09-30
 seen_count = 1
@@ -4581,6 +4581,8 @@ flow = "polymorphic-wondering-magpie"
 context = "mutate_doc and its variants in io.rs now skip a write whose serialised bytes and sidecar already match, so a no-op mutation no longer bumps the mtime or wakes watchers. flow/active.rs, flow/doctor.rs and flow/init.rs call write_toml_with_sidecar directly and still always rewrite. None is known to be on a hot path; route them through the same skip only if one turns out to run repeatedly (e.g. a registry write per flow command)."
 base_sha = "d9e96d675fad19b2c6cca2f05ddcf9548ef98a9b"
 evidence = ["tomlctl/src/io.rs:836"]
+resolved = 2026-10-06
+resolution = "flow active and doctor writes go through write_doc_unless_unchanged; init refreshes an existing store's sidecar only when stale. Test: remove_of_an_absent_slug_leaves_registry_and_sidecar_untouched."
 
 [[backlog]]
 id = "B-f010d1ce"
@@ -4676,7 +4678,7 @@ kind = "direction"
 summary = "ItemsState has no scroll offset, so item lists cannot be wheel-scrolled and re-scroll from the cursor every frame"
 area = "glimpse/src/surface.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4686,6 +4688,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Add a per-surface scroll offset written back by the items view, as layers does with ListScroll, and let the wheel drive it."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-1eb0eeac"]
+resolved = 2026-10-06
+resolution = "Per-list scroll offset on Tracking, written back by the view; the wheel scrolls item lists and the Inbox without moving the cursor."
 
 [[backlog]]
 id = "B-b2574f41"
@@ -4769,7 +4773,7 @@ kind = "direction"
 summary = "glimpse --once cannot set group-by, sort or show-closed, so headless frames never show group headers or closed rows"
 area = "glimpse/src/cli.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4779,6 +4783,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Add --group / --sort / --closed for --once so headless checks can cover grouping."
 base_sha = "da9cb8c036881f962c827369c14e2d709f3c8995"
 related = ["B-f0b743fe"]
+resolved = 2026-10-06
+resolution = "glimpse --once takes --group, --sort and --closed, validated against the shown surface. Tests in cli.rs and tests/cli.rs."
 
 [[backlog]]
 id = "B-aba92409"
@@ -4980,7 +4986,7 @@ kind = "debt"
 summary = "The apply-pipeline skill body sits exactly at the 500-line skill ceiling, so any addition fails skill_bodies_under_line_ceiling"
 area = "claude/skills/flow-contract-apply-pipeline/SKILL.md"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -4989,6 +4995,8 @@ origin = "review-apply"
 flow = "temporal-snuggling-pnueli"
 context = "Move a section (the final-summary skeleton or Step 4 dispatch discipline) into references/ before the next edit to this skill."
 base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
+resolved = 2026-10-06
+resolution = "Final-summary skeleton and dispatch discipline moved to references/; SKILL.md body 500 -> 445 lines."
 
 [[backlog]]
 id = "B-e66b6b41"
@@ -4996,7 +5004,7 @@ kind = "question"
 summary = "is_terminal_status leaves out discarded, which STATUS_COMPANIONS and the plan-review transition treat as a disposition"
 area = "tomlctl/src/items.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -5005,6 +5013,8 @@ origin = "review-apply"
 flow = "temporal-snuggling-pnueli"
 context = "Arrived cheap-in-file and was deferred because it needs a decision: whether items clusters / items sweep should treat a discarded plan-review item as terminal if they ever read plan-review ledgers."
 base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
+resolved = 2026-10-06
+resolution = "discarded added to is_terminal_status (user decision); test every_companion_status_is_terminal."
 
 [[backlog]]
 id = "B-e6f7d10d"
@@ -5012,7 +5022,7 @@ kind = "debt"
 summary = "Scopes::from_value parses a ledger kind string with its own LedgerKind::ALL lookup instead of a shared parse"
 area = "glimpse/src/flows.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -5022,6 +5032,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Last inline LedgerKind conversion in glimpse; a LedgerKind::parse in tomlctl (or a glimpse helper beside Kind::ledger_kind) would remove it."
 base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
 related = ["B-4aecefff"]
+resolved = 2026-10-06
+resolution = "LedgerKind::parse added in tomlctl ledgers.rs; Scopes::from_value uses it."
 
 [[backlog]]
 id = "B-2cc7096a"
@@ -5029,7 +5041,7 @@ kind = "debt"
 summary = "glimpse's write-root conflict check covers only TOMLCTL_ROOT and relies on Writer::spawn running before any tomlctl call caches its process root"
 area = "glimpse/src/writer.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -5038,6 +5050,8 @@ origin = "review-apply"
 flow = "temporal-snuggling-pnueli"
 context = "The spawn-order rule is stated only in a doc comment; reordering runtime::run could reintroduce write-by-write root-mismatch failures. A public tomlctl probe of its process root would make the check exact."
 base_sha = "d8fd96417da08fe04a7ec4aa6471610ead6c9b96"
+resolved = 2026-10-06
+resolution = "tomlctl exports ensure_process_root; glimpse Writer::spawn calls it, so the root check is exact rather than spawn-order dependent."
 
 [[backlog]]
 id = "B-9e85dc77"
@@ -5048,7 +5062,7 @@ tags = [
     "perf",
     "glimpse",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -5059,6 +5073,8 @@ context = "Measured during the temporal-snuggling-pnueli optimise run: glimpse -
 base_sha = "8076c637c4bb408afdeba23375ac5fb10e2ddeb2"
 evidence = ["glimpse/src/main.rs:140"]
 related = ["B-87dce4f2"]
+resolved = 2026-10-06
+resolution = "The ~50 ms was the git rev-parse spawn in flows::repo_root. It now uses tomlctl::discover_repo_root (ancestor walk) and spawns git only when that cannot decide."
 
 [[backlog]]
 id = "B-a18d4c82"
@@ -5069,7 +5085,7 @@ tags = [
     "inputs",
     "harness",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -5079,6 +5095,8 @@ flow = "temporal-snuggling-pnueli"
 context = "The user-inputs skill's Step-0 handle lets rows sharing an outcome share one call, but /backlog's capture notes each name a different minted id, so they cannot share. A per-id-note batch form (e.g. --ndjson of {id,note}) would make the handle step one locked write, matching the one-batched-write rule the ledgers follow. Until then, group rows by identical note where possible."
 base_sha = "8076c637c4bb408afdeba23375ac5fb10e2ddeb2"
 related = ["B-efc86277"]
+resolved = 2026-10-06
+resolution = "inputs handle --ndjson takes {id,note} lines and applies them in one locked write; docs and /backlog point at it."
 
 [[backlog]]
 id = "B-b976c4f9"
@@ -5109,7 +5127,7 @@ kind = "debt"
 summary = "Tracking::rows is pub(crate) and writable through DerefMut, so a caller can skip refresh and leave the row index, flashes and saving set out of step"
 area = "glimpse/src/surface.rs"
 tags = ["glimpse"]
-status = "open"
+status = "resolved"
 created = 2026-10-02
 last_seen = 2026-10-02
 seen_count = 1
@@ -5119,6 +5137,8 @@ flow = "temporal-snuggling-pnueli"
 context = "Two test helpers (view/details.rs review_app_on, view/header.rs load) assign state.rows directly. Tracking::row therefore validates index hits and falls back to a linear scan. Making rows private with a test-only setter that calls refresh would make the index exact and let the fallback go."
 base_sha = "8076c637c4bb408afdeba23375ac5fb10e2ddeb2"
 evidence = ["glimpse/src/surface.rs:280"]
+resolved = 2026-10-06
+resolution = "Tracking::rows is a Rows wrapper buildable only in surface.rs with a test-only set_rows that refreshes; Tracking::row is an exact index lookup."
 
 [[backlog]]
 id = "B-d7742765"
@@ -5148,7 +5168,7 @@ kind = "annoyance"
 summary = "Borrowed-parse read paths report parse and range errors without naming the file, so items find-duplicates --across cannot say which ledger held the bad value"
 area = "tomlctl/src/io.rs"
 tags = []
-status = "open"
+status = "resolved"
 created = 2026-10-05
 last_seen = 2026-10-05
 seen_count = 1
@@ -5156,3 +5176,68 @@ dedup_id = "778163da440a5e57"
 context = "read_doc_either, read_doc_borrowed and the dispatch parse / find-duplicates --across arms surface DeTable::parse and detable_to_json errors with a key path but no file, while the owned read_toml names the file. Wrap each with the path the way ledgers.rs and inputs.rs now do. Surfaced while making detable_to_json fallible."
 base_sha = "25cdbff8b086d9b6f7c9be5348b9f351453662f2"
 evidence = ["tomlctl/src/io.rs"]
+resolved = 2026-10-06
+resolution = "read_doc_borrowed(path) reads, parses and converts, naming the file in parse and range errors; parse and find-duplicates --across use it. Test: items_find_duplicates_across_bad_value_names_its_file."
+
+[[backlog]]
+id = "B-89c4d9a1"
+kind = "direction"
+summary = "glimpse surface tabs cannot be clicked to switch surface and read as plain text rather than tabs"
+area = "glimpse/src/view/header.rs"
+tags = [
+    "ui",
+    "mouse",
+]
+status = "resolved"
+created = 2026-10-06
+last_seen = 2026-10-06
+seen_count = 1
+dedup_id = "89c4d9a128b33ecd"
+origin = "backlog"
+context = "User capture (I1). header::tabs_row draws the surfaces as styled spans with no hit regions, so only the digit keys and Tab switch surface. Write each tab's rect into App::regions and map a click in keys::mouse to Action::SwitchSurface; restyle as tabs (active tab framed or underlined, separators) via new theme tokens, and keep the compact header's folded tabs in step."
+base_sha = "3232deed8dd7b125dca19f6a8fe3dcd7feb9c995"
+evidence = ["glimpse/src/view/header.rs:116"]
+resolved = 2026-10-06
+resolution = "Tabs are clickable (comfortable and compact header) via Regions.tabs; the active tab is filled with padding (surface_tab_active_bg). The rule under the tabs was skipped: no spare header row."
+
+[[backlog]]
+id = "B-90d2a696"
+kind = "annoyance"
+summary = "glimpse legend overlay cannot be wheel-scrolled, because mouse events are ignored while it is open"
+area = "glimpse/src/keys.rs"
+tags = [
+    "ui",
+    "mouse",
+]
+status = "resolved"
+created = 2026-10-06
+last_seen = 2026-10-06
+seen_count = 1
+dedup_id = "90d2a69655eaa00d"
+origin = "backlog"
+context = "User capture (I2). keys::mouse returns early while app.legend_open (and the selector or an overlay) is up, so the legend scrolls only by key. Route ScrollUp/ScrollDown to the legend's scroll action while it is open; the same early return may suit the selector."
+base_sha = "3232deed8dd7b125dca19f6a8fe3dcd7feb9c995"
+evidence = ["glimpse/src/keys.rs:99"]
+related = ["B-20481746"]
+resolved = 2026-10-06
+resolution = "The wheel scrolls the legend and moves the selector cursor while they are open."
+
+[[backlog]]
+id = "B-d83a24fa"
+kind = "annoyance"
+summary = "glimpse backlog list columns are crowded and their spacing and set are not configurable"
+area = "glimpse/src/view/items.rs"
+tags = [
+    "ui",
+    "config",
+]
+status = "resolved"
+created = 2026-10-06
+last_seen = 2026-10-06
+seen_count = 1
+dedup_id = "d83a24fad2198b9c"
+origin = "backlog"
+context = "User capture (I3). The backlog surface's item rows read as busy. Revisit column spacing and formatting, and consider a config key choosing which columns show and their order; any new colour goes through theme.rs tokens."
+base_sha = "3232deed8dd7b125dca19f6a8fe3dcd7feb9c995"
+resolved = 2026-10-06
+resolution = "Area/file sits in an aligned right column cut from the left; id and kind dimmed; item_columns config chooses columns and order; the area column narrows then drops on narrow panes."

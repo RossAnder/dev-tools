@@ -143,6 +143,12 @@ The sweep needs tomlctl 0.13 or later. When `tomlctl inputs list` fails as an un
    tomlctl inputs handle I3 I4 --by review --note "R3, R7 deferred (trigger: writer thread merged)"
    ```
 
+   Rows with distinct notes — each capture naming its own minted id — go in one `--ndjson` call, one `{"id", "note"}` per line, rather than one call per row:
+
+   ```bash
+   printf '%s\n' '{"id":"I5","note":"minted B-1a2b3c4d"}' '{"id":"I6","note":"duplicate of B-9f8e7d6c"}' | tomlctl inputs handle --by backlog --ndjson -
+   ```
+
 Report the swept ids and their outcomes in the run's final summary. An empty sweep is silent.
 
 ## Acting on each kind

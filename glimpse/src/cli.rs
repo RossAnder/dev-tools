@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use crate::config::{OrientationPref, ViewKind};
-use crate::surface::Surface;
+use crate::surface::{Group, Sort, Surface};
 
 pub(crate) const HELP: &str = "\
 glimpse — live terminal view of a flow's task graph, checkpoints and running agents
@@ -34,6 +34,11 @@ VIEW OPTIONS
         --ledger <FILE>         --once only: show this review, optimise, plan-review
                                 or backlog ledger on its surface; without --snapshot
                                 or --slug the task graph is left empty
+        --group <F>             --once only: group the item surface's rows by F, one
+                                of the fields `g` cycles through on that surface
+        --sort <F>              --once only: sort the item surface's rows by F, one
+                                of the orders `S` cycles through on that surface
+        --closed                --once only: list closed rows, as `c` does
 
 HOOK OPTIONS
         --harness <H>           claude-code or codex: which harness sent the payload
@@ -65,6 +70,17 @@ pub(crate) struct Once {
     pub(crate) snapshot: Option<PathBuf>,
     pub(crate) select: Option<u32>,
     pub(crate) ledger: Option<PathBuf>,
+    pub(crate) arrange: Arrange,
+}
+
+/// How the `--once` frame's item surface lays out its rows, in place of the `g`, `S`
+/// and `c` keys. The parser checks each value names some surface's option; whether the
+/// surface on show offers it is checked once that surface is known.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct Arrange {
+    pub(crate) group: Option<Group>,
+    pub(crate) sort: Option<Sort>,
+    pub(crate) closed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,6 +165,7 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
     let mut select = None;
     let mut surface = None;
     let mut ledger = None;
+    let mut arrange = Arrange::default();
     let mut focus = false;
     let mut dry_run = false;
     let mut harness = Harness::default();
@@ -227,6 +244,20 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
                 ledger = Some(PathBuf::from(value("--ledger")?));
                 true
             }
+            (None, "--group") => {
+                let v = value("--group")?;
+                arrange.group = Some(pick("group", &v, Surface::groups, Group::key)?);
+                true
+            }
+            (None, "--sort") => {
+                let v = value("--sort")?;
+                arrange.sort = Some(pick("sort", &v, Surface::sorts, Sort::key)?);
+                true
+            }
+            (None, "--closed") => {
+                arrange.closed = true;
+                true
+            }
             (Some("ensure-pane"), "--focus") => {
                 focus = true;
                 true
@@ -250,7 +281,12 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
                 None => format!("unknown argument `{arg}`"),
             });
         }
-        if inline.is_some() && matches!(name.as_str(), "--once" | "--focus" | "--dry-run") {
+        if inline.is_some()
+            && matches!(
+                name.as_str(),
+                "--once" | "--focus" | "--dry-run" | "--closed"
+            )
+        {
             return Err(format!("{name} takes no value"));
         }
     }
@@ -261,9 +297,17 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
         Some(_) => Command::Setup { dry_run },
         None => {
             if !once
-                && (size.is_some() || snapshot.is_some() || select.is_some() || ledger.is_some())
+                && (size.is_some()
+                    || snapshot.is_some()
+                    || select.is_some()
+                    || ledger.is_some()
+                    || arrange != Arrange::default())
             {
-                return Err("--size, --snapshot, --select and --ledger need --once".to_string());
+                return Err(
+                    "--size, --snapshot, --select, --ledger, --group, --sort and \
+                            --closed need --once"
+                        .to_string(),
+                );
             }
             let once = once.then(|| {
                 let (width, height) = size.unwrap_or(DEFAULT_SIZE);
@@ -273,6 +317,7 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
                     snapshot,
                     select,
                     ledger,
+                    arrange,
                 }
             });
             Command::View(ViewArgs {
@@ -285,6 +330,61 @@ fn parse_inner<I: IntoIterator<Item = String>>(args: I) -> Result<Parsed, String
         }
     };
     Ok(Parsed::Run(command))
+}
+
+/// Finds `value` among the options any surface's `options` lists, by `key`; the error
+/// names every option in first-offered order.
+fn pick<T: Copy + PartialEq>(
+    what: &str,
+    value: &str,
+    options: fn(Surface) -> &'static [T],
+    key: fn(T) -> &'static str,
+) -> Result<T, String> {
+    let mut known: Vec<T> = Vec::new();
+    for option in Surface::ALL.into_iter().flat_map(options) {
+        if !known.contains(option) {
+            known.push(*option);
+        }
+    }
+    known
+        .iter()
+        .copied()
+        .find(|o| key(*o) == value)
+        .ok_or_else(|| {
+            let names: Vec<&str> = known.iter().map(|o| key(*o)).collect();
+            format!(
+                "unknown {what} `{value}`: expected one of {}",
+                names.join(", ")
+            )
+        })
+}
+
+/// The `--once` frame's arrangement checked against what `surface` offers, so a
+/// field the surface cannot group or sort by is refused rather than ignored.
+pub(crate) fn check_arrange(surface: Surface, arrange: &Arrange) -> Result<(), String> {
+    let refuse = |flag: &str, value: &str, offered: Vec<&str>| {
+        Err(format!(
+            "{flag} {value}: the {} surface offers {}",
+            surface.key(),
+            offered.join(", ")
+        ))
+    };
+    if let Some(group) = arrange.group
+        && !surface.groups().contains(&group)
+    {
+        let offered = surface.groups().iter().map(|g| g.key()).collect();
+        return refuse("--group", group.key(), offered);
+    }
+    if let Some(sort) = arrange.sort
+        && !surface.sorts().contains(&sort)
+    {
+        let offered = surface.sorts().iter().map(|s| s.key()).collect();
+        return refuse("--sort", sort.key(), offered);
+    }
+    if arrange.closed && surface == Surface::Tasks {
+        return Err("--closed: the tasks surface has no closed rows to list".to_string());
+    }
+    Ok(())
 }
 
 fn parse_size(s: &str) -> Result<(u16, u16), String> {
@@ -386,6 +486,7 @@ mod tests {
                 snapshot: Some(PathBuf::from("s.json")),
                 select: None,
                 ledger: None,
+                arrange: Arrange::default(),
             })
         );
         let v = view(&["--once", "--select", "7"]);
@@ -401,6 +502,98 @@ mod tests {
         assert!(fails(&["--snapshot", "s.json"]).contains("--once"));
         assert!(fails(&["--select", "7"]).contains("--once"));
         assert!(fails(&["--once", "--select", "seven"]).contains("task id"));
+    }
+
+    #[test]
+    fn once_takes_a_group_a_sort_and_closed() {
+        let once = view(&["--once", "--group", "area", "--sort=newest", "--closed"])
+            .once
+            .expect("--once parsed");
+        assert_eq!(
+            once.arrange,
+            Arrange {
+                group: Some(Group::Area),
+                sort: Some(Sort::Newest),
+                closed: true,
+            }
+        );
+        let once = view(&["--once", "--group=severity"])
+            .once
+            .expect("--once parsed");
+        assert_eq!(once.arrange.group, Some(Group::Severity));
+        assert_eq!(once.arrange.sort, None);
+        assert!(!once.arrange.closed);
+    }
+
+    #[test]
+    fn group_sort_and_closed_are_checked_and_need_once() {
+        let bad_group = fails(&["--once", "--group", "Severity"]);
+        assert!(
+            bad_group.contains("unknown group `Severity`"),
+            "{bad_group}"
+        );
+        assert!(
+            bad_group.contains("none, severity, category, effort, file, status, kind, area"),
+            "{bad_group}"
+        );
+        let bad_sort = fails(&["--once", "--sort", "oldest"]);
+        assert!(
+            bad_sort.contains("expected one of id, severity, effort, newest"),
+            "{bad_sort}"
+        );
+        assert!(fails(&["--once", "--group"]).contains("needs a value"));
+        assert!(fails(&["--once", "--closed=yes"]).contains("takes no value"));
+        for args in [
+            &["--group", "status"][..],
+            &["--sort", "id"][..],
+            &["--closed"][..],
+        ] {
+            assert!(fails(args).contains("need --once"), "{args:?}");
+        }
+        assert!(fails(&["ensure-pane", "--closed"]).contains("for `ensure-pane`"));
+    }
+
+    #[test]
+    fn the_arrangement_must_be_offered_by_the_surface() {
+        let arrange = |group, sort, closed| Arrange {
+            group,
+            sort,
+            closed,
+        };
+        assert!(
+            check_arrange(
+                Surface::Review,
+                &arrange(Some(Group::File), Some(Sort::Effort), true)
+            )
+            .is_ok()
+        );
+        assert!(
+            check_arrange(
+                Surface::Tasks,
+                &arrange(Some(Group::None), Some(Sort::Id), false)
+            )
+            .is_ok()
+        );
+        assert!(check_arrange(Surface::Inbox, &arrange(None, None, true)).is_ok());
+        let err = check_arrange(
+            Surface::Backlog,
+            &arrange(Some(Group::Severity), None, false),
+        )
+        .expect_err("backlog rows carry no severity");
+        assert_eq!(
+            err,
+            "--group severity: the backlog surface offers none, kind, area, status"
+        );
+        let err = check_arrange(
+            Surface::PlanReview,
+            &arrange(None, Some(Sort::Effort), false),
+        )
+        .expect_err("plan-review rows carry no effort");
+        assert!(
+            err.starts_with("--sort effort: the plan-review surface"),
+            "{err}"
+        );
+        assert!(check_arrange(Surface::Tasks, &arrange(None, None, true)).is_err());
     }
 
     #[test]

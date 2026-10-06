@@ -7,7 +7,7 @@
 //! acts on a record's text. Nothing here prints, every function takes the repo
 //! root explicitly, and every write refuses a root that is not the process root.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -260,7 +260,7 @@ pub(crate) fn ack(
         integrity,
         &[STATUS_NEW],
         &[KIND_QUESTION],
-        |row, now| {
+        |_, row, now| {
             set_str(row, "status", STATUS_ACKNOWLEDGED);
             row.insert("acknowledged".into(), TomlValue::Datetime(now));
             set_str(row, "acknowledged_by", by);
@@ -286,13 +286,73 @@ pub(crate) fn handle(
         integrity,
         &[STATUS_NEW, STATUS_ACKNOWLEDGED],
         &[],
-        |row, now| {
-            set_str(row, "status", STATUS_HANDLED);
-            row.insert("handled".into(), TomlValue::Datetime(now));
-            set_str(row, "handled_by", by);
-            set_str(row, "handled_note", note);
-        },
+        |_, row, now| mark_handled(row, now, by, note),
     )
+}
+
+/// [`handle`] with its own note per record, every pair in one write and
+/// under the same skip and unknown-id rules. An id named twice is refused:
+/// only one of its notes could land.
+pub(crate) fn handle_each(
+    root: &Path,
+    notes: &[(String, String)],
+    by: &str,
+    integrity: IntegrityOpts,
+) -> Result<JsonValue> {
+    non_empty("--by", by)?;
+    if notes.is_empty() {
+        return Err(invalid("the batch names no records"));
+    }
+    let mut note_of = BTreeMap::new();
+    for (id, note) in notes {
+        non_empty(&format!("the note for {id}"), note)?;
+        if note_of.insert(id.as_str(), note.as_str()).is_some() {
+            return Err(invalid(format!("{id} is named twice in the batch")));
+        }
+    }
+    let ids: Vec<String> = notes.iter().map(|(id, _)| id.clone()).collect();
+    lifecycle(
+        root,
+        &ids,
+        integrity,
+        &[STATUS_NEW, STATUS_ACKNOWLEDGED],
+        &[],
+        |id, row, now| mark_handled(row, now, by, note_of[id]),
+    )
+}
+
+/// Reads `handle --ndjson` rows, each `{"id", "note"}` and nothing else,
+/// into the pairs [`handle_each`] takes.
+pub(crate) fn handle_rows(rows: &[JsonValue]) -> Result<Vec<(String, String)>> {
+    rows.iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let line = i + 1;
+            let fields = row
+                .as_object()
+                .ok_or_else(|| invalid(format!("batch row {line} must be a JSON object")))?;
+            if let Some(key) = fields.keys().find(|k| *k != "id" && *k != "note") {
+                return Err(invalid(format!(
+                    "batch row {line}: `{key}` is not a handle field; each row is {{\"id\", \"note\"}}"
+                )));
+            }
+            let text = |name: &str| {
+                fields
+                    .get(name)
+                    .and_then(JsonValue::as_str)
+                    .map(str::to_string)
+                    .ok_or_else(|| invalid(format!("batch row {line} needs a string `{name}`")))
+            };
+            Ok((text("id")?, text("note")?))
+        })
+        .collect()
+}
+
+fn mark_handled(row: &mut toml::Table, now: Datetime, by: &str, note: &str) {
+    set_str(row, "status", STATUS_HANDLED);
+    row.insert("handled".into(), TomlValue::Datetime(now));
+    set_str(row, "handled_by", by);
+    set_str(row, "handled_note", note);
 }
 
 /// Withdraws `ids`, refusing the whole call unless every one is `new`.
@@ -446,7 +506,7 @@ fn lifecycle(
     integrity: IntegrityOpts,
     from: &[&str],
     exempt: &[&str],
-    edit: impl Fn(&mut toml::Table, Datetime),
+    edit: impl Fn(&str, &mut toml::Table, Datetime),
 ) -> Result<JsonValue> {
     let ids = unique(ids);
     let mut skipped: Vec<JsonValue> = Vec::new();
@@ -457,7 +517,7 @@ fn lifecycle(
             let status = str_of(row, "status").to_string();
             let kind = str_of(row, "kind").to_string();
             if from.contains(&status.as_str()) && !exempt.contains(&kind.as_str()) {
-                edit(row, now);
+                edit(id, row, now);
                 applied.push(id.clone());
             } else {
                 skipped.push(json!({"id": id, "kind": kind, "status": status}));
@@ -1071,6 +1131,83 @@ text = "because"
             assert_eq!(done["handled_note"], "split into R3, R9");
             assert!(ack(root, &ids(&["I99"]), "review", OPTS).is_err());
         });
+    }
+
+    fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
+        list.iter()
+            .map(|(id, note)| ((*id).to_string(), (*note).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn handle_each_lands_a_note_per_record_in_one_write() {
+        with_root(|root| {
+            let first = add_ok(root, json!({"kind": "capture", "text": "flaky test"}));
+            let second = add_ok(root, json!({"kind": "capture", "text": "slow build"}));
+            let done = add_ok(root, json!({"kind": "note", "text": "x"}));
+            ack(root, &ids(&[&second]), "backlog", OPTS).unwrap();
+            handle(root, &ids(&[&done]), "backlog", "noted", OPTS).unwrap();
+            let out = handle_each(
+                root,
+                &pairs(&[
+                    (&first, "minted B-1"),
+                    (&second, "minted B-2"),
+                    (&done, "again"),
+                ]),
+                "backlog",
+                OPTS,
+            )
+            .unwrap();
+            assert_eq!(out["applied"], json!([first, second]));
+            assert_eq!(
+                out["skipped"],
+                json!([{"id": done, "kind": "note", "status": "handled"}])
+            );
+            assert_eq!(row(root, &first)["handled_note"], "minted B-1");
+            assert_eq!(row(root, &second)["handled_note"], "minted B-2");
+            assert_eq!(row(root, &second)["acknowledged_by"], "backlog");
+            assert_eq!(row(root, &done)["handled_note"], "noted");
+        });
+    }
+
+    #[test]
+    fn handle_each_refuses_the_whole_batch() {
+        with_root(|root| {
+            let id = add_ok(root, json!({"kind": "capture", "text": "x"}));
+            for batch in [
+                pairs(&[(&id, "a"), ("I99", "b")]),
+                pairs(&[(&id, "a"), (&id, "b")]),
+                pairs(&[(&id, " ")]),
+                Vec::new(),
+            ] {
+                assert!(
+                    handle_each(root, &batch, "backlog", OPTS).is_err(),
+                    "{batch:?} must be refused"
+                );
+            }
+            assert_eq!(
+                row(root, &id)["status"],
+                "new",
+                "a refused batch writes nothing"
+            );
+        });
+    }
+
+    #[test]
+    fn handle_rows_takes_only_id_and_note() {
+        let ok = handle_rows(&[json!({"id": "I1", "note": "done"})]).unwrap();
+        assert_eq!(ok, pairs(&[("I1", "done")]));
+        for bad in [
+            json!({"id": "I1"}),
+            json!({"id": "I1", "note": "x", "by": "y"}),
+            json!({"id": 1, "note": "x"}),
+            json!(["I1", "x"]),
+        ] {
+            assert!(
+                handle_rows(std::slice::from_ref(&bad)).is_err(),
+                "{bad} must be refused"
+            );
+        }
     }
 
     #[test]

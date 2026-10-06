@@ -14,7 +14,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use super::items::{Target, cursor_at};
-use super::{text_width, truncate, window};
+use super::{Place, place, text_width, truncate};
 use crate::app::App;
 use crate::ledger::{InputRow, Seen};
 use crate::model::TaskStatus;
@@ -22,15 +22,15 @@ use crate::surface::{InboxState, VisibleRow};
 use crate::theme::Theme;
 
 /// Draws the Inbox into `area` of `buf`; a `Frame` caller passes `frame.buffer_mut()`.
-/// Returns the drawn record rows.
-pub(crate) fn render(buf: &mut Buffer, area: Rect, app: &App) -> Vec<Target> {
+/// Returns the drawn record rows and the list's scroll offset.
+pub(crate) fn render(buf: &mut Buffer, area: Rect, app: &App) -> (Vec<Target>, usize) {
     render_at(buf, area, app, Instant::now())
 }
 
 /// `now` dates the flashes.
-fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Target> {
+fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> (Vec<Target>, usize) {
     if area.width == 0 || area.height == 0 {
-        return Vec::new();
+        return (Vec::new(), 0);
     }
     let state = &app.inbox;
     let width = usize::from(area.width);
@@ -42,7 +42,7 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
         area.height.saturating_sub(1),
     );
     if list.height == 0 {
-        return Vec::new();
+        return (Vec::new(), state.scroll);
     }
 
     let visible = state.visible();
@@ -58,15 +58,17 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
             &Line::from(Span::styled(text, app.theme.secondary)),
             list.width,
         );
-        return Vec::new();
+        return (Vec::new(), 0);
     }
 
     let columns = Columns::measure(state, &visible);
     let view = usize::from(list.height);
-    let offset = window(
+    let offset = place(
+        state.scroll,
         cursor_at(&visible, state.cursor.as_deref()),
         visible.len(),
         view,
+        Place::of_list(state.scroll_pinned),
     );
     let rows: Vec<Row> = visible[offset..]
         .iter()
@@ -99,7 +101,7 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
             }
         })
         .collect();
-    draw_rows(buf, list, &rows)
+    (draw_rows(buf, list, &rows), offset)
 }
 
 /// A drawn row, the styles laid under and over its full width, and the record it shows.
@@ -426,7 +428,7 @@ mod tests {
     fn draw(app: &App, width: u16, height: u16) -> (Vec<String>, Vec<Target>) {
         let area = Rect::new(0, 0, width, height);
         let mut buf = Buffer::empty(area);
-        let targets = render_at(&mut buf, area, app, Instant::now());
+        let (targets, _) = render_at(&mut buf, area, app, Instant::now());
         let rows = (0..height)
             .map(|y| (0..width).map(|x| buf[(x, y)].symbol()).collect())
             .collect();

@@ -232,6 +232,34 @@ pub fn backlog_triage(
     }))
 }
 
+/// Refuses `root` unless it is tomlctl's process root, with the `root
+/// mismatch` error every facade write refuses with. Without `TOMLCTL_ROOT`,
+/// the first resolution in a process caches the root found from the current
+/// directory, so this call pins it if nothing has yet.
+pub fn ensure_process_root(root: &Path) -> anyhow::Result<()> {
+    io::ensure_process_root(root)
+}
+
+/// The top level `git rev-parse --show-toplevel` would print for `start`, found
+/// without spawning git: `Some(Some(root))` inside a repo, `Some(None)` outside
+/// any, and `None` when only git can answer. A drive-letter root loses the
+/// verbatim `\\?\` prefix canonicalisation gives it on Windows.
+pub fn discover_repo_root(start: &Path) -> Option<Option<std::path::PathBuf>> {
+    match repo_root::discover(start, |k| std::env::var_os(k).is_some()) {
+        repo_root::Discovery::Root(root) => Some(Some(strip_verbatim_drive(root))),
+        repo_root::Discovery::NoRepo => Some(None),
+        repo_root::Discovery::AskGit => None,
+    }
+}
+
+fn strip_verbatim_drive(path: std::path::PathBuf) -> std::path::PathBuf {
+    let text = path.to_string_lossy();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => std::path::PathBuf::from(rest),
+        _ => path,
+    }
+}
+
 /// The input store, `<root>/.claude/inputs.toml`.
 pub fn inputs_path(root: &Path) -> PathBuf {
     inputs::path(root)

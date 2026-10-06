@@ -82,8 +82,9 @@ use crate::cli::{WriteIntegrityArgs, write_integrity_opts};
 use crate::flow::artifacts::CanonicalArtifacts;
 use crate::integrity::{refresh_sidecar, sha256_hex_of_file, sidecar_path};
 use crate::io::{
-    guard_write_path, read_dir_sorted, read_toml, recheck_claude_containment, relativise,
-    repo_or_cwd_root, with_exclusive_lock, write_toml_with_sidecar,
+    guard_write_path, read_dir_sorted, read_toml, read_toml_with_source,
+    recheck_claude_containment, relativise, repo_or_cwd_root, with_exclusive_lock,
+    write_doc_unless_unchanged,
 };
 use crate::output::print_json_compact;
 
@@ -821,7 +822,7 @@ fn apply_active_prune(
 
     with_exclusive_lock(&registry, || {
         guard_write_path(&registry, allow_outside)?;
-        let mut doc = read_toml(&registry)?;
+        let (mut doc, on_disk) = read_toml_with_source(&registry)?;
         let root_tbl = doc
             .as_table_mut()
             .context("active-flow.toml root is not a table")?;
@@ -840,7 +841,7 @@ fn apply_active_prune(
         if !allow_outside {
             recheck_claude_containment(&registry)?;
         }
-        write_toml_with_sidecar(&registry, &doc, opts)?;
+        write_doc_unless_unchanged(&registry, &doc, opts, Some(&on_disk))?;
         Ok(())
     })?;
     for slug in stale_slugs {
@@ -875,7 +876,7 @@ fn apply_tasks_key_backfill(
         let want = CanonicalArtifacts::for_slug(slug).tasks;
         let result = with_exclusive_lock(&context, || {
             guard_write_path(&context, allow_outside)?;
-            let mut doc = read_toml(&context)?;
+            let (mut doc, on_disk) = read_toml_with_source(&context)?;
             let arts = doc
                 .as_table_mut()
                 .and_then(|t| t.get_mut("artifacts"))
@@ -888,7 +889,7 @@ fn apply_tasks_key_backfill(
             if !allow_outside {
                 recheck_claude_containment(&context)?;
             }
-            write_toml_with_sidecar(&context, &doc, opts)?;
+            write_doc_unless_unchanged(&context, &doc, opts, Some(&on_disk))?;
             Ok::<bool, anyhow::Error>(true)
         });
         let (action, ok) = match result {

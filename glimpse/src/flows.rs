@@ -130,9 +130,7 @@ impl Scopes {
             .scopes
             .into_iter()
             .map(|raw| {
-                let kind = LedgerKind::ALL
-                    .into_iter()
-                    .find(|kind| kind.as_str() == raw.kind)
+                let kind = LedgerKind::parse(&raw.kind)
                     .ok_or_else(|| format!("unknown ledger kind `{}`", raw.kind))?;
                 Ok(ScopeEntry {
                     kind,
@@ -166,23 +164,31 @@ pub(crate) fn list(
     Ok(entries)
 }
 
-/// The repository root for `cwd`: `git rev-parse --show-toplevel`, else the
+/// The repository root for `cwd`: the top level git would report, found without
+/// spawning git where tomlctl can (a git spawn costs ~50 ms on Windows), else the
 /// nearest ancestor holding `.claude/flows`.
 pub(crate) fn repo_root(cwd: &Path) -> Option<PathBuf> {
-    let git = Command::new("git")
+    let top = match tomlctl::discover_repo_root(cwd) {
+        Some(found) => found,
+        None => git_toplevel(cwd),
+    };
+    top.or_else(|| {
+        cwd.ancestors()
+            .find(|dir| flows_root(dir).is_dir())
+            .map(Path::to_path_buf)
+    })
+}
+
+fn git_toplevel(cwd: &Path) -> Option<PathBuf> {
+    Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .current_dir(cwd)
         .output()
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|s| !s.is_empty());
-    if let Some(top) = git {
-        return Some(PathBuf::from(top));
-    }
-    cwd.ancestors()
-        .find(|dir| flows_root(dir).is_dir())
-        .map(Path::to_path_buf)
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
 }
 
 #[cfg(test)]

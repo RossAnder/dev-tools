@@ -26,6 +26,7 @@ use ratatui::{DefaultTerminal, Frame, Terminal};
 use tomlctl::{LedgerKind, LedgerRef};
 
 use crate::app::{Action, App};
+use crate::cli::{self, Arrange};
 use crate::config::Config;
 use crate::diagram::DiagramCache;
 use crate::flows::{self, FlowEntry, Scopes};
@@ -157,15 +158,17 @@ fn measured_cell_aspect() -> Option<f64> {
 
 /// Draws one frame of `snapshot` into an off-screen buffer and returns its rows as plain
 /// text, one line per row with trailing blanks trimmed. With a ledger, the frame shows
-/// that surface with the ledger read into it.
+/// that surface with the ledger read into it. Fails when `arrange` asks for a group,
+/// sort or closed toggle the surface on show does not offer.
 pub(crate) fn render_once(
     opts: &RunOpts,
     snapshot: Snapshot,
     select: Option<u32>,
     ledger: Option<(Surface, Ledger)>,
+    arrange: Arrange,
     width: u16,
     height: u16,
-) -> String {
+) -> Result<String, String> {
     let mut app = App::new(snapshot, &opts.config);
     app.warning = opts.warning.clone();
     if select.is_some() {
@@ -179,6 +182,8 @@ pub(crate) fn render_once(
         app.apply(Action::SwitchSurface(surface));
         app.apply_ledger(ledger, Instant::now());
     }
+    cli::check_arrange(app.surface, &arrange)?;
+    arrange_rows(&mut app, arrange);
     let mut screen = Screen::new(app, opts.config.clone(), TailView::default());
     let Ok(mut terminal) = Terminal::new(TestBackend::new(width, height));
     let Ok(_) = terminal.draw(|frame| screen.render(frame));
@@ -200,7 +205,31 @@ pub(crate) fn render_once(
         out.push_str(row.trim_end());
         out.push('\n');
     }
-    out
+    Ok(out)
+}
+
+/// Sets the surface on show to `arrange` directly rather than through the cycling
+/// actions, whose footer notices would land in the frame. A cursor left on no visible
+/// row lands on the first one, as `c` does.
+fn arrange_rows(app: &mut App, arrange: Arrange) {
+    if app.surface == Surface::Inbox {
+        if arrange.closed {
+            app.inbox.show_closed = true;
+            app.inbox.move_cursor(0);
+        }
+        return;
+    }
+    let Some(state) = app.items.get_mut(&app.surface) else {
+        return;
+    };
+    if let Some(group) = arrange.group {
+        state.group = group;
+    }
+    if let Some(sort) = arrange.sort {
+        state.sort = sort;
+    }
+    state.show_closed |= arrange.closed;
+    state.move_cursor(0);
 }
 
 /// Forwards every terminal event onto the channel. The thread owns the blocking read for
@@ -760,7 +789,16 @@ mod tests {
     fn render_once_shows_the_slug_and_every_task() {
         let snapshot = fixture();
         let ids: Vec<u32> = snapshot.tasks.iter().map(|task| task.id).collect();
-        let text = render_once(&opts(ViewKind::Diagram), snapshot, None, None, 110, 40);
+        let text = render_once(
+            &opts(ViewKind::Diagram),
+            snapshot,
+            None,
+            None,
+            Arrange::default(),
+            110,
+            40,
+        )
+        .expect("the tasks surface takes the default arrangement");
         assert!(text.contains("demo-flow"), "{text}");
         for id in ids {
             assert!(

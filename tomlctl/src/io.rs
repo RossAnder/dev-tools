@@ -477,7 +477,7 @@ pub(crate) fn read_toml(path: &Path) -> Result<TomlValue> {
 
 /// `read_toml` that also hands back the source text it parsed, so a writer
 /// can tell whether re-serialising the document would change the file.
-fn read_toml_with_source(path: &Path) -> Result<(TomlValue, String)> {
+pub(crate) fn read_toml_with_source(path: &Path) -> Result<(TomlValue, String)> {
     // Split the two failure modes so each gets the correct tag. A
     // `fs::read_to_string` failure whose inner `io::Error` is `NotFound` is
     // tagged `NotFound`; any other I/O error is untagged and falls through
@@ -548,8 +548,8 @@ fn parse_reason(source: &str, e: &toml::de::Error) -> String {
 }
 
 /// Raw-bytes sibling of `read_toml`. Returns the on-disk TOML text as a
-/// `String` without parsing, so callers that want a borrowed-lifetime parse
-/// (`read_doc_borrowed`) can own the source buffer themselves — the borrowed
+/// `String` without parsing, so a borrowed-lifetime parse
+/// (`read_doc_borrowed`) can own the source buffer — the borrowed
 /// `DeTable<'a>` must not outlive the string it references.
 pub(crate) fn read_toml_str(path: &Path) -> Result<String> {
     // Mirror `read_toml`'s NotFound tagging so the borrowed path (used by
@@ -567,32 +567,25 @@ pub(crate) fn read_toml_str(path: &Path) -> Result<String> {
     }
 }
 
-/// Borrowed-lifetime TOML read. Parses `source` via
-/// `toml::de::DeTable::parse` and hands the inner (unwrapped-from-`Spanned`)
-/// table to the closure. The `DeTable` ties its lifetime to the source buffer
-/// — strings, floats, and integers remain `Cow::Borrowed` into `source`
-/// whenever no escape decoding is needed, avoiding the per-scalar `String`
-/// clone that `toml::from_str::<TomlValue>` does unconditionally. Callers
-/// that need an owned `TomlValue` should keep using `read_toml` / `read_doc`;
-/// the borrowed path is only useful when the downstream consumer can work
-/// over borrowed slices (e.g. `detable_to_json` emits owned `JsonValue` at
-/// the leaves but avoids the intermediate owned-String allocation inside
-/// the TOML tree).
-pub(crate) fn read_doc_borrowed<'a, R>(
-    source: &'a str,
-    f: impl FnOnce(&toml::de::DeTable<'a>) -> Result<R>,
-) -> Result<R> {
-    // Tag the borrowed-parse error with `kind=parse` so the JSON envelope
-    // matches the owned-parse tag from `read_toml`. No `file` hint — this helper
-    // receives a `&str`, so we don't know the source path at this layer.
-    let spanned = toml::de::DeTable::parse(source).map_err(|e| {
+/// Reads `path` as JSON through the borrowed `toml::de::DeTable` parse, which
+/// keeps unescaped scalars borrowed from the source buffer instead of
+/// cloning each into a `String` the way `toml::from_str::<TomlValue>` does.
+/// Syntax and out-of-range-number errors name `path`, as `read_toml`'s do.
+pub(crate) fn read_doc_borrowed(path: &Path) -> Result<serde_json::Value> {
+    let source = read_toml_str(path)?;
+    let spanned = toml::de::DeTable::parse(&source).map_err(|e| {
         tagged_err(
             ErrorKind::Parse,
-            None,
-            format!("parsing borrowed TOML: {}", e),
+            Some(path.to_owned()),
+            format!("parsing {}: {}", path.display(), e),
         )
     })?;
-    f(spanned.get_ref())
+    crate::convert::detable_to_json(spanned.get_ref()).map_err(|mut e| {
+        if let Some(tagged) = e.downcast_mut::<crate::errors::TaggedError>() {
+            tagged.file.get_or_insert_with(|| path.to_owned());
+        }
+        e.context(path.display().to_string())
+    })
 }
 
 /// Read-side sibling of `mutate_doc`: runs the standard pre-read
@@ -676,11 +669,7 @@ where
     if integrity.verify_on_read {
         read_doc(file, integrity, owned)
     } else {
-        let source = read_toml_str(file)?;
-        read_doc_borrowed(&source, |table| {
-            let json = crate::convert::detable_to_json(table)?;
-            borrowed(&json)
-        })
+        borrowed(&read_doc_borrowed(file)?)
     }
 }
 
@@ -879,7 +868,7 @@ fn read_or_seed(file: &Path, on_missing: OnMissing) -> Result<(TomlValue, Option
 /// equals the serialised doc and, if this call writes a sidecar, the sidecar
 /// already holds exactly what it would write. A skipped write leaves the
 /// mtime alone, so file watchers are not woken by a no-op mutation.
-fn write_doc_unless_unchanged(
+pub(crate) fn write_doc_unless_unchanged(
     path: &Path,
     value: &TomlValue,
     integrity: IntegrityOpts,
@@ -901,6 +890,13 @@ fn sidecar_covers(path: &Path, bytes: &[u8]) -> bool {
         return false;
     };
     fs::read(sidecar_path(path)).is_ok_and(|current| current == expected.as_bytes())
+}
+
+/// Whether `path`'s sidecar already covers the bytes now on disk, so a
+/// sidecar refresh would rewrite it unchanged. Any read failure counts as
+/// "not covered".
+pub(crate) fn sidecar_covers_file(path: &Path) -> bool {
+    fs::read(path).is_ok_and(|bytes| sidecar_covers(path, &bytes))
 }
 
 /// Sibling of `mutate_doc` whose closure returns `Result<bool>`. When

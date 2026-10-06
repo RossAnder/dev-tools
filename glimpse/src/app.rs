@@ -17,8 +17,8 @@ use tui_input::backend::crossterm::EventHandler;
 
 use crate::actions::{self, InputForm, Overlay, Plan, Purpose, Selection, Transition};
 use crate::config::{
-    COLUMN_RANGE, Config, Density, DensityPref, Orientation, OrientationPref, PANEL_PERCENT_RANGE,
-    Split, ViewKind,
+    COLUMN_RANGE, Config, Density, DensityPref, ItemColumn, Orientation, OrientationPref,
+    PANEL_PERCENT_RANGE, Split, ViewKind,
 };
 use crate::diff::{Changes, diff};
 use crate::flows::{FlowEntry, ScopeEntry, Scopes};
@@ -110,6 +110,8 @@ pub(crate) struct Regions {
     pub(crate) tasks: Vec<(Rect, u32)>,
     /// One rect per item row the mouse can hit, keyed by item id.
     pub(crate) items: Vec<(Rect, String)>,
+    /// One rect per surface tab in the header.
+    pub(crate) tabs: Vec<(Rect, Surface)>,
     /// The body the docked panel shares with the view; a drag measures against it.
     pub(crate) body: Rect,
     /// The strip between the view and a docked panel that a drag resizes from.
@@ -281,6 +283,8 @@ pub(crate) struct App {
     pub(crate) notice: Option<(String, Instant)>,
     pub(crate) notice_duration: Duration,
     pub(crate) surface: Surface,
+    /// The config's `item_columns`.
+    pub(crate) item_columns: Vec<ItemColumn>,
     /// One state per item surface, present from the start and empty until its ledger is read.
     pub(crate) items: HashMap<Surface, ItemsState>,
     pub(crate) inbox: InboxState,
@@ -358,6 +362,7 @@ impl App {
             notice: None,
             notice_duration: NOTICE,
             surface: Surface::Tasks,
+            item_columns: config.item_columns.clone(),
             items: Surface::ALL
                 .into_iter()
                 .filter(|surface| surface.ledger_kind().is_some())
@@ -530,6 +535,16 @@ impl App {
                     self.scroll_legend(scroll);
                 } else if self.details_open {
                     self.scroll_details(scroll);
+                }
+                None
+            }
+            Action::ScrollView(_, rows) if self.surface == Surface::Inbox => {
+                self.inbox.scroll_by(rows);
+                None
+            }
+            Action::ScrollView(_, rows) if self.surface != Surface::Tasks => {
+                if let Some(state) = self.items.get_mut(&self.surface) {
+                    state.scroll_by(rows);
                 }
                 None
             }
@@ -923,14 +938,21 @@ impl App {
     }
 
     /// Edits the current surface's item state; a cursor the edit moved starts the
-    /// details scroll over, as a new task selection does.
+    /// details scroll over, as a new task selection does. A moved cursor or a changed
+    /// visible order also lets the list follow the cursor again after the wheel.
     fn edit_items(&mut self, edit: impl FnOnce(&mut ItemsState)) {
         let Some(state) = self.items.get_mut(&self.surface) else {
             return;
         };
+        let order = |s: &ItemsState| (s.group, s.sort, s.show_closed, s.filter.clone());
         let before = state.cursor.clone();
+        let order_before = order(state);
         edit(state);
+        if order(state) != order_before {
+            state.scroll_pinned = false;
+        }
         if state.cursor != before {
+            state.scroll_pinned = false;
             self.details_scroll = 0;
         }
     }
@@ -938,8 +960,13 @@ impl App {
     /// [`App::edit_items`] for the Inbox.
     fn edit_inbox(&mut self, edit: impl FnOnce(&mut InboxState)) {
         let before = self.inbox.cursor.clone();
+        let closed = self.inbox.show_closed;
         edit(&mut self.inbox);
+        if self.inbox.show_closed != closed {
+            self.inbox.scroll_pinned = false;
+        }
         if self.inbox.cursor != before {
+            self.inbox.scroll_pinned = false;
             self.details_scroll = 0;
         }
     }
@@ -2684,7 +2711,7 @@ mod tests {
     #[test]
     fn toggling_closed_on_the_inbox_shows_handled_and_withdrawn_records() {
         let mut app = inbox_app();
-        let mut rows = app.inbox.rows.clone();
+        let mut rows = app.inbox.rows.to_vec();
         rows.push(record("I3", "note", "user", "handled"));
         rows.push(record("I4", "note", "user", "withdrawn"));
         app.apply_inputs(

@@ -836,7 +836,7 @@ mod tests {
         let mut app = app_on(1);
         app.surface = Surface::Review;
         let state = app.items.get_mut(&Surface::Review).expect("review state");
-        state.rows = ledger.rows;
+        state.set_rows(ledger.rows, Some("fixture"));
         state.cursor = Some(id.to_string());
         app
     }

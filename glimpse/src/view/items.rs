@@ -1,9 +1,12 @@
 //! An item surface: the filtered, grouped and sorted list of ledger rows with marks, flashes and saving state.
 //!
 //! A facet row naming the group-by, sort, closed toggle and filter sits above the list.
-//! Each item row reads `▸● ○ R12 warning category effort summary… ↻ ID file:line`:
-//! cursor, mark, status glyph, id, severity (or backlog kind), category, effort and
-//! summary, then the saving mark, a running agent's chip and the dimmed anchor.
+//! Each item row reads `▸● ○ R12 warning category effort summary… ↻ ID  file:line`:
+//! cursor and mark, then the `item_columns` in their configured order — by default
+//! status glyph, id, severity (or backlog kind), category, effort, the summary with the
+//! saving mark, pending-input mark and a running agent's chip at its right end, and the
+//! anchor in a fixed-width column. The summary takes the width the others leave; the
+//! anchor column narrows, then drops, before the summary falls under [`SUMMARY_MIN`].
 
 use std::time::Instant;
 
@@ -14,9 +17,10 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
 use tui_input::Input;
 
-use super::{initials, text_width, truncate, window};
+use super::{Place, initials, place, text_width, truncate};
 use crate::actions::Overlay;
 use crate::app::App;
+use crate::config::ItemColumn;
 use crate::ledger::{Anchor, ItemRow, Seen, StatusClass};
 use crate::model::{AgentStatus, TaskStatus};
 use crate::surface::{ItemsState, VisibleRow};
@@ -24,19 +28,26 @@ use crate::surface::{ItemsState, VisibleRow};
 /// An item row's on-screen rect and the id it shows, for mouse hits.
 pub(crate) type Target = (Rect, String);
 
+/// The widest the anchor column grows, in cells.
+const AREA_MAX: usize = 28;
+/// The anchor column is dropped rather than drawn narrower than this.
+const AREA_MIN: usize = 10;
+/// The summary cells the anchor column gives way to.
+const SUMMARY_MIN: usize = 20;
+
 /// Draws the current item surface into `area` of `buf`; a `Frame` caller passes
-/// `frame.buffer_mut()`. Returns the drawn item rows.
-pub(crate) fn render(buf: &mut Buffer, area: Rect, app: &App) -> Vec<Target> {
+/// `frame.buffer_mut()`. Returns the drawn item rows and the list's scroll offset.
+pub(crate) fn render(buf: &mut Buffer, area: Rect, app: &App) -> (Vec<Target>, usize) {
     render_at(buf, area, app, Instant::now())
 }
 
 /// `now` dates the flashes.
-fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Target> {
+fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> (Vec<Target>, usize) {
     if area.width == 0 || area.height == 0 {
-        return Vec::new();
+        return (Vec::new(), 0);
     }
     let Some(state) = app.current_items() else {
-        return Vec::new();
+        return (Vec::new(), 0);
     };
     let width = usize::from(area.width);
     buf.set_line(area.x, area.y, &facet_line(app, state), area.width);
@@ -57,7 +68,7 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
         area.height.saturating_sub(1),
     );
     if list.height == 0 {
-        return Vec::new();
+        return (Vec::new(), state.scroll);
     }
 
     let visible = state.visible();
@@ -74,15 +85,18 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
             &Line::from(Span::styled(text, app.theme.secondary)),
             list.width,
         );
-        return Vec::new();
+        return (Vec::new(), 0);
     }
 
-    let columns = Columns::measure(state, &visible);
+    let mut columns = Columns::measure(state, &visible);
+    columns.fit(&app.item_columns, width);
     let view = usize::from(list.height);
-    let offset = window(
+    let offset = place(
+        state.scroll,
         cursor_at(&visible, state.cursor.as_deref()),
         visible.len(),
         view,
+        Place::of_list(state.scroll_pinned),
     );
     let rows: Vec<Row> = visible[offset..]
         .iter()
@@ -110,7 +124,7 @@ fn render_at(buf: &mut Buffer, area: Rect, app: &App, now: Instant) -> Vec<Targe
             }
         })
         .collect();
-    draw_rows(buf, list, &rows)
+    (draw_rows(buf, list, &rows), offset)
 }
 
 /// The position in `visible` of the item row `cursor` names.
@@ -195,13 +209,14 @@ pub(crate) fn prompt_cursor(area: Rect, app: &App) -> Option<Position> {
     ))
 }
 
-/// Widths of the aligned columns over the drawn rows; a column no row fills is zero
+/// Widths of the aligned columns over the visible rows; a column no row fills is zero
 /// and drawn not at all.
 struct Columns {
     id: usize,
     class: usize,
     category: usize,
     effort: usize,
+    area: usize,
 }
 
 impl Columns {
@@ -211,6 +226,7 @@ impl Columns {
             class: 0,
             category: 0,
             effort: 0,
+            area: 0,
         };
         for row in visible.iter().filter_map(|entry| match entry {
             VisibleRow::Item(id) => state.row(id),
@@ -220,10 +236,53 @@ impl Columns {
             columns.class = columns.class.max(text_width(classifier(row).0));
             columns.category = columns.category.max(text_width(&row.category));
             columns.effort = columns.effort.max(text_width(&row.effort));
+            columns.area = columns.area.max(text_width(&anchor_text(&row.anchor)));
         }
         columns
     }
+
+    /// Sizes the anchor column for a `width`-cell row: at most [`AREA_MAX`], narrowed
+    /// to keep [`SUMMARY_MIN`] summary cells, and dropped once under [`AREA_MIN`].
+    fn fit(&mut self, order: &[ItemColumn], width: usize) {
+        let natural = self.area;
+        self.area = 0;
+        if natural == 0 || !order.contains(&ItemColumn::Area) {
+            return;
+        }
+        let others: usize = order
+            .iter()
+            .map(|column| match column {
+                ItemColumn::Area => 0,
+                ItemColumn::Summary => 1 + SUMMARY_MIN,
+                other => match self.width(*other) {
+                    0 => 0,
+                    w => w + 1,
+                },
+            })
+            .sum();
+        let spare = width.saturating_sub(LEAD + others + 1 + 1);
+        let area = natural.min(AREA_MAX).min(spare);
+        if area >= natural.min(AREA_MIN) {
+            self.area = area;
+        }
+    }
+
+    /// A fixed column's width; the summary's is whatever the row has left.
+    fn width(&self, column: ItemColumn) -> usize {
+        match column {
+            ItemColumn::Status => 1,
+            ItemColumn::Id => self.id,
+            ItemColumn::Kind => self.class,
+            ItemColumn::Category => self.category,
+            ItemColumn::Effort => self.effort,
+            ItemColumn::Area => self.area,
+            ItemColumn::Summary => 0,
+        }
+    }
 }
+
+/// The cursor and mark cells every row starts with.
+const LEAD: usize = 2;
 
 /// The severity of a finding, or the kind of a backlog row, and whether it is the kind.
 fn classifier(row: &ItemRow) -> (&str, bool) {
@@ -243,7 +302,8 @@ fn item_line(
     is_cursor: bool,
 ) -> Line<'static> {
     let theme = &app.theme;
-    let mut left = vec![
+    let order = &app.item_columns;
+    let mut spans = vec![
         if is_cursor {
             Span::styled("▸", theme.selection_mark)
         } else {
@@ -254,66 +314,128 @@ fn item_line(
         } else {
             Span::raw(" ")
         },
-        Span::raw(" "),
-        Span::styled(glyph(row.class), theme.item_status(class_name(row.class))),
-        Span::raw(format!(" {:<w$}", row.id, w = columns.id)),
     ];
-    let (class, is_kind) = classifier(row);
-    let class_style = if is_kind {
-        theme.facet
-    } else {
-        theme.severity(class)
-    };
-    for (text, w, style) in [
-        (class, columns.class, class_style),
-        (row.category.as_str(), columns.category, theme.facet),
-        (row.effort.as_str(), columns.effort, theme.effort),
-    ] {
-        if w > 0 {
-            left.push(Span::raw(" "));
-            left.push(Span::styled(format!("{text:<w$}"), style));
-        }
-    }
-    left.push(Span::raw(" "));
-
-    let mut right = Vec::new();
-    if state.saving.contains(&row.id) {
-        right.push(Span::styled("↻", theme.item_saving));
-    }
-    if let Some(mark) = pending_mark(app, &row.id) {
-        if !right.is_empty() {
-            right.push(Span::raw(" "));
-        }
-        right.push(mark);
-    }
-    if let Some(chip) = agent_chip(app, &row.id) {
-        if !right.is_empty() {
-            right.push(Span::raw(" "));
-        }
-        right.push(chip);
-    }
-    let anchor = anchor_text(&row.anchor);
-    let used = spans_width(&left) + spans_width(&right);
-    // The anchor gives way before the summary drops under a dozen cells.
-    if !anchor.is_empty() && used + text_width(&anchor) + 14 <= width {
-        if !right.is_empty() {
-            right.push(Span::raw(" "));
-        }
-        right.push(Span::styled(anchor, theme.facet));
-    }
+    let marks = row_marks(app, state, &row.id);
+    let has_summary = order.contains(&ItemColumn::Summary);
     // The last cell stays blank, so a highlight is padded on both sides.
-    let room = width.saturating_sub(spans_width(&left) + spans_width(&right) + 1);
-    let room = room.saturating_sub(usize::from(!right.is_empty()));
-    let summary = truncate(&row.summary, room);
-    let pad = room.saturating_sub(text_width(&summary));
-    left.push(Span::raw(summary));
-    left.push(Span::raw(" ".repeat(pad)));
-    if !right.is_empty() {
-        left.push(Span::raw(" "));
-        left.extend(right);
+    let fixed: usize = LEAD
+        + 1
+        + order
+            .iter()
+            .map(|column| match columns.width(*column) {
+                _ if *column == ItemColumn::Summary => 1,
+                0 => 0,
+                w => w + 1,
+            })
+            .sum::<usize>();
+    for column in order {
+        if *column == ItemColumn::Summary {
+            spans.push(Span::raw(" "));
+            spans.extend(summary_cell(
+                row,
+                marks.clone(),
+                width.saturating_sub(fixed),
+            ));
+            continue;
+        }
+        let w = columns.width(*column);
+        if w > 0 {
+            spans.push(Span::raw(" "));
+            spans.push(cell(app, row, *column, w));
+        }
     }
-    left.push(Span::raw(" "));
-    Line::from(left)
+    if !has_summary && !marks.is_empty() {
+        spans.push(Span::raw(" "));
+        spans.extend(marks);
+    }
+    spans.push(Span::raw(" "));
+    Line::from(spans)
+}
+
+/// One fixed column's cell, padded to `w`.
+fn cell(app: &App, row: &ItemRow, column: ItemColumn, w: usize) -> Span<'static> {
+    let theme = &app.theme;
+    let padded = |text: &str| format!("{text}{}", " ".repeat(w.saturating_sub(text_width(text))));
+    match column {
+        ItemColumn::Status => {
+            Span::styled(glyph(row.class), theme.item_status(class_name(row.class)))
+        }
+        ItemColumn::Id => Span::styled(padded(&row.id), theme.item_id),
+        ItemColumn::Kind => match classifier(row) {
+            (kind, true) => Span::styled(padded(kind), theme.item_kind),
+            (severity, false) => Span::styled(padded(severity), theme.severity(severity)),
+        },
+        ItemColumn::Category => Span::styled(padded(&row.category), theme.facet),
+        ItemColumn::Effort => Span::styled(padded(&row.effort), theme.effort),
+        ItemColumn::Area => Span::styled(
+            padded(&shorten_path(&anchor_text(&row.anchor), w)),
+            theme.facet,
+        ),
+        ItemColumn::Summary => Span::raw(String::new()),
+    }
+}
+
+/// The summary in `room` cells, cut with `…` to leave the row's `marks` right-aligned
+/// at the cell's end.
+fn summary_cell(row: &ItemRow, marks: Vec<Span<'static>>, room: usize) -> Vec<Span<'static>> {
+    let reserved = if marks.is_empty() {
+        0
+    } else {
+        spans_width(&marks) + 1
+    };
+    let summary = truncate(&row.summary, room.saturating_sub(reserved));
+    let pad = room.saturating_sub(text_width(&summary) + reserved);
+    let mut spans = vec![Span::raw(summary), Span::raw(" ".repeat(pad))];
+    if !marks.is_empty() {
+        spans.push(Span::raw(" "));
+        spans.extend(marks);
+    }
+    spans
+}
+
+/// The saving mark, the pending-input mark and a running agent's chip, space-separated.
+fn row_marks(app: &App, state: &ItemsState, id: &str) -> Vec<Span<'static>> {
+    let saving = state
+        .saving
+        .contains(id)
+        .then(|| Span::styled("↻", app.theme.item_saving));
+    let mut spans = Vec::new();
+    for mark in [saving, pending_mark(app, id), agent_chip(app, id)]
+        .into_iter()
+        .flatten()
+    {
+        if !spans.is_empty() {
+            spans.push(Span::raw(" "));
+        }
+        spans.push(mark);
+    }
+    spans
+}
+
+/// `text` in at most `max` cells. A path keeps its tail behind a leading `…`, since the
+/// file name says more than the directories above it; other text is cut at the end.
+fn shorten_path(text: &str, max: usize) -> String {
+    if text_width(text) <= max {
+        return text.to_string();
+    }
+    if max == 0 {
+        return String::new();
+    }
+    let is_separator = |c: char| matches!(c, '/' | '\\');
+    if !text.contains(is_separator) {
+        return truncate(text, max);
+    }
+    let mut start = text.len();
+    let mut used = 0;
+    for (i, c) in text.char_indices().rev() {
+        let w = text_width(c.encode_utf8(&mut [0; 4]));
+        if used + w > max - 1 {
+            break;
+        }
+        used += w;
+        start = i;
+    }
+    format!("…{}", text[start..].trim_start_matches(is_separator))
 }
 
 /// `file:line` for a finding, the heading or area otherwise.
@@ -435,7 +557,7 @@ mod tests {
     fn draw(app: &App, width: u16, height: u16) -> (Vec<String>, Vec<Target>) {
         let area = Rect::new(0, 0, width, height);
         let mut buf = Buffer::empty(area);
-        let targets = render_at(&mut buf, area, app, Instant::now());
+        let (targets, _) = render_at(&mut buf, area, app, Instant::now());
         let rows = (0..height)
             .map(|y| (0..width).map(|x| buf[(x, y)].symbol()).collect())
             .collect();
@@ -551,8 +673,150 @@ mod tests {
         let (rows, targets) = draw(&app, 100, 3);
         assert_eq!(targets.len(), 2, "two list rows under the facet row");
         assert!(rows[2].starts_with("▸"), "{rows:#?}");
-        assert_eq!(window(Some(9), 10, 4), 6);
-        assert_eq!(window(Some(1), 10, 4), 0);
+    }
+
+    fn backlog_app(rows: Vec<ItemRow>) -> App {
+        let mut app = App::new(fixture(), &Config::default());
+        app.apply_ledger(
+            Ledger {
+                kind: Kind::Backlog,
+                source: tomlctl::LedgerRef::File(".claude/backlog.toml".into()),
+                revision: Some("v1".to_string()),
+                rows,
+            },
+            Instant::now(),
+        );
+        app.apply(Action::SwitchSurface(Surface::Backlog));
+        app
+    }
+
+    fn capture(id: &str, kind: &str, summary: &str, area: &str) -> ItemRow {
+        ItemRow {
+            id: id.to_string(),
+            status: "open".to_string(),
+            class: StatusClass::Live,
+            kind: kind.to_string(),
+            summary: summary.to_string(),
+            anchor: Anchor::Area(area.to_string()),
+            ..ItemRow::default()
+        }
+    }
+
+    #[test]
+    fn the_area_sits_in_an_aligned_column_cut_from_the_left() {
+        let app = backlog_app(vec![
+            capture(
+                "B-2cc7096a",
+                "debt",
+                "glimpse's write-root conflict check covers only TOML ledgers",
+                "glimpse/src/writer.rs",
+            ),
+            capture(
+                "B-778163da",
+                "annoyance",
+                "Borrowed-parse read paths report parse and range errors",
+                "tomlctl/src/io.rs",
+            ),
+            capture(
+                "B-ada06976",
+                "debt",
+                "The apply-pipeline skill body sits exactly at the cap",
+                "claude/skills/flow-contract-apply-pipeline/SKILL.md",
+            ),
+        ]);
+        let (rows, _) = draw(&app, 90, 5);
+        let start = |needle: &str| {
+            let (_, line) = row_of(&rows, needle);
+            let at = line.find(needle).expect("drawn");
+            line[..at].chars().count()
+        };
+        let writer = start("glimpse/src/writer.rs");
+        assert_eq!(start("tomlctl/src/io.rs"), writer, "{rows:#?}");
+        assert_eq!(start("…act-apply-pipeline/SKILL.md"), writer);
+        let (_, line) = row_of(&rows, "B-778163da");
+        assert!(
+            line.starts_with("▸  ○ B-778163da annoyance Borrowed-parse")
+                || line.starts_with("   ○ B-778163da annoyance Borrowed-parse"),
+            "{line:?}"
+        );
+        assert!(line.contains('…'), "the summary gives way: {line:?}");
+
+        let (narrow, _) = draw(&app, 50, 5);
+        assert!(
+            !narrow.iter().any(|row| row.contains("io.rs")),
+            "a narrow pane drops the area: {narrow:#?}"
+        );
+    }
+
+    #[test]
+    fn ids_and_kinds_take_their_dimmed_tokens() {
+        let app = backlog_app(vec![capture("B-1", "debt", "Summary", "src/a.rs")]);
+        let area = Rect::new(0, 0, 60, 3);
+        let mut buf = Buffer::empty(area);
+        render_at(&mut buf, area, &app, Instant::now());
+        let line: String = (0..60).map(|x| buf[(x, 1)].symbol()).collect();
+        let col = |needle: &str| {
+            let at = line.find(needle).expect("drawn");
+            u16::try_from(line[..at].chars().count()).expect("column")
+        };
+        assert_eq!(Some(buf[(col("B-1"), 1)].fg), app.theme.item_id.fg);
+        assert_eq!(Some(buf[(col("debt"), 1)].fg), app.theme.item_kind.fg);
+    }
+
+    #[test]
+    fn configured_columns_choose_the_set_and_order() {
+        let mut app = backlog_app(vec![capture("B-1", "debt", "Summary", "src/a.rs")]);
+        app.item_columns = vec![ItemColumn::Kind, ItemColumn::Id, ItemColumn::Summary];
+        let (rows, _) = draw(&app, 60, 3);
+        let (_, line) = row_of(&rows, "B-1");
+        assert!(line.starts_with("▸  debt B-1 Summary"), "{line:?}");
+        assert!(
+            !line.contains("src/a.rs") && !line.contains('○'),
+            "{line:?}"
+        );
+    }
+
+    #[test]
+    fn paths_keep_their_trailing_segments() {
+        assert_eq!(shorten_path("src/writer.rs", 20), "src/writer.rs");
+        assert_eq!(shorten_path("glimpse/src/writer.rs", 15), "…src/writer.rs");
+        assert_eq!(shorten_path("glimpse/src/writer.rs", 12), "…c/writer.rs");
+        assert_eq!(shorten_path("a/very-long-file-name.rs", 8), "…name.rs");
+        assert_eq!(shorten_path("Approach and risks", 10), "Approach …");
+        assert_eq!(shorten_path("src/a.rs", 0), "");
+    }
+
+    #[test]
+    fn the_wheel_scrolls_the_list_without_moving_the_cursor() {
+        let rows = (1..=9)
+            .map(|n| capture(&format!("B-{n}"), "debt", "Summary", "src/a.rs"))
+            .collect();
+        let mut app = backlog_app(rows);
+        // One frame, writing the offset back as `view::render` does.
+        let frame = |app: &mut App| -> Vec<String> {
+            let area = Rect::new(0, 0, 60, 5);
+            let (targets, offset) = render_at(&mut Buffer::empty(area), area, app, Instant::now());
+            app.items
+                .get_mut(&Surface::Backlog)
+                .expect("backlog")
+                .scroll = offset;
+            targets.into_iter().map(|(_, id)| id).collect()
+        };
+        app.apply(Action::ScrollView(0, 3));
+        assert_eq!(frame(&mut app), ["B-4", "B-5", "B-6", "B-7"]);
+        app.apply(Action::ScrollView(0, 30));
+        assert_eq!(frame(&mut app), ["B-6", "B-7", "B-8", "B-9"], "clamped");
+        let state = &app.items[&Surface::Backlog];
+        assert_eq!(state.cursor.as_deref(), Some("B-1"), "the cursor stays");
+        assert_eq!(state.scroll, 5);
+
+        app.apply(Action::ItemMove(crate::app::Dir::Down));
+        let ids = frame(&mut app);
+        assert_eq!(
+            ids.first().map(String::as_str),
+            Some("B-1"),
+            "a cursor move brings it back: {ids:?}"
+        );
     }
 
     #[test]

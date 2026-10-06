@@ -50,19 +50,50 @@ pub(crate) fn height(app: &App, compact: bool) -> u16 {
     u16::try_from(rows(app, compact).len()).unwrap_or(u16::MAX)
 }
 
-fn rows(app: &App, compact: bool) -> Vec<Line<'static>> {
-    let mut lines = if compact {
+/// The cells a tab covers on its row: its first column and its width.
+type TabCells = (usize, usize, Surface);
+
+/// A header row and the tabs drawn on it.
+struct Row {
+    line: Line<'static>,
+    tabs: Vec<TabCells>,
+}
+
+impl From<Line<'static>> for Row {
+    fn from(line: Line<'static>) -> Row {
+        Row {
+            line,
+            tabs: Vec::new(),
+        }
+    }
+}
+
+fn rows(app: &App, compact: bool) -> Vec<Row> {
+    let mut rows = if compact {
         vec![compact_row(app)]
     } else {
-        vec![first_row(app), tabs_row(app)]
+        vec![first_row(app).into(), tabs_row(app)]
     };
     let second = if compact && app.source_error.is_none() && app.warning.is_none() {
         None
     } else {
         second_row(app)
     };
-    lines.extend(second);
-    lines
+    rows.extend(second.map(Row::from));
+    rows
+}
+
+/// Appends `tab` to `spans`, recording the cells it covers.
+fn push_tab(
+    spans: &mut Vec<Span<'static>>,
+    tabs: &mut Vec<TabCells>,
+    surface: Surface,
+    tab: Vec<Span<'static>>,
+) {
+    let start = spans.iter().map(Span::width).sum();
+    let width = tab.iter().map(Span::width).sum();
+    spans.extend(tab);
+    tabs.push((start, width, surface));
 }
 
 /// A tab's count text: open rows, `—` while the surface has no ledger file read,
@@ -100,8 +131,9 @@ fn tab_style(app: &App, surface: Surface) -> Style {
     }
 }
 
-/// The `+N` arrivals since the surface was last on screen, when there are any.
-fn arrival_badge(app: &App, surface: Surface) -> Option<Span<'static>> {
+/// The `+N` arrivals since the surface was last on screen, when there are any, over
+/// the tab's own `style`.
+fn arrival_badge(app: &App, surface: Surface, style: Style) -> Option<Span<'static>> {
     let arrived = match surface {
         Surface::Inbox => app.inbox.new_since_view,
         _ => app
@@ -109,52 +141,61 @@ fn arrival_badge(app: &App, surface: Surface) -> Option<Span<'static>> {
             .get(&surface)
             .map_or(0, |state| state.new_since_view),
     };
-    (arrived > 0).then(|| Span::styled(format!("+{arrived}"), app.theme.arrival_badge))
+    (arrived > 0).then(|| Span::styled(format!("+{arrived}"), style.patch(app.theme.arrival_badge)))
 }
 
-/// `Tasks  Review 12 +3  Optimise 4  Plan-review —  Backlog 6  Inbox 2?`
-fn tabs_row(app: &App) -> Line<'static> {
+/// ` Tasks   Review 12 +3   Optimise 4 …`: every tab padded a cell either side, so the
+/// current one's fill is centred on its text, and a cell apart. Padding and badge take
+/// the tab's style, so the fill runs unbroken across the tab.
+fn tabs_row(app: &App) -> Row {
     let mut spans = Vec::new();
+    let mut tabs = Vec::new();
     for surface in Surface::ALL {
         if !spans.is_empty() {
-            spans.push(GAP);
-        }
-        let text = match tab_count(app, surface) {
-            Some(count) => format!("{} {count}", surface.label()),
-            None => surface.label().to_string(),
-        };
-        spans.push(Span::styled(text, tab_style(app, surface)));
-        if let Some(badge) = arrival_badge(app, surface) {
             spans.push(Span::raw(" "));
-            spans.push(badge);
         }
+        let style = tab_style(app, surface);
+        let text = match tab_count(app, surface) {
+            Some(count) => format!(" {} {count}", surface.label()),
+            None => format!(" {}", surface.label()),
+        };
+        let mut tab = vec![Span::styled(text, style)];
+        if let Some(badge) = arrival_badge(app, surface, style) {
+            tab.push(Span::styled(" ", style));
+            tab.push(badge);
+        }
+        tab.push(Span::styled(" ", style));
+        push_tab(&mut spans, &mut tabs, surface, tab);
     }
-    Line::from(spans)
+    Row {
+        line: Line::from(spans),
+        tabs,
+    }
 }
 
-/// `R12+3 O4 P— B6 I2?`: the item surfaces' tabs by initial, for the compact row.
-fn compact_tabs(app: &App) -> Vec<Span<'static>> {
-    let mut spans = Vec::new();
+/// `R12+3 O4 P— B6 I2?`: the item surfaces' tabs by initial, appended to the compact
+/// row's `spans`.
+fn compact_tabs(app: &App, spans: &mut Vec<Span<'static>>, tabs: &mut Vec<TabCells>) {
+    let mut first = true;
     for surface in Surface::ALL {
         let Some(count) = tab_count(app, surface) else {
             continue;
         };
-        if !spans.is_empty() {
+        if !first {
             spans.push(Span::raw(" "));
         }
+        first = false;
+        let style = tab_style(app, surface);
         let initial = surface.label().chars().next().unwrap_or(' ');
-        spans.push(Span::styled(
-            format!("{initial}{count}"),
-            tab_style(app, surface),
-        ));
-        spans.extend(arrival_badge(app, surface));
+        let mut tab = vec![Span::styled(format!("{initial}{count}"), style)];
+        tab.extend(arrival_badge(app, surface, style));
+        push_tab(spans, tabs, surface, tab);
     }
-    spans
 }
 
 /// `slug  3/8  ⟳  1▶  R12+3 …`: the first row with the flow status, the checkpoint
 /// policy and the words dropped, and the tabs folded in, to fit a narrow pane.
-fn compact_row(app: &App) -> Line<'static> {
+fn compact_row(app: &App) -> Row {
     let snap = &app.snapshot;
     let done = snap
         .tasks
@@ -181,8 +222,12 @@ fn compact_row(app: &App) -> Line<'static> {
         running_chip(app, format!("{running}▶"), running),
         GAP,
     ];
-    spans.extend(compact_tabs(app));
-    Line::from(spans)
+    let mut tabs = Vec::new();
+    compact_tabs(app, &mut spans, &mut tabs);
+    Row {
+        line: Line::from(spans),
+        tabs,
+    }
 }
 
 fn first_row(app: &App) -> Line<'static> {
@@ -244,8 +289,31 @@ fn running_chip(app: &App, text: String, running: usize) -> Span<'static> {
     }
 }
 
-pub(crate) fn render(frame: &mut Frame, area: Rect, app: &App, compact: bool) {
-    frame.render_widget(Paragraph::new(rows(app, compact)), area);
+/// Returns each tab's on-screen rect, clipped to `area`, for mouse hits.
+pub(crate) fn render(
+    frame: &mut Frame,
+    area: Rect,
+    app: &App,
+    compact: bool,
+) -> Vec<(Rect, Surface)> {
+    let rows = rows(app, compact);
+    let mut targets = Vec::new();
+    for (row, y) in rows.iter().zip(area.y..area.bottom()) {
+        for &(start, width, surface) in &row.tabs {
+            let x = usize::from(area.x) + start;
+            let Ok(x) = u16::try_from(x) else { continue };
+            if x >= area.right() {
+                continue;
+            }
+            let width = u16::try_from(width)
+                .unwrap_or(u16::MAX)
+                .min(area.right() - x);
+            targets.push((Rect::new(x, y, width, 1), surface));
+        }
+    }
+    let lines: Vec<Line<'static>> = rows.into_iter().map(|row| row.line).collect();
+    frame.render_widget(Paragraph::new(lines), area);
+    targets
 }
 
 #[cfg(test)]
@@ -264,7 +332,9 @@ mod tests {
     fn draw_as(app: &App, compact: bool) -> Vec<String> {
         let mut terminal = Terminal::new(TestBackend::new(100, 3)).expect("terminal");
         terminal
-            .draw(|frame| render(frame, frame.area(), app, compact))
+            .draw(|frame| {
+                render(frame, frame.area(), app, compact);
+            })
             .expect("draw");
         let buffer = terminal.backend().buffer().clone();
         (0..3)
@@ -319,8 +389,7 @@ mod tests {
 
     fn load(app: &mut App, surface: Surface, rows: Vec<ItemRow>, revision: Option<&str>) {
         let state = app.items.get_mut(&surface).expect("an item surface");
-        state.rows = rows;
-        state.revision = Seen::read(revision);
+        state.set_rows(rows, revision);
     }
 
     #[test]
@@ -343,7 +412,7 @@ mod tests {
         let rows = draw(&app);
         assert_eq!(
             rows[1],
-            "Tasks  Review 2 +3  Optimise 1  Plan-review —  Backlog —  Inbox —"
+            " Tasks   Review 2 +3   Optimise 1   Plan-review —   Backlog —   Inbox —"
         );
         assert!(
             draw_as(&app, true)[0].ends_with("  R2+3 O1 P— B— I—"),
@@ -352,27 +421,71 @@ mod tests {
         );
 
         let mut terminal = Terminal::new(TestBackend::new(100, 3)).expect("terminal");
+        let mut tabs = Vec::new();
         terminal
-            .draw(|frame| render(frame, frame.area(), &app, false))
+            .draw(|frame| tabs = render(frame, frame.area(), &app, false))
             .expect("draw");
         let buffer = terminal.backend().buffer();
         let column = |needle: &str| {
             let at = rows[1].find(needle).expect("on the tabs row");
             u16::try_from(rows[1][..at].chars().count()).expect("column")
         };
+        let active = column("Optimise");
         assert_eq!(
-            buffer[(column("Optimise"), 1)].fg,
+            buffer[(active, 1)].fg,
             app.theme.surface_tab_active.fg.expect("a colour"),
             "the active tab"
         );
+        let fill = app.theme.surface_tab_active.bg.expect("a fill");
+        let end = active + u16::try_from("Optimise 1".len()).expect("width");
+        assert_eq!(buffer[(active - 1, 1)].bg, fill, "a padding cell before");
+        assert_eq!(buffer[(end, 1)].bg, fill, "a padding cell after");
+        assert_ne!(buffer[(active - 2, 1)].bg, fill, "the gap is not filled");
+        assert_ne!(buffer[(end + 1, 1)].bg, fill);
         assert_eq!(
             buffer[(column("Review"), 1)].fg,
             app.theme.surface_tab.fg.expect("a colour")
         );
+        assert_ne!(buffer[(column("Review"), 1)].bg, fill);
         assert_eq!(
             buffer[(column("+3"), 1)].fg,
             app.theme.arrival_badge.fg.expect("a colour")
         );
+
+        let optimise = tabs
+            .iter()
+            .find(|(_, surface)| *surface == Surface::Optimise)
+            .map(|(rect, _)| *rect)
+            .expect("a tab rect");
+        assert_eq!((optimise.x, optimise.y), (active - 1, 1));
+        assert_eq!(optimise.width, end + 1 - (active - 1), "the padded tab");
+        assert_eq!(tabs.len(), Surface::ALL.len());
+    }
+
+    #[test]
+    fn the_compact_row_records_its_folded_tabs() {
+        let app = App::new(fixture(), &Config::default());
+        let rows = draw_as(&app, true);
+        let mut terminal = Terminal::new(TestBackend::new(100, 3)).expect("terminal");
+        let mut tabs = Vec::new();
+        terminal
+            .draw(|frame| tabs = render(frame, frame.area(), &app, true))
+            .expect("draw");
+        let surfaces: Vec<Surface> = tabs.iter().map(|(_, s)| *s).collect();
+        assert_eq!(
+            surfaces,
+            [
+                Surface::Review,
+                Surface::Optimise,
+                Surface::PlanReview,
+                Surface::Backlog,
+                Surface::Inbox
+            ],
+            "Tasks has no folded tab"
+        );
+        let at = rows[0].find("P—").expect("the plan-review tab");
+        let x = u16::try_from(rows[0][..at].chars().count()).expect("column");
+        assert_eq!(tabs[2].0, Rect::new(x, 0, 2, 1));
     }
 
     #[test]
@@ -430,7 +543,9 @@ mod tests {
         let app = App::new(fixture(), &Config::default());
         let mut terminal = Terminal::new(TestBackend::new(100, 2)).expect("terminal");
         terminal
-            .draw(|frame| render(frame, frame.area(), &app, false))
+            .draw(|frame| {
+                render(frame, frame.area(), &app, false);
+            })
             .expect("draw");
         let buffer = terminal.backend().buffer();
         let row: Vec<&str> = (0..100).map(|x| buffer[(x, 0)].symbol()).collect();

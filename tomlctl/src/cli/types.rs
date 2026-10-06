@@ -2463,9 +2463,14 @@ pub(crate) enum InputsOp {
         integrity: WriteIntegrityArgs,
     },
 
-    /// Move `new` or `acknowledged` records to `handled`.
+    /// Move `new` or `acknowledged` records to `handled`: positional ids
+    /// sharing one `--note`, or `--ndjson` rows each carrying its own.
     Handle {
-        #[arg(value_name = "ID", required = true)]
+        #[arg(
+            value_name = "ID",
+            required_unless_present = "ndjson",
+            conflicts_with = "ndjson"
+        )]
         ids: Vec<String>,
         #[arg(
             long,
@@ -2473,8 +2478,19 @@ pub(crate) enum InputsOp {
             help = "Command that acted on the records"
         )]
         by: String,
-        #[arg(long, help = "What was done, or why it was declined")]
-        note: String,
+        #[arg(
+            long,
+            required_unless_present = "ndjson",
+            conflicts_with = "ndjson",
+            help = "What was done, or why it was declined"
+        )]
+        note: Option<String>,
+        #[arg(
+            long = "ndjson",
+            value_name = "SRC",
+            help = "One {\"id\",\"note\"} object per line, applied in one write: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+        )]
+        ndjson: Option<String>,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },

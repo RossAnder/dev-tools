@@ -36,7 +36,8 @@ use crate::flow::schema::ActiveEntry as SchemaEntry;
 use crate::integrity::refresh_sidecar;
 use crate::io::{
     guard_write_path, read_toml, recheck_claude_containment, record_plan_path, relativise,
-    repo_or_cwd_root, resolve_plan_arg, with_exclusive_lock, write_toml_with_sidecar,
+    repo_or_cwd_root, resolve_plan_arg, sidecar_covers_file, with_exclusive_lock,
+    write_toml_with_sidecar,
 };
 use crate::output::print_json_compact;
 use crate::time::{now_rfc3339, today_toml_date};
@@ -320,12 +321,13 @@ fn bootstrap_seeded_store(
             }
         }
         // File already present: leave the bytes alone but still ensure the
-        // sidecar exists (self-healing for a clobbered `.sha256`). Skip when
-        // the caller asked for no sidecar (`--no-write-integrity`).
+        // sidecar covers them (self-healing for a clobbered `.sha256`). A
+        // sidecar that already matches is left untouched, and none is written
+        // when the caller asked for no sidecar (`--no-write-integrity`).
         if !allow_outside {
             recheck_claude_containment(file)?;
         }
-        if write_sidecar {
+        if write_sidecar && !sidecar_covers_file(file) {
             refresh_sidecar(file)?;
         }
         Ok(false)

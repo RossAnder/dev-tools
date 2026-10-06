@@ -1912,7 +1912,7 @@ pub(crate) fn compute_array_append_mutation(
 pub(crate) fn is_terminal_status(status: &str) -> bool {
     matches!(
         status,
-        "fixed" | "wontfix" | "verified-clean" | "deferred" | "applied" | "wontapply"
+        "fixed" | "wontfix" | "verified-clean" | "deferred" | "applied" | "wontapply" | "discarded"
     )
 }
 
@@ -2037,6 +2037,16 @@ mod tests {
     use crate::convert::{DATE_KEYS, ScalarType, infer_type, json_to_toml, navigate, set_at_path};
     use crate::query::{self, Predicate, Query};
     use crate::test_support::env_lock;
+
+    #[test]
+    fn every_companion_status_is_terminal() {
+        for (status, _) in STATUS_COMPANIONS {
+            assert!(is_terminal_status(status), "{status} must be terminal");
+        }
+        assert!(is_terminal_status("discarded"));
+        assert!(!is_terminal_status("open"));
+        assert!(!is_terminal_status(""));
+    }
 
     const LEDGER: &str = r#"schema_version = 1
 last_updated = 2026-04-16

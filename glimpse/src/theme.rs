@@ -79,6 +79,9 @@ pub(crate) const TOKENS: &[(&str, &str)] = &[
     ("badge", "accent"),
     ("surface_tab", "secondary"),
     ("surface_tab_active", "accent"),
+    ("surface_tab_active_bg", "highlight"),
+    ("item_id", "muted"),
+    ("item_kind", "muted"),
     ("facet", "muted"),
     ("group_header", "section"),
     ("input_new", "info"),
@@ -202,7 +205,12 @@ pub(crate) struct Theme {
     /// The `+N` arrival count on a surface tab.
     pub(crate) arrival_badge: Style,
     pub(crate) surface_tab: Style,
+    /// The current surface's tab, on a filled background.
     pub(crate) surface_tab_active: Style,
+    /// An item row's id.
+    pub(crate) item_id: Style,
+    /// A backlog item's kind.
+    pub(crate) item_kind: Style,
     /// A secondary attribute shown beside an item: kind, area, file.
     pub(crate) facet: Style,
     pub(crate) group_header: Style,
@@ -310,7 +318,10 @@ impl Theme {
             item_saving: fg("item_saving"),
             arrival_badge: fg("badge").add_modifier(bold),
             surface_tab: fg("surface_tab"),
-            surface_tab_active: fg("surface_tab_active").add_modifier(bold),
+            surface_tab_active: on("surface_tab_active", "surface_tab_active_bg")
+                .add_modifier(bold),
+            item_id: fg("item_id"),
+            item_kind: fg("item_kind"),
             facet: fg("facet"),
             group_header: fg("group_header").add_modifier(bold),
             input_new: fg("input_new"),

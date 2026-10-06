@@ -5,7 +5,6 @@
 //! next, so two writes to the same rows land in the order the user made them. A facade error,
 //! a `root mismatch` included, comes back as [`WriteOutcome::error`]; it never ends the thread.
 
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::Duration;
@@ -133,17 +132,17 @@ pub(crate) struct Writer {
 }
 
 impl Writer {
-    /// Starts the thread writing under `root`. Moves the process into `root` first, so the
-    /// process root tomlctl resolves lazily agrees with it and the facade's root check passes;
-    /// spawn it before anything else calls into tomlctl. Also returns, for the header, why
-    /// every write would be refused, when that is already known.
+    /// Starts the thread writing under `root`. Moves the process into `root` first, so a
+    /// process root tomlctl has not yet resolved resolves to it, then runs the facade's own
+    /// root check. Also returns, for the header, why every write would be refused: a
+    /// `TOMLCTL_ROOT` or an earlier-cached root naming another directory.
     pub(crate) fn spawn(root: PathBuf, events: Sender<Event>) -> (Writer, Option<String>) {
         let warning = match std::env::set_current_dir(&root) {
             Err(e) => Some(format!(
                 "writes will fail: cannot enter {}: {e}",
                 root.display()
             )),
-            Ok(()) => root_conflict(&root, std::env::var_os("TOMLCTL_ROOT")),
+            Ok(()) => root_conflict(&root),
         };
         (Writer::spawn_with(root, events, perform), warning)
     }
@@ -182,21 +181,11 @@ impl Writer {
     }
 }
 
-/// Why tomlctl's process root cannot be `root`: once the process sits in `root`, only a
-/// non-empty `TOMLCTL_ROOT` (`pinned`) naming another directory can move it elsewhere.
-fn root_conflict(root: &Path, pinned: Option<OsString>) -> Option<String> {
-    let pinned = PathBuf::from(pinned.filter(|value| !value.is_empty())?);
-    let same = match (pinned.canonicalize(), root.canonicalize()) {
-        (Ok(pinned), Ok(root)) => pinned == root,
-        _ => false,
-    };
-    (!same).then(|| {
-        format!(
-            "writes will fail: TOMLCTL_ROOT is {}, not glimpse's root {}",
-            pinned.display(),
-            root.display()
-        )
-    })
+/// Why the facade will refuse every write under `root`, from the check it makes itself.
+fn root_conflict(root: &Path) -> Option<String> {
+    tomlctl::ensure_process_root(root)
+        .err()
+        .map(|e| format!("writes will fail: {e:#}"))
 }
 
 /// Runs one request through the tomlctl facade.
@@ -580,16 +569,11 @@ mod tests {
 
     #[test]
     fn a_tomlctl_root_naming_another_directory_is_a_conflict() {
-        let root = std::env::temp_dir();
-        assert_eq!(root_conflict(&root, None), None);
-        assert_eq!(
-            root_conflict(&root, Some(OsString::new())),
-            None,
-            "empty is unset"
-        );
-        assert_eq!(root_conflict(&root, Some(root.clone().into())), None);
-        let elsewhere = root.join("glimpse-no-such-root");
-        let conflict = root_conflict(&root, Some(elsewhere.into())).expect("a conflict");
+        let sandbox = Sandbox::new("conflict");
+        assert_eq!(root_conflict(&sandbox.root), None);
+        let elsewhere = std::env::temp_dir();
+        let conflict = root_conflict(&elsewhere).expect("a conflict");
+        assert!(conflict.contains("root mismatch"), "{conflict}");
         assert!(conflict.contains("TOMLCTL_ROOT"), "{conflict}");
     }
 

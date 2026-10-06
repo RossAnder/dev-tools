@@ -225,6 +225,41 @@ fn remove_then_list_shows_zero_entries() {
     assert_eq!(arr[0]["slug"], serde_json::json!("y"));
 }
 
+/// Removing a slug the registry does not hold rewrites neither the registry
+/// nor its sidecar, so file watchers are not woken by the no-op.
+#[test]
+fn remove_of_an_absent_slug_leaves_registry_and_sidecar_untouched() {
+    let (dir, registry) = fresh_root();
+    run_active(&dir, &["add", "--slug", "x"]).success();
+    let sidecar = sidecar_for(&registry);
+    let past = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000_000);
+    for path in [&registry, &sidecar] {
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
+    }
+    let mtime = |path: &Path| fs::metadata(path).unwrap().modified().unwrap();
+
+    run_active(&dir, &["remove", "--slug", "absent"]).success();
+    assert_eq!(
+        mtime(&registry),
+        past,
+        "no-op must not rewrite the registry"
+    );
+    assert_eq!(mtime(&sidecar), past, "no-op must not rewrite the sidecar");
+
+    run_active(&dir, &["remove", "--slug", "x"]).success();
+    assert_ne!(
+        mtime(&registry),
+        past,
+        "a real removal rewrites the registry"
+    );
+    assert_sidecar_matches(&registry);
+}
+
 // ---------------------------------------------------------------------------
 // touch
 // ---------------------------------------------------------------------------

@@ -14,6 +14,7 @@ mod keys;
 mod ledger;
 mod model;
 mod pane;
+mod presence;
 mod runtime;
 mod setup;
 mod source;
@@ -98,7 +99,10 @@ fn run_view(args: ViewArgs) -> Result<(), String> {
         surface: args.surface,
     };
     match args.once {
-        None => runtime::run(opts),
+        None => {
+            let _presence = presence::hold(&opts.root);
+            runtime::run(opts)
+        }
         Some(once) => {
             let ledger = match &once.ledger {
                 Some(path) => Some(read_ledger(&opts, path)?),
@@ -110,17 +114,16 @@ fn run_view(args: ViewArgs) -> Result<(), String> {
             {
                 return Err(format!("--select {id}: no such task in {}", snapshot.slug));
             }
-            print!(
-                "{}",
-                runtime::render_once(
-                    &opts,
-                    snapshot,
-                    once.select,
-                    ledger,
-                    once.width,
-                    once.height
-                )
-            );
+            let frame = runtime::render_once(
+                &opts,
+                snapshot,
+                once.select,
+                ledger,
+                once.arrange,
+                once.width,
+                once.height,
+            )?;
+            print!("{frame}");
             Ok(())
         }
     }

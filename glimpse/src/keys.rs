@@ -80,12 +80,14 @@ pub(crate) fn map(event: KeyEvent) -> Option<Action> {
 }
 
 /// The wheel scrolls the details panel or the view under the pointer, never the
-/// selection; a left press on a task row selects it, and one on the divider starts a
-/// drag that left-button motion continues and the release ends. Only the press edge of
-/// a click acts, the mouse counterpart of dropping key `Release`. Every other kind,
-/// including the motion reports capture turns on, maps to nothing. With the selector,
-/// the legend, a form or the filter prompt up, nothing reacts; with the compact modal up,
-/// nothing outside the details panel does.
+/// selection; a left press on a header tab switches to its surface, one on a task or
+/// item row selects it, and one on the divider starts a drag that left-button motion
+/// continues and the release ends. Only the press edge of a click acts, the mouse
+/// counterpart of dropping key `Release`. Every other kind, including the motion
+/// reports capture turns on, maps to nothing. With a form or the filter prompt up,
+/// nothing reacts; with the legend up the wheel scrolls it and with the selector up the
+/// wheel moves its cursor, and nothing else reacts; with the compact modal up, nothing
+/// in the body outside the details panel does.
 pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
     if app.dragging {
         return match event.kind {
@@ -96,16 +98,32 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
             _ => None,
         };
     }
-    if app.selector_open || app.legend_open || app.overlay.is_some() {
+    if app.overlay.is_some() {
         return None;
+    }
+    if app.legend_open {
+        return match event.kind {
+            MouseEventKind::ScrollDown => Some(Action::ScrollDetails(Scroll::Down(WHEEL_ROWS))),
+            MouseEventKind::ScrollUp => Some(Action::ScrollDetails(Scroll::Up(WHEEL_ROWS))),
+            _ => None,
+        };
+    }
+    if app.selector_open {
+        return match event.kind {
+            MouseEventKind::ScrollDown => Some(Action::SelectorNext),
+            MouseEventKind::ScrollUp => Some(Action::SelectorPrev),
+            _ => None,
+        };
     }
     let at = Position::new(event.column, event.row);
     let regions = &app.regions;
-    if event.kind == MouseEventKind::Down(MouseButton::Left)
-        && regions.modal.is_none()
-        && regions.divider.is_some_and(|r| r.contains(at))
-    {
-        return Some(Action::DragStart);
+    if event.kind == MouseEventKind::Down(MouseButton::Left) {
+        if let Some((_, surface)) = regions.tabs.iter().find(|(rect, _)| rect.contains(at)) {
+            return Some(Action::SwitchSurface(*surface));
+        }
+        if regions.modal.is_none() && regions.divider.is_some_and(|r| r.contains(at)) {
+            return Some(Action::DragStart);
+        }
     }
     let over_details = regions.details.is_some_and(|r| r.contains(at));
     let over_view = regions.modal.is_none() && regions.view.is_some_and(|r| r.contains(at));
@@ -138,9 +156,12 @@ pub(crate) fn mouse(event: MouseEvent, app: &App) -> Option<Action> {
 
 /// One wheel notch over the view, as `(across, down)` in notches. Horizontal layers
 /// scroll a whole layer per notch whichever way the wheel turns; the traversal view
-/// fits its area and takes no wheel.
+/// fits its area and takes no wheel; an item list or the Inbox scrolls only down and up.
 fn scroll_view(app: &App, across: i32, down: i32) -> Option<Action> {
     let rows = i32::from(WHEEL_ROWS);
+    if app.surface != Surface::Tasks {
+        return (down != 0).then_some(Action::ScrollView(0, down * rows));
+    }
     match (app.view, app.resolved_orientation) {
         (ViewKind::Ego, _) => None,
         (ViewKind::Layers, Orientation::Horizontal) => Some(Action::ScrollView(across + down, 0)),
@@ -400,6 +421,80 @@ mod tests {
             Some(Action::SelectItem("R1".to_string()))
         );
         assert_eq!(mouse(event(left, 5, 15), &app), None, "no row there");
+    }
+
+    #[test]
+    fn the_wheel_scrolls_the_legend_and_moves_the_selector_while_they_are_up() {
+        let mut app = app_with_regions();
+        let left = MouseEventKind::Down(MouseButton::Left);
+        app.legend_open = true;
+        assert_eq!(
+            mouse(event(MouseEventKind::ScrollDown, 5, 4), &app),
+            Some(Action::ScrollDetails(Scroll::Down(WHEEL_ROWS)))
+        );
+        assert_eq!(
+            mouse(event(MouseEventKind::ScrollUp, 70, 10), &app),
+            Some(Action::ScrollDetails(Scroll::Up(WHEEL_ROWS))),
+            "anywhere on screen"
+        );
+        assert_eq!(mouse(event(left, 5, 4), &app), None);
+
+        app.legend_open = false;
+        app.selector_open = true;
+        assert_eq!(
+            mouse(event(MouseEventKind::ScrollDown, 5, 4), &app),
+            Some(Action::SelectorNext)
+        );
+        assert_eq!(
+            mouse(event(MouseEventKind::ScrollUp, 5, 4), &app),
+            Some(Action::SelectorPrev)
+        );
+        assert_eq!(mouse(event(MouseEventKind::ScrollLeft, 5, 4), &app), None);
+    }
+
+    #[test]
+    fn a_left_press_on_a_tab_switches_surface() {
+        let mut app = app_with_regions();
+        app.regions.tabs = vec![
+            (Rect::new(0, 1, 7, 1), Surface::Tasks),
+            (Rect::new(8, 1, 10, 1), Surface::Review),
+        ];
+        let left = MouseEventKind::Down(MouseButton::Left);
+        assert_eq!(
+            mouse(event(left, 9, 1), &app),
+            Some(Action::SwitchSurface(Surface::Review))
+        );
+        assert_eq!(mouse(event(left, 7, 1), &app), None, "the gap");
+        assert_eq!(
+            mouse(event(MouseEventKind::Up(MouseButton::Left), 9, 1), &app),
+            None
+        );
+        app.regions.modal = Some(Rect::new(1, 3, 58, 18));
+        assert_eq!(
+            mouse(event(left, 2, 1), &app),
+            Some(Action::SwitchSurface(Surface::Tasks)),
+            "the modal covers only the body"
+        );
+    }
+
+    #[test]
+    fn the_wheel_scrolls_an_item_list_down_and_up_only() {
+        let mut app = app_with_regions();
+        app.surface = Surface::Backlog;
+        app.view = ViewKind::Ego;
+        assert_eq!(
+            mouse(event(MouseEventKind::ScrollDown, 10, 10), &app),
+            Some(Action::ScrollView(0, i32::from(WHEEL_ROWS))),
+            "whatever view Tasks shows"
+        );
+        assert_eq!(
+            mouse(event(MouseEventKind::ScrollUp, 10, 10), &app),
+            Some(Action::ScrollView(0, -i32::from(WHEEL_ROWS)))
+        );
+        assert_eq!(
+            mouse(event(MouseEventKind::ScrollRight, 10, 10), &app),
+            None
+        );
     }
 
     #[test]

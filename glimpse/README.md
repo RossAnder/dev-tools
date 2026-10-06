@@ -74,7 +74,7 @@ start.
 glimpse [--slug S] [--view V] [--orientation O] [--surface U]
                                                   open the live view
 glimpse --once [--size WxH] [--snapshot FILE] [--select ID] [--ledger FILE]
-                                                  render one frame as plain text
+               [--group F] [--sort F] [--closed]  render one frame as plain text
 glimpse hook [--harness H]                        handle one hook payload on stdin
 glimpse ensure-pane [--slug S] [--focus]          open or reuse this tab's glimpse pane
 glimpse setup [--dry-run]                         install the hooks and keybinding
@@ -93,6 +93,9 @@ sequences, at 120x40 unless `--size` says otherwise. With `--snapshot` it draws 
 saved `tasks snapshot` document instead of reading the flow's files. With
 `--ledger` it shows that review, optimise, plan-review or backlog ledger file on
 its surface; without `--snapshot` or `--slug` the task graph is left empty.
+`--group`, `--sort` and `--closed` set the item surface's grouping, sort and
+closed rows as the `g`, `S` and `c` keys would; a value the surface does not offer
+is a runtime error.
 
 ## Surfaces
 
@@ -103,8 +106,9 @@ four item surfaces list the viewed flow's `review-ledger.toml`,
 `.claude/backlog.toml`, and follow them live. Inbox lists `.claude/inputs.toml`
 (see [Inbox](#inbox)).
 
-The header's second row holds the surface tabs, the current one highlighted:
-`Tasks  Review 12 +3  Optimise 4  Plan-review —  Backlog 6  Inbox 2?`. Each count
+The header's second row holds the surface tabs, the current one on a filled
+background: ` Tasks   Review 12 +3   Optimise 4   Plan-review —   Backlog 6   Inbox 2?`.
+Click a tab to switch to it. Each count
 is the surface's open items, `—` while it has no ledger file; Inbox counts the
 questions waiting on an answer, marked `?` when there are any. `+N` counts the items
 that appeared or changed status since you last had that surface on screen, and
@@ -121,7 +125,10 @@ then one row per item:
 cursor, mark, status glyph, id, severity (the kind, on Backlog), category, effort
 and summary, then the saving mark, the pending-input mark, the chip of a running
 agent whose dispatch names the item, and the item's `file:line` (its heading or
-area where it has no file), which gives way first in a narrow pane. `✉` means an
+area where it has no file) in a column of its own, aligned down the list. A long
+path keeps its end, as `…apply-pipeline/SKILL.md`; the column narrows, then drops,
+before the summary falls under 20 cells. `item_columns` picks which columns show
+and their order. `✉` means an
 input record not yet handled names the item, in the `input_new` colour while the
 newest such record is `new` and `input_acknowledged` once an agent has read it;
 the item's details list those records under **Inputs**. The status glyph is `○` open, `⏸`
@@ -305,12 +312,14 @@ timed-out check, and `danger` when it failed.
 While a form is open it takes every key; see [Writing](#writing).
 
 The legend shows a scrollbar and position when it does not fit; while it is open,
-the detail-scroll keys scroll it instead. The details scroll goes back to the top
+the detail-scroll keys and the wheel scroll it instead, and while the flow selector
+is open the wheel moves its cursor. The details scroll goes back to the top
 whenever the selection changes. With mouse capture on, the wheel scrolls whatever
 is under the pointer and never the selection:
-the details panel, the layer list (a layer per notch across horizontal columns) or
-the diagram, which stays where it was left until the selection changes. A left
-click on a task in the layers or ego view, or on an item row, selects it; the
+the details panel, the layer list (a layer per notch across horizontal columns),
+the diagram, or an item list or the Inbox, each of which stays where it was left
+until the selection or cursor moves. A left click on a header tab switches to that
+surface; one on a task in the layers or ego view, or on an item row, selects it; the
 diagram view takes the wheel but not clicks. Mouse capture stops the terminal's
 own text selection while glimpse runs; most terminals still select with `Shift`
 held, or set `mouse = false`.
@@ -351,6 +360,7 @@ optional:
 | `panel_percent` | `40` | the docked panel's share of the body, 20 to 70 |
 | `column_max` | `40` | widest a horizontal layers column grows to fit its titles, 18 to 120 |
 | `mouse` | `true` | capture the mouse for wheel scrolling, click-to-select and dragging the divider |
+| `item_columns` | `["status", "id", "kind", "category", "effort", "summary", "area"]` | the columns of an item surface's rows, in order: any of those names, each at most once. `kind` is a finding's severity or a backlog item's kind; `summary` takes the width the others leave |
 | `[theme]` | | colour tokens, below |
 
 Validation is strict: an unknown key, a wrong type or an out-of-range value makes
@@ -381,8 +391,8 @@ key = "#7FB4CA"         # the footer's key names
 | Chrome | `border` `border_title` `layer_rule` `layer_label` `section` `secondary` `slug` |
 | Chips and rows | `checkpoint` `commit` `agent_bg` `agent_fg` `effort` `effort_warning` `effort_danger` `code` `warning_text` |
 | Footer | `key` `key_label` `key_separator` `notice` |
-| Items | `severity_critical` `severity_warning` `severity_suggestion`, `item_live` `item_parked` `item_done` `item_declined` for the status glyphs, `item_mark` `item_saving` `facet` `group_header` |
-| Surface tabs | `surface_tab` `surface_tab_active`, and `badge` for the `+N` arrival count |
+| Items | `severity_critical` `severity_warning` `severity_suggestion`, `item_live` `item_parked` `item_done` `item_declined` for the status glyphs, `item_mark` `item_saving` `facet` `group_header`, and `item_id` `item_kind` for the dimmed id and backlog kind |
+| Surface tabs | `surface_tab` `surface_tab_active`, `surface_tab_active_bg` for the current tab's fill, and `badge` for the `+N` arrival count |
 | Inbox and forms | `input_new` `input_acknowledged` `input_handled` `question` `form_label` `form_focus` `form_error` |
 
 The defaults are the Kanso Zen palette. `?` shows the legend in the live theme.
@@ -408,7 +418,8 @@ glimpse form ─► writer thread ─► tomlctl ledger facade (CAS-guarded) ─
   `tomlctl agents record --harness <H>`: it works out the flow from the agent's
   dispatch prompt and writes the agent's row.
   On a recorded `SubagentStart` with `HERDR_PANE_ID` set, it opens the glimpse pane
-  next to the Claude pane if that tab has none. It never prints; failures go to
+  next to the Claude pane if that tab has none and no glimpse is already running
+  for the repo, however it was opened. It never prints; failures go to
   `<claude dir>/glimpse/hook.log`, which is emptied once it passes 1 MiB.
 - **Pane.** One pane per herdr tab, found by its `glimpse` label. A new one splits
   the origin pane without taking focus and has the launch line typed into its

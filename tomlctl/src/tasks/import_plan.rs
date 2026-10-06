@@ -201,7 +201,7 @@ impl ParsedPlan {
         // a line of the plan rather than an offset into the section.
         let first_task_line = tasks.heading_line(source) + 1;
 
-        let parsed = parse_tasks_at(&tasks.body_lf(source), first_task_line).map_err(&named)?;
+        let parsed = parse_tasks_at(&tasks.body_lf(source), first_task_line).map_err(named)?;
         Ok(Self {
             detail: match parsed.tasks.is_empty() {
                 true => detail_documents(source, plan_path),
@@ -209,9 +209,9 @@ impl ParsedPlan {
             },
             tasks: parsed.tasks,
             findings: parsed.findings,
-            policy: parse_policy(body(POLICY_SECTION).as_deref()).map_err(&named)?,
+            policy: parse_policy(body(POLICY_SECTION).as_deref()).map_err(named)?,
             markers: match body(GRAPH_SECTION) {
-                Some(graph) => parse_markers(&graph).map_err(&named)?,
+                Some(graph) => parse_markers(&graph).map_err(named)?,
                 None => Vec::new(),
             },
         })

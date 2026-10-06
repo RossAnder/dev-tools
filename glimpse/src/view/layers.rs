@@ -15,7 +15,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use super::{initials, text_width, truncate};
+use super::{Place, initials, place, text_width, truncate};
 use crate::app::{App, Dir, ListScroll, Navigator};
 use crate::config::{COLUMN_RANGE, Orientation};
 use crate::hook::parse_utc;
@@ -249,15 +249,6 @@ impl Row {
     }
 }
 
-/// How a frame scrolls the list: as the wheel left it, with the selection a third of
-/// the way in (follow), or as little as keeps the selection clear of the edges.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Place {
-    Pinned,
-    Jump,
-    Step,
-}
-
 fn render_vertical(buf: &mut Buffer, area: Rect, ctx: &Ctx, groups: &[Group]) -> Drawn {
     let width = usize::from(area.width);
     let id_width = ctx
@@ -390,29 +381,6 @@ fn draw_rows(buf: &mut Buffer, area: Rect, rows: &[Row]) -> Vec<Target> {
         }
     }
     targets
-}
-
-/// First entry of a `view`-long window over `len` entries, starting from `offset`. A
-/// jump puts `at` a third of the way in, so twice as much of what follows it shows as of
-/// what precedes it; a step moves only as far as keeps a couple of entries behind `at`
-/// and a third of the window ahead of it.
-fn place(offset: usize, at: Option<usize>, len: usize, view: usize, how: Place) -> usize {
-    if view == 0 || len <= view {
-        return 0;
-    }
-    let max = len - view;
-    let start = match (at, how) {
-        (Some(at), Place::Jump) => at.saturating_sub(view / 3),
-        (Some(at), Place::Step) => {
-            let behind = (view / 4).min(2);
-            let ahead = view / 3;
-            let low = (at + ahead + 1).saturating_sub(view);
-            let high = at.saturating_sub(behind).max(low);
-            offset.clamp(low, high)
-        }
-        (None, _) | (_, Place::Pinned) => offset,
-    };
-    start.min(max)
 }
 
 fn nudged(offset: usize, by: i32) -> usize {

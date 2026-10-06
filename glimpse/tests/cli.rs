@@ -222,6 +222,52 @@ fn once_renders_a_review_ledger() {
 }
 
 #[test]
+fn once_groups_sorts_and_lists_closed_rows() {
+    let sb = Sandbox::new("once-arrange");
+    let out = sb.run_without_path(
+        "cwd",
+        &[
+            "--once",
+            "--ledger",
+            REVIEW_LEDGER,
+            "--group",
+            "severity",
+            "--sort",
+            "newest",
+            "--closed",
+            "--size",
+            "120x30",
+        ],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(
+        text.contains("group severity · sort newest · closed shown"),
+        "{text}"
+    );
+    assert!(text.contains("▾ critical (1)"), "a group header:\n{text}");
+    assert!(text.contains("R3 "), "a fixed finding is listed:\n{text}");
+}
+
+#[test]
+fn a_group_the_surface_lacks_is_a_runtime_error() {
+    let sb = Sandbox::new("once-arrange-bad");
+    let out = sb.run_without_path(
+        "cwd",
+        &["--once", "--ledger", REVIEW_LEDGER, "--group", "area"],
+        "",
+    );
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stdout(&out).is_empty(), "{}", stdout(&out));
+    assert!(
+        stderr(&out).contains("--group area: the review surface offers"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn ledger_without_once_is_a_usage_error() {
     let sb = Sandbox::new("ledger-no-once");
     let out = sb.run(&["--ledger", REVIEW_LEDGER], "");

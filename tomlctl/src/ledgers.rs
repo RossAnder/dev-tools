@@ -51,6 +51,11 @@ impl LedgerKind {
         }
     }
 
+    /// The kind whose [`LedgerKind::as_str`] is `name`.
+    pub fn parse(name: &str) -> Option<LedgerKind> {
+        Self::ALL.into_iter().find(|kind| kind.as_str() == name)
+    }
+
     /// The ledger's file name inside a flow directory.
     pub fn flow_file(self) -> &'static str {
         match self {
@@ -607,6 +612,14 @@ pub(crate) fn restore(root: &Path, ledger: &LedgerRef, rows: Vec<RestoreRow>) ->
 #[cfg(test)]
 mod tests {
     use crate::test_support::with_root;
+
+    #[test]
+    fn a_kind_name_parses_back_to_its_kind() {
+        for kind in super::LedgerKind::ALL {
+            assert_eq!(super::LedgerKind::parse(kind.as_str()), Some(kind));
+        }
+        assert_eq!(super::LedgerKind::parse("backlog"), None);
+    }
 
     #[test]
     fn a_matching_known_revision_reads_nothing_and_another_reads_in_full() {
