@@ -11,6 +11,7 @@ fingerprint contract. The read-only verbs live in [query.md](query.md).
 - [Common recipes](#common-recipes)
 - [Write operations](#write-operations)
   - [Auto-create on first write](#auto-create-on-first-write)
+  - [`last_updated` stamping](#last_updated-stamping)
   - [`set`](#set)
   - [`set-json`](#set-json)
   - [`items add`](#items-add)
@@ -30,14 +31,13 @@ fingerprint contract. The read-only verbs live in [query.md](query.md).
 ## Common recipes
 
 ```bash
-# 1. Append a task-completion entry with commits[], bump last_updated
-cat <<'EOF' | tomlctl items add .claude/flows/<slug>/execution-record.toml --json -
+# 1. Append a task-completion entry with commits[]; the write itself refreshes last_updated
+cat <<'EOF' | tomlctl items add .claude/flows/<slug>/execution-record.toml --id-prefix E --json -
 {
-  "id":"E12","type":"task-completion","task_ref":"T3",
+  "type":"task-completion","task_ref":"T3",
   "timestamp":"2026-04-18T14:32:00Z","commits":["ab12cd3","9e8f1a2"]
 }
 EOF
-tomlctl set .claude/flows/<slug>/execution-record.toml last_updated 2026-04-18
 ```
 
 ```bash
@@ -46,10 +46,8 @@ tomlctl items add ledger.toml --dedupe-by file,summary --json '{"id":"R24",...}'
 ```
 
 ```bash
-# 3. Mint the next id, build the payload inline, append via stdin
-NEXT=$(tomlctl items next-id ledger.toml --prefix R)
-printf '{"id":%s,"severity":"minor","summary":"...","status":"open"}' "\"$NEXT\"" \
-  | tomlctl items add ledger.toml --json -
+# 3. Mint the id inside the locked write and print it bare (→ R23)
+tomlctl items add ledger.toml --id-prefix R --get id --json '{"severity":"minor","summary":"...","status":"open"}'
 ```
 
 ```bash
@@ -69,13 +67,13 @@ EOF
 
 ## Write operations
 
-Writes preserve every field the tool didn't touch, including `created`. Key order within tables is preserved. The write bundle every verb below carries — `--allow-outside`, `--no-create`, `--no-write-integrity`, `--strict-integrity`, `--dry-run` — is covered once, in [Auto-create on first write](#auto-create-on-first-write) and [Dry-run](#dry-run); the tables list only each verb's own flags.
+Writes preserve every field the tool didn't touch, including `created`. Key order within tables is preserved. The write bundle every verb below carries — `--allow-outside`, `--no-create`, `--no-write-integrity`, `--strict-integrity`, `--no-stamp`, `--dry-run` — is covered once, in [Auto-create on first write](#auto-create-on-first-write), [`last_updated` stamping](#last_updated-stamping) and [Dry-run](#dry-run); the tables list only each verb's own flags.
 
 ### Auto-create on first write
 
 Every mutating verb routed through the write chokepoint — `set`, `set-json`, `array-append`, and `items {add, add-many, apply, update, remove}` — **creates a missing target file by default** instead of erroring. On a missing file the tool seeds a starting document, then applies and persists the verb's mutation transactionally:
 
-- **The recognised flow files** (matched on basename: `execution-record.toml`, `review-ledger.toml`, `optimise-findings.toml`, `plan-review-findings.toml`, `backlog.toml`, `tasks.toml`, `agents.toml`) seed a skeleton `schema_version = 1` (TOML integer) + `last_updated = <today>` (bare date) — byte-identical to what `flow init` bootstraps.
+- **The recognised flow files** (matched on basename: `execution-record.toml`, `review-ledger.toml`, `optimise-findings.toml`, `plan-review-findings.toml`, `backlog.toml`, `tasks.toml`, `agents.toml`) seed a skeleton `schema_version = 1` (TOML integer) + `last_updated = <today>` (bare date) — byte-identical to what `flow init` bootstraps. So does any `.toml` directly inside a flow-less ledger directory — `.claude/reviews/`, `.claude/optimise-findings/`, `.claude/plan-review-findings/` — whatever its basename, so those ledgers carry a `last_updated` for [stamping](#last_updated-stamping) to refresh.
 - **Any other path** seeds an empty document (`{}`).
 
 The seed is only the *starting* doc — the verb's mutation must still succeed against it. A no-match `update` / `remove` (or an all-update `apply`) against a freshly-seeded doc still ERRORS and leaves NO file behind: an empty seed has nothing to match, so the operation fails before the file is persisted.
@@ -104,6 +102,21 @@ tomlctl set .claude/flows/<slug>/context.toml status review --no-create
 > **`--allow-outside` interaction (double opt-out).** `--allow-outside` turns the `.claude/` containment guard into a no-op, and auto-create is on by default — so `--allow-outside` + a path typo can silently create a stray file ANYWHERE on disk, not just inside `.claude/`. This is a deliberate explicit double opt-out; `--no-create` is the escape hatch. Treat `--allow-outside` write paths as auto-create-capable and pair them with `--no-create` whenever the target is expected to already exist.
 
 Not every write pipeline auto-creates: `tomlctl flow active` (the active-flow registry) already bootstraps on missing and gains no `created` field; `tomlctl json …` is unchanged (it targets `settings.json`, which always exists); and `tomlctl flow init` keeps its own created-preservation idempotency for `context.toml` + `execution-record.toml`.
+
+### `last_updated` stamping
+
+`set`, `set-json`, `array-append` and `items {add, add-many, update, remove, apply, backfill-dedup-id, sweep --update}` refresh the root `last_updated` to today's date (UTC) as part of the same write — there is no second `set … last_updated` call to make. The rule:
+
+- **Existing key only.** A file whose root has no `last_updated` never gains one; recognised flow files and flow-less ledgers are [seeded](#auto-create-on-first-write) with it.
+- **Changed writes only.** A write that changes nothing — a dedupe-skipped add, a `backfill-dedup-id` or `sweep --update` run with nothing to do — leaves the file and its date alone. A `--dry-run` preview is never stamped.
+- **The caller's own value wins.** `set <file> last_updated 2026-04-18` (or `set-json` on that key) keeps that date.
+- **`--no-stamp`** leaves `last_updated` as it is. Use it for an interim checkpoint write that must not mark the ledger fresh before the run completes.
+
+```bash
+tomlctl items update ledger.toml R7 --json '{"status":"deferred"}' --no-stamp
+```
+
+The `tasks`, `backlog`, `inputs` and `agents` writes stamp their own stores and take no `--no-stamp`. The library functions glimpse links never stamp.
 
 ### `set`
 
@@ -146,6 +159,16 @@ tomlctl items add .claude/flows/foo/optimise-findings.toml --json '{"id":"O7","f
 | `--json` | JSON object, `-` or `@<path>` | The new row. | required |
 | `--array` | name | Target array-of-tables, e.g. `rollback_events`. | `items` |
 | `--dedupe-by` | `f1,f2,…` | Skip the add when an existing row equals the payload on every listed field, compared as raw strings; the envelope then reports `"added":0` and the `matched_id`. `dedup_id` is never implied — name it for fingerprint dedup. The pre-scan runs before `dedup_id` auto-populates, so a payload's own fingerprint never matches itself. | off |
+| `--id-prefix` | prefix | Mint the row's id as `<prefix>` + the next number inside the write lock, so two concurrent adds never mint the same id. The envelope reports it as `"id"`; a payload that already carries an `id` is refused (`kind=validation`). Numbers against the `--array` target. | off |
+
+**Minting the id.** Prefer `--id-prefix` to reading [`items next-id`](#items-next-id) and pasting the result into the payload; with the global `--get id` the call prints just the minted id:
+
+```bash
+tomlctl items add ledger.toml --id-prefix R --get id --json '{"summary":"...","status":"open"}'
+# R23
+```
+
+The envelope without `--get` is `{"ok":true,"added":1,"id":"R23","created":false,"path":"ledger.toml"}`. Under `--dedupe-by`, a skipped add mints nothing and reports the matched row's id as `"id"` (alongside `matched_id`), so `--get id` names the surviving row on both outcomes.
 
 `dedup_id` is auto-populated by the write funnel if the payload doesn't set it — see [Dedup fingerprint contract](#dedup-fingerprint-contract). Rendered output (e.g. PROGRESS-LOG columns) is unaffected; the field only appears in the TOML.
 
@@ -184,6 +207,7 @@ tomlctl items add-many .claude/flows/foo/review-ledger.toml \
 | `--defaults-json` | JSON object, `-` or `@<path>` | Fields stamped on every row; a row's own key wins. Omit for fully-formed rows; `@defaults.json` pairs with `--ndjson -`. | none |
 | `--array` | name | As on `items add`. | `items` |
 | `--dedupe-by` | `f1,f2,…` | As on `items add`, per row; skipped rows add `"skipped":M` and `"skipped_rows":[{"row":N,"matched_id":"…"}]` to the envelope. | off |
+| `--id-prefix` | prefix | As on `items add`, minting one id per added row in input order; the envelope lists them as `"ids"`. A row that carries an `id` refuses the whole batch. | off |
 
 ### `items update`
 
@@ -263,12 +287,14 @@ Prefer this over looping single-op invocations — one parse + one write instead
 
 ### `items next-id`
 
-Returns the JSON-encoded next id: the prefix + `max(existing numeric suffixes) + 1`.
+Prints the next id bare, on one line with no quotes: the prefix + `max(existing numeric suffixes) + 1`. Read-only — it reserves nothing.
 
 ```bash
-tomlctl items next-id .claude/flows/foo/review-ledger.toml --prefix R        # → "R23"
-tomlctl items next-id .claude/flows/foo/review-ledger.toml --infer-from-file # → "R23"
+tomlctl items next-id .claude/flows/foo/review-ledger.toml --prefix R        # → R23
+tomlctl items next-id .claude/flows/foo/review-ledger.toml --infer-from-file # → R23
 ```
+
+For a plain add, mint inside the write with [`items add --id-prefix`](#items-add) instead. `next-id` is for a mixed [`items apply`](#items-apply) batch whose add ops need ids: read it once before the batch and number the adds upward from it.
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
@@ -379,7 +405,8 @@ The envelope takes three shapes. `set` and `set-json` report `kind: "scalar"` wi
 new value at the path. Every `items` verb, `array-append` and `items sweep --update` report
 `kind: "items"` with per-op counts and `ids`, the union of every affected id — a row with
 no `id`, such as an `array-append` record, is counted but not listed. `items backfill-dedup-id`
-reports `would_backfill` and the ids it would stamp.
+reports `would_backfill` and the ids it would stamp. Under `--id-prefix`, the preview's `ids`
+are the ids the real write would mint.
 
 ```bash
 tomlctl set foo.toml status review --dry-run
