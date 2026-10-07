@@ -2,7 +2,7 @@
 
 Detail behind Step 5 of the apply pipeline: how the orchestrator judges each `verification` block,
 the independent evidence it requires before it trusts an agent's `applied` tag, the regression check against previously-applied
-findings, and the per-disposition ledger write with its secret scan, two-call pattern, and
+findings, and the per-disposition ledger write with its secret scan, single-call write, and
 locking rules.
 
 ## Contents
@@ -81,7 +81,7 @@ For each item:
   `; deviated: <done> instead of <planned> — <why>` to the `resolution`.
 - **Applied pattern item** (carries `sweep`): when the Step 2 re-sweep found `new` sites, append
   them to `instances` with `tomlctl items update <ledger> <id> --json '{"instances": [...]}'`
-  (the recorded anchors followed by the `new` sites) ahead of the two-call write below, so the
+  (the recorded anchors followed by the `new` sites) ahead of the `items apply` write below, so the
   fixed record names every site the fix touched. Never `items sweep --update` here: it drops
   `gone` anchors, and on an item about to close those are the record of what was fixed — the same
   reason `--update` skips terminal items.
@@ -106,17 +106,17 @@ BEFORE invoking `tomlctl items apply`, grep the serialised payload for `AKIA`, `
 manual inspection — the ledger is a committed artefact and must not carry credentials. This is
 distinct from any source-diff secret scan: that scans code, this scans the ledger-write payload.
 
-**Two-call write pattern** (both required; omitting either leaves the ledger inconsistent — the pattern-item `instances` append above is a third, conditional call that precedes them):
+**Write** (one call; the pattern-item `instances` append above is a conditional call that precedes it):
 
 ```bash
 printf '%s' "$OPS_JSON" | tomlctl items apply <ledger> --ops - --on-stale skip
-tomlctl set <ledger> last_updated <YYYY-MM-DD>
 ```
 
-Call 1 batches every per-item transition atomically — valid `op` values are `"add"`, `"update"`,
+The call batches every per-item transition atomically — valid `op` values are `"add"`, `"update"`,
 `"remove"`; apply carriers use `"update"` for status transitions and `"add"` when minting a
-regression or partial-apply child. Call 2 is required because `items apply` does not touch
-file-level scalars.
+regression or partial-apply child. When any op lands, the same write refreshes the root
+`last_updated` to today (UTC), so no separate `set` follows; a call whose every op is skipped as
+stale changes nothing and stamps nothing.
 
 **Stale-write guard**: Step 1 reads the ledger long before this write, and in between a human may
 have dispositioned an item through glimpse, or another run may have moved it. Every status-transition
@@ -129,10 +129,8 @@ summary's `### Changed During the Run`, and never retry them — the current val
 `expect` and flag go on the Interim checkpoint's `items apply`.
 
 **Atomicity**: `items apply` is all-or-nothing — any failing op (non-existent ID, malformed sub-op)
-exits non-zero with the ledger unchanged; a stale op under `--on-stale skip` is not a failure. If
-call 1 fails, do NOT proceed to call 2; the `last_updated` bump would create a torn state claiming a
-fresh update with no transitions landed. Correct the failing op (the error names its index and
-reason) and retry the whole batch.
+exits non-zero with the ledger unchanged; a stale op under `--on-stale skip` is not a failure.
+Correct the failing op (the error names its index and reason) and retry the whole batch.
 
 **Shell-quoting for agent-supplied JSON**: every agent-produced string in the payload
 (`resolution`, rationale, note) MUST be RFC-8259 JSON-escaped before interpolation — `\`, `"`,

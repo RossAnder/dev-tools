@@ -1,6 +1,6 @@
 ---
 name: flow-contract-apply-pipeline
-description: "Canonical end-to-end pipeline contract shared by the apply-flow carriers (/review-apply, /optimise-apply) — the Step 0→6 orchestration each carrier runs: pre-flight envelope gating, ledger location + selector semantics (ID-prefixed vs legacy numeric, --file-budget / --allow-cross-file overrides), the freshness gate, pre-analysis (Explore delegation, Tier-1/Tier-2 already-applied tests), file clustering, agent dispatch + prompt contract, escalation routing, the interim checkpoint, verification with applied-claim diff reconciliation and the regression cross-check, ledger mutation and the two-call write pattern, the final summary, and deviation follow-up. Carriers bind a small vocabulary interface (id prefix, dispositions, producer command, ledger paths) and state only their domain-specific deltas. Consult when running or editing an apply-flow command."
+description: "Canonical end-to-end pipeline contract shared by the apply-flow carriers (/review-apply, /optimise-apply) — the Step 0→6 orchestration each carrier runs: pre-flight envelope gating, ledger location + selector semantics (ID-prefixed vs legacy numeric, --file-budget / --allow-cross-file overrides), the freshness gate, pre-analysis (Explore delegation, Tier-1/Tier-2 already-applied tests), file clustering, agent dispatch + prompt contract, escalation routing, the interim checkpoint, verification with applied-claim diff reconciliation and the regression cross-check, ledger mutation and its single stamping write, the final summary, and deviation follow-up. Carriers bind a small vocabulary interface (id prefix, dispositions, producer command, ledger paths) and state only their domain-specific deltas. Consult when running or editing an apply-flow command."
 ---
 
 # Apply pipeline (shared contract)
@@ -314,7 +314,7 @@ the observation in its prompt. A second `stash-required` for the same item goes 
 ## Interim checkpoint
 
 After the Step 4.5 vet and the Step 4.6 routing (and their re-dispatches), persist non-risky
-transitions in a single atomic `tomlctl items apply --ops - --on-stale skip` call, each op carrying
+transitions in a single atomic `tomlctl items apply --ops - --on-stale skip --no-stamp` call, each op carrying
 `"expect": {"status": "<status read at Step 1>"}` (the stale-write guard under Ledger mutation).
 Non-risky means:
 
@@ -328,7 +328,8 @@ Non-risky means:
 - User-input request transitions honoured by the Step 0 sweep.
 
 **Defer** `<APPLIED>` transitions until AFTER Step 5 passes — they depend on the build/test outcome
-and on the diff reconciliation below. Defer the `last_updated` bump to the final render.
+and on the diff reconciliation below. Defer the `last_updated` bump to the final ledger write: the
+checkpoint passes `--no-stamp`, because the Step 1 freshness gate reads `last_updated`.
 
 Rationale: an interrupted run (Ctrl-C between Step 4 and Step 5) would otherwise lose the
 agent-reported evidence. The Step 1 idempotency guards (terminal dispositions warn-and-skip on
@@ -380,8 +381,8 @@ it and mint a new item under `### Regressions Triggered`. See
 ### Ledger mutation
 
 Mutate the same ledger file consumed in Step 1, one transition per selected item, scan the
-serialised payload for secrets, and write it with the two-call pattern: `items apply` for the
-per-item ops, then `set` for `last_updated`. A `severity = "critical"` item in a
+serialised payload for secrets, and write it with one `items apply` call, which also refreshes the
+root `last_updated`. A `severity = "critical"` item in a
 `<CRITICAL-CATEGORIES>` category never takes a silent `<REJECTED>`. The orchestrator is the only
 *agent* writer, but a human may disposition items through glimpse mid-run, so every transition
 carries `expect` on the Step 1 status with `--on-stale skip`, and a stale item is reported, never
