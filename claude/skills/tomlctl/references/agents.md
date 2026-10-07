@@ -80,6 +80,7 @@ tomlctl agents list --slug <slug>
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--slug` | slug | Flow whose `agents.toml` is read. Must match `^[a-z0-9][a-z0-9-]{0,63}$`. | required |
+| `--lines` | — | One record per line. See [line output](../SKILL.md#line-output). | off |
 
 A missing store prints `[]` — no hook has fired for the flow yet — unless `--strict-read`
 asks for `kind=not_found`. Rows pass through the store schema on the way out, so every

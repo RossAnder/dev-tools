@@ -301,7 +301,8 @@ downstream flow-command templates can feature-gate at boot without parsing
                "tasks_batches", "tasks_closure", "tasks_check",
                "tasks_render", "tasks_snapshot", "agents_record",
                "agents_list", "inputs", "items_apply_expect", "sweep",
-               "items_sweep", "items_clusters", "orphans_instances"],
+               "items_sweep", "items_clusters", "report_lines",
+               "orphans_instances"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -403,4 +404,5 @@ Feature meanings:
 | `sweep` | `sweep -e <REGEX>...` — regex hits over the repo's tracked files as sorted `file:line` sites, with `skipped` counts, `truncated` and `coverage_complete`; `.claude/**` and `docs/plans/**` are excluded by default |
 | `items_sweep` | `items sweep <file>` — re-run each item's stored `sweep` patterns and diff the hits against its `instances` (`new` / `gone` / `kept` / `unverified`); `--update` rewrites an open item's `instances` in listed order, appending new sites, and refuses while the run is truncated or an anchor is unverified for any reason but `excluded` |
 | `items_clusters` | `items clusters <file> --ids <R1,R7,...>` — file-disjoint clusters over `file` plus `instances`, layered by `depends_on` into batches, each cluster carrying `lite_file_scope`; out-of-selection dependencies land in `dropped_deps` and a cycle is refused |
+| `report_lines` | `--lines` on the collection read verbs (`items clusters`, `orphans`, `find-duplicates`, read-only `sweep`; top-level `sweep`; `inputs list`; `tasks edges`, `batches`, `check`, `snapshot`; `backlog check`, `evidence audit`; `flow list`, `find-plans`; `agents list`; `blocks verify`) — compact NDJSON: the report's other fields as one header line, then one row per line |
 | `orphans_instances` | `items orphans` reports an `instance-missing` class for every `instances` anchor that does not resolve, with `reason` one of `missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `unparseable` |

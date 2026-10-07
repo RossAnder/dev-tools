@@ -28,7 +28,7 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Next monotonic id | `tomlctl items next-id <file> --prefix R\|O\|E\|P` |
 | Regex sites over the tracked files (`file:line`, for an `Instances` line) | `tomlctl sweep -e <regex> [-e <regex>]... [--exclude <glob>]... [--max-hits <n>]` |
 | Re-run items' stored `sweep` strings and diff against `instances` | `tomlctl items sweep <file> [--ids R5,R12] [--update [--dry-run]]` |
-| File-disjoint clusters + dependency batches for the apply flow | `tomlctl items clusters <file> [--ids R5,R12]` |
+| File-disjoint clusters + dependency batches for the apply flow | `tomlctl items clusters <file> [--ids R5,R12] [--lines]` |
 | Bump scalar field | `tomlctl set <file> <key.path> <value>` |
 | Set array / sub-table | `tomlctl set-json <file> <key.path> --json '<json>'` |
 | Read value via json subcommand | `tomlctl json get <file> <path>` |
@@ -73,6 +73,31 @@ To find a section without reading a whole file:
 ```bash
 grep -n '^##' claude/skills/tomlctl/references/<file>.md
 ```
+
+## Line output
+
+Every read verb whose report holds a collection takes `--lines`: compact NDJSON in place of pretty JSON. A report wrapped in an object emits its other fields as one header line first, then one row per line; the header is left out when the object has no other field. A bare-array report emits one element per line, so an empty one prints nothing. The header comes first so that a truncated read still sees the totals and the hazards. Reach for `--lines` before piping a report through `jq` or `head`: it needs no external tool and reads the same on every OS.
+
+| Verb | One line per | Header fields |
+|---|---|---|
+| `items clusters` | cluster | `batches`, `dropped_deps` |
+| `items orphans` | orphan record | — |
+| `items find-duplicates` | duplicate group | — |
+| `items sweep` (read-only) | swept item | `skipped_items`, `files_scanned`, `coverage_complete`, `truncated` |
+| `sweep` | `file:line` hit | `files_scanned`, `skipped`, `truncated`, `coverage_complete` |
+| `inputs list` | input record | `path`, `revision` |
+| `tasks edges` | edge | — |
+| `tasks batches` | Kahn layer | — |
+| `tasks check` | finding | `ok` |
+| `tasks snapshot` | task row | every other snapshot field |
+| `backlog check` | candidate | `verdict`, `dedup_id`, `thresholds` |
+| `backlog evidence audit` | finding | `root`, `counts` |
+| `flow list` | flow | `ok`, `skipped` |
+| `flow find-plans` | plan | — |
+| `agents list` | agent record | — |
+| `blocks verify` | block | `ok` |
+
+`items list`, `backlog list` and `tasks list` run on the query engine, whose own `--lines` / `--ndjson` is documented under [output shapes](references/query.md#output-shapes---raw----lines----ndjson). `--lines` is refused beside `items sweep --update` (a write envelope) and `tasks edges --dot` (DOT source). `tomlctl capabilities` advertises the flag as `report_lines`.
 
 ## Install
 

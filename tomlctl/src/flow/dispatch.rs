@@ -11,7 +11,11 @@ use crate::cli::{EnvelopeOp, FlowOp};
 pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
     match op {
         FlowOp::Active { op } => crate::flow::active::dispatch(op),
-        FlowOp::FindPlans { dirs, integrity } => crate::flow::find_plans::dispatch(dirs, integrity),
+        FlowOp::FindPlans {
+            dirs,
+            lines,
+            integrity,
+        } => crate::flow::find_plans::dispatch(dirs, lines, integrity),
         FlowOp::Stale {
             slug,
             threshold,
@@ -83,8 +87,9 @@ pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
             status,
             branch,
             active_only,
+            lines,
             integrity,
-        } => crate::flow::list::dispatch(status, branch, active_only, integrity),
+        } => crate::flow::list::dispatch(status, branch, active_only, lines, integrity),
         // `--stdout` previews instead of writing; `--verify-integrity` checks
         // the execution record's sidecar before rendering.
         FlowOp::RenderProgressLog {

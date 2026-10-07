@@ -1645,6 +1645,7 @@ fn capabilities_features_contains_every_plan_feature() {
         "sweep",
         "items_sweep",
         "items_clusters",
+        "report_lines",
         "orphans_instances",
     ];
     for name in expected {

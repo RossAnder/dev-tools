@@ -164,6 +164,7 @@ tomlctl flow list --status draft
 | `--active-only` | — | Keep only slugs present in `.claude/active-flow.toml`. | off |
 | `--verify-integrity` | — | Also skip a `context.toml` whose `.sha256` sidecar is missing or does not match, with the verifier's message as the `reason`. | off |
 | `--strict-read` | — | Turn the first skipped `context.toml` into an error instead — `kind=integrity` for a sidecar failure, `kind=parse` otherwise. | off |
+| `--lines` | — | Header line (`ok`, `skipped`), then one flow per line. See [line output](../SKILL.md#line-output). | off |
 
 ### `flow render-progress-log`
 
@@ -231,6 +232,7 @@ tomlctl blocks verify claude/agents/implement-deep.md claude/agents/implement-li
 |---|---|---|---|
 | *(positional)* | files | Markdown files whose spans are compared. | — |
 | `--block` | name | Block to verify. Repeatable. Name only blocks the listed files actually carry — a `--block` naming an absent marker exits non-zero; `scripts/shared-blocks.toml` enumerates which files carry which markers. | every block present in the first listed file |
+| `--lines` | — | Header line (`ok`), then one block per line. See [line output](../SKILL.md#line-output). | off |
 
 Output is JSON (`{"ok":true|false,"blocks":[...]}`); exit code 0 on success, non-zero on drift, on a missing marker, and on a span that extracts empty between its markers — two carriers whose spans are both empty hash the same digest of nothing, so parity there reports having compared nothing.
 

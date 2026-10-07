@@ -125,6 +125,7 @@ tomlctl tasks edges --slug <slug> --dot
 |---|---|---|---|
 | `--kind` | `needs` \| `coupling` \| `overlap` | Restrict to one kind. Omit for all three. A clap `value_enum`, failing exactly as `tasks show --with` does: an unknown kind exits `2` with usage prose, **outside** the `--error-format json` envelope. | all |
 | `--dot` | — | Emit Graphviz DOT source on stdout instead of the JSON edge list. | off |
+| `--lines` | — | One edge per line. Refused with `--dot`. See [line output](../SKILL.md#line-output). | off |
 
 Under `--dot` every task is a node whatever `--kind` selects, so a filtered graph still renders
 the whole plan; `coupling` arrows are dashed and `overlap` dotted and undirected.
@@ -220,6 +221,7 @@ tomlctl tasks check --slug <slug> --in-flight 3,4
 |---|---|---|---|
 | `--plan` | — | Also compare the plan markdown against the render output and report `render/drift`. | off |
 | `--in-flight` | comma-separated ids | Tasks currently dispatched. A row waiting on one of them is not reported as `dag/stalled-dependency`. Unlike [`ready`](#tasks-ready)'s, an id no row carries is dropped rather than refused — a typo must not empty a class. | empty |
+| `--lines` | — | Header line (`ok`), then one finding per line. See [line output](../SKILL.md#line-output). | off |
 
 **Exit `1` when any finding is error-class, `0` otherwise** — warnings alone exit `0`. See
 [the check finding classes](#the-check-finding-classes) for the full list. Under `--plan` the plan is resolved exactly as `render` resolves it, and the same
@@ -295,6 +297,7 @@ tomlctl tasks snapshot --file <path> --verify-integrity
 | `--slug` / `--file` | see [Store target](#store-target) | The store to read. Its companions `execution-record.toml`, `agents.toml` and `context.toml` are read from the same directory under either flag, and each reads as empty when absent. | — |
 | `--verify-integrity` | — | Check `tasks.toml`, and each companion that exists, against its own sidecar before reading. | off |
 | `--strict-read` | — | A missing store is `kind=not_found` even under `--verify-integrity`. Companions stay optional. | off |
+| `--lines` | — | Header line (every field but `tasks`), then one task row per line. See [line output](../SKILL.md#line-output). | off |
 
 The verb writes nothing and seeds no absent companion. A cycle, a dangling edge or a store past
 the node cap refuses the whole snapshot, as it does `ready` and `batches`.

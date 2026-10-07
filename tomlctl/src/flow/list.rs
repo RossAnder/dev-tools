@@ -48,19 +48,20 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde_json::Value as JsonValue;
 
-use crate::cli::ReadIntegrityArgs;
+use crate::cli::{LinesArgs, ReadIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::schema::{ActiveDoc, FlowProjection};
 use crate::integrity::verify_integrity;
 use crate::io::{
     read_dir_sorted, read_toml_reason, relativise, repo_or_cwd_root, with_shared_lock,
 };
-use crate::output::print_json;
+use crate::output::{Rows, print_report};
 
 pub(crate) fn dispatch(
     status: Option<String>,
     branch: Option<String>,
     active_only: bool,
+    lines: LinesArgs,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
     let root = repo_or_cwd_root()?;
@@ -103,7 +104,7 @@ pub(crate) fn dispatch(
         out.push(rec.to_json());
     }
 
-    print_json(&envelope(out, skipped))
+    print_report(envelope(out, skipped), lines.lines, Rows::Field("flows"))
 }
 
 /// Every flow under `<root>/.claude/flows` whose slug `keep` accepts, in the

@@ -137,6 +137,7 @@ SUMMARY
 | `--limit` | integer | Return at most N candidates. | `5` |
 | `--similarity-strong` | 0.0–1.0 | Char-trigram Jaccard at or above which a candidate reads as `likely-duplicate`. | `0.75` |
 | `--similarity-related` | 0.0–1.0 | Word Jaccard at or above which a candidate reads as `related`. | `0.35` |
+| `--lines` | — | Header line, then one candidate per line. See [line output](../SKILL.md#line-output). | off |
 
 A threshold outside 0.0–1.0, or NaN, errors with `kind=validation`.
 
@@ -401,8 +402,7 @@ Copy into exactly the path it printed.
 
 ## `backlog evidence audit`
 
-Walks `.claude/backlog-evidence/` and reports every directory the store does not own, plus
-policy and stale-reference findings.
+Walks `.claude/backlog-evidence/` and reports every directory the store does not own, plus policy and stale-reference findings.
 
 ```bash
 tomlctl backlog evidence audit --strict --max-bytes 2097152
@@ -412,6 +412,7 @@ tomlctl backlog evidence audit --strict --max-bytes 2097152
 |---|---|---|---|
 | `--strict` | — | Exit 1 on the seven failing classes below. | off |
 | `--max-bytes` | integer | Oversize threshold in bytes. | `2097152` (2 MiB) |
+| `--lines` | — | Header line (`root`, `counts`), then one finding per line. See [line output](../SKILL.md#line-output). | off |
 
 Eleven finding classes, seven of them strict:
 

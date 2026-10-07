@@ -190,6 +190,7 @@ tomlctl items get .claude/flows/auth-overhaul/review-ledger.toml R22
 |---|---|---|---|
 | `--tier` | `A` \| `B` \| `C` | `A`: the canonical dedup rule — group by (file, symbol) when symbol is non-empty, otherwise by (file, summary). `B`: content fingerprint — items sharing `<file>\|<summary>\|<severity>\|<category>\|<symbol>` (truncated SHA-256, 16 hex) and the same file basename. `C`: file-scoped greedy line-window grouping for symbol-less items (group anchor + window of 10 lines). | `A` |
 | `--across` | path | Run tier A or B over the union of this ledger's items and the other's. Each output entry is tagged with `source_file`, the basename of its origin ledger; the tag is applied at JSON-emit time and never written back to either ledger. Tier C's line-window grouping assumes one source file, so `--tier C --across` errors `tier C is file-scoped; use --tier A or --tier B with --across`. | none |
+| `--lines` | — | One duplicate group per line. See [line output](../SKILL.md#line-output). | off |
 
 ```bash
 tomlctl items find-duplicates review-ledger.toml --across optimise-findings.toml --tier B
@@ -295,6 +296,7 @@ match before a `\r`), and a pattern longer than 512 bytes is refused — the sam
 | `--max-file-bytes` | bytes | Files larger than this are skipped and counted under `skipped.oversize`. | `4194304` |
 | `--max-hits` | count | Stop after this many distinct `file:line` sites and set `truncated: true`. | `5000` |
 | `--exclude` | glob, repeatable | Extra exclusion on top of `.claude/**` and `docs/plans/**`. | none |
+| `--lines` | — | Header line, then one `hits` row per line. See [line output](../SKILL.md#line-output). | off |
 
 The verb takes no ledger and no integrity flag; `--error-format text|json` applies as
 everywhere.
@@ -385,6 +387,7 @@ path, its `--dry-run` preview and the anchor-spelling consequence (new sites lan
 | `--dry-run` | — | Preview the `--update` rewrite as a `would_change` summary; no file or sidecar touch. Requires `--update`. | off |
 | `--max-file-bytes` | bytes | Files larger than this are skipped, which leaves their anchors `unverified` (`reason: skipped`) and blocks `--update`. | `4194304` |
 | `--max-hits` | count | Distinct `file:line` sites after which the sweep stops and every item reports `truncated: true`. | `5000` |
+| `--lines` | — | Header line, then one `items` row per line. Read-only sweep only; refused with `--update`. See [line output](../SKILL.md#line-output). | off |
 
 The verb carries the write bundle (`--allow-outside`, `--no-create`, `--no-write-integrity`,
 `--strict-integrity`, `--verify-integrity`) because of `--update`; there is no `--strict-read`
@@ -428,6 +431,13 @@ tomlctl items clusters <ledger>
 }
 ```
 
+The same report under `--lines`, as the apply pipeline reads it:
+
+```json
+{"batches":[["c1"]],"dropped_deps":[{"id":"R78","unselected":[{"id":"R41","status":"fixed"}],"unknown":["R9"]}]}
+{"id":"c1","item_ids":["R78"],"files":["tomlctl/src/cli/dispatch/tests/lint.rs"],"depends_on":[],"lite_file_scope":true}
+```
+
 Cluster ids are assigned in first-item order; `batches` lists cluster ids per dependency
 level, so every cluster in one batch may be dispatched in parallel once the previous batch
 has landed. `lite_file_scope` is `true` when the cluster has at most two files, or holds
@@ -440,5 +450,6 @@ cluster shares one edit shape stays the orchestrator's judgement.
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--ids` | comma-separated ids | Items to cluster. Omit for every item not at a terminal status — an absent or unrecognised status reads as `open`, as `items sweep --update` reads it. | every open item |
+| `--lines` | — | Header line (`batches`, `dropped_deps`), then one cluster per line. See [line output](../SKILL.md#line-output). | off |
 
 Read-only: carries `--verify-integrity` and `--strict-read` and no write flag.

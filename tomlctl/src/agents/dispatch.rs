@@ -4,9 +4,9 @@
 use anyhow::{Context, Result, anyhow};
 
 use super::schema::{self, Harness};
-use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs};
+use crate::cli::{LinesArgs, ReadIntegrityArgs, WriteIntegrityArgs};
 use crate::io;
-use crate::output::{print_json, print_json_compact};
+use crate::output::{Rows, print_json_compact, print_report};
 
 /// Record one hook payload and print the outcome on a single line, the form a
 /// hook's log captures whole.
@@ -37,7 +37,11 @@ pub(crate) fn record_value(
 }
 
 /// Print the flow's agent records as a JSON array.
-pub(crate) fn dispatch_list(slug: &str, read_args: &ReadIntegrityArgs) -> Result<()> {
+pub(crate) fn dispatch_list(
+    slug: &str,
+    lines: LinesArgs,
+    read_args: &ReadIntegrityArgs,
+) -> Result<()> {
     let path = schema::agents_path(slug)?;
-    print_json(&super::list::rows(&path, read_args)?)
+    print_report(super::list::rows(&path, read_args)?, lines.lines, Rows::Top)
 }

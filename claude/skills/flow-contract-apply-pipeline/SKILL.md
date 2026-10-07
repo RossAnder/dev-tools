@@ -194,8 +194,12 @@ Cluster the selected findings with the ledger's own clusterer — one implementa
 cluster:
 
 ```bash
-tomlctl items clusters <ledger> --ids <selected>
+tomlctl items clusters <ledger> --ids <selected> --lines
 ```
+
+`--lines` prints a header line holding `batches` and `dropped_deps`, then one compact line per
+cluster. Read the whole output as it is: do not pipe it through `jq` or `head`, which drops
+the batches and dependency hazards that this step must name.
 
 `<selected>` is the comma-delimited id list that survived Step 2 (the resolved selector minus
 the ids pre-transitioned there). Always pass `--ids`: the bare verb selects every `open` item,

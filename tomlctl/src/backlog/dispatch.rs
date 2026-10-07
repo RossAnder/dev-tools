@@ -64,6 +64,7 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             limit,
             similarity_strong,
             similarity_related,
+            lines,
             integrity,
         } => crate::backlog::check::dispatch(
             summary,
@@ -73,6 +74,7 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             limit,
             similarity_strong,
             similarity_related,
+            lines,
             integrity,
         ),
         BacklogOp::List {
@@ -163,8 +165,9 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             EvidenceOp::Audit {
                 strict,
                 max_bytes,
+                lines,
                 integrity,
-            } => crate::backlog::evidence_ops::dispatch_audit(strict, max_bytes, integrity),
+            } => crate::backlog::evidence_ops::dispatch_audit(strict, max_bytes, lines, integrity),
         },
     }
 }

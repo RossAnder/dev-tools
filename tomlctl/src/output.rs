@@ -91,6 +91,56 @@ pub(crate) fn print_json_compact(v: &JsonValue) -> Result<()> {
     Ok(())
 }
 
+/// Where a report's rows sit, which is what `--lines` splits on.
+#[derive(Clone, Copy)]
+pub(crate) enum Rows {
+    /// The report is the row array itself.
+    Top,
+    /// The rows are this field of the report object.
+    Field(&'static str),
+}
+
+/// The `--lines` encoding of a report: under `Rows::Field`, the other fields
+/// as one header line first (so a truncated read keeps the totals and
+/// hazards), omitted when there are none; then one line per row. A report
+/// that does not have the declared shape is one line.
+pub(crate) fn report_lines(report: JsonValue, rows: Rows) -> Vec<JsonValue> {
+    match (rows, report) {
+        (Rows::Top, JsonValue::Array(rows)) => rows,
+        (Rows::Field(key), JsonValue::Object(mut header))
+            if header.get(key).is_some_and(JsonValue::is_array) =>
+        {
+            let rows = match header.shift_remove(key) {
+                Some(JsonValue::Array(rows)) => rows,
+                _ => Vec::new(),
+            };
+            let mut lines = Vec::with_capacity(rows.len() + 1);
+            if !header.is_empty() {
+                lines.push(JsonValue::Object(header));
+            }
+            lines.extend(rows);
+            lines
+        }
+        (_, report) => vec![report],
+    }
+}
+
+/// Emit a read verb's report: pretty JSON, or under `--lines` the
+/// `report_lines` encoding, one compact value per line.
+pub(crate) fn print_report(report: JsonValue, lines: bool, rows: Rows) -> Result<()> {
+    if !lines {
+        return print_json(&report);
+    }
+    let stdout = std::io::stdout();
+    let mut out = BufWriter::new(stdout.lock());
+    for line in report_lines(report, rows) {
+        serde_json::to_writer(&mut out, &line)?;
+        out.write_all(b"\n")?;
+    }
+    out.flush()?;
+    Ok(())
+}
+
 /// Emit one bare-scalar value to stdout, followed by exactly one
 /// trailing newline. The trailing `\n` is deliberate — bash `read -r N`
 /// consumes up to a newline, so agents piping tomlctl output into
@@ -180,6 +230,43 @@ pub(crate) fn emit_dry_run_scalar(plan: &ScalarMutationPlan) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn report_lines_lead_with_the_header_then_one_row_per_line() {
+        let report = json!({ "rows": [{ "a": 1 }, { "a": 2 }], "total": 2, "ok": true });
+        assert_eq!(
+            report_lines(report, Rows::Field("rows")),
+            [
+                json!({ "total": 2, "ok": true }),
+                json!({ "a": 1 }),
+                json!({ "a": 2 })
+            ]
+        );
+    }
+
+    #[test]
+    fn report_lines_omit_an_empty_header_and_split_a_bare_array() {
+        assert_eq!(
+            report_lines(json!({ "rows": [[1, 2], [3]] }), Rows::Field("rows")),
+            [json!([1, 2]), json!([3])]
+        );
+        assert_eq!(
+            report_lines(json!([{ "a": 1 }, { "a": 2 }]), Rows::Top),
+            [json!({ "a": 1 }), json!({ "a": 2 })]
+        );
+        assert_eq!(report_lines(json!([]), Rows::Top), [] as [JsonValue; 0]);
+    }
+
+    #[test]
+    fn report_lines_keep_an_off_shape_report_whole() {
+        let report = json!({ "rows": null, "total": 0 });
+        assert_eq!(report_lines(report.clone(), Rows::Field("rows")), [report]);
+        assert_eq!(
+            report_lines(json!({ "a": 1 }), Rows::Top),
+            [json!({ "a": 1 })]
+        );
+    }
 
     #[test]
     fn emit_dry_run_scalar_envelope_shape() {

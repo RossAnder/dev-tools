@@ -28,10 +28,10 @@ use super::schema::{
     FIELD_PROMOTED_TO, FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, KIND_OTHER,
     STATUS_PROMOTED, coerce_kind,
 };
-use crate::cli::ReadIntegrityArgs;
+use crate::cli::{LinesArgs, ReadIntegrityArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{items_array, read_text_arg};
-use crate::output::print_json;
+use crate::output::{Rows, print_report};
 
 /// Number of shared leading `area` components, or shared tags, at which a
 /// candidate is proposed as `related` on structure alone. One is the
@@ -422,6 +422,7 @@ pub(crate) fn dispatch(
     limit: usize,
     similarity_strong: Option<f64>,
     similarity_related: Option<f64>,
+    lines: LinesArgs,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
     let thresholds = Thresholds {
@@ -439,7 +440,11 @@ pub(crate) fn dispatch(
 
     let mut verdicts = evaluate(&doc, &probe, &thresholds);
     verdicts.cap(limit);
-    print_json(&render(&probe, &thresholds, &verdicts)?)
+    print_report(
+        render(&probe, &thresholds, &verdicts)?,
+        lines.lines,
+        Rows::Field("candidates"),
+    )
 }
 
 #[cfg(test)]
@@ -824,6 +829,7 @@ mod tests {
                 5,
                 None,
                 None,
+                LinesArgs { lines: false },
                 read_args(),
             );
             let mut args = read_args();
@@ -836,6 +842,7 @@ mod tests {
                 5,
                 None,
                 None,
+                LinesArgs { lines: false },
                 args,
             );
             (lenient, strict)

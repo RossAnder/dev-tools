@@ -85,6 +85,7 @@ pub(crate) const FEATURES: &[&str] = &[
     "sweep",
     "items_sweep",
     "items_clusters",
+    "report_lines",
     "orphans_instances",
 ];
 
@@ -188,6 +189,16 @@ pub(crate) struct ReadIntegrityArgs {
         help = "Error on missing file instead of returning empty default (kind=not_found)"
     )]
     pub(crate) strict_read: bool,
+}
+
+/// `--lines`, shared by every read verb whose report holds a row collection;
+/// `output::Rows` names which field that is per verb.
+#[derive(Args, Clone, Copy)]
+pub(crate) struct LinesArgs {
+    /// Emit compact NDJSON instead of pretty JSON: the report's other fields
+    /// as one header line (omitted when there are none), then one line per row.
+    #[arg(long)]
+    pub(crate) lines: bool,
 }
 
 /// Write-side integrity/containment flags. Writers
@@ -711,6 +722,8 @@ pub(crate) enum Cmd {
         /// Extra glob to exclude, on top of the defaults; repeatable.
         #[arg(long, value_name = "GLOB")]
         exclude: Vec<String>,
+        #[command(flatten)]
+        lines: LinesArgs,
     },
 }
 
@@ -732,6 +745,8 @@ pub(crate) enum FlowOp {
         /// in `.claude/settings.json` when provided.
         #[arg(long = "dirs", value_name = "DIR")]
         dirs: Vec<PathBuf>,
+        #[command(flatten)]
+        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -880,6 +895,8 @@ pub(crate) enum FlowOp {
         /// present in the registry.
         #[arg(long = "active-only")]
         active_only: bool,
+        #[command(flatten)]
+        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -1176,6 +1193,8 @@ pub(crate) enum BacklogOp {
         #[arg(long = "similarity-related", value_name = "0.0-1.0")]
         similarity_related: Option<f64>,
         #[command(flatten)]
+        lines: LinesArgs,
+        #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
 
@@ -1399,6 +1418,8 @@ pub(crate) enum EvidenceOp {
             help = "Oversize threshold; omit for the built-in default"
         )]
         max_bytes: Option<u64>,
+        #[command(flatten)]
+        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -1843,6 +1864,8 @@ pub(crate) enum ItemsOp {
         )]
         across: Option<PathBuf>,
         #[command(flatten)]
+        lines: LinesArgs,
+        #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
 
@@ -1869,6 +1892,8 @@ pub(crate) enum ItemsOp {
     /// `outside-repo`, `unparseable`.
     Orphans {
         file: PathBuf,
+        #[command(flatten)]
+        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -1908,6 +1933,8 @@ pub(crate) enum ItemsOp {
         #[arg(long, default_value_t = DEFAULT_MAX_HITS, value_name = "N")]
         max_hits: usize,
         #[command(flatten)]
+        lines: LinesArgs,
+        #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
 
@@ -1925,6 +1952,8 @@ pub(crate) enum ItemsOp {
         /// status (an absent status reads as `open`).
         #[arg(long, value_delimiter = ',', value_name = "R1,R7,...")]
         ids: Vec<String>,
+        #[command(flatten)]
+        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -1992,6 +2021,8 @@ pub(crate) enum BlocksOp {
         /// present in the first listed file is used.
         #[arg(long = "block")]
         block: Vec<String>,
+        #[command(flatten)]
+        lines: LinesArgs,
     },
 }
 
@@ -2285,6 +2316,8 @@ pub(crate) enum TasksOp {
         #[arg(long = "dot")]
         dot: bool,
         #[command(flatten)]
+        lines: LinesArgs,
+        #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
 
@@ -2308,6 +2341,8 @@ pub(crate) enum TasksOp {
     Batches {
         #[command(flatten)]
         target: TasksTarget,
+        #[command(flatten)]
+        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -2348,6 +2383,8 @@ pub(crate) enum TasksOp {
         #[arg(long = "in-flight", value_delimiter = ',', value_name = "N1,N2,...")]
         in_flight: Vec<u32>,
         #[command(flatten)]
+        lines: LinesArgs,
+        #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
 
@@ -2379,6 +2416,8 @@ pub(crate) enum TasksOp {
         #[command(flatten)]
         target: TasksTarget,
         #[command(flatten)]
+        lines: LinesArgs,
+        #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
 }
@@ -2407,6 +2446,8 @@ pub(crate) enum AgentsOp {
         #[arg(long = "slug", value_name = "SLUG")]
         slug: String,
         #[command(flatten)]
+        lines: LinesArgs,
+        #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
 }
@@ -2433,6 +2474,8 @@ pub(crate) enum InputsOp {
         scope: Option<String>,
         #[arg(long, value_name = "ID", help = "Keep records targeting this item id")]
         item: Option<String>,
+        #[command(flatten)]
+        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },

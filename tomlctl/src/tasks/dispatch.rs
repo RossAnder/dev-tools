@@ -28,7 +28,7 @@ use super::{
 use crate::cli::TasksOp;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{atomic_write, read_ndjson_source, relativise, repo_or_cwd_root};
-use crate::output::{print_json, print_json_compact};
+use crate::output::{Rows, print_json, print_json_compact, print_report};
 
 pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
     match op {
@@ -203,8 +203,9 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             target,
             kind,
             dot,
+            lines,
             integrity,
-        } => edges::dispatch(target, kind, dot, integrity),
+        } => edges::dispatch(target, kind, dot, lines, integrity),
 
         TasksOp::Ready {
             target,
@@ -216,10 +217,18 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             print_json(&ready::ready(&store, &in_flight)?)
         }
 
-        TasksOp::Batches { target, integrity } => {
+        TasksOp::Batches {
+            target,
+            lines,
+            integrity,
+        } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let store = store::load(&path, &integrity)?;
-            print_json(&batches::batches(&store)?)
+            print_report(
+                batches::batches(&store)?,
+                lines.lines,
+                Rows::Field("batches"),
+            )
         }
 
         TasksOp::Closure {
@@ -240,6 +249,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             target,
             plan,
             in_flight,
+            lines,
             integrity,
         } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
@@ -257,7 +267,11 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             let rendered: Vec<_> = findings.iter().map(finding_json).collect();
             // `print_json` flushes its own writer, so nothing is left buffered
             // when the exit below skips every destructor.
-            print_json(&json!({ "ok": code == 0, "findings": rendered }))?;
+            print_report(
+                json!({ "ok": code == 0, "findings": rendered }),
+                lines.lines,
+                Rows::Field("findings"),
+            )?;
             if code != 0 {
                 std::process::exit(code);
             }
@@ -310,7 +324,11 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             }))
         }
 
-        TasksOp::Snapshot { target, integrity } => {
+        TasksOp::Snapshot {
+            target,
+            lines,
+            integrity,
+        } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             // Under `--file` there is no slug; the flow directory's name is
             // the slug a `--slug` read of the same store would carry.
@@ -324,7 +342,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             };
             let snap = super::snapshot(&slug, &path, &integrity, None)?
                 .expect("no known revision always builds");
-            print_json(&snap)
+            print_report(snap, lines.lines, Rows::Field("tasks"))
         }
     }
 }

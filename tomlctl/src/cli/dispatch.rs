@@ -41,8 +41,8 @@ use crate::items::{
 use crate::items_sweep::{items_sweep, outcome_json, update_plan};
 use crate::orphans::items_orphans;
 use crate::output::{
-    build_dry_run_plan_envelope, emit_dry_run_plan, emit_dry_run_scalar, emit_list_raw, print_json,
-    print_json_compact, print_raw_value,
+    Rows, build_dry_run_plan_envelope, emit_dry_run_plan, emit_dry_run_scalar, emit_list_raw,
+    print_json, print_json_compact, print_raw_value, print_report,
 };
 use crate::query::{self, Query, ShapeDispatch};
 use crate::sweep::{self, SweepOptions};
@@ -391,9 +391,11 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 payload,
                 integrity,
             } => crate::agents::dispatch::dispatch_record(&harness, &payload, &integrity)?,
-            AgentsOp::List { slug, integrity } => {
-                crate::agents::dispatch::dispatch_list(&slug, &integrity)?
-            }
+            AgentsOp::List {
+                slug,
+                lines,
+                integrity,
+            } => crate::agents::dispatch::dispatch_list(&slug, lines, &integrity)?,
         },
         Cmd::Inputs { op } => inputs_dispatch(op)?,
         Cmd::Sweep {
@@ -401,6 +403,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             max_file_bytes,
             max_hits,
             exclude,
+            lines,
         } => {
             let root = repo_or_cwd_root()?;
             let mut opts = SweepOptions {
@@ -410,7 +413,11 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             };
             opts.exclude.extend(exclude);
             let report = sweep::run(&root, &pattern, &opts)?;
-            print_json(&sweep::report_json(&report))?;
+            print_report(
+                sweep::report_json(&report),
+                lines.lines,
+                Rows::Field("hits"),
+            )?;
         }
         Cmd::Json { op } => {
             // Resolve `--json -` stdin sentinel for `json set` at the CLI
@@ -1039,6 +1046,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             file,
             tier,
             across,
+            lines,
             integrity,
         } => {
             strict_read_check(&file, integrity.strict_read)?;
@@ -1105,7 +1113,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     }
                 }
             };
-            print_json(&JsonValue::Array(groups))?;
+            print_report(JsonValue::Array(groups), lines.lines, Rows::Top)?;
         }
         ItemsOp::Fingerprint {
             file,
@@ -1117,11 +1125,15 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let out = read_doc(&file, opts, |doc| items_fingerprint(doc, &id))?;
             print_json(&out)?;
         }
-        ItemsOp::Orphans { file, integrity } => {
+        ItemsOp::Orphans {
+            file,
+            lines,
+            integrity,
+        } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             let orphans = read_doc(&file, opts, items_orphans)?;
-            print_json(&JsonValue::Array(orphans))?;
+            print_report(JsonValue::Array(orphans), lines.lines, Rows::Top)?;
         }
         ItemsOp::Sweep {
             file,
@@ -1130,8 +1142,14 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             dry_run,
             max_file_bytes,
             max_hits,
+            lines,
             integrity,
         } => {
+            if lines.lines && update {
+                bail!(
+                    "items sweep --lines applies to the read-only sweep; --update emits a write envelope"
+                );
+            }
             if dry_run && !update {
                 bail!(
                     "items sweep --dry-run requires --update (the read-only sweep writes nothing to preview)"
@@ -1150,7 +1168,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 let results = read_doc(&file, read_opts, |doc| {
                     items_sweep(doc, &file, &root, &ids, &sweep_opts)
                 })?;
-                print_json(&outcome_json(&results))?;
+                print_report(outcome_json(&results), lines.lines, Rows::Field("items"))?;
                 return Ok(());
             }
             if dry_run {
@@ -1192,13 +1210,14 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
         ItemsOp::Clusters {
             file,
             ids,
+            lines,
             integrity,
         } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             let root = repo_or_cwd_root()?;
             let out = read_doc(&file, opts, |doc| items_clusters(doc, &root, &ids))?;
-            print_json(&out)?;
+            print_report(out, lines.lines, Rows::Field("clusters"))?;
         }
         ItemsOp::BackfillDedupId {
             file,
@@ -1316,6 +1335,7 @@ fn inputs_dispatch(op: InputsOp) -> Result<()> {
             flow,
             scope,
             item,
+            lines,
             integrity,
         } => {
             let path = inputs::path(&root);
@@ -1332,7 +1352,11 @@ fn inputs_dispatch(op: InputsOp) -> Result<()> {
                 scope,
                 item,
             };
-            return print_json(&inputs::list(&root, &filter)?);
+            return print_report(
+                inputs::list(&root, &filter)?,
+                lines.lines,
+                Rows::Field("inputs"),
+            );
         }
         InputsOp::Add { json, integrity } => {
             let record = read_json_value_from_arg(&json).context("parsing --json")?;
@@ -1379,9 +1403,13 @@ fn inputs_dispatch(op: InputsOp) -> Result<()> {
 
 fn blocks_dispatch(op: BlocksOp) -> Result<()> {
     match op {
-        BlocksOp::Verify { files, block } => {
+        BlocksOp::Verify {
+            files,
+            block,
+            lines,
+        } => {
             let report = blocks_verify(&files, &block)?;
-            print_json(&report.report)?;
+            print_report(report.report, lines.lines, Rows::Field("blocks"))?;
             if !report.ok {
                 std::process::exit(1);
             }

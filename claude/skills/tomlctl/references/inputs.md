@@ -57,6 +57,7 @@ tomlctl inputs list --ledger optimise --flow <slug> --item O12
 | `--flow` | slug | Keep records whose `flow` equals it. A record with no `flow` never matches. | any |
 | `--scope` | name | Keep records whose `scope` equals it. A record with no `scope` never matches. | any |
 | `--item` | id | Keep records whose `items` array contains it. | any |
+| `--lines` | — | Header line (`path`, `revision`), then one record per line. See [line output](../SKILL.md#line-output). | off |
 
 Every given filter must hold. Because `--flow` and `--scope` exclude records that name no
 flow or scope, the Step-0 sweep lists by `--ledger` alone and partitions the rows itself.
