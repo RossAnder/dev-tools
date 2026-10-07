@@ -976,15 +976,16 @@ fn strict_read_default_preserves_next_id_missing_file_fast_path() {
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    assert!(
-        stdout.contains("\"R1\""),
-        "default (non-strict) next-id on missing file must still mint \"R1\", got:\n{stdout}"
+    assert_eq!(
+        stdout.trim(),
+        "R1",
+        "default (non-strict) next-id on missing file must still mint a bare R1"
     );
 }
 
 /// `--strict-read` on a missing-file `items next-id` errors with the
 /// documented "file does not exist" prose on stderr and exits 1. Without the
-/// flag the command succeeds with `"R1"` (covered above).
+/// flag the command succeeds with `R1` (covered above).
 #[test]
 fn strict_read_next_id_missing_file_errors_with_not_found_prose() {
     let dir = tempfile::tempdir().unwrap();
@@ -1679,6 +1680,11 @@ fn capabilities_features_contains_every_plan_feature() {
         "items_clusters",
         "orphans_instances",
         "output_options", // the root's global output flags
+        // Write ergonomics.
+        "next_id_bare",
+        "id_prefix",
+        "auto_last_updated",
+        "multi_id",
     ];
     for name in expected {
         assert!(
@@ -1713,8 +1719,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.13.0",
-        "expected version `0.13.0` (the minor bump for `items apply` expect/`--on-stale`, `backlog triage --expect-status`, the `inputs` group, and the ledger and inputs library facade); got `{version}`"
+        version, "0.14.0",
+        "expected version `0.14.0` (the minor bump for the global output flags, the bare `items next-id` output, `--id-prefix`, CLI `last_updated` stamping, and multi-id `tasks update`/`tasks show`/`backlog show`); got `{version}`"
     );
 }
 

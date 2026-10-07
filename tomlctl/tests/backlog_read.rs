@@ -575,6 +575,65 @@ fn show_on_an_unknown_id_reports_a_not_found_envelope() {
     assert_eq!(err["kind"], json!("not_found"));
 }
 
+#[test]
+fn show_with_several_ids_prints_an_array_in_the_order_given() {
+    let (_tmp, root) = sandbox();
+    seed(&root, FIXTURE);
+
+    for args in [
+        &["show", "B-00000003,B-00000001"][..],
+        &["show", "B-00000003", "B-00000001"][..],
+    ] {
+        let v = backlog(&root, args);
+        let rows = v.as_array().unwrap_or_else(|| panic!("an array: {v}"));
+        assert_eq!(rows.len(), 2, "{v}");
+        assert_eq!(rows[0]["item"]["id"], json!("B-00000003"));
+        assert_eq!(rows[1]["item"]["id"], json!("B-00000001"));
+        assert_eq!(
+            rows[1],
+            backlog(&root, &["show", "B-00000001"]),
+            "each element is the single-id object"
+        );
+    }
+}
+
+#[test]
+fn show_with_several_ids_gets_one_value_per_id() {
+    let (_tmp, root) = sandbox();
+    seed(&root, FIXTURE);
+
+    let out = backlog_stdout(
+        &root,
+        &["show", "B-00000001,B-00000003", "--get", "item.status"],
+    );
+    assert_eq!(out.lines().collect::<Vec<_>>(), vec!["open", "dismissed"]);
+}
+
+#[test]
+fn show_with_one_unknown_id_among_several_fails_the_whole_call() {
+    let (_tmp, root) = sandbox();
+    seed(&root, FIXTURE);
+
+    let out = cli(&root)
+        .args([
+            "--error-format",
+            "json",
+            "backlog",
+            "show",
+            "B-00000001,B-99999999",
+        ])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    assert!(out.get_output().stdout.is_empty(), "nothing is printed");
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert_eq!(
+        parse_json_error_envelope(&stderr)["kind"],
+        json!("not_found")
+    );
+}
+
 // -------------------------------------------------------------- cluster
 
 #[test]

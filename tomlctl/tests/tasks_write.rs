@@ -466,6 +466,60 @@ fn update_refuses_an_id_the_store_does_not_carry() {
     assert_eq!(snapshot(&store), before);
 }
 
+fn statuses(store: &Path) -> Vec<String> {
+    rows(&read_store(store))
+        .iter()
+        .map(|row| row["status"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// A comma list and a space list both patch every named row, reporting each
+/// id's own changes in the order given.
+#[test]
+fn update_patches_every_id_in_a_comma_or_space_list() {
+    for ids in [&["3,2"][..], &["3", "2"][..]] {
+        let (_tmp, root) = sandbox();
+        let store = seed_tasks(&root, REMOVE_FIXTURE);
+
+        let mut args = vec!["update"];
+        args.extend_from_slice(ids);
+        args.extend_from_slice(&["--slug", TASKS_SLUG, "--status", "done"]);
+        let out = tasks(&root, &args, "");
+        assert_eq!(
+            out,
+            json!({"ok": true, "results": [
+                {"id": 3, "changed": ["status"]},
+                {"id": 2, "changed": ["status"]},
+            ]}),
+            "ids {ids:?}"
+        );
+        assert_sidecar_matches(&store);
+        assert_eq!(statuses(&store), ["done", "done", "done", "pending"]);
+    }
+}
+
+/// Every id is resolved before any row moves: an unknown id among valid ones
+/// aborts the call with the store and sidecar untouched.
+#[test]
+fn update_with_an_unknown_id_among_valid_ones_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, REMOVE_FIXTURE);
+    let before = snapshot(&store);
+
+    let err = tasks_err(
+        &root,
+        &["update", "2,99,3", "--slug", TASKS_SLUG, "--status", "done"],
+        "",
+    );
+    assert_eq!(err["kind"], json!("validation"));
+    assert!(
+        err["message"].as_str().unwrap().contains("no task 99"),
+        "{}",
+        err["message"]
+    );
+    assert_eq!(snapshot(&store), before);
+}
+
 // ---------------------------------------------------------------------------
 // remove
 // ---------------------------------------------------------------------------

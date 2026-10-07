@@ -87,6 +87,11 @@ pub(crate) const FEATURES: &[&str] = &[
     "items_clusters",
     "orphans_instances",
     "output_options", // the root's global output flags
+    // Write ergonomics.
+    "next_id_bare",      // `items next-id` prints the bare id
+    "id_prefix",         // `items add`/`add-many --id-prefix` mint inside the lock
+    "auto_last_updated", // CLI writes stamp an existing `last_updated`
+    "multi_id",          // `tasks update`/`tasks show`/`backlog show` take id lists
 ];
 
 /// User-facing top-level subcommand names, as they appear in
@@ -295,6 +300,20 @@ pub(crate) struct WriteIntegrityArgs {
     /// and a missing file is reported as `kind=not_found` either way.
     #[arg(long = "no-create")]
     pub(crate) no_create: bool,
+}
+
+/// `last_updated` stamping for the generic write commands (`set`, `set-json`,
+/// `array-append`, and the `items` writers). The `tasks`, `backlog`,
+/// `inputs` and `agents` writers stamp their own stores and do not take it.
+#[derive(Args, Clone)]
+#[command(next_help_heading = "Integrity options")]
+pub(crate) struct StampArgs {
+    /// Leave the root `last_updated` as it is. By default a write that
+    /// changes the document refreshes an existing root `last_updated` to
+    /// today (UTC); a file without the key never gains one, and a write that
+    /// sets `last_updated` itself keeps the value it sets.
+    #[arg(long = "no-stamp")]
+    pub(crate) no_stamp: bool,
 }
 
 /// Flattened bundle of all `items list` query options — predicates,
@@ -580,6 +599,8 @@ pub(crate) enum Cmd {
         dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
+        #[command(flatten)]
+        stamp: StampArgs,
     },
 
     /// Set a JSON-encoded value (array, object, or scalar) at a dotted key path.
@@ -600,6 +621,8 @@ pub(crate) enum Cmd {
         dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
+        #[command(flatten)]
+        stamp: StampArgs,
     },
 
     /// Parse-check only. Exit 0 on valid TOML, non-zero otherwise.
@@ -656,6 +679,8 @@ pub(crate) enum Cmd {
         dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
+        #[command(flatten)]
+        stamp: StampArgs,
     },
 
     /// Emit a JSON description of this binary's capabilities. Downstream
@@ -1259,9 +1284,17 @@ pub(crate) enum BacklogOp {
     },
 
     /// Print one item with its one-hop relation neighbourhood and its
-    /// evidence-directory listing.
+    /// evidence-directory listing, or an array of those objects in the order
+    /// given; an unknown id fails the whole call.
     Show {
-        id: String,
+        /// Item ids to print, comma- or space-separated.
+        #[arg(
+            required = true,
+            num_args = 1..,
+            value_delimiter = ',',
+            value_name = "ID,..."
+        )]
+        ids: Vec<String>,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -1661,6 +1694,15 @@ pub(crate) enum ItemsOp {
             help = "Skip the add when an existing item matches these fields (raw equality; use --where for typed comparison)"
         )]
         dedupe_by: Option<String>,
+        /// Mint the item's id as `<P><n+1>` inside the locked write and
+        /// report it as `id`. The payload must not carry an `id`. On a
+        /// `--dedupe-by` skip nothing is minted and `id` is the matched row's.
+        #[arg(
+            long = "id-prefix",
+            value_name = "P",
+            help = "Mint the id as <P><next> under the write lock and report it as `id`; the payload must not carry an id"
+        )]
+        id_prefix: Option<String>,
         /// Preview the operation without writing. Emits a `would_change`
         /// summary on stdout and leaves the file + sidecar byte-identical.
         #[arg(
@@ -1670,6 +1712,8 @@ pub(crate) enum ItemsOp {
         dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
+        #[command(flatten)]
+        stamp: StampArgs,
     },
 
     /// Append many items in one batch from NDJSON. `--defaults-json` stamps
@@ -1702,6 +1746,15 @@ pub(crate) enum ItemsOp {
             help = "Skip rows whose values at these fields already exist (raw equality; use --where for typed comparison)"
         )]
         dedupe_by: Option<String>,
+        /// Mint each added row's id as `<P><n+1>`, in input order, inside the
+        /// locked write, and report them as `ids`. No row may carry an `id`;
+        /// a `--dedupe-by` skip mints nothing.
+        #[arg(
+            long = "id-prefix",
+            value_name = "P",
+            help = "Mint each added row's id as <P><next> under the write lock and report them as `ids`; no row may carry an id"
+        )]
+        id_prefix: Option<String>,
         /// Preview the operation without writing. Emits a `would_change`
         /// summary on stdout and leaves the file + sidecar byte-identical.
         #[arg(
@@ -1711,6 +1764,8 @@ pub(crate) enum ItemsOp {
         dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
+        #[command(flatten)]
+        stamp: StampArgs,
     },
 
     /// Merge fields into an existing item (matched by `id`). --json is a patch object.
@@ -1752,6 +1807,8 @@ pub(crate) enum ItemsOp {
         dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
+        #[command(flatten)]
+        stamp: StampArgs,
     },
 
     /// Remove an item by id. Fails if no such id exists.
@@ -1773,6 +1830,8 @@ pub(crate) enum ItemsOp {
         dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
+        #[command(flatten)]
+        stamp: StampArgs,
     },
 
     /// Print the next id string for the given prefix.
@@ -1857,6 +1916,8 @@ pub(crate) enum ItemsOp {
         dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
+        #[command(flatten)]
+        stamp: StampArgs,
     },
 
     /// Find duplicate items using one of the dedup tiers.
@@ -1948,6 +2009,8 @@ pub(crate) enum ItemsOp {
         max_hits: usize,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
+        #[command(flatten)]
+        stamp: StampArgs,
     },
 
     /// Group selected items into file-disjoint clusters and order the
@@ -2013,6 +2076,8 @@ pub(crate) enum ItemsOp {
         dry_run: bool,
         #[command(flatten)]
         integrity: WriteIntegrityArgs,
+        #[command(flatten)]
+        stamp: StampArgs,
     },
 }
 
@@ -2210,12 +2275,20 @@ pub(crate) enum TasksOp {
         integrity: WriteIntegrityArgs,
     },
 
-    /// Patch one row's mutable fields. `ref` is immutable unless `--ref` is
-    /// given explicitly — renaming it orphans the execution record's
-    /// `task_ref` and the last import's ref set.
+    /// Patch the mutable fields of one or more rows in one write. Every id is
+    /// resolved before anything changes, so an unknown id aborts the whole
+    /// call. `ref` is immutable unless `--ref` is given explicitly — renaming
+    /// it orphans the execution record's `task_ref` and the last import's ref
+    /// set — and `--ref` takes a single id.
     Update {
-        /// Task id to patch.
-        id: u32,
+        /// Task ids to patch, comma- or space-separated.
+        #[arg(
+            required = true,
+            num_args = 1..,
+            value_delimiter = ',',
+            value_name = "ID,..."
+        )]
+        ids: Vec<u32>,
         #[command(flatten)]
         target: TasksTarget,
         /// Lifecycle status: `pending`, `in-progress`, `done`, `failed` or
@@ -2270,12 +2343,19 @@ pub(crate) enum TasksOp {
         integrity: WriteIntegrityArgs,
     },
 
-    /// Print one row. Without `--with` the output is the summary shape;
-    /// `--with body,files,deps` is the fetch-by-id form a dispatching
+    /// Print one row's object, or an array of rows in the order given; an
+    /// unknown id fails the whole call. Without `--with` each is the summary
+    /// shape; `--with body,files,deps` is the fetch-by-id form a dispatching
     /// orchestrator hands an implementing agent in place of pasted prose.
     Show {
-        /// Task id to print.
-        id: u32,
+        /// Task ids to print, comma- or space-separated.
+        #[arg(
+            required = true,
+            num_args = 1..,
+            value_delimiter = ',',
+            value_name = "ID,..."
+        )]
+        ids: Vec<u32>,
         #[command(flatten)]
         target: TasksTarget,
         #[arg(

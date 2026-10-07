@@ -17,17 +17,27 @@ use super::schema::{FileKind, ImportOverride, Store, TaskRow};
 use super::store;
 use crate::cli::{ReadIntegrityArgs, ShowPart, TasksTarget};
 use crate::errors::{ErrorKind, tagged_err};
-use crate::output::print_json;
+use crate::output::{Rows, print_json, print_report};
 
+/// Several ids print a row report, so the output options apply per row. Every
+/// row is built before anything prints, so an unknown id fails the call with
+/// no partial output.
 pub(crate) fn dispatch(
-    id: u32,
+    ids: &[u32],
     target: TasksTarget,
     with: Vec<ShowPart>,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
     let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
     let store = store::load(&path, &integrity)?;
-    print_json(&show(&store, id, &with)?)
+    let mut rows = ids
+        .iter()
+        .map(|&id| show(&store, id, &with))
+        .collect::<Result<Vec<_>>>()?;
+    if rows.len() == 1 {
+        return print_json(&rows.remove(0));
+    }
+    print_report(JsonValue::Array(rows), Rows::Top)
 }
 
 /// An empty `parts` is the summary shape. A cycle or a dangling edge is an

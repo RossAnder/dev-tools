@@ -396,6 +396,48 @@ fn a_fetch_for_an_absent_row_is_a_not_found_envelope() {
     assert_eq!(err["message"], json!("no task 99 in the store"), "{err}");
 }
 
+/// Several ids are a row report in the order asked, so the output options
+/// apply per row: `--get` prints one bare value per id.
+#[test]
+fn several_ids_print_one_row_each_in_the_order_given() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, READ_FIXTURE);
+
+    assert_eq!(
+        tasks_stdout(&root, &["show", "1,2", "--get", "ref"]),
+        "scaffold-the-module-tree\nwire-the-graph-engine\n"
+    );
+
+    let rows = tasks(&root, &["show", "3", "1", "--with", "deps"]);
+    assert_eq!(ids(&rows), vec![3, 1], "{rows}");
+    assert_eq!(
+        ids(&rows[0]["deps"]),
+        vec![1, 2],
+        "`--with` shapes every row: {rows}"
+    );
+    assert_eq!(rows[1]["deps"], json!([]), "{rows}");
+}
+
+/// Every id is resolved before anything prints, so one unknown id fails the
+/// call with the single-id message and no partial output.
+#[test]
+fn one_unknown_id_among_several_fails_the_whole_fetch() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, READ_FIXTURE);
+
+    let out = cli(&root)
+        .args(["--error-format", "json", "tasks", "show", "1,99,2"])
+        .args(["--slug", TASKS_SLUG])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    assert!(out.get_output().stdout.is_empty(), "{out:?}");
+    let err = parse_json_error_envelope(&String::from_utf8_lossy(&out.get_output().stderr));
+    assert_eq!(err["kind"], json!("not_found"), "{err}");
+    assert_eq!(err["message"], json!("no task 99 in the store"), "{err}");
+}
+
 // ---------------------------------------------------------------------------
 // list
 // ---------------------------------------------------------------------------

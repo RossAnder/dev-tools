@@ -96,7 +96,7 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             query,
             integrity,
         ),
-        BacklogOp::Show { id, integrity } => crate::backlog::query::dispatch_show(id, integrity),
+        BacklogOp::Show { ids, integrity } => crate::backlog::query::dispatch_show(&ids, integrity),
         BacklogOp::Relate {
             a,
             to,

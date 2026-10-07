@@ -1143,6 +1143,28 @@ pub(crate) fn items_remove_from(doc: &mut TomlValue, array_name: &str, id: &str)
 }
 
 pub(crate) fn items_next_id(doc: &TomlValue, prefix: &str) -> Result<String> {
+    items_next_id_in(doc, "items", prefix)
+}
+
+/// Array-parametric `items_next_id`: one past the highest `{prefix}{n}` id in
+/// `doc[array_name]`. The `--id-prefix` add paths mint through this so an
+/// `--array` other than `items` numbers against its own rows.
+fn items_next_id_in(doc: &TomlValue, array_name: &str, prefix: &str) -> Result<String> {
+    validate_id_prefix(prefix)?;
+    let mut max_n: u64 = 0;
+    for item in items_array(doc, array_name) {
+        if let Some(id) = item_id(item)
+            && let Some(rest) = id.strip_prefix(prefix)
+            && let Ok(n) = rest.parse::<u64>()
+            && n > max_n
+        {
+            max_n = n;
+        }
+    }
+    Ok(format!("{}{}", prefix, max_n + 1))
+}
+
+fn validate_id_prefix(prefix: &str) -> Result<()> {
     // Both prefix-shape rejections are CLI-surface validation failures —
     // tag them `Validation` so `--error-format json` reports the same `kind`
     // regardless of which rule fired. Text output stays identical to a plain
@@ -1162,17 +1184,72 @@ pub(crate) fn items_next_id(doc: &TomlValue, prefix: &str) -> Result<String> {
             "prefix must not be all-digit — would collide with numeric-suffix parsing",
         ));
     }
-    let mut max_n: u64 = 0;
-    for item in items_array(doc, "items") {
-        if let Some(id) = item_id(item)
-            && let Some(rest) = id.strip_prefix(prefix)
-            && let Ok(n) = rest.parse::<u64>()
-            && n > max_n
-        {
-            max_n = n;
-        }
+    Ok(())
+}
+
+/// Stamp a freshly minted `{prefix}{n}` id onto `obj` (as its first key) and
+/// return it. The id is computed from `doc` as it stands, so the caller must
+/// hold the write lock and append the row before minting the next one.
+/// A payload that already carries an `id` is refused rather than overwritten.
+fn mint_row_id(
+    doc: &TomlValue,
+    array_name: &str,
+    prefix: &str,
+    obj: serde_json::Map<String, JsonValue>,
+) -> Result<(serde_json::Map<String, JsonValue>, String)> {
+    refuse_supplied_id(&obj)?;
+    let id = items_next_id_in(doc, array_name, prefix)?;
+    let mut stamped = serde_json::Map::with_capacity(obj.len() + 1);
+    stamped.insert("id".to_string(), JsonValue::String(id.clone()));
+    stamped.extend(obj.into_iter().filter(|(k, _)| k != "id"));
+    Ok((stamped, id))
+}
+
+fn refuse_supplied_id(obj: &serde_json::Map<String, JsonValue>) -> Result<()> {
+    if obj.get("id").is_some_and(|v| !is_empty_json(v)) {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "payload already carries an `id`; drop it or drop --id-prefix",
+        ));
     }
-    Ok(format!("{}{}", prefix, max_n + 1))
+    Ok(())
+}
+
+/// Single-row `items add --id-prefix`: dedupe first (when `dedupe_fields` is
+/// non-empty), then mint and append. Returns the outcome with the id to
+/// report — the minted id on `Added`, the matched row's id on `Skipped`.
+pub(crate) fn items_add_value_minted(
+    doc: &mut TomlValue,
+    patch: JsonValue,
+    array_name: &str,
+    dedupe_fields: &[String],
+    prefix: &str,
+) -> Result<(AddOutcome, String)> {
+    validate_id_prefix(prefix)?;
+    let got_type = crate::convert::json_type_name(&patch);
+    let JsonValue::Object(obj) = patch else {
+        bail!(
+            "--json must be a JSON object (e.g. {{\"status\":\"open\"}}); got JSON {}",
+            got_type
+        );
+    };
+    refuse_supplied_id(&obj)?;
+    let payload = JsonValue::Object(obj);
+    if !dedupe_fields.is_empty()
+        && let Some(matched_id) = find_dedupe_match(doc, array_name, &payload, dedupe_fields)
+    {
+        let outcome = AddOutcome::Skipped {
+            matched_id: matched_id.clone(),
+        };
+        return Ok((outcome, matched_id));
+    }
+    let JsonValue::Object(obj) = payload else {
+        unreachable!("payload was built from an object above")
+    };
+    let (stamped, id) = mint_row_id(doc, array_name, prefix, obj)?;
+    items_add_value_to(doc, JsonValue::Object(stamped), array_name)?;
+    Ok((AddOutcome::Added, id))
 }
 
 /// Sibling of `items_next_id` that scans the ledger's existing ids,
@@ -1660,6 +1737,9 @@ pub(crate) fn compute_backfill_mutation(doc: &TomlValue, array_name: &str) -> Re
 #[derive(Debug, Clone)]
 pub(crate) struct AddManyOutcome {
     pub added: usize,
+    /// The `id` of each appended row in input order — minted under
+    /// `--id-prefix`, empty for a row that has none.
+    pub ids: Vec<String>,
     pub skipped_rows: Vec<SkippedRow>,
 }
 
@@ -1696,10 +1776,15 @@ pub(crate) fn items_add_many_with_dedupe(
     rows: &[JsonValue],
     defaults: Option<&JsonValue>,
     dedupe_fields: &[String],
+    id_prefix: Option<&str>,
 ) -> Result<AddManyOutcome> {
     // Share the defaults + row-merge shape with `items_add_many`.
     let base = defaults_base(defaults)?;
+    if let Some(prefix) = id_prefix {
+        validate_id_prefix(prefix)?;
+    }
     let mut added: usize = 0;
+    let mut ids: Vec<String> = Vec::with_capacity(rows.len());
     let mut skipped_rows: Vec<SkippedRow> = Vec::new();
     for (i, row) in rows.iter().enumerate() {
         let row_num = i + 1;
@@ -1712,7 +1797,11 @@ pub(crate) fn items_add_many_with_dedupe(
         })?;
         // Build the merged payload first so dedupe sees the same fields
         // `items_add_value_to` would otherwise persist.
-        let merged_val = JsonValue::Object(merge_row_over_base(&base, row_obj));
+        let merged = merge_row_over_base(&base, row_obj);
+        if id_prefix.is_some() {
+            refuse_supplied_id(&merged).with_context(|| format!("row {row_num}"))?;
+        }
+        let merged_val = JsonValue::Object(merged);
         if !dedupe_fields.is_empty()
             && let Some(matched_id) = find_dedupe_match(doc, array_name, &merged_val, dedupe_fields)
         {
@@ -1722,17 +1811,29 @@ pub(crate) fn items_add_many_with_dedupe(
             });
             continue;
         }
-        items_add_value_to(doc, merged_val, array_name)
-            .with_context(|| {
-                format!(
-                    "row {} (per-row dedupe-add failed; row must be a JSON object with at minimum an `id` field)",
-                    row_num
-                )
-            })?;
+        // Minting only after the dedupe decision keeps a skipped row from
+        // consuming an id; each mint observes the rows appended before it.
+        let to_add = match (id_prefix, merged_val) {
+            (Some(prefix), JsonValue::Object(obj)) => {
+                let (stamped, _) = mint_row_id(doc, array_name, prefix, obj)?;
+                JsonValue::Object(stamped)
+            }
+            (_, v) => v,
+        };
+        let row_id = capture_row_id(&to_add);
+        items_add_value_to(doc, to_add, array_name).with_context(|| {
+            format!(
+                "row {} (per-row {}add failed; row must be a JSON object with at minimum an `id` field)",
+                row_num,
+                if dedupe_fields.is_empty() { "" } else { "dedupe-" }
+            )
+        })?;
+        ids.push(row_id);
         added += 1;
     }
     Ok(AddManyOutcome {
         added,
+        ids,
         skipped_rows,
     })
 }
@@ -1783,10 +1884,10 @@ pub(crate) fn compute_add_mutation(
 }
 
 /// Pure sibling of `items_add_many` / `items_add_many_with_dedupe`.
-/// Empty `dedupe_fields` runs `items_add_many` on a cloned doc; non-empty
-/// runs `items_add_many_with_dedupe` and threads `AddManyOutcome.added`
-/// into `plan.added` (with per-row ids captured from the merged payloads
-/// on success) and `AddManyOutcome.skipped_rows` into `plan.skipped`.
+/// Empty `dedupe_fields` with no `id_prefix` runs `items_add_many` on a
+/// cloned doc; otherwise runs `items_add_many_with_dedupe` and threads
+/// `AddManyOutcome.ids` (minted ids included) into `plan.added` and
+/// `AddManyOutcome.skipped_rows` into `plan.skipped`.
 ///
 /// `defaults` carries the same `--defaults-json` shape the live `items
 /// add-many` accepts; omitting it would make the dry-run preview diverge
@@ -1802,9 +1903,10 @@ pub(crate) fn compute_add_many_mutation(
     rows: &[JsonValue],
     defaults: Option<&JsonValue>,
     dedupe_fields: &[String],
+    id_prefix: Option<&str>,
 ) -> Result<MutationPlan> {
     let mut new_doc = doc.clone();
-    if dedupe_fields.is_empty() {
+    if dedupe_fields.is_empty() && id_prefix.is_none() {
         // Pre-capture ids from the input rows. `items_add_many` returns
         // only a count; we walk the rows once before delegating so the
         // plan can report ids in input order. A row that fails validation
@@ -1829,38 +1931,20 @@ pub(crate) fn compute_add_many_mutation(
             skipped: Vec::new(),
         })
     } else {
-        // Capture per-row ids up front; we'll filter to only the rows
-        // that actually appended after the dedupe outcome lands.
-        // Shared `capture_row_id` — the dedupe arm uses the same
-        // empty-on-missing convention as the no-dedupe arm above.
-        let row_ids: Vec<String> = rows.iter().map(capture_row_id).collect();
-        let outcome =
-            items_add_many_with_dedupe(&mut new_doc, array_name, rows, defaults, dedupe_fields)?;
-        // `outcome.skipped_rows` carries 1-indexed row numbers; the
-        // remaining indices are the ones that appended in input order.
-        // `outcome.skipped_rows` is sorted ascending (see `AddManyOutcome`),
-        // so a two-pointer merge would avoid the hash — but the per-row
-        // `contains` below states the "did this index get skipped?" intent
-        // directly, and at the typical sub-1000-row batch size the
-        // difference is dominated by the per-row TOML mutation cost.
-        let skipped_set: std::collections::HashSet<usize> =
-            outcome.skipped_rows.iter().map(|r| r.row).collect();
-        let added: Vec<String> = row_ids
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, id)| {
-                if skipped_set.contains(&(i + 1)) {
-                    None
-                } else {
-                    Some(id)
-                }
-            })
-            .collect();
-        // Defensive: the appended-id count must equal `outcome.added`.
-        debug_assert_eq!(added.len(), outcome.added);
+        // `outcome.ids` holds the id of each appended row as written —
+        // minted under `id_prefix` — so skipped rows contribute nothing.
+        let outcome = items_add_many_with_dedupe(
+            &mut new_doc,
+            array_name,
+            rows,
+            defaults,
+            dedupe_fields,
+            id_prefix,
+        )?;
+        debug_assert_eq!(outcome.ids.len(), outcome.added);
         Ok(MutationPlan {
             new_doc,
-            added,
+            added: outcome.ids,
             updated: Vec::new(),
             removed: Vec::new(),
             skipped: outcome.skipped_rows,
@@ -1903,7 +1987,7 @@ pub(crate) fn compute_array_append_mutation(
     array_name: &str,
     rows: &[JsonValue],
 ) -> Result<MutationPlan> {
-    compute_add_many_mutation(doc, array_name, rows, None, &[])
+    compute_add_many_mutation(doc, array_name, rows, None, &[], None)
 }
 
 /// A status that closes an item: the schema's dispositions other than `open`.
@@ -3551,6 +3635,7 @@ status = "open"
             &rows,
             None,
             &["file".to_string(), "summary".to_string()],
+            None,
         )
         .unwrap();
         assert_eq!(outcome.added, 2);
@@ -4223,8 +4308,8 @@ status = "open"
         let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
 
         let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
-        let plan =
-            compute_add_many_mutation(&plan_doc, "items", &rows, Some(&defaults), &[]).unwrap();
+        let plan = compute_add_many_mutation(&plan_doc, "items", &rows, Some(&defaults), &[], None)
+            .unwrap();
         let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
         assert_eq!(
             live_bytes, plan_bytes,
@@ -4244,11 +4329,13 @@ status = "open"
 
         let mut live_doc: TomlValue = toml::from_str(fixture).unwrap();
         let live_outcome =
-            items_add_many_with_dedupe(&mut live_doc, "items", &dup_rows, None, &dedupe).unwrap();
+            items_add_many_with_dedupe(&mut live_doc, "items", &dup_rows, None, &dedupe, None)
+                .unwrap();
         let live_bytes = toml::to_string_pretty(&live_doc).unwrap();
 
         let plan_doc: TomlValue = toml::from_str(fixture).unwrap();
-        let plan = compute_add_many_mutation(&plan_doc, "items", &dup_rows, None, &dedupe).unwrap();
+        let plan =
+            compute_add_many_mutation(&plan_doc, "items", &dup_rows, None, &dedupe, None).unwrap();
         let plan_bytes = toml::to_string_pretty(&plan.new_doc).unwrap();
         assert_eq!(
             live_bytes, plan_bytes,

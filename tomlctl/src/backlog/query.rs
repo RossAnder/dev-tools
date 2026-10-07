@@ -27,7 +27,7 @@ use crate::cli::{LegacyShortcuts, QueryArgs, ReadIntegrityArgs};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{items_array, relativise, repo_or_cwd_root};
-use crate::output::{self, OutputOpts, print_json};
+use crate::output::{self, OutputOpts, Rows, print_json, print_report};
 use crate::query::{Query, ShapeDispatch};
 
 const DIRECTION_OUT: &str = "out";
@@ -73,9 +73,20 @@ pub(crate) fn dispatch_list(
     }
 }
 
-pub(crate) fn dispatch_show(id: String, integrity: ReadIntegrityArgs) -> Result<()> {
+pub(crate) fn dispatch_show(ids: &[String], integrity: ReadIntegrityArgs) -> Result<()> {
     let doc = schema::read_store(&integrity)?;
-    print_json(&build_show(&doc, &id)?)
+    let resolved = ids
+        .iter()
+        .map(|id| evidence::resolve_id(&doc, id))
+        .collect::<Result<Vec<_>>>()?;
+    let mut rows = resolved
+        .iter()
+        .map(|id| build_show_resolved(&doc, id))
+        .collect::<Result<Vec<_>>>()?;
+    if rows.len() == 1 {
+        return print_json(&rows.remove(0));
+    }
+    print_report(JsonValue::Array(rows), Rows::Top)
 }
 
 /// Filters applied before the query engine sees the array.
@@ -172,8 +183,13 @@ fn narrowed_doc(items: Vec<TomlValue>) -> TomlValue {
     TomlValue::Table(table)
 }
 
+#[cfg(test)]
 fn build_show(doc: &TomlValue, id: &str) -> Result<JsonValue> {
-    let resolved = evidence::resolve_id(doc, id)?;
+    build_show_resolved(doc, &evidence::resolve_id(doc, id)?)
+}
+
+fn build_show_resolved(doc: &TomlValue, resolved: &str) -> Result<JsonValue> {
+    let resolved = resolved.to_string();
     let Some(row) = stored_rows(doc).find(|r| row_str(r, FIELD_ID) == Some(resolved.as_str()))
     else {
         return Err(tagged_err(

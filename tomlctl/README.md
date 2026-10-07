@@ -56,7 +56,7 @@ tomlctl backlog check  --summary <s> [--area PATH] [--kind K] [--tag T]...  # is
 tomlctl backlog add    --summary <s> [--kind K] [--area PATH] [--evidence path:line]... [--context <how-to-work-around>]
 tomlctl backlog add-many --ndjson <src> [--auto-base-sha] [--on-duplicate bump|skip|fail]   # one `add --json` payload per line; one lock, one write, all-or-nothing
 tomlctl backlog list   [--open|--live] [--kind K] [--tag T]... [--area-prefix PATH] [--has-evidence] [--count]   # --live is open or promoted; plus the full --where-* query surface
-tomlctl backlog show   <id>                            # one item + its one-hop relations + its evidence listing
+tomlctl backlog show   <id>[,<id>...]                  # one item + its one-hop relations + its evidence listing; several ids print an array
 tomlctl backlog relate B7 --to B3 --as relates-to|duplicates|supersedes   # duplicates dismisses B7, supersedes dismisses B3
 tomlctl backlog triage --promote --to <flow-slug> B7   # --to must name a flow or plan (see --external / --allow-closed); or --dismiss --reason / --resolve --resolution / --reopen --rationale
 tomlctl backlog triage --dismiss --reason <r> --expect-status open B7 B9   # move only ids still at that status; the rest land in skipped_stale
@@ -231,14 +231,14 @@ tier C is file-scoped; use --tier A or --tier B with --across
 
 | State                     | Default mode                              | `--strict-read` mode         |
 |---------------------------|-------------------------------------------|------------------------------|
-| Missing                   | Empty-default (e.g. `items next-id --prefix R` → `"R1"`) | Error `kind=not_found`       |
+| Missing                   | Empty-default (e.g. `items next-id --prefix R` → `R1`) | Error `kind=not_found`       |
 | Zero-byte                 | Treated as a minimal valid doc            | Same (no error)              |
 | Exists but malformed TOML | Error `kind=parse`                        | Same                         |
 
 Three read surfaces have a "missing file → silent default" branch, and
 `--strict-read` turns each into `kind=not_found`:
 
-- `items next-id --prefix <P>` returns `"<P>1"`, a bootstrapping fast path for
+- `items next-id --prefix <P>` returns `<P>1`, a bootstrapping fast path for
   flows that mint the first id before the ledger file exists.
 - The `backlog` read verbs (`check`, `list`, `show`, `cluster`, `evidence dir`,
   `evidence audit`) read a missing `.claude/backlog.toml` as an empty store,
@@ -280,7 +280,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.13.0",
+  "version": "0.14.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -302,7 +302,8 @@ downstream flow-command templates can feature-gate at boot without parsing
                "tasks_render", "tasks_snapshot", "agents_record",
                "agents_list", "inputs", "items_apply_expect", "sweep",
                "items_sweep", "items_clusters", "orphans_instances",
-               "output_options"],
+               "output_options", "next_id_bare", "id_prefix",
+               "auto_last_updated", "multi_id"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
@@ -387,7 +388,7 @@ Feature meanings:
 | `backlog_compact` | `backlog compact --older-than <DURATION>` — age resolved and dismissed items into `[[compacted]]`; `open` and `promoted` items are never touched |
 | `backlog_evidence` | `backlog evidence dir` / `audit` — per-item evidence directories under `.claude/backlog-evidence/` |
 | `backlog_list` | `backlog list` — query the store, with `--open` / `--live` (open or promoted) / `--area-prefix` / `--has-evidence` on top of the shared filter and projection surface |
-| `backlog_show` | `backlog show <ID>` — one item with its one-hop relation neighbourhood and evidence listing |
+| `backlog_show` | `backlog show <ID>` — one item with its one-hop relation neighbourhood and evidence listing; `backlog show <ID>,<ID>...` prints an array of those objects, and an unknown id fails the whole call |
 | `backlog_relate` | `backlog relate <A> --to <ID> --as <KIND>` — write a typed edge between two items |
 | `backlog_triage` | `backlog triage <ID>... --promote` / `--dismiss` / `--resolve` / `--reopen` — transition items out of (or back into) `open`; `--promote --to` must name an existing flow or plan and stores a plan some flow binds as that flow's slug, `--external` stores `external:<REF>` unresolved, and `--allow-closed` accepts a flow at `review` or `complete`. Resolving or dismissing a promoted item keeps its `promoted` / `promoted_to` claim |
 | `backlog_triage_expect` | `backlog triage --expect-status <STATUS>` — move only the ids still at that status; the envelope lists the moved ids under `applied` and each other id under `skipped_stale` with its expected and found status |
@@ -395,9 +396,9 @@ Feature meanings:
 | `tasks_import_plan` | `tasks import-plan --slug <SLUG>` — upsert a plan's `## Tasks`, `## Execution Policy` and `## Dependency Graph` into the store, keyed on each row's `ref`; `--reconcile-record` adopts the execution record's completions |
 | `tasks_add` | `tasks add --title <TEXT> --effort <S\|M\|L>` — append one row, refusing a dangling dependency target or a cycle before writing |
 | `tasks_add_many` | `tasks add-many --ndjson <SRC>` — append a batch of rows all-or-nothing |
-| `tasks_update` | `tasks update <N> --status <STATUS>` — patch one row's mutable fields; `ref` moves only under an explicit `--ref` |
+| `tasks_update` | `tasks update <N>[,<N>...] --status <STATUS>` — patch the mutable fields of one row, or of several in one locked write that prints `{"ok":true,"results":[{"id":N,"changed":[...]},...]}`; an unknown id writes nothing; `ref` moves only under an explicit `--ref`, which takes a single id |
 | `tasks_remove` | `tasks remove <N>` — retire one row, the only verb that deletes; a settled row, or one other rows depend on, needs `--force`, which splices its dependencies into every dependent |
-| `tasks_show` | `tasks show <N> --with body,files,deps` — one row, the fetch-by-id form an orchestrator hands a dispatched agent in place of pasted prose |
+| `tasks_show` | `tasks show <N>[,<N>...] --with body,files,deps` — one row, or an array of rows for several ids; the single-id call is the fetch-by-id form an orchestrator hands a dispatched agent in place of pasted prose |
 | `tasks_list` | `tasks list` — query rows with the full `items list` predicate, projection and aggregation surface |
 | `tasks_edges` | `tasks edges --kind needs\|coupling\|overlap` — the edge list, or Graphviz DOT under `--dot` |
 | `tasks_ready` | `tasks ready --in-flight <N1,N2,...>` — the dispatchable frontier, which rows a file claim holds, and what unblocks once the round lands |
@@ -415,3 +416,7 @@ Feature meanings:
 | `items_clusters` | `items clusters <file> --ids <R1,R7,...>` — file-disjoint clusters over `file` plus `instances`, layered by `depends_on` into batches, each cluster carrying `lite_file_scope`; out-of-selection dependencies land in `dropped_deps` and a cycle is refused |
 | `orphans_instances` | `items orphans` reports an `instance-missing` class for every `instances` anchor that does not resolve, with `reason` one of `missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `unparseable` |
 | `output_options` | the global output flags `--select`, `--limit`, `--lines`, `--get`, `--template` and `-q`/`--quiet`, accepted before or after the subcommand on every command and listed once under the root `global_flags` key — a command's accepted flags are its `.commands` flags plus `global_flags` |
+| `next_id_bare` | `items next-id` prints the bare id (`R23`), with no JSON quotes |
+| `id_prefix` | `items add --id-prefix <P>` / `items add-many --id-prefix <P>` — mint each new row's id inside the locked write; the envelope carries `id` (add) or `ids` (add-many), a dedupe skip reports the matched row's `id`, and a payload that already carries an `id` is refused |
+| `auto_last_updated` | CLI writes through `set`, `set-json`, `array-append` and `items add` / `add-many` / `update` / `remove` / `apply` / `sweep --update` / `backfill-dedup-id` refresh an existing root `last_updated` to today (UTC) when they change anything else; `--no-stamp` opts out, and dry-run previews are unstamped |
+| `multi_id` | `tasks update`, `tasks show` and `backlog show` take a comma- or space-separated id list; one id prints exactly the single-id output |

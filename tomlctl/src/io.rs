@@ -711,18 +711,41 @@ const SCHEMA_SEEDED_FLOW_FILES: &[&str] = &[
     "agents.toml",
 ];
 
+/// Directories directly under `.claude/` that hold flow-less ledgers
+/// (`.claude/reviews/<scope>.toml` and siblings). Any `.toml` in one of them
+/// is seeded like a recognised flow file, whatever its basename.
+const SCHEMA_SEEDED_LEDGER_DIRS: &[&str] =
+    &["reviews", "optimise-findings", "plan-review-findings"];
+
+/// Whether a missing `path` is seeded with the `schema_version` /
+/// `last_updated` skeleton: a recognised flow-file basename, or a file inside
+/// one of the `SCHEMA_SEEDED_LEDGER_DIRS` under `.claude/`.
+fn is_schema_seeded(path: &Path) -> bool {
+    let basename = path.file_name().and_then(|n| n.to_str());
+    if basename.is_some_and(|b| SCHEMA_SEEDED_FLOW_FILES.contains(&b)) {
+        return true;
+    }
+    let parent = path.parent();
+    let in_ledger_dir = parent
+        .and_then(Path::file_name)
+        .and_then(|n| n.to_str())
+        .is_some_and(|d| SCHEMA_SEEDED_LEDGER_DIRS.contains(&d));
+    let under_claude = parent
+        .and_then(Path::parent)
+        .and_then(Path::file_name)
+        .is_some_and(|n| n == ".claude");
+    in_ledger_dir && under_claude
+}
+
 /// Compute the schema-conformant seed doc to use when a write target does
-/// not exist yet (the `OnMissing::Create` payload). Matches the file's
-/// BASENAME against the recognised flow files (`SCHEMA_SEEDED_FLOW_FILES`):
-/// each gets a `{schema_version = 1, last_updated = <today>}` table (that key
-/// order); any other basename gets an empty table `{}`.
+/// not exist yet (the `OnMissing::Create` payload). A recognised flow file
+/// (`is_schema_seeded`) gets a `{schema_version = 1, last_updated = <today>}`
+/// table (that key order); anything else gets an empty table `{}`.
 ///
 /// Fallible because the recognised-file seed embeds today's date.
 pub(crate) fn seed_doc_for(path: &Path) -> Result<TomlValue> {
-    let basename = path.file_name().and_then(|n| n.to_str());
-    let recognised = basename.is_some_and(|b| SCHEMA_SEEDED_FLOW_FILES.contains(&b));
     let mut table = toml::map::Map::new();
-    if recognised {
+    if is_schema_seeded(path) {
         // Key order is load-bearing for byte-identity with the (former)
         // literal `schema_version = 1\nlast_updated = <date>\n` skeleton that
         // `flow::init::bootstrap_execution_record` wrote — `toml`'s
@@ -748,6 +771,101 @@ pub(crate) fn on_missing_for(file: &Path, no_create: bool) -> Result<OnMissing> 
     }
 }
 
+const LAST_UPDATED: &str = "last_updated";
+
+/// Refresh the root `last_updated` of `after` to today (UTC) when `before`
+/// carried the key and the mutation changed anything else. A write that
+/// touched only `last_updated` (an explicit `set … last_updated`) keeps the
+/// caller's value; a file without the key never gains one. An existing string
+/// value is restamped as a string, a date as a date.
+fn stamp_if_changed(before: &TomlValue, after: &mut TomlValue) -> Result<()> {
+    let (Some(old), Some(new)) = (before.as_table(), after.as_table()) else {
+        return Ok(());
+    };
+    if !old.contains_key(LAST_UPDATED) || !new.contains_key(LAST_UPDATED) {
+        return Ok(());
+    }
+    let rest = |t: &'_ toml::Table| t.iter().filter(|(k, _)| k.as_str() != LAST_UPDATED).count();
+    let changed = rest(old) != rest(new)
+        || new
+            .iter()
+            .filter(|(k, _)| k.as_str() != LAST_UPDATED)
+            .any(|(k, v)| old.get(k) != Some(v));
+    if !changed {
+        return Ok(());
+    }
+    let today = crate::time::today_toml_date()?;
+    let stamped = match new.get(LAST_UPDATED) {
+        Some(TomlValue::String(_)) => TomlValue::String(today.to_string()),
+        _ => TomlValue::Datetime(today),
+    };
+    if let Some(table) = after.as_table_mut() {
+        table.insert(LAST_UPDATED.to_string(), stamped);
+    }
+    Ok(())
+}
+
+/// Snapshot `doc` for `stamp_if_changed`, or `None` when stamping is off or
+/// the root has no `last_updated` to refresh (so no clone is paid).
+fn stamp_baseline(stamp: bool, doc: &TomlValue) -> Option<TomlValue> {
+    (stamp && doc.get(LAST_UPDATED).is_some()).then(|| doc.clone())
+}
+
+/// CLI-only `last_updated` stamping around a `mutate_doc` closure. The
+/// library facade calls `mutate_doc*` directly and never restamps; only the
+/// CLI write arms wrap their closures with this family. `stamp` is
+/// `!--no-stamp`.
+pub(crate) fn stamped<F>(stamp: bool, f: F) -> impl FnOnce(&mut TomlValue) -> Result<()>
+where
+    F: FnOnce(&mut TomlValue) -> Result<()>,
+{
+    move |doc| {
+        let before = stamp_baseline(stamp, doc);
+        f(doc)?;
+        match before {
+            Some(before) => stamp_if_changed(&before, doc),
+            None => Ok(()),
+        }
+    }
+}
+
+/// `stamped` for a `mutate_doc_conditional` closure: a closure that declines
+/// the write (`Ok(false)`) is never stamped.
+pub(crate) fn stamped_conditional<F>(
+    stamp: bool,
+    f: F,
+) -> impl FnOnce(&mut TomlValue) -> Result<bool>
+where
+    F: FnOnce(&mut TomlValue) -> Result<bool>,
+{
+    move |doc| {
+        let before = stamp_baseline(stamp, doc);
+        let mutated = f(doc)?;
+        if mutated && let Some(before) = before {
+            stamp_if_changed(&before, doc)?;
+        }
+        Ok(mutated)
+    }
+}
+
+/// `stamped` for a `mutate_doc_plan` closure: the plan's `new_doc` is stamped
+/// against the document it was computed from.
+pub(crate) fn stamped_plan<F>(
+    stamp: bool,
+    f: F,
+) -> impl FnOnce(&TomlValue) -> Result<crate::items::MutationPlan>
+where
+    F: FnOnce(&TomlValue) -> Result<crate::items::MutationPlan>,
+{
+    move |doc| {
+        let mut plan = f(doc)?;
+        if stamp {
+            stamp_if_changed(doc, &mut plan.new_doc)?;
+        }
+        Ok(plan)
+    }
+}
+
 /// Read options for a `--dry-run` preview: never writes a sidecar and never
 /// goes strict, and verifies on read only when the caller asked it to.
 pub(crate) fn dry_run_read_opts(verify_on_read: bool) -> IntegrityOpts {
@@ -763,8 +881,7 @@ pub(crate) fn dry_run_read_opts(verify_on_read: bool) -> IntegrityOpts {
 /// unconditionally with the `created` bool its `mutate_doc*` wrapper
 /// returned. Goes through `advise!`, so a caller parsing stderr never sees
 /// it; the write envelope on stdout carries the same fact as `created`. A
-/// recognised flow file
-/// (`SCHEMA_SEEDED_FLOW_FILES`, seeded with `schema_version = 1`) appends a
+/// schema-seeded file (`is_schema_seeded`) appends a
 /// `(schema_version=1)` suffix so a human watching the terminal can tell a
 /// schema-seeded ledger from an arbitrary `.toml` (seeded as an empty table,
 /// which gets the bare message).
@@ -772,11 +889,7 @@ pub(crate) fn warn_if_created(file: &Path, created: bool) {
     if !created {
         return;
     }
-    let recognised = file
-        .file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|b| SCHEMA_SEEDED_FLOW_FILES.contains(&b));
-    if recognised {
+    if is_schema_seeded(file) {
         advise!(
             "tomlctl: created new file {} (schema_version=1)",
             file.display()

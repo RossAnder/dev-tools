@@ -27,23 +27,24 @@ use crate::io::{
     compute_set_json_mutation, compute_set_mutation, dry_run_read_opts, guard_write_path,
     mutate_doc, mutate_doc_conditional, mutate_doc_plan, on_missing_for, read_doc,
     read_doc_borrowed, read_doc_either, read_json_arg, read_json_value_from_arg,
-    read_ndjson_source, recheck_claude_containment, repo_or_cwd_root, strict_read_check,
-    warn_if_created, warn_if_read_outside_claude, with_exclusive_lock,
+    read_ndjson_source, recheck_claude_containment, repo_or_cwd_root, stamped, stamped_conditional,
+    stamped_plan, strict_read_check, warn_if_created, warn_if_read_outside_claude,
+    with_exclusive_lock,
 };
 use crate::items::{
     AddManyOutcome, AddOutcome, StaleOp, StalePolicy, array_append, compute_add_many_mutation,
     compute_add_mutation, compute_apply_mutation_with, compute_array_append_mutation,
     compute_backfill_mutation, compute_remove_mutation, compute_update_mutation, dedup_id_disabled,
-    items_add_many, items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to,
-    items_fingerprint, items_get_from, items_get_from_json, items_infer_and_next_id, items_next_id,
-    items_update_to, parse_apply_ops, parse_ndjson,
+    items_add_many, items_add_many_with_dedupe, items_add_to, items_add_value_minted,
+    items_add_value_with_dedupe_to, items_fingerprint, items_get_from, items_get_from_json,
+    items_infer_and_next_id, items_next_id, items_update_to, parse_apply_ops, parse_ndjson,
 };
 use crate::items_sweep::{items_sweep, outcome_json, update_plan};
 use crate::orphans::items_orphans;
 use crate::output::{
     OutputOpts, Rows, build_dry_run_plan_envelope, emit_dry_run_plan, emit_dry_run_scalar,
     emit_list_raw, print_json, print_json_compact, print_query, print_raw_value, print_report,
-    stdout_stream, streaming_allowed,
+    print_text, stdout_stream, streaming_allowed,
 };
 use crate::query::{self, Query, ShapeDispatch};
 use crate::sweep::{self, SweepOptions};
@@ -252,6 +253,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             ty,
             dry_run,
             integrity,
+            stamp,
         } => {
             refuse_json_extension_for_toml_writers(&file)?;
             if dry_run {
@@ -280,10 +282,16 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             let on_missing = on_missing_for(&file, integrity.no_create)?;
             // Surface the `created` signal — `"created"` + `"path"` in the
             // success envelope, plus the one-line stderr guidance when seeded.
-            let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                let v = parse_scalar(&value, ty)?;
-                set_at_path(doc, &path, v)
-            })?;
+            let created = mutate_doc(
+                &file,
+                integrity.allow_outside,
+                opts,
+                on_missing,
+                stamped(!stamp.no_stamp, |doc| {
+                    let v = parse_scalar(&value, ty)?;
+                    set_at_path(doc, &path, v)
+                }),
+            )?;
             write_envelope(&file, created)?;
         }
         Cmd::SetJson {
@@ -292,6 +300,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             json,
             dry_run,
             integrity,
+            stamp,
         } => {
             refuse_json_extension_for_toml_writers(&file)?;
             // Parse stdin/literal JSON straight into a `JsonValue`, skipping
@@ -319,14 +328,20 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             // Auto-create policy; see `Cmd::Set`.
             let on_missing = on_missing_for(&file, integrity.no_create)?;
             // Surface `created` + `path` (see `Cmd::Set`).
-            let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                let last_key = path
-                    .rsplit_once('.')
-                    .map(|(_, k)| k)
-                    .unwrap_or(path.as_str());
-                let v = maybe_date_coerce(last_key, &parsed)?;
-                set_at_path(doc, &path, v)
-            })?;
+            let created = mutate_doc(
+                &file,
+                integrity.allow_outside,
+                opts,
+                on_missing,
+                stamped(!stamp.no_stamp, |doc| {
+                    let last_key = path
+                        .rsplit_once('.')
+                        .map(|(_, k)| k)
+                        .unwrap_or(path.as_str());
+                    let v = maybe_date_coerce(last_key, &parsed)?;
+                    set_at_path(doc, &path, v)
+                }),
+            )?;
             write_envelope(&file, created)?;
         }
         Cmd::Validate { file, integrity } => {
@@ -344,6 +359,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             ndjson,
             dry_run,
             integrity,
+            stamp,
         } => {
             refuse_json_extension_for_toml_writers(&file)?;
             // clap's `conflicts_with` guarantees at most one is set; enforce
@@ -392,10 +408,16 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             // Auto-create policy.
             let on_missing = on_missing_for(&file, integrity.no_create)?;
             // Surface `created` + `path` alongside the `appended` count.
-            let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                appended = array_append(doc, &array, &rows)?;
-                Ok(())
-            })?;
+            let created = mutate_doc(
+                &file,
+                integrity.allow_outside,
+                opts,
+                on_missing,
+                stamped(!stamp.no_stamp, |doc| {
+                    appended = array_append(doc, &array, &rows)?;
+                    Ok(())
+                }),
+            )?;
             warn_if_created(&file, created);
             print_json_compact(&serde_json::json!({
                 "ok": true,
@@ -563,11 +585,73 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             json,
             array,
             dedupe_by,
+            id_prefix,
             dry_run,
             integrity,
+            stamp,
         } => {
             let opts = write_integrity_opts(&integrity);
+            let stamp = !stamp.no_stamp;
             let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
+            if let Some(prefix) = id_prefix.as_deref() {
+                let patch: JsonValue = read_json_value_from_arg(&json).context("parsing --json")?;
+                if dry_run {
+                    warn_if_read_outside_claude(&file);
+                    let read_opts = dry_run_read_opts(integrity.verify_integrity);
+                    let rows = vec![patch];
+                    let plan = read_doc(&file, read_opts, |doc| {
+                        compute_add_many_mutation(
+                            doc,
+                            &array,
+                            &rows,
+                            None,
+                            &dedupe_fields,
+                            Some(prefix),
+                        )
+                    })?;
+                    emit_dry_run_plan(&plan)?;
+                    return Ok(());
+                }
+                // The id is minted inside the lock closure, so two concurrent
+                // adds can never observe the same high-water mark.
+                let mut outcome: Option<(AddOutcome, String)> = None;
+                let on_missing = on_missing_for(&file, integrity.no_create)?;
+                let created = mutate_doc_conditional(
+                    &file,
+                    integrity.allow_outside,
+                    opts,
+                    on_missing,
+                    stamped_conditional(stamp, |doc| {
+                        let result =
+                            items_add_value_minted(doc, patch, &array, &dedupe_fields, prefix)?;
+                        let mutated = matches!(result.0, AddOutcome::Added);
+                        outcome = Some(result);
+                        Ok(mutated)
+                    }),
+                )?;
+                warn_if_created(&file, created);
+                let path = file.display().to_string();
+                match outcome.expect("closure always sets outcome on success") {
+                    (AddOutcome::Added, id) => print_json_compact(&serde_json::json!({
+                        "ok": true,
+                        "added": 1,
+                        "id": id,
+                        "created": created,
+                        "path": path,
+                    }))?,
+                    (AddOutcome::Skipped { matched_id }, id) => {
+                        print_json_compact(&serde_json::json!({
+                            "ok": true,
+                            "added": 0,
+                            "id": id,
+                            "matched_id": matched_id,
+                            "created": created,
+                            "path": path,
+                        }))?
+                    }
+                }
+                return Ok(());
+            }
             if dry_run {
                 // A caller passing `tomlctl items add --dry-run
                 // /etc/passwd` would otherwise silently parse the file as
@@ -599,7 +683,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 } else {
                     let rows = vec![patch];
                     read_doc(&file, read_opts, |doc| {
-                        compute_add_many_mutation(doc, &array, &rows, None, &dedupe_fields)
+                        compute_add_many_mutation(doc, &array, &rows, None, &dedupe_fields, None)
                     })?
                 };
                 emit_dry_run_plan(&plan)?;
@@ -612,10 +696,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // add verbs.
                 let json = read_json_arg(&json)?;
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
-                let created =
-                    mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                        items_add_to(doc, &array, &json)
-                    })?;
+                let created = mutate_doc(
+                    &file,
+                    integrity.allow_outside,
+                    opts,
+                    on_missing,
+                    stamped(stamp, |doc| items_add_to(doc, &array, &json)),
+                )?;
                 warn_if_created(&file, created);
                 print_json_compact(&serde_json::json!({
                     "ok": true,
@@ -647,13 +734,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     integrity.allow_outside,
                     opts,
                     on_missing,
-                    |doc| {
+                    stamped_conditional(stamp, |doc| {
                         let result =
                             items_add_value_with_dedupe_to(doc, patch, &array, &dedupe_fields)?;
                         let mutated = matches!(result, AddOutcome::Added);
                         outcome = Some(result);
                         Ok(mutated)
-                    },
+                    }),
                 )?;
                 warn_if_created(&file, created);
                 match outcome.expect("closure always sets outcome on success") {
@@ -683,11 +770,15 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             defaults_json,
             array,
             dedupe_by,
+            id_prefix,
             dry_run,
             integrity,
+            stamp,
         } => {
             let opts = write_integrity_opts(&integrity);
+            let stamp = !stamp.no_stamp;
             let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
+            let id_prefix = id_prefix.as_deref();
             // The STDIN_CONSUMED guard inside `read_json_arg` refuses a second
             // `-` when `--defaults-json -` also wants stdin on the same call.
             let ndjson_text = read_ndjson_source(&ndjson)?;
@@ -711,23 +802,35 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // funnel inside the helper; non-empty → the dedupe funnel).
                 let read_opts = dry_run_read_opts(integrity.verify_integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
-                    compute_add_many_mutation(doc, &array, &rows, defaults.as_ref(), &dedupe_fields)
+                    compute_add_many_mutation(
+                        doc,
+                        &array,
+                        &rows,
+                        defaults.as_ref(),
+                        &dedupe_fields,
+                        id_prefix,
+                    )
                 })?;
                 emit_dry_run_plan(&plan)?;
                 return Ok(());
             }
-            if dedupe_fields.is_empty() {
+            if dedupe_fields.is_empty() && id_prefix.is_none() {
                 // No-dedupe path: output shape is `{"ok":true,"added":N}` and
                 // the always-write pipeline runs unconditionally.
                 let mut added: usize = 0;
                 // Auto-create policy.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
                 // Surface `created` + `path` alongside the `added` count.
-                let created =
-                    mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                let created = mutate_doc(
+                    &file,
+                    integrity.allow_outside,
+                    opts,
+                    on_missing,
+                    stamped(stamp, |doc| {
                         added = items_add_many(doc, &array, &rows, defaults.as_ref())?;
                         Ok(())
-                    })?;
+                    }),
+                )?;
                 warn_if_created(&file, created);
                 print_json_compact(&serde_json::json!({
                     "ok": true,
@@ -736,8 +839,10 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     "path": file.display().to_string(),
                 }))?;
             } else {
-                // Dedupe path: run the pre-scan + append loop inside the
-                // lock via `mutate_doc_conditional`. Skip the file write
+                // Dedupe / id-minting path: run the pre-scan, mint and
+                // append loop inside the lock via `mutate_doc_conditional`.
+                // `ids` is reported only under `--id-prefix`, the skip keys
+                // only under `--dedupe-by`. Skip the file write
                 // entirely when the batch added zero rows — the doc is
                 // untouched and the sidecar must not bump for a pure-
                 // skip batch. Any `added > 0` takes the write branch.
@@ -755,39 +860,45 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     integrity.allow_outside,
                     opts,
                     on_missing,
-                    |doc| {
+                    stamped_conditional(stamp, |doc| {
                         let result = items_add_many_with_dedupe(
                             doc,
                             &array,
                             &rows,
                             defaults.as_ref(),
                             &dedupe_fields,
+                            id_prefix,
                         )?;
                         let mutated = result.added > 0;
                         outcome = Some(result);
                         Ok(mutated)
-                    },
+                    }),
                 )?;
                 warn_if_created(&file, created);
                 let outcome = outcome.expect("closure always sets outcome on success");
-                let skipped_rows_json: Vec<JsonValue> = outcome
-                    .skipped_rows
-                    .iter()
-                    .map(|s| {
-                        serde_json::json!({
-                            "row": s.row,
-                            "matched_id": s.matched_id,
+                let mut envelope = serde_json::Map::new();
+                envelope.insert("ok".into(), JsonValue::Bool(true));
+                envelope.insert("added".into(), outcome.added.into());
+                if id_prefix.is_some() {
+                    envelope.insert("ids".into(), outcome.ids.into());
+                }
+                if !dedupe_fields.is_empty() {
+                    let skipped_rows_json: Vec<JsonValue> = outcome
+                        .skipped_rows
+                        .iter()
+                        .map(|s| {
+                            serde_json::json!({
+                                "row": s.row,
+                                "matched_id": s.matched_id,
+                            })
                         })
-                    })
-                    .collect();
-                print_json_compact(&serde_json::json!({
-                    "ok": true,
-                    "added": outcome.added,
-                    "skipped": outcome.skipped_rows.len(),
-                    "skipped_rows": skipped_rows_json,
-                    "created": created,
-                    "path": file.display().to_string(),
-                }))?;
+                        .collect();
+                    envelope.insert("skipped".into(), outcome.skipped_rows.len().into());
+                    envelope.insert("skipped_rows".into(), skipped_rows_json.into());
+                }
+                envelope.insert("created".into(), created.into());
+                envelope.insert("path".into(), file.display().to_string().into());
+                print_json_compact(&JsonValue::Object(envelope))?;
             }
         }
         ItemsOp::Update {
@@ -798,6 +909,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             array,
             dry_run,
             integrity,
+            stamp,
         } => {
             // Enforce "at least one of --json / --unset" here rather than as a
             // required ArgGroup, matching `array-append`'s --json / --ndjson
@@ -851,9 +963,15 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // surfaces `created=false` or errors out first).
             let on_missing = on_missing_for(&file, integrity.no_create)?;
             // Surface `created` + `path`.
-            let created = mutate_doc(&file, integrity.allow_outside, opts, on_missing, |doc| {
-                items_update_to(doc, &array, &id, &json, &unset)
-            })?;
+            let created = mutate_doc(
+                &file,
+                integrity.allow_outside,
+                opts,
+                on_missing,
+                stamped(!stamp.no_stamp, |doc| {
+                    items_update_to(doc, &array, &id, &json, &unset)
+                }),
+            )?;
             write_envelope(&file, created)?;
         }
         ItemsOp::Remove {
@@ -862,6 +980,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             array,
             dry_run,
             integrity,
+            stamp,
         } => {
             let opts = write_integrity_opts(&integrity);
             if dry_run {
@@ -896,10 +1015,15 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // `false` or the call errors out first.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
                 // Surface `created` + `path`.
-                let created =
-                    mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                let created = mutate_doc_plan(
+                    &file,
+                    integrity.allow_outside,
+                    opts,
+                    on_missing,
+                    stamped_plan(!stamp.no_stamp, |doc| {
                         compute_remove_mutation(doc, &array, &id)
-                    })?;
+                    }),
+                )?;
                 write_envelope(&file, created)?;
             }
         }
@@ -911,6 +1035,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             on_stale,
             dry_run,
             integrity,
+            stamp,
         } => {
             let opts = write_integrity_opts(&integrity);
             let policy = match on_stale {
@@ -974,8 +1099,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // seed-then-append into the new file — `created=true` there.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
                 let mut skipped_stale = Vec::new();
-                let created =
-                    mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                let created = mutate_doc_plan(
+                    &file,
+                    integrity.allow_outside,
+                    opts,
+                    on_missing,
+                    stamped_plan(!stamp.no_stamp, |doc| {
                         let guarded = compute_apply_mutation_with(
                             doc,
                             &array,
@@ -985,7 +1114,8 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                         )?;
                         skipped_stale = guarded.skipped_stale;
                         Ok(guarded.plan)
-                    })?;
+                    }),
+                )?;
                 warn_if_created(&file, created);
                 print_json_compact(&serde_json::json!({
                     "ok": true,
@@ -1007,7 +1137,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             //
             // `--strict-read` fires BEFORE the missing-file fast path below,
             // so a caller who opted out of the bootstrap default on this
-            // subcommand gets `kind=not_found` instead of the `"<prefix>1"`
+            // subcommand gets `kind=not_found` instead of the `<prefix>1`
             // fallback. `strict_read_check` returns `Ok(())` when the flag
             // is absent OR the file exists, so the default (non-strict)
             // invocation flows straight into that branch.
@@ -1020,7 +1150,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // no corpus to work from, which is indistinguishable from the
             // "empty ledger" failure case — surface the same error so the
             // caller's remediation is the same either way.
-            if !file.exists() {
+            let id = if !file.exists() {
                 if infer_from_file {
                     bail!(
                         "--infer-from-file requires a non-empty ledger or explicit --prefix (the file does not exist yet; pass --prefix R/O/A/E directly to bootstrap)"
@@ -1035,11 +1165,10 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // `--error-format json`, making the kind depend on whether
                 // the ledger existed.
                 let empty_doc = toml::Value::Table(toml::Table::new());
-                let id = items_next_id(&empty_doc, prefix)?;
-                print_json_compact(&serde_json::Value::from(id))?;
+                items_next_id(&empty_doc, prefix)?
             } else {
                 let opts = read_integrity_opts(&integrity);
-                let id = read_doc(&file, opts, |doc| {
+                read_doc(&file, opts, |doc| {
                     if infer_from_file {
                         items_infer_and_next_id(doc)
                     } else {
@@ -1047,9 +1176,11 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                             prefix.as_deref().expect("clap required_unless_present guarantees prefix is Some when infer_from_file is false");
                         items_next_id(doc, prefix)
                     }
-                })?;
-                print_json_compact(&serde_json::Value::from(id))?;
-            }
+                })?
+            };
+            // Bare text, not a JSON string, so a shell caller can use the id
+            // without stripping quotes.
+            print_text(&format!("{id}\n"))?;
         }
         ItemsOp::FindDuplicates {
             file,
@@ -1147,6 +1278,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             max_file_bytes,
             max_hits,
             integrity,
+            stamp,
         } => {
             if crate::output::opts().lines && update {
                 bail!(
@@ -1191,8 +1323,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // The sweep walks every tracked file, so it runs once, in-lock;
             // an unchanged ledger skips the write and the sidecar bump.
             let mut updated: Vec<String> = Vec::new();
-            let created =
-                mutate_doc_conditional(&file, integrity.allow_outside, opts, on_missing, |doc| {
+            let created = mutate_doc_conditional(
+                &file,
+                integrity.allow_outside,
+                opts,
+                on_missing,
+                stamped_conditional(!stamp.no_stamp, |doc| {
                     let results = items_sweep(doc, &file, &root, &ids, &sweep_opts)?;
                     let plan = update_plan(doc, &results)?;
                     if plan.updated.is_empty() {
@@ -1201,7 +1337,8 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     updated = plan.updated;
                     *doc = plan.new_doc;
                     Ok(true)
-                })?;
+                }),
+            )?;
             warn_if_created(&file, created);
             print_json_compact(&serde_json::json!({
                 "ok": true,
@@ -1226,6 +1363,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             array,
             dry_run,
             integrity,
+            stamp,
         } => {
             // Kill-switch short-circuit. Checked at the dispatch
             // boundary (rather than inside `compute_backfill_mutation`) so
@@ -1307,12 +1445,17 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // (the pre-read short-circuits a missing ledger), so
                 // `warn_if_created` never fires — but threading it keeps the
                 // envelope shape uniform across every write arm.
-                let created =
-                    mutate_doc_plan(&file, integrity.allow_outside, opts, on_missing, |doc| {
+                let created = mutate_doc_plan(
+                    &file,
+                    integrity.allow_outside,
+                    opts,
+                    on_missing,
+                    stamped_plan(!stamp.no_stamp, |doc| {
                         let plan = compute_backfill_mutation(doc, &array)?;
                         written = plan.updated.len();
                         Ok(plan)
-                    })?;
+                    }),
+                )?;
                 warn_if_created(&file, created);
                 print_json_compact(&serde_json::json!({
                     "ok": true,

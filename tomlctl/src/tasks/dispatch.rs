@@ -136,7 +136,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         }
 
         TasksOp::Update {
-            id,
+            ids,
             target,
             status,
             agent,
@@ -159,11 +159,21 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                 relock,
                 set,
             };
-            let changed = update::update(&path, &integrity, id, fields)?;
+            let outcomes = update::update_many(&path, &integrity, &ids, fields)?;
+            if let [(id, changed)] = outcomes.as_slice() {
+                return print_json_compact(&json!({
+                    "ok": true,
+                    "id": id,
+                    "changed": changed,
+                }));
+            }
+            let results: Vec<_> = outcomes
+                .into_iter()
+                .map(|(id, changed)| json!({"id": id, "changed": changed}))
+                .collect();
             print_json_compact(&json!({
                 "ok": true,
-                "id": id,
-                "changed": changed,
+                "results": results,
             }))
         }
 
@@ -185,11 +195,11 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         }
 
         TasksOp::Show {
-            id,
+            ids,
             target,
             with,
             integrity,
-        } => show::dispatch(id, target, with, integrity),
+        } => show::dispatch(&ids, target, with, integrity),
 
         TasksOp::List {
             target,

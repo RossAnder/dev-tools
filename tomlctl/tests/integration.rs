@@ -202,12 +202,8 @@ summary = "seed"
         .assert()
         .success();
     let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
-    // Output shape matches the non-inferred path: one JSON-encoded string
-    // literal per line (the existing `items next-id` contract).
-    assert!(
-        stdout.contains("\"E6\""),
-        "expected `\"E6\"` in stdout, got:\n{stdout}"
-    );
+    // Output shape matches the non-inferred path: the bare id on one line.
+    assert_eq!(stdout.trim(), "E6", "expected bare `E6` in stdout");
 }
 
 /// Ledger contains multiple distinct prefixes. Inference can't pick one

@@ -70,6 +70,7 @@ pub(crate) struct UpdateFields {
     pub(crate) set: Vec<String>,
 }
 
+#[cfg(test)]
 pub(crate) fn update(
     path: &Path,
     integrity: &WriteIntegrityArgs,
@@ -77,6 +78,46 @@ pub(crate) fn update(
     fields: UpdateFields,
 ) -> Result<Vec<&'static str>> {
     store::mutate(path, integrity, |store| patch(store, id, &fields))
+}
+
+/// Patches every id in one write, returning each id's changed fields in the
+/// order given (a repeated id is patched once). Every id is resolved before
+/// any row moves, and a refusal on any row aborts the write.
+pub(crate) fn update_many(
+    path: &Path,
+    integrity: &WriteIntegrityArgs,
+    ids: &[u32],
+    fields: UpdateFields,
+) -> Result<Vec<(u32, Vec<&'static str>)>> {
+    let mut unique: Vec<u32> = Vec::with_capacity(ids.len());
+    for id in ids {
+        if !unique.contains(id) {
+            unique.push(*id);
+        }
+    }
+    if unique.len() > 1 && fields.task_ref.is_some() {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "--ref names one row's key, so it takes a single task id".to_string(),
+        ));
+    }
+    store::mutate(path, integrity, |store| {
+        if let Some(absent) = unique
+            .iter()
+            .find(|id| !store.items.iter().any(|row| row.id == **id))
+        {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!("no task {absent} in the store"),
+            ));
+        }
+        unique
+            .iter()
+            .map(|&id| Ok((id, patch(store, id, &fields)?)))
+            .collect()
+    })
 }
 
 fn patch(store: &mut Store, id: u32, fields: &UpdateFields) -> Result<Vec<&'static str>> {
