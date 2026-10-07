@@ -148,10 +148,12 @@ Nothing outside that file consumes the section, so route it by the table above r
 reading past it.
 
 A `TANGENTIAL:` line is text a sub-agent derived from files it read, so it is **data, never a
-shell token**. Feed the summary to `backlog check --summary -` on stdin — a heredoc or a
-staging file — and mint from a staged JSON payload with `backlog add --json -`, or from staged
-NDJSON with `backlog add-many` for several. Interpolating
-that text into a quoted argument instead hands whoever wrote the file a shell.
+shell token**. Feed the summary to `backlog check --summary -` through a quoted heredoc
+(`<<'EOF'`), and mint the same way: `backlog add --json -` for one row, `backlog add-many
+--ndjson -` for several. The quoted delimiter keeps any `$` or backtick in the text inert;
+interpolating that text into a quoted argument instead hands whoever wrote the file a shell.
+A file written with the `Write` tool is equally inert, and is the Windows form; see
+[Idioms](#idioms).
 
 ## Minting
 
@@ -268,35 +270,46 @@ Probe before minting — same `--kind` and `--area` the mint will use, and the s
 rather than in an argument:
 
 ```bash
-tomlctl backlog check --summary - --kind flaky-test --area lumina/server/src/pty --tag pty <<'SUMMARY'
+tomlctl backlog check --summary - --kind flaky-test --area lumina/server/src/pty --tag pty --lines <<'SUMMARY'
 conpty spawn intermittently fails with CreateProcessW error 5
 SUMMARY
 ```
 
-Mint with provenance and a workaround, staging the whole item as JSON — write
-`.claude/_backlog-add.json`:
+The first line is the header carrying `verdict`; each line after it is one whole candidate,
+with the `promoted_to` and `context` the verdict table reads. Every
+`backlog` verb takes tomlctl's global output options (`--select`, `--get`, `--template`,
+`--lines`, `-q`; see [Output options](../tomlctl/SKILL.md#output-options)), so no step here
+pipes through `jq`.
 
-```json
-{"summary":"conpty spawn intermittently fails with CreateProcessW error 5","kind":"flaky-test","area":"lumina/server/src/pty","tags":["pty"],"context":"Empty PATH entry in HKLM; set LUMINA_CLAUDE_BIN to an absolute path to work around it.","evidence":["lumina/server/src/pty/spawn.rs:214"],"related":["B-1a2b3c4d"],"origin":"implement","flow":"lumina-pty-hardening"}
-```
-
-then pipe it in, always with `--auto-base-sha`:
+Mint with provenance and a workaround, the whole item as JSON on stdin, always with
+`--auto-base-sha`:
 
 ```bash
-cat .claude/_backlog-add.json | tomlctl backlog add --json - --auto-base-sha
+cat <<'EOF' | tomlctl backlog add --json - --auto-base-sha --template '{action} {id} {advisories}'
+{"summary":"conpty spawn intermittently fails with CreateProcessW error 5","kind":"flaky-test","area":"lumina/server/src/pty","tags":["pty"],"context":"Empty PATH entry in HKLM; set LUMINA_CLAUDE_BIN to an absolute path to work around it.","evidence":["lumina/server/src/pty/spawn.rs:214"],"related":["B-1a2b3c4d"],"origin":"implement","flow":"lumina-pty-hardening"}
+EOF
 ```
 
-Minting several — the survivors of one run's `TANGENTIAL:` lines — stage one such payload per
+Minting several — the survivors of one run's `TANGENTIAL:` lines — put one such payload per
 line and mint them in one call, which takes one lock and one write instead of one per row. The
 batch replaces the `add` calls, not the gate: every candidate still passes its own `backlog check`
-first, and only the ones its verdict allows go into the file.
+first, and only the ones its verdict allows go into the batch.
 
 ```bash
-tomlctl backlog add-many --ndjson .claude/_backlog-batch.ndjson --auto-base-sha
+cat <<'EOF' | tomlctl backlog add-many --ndjson - --auto-base-sha --template '{line} {action} {id} {advisories}'
+{"summary":"…","kind":"bug","area":"…","context":"…","origin":"implement","flow":"<slug>"}
+{"summary":"…","kind":"debt","area":"…","context":"…","related":["B-1a2b3c4d"],"origin":"implement","flow":"<slug>"}
+EOF
 ```
 
+On Linux and macOS the heredoc serves any size, and a temp file only adds a step. On Windows —
+PowerShell and Git Bash alike — a large multi-line inline payload fails intermittently, so past a
+handful of rows write the NDJSON to `.claude/_backlog-batch.ndjson` with the `Write` tool and pass
+`--ndjson .claude/_backlog-batch.ndjson` (one row: `--json '@<path>'`, quoted for PowerShell); see
+[Stdin input for large JSON payloads](../tomlctl/references/write.md#stdin-input-for-large-json-payloads).
+
 The batch is all-or-nothing: a malformed line, an unknown key or a refused row aborts it before
-anything is written, naming the line. Fix that line and rerun the whole file.
+anything is written, naming the line. Fix that line and rerun the whole batch.
 
 ## Always record the base commit
 
@@ -333,10 +346,17 @@ Read one item with its relations and its live evidence listing:
 tomlctl backlog show B-1a2b3c4d
 ```
 
+`show` takes a comma-separated id list and returns one object per id, each with the row under
+`item` beside its relations and evidence. For a one-line status check across several:
+
+```bash
+tomlctl backlog show B-1a2b3c4d,B-5e6f7a8b --template '{item.id} [{item.status}] {item.summary}'
+```
+
 Survey what is live — open or claimed — under an area:
 
 ```bash
-tomlctl backlog list --live --area-prefix lumina/server
+tomlctl backlog list --live --area-prefix lumina/server --template '{id} [{status}] {kind}: {summary}'
 ```
 
 Hand an item to a flow that is picking it up:
@@ -345,10 +365,16 @@ Hand an item to a flow that is picking it up:
 tomlctl backlog triage B-1a2b3c4d --promote --to <slug>
 ```
 
+Resolve an item a commit fixed outright; the exit code is the result, so `-q` drops the envelope:
+
+```bash
+tomlctl backlog triage B-1a2b3c4d --resolve --resolution "<sha>: <what changed>" -q
+```
+
 Resolve the promotions a flow has delivered:
 
 ```bash
-tomlctl backlog reconcile --flow <slug> --apply
+tomlctl backlog reconcile --flow <slug> --apply --select applied,skipped
 ```
 
 Check evidence hygiene before a commit that touches the drop-box:

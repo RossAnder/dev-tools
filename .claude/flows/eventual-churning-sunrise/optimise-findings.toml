@@ -1,0 +1,88 @@
+schema_version = 1
+last_updated = 2026-10-07
+
+[[items]]
+id = "O1"
+first_flagged = 2026-10-07
+rounds = 1
+status = "applied"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/output.rs"
+line = 371
+symbol = "print_json"
+severity = "suggestion"
+effort = "small"
+category = "memory"
+summary = "print_json / print_json_compact deep-clone the whole report whenever any output flag is set"
+description = "emit takes the report by value, so both emitters clone; on Shape::One emit never needs ownership. Borrowed Shape::One branch, or take JsonValue by value (every caller owns it). On the 270 KB backlog, clone 368us vs pretty serialise 305us: parse --lines is slower than parse."
+evidence = [
+    "tomlctl/src/output.rs:371",
+    "tomlctl/src/output.rs:379",
+    "bench: parse .claude/backlog.toml 4708us; with --lines 5116us (tomlctl 0.14.0, 200 runs)",
+]
+instances = [
+    "tomlctl/src/output.rs:print_json",
+    "tomlctl/src/output.rs:compact_lenient",
+]
+sweep = ["emit(v.clone()"]
+enumeration = "complete"
+dedup_id = "13cbec57f0e230ab"
+resolved = 2026-10-07
+resolution = "uncommitted (2026-10-07): single-object reports go through borrowing output::emit_one, so print_json, compact_lenient and print_json_line no longer deep-clone; row path takes the rows out with mem::take; output bytes unchanged"
+
+[[items]]
+id = "O2"
+first_flagged = 2026-10-07
+rounds = 1
+status = "wontapply"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/query.rs"
+line = 520
+symbol = "build_pipeline"
+severity = "suggestion"
+effort = "small"
+category = "serialization"
+summary = "--get/--template on the query lists materialise every filtered row in full to read one path back"
+description = "When --get/--template is set with no select/exclude/sort/distinct/offset/limit, convert only the top-level segment of each referenced path per row (as the --pluck narrow path does); emit's validation and rendering are unchanged. Do not rewrite as --pluck --raw: rendering differs for arrays/objects."
+evidence = [
+    "tomlctl/src/query.rs:520",
+    "bench: backlog list --get id 7018us vs --pluck id --raw --lines 5418us (247 rows)",
+]
+instances = [
+    "tomlctl/src/query.rs:build_pipeline",
+    "tomlctl/src/query.rs:run",
+    "tomlctl/src/output.rs:streaming_allowed",
+]
+enumeration = "complete"
+dedup_id = "22378d46bcbbfab3"
+wontapply_rationale = "Carriers filter before --get, where the measured gain is nil; a second row-building path would have to stay in step with emit's validation, a correctness risk for no practical gain"
+
+[[items]]
+id = "O3"
+first_flagged = 2026-10-07
+rounds = 1
+status = "wontapply"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/io.rs"
+line = 811
+symbol = "stamp_baseline"
+severity = "suggestion"
+effort = "small"
+category = "memory"
+summary = "Every stamped append deep-clones the whole document inside the exclusive lock though an append always changes it"
+description = "Add a stamped_appending variant that skips the baseline and stamps whenever rows were appended (still only when root has last_updated); keep the clone for set/set-json/items update/sweep --update. Gain ~5-8% of in-lock CPU on the harness's most frequent write."
+evidence = [
+    "tomlctl/src/io.rs:811",
+    "microbench toml 1.1.6: backlog.toml clone 387us vs serialise 2.12ms",
+]
+instances = [
+    "tomlctl/src/cli/dispatch.rs:416",
+    "tomlctl/src/cli/dispatch.rs:624",
+    "tomlctl/src/cli/dispatch.rs:704",
+    "tomlctl/src/cli/dispatch.rs:737",
+    "tomlctl/src/cli/dispatch.rs:829",
+    "tomlctl/src/cli/dispatch.rs:863",
+]
+enumeration = "complete"
+dedup_id = "391aa58cc4779484"
+wontapply_rationale = "~0.1-0.4 ms per append; a third stamping variant adds subtle-bug surface in the stamping logic, and no lock contention has been observed"

@@ -333,7 +333,8 @@ pub(crate) fn items_add_value_to(
         bail!(
             "ledger row must carry a non-empty string `id` (e.g. {{\"id\":\"R1\", ...}}); \
              mint one with `tomlctl items add --id-prefix <P>` or `tomlctl items add-many --id-prefix <P>`, \
-             which assign the id inside the locked write"
+             or for an `items apply` batch number the add ops upward from one \
+             `tomlctl items next-id <file> --prefix <P>` read"
         );
     }
     // Auto-populate `dedup_id` from the payload BEFORE conversion to
@@ -1215,42 +1216,6 @@ fn refuse_supplied_id(obj: &serde_json::Map<String, JsonValue>) -> Result<()> {
         ));
     }
     Ok(())
-}
-
-/// Single-row `items add --id-prefix`: dedupe first (when `dedupe_fields` is
-/// non-empty), then mint and append. Returns the outcome with the id to
-/// report — the minted id on `Added`, the matched row's id on `Skipped`.
-pub(crate) fn items_add_value_minted(
-    doc: &mut TomlValue,
-    patch: JsonValue,
-    array_name: &str,
-    dedupe_fields: &[String],
-    prefix: &str,
-) -> Result<(AddOutcome, String)> {
-    validate_id_prefix(prefix)?;
-    let got_type = crate::convert::json_type_name(&patch);
-    let JsonValue::Object(obj) = patch else {
-        bail!(
-            "--json must be a JSON object (e.g. {{\"status\":\"open\"}}); got JSON {}",
-            got_type
-        );
-    };
-    refuse_supplied_id(&obj)?;
-    let payload = JsonValue::Object(obj);
-    if !dedupe_fields.is_empty()
-        && let Some(matched_id) = find_dedupe_match(doc, array_name, &payload, dedupe_fields)
-    {
-        let outcome = AddOutcome::Skipped {
-            matched_id: matched_id.clone(),
-        };
-        return Ok((outcome, matched_id));
-    }
-    let JsonValue::Object(obj) = payload else {
-        unreachable!("payload was built from an object above")
-    };
-    let (stamped, id) = mint_row_id(doc, array_name, prefix, obj)?;
-    items_add_value_to(doc, JsonValue::Object(stamped), array_name)?;
-    Ok((AddOutcome::Added, id))
 }
 
 /// Sibling of `items_next_id` that scans the ledger's existing ids,

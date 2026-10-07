@@ -43,7 +43,7 @@ use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::{ActiveDoc, ActiveEntry, FlowProjection};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
 use crate::io::{read_dir_sorted, read_toml, recorded_under_root, relativise, repo_or_cwd_root};
-use crate::output::print_json_compact;
+use crate::output::print_json_line;
 use crate::time::{parse_iso_to_date, today_utc_date};
 
 // ---------------------------------------------------------------------------
@@ -110,7 +110,7 @@ pub(crate) fn dispatch(
         opts,
         integrity.strict_read,
     )?;
-    print_json_compact(&envelope)
+    print_json_line(&envelope)
 }
 
 // ---------------------------------------------------------------------------

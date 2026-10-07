@@ -48,7 +48,7 @@ use crate::io::{
     guard_write_path, read_toml, read_toml_with_source, recheck_claude_containment,
     repo_or_cwd_root, with_exclusive_lock, write_doc_unless_unchanged,
 };
-use crate::output::print_json_compact;
+use crate::output::{print_json_compact, print_json_line};
 use crate::time::now_rfc3339;
 
 /// Resolve `<repo-or-cwd-root>/.claude/active-flow.toml`. The root honours
@@ -363,7 +363,7 @@ fn list(integrity: ReadIntegrityArgs) -> Result<()> {
         // reading a pipe learns the legacy pointer is being ignored.
         "legacy_pointer": legacy_pointer,
     });
-    print_json_compact(&envelope)
+    print_json_line(&envelope)
 }
 
 fn add(

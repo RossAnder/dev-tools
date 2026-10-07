@@ -1,0 +1,890 @@
+schema_version = 1
+last_updated = 2026-10-07
+
+[[vet_events]]
+timestamp = "2026-10-07T18:00:00Z"
+command = "review"
+agent_index = 1
+lens = "quality"
+tier = "deep"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "F3 items.rs:1223, F5 tasks/list.rs:29, F6 cli/types.rs:242, F2 cli/types.rs:530 all match the cited code. F1/F2 merged with testability F1/F4."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:00:00Z"
+command = "review"
+agent_index = 2
+lens = "performance"
+tier = "deep"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Performance lens substituted for security at the user's request. output.rs:371/379 v.clone(), query.rs:520 full_item_toml_to_json, io.rs:811 doc.clone() confirmed. Findings persisted to optimise-findings.toml."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:00:00Z"
+command = "review"
+agent_index = 3
+lens = "architecture"
+tier = "deep"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 1
+rationale = "L2 (read verbs inherit write leniency) downgraded warning to suggestion: plan Approach 'Output pipeline' grants the reads that share the emitter the same leniency. L1 merged into the backlog-check --limit item."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:00:00Z"
+command = "review"
+agent_index = 4
+lens = "completeness"
+tier = "lite"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "vet-implement-lite:28 and rollback-protocol:30/34 lack --no-stamp; correlate.rs:194 single-id regex; items.rs:854 apply arm funnels through items_add_value_to; show.rs no dedup. F3/F7 merged."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:00:00Z"
+command = "review"
+agent_index = 5
+lens = "testability"
+tier = "lite"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "check.rs:443 cap before print_report, output.rs:277 filter_map, output_gate.rs:44 starts_with mod tests, dispatch.rs:142 empty-segment filter vs query.rs:1897 all confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:00:00Z"
+command = "review"
+agent_index = 6
+lens = "package-quality"
+tier = "lite"
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "review.md:76 checkpoint wording, write.md:35 recipe lacks date/agent/summary, write.md:45 hard-coded id, apply-pipeline:398 anchor vs '# Final summary reference' heading, all confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:40:00Z"
+command = "review-apply"
+agent_index = 1
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R1 build_report diff read in full; explicit limit deferred to emit, default cap adds limited only when cut."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:40:00Z"
+command = "review-apply"
+agent_index = 3
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R4 --no-stamp on three writes, rationale sentences read."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:40:00Z"
+command = "review-apply"
+agent_index = 4
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R5 regex and split read; test covers 3,7."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:40:00Z"
+command = "review-apply"
+agent_index = 6
+lens = "implement-lite"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "R9 payload checked against execution-record schema task-completion row; R10 id removals read."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:40:00Z"
+command = "review-apply"
+agent_index = 7
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R11 four rows read."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:40:00Z"
+command = "review-apply"
+agent_index = 9
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R17 README diff read."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:40:00Z"
+command = "review-apply"
+agent_index = 10
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R23 comment read against print_report."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:40:00Z"
+command = "review-apply"
+agent_index = 11
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R25 concurrent test read; threads each spawn a process."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:40:00Z"
+command = "review-apply"
+agent_index = 12
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R26 io.rs tests read; clock seam is thread-local so parallel tests are safe."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:40:00Z"
+command = "review-apply"
+agent_index = 14
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R28 match and extended test read."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T18:55:00Z"
+command = "review-apply"
+agent_index = 13
+lens = "implement-lite"
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "R27 check() additions read: template line count, limit header, write --get absent tree comparison. Agent ran crate-wide cargo fmt; diff stat shows no file outside this run's set."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "R1"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/backlog/check.rs"
+line = 443
+symbol = "dispatch"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "backlog check cuts candidates to --limit before print_report, so the limited header and stderr notice never appear"
+description = "verdicts.cap(opts().limit.unwrap_or(DEFAULT_LIMIT)) truncates before emit sees the rows, breaking the User Decision 5 / SKILL.md:107 contract that any --limit cut reports limited:{shown,total} (only the three query lists are exempt). Fix: when opts().limit is Some, skip the local cap and let print_report cut and signal; apply DEFAULT_LIMIT locally only when the flag is absent. Decide whether the default cap of 5 also reports limited. Passing the limit in as a parameter restores the unit-test seam the range removed. Reported by quality, architecture, completeness and testability lenses."
+evidence = [
+    "tomlctl/src/backlog/check.rs:443",
+    "tomlctl/src/backlog/check.rs:165",
+    "tomlctl/src/output.rs:249",
+    "tomlctl backlog check --summary ... --limit 2 --lines: header has no limited key, stderr empty (tomlctl 0.14.0)",
+]
+dedup_id = "a1b11be4e2a6ce86"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): backlog check leaves an explicit --limit to the output layer (limited header + notice); the default cap of 5 adds limited only when it cuts; limit passed as a parameter for tests"
+
+[[items]]
+id = "R2"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/cli/dispatch.rs"
+line = 142
+symbol = "output_opts"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "Empty --select/--get paths are accepted, and --select is parsed twice with different empty-segment rules"
+description = "output_opts drops empty segments (--select , gives {} everywhere), to_query_input re-joins the Vec into a String and Query::from_query_input re-splits keeping the empty segment, so items/tasks/backlog list nest the whole row under a '' key. navigate_json treats '' as root, so --get '' prints the whole report with exit 0. Template already refuses an empty placeholder (template.rs:59). Fix: pass QueryInput.select as Option<Vec<String>> (single construction site cli/types.rs:511), drop the re-split, and refuse empty paths for --select/--get with kind=validation."
+evidence = [
+    """tomlctl items list led.toml --select '' -> [{"": {...}}] exit 0""",
+    "tomlctl tasks show 1 --get '' -> whole object exit 0",
+    "tomlctl/src/query.rs:1897",
+    "tomlctl/src/json.rs:95",
+]
+instances = [
+    "tomlctl/src/cli/dispatch.rs:output_opts",
+    "tomlctl/src/cli/types.rs:530",
+    "tomlctl/src/query.rs:1897",
+    "tomlctl/src/json.rs:navigate_json",
+]
+enumeration = "complete"
+dedup_id = "6349f19f5bf1b41f"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): QueryInput.select is Option<Vec<String>> passed through; empty --select lists/segments and empty --get refused with kind=validation"
+
+[[items]]
+id = "R3"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/output.rs"
+line = 534
+symbol = "print_json_compact"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "Lenient-shaping warning is plain text on stderr even under --error-format json"
+description = """write_emitted honours json_errors for the truncation notice, but print_json_compact eprintln!s 'tomlctl: warning: ...' unconditionally, so a harness parsing stderr as JSON breaks on a successful write. Emit the warning as a JSON line (e.g. {"warning":{"kind":"validation","message":...}}) when json_errors is set; do not suppress it."""
+evidence = [
+    "tomlctl --error-format json validate .claude/backlog.toml --get nope -> plain-text warning on stderr, exit 0",
+    "tomlctl/src/output.rs:26",
+]
+dedup_id = "d56372348d85b686"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): lenient-shaping warning is a JSON {warning:{kind,message}} line under --error-format json"
+
+[[items]]
+id = "R4"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "claude/skills/flow-contract-apply-vet-implement-lite/SKILL.md"
+line = 28
+symbol = "vet_events append"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "Apply-flow mid-run ledger writes now stamp last_updated, defeating the checkpoint's --no-stamp deferral"
+description = "0.14 makes array-append and items apply stamp. The Step 4.5 vet_events append runs before the interim checkpoint, and the Step 5.5 rollback items apply plus rollback_events append run after a failed run; none passes --no-stamp, so the Step 1 freshness gate (apply-pipeline SKILL.md:331) sees a fresh ledger without a completed run. Add --no-stamp to all three."
+evidence = [
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md:331",
+    "tomlctl/src/cli/dispatch.rs:416",
+]
+instances = [
+    "claude/skills/flow-contract-apply-vet-implement-lite/SKILL.md:28",
+    "claude/skills/flow-contract-apply-rollback-protocol/SKILL.md:30",
+    "claude/skills/flow-contract-apply-rollback-protocol/SKILL.md:34",
+]
+enumeration = "complete"
+dedup_id = "9b166f55b1e666eb"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): --no-stamp added to the vet_events append and both rollback writes, with rationale"
+
+[[items]]
+id = "R5"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/agents/correlate.rs"
+line = 194
+symbol = "dispatch_in"
+severity = "warning"
+effort = "small"
+category = "completeness"
+summary = "Dispatch correlation only parses single-id 'tasks show N --slug', so the newly documented multi-id form loses task attribution"
+description = "The pattern tasks show ([0-9]+) --slug never matches tasks show 3,7 --slug s, which references/tasks.md:60 now shows; agents.toml and glimpse then record no task set for that dispatch. The ledger pattern in the same function already accepts comma lists. Either extend the regex to ([0-9]+(?:,[0-9]+)*) and split, or document that the dispatch fetch line must stay single-id (flow-contract-task-store and references/agents.md:208)."
+evidence = [
+    "tomlctl/src/agents/correlate.rs:194",
+    "claude/skills/tomlctl/references/tasks.md:60",
+]
+dedup_id = "dc897a29b10fda36"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): dispatch correlation parses comma-separated tasks show id lists; unit test added"
+
+[[items]]
+id = "R6"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "claude/commands/review.md"
+line = 76
+symbol = "Interim checkpoint"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "Interim checkpoint persists new findings via items apply but never says where add-op ids come from, and its example omits <ledger>"
+description = "items apply has no --id-prefix and an add op without an id fails the whole batch; Step 3 says ids are minted by tomlctl. State that checkpoint add ops number upward from one items next-id read (or use add-many --id-prefix for a pure-add checkpoint), and show the ledger argument in the invocation."
+evidence = [
+    """echo '[{"op":"add","json":{"summary":"noid"}}]' | tomlctl items apply L --ops - -> op[0] failed: ledger row must carry a non-empty string id""",
+    "tomlctl items apply --ops - --on-stale skip --no-stamp -> required argument <FILE> not provided",
+]
+instances = [
+    "claude/commands/review.md:76",
+    "claude/commands/optimise.md:89",
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md:317",
+    "claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md:46",
+]
+enumeration = "complete"
+dedup_id = "13a1ccfc43900235"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): checkpoint invocations show <ledger> and state ids come from one items next-id read or add-many --id-prefix; same fix in apply-pipeline and disposition-sweep"
+
+[[items]]
+id = "R7"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "claude/commands/review.md"
+line = 76
+symbol = "Interim checkpoint skip gate"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "Checkpoint skip gate counts open items already in the ledger, not pending transitions, and errors on a first-round missing ledger"
+description = "items list <ledger> --status open --count --raw fails on a missing file (first round) and returns 0 for a ledger with no open items even when new findings are pending, so the checkpoint is skipped exactly when it matters. Gate on the pending op count instead. Predates the range (502283d) but sits in flow scope."
+evidence = ["tomlctl items list <missing>.toml --status open --count --raw -> No such file or directory, rc=1"]
+instances = [
+    "claude/commands/review.md:76",
+    "claude/commands/optimise.md:89",
+]
+enumeration = "complete"
+dedup_id = "ecdfc9d722f96c6f"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): checkpoint skip gate now tests the run's own pending set, no tomlctl call"
+
+[[items]]
+id = "R8"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "claude/commands/review.md"
+line = 82
+symbol = "Step 3 merge vs interim checkpoint"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "A finding written by the interim checkpoint matches itself as an open item at Step 3, so a brand-new finding ends the run with rounds=2"
+description = "Step 3's merge rule reuses the id and increments rounds on an open match; nothing excludes items the same run's checkpoint just wrote. Exclude this run's checkpoint ids from the Step 3 match set (or have Step 3 only touch prior-round items). Same shape in optimise.md."
+evidence = [
+    "claude/commands/review.md:76",
+    "claude/commands/review.md:82",
+]
+instances = [
+    "claude/commands/review.md:82",
+    "claude/commands/optimise.md:89",
+]
+dedup_id = "0492858abe6b48ab"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): Step 3 open-match set excludes ids this run's checkpoint minted (review and optimise)"
+
+[[items]]
+id = "R9"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "claude/skills/tomlctl/references/write.md"
+line = 35
+symbol = "Common recipes #1"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "Task-completion recipe writes an execution-record entry missing date/agent/summary/status/files and carrying timestamp"
+description = "execution-record schema requires id, type, date (not timestamp), agent, summary, plus status and files for task-completion. tomlctl accepts the recipe silently and render-progress-log does not flag it, so copying it corrupts the record. Rebuild the payload from the schema's example."
+evidence = [
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:53",
+    'recipe against a scratch record -> {"ok":true,"added":1,"id":"E94"}',
+]
+dedup_id = "66840a9be8b3838c"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): task-completion recipe rebuilt to the execution-record schema"
+
+[[items]]
+id = "R10"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "claude/skills/tomlctl/references/write.md"
+line = 45
+symbol = "Common recipes #2"
+severity = "suggestion"
+effort = "small"
+category = "package-quality"
+summary = "items add/add-many examples still hand-code ids (R24, R1, O7) against the new never-hand-compute rule"
+description = "--dedupe-by composes with --id-prefix, so the recipes can switch. Line 154 may keep its id if it says it demonstrates key order."
+instances = [
+    "claude/skills/tomlctl/references/write.md:45",
+    "claude/skills/tomlctl/references/write.md:85",
+    "claude/skills/tomlctl/references/write.md:154",
+    "claude/skills/tomlctl/references/write.md:186",
+    "claude/skills/tomlctl/references/write.md:192",
+    "claude/skills/tomlctl/references/write.md:369",
+]
+enumeration = "complete"
+evidence = ["claude/skills/tomlctl/references/write.md:45"]
+dedup_id = "192534206e4dbe29"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): add/add-many examples use --id-prefix; key-order example annotated"
+
+[[items]]
+id = "R11"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 165
+symbol = "Feature-gate with tomlctl capabilities"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Capabilities feature table omits the 0.14 features next_id_bare, id_prefix, auto_last_updated, multi_id"
+evidence = ["tomlctl capabilities --get features lists all four"]
+dedup_id = "c0726878a8912cdc"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): capabilities table lists next_id_bare, id_prefix, auto_last_updated, multi_id"
+
+[[items]]
+id = "R12"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "claude/skills/flow-contract-apply-pipeline/SKILL.md"
+line = 398
+symbol = "Final summary"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "Broken anchor references/final-summary.md#final-summary; the heading is '# Final summary reference'"
+description = "Predates the range (50349c0). Use #final-summary-reference."
+evidence = ["claude/skills/flow-contract-apply-pipeline/references/final-summary.md:1"]
+dedup_id = "ff0ffc1e77615ce8"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): Final summary link anchor corrected to #final-summary-reference"
+
+[[items]]
+id = "R13"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/items.rs"
+line = 333
+symbol = "items_add_value_to"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "Id-less row error points items apply and array-append callers at --id-prefix, which those verbs lack"
+description = "The hint fires from the apply add arm (items.rs:854) too; the documented mixed-batch remedy is items next-id read once and numbered upward. Name both remedies."
+evidence = [
+    "tomlctl/src/items.rs:854",
+    "tomlctl/src/items.rs:333",
+]
+dedup_id = "bbd5e2e1f0cc0c3b"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): id-less row error names --id-prefix for add/add-many and items next-id for apply batches"
+
+[[items]]
+id = "R14"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/output.rs"
+line = 277
+symbol = "emit"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "--get silently drops rows lacking the path while --template prints an empty line, breaking 'one line per row' alignment"
+description = "Help (cli/types.rs:186) promises one line per row; the unit test get_prints_one_line_per_row asserts 1 line for 3 rows. Either emit an empty line like the template, or reword the help and rename the test."
+evidence = [
+    "items list t/l.toml --get summary on 2 rows, one without summary -> 1 line",
+    "tomlctl/src/output.rs:882",
+]
+dedup_id = "1b2c9b7d4b635757"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): --get prints an empty line for a row lacking the path; unit test and output_options oracle updated"
+
+[[items]]
+id = "R15"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/output/template.rs"
+line = 113
+symbol = "value_text"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "--get/--template print multi-line strings raw, so one row spans several lines"
+description = "tasks show 1,2 --with body --get detail printed 24 lines for 2 rows. Escape newlines in row mode or document the exception next to the one-line-per-row promise (SKILL.md:87)."
+evidence = ["tomlctl tasks show 1,2 --slug eventual-churning-sunrise --with body --get detail | wc -l -> 24"]
+dedup_id = "1cd3c39f23490fd4"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): --get/--template long help and SKILL.md note that multi-line strings print verbatim"
+
+[[items]]
+id = "R16"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/tasks/show.rs"
+line = 25
+symbol = "dispatch"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "tasks show and backlog show print a repeated id twice, while tasks update de-duplicates"
+evidence = ['tomlctl tasks show 1,1 --slug eventual-churning-sunrise --get id -> 1\n1']
+instances = [
+    "tomlctl/src/tasks/show.rs:dispatch",
+    "tomlctl/src/backlog/query.rs:dispatch_show",
+]
+enumeration = "complete"
+dedup_id = "63cbf85cc13c7830"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): tasks show and backlog show de-duplicate repeated ids preserving order"
+
+[[items]]
+id = "R17"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/README.md"
+line = 89
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "README Usage is stale: 'All commands print JSON' and no mention of the global output flags, --id-prefix or --no-stamp"
+evidence = [
+    "tomlctl/README.md:20",
+    "tomlctl/README.md:89",
+]
+dedup_id = "d95bf0d831d39585"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): README output claim corrected; global output options, --id-prefix and --no-stamp documented"
+
+[[items]]
+id = "R18"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/output.rs"
+line = 378
+symbol = "compact_lenient"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Write-envelope leniency also covers six read verbs, so flow resolve --get slug captures the whole envelope with exit 0"
+description = "Plan Approach grants reads sharing the emitter the same leniency, but did not weigh SLUG=$(tomlctl flow resolve --get slug) on an unresolved flow, or flow stale being strict without --json and lenient with it. Option: a strict compact emitter for the read sites; else wontfix citing the Approach."
+evidence = [
+    "tomlctl flow stale --slug eventual-churning-sunrise --get nope -> exit 1; with --json -> exit 0",
+    "tomlctl validate .claude/backlog.toml --get nope -> exit 0",
+]
+instances = [
+    "tomlctl/src/output.rs:print_json_compact",
+    "tomlctl/src/cli/dispatch.rs:351",
+    "tomlctl/src/flow/resolve.rs:113",
+    "tomlctl/src/flow/doctor.rs:1051",
+    "tomlctl/src/flow/envelope.rs:170",
+    "tomlctl/src/flow/active.rs:366",
+    "tomlctl/src/flow/stale.rs:66",
+]
+enumeration = "complete"
+dedup_id = "a1a30bc13375c535"
+resolved = 2026-10-07
+resolution = "uncommitted (2026-10-07): new strict compact emitter output::print_json_line; validate, flow resolve, flow stale --json, flow envelope build, flow active list, flow ensure-artifact reads and plain backlog reconcile surveys now fail a bad shaping flag; flow doctor stays lenient only when --fix wrote; writes and dry-runs stay lenient; test a_compact_read_fails_a_bad_get"
+
+[[items]]
+id = "R19"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/items.rs"
+line = 1223
+symbol = "items_add_value_minted"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Live --id-prefix single add and its --dry-run use separate implementations whose errors already differ"
+description = "Dry-run goes through items_add_many_with_dedupe (errors prefixed 'row 1:'), live through items_add_value_minted, which also re-validates the prefix and supplied id twice and wraps/unwraps behind unreachable!. Build the live path on items_add_many_with_dedupe(&[patch], .., Some(prefix)) and delete items_add_value_minted."
+evidence = [
+    "tomlctl/src/items.rs:1223",
+    "tomlctl/src/cli/dispatch.rs:663",
+]
+dedup_id = "fe0e59f842ed316f"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): live items add --id-prefix runs items_add_many_with_dedupe like its dry-run; items_add_value_minted deleted"
+
+[[items]]
+id = "R20"
+first_flagged = 2026-10-07
+rounds = 1
+status = "deferred"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/output.rs"
+line = 28
+symbol = "OutputOpts"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "needs-plan: OutputOpts encodes mutually exclusive modes as independent Options, with flag names in hand-kept duplicate lists"
+description = "needs-plan. validate checks conflicts once but the struct still permits them: the template is re-parsed in every emit, emit has an unreachable (None, None) arm and relies on empty-path-is-root, --lines with --get is silently ignored, and shaping_flags / ALL_SHAPING / emit_list_raw keep three lists of flag spellings. Parse once into Mode/View enums and an OutputFlag enum. Decisions: whether --lines with --get errors, and how query_opts maps."
+evidence = [
+    "tomlctl/src/output.rs:57",
+    "tomlctl/src/output.rs:460",
+    "tomlctl/src/output.rs:269",
+]
+dedup_id = "01951d3b87ce9c84"
+defer_reason = "Medium refactor needing design decisions (--lines with --get, query_opts mapping) in an output layer just reworked; no user-visible bug today"
+defer_trigger = "When the next global output flag is added"
+
+[[items]]
+id = "R21"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/tasks/list.rs"
+line = 29
+symbol = "dispatch"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Query-list stream-or-buffer emit block is copied three times and was edited in lockstep"
+description = "Extract one output::print_query_list(doc, array, q) helper."
+instances = [
+    "tomlctl/src/cli/dispatch.rs:534",
+    "tomlctl/src/backlog/query.rs:61",
+    "tomlctl/src/tasks/list.rs:29",
+]
+sweep = ['streaming_allowed\(\)']
+enumeration = "complete"
+evidence = ["tomlctl/src/tasks/list.rs:29"]
+dedup_id = "a38f2e4bc00a0a7a"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): output::print_query_list replaces the three copied stream-or-buffer blocks"
+
+[[items]]
+id = "R22"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/cli/types.rs"
+line = 242
+symbol = "ReadIntegrityArgs::strict_read"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "--strict-read help and three test comments still describe quoted next-id output"
+instances = [
+    "tomlctl/src/cli/types.rs:242",
+    "tomlctl/tests/capabilities.rs:942",
+    "tomlctl/tests/capabilities.rs:948",
+    "tomlctl/tests/capabilities.rs:957",
+]
+enumeration = "complete"
+evidence = ["""tomlctl items next-id --help -> 'which returns "<P>1"'"""]
+dedup_id = "003a11a67ad12628"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): --strict-read help and capabilities test comments show bare next-id output"
+
+[[items]]
+id = "R23"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/tasks/dispatch.rs"
+line = 267
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "Comment says print_json flushes its own writer, but the code below now calls print_report"
+evidence = ["tomlctl/src/tasks/dispatch.rs:267"]
+dedup_id = "0bf4cd39995470d4"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): comment corrected to describe print_report's flush"
+
+[[items]]
+id = "R24"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/query.rs"
+line = 1381
+symbol = "validate_select"
+severity = "suggestion"
+effort = "small"
+category = "architecture"
+summary = "Pure JSON path helpers moved into output.rs create output<->query and output<->json two-way module dependencies"
+description = "Move navigate_json, project and validate_paths into convert.rs (a leaf that already holds the crate's path walkers) and repoint imports. No behaviour change."
+instances = [
+    "tomlctl/src/query.rs:validate_select",
+    "tomlctl/src/query.rs:apply_projection",
+    "tomlctl/src/output.rs:project",
+    "tomlctl/src/output.rs:validate_paths",
+    "tomlctl/src/output/template.rs:10",
+    "tomlctl/src/json.rs:navigate_json",
+]
+enumeration = "complete"
+evidence = [
+    "tomlctl/src/output.rs:21",
+    "tomlctl/src/json.rs:34",
+]
+dedup_id = "9d5df9c11d00d3f3"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): navigate_json, project and validate_paths moved to convert.rs; output/query/json depend down on it"
+
+[[items]]
+id = "R25"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/tests/items_id_prefix.rs"
+line = 37
+symbol = "sequential_adds_mint_e1_then_e2"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "No test mints --id-prefix ids from concurrent processes, the risk minting-under-lock exists to remove"
+description = "Add a test spawning 4 items add --id-prefix E processes and asserting exactly E1..E4; model on tests/tasks_write.rs:699 concurrent_adds_serialise_with_no_row_loss."
+evidence = [
+    "docs/plans/eventual-churning-sunrise.md:320",
+    "tomlctl/tests/tasks_write.rs:699",
+]
+dedup_id = "da069e858979a9bd"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): concurrent --id-prefix test asserts E1..E4 with no duplicates"
+
+[[items]]
+id = "R26"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/tests/last_updated_stamp.rs"
+line = 28
+symbol = "today_iso"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Stamp tests depend on the wall clock and never check a string-typed last_updated stays a string"
+description = "Three real plan-review-findings.toml files hold last_updated as a string. Unit-test stamp_if_changed in io.rs with time::set_now_for_test: type preserved, last_updated-only change left alone, no-op writes nothing."
+evidence = ["tomlctl/src/io.rs:781"]
+dedup_id = "3651d20db204ceb9"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): clock-pinned unit tests for stamp_if_changed (date, string, caller-set, no-op, absent); CLI stamp tests tolerate UTC midnight"
+
+[[items]]
+id = "R27"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/tests/output_options.rs"
+line = 726
+symbol = "check"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Every-command test never exercises --limit, --template, or a failed shaping flag on a write"
+description = "No test checks the limited header, the 'showing n of N rows' notice or its --error-format json suppression, or that a write with a bad --get exits 0 with a warning and the write landed. Add --limit 1 on row cases and --get <absent> on write cases."
+evidence = ["tomlctl/tests/output_options.rs:731"]
+dedup_id = "70c2e7eb67c62443"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): every-command test exercises --template, --limit 1 limited header and a failed --get on writes (text and JSON warning)"
+
+[[items]]
+id = "R28"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/cli/dispatch/tests/output_gate.rs"
+line = 44
+symbol = "scanned_lines"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Stdout gate stops scanning at a bodiless '#[cfg(test)] mod tests;', exempting everything below it if moved"
+description = "starts_with('mod tests') matches the declaration form; only cli/dispatch.rs:1623 has one today, at the last line. Match 'mod tests {' and extend only_a_test_module_ends_the_scan."
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/output_gate.rs:44",
+    "tomlctl/src/cli/dispatch.rs:1623",
+]
+dedup_id = "f9c930dfc18a9bf7"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): stdout gate ends only at a mod tests with a body; test extended"
+
+[[items]]
+id = "R29"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/output.rs"
+line = 251
+symbol = "emit"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "Single-object --limit error names neither the report shape nor the flags that do apply"
+description = "Say e.g. '--limit applies to row reports; this command prints a single object (use --get/--select)'. Tests at output.rs:808 and :978 pin the text."
+evidence = ["tomlctl get t/l.toml schema_version --limit 1 -> '--limit applies to row reports'"]
+dedup_id = "b9b37e021a241ce6"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): single-object --limit error names the report shape and the applicable flags"
+
+[[items]]
+id = "R30"
+first_flagged = 2026-10-07
+rounds = 1
+status = "fixed"
+flow = "eventual-churning-sunrise"
+file = "tomlctl/src/cli/types.rs"
+line = 0
+symbol = "QueryArgs::raw help"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "items list --help for --raw says 'tests assert it byte-for-byte', internal wording in user help"
+description = "Predates the range; drop the test-facing sentence from the long help."
+evidence = ["tomlctl items list --help"]
+dedup_id = "e7f4cca1984e3e6f"
+resolved = 2026-10-07
+resolution = "uncommitted (review-apply 2026-10-07): test-facing sentence removed from --raw help (plus the --raw/--count-distinct motivation paragraphs)"

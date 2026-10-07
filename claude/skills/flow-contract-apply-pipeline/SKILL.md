@@ -314,7 +314,7 @@ the observation in its prompt. A second `stash-required` for the same item goes 
 ## Interim checkpoint
 
 After the Step 4.5 vet and the Step 4.6 routing (and their re-dispatches), persist non-risky
-transitions in a single atomic `tomlctl items apply --ops - --on-stale skip --no-stamp` call, each op carrying
+transitions in a single atomic `tomlctl items apply <ledger> --ops - --on-stale skip --no-stamp` call, each op carrying
 `"expect": {"status": "<status read at Step 1>"}` (the stale-write guard under Ledger mutation).
 Non-risky means:
 
@@ -395,7 +395,7 @@ completeness, and ensure the report reflects what was actually implemented, audi
 **Omit any sub-section with no entries.**
 
 Read the report skeleton (section order and per-section line shapes) in
-[Final summary](references/final-summary.md#final-summary) before emitting it.
+[Final summary](references/final-summary.md#final-summary-reference) before emitting it.
 
 ## Step 6: Plan-deviation follow-up
 

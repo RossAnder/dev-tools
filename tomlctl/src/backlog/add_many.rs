@@ -18,7 +18,7 @@ use super::schema;
 use crate::cli::{OnDuplicate, WriteIntegrityArgs, write_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{self, advise, on_missing_for, warn_if_created};
-use crate::output::{build_dry_run_plan_envelope, print_json_compact};
+use crate::output::{Rows, build_dry_run_plan_envelope, print_rows_compact};
 
 /// One validated line and the 1-based source line it came from, which every
 /// error and every per-row envelope names.
@@ -58,7 +58,7 @@ pub(crate) fn dispatch(
             map.insert("rows".to_string(), row_envelopes(&rows, &outcomes));
             insert_advisories(map, advisories);
         }
-        return print_json_compact(&envelope);
+        return print_rows_compact(&envelope, Rows::Field("rows"));
     }
 
     let opts = write_integrity_opts(&integrity);
@@ -88,7 +88,7 @@ pub(crate) fn dispatch(
     }
     envelope.insert("rows".to_string(), row_envelopes(&rows, &outcomes));
     insert_advisories(&mut envelope, advisories);
-    print_json_compact(&JsonValue::Object(envelope))
+    print_rows_compact(&JsonValue::Object(envelope), Rows::Field("rows"))
 }
 
 /// Parse and validate every line before any lock is taken. Blank lines are

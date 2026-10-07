@@ -195,7 +195,8 @@ Several ids apply the same patch to each row under one lock and one sidecar writ
 resolved and every row's patch validated before anything changes, so an unknown id or a refusal
 on any row aborts the whole call and writes nothing. One id
 prints the single-row envelope; several print `{"ok":true,"results":[…]}`, one entry per
-distinct id in the order given.
+distinct id in the order given, and the output options act on `results` (`--get id` prints one
+id per line).
 
 | Key | Value | Meaning |
 |---|---|---|

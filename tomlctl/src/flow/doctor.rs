@@ -86,7 +86,7 @@ use crate::io::{
     recheck_claude_containment, relativise, repo_or_cwd_root, with_exclusive_lock,
     write_doc_unless_unchanged,
 };
-use crate::output::print_json_compact;
+use crate::output::{print_json_compact, print_json_line};
 
 /// Outcome of a sidecar-state probe. `Mismatch` carries the expected and
 /// actual hex digests so the caller can format a directed failure detail
@@ -1048,7 +1048,12 @@ pub(crate) fn dispatch(
         "fixes_applied": fixes_json,
         "warnings": warnings,
     });
-    print_json_compact(&envelope)
+    // Only a `--fix` that changed files gets the write envelope's leniency.
+    if fix && !dry_run && !fixes.is_empty() {
+        print_json_compact(&envelope)
+    } else {
+        print_json_line(&envelope)
+    }
 }
 
 #[cfg(test)]

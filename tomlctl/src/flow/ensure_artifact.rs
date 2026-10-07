@@ -37,7 +37,7 @@ use crate::io::{
     atomic_write, guard_write_path, recheck_claude_containment, relativise, repo_or_cwd_root,
     with_exclusive_lock,
 };
-use crate::output::print_json_compact;
+use crate::output::{print_json_compact, print_json_line};
 
 pub(crate) fn dispatch(
     slug: String,
@@ -67,7 +67,7 @@ pub(crate) fn dispatch(
         }
     } else {
         let report = compute_report(&root, &artifact_path)?;
-        print_json_compact(&report)
+        print_json_line(&report)
     }
 }
 
@@ -331,7 +331,7 @@ fn emit_bootstrap_noop(root: &Path, artifact: &Path, kind: ArtifactKind) -> Resu
             )),
         );
     }
-    print_json_compact(&report)
+    print_json_line(&report)
 }
 
 #[cfg(test)]

@@ -10,3 +10,1296 @@ summary = "draft -> in-progress at /implement start"
 from_status = "draft"
 to_status = "in-progress"
 dedup_id = "5f59db45bfced9a5"
+
+[[items]]
+id = "E2"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "build-the-output-pipeline-core"
+summary = "OutputOpts gained a seventh field json_errors in tomlctl/src/output.rs"
+original_intent = "OutputOpts has six fields (select, limit, lines, get, template, quiet)"
+rationale = "the truncation notice must be suppressed under --error-format json and nothing else in the output layer can see the error format; the CLI sets it from cli.error_format"
+dedup_id = "33ed8d74dabb53f7"
+
+[[items]]
+id = "E3"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "build-the-output-pipeline-core"
+summary = "configure returns Result<()> and runs the flag-conflict validation in tomlctl/src/output.rs"
+original_intent = "configure(opts: OutputOpts) with no return value"
+rationale = "the conflict check runs once inside configure; a second call is still a debug_assert failure"
+dedup_id = "99e39e4148361985"
+
+[[items]]
+id = "E4"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "build-the-output-pipeline-core"
+summary = "emit validates --select/--get/template paths against the full row set before --limit cuts rows"
+original_intent = "order of application: -q, --limit, --select, --get/--template"
+rationale = "validating after the cut could make a valid path look unknown; matches the query lists, which validate against the unfiltered array"
+dedup_id = "89ec157613907a85"
+
+[[items]]
+id = "E5"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "build-the-output-pipeline-core"
+summary = "Added OutputOpts, the emit pipeline, print_query/print_text/stdout_stream, project/validate_paths and the template module; navigate_json is pub(crate)"
+files = [
+    "tomlctl/src/output.rs",
+    "tomlctl/src/output/template.rs",
+    "tomlctl/src/json.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "b823f8727a6ec00e"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "route-the-json-get-and-progress-log-text-output-through-print_text"
+summary = "json get --raw and render-progress-log --stdout now emit through output::print_text"
+files = [
+    "tomlctl/src/json.rs",
+    "tomlctl/src/flow/render_progress_log.rs",
+]
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "aa37d3929bb7ac36"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "add-the-global-output-flags-to-the-cli-root"
+summary = "Global OutputArgs flattened into Cli; cli::run configures the output layer; backlog check --limit is Option<usize> defaulting to 5"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/backlog/check.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "381e6ff17d0ce130"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "retire-the-per-command-linesargs"
+summary = "Removed LinesArgs and its plumbing; print_report reads --lines from the global OutputOpts"
+files = [
+    "tomlctl/src/output.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/agents/dispatch.rs",
+    "tomlctl/src/flow/dispatch.rs",
+    "tomlctl/src/flow/find_plans.rs",
+    "tomlctl/src/flow/list.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/backlog/check.rs",
+    "tomlctl/src/backlog/evidence_ops.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/tasks/edges.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "58fef2a0f1711a4b"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "route-dot-and-rendered-plan-output-through-print_text"
+summary = "tasks edges --dot and tasks render --stdout now emit through output::print_text; the --dot --lines bail is unchanged"
+files = [
+    "tomlctl/src/tasks/edges.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+]
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+dedup_id = "525c7d380508bb42"
+
+[[items]]
+id = "E10"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-query-lists-at-the-global-select-limit-and-lines"
+summary = "QueryArgs and backlog check read select/limit/lines from the global options; the three lists stream via stdout_stream or print through print_query; apply_projection uses output::project"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/query.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/tasks/list.rs",
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/src/backlog/check.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "cb2eccd7c4b764ff"
+
+[[items]]
+id = "E11"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "advertise-the-global-flags-and-the-new-features"
+summary = "global_flags built by a new capabilities::build_global_flags and added to the root object in the Cmd::Capabilities arm of tomlctl/src/cli/dispatch.rs; Files widened"
+original_intent = "Files line for advertise-the-global-flags-and-the-new-features omits tomlctl/src/cli/dispatch.rs; emit global_flags from build_agent_context"
+rationale = "build_agent_context returns only the .commands map; the root capabilities object is assembled in the Cmd::Capabilities json! literal in cli/dispatch.rs"
+dedup_id = "f3da168e2eb2e73f"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "advertise-the-global-flags-and-the-new-features"
+summary = "capabilities emits a root global_flags key; FEATURES, README sample/table and tests swap report_lines for output_options"
+files = [
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+escalation_reason = "cross-cut"
+dedup_id = "2565891bb8731f9f"
+
+[[items]]
+id = "E13"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "advertise-the-global-flags-and-the-new-features"
+summary = "Checkpoint A gate: fmt check"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 1
+dedup_id = "f8b79f08a752aca5"
+
+[[items]]
+id = "E14"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "advertise-the-global-flags-and-the-new-features"
+summary = "Checkpoint A gate: tomlctl clippy"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 0
+dedup_id = "45418f234f81e685"
+
+[[items]]
+id = "E15"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "advertise-the-global-flags-and-the-new-features"
+summary = "Checkpoint A gate: tomlctl tests, 1581 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 12
+dedup_id = "fcc405a4d82bfa93"
+
+[[items]]
+id = "E16"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "advertise-the-global-flags-and-the-new-features"
+summary = "Checkpoint A gate: glimpse clippy"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+duration_s = 4
+dedup_id = "d51fbb039c843fd1"
+
+[[items]]
+id = "E17"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "advertise-the-global-flags-and-the-new-features"
+summary = "Checkpoint A gate: glimpse tests, 485 passed"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 31
+dedup_id = "8a535f51fc4ba6d2"
+
+[[items]]
+id = "E18"
+type = "checkpoint"
+date = 2026-10-07
+agent = "implement"
+kind = "commit-train"
+commits = ["4ef662e"]
+summary = "Checkpoint A: 4ef662e -> build-the-output-pipeline-core, add-the-global-output-flags-to-the-cli-root, retire-the-per-command-linesargs, point-the-query-lists-at-the-global-select-limit-and-lines, route-the-json-get-and-progress-log-text-output-through-print_text, route-dot-and-rendered-plan-output-through-print_text, advertise-the-global-flags-and-the-new-features (one commit: overlapping files)"
+dedup_id = "9321219866a8a537"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "print-items-next-id-bare"
+summary = "items next-id prints the bare id plus newline through print_text; the two quoted-form tests assert trimmed bare ids"
+files = [
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/integration.rs",
+    "tomlctl/tests/capabilities.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "c8364ff9b52a7b05"
+
+[[items]]
+id = "E20"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "mint-ids-inside-items-add-and-items-add-many"
+summary = "items add mints via a new items.rs helper items_add_value_minted called from the dispatch lock closure"
+original_intent = "mint in the dispatch closure before items_add_value_to"
+rationale = "the supplied-id refusal and dedupe-then-mint order live with the other private add helpers in items.rs; minting still happens inside the lock closure"
+dedup_id = "12b14a3a82f79974"
+
+[[items]]
+id = "E21"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "mint-ids-inside-items-add-and-items-add-many"
+summary = "add-many --id-prefix without --dedupe-by routes through items_add_many_with_dedupe with an empty field list; items_add_many unchanged"
+original_intent = "add a minted-ids field and mint in items_add_many"
+rationale = "one minting loop instead of two"
+dedup_id = "70a710ec0b68e1ba"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "mint-ids-inside-items-add-and-items-add-many"
+summary = "items add/add-many --id-prefix mint ids inside the locked write and report id/ids; supplied ids refused; dedupe skip reports matched id"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/items.rs",
+    "tomlctl/tests/items_id_prefix.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "47b1c56c390c7b6f"
+
+[[items]]
+id = "E23"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "stamp-last_updated-on-cli-writes"
+summary = "--dry-run previews are left unstamped in tomlctl/src/cli/dispatch.rs"
+original_intent = "spec silent on --dry-run; stamping wraps every CLI write"
+rationale = "previews keep the plain mutation so the preview bytes existing tests pin stay unchanged; stamping a preview is a small follow-up with the same helpers"
+dedup_id = "81ca930380aba451"
+
+[[items]]
+id = "E24"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "stamp-last_updated-on-cli-writes"
+summary = "CLI writes stamp last_updated via io::stamped/stamped_conditional/stamped_plan wrappers; --no-stamp via StampArgs; flow-less ledgers seed schema_version/last_updated; facade untouched"
+files = [
+    "tomlctl/src/io.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/last_updated_stamp.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "5321df1df82d0d0f"
+
+[[items]]
+id = "E25"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "let-tasks-update-take-several-ids"
+summary = "update::update is now #[cfg(test)] in tomlctl/src/tasks/update.rs; --ref with several ids is refused"
+original_intent = "keep update::update unchanged beside a new update_many"
+rationale = "its only non-test caller moved to update_many and clippy flagged dead_code; a ref is unique so --ref across several ids can only collide"
+dedup_id = "49a3d5177c17611b"
+
+[[items]]
+id = "E26"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "let-tasks-update-take-several-ids"
+summary = "tasks update takes an id list patched in one store::mutate; single id output unchanged, several give a results envelope; unknown id aborts with nothing written"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/tests/tasks_write.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "6744ae41182df230"
+
+[[items]]
+id = "E27"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "let-tasks-show-take-several-ids"
+summary = "tasks show takes an id list; one id prints the unchanged object, several print an array via print_report Rows::Top; unknown id fails the whole call"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/tests/tasks_read.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "7b724ba5db4d2f9d"
+
+[[items]]
+id = "E28"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "let-backlog-show-take-several-ids"
+summary = "backlog show takes an id list resolved up front; one id prints the unchanged object, several an array via print_report Rows::Top"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/tests/backlog_read.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "5b12d13b7b5154a1"
+
+[[items]]
+id = "E29"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "retire-the-two-call-pattern-in-the-apply-pipeline-and-plan-new"
+summary = "the interim checkpoint's items apply command also carries --no-stamp in claude/skills/flow-contract-apply-pipeline/SKILL.md"
+original_intent = "keep the interim checkpoint deferral and name --no-stamp in the prose sentence"
+rationale = "naming the flag only in prose would leave the command as written stamping the ledger"
+dedup_id = "3f1f53693f1cdff1"
+
+[[items]]
+id = "E30"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "retire-the-two-call-pattern-in-the-apply-pipeline-and-plan-new"
+summary = "apply pipeline SKILL, verification reference and plan-new now show a single stamping write; interim checkpoint passes --no-stamp"
+files = [
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md",
+    "claude/skills/flow-contract-apply-pipeline/references/verification.md",
+    "claude/commands/plan-new.md",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "d99912b4d67bce45"
+
+[[items]]
+id = "E31"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-the-tomlctl-backlog-flow-and-agents-references"
+summary = "dropped the backlog show 'no flags beyond the read bundle' clause in claude/skills/tomlctl/references/backlog.md"
+original_intent = "document several ids on backlog show within the 600-line ceiling"
+rationale = "the ceiling left no room for the multi-id paragraph otherwise"
+dedup_id = "50be89122121f0ef"
+
+[[items]]
+id = "E32"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-the-tomlctl-backlog-flow-and-agents-references"
+summary = "backlog/flow/agents references drop per-command --lines rows and #line-output links; backlog show multi-id and global --limit documented"
+files = [
+    "claude/skills/tomlctl/references/backlog.md",
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/references/agents.md",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "76d29b466601fb52"
+
+[[items]]
+id = "E33"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "rewrite-the-tomlctl-write-reference"
+summary = "recipe 1 also mints with --id-prefix E and the auto-create seed bullet names the flow-less ledger dirs in claude/skills/tomlctl/references/write.md"
+original_intent = "rewrite recipe 3 and remove recipe 1's second set call; document the stamping rule"
+rationale = "keeps recipe 1 a single call with no hand-written id; the seed bullet's 'any other path seeds {}' was stale after flow-less ledgers began seeding schema_version/last_updated"
+dedup_id = "59a512554f188ca4"
+
+[[items]]
+id = "E34"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "rewrite-the-tomlctl-write-reference"
+summary = "write.md documents single stamping writes, --id-prefix minting, bare next-id, --no-stamp and the stamping rule"
+files = ["claude/skills/tomlctl/references/write.md"]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "6444a0a8f8617844"
+
+[[items]]
+id = "E35"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-the-tomlctl-tasks-references"
+summary = "tasks/tasks-write references and the task-store contract document multi-id update/show; per-command --lines rows and #line-output links removed"
+files = [
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "ab732847a8edaae8"
+
+[[items]]
+id = "E36"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "release-tomlctl-0140-and-refresh-glimpses-lock"
+summary = "capabilities_version_matches_cargo_toml literal bumped to 0.14.0 and README usage line backlog show <id> widened to an id list"
+original_intent = "add the four features to the expected list; rewrite the multi-id feature-table rows"
+rationale = "the version test pins the literal in lockstep with Cargo.toml; the usage-block line described single-id only"
+dedup_id = "b32014d40735926a"
+
+[[items]]
+id = "E37"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "release-tomlctl-0140-and-refresh-glimpses-lock"
+summary = "tomlctl 0.14.0; both lockfiles refreshed; FEATURES gains next_id_bare, id_prefix, auto_last_updated, multi_id with README and test parity"
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/README.md",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/tests/capabilities.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "553723066934fa8a"
+
+[[items]]
+id = "E38"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "raise-the-flow-bootstrap-tomlctl-version-floor-to-0140"
+summary = "flow-bootstrap pre-flight floor raised to 0.14 in prose and both halt envelopes"
+files = ["claude/agents/flow-bootstrap.md"]
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "1e2350a55c84340c"
+
+[[items]]
+id = "E39"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+summary = "output_options pins the command-specific --lines refusals of tasks edges --dot and items sweep --update instead of the print_text refusal / lenient write path"
+original_intent = "every text-mode case refuses --lines with the print_text message; writes take the lenient envelope path"
+rationale = "both commands refuse --lines earlier with their own messages, which tests/lines.rs already pinned"
+dedup_id = "7c03486a542f67f5"
+
+[[items]]
+id = "E40"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+summary = "output_options every-command test and output_gate stdout scan plus debug_assert; tests/lines.rs folded in and deleted"
+files = [
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/lines.rs",
+    "tomlctl/src/cli/dispatch/tests/output_gate.rs",
+    "tomlctl/src/cli/dispatch/tests/mod.rs",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "88c51081faa2c349"
+
+[[items]]
+id = "E41"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+summary = "Checkpoint B gate: fmt check"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 1
+dedup_id = "2b46971791104700"
+
+[[items]]
+id = "E42"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+summary = "Checkpoint B gate: tomlctl clippy"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 0
+dedup_id = "6257204b4bd83b16"
+
+[[items]]
+id = "E43"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+summary = "Checkpoint B gate: tomlctl tests, 1610 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 13
+dedup_id = "40771a94ea6f8c04"
+
+[[items]]
+id = "E44"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+summary = "Checkpoint B gate: glimpse clippy"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+duration_s = 1
+dedup_id = "0ab8403f7e0b0f24"
+
+[[items]]
+id = "E45"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+summary = "Checkpoint B gate: glimpse tests, 485 passed"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 26
+dedup_id = "34441bc76920e569"
+
+[[items]]
+id = "E46"
+type = "checkpoint"
+date = 2026-10-07
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "ba3e317",
+    "d989aac",
+]
+summary = "Checkpoint B: ba3e317 -> print-items-next-id-bare, mint-ids-inside-items-add-and-items-add-many, stamp-last_updated-on-cli-writes, let-tasks-update-take-several-ids, let-tasks-show-take-several-ids, let-backlog-show-take-several-ids, release-tomlctl-0140-and-refresh-glimpses-lock (one commit: overlapping files); d989aac -> add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+dedup_id = "383ab302c0949b1e"
+
+[[items]]
+id = "E47"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "retire-the-two-call-pattern-in-the-ledger-and-record-contracts"
+summary = "ledger-schema seed-shape sentence also rewritten in claude/skills/flow-contract-ledger-schema/SKILL.md"
+original_intent = "rewrite ledger-schema lines 200-228 only"
+rationale = "the sentence said flow-less <scope>.toml ledgers seed {} but 0.14.0 seeds schema_version and last_updated; leaving it would say there is no key to stamp"
+dedup_id = "6aaedaec54d702ef"
+
+[[items]]
+id = "E48"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "retire-the-two-call-pattern-in-the-ledger-and-record-contracts"
+summary = "execution-record, ledger and vet-research contracts use one stamping write and --id-prefix minting; next-id kept only for mixed apply batches"
+files = [
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md",
+    "claude/skills/flow-contract-ledger-schema/SKILL.md",
+    "claude/skills/flow-contract-vet-research/SKILL.md",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "12c9632206b1c605"
+
+[[items]]
+id = "E49"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "plan-update Step 3 date rule reworded for the implicit stamp; migrate and tdd copy-up use items add-many --id-prefix E for multi-entry back-fills"
+original_intent = "drop the second last_updated write; mint with --id-prefix E"
+rationale = "the date rule referred to the removed explicit write; multi-entry back-fills mint a contiguous run in one call instead of a per-row next-id loop"
+dedup_id = "48258f52c54567d5"
+
+[[items]]
+id = "E50"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "implement.md uses id-list tasks update; plan-update and tdd mint with --id-prefix E; second last_updated calls and two-call prose removed"
+files = [
+    "claude/commands/implement.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/tdd.md",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "ab066f6b9188f553"
+
+[[items]]
+id = "E51"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-review-optimise-and-review-plan"
+summary = "review-plan A5 and B9 kept as one-line 'no separate last_updated write' steps; B9 now stamps only on Accept/Discard"
+original_intent = "drop the set ... last_updated second calls"
+rationale = "later steps are referenced by number, so deleting A5/B9 would renumber them; Keep writes nothing so nothing stamps"
+dedup_id = "5c6fa4fe8b2a6294"
+
+[[items]]
+id = "E52"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-review-optimise-and-review-plan"
+summary = "review/optimise/review-plan mint with --id-prefix R|O|P or a bare next-id for mixed apply batches, drop the second last_updated call, and pass --no-stamp on Step-2 interim checkpoints"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/commands/review-plan.md",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "374952de33221e81"
+
+[[items]]
+id = "E53"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "document-the-global-output-flags-in-the-tomlctl-skill"
+summary = "kept the per-verb --lines header table as a subsection of SKILL.md Output options and a one-line row-field note under each query.md verb table; added an items add --id-prefix quick-reference row and an output_options feature row"
+original_intent = "generalise Line output into Output options and drop the per-verb --lines rows in favour of the central section"
+rationale = "the per-verb table is the only place that lists each report's header fields, so the row-vs-header split would otherwise be undocumented"
+dedup_id = "08db86b9b1227c34"
+
+[[items]]
+id = "E54"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "document-the-global-output-flags-in-the-tomlctl-skill"
+summary = "tomlctl SKILL.md gains an Output options section covering the six global flags; query.md and inputs.md drop per-command --lines rows and show bare next-id"
+files = [
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/query.md",
+    "claude/skills/tomlctl/references/inputs.md",
+]
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "8c6b2d307ac900f8"
+
+[[items]]
+id = "E55"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 1
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E56"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 7
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E57"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass: 1610 passed"
+command = "CARGO_INCREMENTAL=0 cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 21
+dedup_id = "5ffe7c84e4136b5d"
+
+[[items]]
+id = "E58"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 0
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E59"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+duration_s = 0
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E60"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass: 485 passed"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 1
+dedup_id = "33462d23479a16c5"
+
+[[items]]
+id = "E61"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 0
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E62"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+duration_s = 0
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E63"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = """test "$(grep -rlE 'tomlctl set [^ ]+ last_updated' claude --include=*.md | wc -l)" -eq 0"""
+outcome = "pass"
+duration_s = 0
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E64"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = """test "$(grep -rl -- '--id-prefix' claude/commands | wc -l)" -ge 4"""
+outcome = "pass"
+duration_s = 0
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E65"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = """test "$(grep -rli 'two-call' claude/skills claude/commands | wc -l)" -eq 0"""
+outcome = "pass"
+duration_s = 0
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E66"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass: 4 passed"
+command = "test -f tomlctl/src/cli/dispatch/tests/output_gate.rs && cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::output_gate"
+outcome = "pass"
+duration_s = 1
+dedup_id = "2806abf043ceb330"
+
+[[items]]
+id = "E67"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = """grep -A1 '^name = "tomlctl"' glimpse/Cargo.lock | grep -q '0.14.0'"""
+outcome = "pass"
+duration_s = 0
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E68"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass: 2 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test output_options"
+outcome = "pass"
+duration_s = 0
+dedup_id = "be479deced0b548c"
+
+[[items]]
+id = "E69"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass: 26 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test library_facade"
+outcome = "pass"
+duration_s = 0
+dedup_id = "d301755b52b079c6"
+
+[[items]]
+id = "E70"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = "cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items"
+outcome = "pass"
+duration_s = 1
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E71"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "update-implement-plan-update-and-tdd"
+summary = "Checkpoint C gate + Phase 3 final pass"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+duration_s = 2
+dedup_id = "c1f9baaf2f99d87f"
+
+[[items]]
+id = "E72"
+type = "checkpoint"
+date = 2026-10-07
+agent = "implement"
+kind = "commit-train"
+commits = [
+    "bd99cac",
+    "c5b628f",
+    "e4222c2",
+    "e31a465",
+    "f38633e",
+    "d610933",
+    "e46faa0",
+    "ce88045",
+    "859faee",
+]
+summary = "Checkpoint C: bd99cac -> document-the-global-output-flags-in-the-tomlctl-skill; c5b628f -> rewrite-the-tomlctl-write-reference; e4222c2 -> update-the-tomlctl-tasks-references; e31a465 -> update-the-tomlctl-backlog-flow-and-agents-references; f38633e -> retire-the-two-call-pattern-in-the-ledger-and-record-contracts; d610933 -> retire-the-two-call-pattern-in-the-apply-pipeline-and-plan-new; e46faa0 -> update-review-optimise-and-review-plan; ce88045 -> update-implement-plan-update-and-tdd; 859faee -> raise-the-flow-bootstrap-tomlctl-version-floor-to-0140"
+dedup_id = "0276cf714bde56dc"
+
+[[items]]
+id = "E73"
+type = "deviation"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "minted task 25 to update the items.rs id-less-row error hint"
+original_intent = "plan carries no task for the items.rs error hint that still names the next-id + paste flow"
+rationale = "task 9's implementer reported it cheap-in-file; items.rs is in this run and covered by the full suite, so it clears all three same-run factors"
+dedup_id = "e87615468ee79b73"
+
+[[items]]
+id = "E74"
+type = "task-completion"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "items.rs id-less ledger row error now points at items add/add-many --id-prefix"
+files = ["tomlctl/src/items.rs"]
+status = "done"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "d280a76e931e2766"
+
+[[items]]
+id = "E75"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = "cargo fmt --manifest-path tomlctl/Cargo.toml -- --check"
+outcome = "pass"
+duration_s = 0
+supersedes_entry = "E55"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E76"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+outcome = "pass"
+duration_s = 1
+supersedes_entry = "E56"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E77"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task: 1610 passed"
+command = "CARGO_INCREMENTAL=0 cargo test --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 21
+supersedes_entry = "E57"
+dedup_id = "57b36b8d008cec5b"
+
+[[items]]
+id = "E78"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 2
+supersedes_entry = "E58"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E79"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --locked"
+outcome = "pass"
+duration_s = 1
+supersedes_entry = "E59"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E80"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task: 485 passed"
+command = "cargo test --manifest-path glimpse/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 14
+supersedes_entry = "E60"
+dedup_id = "d80da6f8d26c5048"
+
+[[items]]
+id = "E81"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = "bash scripts/verify-shared-blocks.sh"
+outcome = "pass"
+duration_s = 0
+supersedes_entry = "E61"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E82"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = "bash scripts/verify-plan-story-blocks.sh"
+outcome = "pass"
+duration_s = 0
+supersedes_entry = "E62"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E83"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = """test "$(grep -rlE 'tomlctl set [^ ]+ last_updated' claude --include=*.md | wc -l)" -eq 0"""
+outcome = "pass"
+duration_s = 0
+supersedes_entry = "E63"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E84"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = """test "$(grep -rl -- '--id-prefix' claude/commands | wc -l)" -ge 4"""
+outcome = "pass"
+duration_s = 0
+supersedes_entry = "E64"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E85"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = """test "$(grep -rli 'two-call' claude/skills claude/commands | wc -l)" -eq 0"""
+outcome = "pass"
+duration_s = 0
+supersedes_entry = "E65"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E86"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task: 4 passed"
+command = "test -f tomlctl/src/cli/dispatch/tests/output_gate.rs && cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::output_gate"
+outcome = "pass"
+duration_s = 0
+supersedes_entry = "E66"
+dedup_id = "7eaf8988b6d797ec"
+
+[[items]]
+id = "E87"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = """grep -A1 '^name = "tomlctl"' glimpse/Cargo.lock | grep -q '0.14.0'"""
+outcome = "pass"
+duration_s = 0
+supersedes_entry = "E67"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E88"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task: 2 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test output_options"
+outcome = "pass"
+duration_s = 1
+supersedes_entry = "E68"
+dedup_id = "18e2245570e7eccd"
+
+[[items]]
+id = "E89"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task: 26 passed"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test library_facade"
+outcome = "pass"
+duration_s = 0
+supersedes_entry = "E69"
+dedup_id = "577878041929d8f6"
+
+[[items]]
+id = "E90"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = "cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items"
+outcome = "pass"
+duration_s = 1
+supersedes_entry = "E70"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E91"
+type = "verification"
+date = 2026-10-07
+agent = "implement"
+task_ref = "point-the-id-less-ledger-row-error-at-id-prefix"
+summary = "Phase 3 re-run after same-run task"
+command = "cargo audit --file tomlctl/Cargo.lock"
+outcome = "pass"
+duration_s = 2
+supersedes_entry = "E71"
+dedup_id = "f510c861f62fd3bc"
+
+[[items]]
+id = "E92"
+type = "checkpoint"
+date = 2026-10-07
+agent = "implement"
+kind = "commit-train"
+commits = ["150ada4"]
+summary = "Final train: 150ada4 -> point-the-id-less-ledger-row-error-at-id-prefix"
+dedup_id = "5132c4193cd2893e"
+
+[[items]]
+id = "E93"
+type = "status-transition"
+date = 2026-10-07
+agent = "plan-update"
+summary = "in-progress -> review: all 25 tasks done after /implement"
+from_status = "in-progress"
+to_status = "review"
+dedup_id = "05e52a15579b9dd9"

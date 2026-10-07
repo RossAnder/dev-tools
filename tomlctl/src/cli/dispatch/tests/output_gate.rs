@@ -35,13 +35,17 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 /// The lines before the file's test module: a `#[cfg(test)]` directly
-/// followed by `mod tests`. A `#[cfg(test)]` on anything else gates one item
-/// mid-file and leaves the rest of the file in scope.
+/// followed by an inline `mod tests` body. A `#[cfg(test)]` on anything else,
+/// including a bodiless `mod tests;`, gates one item mid-file and leaves the
+/// rest of the file in scope.
 fn scanned_lines(text: &str) -> Vec<(usize, &str)> {
     let lines: Vec<&str> = text.lines().collect();
     let end = lines
         .windows(2)
-        .position(|w| w[0].trim() == "#[cfg(test)]" && w[1].trim_start().starts_with("mod tests"))
+        .position(|w| {
+            let next = w[1].trim();
+            w[0].trim() == "#[cfg(test)]" && next.starts_with("mod tests") && !next.ends_with(';')
+        })
         .unwrap_or(lines.len());
     lines[..end]
         .iter()
@@ -116,6 +120,8 @@ fn only_a_test_module_ends_the_scan() {
     assert_eq!(lines, [1, 2, 3]);
     let text = "#[cfg(test)]\nmod test_support;\nprintln!(\"a\");\n";
     assert_eq!(scanned_lines(text).len(), 3);
+    let text = "println!(\"a\");\n#[cfg(test)]\nmod tests;\nprintln!(\"b\");\n";
+    assert_eq!(scanned_lines(text).len(), 4);
 }
 
 #[test]

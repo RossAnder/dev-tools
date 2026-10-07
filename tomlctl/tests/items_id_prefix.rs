@@ -68,6 +68,39 @@ fn sequential_adds_mint_e1_then_e2() {
 }
 
 #[test]
+fn concurrent_id_prefix_adds_mint_distinct_ids() {
+    use std::thread;
+
+    let (dir, ledger) = seed_ledger("schema_version = 1\n");
+    let root = dir.path().to_path_buf();
+    let l = ledger.to_str().unwrap().to_string();
+
+    let handles: Vec<_> = ["a", "b", "c", "d"]
+        .iter()
+        .map(|summary| {
+            let root = root.clone();
+            let l = l.clone();
+            let payload = format!(r#"{{"summary":"{summary}"}}"#);
+            thread::spawn(move || {
+                cli(&root)
+                    .env("TOMLCTL_LOCK_TIMEOUT", "30")
+                    .args(["items", "add", &l, "--json", &payload, "--id-prefix", "E"])
+                    .write_stdin("")
+                    .assert()
+                    .success();
+            })
+        })
+        .collect();
+    for handle in handles {
+        handle.join().expect("every writer must succeed");
+    }
+
+    let mut ids = ledger_ids(&ledger);
+    ids.sort_unstable();
+    assert_eq!(ids, ["E1", "E2", "E3", "E4"]);
+}
+
+#[test]
 fn add_mints_past_the_existing_high_water_mark() {
     let (dir, ledger) =
         seed_ledger("schema_version = 1\n\n[[items]]\nid = \"E7\"\n\n[[items]]\nid = \"R40\"\n");

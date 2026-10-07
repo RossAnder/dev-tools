@@ -1,6 +1,6 @@
 slug = "eventual-churning-sunrise"
 plan_path = "docs/plans/eventual-churning-sunrise.md"
-status = "in-progress"
+status = "review"
 created = 2026-10-07
 updated = 2026-10-07
 branch = "main"
@@ -16,9 +16,9 @@ scope = [
 ]
 
 [tasks]
-total = 24
-completed = 0
-in_progress = 1
+total = 25
+completed = 25
+in_progress = 0
 
 [artifacts]
 review_ledger = ".claude/flows/eventual-churning-sunrise/review-ledger.toml"

@@ -21,7 +21,7 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 |---|---|
 | Append one item (JSON arg) | `tomlctl items add <file> --json '{...}'` |
 | Append one item (stdin) | `cat payload.json \| tomlctl items add <file> --json -` |
-| Batch append homogeneous items | `tomlctl items add-many <file> --ndjson <path>` |
+| Batch append homogeneous items | `tomlctl items add-many <file> --ndjson -` (a staged `<path>` on Windows) |
 | Apply heterogeneous batch (add/update/remove) | `tomlctl items apply <file> --ops -` |
 | Filter items | `tomlctl items list <file> --where status=open` |
 | Count / bucket items | `tomlctl items list <file> --count` / `--count-by status` / `--group-by file` |
@@ -90,6 +90,8 @@ Six global flags shape the output of every command, so no tomlctl output needs `
 
 A path is dot-separated, with a numeric segment indexing an array (`policy.checkpoints`, `files.0`).
 
+`--get` and `--template` print a string value verbatim, so a value containing newlines spans several lines and a row is no longer one line; use `--lines` or `--select` when line-safety matters.
+
 ```bash
 tomlctl items get ledger.toml R22 --get symbol                 # old::fn
 tomlctl items list ledger.toml --where status=open --get id    # R1\nR3
@@ -102,7 +104,7 @@ tomlctl set .claude/flows/auth-overhaul/context.toml status review -q  # nothing
 
 **Combinations.** `--get` excludes `--select` and `--template`; `--template` excludes `--select`; `-q` excludes every other output flag. Each refusal, and each path failure, is a `kind=validation` error under `--error-format json`. Options apply in this order: `-q` → `--limit` → `--select` → `--get` / `--template` → `--lines` or the default style.
 
-**Unknown paths.** A `--select`, `--get` or template path present on no row of a non-empty row set, or absent from a single object, errors with the list of fields that do exist. Validation runs against the full row set before `--limit` cuts it; a key missing from only some rows is omitted (or rendered empty) on those rows. An empty row set validates nothing and prints its empty result, so `tasks check --get class` on a clean store exits 0.
+**Unknown paths.** When none of the `--select`, `--get` or template paths is present on any row of a non-empty row set, or on a single object, the call errors with the list of fields that do exist. A path no row carries passes beside one that matches and projects to absent (renders empty), so an optional field such as `promoted_to` can ride along in a `--select`; the cost is that a typo beside a valid path goes unflagged. Validation runs against the full row set before `--limit` cuts it; a key missing from only some rows is omitted (or rendered empty) on those rows. An empty row set validates nothing and prints its empty result, so `tasks check --get class` on a clean store exits 0.
 
 **Truncation.** When `--limit` actually removes rows, the report records `"limited": {"shown": n, "total": N}` — in the header of an object report; as a header line `{"limited":{…}}` before the rows of a bare-array report under `--lines`; and by wrapping a bare-array report as `{"rows":[…],"limited":{…}}` in pretty mode. Under `--get` / `--template`, which have no header, `tomlctl: showing n of N rows` goes to stderr instead (suppressed under `--error-format json`). `items list`, `backlog list` and `tasks list` apply `--select` / `--limit` / `--lines` inside their query engine — documented under [output shapes](references/query.md#output-shapes---raw----lines----ndjson) — and report no `limited` key.
 
@@ -129,6 +131,8 @@ A report wrapped in an object emits its other fields as one header line first, t
 | `tasks check` | finding | `ok` |
 | `tasks snapshot` | task row | every other snapshot field |
 | `backlog check` | candidate | `verdict`, `dedup_id`, `thresholds` |
+| `tasks update <id>,<id>` | updated row (`id`, `changed`) | `ok` |
+| `backlog add-many` | input line's outcome (`line`, `action`, `id`) | `ok`, `path`, `created`, `added`, `bumped`, `skipped`, `advisories` |
 | `backlog evidence audit` | finding | `root`, `counts` |
 | `flow list` | flow | `ok`, `skipped` |
 | `flow find-plans` | plan | — |
@@ -177,6 +181,10 @@ Representative entries:
 | `items_clusters` | `items clusters` — file-disjoint clusters, `depends_on` batches, per-cluster `lite_file_scope` |
 | `output_options` | the global `--select` / `--limit` / `--lines` / `--get` / `--template` / `-q` on every command ([Output options](#output-options)) |
 | `orphans_instances` | `items orphans` reports the `instance-missing` class (one row per unresolvable `instances` anchor, with `reason`) |
+| `next_id_bare` | `items next-id` prints the bare id |
+| `id_prefix` | `items add` / `items add-many --id-prefix <P>` mint the id inside the write lock |
+| `auto_last_updated` | CLI writes stamp an existing `last_updated` field |
+| `multi_id` | `tasks update`, `tasks show` and `backlog show` take lists of ids |
 | `agent_context` | `tomlctl capabilities` (the `.commands` field of the JSON output) emits a per-subcommand flag schema (type/required/default/values/repeatable + mutex_groups) for runtime introspection without parsing --help prose. |
 
 ### Agent-context schema (`tomlctl capabilities` — `.commands` field)

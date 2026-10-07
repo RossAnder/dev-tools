@@ -35,18 +35,18 @@ use crate::items::{
     AddManyOutcome, AddOutcome, StaleOp, StalePolicy, array_append, compute_add_many_mutation,
     compute_add_mutation, compute_apply_mutation_with, compute_array_append_mutation,
     compute_backfill_mutation, compute_remove_mutation, compute_update_mutation, dedup_id_disabled,
-    items_add_many, items_add_many_with_dedupe, items_add_to, items_add_value_minted,
-    items_add_value_with_dedupe_to, items_fingerprint, items_get_from, items_get_from_json,
-    items_infer_and_next_id, items_next_id, items_update_to, parse_apply_ops, parse_ndjson,
+    items_add_many, items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to,
+    items_fingerprint, items_get_from, items_get_from_json, items_infer_and_next_id, items_next_id,
+    items_update_to, parse_apply_ops, parse_ndjson,
 };
 use crate::items_sweep::{items_sweep, outcome_json, update_plan};
 use crate::orphans::items_orphans;
 use crate::output::{
     OutputOpts, Rows, build_dry_run_plan_envelope, emit_dry_run_plan, emit_dry_run_scalar,
-    emit_list_raw, print_json, print_json_compact, print_query, print_raw_value, print_report,
-    print_text, stdout_stream, streaming_allowed,
+    print_json, print_json_compact, print_json_line, print_query_list, print_raw_value,
+    print_report, print_text,
 };
-use crate::query::{self, Query, ShapeDispatch};
+use crate::query::{self, Query};
 use crate::sweep::{self, SweepOptions};
 
 /// Maximum number of ops accepted in a single `items apply` batch.
@@ -136,16 +136,14 @@ fn skipped_stale_json(skipped: &[StaleOp]) -> JsonValue {
     JsonValue::Array(skipped.iter().map(StaleOp::to_json).collect())
 }
 
-/// The global output options from the parsed root.
+/// The global output options from the parsed root. Empty `--select`
+/// segments are kept so `OutputOpts::validate` can refuse them.
 fn output_opts(cli: &Cli) -> OutputOpts {
     let out = &cli.output;
-    let select = out.select.as_deref().map(|s| {
-        s.split(',')
-            .map(str::trim)
-            .filter(|p| !p.is_empty())
-            .map(String::from)
-            .collect()
-    });
+    let select = out
+        .select
+        .as_deref()
+        .map(|s| s.split(',').map(|p| p.trim().to_string()).collect());
     OutputOpts {
         select,
         limit: out.limit,
@@ -348,7 +346,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             read_doc(&file, opts, |_doc| Ok(()))?;
-            print_json_compact(&serde_json::json!({"ok": true}))?;
+            print_json_line(&serde_json::json!({"ok": true}))?;
         }
         Cmd::Items { op } => items_dispatch(op)?,
         Cmd::Blocks { op } => blocks_dispatch(op)?,
@@ -532,37 +530,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 count,
             };
             let q = Query::from_query_input(&query.to_query_input(&legacy, crate::output::opts()))?;
-            // `ndjson` is an output-encoding choice, not a shape. Only
-            // the Array and Pluck shape + ndjson encoding combinations are
-            // meaningful; for aggregation shapes (Count/CountBy/
-            // CountDistinct/GroupBy) the ndjson bit is silently ignored
-            // since the output is a single JSON value that has no per-line
-            // decomposition.
-            //
-            // Pluck is streaming-eligible too: `--pluck f
-            // --lines` (or `--pluck f --ndjson`) streams one plucked JSON
-            // value per line; `run_streaming` mirrors `apply_pluck`'s
-            // null/missing-drop so the set of emitted values is identical
-            // to the non-streaming path. `--get` / `--template` need the
-            // whole row set, so they take the non-streaming path.
-            if q.ndjson && q.shape.is_streamable() && streaming_allowed() {
-                // `--pluck foo --lines --raw` flows through here too;
-                // `run_streaming` reads `q.raw` and emits bare values per
-                // line instead of quoted JSON. The Array variant has no raw
-                // form, so `validate_query` rejects `--raw` there.
-                stdout_stream(|mut w| {
-                    read_doc(&file, opts, |doc| {
-                        query::run_streaming(doc, &array, &q, &mut w)
-                    })
-                })?;
-            } else {
-                let out = read_doc(&file, opts, |doc| query::run(doc, &array, &q))?;
-                if q.raw {
-                    emit_list_raw(&out, &q.shape)?;
-                } else {
-                    print_query(out)?;
-                }
-            }
+            read_doc(&file, opts, |doc| print_query_list(doc, &array, &q))?;
         }
         ItemsOp::Get {
             file,
@@ -595,10 +563,12 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let dedupe_fields = parse_dedupe_fields(dedupe_by.as_deref())?;
             if let Some(prefix) = id_prefix.as_deref() {
                 let patch: JsonValue = read_json_value_from_arg(&json).context("parsing --json")?;
+                // Live and dry-run both run the one-row `items_add_many_with_dedupe`
+                // funnel, so their validation errors are byte-identical.
+                let rows = vec![patch];
                 if dry_run {
                     warn_if_read_outside_claude(&file);
                     let read_opts = dry_run_read_opts(integrity.verify_integrity);
-                    let rows = vec![patch];
                     let plan = read_doc(&file, read_opts, |doc| {
                         compute_add_many_mutation(
                             doc,
@@ -622,8 +592,28 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     opts,
                     on_missing,
                     stamped_conditional(stamp, |doc| {
-                        let result =
-                            items_add_value_minted(doc, patch, &array, &dedupe_fields, prefix)?;
+                        let mut many = items_add_many_with_dedupe(
+                            doc,
+                            &array,
+                            &rows,
+                            None,
+                            &dedupe_fields,
+                            Some(prefix),
+                        )?;
+                        let result = match many.skipped_rows.pop() {
+                            Some(skip) => (
+                                AddOutcome::Skipped {
+                                    matched_id: skip.matched_id.clone(),
+                                },
+                                skip.matched_id,
+                            ),
+                            None => (
+                                AddOutcome::Added,
+                                many.ids
+                                    .pop()
+                                    .expect("a one-row add that skips nothing appends"),
+                            ),
+                        };
                         let mutated = matches!(result.0, AddOutcome::Added);
                         outcome = Some(result);
                         Ok(mutated)

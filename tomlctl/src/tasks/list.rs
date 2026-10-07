@@ -11,7 +11,7 @@ use super::store;
 use crate::cli::{LegacyShortcuts, QueryArgs, ReadIntegrityArgs, TasksTarget, read_integrity_opts};
 use crate::io::{read_doc, strict_read_check};
 use crate::output::{self, OutputOpts};
-use crate::query::{self, Query, ShapeDispatch};
+use crate::query::Query;
 
 /// The array the store keeps its rows in, and the reason the whole `items`
 /// query machinery applies to them.
@@ -27,21 +27,9 @@ pub(crate) fn dispatch(
     strict_read_check(&path, integrity.strict_read)?;
     let opts = read_integrity_opts(&integrity);
     let q = build_query(count, &query_args, output::opts())?;
-
-    if q.ndjson && q.shape.is_streamable() && output::streaming_allowed() {
-        return output::stdout_stream(|mut w| {
-            read_doc(&path, opts, |doc| {
-                query::run_streaming(doc, ARRAY_ITEMS, &q, &mut w)
-            })
-        });
-    }
-
-    let out = read_doc(&path, opts, |doc| query::run(doc, ARRAY_ITEMS, &q))?;
-    if q.raw {
-        output::emit_list_raw(&out, &q.shape)
-    } else {
-        output::print_query(out)
-    }
+    read_doc(&path, opts, |doc| {
+        output::print_query_list(doc, ARRAY_ITEMS, &q)
+    })
 }
 
 /// The store carries none of the legacy shortcut fields, so `--count` is the
@@ -61,6 +49,7 @@ fn build_query(count: bool, query_args: &QueryArgs, out: &OutputOpts) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query;
     use crate::tasks::schema::{self, DEFAULT_HEADING_DEPTH, Effort, Status, Store, TaskRow};
     use clap::Parser;
     use serde_json::Value as JsonValue;

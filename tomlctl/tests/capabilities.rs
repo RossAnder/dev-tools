@@ -939,13 +939,13 @@ fn error_format_json_flag_position_is_global() {
 // `--strict-read` on every read subcommand — surface `kind=not_found` on a
 // missing file instead of returning an empty default. The only read path with
 // a "missing → silent default" branch is `items next-id --prefix <P>`
-// (returns `"<P>1"`); every other read subcommand already errors on a missing
+// (returns `<P>1`); every other read subcommand already errors on a missing
 // file via `read_toml`'s tagged NotFound, so `--strict-read` is a no-op there
 // but accepted uniformly so callers can pass it without branching on
 // subcommand.
 //
 // Default (flag absent) behaviour: `items next-id --prefix R <missing>` still
-// mints `"R1"` for flows that bootstrap the ledger lazily.
+// mints `R1` for flows that bootstrap the ledger lazily.
 //
 // Layering: `--strict-read` fires BEFORE `--verify-integrity`, so
 // `items list <missing> --strict-read --verify-integrity` produces
@@ -954,7 +954,7 @@ fn error_format_json_flag_position_is_global() {
 // ---------------------------------------------------------------------------
 
 /// Default (flag absent) behaviour on `items next-id` with a missing ledger:
-/// `"R1"` is the lazy-bootstrap fast path, and the strict-read gate must not
+/// `R1` is the lazy-bootstrap fast path, and the strict-read gate must not
 /// disturb it. Duplicates `items_next_id_on_missing_file_prints_prefix_one`
 /// in spirit, but lives beside the strict-read tests so a regression in the
 /// gate surfaces here rather than in a distant module.

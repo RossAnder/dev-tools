@@ -41,18 +41,31 @@ fn today_iso() -> String {
         .to_string()
 }
 
+/// Asserts the stamp equals a day read before or after the run, so a UTC
+/// midnight crossing mid-test cannot fail it.
+fn assert_stamped_today(ledger: &Path, before: &str) {
+    let after = today_iso();
+    let got = last_updated(ledger);
+    assert!(
+        got.as_deref() == Some(before) || got.as_deref() == Some(after.as_str()),
+        "last_updated {got:?} is neither {before} nor {after}"
+    );
+}
+
 #[test]
 fn items_add_stamps_today() {
     let (dir, ledger) = seeded();
     let l = ledger.to_str().unwrap();
+    let before = today_iso();
     run(dir.path(), &["items", "add", l, "--json", r#"{"id":"R2"}"#]);
-    assert_eq!(last_updated(&ledger).as_deref(), Some(today_iso().as_str()));
+    assert_stamped_today(&ledger, &before);
 }
 
 #[test]
 fn items_add_id_prefix_stamps_today() {
     let (dir, ledger) = seeded();
     let l = ledger.to_str().unwrap();
+    let before = today_iso();
     run(
         dir.path(),
         &[
@@ -65,7 +78,7 @@ fn items_add_id_prefix_stamps_today() {
             "R",
         ],
     );
-    assert_eq!(last_updated(&ledger).as_deref(), Some(today_iso().as_str()));
+    assert_stamped_today(&ledger, &before);
 }
 
 #[test]
@@ -83,16 +96,18 @@ fn no_stamp_keeps_the_old_date() {
 fn plan_path_writes_stamp_today() {
     let (dir, ledger) = seeded();
     let l = ledger.to_str().unwrap();
+    let before = today_iso();
     run(dir.path(), &["items", "remove", l, "R1"]);
-    assert_eq!(last_updated(&ledger).as_deref(), Some(today_iso().as_str()));
+    assert_stamped_today(&ledger, &before);
 }
 
 #[test]
 fn set_of_another_key_stamps_today() {
     let (dir, ledger) = seeded();
     let l = ledger.to_str().unwrap();
+    let before = today_iso();
     run(dir.path(), &["set", l, "scope", "x"]);
-    assert_eq!(last_updated(&ledger).as_deref(), Some(today_iso().as_str()));
+    assert_stamped_today(&ledger, &before);
 }
 
 #[test]
@@ -155,6 +170,7 @@ fn first_add_to_a_missing_flowless_review_ledger_writes_last_updated() {
     let reviews = dir.path().join(".claude").join("reviews");
     fs::create_dir_all(&reviews).unwrap();
     let ledger = reviews.join("x.toml");
+    let before = today_iso();
     run(
         dir.path(),
         &[
@@ -167,5 +183,5 @@ fn first_add_to_a_missing_flowless_review_ledger_writes_last_updated() {
     );
     let doc: toml::Value = toml::from_str(&fs::read_to_string(&ledger).unwrap()).unwrap();
     assert_eq!(doc["schema_version"].as_integer(), Some(1));
-    assert_eq!(last_updated(&ledger).as_deref(), Some(today_iso().as_str()));
+    assert_stamped_today(&ledger, &before);
 }

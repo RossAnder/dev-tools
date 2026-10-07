@@ -24,8 +24,8 @@ use std::io::Write;
 use toml::Value as TomlValue;
 
 use crate::convert::{
-    TypeHint, compare_typed, json_type_name, navigate, parse_typed_value, split_type_hint,
-    toml_to_json,
+    TypeHint, compare_typed, json_type_name, navigate, parse_typed_value, project, split_type_hint,
+    toml_to_json, validate_paths,
 };
 use crate::errors::{ErrorKind, tagged_err};
 
@@ -1378,7 +1378,7 @@ fn validate_select(items: &[TomlValue], q: &Query) -> Result<()> {
         return Ok(());
     }
     let rows: Vec<JsonValue> = items.iter().map(toml_to_json).collect();
-    crate::output::validate_paths(&rows, paths.iter().map(String::as_str), "--select")
+    validate_paths(&rows, paths.iter().map(String::as_str), "--select")
 }
 
 pub(crate) fn apply_projection(item: &JsonValue, q: &Query) -> JsonValue {
@@ -1386,7 +1386,7 @@ pub(crate) fn apply_projection(item: &JsonValue, q: &Query) -> JsonValue {
         return item.clone();
     };
     if let Some(keep) = &q.select {
-        return crate::output::project(item, keep);
+        return project(item, keep);
     }
     if let Some(drop) = &q.exclude {
         // Build the kept-keys map directly with a HashSet membership probe
@@ -1699,15 +1699,13 @@ fn bucket_key_borrowed(v: Option<&JsonValue>) -> Cow<'_, str> {
 }
 
 /// Plain-old-data input for `Query::from_query_input`. Draws the module
-/// boundary between the clap-derive layer (`cli.rs`) and the query engine
-/// (this module): query.rs used to reach back into `crate::cli` for
-/// `LegacyShortcuts<'_>` and `QueryArgs`, which inverted the intended
-/// dependency direction (cli → query). This POD owns only primitive
-/// standard-library types — no clap derives, no `'a` lifetimes — so the
-/// query module compiles without any `use crate::cli` import. Fields
-/// mirror the subset of `LegacyShortcuts` + `QueryArgs` that
-/// `from_query_input` actually reads; see
-/// `cli::query_input_from_cli` for the trivial field-copy adapter.
+/// boundary between the clap-derive layer (`cli`) and the query engine
+/// (this module), keeping the dependency direction cli → query. This POD
+/// owns only primitive standard-library types — no clap derives, no `'a`
+/// lifetimes — so the query module compiles without any `use crate::cli`
+/// import. Fields mirror the subset of `LegacyShortcuts` + `QueryArgs` that
+/// `from_query_input` actually reads; `QueryArgs::to_query_input` is the
+/// field-copy adapter.
 pub(crate) struct QueryInput {
     // Legacy shortcut flags (pre-query-engine back-compat).
     pub(crate) status: Option<String>,
@@ -1729,8 +1727,9 @@ pub(crate) struct QueryInput {
     pub(crate) where_prefix: Vec<String>,
     pub(crate) where_suffix: Vec<String>,
     pub(crate) where_regex: Vec<String>,
-    // Projection + shape + pagination.
-    pub(crate) select: Option<String>,
+    // Projection + shape + pagination. `select` arrives already split and
+    // validated by the global output options.
+    pub(crate) select: Option<Vec<String>>,
     pub(crate) exclude: Option<String>,
     pub(crate) pluck: Option<String>,
     pub(crate) sort_by: Vec<String>,
@@ -1771,7 +1770,7 @@ impl Query {
     ///
     /// The input is a plain-old-data `QueryInput` owned by this module
     /// rather than `&crate::cli::LegacyShortcuts` + `&crate::cli::QueryArgs`;
-    /// `cli::query_input_from_cli` is the field-copy adapter. That keeps the
+    /// `QueryArgs::to_query_input` is the field-copy adapter. That keeps the
     /// import direction cli → query, and keeps the dispatch site a one-line
     /// call instead of a 26-argument spray.
     ///
@@ -1891,13 +1890,10 @@ impl Query {
             predicates.push(Predicate::WhereRegex { key, pattern });
         }
 
-        // Projection: parse `--select a,b` / `--exclude a,b` into Vec<String>.
-        // `validate_query` enforces `select` / `exclude` / `pluck` mutual
-        // exclusion; we just populate the struct.
-        let select_fields: Option<Vec<String>> = input
-            .select
-            .as_deref()
-            .map(|s| s.split(',').map(|t| t.trim().to_string()).collect());
+        // Projection: parse `--exclude a,b` into Vec<String>; `select` is
+        // already split. `validate_query` enforces `select` / `exclude` /
+        // `pluck` mutual exclusion; we just populate the struct.
+        let select_fields = input.select.clone();
         let exclude_fields: Option<Vec<String>> = input
             .exclude
             .as_deref()

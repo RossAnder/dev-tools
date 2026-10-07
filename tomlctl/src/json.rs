@@ -25,6 +25,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::cli::{JsonOp, ReadIntegrityArgs, WriteIntegrityArgs};
+use crate::convert::navigate_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::{maybe_verify_integrity, refresh_sidecar};
 use crate::io::{
@@ -85,28 +86,6 @@ fn refuse_toml_extension(file: &Path) -> Result<()> {
 /// so a per-flow `settings.json` is also exempt.
 fn should_skip_sidecar(file: &Path) -> bool {
     file.file_name().is_some_and(|n| n == "settings.json")
-}
-
-/// JSON-side dotted-path read. Mirrors `convert::navigate` for TOML, but
-/// over `serde_json::Value`. Each segment indexes by string key on objects,
-/// or by `usize` index on arrays. Returns `None` on any missing segment or
-/// type mismatch (e.g. trying to descend into a scalar / null).
-pub(crate) fn navigate_json<'a>(root: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
-    if path.is_empty() {
-        return Some(root);
-    }
-    let mut cur = root;
-    for seg in path.split('.') {
-        cur = match cur {
-            JsonValue::Object(map) => map.get(seg)?,
-            JsonValue::Array(arr) => {
-                let idx: usize = seg.parse().ok()?;
-                arr.get(idx)?
-            }
-            _ => return None,
-        };
-    }
-    Some(cur)
 }
 
 /// JSON-side dotted-path write. Mirrors `convert::set_at_path` for TOML.
@@ -601,18 +580,6 @@ fn emit_dry_run_envelope(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn navigate_json_walks_objects_and_arrays() {
-        let v: JsonValue =
-            serde_json::from_str(r#"{"permissions":{"allow":["a","b","c"]}}"#).unwrap();
-        assert_eq!(
-            navigate_json(&v, "permissions.allow.1"),
-            Some(&JsonValue::String("b".to_string()))
-        );
-        assert_eq!(navigate_json(&v, "missing"), None);
-        assert_eq!(navigate_json(&v, "permissions.deny"), None);
-    }
 
     #[test]
     fn set_at_path_json_autovivifies_missing_parents() {

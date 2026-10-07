@@ -684,3 +684,21 @@ scope = [
     "CLAUDE.md",
     ".gitignore",
 ]
+
+[[active]]
+slug = "eventual-churning-sunrise"
+last_used = "2026-10-07T12:17:25.159395024Z"
+
+[active.binding]
+branch = "main"
+worktree = "/home/ross/Dev/dev-tools"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/README.md",
+    "glimpse/Cargo.lock",
+    "claude/skills/**",
+    "claude/commands/**",
+]

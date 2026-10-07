@@ -31,7 +31,7 @@ use toml::Value as TomlValue;
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{read_toml, repo_or_cwd_root};
-use crate::output::{print_json, print_json_compact};
+use crate::output::{print_json, print_json_line};
 use crate::time::{parse_iso_to_date, parse_threshold, today_utc_date};
 
 pub(crate) fn dispatch(
@@ -63,7 +63,7 @@ pub(crate) fn dispatch(
     };
 
     if json_out {
-        print_json_compact(&verdict)?;
+        print_json_line(&verdict)?;
     } else {
         print_json(&verdict)?;
     }

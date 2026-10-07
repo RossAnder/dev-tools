@@ -15,10 +15,10 @@ use serde_json::Value as JsonValue;
 use std::io::{BufWriter, Write};
 use std::sync::OnceLock;
 
+use crate::convert::{navigate_json, project, validate_paths};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::ScalarMutationPlan;
 use crate::items::MutationPlan;
-use crate::json::navigate_json;
 use crate::query::{self, OutputShape, RawArrayHint, ShapeDispatch};
 use template::{Template, value_text};
 
@@ -82,6 +82,20 @@ impl OutputOpts {
     /// subcommand, and a parse of `--template` so a malformed one fails
     /// before any command runs.
     pub(crate) fn validate(&self) -> Result<()> {
+        if let Some(paths) = &self.select {
+            if paths.is_empty() {
+                return Err(invalid("--select: empty path list"));
+            }
+            if let Some(i) = paths.iter().position(String::is_empty) {
+                return Err(invalid(format!(
+                    "--select: empty path at position {}",
+                    i + 1
+                )));
+            }
+        }
+        if self.get.as_deref() == Some("") {
+            return Err(invalid("--get: empty path"));
+        }
         if self.quiet
             && let Some(other) = self.shaping_flags().first()
         {
@@ -148,54 +162,6 @@ fn row_slot(report: &mut JsonValue, shape: Shape) -> Option<&mut Vec<JsonValue>>
     }
 }
 
-/// Keep only `paths` of `row`, each keyed by its path string; a path the row
-/// lacks is left out.
-pub(crate) fn project(row: &JsonValue, paths: &[String]) -> JsonValue {
-    let mut out = serde_json::Map::new();
-    for p in paths {
-        if let Some(v) = navigate_json(row, p) {
-            out.insert(p.clone(), v.clone());
-        }
-    }
-    JsonValue::Object(out)
-}
-
-/// Refuse a path that no row carries, naming the top-level keys that do
-/// exist. An empty row set validates nothing.
-pub(crate) fn validate_paths<'a>(
-    rows: &[JsonValue],
-    paths: impl IntoIterator<Item = &'a str>,
-    flag: &str,
-) -> Result<()> {
-    if rows.is_empty() {
-        return Ok(());
-    }
-    for p in paths {
-        if rows.iter().any(|r| navigate_json(r, p).is_some()) {
-            continue;
-        }
-        let mut keys: Vec<&str> = Vec::new();
-        for r in rows {
-            if let Some(obj) = r.as_object() {
-                for k in obj.keys() {
-                    if !keys.contains(&k.as_str()) {
-                        keys.push(k);
-                    }
-                }
-            }
-        }
-        let available = if keys.is_empty() {
-            "(none)".to_string()
-        } else {
-            keys.join(", ")
-        };
-        return Err(invalid(format!(
-            "{flag} path `{p}` matches no field; available fields: {available}"
-        )));
-    }
-    Ok(())
-}
-
 fn push_line(out: &mut Vec<u8>, text: &str) {
     out.extend_from_slice(text.as_bytes());
     out.push(b'\n');
@@ -210,119 +176,144 @@ fn push_json(out: &mut Vec<u8>, v: &JsonValue, style: Style) -> Result<()> {
     Ok(())
 }
 
+const LIMIT_ON_ONE: &str =
+    "`--limit` applies to row reports; this command prints a single object (use --get or --select)";
+
+fn validate_shaping_paths(
+    rows: &[JsonValue],
+    opts: &OutputOpts,
+    template: Option<&Template>,
+) -> Result<()> {
+    if let Some(paths) = &opts.select {
+        validate_paths(rows, paths.iter().map(String::as_str), "--select")?;
+    }
+    if let Some(path) = &opts.get {
+        validate_paths(rows, [path.as_str()], "--get")?;
+    }
+    if let Some(t) = template {
+        validate_paths(rows, t.paths(), "--template")?;
+    }
+    Ok(())
+}
+
+/// `emit` for a single-object report, by reference: only `--select` builds
+/// a new value, so the report itself is never cloned.
+fn emit_one(report: &JsonValue, style: Style, opts: &OutputOpts) -> Result<Emitted> {
+    if opts.quiet {
+        return Ok(Emitted::default());
+    }
+    let template = opts.template.as_deref().map(Template::parse).transpose()?;
+    validate_shaping_paths(std::slice::from_ref(report), opts, template.as_ref())?;
+    if opts.limit.is_some() {
+        return Err(invalid(LIMIT_ON_ONE));
+    }
+    let projected;
+    let report = match &opts.select {
+        Some(paths) => {
+            projected = project(report, paths);
+            &projected
+        }
+        None => report,
+    };
+    let mut out = Vec::new();
+    if let Some(path) = &opts.get {
+        match navigate_json(report, path) {
+            Some(JsonValue::Array(items)) => items
+                .iter()
+                .for_each(|v| push_line(&mut out, &value_text(v))),
+            Some(v) => push_line(&mut out, &value_text(v)),
+            None => {}
+        }
+    } else if let Some(t) = &template {
+        push_line(&mut out, &t.render(report));
+    } else {
+        let style = if opts.lines { Style::Compact } else { style };
+        push_json(&mut out, report, style)?;
+    }
+    Ok(Emitted {
+        stdout: out,
+        notice: None,
+    })
+}
+
 /// Apply `opts` to one report. Order: `-q`, `--limit`, `--select`, then
 /// `--get` / `--template`, then `--lines` or `style`. Paths are validated
-/// against every row before `--limit` cuts any.
+/// against every row before `--limit` cuts any. A report without its
+/// declared rows is emitted as one object.
 pub(crate) fn emit(
     mut report: JsonValue,
     shape: Shape,
     style: Style,
     opts: &OutputOpts,
 ) -> Result<Emitted> {
+    let (rows_shape, mut rows) = match (shape, row_slot(&mut report, shape)) {
+        (Shape::Rows(r), Some(slot)) => (r, std::mem::take(slot)),
+        _ => return emit_one(&report, style, opts),
+    };
     if opts.quiet {
         return Ok(Emitted::default());
     }
     let template = opts.template.as_deref().map(Template::parse).transpose()?;
-    let rows_shape = match shape {
-        Shape::Rows(r) if row_slot(&mut report, shape).is_some() => Some(r),
-        _ => None,
-    };
-    let shape = rows_shape.map_or(Shape::One, Shape::Rows);
-
-    {
-        let rows: &[JsonValue] = match row_slot(&mut report, shape) {
-            Some(rows) => rows,
-            None => std::slice::from_ref(&report),
-        };
-        if let Some(paths) = &opts.select {
-            validate_paths(rows, paths.iter().map(String::as_str), "--select")?;
-        }
-        if let Some(path) = &opts.get {
-            validate_paths(rows, [path.as_str()], "--get")?;
-        }
-        if let Some(t) = &template {
-            validate_paths(rows, t.paths(), "--template")?;
-        }
-    }
+    validate_shaping_paths(&rows, opts, template.as_ref())?;
 
     let mut limited = None;
-    if let Some(n) = opts.limit {
-        let Some(rows) = row_slot(&mut report, shape) else {
-            return Err(invalid("`--limit` applies to row reports"));
-        };
-        if rows.len() > n {
-            limited = Some((n, rows.len()));
-            rows.truncate(n);
-        }
+    if let Some(n) = opts.limit
+        && rows.len() > n
+    {
+        limited = Some((n, rows.len()));
+        rows.truncate(n);
     }
 
     if let Some(paths) = &opts.select {
-        match row_slot(&mut report, shape) {
-            Some(rows) => rows.iter_mut().for_each(|r| *r = project(r, paths)),
-            None => report = project(&report, paths),
-        }
+        rows.iter_mut().for_each(|r| *r = project(r, paths));
     }
 
     let notice = limited.map(|(n, total)| format!("tomlctl: showing {n} of {total} rows"));
     let mut out = Vec::new();
     if opts.get.is_some() || template.is_some() {
-        let render = |v: &JsonValue| match (&opts.get, &template) {
-            (Some(path), _) => navigate_json(v, path).map(value_text),
-            (None, Some(t)) => Some(t.render(v)),
-            (None, None) => None,
-        };
-        match row_slot(&mut report, shape) {
-            Some(rows) => rows
-                .iter()
-                .filter_map(&render)
-                .for_each(|l| push_line(&mut out, &l)),
-            None => match (
-                &opts.get,
-                navigate_json(&report, opts.get.as_deref().unwrap_or("")),
-            ) {
-                (Some(_), Some(JsonValue::Array(items))) => items
-                    .iter()
-                    .for_each(|v| push_line(&mut out, &value_text(v))),
-                _ => {
-                    if let Some(l) = render(&report) {
-                        push_line(&mut out, &l);
-                    }
-                }
-            },
+        // A row lacking the `--get` path prints an empty line, as
+        // `--template` renders a missing key, so output stays one line per
+        // row.
+        for r in &rows {
+            let line = match (&opts.get, &template) {
+                (Some(path), _) => navigate_json(r, path).map(value_text),
+                (None, Some(t)) => Some(t.render(r)),
+                (None, None) => None,
+            };
+            push_line(&mut out, &line.unwrap_or_default());
         }
         return Ok(Emitted {
             stdout: out,
             notice,
         });
     }
+    if let Some(slot) = row_slot(&mut report, Shape::Rows(rows_shape)) {
+        *slot = rows;
+    }
 
     let limited_json =
         limited.map(|(shown, total)| serde_json::json!({ "shown": shown, "total": total }));
-    match (shape, limited_json) {
-        (Shape::Rows(Rows::Field(_)), Some(l)) => {
+    match (rows_shape, limited_json) {
+        (Rows::Field(_), Some(l)) => {
             if let Some(obj) = report.as_object_mut() {
                 obj.insert("limited".to_string(), l);
             }
         }
-        (Shape::Rows(Rows::Top), Some(l)) if !opts.lines => {
+        (Rows::Top, Some(l)) if !opts.lines => {
             report = serde_json::json!({ "rows": report, "limited": l });
         }
-        (Shape::Rows(Rows::Top), Some(l)) => {
+        (Rows::Top, Some(l)) => {
             push_json(
                 &mut out,
                 &serde_json::json!({ "limited": l }),
                 Style::Compact,
             )?;
         }
-        _ => {}
+        (_, None) => {}
     }
 
     if opts.lines {
-        let lines = match shape {
-            Shape::Rows(rows) => report_lines(report, rows),
-            Shape::One => vec![report],
-        };
-        for line in &lines {
+        for line in &report_lines(report, rows_shape) {
             push_json(&mut out, line, Style::Compact)?;
         }
     } else {
@@ -368,20 +359,47 @@ pub(crate) fn print_json(v: &JsonValue) -> Result<()> {
     if o.is_inert() {
         return write_json(v, Style::Pretty);
     }
-    write_emitted(emit(v.clone(), Shape::One, Style::Pretty, o)?, o)
+    write_emitted(emit_one(v, Style::Pretty, o)?, o)
+}
+
+/// Compact single-line `print_json` for read verbs: a shaping failure is an
+/// error, as in `print_json`. Write envelopes use `print_json_compact`.
+pub(crate) fn print_json_line(v: &JsonValue) -> Result<()> {
+    let o = opts();
+    if o.is_inert() {
+        return write_json(v, Style::Compact);
+    }
+    write_emitted(emit_one(v, Style::Compact, o)?, o)
 }
 
 /// `print_json_compact`'s core. A shaping failure yields the unshaped value
 /// and a warning instead of an error: this emitter carries write envelopes,
 /// and an exit of 1 after a landed write invites a retry that applies it
-/// twice.
-fn compact_lenient(v: &JsonValue, opts: &OutputOpts) -> Result<(Emitted, Option<String>)> {
-    match emit(v.clone(), Shape::One, Style::Compact, opts) {
+/// twice. Under `json_errors` the warning is one compact JSON line, since
+/// stderr then carries only JSON.
+fn compact_lenient(
+    v: &JsonValue,
+    shape: Shape,
+    opts: &OutputOpts,
+) -> Result<(Emitted, Option<String>)> {
+    let shaped = match shape {
+        Shape::One => emit_one(v, Style::Compact, opts),
+        Shape::Rows(_) => emit(v.clone(), shape, Style::Compact, opts),
+    };
+    match shaped {
         Ok(emitted) => Ok((emitted, None)),
         Err(err) => {
             let mut stdout = Vec::new();
             push_json(&mut stdout, v, Style::Compact)?;
-            let warning = format!("tomlctl: warning: {err:#}; printed the unshaped output");
+            let message = format!("{err:#}; printed the unshaped output");
+            let warning = if opts.json_errors {
+                let kind = err
+                    .downcast_ref::<crate::errors::TaggedError>()
+                    .map_or("other", |t| t.kind.as_str());
+                serde_json::json!({ "warning": { "kind": kind, "message": message } }).to_string()
+            } else {
+                format!("tomlctl: warning: {message}")
+            };
             Ok((
                 Emitted {
                     stdout,
@@ -437,6 +455,25 @@ pub(crate) fn print_query(out: JsonValue) -> Result<()> {
     };
     let emitted = emit(out, shape, Style::Pretty, &o)?;
     write_emitted(emitted, &o)
+}
+
+/// Run `q` over `doc`'s `array` and emit the result: streamed line by line
+/// when `--ndjson`/`--lines` meets a streamable shape and no `--get` or
+/// `--template` needs the whole row set, otherwise buffered through
+/// `emit_list_raw` or `print_query`.
+pub(crate) fn print_query_list(doc: &toml::Value, array: &str, q: &query::Query) -> Result<()> {
+    // Aggregation shapes ignore `--ndjson`: their output is one value. A
+    // streamed `--pluck` mirrors `apply_pluck`'s null/missing drop, and under
+    // `--raw` writes bare values per line.
+    if q.ndjson && q.shape.is_streamable() && streaming_allowed() {
+        return stdout_stream(|mut w| query::run_streaming(doc, array, q, &mut w));
+    }
+    let out = query::run(doc, array, q)?;
+    if q.raw {
+        emit_list_raw(&out, &q.shape)
+    } else {
+        print_query(out)
+    }
 }
 
 /// Whether text output may be written: `false` under `-q`, an error for any
@@ -517,20 +554,33 @@ pub(crate) fn emit_dry_run_plan(plan: &MutationPlan) -> Result<()> {
 }
 
 /// Compact single-line sibling of `print_json`, used for the `{"ok":true,...}`
-/// terminal status lines emitted by write-path dispatch arms. Keeping
-/// this separate from `print_json` preserves the pretty-printed contract that
-/// downstream consumers rely on for read-path output (tests + humans) while
-/// letting every OK-status emitter funnel through a single helper rather
-/// than hand-constructing JSON strings. Integration tests assert on these
-/// compact bytes with `.contains(r#"{"ok":true,"added":N}"#)`, so the
-/// single-line form is load-bearing. A shaping failure prints the unshaped
-/// value with a stderr warning and returns `Ok` (see `compact_lenient`).
+/// terminal status lines emitted by write-path and dry-run dispatch arms.
+/// Integration tests assert on these compact bytes with
+/// `.contains(r#"{"ok":true,"added":N}"#)`, so the single-line form is
+/// load-bearing. A shaping failure prints the unshaped value with a stderr
+/// warning and returns `Ok` (see `compact_lenient`); a read verb that prints
+/// compact JSON uses `print_json_line`, which fails instead.
 pub(crate) fn print_json_compact(v: &JsonValue) -> Result<()> {
     let o = opts();
     if o.is_inert() {
         return write_json(v, Style::Compact);
     }
-    let (emitted, warning) = compact_lenient(v, o)?;
+    let (emitted, warning) = compact_lenient(v, Shape::One, o)?;
+    if let Some(w) = warning {
+        eprintln!("{w}");
+    }
+    write_emitted(emitted, o)
+}
+
+/// `print_json_compact` for a write envelope that carries per-row results in
+/// one field, so `--select` / `--get` / `--template` / `--limit` act on those
+/// rows and `--lines` emits the rest of the envelope as a header line first.
+pub(crate) fn print_rows_compact(v: &JsonValue, rows: Rows) -> Result<()> {
+    let o = opts();
+    if o.is_inert() {
+        return write_json(v, Style::Compact);
+    }
+    let (emitted, warning) = compact_lenient(v, Shape::Rows(rows), o)?;
     if let Some(w) = warning {
         eprintln!("{w}");
     }
@@ -803,14 +853,9 @@ mod tests {
     #[test]
     fn limit_on_a_single_report_is_refused() {
         let o = with(|o| o.limit = Some(1));
-        assert_eq!(
-            err(json!({ "a": 1 }), Shape::One, &o),
-            "`--limit` applies to row reports"
-        );
-        assert_eq!(
-            err(json!({ "a": 1 }), FIELD, &o),
-            "`--limit` applies to row reports"
-        );
+        let msg = "`--limit` applies to row reports; this command prints a single object (use --get or --select)";
+        assert_eq!(err(json!({ "a": 1 }), Shape::One, &o), msg);
+        assert_eq!(err(json!({ "a": 1 }), FIELD, &o), msg);
     }
 
     #[test]
@@ -833,6 +878,20 @@ mod tests {
             out(rows3(), TOP, Style::Pretty, &o),
             "{\"id\":1,\"deps\":[2]}\n{\"id\":2}\n{\"id\":3}\n"
         );
+    }
+
+    #[test]
+    fn select_keeps_a_path_no_row_carries_beside_one_that_matches() {
+        let o = with(|o| {
+            o.select = Some(vec!["id".into(), "promoted_to".into()]);
+            o.lines = true;
+        });
+        assert_eq!(
+            out(rows3(), TOP, Style::Pretty, &o),
+            "{\"id\":1}\n{\"id\":2}\n{\"id\":3}\n"
+        );
+        let o = with(|o| o.select = Some(vec!["nope".into(), "also_nope".into()]));
+        assert!(err(rows3(), TOP, &o).starts_with("--select path `nope` matches no field"));
     }
 
     #[test]
@@ -881,7 +940,7 @@ mod tests {
     #[test]
     fn get_prints_one_line_per_row() {
         let o = with(|o| o.get = Some("deps".into()));
-        assert_eq!(out(rows3(), TOP, Style::Pretty, &o), "[2]\n");
+        assert_eq!(out(rows3(), TOP, Style::Pretty, &o), "[2]\n\n\n");
         let o = with(|o| o.get = Some("id".into()));
         let report = json!({ "total": 3, "items": rows3() });
         assert_eq!(out(report, FIELD, Style::Pretty, &o), "1\n2\n3\n");
@@ -964,23 +1023,97 @@ mod tests {
     fn compact_shaping_failure_prints_the_unshaped_value() {
         let v = json!({ "ok": true, "added": 1 });
         let o = with(|o| o.get = Some("missing".into()));
-        let (e, warning) = compact_lenient(&v, &o).unwrap();
+        let (e, warning) = compact_lenient(&v, Shape::One, &o).unwrap();
         assert_eq!(
             String::from_utf8(e.stdout).unwrap(),
             "{\"ok\":true,\"added\":1}\n"
         );
         assert!(warning.unwrap().contains("--get path `missing`"));
         let o = with(|o| o.limit = Some(1));
-        let (_, warning) = compact_lenient(&v, &o).unwrap();
-        assert!(
-            warning
-                .unwrap()
-                .contains("`--limit` applies to row reports")
-        );
+        let (_, warning) = compact_lenient(&v, Shape::One, &o).unwrap();
+        assert!(warning.unwrap().contains(LIMIT_ON_ONE));
         let o = with(|o| o.get = Some("added".into()));
-        let (e, warning) = compact_lenient(&v, &o).unwrap();
+        let (e, warning) = compact_lenient(&v, Shape::One, &o).unwrap();
         assert_eq!(String::from_utf8(e.stdout).unwrap(), "1\n");
         assert!(warning.is_none());
+    }
+
+    #[test]
+    fn strict_compact_shaping_failure_is_a_validation_error() {
+        let v = json!({ "ok": true, "added": 1 });
+        let o = with(|o| o.get = Some("missing".into()));
+        let err = emit_one(&v, Style::Compact, &o).unwrap_err();
+        let tagged = err.downcast_ref::<crate::errors::TaggedError>().unwrap();
+        assert_eq!(tagged.kind.as_str(), "validation");
+        let o = with(|o| o.lines = true);
+        let e = emit_one(&json!({ "a": [1, 2] }), Style::Pretty, &o).unwrap();
+        assert_eq!(String::from_utf8(e.stdout).unwrap(), "{\"a\":[1,2]}\n");
+    }
+
+    #[test]
+    fn compact_rows_shape_the_row_field_and_stay_lenient() {
+        let v = json!({
+            "ok": true,
+            "added": ["B-1"],
+            "rows": [{ "line": 1, "action": "added", "id": "B-1" }]
+        });
+        let rows = Shape::Rows(Rows::Field("rows"));
+        let o = with(|o| o.template = Some("{line} {action} {id}".into()));
+        let (e, warning) = compact_lenient(&v, rows, &o).unwrap();
+        assert_eq!(String::from_utf8(e.stdout).unwrap(), "1 added B-1\n");
+        assert!(warning.is_none());
+        let o = with(|o| o.lines = true);
+        let (e, _) = compact_lenient(&v, rows, &o).unwrap();
+        assert_eq!(
+            String::from_utf8(e.stdout).unwrap(),
+            "{\"ok\":true,\"added\":[\"B-1\"]}\n{\"line\":1,\"action\":\"added\",\"id\":\"B-1\"}\n"
+        );
+        let o = with(|o| o.get = Some("added".into()));
+        let (e, warning) = compact_lenient(&v, rows, &o).unwrap();
+        assert_eq!(
+            String::from_utf8(e.stdout).unwrap(),
+            format!("{}\n", serde_json::to_string(&v).unwrap())
+        );
+        assert!(warning.unwrap().contains("--get path `added`"));
+    }
+
+    #[test]
+    fn compact_shaping_warning_is_json_under_json_errors() {
+        let v = json!({ "ok": true });
+        let o = with(|o| {
+            o.get = Some("missing".into());
+            o.json_errors = true;
+        });
+        let (_, warning) = compact_lenient(&v, Shape::One, &o).unwrap();
+        let warning = warning.unwrap();
+        assert!(!warning.contains('\n'), "{warning}");
+        let parsed: JsonValue = serde_json::from_str(&warning).unwrap();
+        assert_eq!(parsed["warning"]["kind"], "validation");
+        let message = parsed["warning"]["message"].as_str().unwrap();
+        assert!(message.starts_with("--get path `missing`"), "{message}");
+        assert!(
+            message.ends_with("; printed the unshaped output"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn empty_select_and_get_paths_are_refused() {
+        let msg = |f: fn(&mut OutputOpts)| {
+            let e = with(f).validate().unwrap_err();
+            let tag = e.downcast_ref::<crate::errors::TaggedError>().unwrap();
+            assert_eq!(tag.kind.as_str(), "validation");
+            format!("{e:#}")
+        };
+        assert_eq!(
+            msg(|o| o.select = Some(vec!["id".into(), String::new()])),
+            "--select: empty path at position 2"
+        );
+        assert_eq!(
+            msg(|o| o.select = Some(vec![])),
+            "--select: empty path list"
+        );
+        assert_eq!(msg(|o| o.get = Some(String::new())), "--get: empty path");
     }
 
     #[test]

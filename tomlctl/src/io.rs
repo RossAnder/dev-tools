@@ -3038,9 +3038,10 @@ arr = [1, 2]
     fn read_json_arg_dash_second_call_errors_already_consumed() {
         let _guard = env_lock();
         let prev = STDIN_CONSUMED.swap(false, std::sync::atomic::Ordering::SeqCst);
-        // First `-` call: either succeeds (stdin readable) or errors (TTY / empty).
-        // In both cases it should have set the consumed flag BEFORE returning.
-        let _ = read_json_arg("-");
+        // Claim stdin the way a first `-` flag does, without reading it: a
+        // real read blocks forever when the test process inherits an open
+        // pipe that never reaches EOF.
+        claim_stdin().unwrap();
         let second = read_json_arg("-").unwrap_err();
         let msg = format!("{second:#}");
         assert!(
@@ -3531,5 +3532,72 @@ arr = [1, 2]
 
         let target = outside.path().canonicalize().unwrap().join("secret.toml");
         assert_eq!(relativise_under(&root, &target), None);
+    }
+
+    struct PinnedClock;
+    impl PinnedClock {
+        fn at(ts: &str) -> Self {
+            crate::time::set_now_for_test(Some(ts.parse().unwrap()));
+            PinnedClock
+        }
+    }
+    impl Drop for PinnedClock {
+        fn drop(&mut self) {
+            crate::time::set_now_for_test(None);
+        }
+    }
+
+    fn doc(src: &str) -> TomlValue {
+        toml::from_str(src).unwrap()
+    }
+
+    #[test]
+    fn stamp_restamps_a_date_as_a_date_when_the_doc_changed() {
+        let _clock = PinnedClock::at("2026-05-08T12:00:00Z");
+        let before = doc("last_updated = 2026-01-01\nscope = \"a\"\n");
+        let mut after = doc("last_updated = 2026-01-01\nscope = \"b\"\n");
+        stamp_if_changed(&before, &mut after).unwrap();
+        let stamped = after.get(LAST_UPDATED).unwrap();
+        assert!(matches!(stamped, TomlValue::Datetime(_)), "{stamped:?}");
+        assert_eq!(stamped.to_string(), "2026-05-08");
+    }
+
+    #[test]
+    fn stamp_restamps_a_string_as_a_string_when_the_doc_changed() {
+        let _clock = PinnedClock::at("2026-05-08T12:00:00Z");
+        let before = doc("last_updated = \"2026-01-01\"\nscope = \"a\"\n");
+        let mut after = doc("last_updated = \"2026-01-01\"\nscope = \"b\"\n");
+        stamp_if_changed(&before, &mut after).unwrap();
+        assert_eq!(
+            after.get(LAST_UPDATED),
+            Some(&TomlValue::String("2026-05-08".to_string()))
+        );
+    }
+
+    #[test]
+    fn stamp_keeps_a_caller_set_last_updated_when_it_is_the_only_change() {
+        let _clock = PinnedClock::at("2026-05-08T12:00:00Z");
+        let before = doc("last_updated = 2026-01-01\nscope = \"a\"\n");
+        let mut after = doc("last_updated = 2026-03-03\nscope = \"a\"\n");
+        stamp_if_changed(&before, &mut after).unwrap();
+        assert_eq!(after.get(LAST_UPDATED).unwrap().to_string(), "2026-03-03");
+    }
+
+    #[test]
+    fn stamp_leaves_an_unchanged_doc_alone() {
+        let _clock = PinnedClock::at("2026-05-08T12:00:00Z");
+        let before = doc("last_updated = 2026-01-01\nscope = \"a\"\n");
+        let mut after = before.clone();
+        stamp_if_changed(&before, &mut after).unwrap();
+        assert_eq!(after, before);
+    }
+
+    #[test]
+    fn stamp_never_adds_last_updated_to_a_root_without_it() {
+        let _clock = PinnedClock::at("2026-05-08T12:00:00Z");
+        let before = doc("scope = \"a\"\n");
+        let mut after = doc("scope = \"b\"\n");
+        stamp_if_changed(&before, &mut after).unwrap();
+        assert!(after.get(LAST_UPDATED).is_none());
     }
 }

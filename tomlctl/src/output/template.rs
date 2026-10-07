@@ -1,13 +1,13 @@
 //! The `--template` mini-language: literal text with `{path}` placeholders,
 //! `{{` and `}}` for literal braces. A path uses the dotted syntax of
-//! `json::navigate_json`. Strings render bare, numbers and bools as literals,
+//! `convert::navigate_json`. Strings render bare, numbers and bools as literals,
 //! arrays and objects as compact JSON, and null or a missing path as nothing.
 
 use anyhow::Result;
 use serde_json::Value as JsonValue;
 
+use crate::convert::navigate_json;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::json::navigate_json;
 
 #[derive(Debug, PartialEq)]
 enum Segment {

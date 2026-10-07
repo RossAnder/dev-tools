@@ -89,7 +89,7 @@ The batch form of `add`: one `add --json` payload per NDJSON line, captured unde
 read and one write. Reach for it whenever more than one row is being minted.
 
 ```bash
-tomlctl backlog add-many --ndjson .claude/_backlog-batch.ndjson --auto-base-sha
+printf '%s\n' '{"summary":"…","kind":"bug","area":"src/a"}' '{"summary":"…","kind":"debt","area":"src/b"}' | tomlctl backlog add-many --ndjson - --auto-base-sha --template '{line} {action} {id}'
 ```
 
 | Flag | Value | Meaning | Default |
@@ -111,8 +111,8 @@ batch writes nothing.
          {"line":2,"action":"bumped","id":"B-1a2b3c4d","seen_count":3,"advisories":[]}]}
 ```
 
-Each `rows` entry carries `add`'s keys for that row. A top-level `advisories`, each entry
-prefixed `line N:`, appears only when some row raised one.
+Each `rows` entry carries `add`'s keys for that row, and the output options act on `rows`. A
+top-level `advisories`, each entry prefixed `line N:`, appears only when some row raised one.
 
 ## `backlog check`
 

@@ -21,7 +21,7 @@ use crate::io::{
     item_id, items_array, items_array_mut, mutate_doc_conditional, on_missing_for,
     repo_or_cwd_root, warn_if_created,
 };
-use crate::output::print_json_compact;
+use crate::output::{print_json_compact, print_json_line};
 use crate::tasks::{BacklogLink, Status, Store, load_store, mutate_store, resolve_store_path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,7 +122,13 @@ pub(crate) fn dispatch(
 ) -> Result<()> {
     let today = crate::time::today_toml_date()?;
     let report = reconcile(flow.as_deref(), apply, adopt, &integrity, today)?;
-    print_json_compact(&report)
+    // Only `--apply` and `--adopt` write; a plain survey is a read, so a bad
+    // shaping flag fails it rather than printing the unshaped report.
+    if apply || adopt {
+        print_json_compact(&report)
+    } else {
+        print_json_line(&report)
+    }
 }
 
 fn reconcile(

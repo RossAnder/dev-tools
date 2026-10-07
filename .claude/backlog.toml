@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-10-06
+last_updated = 2026-10-07
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -5241,3 +5241,172 @@ context = "User capture (I3). The backlog surface's item rows read as busy. Revi
 base_sha = "3232deed8dd7b125dca19f6a8fe3dcd7feb9c995"
 resolved = 2026-10-06
 resolution = "Area/file sits in an aligned right column cut from the left; id and kind dimmed; item_columns config chooses columns and order; the area column narrows then drops on narrow panes."
+
+[[backlog]]
+id = "B-e5b42b3b"
+kind = "question"
+summary = "backlog check verdict cannot be read with --get or --select because it sits in the report header, not the candidate rows"
+area = "tomlctl/src/backlog/check.rs"
+tags = ["output-options"]
+status = "open"
+created = 2026-10-07
+last_seen = 2026-10-07
+seen_count = 1
+dedup_id = "e5b42b3b00709de3"
+origin = "implement"
+flow = "eventual-churning-sunrise"
+context = "Global --get/--select act on a row report's rows; backlog check's rows are its candidates and the verdict lives in the header. --get verdict errors when candidates exist and prints nothing when none do. Workaround: read the first line of --lines output, which is the header object. A fix needs a design call (a header-path syntax, or making verdict-only reports single-object)."
+base_sha = "859faee582f394ab246132d4e83ac61f7dfee028"
+evidence = ["tomlctl/src/backlog/check.rs"]
+related = ["B-46de01dc"]
+
+[[backlog]]
+id = "B-b0357675"
+kind = "bug"
+summary = "items next-id and --id-prefix re-mint the id of a deleted highest-numbered row, contradicting the never-reused ledger rule"
+area = "tomlctl/src/items.rs"
+tags = ["ids"]
+status = "open"
+created = 2026-10-07
+last_seen = 2026-10-07
+seen_count = 1
+dedup_id = "b0357675d61bf61f"
+origin = "implement"
+flow = "eventual-churning-sunrise"
+context = "items_next_id computes the highest existing numeric suffix plus one, so removing the top row frees its id again. The ledger-schema skill says ids retired by deletion are never reused, and --id-prefix now mints automatically, so the gap is reachable without anyone choosing an id. Fix would need a persisted high-water mark per prefix, or the rule relaxed."
+base_sha = "859faee582f394ab246132d4e83ac61f7dfee028"
+evidence = ["tomlctl/src/items.rs"]
+related = ["B-98a1c2e6"]
+
+[[backlog]]
+id = "B-76668b92"
+kind = "question"
+summary = "review and optimise leave last_updated unstamped when the --no-stamp interim checkpoint is followed by an empty Step 3 write"
+area = "claude/commands/review.md"
+tags = ["last_updated"]
+status = "open"
+created = 2026-10-07
+last_seen = 2026-10-07
+seen_count = 1
+dedup_id = "76668b9238111e24"
+origin = "implement"
+flow = "eventual-churning-sunrise"
+context = "Step 2's interim checkpoint now passes --no-stamp to defer freshness; Step 3's write is what stamps. When Step 3 has nothing to write (no prior open rows to bump, no new findings) nothing stamps, so the freshness gate and /optimise-apply's latest-report filter see a stale ledger. Same shape in optimise.md. The removed unconditional set of last_updated used to cover this."
+base_sha = "859faee582f394ab246132d4e83ac61f7dfee028"
+evidence = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+]
+related = ["B-684379b8"]
+
+[[backlog]]
+id = "B-a7e28a05"
+kind = "question"
+summary = "tdd copy-up of cycle record entries to the parent record carries the cycle's dedup_id"
+area = "claude/commands/tdd.md"
+tags = ["execution-record"]
+status = "open"
+created = 2026-10-07
+last_seen = 2026-10-07
+seen_count = 1
+dedup_id = "a7e28a0582ebbf9b"
+origin = "implement"
+flow = "eventual-churning-sunrise"
+context = "The copy-up now drops each entry's id and mints a fresh one with --id-prefix E, but the payload still carries the dedup_id auto-added in the cycle record. Unverified whether items add keeps or recomputes a supplied dedup_id; if kept, a dedupe on the parent record could match or collide with the cycle's entry."
+base_sha = "859faee582f394ab246132d4e83ac61f7dfee028"
+evidence = ["claude/commands/tdd.md"]
+related = ["B-fe2a80ba"]
+
+[[backlog]]
+id = "B-c32a11bc"
+kind = "annoyance"
+summary = "items sweep --update and tasks edges --dot refuse --lines with their own messages instead of the shared output-option behaviour"
+area = "tomlctl/src/cli/dispatch.rs"
+tags = ["output-options"]
+status = "open"
+created = 2026-10-07
+last_seen = 2026-10-07
+seen_count = 1
+dedup_id = "c32a11bc6bd4b7fd"
+origin = "implement"
+flow = "eventual-churning-sunrise"
+context = "Every other write accepts global --lines leniently and every other text command uses print_text's shared refusal; these two keep refusals inherited from the old per-command flag. tests/output_options.rs pins both messages, so changing either means updating that case too."
+base_sha = "859faee582f394ab246132d4e83ac61f7dfee028"
+evidence = [
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/tasks/edges.rs",
+]
+related = ["B-6a671fa3"]
+
+[[backlog]]
+id = "B-18128443"
+kind = "question"
+summary = "multi-id tasks update returns its results envelope unshaped under --get, because a write envelope's results array is not treated as a row report"
+area = "tomlctl/src/output.rs"
+tags = ["output-options"]
+status = "resolved"
+created = 2026-10-07
+last_seen = 2026-10-07
+seen_count = 1
+dedup_id = "181284430ae0f20a"
+origin = "review"
+flow = "eventual-churning-sunrise"
+context = "tasks update 8,9 --get id prints the whole {ok,results} envelope plus a stderr warning listing ok, results. Workaround: tasks show <ids> --get <field> after the write. A fix needs a call on whether write envelopes with a results array become row reports."
+base_sha = "150ada4481b7a5e976bf9395614d4a08b70535ec"
+related = ["B-e5b42b3b"]
+resolved = 2026-10-07
+resolution = "uncommitted: multi-id tasks update prints through print_rows_compact with results as its rows, so --get id prints one id per line"
+
+[[backlog]]
+id = "B-42c3a13c"
+kind = "question"
+summary = "items, tasks and backlog list never report that --limit cut rows, so an agent paging a list cannot tell a full page from a truncated one"
+area = "tomlctl/src/query.rs"
+tags = ["output-options"]
+status = "open"
+created = 2026-10-07
+last_seen = 2026-10-07
+seen_count = 1
+dedup_id = "42c3a13c3cbcfd41"
+origin = "review"
+flow = "eventual-churning-sunrise"
+context = "The query engine consumes --limit before print_query, so no limited header is emitted; the plan's Approach sanctions this, but User Decision 5 says header everywhere. Workaround: request limit+1 rows, or run --count first."
+base_sha = "150ada4481b7a5e976bf9395614d4a08b70535ec"
+
+[[backlog]]
+id = "B-d1dc0366"
+kind = "debt"
+summary = "tomlctl get takes the owned read_doc path and runs about 20 percent slower than parse on the same file"
+area = "tomlctl/src/cli/dispatch.rs"
+tags = ["perf"]
+status = "open"
+created = 2026-10-07
+last_seen = 2026-10-07
+seen_count = 1
+dedup_id = "d1dc03668c876477"
+origin = "review"
+flow = "eventual-churning-sunrise"
+context = "Measured on .claude/backlog.toml with tomlctl 0.14.0: get <file> backlog 5745us vs parse 4708us. parse uses the borrowed DeTable fast path. Predates the output-options flow; low priority."
+base_sha = "150ada4481b7a5e976bf9395614d4a08b70535ec"
+
+[[backlog]]
+id = "B-c35192c6"
+kind = "bug"
+summary = "--select on a field that only some rows carry is a hard error on read reports but a warning plus unshaped output on write envelopes"
+area = "tomlctl/src/output.rs"
+tags = ["output-options"]
+status = "resolved"
+created = 2026-10-07
+last_seen = 2026-10-07
+seen_count = 1
+dedup_id = "c35192c6e7648246"
+origin = "review"
+flow = "eventual-churning-sunrise"
+context = "validate_shaping_paths requires every --select path to exist in some row: backlog check --select id,promoted_to exits 1 when no candidate is promoted, while a write envelope (print_json_compact / print_rows_compact) falls back to the unshaped output with a warning. An optional field (promoted_to, advisories) cannot be projected reliably on reads. Decide whether a select path missing from every row should project to absent rather than fail. Workaround: --lines without --select."
+base_sha = "150ada4481b7a5e976bf9395614d4a08b70535ec"
+related = [
+    "B-18128443",
+    "B-e5b42b3b",
+]
+resolved = 2026-10-07
+resolution = "uncommitted: validate_paths refuses only when no listed path matches any row, so an optional field projects to absent beside a matching one"

@@ -191,7 +191,7 @@ fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Disp
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     // `[0-9]` rather than `\d`: the crate is built without Unicode classes.
     let pattern = PATTERN.get_or_init(|| {
-        Regex::new(r"tasks show ([0-9]+) --slug ([a-z0-9][a-z0-9-]{0,63})")
+        Regex::new(r"tasks show ([0-9]+(?:,[0-9]+)*) --slug ([a-z0-9][a-z0-9-]{0,63})")
             .expect("dispatch pattern compiles")
     });
     static LEDGER: OnceLock<Regex> = OnceLock::new();
@@ -218,13 +218,10 @@ fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Disp
             let (Some(id), Some(s)) = (caps.get(1), caps.get(2)) else {
                 continue;
             };
-            let Ok(id) = id.as_str().parse::<u32>() else {
-                continue;
-            };
             if !same_slug(&mut slug, s.as_str()) {
                 return None;
             }
-            task_ids.push(id);
+            task_ids.extend(id.as_str().split(',').filter_map(|n| n.parse::<u32>().ok()));
         }
         let mut item_ids: Vec<String> = Vec::new();
         for caps in ledger.captures_iter(&prompt) {
@@ -559,6 +556,19 @@ mod tests {
             Some(Dispatch {
                 slug: "my-flow".into(),
                 task_ids: vec![5, 12],
+                item_ids: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn a_comma_separated_id_list_yields_every_id() {
+        let text = user_line("tomlctl tasks show 3,7 --slug some-slug --with body");
+        assert_eq!(
+            dispatch_in(&text, user_text),
+            Some(Dispatch {
+                slug: "some-slug".into(),
+                task_ids: vec![3, 7],
                 item_ids: Vec::new(),
             })
         );

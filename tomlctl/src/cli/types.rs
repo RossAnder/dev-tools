@@ -183,7 +183,8 @@ pub(crate) struct OutputArgs {
         long = "get",
         value_name = "PATH",
         global = true,
-        help = "Print the bare value at PATH — one line per row on a row report"
+        help = "Print the bare value at PATH — one line per row on a row report",
+        long_help = "Print the bare value at PATH — one line per row on a row report; a row lacking PATH prints an empty line. A string containing newlines prints them verbatim, so one row can span several lines; use --lines or --select for line-safe output"
     )]
     pub(crate) get: Option<String>,
 
@@ -191,7 +192,8 @@ pub(crate) struct OutputArgs {
         long = "template",
         value_name = "T",
         global = true,
-        help = "One text line per row (or one for a single report); `{path}` placeholders, `{{`/`}}` for literal braces"
+        help = "One text line per row (or one for a single report); `{path}` placeholders, `{{`/`}}` for literal braces",
+        long_help = "One text line per row (or one for a single report); `{path}` placeholders, `{{`/`}}` for literal braces. A string value containing newlines prints them verbatim, so one row can span several lines; use --lines or --select for line-safe output"
     )]
     pub(crate) template: Option<String>,
 
@@ -239,7 +241,7 @@ pub(crate) struct ReadIntegrityArgs {
 
     /// Error on a missing target file (`kind=not_found`) instead of returning
     /// an empty default. Only the defaulting reads change: `items next-id
-    /// --prefix <P>` (which returns `"<P>1"`), the `backlog` read verbs (an
+    /// --prefix <P>` (which returns `<P>1`), the `backlog` read verbs (an
     /// empty store) and `agents list` (`[]`); `items list` / `items orphans`
     /// already error on a missing file. Pass `--strict-read` when the caller
     /// needs to distinguish "no matches in an existing ledger" from "ledger
@@ -445,10 +447,7 @@ pub(crate) struct QueryArgs {
     /// Mutually exclusive with the other shape flags via the `shape`
     /// ArgGroup below (`--count`, `--count-by`, `--group-by`, `--pluck`),
     /// and mutex with `--select`/`--exclude` at the `validate_query` layer
-    /// (projection on an aggregation-only shape would be ambiguous). The
-    /// whole motivation is to replace the ~140 `--pluck f | jq -r '.[]'
-    /// | sort -u | wc -l` pipe chains that agents were spelling out for
-    /// cardinality readouts.
+    /// (projection on an aggregation-only shape would be ambiguous).
     #[arg(
         long = "count-distinct",
         value_name = "FIELD",
@@ -467,17 +466,11 @@ pub(crate) struct QueryArgs {
     ///   wrapping).
     /// - `--pluck f --raw` (N=1): emit the bare plucked value (strings
     ///   unquoted, numbers/bools bare).
-    /// - `--pluck f --raw` (N != 1): errors; the message is load-bearing —
-    ///   tests assert it byte-for-byte.
+    /// - `--pluck f --raw` (N != 1): errors.
     /// - `--pluck f --raw --lines`: one bare value per line (composes
     ///   with the streaming Pluck path).
     /// - `--count-by --raw` / `--group-by --raw`: rejected — the output is
     ///   a map, not a scalar; `--raw` has no well-defined conversion.
-    ///
-    /// Motivation: replaces the ~35 `tomlctl items list ... --count
-    /// | jq -r .count` pipe chains the transcript audit found. Agents
-    /// consuming counts into a `read -r N` bash loop want the bare integer
-    /// on stdout without piping through jq.
     #[arg(
         long = "raw",
         help = "Emit bare scalar (no JSON quoting) for --count/--count-distinct/single --pluck. With --lines + --pluck: bare value per line. Rejected on --count-by/--group-by."
@@ -527,7 +520,7 @@ impl QueryArgs {
             where_prefix: self.where_prefix.clone(),
             where_suffix: self.where_suffix.clone(),
             where_regex: self.where_regex.clone(),
-            select: out.select.as_ref().map(|paths| paths.join(",")),
+            select: out.select.clone(),
             exclude: self.exclude.clone(),
             pluck: self.pluck.clone(),
             sort_by: self.sort_by.clone(),

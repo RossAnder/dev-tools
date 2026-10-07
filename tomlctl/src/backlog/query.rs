@@ -28,7 +28,7 @@ use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{items_array, relativise, repo_or_cwd_root};
 use crate::output::{self, OutputOpts, Rows, print_json, print_report};
-use crate::query::{Query, ShapeDispatch};
+use crate::query::Query;
 
 const DIRECTION_OUT: &str = "out";
 const DIRECTION_IN: &str = "in";
@@ -59,28 +59,21 @@ pub(crate) fn dispatch_list(
     let narrowed = narrowed_doc(filter_backlog(items_array(&doc, ARRAY_BACKLOG), &filters)?);
 
     let q = build_query(&status, &kind, open, count, &query, output::opts())?;
-    if q.ndjson && q.shape.is_streamable() && output::streaming_allowed() {
-        output::stdout_stream(|mut w| {
-            crate::query::run_streaming(&narrowed, ARRAY_BACKLOG, &q, &mut w)
-        })
-    } else {
-        let out = crate::query::run(&narrowed, ARRAY_BACKLOG, &q)?;
-        if q.raw {
-            output::emit_list_raw(&out, &q.shape)
-        } else {
-            output::print_query(out)
-        }
-    }
+    output::print_query_list(&narrowed, ARRAY_BACKLOG, &q)
 }
 
+/// An id named twice, in any spelling that resolves to the same row, prints
+/// once at its first position; a single distinct id prints one object.
 pub(crate) fn dispatch_show(ids: &[String], integrity: ReadIntegrityArgs) -> Result<()> {
     let doc = schema::read_store(&integrity)?;
     let resolved = ids
         .iter()
         .map(|id| evidence::resolve_id(&doc, id))
         .collect::<Result<Vec<_>>>()?;
+    let mut seen = BTreeSet::new();
     let mut rows = resolved
         .iter()
+        .filter(|id| seen.insert(id.as_str()))
         .map(|id| build_show_resolved(&doc, id))
         .collect::<Result<Vec<_>>>()?;
     if rows.len() == 1 {

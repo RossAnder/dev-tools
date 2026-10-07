@@ -25,9 +25,11 @@ After cluster agents return but BEFORE the Step 4.6 escalation routing and the i
 6. **Record the vet outcome** per lite cluster, as a console line — `vet: cluster <id> — N applies sampled, M failed, K re-dispatched to deep` — and as one `[[vet_events]]` entry on the ledger, in the shape the ledger-schema contract defines. `command` is the bare carrier name (`review-apply`, `optimise-apply`), `lens` is `"implement-lite"`, `agent_index` is the cluster's ordinal (`c3` → `3`), `sampled_count` / `dropped_count` / `downgraded_count` are N / M / K, and `dropped_ids` lists the failed applies. The log is what lets lite's accuracy be judged across runs.
 
    ```bash
-   cat <<'EOF' | tomlctl array-append <ledger> vet_events --json -
+   cat <<'EOF' | tomlctl array-append <ledger> vet_events --json - --no-stamp
    {"timestamp":"<ISO 8601>","command":"review-apply","agent_index":3,"lens":"implement-lite","sampled_count":2,"dropped_count":1,"downgraded_count":1,"dropped_ids":["R12"],"rationale":"R12 guarded the wrong branch"}
    EOF
    ```
+
+   Pass `--no-stamp`: this write lands mid-run and must not mark the ledger fresh before the run's final write.
 
 The vet pass is what separates "the change succeeded" from "the right thing happened." Skipping it means a regression — bytes that compile and pass existing tests but break correctness, style, or root-cause coverage — can ship unnoticed.

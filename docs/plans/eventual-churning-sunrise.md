@@ -172,7 +172,7 @@ The pre-commit hook additionally runs `bash scripts/verify-shared-blocks.sh` and
 ## Execution Policy
 
 - **Checkpoints**: milestones
-- **Checkpoint after**: tasks 5, 6, 7, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24
+- **Checkpoint after**: tasks 5, 6, 7, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25
 - **Max parallel agents**: 6
 - **Commit granularity**: per-task
 
@@ -273,7 +273,7 @@ The pre-commit hook additionally runs `bash scripts/verify-shared-blocks.sh` and
   - guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_graph --test tasks_render --test lines` passes — **predicted, unverified**. falsifier: replacing the bail with `print_text`'s generic refusal turns `lines`' `--dot --lines` case red.
 
 ### 7. Advertise the global flags and the new features [L]
-- **Files**: `tomlctl/src/capabilities.rs`, `tomlctl/src/cli/types.rs`, `tomlctl/README.md`, `tomlctl/tests/capabilities.rs`
+- **Files**: `tomlctl/src/capabilities.rs`, `tomlctl/src/cli/types.rs`, `tomlctl/README.md`, `tomlctl/tests/capabilities.rs`, `tomlctl/src/cli/dispatch.rs`
 - **Depends on**: 4
 - **Action**: Emit a root `global_flags` list from `build_agent_context`; replace `report_lines` with `output_options` in `FEATURES`, the README sample block, the README feature table and the expected list in `tomlctl/tests/capabilities.rs`.
 - **Detail**: Implements Approach, "Capabilities".
@@ -529,6 +529,12 @@ The pre-commit hook additionally runs `bash scripts/verify-shared-blocks.sh` and
   - forward: `grep -c '0\.7' claude/agents/flow-bootstrap.md` is 0 (today: 3)
   - guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**
 
+### 25. Point the id-less ledger row error at --id-prefix [S]
+- **Files**: `tomlctl/src/items.rs`
+- **Depends on**: 9
+- **Action**: In tomlctl/src/items.rs, the bail! in the ledger-row id check (the message beginning 'ledger row must carry a non-empty string `id`') tells the caller to mint with `tomlctl items next-id <file> --prefix <P>` and stamp it onto each row. Rewrite the hint to name `items add --id-prefix <P>` / `items add-many --id-prefix <P>` (which mint inside the locked write), keeping the first clause and the example payload. No other change.
+- **Acceptance**: grep -c 'items next-id <file> --prefix' tomlctl/src/items.rs is 0 (today: 1); grep -c -- '--id-prefix' on that bail! message is at least 1; cargo clippy --manifest-path tomlctl/Cargo.toml is clean
+
 ## Dependency Graph
 
 Per-task `Depends on` lines are authoritative; this section states only the checkpoint cuts.
@@ -537,7 +543,7 @@ Per-task `Depends on` lines are authoritative; this section states only the chec
 
 — CHECKPOINT B after tasks 14, 15 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15. The write changes (bare `next-id`, `--id-prefix`, `last_updated` stamping, several ids), the every-command and stdout-gate tests, and 0.14.0 with glimpse's lock refreshed
 
-— CHECKPOINT C after tasks 16, 17, 18, 19, 20, 21, 22, 23, 24 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24. Every skill, reference and command shows the new forms; `command_lint`, `flag_table_lint` and the line-ceiling gates pass
+— CHECKPOINT C after tasks 16, 17, 18, 19, 20, 21, 22, 23, 24, 25 — dependency closure: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25. Every skill, reference and command shows the new forms; `command_lint`, `flag_table_lint` and the line-ceiling gates pass
 
 ## Risks
 

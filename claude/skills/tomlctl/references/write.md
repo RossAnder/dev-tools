@@ -34,15 +34,17 @@ fingerprint contract. The read-only verbs live in [query.md](query.md).
 # 1. Append a task-completion entry with commits[]; the write itself refreshes last_updated
 cat <<'EOF' | tomlctl items add .claude/flows/<slug>/execution-record.toml --id-prefix E --json -
 {
-  "type":"task-completion","task_ref":"T3",
-  "timestamp":"2026-04-18T14:32:00Z","commits":["ab12cd3","9e8f1a2"]
+  "type":"task-completion","date":"2026-04-18","agent":"implement",
+  "task_ref":"add-retry-logic","dispatch_tier":"lite","dispatch_agent":"implement-lite",
+  "vet":"sampled-pass","retries":0,"summary":"Added retry logic in src/retry.rs",
+  "files":["src/retry.rs"],"commits":["ab12cd3","9e8f1a2"],"status":"done"
 }
 EOF
 ```
 
 ```bash
 # 2. Dedup-by-field add — skip if (file, summary) already present
-tomlctl items add ledger.toml --dedupe-by file,summary --json '{"id":"R24",...}'
+tomlctl items add ledger.toml --dedupe-by file,summary --id-prefix R --json '{"file":"src/a.rs","summary":"...","status":"open"}'
 ```
 
 ```bash
@@ -83,8 +85,8 @@ The seed is only the *starting* doc — the verb's mutation must still succeed a
 **Envelope.** Write-success envelopes carry `"created": <bool>` and `"path": "<file>"` alongside any verb-specific keys (e.g. `added` on `items add` and `items add-many`, `appended` on `array-append`):
 
 ```bash
-tomlctl items add .claude/flows/<slug>/review-ledger.toml --json '{"id":"R1","summary":"...","status":"open"}'
-# {"ok":true,"added":1,"created":true,"path":".claude/flows/<slug>/review-ledger.toml"}
+tomlctl items add .claude/flows/<slug>/review-ledger.toml --id-prefix R --json '{"summary":"...","status":"open"}'
+# {"ok":true,"added":1,"id":"R1","created":true,"path":".claude/flows/<slug>/review-ledger.toml"}
 ```
 
 **Stderr guidance.** When a file is created, exactly one line is written to stderr:
@@ -154,6 +156,8 @@ Appends one row. Pass fields in the canonical key order the `flow-contract-ledge
 tomlctl items add .claude/flows/foo/optimise-findings.toml --json '{"id":"O7","file":"src/svc/foo.rs","line":44,"severity":"critical","effort":"small","category":"memory","summary":"Allocates fresh Vec in hot loop","first_flagged":"2026-04-17","rounds":1,"status":"open"}'
 ```
 
+The `id` above is shown only to fix the key order; a real append drops it and passes `--id-prefix`, which mints the id.
+
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--json` | JSON object, `-` or `@<path>` | The new row. | required |
@@ -178,21 +182,30 @@ Date-shaped strings (`YYYY-MM-DD`) in the `DATE_KEYS` set — `created`, `update
 
 Appends many rows — e.g. a 50-finding review batch — in one parse, one lock, one rewrite, one sidecar refresh.
 
-Two agent-native forms, neither a heredoc and neither a temp file. Prefer the pipe for a handful of rows and the staging file past that (see [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads) for why the heredoc form is not on this list).
+Pick the form by platform (see [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads) for why). On Linux and macOS, feed the rows on stdin through a quoted heredoc, at any size; a temp file only adds a step. On Windows — PowerShell and Git Bash alike — a large multi-line inline payload fails intermittently, so use the single-line pipe for a handful of short rows and the staging file past that.
+
+**Heredoc** (Linux / macOS):
+
+```bash
+cat <<'EOF' | tomlctl items add-many ledger.toml --id-prefix R --ndjson - --defaults-json '{"status":"open"}'
+{"summary":"..."}
+{"summary":"..."}
+EOF
+```
 
 **Pipe, one row per argument** — a single-line command; `printf '%s\n'` emits each argument on its own line, so the rows arrive as NDJSON without a heredoc:
 
 ```bash
-printf '%s\n' '{"id":"R1","summary":"..."}' '{"id":"R2","summary":"..."}' | tomlctl items add-many ledger.toml --ndjson - --defaults-json '{"status":"open"}'
+printf '%s\n' '{"summary":"..."}' '{"summary":"..."}' | tomlctl items add-many ledger.toml --id-prefix R --ndjson - --defaults-json '{"status":"open"}'
 ```
 
 The PowerShell spelling pipes a string array; each element becomes one line:
 
 ```powershell
-'{"id":"R1","summary":"..."}','{"id":"R2","summary":"..."}' | tomlctl items add-many ledger.toml --ndjson - --defaults-json '{"status":"open"}'
+'{"summary":"..."}','{"summary":"..."}' | tomlctl items add-many ledger.toml --id-prefix R --ndjson - --defaults-json '{"status":"open"}'
 ```
 
-**Staging file** — write the NDJSON with the `Write` tool, then point `--ndjson` at the path:
+**Staging file** (Windows, past a handful of rows) — write the NDJSON with the `Write` tool, then point `--ndjson` at the path:
 
 ```bash
 tomlctl items add-many .claude/flows/foo/review-ledger.toml \
@@ -365,9 +378,9 @@ The single-line pipe (`printf '%s\n' '<row>' '<row>' | tomlctl … --ndjson -`, 
 On Linux/macOS the heredoc form is fine for any size:
 
 ```bash
-tomlctl items add-many ledger.toml --ndjson - <<'EOF'
-{"id":"R1", ...}
-{"id":"R2", ...}
+tomlctl items add-many ledger.toml --id-prefix R --ndjson - <<'EOF'
+{"summary":"..."}
+{"summary":"..."}
 EOF
 ```
 
@@ -376,9 +389,11 @@ EOF
 - `bash: -c: line N: unexpected EOF while looking for matching \`''` — the whole command errors out, no write happens.
 - Partial success followed by spurious errors — tomlctl actually writes the first N items, then bash treats the tail of the heredoc body as shell commands to execute (e.g. `/c/Users/ros…: Permission denied`). This is the failure mode that shows up as a "false interrupt" in the UI.
 
+**Windows PowerShell has the same limit.** A large multi-line inline payload — a here-string or a long string-array pipe — fails intermittently there too, so the staging-file rule below covers both Windows shells.
+
 The threshold is roughly 10 KB of total command text, which a batch of typical review-finding rows passes at around a dozen. **Don't try to estimate this at call time** — just stage to a file once you're past a handful of rows.
 
-Windows-safe pattern (mandatory for >5 items, recommended for all batches):
+Windows-safe pattern (mandatory on Windows past 5 items):
 
 ```bash
 # 1. Write tool → .claude/flows/<slug>/_batch.ndjson  (one JSON object per line)

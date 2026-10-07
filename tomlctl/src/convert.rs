@@ -7,12 +7,16 @@
 //! - `toml_to_json` / `json_to_toml`
 //! - `maybe_date_coerce` + `DATE_KEYS`
 //! - `navigate` / `set_at_path`
+//! - `navigate_json` / `project` / `validate_paths` — the JSON dotted-path
+//!   reads shared by `json`, `query` and `output`
 //! - `str_field` / `i64_field`
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::ValueEnum;
 use serde_json::Value as JsonValue;
 use toml::Value as TomlValue;
+
+use crate::errors::{ErrorKind, tagged_err};
 
 #[derive(Clone, Copy, ValueEnum)]
 pub(crate) enum ScalarType {
@@ -101,6 +105,84 @@ pub(crate) fn navigate<'a>(root: &'a TomlValue, path: &str) -> Option<&'a TomlVa
         };
     }
     Some(cur)
+}
+
+/// JSON-side dotted-path read. Mirrors `navigate` for TOML, but over
+/// `serde_json::Value`. Each segment indexes by string key on objects, or by
+/// `usize` index on arrays. Returns `None` on any missing segment or type
+/// mismatch (e.g. trying to descend into a scalar / null).
+pub(crate) fn navigate_json<'a>(root: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
+    if path.is_empty() {
+        return Some(root);
+    }
+    let mut cur = root;
+    for seg in path.split('.') {
+        cur = match cur {
+            JsonValue::Object(map) => map.get(seg)?,
+            JsonValue::Array(arr) => {
+                let idx: usize = seg.parse().ok()?;
+                arr.get(idx)?
+            }
+            _ => return None,
+        };
+    }
+    Some(cur)
+}
+
+/// Keep only `paths` of `row`, each keyed by its path string; a path the row
+/// lacks is left out.
+pub(crate) fn project(row: &JsonValue, paths: &[String]) -> JsonValue {
+    let mut out = serde_json::Map::new();
+    for p in paths {
+        if let Some(v) = navigate_json(row, p) {
+            out.insert(p.clone(), v.clone());
+        }
+    }
+    JsonValue::Object(out)
+}
+
+/// Refuse `paths` when no row carries any of them, naming the first and the
+/// top-level keys that do exist. A path absent from every row passes beside
+/// one that matches, so an optional field (`promoted_to`, `advisories`)
+/// projects to absent instead of failing. An empty row set validates nothing.
+pub(crate) fn validate_paths<'a>(
+    rows: &[JsonValue],
+    paths: impl IntoIterator<Item = &'a str>,
+    flag: &str,
+) -> Result<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let mut unmatched = None;
+    for p in paths {
+        if rows.iter().any(|r| navigate_json(r, p).is_some()) {
+            return Ok(());
+        }
+        unmatched.get_or_insert(p);
+    }
+    if let Some(p) = unmatched {
+        let mut keys: Vec<&str> = Vec::new();
+        for r in rows {
+            if let Some(obj) = r.as_object() {
+                for k in obj.keys() {
+                    if !keys.contains(&k.as_str()) {
+                        keys.push(k);
+                    }
+                }
+            }
+        }
+        let available = if keys.is_empty() {
+            "(none)".to_string()
+        } else {
+            keys.join(", ")
+        };
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("{flag} path `{p}` matches no field; available fields: {available}"),
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn set_at_path(root: &mut TomlValue, path: &str, value: TomlValue) -> Result<()> {
@@ -655,6 +737,18 @@ pub(crate) fn compare_typed(field: &TomlValue, rhs_raw: &str) -> Result<std::cmp
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn navigate_json_walks_objects_and_arrays() {
+        let v: JsonValue =
+            serde_json::from_str(r#"{"permissions":{"allow":["a","b","c"]}}"#).unwrap();
+        assert_eq!(
+            navigate_json(&v, "permissions.allow.1"),
+            Some(&JsonValue::String("b".to_string()))
+        );
+        assert_eq!(navigate_json(&v, "missing"), None);
+        assert_eq!(navigate_json(&v, "permissions.deny"), None);
+    }
 
     /// `detable_to_json` over a borrowed `DeTable` must produce the same JSON
     /// shape as `toml_to_json` over an owned `TomlValue` for

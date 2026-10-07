@@ -43,7 +43,7 @@ Reopen?
   [a] abort sweep (do not inspect further candidates)
 ```
 
-On `[y]`, queue the transition for a single atomic `tomlctl items apply --ops - --on-stale skip` at the end of the sweep: set `status = "open"`, preserve `defer_reason` (audit trail), drop `defer_trigger`, set `reopen_rationale = "trigger fired: <matched trigger text>"`. Never auto-transition silently — every reopen passes through the prompt.
+On `[y]`, queue the transition for a single atomic `tomlctl items apply <ledger> --ops - --on-stale skip` at the end of the sweep: set `status = "open"`, preserve `defer_reason` (audit trail), drop `defer_trigger`, set `reopen_rationale = "trigger fired: <matched trigger text>"`. Never auto-transition silently — every reopen passes through the prompt.
 
 Each reopen op carries `"expect": {"status": "deferred"}`, since a human (glimpse) or another run may have changed the item between the sweep's read and the write:
 

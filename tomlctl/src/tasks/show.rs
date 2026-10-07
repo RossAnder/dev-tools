@@ -19,9 +19,10 @@ use crate::cli::{ReadIntegrityArgs, ShowPart, TasksTarget};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::output::{Rows, print_json, print_report};
 
-/// Several ids print a row report, so the output options apply per row. Every
-/// row is built before anything prints, so an unknown id fails the call with
-/// no partial output.
+/// Several distinct ids print a row report, so the output options apply per
+/// row; a repeated id prints once, at its first position. Every row is built
+/// before anything prints, so an unknown id fails the call with no partial
+/// output.
 pub(crate) fn dispatch(
     ids: &[u32],
     target: TasksTarget,
@@ -30,8 +31,10 @@ pub(crate) fn dispatch(
 ) -> Result<()> {
     let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
     let store = store::load(&path, &integrity)?;
+    let mut seen = BTreeSet::new();
     let mut rows = ids
         .iter()
+        .filter(|&&id| seen.insert(id))
         .map(|&id| show(&store, id, &with))
         .collect::<Result<Vec<_>>>()?;
     if rows.len() == 1 {

@@ -27,7 +27,7 @@ use super::{
 use crate::cli::TasksOp;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{atomic_write, read_ndjson_source, relativise, repo_or_cwd_root};
-use crate::output::{Rows, print_json, print_json_compact, print_report};
+use crate::output::{Rows, print_json, print_json_compact, print_report, print_rows_compact};
 
 pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
     match op {
@@ -171,10 +171,13 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                 .into_iter()
                 .map(|(id, changed)| json!({"id": id, "changed": changed}))
                 .collect();
-            print_json_compact(&json!({
-                "ok": true,
-                "results": results,
-            }))
+            print_rows_compact(
+                &json!({
+                    "ok": true,
+                    "results": results,
+                }),
+                Rows::Field("results"),
+            )
         }
 
         TasksOp::Remove {
@@ -264,8 +267,9 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             }
             let code = check::exit_code(&findings);
             let rendered: Vec<_> = findings.iter().map(finding_json).collect();
-            // `print_json` flushes its own writer, so nothing is left buffered
-            // when the exit below skips every destructor.
+            // `print_report` writes through a buffered stdout writer and flushes
+            // it before returning, so nothing is left buffered when the exit
+            // below skips every destructor.
             print_report(
                 json!({ "ok": code == 0, "findings": rendered }),
                 Rows::Field("findings"),

@@ -28,8 +28,8 @@ tomlctl json unset  <file> <path>                     # delete a key at path
 tomlctl validate    <file>                            # parse-check
 tomlctl items list  <file> [--status X] [--category Y] [--newer-than YYYY-MM-DD] [--file PATH] [--count]
 tomlctl items get   <file> <id>
-tomlctl items add   <file> --json '{"id":"R7",...}'
-tomlctl items add-many <file> --defaults-json '{...}' --ndjson -    # batched NDJSON append
+tomlctl items add   <file> --json '{"id":"R7",...}' [--id-prefix P]   # --id-prefix mints the id under the lock (payload must not carry one)
+tomlctl items add-many <file> --defaults-json '{...}' --ndjson - [--id-prefix P]    # batched NDJSON append; --id-prefix mints each row's id
 tomlctl items update <file> <id> --json '{"status":"fixed"}' [--unset key]...
 tomlctl items remove <file> <id>
 tomlctl items next-id <file> --prefix R|O|E             # prefix is required — no default
@@ -75,6 +75,8 @@ tomlctl inputs handle <id>... --by <command> --note <text>   # new or acknowledg
 tomlctl inputs withdraw <id>...                        # withdraw new records, all or none
 tomlctl inputs answer <question-id> [--pick <option>]... [--text <text>]   # answer a new question and mark it handled
 
+# Output options (work before or after the subcommand): --select, --limit, --lines, --get, --template, -q
+
 # Integrity flags (accepted after the subcommand name on any TOML-touching command):
 #   --allow-outside           bypass the best-effort .claude/ containment guard (not a sandbox)
 #   --no-write-integrity      suppress the <file>.sha256 sidecar on write
@@ -86,7 +88,9 @@ tomlctl inputs answer <question-id> [--pick <option>]... [--text <text>]   # ans
 
 **Stdin input** (`-` sentinel on `--json` / `--ops` / `--ndjson` / `--defaults-json`): see [references/write.md stdin section](../claude/skills/tomlctl/references/write.md#stdin-input-for-large-json-payloads) for the full reference.
 
-All commands print JSON on stdout, exit non-zero on failure.
+Most commands print JSON on stdout; `items next-id` prints a bare id, render verbs with `--stdout` print text, and `-q` prints nothing on success. Commands exit non-zero on failure.
+
+A CLI write that changes a document refreshes an existing root `last_updated` to today (UTC); pass `--no-stamp` to leave it as it is.
 
 ## Design
 

@@ -127,6 +127,8 @@ struct Case {
     /// A field every row (or the single value) carries in the fixture.
     key: &'static str,
     write: bool,
+    /// Runs on its own copy of the fixture; set for every write.
+    isolated: bool,
     git: bool,
     /// The stderr text of the command's refusal of `--lines`, for a command
     /// that refuses it.
@@ -140,6 +142,7 @@ const fn read(argv: &'static [&'static str], shape: Shape, key: &'static str) ->
         shape,
         key,
         write: false,
+        isolated: false,
         git: false,
         refuses_lines: None,
     }
@@ -152,6 +155,7 @@ const fn write(argv: &'static [&'static str], key: &'static str) -> Case {
         shape: Shape::One,
         key,
         write: true,
+        isolated: true,
         git: false,
         refuses_lines: None,
     }
@@ -174,6 +178,12 @@ impl Case {
         self
     }
 
+    /// A write whose envelope carries per-row results in `field`.
+    const fn rows(mut self, field: &'static str) -> Self {
+        self.shape = Shape::Field(field);
+        self
+    }
+
     const fn git(mut self) -> Self {
         self.git = true;
         self
@@ -181,7 +191,7 @@ impl Case {
 
     /// A read whose fixture the command may change, so it runs on a copy.
     const fn isolated(mut self) -> Self {
-        self.write = true;
+        self.isolated = true;
         self
     }
 }
@@ -328,8 +338,13 @@ fn cases() -> Vec<Case> {
             ],
             "id",
         ),
-        write(&["backlog", "add-many", "--ndjson", "-"], "added")
-            .stdin(r#"{"summary":"third thing","kind":"debt"}"#),
+        write(&["backlog", "add-many", "--ndjson", "-"], "id")
+            .rows("rows")
+            .stdin(concat!(
+                r#"{"summary":"third thing","kind":"debt"}"#,
+                "\n",
+                r#"{"summary":"fourth thing","kind":"bug"}"#
+            )),
         read(
             &["backlog", "check", "--summary", "probe flakes on slow CI"],
             Field("candidates"),
@@ -361,7 +376,7 @@ fn cases() -> Vec<Case> {
             ],
             "transition",
         ),
-        write(&["backlog", "reconcile"], "ok"),
+        read(&["backlog", "reconcile"], One, "ok"),
         read(&["backlog", "cluster"], One, "area"),
         write(&["backlog", "compact"], "remaining"),
         write(&["backlog", "evidence", "dir", "{B1}"], "dir"),
@@ -405,8 +420,9 @@ fn cases() -> Vec<Case> {
                 "--status",
                 "in-progress",
             ],
-            "results",
-        ),
+            "id",
+        )
+        .rows("results"),
         write(&["tasks", "remove", "2", "--slug", S], "ref"),
         read(&["tasks", "show", "1", "--slug", S], One, "ref"),
         read(&["tasks", "show", "1,2", "--slug", S], Top, "ref"),
@@ -592,17 +608,70 @@ struct Run {
     code: Option<i32>,
     stdout: String,
     stderr: String,
+    /// The directory the command ran in, kept alive so a write can be re-read.
+    root: PathBuf,
+    _copy: Option<tempfile::TempDir>,
+}
+
+/// Every file under `root`, by relative path. The git directory, the lock
+/// files (named by a hash of the absolute path) and the flow registry (which
+/// stamps the time of day) are left out because they differ between runs of
+/// the same command.
+/// Records stamp wall-clock datetimes, so two runs of one write differ there
+/// and in the sidecar digest that follows; both are masked out.
+fn datetime() -> &'static regex::bytes::Regex {
+    static RE: std::sync::OnceLock<regex::bytes::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::bytes::Regex::new(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})?")
+            .unwrap()
+    })
+}
+
+fn snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+    fn walk(root: &Path, dir: &Path, out: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name();
+            if [
+                ".git",
+                ".locks",
+                "active-flow.toml",
+                "active-flow.toml.sha256",
+            ]
+            .iter()
+            .any(|skip| name == *skip)
+            {
+                continue;
+            }
+            if entry.file_type().unwrap().is_dir() {
+                walk(root, &entry.path(), out);
+            } else if !name.to_string_lossy().ends_with(".sha256") {
+                let rel = entry.path().strip_prefix(root).unwrap().to_path_buf();
+                let bytes = fs::read(entry.path()).unwrap();
+                out.insert(
+                    rel,
+                    datetime()
+                        .replace_all(&bytes, &b"<datetime>"[..])
+                        .into_owned(),
+                );
+            }
+        }
+    }
+    let mut out = std::collections::BTreeMap::new();
+    walk(root, root, &mut out);
+    out
 }
 
 /// Run `case` with `before` ahead of the subcommand and `after` behind it —
 /// globals are accepted in either position. A write runs on its own copy of
 /// the fixture.
 fn run(fx: &Fixture, case: &Case, before: &[&str], after: &[&str]) -> Run {
-    let copy;
-    let root = if case.write {
-        copy = tempfile::tempdir().unwrap();
-        let root = copy.path().canonicalize().unwrap();
+    let mut copy = None;
+    let root = if case.isolated {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
         copy_tree(&fx.root, &root);
+        copy = Some(dir);
         root
     } else {
         fx.root.clone()
@@ -627,6 +696,8 @@ fn run(fx: &Fixture, case: &Case, before: &[&str], after: &[&str]) -> Run {
         code: out.status.code(),
         stdout: String::from_utf8(out.stdout).unwrap(),
         stderr: String::from_utf8(out.stderr).unwrap(),
+        root,
+        _copy: copy,
     }
 }
 
@@ -697,8 +768,7 @@ fn expected_get(report: &Value, shape: Shape, key: &str) -> String {
     let lines: Vec<String> = match rows_of(report, shape) {
         Some(rows) => rows
             .iter()
-            .filter_map(|r| nav(r, key))
-            .map(value_text)
+            .map(|r| nav(r, key).map(value_text).unwrap_or_default())
             .collect(),
         None => match nav(report, key) {
             Some(Value::Array(items)) => items.iter().map(value_text).collect(),
@@ -776,7 +846,7 @@ fn check(fx: &Fixture, case: &Case) -> Vec<String> {
     match json_lines(&lines.stdout) {
         _ if case.refuses_lines.is_some() => {}
         Err(e) => fail(format!("--lines line is not one JSON value: {e}")),
-        Ok(got) if case.write => {
+        Ok(got) if case.write && matches!(case.shape, Shape::One) => {
             if got.len() != 1 || keys(&got[0]) != keys(&report) {
                 fail(format!(
                     "--lines must print the envelope as one line: {got:?}"
@@ -809,7 +879,97 @@ fn check(fx: &Fixture, case: &Case) -> Vec<String> {
             case.key, get.stdout, get.stderr
         ));
     }
+
+    if let Some(rows) = rows_of(&report, case.shape) {
+        let template = run(fx, case, &[], &["--template", &format!("{{{}}}", case.key)]);
+        if template.code != Some(0) || template.stdout.lines().count() != rows.len() {
+            fail(format!(
+                "--template {{{}}} printed {:?} (stderr {:?}), expected {} lines",
+                case.key,
+                template.stdout,
+                template.stderr,
+                rows.len()
+            ));
+        }
+
+        let engine_listed = matches!(case.argv, ["items" | "backlog" | "tasks", "list", ..]);
+        if rows.len() > 1 && !engine_listed {
+            let limited = run(fx, case, &[], &["--limit", "1", "--lines"]);
+            match json_lines(&limited.stdout) {
+                Ok(got)
+                    if limited.code == Some(0)
+                        && got.len() == 2
+                        && got[0]["limited"]
+                            == serde_json::json!({ "shown": 1, "total": rows.len() }) => {}
+                _ => fail(format!(
+                    "--limit 1 --lines printed {:?} (stderr {:?}), expected a limited header and 1 of {} rows",
+                    limited.stdout,
+                    limited.stderr,
+                    rows.len()
+                )),
+            }
+        }
+    }
+
+    if case.write {
+        let absent = ["--get", "definitely_absent_field"];
+        let shaped = run(fx, case, &[], &absent);
+        if shaped.code != Some(0) || !shaped.stderr.contains("tomlctl: warning:") {
+            fail(format!(
+                "a failed --get on a write exited {:?} with stderr {:?}; expected exit 0 and a warning",
+                shaped.code, shaped.stderr
+            ));
+        }
+        if snapshot(&shaped.root) != snapshot(&plain.root) {
+            fail("a failed --get on a write left different files than the plain write".into());
+        }
+        if case.argv[0] == "set" {
+            let json = run(fx, case, &["--error-format", "json"], &absent);
+            let warned = json.stderr.lines().any(|line| {
+                serde_json::from_str::<Value>(line).is_ok_and(|v| v["warning"].is_object())
+            });
+            if json.code != Some(0) || !warned {
+                fail(format!(
+                    "--error-format json must put the warning on stderr as a JSON line: exited {:?}, stderr {:?}",
+                    json.code, json.stderr
+                ));
+            }
+        }
+    }
     fails
+}
+
+/// A read verb that prints compact JSON fails a shaping error, unlike a
+/// write: an unresolved flow must not hand `$(tomlctl flow resolve --get
+/// slug)` the whole envelope with exit 0.
+#[test]
+fn a_compact_read_fails_a_bad_get() {
+    let (_dir, root) = sandbox();
+    put(&root, "doc.toml", "a = 1\n");
+    let reads: &[&[&str]] = &[
+        &["validate", "doc.toml"],
+        &["flow", "resolve"],
+        &["flow", "stale", "--slug", "nope", "--json"],
+        &["flow", "stale", "--slug", "nope"],
+        &["flow", "doctor"],
+        &["flow", "envelope", "build", "--command", "review"],
+        &["flow", "active", "list"],
+    ];
+    for argv in reads {
+        let out = cli(&root)
+            .current_dir(&root)
+            .args(["--error-format", "json"])
+            .args(*argv)
+            .args(["--get", "nope"])
+            .output()
+            .unwrap();
+        let what = argv.join(" ");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "`{what}`: stderr {stderr}");
+        assert!(out.stdout.is_empty(), "`{what}` printed to stdout");
+        let err: Value = serde_json::from_str(stderr.trim()).unwrap();
+        assert_eq!(err["error"]["kind"], "validation", "`{what}`: {err}");
+    }
 }
 
 /// The leaf command a case's argv names, walked down the capabilities tree.

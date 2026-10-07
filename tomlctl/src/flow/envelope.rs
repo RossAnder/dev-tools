@@ -16,7 +16,7 @@ use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
 use crate::errors::{ErrorKind, tagged_err};
-use crate::output::print_json_compact;
+use crate::output::print_json_line;
 
 /// Carrier commands accepted by `--command`. Matches the enumeration in
 /// `claude/agents/flow-bootstrap.md`'s envelope schema.
@@ -167,5 +167,5 @@ pub(crate) fn dispatch(
         "require_artifacts": require_artifacts,
         "staleness_threshold": staleness_threshold,
     });
-    print_json_compact(&envelope)
+    print_json_line(&envelope)
 }

@@ -439,12 +439,35 @@ pub(crate) fn dispatch(
 
     let doc = schema::read_store(&integrity)?;
 
-    let mut verdicts = evaluate(&doc, &probe, &thresholds);
-    verdicts.cap(crate::output::opts().limit.unwrap_or(DEFAULT_LIMIT));
+    let verdicts = evaluate(&doc, &probe, &thresholds);
     print_report(
-        render(&probe, &thresholds, &verdicts)?,
+        build_report(&probe, &thresholds, verdicts, crate::output::opts().limit)?,
         Rows::Field("candidates"),
     )
+}
+
+/// An explicit `--limit` is left to the output layer, which cuts the rows and
+/// reports the cut; without one the default cap applies here and the header
+/// carries the same `limited` shape the output layer would have written.
+fn build_report(
+    probe: &Probe,
+    thresholds: &Thresholds,
+    mut verdicts: Verdicts,
+    limit: Option<usize>,
+) -> Result<JsonValue> {
+    let mut cut = None;
+    if limit.is_none() {
+        let total = verdicts.candidates.len();
+        verdicts.cap(DEFAULT_LIMIT);
+        if total > verdicts.candidates.len() {
+            cut = Some((verdicts.candidates.len(), total));
+        }
+    }
+    let mut report = render(probe, thresholds, &verdicts)?;
+    if let Some((shown, total)) = cut {
+        report["limited"] = json!({ "shown": shown, "total": total });
+    }
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -964,6 +987,51 @@ mod tests {
         verdicts.cap(2);
         assert_eq!(verdicts.verdict, "likely-duplicate");
         assert_eq!(verdicts.candidates.len(), 2);
+    }
+
+    #[test]
+    fn the_default_cap_reports_a_limited_header_only_when_it_cuts() {
+        let rows = |count: usize| {
+            store(
+                (0..count)
+                    .map(|n| {
+                        live_row(
+                            &format!("B-{n:08x}"),
+                            KIND_BUG,
+                            &format!("tomlctl/src/backlog/leaf{n}.rs"),
+                            "the sidecar rename fails with access denied",
+                            "",
+                        )
+                    })
+                    .collect(),
+                vec![],
+            )
+        };
+        let probe = probe(
+            "the sidecar rename fails with access denied",
+            "tomlctl/src/backlog/check.rs",
+            KIND_BUG,
+        );
+        let over = DEFAULT_LIMIT + 2;
+        let (cut, whole, explicit) = with_root(|_| {
+            let build = |count: usize, limit: Option<usize>| {
+                let verdicts = evaluate(&rows(count), &probe, &defaults());
+                build_report(&probe, &defaults(), verdicts, limit).unwrap()
+            };
+            (
+                build(over, None),
+                build(DEFAULT_LIMIT - 1, None),
+                build(over, Some(2)),
+            )
+        });
+        assert_eq!(cut["candidates"].as_array().unwrap().len(), DEFAULT_LIMIT);
+        assert_eq!(
+            cut["limited"],
+            json!({ "shown": DEFAULT_LIMIT, "total": over })
+        );
+        assert!(whole.get("limited").is_none());
+        assert_eq!(explicit["candidates"].as_array().unwrap().len(), over);
+        assert!(explicit.get("limited").is_none());
     }
 
     #[test]

@@ -53,7 +53,17 @@ tomlctl tasks import-plan --slug <slug> --reconcile-record
 
 **Plan-path validation (mandatory, before any plan Read).** The plan's narrative sections — Summary, Context, Scope, User Decisions, Approach and Risks, whichever of the six the plan carries — are embedded verbatim into every Phase-2 agent prompt's shared preamble. The `## Exploration Notes` / `## Research Notes` appendix (or `RESEARCH-NOTES.md`) is never embedded: a task that relies on design text names its `###` Approach sub-heading, which the preamble already carries. Resolve the candidate path and verify it falls under the git top-level. **Reject** if: (1) it contains `..` after normalisation; (2) it is absolute and not under the git top-level prefix (`/tmp`, `/etc`, `~/`, etc.); (3) it resolves outside the repo via symlink. Halt naming the offending path; dispatch no agent. This binds to the initial read, outline/detail reads, and any Phase-4.5 re-read.
 
-Handle plan-directory (start at outline/master, then only relevant detail docs), single-file, inline-task, and item-subset (`items 3,4,5`) inputs. Update the resolved `context.toml`: read pre-update `status` as `<old_status>`, set `status = "in-progress"`, set `updated` to today, set `[tasks].total` to the store's row count (`tomlctl tasks list --slug <slug> --count`), set `[tasks].in_progress` to the count of tasks this run will dispatch, preserve `created` and key order. **`[tasks].in_progress` is derived from the frontier scheduler's in-flight set.** It is written only by `/implement`; `/plan-new` and `/plan-update` never touch it, and Phase 4.5 resets it.
+Handle plan-directory (start at outline/master, then only relevant detail docs), single-file, inline-task, and item-subset (`items 3,4,5`) inputs. Update the resolved `context.toml`: read pre-update `status` as `<old_status>`, set `status = "in-progress"`, set `updated` to today, set `[tasks].total` to the store's row count, set `[tasks].in_progress` to the count of tasks this run will dispatch, preserve `created` and key order. `set` infers the type — `updated` lands as a TOML date and the counts as integers — so pass no `--type` and no fallback:
+
+```bash
+tomlctl get <context_path> status --raw
+tomlctl set <context_path> status in-progress -q
+tomlctl set <context_path> updated <today> -q
+tomlctl set <context_path> tasks.total "$(tomlctl tasks list --slug <slug> --count --raw)" -q
+tomlctl set <context_path> tasks.in_progress <n> -q
+```
+
+**`[tasks].in_progress` is derived from the frontier scheduler's in-flight set.** It is written only by `/implement`; `/plan-new` and `/plan-update` never touch it, and Phase 4.5 resets it.
 
 Invoke the `flow-contract-execution-record-schema` skill to load the canonical execution-record contract (schema, type vocabulary + per-type required fields, the heredoc write contract, `<record>` path-resolution rule, `[[items]]` subcommand restrictions, append-only/supersession, deterministic PROGRESS-LOG.md regeneration via `tomlctl flow render-progress-log`, `[tasks].completed` derivation, read-path `--verify-integrity` integrity contract, field-length caps, and read rules). Resolve `<record>` as `[artifacts].execution_record` (fallback `.claude/flows/<slug>/execution-record.toml`); no explicit pre-create is needed — `flow init` / `/plan-new` normally pre-seed it, and if it is absent on disk the first mutating `tomlctl items add` / `set` against `<record>` auto-creates and seeds it with the byte-identical `schema_version = 1` + `last_updated = <today>` skeleton (the write success envelope then carries `"created": true`). Use `<record>` (fully-qualified) for every later `tomlctl` call — never the bare filename. If `<old_status> != "in-progress"`, append a `type=status-transition` entry per the skill's heredoc form (skip the no-op case). Build the idempotency skip-list from the store — `tomlctl tasks list --slug <slug> --where status=done --pluck ref` — and skip every task whose `ref` it names. **A record `task_ref` is the store row's `ref`**: the execution-record contract pins the two to one value, which is what lets Step 0.5's `--reconcile-record` import carry a prior run's completions into row statuses, and what makes this one query equivalent to the record scan it replaces. A `/tdd` sub-flow, having no store, keeps that scan: `tomlctl items list <record> --where type=task-completion --where status=done --pluck task_ref --verify-integrity`. Extract `## Verification Commands` for Phase 3, and the plan's `## After Merge` list for Phase 4.
 
@@ -110,7 +120,13 @@ tomlctl tasks update <id>,<id> --slug <slug> --status in-progress --agent implem
 tomlctl tasks update <id>,<id> --slug <slug> --status in-progress --agent implement-lite
 ```
 
-**Record the dispatch-time file state.** Before the agent is dispatched, test each path on the row's `files` (`test -e <path>`) and emit one console line in this conversation: `dispatch <id>: absent at dispatch — <paths>` (or `— none`). That line is the record. It is orchestrator-held state that no store field carries, and step 6's new-file test reads it back from this conversation to decide which untracked paths the rollback stashes away and which it leaves on disk. When the `cross-cut` handler widens the row's `files`, test the added paths before the re-dispatch and emit the line again, carrying forward the absent paths of the earlier line and adding the new ones that are absent. Never re-test a path already recorded: a retry or reroute would otherwise count a file the failed attempt created as present at dispatch, and step 6 would leave it on disk. A run resumed in a fresh conversation has no such line for a row still in flight. Step 6 then treats every path on that row as present at dispatch.
+**Record the dispatch-time file state.** Before the agent is dispatched, test each path on the row's `files` (`test -e <path>`) and emit one console line in this conversation: `dispatch <id>: absent at dispatch — <paths>` (or `— none`). `--get files` prints the row's paths one per line, so the test needs no `jq`:
+
+```bash
+for id in <id> <id>; do abs=; while IFS= read -r p; do test -e "$p" || abs="$abs $p"; done < <(tomlctl tasks show $id --slug <slug> --get files); echo "dispatch $id: absent at dispatch —${abs:- none}"; done
+```
+
+That line is the record. It is orchestrator-held state that no store field carries, and step 6's new-file test reads it back from this conversation to decide which untracked paths the rollback stashes away and which it leaves on disk. When the `cross-cut` handler widens the row's `files`, test the added paths before the re-dispatch and emit the line again, carrying forward the absent paths of the earlier line and adding the new ones that are absent. Never re-test a path already recorded: a retry or reroute would otherwise count a file the failed attempt created as present at dispatch, and step 6 would leave it on disk. A run resumed in a fresh conversation has no such line for a row still in flight. Step 6 then treats every path on that row as present at dispatch.
 
 Per completed agent:
 
@@ -223,7 +239,7 @@ The render is a derived write like `PROGRESS-LOG.md` and carries no `.sha256` si
 **Backlog reconcile.** Only when the Phase-3 final pass was green — never after a red or unfinished pass — resolve the backlog items this flow delivered:
 
 ```bash
-tomlctl backlog reconcile --flow <slug> --apply
+tomlctl backlog reconcile --flow <slug> --apply --select applied,skipped
 ```
 
 It resolves every `ready` item (every task that `closes` it is `done`), recording `resolved_flow`, `resolved_tasks` and `resolved_commits`. Under per-batch legacy the final batch is still uncommitted, so `resolved_commits` may be empty; that needs no action. Report `applied` as the resolved ids, and surface each `skipped` entry with its reason.
