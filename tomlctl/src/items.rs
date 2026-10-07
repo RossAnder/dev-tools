@@ -332,7 +332,8 @@ pub(crate) fn items_add_value_to(
     {
         bail!(
             "ledger row must carry a non-empty string `id` (e.g. {{\"id\":\"R1\", ...}}); \
-             mint one with `tomlctl items next-id <file> --prefix <P>` and stamp it onto each row"
+             mint one with `tomlctl items add --id-prefix <P>` or `tomlctl items add-many --id-prefix <P>`, \
+             which assign the id inside the locked write"
         );
     }
     // Auto-populate `dedup_id` from the payload BEFORE conversion to
