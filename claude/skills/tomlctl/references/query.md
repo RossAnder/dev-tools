@@ -29,7 +29,7 @@ on this page, `items sweep --update`.
 
 All read commands print JSON on stdout by default.
 
-> **There is no `--format` / `--output` flag, by decision.** JSON is the only structured output; use `--raw` / `--lines` for bare scalars (see [Output shapes](#output-shapes---raw----lines----ndjson)). The compact table an agent reaches for is `--select <fields> --ndjson`: one self-describing object per line, immune to a `|` or tab inside a summary — which is exactly what a `--tsv` or a hand-rendered pipe table is not. `gh`/`kubectl`-style `--template` / `custom-columns` serve humans and shell scripts; tomlctl's reader is an agent, and NDJSON is strictly better for it. Do **not** invent `--format json`; it errors with `error: unexpected argument '--format' found` and a `Usage:` line for the subcommand, which names the flag to drop. Swallowing that (`2>/dev/null`) throws the diagnosis away and leaves the verification silently producing nothing.
+> **There is no `--format` / `--output` flag.** JSON is the only structured output. Every command takes the global [output options](../SKILL.md#output-options): `--get <path>` for bare values, `--select` / `--lines` for a compact projection, `--template` for one text line per row, `-q` for silence. The compact table an agent reaches for is `--select <fields> --lines`: one self-describing object per line, immune to a `|` or tab inside a summary — which a `--template` line joining fields with a delimiter is not, so keep `--template` for text a human or a shell reads. Do **not** invent `--format json`; it errors with `error: unexpected argument '--format' found` and a `Usage:` line for the subcommand, which names the flag to drop. Swallowing that (`2>/dev/null`) throws the diagnosis away and leaves the verification silently producing nothing.
 
 ```bash
 # Omit the dotted path to read the whole document
@@ -58,13 +58,13 @@ flag tables omit; `sweep` and `items sweep` state their own exceptions.
 
 ### Strict reads (`--strict-read`)
 
-By default the only read subcommand with a "missing file → silent default" branch is `items next-id --prefix <P>`, which returns `"<P>1"` as a bootstrapping fast path for flows that mint the first id before the ledger file exists. Every other read subcommand already errors on a missing file with `kind=not_found`.
+By default the only read subcommand with a "missing file → silent default" branch is `items next-id --prefix <P>`, which prints the bare id `<P>1` as a bootstrapping fast path for flows that mint the first id before the ledger file exists. Every other read subcommand already errors on a missing file with `kind=not_found`.
 
 Pass `--strict-read` when an agent needs to distinguish "no matches in an existing ledger" from "ledger does not exist" — e.g. when a flow expects a file to have been bootstrapped by `/plan-new` or `/implement` before proceeding:
 
 ```bash
 # Errors with kind=not_found if the ledger hasn't been bootstrapped yet,
-# even for next-id (which otherwise silently returns "R1").
+# even for next-id (which otherwise silently prints R1).
 tomlctl items next-id .claude/flows/foo/review-ledger.toml --prefix R --strict-read
 tomlctl items list .claude/flows/foo/review-ledger.toml --status open --strict-read
 ```
@@ -110,11 +110,13 @@ tomlctl items list .claude/flows/foo/review-ledger.toml --status open --strict-r
 
 | Flag | Value | Meaning |
 |---|---|---|
-| `--select` | `F1,F2,...` | Keep only these keys per item. |
+| `--select` | `P1,P2,...` | Keep only these paths per item. Global (see [output options](../SKILL.md#output-options)): a dotted path such as `policy.checkpoints` keys its value by the path string, and a path that no item in the array holds is a `kind=validation` error listing the fields that exist — even when the filters leave no row, because the check runs against every item before filtering. A key missing from only some items is omitted from those. |
 | `--exclude` | `F1,F2,...` | Drop these keys per item. |
 | `--pluck` | `FIELD` | Flat array of one field's values, e.g. `["R3","R7","R22"]`. |
 
 `--select` + `--exclude`, `--select` + `--pluck`, and `--exclude` + `--pluck` are rejected.
+
+The global `--get <path>` and `--template <T>` also work on a list, one line per item: `--where status=open --get id` prints `R1`, `R3`, … one per line, unquoted.
 
 ### Shaping
 
@@ -123,7 +125,7 @@ tomlctl items list .claude/flows/foo/review-ledger.toml --status open --strict-r
 | Flag | Value | Meaning |
 |---|---|---|
 | `--sort-by` | `FIELD[:asc\|desc]`, repeatable | Sort ascending unless `:desc`; each repeat is a tiebreaker, e.g. `--sort-by severity:desc --sort-by first_flagged:asc`. |
-| `--limit` | `N` | Return at most N items. |
+| `--limit` | `N` | Return at most N items. Global; on a list it is applied by the query engine after sorting and adds no `limited` key. |
 | `--offset` | `N` | Skip the first N items; `--offset 20 --limit 10` pages. |
 | `--distinct` | — | Dedup on the projected shape, keeping the first occurrence, e.g. `--select category --distinct`. |
 
@@ -147,7 +149,7 @@ tomlctl items list .claude/flows/foo/review-ledger.toml --status open --strict-r
 | Flag | Meaning |
 |---|---|
 | `--raw` | Emit a single bare scalar (no JSON framing). Requires a shape that collapses to one value: `--count`, `--count-distinct F`, or `--pluck F` when exactly one item matches. Errors on a multi-element pluck, `--count-by`, `--group-by`, or row output, and on row output combined with `--lines` / `--ndjson`; `--pluck F --raw --lines` emits one bare value per line. |
-| `--lines` | The `--ndjson` switch under the spelling the `--pluck` case reaches for: one JSON value per line instead of a JSON array. A no-op on the aggregate shapes, which are one value already. |
+| `--lines` | Global. On a list, the `--ndjson` switch under the spelling the `--pluck` case reaches for: one JSON value per line instead of a JSON array. A no-op on the aggregate shapes, which are one value already. |
 | `--ndjson` | One item per line instead of a JSON array. Composes with `--select` / `--exclude`, so a projected list is one compact object per line — the agent-facing table shape. Unprojected, each line is a full item and pipes cleanly into `items add-many --ndjson`. `items apply --ops` takes NDJSON too, but of ops rather than rows: each line wraps a row under a `json` key (`{"op":"add","json":{…}}`), so listed rows need that framing first. |
 
 ```bash
@@ -190,7 +192,8 @@ tomlctl items get .claude/flows/auth-overhaul/review-ledger.toml R22
 |---|---|---|---|
 | `--tier` | `A` \| `B` \| `C` | `A`: the canonical dedup rule — group by (file, symbol) when symbol is non-empty, otherwise by (file, summary). `B`: content fingerprint — items sharing `<file>\|<summary>\|<severity>\|<category>\|<symbol>` (truncated SHA-256, 16 hex) and the same file basename. `C`: file-scoped greedy line-window grouping for symbol-less items (group anchor + window of 10 lines). | `A` |
 | `--across` | path | Run tier A or B over the union of this ledger's items and the other's. Each output entry is tagged with `source_file`, the basename of its origin ledger; the tag is applied at JSON-emit time and never written back to either ledger. Tier C's line-window grouping assumes one source file, so `--tier C --across` errors `tier C is file-scoped; use --tier A or --tier B with --across`. | none |
-| `--lines` | — | One duplicate group per line. See [line output](../SKILL.md#line-output). | off |
+
+The groups are the report's rows, so the global `--lines` prints one group per line. Finding duplicates is not a failure: the verb exits 0 either way, so under `-q` it reports only that it ran.
 
 ```bash
 tomlctl items find-duplicates review-ledger.toml --across optimise-findings.toml --tier B
@@ -296,10 +299,11 @@ match before a `\r`), and a pattern longer than 512 bytes is refused — the sam
 | `--max-file-bytes` | bytes | Files larger than this are skipped and counted under `skipped.oversize`. | `4194304` |
 | `--max-hits` | count | Stop after this many distinct `file:line` sites and set `truncated: true`. | `5000` |
 | `--exclude` | glob, repeatable | Extra exclusion on top of `.claude/**` and `docs/plans/**`. | none |
-| `--lines` | — | Header line, then one `hits` row per line. See [line output](../SKILL.md#line-output). | off |
 
-The verb takes no ledger and no integrity flag; `--error-format text|json` applies as
-everywhere.
+The verb takes no ledger and no integrity flag; `--error-format text|json` and the
+[output options](../SKILL.md#output-options) apply as everywhere, with `hits` as the rows —
+`--lines` prints the header, then one hit per line, and `--template '{file}:{line}'` prints
+bare sites.
 
 ### Re-sweep a pattern item
 
@@ -387,7 +391,9 @@ path, its `--dry-run` preview and the anchor-spelling consequence (new sites lan
 | `--dry-run` | — | Preview the `--update` rewrite as a `would_change` summary; no file or sidecar touch. Requires `--update`. | off |
 | `--max-file-bytes` | bytes | Files larger than this are skipped, which leaves their anchors `unverified` (`reason: skipped`) and blocks `--update`. | `4194304` |
 | `--max-hits` | count | Distinct `file:line` sites after which the sweep stops and every item reports `truncated: true`. | `5000` |
-| `--lines` | — | Header line, then one `items` row per line. Read-only sweep only; refused with `--update`. See [line output](../SKILL.md#line-output). | off |
+
+The read-only report's rows are `items`, so the global `--lines` prints the header, then one
+swept item per line; it is refused beside `--update`, whose output is a write envelope.
 
 The verb carries the write bundle (`--allow-outside`, `--no-create`, `--no-write-integrity`,
 `--strict-integrity`, `--verify-integrity`) because of `--update`; there is no `--strict-read`
@@ -431,7 +437,7 @@ tomlctl items clusters <ledger>
 }
 ```
 
-The same report under `--lines`, as the apply pipeline reads it:
+The same report under the global `--lines` (`tomlctl items clusters <ledger> --lines`), as the apply pipeline reads it:
 
 ```json
 {"batches":[["c1"]],"dropped_deps":[{"id":"R78","unselected":[{"id":"R41","status":"fixed"}],"unknown":["R9"]}]}
@@ -450,6 +456,9 @@ cluster shares one edit shape stays the orchestrator's judgement.
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--ids` | comma-separated ids | Items to cluster. Omit for every item not at a terminal status — an absent or unrecognised status reads as `open`, as `items sweep --update` reads it. | every open item |
-| `--lines` | — | Header line (`batches`, `dropped_deps`), then one cluster per line. See [line output](../SKILL.md#line-output). | off |
+
+The report's rows are `clusters`; the global `--lines` gives the header-then-rows form shown
+above, and `--get` / `--select` act on the clusters, not on `batches` (see
+[output options](../SKILL.md#output-options)).
 
 Read-only: carries `--verify-integrity` and `--strict-read` and no write flag.
