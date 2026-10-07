@@ -35,7 +35,7 @@ Each cycle: (1) writes one failing test via the `test-author` skill, commits `re
 
 ## Cycle FSM
 
-Invoke the `flow-contract-execution-record-schema` skill before the first execution-record write to load the canonical schema (field set, type vocabulary, the two-call heredoc append idiom, append-only + supersession, `--verify-integrity` read contract, field-length caps, and deterministic PROGRESS-LOG.md regeneration via `tomlctl flow render-progress-log`). `/tdd` writes `verification` and `task-completion` entries into cycle sub-flows and copies entries up to the parent record; all writes follow this contract.
+Invoke the `flow-contract-execution-record-schema` skill before the first execution-record write to load the canonical schema (field set, type vocabulary, the heredoc append idiom, append-only + supersession, `--verify-integrity` read contract, field-length caps, and deterministic PROGRESS-LOG.md regeneration via `tomlctl flow render-progress-log`). `/tdd` writes `verification` and `task-completion` entries into cycle sub-flows and copies entries up to the parent record; all writes follow this contract.
 
 Finite state machine RED → GREEN → REFACTOR → cycle decision (loop or stop), gated by recorded entries in the cycle sub-flow's `execution-record.toml`; states cannot be skipped or reordered.
 
@@ -52,15 +52,16 @@ Per-language test-globs: rust `tests/**/*.rs` + `src/**/*.rs:#[cfg(test)]`; pyth
 **Mismatch handling (do all three before halting)**: (1) revert the GREEN commit — `git revert --no-edit <green-sha>` by default; `git reset --hard HEAD~1` only on single-developer linear history with no push since GREEN; skip if `/implement` exited pre-commit. (2) Append a NEW superseding `task-completion` entry marking the cycle failed (do NOT mutate the original `status=done` in place):
 
 ```
-cat <<'EOF' | tomlctl items add <cycle-record> --json -
-{"id":"<E{n+1}>","type":"task-completion","date":"<today>","agent":"tdd","task_ref":"tdd-cycle-<NNN>-<short-name>","summary":"GREEN fingerprint mismatch — reverted","files":[],"status":"failed","failure_reason":"fingerprint-mismatch","red_fingerprint":"<sha256-from-RED>","green_fingerprint":"<sha256-recomputed-at-GREEN>","supersedes_entry":"<E-id-of-original-done-entry>"}
+cat <<'EOF' | tomlctl items add <cycle-record> --json - --id-prefix E
+{"type":"task-completion","date":"<today>","agent":"tdd","task_ref":"tdd-cycle-<NNN>-<short-name>","summary":"GREEN fingerprint mismatch — reverted","files":[],"status":"failed","failure_reason":"fingerprint-mismatch","red_fingerprint":"<sha256-from-RED>","green_fingerprint":"<sha256-recomputed-at-GREEN>","supersedes_entry":"<E-id-of-original-done-entry>"}
 EOF
-tomlctl set <cycle-record> last_updated <today>
 ```
+
+`--id-prefix E` mints the entry's id under the write lock, and the add restamps the record's `last_updated` itself.
 
 `failure_reason` is an optional discriminator (the schema's required set does not proscribe extra keys); the resume FSM pivots on `status=failed` AND `failure_reason="fingerprint-mismatch"` together, and both fingerprint hashes are retained for audit. (3) Halt without REFACTOR; do NOT advance the cycle counter; do NOT copy up to the parent (REFACTOR does that). Surface a diagnostic naming offending files (diff `git ls-tree -r <green-sha> -- <test-glob>` vs the RED tree). Resume contract: a `status=failed` + `failure_reason="fingerprint-mismatch"` entry is a **re-RED trigger for the SAME cycle-NNN** (not a fresh NNN+1); counter does not advance until the re-RED yields a clean GREEN. Commit `green: <cycle-slug>` only once the test passes AND the fingerprint matches. **Anti-cheat rule 2** (no test mutation) is the fingerprint diff.
 
-**REFACTOR**: run the coverage tool; if changed-line coverage <90%, append a follow-up parent task and re-enter GREEN as the next cycle (a follow-up outside the feature's plan scope goes to the backlog instead — see **Deferred follow-ups**). Otherwise optionally do a production-only refactor (same fingerprint check; revert on regression). Append a `task-completion` to the **parent** record with `task_ref` prefixed `tdd-cycle-<NNN>-<short-name>` and a re-minted `id` (`tomlctl items next-id <parent-record> --prefix E`). Copy up the cycle's `verification` entries with the same prefixing + re-mint.
+**REFACTOR**: run the coverage tool; if changed-line coverage <90%, append a follow-up parent task and re-enter GREEN as the next cycle (a follow-up outside the feature's plan scope goes to the backlog instead — see **Deferred follow-ups**). Otherwise optionally do a production-only refactor (same fingerprint check; revert on regression). Append a `task-completion` to the **parent** record with `task_ref` prefixed `tdd-cycle-<NNN>-<short-name>` and a re-minted `id`: drop the cycle's `id` from the payload and append with `tomlctl items add <parent-record> --json - --id-prefix E`. Copy up the cycle's `verification` entries with the same prefixing, ids dropped, in one `tomlctl items add-many <parent-record> --ndjson - --id-prefix E`, which mints a contiguous run in order.
 
 **Cycle decision**: loop to RED for `<NNN+1>` if uncovered behaviour remains OR coverage gating appended a follow-up; stop when all feature behaviour is covered AND changed-line coverage ≥90% AND all tests pass. On stop, summarise cycles run, total commits, final coverage, and deferred follow-ups.
 
