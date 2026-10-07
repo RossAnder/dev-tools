@@ -134,10 +134,9 @@ SUMMARY
 | `--kind` | text | Must match the `--kind` the following `add` will use — it is hashed into the fingerprint. | `other` |
 | `--area` | repo-relative path | Must match the following `add` for the same reason; also feeds the structural `related` rung. | empty |
 | `--tag` | text, repeatable | Feeds the structural `related` rung only. | none |
-| `--limit` | integer | Return at most N candidates. | `5` |
+| `--limit` | integer | The global flag: return at most N candidates. Global `--select` / `--get` act on the candidate rows, never the header that holds `verdict`. | `5` |
 | `--similarity-strong` | 0.0–1.0 | Char-trigram Jaccard at or above which a candidate reads as `likely-duplicate`. | `0.75` |
 | `--similarity-related` | 0.0–1.0 | Word Jaccard at or above which a candidate reads as `related`. | `0.35` |
-| `--lines` | — | Header line, then one candidate per line. See [line output](../SKILL.md#line-output). | off |
 
 A threshold outside 0.0–1.0, or NaN, errors with `kind=validation`.
 
@@ -186,10 +185,12 @@ in play: an array of item objects by default, `{"count":N}` under `--count`, a b
 
 ```bash
 tomlctl backlog show B-a1b2c3d4
+tomlctl backlog show B-a1b2c3d4,B-1a2b3c4d --get item.status
 ```
 
-Takes an id positionally and no flags beyond the read bundle. Emits the stored row, its
-evidence listing, and its one-hop typed-edge neighbourhood in both directions:
+Takes ids comma- or space-separated; one prints the object below, several an array of them in
+order, and an unknown id fails the whole call before anything prints. Each object holds the
+stored row, its evidence listing, and its one-hop typed-edge neighbourhood in both directions:
 
 ```json
 {"item":{"id":"B-a1b2c3d4","summary":"…"},
@@ -412,7 +413,6 @@ tomlctl backlog evidence audit --strict --max-bytes 2097152
 |---|---|---|---|
 | `--strict` | — | Exit 1 on the seven failing classes below. | off |
 | `--max-bytes` | integer | Oversize threshold in bytes. | `2097152` (2 MiB) |
-| `--lines` | — | Header line (`root`, `counts`), then one finding per line. See [line output](../SKILL.md#line-output). | off |
 
 Eleven finding classes, seven of them strict:
 
