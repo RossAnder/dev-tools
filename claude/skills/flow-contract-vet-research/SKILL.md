@@ -16,10 +16,9 @@ description: Orchestrator-side vet pass run after a research agent returns — t
    cat <<'EOF' | tomlctl array-append <ledger> vet_events --json -
    {"timestamp":"<ISO 8601>","command":"<review|optimise|review-plan|plan-new|plan-update|test-bootstrap>","agent_index":<n>,"lens":"<lens>","tier":"<lite|deep>","sampled_count":<N>,"dropped_count":<M>,"downgraded_count":<K>,"dropped_ids":["<R{n}>",...],"rationale":"<≤8 KiB rationale>"}
    EOF
-   tomlctl set <ledger> last_updated <YYYY-MM-DD>
    ```
 
-   `array-append` is a `mutate_doc*`-routed verb, so this idiom works against a fresh (missing) ledger too — the first `vet_events` append auto-creates the file with the `schema_version = 1` skeleton, no pre-initialisation needed.
+   `array-append` is a `mutate_doc*`-routed verb, so this idiom works against a fresh (missing) ledger too — the first `vet_events` append auto-creates the file with the `schema_version = 1` skeleton, no pre-initialisation needed. The append stamps the ledger's `last_updated` itself, so no follow-up `tomlctl set` is needed.
 
    `lens` is the carrier's canonical lens name exactly as it lists it — lowercase and hyphenated (`package-quality`, never `Package Quality` or `Agent-6`), so entries from different runs aggregate by string. `tier` is the tier of the run whose findings were vetted: `deep` for a `research-deep` dispatch or a lens re-dispatched to it under step 2, `lite` otherwise.
 

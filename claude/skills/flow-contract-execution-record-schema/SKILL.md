@@ -1,6 +1,6 @@
 ---
 name: flow-contract-execution-record-schema
-description: Canonical schema and contract for a flow's per-flow append-only execution log at `.claude/flows/<slug>/execution-record.toml` — the single source of truth from which `PROGRESS-LOG.md` is rendered (by `tomlctl flow render-progress-log`) and `[tasks].completed` is derived. Defines the `[[items]]` entry shape, the always-required fields, and the type vocabulary (`task-completion`, `verification`, `deviation`, `deferral`, `reconcile`, `status-transition`, `checkpoint`) with each type's additional required fields. Covers the two-call write idiom (`tomlctl items add --json -` then `tomlctl set last_updated`), append-only supersession, the `[tasks].completed` derivation, field-length caps, and the read-path integrity contract (`--verify-integrity`, no auto-repair). Consult before any read or write of a flow's execution-record.toml by /plan-new, /implement, /plan-update, or /tdd.
+description: Canonical schema and contract for a flow's per-flow append-only execution log at `.claude/flows/<slug>/execution-record.toml` — the single source of truth from which `PROGRESS-LOG.md` is rendered (by `tomlctl flow render-progress-log`) and `[tasks].completed` is derived. Defines the `[[items]]` entry shape, the always-required fields, and the type vocabulary (`task-completion`, `verification`, `deviation`, `deferral`, `reconcile`, `status-transition`, `checkpoint`) with each type's additional required fields. Covers the heredoc write contract (one `tomlctl items add --json - --id-prefix E` that mints the id and stamps `last_updated`), append-only supersession, the `[tasks].completed` derivation, field-length caps, and the read-path integrity contract (`--verify-integrity`, no auto-repair). Consult before any read or write of a flow's execution-record.toml by /plan-new, /implement, /plan-update, or /tdd.
 ---
 
 ## Execution Record Schema
@@ -50,7 +50,7 @@ commits = ["def5678"]
 legacy_id = "D3"
 ```
 
-**Required fields per entry (all types):** `id` (E{n}, monotonic via `tomlctl items next-id <record> --prefix E`), `type`, `date` (YYYY-MM-DD TOML date — NOT `timestamp`), `agent`, `summary`.
+**Required fields per entry (all types):** `id` (E{n}, monotonic, minted by the write itself via `items add --id-prefix E` — see the heredoc write contract below), `type`, `date` (YYYY-MM-DD TOML date — NOT `timestamp`), `agent`, `summary`.
 
 ### Type vocabulary + type-specific required fields
 
@@ -72,16 +72,19 @@ legacy_id = "D3"
 
 **`vet` / `retries` fields** (task-completion): the calibration data for `/implement`'s lite vet rate. `vet` is the Phase 2 step 3a outcome for the task's `implement-lite` return — `flagged-*` when a signal in the return forced the vet, `sampled-*` when the sample drew it, with `-pass` / `-fail` its verdict — and `skipped` when 3a did not vet it, including every task dispatched deep. A `*-fail` entry is always a reroute, so it carries `escalation_reason = "vet-failed"`. `retries` counts the retry-budget spends before the task settled: `0` when its first return did; an escalation reroute is not a spend. Both are required on new task-completion entries written by `/implement` Phase 2 step 5b, forward-only like the dispatch fields; a reader treats an absent `vet` as unknown, never as `skipped`.
 
-### Write contract — two-call pattern (canonical heredoc form)
+### Heredoc write contract (one call)
 
-Every writer appends an entry using this exact idiom. Never tempfile-stage payloads; heredoc stdin is the blessed path. There is NO separate "create the file first" step — the first `tomlctl items add` auto-creates a missing record (seeding the `schema_version = 1` / `last_updated = <today>` skeleton) and applies the append in one transaction. `flow init` / `/plan-new` normally pre-seed the record, so the auto-create is the recovery path, not the routine one.
+Every writer appends an entry using this exact idiom — one `tomlctl items add`, nothing after it. Never tempfile-stage payloads; heredoc stdin is the blessed path. There is NO separate "create the file first" step — the first `tomlctl items add` auto-creates a missing record (seeding the `schema_version = 1` / `last_updated = <today>` skeleton) and applies the append in one transaction. `flow init` / `/plan-new` normally pre-seed the record, so the auto-create is the recovery path, not the routine one.
 
-```
-cat <<'EOF' | tomlctl items add <fully-qualified-execution-record-path> --json -
-{"id":"<E{n}>","type":"<type>","date":"<YYYY-MM-DD>","agent":"<implement|plan-update|plan-new>","summary":"<one-line>", …type-specific fields…}
+```bash
+cat <<'EOF' | tomlctl items add <fully-qualified-execution-record-path> --json - --id-prefix E --get id
+{"type":"<type>","date":"<YYYY-MM-DD>","agent":"<implement|plan-update|plan-new>","summary":"<one-line>", …type-specific fields…}
 EOF
-tomlctl set <fully-qualified-execution-record-path> last_updated <YYYY-MM-DD>
 ```
+
+- **The write mints the id.** `--id-prefix E` assigns the next `E{n}` under the record's write lock, so two writers can never mint the same number; the payload carries no `id` (one that does is refused with `kind=validation`). `--get id` prints the minted id bare (`E12`) for a later `supersedes_entry` or a console line; drop it when nothing reads the id. A batch of homogeneous entries goes through `items add-many --id-prefix E --ndjson -`, which mints a contiguous run in row order and reports them as `ids`.
+- **The write stamps `last_updated`.** The append refreshes the record's root `last_updated` to today (UTC) in the same write, so no follow-up `tomlctl set` is needed. A `--dry-run` preview stamps nothing and shows the id it would mint.
+- **`tomlctl items next-id <record> --prefix E`** prints the bare next id without writing. Reach for it only where an id must be known before the write and the write cannot mint it — for example a mixed `items apply --ops` batch, whose add ops carry explicit ids numbered upward from that one read.
 
 `<fully-qualified-execution-record-path>` MUST be the resolved value of `[artifacts].execution_record` in the flow's `context.toml` — NEVER the bare filename `execution-record.toml` (which resolves relative to CWD). Now that a missing target auto-creates, passing the bare filename SILENTLY seeds a stray `execution-record.toml` at the CWD/repo root rather than erroring, so the fully-qualified path is more load-bearing than ever. Writers that need the path without reading `context.toml` first can compute it as `.claude/flows/<slug>/execution-record.toml` per the slug derivation rule.
 
@@ -89,7 +92,7 @@ Append order is preserved by tomlctl's exclusive `.lock` sidecar + atomic tempfi
 
 ### `[[items]]` naming rationale + restricted subcommands
 
-The log uses `[[items]]` as its table-array name so generic `tomlctl items` ops (`list`, `get`, `add`, `add-many`, `update`, `remove`, `apply`, `next-id --prefix E`) work as-is. Four `tomlctl items` subcommands hardcode the review/optimise ledger schema and must not be invoked against `execution-record.toml` — they will emit garbage: `items orphans` and `items find-duplicates` (they expect `file`, `symbol`, `summary`, `severity`, `category`), `items sweep` (reads `sweep`, `instances`, `file`, `symbol`) and `items clusters` (reads `file`, `instances`, `depends_on`, `enumeration`, `status`). The generic set — `list`, `get`, `add`, `add-many`, `update`, `remove`, `apply`, `next-id`, `backfill-dedup-id` — works correctly against this schema.
+The log uses `[[items]]` as its table-array name so generic `tomlctl items` ops (`list`, `get`, `add`/`add-many --id-prefix E`, `update`, `remove`, `apply`, `next-id --prefix E`) work as-is. Four `tomlctl items` subcommands hardcode the review/optimise ledger schema and must not be invoked against `execution-record.toml` — they will emit garbage: `items orphans` and `items find-duplicates` (they expect `file`, `symbol`, `summary`, `severity`, `category`), `items sweep` (reads `sweep`, `instances`, `file`, `symbol`) and `items clusters` (reads `file`, `instances`, `depends_on`, `enumeration`, `status`). The generic set — `list`, `get`, `add`, `add-many`, `update`, `remove`, `apply`, `next-id`, `backfill-dedup-id` — works correctly against this schema.
 
 ### Append-only + supersession
 

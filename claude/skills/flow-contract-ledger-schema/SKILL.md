@@ -181,7 +181,7 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
 
 **Ledger writes MUST use parse-rewrite, not line-edit.** Preferred path — `tomlctl` (see skill `tomlctl`):
 
-**First write auto-creates the ledger.** Every mutating verb below routes through `tomlctl`'s `mutate_doc*` chokepoint, so a FIRST write against a missing ledger creates it on demand. The seed shape is keyed by the file **basename**: the flow-local `review-ledger.toml` / `optimise-findings.toml` are recognised flow files and seed the schema-aware skeleton (`schema_version = 1` + `last_updated = <today>`, byte-identical to `flow init`'s bootstrap), whereas the flow-less `.claude/reviews/<scope>.toml` / `.claude/optimise-findings/<scope>.toml` variants carry arbitrary `<scope>.toml` basenames, so they seed an empty document `{}` instead (a missing `schema_version` reads as `1` and is written back on a later write). Either way, callers do NOT need to initialise the file first — a bare `items add` (or any `mutate_doc*` verb) against a non-existent ledger is sufficient; the write envelope reports `"created": true` and one stderr line confirms the seed (the `(schema_version=1)` suffix appears only for the recognised flow-file basenames). (A no-match `update`/`remove` against a freshly-seeded doc still errors and leaves no file. Pass `--no-create` to restore the strict prior behaviour where a missing file yields `kind=not_found`.)
+**First write auto-creates the ledger.** Every mutating verb below routes through `tomlctl`'s `mutate_doc*` chokepoint, so a FIRST write against a missing ledger creates it on demand. Both the flow-local `review-ledger.toml` / `optimise-findings.toml` and the flow-less `.claude/reviews/<scope>.toml` / `.claude/optimise-findings/<scope>.toml` variants seed the schema-aware skeleton (`schema_version = 1` + `last_updated = <today>`, byte-identical to `flow init`'s bootstrap), so every ledger carries the `last_updated` key the write stamps. Callers do NOT need to initialise the file first — a bare `items add` (or any `mutate_doc*` verb) against a non-existent ledger is sufficient; the write envelope reports `"created": true`. (A no-match `update`/`remove` against a freshly-seeded doc still errors and leaves no file. Pass `--no-create` to restore the strict prior behaviour where a missing file yields `kind=not_found`.)
 
 - `tomlctl items add <ledger> --json '{...}'` — append a new item.
 - `tomlctl items update <ledger> <id> --json '{...}'` — patch fields on an existing item matched by `id`.
@@ -189,16 +189,17 @@ Applies to every read/write of `review-ledger.toml` and `optimise-findings.toml`
 - `tomlctl items apply <ledger> --ops -` (stdin heredoc — preferred) or `tomlctl items apply <ledger> --ops '[{"op":"add|update|remove", ...}, ...]'` (argv; small fixed-string batches only) — batch multiple **heterogeneous** ops (mixed add/update/remove, or non-uniform field sets) in one atomic, all-or-nothing file rewrite. An `update` / `remove` op may carry `"expect": {"<field>": <value>}` (`null` = field absent), a compare-and-set on the values the caller read; every late status write carries `"expect": {"status": "<status it read>"}` and passes `--on-stale skip`, which drops a stale op, applies the rest, and lists it under the envelope's `skipped_stale` — report those ids as changed during the run and never retry them. Always pair `expect` with `--on-stale`: an older tomlctl silently ignores `expect` but rejects the flag (see the `tomlctl` skill's `references/write.md`, `items apply`). Use this whenever touching several items in the same run so the ledger pays one parse + one write instead of N. Feed the ops array via heredoc — the same `<<'EOF' … EOF` pattern as the `add-many` example below, except the payload is a JSON array of op objects piped into `--ops -` instead of NDJSON. Never stage the ops payload via a tempfile; the `-` sentinel is the agent-native replacement for that round-trip.
 - `tomlctl items add-many <ledger> --ndjson - [--defaults-json '{...}']` — batch-append **homogeneous** new items via newline-delimited JSON on stdin; shared fields go in `--defaults-json` and per-row keys win. Prefer this over a hand-rolled `--ops` array when every op is `"add"`. Example:
   ```bash
-  tomlctl items add-many <ledger> \
+  tomlctl items add-many <ledger> --id-prefix R \
     --defaults-json '{"first_flagged":"2026-04-18","rounds":1,"status":"open"}' \
     --ndjson - <<'EOF'
-  {"id":"R40","file":"src/a.rs","line":10,"severity":"warning","effort":"small","category":"quality","summary":"..."}
-  {"id":"R41","file":"src/b.rs","line":22,"severity":"suggestion","effort":"trivial","category":"quality","summary":"..."}
+  {"file":"src/a.rs","line":10,"severity":"warning","effort":"small","category":"quality","summary":"..."}
+  {"file":"src/b.rs","line":22,"severity":"suggestion","effort":"trivial","category":"quality","summary":"..."}
   EOF
   ```
 - `tomlctl array-append <ledger> <array-name> --json '{...}'` (or `--ndjson -` for many) — append to an append-only array-of-tables (e.g. `rollback_events`) without op-type JSON framing. Thin shim over `items apply --array <name>`; use this for readable single-entry appends.
-- `tomlctl set <ledger> last_updated <YYYY-MM-DD>` — bump the file-level `last_updated`.
-- `tomlctl items next-id <ledger> --prefix R|O` — compute the next monotonic id.
+- **`last_updated` is stamped by the write.** Every CLI `items add` / `add-many` / `update` / `remove` / `apply` and `array-append` that changes the ledger refreshes its root `last_updated` to today (UTC) in the same write — no follow-up `tomlctl set` call. A no-op write and a `--dry-run` preview stamp nothing. Pass `--no-stamp` to a checkpoint write whose carrier deliberately defers the bump, so an interrupted run does not mark the ledger fresh.
+- `tomlctl items add <ledger> --json - --id-prefix R|O --get id` — append a new item and mint its id under the write lock; the payload carries no `id`, and `--get id` prints the minted id bare. `items add-many --id-prefix R|O` mints a contiguous run in row order, reported as `ids`.
+- `tomlctl items next-id <ledger> --prefix R|O` — print the next monotonic id bare (`R23`), without writing. Use it only for a mixed `items apply --ops` batch, whose add ops need explicit ids: read it once before the batch and number upward.
 - **Reads / queries** — `tomlctl items list <ledger>` carries a full query surface; reach for it instead of piping `tomlctl parse` through another language:
   - `--status open --count` — gate count (emits `{"count": N}`).
   - `--group-by file --select id,symbol` — regression-style grouping (emits `{"<file>":[{id, symbol}, ...], ...}`).
@@ -222,10 +223,10 @@ The file-level keys come first: `schema_version`, `last_updated`, then `[[items]
 
 ### Item-ID assignment and dedup
 
-- **ID assignment**: R-numbers for review items, O-numbers for optimise items. New items get `max(existing) + 1`. Never renumber. IDs retired by deletion are never reused.
+- **ID assignment**: R-numbers for review items, O-numbers for optimise items. New items get the next number after the highest existing one, minted by the write itself (`--id-prefix R|O` on `items add` / `add-many`) or, for a mixed `items apply` batch, numbered upward from one `items next-id` read. Never hand-compute an id. Never renumber. IDs retired by deletion are never reused.
 - **Dedup rule (same for new-item merge AND regression detection)**: two findings match iff they have the **same `file`** AND (**same non-empty `symbol`** OR **exact `summary` string match**). No fuzzy matching, no keyword clustering. When in doubt, new ID.
 - **Merge behaviour**:
-  - New finding matches an `open` item → reuse the existing ID; increment `rounds`; update `last_updated` of the ledger.
+  - New finding matches an `open` item → reuse the existing ID; increment `rounds` (the write stamps the ledger's `last_updated`).
   - New finding matches a `fixed` / `applied` item → **regression**; assign a new ID; write `related = ["<old id>"]`; flag prominently in the console report.
   - New finding matches a `deferred` / `wontfix` / `wontapply` / `verified-clean` item → treat as existing (no change); do not emit a new item; do not increment `rounds`. Note in console: "this matches an existing <status> item, not re-reporting."
 - **Chronic-item escalation**: `rounds >= 3` on `open` items escalates in the summary output.
