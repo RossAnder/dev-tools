@@ -1,0 +1,888 @@
+schema_version = 1
+last_updated = 2026-10-07
+plan_path = "docs/plans/eventual-churning-sunrise.md"
+last_import_refs = [
+    "build-the-output-pipeline-core",
+    "add-the-global-output-flags-to-the-cli-root",
+    "retire-the-per-command-linesargs",
+    "point-the-query-lists-at-the-global-select-limit-and-lines",
+    "route-the-json-get-and-progress-log-text-output-through-print_text",
+    "route-dot-and-rendered-plan-output-through-print_text",
+    "advertise-the-global-flags-and-the-new-features",
+    "print-items-next-id-bare",
+    "mint-ids-inside-items-add-and-items-add-many",
+    "stamp-last_updated-on-cli-writes",
+    "let-tasks-update-take-several-ids",
+    "let-tasks-show-take-several-ids",
+    "let-backlog-show-take-several-ids",
+    "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check",
+    "release-tomlctl-0140-and-refresh-glimpses-lock",
+    "document-the-global-output-flags-in-the-tomlctl-skill",
+    "rewrite-the-tomlctl-write-reference",
+    "update-the-tomlctl-tasks-references",
+    "update-the-tomlctl-backlog-flow-and-agents-references",
+    "retire-the-two-call-pattern-in-the-ledger-and-record-contracts",
+    "retire-the-two-call-pattern-in-the-apply-pipeline-and-plan-new",
+    "update-review-optimise-and-review-plan",
+    "update-implement-plan-update-and-tdd",
+    "raise-the-flow-bootstrap-tomlctl-version-floor-to-0140",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "The global output flags work on every command (pipeline, flags, `LinesArgs` and `QueryArgs` retired, text and stream output routed, capabilities advertised) — a buildable increment with today's write behaviour unchanged"
+
+[[checkpoints]]
+id = "B"
+rationale = "The write changes (bare `next-id`, `--id-prefix`, `last_updated` stamping, several ids), the every-command and stdout-gate tests, and 0.14.0 with glimpse's lock refreshed"
+
+[[checkpoints]]
+id = "C"
+rationale = "Every skill, reference and command shows the new forms; `command_lint`, `flag_table_lint` and the line-ceiling gates pass"
+
+[[file_notes]]
+ref = "build-the-output-pipeline-core"
+file = "tomlctl/src/output/template.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "mint-ids-inside-items-add-and-items-add-many"
+file = "tomlctl/tests/items_id_prefix.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "stamp-last_updated-on-cli-writes"
+file = "tomlctl/tests/last_updated_stamp.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+file = "tomlctl/tests/output_options.rs"
+note = "(new)"
+
+[[file_notes]]
+ref = "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+file = "tomlctl/tests/lines.rs"
+note = "(delete)"
+
+[[file_notes]]
+ref = "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+file = "tomlctl/src/cli/dispatch/tests/output_gate.rs"
+note = "(new)"
+
+[[items]]
+id = 1
+ref = "build-the-output-pipeline-core"
+title = "Build the output pipeline core"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Wave A — global output flags"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/output.rs",
+    "tomlctl/src/output/template.rs",
+    "tomlctl/src/json.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add the process-global `OutputOpts` and apply it in every emitter in `tomlctl/src/output.rs`; add the template module; expose `navigate_json`."
+detail = """
+Implements Approach, "Output pipeline" and Approach, "Template".
+- `pub(crate) struct OutputOpts { select: Option<Vec<String>>, limit: Option<usize>, lines: bool, get: Option<String>, template: Option<String>, quiet: bool }`, held in a `OnceLock`.
+- `pub(crate) fn configure(opts: OutputOpts)`, plus a `Default`-backed getter, so library callers that never configure see today's behaviour; a second `configure` is a `debug_assert!` failure, not a silent no-op. `emit`, `project` and the template renderer take `&OutputOpts` as a parameter and only the `print_*` wrappers read the global, so unit tests pass their own options (a `OnceLock` sets once per test process); Task 4's `QueryArgs::to_query_input` takes `&OutputOpts` the same way. The core returns the truncation notice as a value and the wrapper writes it to stderr, so a test can assert it.
+- `print_json`, `print_json_compact` and `print_report` route through one `emit(report, shape, style)`. Keep `print_report`'s `lines: bool` parameter for now and OR it with the global (Task 3 removes it).
+- Add `print_query`, `print_text` and `stdout_stream` with the semantics the Approach gives. `print_raw_value` honours `-q` and refuses every other output flag, exactly like `print_text`. `emit_list_raw` serves only the query lists, whose engine applies `--select`/`--limit`/`--lines` itself, so like `print_query` it honours `-q` and refuses only `--get` and `--template`.
+- `print_json_compact` treats a shaping failure as a stderr warning and prints the unshaped value (Approach, "Output pipeline").
+- Put the shared projection helper (`pub(crate) fn project(row: &JsonValue, paths: &[String]) -> JsonValue`) and the unknown-path validation here.
+- In `tomlctl/src/json.rs`, make `navigate_json` `pub(crate)`. Leave `handle_get`'s stdout write for Task 5.
+- Use `errors::tagged_err(ErrorKind::Validation, …)` for every option error.
+- Unit tests in both files cover each rule:
+  - order of application;
+  - the `limited` header for field reports, for bare-array `--lines` and pretty output, and the truncation notice the core returns under `--get`/`--template`;
+  - `--select` with dotted paths, a key missing from some rows, and an unknown path;
+  - an empty row set under `--select`, `--get` and `--template` prints its empty result rather than erroring;
+  - a shaping failure under `print_json_compact` prints the unshaped value and returns `Ok`;
+  - `--get` on a single report (array spread) and on rows;
+  - template escapes, value rendering, unknown placeholder, unclosed brace;
+  - `-q` against every other flag."""
+acceptance = """
+- forward: `test -f tomlctl/src/output/template.rs` (today: absent)
+- forward: `grep -c 'pub(crate) fn print_text' tomlctl/src/output.rs` is 1 (today: 0)
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --lib output::` passes, including the new tests — **predicted, unverified**. falsifier: dropping the `{{` escape turns the template's doubled-brace test red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 2
+ref = "add-the-global-output-flags-to-the-cli-root"
+title = "Add the global output flags to the CLI root"
+effort = "M"
+status = "pending"
+checkpoint = "A"
+phase = "Wave A — global output flags"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/backlog/check.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Flatten a global `OutputArgs` into `Cli`, configure the output layer from it at the top of `cli::run`, and validate the flag conflicts there."
+detail = """
+Implements Approach, "Global flags" and Approach, "Promoting per-command flags to global".
+- Field ids and types must equal the per-command ones they will replace: `select: Option<String>`, `limit: Option<usize>`, `lines: bool`. Add `get: Option<String>`, `template: Option<String>`, and `quiet: bool` with `short = 'q'`. Every field is `global = true`.
+- `cli::run` splits `select` on `,` into `OutputOpts` and runs the post-parse conflict checks, each a tagged validation error.
+- `backlog check --limit` changes from `usize` with `default_value_t = 5` to `Option<usize>`. `tomlctl/src/backlog/check.rs` applies `unwrap_or(5)`, so its candidate cap is unchanged.
+- Do not remove `LinesArgs` or `QueryArgs`' fields here.
+- clap copies a subcommand's same-id local `--select`/`--limit`/`--lines` up to the root struct (`clap_builder` `arg_matcher.rs` `fill_in_global_values`), so `cli::run` leaves `select`, `limit` and `lines` out of `OutputOpts` when the subcommand is `items list`, `backlog list` or `tasks list`. Otherwise `print_json` re-applies them to the list's already-projected array as a single report, and `the_generic_query_surface_is_threaded_through_list` (`tomlctl/tests/backlog_read.rs`) and `lines_on_count_shape_is_noop_single_object` (`tomlctl/tests/capabilities.rs`) go red. From Task 4 on, `print_query` owns those three commands' output and ignores the three engine-consumed options."""
+acceptance = """
+- forward: `grep -c 'global = true' tomlctl/src/cli/types.rs` is at least 7 (today: 1)
+- forward: `grep -c 'default_value_t = 5' tomlctl/src/cli/types.rs` is 0 (today: 1)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test lines --test backlog_read --test agent_contract` passes — **predicted, unverified**"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "retire-the-per-command-linesargs"
+title = "Retire the per-command `LinesArgs`"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = "Wave A — global output flags"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/mod.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/output.rs",
+    "tomlctl/src/flow/dispatch.rs",
+    "tomlctl/src/flow/list.rs",
+    "tomlctl/src/flow/find_plans.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/backlog/check.rs",
+    "tomlctl/src/backlog/evidence_ops.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/tasks/edges.rs",
+    "tomlctl/src/agents/dispatch.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "Delete `LinesArgs`, its 16 `lines: LinesArgs` fields, its re-export in `tomlctl/src/cli/mod.rs` and every place a dispatch arm threads it through; drop `print_report`'s `lines` parameter."
+detail = """
+Mechanical — the edits are inseparable because removing the struct breaks every user at once. Implements Approach, "Promoting per-command flags to global".
+- Every `print_report(x, lines.lines, Rows::…)` becomes `print_report(x, Rows::…)`.
+- The `items sweep --update --lines` and `tasks edges --dot --lines` refusals now read the global: `items sweep` checks it in the dispatch arm; `edges` keeps the bail in `tomlctl/src/tasks/edges.rs` until Task 6 moves DOT onto `print_text`.
+- `tomlctl/tests/lines.rs` passes unchanged, because it passes `--lines` after the subcommand, where the global still parses."""
+acceptance = """
+- forward: `grep -rc 'LinesArgs' tomlctl/src | grep -v ':0' | wc -l` is 0 (today: 8)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test lines` passes — **predicted, unverified**. falsifier: changing the `items clusters` call site's `Rows::Field("clusters")` to `Rows::Top` turns it red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 4
+ref = "point-the-query-lists-at-the-global-select-limit-and-lines"
+title = "Point the query lists at the global `--select`, `--limit` and `--lines`"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = "Wave A — global output flags"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/query.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/src/tasks/list.rs",
+    "tomlctl/src/backlog/check.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+]
+needs = [3]
+coupling = []
+deps_note = ""
+action = "Remove `select`, `limit` and `lines` from `QueryArgs` and `limit` from `backlog check`; have `QueryArgs::to_query_input` take them from the global output options, passed in as `&OutputOpts`; route the three list commands' output through `print_query` and `stdout_stream`."
+detail = """
+Implements Approach, "Promoting per-command flags to global" and Approach, "Output pipeline".
+- The query engine keeps owning select, limit and lines for the lists, because select feeds `--distinct` and limit follows `--sort-by`/`--offset`. `print_query` therefore applies only `--get`, `--template` and `-q`.
+- `apply_projection` in `tomlctl/src/query.rs` calls `output::project`, gaining dotted paths and the unknown-path error.
+- The streaming path writes through `output::stdout_stream`. When `--get` or `--template` is set, take the non-streaming path.
+- The `items list`, `backlog list` and `tasks list` dispatch sites drop their direct `stdout().lock()`.
+- `validate_query`'s mutex errors keep their wording (`tomlctl/tests/capabilities.rs` matches `--select` with `--count-distinct`).
+- `cli::run` now puts `select`, `limit` and `lines` into `OutputOpts` for every command, the three lists included; `print_query` and `emit_list_raw` leave them to the engine.
+- The `QueryHarness` unit tests that parse the removed flags — `the_whole_predicate_surface_reaches_task_rows` in `tomlctl/src/tasks/list.rs` (`--select`) and `the_generic_query_surface_still_applies` in `tomlctl/src/backlog/query.rs` (`--limit`) — build their `OutputOpts` directly.
+- Delete `backlog check`'s own `limit` field (`BacklogOp::Check` in `tomlctl/src/cli/types.rs`); `tomlctl/src/backlog/check.rs` reads the global `limit.unwrap_or(5)`, and `tomlctl/src/backlog/dispatch.rs` stops threading it."""
+acceptance = '''
+- forward: `awk '/^pub\(crate\) struct QueryArgs/,/^}/' tomlctl/src/cli/types.rs | grep -cE '^    pub\(crate\) (select|limit|lines): '` is 0 (today: 3; the `OutputArgs` fields Task 2 adds sit outside that range)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities --test agent_contract --test backlog_read --test tasks_read` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- tasks::list backlog::query backlog::check` pass — **predicted, unverified**. falsifier: if `to_query_input` stops reading the global `select`, `agent_contract`'s `--select id,status --ndjson` case returns full rows and turns red.'''
+agent = ""
+commit = ""
+
+[[items]]
+id = 5
+ref = "route-the-json-get-and-progress-log-text-output-through-print_text"
+title = "Route the JSON-get and progress-log text output through `print_text`"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = "Wave A — global output flags"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/json.rs",
+    "tomlctl/src/flow/render_progress_log.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Replace `json.rs` `handle_get`'s hand-rolled stdout write and `render_progress_log`'s `print!` with `output::print_text`."
+detail = """
+Implements Approach, "Output pipeline".
+- `print_text` writes the bytes unchanged (no added newline), so the single-trailing-newline contract `render_progress_log` documents still holds.
+- `-q` suppresses the output; any other output flag is refused."""
+acceptance = """
+- forward: `grep -c 'print!(' tomlctl/src/flow/render_progress_log.rs` is 0 (today: 1)
+- forward: `grep -c 'std::io::stdout()' tomlctl/src/json.rs` is 0 (today: 1)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test render_progress_log` passes — **predicted, unverified**"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 6
+ref = "route-dot-and-rendered-plan-output-through-print_text"
+title = "Route DOT and rendered-plan output through `print_text`"
+effort = "S"
+status = "pending"
+checkpoint = "A"
+phase = "Wave A — global output flags"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/tasks/edges.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+]
+needs = [3]
+coupling = []
+deps_note = ""
+action = "Replace `tasks edges --dot`'s and `tasks render --stdout`'s `print!` with `output::print_text`, and keep the `--dot --lines` bail in `tomlctl/src/tasks/edges.rs` unchanged, ahead of the `print_text` call, because `tomlctl/tests/lines.rs` pins its message (`--lines applies to the JSON edge list`) until Task 14 folds that test in; `print_text`'s generic refusal covers the other text emitters."
+detail = 'Implements Approach, "Output pipeline".'
+acceptance = """
+- forward: `grep -c 'print!(' tomlctl/src/tasks/edges.rs tomlctl/src/tasks/dispatch.rs` shows 0 for both (today: 1 each)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_graph --test tasks_render --test lines` passes — **predicted, unverified**. falsifier: replacing the bail with `print_text`'s generic refusal turns `lines`' `--dot --lines` case red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 7
+ref = "advertise-the-global-flags-and-the-new-features"
+title = "Advertise the global flags and the new features"
+effort = "L"
+status = "pending"
+checkpoint = "A"
+phase = "Wave A — global output flags"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/README.md",
+    "tomlctl/tests/capabilities.rs",
+]
+needs = [4]
+coupling = []
+deps_note = ""
+action = "Emit a root `global_flags` list from `build_agent_context`; replace `report_lines` with `output_options` in `FEATURES`, the README sample block, the README feature table and the expected list in `tomlctl/tests/capabilities.rs`."
+detail = """
+Implements Approach, "Capabilities".
+- `global_flags` reuses `describe_flags` over `Cli::command()`'s own args, which is the root without `build()`.
+- Add only `output_options` here. The four write features (`next_id_bare`, `id_prefix`, `auto_last_updated`, `multi_id`) are Task 15's, so Checkpoint A's commit never advertises a feature its binary lacks.
+- Add a test asserting `global_flags` names `--select`, `--limit`, `--lines`, `--get`, `--template`, `--quiet`."""
+acceptance = """
+- forward: `grep -c '"output_options"' tomlctl/src/cli/types.rs` is 1 (today: 0)
+- forward: `grep -c 'report_lines' tomlctl/src/cli/types.rs tomlctl/README.md tomlctl/tests/capabilities.rs` shows 0 for each (today: 1, 2, 1)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test capabilities` passes — **predicted, unverified**. falsifier: leaving `output_options` out of the README table turns `readme_feature_transcriptions_match_capabilities_features` red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 8
+ref = "print-items-next-id-bare"
+title = "Print `items next-id` bare"
+effort = "M"
+status = "pending"
+checkpoint = "B"
+phase = "Wave B — write changes"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/integration.rs",
+    "tomlctl/tests/capabilities.rs",
+]
+needs = [
+    4,
+    7,
+]
+coupling = []
+deps_note = ""
+action = "Emit the minted id through `output::print_text` with a trailing newline, and update the two tests that pin the quoted form."
+detail = """
+Implements Approach, "Id minting".
+- The missing-file fast path (`<P>1`) and the `--strict-read` error are unchanged.
+- `items_next_id_infer_from_file_picks_sole_prefix` asserts `stdout.trim() == "E6"`.
+- `strict_read_default_preserves_next_id_missing_file_fast_path` asserts `stdout.trim() == "R1"`."""
+acceptance = '''
+- forward: `grep -cF 'contains("\"E6\"")' tomlctl/tests/integration.rs` is 0 (today: 1)
+- forward: `grep -cF 'contains("\"R1\"")' tomlctl/tests/capabilities.rs` is 0 (today: 1)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test integration --test capabilities` passes — **predicted, unverified**'''
+agent = ""
+commit = ""
+
+[[items]]
+id = 9
+ref = "mint-ids-inside-items-add-and-items-add-many"
+title = "Mint ids inside `items add` and `items add-many`"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = "Wave B — write changes"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/items.rs",
+    "tomlctl/tests/items_id_prefix.rs",
+]
+needs = [8]
+coupling = []
+deps_note = ""
+action = "Add `--id-prefix <P>` to `items add` and `items add-many`, mint ids inside the locked write, and report them as `id` / `ids` in the envelope."
+detail = """
+Implements Approach, "Id minting".
+- Mint with `items_next_id(doc, prefix)` (`tomlctl/src/items.rs`) inside the exclusive-lock closure, advancing the counter per row. For `items add`, mint in the dispatch closure before `items_add_value_to`. For add-many, mint inside the row loops in `tomlctl/src/items.rs` — `items_add_many`, `items_add_many_with_dedupe` (after `find_dedupe_match`, before `items_add_value_to`) and the dry-run `compute_add_many_mutation` — because `--defaults` merging (`defaults_base`, `merge_row_over_base`) and the dedupe decision are private to that file; `AddManyOutcome` gains the minted ids.
+- A row that already has an `id` is refused with `kind=validation`.
+- On the dedupe path, mint only for rows actually added; a skipped add reports the matched row's id as `id`.
+- Dry-run envelopes show the minted ids.
+- Tests:
+  - two sequential adds mint `E1` then `E2`;
+  - add-many mints a contiguous run;
+  - an explicit `id` plus `--id-prefix` is refused;
+  - `--get id` prints the bare minted id;
+  - a dedupe skip mints nothing, and `--get id` prints the matched row's id."""
+acceptance = """
+- forward: `grep -c 'id_prefix' tomlctl/src/cli/types.rs` is at least 2 (today: 0)
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test items_id_prefix` passes — **predicted, unverified**. falsifier: minting outside the lock closure lets the add-many contiguous-run case repeat an id."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 10
+ref = "stamp-last_updated-on-cli-writes"
+title = "Stamp `last_updated` on CLI writes"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = "Wave B — write changes"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/io.rs",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/tests/last_updated_stamp.rs",
+]
+needs = [9]
+coupling = []
+deps_note = ""
+action = "Add the CLI-only stamping wrapper in `io.rs`, a `StampArgs { no_stamp: bool }` (`--no-stamp`) flattened into the generic write commands, and use the wrapper in their CLI arms."
+detail = """
+Implements Approach, "last_updated stamping".
+- **Commands:** `set`, `set-json`, `array-append`, and `items add`, `add-many`, `update`, `remove`, `apply`, `sweep --update`, `backfill-dedup-id`.
+- **When to stamp:** compare the document before and after the mutation, ignoring `last_updated`. Stamp only when they differ and the root already has `last_updated`.
+- **Explicit set wins:** `set <file> last_updated <date>` keeps the caller's value.
+- **Flow-less ledgers seed the key:** extend `io.rs` `seed_doc_for` so a missing file under `.claude/reviews/`, `.claude/optimise-findings/` or `.claude/plan-review-findings/` seeds `schema_version = 1` / `last_updated = <today>` like the recognised basenames.
+- **Facade untouched:** do not touch `mutate_doc`, `mutate_doc_conditional`, `mutate_doc_plan` or `compute_apply_mutation_with`.
+- **Tests:**
+  - an `items add` to a ledger with `last_updated = 2026-01-01` stamps today;
+  - `--no-stamp` keeps it;
+  - a no-op `items update` leaves the bytes and sidecar unchanged;
+  - a file without the key gains none;
+  - an explicit `set … last_updated` wins;
+  - a first `items add` to a missing `.claude/reviews/x.toml` writes `last_updated`.
+- **Breakage:** an existing test that breaks because of the stamp is stop-and-report unless it is in this task's Files."""
+acceptance = """
+- forward: `grep -c 'no_stamp' tomlctl/src/cli/types.rs` is at least 1 (today: 0)
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test last_updated_stamp` passes — **predicted, unverified**
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test library_facade` passes — **predicted, unverified**. falsifier: stamping inside `mutate_doc` turns its `last_updated == "2026-09-30"` assertions red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 11
+ref = "let-tasks-update-take-several-ids"
+title = "Let `tasks update` take several ids"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = "Wave B — write changes"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/tests/tasks_write.rs",
+]
+needs = [
+    6,
+    10,
+]
+coupling = []
+deps_note = ""
+action = "Change `tasks update`'s positional `id: u32` to `ids: Vec<u32>` (`value_delimiter = ','`, `num_args = 1..`, required) and patch every id inside one `store::mutate`."
+detail = """
+Implements Approach, "Several ids".
+- Resolve every id before patching, so an unknown id errors with the existing "no task N" message and writes nothing.
+- Keep `update::update`'s signature — the `#[cfg(test)]` helper `unlock` in `tomlctl/src/tasks/import_plan.rs` calls it — and add a sibling `update_many(path, integrity, &[u32], fields)` in `tomlctl/src/tasks/update.rs` that the dispatch arm uses.
+- Rewrite the `TasksOp::Update` doc comments in `tomlctl/src/cli/types.rs` ("Patch one row's mutable fields", "Task id to patch") for several ids; they surface in `--help` and `capabilities`.
+- **Output:** one id gives the existing envelope byte for byte (`update_reports_only_the_fields_that_moved` must pass unchanged). Several ids give `{"ok":true,"results":[{"id":…,"changed":[…]},…]}`.
+- **Tests:** a comma list and a space list each patch every row in one write; an unknown id among valid ones aborts with the store unchanged."""
+acceptance = """
+- forward: `grep -c 'ids: Vec<u32>' tomlctl/src/cli/types.rs` is at least 1 (today: 0)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_write` passes — **predicted, unverified**. falsifier: patching before resolving every id turns the abort case red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 12
+ref = "let-tasks-show-take-several-ids"
+title = "Let `tasks show` take several ids"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = "Wave B — write changes"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/tasks/show.rs",
+    "tomlctl/tests/tasks_read.rs",
+]
+needs = [11]
+coupling = []
+deps_note = ""
+action = "Change `tasks show`'s positional `id: u32` to `ids: Vec<u32>`; one id prints today's object, several print an array through `print_report(…, Rows::Top)`."
+detail = """
+Implements Approach, "Several ids".
+- `--with` applies to every id.
+- Rewrite the `TasksOp::Show` doc comment in `tomlctl/src/cli/types.rs` ("Print one row") for several ids.
+- An unknown id fails the call with the existing "no task 99 in the store" message.
+- Tests: `tasks show 1,2 --get ref` prints two lines; the single-id key-order test still passes."""
+acceptance = """
+- forward: `grep -c 'ids: Vec<u32>' tomlctl/src/cli/types.rs` is at least 2 (today: 0)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test tasks_read` passes — **predicted, unverified**"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 13
+ref = "let-backlog-show-take-several-ids"
+title = "Let `backlog show` take several ids"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = "Wave B — write changes"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/backlog/query.rs",
+    "tomlctl/tests/backlog_read.rs",
+]
+needs = [12]
+coupling = []
+deps_note = ""
+action = "Change `backlog show`'s positional `id: String` to `ids: Vec<String>` (`value_delimiter = ','`, `num_args = 1..`); one id prints today's `{item, evidence, neighbours}` object, several print an array through `print_report(…, Rows::Top)`."
+detail = """
+Implements Approach, "Several ids".
+- Resolve each id through `evidence::resolve_id` before building anything.
+- Tests: two ids print an array of two objects; `--get item.status` prints one line per id; the existing single-object tests pass unchanged."""
+acceptance = """
+- forward: `grep -cE 'ids: Vec<String>' tomlctl/src/cli/types.rs` is at least 7 (today: 6)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --test backlog_read` passes — **predicted, unverified**"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 14
+ref = "add-the-every-command-test-the-stdout-gate-and-the-duplicate-flag-check"
+title = "Add the every-command test, the stdout gate and the duplicate-flag check"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = "Wave B — write changes"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/tests/output_options.rs",
+    "tomlctl/tests/lines.rs",
+    "tomlctl/src/cli/dispatch/tests/output_gate.rs",
+    "tomlctl/src/cli/dispatch/tests/mod.rs",
+]
+needs = [
+    5,
+    6,
+    7,
+    13,
+]
+coupling = []
+deps_note = ""
+action = 'Write the coverage tests that Approach, "Coverage guarantees" describes, and fold `tomlctl/tests/lines.rs` into the new integration test.'
+detail = """
+Implements Approach, "Coverage guarantees".
+- **Command list:** read it from `tomlctl capabilities` `.commands` (the integration test cannot reach the private `Cli`), and assert set equality with the case table.
+- **Fixtures:** reuse `tests/common/mod.rs` helpers (`sandbox`, `seed_ledger_in`, `seed_tasks`, `stage_tasks_flow`, `cli`, `git_available`), adding nothing to that file.
+- **Write commands:** run each against a fresh sandbox per invocation.
+- **Text-mode cases:** `tasks render --stdout`, `flow render-progress-log --stdout`, `tasks edges --dot` and `json get --raw` must refuse `--lines` and print nothing under `-q`.
+- **Gate:** `output_gate.rs` holds the stdout scan and the `Cli::command().debug_assert()` test inside `test_support::on_cli_stack`. Register it in `mod.rs`. The scan's skip rules and word-bounded patterns are Approach, "Coverage guarantees"; assemble the patterns so the gate's own source does not match them."""
+acceptance = """
+- forward: `test -f tomlctl/tests/output_options.rs && test ! -f tomlctl/tests/lines.rs` (today: fails — `lines.rs` exists, `output_options.rs` does not)
+- forward: `cargo test --manifest-path tomlctl/Cargo.toml --test output_options` and `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::output_gate` pass — **predicted, unverified**. falsifier: a temporary `println!` in `run_streaming` (`tomlctl/src/query.rs`, below that file's first non-`mod tests` `#[cfg(test)]`) turns the gate red, while the existing `eprintln!` calls under `tomlctl/src/cli/dispatch/tests/` and in `tomlctl/src/lib.rs` do not; removing one case turns the leaf-set comparison red."""
+agent = ""
+commit = ""
+
+[[items]]
+id = 15
+ref = "release-tomlctl-0140-and-refresh-glimpses-lock"
+title = "Release tomlctl 0.14.0 and refresh glimpse's lock"
+effort = "L"
+status = "pending"
+checkpoint = "B"
+phase = "Wave B — write changes"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/README.md",
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/tests/capabilities.rs",
+]
+needs = [13]
+coupling = []
+deps_note = ""
+action = "Bump `tomlctl/Cargo.toml` to `0.14.0`, update the README sample block's `version`, and refresh both lockfiles with `cargo tree --manifest-path tomlctl/Cargo.toml >/dev/null` and `cargo tree --manifest-path glimpse/Cargo.toml >/dev/null`. Add `next_id_bare`, `id_prefix`, `auto_last_updated` and `multi_id` to `FEATURES` in `tomlctl/src/cli/types.rs`, the README sample block and feature table, and the expected list in `tomlctl/tests/capabilities.rs`."
+detail = """
+Implements Approach, "glimpse compatibility" and Approach, "Capabilities". 0.14.0 because `items next-id` output is a breaking change (User Decisions 3). `readme_sample_version_matches_cargo_toml` pins the README version to `Cargo.toml`.
+- In `tomlctl/README.md` also drop the quotes from the two `items next-id` missing-file outputs (`"R1"`, `"<P>1"`), and rewrite the single-id `backlog show <id>`, `tasks update` ("patch one row") and `tasks show` ("one row") rows for several ids."""
+acceptance = """
+- forward: `grep -c '^version = "0.14.0"' tomlctl/Cargo.toml` is 1 (today: 0)
+- forward: `grep -c '"auto_last_updated"' tomlctl/src/cli/types.rs` is 1 (today: 0)
+- forward: `grep -A1 '^name = "tomlctl"' glimpse/Cargo.lock | tail -1` reads `version = "0.14.0"` (today: `version = "0.13.0"`)
+- guard: `cargo clippy --manifest-path glimpse/Cargo.toml --locked` passes — **predicted, unverified**"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 16
+ref = "document-the-global-output-flags-in-the-tomlctl-skill"
+title = "Document the global output flags in the tomlctl skill"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Wave C — skills and commands"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/query.md",
+    "claude/skills/tomlctl/references/inputs.md",
+]
+needs = [
+    13,
+    14,
+]
+coupling = []
+deps_note = ""
+action = """Generalise SKILL.md's "Line output" section into "Output options" covering all six global flags; update `query.md` for the now-global `--select`/`--limit`/`--lines`, the `items next-id` bare output, and the `items clusters --lines` example; drop `inputs.md`'s per-command `--lines` row."""
+detail = """
+Implements Approach, "Skill and command sweep" and Approach, "Capabilities".
+- **SKILL.md:**
+  - Rename the anchor and repoint or drop the `#line-output` links in this task's own files (`query.md` 193, 299, 390, 453; `inputs.md:60` goes with its row). `skill_markdown_links_resolve` checks a link's path only, never its fragment, so no gate catches a stale anchor; Tasks 18 and 19 handle the links in their own files.
+  - The "Output options" section lists the commands whose verdict lives in the payload and that exit 0 regardless — `flow stale`, `flow doctor`, `backlog check`, `items find-duplicates`, `backlog evidence audit` without `--strict` — for which `-q` reports only that the command ran.
+  - Replace the `report_lines` mention (about line 100) with `output_options`, and state in the agent-context section (about lines 143–160) that a command's accepted flags are its `.commands` flags plus the root `global_flags`.
+  - Leave the SKILL.md description alone, since it is near the 1024-character cap.
+  - The Quick Reference row for `items clusters` keeps `[--lines]`.
+- **query.md:**
+  - Rows for `--select`, `--limit` and `--lines` under the `items list` flag table stay, because globals parse on every leaf under `flag_table_lint`. Note that they are global.
+  - Drop the four per-verb `--lines` rows (`items find-duplicates`, `sweep`, `items sweep`, `items clusters`) in favour of the central section.
+  - Lines 61–68 describe next-id's missing-file output as `"<P>1"`; drop the quotes.
+  - Rewrite the line-32 note that rejects a `--format`/`--output` flag "by decision", which `--template` now contradicts."""
+acceptance = """
+- forward: `grep -c '## Output options' claude/skills/tomlctl/SKILL.md` is 1 (today: 0)
+- forward: `grep -c -- '--lines' claude/skills/tomlctl/references/inputs.md` is 0 (today: 1)
+- forward: `grep -c '#line-output' claude/skills/tomlctl/references/query.md claude/skills/tomlctl/references/inputs.md` shows 0 for each (today: 4, 1)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 17
+ref = "rewrite-the-tomlctl-write-reference"
+title = "Rewrite the tomlctl write reference"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Wave C — skills and commands"
+phase_depth = 4
+heading_depth = 3
+files = ["claude/skills/tomlctl/references/write.md"]
+needs = [13]
+coupling = []
+deps_note = ""
+action = "Replace recipe 1's two-call pattern with a single write; rewrite example 3 to use `items add --id-prefix R --get id` instead of capturing a quoted `next-id`; update the `items next-id` flag table and prose for the bare output; document `--id-prefix`, `--no-stamp` and the stamping rule."
+detail = """
+Implements Approach, "last_updated stamping" and Approach, "Id minting".
+- Leave the `DATE_KEYS` em-dash list at about line 152 intact (`write_reference_enumerates_every_date_key` parses it).
+- Flag-table rows go under backticked-verb headings so `flag_table_lint` checks them."""
+acceptance = """
+- forward: `grep -cE 'tomlctl set [^ ]+ last_updated' claude/skills/tomlctl/references/write.md` is 0 (today: 1)
+- forward: `grep -c -- '--id-prefix' claude/skills/tomlctl/references/write.md` is at least 2 (today: 0)"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 18
+ref = "update-the-tomlctl-tasks-references"
+title = "Update the tomlctl tasks references"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Wave C — skills and commands"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+]
+needs = [13]
+coupling = []
+deps_note = ""
+action = "Document several ids on `tasks update` and `tasks show`, including both output shapes; drop the per-command `--lines` rows and the `#line-output` links from `tasks.md`; update the task-store contract's `update` and `show` verb semantics for several ids."
+detail = """
+Implements Approach, "Several ids".
+- The `tasks.md` finding-class table must still match the classes `tomlctl/src/cli/dispatch/tests/finding_classes.rs` checks against `tomlctl/src/tasks`, so leave it as is.
+- `claude/skills/flow-contract-task-store/SKILL.md` §5 says `update` patches "one row's mutable fields" and `show` prints "one row"; extend both to an id list. Keep its §12 fetch-by-id idiom single-id: the dispatch fetch line is what `tomlctl/src/agents/correlate.rs` matches."""
+acceptance = """
+- forward: ``grep -c -- '| `--lines`' claude/skills/tomlctl/references/tasks.md`` is 0 (today: 3)
+- forward: `grep -c '#line-output' claude/skills/tomlctl/references/tasks.md` is 0 (today: 3)
+- forward: `grep -cE 'tasks update [0-9]+,[0-9]+' claude/skills/tomlctl/references/tasks-write.md` is at least 1 (today: 0)"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 19
+ref = "update-the-tomlctl-backlog-flow-and-agents-references"
+title = "Update the tomlctl backlog, flow and agents references"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Wave C — skills and commands"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/backlog.md",
+    "claude/skills/tomlctl/references/flow.md",
+    "claude/skills/tomlctl/references/agents.md",
+]
+needs = [13]
+coupling = []
+deps_note = ""
+action = "Drop the per-command `--lines` rows and their `#line-output` links; document `backlog show`'s several ids; note that `backlog check --limit` is the global flag (default 5)."
+detail = """Implements Approach, "Skill and command sweep". `backlog.md` is at the 600-line ceiling: the net change must not add lines (`skill_references_under_line_ceiling`). `flow.md`'s two `next-id` mentions (a `--verify-integrity` row and an error-kind row) show no output shape, so leave them."""
+acceptance = """
+- forward: ``grep -c -- '| `--lines`' claude/skills/tomlctl/references/backlog.md claude/skills/tomlctl/references/flow.md claude/skills/tomlctl/references/agents.md`` shows 0 for each (today: 2, 2, 1)
+- forward: `grep -c '#line-output' claude/skills/tomlctl/references/backlog.md claude/skills/tomlctl/references/flow.md claude/skills/tomlctl/references/agents.md` shows 0 for each (today: 2, 2, 1)
+- guard: `wc -l < claude/skills/tomlctl/references/backlog.md` is at most 600 (today: 600)"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 20
+ref = "retire-the-two-call-pattern-in-the-ledger-and-record-contracts"
+title = "Retire the two-call pattern in the ledger and record contracts"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Wave C — skills and commands"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md",
+    "claude/skills/flow-contract-ledger-schema/SKILL.md",
+    "claude/skills/flow-contract-vet-research/SKILL.md",
+]
+needs = [
+    13,
+    14,
+]
+coupling = []
+deps_note = ""
+action = 'Replace each "two-call pattern" (`items add` then `tomlctl set … last_updated`) with the single write, and mint ids with `--id-prefix` where these contracts show an id being minted.'
+detail = """
+Implements Approach, "Skill and command sweep".
+- **execution-record-schema:** lines 75–86 are the canonical "Write contract — two-call pattern" block; rename and rewrite it as a single call. The skill's description names the idiom; keep the description under 1024 characters. Update the `next-id` uses at lines 53 and 92.
+- **ledger-schema:** lines 200–228, including the hand-computed id at line 225.
+- **vet-research:** step 6's heredoc drops its `tomlctl set <ledger> last_updated` line."""
+acceptance = """
+- forward: `grep -cE 'tomlctl set [^ ]+ last_updated' claude/skills/flow-contract-execution-record-schema/SKILL.md claude/skills/flow-contract-ledger-schema/SKILL.md claude/skills/flow-contract-vet-research/SKILL.md` shows 0 for each (today: 1, 1, 1)
+- forward: `grep -ci 'two-call' claude/skills/flow-contract-execution-record-schema/SKILL.md` is 0 (today: 2)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 21
+ref = "retire-the-two-call-pattern-in-the-apply-pipeline-and-plan-new"
+title = "Retire the two-call pattern in the apply pipeline and `/plan-new`"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Wave C — skills and commands"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md",
+    "claude/skills/flow-contract-apply-pipeline/references/verification.md",
+    "claude/commands/plan-new.md",
+]
+needs = [13]
+coupling = []
+deps_note = ""
+action = """Rewrite the "both calls required" ledger-mutation pattern in `verification.md` (lines 5, 84, 109, 113, 133) and its summary in the apply-pipeline SKILL.md (description at line 3; lines 383–384) as a single write; update `plan-new.md:131`'s mention of the two-call contract."""
+detail = """
+Implements Approach, "Skill and command sweep".
+- The apply-pipeline SKILL body is at 449/500 lines and must not grow past 500.
+- In the **Atomicity** paragraph of `claude/skills/flow-contract-apply-pipeline/references/verification.md` (line 133), delete only the sentence beginning "If call 1 fails, do NOT proceed to call 2" — it guards the `last_updated` call this task removes; keep the all-or-nothing statement and the correct-and-retry-the-whole-batch instruction.
+- The apply-pipeline SKILL.md's interim checkpoint (about line 331, "Defer the `last_updated` bump to the final render") keeps its deferral: that write passes `--no-stamp`, and the sentence names the flag, because the freshness gate reads `last_updated`."""
+acceptance = """
+- forward: `grep -cE 'tomlctl set [^ ]+ last_updated' claude/skills/flow-contract-apply-pipeline/references/verification.md` is 0 (today: 1)
+- forward: `grep -ci 'two-call' claude/skills/flow-contract-apply-pipeline/references/verification.md` is 0 (today: 3)
+- forward: `grep -c -- '--no-stamp' claude/skills/flow-contract-apply-pipeline/SKILL.md` is at least 1 (today: 0)
+- forward: `grep -ci 'two-call' claude/commands/plan-new.md claude/skills/flow-contract-apply-pipeline/SKILL.md` shows 0 for each (today: 1, 2)"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 22
+ref = "update-review-optimise-and-review-plan"
+title = "Update `/review`, `/optimise` and `/review-plan`"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Wave C — skills and commands"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/commands/review-plan.md",
+]
+needs = [
+    13,
+    14,
+]
+coupling = []
+deps_note = ""
+action = 'Replace hand-computed ids (`review.md:80` "`max(existing) + 1`", `optimise.md:97`) and read-then-paste `next-id` (`review-plan.md` 129, 133, 139) with `items add --id-prefix <P>` / `add-many --id-prefix <P>` for pure adds; drop every `tomlctl set … last_updated` second call (`review.md` 82, 90; `optimise.md` 99; `review-plan.md` 135, 200, 226).'
+detail = """
+Implements Approach, "Skill and command sweep".
+- Keep each carrier's required "`` `skill-name` `` skill" phrases intact, since `carrier_invokes_required_skills` checks them and a nearby "rather than"/"instead of" disqualifies one.
+- The Step-2 interim checkpoints keep their deliberate deferral (`review.md:76` "Defer `last_updated` stamping … to Step 3"; `optimise.md:89` "Defer two writes to Step 3 … the ledger is only 'fresh' once the report was actually produced"): their `items apply` passes `--no-stamp`, and the deferral sentence names that flag in place of the dropped `set` call.
+- A mixed `items apply --ops` batch (adds plus `rounds`/`line` updates) stays one atomic call and takes its add-op ids from the bare `items next-id`, read once before the batch and numbered upward."""
+acceptance = """
+- forward: `grep -cE 'tomlctl set [^ ]+ last_updated' claude/commands/review.md claude/commands/optimise.md claude/commands/review-plan.md` shows 0 for each (today: 2, 2, 3)
+- forward: `grep -c 'max(existing)' claude/commands/review.md` is 0 (today: 1)
+- forward: `grep -c -- '--no-stamp' claude/commands/review.md claude/commands/optimise.md` shows at least 1 for each (today: 0, 0)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 23
+ref = "update-implement-plan-update-and-tdd"
+title = "Update `/implement`, `/plan-update` and `/tdd`"
+effort = "M"
+status = "pending"
+checkpoint = "C"
+phase = "Wave C — skills and commands"
+phase_depth = 4
+heading_depth = 3
+files = [
+    "claude/commands/implement.md",
+    "claude/commands/plan-update.md",
+    "claude/commands/tdd.md",
+]
+needs = [
+    13,
+    14,
+]
+coupling = []
+deps_note = ""
+action = """
+- In `claude/commands/implement.md`, collapse the per-row `tasks update <id>` steps (lines 109, 128, 148) into one call per distinct value with an id list — at line 109 group the dispatched rows by tier, one call per `--agent` value. Leave the `tasks show <id>` reads (95, 155) single-id: line 95 is the dispatch fetch line that `tomlctl/src/agents/correlate.rs` matches with `tasks show ([0-9]+) --slug` to attribute an agent to its task, and line 155 fetches one failed task.
+- Mint execution-record ids with `--id-prefix E` in `plan-update.md` (126, 140, 144, 195) and `tdd.md:63`.
+- Drop the `tomlctl set … last_updated` second calls (`implement.md` 149, 191; `plan-update.md` 126; `tdd.md` 58), and the prose naming the two-call pattern (`implement.md:58`, `plan-update.md` 38/140/195/199, `tdd.md:38`)."""
+detail = 'Implements Approach, "Several ids" and Approach, "Skill and command sweep". `carrier_invokes_required_skills` applies as in Task 22.'
+acceptance = """
+- forward: `grep -cE 'tomlctl set [^ ]+ last_updated' claude/commands/implement.md claude/commands/plan-update.md claude/commands/tdd.md` shows 0 for each (today: 2, 1, 1)
+- forward: `grep -c -- '--id-prefix' claude/commands/plan-update.md` is at least 1 (today: 0)
+- forward: `grep -cE 'tasks update <[a-z0-9]+>,' claude/commands/implement.md` is at least 1 (today: 0)
+- forward: `grep -ci 'two-call' claude/commands/implement.md claude/commands/plan-update.md claude/commands/tdd.md` shows 0 for each (today: 2, 4, 1)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**"""
+agent = ""
+commit = ""
+
+[[items]]
+id = 24
+ref = "raise-the-flow-bootstrap-tomlctl-version-floor-to-0140"
+title = "Raise the flow-bootstrap tomlctl version floor to 0.14.0"
+effort = "S"
+status = "pending"
+checkpoint = "C"
+phase = "Wave C — skills and commands"
+phase_depth = 4
+heading_depth = 3
+files = ["claude/agents/flow-bootstrap.md"]
+needs = [15]
+coupling = []
+deps_note = ""
+action = "In the pre-flight version check, raise the floor from 0.7 to 0.14: the prose threshold and comparison (`below 0.7`, `minor < 7` become `below 0.14`, `minor < 14`) and both copies of the halt envelope (`tomlctl ≥0.7.0 required` becomes `tomlctl ≥0.14.0 required` in step 2 and in the example envelope further down)."
+detail = """Implements Approach, "last_updated stamping". Once the sweep drops the second `set … last_updated` call, an installed 0.13 binary accepts every single write and silently never stamps; the floor turns that skew into a loud halt at every carrier's Step 0."""
+acceptance = '''
+- forward: `grep -c '≥0.14.0 required' claude/agents/flow-bootstrap.md` is 2 (today: 0)
+- forward: `grep -c '0\.7' claude/agents/flow-bootstrap.md` is 0 (today: 3)
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes — **predicted, unverified**'''
+agent = ""
+commit = ""

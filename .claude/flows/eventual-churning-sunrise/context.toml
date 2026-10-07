@@ -1,0 +1,28 @@
+slug = "eventual-churning-sunrise"
+plan_path = "docs/plans/eventual-churning-sunrise.md"
+status = "in-progress"
+created = 2026-10-07
+updated = 2026-10-07
+branch = "main"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/README.md",
+    "glimpse/Cargo.lock",
+    "claude/skills/**",
+    "claude/commands/**",
+]
+
+[tasks]
+total = 24
+completed = 0
+in_progress = 1
+
+[artifacts]
+review_ledger = ".claude/flows/eventual-churning-sunrise/review-ledger.toml"
+optimise_findings = ".claude/flows/eventual-churning-sunrise/optimise-findings.toml"
+execution_record = ".claude/flows/eventual-churning-sunrise/execution-record.toml"
+plan_review_findings = ".claude/flows/eventual-churning-sunrise/plan-review-findings.toml"
+tasks = ".claude/flows/eventual-churning-sunrise/tasks.toml"

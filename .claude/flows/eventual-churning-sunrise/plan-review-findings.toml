@@ -1,0 +1,381 @@
+schema_version = 1
+last_updated = 2026-10-07
+round = 1
+
+[[vet_events]]
+timestamp = "2026-10-07T16:00:00Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+tier = "deep"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified: clap_builder-4.6.7 arg_matcher.rs fill_in_global_values copies a subcommand's same-id match into the root; items.rs items_add_many_with_dedupe:1693 / defaults_base:1281 / merge_row_over_base:1308 private; skills.rs:1077 fragment checks path only; ~/.claude-work skills are regular files."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T16:00:00Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+tier = "deep"
+sampled_count = 4
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified: review.md:76 and optimise.md:89 defer last_updated; apply-pipeline SKILL.md:331 + freshness gate reads root last_updated; io.rs SCHEMA_SEEDED_FLOW_FILES basename-only; tasks/list.rs:143 and backlog/query.rs:505 QueryHarness parse --select/--limit; correlate.rs regex `tasks show ([0-9]+) --slug`."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T16:00:00Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+tier = "deep"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified: tests/lines.rs matches edges.rs:36 bail message; tasks/import_plan.rs:2190 calls update::update; Task 4 regex unsatisfiable reproduced by orchestrator positive control (OutputArgs fields count 3)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-07T16:00:00Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+tier = "deep"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Verified: io.rs advise_fmt gated on VISIBLE = stderr().is_terminal(); flow/stale.rs prints verdict and returns Ok(()); installed skills/commands are regular-file copies."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P1"
+severity = "critical"
+category = "executability"
+plan_section = "### Coverage guarantees"
+summary = "The stdout gate as specified fails on today's tree and is blind to most of items.rs, query.rs and lib.rs"
+description = "Unsatisfiable and weak at once (all four lenses plus the orchestrator's probe). (1) Substring `println!(` matches `eprintln!(`: the whole-file test modules under tomlctl/src/cli/dispatch/tests/ (lint.rs:270,278,283; skills.rs:265…1198; finding_classes.rs:404) carry no `#[cfg(test)]` line because dispatch.rs:1486 gates `mod tests;`, so they are scanned and fail; output_gate.rs itself contains the pattern literals. Simulated after every planned routing edit, the gate still reports 16 hits. (2) Cutting at the first `#[cfg(test)]` hides production code: lib.rs from line 33 (`mod test_support;`, hides run() and emit_error), query.rs from 40 (hides run_streaming, which Task 4 rewires), items.rs from 16, parse_tasks.rs 79, dedup.rs 197, time.rs 25, correlate.rs 367. finding_classes.rs:34 already documents this trap and cuts at `mod tests {`. Task 14's falsifier (a println! in flow/list.rs) cannot expose the blind spot — change it to a println! in `run_streaming` (tomlctl/src/query.rs)."
+anchor_old = "skipping `output.rs`, `output/`, and everything from a `#[cfg(test)]` line on. It fails on `print!(`, `println!(`, or `stdout()`."
+anchor_new = '''skipping `output.rs`, `output/`, the whole test-only `tomlctl/src/cli/dispatch/tests/` directory (the gate's own file included) and `tomlctl/src/test_support.rs`; in every other file it skips only from a `#[cfg(test)]` line directly followed by a `mod tests` item to the end of the file — a `#[cfg(test)]` on a single `use`, helper or `mod test_support;` (`tomlctl/src/lib.rs`, `tomlctl/src/query.rs`, `tomlctl/src/items.rs`) does not end the scan. It fails on the word-bounded patterns `\bprint(ln)?!\(` and `\bstdout\(\)`, so stderr's `eprintln!(` never matches.'''
+dedup_id = "ea7d6e445ba9ebaa"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P2"
+severity = "critical"
+category = "executability"
+plan_section = "### 4. Point the query lists at the global `--select`, `--limit` and `--lines` [L]"
+summary = "Task 4's forward grep can never reach 0: Task 2's OutputArgs fields in the same file match the regex"
+description = "Orchestrator two-control probe: negative control 4 (types.rs:201 LinesArgs.lines, 346/366/419 QueryArgs); positive control — an OutputArgs struct in the file's house style (`    pub(crate) select: Option<String>,` etc., as Task 2 places it in tomlctl/src/cli/types.rs) — prints 3. Unsatisfiable for any correct implementation. Scoping to the QueryArgs struct measures 3 today and 0 after Task 4."
+anchor_old = '''forward: `grep -cE '^    pub\(crate\) (select|limit|lines): ' tomlctl/src/cli/types.rs` is 0 (today: 4)'''
+anchor_new = '''forward: `awk '/^pub\(crate\) struct QueryArgs/,/^}/' tomlctl/src/cli/types.rs | grep -cE '^    pub\(crate\) (select|limit|lines): '` is 0 (today: 3; the `OutputArgs` fields Task 2 adds sit outside that range)'''
+dedup_id = "7234042154bd5cbc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P3"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 2. Add the global output flags to the CLI root [M]"
+summary = "Global select/limit/lines re-apply to the query lists' output, so Task 2's own backlog_read guard goes red"
+description = "clap_builder-4.6.7 arg_matcher.rs `fill_in_global_values` copies a subcommand's same-id local match into the root, so `backlog list --select id,status` sets root `select`. Until Task 4 the three lists print non-streaming output via `print_json(&out)` (cli/dispatch.rs:528-532, backlog/query.rs:73, tasks/list.rs:46), which Task 1 makes treat the already-projected array as Shape::One: `--select` → 'absent from a single object', `--limit` → 'applies to row reports', `--count --lines` turns compact. Breaks tests/backlog_read.rs `the_generic_query_surface_is_threaded_through_list` (Task 2's own guard), tests/capabilities.rs `lines_on_count_shape_is_noop_single_object`, and integration.rs list cases. Raised by all four lenses. See P5 for the permanent `emit_list_raw` half."
+anchor_old = "  - Do not remove `LinesArgs` or `QueryArgs`' fields here."
+anchor_new = """
+  - Do not remove `LinesArgs` or `QueryArgs`' fields here.
+  - clap copies a subcommand's same-id local `--select`/`--limit`/`--lines` up to the root struct (`clap_builder` `arg_matcher.rs` `fill_in_global_values`), so `cli::run` leaves `select`, `limit` and `lines` out of `OutputOpts` when the subcommand is `items list`, `backlog list` or `tasks list`. Otherwise `print_json` re-applies them to the list's already-projected array as a single report, and `the_generic_query_surface_is_threaded_through_list` (`tomlctl/tests/backlog_read.rs`) and `lines_on_count_shape_is_noop_single_object` (`tomlctl/tests/capabilities.rs`) go red. From Task 4 on, `print_query` owns those three commands' output and ignores the three engine-consumed options."""
+dedup_id = "b1ae4ab2b8602573"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P4"
+severity = "critical"
+category = "risk"
+plan_section = "### Output pipeline"
+summary = "The unknown-path rule errors on every empty row set, inverting gates like `tasks check --get class`"
+description = "'A path present on no row' is true of every path when there are zero rows. `items list --where status=open --select id` on a ledger with no open items errors instead of printing []; `inputs list --get id` errors on the Step-0 sweep's normal empty case; `tasks check --get class` on a clean store errors inside print_report before the process::exit at tasks/dispatch.rs:276, so a passing gate exits 1. Template placeholders inherit the same rule. Separately, the streaming list path (query.rs run_streaming) writes rows before a union over rows is known, so the check must use the unfiltered array's keys."
+anchor_old = "A path present on no row, or absent from a single object, is a `kind=validation` error listing the top-level keys that do exist"
+anchor_new = "A path present on no row of a non-empty row set, or absent from a single object, is a `kind=validation` error listing the top-level keys that do exist (an empty row set validates nothing and prints its empty result, so `tasks check --get class` on a clean store still exits 0; the same holds for `--get` and template placeholders; the query lists validate against the union of keys across the unfiltered array, known before the streaming path writes its first row)"
+dedup_id = "3b7098c4e625fc97"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P5"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 1. Build the output pipeline core [M]"
+summary = "emit_list_raw refusing every output flag breaks documented --raw combinations once --limit/--lines are global"
+description = "emit_list_raw serves only the three query lists' `--raw` path. After Task 4, `--limit`/`--lines` are those lists' own engine options, so refusing them breaks `--count --raw --lines` (documented as a no-op at types.rs:410-414, so scripts blanket-add it) and `--pluck f --raw --limit 1` (query.md:149). Count is not streamable (query.rs is_streamable), so these do reach emit_list_raw."
+anchor_old = "`print_raw_value` and `emit_list_raw` honour `-q` and refuse every other output flag, exactly like `print_text`."
+anchor_new = "`print_raw_value` honours `-q` and refuses every other output flag, exactly like `print_text`. `emit_list_raw` serves only the query lists, whose engine applies `--select`/`--limit`/`--lines` itself, so like `print_query` it honours `-q` and refuses only `--get` and `--template`."
+dedup_id = "4b06c2e1040ec061"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P6"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Id minting"
+summary = "Output-option errors fire after a write commits, so the recommended `--get id` exits 1 on success and invites duplicate retries"
+description = "Every write arm prints its envelope after mutate_doc* returns (cli/dispatch.rs:606-616 for items add), so an unknown --get/--select/--template path or --limit on an envelope exits 1 for a landed write; a retry duplicates the row, or mints a second id under --id-prefix. The dedupe Skipped envelope (added:0, matched_id) has no `id`, so `items add --id-prefix … --get id` — the form Tasks 17, 20, 22, 23 put into every carrier — fails on a skip that is not an error. Raised by feasibility, completeness and risk lenses."
+anchor_old = 'The add envelope gains `"id"` (add) or `"ids"` (add-many), so `--get id` returns the minted id.'
+anchor_new = """The add envelope gains `"id"` (add) or `"ids"` (add-many), so `--get id` returns the minted id; a dedupe skip reports the matched row's id as `"id"` too, so the same `--get id` succeeds on both arms. On every write verb, an output-option failure raised after the mutation has committed (an unknown `--get`/`--select`/`--template` path, `--limit` on an envelope) prints the unshaped envelope, reports the problem on stderr, and exits 0, so a retry never re-applies a landed write."""
+dedup_id = "4893ad53ef1f8bd5"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P7"
+severity = "warning"
+category = "risk"
+plan_section = "### Output pipeline"
+summary = "The --get/--template truncation advisory goes through the TTY-gated advise! path, so agents never see it"
+description = "io.rs advise_fmt returns unless VISIBLE (= stderr().is_terminal()); agent Bash tools capture stderr, so under --get/--template — the only modes without a `limited` header — a cutting --limit is silent, recreating the `| head` truncation the plan exists to remove. Task 1's planned unit test of the advisory cannot observe it either. Raised by all four lenses."
+anchor_old = "a one-line stderr advisory `tomlctl: showing n of N rows` goes through the existing `io.rs` advisory path."
+anchor_new = "a one-line notice `tomlctl: showing n of N rows` is written straight to stderr — not through `io.rs` `advise!`, which prints only when stderr is a terminal and so never reaches an agent — and is suppressed under `--error-format json`, whose stderr carries only the error envelope."
+dedup_id = "e6dddaf7a510e925"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P8"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 1. Build the output pipeline core [M]"
+summary = "A process-global OnceLock leaves Task 1's option-combination tests and Task 4's QueryHarness tests no way to vary options"
+description = "`cargo test --lib` runs all unit tests in one process and a OnceLock sets once, so 'order of application' and '-q against every other flag' cannot each configure their own options; io.rs VISIBLE silently ignores a second set. Task 4 also breaks two in-process tests that parse the removed QueryArgs fields through QueryHarness: tasks/list.rs:143 `the_whole_predicate_surface_reaches_task_rows` (--select) and backlog/query.rs:505 `the_generic_query_surface_still_applies` (--limit); Task 4's guard runs integration tests only, so add `cargo test --manifest-path tomlctl/Cargo.toml --lib -- tasks::list backlog::query` to it and have `to_query_input` take `&OutputOpts`."
+anchor_old = "  - `pub(crate) fn configure(opts: OutputOpts)`, plus a `Default`-backed getter, so tests and library callers that never configure see today's behaviour."
+anchor_new = "  - `pub(crate) fn configure(opts: OutputOpts)`, plus a `Default`-backed getter, so library callers that never configure see today's behaviour; a second `configure` is a `debug_assert!` failure, not a silent no-op. `emit`, `project` and the template renderer take `&OutputOpts` as a parameter and only the `print_*` wrappers read the global, so unit tests pass their own options; Task 4's `QueryArgs::to_query_input` takes `&OutputOpts` the same way."
+dedup_id = "3dff218860d774b6"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P9"
+severity = "warning"
+category = "risk"
+plan_section = "### Skill and command sweep"
+summary = "Automatic stamping defeats the carriers' deliberately deferred last_updated bump that feeds the freshness gate"
+description = """review.md:76 ('Defer `last_updated` stamping … to Step 3'), optimise.md:89 ('the ledger is only "fresh" once the report was actually produced') and flow-contract-apply-pipeline/SKILL.md:331 ('Defer the `last_updated` bump to the final render') defer the bump on purpose; the freshness gate (SKILL.md:126-135) reads it. Under Task 10 every interim items apply stamps, so an interrupted run leaves the ledger 'fresh'. Task 22 treats optimise.md:89 as a second call to drop, deleting the stated reason; Task 21 does not cite SKILL.md:331."""
+anchor_old = "- the two-call pattern → a single write, now that the write stamps `last_updated`;"
+anchor_new = "- the two-call pattern → a single write, now that the write stamps `last_updated` — except a checkpoint write whose carrier deliberately defers the bump (`claude/commands/review.md` and `claude/commands/optimise.md` Step 2, the interim checkpoint in `claude/skills/flow-contract-apply-pipeline/SKILL.md`), which passes `--no-stamp` so an interrupted run does not mark the ledger fresh;"
+dedup_id = "c0657916a9dd279b"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P10"
+severity = "warning"
+category = "completeness"
+plan_section = "### 10. Stamp `last_updated` on CLI writes [L]"
+summary = "Flow-less ledgers are seeded without last_updated, so once the second set call is gone they never gain one"
+description = "io.rs SCHEMA_SEEDED_FLOW_FILES matches basenames (execution-record.toml, review-ledger.toml, …); `.claude/reviews/<scope>.toml`, `.claude/optimise-findings/<scope>.toml` and flow-less plan-review files seed `{}`. Stamping only refreshes an existing key (User Decision 4), and today only the second `tomlctl set … last_updated` call adds it. After Tasks 20/22 a new flow-less ledger has no last_updated and the freshness gate reads nothing. seed_doc_for is CLI-only (the facade passes OnMissing::Error), so glimpse is unaffected."
+anchor_old = "  - **Explicit set wins:** `set <file> last_updated <date>` keeps the caller's value."
+anchor_new = """
+  - **Explicit set wins:** `set <file> last_updated <date>` keeps the caller's value.
+  - **Flow-less ledgers seed the key:** extend `io.rs` `seed_doc_for` so a missing file under `.claude/reviews/`, `.claude/optimise-findings/` or `.claude/plan-review-findings/` seeds `schema_version = 1` / `last_updated = <today>` like the recognised basenames; test that a first `items add` to `.claude/reviews/x.toml` writes `last_updated`."""
+dedup_id = "fdf7b921ad17b704"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P11"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "Installed skills are copies, not links; After Merge has no sync step or ordering, and an old binary silently stops stamping"
+description = "~/.claude-work/skills and ~/.claude-work/commands hold regular-file copies (stat), already diverged from claude/ in 7 files; eggshell and books-rs share them. New skills + 0.13 binary: `--id-prefix`/`--get` fail loudly, but single writes succeed and silently leave last_updated stale. New binary + old skills: `next-id | jq -r .` errors on the bare id. Related: claude/agents/flow-bootstrap.md's version floor is still 0.7.0 (lines 52, 55) — raising it to 0.14.0 would make the skew halt loudly, but no task owns that file. After Merge needs a sync step after `cargo install`."
+anchor_old = "installed skills read this repo's `claude/`, so skills and binary change together once `cargo install --path tomlctl` runs."
+anchor_new = "the installed skills and commands under `~/.claude-work/` are regular-file copies synced out of band, not links to `claude/`, so they change separately from the binary. After Merge runs `cargo install --path tomlctl` first and only then syncs the skills, commands and agents: a new skill against the 0.13 binary fails loudly on `--id-prefix` but, having dropped the second `set … last_updated` call, silently leaves ledgers unstamped."
+dedup_id = "6c741d056260c214"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P12"
+severity = "warning"
+category = "risk"
+plan_section = "### 7. Advertise the global flags and the new features [L]"
+summary = "Checkpoint A's commit advertises four Wave B features its binary lacks"
+description = "Task 7 (Checkpoint A) adds next_id_bare, id_prefix, auto_last_updated, multi_id to FEATURES and the README, but Tasks 8–13 (Checkpoint B) implement them. The tomlctl skill prescribes feature-gating on `capabilities.features`; a binary built at A claims auto_last_updated (a gating carrier drops its second call and gets no stamp) and id_prefix (clap rejects the flag). Moving them changes Task 15's Files (add `tomlctl/src/cli/types.rs`, `tomlctl/tests/capabilities.rs`) and Depends on (add 13) — a mechanical merge will not make that edit; use Manual merge or fix by hand. Raised by feasibility, executability and risk lenses."
+anchor_old = "  - The four write features ship in Wave B. Their README rows describe the finished behaviour, and Tasks 8–13 make them true before the Wave B checkpoint."
+anchor_new = "  - Add only `output_options` here. The four write features (`next_id_bare`, `id_prefix`, `auto_last_updated`, `multi_id`) move to Task 15, which then also edits `tomlctl/src/cli/types.rs` and `tomlctl/tests/capabilities.rs` and depends on 13, so Checkpoint A's commit never advertises a feature its binary lacks."
+dedup_id = "771a599f9c19a499"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P13"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Promoting per-command flags to global"
+summary = "No task deletes backlog check's local --limit, so it silently shadows the global forever"
+description = "Task 2 retypes BacklogOp::Check's `limit` (types.rs:1184-1185) to Option<usize>; Tasks 3/4 remove LinesArgs and QueryArgs fields only. A same-id local makes clap skip propagating the global (command.rs:4754) and never trips debug_asserts.rs:108, so the Risks bullet's claim that Task 14's debug_assert catches leftovers does not cover it; Task 19 then documents it as global, contrary to User Decision 2. Moving the deletion into Task 4 adds `tomlctl/src/backlog/check.rs` and `tomlctl/src/backlog/dispatch.rs` to Task 4's Files (both already precede it via Task 3; no new edges)."
+anchor_old = "- `backlog check --limit` is `usize` with a default of 5. It becomes `Option<usize>` in Task 2, and `backlog/check.rs` applies the default."
+anchor_new = "- `backlog check --limit` is `usize` with a default of 5. It becomes `Option<usize>` in Task 2, and `backlog/check.rs` applies the default. Task 4 then deletes that local (adding `tomlctl/src/backlog/check.rs` and `tomlctl/src/backlog/dispatch.rs` to its Files) and the check reads the global `limit.unwrap_or(5)`: a same-id local never trips `debug_assert`, so leaving it would keep the silent shadow the Risks section warns about."
+dedup_id = "3e0172d872da6f00"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P14"
+severity = "warning"
+category = "executability"
+plan_section = "### 9. Mint ids inside `items add` and `items add-many` [M]"
+summary = "Files-line closure: Task 9 must edit tomlctl/src/items.rs; Task 11 must touch tasks/import_plan.rs"
+description = "Per-row minting with --defaults and dedupe has to happen inside items.rs `items_add_many_with_dedupe` (:1693, between find_dedupe_match and items_add_value_to), `items_add_many` (:1341) and dry-run `compute_add_many_mutation` (:1799); the merge helpers `defaults_base`/`merge_row_over_base` are private, and AddManyOutcome must carry `ids`. With 4 files the task is [L], not [M] (the ref excludes the tag, so retagging is safe). Second instance: Task 11 changes `update::update`'s signature, which `tomlctl/src/tasks/import_plan.rs:2190` calls in a #[cfg(test)] helper — add that file to Task 11's Files or keep the signature and add a sibling `update_many`."
+anchor_old = "- **Files**: `tomlctl/src/cli/types.rs`, `tomlctl/src/cli/dispatch.rs`, `tomlctl/tests/items_id_prefix.rs` (new)"
+anchor_new = "- **Files**: `tomlctl/src/cli/types.rs`, `tomlctl/src/cli/dispatch.rs`, `tomlctl/src/items.rs`, `tomlctl/tests/items_id_prefix.rs` (new)"
+dedup_id = "ad88309e47b54ccd"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P15"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 16. Document the global output flags in the tomlctl skill [M]"
+summary = "Renaming #line-output reaches links in Tasks 18/19's files, and no gate checks anchors"
+description = "`../SKILL.md#line-output` links: query.md 193, 299, 390, 453 and inputs.md:60 (Task 16); tasks.md 128, 224, 300 (Task 18); backlog.md 140, 415, flow.md 167, 235, agents.md:83 (Task 19). Tasks 16, 18, 19 run in parallel with no path between them. `skill_markdown_links_resolve` checks the path only (skills.rs:1077 fixture: 'A fragment on a path checks the path only'), so a dead anchor passes every gate. Task 16 also leaves open whether query.md's four per-verb --lines rows are dropped."
+anchor_old = "    - Rename the anchor and update every link to it, which `skill_markdown_links_resolve` checks."
+anchor_new = "    - Rename the anchor and repoint or drop the `#line-output` links in this task's own files (`query.md` 193, 299, 390, 453; `inputs.md:60` goes with its row). `skill_markdown_links_resolve` checks a link's path only, never its fragment, so no gate catches a stale anchor: Tasks 18 and 19 drop or repoint the links in `tasks.md`, `flow.md`, `agents.md` and `backlog.md`, and each of the three tasks adds `grep -c '#line-output'` over its own files showing 0 to its acceptance."
+dedup_id = "16bb97c8c7dae5ac"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P16"
+severity = "warning"
+category = "executability"
+plan_section = "### 6. Route DOT and rendered-plan output through `print_text` [S]"
+summary = "Dropping the --dot --lines bail breaks tests/lines.rs at Checkpoint A; the Detail contradicts the Action"
+description = "tests/lines.rs:274-286 asserts stderr contains `--lines applies to the JSON edge list` — the exact text of the bail at tasks/edges.rs:36. A shared generic print_text refusal cannot carry it, and the Detail defers the fix to Task 14 (Checkpoint B), while Checkpoint A's full suite still runs lines.rs. Task 6's guard omits `--test lines`; add it."
+anchor_old = "and drop the `--dot --lines` bail in favour of `print_text`'s refusal."
+anchor_new = "and keep the `--dot --lines` bail in `tomlctl/src/tasks/edges.rs` unchanged, ahead of the `print_text` call, because `tomlctl/tests/lines.rs` pins its message (`--lines applies to the JSON edge list`) until Task 14 folds that test in; `print_text`'s generic refusal covers the other text emitters."
+dedup_id = "f224fb36eec48fc8"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P17"
+severity = "warning"
+category = "completeness"
+plan_section = "### 23. Update `/implement`, `/plan-update` and `/tdd` [M]"
+summary = "Task 23's multi-id collapse is underspecified and would break agent-to-task attribution"
+description = "implement.md:95 is the per-dispatch fetch line that agents/correlate.rs:194 matches with `tasks show ([0-9]+) --slug` to attribute an agent to its task — a comma list does not match. Line 155 fetches one failed task; line 149 has no `tasks show`. Line 109 sets `--agent` per task, chosen per-task at :104, so one id list needs grouping by tier. No acceptance checks the collapse."
+anchor_old = "  - Collapse `implement.md`'s per-row `tasks update <id>` steps (lines 109, 128, 148) into single calls with an id list, and its `tasks show <id>` reads (95, 149, 155) where several rows are read together."
+anchor_new = "  - In `claude/commands/implement.md`, collapse the per-row `tasks update <id>` steps (lines 109, 128, 148) into one call per distinct value with an id list — at line 109 group the dispatched rows by tier, one call per `--agent` value. Leave the `tasks show <id>` reads (95, 155) single-id: line 95 is the dispatch fetch line that `tomlctl/src/agents/correlate.rs` matches with `tasks show ([0-9]+) --slug` to attribute an agent to its task, and line 155 fetches one failed task."
+dedup_id = "dc88ff8464b5c1bf"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P18"
+severity = "warning"
+category = "completeness"
+plan_section = "### Skill and command sweep"
+summary = "--id-prefix exists only on add/add-many, but /review and /optimise persist mixed batches through one atomic items apply"
+description = "review.md:76/82 and optimise.md:89/99 persist adds plus rounds/line updates in a single atomic `items apply --ops` call. Replacing their id minting with `items add --id-prefix` either splits that atomic write or leaves the apply path without guidance; the Id-minting approach does not cover `items apply`."
+anchor_old = "- hand-computed ids (`max(existing) + 1`) and read-then-paste `next-id` → `items add --id-prefix <P> … --get id`;"
+anchor_new = "- hand-computed ids (`max(existing) + 1`) and read-then-paste `next-id` → `items add --id-prefix <P> … --get id` for pure adds; a mixed `items apply --ops` batch (review and optimise Step 2–3, the interim checkpoints) stays one atomic call and takes its add-op ids from the now-bare `items next-id`, read once before the batch and numbered upward;"
+dedup_id = "3a494e54bba65739"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P19"
+severity = "warning"
+category = "risk"
+plan_section = "### Global flags"
+summary = "-q claims the exit code carries the result, but several commands put their verdict in the payload and exit 0"
+description = "flow stale (flow/stale.rs:66-71 prints the verdict and returns Ok), flow doctor (ok:false still exits 0), backlog check, items find-duplicates, and backlog evidence audit without --strict. `tomlctl flow stale --slug x -q && …` always takes the fresh branch, and the every-command test only checks -q preserves exit status."
+anchor_old = "Print nothing on success; the exit code carries the result."
+anchor_new = "Print nothing on success; the exit code carries the result — except for commands whose verdict lives in the payload and that exit 0 regardless (`flow stale`, `flow doctor`, `backlog check`, `items find-duplicates`, `backlog evidence audit` without `--strict`), which report under `-q` only that they ran and which Task 16 lists."
+dedup_id = "08f1b545589108ae"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P20"
+severity = "warning"
+category = "executability"
+plan_section = "## Success Criteria"
+summary = "Goal coverage is partial: no criterion for the two-call prose, Windows parity, and output_gate has no success: key"
+description = "Context's outcome: every skill and command shows the new forms; Linux/Windows parity; glimpse unchanged. Criteria check the `tomlctl set … last_updated` call and --id-prefix only; the two-call prose (`grep -rli 'two-call' claude/skills claude/commands` → 9 files today, incl. description lines the set-regex misses) and the per-command --lines rows are unchecked. Windows parity has no criterion and no statement that it is verified by construction. The output_gate criterion has no matching `success:` line under ## Verification Commands (add `success: cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::output_gate`), nor does the new two-call one."
+anchor_old = "- forward: the commands mint ids through tomlctl — `grep -rl -- '--id-prefix' claude/commands | wc -l` is at least 4 (today: 0)."
+anchor_new = """
+- forward: the commands mint ids through tomlctl — `grep -rl -- '--id-prefix' claude/commands | wc -l` is at least 4 (today: 0).
+- forward: no skill or command still names the two-call pattern — `grep -rli 'two-call' claude/skills claude/commands | wc -l` is 0 (today: 9).
+- Windows parity is verified by construction only: no shipped skill or command form pipes tomlctl into `jq`, `head` or `tr` (no Windows runner is available)."""
+dedup_id = "18bcefbe22e0eebc"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P21"
+severity = "warning"
+category = "executability"
+plan_section = "### 21. Retire the two-call pattern in the apply pipeline and `/plan-new` [M]"
+summary = "Task 21 leaves an executor-time decision open that can be settled now"
+description = "verification.md's Atomicity paragraph (131-135) has three parts; only 'If call 1 fails, do NOT proceed to call 2; the last_updated bump would create a torn state' depends on the removed call. The all-or-nothing statement and correct-and-retry instruction stay true. Also add `grep -ci 'two-call' claude/skills/flow-contract-apply-pipeline/references/verification.md` is 0 (today: 3) to the acceptance."
+anchor_old = "  - `verification.md` line 133's torn-state rule is about a write that half-lands. Keep it only if it still applies to the single write; otherwise remove it."
+anchor_new = '  - In the **Atomicity** paragraph of `claude/skills/flow-contract-apply-pipeline/references/verification.md` (line 133), delete only the sentence beginning "If call 1 fails, do NOT proceed to call 2" — it guards the `last_updated` call this task removes; keep the all-or-nothing statement and the correct-and-retry-the-whole-batch instruction.'
+dedup_id = "8e8a197d09bc1223"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P22"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 16. Document the global output flags in the tomlctl skill [M]"
+summary = "Docs and help strings describing superseded behaviour sit in no task's Files"
+description = """tomlctl/README.md:234,241 (quoted `"R1"`/`"<P>1"` next-id output), README.md:59, :389, :391 (single-id backlog show / tasks update / tasks show); types.rs TasksOp::Update/Show doc comments ('Patch one row', 'Print one row', shown in --help and capabilities — Tasks 11/12); claude/skills/flow-contract-task-store/SKILL.md:159 ('patch one row's mutable fields' — Task 18); claude/skills/tomlctl/references/query.md:32 ('no --format/--output flag, by decision', contradicting --template); claude/skills/tomlctl/SKILL.md:100 (report_lines) and :143-160 (drive flags from `.commands[…].flags`, where --select/--limit/--lines vanish once global — state that accepted flags are `.commands` flags plus `global_flags`)."""
+anchor_old = "- **Files**: `claude/skills/tomlctl/SKILL.md`, `claude/skills/tomlctl/references/query.md`, `claude/skills/tomlctl/references/inputs.md`"
+anchor_new = "- **Files**: `claude/skills/tomlctl/SKILL.md`, `claude/skills/tomlctl/references/query.md`, `claude/skills/tomlctl/references/inputs.md`, `tomlctl/README.md`"
+dedup_id = "3f462acabdc36ed3"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P23"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 18. Update the tomlctl tasks references [M]"
+summary = "Tasks 18/19 ask for next-id edits where no output shape is shown; Task 18 cites a wrong path"
+description = "tasks-store.md:93 lists next-id among generic verbs; flow.md:36 and :108 are a --verify-integrity row and an error-kind row — none shows quoted output, so the executor would invent an edit. Drop those clauses (and tasks-store.md from Task 18's Files). Task 18's Detail cites '`src/tasks` (`finding_classes.rs`)'; the gate is `tomlctl/src/cli/dispatch/tests/finding_classes.rs`."
+anchor_old = "The `tasks.md` finding-class table must still match `src/tasks` (`finding_classes.rs`), so leave it as is."
+anchor_new = "The `tasks.md` finding-class table must still match the classes `tomlctl/src/cli/dispatch/tests/finding_classes.rs` checks against `tomlctl/src/tasks`, so leave it as is."
+dedup_id = "b55a165b38087251"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P24"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 19. Update the tomlctl backlog, flow and agents references [M]"
+summary = "Acceptance mechanics: a vacuous forward, nested backticks, an unobservable sidecar claim"
+description = "Task 19's `wc -l` bullet already holds (600 ≤ 600; orchestrator probe) — relabel guard. Tasks 18/19 write `` `grep -c -- '| `--lines`' …` `` with backticks nested in a single-backtick span, which splits the command when rendered; use a double-backtick span. Task 11's 'one sidecar update' cannot be observed from an integration test (the final sidecar is identical after one or N writes)."
+anchor_old = "  - forward: `wc -l < claude/skills/tomlctl/references/backlog.md` is at most 600 (today: 600)"
+anchor_new = "  - guard: `wc -l < claude/skills/tomlctl/references/backlog.md` is at most 600 (today: 600)"
+dedup_id = "5a3c77fa4dcd69ef"
+
+[[items]]
+review_round = 1
+status = "merged"
+id = "P25"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 14. Add the every-command test, the stdout gate and the duplicate-flag check [L]"
+summary = "Task 14 bundles two concerns; the stdout gate could land at Checkpoint A, and Wave C guards compile it half-written"
+description = "The gate + debug_assert (output_gate.rs, mod.rs) needs only Tasks 3–6; the every-command test needs Task 13. Splitting lets the gate guard Wave B's dispatch edits. As written, Task 14 shares a frontier batch with 16–23, whose guards (`--lib -- cli::dispatch::tests`) compile and run its in-flight output_gate.rs module — failures naming a sibling's file. Either split, or add 14 to the Depends on of 16, 20, 22, 23. Needs restructuring (new task, renumbered markers) — manual merge only."
+dedup_id = "be80f739204eb97e"
