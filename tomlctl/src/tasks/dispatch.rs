@@ -12,7 +12,6 @@
 //! place.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -203,9 +202,8 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             target,
             kind,
             dot,
-            lines,
             integrity,
-        } => edges::dispatch(target, kind, dot, lines, integrity),
+        } => edges::dispatch(target, kind, dot, integrity),
 
         TasksOp::Ready {
             target,
@@ -217,18 +215,10 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             print_json(&ready::ready(&store, &in_flight)?)
         }
 
-        TasksOp::Batches {
-            target,
-            lines,
-            integrity,
-        } => {
+        TasksOp::Batches { target, integrity } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let store = store::load(&path, &integrity)?;
-            print_report(
-                batches::batches(&store)?,
-                lines.lines,
-                Rows::Field("batches"),
-            )
+            print_report(batches::batches(&store)?, Rows::Field("batches"))
         }
 
         TasksOp::Closure {
@@ -249,7 +239,6 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             target,
             plan,
             in_flight,
-            lines,
             integrity,
         } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
@@ -269,7 +258,6 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             // when the exit below skips every destructor.
             print_report(
                 json!({ "ok": code == 0, "findings": rendered }),
-                lines.lines,
                 Rows::Field("findings"),
             )?;
             if code != 0 {
@@ -309,8 +297,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
 
             let plan = render::render_into_plan(&store, &source)?;
             if stdout {
-                print!("{plan}");
-                std::io::stdout().flush().ok();
+                crate::output::print_text(&plan)?;
                 return Ok(());
             }
 
@@ -324,11 +311,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             }))
         }
 
-        TasksOp::Snapshot {
-            target,
-            lines,
-            integrity,
-        } => {
+        TasksOp::Snapshot { target, integrity } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             // Under `--file` there is no slug; the flow directory's name is
             // the slug a `--slug` read of the same store would carry.
@@ -342,7 +325,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             };
             let snap = super::snapshot(&slug, &path, &integrity, None)?
                 .expect("no known revision always builds");
-            print_report(snap, lines.lines, Rows::Field("tasks"))
+            print_report(snap, Rows::Field("tasks"))
         }
     }
 }

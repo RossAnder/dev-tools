@@ -38,7 +38,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde_json::Value as JsonValue;
 
-use crate::cli::{LinesArgs, ReadIntegrityArgs};
+use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{read_dir_sorted, relativise, repo_or_cwd_root};
 use crate::output::{Rows, print_report};
@@ -47,11 +47,7 @@ use crate::output::{Rows, print_report};
 /// and falls through to the next resolution step.
 const SENTINEL_UNSET: &str = "__DONT_ASK__";
 
-pub(crate) fn dispatch(
-    dirs: Vec<PathBuf>,
-    lines: LinesArgs,
-    integrity: ReadIntegrityArgs,
-) -> Result<()> {
+pub(crate) fn dispatch(dirs: Vec<PathBuf>, integrity: ReadIntegrityArgs) -> Result<()> {
     let root = repo_or_cwd_root()?;
 
     // Step 1–4: resolve plan directories. We track whether the source was
@@ -83,7 +79,7 @@ pub(crate) fn dispatch(
         walk_plans(&abs_dir, &root, &mut records, &mut seen_slugs)?;
     }
 
-    print_report(JsonValue::Array(records), lines.lines, Rows::Top)
+    print_report(JsonValue::Array(records), Rows::Top)
 }
 
 /// Resolution-order driver. Returns the resolved list of plan directories

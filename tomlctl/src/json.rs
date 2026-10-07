@@ -22,7 +22,6 @@ use crate::io::advise;
 use anyhow::{Context, Result, bail};
 use serde_json::Value as JsonValue;
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 
 use crate::cli::{JsonOp, ReadIntegrityArgs, WriteIntegrityArgs};
@@ -92,7 +91,7 @@ fn should_skip_sidecar(file: &Path) -> bool {
 /// over `serde_json::Value`. Each segment indexes by string key on objects,
 /// or by `usize` index on arrays. Returns `None` on any missing segment or
 /// type mismatch (e.g. trying to descend into a scalar / null).
-fn navigate_json<'a>(root: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
+pub(crate) fn navigate_json<'a>(root: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
     if path.is_empty() {
         return Some(root);
     }
@@ -323,12 +322,7 @@ fn handle_get(
             // branch above; this is unreachable.
             _ => leaf.to_string(),
         };
-        let stdout = std::io::stdout();
-        let mut w = stdout.lock();
-        w.write_all(bare.as_bytes())?;
-        w.write_all(b"\n")?;
-        w.flush()?;
-        return Ok(());
+        return crate::output::print_text(&format!("{bare}\n"));
     }
 
     // `--json` is the default for non-raw output; it's accepted as a

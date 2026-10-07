@@ -22,7 +22,7 @@ use super::evidence::{
     self, EVIDENCE_EXTENSIONS, EVIDENCE_MAX_BYTES, MARKER_NAME, SENSITIVE_EXTENSIONS,
 };
 use super::schema::{self, ARRAY_BACKLOG, ARRAY_COMPACTED, FIELD_ID, FIELD_SUMMARY};
-use crate::cli::{LinesArgs, ReadIntegrityArgs};
+use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{
     atomic_write, guard_write_path, items_array, read_dir_sorted, relativise, relativise_under,
@@ -376,13 +376,12 @@ pub(crate) fn audit(doc: Option<&TomlValue>, root: &Path, max_bytes: u64) -> Res
 pub(crate) fn dispatch_audit(
     strict: bool,
     max_bytes: Option<u64>,
-    lines: LinesArgs,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
     let doc = schema::read_store(&integrity)?;
     let root = evidence::evidence_root()?;
     let report = audit(Some(&doc), &root, max_bytes.unwrap_or(EVIDENCE_MAX_BYTES))?;
-    print_report(report.to_json(), lines.lines, Rows::Field("findings"))?;
+    print_report(report.to_json(), Rows::Field("findings"))?;
     let failures = report.strict_failures();
     if strict && failures > 0 {
         return Err(tagged_err(

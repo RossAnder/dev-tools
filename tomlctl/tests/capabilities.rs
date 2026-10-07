@@ -1555,6 +1555,38 @@ fn capabilities_output_parses_as_json() {
     );
 }
 
+/// The global output flags appear once, under the root `global_flags` key,
+/// rather than in any `.commands` entry.
+#[test]
+fn capabilities_global_flags_lists_every_output_flag() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}"));
+    let flags = v
+        .get("global_flags")
+        .and_then(|f| f.as_object())
+        .unwrap_or_else(|| panic!("`global_flags` must be a JSON object; got {v}"));
+    for name in [
+        "--select",
+        "--limit",
+        "--lines",
+        "--get",
+        "--template",
+        "--quiet",
+    ] {
+        assert!(
+            flags.contains_key(name),
+            "global_flags must list `{name}`; got {flags:?}"
+        );
+    }
+}
+
 /// The `features` array advertises the whole feature vocabulary. The expected
 /// list duplicates the names from `cli::FEATURES` deliberately — if the const
 /// drifts (a feature removed or renamed), this test fails rather than
@@ -1645,8 +1677,8 @@ fn capabilities_features_contains_every_plan_feature() {
         "sweep",
         "items_sweep",
         "items_clusters",
-        "report_lines",
         "orphans_instances",
+        "output_options", // the root's global output flags
     ];
     for name in expected {
         assert!(

@@ -85,8 +85,8 @@ pub(crate) const FEATURES: &[&str] = &[
     "sweep",
     "items_sweep",
     "items_clusters",
-    "report_lines",
     "orphans_instances",
+    "output_options", // the root's global output flags
 ];
 
 /// User-facing top-level subcommand names, as they appear in
@@ -137,8 +137,66 @@ pub(crate) struct Cli {
     )]
     pub(crate) error_format: ErrorFormat,
 
+    #[command(flatten)]
+    pub(crate) output: OutputArgs,
+
     #[command(subcommand)]
     pub(crate) cmd: Cmd,
+}
+
+/// The output-shaping flags every command accepts, before or after the
+/// subcommand. Ids and types must equal any same-named per-command flag:
+/// clap merges a same-id local into the global but panics on a different id
+/// sharing the long name. Conflicts are checked by `output::configure`.
+#[derive(Args, Clone, Default)]
+#[command(next_help_heading = "Output options")]
+pub(crate) struct OutputArgs {
+    #[arg(
+        long = "select",
+        value_name = "P1,P2,...",
+        global = true,
+        help = "Keep only these dotted paths — of each row on a row report, of the object otherwise"
+    )]
+    pub(crate) select: Option<String>,
+
+    #[arg(
+        long = "limit",
+        value_name = "N",
+        global = true,
+        help = "Keep at most N rows of a row report"
+    )]
+    pub(crate) limit: Option<usize>,
+
+    #[arg(
+        long = "lines",
+        global = true,
+        help = "Compact NDJSON: a header line, then one row per line; one compact line for a single object"
+    )]
+    pub(crate) lines: bool,
+
+    #[arg(
+        long = "get",
+        value_name = "PATH",
+        global = true,
+        help = "Print the bare value at PATH — one line per row on a row report"
+    )]
+    pub(crate) get: Option<String>,
+
+    #[arg(
+        long = "template",
+        value_name = "T",
+        global = true,
+        help = "One text line per row (or one for a single report); `{path}` placeholders, `{{`/`}}` for literal braces"
+    )]
+    pub(crate) template: Option<String>,
+
+    #[arg(
+        short = 'q',
+        long = "quiet",
+        global = true,
+        help = "Print nothing on success; the exit code carries the result"
+    )]
+    pub(crate) quiet: bool,
 }
 
 /// Stderr-format selector surfaced via `--error-format`. `pub(crate)` so
@@ -189,16 +247,6 @@ pub(crate) struct ReadIntegrityArgs {
         help = "Error on missing file instead of returning empty default (kind=not_found)"
     )]
     pub(crate) strict_read: bool,
-}
-
-/// `--lines`, shared by every read verb whose report holds a row collection;
-/// `output::Rows` names which field that is per verb.
-#[derive(Args, Clone, Copy)]
-pub(crate) struct LinesArgs {
-    /// Emit compact NDJSON instead of pretty JSON: the report's other fields
-    /// as one header line (omitted when there are none), then one line per row.
-    #[arg(long)]
-    pub(crate) lines: bool,
 }
 
 /// Write-side integrity/containment flags. Writers
@@ -339,12 +387,6 @@ pub(crate) struct QueryArgs {
     )]
     pub(crate) where_regex: Vec<String>,
     #[arg(
-        long = "select",
-        value_name = "F1,F2,...",
-        help = "Projection: keep only the listed fields"
-    )]
-    pub(crate) select: Option<String>,
-    #[arg(
         long = "exclude",
         value_name = "F1,F2,...",
         help = "Projection: drop the listed fields"
@@ -362,8 +404,6 @@ pub(crate) struct QueryArgs {
         help = "Sort by FIELD (repeatable for tiebreakers)"
     )]
     pub(crate) sort_by: Vec<String>,
-    #[arg(long = "limit", value_name = "N", help = "Return at most N items")]
-    pub(crate) limit: Option<usize>,
     #[arg(long = "offset", value_name = "N", help = "Skip the first N items")]
     pub(crate) offset: Option<usize>,
     #[arg(long = "distinct", help = "Dedup on the projected shape")]
@@ -401,22 +441,6 @@ pub(crate) struct QueryArgs {
         help = "Output one JSON value per line (for piping into add-many/apply)"
     )]
     pub(crate) ndjson: bool,
-    /// Discoverable spelling of `--ndjson` for the `--pluck` case. A clap
-    /// `alias` wouldn't appear in `items list --help`, defeating the whole
-    /// point of exposing the flag — agents need to see it at a glance.
-    /// `Query::from_query_input` merges this with `ndjson` (`lines || ndjson`),
-    /// so downstream pipeline logic still inspects a single boolean.
-    ///
-    /// For non-Pluck/non-Array shapes (Count, CountBy, CountDistinct,
-    /// GroupBy) this is a silent no-op — the output is a single JSON value
-    /// regardless, so "one value per line" collapses to the same bytes.
-    /// This keeps scripts free to blanket-add `--lines` without branching
-    /// on shape.
-    #[arg(
-        long = "lines",
-        help = "Emit one JSON value per line on --pluck (alias-of-semantics for --ndjson). No-op on --count/--count-by/--count-distinct/--group-by."
-    )]
-    pub(crate) lines: bool,
     /// Bare-scalar output for single-value shapes. Composes as follows:
     ///
     /// - `--count --raw` / `--count-distinct --raw`: emit the bare integer
@@ -457,8 +481,14 @@ impl QueryArgs {
     /// `&Option<String>` references on `LegacyShortcuts`. Logic that would
     /// creep in here belongs in `Query::from_query_input` instead — the POD
     /// type's whole job is to keep this boundary a straight-line data
-    /// transfer.
-    pub(crate) fn to_query_input(&self, legacy: &LegacyShortcuts<'_>) -> crate::query::QueryInput {
+    /// transfer. `select`, `limit` and `lines` come from the global output
+    /// options in `out`: the engine applies them before `--distinct` and
+    /// after `--sort-by`/`--offset`, which a post-hoc emitter could not.
+    pub(crate) fn to_query_input(
+        &self,
+        legacy: &LegacyShortcuts<'_>,
+        out: &crate::output::OutputOpts,
+    ) -> crate::query::QueryInput {
         crate::query::QueryInput {
             status: legacy.status.clone(),
             category: legacy.category.clone(),
@@ -478,18 +508,18 @@ impl QueryArgs {
             where_prefix: self.where_prefix.clone(),
             where_suffix: self.where_suffix.clone(),
             where_regex: self.where_regex.clone(),
-            select: self.select.clone(),
+            select: out.select.as_ref().map(|paths| paths.join(",")),
             exclude: self.exclude.clone(),
             pluck: self.pluck.clone(),
             sort_by: self.sort_by.clone(),
-            limit: self.limit,
+            limit: out.limit,
             offset: self.offset,
             distinct: self.distinct,
             group_by: self.group_by.clone(),
             count_by: self.count_by.clone(),
             count_distinct: self.count_distinct.clone(),
             ndjson: self.ndjson,
-            lines: self.lines,
+            lines: out.lines,
             raw: self.raw,
         }
     }
@@ -722,8 +752,6 @@ pub(crate) enum Cmd {
         /// Extra glob to exclude, on top of the defaults; repeatable.
         #[arg(long, value_name = "GLOB")]
         exclude: Vec<String>,
-        #[command(flatten)]
-        lines: LinesArgs,
     },
 }
 
@@ -745,8 +773,6 @@ pub(crate) enum FlowOp {
         /// in `.claude/settings.json` when provided.
         #[arg(long = "dirs", value_name = "DIR")]
         dirs: Vec<PathBuf>,
-        #[command(flatten)]
-        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -895,8 +921,6 @@ pub(crate) enum FlowOp {
         /// present in the registry.
         #[arg(long = "active-only")]
         active_only: bool,
-        #[command(flatten)]
-        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -1168,7 +1192,7 @@ pub(crate) enum BacklogOp {
 
     /// Ask whether a discovery is already known, before minting it.
     /// Read-only; emits a graded verdict plus the matching items' stored
-    /// context.
+    /// context, at most `--limit` candidates (default 5).
     Check {
         #[arg(
             long,
@@ -1181,8 +1205,6 @@ pub(crate) enum BacklogOp {
         kind: Option<String>,
         #[arg(long = "tag", value_name = "TAG", help = "Free-form tag (repeatable)")]
         tag: Vec<String>,
-        #[arg(long, default_value_t = 5, help = "Return at most N candidates")]
-        limit: usize,
         /// Char-trigram Jaccard at or above which a candidate is reported as
         /// `likely-duplicate`. Omit to use the pinned default.
         #[arg(long = "similarity-strong", value_name = "0.0-1.0")]
@@ -1192,8 +1214,6 @@ pub(crate) enum BacklogOp {
         /// which is an id list.
         #[arg(long = "similarity-related", value_name = "0.0-1.0")]
         similarity_related: Option<f64>,
-        #[command(flatten)]
-        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -1418,8 +1438,6 @@ pub(crate) enum EvidenceOp {
             help = "Oversize threshold; omit for the built-in default"
         )]
         max_bytes: Option<u64>,
-        #[command(flatten)]
-        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -1864,8 +1882,6 @@ pub(crate) enum ItemsOp {
         )]
         across: Option<PathBuf>,
         #[command(flatten)]
-        lines: LinesArgs,
-        #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
 
@@ -1892,8 +1908,6 @@ pub(crate) enum ItemsOp {
     /// `outside-repo`, `unparseable`.
     Orphans {
         file: PathBuf,
-        #[command(flatten)]
-        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -1933,8 +1947,6 @@ pub(crate) enum ItemsOp {
         #[arg(long, default_value_t = DEFAULT_MAX_HITS, value_name = "N")]
         max_hits: usize,
         #[command(flatten)]
-        lines: LinesArgs,
-        #[command(flatten)]
         integrity: WriteIntegrityArgs,
     },
 
@@ -1952,8 +1964,6 @@ pub(crate) enum ItemsOp {
         /// status (an absent status reads as `open`).
         #[arg(long, value_delimiter = ',', value_name = "R1,R7,...")]
         ids: Vec<String>,
-        #[command(flatten)]
-        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -2021,8 +2031,6 @@ pub(crate) enum BlocksOp {
         /// present in the first listed file is used.
         #[arg(long = "block")]
         block: Vec<String>,
-        #[command(flatten)]
-        lines: LinesArgs,
     },
 }
 
@@ -2316,8 +2324,6 @@ pub(crate) enum TasksOp {
         #[arg(long = "dot")]
         dot: bool,
         #[command(flatten)]
-        lines: LinesArgs,
-        #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
 
@@ -2341,8 +2347,6 @@ pub(crate) enum TasksOp {
     Batches {
         #[command(flatten)]
         target: TasksTarget,
-        #[command(flatten)]
-        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -2383,8 +2387,6 @@ pub(crate) enum TasksOp {
         #[arg(long = "in-flight", value_delimiter = ',', value_name = "N1,N2,...")]
         in_flight: Vec<u32>,
         #[command(flatten)]
-        lines: LinesArgs,
-        #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
 
@@ -2416,8 +2418,6 @@ pub(crate) enum TasksOp {
         #[command(flatten)]
         target: TasksTarget,
         #[command(flatten)]
-        lines: LinesArgs,
-        #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
 }
@@ -2446,8 +2446,6 @@ pub(crate) enum AgentsOp {
         #[arg(long = "slug", value_name = "SLUG")]
         slug: String,
         #[command(flatten)]
-        lines: LinesArgs,
-        #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
 }
@@ -2474,8 +2472,6 @@ pub(crate) enum InputsOp {
         scope: Option<String>,
         #[arg(long, value_name = "ID", help = "Keep records targeting this item id")]
         item: Option<String>,
-        #[command(flatten)]
-        lines: LinesArgs,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },

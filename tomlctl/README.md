@@ -301,12 +301,21 @@ downstream flow-command templates can feature-gate at boot without parsing
                "tasks_batches", "tasks_closure", "tasks_check",
                "tasks_render", "tasks_snapshot", "agents_record",
                "agents_list", "inputs", "items_apply_expect", "sweep",
-               "items_sweep", "items_clusters", "report_lines",
-               "orphans_instances"],
+               "items_sweep", "items_clusters", "orphans_instances",
+               "output_options"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
                   "agents", "inputs", "sweep"],
+  "global_flags": {
+    "--error-format": {"type": "enum", "required": false, "default": "text", "values": ["text","json"], "repeatable": false},
+    "--select":       {"type": "string", "required": false, "repeatable": false},
+    "--limit":        {"type": "string", "required": false, "repeatable": false},
+    "--lines":        {"type": "bool",   "required": false, "values": ["true","false"], "repeatable": false},
+    "--get":          {"type": "string", "required": false, "repeatable": false},
+    "--template":     {"type": "string", "required": false, "repeatable": false},
+    "--quiet":        {"type": "bool",   "required": false, "values": ["true","false"], "repeatable": false}
+  },
   "commands": {
     "items": {
       "subcommands": {
@@ -326,7 +335,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 }
 ```
 
-(The `commands` slice above is abbreviated — every subcommand has an entry; run `tomlctl capabilities` for the full tree.) Each flag entry carries `type` (`string` / `bool` / `enum`), `required`, `repeatable`, and optional `default` / `values`. `mutex_groups` lists clap `ArgGroup` mutex sets so an agent can pre-validate a flag combination before invoking the binary.
+(The `commands` slice above is abbreviated — every subcommand has an entry; run `tomlctl capabilities` for the full tree.) Each flag entry carries `type` (`string` / `bool` / `enum`), `required`, `repeatable`, and optional `default` / `values`. `mutex_groups` lists clap `ArgGroup` mutex sets so an agent can pre-validate a flag combination before invoking the binary. `global_flags` uses the same entry shape for the root's flags, which every subcommand accepts and which no `commands` entry repeats.
 
 Stability contract:
 
@@ -347,7 +356,7 @@ Feature meanings:
 |---|---|
 | `count_distinct` | `--count-distinct <FIELD>` on `items list` |
 | `raw` | `--raw` scalar emit on `get` and on single-value `items list` shapes |
-| `lines` | `--lines` newline-per-value emit on `items list --pluck` |
+| `lines` | `--lines` on `items list --pluck` prints one value per line; on every other command `--lines` is the global compact NDJSON form listed under `output_options` |
 | `infer_prefix` | `items next-id --infer-from-file` |
 | `dedupe_by` | `--dedupe-by <FIELDS>` on `items add` / `items add-many` |
 | `dedup_id_auto` | auto-populate `dedup_id` in every write funnel |
@@ -404,5 +413,5 @@ Feature meanings:
 | `sweep` | `sweep -e <REGEX>...` — regex hits over the repo's tracked files as sorted `file:line` sites, with `skipped` counts, `truncated` and `coverage_complete`; `.claude/**` and `docs/plans/**` are excluded by default |
 | `items_sweep` | `items sweep <file>` — re-run each item's stored `sweep` patterns and diff the hits against its `instances` (`new` / `gone` / `kept` / `unverified`); `--update` rewrites an open item's `instances` in listed order, appending new sites, and refuses while the run is truncated or an anchor is unverified for any reason but `excluded` |
 | `items_clusters` | `items clusters <file> --ids <R1,R7,...>` — file-disjoint clusters over `file` plus `instances`, layered by `depends_on` into batches, each cluster carrying `lite_file_scope`; out-of-selection dependencies land in `dropped_deps` and a cycle is refused |
-| `report_lines` | `--lines` on the collection read verbs (`items clusters`, `orphans`, `find-duplicates`, read-only `sweep`; top-level `sweep`; `inputs list`; `tasks edges`, `batches`, `check`, `snapshot`; `backlog check`, `evidence audit`; `flow list`, `find-plans`; `agents list`; `blocks verify`) — compact NDJSON: the report's other fields as one header line, then one row per line |
 | `orphans_instances` | `items orphans` reports an `instance-missing` class for every `instances` anchor that does not resolve, with `reason` one of `missing-file`, `symbol-missing`, `io-error`, `outside-repo`, `unparseable` |
+| `output_options` | the global output flags `--select`, `--limit`, `--lines`, `--get`, `--template` and `-q`/`--quiet`, accepted before or after the subcommand on every command and listed once under the root `global_flags` key — a command's accepted flags are its `.commands` flags plus `global_flags` |

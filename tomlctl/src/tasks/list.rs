@@ -10,7 +10,7 @@ use anyhow::Result;
 use super::store;
 use crate::cli::{LegacyShortcuts, QueryArgs, ReadIntegrityArgs, TasksTarget, read_integrity_opts};
 use crate::io::{read_doc, strict_read_check};
-use crate::output::{emit_list_raw, print_json};
+use crate::output::{self, OutputOpts};
 use crate::query::{self, Query, ShapeDispatch};
 
 /// The array the store keeps its rows in, and the reason the whole `items`
@@ -26,30 +26,27 @@ pub(crate) fn dispatch(
     let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
     strict_read_check(&path, integrity.strict_read)?;
     let opts = read_integrity_opts(&integrity);
-    let q = build_query(count, &query_args)?;
+    let q = build_query(count, &query_args, output::opts())?;
 
-    if q.ndjson && q.shape.is_streamable() {
-        use std::io::Write;
-        let stdout = std::io::stdout();
-        let mut h = stdout.lock();
-        read_doc(&path, opts, |doc| {
-            query::run_streaming(doc, ARRAY_ITEMS, &q, &mut h)
-        })?;
-        h.flush()?;
-        return Ok(());
+    if q.ndjson && q.shape.is_streamable() && output::streaming_allowed() {
+        return output::stdout_stream(|mut w| {
+            read_doc(&path, opts, |doc| {
+                query::run_streaming(doc, ARRAY_ITEMS, &q, &mut w)
+            })
+        });
     }
 
     let out = read_doc(&path, opts, |doc| query::run(doc, ARRAY_ITEMS, &q))?;
     if q.raw {
-        emit_list_raw(&out, &q.shape)
+        output::emit_list_raw(&out, &q.shape)
     } else {
-        print_json(&out)
+        output::print_query(out)
     }
 }
 
 /// The store carries none of the legacy shortcut fields, so `--count` is the
 /// only slot filled here; every other predicate arrives through `QueryArgs`.
-fn build_query(count: bool, query_args: &QueryArgs) -> Result<Query> {
+fn build_query(count: bool, query_args: &QueryArgs, out: &OutputOpts) -> Result<Query> {
     let unset: Option<String> = None;
     let legacy = LegacyShortcuts {
         status: &unset,
@@ -58,7 +55,7 @@ fn build_query(count: bool, query_args: &QueryArgs) -> Result<Query> {
         newer_than: &unset,
         count,
     };
-    Query::from_query_input(&query_args.to_query_input(&legacy))
+    Query::from_query_input(&query_args.to_query_input(&legacy, out))
 }
 
 #[cfg(test)]
@@ -121,9 +118,13 @@ mod tests {
         })
     }
 
-    fn run(args: &[&str], count: bool) -> JsonValue {
-        let q = build_query(count, &query_args(args)).expect("the query builds");
+    fn run_with(args: &[&str], count: bool, out: &OutputOpts) -> JsonValue {
+        let q = build_query(count, &query_args(args), out).expect("the query builds");
         query::run(&doc(), ARRAY_ITEMS, &q).expect("the query runs")
+    }
+
+    fn run(args: &[&str], count: bool) -> JsonValue {
+        run_with(args, count, &OutputOpts::default())
     }
 
     #[test]
@@ -140,7 +141,11 @@ mod tests {
 
     #[test]
     fn the_whole_predicate_surface_reaches_task_rows() {
-        let out = run(&["--where-in", "id=2,3", "--select", "id,status"], false);
+        let select = OutputOpts {
+            select: Some(vec!["id".into(), "status".into()]),
+            ..OutputOpts::default()
+        };
+        let out = run_with(&["--where-in", "id=2,3"], false, &select);
         assert_eq!(
             out,
             serde_json::json!([

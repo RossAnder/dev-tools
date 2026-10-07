@@ -11,8 +11,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde_json::Value as JsonValue;
 
 use super::types::{
-    AgentsOp, BlocksOp, Cli, Cmd, FEATURES, InputsOp, IntegrityOp, ItemsOp, LegacyShortcuts,
-    OnStale, ReadIntegrityArgs, SUBCOMMANDS, WriteIntegrityArgs,
+    AgentsOp, BlocksOp, Cli, Cmd, ErrorFormat, FEATURES, InputsOp, IntegrityOp, ItemsOp,
+    LegacyShortcuts, OnStale, ReadIntegrityArgs, SUBCOMMANDS, WriteIntegrityArgs,
 };
 
 use crate::blocks::blocks_verify;
@@ -41,8 +41,9 @@ use crate::items::{
 use crate::items_sweep::{items_sweep, outcome_json, update_plan};
 use crate::orphans::items_orphans;
 use crate::output::{
-    Rows, build_dry_run_plan_envelope, emit_dry_run_plan, emit_dry_run_scalar, emit_list_raw,
-    print_json, print_json_compact, print_raw_value, print_report,
+    OutputOpts, Rows, build_dry_run_plan_envelope, emit_dry_run_plan, emit_dry_run_scalar,
+    emit_list_raw, print_json, print_json_compact, print_query, print_raw_value, print_report,
+    stdout_stream, streaming_allowed,
 };
 use crate::query::{self, Query, ShapeDispatch};
 use crate::sweep::{self, SweepOptions};
@@ -134,6 +135,27 @@ fn skipped_stale_json(skipped: &[StaleOp]) -> JsonValue {
     JsonValue::Array(skipped.iter().map(StaleOp::to_json).collect())
 }
 
+/// The global output options from the parsed root.
+fn output_opts(cli: &Cli) -> OutputOpts {
+    let out = &cli.output;
+    let select = out.select.as_deref().map(|s| {
+        s.split(',')
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(String::from)
+            .collect()
+    });
+    OutputOpts {
+        select,
+        limit: out.limit,
+        lines: out.lines,
+        get: out.get.clone(),
+        template: out.template.clone(),
+        quiet: out.quiet,
+        json_errors: cli.error_format == ErrorFormat::Json,
+    }
+}
+
 /// TOML write subcommands (`set`, `set-json`, `array-append`) refuse `.json`
 /// targets and point the caller at `tomlctl json set`. The symmetric half
 /// (JSON writers refuse `.toml` targets) lives in
@@ -167,6 +189,7 @@ fn refuse_json_extension_for_toml_writers(file: &std::path::Path) -> Result<()> 
 /// then a full `Cli::parse()` on entry) would silently swallow errors on
 /// the peek path and risk double `--help` rendering.
 pub(crate) fn run(cli: Cli) -> Result<()> {
+    crate::output::configure(output_opts(&cli))?;
     match cli.cmd {
         Cmd::Parse { file, integrity } => {
             strict_read_check(&file, integrity.strict_read)?;
@@ -391,11 +414,9 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 payload,
                 integrity,
             } => crate::agents::dispatch::dispatch_record(&harness, &payload, &integrity)?,
-            AgentsOp::List {
-                slug,
-                lines,
-                integrity,
-            } => crate::agents::dispatch::dispatch_list(&slug, lines, &integrity)?,
+            AgentsOp::List { slug, integrity } => {
+                crate::agents::dispatch::dispatch_list(&slug, &integrity)?
+            }
         },
         Cmd::Inputs { op } => inputs_dispatch(op)?,
         Cmd::Sweep {
@@ -403,7 +424,6 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             max_file_bytes,
             max_hits,
             exclude,
-            lines,
         } => {
             let root = repo_or_cwd_root()?;
             let mut opts = SweepOptions {
@@ -413,11 +433,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             };
             opts.exclude.extend(exclude);
             let report = sweep::run(&root, &pattern, &opts)?;
-            print_report(
-                sweep::report_json(&report),
-                lines.lines,
-                Rows::Field("hits"),
-            )?;
+            print_report(sweep::report_json(&report), Rows::Field("hits"))?;
         }
         Cmd::Json { op } => {
             // Resolve `--json -` stdin sentinel for `json set` at the CLI
@@ -462,6 +478,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
                 "version": env!("CARGO_PKG_VERSION"),
                 "features": FEATURES,
                 "subcommands": SUBCOMMANDS,
+                "global_flags": crate::capabilities::build_global_flags(),
                 "commands": crate::capabilities::build_agent_context(),
             });
             print_json(&output)?;
@@ -492,7 +509,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 newer_than: &newer_than,
                 count,
             };
-            let q = Query::from_query_input(&query.to_query_input(&legacy))?;
+            let q = Query::from_query_input(&query.to_query_input(&legacy, crate::output::opts()))?;
             // `ndjson` is an output-encoding choice, not a shape. Only
             // the Array and Pluck shape + ndjson encoding combinations are
             // meaningful; for aggregation shapes (Count/CountBy/
@@ -504,32 +521,24 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             // --lines` (or `--pluck f --ndjson`) streams one plucked JSON
             // value per line; `run_streaming` mirrors `apply_pluck`'s
             // null/missing-drop so the set of emitted values is identical
-            // to the non-streaming path.
-            if q.ndjson && q.shape.is_streamable() {
-                // Stream one compact JSON value per line directly via
-                // `query::run_streaming`, avoiding the `Vec<JsonValue>` that
-                // `query::run` would otherwise materialise only for us to
-                // iterate and re-serialise. The streaming path walks the
-                // same pipeline and emits per-item — peak memory scales with
-                // the filtered set, not the full output array.
-                //
+            // to the non-streaming path. `--get` / `--template` need the
+            // whole row set, so they take the non-streaming path.
+            if q.ndjson && q.shape.is_streamable() && streaming_allowed() {
                 // `--pluck foo --lines --raw` flows through here too;
                 // `run_streaming` reads `q.raw` and emits bare values per
                 // line instead of quoted JSON. The Array variant has no raw
                 // form, so `validate_query` rejects `--raw` there.
-                use std::io::Write;
-                let stdout = std::io::stdout();
-                let mut h = stdout.lock();
-                read_doc(&file, opts, |doc| {
-                    query::run_streaming(doc, &array, &q, &mut h)
+                stdout_stream(|mut w| {
+                    read_doc(&file, opts, |doc| {
+                        query::run_streaming(doc, &array, &q, &mut w)
+                    })
                 })?;
-                h.flush()?;
             } else {
                 let out = read_doc(&file, opts, |doc| query::run(doc, &array, &q))?;
                 if q.raw {
                     emit_list_raw(&out, &q.shape)?;
                 } else {
-                    print_json(&out)?;
+                    print_query(out)?;
                 }
             }
         }
@@ -1046,7 +1055,6 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             file,
             tier,
             across,
-            lines,
             integrity,
         } => {
             strict_read_check(&file, integrity.strict_read)?;
@@ -1113,7 +1121,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                     }
                 }
             };
-            print_report(JsonValue::Array(groups), lines.lines, Rows::Top)?;
+            print_report(JsonValue::Array(groups), Rows::Top)?;
         }
         ItemsOp::Fingerprint {
             file,
@@ -1125,15 +1133,11 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             let out = read_doc(&file, opts, |doc| items_fingerprint(doc, &id))?;
             print_json(&out)?;
         }
-        ItemsOp::Orphans {
-            file,
-            lines,
-            integrity,
-        } => {
+        ItemsOp::Orphans { file, integrity } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             let orphans = read_doc(&file, opts, items_orphans)?;
-            print_report(JsonValue::Array(orphans), lines.lines, Rows::Top)?;
+            print_report(JsonValue::Array(orphans), Rows::Top)?;
         }
         ItemsOp::Sweep {
             file,
@@ -1142,10 +1146,9 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
             dry_run,
             max_file_bytes,
             max_hits,
-            lines,
             integrity,
         } => {
-            if lines.lines && update {
+            if crate::output::opts().lines && update {
                 bail!(
                     "items sweep --lines applies to the read-only sweep; --update emits a write envelope"
                 );
@@ -1168,7 +1171,7 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
                 let results = read_doc(&file, read_opts, |doc| {
                     items_sweep(doc, &file, &root, &ids, &sweep_opts)
                 })?;
-                print_report(outcome_json(&results), lines.lines, Rows::Field("items"))?;
+                print_report(outcome_json(&results), Rows::Field("items"))?;
                 return Ok(());
             }
             if dry_run {
@@ -1210,14 +1213,13 @@ fn items_dispatch(op: ItemsOp) -> Result<()> {
         ItemsOp::Clusters {
             file,
             ids,
-            lines,
             integrity,
         } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
             let root = repo_or_cwd_root()?;
             let out = read_doc(&file, opts, |doc| items_clusters(doc, &root, &ids))?;
-            print_report(out, lines.lines, Rows::Field("clusters"))?;
+            print_report(out, Rows::Field("clusters"))?;
         }
         ItemsOp::BackfillDedupId {
             file,
@@ -1335,7 +1337,6 @@ fn inputs_dispatch(op: InputsOp) -> Result<()> {
             flow,
             scope,
             item,
-            lines,
             integrity,
         } => {
             let path = inputs::path(&root);
@@ -1352,11 +1353,7 @@ fn inputs_dispatch(op: InputsOp) -> Result<()> {
                 scope,
                 item,
             };
-            return print_report(
-                inputs::list(&root, &filter)?,
-                lines.lines,
-                Rows::Field("inputs"),
-            );
+            return print_report(inputs::list(&root, &filter)?, Rows::Field("inputs"));
         }
         InputsOp::Add { json, integrity } => {
             let record = read_json_value_from_arg(&json).context("parsing --json")?;
@@ -1403,13 +1400,9 @@ fn inputs_dispatch(op: InputsOp) -> Result<()> {
 
 fn blocks_dispatch(op: BlocksOp) -> Result<()> {
     match op {
-        BlocksOp::Verify {
-            files,
-            block,
-            lines,
-        } => {
+        BlocksOp::Verify { files, block } => {
             let report = blocks_verify(&files, &block)?;
-            print_report(report.report, lines.lines, Rows::Field("blocks"))?;
+            print_report(report.report, Rows::Field("blocks"))?;
             if !report.ok {
                 std::process::exit(1);
             }

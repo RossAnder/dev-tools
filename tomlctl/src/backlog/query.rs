@@ -27,7 +27,7 @@ use crate::cli::{LegacyShortcuts, QueryArgs, ReadIntegrityArgs};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{items_array, relativise, repo_or_cwd_root};
-use crate::output::{emit_list_raw, print_json};
+use crate::output::{self, OutputOpts, print_json};
 use crate::query::{Query, ShapeDispatch};
 
 const DIRECTION_OUT: &str = "out";
@@ -58,22 +58,19 @@ pub(crate) fn dispatch_list(
     };
     let narrowed = narrowed_doc(filter_backlog(items_array(&doc, ARRAY_BACKLOG), &filters)?);
 
-    let q = build_query(&status, &kind, open, count, &query)?;
-    if q.ndjson && q.shape.is_streamable() {
-        use std::io::Write;
-        let stdout = std::io::stdout();
-        let mut h = stdout.lock();
-        crate::query::run_streaming(&narrowed, ARRAY_BACKLOG, &q, &mut h)?;
-        h.flush()?;
+    let q = build_query(&status, &kind, open, count, &query, output::opts())?;
+    if q.ndjson && q.shape.is_streamable() && output::streaming_allowed() {
+        output::stdout_stream(|mut w| {
+            crate::query::run_streaming(&narrowed, ARRAY_BACKLOG, &q, &mut w)
+        })
     } else {
         let out = crate::query::run(&narrowed, ARRAY_BACKLOG, &q)?;
         if q.raw {
-            emit_list_raw(&out, &q.shape)?;
+            output::emit_list_raw(&out, &q.shape)
         } else {
-            print_json(&out)?;
+            output::print_query(out)
         }
     }
-    Ok(())
 }
 
 pub(crate) fn dispatch_show(id: String, integrity: ReadIntegrityArgs) -> Result<()> {
@@ -149,6 +146,7 @@ fn build_query(
     open: bool,
     count: bool,
     query: &QueryArgs,
+    out: &OutputOpts,
 ) -> Result<Query> {
     let unset: Option<String> = None;
     let legacy = LegacyShortcuts {
@@ -158,7 +156,7 @@ fn build_query(
         newer_than: &unset,
         count,
     };
-    let mut input = query.to_query_input(&legacy);
+    let mut input = query.to_query_input(&legacy, out);
     if open {
         input.where_eq.push(format!("{FIELD_STATUS}={STATUS_OPEN}"));
     }
@@ -308,6 +306,17 @@ mod tests {
         let mut argv = vec!["harness"];
         argv.extend_from_slice(args);
         QueryHarness::try_parse_from(argv).unwrap().q
+    }
+
+    /// `super::build_query` with no global output options set.
+    fn build_query(
+        status: &Option<String>,
+        kind: &Option<String>,
+        open: bool,
+        count: bool,
+        query: &QueryArgs,
+    ) -> Result<Query> {
+        super::build_query(status, kind, open, count, query, &OutputOpts::default())
     }
 
     fn doc(s: &str) -> TomlValue {
@@ -502,7 +511,11 @@ kind = "debt"
     #[test]
     fn the_generic_query_surface_still_applies() {
         let d = doc(STATUSES);
-        let q = build_query(&None, &None, true, false, &query_args(&["--limit", "1"])).unwrap();
+        let limit = OutputOpts {
+            limit: Some(1),
+            ..OutputOpts::default()
+        };
+        let q = super::build_query(&None, &None, true, false, &query_args(&[]), &limit).unwrap();
         assert_eq!(run_ids(&d, &q), ["B-1"]);
 
         let q = build_query(

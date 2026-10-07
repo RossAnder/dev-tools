@@ -24,7 +24,8 @@ use std::io::Write;
 use toml::Value as TomlValue;
 
 use crate::convert::{
-    TypeHint, compare_typed, json_type_name, parse_typed_value, split_type_hint, toml_to_json,
+    TypeHint, compare_typed, json_type_name, navigate, parse_typed_value, split_type_hint,
+    toml_to_json,
 };
 use crate::errors::{ErrorKind, tagged_err};
 
@@ -569,6 +570,7 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
         Some(arr) => arr.as_slice(),
         None => &[],
     };
+    validate_select(items, q)?;
 
     // 1. Filter
     // Pass the array slice directly instead of materialising a
@@ -810,6 +812,7 @@ pub(crate) fn run_streaming<W: Write>(
         Some(arr) => arr.as_slice(),
         None => &[],
     };
+    validate_select(items, q)?;
     let filtered = apply_filters(items, &q.predicates)?;
 
     let window_untouched =
@@ -1361,18 +1364,29 @@ fn cmp_pred(
 // Projection
 // -----------------------------------------------------------------------
 
+/// Refuse a `--select` path that no row of the unfiltered array carries.
+/// Checked against the TOML rows so it costs no JSON materialisation on
+/// success, and runs before the streaming path writes its first row.
+fn validate_select(items: &[TomlValue], q: &Query) -> Result<()> {
+    let Some(paths) = &q.select else {
+        return Ok(());
+    };
+    if paths
+        .iter()
+        .all(|p| items.iter().any(|t| navigate(t, p).is_some()))
+    {
+        return Ok(());
+    }
+    let rows: Vec<JsonValue> = items.iter().map(toml_to_json).collect();
+    crate::output::validate_paths(&rows, paths.iter().map(String::as_str), "--select")
+}
+
 pub(crate) fn apply_projection(item: &JsonValue, q: &Query) -> JsonValue {
     let Some(obj) = item.as_object() else {
         return item.clone();
     };
     if let Some(keep) = &q.select {
-        let mut out = serde_json::Map::new();
-        for k in keep {
-            if let Some(v) = obj.get(k) {
-                out.insert(k.clone(), v.clone());
-            }
-        }
-        return JsonValue::Object(out);
+        return crate::output::project(item, keep);
     }
     if let Some(drop) = &q.exclude {
         // Build the kept-keys map directly with a HashSet membership probe

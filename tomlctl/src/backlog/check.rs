@@ -28,7 +28,7 @@ use super::schema::{
     FIELD_PROMOTED_TO, FIELD_SEEN_COUNT, FIELD_STATUS, FIELD_SUMMARY, FIELD_TAGS, KIND_OTHER,
     STATUS_PROMOTED, coerce_kind,
 };
-use crate::cli::{LinesArgs, ReadIntegrityArgs};
+use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{items_array, read_text_arg};
 use crate::output::{Rows, print_report};
@@ -83,6 +83,9 @@ const VERDICT_NOVEL: &str = "novel";
 
 /// `--summary` value that means "the summary is on stdin".
 const SUMMARY_STDIN: &str = "-";
+
+/// The candidate cap when `--limit` is not given.
+const DEFAULT_LIMIT: usize = 5;
 
 struct Thresholds {
     strong: f64,
@@ -419,10 +422,8 @@ pub(crate) fn dispatch(
     area: Option<String>,
     kind: Option<String>,
     tag: Vec<String>,
-    limit: usize,
     similarity_strong: Option<f64>,
     similarity_related: Option<f64>,
-    lines: LinesArgs,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
     let thresholds = Thresholds {
@@ -439,10 +440,9 @@ pub(crate) fn dispatch(
     let doc = schema::read_store(&integrity)?;
 
     let mut verdicts = evaluate(&doc, &probe, &thresholds);
-    verdicts.cap(limit);
+    verdicts.cap(crate::output::opts().limit.unwrap_or(DEFAULT_LIMIT));
     print_report(
         render(&probe, &thresholds, &verdicts)?,
-        lines.lines,
         Rows::Field("candidates"),
     )
 }
@@ -826,10 +826,8 @@ mod tests {
                 Some(FLAKE_AREA.to_owned()),
                 Some(KIND_FLAKY_TEST.to_owned()),
                 vec![],
-                5,
                 None,
                 None,
-                LinesArgs { lines: false },
                 read_args(),
             );
             let mut args = read_args();
@@ -839,10 +837,8 @@ mod tests {
                 None,
                 None,
                 vec![],
-                5,
                 None,
                 None,
-                LinesArgs { lines: false },
                 args,
             );
             (lenient, strict)

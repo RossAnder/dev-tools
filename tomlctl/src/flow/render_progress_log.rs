@@ -89,12 +89,9 @@ pub(crate) fn dispatch(slug: &str, stdout: bool, integrity: &ReadIntegrityArgs) 
 
     if stdout {
         // Preview / test path: emit the markdown verbatim, no file write.
-        // `print!` (no extra newline) preserves the single-trailing-newline-at-
+        // `print_text` adds no newline, preserving the single-trailing-newline-at-
         // EOF invariant baked into the rendered String itself.
-        print!("{}", rendered.markdown);
-        use std::io::Write;
-        std::io::stdout().flush().ok();
-        return Ok(());
+        return crate::output::print_text(&rendered.markdown);
     }
 
     // PROGRESS-LOG.md is a DERIVED artifact regenerated wholesale from the

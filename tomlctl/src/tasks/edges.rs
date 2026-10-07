@@ -15,7 +15,7 @@ use serde_json::{Value as JsonValue, json};
 use super::graph::{Graph, nodes_of};
 use super::schema::Store;
 use super::store;
-use crate::cli::{EdgeKind, LinesArgs, ReadIntegrityArgs, TasksTarget};
+use crate::cli::{EdgeKind, ReadIntegrityArgs, TasksTarget};
 use crate::output::{Rows, print_report};
 
 /// One kind's label and its pairs, ordered as the output emits them.
@@ -29,21 +29,18 @@ pub(crate) fn dispatch(
     target: TasksTarget,
     kind: Option<EdgeKind>,
     dot: bool,
-    lines: LinesArgs,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
-    if dot && lines.lines {
+    if dot && crate::output::opts().lines {
         bail!("tasks edges --lines applies to the JSON edge list; --dot emits DOT source");
     }
     let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
     let store = store::load(&path, &integrity)?;
     if dot {
-        print!("{}", dot_source(&store, kind)?);
-        use std::io::Write;
-        std::io::stdout().flush().ok();
+        crate::output::print_text(&dot_source(&store, kind)?)?;
         return Ok(());
     }
-    print_report(edge_list(&store, kind)?, lines.lines, Rows::Top)
+    print_report(edge_list(&store, kind)?, Rows::Top)
 }
 
 /// Edges as `{kind, from, to}`, grouped by kind in declaration order and

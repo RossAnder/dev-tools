@@ -97,6 +97,15 @@ pub(crate) fn build_agent_context() -> JsonValue {
     JsonValue::Object(commands_map)
 }
 
+/// The root's own flags, which apply to every subcommand. Read from the
+/// unbuilt root, so clap's auto-generated `--help` / `--version` stay out, and
+/// listed once here because the `.commands` walk never sees a global: clap
+/// copies globals into subcommands only when the tree is built.
+pub(crate) fn build_global_flags() -> JsonValue {
+    let cmd = <Cli as CommandFactory>::command();
+    describe_flags(&cmd, "")
+}
+
 fn walk_commands(cmd: &Command, parent_path: &str, out: &mut Map<String, JsonValue>) {
     for sub in cmd.get_subcommands() {
         let name = sub.get_name().to_string();
@@ -294,6 +303,45 @@ fn describe_mutex_groups(cmd: &Command, sub_path: &str) -> JsonValue {
 mod tests {
     use super::*;
     use crate::test_support::on_cli_stack;
+
+    #[test]
+    fn build_global_flags_names_every_output_flag() {
+        let flags = on_cli_stack(build_global_flags);
+        for name in [
+            "--select",
+            "--limit",
+            "--lines",
+            "--get",
+            "--template",
+            "--quiet",
+        ] {
+            assert!(
+                flags.get(name).is_some(),
+                "global_flags must list `{name}`; got {flags}"
+            );
+        }
+        assert!(
+            flags.get("--help").is_none() && flags.get("--version").is_none(),
+            "global_flags must read the unbuilt root, without clap's auto flags; got {flags}"
+        );
+    }
+
+    #[test]
+    fn build_agent_context_omits_the_global_output_flags() {
+        let ctx = on_cli_stack(build_agent_context);
+        let flags = ctx
+            .get("items")
+            .and_then(|v| v.get("subcommands"))
+            .and_then(|v| v.get("list"))
+            .and_then(|v| v.get("flags"))
+            .expect("items list flags present");
+        for name in ["--select", "--limit", "--lines", "--get", "--quiet"] {
+            assert!(
+                flags.get(name).is_none(),
+                "`{name}` is global and belongs only under global_flags; got {flags}"
+            );
+        }
+    }
 
     #[test]
     fn build_agent_context_includes_items_list_count_flag() {
