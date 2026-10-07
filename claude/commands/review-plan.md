@@ -126,17 +126,17 @@ Findings from this step enter Step 3 alongside the lens findings, categorised `f
 
 After Step 3 and before Step 4, persist findings to the flow's `plan-review-findings.toml` so subsequent runs dedup and Step 4 has a single source of truth.
 
-**Before the first TOML mutation, invoke the `tomlctl` skill** to load the full CLI surface (`items next-id` / `add-many` / `array-append` / `items apply` / `set` / readback). Drive every read and write of `plan-review-findings.toml` through `tomlctl` — never line-edit the TOML, and do **not** probe `tomlctl --help` (the skill is authoritative for subcommands and flag spelling; `--help` round-trips waste a turn and invite invented flags such as `--format json`).
+**Before the first TOML mutation, invoke the `tomlctl` skill** to load the full CLI surface (`add-many --id-prefix` / `array-append` / `items apply` / `set` / readback). Drive every read and write of `plan-review-findings.toml` through `tomlctl` — never line-edit the TOML, and do **not** probe `tomlctl --help` (the skill is authoritative for subcommands and flag spelling; `--help` round-trips waste a turn and invite invented flags such as `--format json`).
 
 1. Resolve `plan_review_findings_path` from `envelope.resolved.artifacts.plan_review_findings`; for legacy flows derive `.claude/flows/<slug>/plan-review-findings.toml` per the `flow-contract-flow-context` self-healing contract and write it back to `[artifacts]` on the next TOML write.
 2. No manual bootstrap if the file does not exist — the first `tomlctl items add-many` / `set` write (steps 4-5 below) auto-creates and seeds it with the schema-aware skeleton (`schema_version = 1` + `last_updated`, byte-identical to `flow init`), reporting `"created": true` in its envelope. (No atomic dance either way — `/review-plan` is the only agent writer; the human may discard a finding through glimpse, which is why late status writes carry `expect` and `--on-stale skip`.)
-3. Mint monotonic IDs via `tomlctl items next-id <path> --prefix P`.
-4. Batch-write: `tomlctl items add-many <path> --defaults-json '{"review_round":<n>, "status":"open"}' --ndjson <path or ->` — a staged NDJSON file for a batch of more than a few rows, `-` with the single-line `printf` pipe otherwise (see the tomlctl skill).
-5. `tomlctl set <path> last_updated <today>` and `tomlctl set <path> round <n>`, where `<n>` is the current review round (1 on first run; increment per Re-run dedup).
+3. Rows carry no `id`: `--id-prefix P` on the batch write mints monotonic `P{n}` IDs inside the write lock and lists them as `ids` in the envelope.
+4. Batch-write: `tomlctl items add-many <path> --id-prefix P --defaults-json '{"review_round":<n>, "status":"open"}' --ndjson <path or ->` — a staged NDJSON file for a batch of more than a few rows, `-` with the single-line `printf` pipe otherwise (see the tomlctl skill).
+5. `tomlctl set <path> round <n>`, where `<n>` is the current review round (1 on first run; increment per Re-run dedup). Both writes stamp `last_updated` themselves.
 
 ### Artifact Schema: `plan-review-findings.toml`
 
-Required fields: `id` (`P{n}` monotonic), `review_round` (int), `severity` ∈ {`critical`, `warning`, `suggestion`}, `category` ∈ {`feasibility`, `completeness`, `executability`, `risk`}, `plan_section` (markdown heading anchor, copied verbatim from the plan), `summary` (one line), `status` ∈ {`open`, `merged`, `discarded`}. Optional: `discard_reason` (set when a finding is discarded through glimpse), `description`, `anchor_old` (exact substring already in the plan under `plan_section`), `anchor_new` (replacement). **The `anchor_old` + `anchor_new` pair is the mechanical merge contract — BOTH required for auto-merge; anchor-less findings are advisory-only and skipped by the merger.** Schema callouts: `tomlctl items find-duplicates` / `orphans` / `items sweep` (reads `sweep`, `instances`, `file`, `symbol`) / `items clusters` (reads `file`, `instances`, `depends_on`, `enumeration`, `status`) hardcode the review/optimise schema and MUST NOT run against this file; `next-id --prefix P`, `items list`, `add-many --ndjson -`, and `apply --ops -` are the supported subcommands.
+Required fields: `id` (`P{n}` monotonic), `review_round` (int), `severity` ∈ {`critical`, `warning`, `suggestion`}, `category` ∈ {`feasibility`, `completeness`, `executability`, `risk`}, `plan_section` (markdown heading anchor, copied verbatim from the plan), `summary` (one line), `status` ∈ {`open`, `merged`, `discarded`}. Optional: `discard_reason` (set when a finding is discarded through glimpse), `description`, `anchor_old` (exact substring already in the plan under `plan_section`), `anchor_new` (replacement). **The `anchor_old` + `anchor_new` pair is the mechanical merge contract — BOTH required for auto-merge; anchor-less findings are advisory-only and skipped by the merger.** Schema callouts: `tomlctl items find-duplicates` / `orphans` / `items sweep` (reads `sweep`, `instances`, `file`, `symbol`) / `items clusters` (reads `file`, `instances`, `depends_on`, `enumeration`, `status`) hardcode the review/optimise schema and MUST NOT run against this file; `items list`, `add-many --id-prefix P --ndjson -`, `next-id --prefix P`, and `apply --ops -` are the supported subcommands.
 
 ## Step 4: Merge Offer (end of turn)
 
@@ -196,8 +196,8 @@ A3.5. **Merge-exit consistency re-derivation (mandatory, against the written fil
   Do NOT mirror `Depends on` edges into `## Dependency Graph`: that section carries checkpoint markers only, and the per-task edges are authoritative. A merge that renumbers tasks must fix the markers, not re-transcribe the graph. When Step 0.6 skipped the store, (a) and (b) have nothing to run against — walk the multi-claimed files pairwise and each marker's closure by hand instead, and say in A6 that they were hand-derived.
 
   Record what the re-derivation changed; it is reported in A6. Never emit a self-audit block (a "File-claim check" paragraph or similar) asserting the plan is clean — a transcribed assertion goes stale the moment a later edit lands, and the next reader inherits false confidence from it. State the edges; let the reader re-derive.
-A4. **Transition** every merged finding to `status = "merged"` in one batch via `tomlctl items apply <path> --on-stale skip --ops -`, each op carrying `"expect": {"status": "open"}`. Report any `skipped_stale` ids under a "changed during the run" line and never retry them.
-A5. `tomlctl set <path> last_updated <today>`.
+A4. **Transition** every merged finding to `status = "merged"` in one batch via `tomlctl items apply <path> --on-stale skip --ops -`, each op carrying `"expect": {"status": "open"}`. Report any `skipped_stale` ids under a "changed during the run" line and never retry them. The batch stamps `last_updated` itself.
+A5. No separate `last_updated` write: A4's batch carries it.
 A6. **Console summary**: `N findings merged into <plan>`; list `plan_section → summary` per finding, then one line per A3.5 re-derivation fix (`[merge-exit: <task> — added edge N→M; pipelineApi.ts claimed by both]`), the store line carrying the denominator (`store: 37 rows imported (2 added, 1 updated); tasks check clean`), and the ref-set diff whenever either side was non-empty (`refs: +wire-the-render-verb / -wire-the-renderer (id 21, pending)`). When the merge changed any **Files** line, **Depends on** line, or task count, close with `merged text is unreviewed — re-run /review-plan for round 2`. End the turn — no further prompt.
 
 ### Step 4B: Mechanical merge → review
@@ -223,7 +223,7 @@ tomlctl tasks check --slug <slug>
 ```
 
 Abort the import instead, per A3.5(a), if B4 recorded a `[ref-orphan: …]` the user has not resolved with `tasks update <id> --slug <slug> --ref <new-ref>`. **Keep both** → no mutation; findings stay `open` and the store is untouched, matching a plan file that did not change. **Discard** → delete `<plan>.revised.md`, transition findings to `discarded` via `tomlctl items apply <path> --on-stale skip --ops -` with the same `expect` and `skipped_stale` handling; the store is likewise untouched. The prior run's `<plan>.revised.prev.md` is deleted on the NEXT run's B5 (one-cycle retention).
-B9. `tomlctl set <path> last_updated <today>`.
+B9. No separate `last_updated` write: the Accept and Discard transitions stamp it themselves, and Keep both writes nothing.
 
 ### Re-run dedup (subsequent invocations)
 
