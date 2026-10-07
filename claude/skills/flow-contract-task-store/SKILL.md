@@ -156,10 +156,11 @@ tomlctl tasks add --slug <slug> --title "Extract the token reader" --effort S --
 printf '%s\n' '{"title":"Add the retry guard","effort":"S","files":["src/retry.rs"],"needs":[3]}' | tomlctl tasks add-many --slug <slug> --ndjson -
 ```
 
-**`update`** — patch one row's mutable fields. `changed[]` reports what actually moved, not what was passed, so a re-issued `--status done` reports no change. `--set` reaches `title`, `effort`, `status`, `checkpoint`, `agent`, `commit`, `deps_note`, `action`, `detail`, `acceptance` and `coupling`; `files` and `needs` are owned by `import-plan` and refused unless `--unlock-import-fields` rides along (§5a).
+**`update`** — patch the mutable fields of one row, or of several given as an id list (`8,9,14` or `8 9 14`). Several ids take the same patch under one lock and one write; every id is resolved and every row's patch validated first, so an unknown id or one refused row writes nothing. One id prints `{"ok":true,"id":…,"changed":[…]}`; several print `{"ok":true,"results":[{"id":…,"changed":[…]},…]}`. `--ref` names one row's key and so takes a single id. `changed[]` reports what actually moved, not what was passed, so a re-issued `--status done` reports no change. `--set` reaches `title`, `effort`, `status`, `checkpoint`, `agent`, `commit`, `deps_note`, `action`, `detail`, `acceptance` and `coupling`; `files` and `needs` are owned by `import-plan` and refused unless `--unlock-import-fields` rides along (§5a).
 
 ```bash
 tomlctl tasks update <id> --slug <slug> --status in-progress --agent implement-deep
+tomlctl tasks update 8,9,14 --slug <slug> --status done
 ```
 
 #### 5a. `--unlock-import-fields`, and the stamp it leaves
@@ -189,7 +190,7 @@ A successful removal also drops the row's `[[import_overrides]]` entry, so the s
 tomlctl tasks remove <id> --slug <slug> --force
 ```
 
-**`show`** — one row. Without `--with` the output is the summary shape (`id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `files`, `needs`, `coupling`). `id` is always emitted whatever `--with` selects, so a fetched row can be matched back to the id that was asked for. `deps` is the row's own direct targets; `dependents` is the transitive successor set.
+**`show`** — one row's object, or for an id list an array of row objects in the order given, `--with` applied to each; an unknown id fails the whole call. Without `--with` the output is the summary shape (`id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `files`, `needs`, `coupling`). `id` is always emitted whatever `--with` selects, so a fetched row can be matched back to the id that was asked for. `deps` is the row's own direct targets; `dependents` is the transitive successor set.
 
 The `files` part adds three keys after `files`, always present when it is selected. `file_notes` maps each path the row claims that carries a `[[file_notes]]` entry to its note, `{}` when none does. `new_files` and `deleted_files` list the paths whose note marks a created or a removed file, in the row's `files` order and possibly empty. The kind is derived from the note on read, never stored: a note counts only when it opens with a parenthetical whose first word — after optional whitespace, case-insensitive — is `new`, `create` or `created` (a new file) or `delete`, `deleted`, `remove` or `removed` (a removed one), followed by optional whitespace and one of `)`, `,`, `;`, `:` or `—`. So `(NEW)`, `( created )` and `(new, generated)` mark a new file, while `(new thread)` describes an addition to an existing one and `(remove the call)` an edit. This is how an implementer sees the plan's per-file notes, and how a rollback learns which paths the task declared it creates.
 

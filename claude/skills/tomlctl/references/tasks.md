@@ -40,7 +40,9 @@ A `--slug` target lands inside the `.claude/` containment guard, so none of thes
 from the flow context or the store's recorded `plan_path` rather than from an argument, so it
 carries the read bundle and no write flag has a hook on it. Every verb also takes the global
 `--error-format text|json`; see [flow.md](flow.md#error-format---error-format-json) for the
-JSON envelope and its `kind` taxonomy.
+JSON envelope and its `kind` taxonomy. The global output options — `--select`, `--limit`,
+`--lines`, `--get`, `--template`, `-q` — shape any verb's stdout; see
+[Output options](../SKILL.md#output-options).
 
 ## Output fields
 
@@ -55,15 +57,19 @@ or a documented count. `import-plan`, `check` and `render --check` report findin
 
 ```bash
 tomlctl tasks show <id> --slug <slug> --with body,files,deps
+tomlctl tasks show 3,7,12 --slug <slug> --get status
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| *(positional)* | id | Task to print. Required. | — |
+| *(positional)* | ids, comma- or space-separated | Tasks to print. At least one. | — |
 | `--with` | comma-separated, repeatable | `summary`, `body`, `files`, `deps`, `dependents`. A clap `value_enum`: an unknown part exits `2` with usage prose naming it and listing the valid set, **outside** the `--error-format json` envelope — not the exit-`1` `kind=validation` error `--effort` and `--status` raise. | `summary` |
 
-An unknown id errors with `kind=not_found`. Only `dependents` builds the graph, so a store with
-a cycle or a dangling edge still shows its rows under every other part.
+One id prints that row's object. Several print an array of those objects in the order given,
+with `--with` applied to each, so the global `--get`, `--select` and `--lines` work per row.
+An unknown id errors with `kind=not_found` and fails the whole call, whichever position it
+holds. Only `dependents` builds the graph, so a store with a cycle or a dangling edge still
+shows its rows under every other part.
 
 | Key | Value | Meaning |
 |---|---|---|
@@ -89,7 +95,7 @@ under `deps` / `dependents`: they belong to the row that was asked for.
 Task rows through the generic query engine — the whole `items list` surface applies, because
 the store's array *is* `items`. See [query.md](query.md) for that half: `--where-*` predicates,
 `--select` / `--exclude` / `--pluck`, `--sort-by` / `--limit` / `--offset`, `--count-by` /
-`--group-by`, `--raw` / `--lines` / `--ndjson`.
+`--group-by`, `--raw` / `--ndjson`, plus the global `--lines`.
 
 ```bash
 tomlctl tasks list --slug <slug> --where status=pending --select id,ref,files --ndjson
@@ -124,8 +130,7 @@ tomlctl tasks edges --slug <slug> --dot
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--kind` | `needs` \| `coupling` \| `overlap` | Restrict to one kind. Omit for all three. A clap `value_enum`, failing exactly as `tasks show --with` does: an unknown kind exits `2` with usage prose, **outside** the `--error-format json` envelope. | all |
-| `--dot` | — | Emit Graphviz DOT source on stdout instead of the JSON edge list. | off |
-| `--lines` | — | One edge per line. Refused with `--dot`. See [line output](../SKILL.md#line-output). | off |
+| `--dot` | — | Emit Graphviz DOT source on stdout instead of the JSON edge list. Text output, so the global output options other than `-q` are refused with it. | off |
 
 Under `--dot` every task is a node whatever `--kind` selects, so a filtered graph still renders
 the whole plan; `coupling` arrows are dashed and `overlap` dotted and undirected.
@@ -221,7 +226,6 @@ tomlctl tasks check --slug <slug> --in-flight 3,4
 |---|---|---|---|
 | `--plan` | — | Also compare the plan markdown against the render output and report `render/drift`. | off |
 | `--in-flight` | comma-separated ids | Tasks currently dispatched. A row waiting on one of them is not reported as `dag/stalled-dependency`. Unlike [`ready`](#tasks-ready)'s, an id no row carries is dropped rather than refused — a typo must not empty a class. | empty |
-| `--lines` | — | Header line (`ok`), then one finding per line. See [line output](../SKILL.md#line-output). | off |
 
 **Exit `1` when any finding is error-class, `0` otherwise** — warnings alone exit `0`. See
 [the check finding classes](#the-check-finding-classes) for the full list. Under `--plan` the plan is resolved exactly as `render` resolves it, and the same
@@ -297,9 +301,9 @@ tomlctl tasks snapshot --file <path> --verify-integrity
 | `--slug` / `--file` | see [Store target](#store-target) | The store to read. Its companions `execution-record.toml`, `agents.toml` and `context.toml` are read from the same directory under either flag, and each reads as empty when absent. | — |
 | `--verify-integrity` | — | Check `tasks.toml`, and each companion that exists, against its own sidecar before reading. | off |
 | `--strict-read` | — | A missing store is `kind=not_found` even under `--verify-integrity`. Companions stay optional. | off |
-| `--lines` | — | Header line (every field but `tasks`), then one task row per line. See [line output](../SKILL.md#line-output). | off |
 
-The verb writes nothing and seeds no absent companion. A cycle, a dangling edge or a store past
+`tasks` is the row set the global output options act on: under `--lines`, a header line of every
+other key, then one task row per line. The verb writes nothing and seeds no absent companion. A cycle, a dangling edge or a store past
 the node cap refuses the whole snapshot, as it does `ready` and `batches`.
 
 | Key | Value | Meaning |

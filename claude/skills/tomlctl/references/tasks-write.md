@@ -141,20 +141,21 @@ an edge. An absent key is the empty value; a wrong JSON type names the key and t
 
 ## `tasks update`
 
-Patches one row's mutable fields.
+Patches the mutable fields of one or more rows in one write.
 
 ```bash
 tomlctl tasks update <id> --slug <slug> --status done --agent implement-deep --commit <sha>
+tomlctl tasks update 8,9,14 --slug <slug> --status in-progress
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| *(positional)* | id | Task to patch. Required. | — |
+| *(positional)* | ids, comma- or space-separated | Tasks to patch. At least one; a repeated id is patched once. | — |
 | `--status` | text | `pending`, `in-progress`, `done`, `failed`, `deferred`. Case-sensitive; validated after parsing. | — |
 | `--agent` | text | Agent the row was dispatched to. | — |
 | `--commit` | SHA | Commit the row landed in. | — |
 | `--checkpoint` | group id | Checkpoint group; pass an empty value to clear it. An undeclared group id is refused, through this flag and through `--set checkpoint=` alike. | — |
-| `--ref` | slug | Rewrite the `ref`. Never inferred from a retitle. | — |
+| `--ref` | slug | Rewrite the `ref`. Never inferred from a retitle. Takes a single id: with several it is a `kind=validation` error. | — |
 | `--unlock-import-fields` | — | Permit `--set files=` and `--set needs=`, stamping the row with the plan values the patch replaces. Conflicts with `--relock-import-fields`. | off |
 | `--relock-import-fields` | — | Drop that stamp: the next import restores whatever the plan states. Values are left as they are. | off |
 | `--set` | `KEY=VAL`, repeatable | Any other settable field. | — |
@@ -190,11 +191,18 @@ diverges from what its title derives.
 execution record — a rename orphans the row's `task_ref` there until the next
 `import-plan --reconcile-record` re-adopts it.
 
+Several ids apply the same patch to each row under one lock and one sidecar write. Every id is
+resolved and every row's patch validated before anything changes, so an unknown id or a refusal
+on any row aborts the whole call and writes nothing. One id
+prints the single-row envelope; several print `{"ok":true,"results":[…]}`, one entry per
+distinct id in the order given.
+
 | Key | Value | Meaning |
 |---|---|---|
 | `ok` | `true` | Success path only; a refusal arrives as a `kind=validation` error and moves nothing. |
-| `id` | id | The patched row, echoing the positional argument. |
-| `changed` | field names, ascending | Fields whose value moved. Each assignment is compared against what the row already held, so this is what moved rather than what was passed — a re-issued `--status done` reports `[]`. `import_override` joins the list whenever the call adds the stamp, adds a field to it, or drops it. |
+| `id` | id | One id only: the patched row, echoing the positional argument. |
+| `changed` | field names, ascending | One id only: fields whose value moved. Each assignment is compared against what the row already held, so this is what moved rather than what was passed — a re-issued `--status done` reports `[]`. `import_override` joins the list whenever the call adds the stamp, adds a field to it, or drops it. |
+| `results[]` | objects | Several ids only, in place of `id` and `changed`: each row's `id` and `changed`, as above. |
 
 ## `tasks remove`
 
