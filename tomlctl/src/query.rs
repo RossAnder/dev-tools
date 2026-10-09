@@ -395,11 +395,12 @@ pub(crate) struct Query {
     pub offset: Option<usize>,
     pub distinct: bool,
     pub shape: OutputShape,
-    /// Output encoding: if `true` the CLI emits one compact JSON value per
-    /// line instead of a single pretty-printed JSON array. Only meaningful
-    /// when `shape == Array`; `run()` ignores it (it always returns a
-    /// `JsonValue::Array`).
+    /// `--ndjson`: one compact JSON value per line and nothing else, since the
+    /// stream is `add-many` input. `run()` ignores it.
     pub ndjson: bool,
+    /// `--lines`: one compact JSON value per line, which on row output may
+    /// lead with a `limited` header line. `run()` ignores it.
+    pub lines: bool,
     /// Bare-scalar output (`--raw`). `run()` itself is oblivious to
     /// this bit — raw-conversion happens at the cli.rs dispatch boundary
     /// AFTER `run()` returns the JSON-shaped result. The exception is
@@ -410,6 +411,41 @@ pub(crate) struct Query {
     /// on count-by / group-by and on the streamed row array). Default false
     /// keeps every non-raw path byte-identical.
     pub raw: bool,
+}
+
+impl Query {
+    /// Whether output is one value per line, under either spelling.
+    pub(crate) fn per_line(&self) -> bool {
+        self.ndjson || self.lines
+    }
+
+    /// Whether a `--limit` cut is reported inside stdout — a wrapper object
+    /// on pretty row output, a leading header line under `--lines` — rather
+    /// than on stderr. Only row output has a place for it; the `--ndjson`,
+    /// `--pluck` and `--raw` streams stay bare.
+    pub(crate) fn cut_in_band(&self) -> bool {
+        self.shape == OutputShape::Array && !self.ndjson && !self.raw
+    }
+}
+
+/// Rows a `--limit` cut from a list: `shown` of the `total` the limit was
+/// applied to (after filtering, `--distinct` and `--offset`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Cut {
+    pub(crate) shown: usize,
+    pub(crate) total: usize,
+}
+
+impl Cut {
+    /// The value of a report's `limited` key.
+    pub(crate) fn header(self) -> JsonValue {
+        serde_json::json!({ "shown": self.shown, "total": self.total })
+    }
+
+    /// The stderr line for output that has no place for the header.
+    pub(crate) fn notice(self) -> String {
+        format!("tomlctl: showing {} of {} rows", self.shown, self.total)
+    }
 }
 
 /// Reject mutually exclusive flag combinations. The CLI's `validate_query`
@@ -488,7 +524,7 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
     }
     // The row-array stream has no bare form, so `--raw` there would be dropped
     // silently. `--pluck f --raw --lines` stays legal: it streams bare values.
-    if q.raw && q.ndjson && q.shape == OutputShape::Array {
+    if q.raw && q.per_line() && q.shape == OutputShape::Array {
         validation_bail!(
             "--raw and --lines/--ndjson cannot be combined on row output: --raw is the single-value form, --lines/--ndjson the one-row-per-line form — pass one, or add --pluck <f> for one bare value per line"
         );
@@ -513,8 +549,9 @@ pub(crate) fn validate_query(q: &Query) -> Result<()> {
 /// cost of CountDistinct / Pluck / CountBy at O(field size) as before).
 ///
 /// Materialisation goes through `full_item_toml_to_json`, so the test-only
-/// counters record one "full-item" hit per filtered row.
-fn build_pipeline(filtered: &[&TomlValue], q: &Query) -> Vec<JsonValue> {
+/// counters record one "full-item" hit per filtered row. The `Cut` is set
+/// when `--limit` dropped rows.
+fn build_pipeline(filtered: &[&TomlValue], q: &Query) -> (Vec<JsonValue>, Option<Cut>) {
     // 2. Project (select/exclude) before shaping for Array/Pluck/Distinct
     // so distinct/pluck see the already-narrowed shape. Aggregations
     // (count/count-by/group-by) operate on the unprojected items so the
@@ -566,7 +603,17 @@ fn build_pipeline(filtered: &[&TomlValue], q: &Query) -> Vec<JsonValue> {
 
 /// Top-level entry: walk the array-of-tables at `array_name`, run the
 /// pipeline, and return the requested JSON shape.
+#[cfg(test)]
 pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonValue> {
+    run_counted(doc, array_name, q).map(|(out, _)| out)
+}
+
+/// `run`, plus the rows `--limit` cut from the result, if any.
+pub(crate) fn run_counted(
+    doc: &TomlValue,
+    array_name: &str,
+    q: &Query,
+) -> Result<(JsonValue, Option<Cut>)> {
     validate_query(q)?;
     let items: &[TomlValue] = match doc.get(array_name).and_then(|v| v.as_array()) {
         Some(arr) => arr.as_slice(),
@@ -594,7 +641,7 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
     if window_untouched {
         match &q.shape {
             OutputShape::Count => {
-                return Ok(serde_json::json!({ "count": filtered.len() }));
+                return Ok((serde_json::json!({ "count": filtered.len() }), None));
             }
             OutputShape::Pluck(field) => {
                 let mut out = Vec::with_capacity(filtered.len());
@@ -604,7 +651,7 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
                         Some(v) => out.push(v),
                     }
                 }
-                return Ok(JsonValue::Array(out));
+                return Ok((JsonValue::Array(out), None));
             }
             OutputShape::CountBy(field) => {
                 let mut counts: serde_json::Map<String, JsonValue> = serde_json::Map::new();
@@ -624,7 +671,7 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
                         }
                     }
                 }
-                return Ok(JsonValue::Object(counts));
+                return Ok((JsonValue::Object(counts), None));
             }
             OutputShape::CountDistinct(field) => {
                 // Structural analogue of the CountBy fast-path — one
@@ -672,10 +719,11 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
                         }
                     }
                 }
-                return Ok(serde_json::json!({
+                let out = serde_json::json!({
                     "count_distinct": seen_strings.len() + seen_other.len(),
                     "field": field,
-                }));
+                });
+                return Ok((out, None));
             }
             _ => {}
         }
@@ -684,13 +732,13 @@ pub(crate) fn run(doc: &TomlValue, array_name: &str, q: &Query) -> Result<JsonVa
     // Slow-path pipeline (materialise → sort → distinct → window) lives
     // in `build_pipeline` so `run()` and `run_streaming()` share one
     // implementation. Only the per-shape terminal emit below differs.
-    let windowed = build_pipeline(&filtered, q);
+    let (windowed, cut) = build_pipeline(&filtered, q);
 
     // 6. Shape. Single-arm dispatch via `ShapeDispatch::compute` —
     // per-variant bodies (including the project-then-aggregate branches
     // for Array and GroupBy) live in the `impl ShapeDispatch for OutputShape`
     // block so adding a new variant here is one `match` arm, not six.
-    Ok(q.shape.compute(&windowed, q))
+    Ok((q.shape.compute(&windowed, q), cut))
 }
 
 /// The remedy a `--raw`-on-an-array error suggests, chosen by the calling verb.
@@ -767,7 +815,7 @@ pub(crate) fn emit_raw(v: &JsonValue, hint: RawArrayHint) -> Result<String> {
 }
 
 /// Streaming NDJSON sibling of `run()`. For `OutputShape::Array` with
-/// `q.ndjson == true`, emits one compact JSON object per line directly to
+/// `q.per_line()`, emits one compact JSON object per line directly to
 /// `writer`, avoiding the `Vec<JsonValue>` that `run()` would otherwise
 /// materialise only to have the CLI iterate and re-serialise it. For every
 /// other shape/encoding combination, this delegates to `run()` and
@@ -785,21 +833,25 @@ pub(crate) fn emit_raw(v: &JsonValue, hint: RawArrayHint) -> Result<String> {
 /// Aggregation shapes (Count/CountBy/CountDistinct/GroupBy) still fall
 /// through to the single-shot delegation — a single JSON value has no
 /// sensible "one per line" decomposition.
+///
+/// Returns the rows `--limit` cut. When `q.cut_in_band()`, the cut is also
+/// written first as a `{"limited":{…}}` line; every row is counted before
+/// the first write, so the header can lead.
 pub(crate) fn run_streaming<W: Write>(
     doc: &TomlValue,
     array_name: &str,
     q: &Query,
     writer: &mut W,
-) -> Result<()> {
+) -> Result<Option<Cut>> {
     // Non-streamable shapes (Count/CountBy/CountDistinct/GroupBy, or Array
     // / Pluck without ndjson encoding) don't benefit from streaming — the
     // final value is a single object/scalar, or the caller explicitly
     // chose the batched array encoding. Delegate to `run()` and serialise
     // once.
-    if !q.ndjson || !q.shape.is_streamable() {
-        let out = run(doc, array_name, q)?;
+    if !q.per_line() || !q.shape.is_streamable() {
+        let (out, cut) = run_counted(doc, array_name, q)?;
         serde_json::to_writer(writer, &out)?;
-        return Ok(());
+        return Ok(cut);
     }
 
     // Array/Pluck + ndjson streaming path. Mirrors the Array/Pluck arms of
@@ -854,14 +906,14 @@ pub(crate) fn run_streaming<W: Write>(
                     }
                 }
             }
-            return Ok(());
+            return Ok(None);
         }
         // Slow path: share the materialise → sort → distinct → window
         // pipeline with `run()` via `build_pipeline`. Pluck's
         // plucked-field distinct-key branch lives inside that helper so
         // both entry points stay in sync. The final emit below
         // replicates `apply_pluck`'s null/missing drop.
-        let windowed = build_pipeline(&filtered, q);
+        let (windowed, cut) = build_pipeline(&filtered, q);
         for v in &windowed {
             match v.get(field) {
                 None | Some(JsonValue::Null) => {}
@@ -876,7 +928,7 @@ pub(crate) fn run_streaming<W: Write>(
                 }
             }
         }
-        return Ok(());
+        return Ok(cut);
     }
 
     // Array fast-path: no sort/distinct/window. Stream directly from the
@@ -895,19 +947,25 @@ pub(crate) fn run_streaming<W: Write>(
             serde_json::to_writer(&mut *writer, &projected)?;
             writer.write_all(b"\n")?;
         }
-        return Ok(());
+        return Ok(None);
     }
 
     // Array slow path (sort/distinct/window touched): share the pipeline
     // with `run()` via `build_pipeline`, then emit per-item at the
     // tail rather than collecting.
-    let windowed = build_pipeline(&filtered, q);
+    let (windowed, cut) = build_pipeline(&filtered, q);
+    if let Some(c) = cut
+        && q.cut_in_band()
+    {
+        serde_json::to_writer(&mut *writer, &serde_json::json!({ "limited": c.header() }))?;
+        writer.write_all(b"\n")?;
+    }
     for v in &windowed {
         let projected = apply_projection(v, q);
         serde_json::to_writer(&mut *writer, &projected)?;
         writer.write_all(b"\n")?;
     }
-    Ok(())
+    Ok(cut)
 }
 
 // -----------------------------------------------------------------------
@@ -1643,22 +1701,29 @@ fn json_structural_hash(v: &JsonValue) -> u64 {
     h.finish()
 }
 
+/// Skip `offset` rows, then keep at most `limit`; the `Cut` is set only when
+/// the limit dropped rows.
 fn apply_window(
     items: Vec<JsonValue>,
     offset: Option<usize>,
     limit: Option<usize>,
-) -> Vec<JsonValue> {
+) -> (Vec<JsonValue>, Option<Cut>) {
     let off = offset.unwrap_or(0);
     if off >= items.len() {
-        return Vec::new();
+        return (Vec::new(), None);
     }
+    let total = items.len() - off;
+    let cut = limit
+        .filter(|&n| total > n)
+        .map(|shown| Cut { shown, total });
     // Fuse skip+take into a single iterator chain so we only allocate
     // the output Vec once instead of materialising an intermediate `tail`.
-    items
+    let kept = items
         .into_iter()
         .skip(off)
         .take(limit.unwrap_or(usize::MAX))
-        .collect()
+        .collect();
+    (kept, cut)
 }
 
 // -----------------------------------------------------------------------
@@ -2065,9 +2130,9 @@ impl Query {
         }
 
         // OutputShape priority: count > count-by > count-distinct >
-        // group-by > pluck > default Array. `ndjson` is an *encoding* choice,
-        // not a shape — it lives on `Query.ndjson` and only applies
-        // when the chosen shape is Array. Multiple shape flags would
+        // group-by > pluck > default Array. `--ndjson` / `--lines` are
+        // *encoding* choices, not shapes — they live on `Query.ndjson` /
+        // `Query.lines`. Multiple shape flags would
         // typically collapse to the highest-priority one here; the clap
         // `shape` ArgGroup at the CLI layer makes this impossible in
         // practice (any two shape flags error at parse time), but we keep
@@ -2102,16 +2167,13 @@ impl Query {
             offset: input.offset,
             distinct: input.distinct,
             shape,
-            // `--lines` and `--ndjson` both map onto the same internal
-            // boolean — the spellings differ only at the CLI surface. `--lines`
-            // is the discoverable spelling for the Pluck case; `--ndjson` is
-            // the historic spelling for the Array case. Both enable the
-            // streaming per-line encoding for Array and Pluck shapes; for
-            // aggregation shapes (Count/CountBy/CountDistinct/GroupBy) the
-            // bit is silently ignored (single-value output — "one per line"
-            // collapses to the same bytes). This keeps downstream pipeline
-            // logic inspecting a single boolean.
-            ndjson: input.ndjson || input.lines,
+            // Both spellings enable the per-line encoding for Array and Pluck
+            // shapes (`Query::per_line`) and are ignored by aggregation
+            // shapes. They differ in one way: only `--lines` row output may
+            // lead with a `limited` header, because `--ndjson` output is
+            // `add-many` input and must stay rows only.
+            ndjson: input.ndjson,
+            lines: input.lines,
             // Propagate `--raw` through to the query spec. Most of the
             // dispatch machinery is oblivious; the cli.rs `items list`
             // branch post-processes the `run()` result when `raw` is set,

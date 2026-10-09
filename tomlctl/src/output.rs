@@ -12,15 +12,19 @@ mod template;
 
 use anyhow::Result;
 use serde_json::Value as JsonValue;
+use std::borrow::Cow;
 use std::io::{BufWriter, Write};
 use std::sync::OnceLock;
 
-use crate::convert::{navigate_json, project, validate_paths};
+use crate::convert::{
+    WILDCARD, is_wildcard_path, json_type_name, navigate_json, navigate_json_all, project,
+    validate_paths,
+};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::ScalarMutationPlan;
 use crate::items::MutationPlan;
-use crate::query::{self, OutputShape, RawArrayHint, ShapeDispatch};
-use template::{Template, value_text};
+use crate::query::{self, Cut, OutputShape, Predicate, RawArrayHint, ShapeDispatch, WhereInput};
+use template::{Template, truncate_text, value_text};
 
 /// The global output options, applied by every emitter in this module.
 /// `json_errors` mirrors `--error-format json`, under which stderr carries
@@ -116,6 +120,35 @@ impl WhereFilters {
     /// Total values across every flag.
     pub(crate) fn len(&self) -> usize {
         self.families().iter().map(|(_, v)| v.len()).sum()
+    }
+
+    /// The long name of the first flag that carries a value.
+    fn first_set(&self) -> Option<&'static str> {
+        self.families()
+            .into_iter()
+            .find_map(|(flag, values)| (!values.is_empty()).then_some(flag))
+    }
+
+    fn input(&self) -> WhereInput<'_> {
+        WhereInput {
+            where_eq: &self.where_eq,
+            where_not: &self.where_not,
+            where_in: &self.where_in,
+            where_has: &self.where_has,
+            where_missing: &self.where_missing,
+            where_gt: &self.where_gt,
+            where_gte: &self.where_gte,
+            where_lt: &self.where_lt,
+            where_lte: &self.where_lte,
+            where_contains: &self.where_contains,
+            where_prefix: &self.where_prefix,
+            where_suffix: &self.where_suffix,
+            where_regex: &self.where_regex,
+        }
+    }
+
+    fn predicates(&self) -> Result<Vec<Predicate>> {
+        query::predicates_from(&self.input())
     }
 }
 
@@ -319,11 +352,60 @@ pub(crate) struct Emitted {
     pub(crate) notice: Option<String>,
 }
 
-fn row_slot(report: &mut JsonValue, shape: Shape) -> Option<&mut Vec<JsonValue>> {
-    match shape {
-        Shape::One => None,
-        Shape::Rows(Rows::Top) => report.as_array_mut(),
-        Shape::Rows(Rows::Field(key)) => report.as_object_mut()?.get_mut(key)?.as_array_mut(),
+/// Where `emit` takes a report's rows from: its declared `Rows`, or the
+/// dotted `--rows` path.
+#[derive(Clone, Copy)]
+enum RowsAt<'a> {
+    Top,
+    Field(&'a str),
+}
+
+impl From<Rows> for RowsAt<'static> {
+    fn from(rows: Rows) -> Self {
+        match rows {
+            Rows::Top => RowsAt::Top,
+            Rows::Field(key) => RowsAt::Field(key),
+        }
+    }
+}
+
+fn json_path_mut<'a>(root: &'a mut JsonValue, path: &str) -> Option<&'a mut JsonValue> {
+    let mut cur = root;
+    for seg in path.split('.') {
+        cur = match cur {
+            JsonValue::Object(map) => map.get_mut(seg)?,
+            JsonValue::Array(arr) => arr.get_mut(seg.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    Some(cur)
+}
+
+fn row_slot<'r>(report: &'r mut JsonValue, at: RowsAt<'_>) -> Option<&'r mut Vec<JsonValue>> {
+    match at {
+        RowsAt::Top => report.as_array_mut(),
+        RowsAt::Field(path) => json_path_mut(report, path)?.as_array_mut(),
+    }
+}
+
+/// Remove the value at `path`, leaving the report's header.
+fn detach(report: &mut JsonValue, path: &str) {
+    let (parent, last) = match path.rsplit_once('.') {
+        Some((parent, last)) => (json_path_mut(report, parent), last),
+        None => (Some(report), path),
+    };
+    match parent {
+        Some(JsonValue::Object(map)) => {
+            map.shift_remove(last);
+        }
+        Some(JsonValue::Array(arr)) => {
+            if let Ok(i) = last.parse::<usize>()
+                && i < arr.len()
+            {
+                arr.remove(i);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -344,6 +426,41 @@ fn push_json(out: &mut Vec<u8>, v: &JsonValue, style: Style) -> Result<()> {
 const LIMIT_ON_ONE: &str =
     "`--limit` applies to row reports; this command prints a single object (use --get or --select)";
 
+const HEADER_ON_ONE: &str =
+    "`--header` applies to a report with rows beside a header; this command prints a single object";
+
+const HEADER_ON_TOP: &str =
+    "`--header` applies to a report with rows beside a header; this report is a bare row array";
+
+/// `--rows` given for a report whose rows are already declared.
+fn rows_on_row_report(rows: Rows) -> anyhow::Error {
+    let what = match rows {
+        Rows::Top => "this report is already a row array".to_string(),
+        Rows::Field(key) => format!("this report's rows are already its `{key}` field"),
+    };
+    invalid(format!(
+        "`--rows` applies to a single-object report; {what}"
+    ))
+}
+
+/// The array `--rows` names on a single report.
+fn check_rows_path(report: &JsonValue, path: &str) -> Result<()> {
+    validate_paths(std::slice::from_ref(report), [path], "--rows")?;
+    if is_wildcard_path(path) {
+        return Err(invalid(format!(
+            "--rows path `{path}`: `*` is not allowed; name one array"
+        )));
+    }
+    match navigate_json(report, path) {
+        Some(JsonValue::Array(_)) => Ok(()),
+        Some(v) => Err(invalid(format!(
+            "--rows path `{path}` is not an array (found {})",
+            json_type_name(v)
+        ))),
+        None => Err(invalid(format!("--rows path `{path}` matches no field"))),
+    }
+}
+
 fn validate_shaping_paths(
     rows: &[JsonValue],
     opts: &OutputOpts,
@@ -361,33 +478,155 @@ fn validate_shaping_paths(
     Ok(())
 }
 
-/// `emit` for a single-object report, by reference: only `--select` builds
-/// a new value, so the report itself is never cloned.
+/// `--omit` paths are valid when some row carries one, or failing that the
+/// header does: either is a place the paths are dropped from.
+fn validate_omit_paths(
+    rows: &[JsonValue],
+    header: Option<&JsonValue>,
+    paths: &[String],
+) -> Result<()> {
+    let names = || paths.iter().map(String::as_str);
+    let on_rows = validate_paths(rows, names(), "--omit");
+    match header {
+        Some(h)
+            if on_rows.is_err()
+                && validate_paths(std::slice::from_ref(h), names(), "--omit").is_ok() =>
+        {
+            Ok(())
+        }
+        _ => on_rows,
+    }
+}
+
+/// Remove the value at `segs` from `v`; a `*` segment walks every element
+/// or value, and a branch that does not resolve is left alone.
+fn omit_path(v: &mut JsonValue, segs: &[&str]) {
+    let Some((&seg, rest)) = segs.split_first() else {
+        return;
+    };
+    if rest.is_empty() {
+        match v {
+            JsonValue::Object(map) if seg == WILDCARD => map.clear(),
+            JsonValue::Object(map) => {
+                map.shift_remove(seg);
+            }
+            JsonValue::Array(arr) if seg == WILDCARD => arr.clear(),
+            JsonValue::Array(arr) => {
+                if let Ok(i) = seg.parse::<usize>()
+                    && i < arr.len()
+                {
+                    arr.remove(i);
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
+    match v {
+        JsonValue::Object(map) if seg == WILDCARD => {
+            map.values_mut().for_each(|c| omit_path(c, rest));
+        }
+        JsonValue::Object(map) => {
+            if let Some(c) = map.get_mut(seg) {
+                omit_path(c, rest);
+            }
+        }
+        JsonValue::Array(arr) if seg == WILDCARD => {
+            arr.iter_mut().for_each(|c| omit_path(c, rest));
+        }
+        JsonValue::Array(arr) => {
+            if let Some(c) = seg.parse::<usize>().ok().and_then(|i| arr.get_mut(i)) {
+                omit_path(c, rest);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn omit_paths(v: &mut JsonValue, paths: &[String]) {
+    for p in paths {
+        omit_path(v, &p.split('.').collect::<Vec<_>>());
+    }
+}
+
+/// Cut every string inside `v` to `n` Unicode scalars, marking how many were
+/// cut. Not idempotent (the marker lengthens a cut string), so each value is
+/// walked once.
+fn cap_strings(v: &mut JsonValue, n: usize) {
+    match v {
+        JsonValue::String(s) => {
+            if s.char_indices().nth(n).is_some() {
+                *s = truncate_text(s, n).into_owned();
+            }
+        }
+        JsonValue::Array(arr) => arr.iter_mut().for_each(|c| cap_strings(c, n)),
+        JsonValue::Object(map) => map.values_mut().for_each(|c| cap_strings(c, n)),
+        _ => {}
+    }
+}
+
+/// `--omit` then `--max-chars` over one row, header or single report.
+fn trim(v: &mut JsonValue, opts: &OutputOpts) {
+    if let Some(paths) = &opts.omit {
+        omit_paths(v, paths);
+    }
+    if let Some(n) = opts.max_chars {
+        cap_strings(v, n);
+    }
+}
+
+/// `emit` for a single-object report, by reference: only `--select`,
+/// `--omit`, `--max-chars` and `--rows` build a new value, so the report
+/// itself is otherwise never cloned.
 fn emit_one(report: &JsonValue, style: Style, opts: &OutputOpts) -> Result<Emitted> {
     if opts.quiet {
         return Ok(Emitted::default());
     }
+    if opts.header {
+        return Err(invalid(HEADER_ON_ONE));
+    }
+    if let Some(path) = &opts.rows {
+        check_rows_path(report, path)?;
+        let at = RowsAt::Field(path);
+        let mut report = report.clone();
+        let rows = row_slot(&mut report, at)
+            .map(std::mem::take)
+            .unwrap_or_default();
+        return emit_rows(report, at, rows, style, opts, None);
+    }
     let template = opts.template.as_deref().map(Template::parse).transpose()?;
     validate_shaping_paths(std::slice::from_ref(report), opts, template.as_ref())?;
+    if let Some(paths) = &opts.omit {
+        validate_omit_paths(std::slice::from_ref(report), None, paths)?;
+    }
     if opts.limit.is_some() {
         return Err(invalid(LIMIT_ON_ONE));
     }
-    let projected;
-    let report = match &opts.select {
-        Some(paths) => {
-            projected = project(report, paths);
-            &projected
-        }
-        None => report,
+    if let Some(flag) = opts.filters.first_set() {
+        return Err(invalid(format!(
+            "`{flag}` applies to row reports; this command prints a single object (use --rows <PATH> to filter one of its arrays)"
+        )));
+    }
+    let mut shaped = match &opts.select {
+        Some(paths) => Cow::Owned(project(report, paths)),
+        None => Cow::Borrowed(report),
     };
+    if opts.omit.is_some() || opts.max_chars.is_some() {
+        trim(shaped.to_mut(), opts);
+    }
+    let report: &JsonValue = &shaped;
     let mut out = Vec::new();
     if let Some(path) = &opts.get {
-        match navigate_json(report, path) {
-            Some(JsonValue::Array(items)) => items
-                .iter()
-                .for_each(|v| push_line(&mut out, &value_text(v))),
-            Some(v) => push_line(&mut out, &value_text(v)),
-            None => {}
+        // A plain path naming an array spreads it one element per line; a
+        // `*` path prints each match on its own line, an array match whole.
+        let wildcard = is_wildcard_path(path);
+        for v in navigate_json_all(report, path) {
+            match v {
+                JsonValue::Array(items) if !wildcard => items
+                    .iter()
+                    .for_each(|v| push_line(&mut out, &value_text(v))),
+                v => push_line(&mut out, &value_text(v)),
+            }
         }
     } else if let Some(t) = &template {
         push_line(&mut out, &t.render(report));
@@ -401,73 +640,131 @@ fn emit_one(report: &JsonValue, style: Style, opts: &OutputOpts) -> Result<Emitt
     })
 }
 
-/// Apply `opts` to one report. Order: `-q`, `--limit`, `--select`, then
-/// `--get` / `--template`, then `--lines` or `style`. Paths are validated
-/// against every row before `--limit` cuts any. A report without its
-/// declared rows is emitted as one object.
+/// Apply `opts` to one report. Order: `-q`, `--rows` / `--header`, path
+/// validation against every row, `--where*`, `--limit`, `--omit` /
+/// `--select`, `--max-chars`, then `--get` / `--template`, then `--lines` or
+/// `style`. A report without its declared rows is emitted as one object.
+///
+/// The list verbs filter in their query engine and reach this through
+/// `print_query_list`, whose `query_opts` drops `--where*`. A list-like verb
+/// that calls `print_report` over rows already filtered by its `QueryArgs`
+/// would filter twice, and after a `--select` projection the second pass
+/// could drop every row.
 pub(crate) fn emit(
     mut report: JsonValue,
     shape: Shape,
     style: Style,
     opts: &OutputOpts,
 ) -> Result<Emitted> {
-    let (rows_shape, mut rows) = match (shape, row_slot(&mut report, shape)) {
-        (Shape::Rows(r), Some(slot)) => (r, std::mem::take(slot)),
-        _ => return emit_one(&report, style, opts),
+    let (declared, rows) = match shape {
+        Shape::Rows(r) => match row_slot(&mut report, r.into()) {
+            Some(slot) => (r, std::mem::take(slot)),
+            None => return emit_one(&report, style, opts),
+        },
+        Shape::One => return emit_one(&report, style, opts),
     };
     if opts.quiet {
         return Ok(Emitted::default());
     }
+    if opts.rows.is_some() {
+        return Err(rows_on_row_report(declared));
+    }
+    if opts.header {
+        let Rows::Field(key) = declared else {
+            return Err(invalid(HEADER_ON_TOP));
+        };
+        detach(&mut report, key);
+        let opts = OutputOpts {
+            header: false,
+            ..opts.clone()
+        };
+        return emit_one(&report, style, &opts);
+    }
+    emit_rows(report, declared.into(), rows, style, opts, None)
+}
+
+/// `emit` once the rows are out of `report`; `at` is where they go back.
+/// `precut` reports rows a query engine's `--limit` already dropped, in the
+/// same `limited` form a cut made here takes.
+fn emit_rows(
+    mut report: JsonValue,
+    at: RowsAt<'_>,
+    mut rows: Vec<JsonValue>,
+    style: Style,
+    opts: &OutputOpts,
+    precut: Option<Cut>,
+) -> Result<Emitted> {
     let template = opts.template.as_deref().map(Template::parse).transpose()?;
     validate_shaping_paths(&rows, opts, template.as_ref())?;
+    if let Some(paths) = &opts.omit {
+        let header = matches!(at, RowsAt::Field(_)).then_some(&report);
+        validate_omit_paths(&rows, header, paths)?;
+    }
+    query::json_rows::filter(&mut rows, &opts.filters.predicates()?)?;
 
-    let mut limited = None;
+    let mut limited = precut;
     if let Some(n) = opts.limit
         && rows.len() > n
     {
-        limited = Some((n, rows.len()));
+        limited = Some(Cut {
+            shown: n,
+            total: rows.len(),
+        });
         rows.truncate(n);
     }
 
     if let Some(paths) = &opts.select {
         rows.iter_mut().for_each(|r| *r = project(r, paths));
     }
+    let trims = opts.omit.is_some() || opts.max_chars.is_some();
+    if trims {
+        rows.iter_mut().for_each(|r| trim(r, opts));
+    }
 
-    let notice = limited.map(|(n, total)| format!("tomlctl: showing {n} of {total} rows"));
+    let notice = limited.map(Cut::notice);
     let mut out = Vec::new();
     if opts.get.is_some() || template.is_some() {
-        // A row lacking the `--get` path prints an empty line, as
+        // A row lacking a plain `--get` path prints an empty line, as
         // `--template` renders a missing key, so output stays one line per
-        // row.
+        // row. A `*` path prints one line per match instead, none for a row
+        // without any.
         for r in &rows {
-            let line = match (&opts.get, &template) {
-                (Some(path), _) => navigate_json(r, path).map(value_text),
-                (None, Some(t)) => Some(t.render(r)),
-                (None, None) => None,
-            };
-            push_line(&mut out, &line.unwrap_or_default());
+            match (&opts.get, &template) {
+                (Some(path), _) if is_wildcard_path(path) => navigate_json_all(r, path)
+                    .into_iter()
+                    .for_each(|v| push_line(&mut out, &value_text(v))),
+                (Some(path), _) => push_line(
+                    &mut out,
+                    &navigate_json(r, path).map(value_text).unwrap_or_default(),
+                ),
+                (None, Some(t)) => push_line(&mut out, &t.render(r)),
+                (None, None) => {}
+            }
         }
         return Ok(Emitted {
             stdout: out,
             notice,
         });
     }
-    if let Some(slot) = row_slot(&mut report, Shape::Rows(rows_shape)) {
+    // The header is trimmed while its row slot is still empty, so no row is
+    // walked twice. Omitting the row field itself drops the rows with it.
+    if trims && matches!(at, RowsAt::Field(_)) {
+        trim(&mut report, opts);
+    }
+    if let Some(slot) = row_slot(&mut report, at) {
         *slot = rows;
     }
 
-    let limited_json =
-        limited.map(|(shown, total)| serde_json::json!({ "shown": shown, "total": total }));
-    match (rows_shape, limited_json) {
-        (Rows::Field(_), Some(l)) => {
+    match (at, limited.map(Cut::header)) {
+        (RowsAt::Field(_), Some(l)) => {
             if let Some(obj) = report.as_object_mut() {
                 obj.insert("limited".to_string(), l);
             }
         }
-        (Rows::Top, Some(l)) if !opts.lines => {
+        (RowsAt::Top, Some(l)) if !opts.lines => {
             report = serde_json::json!({ "rows": report, "limited": l });
         }
-        (Rows::Top, Some(l)) => {
+        (RowsAt::Top, Some(l)) => {
             push_json(
                 &mut out,
                 &serde_json::json!({ "limited": l }),
@@ -478,7 +775,7 @@ pub(crate) fn emit(
     }
 
     if opts.lines {
-        for line in &report_lines(report, rows_shape) {
+        for line in &lines_at(report, at) {
             push_json(&mut out, line, Style::Compact)?;
         }
     } else {
@@ -580,65 +877,133 @@ fn compact_lenient(
 /// under `-q` so its errors still decide the exit code. Under `--get` or
 /// `--template` the caller takes the non-streaming path through
 /// `print_query` instead.
-pub(crate) fn stdout_stream(f: impl FnOnce(&mut dyn Write) -> Result<()>) -> Result<()> {
+pub(crate) fn stdout_stream<T>(f: impl FnOnce(&mut dyn Write) -> Result<T>) -> Result<T> {
     if opts().quiet {
         return f(&mut std::io::sink());
     }
     let stdout = std::io::stdout();
     let mut h = stdout.lock();
-    f(&mut h)?;
+    let out = f(&mut h)?;
     h.flush()?;
-    Ok(())
+    Ok(out)
 }
 
-/// Whether the output options leave a query list free to stream.
+/// Report on stderr a `--limit` cut that a query list's output has no place
+/// for; withheld under `-q`, and under `--error-format json` as in
+/// `write_emitted`.
+fn report_cut(cut: Option<Cut>, opts: &OutputOpts) -> Result<()> {
+    if opts.quiet {
+        return Ok(());
+    }
+    let emitted = Emitted {
+        stdout: Vec::new(),
+        notice: cut.map(Cut::notice),
+    };
+    write_emitted(emitted, opts)
+}
+
+/// Whether the output options leave a query list free to stream: every
+/// option the engine does not consume needs the whole row set.
 pub(crate) fn streaming_allowed() -> bool {
     let o = opts();
-    o.get.is_none() && o.template.is_none()
+    o.get.is_none() && o.template.is_none() && o.omit.is_none() && o.max_chars.is_none()
 }
 
 /// The options that still apply to a query list's output once its engine
 /// has consumed `--select`, `--limit`, `--lines` and the `--where*` filters,
-/// which reach it through the list verb's merged `QueryArgs`.
-fn query_opts(opts: &OutputOpts) -> OutputOpts {
+/// which reach it through the list verb's merged `QueryArgs`. `lines` is the
+/// engine's own line encoding, which this output has to reproduce when the
+/// options kept it from streaming.
+fn query_opts(opts: &OutputOpts, lines: bool) -> OutputOpts {
     OutputOpts {
         get: opts.get.clone(),
         template: opts.template.clone(),
+        omit: opts.omit.clone(),
+        max_chars: opts.max_chars,
         quiet: opts.quiet,
         json_errors: opts.json_errors,
+        lines,
         ..OutputOpts::default()
     }
 }
 
-/// Emit a query list's engine output: rows when it is an array, one value
-/// otherwise.
-pub(crate) fn print_query(out: JsonValue) -> Result<()> {
-    let o = query_opts(opts());
-    let shape = if out.is_array() {
-        Shape::Rows(Rows::Top)
+/// A list verb's rows are its listed items, so `--rows` and `--header` have
+/// nothing to reshape; refused rather than dropped by `query_opts`.
+fn refuse_row_flags_on_list(opts: &OutputOpts) -> Result<()> {
+    let flag = if opts.rows.is_some() {
+        "--rows"
+    } else if opts.header {
+        "--header"
     } else {
-        Shape::One
+        return Ok(());
     };
-    let emitted = emit(out, shape, Style::Pretty, &o)?;
+    Err(invalid(format!(
+        "`{flag}` does not apply to a list verb: its rows are the listed items"
+    )))
+}
+
+/// Emit a query list's engine output: rows when it is an array, one value
+/// otherwise; `lines` writes a streamable shape one row per line. `cut` is
+/// the rows the engine's `--limit` dropped: a `limited` header when
+/// `in_band` (wrapping pretty rows, or leading the lines), a stderr notice
+/// otherwise.
+pub(crate) fn print_query(
+    out: JsonValue,
+    lines: bool,
+    cut: Option<Cut>,
+    in_band: bool,
+) -> Result<()> {
+    let o = query_opts(opts(), lines);
+    let emitted = match out {
+        JsonValue::Array(rows) if in_band && cut.is_some() && !o.quiet => emit_rows(
+            JsonValue::Array(Vec::new()),
+            RowsAt::Top,
+            rows,
+            Style::Pretty,
+            &o,
+            cut,
+        )?,
+        out => {
+            let shape = if out.is_array() {
+                Shape::Rows(Rows::Top)
+            } else {
+                Shape::One
+            };
+            let mut emitted = emit(out, shape, Style::Pretty, &o)?;
+            if !in_band && !o.quiet && emitted.notice.is_none() {
+                emitted.notice = cut.map(Cut::notice);
+            }
+            emitted
+        }
+    };
     write_emitted(emitted, &o)
 }
 
 /// Run `q` over `doc`'s `array` and emit the result: streamed line by line
-/// when `--ndjson`/`--lines` meets a streamable shape and no `--get` or
-/// `--template` needs the whole row set, otherwise buffered through
-/// `emit_list_raw` or `print_query`.
+/// when `--ndjson`/`--lines` meets a streamable shape and no output option
+/// needs the whole row set, otherwise buffered through `emit_list_raw` or
+/// `print_query`. A `--limit` cut of row or pluck output is reported per
+/// `Query::cut_in_band`; an aggregate's is not reported.
 pub(crate) fn print_query_list(doc: &toml::Value, array: &str, q: &query::Query) -> Result<()> {
+    refuse_row_flags_on_list(opts())?;
     // Aggregation shapes ignore `--ndjson`: their output is one value. A
     // streamed `--pluck` mirrors `apply_pluck`'s null/missing drop, and under
     // `--raw` writes bare values per line.
-    if q.ndjson && q.shape.is_streamable() && streaming_allowed() {
-        return stdout_stream(|mut w| query::run_streaming(doc, array, q, &mut w));
+    let line_rows = q.per_line() && q.shape.is_streamable();
+    if line_rows && streaming_allowed() {
+        let cut = stdout_stream(|mut w| query::run_streaming(doc, array, q, &mut w))?;
+        if q.cut_in_band() {
+            return Ok(());
+        }
+        return report_cut(cut, opts());
     }
-    let out = query::run(doc, array, q)?;
+    let (out, cut) = query::run_counted(doc, array, q)?;
+    let cut = cut.filter(|_| q.shape.is_streamable());
     if q.raw {
-        emit_list_raw(&out, &q.shape)
+        emit_list_raw(&out, &q.shape)?;
+        report_cut(cut, opts())
     } else {
-        print_query(out)
+        print_query(out, line_rows, cut, q.cut_in_band())
     }
 }
 
@@ -785,33 +1150,31 @@ pub(crate) enum Rows {
     Field(&'static str),
 }
 
-/// The `--lines` encoding of a report: under `Rows::Field`, the other fields
-/// as one header line first (so a truncated read keeps the totals and
-/// hazards), omitted when there are none; then one line per row. A report
-/// that does not have the declared shape is one line.
-pub(crate) fn report_lines(report: JsonValue, rows: Rows) -> Vec<JsonValue> {
-    match (rows, report) {
-        (Rows::Top, JsonValue::Array(rows)) => rows,
-        (Rows::Field(key), JsonValue::Object(mut header))
-            if header.get(key).is_some_and(JsonValue::is_array) =>
-        {
-            let rows = match header.shift_remove(key) {
-                Some(JsonValue::Array(rows)) => rows,
-                _ => Vec::new(),
-            };
-            let mut lines = Vec::with_capacity(rows.len() + 1);
-            if !header.is_empty() {
-                lines.push(JsonValue::Object(header));
-            }
-            lines.extend(rows);
-            lines
-        }
-        (_, report) => vec![report],
+/// The `--lines` encoding of a report: with rows at a field, the rest of the
+/// report as one header line first (so a truncated read keeps the totals and
+/// hazards), omitted when it is an empty object; then one line per row. A
+/// report that does not have the declared shape is one line.
+fn lines_at(mut report: JsonValue, at: RowsAt<'_>) -> Vec<JsonValue> {
+    let RowsAt::Field(path) = at else {
+        return match report {
+            JsonValue::Array(rows) => rows,
+            report => vec![report],
+        };
+    };
+    let Some(rows) = row_slot(&mut report, at).map(std::mem::take) else {
+        return vec![report];
+    };
+    detach(&mut report, path);
+    let mut lines = Vec::with_capacity(rows.len() + 1);
+    if !report.as_object().is_some_and(serde_json::Map::is_empty) {
+        lines.push(report);
     }
+    lines.extend(rows);
+    lines
 }
 
 /// Emit a read verb's report: pretty JSON, or under `--lines` the
-/// `report_lines` encoding.
+/// `lines_at` encoding.
 pub(crate) fn print_report(report: JsonValue, rows: Rows) -> Result<()> {
     let o = opts();
     write_emitted(emit(report, Shape::Rows(rows), Style::Pretty, o)?, o)
@@ -860,7 +1223,18 @@ pub(crate) fn print_raw_value(v: &JsonValue, hint: RawArrayHint) -> Result<()> {
 /// tests. Those strings are pinned inside `ShapeDispatch::raw_emit` —
 /// see the trait impl in `query.rs`.
 pub(crate) fn emit_list_raw(v: &JsonValue, shape: &OutputShape) -> Result<()> {
-    let print = text_allowed(opts(), &["--get", "--template"])?;
+    let o = opts();
+    let print = text_allowed(o, &["--get", "--template", "--omit"])?;
+    let capped;
+    let v = match o.max_chars {
+        Some(n) => {
+            let mut c = v.clone();
+            cap_strings(&mut c, n);
+            capped = c;
+            &capped
+        }
+        None => v,
+    };
     let rendered = shape.raw_emit(v)?;
     if !print {
         return Ok(());
@@ -940,6 +1314,10 @@ mod tests {
 
     const TOP: Shape = Shape::Rows(Rows::Top);
     const FIELD: Shape = Shape::Rows(Rows::Field("items"));
+
+    fn report_lines(report: JsonValue, rows: Rows) -> Vec<JsonValue> {
+        lines_at(report, rows.into())
+    }
 
     #[test]
     fn inert_options_keep_the_default_bytes() {
@@ -1320,13 +1698,125 @@ mod tests {
 
     #[test]
     fn query_output_ignores_engine_consumed_flags() {
-        let o = query_opts(&with(|o| {
-            o.select = Some(vec!["x".into()]);
-            o.limit = Some(1);
-            o.lines = true;
-            o.get = Some("id".into());
-        }));
+        let o = query_opts(
+            &with(|o| {
+                o.select = Some(vec!["x".into()]);
+                o.limit = Some(1);
+                o.lines = true;
+                o.get = Some("id".into());
+            }),
+            false,
+        );
         assert_eq!(out(rows3(), TOP, Style::Pretty, &o), "1\n2\n3\n");
+    }
+
+    fn long_rows() -> JsonValue {
+        json!([
+            { "id": 1, "detail": "abcdefghij", "tags": ["0123456789"], "n": { "s": "xyzxyzxyz" } },
+            { "id": 2, "detail": "short" }
+        ])
+    }
+
+    #[test]
+    fn max_chars_cuts_every_string_after_projection() {
+        let o = with(|o| {
+            o.max_chars = Some(4);
+            o.lines = true;
+        });
+        assert_eq!(
+            out(long_rows(), TOP, Style::Pretty, &o),
+            "{\"id\":1,\"detail\":\"abcd…(+6)\",\"tags\":[\"0123…(+6)\"],\"n\":{\"s\":\"xyzx…(+5)\"}}\n\
+             {\"id\":2,\"detail\":\"shor…(+1)\"}\n"
+        );
+        let o = with(|o| {
+            o.max_chars = Some(3);
+            o.select = Some(vec!["detail".into()]);
+        });
+        assert_eq!(
+            out(long_rows(), TOP, Style::Compact, &o),
+            "[{\"detail\":\"abc…(+7)\"},{\"detail\":\"sho…(+2)\"}]\n"
+        );
+    }
+
+    #[test]
+    fn max_chars_caps_get_output_and_the_header() {
+        let o = with(|o| {
+            o.max_chars = Some(2);
+            o.get = Some("detail".into());
+        });
+        assert_eq!(
+            out(long_rows(), TOP, Style::Pretty, &o),
+            "ab…(+8)\nsh…(+3)\n"
+        );
+        let o = with(|o| {
+            o.max_chars = Some(2);
+            o.get = Some("title".into());
+        });
+        assert_eq!(
+            out(json!({ "title": "héllo" }), Shape::One, Style::Pretty, &o),
+            "hé…(+3)\n"
+        );
+        let report = json!({ "note": "header text", "items": long_rows() });
+        let o = with(|o| {
+            o.max_chars = Some(3);
+            o.lines = true;
+            o.select = Some(vec!["id".into()]);
+        });
+        assert_eq!(
+            out(report, FIELD, Style::Pretty, &o),
+            "{\"note\":\"hea…(+8)\"}\n{\"id\":1}\n{\"id\":2}\n"
+        );
+    }
+
+    #[test]
+    fn omit_drops_paths_from_rows_and_the_header() {
+        let o = with(|o| {
+            o.omit = Some(vec!["detail".into(), "n.s".into(), "note".into()]);
+            o.lines = true;
+        });
+        let report = json!({ "note": "x", "total": 2, "items": long_rows() });
+        assert_eq!(
+            out(report, FIELD, Style::Pretty, &o),
+            "{\"total\":2}\n{\"id\":1,\"tags\":[\"0123456789\"],\"n\":{}}\n{\"id\":2}\n"
+        );
+        let o = with(|o| o.omit = Some(vec!["deps.*.files".into(), "title".into()]));
+        assert_eq!(
+            out(show_report(), Shape::One, Style::Compact, &o),
+            "{\"id\":3,\"deps\":[{\"id\":1,\"ref\":\"a\"},{\"id\":2,\"ref\":\"b\"}]}\n"
+        );
+    }
+
+    #[test]
+    fn omit_refuses_a_path_nothing_carries() {
+        let o = with(|o| o.omit = Some(vec!["nope".into()]));
+        let e = emit(long_rows(), TOP, Style::Pretty, &o).unwrap_err();
+        assert_eq!(tag(&e), "validation");
+        assert_eq!(
+            format!("{e:#}"),
+            "--omit path `nope` matches no field; available fields: id, detail, tags, n"
+        );
+        assert!(
+            err(show_report(), Shape::One, &o).starts_with("--omit path `nope` matches no field")
+        );
+        let report = json!({ "note": "x", "items": long_rows() });
+        let o = with(|o| o.omit = Some(vec!["note".into()]));
+        emit(report, FIELD, Style::Pretty, &o).unwrap();
+    }
+
+    #[test]
+    fn query_output_keeps_omit_and_max_chars() {
+        let o = query_opts(
+            &with(|o| {
+                o.omit = Some(vec!["n".into(), "tags".into()]);
+                o.max_chars = Some(1);
+                o.limit = Some(1);
+            }),
+            true,
+        );
+        assert_eq!(
+            out(long_rows(), TOP, Style::Pretty, &o),
+            "{\"id\":1,\"detail\":\"a…(+9)\"}\n{\"id\":2,\"detail\":\"s…(+4)\"}\n"
+        );
     }
 
     #[test]
@@ -1541,6 +2031,205 @@ mod tests {
         );
         let o = with(|o| o.max_chars = Some(3));
         assert!(text_allowed(&o, ALL_SHAPING).is_err());
+    }
+
+    fn show_report() -> JsonValue {
+        json!({
+            "id": 3,
+            "title": "t",
+            "deps": [
+                { "id": 1, "ref": "a", "files": ["x.rs", "y.rs"] },
+                { "id": 2, "ref": "b", "files": ["z.rs"] }
+            ]
+        })
+    }
+
+    fn tag(e: &anyhow::Error) -> &'static str {
+        e.downcast_ref::<crate::errors::TaggedError>()
+            .map_or("untagged", |t| t.kind.as_str())
+    }
+
+    #[test]
+    fn rows_reroots_a_single_report_onto_a_nested_array() {
+        let o = with(|o| {
+            o.rows = Some("deps".into());
+            o.get = Some("ref".into());
+        });
+        assert_eq!(out(show_report(), Shape::One, Style::Pretty, &o), "a\nb\n");
+        let o = with(|o| {
+            o.rows = Some("deps".into());
+            o.lines = true;
+            o.select = Some(vec!["id".into()]);
+        });
+        assert_eq!(
+            out(show_report(), Shape::One, Style::Pretty, &o),
+            "{\"id\":3,\"title\":\"t\"}\n{\"id\":1}\n{\"id\":2}\n"
+        );
+        let o = with(|o| {
+            o.rows = Some("deps".into());
+            o.limit = Some(1);
+        });
+        let v: JsonValue =
+            serde_json::from_str(&out(show_report(), Shape::One, Style::Compact, &o)).unwrap();
+        assert_eq!(
+            v["deps"],
+            json!([{ "id": 1, "ref": "a", "files": ["x.rs", "y.rs"] }])
+        );
+        assert_eq!(v["limited"], json!({ "shown": 1, "total": 2 }));
+    }
+
+    #[test]
+    fn rows_takes_a_dotted_path() {
+        let report = json!({ "ok": true, "plan": { "n": 2, "steps": [{ "s": 1 }, { "s": 2 }] } });
+        let o = with(|o| {
+            o.rows = Some("plan.steps".into());
+            o.lines = true;
+        });
+        assert_eq!(
+            out(report, Shape::One, Style::Pretty, &o),
+            "{\"ok\":true,\"plan\":{\"n\":2}}\n{\"s\":1}\n{\"s\":2}\n"
+        );
+    }
+
+    #[test]
+    fn rows_is_refused_on_a_row_report_naming_its_row_field() {
+        let o = with(|o| o.rows = Some("deps".into()));
+        let report = json!({ "total": 3, "items": rows3() });
+        let e = emit(report, FIELD, Style::Pretty, &o).unwrap_err();
+        assert_eq!(tag(&e), "validation");
+        assert_eq!(
+            format!("{e:#}"),
+            "`--rows` applies to a single-object report; this report's rows are already its `items` field"
+        );
+        assert!(err(rows3(), TOP, &o).ends_with("this report is already a row array"));
+    }
+
+    #[test]
+    fn rows_must_name_one_array() {
+        let msg = |path: &str| {
+            let o = with(|o| o.rows = Some(path.into()));
+            let e = emit(show_report(), Shape::One, Style::Pretty, &o).unwrap_err();
+            assert_eq!(tag(&e), "validation");
+            format!("{e:#}")
+        };
+        assert_eq!(
+            msg("title"),
+            "--rows path `title` is not an array (found string)"
+        );
+        assert!(
+            msg("nope").starts_with(
+                "--rows path `nope` matches no field; available fields: id, title, deps"
+            )
+        );
+        assert!(msg("deps.*.files").contains("`*` is not allowed"));
+    }
+
+    #[test]
+    fn header_shapes_the_report_minus_its_rows() {
+        let report = json!({ "verdict": "novel", "dedup_id": "d1", "items": rows3() });
+        let o = with(|o| {
+            o.header = true;
+            o.get = Some("verdict".into());
+        });
+        assert_eq!(out(report.clone(), FIELD, Style::Pretty, &o), "novel\n");
+        let o = with(|o| o.header = true);
+        assert_eq!(
+            out(report.clone(), FIELD, Style::Compact, &o),
+            "{\"verdict\":\"novel\",\"dedup_id\":\"d1\"}\n"
+        );
+        let o = with(|o| {
+            o.header = true;
+            o.get = Some("id".into());
+        });
+        assert!(err(report, FIELD, &o).starts_with("--get path `id` matches no field"));
+    }
+
+    #[test]
+    fn header_is_refused_on_a_bare_row_array_and_a_single_report() {
+        let o = with(|o| o.header = true);
+        let e = emit(rows3(), TOP, Style::Pretty, &o).unwrap_err();
+        assert_eq!(tag(&e), "validation");
+        assert_eq!(format!("{e:#}"), HEADER_ON_TOP);
+        let e = emit(json!({ "a": 1 }), Shape::One, Style::Pretty, &o).unwrap_err();
+        assert_eq!(tag(&e), "validation");
+        assert_eq!(format!("{e:#}"), HEADER_ON_ONE);
+    }
+
+    #[test]
+    fn where_filters_rows_before_limit_counts_them() {
+        let o = with(|o| {
+            o.filters.where_not = vec!["ref=a".into()];
+            o.limit = Some(1);
+            o.get = Some("id".into());
+        });
+        let e = emit(rows3(), TOP, Style::Pretty, &o).unwrap();
+        assert_eq!(String::from_utf8(e.stdout).unwrap(), "2\n");
+        assert_eq!(e.notice.as_deref(), Some("tomlctl: showing 1 of 2 rows"));
+        let o = with(|o| {
+            o.filters.where_eq = vec!["deps=2".into()];
+            o.get = Some("ref".into());
+        });
+        assert_eq!(out(rows3(), TOP, Style::Pretty, &o), "a\n");
+        let o = with(|o| {
+            o.rows = Some("deps".into());
+            o.filters.where_eq = vec!["files=z.rs".into()];
+            o.get = Some("ref".into());
+        });
+        assert_eq!(out(show_report(), Shape::One, Style::Pretty, &o), "b\n");
+    }
+
+    #[test]
+    fn where_on_a_single_report_without_rows_names_rows() {
+        let o = with(|o| o.filters.where_has = vec!["deps".into()]);
+        let e = emit(show_report(), Shape::One, Style::Pretty, &o).unwrap_err();
+        assert_eq!(tag(&e), "validation");
+        let msg = format!("{e:#}");
+        assert!(
+            msg.starts_with("`--where-has` applies to row reports"),
+            "{msg}"
+        );
+        assert!(msg.contains("--rows"), "{msg}");
+        let (e, warning) = compact_lenient(&json!({ "ok": true }), Shape::One, &o).unwrap();
+        assert_eq!(String::from_utf8(e.stdout).unwrap(), "{\"ok\":true}\n");
+        assert!(
+            warning
+                .unwrap()
+                .contains("`--where-has` applies to row reports")
+        );
+    }
+
+    #[test]
+    fn wildcard_get_prints_each_match() {
+        let o = with(|o| o.get = Some("deps.*.ref".into()));
+        assert_eq!(out(show_report(), Shape::One, Style::Pretty, &o), "a\nb\n");
+        let o = with(|o| o.get = Some("deps.*.files".into()));
+        assert_eq!(
+            out(show_report(), Shape::One, Style::Pretty, &o),
+            "[\"x.rs\",\"y.rs\"]\n[\"z.rs\"]\n"
+        );
+        let o = with(|o| {
+            o.rows = Some("deps".into());
+            o.get = Some("files.*".into());
+        });
+        assert_eq!(
+            out(show_report(), Shape::One, Style::Pretty, &o),
+            "x.rs\ny.rs\nz.rs\n"
+        );
+        let o = with(|o| o.get = Some("deps.ref".into()));
+        assert!(
+            err(show_report(), Shape::One, &o)
+                .starts_with("--get path `deps.ref` matches no field")
+        );
+    }
+
+    #[test]
+    fn list_verbs_refuse_rows_and_header() {
+        let e = refuse_row_flags_on_list(&with(|o| o.rows = Some("deps".into()))).unwrap_err();
+        assert_eq!(tag(&e), "validation");
+        assert!(format!("{e:#}").starts_with("`--rows` does not apply to a list verb"));
+        let e = refuse_row_flags_on_list(&with(|o| o.header = true)).unwrap_err();
+        assert!(format!("{e:#}").starts_with("`--header` does not apply to a list verb"));
+        refuse_row_flags_on_list(&with(|o| o.limit = Some(1))).unwrap();
     }
 
     /// The root-level `--where` values and the `tasks list` engine's own,

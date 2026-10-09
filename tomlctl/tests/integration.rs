@@ -1152,8 +1152,12 @@ fn items_list_sort_by_asc_then_limit() {
     let stdout = run_list_query(&["--sort-by", "first_flagged", "--limit", "2"]);
     let v: serde_json::Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("stdout must be JSON: {e}; stdout:\n{stdout}"));
-    let arr = v.as_array().expect("list output is an array");
+    // A cut list is wrapped with its `limited` header.
+    let arr = v["rows"]
+        .as_array()
+        .expect("a cut list carries its rows in `rows`");
     assert_eq!(arr.len(), 2);
+    assert_eq!(v["limited"], serde_json::json!({ "shown": 2, "total": 6 }));
     // Fixture earliest → latest:
     //   R1 (2026-03-10), R3 (2026-03-25), R2 (2026-04-02), R5 (2026-04-05),
     //   R4 (2026-04-10), R6 (2026-04-15).
@@ -1319,7 +1323,9 @@ fn items_list_sort_by_desc_reverses() {
     let stdout = run_list_query(&["--sort-by", "first_flagged:desc", "--limit", "2"]);
     let v: serde_json::Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("stdout must be JSON: {e}; stdout:\n{stdout}"));
-    let arr = v.as_array().expect("list output is a JSON array");
+    let arr = v["rows"]
+        .as_array()
+        .expect("a cut list carries its rows in `rows`");
     let ids: Vec<&str> = arr
         .iter()
         .map(|el| el.get("id").and_then(|v| v.as_str()).unwrap_or(""))
