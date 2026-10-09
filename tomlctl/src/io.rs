@@ -2171,8 +2171,8 @@ pub(crate) fn warn_if_read_outside_claude(file: &Path) {
 ///
 /// Taking the *source bytes* (rather than a pre-computed digest) keeps the
 /// hash-and-format contract in one place — every caller already has the
-/// bytes in hand. Used by both `write_toml_with_sidecar` (first persist and
-/// its recovery branch) and `integrity::refresh_sidecar`.
+/// bytes in hand. Used by `write_toml_with_sidecar`'s recovery branch and
+/// `integrity::refresh_sidecar`.
 pub(crate) fn write_sidecar_for(file: &Path, bytes: &[u8]) -> Result<()> {
     atomic_write(
         &sidecar_path(file),
@@ -2205,11 +2205,11 @@ fn sidecar_contents(file: &Path, bytes: &[u8]) -> Result<String> {
 /// sidecar.
 ///
 /// Torn-sidecar safety: the hash is computed in memory from the serialised
-/// bytes BEFORE any rename, so both tempfiles (TOML + sidecar) are staged with
-/// byte-content that is guaranteed consistent. We then `persist()` the SIDECAR
-/// first and the TOML second (see below), both under the existing
+/// bytes, and both tempfiles (sidecar, then TOML) are written and data-synced
+/// BEFORE either rename, so a staging failure renames nothing. We then
+/// persist the SIDECAR first and the TOML second, both under the existing
 /// `<file>.lock` exclusive lock. A reader that interleaves between the two
-/// `persist()` calls either:
+/// renames either:
 ///   (a) sees the OLD TOML + OLD sidecar — hashes agree, passes integrity;
 ///   (b) sees the OLD TOML + NEW sidecar — the NEW sidecar's hash refers to
 ///       the not-yet-persisted NEW bytes, reader fails integrity but the next
@@ -2250,13 +2250,17 @@ fn write_serialized_with_sidecar(
         return atomic_write(path, bytes);
     }
 
-    // Persist SIDECAR first; if this fails, the TOML was never updated and
-    // the on-disk pair stays internally consistent (OLD + OLD). If sidecar
-    // succeeds, persist the TOML — under the same exclusive lock there is no
-    // concurrent writer, and any reader observing a mid-swap state lands on
-    // the recoverable combinations documented above.
-    write_sidecar_for(path, bytes)?;
-    let Err(e) = atomic_write(path, bytes) else {
+    // Stage both files before renaming either, so a staging failure leaves
+    // OLD + OLD untouched and the OLD TOML + NEW sidecar window spans one
+    // rename. Then persist SIDECAR first; if that fails, the pair stays
+    // OLD + OLD. Under the exclusive lock there is no concurrent writer, and
+    // a reader observing the mid-swap state lands on the recoverable
+    // combinations documented above.
+    let sidecar = sidecar_path(path);
+    let staged_sidecar = stage(&sidecar, sidecar_contents(path, bytes)?.as_bytes())?;
+    let staged_toml = stage(path, bytes)?;
+    commit(staged_sidecar, &sidecar)?;
+    let Err(e) = commit(staged_toml, path) else {
         return Ok(());
     };
     // The exclusive lock means no other writer touched the TOML, so the pair
@@ -2319,16 +2323,29 @@ fn is_transient_rename_error(err: &std::io::Error) -> bool {
 /// (e.g. parent missing — staging then surfaces the same underlying ENOENT
 /// with a clearer-context error message).
 pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+    commit(stage(path, bytes)?, path)
+}
+
+/// A fully written and data-synced file beside its target, awaiting
+/// `commit`. Dropping it uncommitted deletes the staged file.
+struct Staged {
+    temp: tempfile::TempPath,
+    /// Read only by the unix parent-directory fsync in `commit`.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    parent: PathBuf,
+}
+
+/// The staging half of `atomic_write`: everything up to the rename.
+fn stage(path: &Path, bytes: &[u8]) -> Result<Staged> {
     let raw_parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    let parent_buf = raw_parent
+    let parent = raw_parent
         .canonicalize()
         .unwrap_or_else(|_| raw_parent.to_path_buf());
-    let parent: &Path = &parent_buf;
     let mut tmp = tempfile::Builder::new()
-        .make_in(parent, |staged| {
+        .make_in(&parent, |staged| {
             let mut opts = std::fs::OpenOptions::new();
             opts.write(true).create_new(true);
             // The staged file's mode becomes the target's; keep the 0600
@@ -2348,22 +2365,31 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     // tempfile — only the data needs to reach stable storage before
     // the rename moves it into place. Tempfile metadata (owner,
     // mode, mtime) is not load-bearing for the post-rename target,
-    // and the parent-directory `sync_all()` below still flushes the
+    // and the parent-directory `sync_all()` in `commit` still flushes the
     // dirent update that makes the rename durable. Skipping the
     // metadata fsync trims one disk operation per atomic write.
     tmp.as_file()
         .sync_data()
         .with_context(|| format!("fsync temp file for {}", path.display()))?;
     // Closes the handle so the rename is not blocked by our own open file;
-    // dropping `staged` on an error path deletes the staged file.
-    let mut staged = tmp.into_temp_path();
+    // dropping the `TempPath` on an error path deletes the staged file.
+    Ok(Staged {
+        temp: tmp.into_temp_path(),
+        parent,
+    })
+}
+
+/// The commit half of `atomic_write`: rename `staged` onto `path`, retrying
+/// transient sharing violations, then (on unix) fsync the parent directory.
+fn commit(staged: Staged, path: &Path) -> Result<()> {
+    let mut temp = staged.temp;
     let mut attempt: u32 = 1;
     loop {
-        match std::fs::rename(&staged, path) {
+        match std::fs::rename(&temp, path) {
             Ok(()) => {
                 // The staged name no longer exists; stop the drop from
                 // removing whatever may later appear under it.
-                staged.disable_cleanup(true);
+                temp.disable_cleanup(true);
                 break;
             }
             Err(e) if attempt < PERSIST_ATTEMPTS && is_transient_rename_error(&e) => {
@@ -2384,7 +2410,8 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     // sync_all() pattern there is awkward and largely a no-op).
     #[cfg(unix)]
     {
-        let dir = std::fs::File::open(parent).with_context(|| {
+        let parent = staged.parent;
+        let dir = std::fs::File::open(&parent).with_context(|| {
             format!(
                 "opening parent {} for fsync after persist",
                 parent.display()
