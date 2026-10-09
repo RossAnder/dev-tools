@@ -35,11 +35,17 @@ Each cycle: (1) writes one failing test via the `test-author` skill, commits `re
 
 ## Cycle FSM
 
-Invoke the `flow-contract-execution-record-schema` skill before the first execution-record write to load the canonical schema (field set, type vocabulary, the heredoc append idiom, append-only + supersession, `--verify-integrity` read contract, field-length caps, and deterministic PROGRESS-LOG.md regeneration via `tomlctl flow render-progress-log`). `/tdd` writes `verification` and `task-completion` entries into cycle sub-flows and copies entries up to the parent record; all writes follow this contract.
+Invoke the `flow-contract-execution-record-schema` skill before the first execution-record write to load the canonical schema (field set, type vocabulary, the `flow record` write contract, append-only + supersession, `--verify-integrity` read contract, field-length caps, and deterministic PROGRESS-LOG.md regeneration via `tomlctl flow render-progress-log`). `/tdd` writes `verification` and `task-completion` entries into cycle sub-flows and copies entries up to the parent record; every write is a `tomlctl flow record` call. A cycle sub-flow has no task store, so `--task` cannot derive its `task_ref`: pass `--set task_ref=tdd-cycle-<NNN>-<short-name>` on every cycle write.
 
 Finite state machine RED → GREEN → REFACTOR → cycle decision (loop or stop), gated by recorded entries in the cycle sub-flow's `execution-record.toml`; states cannot be skipped or reordered.
 
-**RED**: author ONE failing test (`test-author` skill), then dispatch the `verification` agent (`subagent_type: "verification"`) with the parent's `test:` line as its one command — no `rerun:` and no `transient:`, since a retry exists to turn a failure green — and never run it in the main conversation. Require `outcome: fail`, with the new test among its `failed_ids:` when the block carries them: `pass` or `flaky` means the test does not reliably fail, so revise it; `timeout` proves nothing, so re-dispatch with a larger `timeout:`; a failure naming only other tests is a broken baseline, so halt. Append a `verification` entry with `outcome=fail`. Commit `red: <cycle-slug>`. Capture `red_test_fingerprint` **POST-COMMIT** from the `red:` commit's tree (NOT the working tree), excluding snapshot artifacts (`**/__snapshots__/**`, `*.snap*`, `**/snapshots/**`, `*.snapshot`, `.snap.new`). Fingerprint pipeline (single source of truth):
+**RED**: author ONE failing test (`test-author` skill), then dispatch the `verification` agent (`subagent_type: "verification"`) with the parent's `test:` line as its one command — no `rerun:` and no `transient:`, since a retry exists to turn a failure green — and never run it in the main conversation. Require `outcome: fail`, with the new test among its `failed_ids:` when the block carries them: `pass` or `flaky` means the test does not reliably fail, so revise it; `timeout` proves nothing, so re-dispatch with a larger `timeout:`; a failure naming only other tests is a broken baseline, so halt. Append a `verification` entry with `outcome=fail`:
+
+```bash
+tomlctl flow record --slug <parent-slug>-tdd-<NNN> --type verification --set agent=tdd --set task_ref=tdd-cycle-<NNN>-<short-name> --set command='<test-line>' --set outcome=fail --set-json failed_ids='["<test-id>"]' --set summary='RED: <test name> fails'
+```
+
+Drop `--set-json failed_ids` when the block carries none. Commit `red: <cycle-slug>`. Capture `red_test_fingerprint` **POST-COMMIT** from the `red:` commit's tree (NOT the working tree), excluding snapshot artifacts (`**/__snapshots__/**`, `*.snap*`, `**/snapshots/**`, `*.snapshot`, `.snap.new`). Fingerprint pipeline (single source of truth):
 
 ```
 git ls-tree -r <red-commit> -- <test-glob> | sha256sum | awk '{print $1}'
@@ -49,19 +55,23 @@ Per-language test-globs: rust `tests/**/*.rs` + `src/**/*.rs:#[cfg(test)]`; pyth
 
 **GREEN**: derive slugs — `<NNN>` = zero-padded 3-digit cycle counter (monotonic under the lockfile); `<short-name>` = first 4 words of the failing test, lowercased/hyphenated, ≤30 chars; collisions append `-2`, `-3`; cycle slug = `<parent-slug>-tdd-<NNN>` (flat, satisfies plan-new's `^[a-z0-9][a-z0-9-]{0,63}$`); sub-flow at `.claude/flows/<parent-slug>-tdd-<NNN>/`. Write a one-task mini-plan at `docs/plans/<parent-slug>/tdd/cycle-<NNN>-<short-name>.md` whose task `task_ref` is `tdd-cycle-<NNN>-<short-name>`, acceptance "`<test name>` passes", carrying the parent's `test:` line. Tag the task's effort explicitly — `/implement` treats an untagged task as `M`, which always goes deep: `[S]` only when you can name the non-test files the fix touches (at most 2) on its **Files** line and write a concrete **Action** for them, otherwise `[M]`. Bootstrap the sub-flow execution-record (see `## Cycle sub-flow layout`). Dispatch `/implement --flow <parent-slug>-tdd-<NNN>`. On return, recompute the fingerprint POST-COMMIT from the GREEN HEAD and require **strict equality** with RED's value.
 
-**Mismatch handling (do all three before halting)**: (1) revert the GREEN commit — `git revert --no-edit <green-sha>` by default; `git reset --hard HEAD~1` only on single-developer linear history with no push since GREEN; skip if `/implement` exited pre-commit. (2) Append a NEW superseding `task-completion` entry marking the cycle failed (do NOT mutate the original `status=done` in place):
+**Mismatch handling (do all three before halting)**: (1) revert the GREEN commit — `git revert --no-edit <green-sha>` by default; `git reset --hard HEAD~1` only on single-developer linear history with no push since GREEN; skip if `/implement` exited pre-commit. (2) Append a NEW superseding `task-completion` entry marking the cycle failed (do NOT mutate the original `status=done` in place). `flow record` requires the dispatch fields on every `task-completion`, so carry them over from the superseded entry — read them with `tomlctl items get <cycle-record> <E-id-of-original-done-entry> --select dispatch_tier,dispatch_agent,vet,retries`:
 
-```
-cat <<'EOF' | tomlctl items add <cycle-record> --json - --id-prefix E
-{"type":"task-completion","date":"<today>","agent":"tdd","task_ref":"tdd-cycle-<NNN>-<short-name>","summary":"GREEN fingerprint mismatch — reverted","files":[],"status":"failed","failure_reason":"fingerprint-mismatch","red_fingerprint":"<sha256-from-RED>","green_fingerprint":"<sha256-recomputed-at-GREEN>","supersedes_entry":"<E-id-of-original-done-entry>"}
-EOF
+```bash
+tomlctl flow record --slug <parent-slug>-tdd-<NNN> --type task-completion --set agent=tdd --set task_ref=tdd-cycle-<NNN>-<short-name> --set status=failed --set-json files='[]' --set dispatch_tier=<tier> --set dispatch_agent=<agent> --set vet=<vet> --set retries=<retries> --set failure_reason=fingerprint-mismatch --set red_fingerprint=<sha256-from-RED> --set green_fingerprint=<sha256-recomputed-at-GREEN> --set supersedes_entry=<E-id-of-original-done-entry> --set summary='GREEN fingerprint mismatch — reverted'
 ```
 
-`--id-prefix E` mints the entry's id under the write lock, and the add restamps the record's `last_updated` itself.
+The record mints the entry's id under the write lock, stamps its date, and restamps the record's `last_updated` itself.
 
 `failure_reason` is an optional discriminator (the schema's required set does not proscribe extra keys); the resume FSM pivots on `status=failed` AND `failure_reason="fingerprint-mismatch"` together, and both fingerprint hashes are retained for audit. (3) Halt without REFACTOR; do NOT advance the cycle counter; do NOT copy up to the parent (REFACTOR does that). Surface a diagnostic naming offending files (diff `git ls-tree -r <green-sha> -- <test-glob>` vs the RED tree). Resume contract: a `status=failed` + `failure_reason="fingerprint-mismatch"` entry is a **re-RED trigger for the SAME cycle-NNN** (not a fresh NNN+1); counter does not advance until the re-RED yields a clean GREEN. Commit `green: <cycle-slug>` only once the test passes AND the fingerprint matches. **Anti-cheat rule 2** (no test mutation) is the fingerprint diff.
 
-**REFACTOR**: run the coverage tool; if changed-line coverage <90%, append a follow-up parent task and re-enter GREEN as the next cycle (a follow-up outside the feature's plan scope goes to the backlog instead — see **Deferred follow-ups**). Otherwise optionally do a production-only refactor (same fingerprint check; revert on regression). Append a `task-completion` to the **parent** record with `task_ref` prefixed `tdd-cycle-<NNN>-<short-name>` and a re-minted `id`: drop the cycle's `id` from the payload and append with `tomlctl items add <parent-record> --json - --id-prefix E`. Copy up the cycle's `verification` entries with the same prefixing, ids dropped, in one `tomlctl items add-many <parent-record> --ndjson - --id-prefix E`, which mints a contiguous run in order.
+**REFACTOR**: run the coverage tool; if changed-line coverage <90%, append a follow-up parent task and re-enter GREEN as the next cycle (a follow-up outside the feature's plan scope goes to the backlog instead — see **Deferred follow-ups**). Otherwise optionally do a production-only refactor (same fingerprint check; revert on regression). Copy the cycle's `verification` entries and its `done` `task-completion` up to the **parent** record in one all-or-nothing call, each keeping its `tdd-cycle-<NNN>-<short-name>` `task_ref` and its cycle `date`, with the cycle `id` dropped so the parent re-mints a contiguous run in order:
+
+```bash
+tomlctl items list <cycle-record> --where-in type=verification,task-completion --where-not status=failed --omit id,dedup_id --ndjson | tomlctl flow record --slug <parent-slug> --ndjson -
+```
+
+`--where-not status=failed` leaves out the failed superseding entry of a re-RED, whose `supersedes_entry` names a cycle id the parent does not hold.
 
 **Cycle decision**: loop to RED for `<NNN+1>` if uncovered behaviour remains OR coverage gating appended a follow-up; stop when all feature behaviour is covered AND changed-line coverage ≥90% AND all tests pass. On stop, summarise cycles run, total commits, final coverage, and deferred follow-ups.
 
@@ -69,7 +79,7 @@ EOF
 
 ## Cycle sub-flow layout
 
-Each cycle gets a transient flow at `.claude/flows/<parent-slug>-tdd-<NNN>/` with its own `context.toml` (cycle slug, parent reference, persisted `red_test_fingerprint` + `test_globs`) and one-task `execution-record.toml`. **Bootstrap protocol** (idempotent): no explicit pre-create is needed — the first mutating `tomlctl items add` against the cycle `execution-record.toml` auto-creates and seeds it with the byte-identical `schema_version = 1` + `last_updated = <today>` skeleton and materialises its `.sha256` sidecar in the same transaction (the write success envelope carries `"created": true`). At completion, copy `task-completion` + `verification` entries up to the parent record (prefix + ID re-mint per REFACTOR), keeping the parent as audit source-of-truth and cycle noise isolated, then regenerate the parent's progress log:
+Each cycle gets a transient flow at `.claude/flows/<parent-slug>-tdd-<NNN>/` with its own `context.toml` (cycle slug, parent reference, persisted `red_test_fingerprint` + `test_globs`) and one-task `execution-record.toml`. **Bootstrap protocol** (idempotent): the cycle `context.toml` must exist before the first record write, because `flow record` refuses a slug without one (`kind=not_found`). No explicit pre-create of the record is needed — the first `flow record` against the cycle slug auto-creates `execution-record.toml` with the `schema_version = 1` skeleton and materialises its `.sha256` sidecar in the same write. At completion, copy `task-completion` + `verification` entries up to the parent record (ID re-mint per REFACTOR), keeping the parent as audit source-of-truth and cycle noise isolated, then regenerate the parent's progress log:
 
 ```bash
 tomlctl flow render-progress-log --slug <parent-slug>
