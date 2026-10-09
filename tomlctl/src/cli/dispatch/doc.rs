@@ -11,7 +11,7 @@ use crate::convert::{ScalarType, maybe_date_coerce, parse_scalar, set_at_path};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{
     compute_set_json_mutation, compute_set_mutation, dry_run_read_opts, mutate_doc, on_missing_for,
-    read_doc, read_json_value_from_arg, read_ndjson_source, stamped, warn_if_created,
+    read_doc, read_json_value_from_arg, read_ndjson_source, stamped_at, warn_if_created,
     warn_if_read_outside_claude,
 };
 use crate::items::{compute_array_append_mutation, parse_ndjson};
@@ -166,7 +166,7 @@ pub(super) fn set(cmd: Cmd) -> Result<()> {
         integrity.allow_outside,
         opts,
         on_missing,
-        stamped(!stamp.no_stamp, |doc| {
+        stamped_at(&file, !stamp.no_stamp, |doc| {
             for p in &pairs {
                 let v = parse_scalar(&p.value, p.ty)?;
                 set_at_path(doc, &p.path, v)?;
@@ -219,7 +219,7 @@ pub(super) fn set_json(cmd: Cmd) -> Result<()> {
         integrity.allow_outside,
         opts,
         on_missing,
-        stamped(!stamp.no_stamp, |doc| {
+        stamped_at(&file, !stamp.no_stamp, |doc| {
             let last_key = path
                 .rsplit_once('.')
                 .map(|(_, k)| k)
@@ -299,7 +299,7 @@ pub(super) fn array_append(cmd: Cmd) -> Result<()> {
         integrity.allow_outside,
         opts,
         on_missing,
-        stamped(!stamp.no_stamp, |doc| {
+        stamped_at(&file, !stamp.no_stamp, |doc| {
             appended = crate::items::array_append(doc, &array, &rows)?;
             Ok(())
         }),

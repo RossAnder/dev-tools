@@ -364,8 +364,9 @@ pub(crate) fn read_text_arg(arg: &str) -> Result<String> {
         return Err(tagged_err(
             ErrorKind::Validation,
             None,
-            "the `-` sentinel reads the value from stdin, and stdin is a TTY; pipe the text in \
-             (e.g. `… - <<'EOF'`) or pass it as a literal"
+            "the `-` sentinel reads the value from stdin, and stdin is a TTY; stage the text in \
+             a file and redirect it in (`… - < file`), name the file with `--set-file KEY=PATH` \
+             where the verb takes field flags, or pass it as a literal"
                 .to_string(),
         ));
     }
@@ -772,6 +773,32 @@ pub(crate) fn on_missing_for(file: &Path, no_create: bool) -> Result<OnMissing> 
 }
 
 const LAST_UPDATED: &str = "last_updated";
+const UPDATED: &str = "updated";
+const CONTEXT_FILE: &str = "context.toml";
+
+/// Whether any root key other than `key` differs between `old` and `new`.
+fn others_changed(old: &toml::Table, new: &toml::Table, key: &str) -> bool {
+    let rest = |t: &'_ toml::Table| t.iter().filter(|(k, _)| k.as_str() != key).count();
+    rest(old) != rest(new)
+        || new
+            .iter()
+            .filter(|(k, _)| k.as_str() != key)
+            .any(|(k, v)| old.get(k) != Some(v))
+}
+
+/// Overwrite root `key` of `after` with today (UTC), keeping its existing
+/// string-or-date representation.
+fn restamp_today(after: &mut TomlValue, key: &str) -> Result<()> {
+    let today = crate::time::today_toml_date()?;
+    if let Some(table) = after.as_table_mut() {
+        let stamped = match table.get(key) {
+            Some(TomlValue::String(_)) => TomlValue::String(today.to_string()),
+            _ => TomlValue::Datetime(today),
+        };
+        table.insert(key.to_string(), stamped);
+    }
+    Ok(())
+}
 
 /// Refresh the root `last_updated` of `after` to today (UTC) when `before`
 /// carried the key and the mutation changed anything else. A write that
@@ -785,30 +812,62 @@ fn stamp_if_changed(before: &TomlValue, after: &mut TomlValue) -> Result<()> {
     if !old.contains_key(LAST_UPDATED) || !new.contains_key(LAST_UPDATED) {
         return Ok(());
     }
-    let rest = |t: &'_ toml::Table| t.iter().filter(|(k, _)| k.as_str() != LAST_UPDATED).count();
-    let changed = rest(old) != rest(new)
-        || new
-            .iter()
-            .filter(|(k, _)| k.as_str() != LAST_UPDATED)
-            .any(|(k, v)| old.get(k) != Some(v));
-    if !changed {
+    if !others_changed(old, new, LAST_UPDATED) {
         return Ok(());
     }
-    let today = crate::time::today_toml_date()?;
-    let stamped = match new.get(LAST_UPDATED) {
-        Some(TomlValue::String(_)) => TomlValue::String(today.to_string()),
-        _ => TomlValue::Datetime(today),
+    restamp_today(after, LAST_UPDATED)
+}
+
+/// Refresh a flow context's root `updated` to today (UTC) when the mutation
+/// changed anything else and left `updated` as it was. A write that set
+/// `updated` itself keeps the caller's value; a file without the key never
+/// gains one.
+fn refresh_context_updated(before: &TomlValue, after: &mut TomlValue) -> Result<()> {
+    let (Some(old), Some(new)) = (before.as_table(), after.as_table()) else {
+        return Ok(());
     };
-    if let Some(table) = after.as_table_mut() {
-        table.insert(LAST_UPDATED.to_string(), stamped);
+    let (Some(was), Some(now)) = (old.get(UPDATED), new.get(UPDATED)) else {
+        return Ok(());
+    };
+    if was != now || !others_changed(old, new, UPDATED) {
+        return Ok(());
     }
-    Ok(())
+    restamp_today(after, UPDATED)
 }
 
 /// Snapshot `doc` for `stamp_if_changed`, or `None` when stamping is off or
 /// the root has no `last_updated` to refresh (so no clone is paid).
 fn stamp_baseline(stamp: bool, doc: &TomlValue) -> Option<TomlValue> {
     (stamp && doc.get(LAST_UPDATED).is_some()).then(|| doc.clone())
+}
+
+/// `stamped` for a write whose target path is known: a target named
+/// `context.toml` also has its root `updated` refreshed. Used by the document
+/// writers (`set`, `set-json`, `array-append`).
+pub(crate) fn stamped_at<F>(
+    path: &Path,
+    stamp: bool,
+    f: F,
+) -> impl FnOnce(&mut TomlValue) -> Result<()>
+where
+    F: FnOnce(&mut TomlValue) -> Result<()>,
+{
+    let context = path
+        .file_name()
+        .is_some_and(|n| n == std::ffi::OsStr::new(CONTEXT_FILE));
+    move |doc| {
+        let before = (stamp
+            && (doc.get(LAST_UPDATED).is_some() || (context && doc.get(UPDATED).is_some())))
+        .then(|| doc.clone());
+        f(doc)?;
+        let Some(before) = before else {
+            return Ok(());
+        };
+        if context {
+            refresh_context_updated(&before, doc)?;
+        }
+        stamp_if_changed(&before, doc)
+    }
 }
 
 /// CLI-only `last_updated` stamping around a `mutate_doc` closure. The
