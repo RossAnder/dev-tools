@@ -86,7 +86,7 @@ use crate::integrity::{refresh_sidecar, sha256_hex_of_file, sidecar_path};
 use crate::io::{
     guard_write_path, read_dir_sorted, read_toml, read_toml_with_source,
     recheck_claude_containment, relativise, repo_or_cwd_root, with_exclusive_lock,
-    write_doc_unless_unchanged,
+    with_shared_lock, write_doc_unless_unchanged,
 };
 use crate::output::{print_json_compact, print_json_line};
 
@@ -107,7 +107,28 @@ enum SidecarStatus {
 /// - `Some(SidecarStatus::Mismatch { expected, actual })` when present and
 ///   parseable, but the digest disagrees with the file's current bytes.
 /// - `Some(SidecarStatus::Ok)` when present-and-matching.
+///
+/// The first probe takes no lock. A failing one is re-run once under the
+/// shared lock, which a writer's exclusive sidecar-then-TOML rename excludes,
+/// so a write in flight is not reported as a mismatch; if the lock cannot be
+/// taken the unlocked result stands.
 fn sidecar_state(file: &Path) -> Result<Option<SidecarStatus>> {
+    let first = sidecar_state_unlocked(file)?;
+    if !matches!(
+        first,
+        Some(SidecarStatus::Mismatch { .. } | SidecarStatus::Malformed)
+    ) {
+        return Ok(first);
+    }
+    let mut locked = None;
+    let _ = with_shared_lock(file, || {
+        locked = Some(sidecar_state_unlocked(file));
+        Ok(())
+    });
+    locked.unwrap_or(Ok(first))
+}
+
+fn sidecar_state_unlocked(file: &Path) -> Result<Option<SidecarStatus>> {
     let sidecar = sidecar_path(file);
     if !sidecar.exists() {
         return Ok(None);
@@ -1357,31 +1378,33 @@ mod tests {
     /// tampered digest lands on the `--fix` list.
     #[test]
     fn a_tampered_task_store_sidecar_fails_and_stages_a_refresh() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let store = root.join("tasks.toml");
-        fs::write(&store, "schema_version = 1\n").unwrap();
-        fs::write(
-            sidecar_path(&store),
-            format!("{}  tasks.toml\n", "0".repeat(64)),
-        )
-        .unwrap();
+        // Sandboxed root: the mismatch re-check takes a shared lock, whose
+        // lock file lives under the root's `.claude/.locks/`.
+        crate::test_support::with_root(|root| {
+            let store = root.join("tasks.toml");
+            fs::write(&store, "schema_version = 1\n").unwrap();
+            fs::write(
+                sidecar_path(&store),
+                format!("{}  tasks.toml\n", "0".repeat(64)),
+            )
+            .unwrap();
 
-        let mut checks = Vec::new();
-        let mut stale = Vec::new();
-        push_sidecar_check(
-            root,
-            "feature-x",
-            "tasks-sidecar",
-            &store,
-            &mut checks,
-            &mut stale,
-        )
-        .unwrap();
+            let mut checks = Vec::new();
+            let mut stale = Vec::new();
+            push_sidecar_check(
+                root,
+                "feature-x",
+                "tasks-sidecar",
+                &store,
+                &mut checks,
+                &mut stale,
+            )
+            .unwrap();
 
-        assert_eq!(checks.len(), 1);
-        assert!(!checks[0].ok, "detail: {:?}", checks[0].detail);
-        assert_eq!(stale, vec![(store, "feature-x".to_string())]);
+            assert_eq!(checks.len(), 1);
+            assert!(!checks[0].ok, "detail: {:?}", checks[0].detail);
+            assert_eq!(stale, vec![(store, "feature-x".to_string())]);
+        });
     }
 
     fn tasks_doc(body: &str) -> TomlValue {

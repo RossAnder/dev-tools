@@ -25,9 +25,8 @@ use toml::Value as TomlValue;
 use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::convert::json_type_name;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::integrity::maybe_verify_integrity;
 use crate::io::advise;
-use crate::io::{items_array, read_toml, repo_or_cwd_root, strict_read_check};
+use crate::io::{items_array, read_doc_owned, repo_or_cwd_root, strict_read_check};
 
 /// Array of live captures. Never `items`: an array named `items` under
 /// `.claude/` is the default target of `tomlctl items add|update|apply`,
@@ -299,8 +298,7 @@ pub(crate) fn read_store(integrity: &ReadIntegrityArgs) -> Result<TomlValue> {
     if !file.exists() {
         return Ok(TomlValue::Table(toml::map::Map::new()));
     }
-    maybe_verify_integrity(&file, read_integrity_opts(integrity))?;
-    read_toml(&file)
+    read_doc_owned(&file, read_integrity_opts(integrity))
 }
 
 /// Rejection reasons from the two validators. Every variant is a caller

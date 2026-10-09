@@ -38,7 +38,7 @@ use crate::integrity::{sha256_hex_of_file, sidecar_path};
 use crate::io::advise;
 use crate::io::{
     atomic_write, guard_write_path, recheck_claude_containment, relativise, repo_or_cwd_root,
-    with_exclusive_lock,
+    with_exclusive_lock, with_shared_lock,
 };
 use crate::output::{print_json_compact, print_json_line};
 
@@ -196,7 +196,7 @@ fn assert_under_claude(root: &Path, artifact: &Path) -> Result<()> {
 }
 
 /// Compute the read-only verdict — does the artifact exist, and (if so) is
-/// its sidecar present and digest-matching? Never mutates the filesystem.
+/// its sidecar present and digest-matching? Never writes the artifact or its sidecar.
 fn compute_report(root: &Path, artifact: &Path) -> Result<JsonValue> {
     let sidecar = sidecar_path(artifact);
     let exists = artifact.exists();
@@ -209,14 +209,21 @@ fn compute_report(root: &Path, artifact: &Path) -> Result<JsonValue> {
         // we deliberately do not auto-repair on the report path.
         JsonValue::Bool(false)
     } else {
-        match sidecar_matches(artifact, &sidecar) {
-            Ok(ok) => JsonValue::Bool(ok),
-            // Any I/O / parse failure during sidecar comparison is
-            // treated as "invalid" rather than aborting — the report is
-            // an introspection primitive and a malformed sidecar is
-            // exactly what we're meant to surface.
-            Err(_) => JsonValue::Bool(false),
-        }
+        // Any I/O / parse failure during sidecar comparison is treated as
+        // "invalid" rather than aborting — the report is an introspection
+        // primitive and a malformed sidecar is exactly what we're meant to
+        // surface. A failing unlocked probe is re-run once under the shared
+        // lock, which a writer's sidecar-then-TOML rename excludes, so a write
+        // in flight is not reported invalid; without the lock it stays false.
+        let valid = sidecar_matches(artifact, &sidecar).unwrap_or(false) || {
+            let mut locked = false;
+            let _ = with_shared_lock(artifact, || {
+                locked = sidecar_matches(artifact, &sidecar).unwrap_or(false);
+                Ok(())
+            });
+            locked
+        };
+        JsonValue::Bool(valid)
     };
     Ok(json!({
         "exists": exists,

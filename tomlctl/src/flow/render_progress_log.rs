@@ -34,7 +34,9 @@ use toml::Value as TomlValue;
 use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
 use crate::flow::record_path::flow_execution_record_path;
 use crate::integrity::maybe_verify_integrity;
-use crate::io::{atomic_write, read_toml, recorded_under_root, relativise, repo_or_cwd_root};
+use crate::io::{
+    atomic_write, read_toml, recorded_under_root, relativise, repo_or_cwd_root, with_shared_lock,
+};
 use crate::output::print_json_compact;
 
 /// EM DASH (U+2014) — the H1 separator and the empty-`supersedes` placeholder.
@@ -69,19 +71,30 @@ pub(crate) fn dispatch(slug: &str, stdout: bool, integrity: &ReadIntegrityArgs) 
     let context_path = flow_dir.join("context.toml");
     let progress_log_path = flow_dir.join("PROGRESS-LOG.md");
 
-    // `--verify-integrity`: check the record's `.sha256` sidecar BEFORE
-    // rendering, so a stale/tampered sidecar fails fast (mirrors the read-side
-    // `maybe_verify_integrity` no-op when the flag is off).
-    maybe_verify_integrity(&record_path, read_integrity_opts(integrity))?;
-
     // Chain an actionable hint onto a record-read failure (missing flow,
     // unparseable record) naming the slug and pointing at `flow init`. The
     // underlying not-found / parse error stays chained beneath this context.
-    let record = read_toml(&record_path).with_context(|| {
-        format!(
-            "rendering PROGRESS-LOG.md for flow `{slug}` — is the flow initialised? (run `tomlctl flow init`)"
-        )
-    })?;
+    let read_record = || {
+        read_toml(&record_path).with_context(|| {
+            format!(
+                "rendering PROGRESS-LOG.md for flow `{slug}` — is the flow initialised? (run `tomlctl flow init`)"
+            )
+        })
+    };
+    // `--verify-integrity`: check the record's `.sha256` sidecar BEFORE
+    // rendering, so a stale/tampered sidecar fails fast. The check and the
+    // read share one shared lock, so a concurrent writer's sidecar-then-TOML
+    // rename can never be observed half-done; the integrity error carries no
+    // `flow init` hint, since the flow plainly exists.
+    let opts = read_integrity_opts(integrity);
+    let record = if opts.verify_on_read {
+        with_shared_lock(&record_path, || {
+            maybe_verify_integrity(&record_path, opts)?;
+            read_record()
+        })?
+    } else {
+        read_record()?
+    };
     let title = resolve_title(slug, &context_path);
     let rendered = render_to_string(&record, &title)?;
 

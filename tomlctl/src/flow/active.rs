@@ -45,7 +45,7 @@ use crate::flow::schema::{ActiveDoc, ActiveEntry as SchemaEntry};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
 use crate::io::advise;
 use crate::io::{
-    guard_write_path, read_toml, read_toml_with_source, recheck_claude_containment,
+    guard_write_path, read_doc_owned, read_toml_with_source, recheck_claude_containment,
     repo_or_cwd_root, with_exclusive_lock, write_doc_unless_unchanged,
 };
 use crate::output::{print_json_compact, print_json_line};
@@ -82,8 +82,7 @@ fn read_doc_or_default(file: &Path, integrity: IntegrityOpts) -> Result<TomlValu
     if !file.exists() {
         return Ok(empty_doc());
     }
-    maybe_verify_integrity(file, integrity)?;
-    read_toml(file)
+    read_doc_owned(file, integrity)
 }
 
 /// Build the empty default registry doc — used as the in-memory bootstrap

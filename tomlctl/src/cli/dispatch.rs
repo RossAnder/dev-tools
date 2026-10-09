@@ -22,7 +22,7 @@ use crate::integrity::{IntegrityOpts, refresh_sidecar, sidecar_path, verify_inte
 use crate::io::{
     guard_write_path, read_doc, read_doc_borrowed, read_json_arg, read_json_value_from_arg,
     read_ndjson_source, recheck_claude_containment, repo_or_cwd_root, strict_read_check,
-    warn_if_created, with_exclusive_lock,
+    warn_if_created, with_exclusive_lock, with_shared_lock,
 };
 use crate::items::parse_ndjson;
 use crate::output::{
@@ -316,10 +316,6 @@ fn inputs_dispatch(op: InputsOp) -> Result<()> {
         } => {
             let path = inputs::path(&root);
             strict_read_check(&path, integrity.strict_read)?;
-            // A missing store lists as empty, so there is no sidecar to check.
-            if integrity.verify_integrity && path.exists() {
-                verify_integrity(&path)?;
-            }
             let filter = inputs::Filter {
                 pending,
                 kinds: kind,
@@ -328,7 +324,18 @@ fn inputs_dispatch(op: InputsOp) -> Result<()> {
                 scope,
                 item,
             };
-            return print_report(inputs::list(&root, &filter)?, Rows::Field("inputs"));
+            // A missing store lists as empty, so there is no sidecar to check.
+            // The check and the read share one shared lock so they observe a
+            // single (TOML, sidecar) pair.
+            let report = if integrity.verify_integrity && path.exists() {
+                with_shared_lock(&path, || {
+                    verify_integrity(&path)?;
+                    inputs::list(&root, &filter)
+                })?
+            } else {
+                inputs::list(&root, &filter)?
+            };
+            return print_report(report, Rows::Field("inputs"));
         }
         InputsOp::Add { json, integrity } => {
             let record = read_json_value_from_arg(&json).context("parsing --json")?;

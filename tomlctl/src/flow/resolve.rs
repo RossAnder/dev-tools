@@ -42,7 +42,9 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::flow::artifacts::CanonicalArtifacts;
 use crate::flow::schema::{ActiveDoc, ActiveEntry, FlowProjection};
 use crate::integrity::{IntegrityOpts, maybe_verify_integrity};
-use crate::io::{read_dir_sorted, read_toml, recorded_under_root, relativise, repo_or_cwd_root};
+use crate::io::{
+    read_dir_sorted, read_toml, recorded_under_root, relativise, repo_or_cwd_root, with_shared_lock,
+};
 use crate::output::print_json_line;
 use crate::time::{parse_iso_to_date, today_utc_date};
 
@@ -267,12 +269,17 @@ fn resolve(
     // Step 3 + 4: registry consultation.
     let registry_path = active_flow_path(root);
     let registry_entries = if registry_path.exists() {
-        // Honour --verify-integrity on the registry.
+        // Honour --verify-integrity on the registry. The verify and the read
+        // share one shared lock so they observe a single (TOML, sidecar) pair.
         if opts.verify_on_read {
-            maybe_verify_integrity(&registry_path, opts)
-                .with_context(|| format!("verifying {}", registry_path.display()))?;
+            with_shared_lock(&registry_path, || {
+                maybe_verify_integrity(&registry_path, opts)
+                    .with_context(|| format!("verifying {}", registry_path.display()))?;
+                load_active_entries(&registry_path, &mut warnings)
+            })?
+        } else {
+            load_active_entries(&registry_path, &mut warnings)?
         }
-        load_active_entries(&registry_path, &mut warnings)?
     } else {
         Vec::new()
     };
@@ -533,12 +540,17 @@ fn build_resolved_envelope(
     let context_path = context_path_for(root, slug);
 
     // Read the resolved context.toml. Honour --verify-integrity here so
-    // the caller catches a tampered context before downstream consumption.
-    if opts.verify_on_read && context_path.exists() {
-        maybe_verify_integrity(&context_path, opts)
-            .with_context(|| format!("verifying {}", context_path.display()))?;
-    }
-    let doc = read_toml(&context_path)?;
+    // the caller catches a tampered context before downstream consumption;
+    // the verify and the read share one shared lock.
+    let doc = if opts.verify_on_read && context_path.exists() {
+        with_shared_lock(&context_path, || {
+            maybe_verify_integrity(&context_path, opts)
+                .with_context(|| format!("verifying {}", context_path.display()))?;
+            read_toml(&context_path)
+        })?
+    } else {
+        read_toml(&context_path)?
+    };
     let table = doc.as_table().ok_or_else(|| {
         tagged_err(
             ErrorKind::Parse,
