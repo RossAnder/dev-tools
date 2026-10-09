@@ -80,6 +80,45 @@ fn write_envelope(file: &std::path::Path, created: bool) -> Result<()> {
     }))
 }
 
+/// `navigate_json` that moves the target out of `root` instead of borrowing
+/// it, so `get` copies no subtree. Segment rules must stay `navigate`'s: key
+/// on an object, `usize` index on an array, `None` on anything else.
+fn take_json_path(mut cur: serde_json::Value, path: &str) -> Option<serde_json::Value> {
+    use serde_json::Value;
+    for seg in path.split('.') {
+        cur = match cur {
+            Value::Object(mut map) => map.swap_remove(seg)?,
+            Value::Array(mut arr) => {
+                let idx: usize = seg.parse().ok()?;
+                if idx >= arr.len() {
+                    return None;
+                }
+                arr.swap_remove(idx)
+            }
+            _ => return None,
+        };
+    }
+    Some(cur)
+}
+
+/// The borrowed DeTable read unless `verify_on_read` needs `read_doc`'s lock
+/// and sidecar check. A borrowed read that fails is redone owned, so a bad
+/// file reports the owned parser's error text.
+fn read_borrowed_first<T>(
+    file: &std::path::Path,
+    verify_on_read: bool,
+    owned: impl FnOnce() -> Result<T>,
+    borrowed: impl FnOnce(serde_json::Value) -> Result<T>,
+) -> Result<T> {
+    if verify_on_read {
+        return owned();
+    }
+    match read_doc_borrowed(file) {
+        Ok(doc) => borrowed(doc),
+        Err(_) => owned(),
+    }
+}
+
 /// The global output options from the parsed root. Empty `--select` and
 /// `--omit` segments are kept so `OutputOpts::validate` can refuse them.
 fn output_opts(cli: &Cli) -> OutputOpts {
@@ -120,23 +159,14 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         Cmd::Parse { file, integrity } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
-            // `parse` is the single dispatch arm whose whole output is
-            // "the entire TOML doc as JSON" — no dotted-path navigation, no
-            // per-item filtering — so it benefits most from the borrowed
-            // DeTable fast-path that skips the per-scalar `String` clone
-            // done inside `toml::from_str::<TomlValue>`. When
-            // `--verify-integrity` is requested we still need the shared
-            // lock + sidecar verify dance from `read_doc`, so the owned
-            // path is retained for that case. All other read dispatch arms
-            // (`get`, `validate`, every `items *` op) stay on the owned
-            // path — they either need `navigate` / TomlValue-level helpers
-            // or the borrowed-lifetime plumbing doesn't yet cover their
-            // downstream consumers.
-            let out = if opts.verify_on_read {
-                read_doc(&file, opts, |doc| Ok(toml_to_json(doc)))?
-            } else {
-                read_doc_borrowed(&file)?
-            };
+            // The borrowed DeTable parse skips the per-scalar `String` clone
+            // `toml::from_str::<TomlValue>` makes.
+            let out = read_borrowed_first(
+                &file,
+                opts.verify_on_read,
+                || read_doc(&file, opts, |doc| Ok(toml_to_json(doc))),
+                Ok,
+            )?;
             print_json(&out)?;
         }
         Cmd::Get {
@@ -147,25 +177,31 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         } => {
             strict_read_check(&file, integrity.strict_read)?;
             let opts = read_integrity_opts(&integrity);
-            let out = read_doc(&file, opts, |doc| {
+            let not_found = |p: &str| {
+                anyhow!(
+                    "key path `{}` not found (run `tomlctl parse <file>` to inspect the document tree, or `tomlctl get <file>` with no --path to print the whole doc)",
+                    p
+                )
+            };
+            let owned = || {
+                read_doc(&file, opts, |doc| {
+                    Ok(match path.as_deref() {
+                        None | Some("") => toml_to_json(doc),
+                        Some(p) => toml_to_json(navigate(doc, p).ok_or_else(|| not_found(p))?),
+                    })
+                })
+            };
+            let out = read_borrowed_first(&file, opts.verify_on_read, owned, |doc| {
                 Ok(match path.as_deref() {
-                    None | Some("") => toml_to_json(doc),
-                    Some(p) => toml_to_json(
-                        navigate(doc, p).ok_or_else(|| {
-                            anyhow!(
-                                "key path `{}` not found (run `tomlctl parse <file>` to inspect the document tree, or `tomlctl get <file>` with no --path to print the whole doc)",
-                                p
-                            )
-                        })?,
-                    ),
+                    None | Some("") => doc,
+                    Some(p) => take_json_path(doc, p).ok_or_else(|| not_found(p))?,
                 })
             })?;
             if raw {
-                // Bare-scalar emit; `emit_raw` refuses an array or table.
-                // Null is impossible here — `navigate` returns `None` for a
-                // missing path, which we already surface as "key path not
-                // found" above; a present TOML scalar cannot map to JSON null
-                // via `toml_to_json`.
+                // Bare-scalar emit; `emit_raw` refuses an array or table. A
+                // missing path never reaches here (surfaced as "key path not
+                // found" above), but a non-finite float (`nan`, `inf`) maps to
+                // JSON null in `toml_to_json`, which `--raw` rejects.
                 print_raw_value(&out, query::RawArrayHint::Get)?;
             } else {
                 print_json(&out)?;

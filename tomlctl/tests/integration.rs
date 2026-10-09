@@ -619,6 +619,160 @@ fn get_raw_on_an_array_does_not_advise_lines() {
     );
 }
 
+/// Covers every scalar kind `get` renders specially, nested tables, an array
+/// of tables and arrays nested in arrays.
+const GET_PARITY_FIXTURE: &str = r#"schema_version = 1
+day = 2026-03-04
+when = 1979-05-27T07:32:00-08:00
+local = 1979-05-27T07:32:00
+clock = 07:32:00.5
+ratio = 1.5e3
+not_a_number = nan
+esc = "a\tbé"
+"0" = "zero"
+
+[outer.inner]
+k = [1, 2, [3, 4]]
+m = { x = 1, y = "two" }
+
+[[items]]
+id = "R1"
+first = 2026-03-04
+tags = ["a", "b"]
+
+[[items]]
+id = "R2"
+nested = { d = 2026-01-02T03:04:05Z }
+"#;
+
+/// Run `tomlctl get <ledger> <args…>` and capture exit status and both streams.
+fn get_capture(root: &Path, ledger: &Path, args: &[&str]) -> (bool, String, String) {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", root)
+        .env("TOMLCTL_LOCK_TIMEOUT", "5")
+        .arg("get")
+        .arg(ledger)
+        .args(args)
+        .write_stdin("")
+        .output()
+        .unwrap();
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// A plain `get` reads through the borrowed parse and `get --verify-integrity`
+/// through the owned one; both must print the same bytes, errors included.
+#[test]
+fn get_borrowed_and_owned_reads_print_identical_bytes() {
+    let (dir, ledger) = seed_ledger(GET_PARITY_FIXTURE);
+    let (range_dir, range_ledger) = seed_ledger("a = 1\n[t]\nbig = 99999999999999999999\n");
+    for (root, file) in [(dir.path(), &ledger), (range_dir.path(), &range_ledger)] {
+        Command::cargo_bin("tomlctl")
+            .unwrap()
+            .env("TOMLCTL_ROOT", root)
+            .args(["integrity", "refresh"])
+            .arg(file)
+            .assert()
+            .success();
+    }
+
+    let paths = [
+        "",
+        "day",
+        "when",
+        "local",
+        "clock",
+        "ratio",
+        "not_a_number",
+        "esc",
+        "0",
+        "outer",
+        "outer.inner.k",
+        "outer.inner.k.2.1",
+        "outer.inner.k.9",
+        "items",
+        "items.1.nested.d",
+        "items.01",
+        "items.x",
+        "missing",
+        "day.x",
+    ];
+    let mut cases: Vec<(&Path, &Path, Vec<&str>)> = vec![(dir.path(), ledger.as_path(), vec![])];
+    for p in paths {
+        cases.push((dir.path(), ledger.as_path(), vec![p]));
+        cases.push((dir.path(), ledger.as_path(), vec![p, "--raw"]));
+    }
+    cases.push((range_dir.path(), range_ledger.as_path(), vec!["a"]));
+
+    for (root, file, args) in &cases {
+        let borrowed = get_capture(root, file, args);
+        let mut owned_args = args.clone();
+        owned_args.push("--verify-integrity");
+        let owned = get_capture(root, file, &owned_args);
+        assert_eq!(borrowed, owned, "`get {args:?}` diverged between readers");
+    }
+
+    let (ok, stdout, _) = get_capture(dir.path(), &ledger, &["items.1.nested.d", "--raw"]);
+    assert!(ok);
+    assert_eq!(stdout.trim_end(), "2026-01-02T03:04:05Z");
+    let (ok, _, stderr) = get_capture(dir.path(), &ledger, &["missing"]);
+    assert!(!ok);
+    assert!(
+        stderr.contains("key path `missing` not found"),
+        "got stderr:\n{stderr}"
+    );
+    let (ok, _, stderr) = get_capture(range_dir.path(), &range_ledger, &["a"]);
+    assert!(!ok);
+    assert!(
+        stderr.contains("TOML parse error at line 3"),
+        "a bad file must report the owned parser's error; got stderr:\n{stderr}"
+    );
+}
+
+/// `parse` on an out-of-range integer reports the owned parser's error with and
+/// without `--verify-integrity`.
+#[test]
+fn parse_borrowed_and_owned_reads_print_identical_errors() {
+    let (dir, ledger) = seed_ledger("a = 1\n[t]\nbig = 99999999999999999999\n");
+    Command::cargo_bin("tomlctl")
+        .unwrap()
+        .env("TOMLCTL_ROOT", dir.path())
+        .args(["integrity", "refresh"])
+        .arg(&ledger)
+        .assert()
+        .success();
+    let run = |extra: &[&str]| {
+        let out = Command::cargo_bin("tomlctl")
+            .unwrap()
+            .env("TOMLCTL_ROOT", dir.path())
+            .env("TOMLCTL_LOCK_TIMEOUT", "5")
+            .arg("parse")
+            .arg(&ledger)
+            .args(extra)
+            .write_stdin("")
+            .output()
+            .unwrap();
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    let borrowed = run(&[]);
+    let owned = run(&["--verify-integrity"]);
+    assert!(!borrowed.0);
+    assert!(
+        borrowed.2.contains("TOML parse error at line 3"),
+        "got stderr:\n{}",
+        borrowed.2
+    );
+    assert_eq!(borrowed, owned, "`parse` diverged between readers");
+}
+
 /// `--pluck <f> --raw` over an array-valued field advises dropping `--raw`, not
 /// adding `--lines`, which fails the same way on every line.
 #[test]

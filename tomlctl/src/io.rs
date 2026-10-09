@@ -592,10 +592,11 @@ pub(crate) fn read_doc_borrowed(path: &Path) -> Result<serde_json::Value> {
 /// Read-side sibling of `mutate_doc`: runs the standard pre-read
 /// ritual — `maybe_verify_integrity` first (so a stale / tampered sidecar
 /// fails fast before the caller works on bad bytes), then `read_toml` —
-/// and hands the parsed doc to the closure. Every `Cmd::{Parse,Get,Validate}`
-/// and `ItemsOp::{List,Get,FindDuplicates,Orphans}` dispatch arm routes
-/// through it. Writers go through `mutate_doc`; this is strictly for
-/// read-only operations.
+/// and hands the parsed doc to the closure. `Cmd::Validate` and the
+/// `ItemsOp::{List,Get,FindDuplicates,Orphans}` dispatch arms route through
+/// it; `Cmd::{Parse,Get}` do so only under `--verify-integrity` and as the
+/// fallback when the borrowed read errors. Writers go through `mutate_doc`;
+/// this is strictly for read-only operations.
 pub(crate) fn read_doc<R>(
     file: &Path,
     integrity: IntegrityOpts,
