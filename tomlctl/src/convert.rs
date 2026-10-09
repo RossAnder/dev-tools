@@ -7,8 +7,8 @@
 //! - `toml_to_json` / `json_to_toml`
 //! - `maybe_date_coerce` + `DATE_KEYS`
 //! - `navigate` / `set_at_path`
-//! - `navigate_json` / `project` / `validate_paths` — the JSON dotted-path
-//!   reads shared by `json`, `query` and `output`
+//! - `navigate_json` / `navigate_json_all` / `project` / `validate_paths` —
+//!   the JSON dotted-path reads shared by `json`, `query` and `output`
 //! - `str_field` / `i64_field`
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -129,22 +129,102 @@ pub(crate) fn navigate_json<'a>(root: &'a JsonValue, path: &str) -> Option<&'a J
     Some(cur)
 }
 
+/// The `*` path segment: every element of an array, every value of an object.
+pub(crate) const WILDCARD: &str = "*";
+
+/// Whether `path` holds a `*` segment, and so resolves to a list of matches.
+pub(crate) fn is_wildcard_path(path: &str) -> bool {
+    path.split('.').any(|s| s == WILDCARD)
+}
+
+/// The segments of `path` before its first `*`, or `path` itself when it has
+/// none; empty when the path opens with `*`.
+fn wildcard_prefix(path: &str) -> &str {
+    let mut end = 0;
+    for seg in path.split('.') {
+        if seg == WILDCARD {
+            return path[..end].trim_end_matches('.');
+        }
+        end += seg.len() + 1;
+    }
+    path
+}
+
+/// `navigate_json` with `*` segments. A `*` fans out over every element of an
+/// array or every value of an object, and a branch that fails to resolve is
+/// dropped rather than failing the whole walk. Matches come back in document
+/// order; a path without `*` yields at most one.
+pub(crate) fn navigate_json_all<'a>(root: &'a JsonValue, path: &str) -> Vec<&'a JsonValue> {
+    let mut cur = vec![root];
+    if path.is_empty() {
+        return cur;
+    }
+    for seg in path.split('.') {
+        let mut next = Vec::with_capacity(cur.len());
+        for v in cur {
+            match (v, seg) {
+                (JsonValue::Array(arr), WILDCARD) => next.extend(arr.iter()),
+                (JsonValue::Object(map), WILDCARD) => next.extend(map.values()),
+                (JsonValue::Object(map), _) => next.extend(map.get(seg)),
+                (JsonValue::Array(arr), _) => {
+                    next.extend(seg.parse::<usize>().ok().and_then(|i| arr.get(i)))
+                }
+                _ => {}
+            }
+        }
+        if next.is_empty() {
+            return next;
+        }
+        cur = next;
+    }
+    cur
+}
+
 /// Keep only `paths` of `row`, each keyed by its path string; a path the row
-/// lacks is left out.
+/// lacks is left out. A `*` path projects to the array of its matches, empty
+/// when nothing below the `*` resolves, and is left out only when the
+/// segments before the `*` are missing.
 pub(crate) fn project(row: &JsonValue, paths: &[String]) -> JsonValue {
     let mut out = serde_json::Map::new();
     for p in paths {
-        if let Some(v) = navigate_json(row, p) {
+        if is_wildcard_path(p) {
+            if navigate_json(row, wildcard_prefix(p)).is_some() {
+                let matches = navigate_json_all(row, p).into_iter().cloned().collect();
+                out.insert(p.clone(), JsonValue::Array(matches));
+            }
+        } else if let Some(v) = navigate_json(row, p) {
             out.insert(p.clone(), v.clone());
         }
     }
     JsonValue::Object(out)
 }
 
+/// Up to three `parent.path` spellings of `path` on `rows`: a top-level key
+/// whose object value carries `path`'s first segment.
+fn nested_path_hints(rows: &[JsonValue], path: &str) -> Vec<String> {
+    let first = path.split('.').next().unwrap_or(path);
+    let mut hints: Vec<String> = Vec::new();
+    for obj in rows.iter().filter_map(JsonValue::as_object) {
+        for (k, v) in obj {
+            if hints.len() == 3 {
+                return hints;
+            }
+            let hint = format!("{k}.{path}");
+            if v.as_object().is_some_and(|m| m.contains_key(first)) && !hints.contains(&hint) {
+                hints.push(hint);
+            }
+        }
+    }
+    hints
+}
+
 /// Refuse `paths` when no row carries any of them, naming the first and the
-/// top-level keys that do exist. A path absent from every row passes beside
-/// one that matches, so an optional field (`promoted_to`, `advisories`)
-/// projects to absent instead of failing. An empty row set validates nothing.
+/// top-level keys that do exist, plus a `did you mean` for the same path one
+/// object level down. A path absent from every row passes beside one that
+/// matches, so an optional field (`promoted_to`, `advisories`) projects to
+/// absent instead of failing. A `*` path passes when its segments before the
+/// `*` resolve, even if nothing matches below. An empty row set validates
+/// nothing.
 pub(crate) fn validate_paths<'a>(
     rows: &[JsonValue],
     paths: impl IntoIterator<Item = &'a str>,
@@ -155,7 +235,10 @@ pub(crate) fn validate_paths<'a>(
     }
     let mut unmatched = None;
     for p in paths {
-        if rows.iter().any(|r| navigate_json(r, p).is_some()) {
+        if rows
+            .iter()
+            .any(|r| navigate_json(r, wildcard_prefix(p)).is_some())
+        {
             return Ok(());
         }
         unmatched.get_or_insert(p);
@@ -176,10 +259,17 @@ pub(crate) fn validate_paths<'a>(
         } else {
             keys.join(", ")
         };
+        let hints = nested_path_hints(rows, p);
+        let hint = if hints.is_empty() {
+            String::new()
+        } else {
+            let quoted: Vec<String> = hints.iter().map(|h| format!("`{h}`")).collect();
+            format!("; did you mean {}?", quoted.join(", "))
+        };
         return Err(tagged_err(
             ErrorKind::Validation,
             None,
-            format!("{flag} path `{p}` matches no field; available fields: {available}"),
+            format!("{flag} path `{p}` matches no field; available fields: {available}{hint}"),
         ));
     }
     Ok(())
@@ -748,6 +838,62 @@ mod tests {
         );
         assert_eq!(navigate_json(&v, "missing"), None);
         assert_eq!(navigate_json(&v, "permissions.deny"), None);
+    }
+
+    #[test]
+    fn wildcard_projects_deps_refs_skipping_missing() {
+        let row = serde_json::json!({
+            "id": 1,
+            "deps": [{ "ref": "a" }, { "id": 9 }, { "ref": "c" }, "bare"],
+        });
+        let paths = vec!["deps.*.ref".to_string(), "id".to_string()];
+        assert_eq!(
+            project(&row, &paths),
+            serde_json::json!({ "deps.*.ref": ["a", "c"], "id": 1 })
+        );
+        let no_refs = serde_json::json!({ "deps": [{ "id": 9 }] });
+        assert_eq!(
+            project(&no_refs, &paths),
+            serde_json::json!({ "deps.*.ref": [] })
+        );
+        let no_deps = serde_json::json!({ "id": 2 });
+        assert_eq!(project(&no_deps, &paths), serde_json::json!({ "id": 2 }));
+        let rows = [no_deps.clone(), no_refs.clone()];
+        assert!(validate_paths(&rows, ["deps.*.ref"], "--select").is_ok());
+        assert!(validate_paths(&[no_deps], ["deps.*.ref"], "--select").is_err());
+    }
+
+    #[test]
+    fn wildcard_over_object_values() {
+        let v = serde_json::json!({
+            "lanes": { "a": { "n": 1 }, "b": { "m": 0 }, "c": { "n": 3 } },
+        });
+        let ns: Vec<&JsonValue> = navigate_json_all(&v, "lanes.*.n");
+        assert_eq!(ns, [&serde_json::json!(1), &serde_json::json!(3)]);
+        assert_eq!(navigate_json_all(&v, "*").len(), 1);
+        assert_eq!(navigate_json_all(&v, "lanes.*").len(), 3);
+        assert!(navigate_json_all(&v, "lanes.*.z").is_empty());
+        assert_eq!(navigate_json_all(&v, "lanes.b.m"), [&serde_json::json!(0)]);
+    }
+
+    #[test]
+    fn wildcard_hint_suggests_item_summary() {
+        let rows = [serde_json::json!({
+            "item": { "id": "B-1", "summary": "s" },
+            "verdict": "novel",
+        })];
+        let err = validate_paths(&rows, ["summary"], "--get")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            err,
+            "--get path `summary` matches no field; available fields: item, verdict; \
+             did you mean `item.summary`?"
+        );
+        let err = validate_paths(&rows, ["nope"], "--get")
+            .unwrap_err()
+            .to_string();
+        assert!(!err.contains("did you mean"), "{err}");
     }
 
     /// `detable_to_json` over a borrowed `DeTable` must produce the same JSON
