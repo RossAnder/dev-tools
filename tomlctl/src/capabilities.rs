@@ -143,6 +143,10 @@ fn walk_commands(cmd: &Command, parent_path: &str, out: &mut Map<String, JsonVal
 fn describe_flags(cmd: &Command, sub_path: &str) -> JsonValue {
     let mut flags = Map::new();
     for arg in cmd.get_arguments() {
+        // Hidden arguments are recovery aliases, not part of the documented surface.
+        if arg.is_hide_set() {
+            continue;
+        }
         let id = arg.get_id().as_str();
         // Use the user-facing long name when available — this matches what
         // appears in `--help` output. clap stores ids as snake_case (e.g.
@@ -314,6 +318,23 @@ mod tests {
             "--get",
             "--template",
             "--quiet",
+            "--rows",
+            "--header",
+            "--max-chars",
+            "--omit",
+            "--where",
+            "--where-not",
+            "--where-in",
+            "--where-has",
+            "--where-missing",
+            "--where-gt",
+            "--where-gte",
+            "--where-lt",
+            "--where-lte",
+            "--where-contains",
+            "--where-prefix",
+            "--where-suffix",
+            "--where-regex",
         ] {
             assert!(
                 flags.get(name).is_some(),

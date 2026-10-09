@@ -107,6 +107,29 @@ pub(crate) const FEATURES: &[&str] = &[
     "id_prefix",         // `items add`/`add-many --id-prefix` mint inside the lock
     "auto_last_updated", // CLI writes stamp an existing `last_updated`
     "multi_id",          // `tasks update`/`tasks show`/`backlog show` take id lists
+    // Output shaping.
+    "path_wildcard",
+    "rows_header",
+    "global_where",
+    "array_predicates",
+    "max_chars",
+    "omit",
+    "template_width",
+    "list_limited",
+    // Field flags and schema-aware writes.
+    "field_flags",
+    "flow_record",
+    "multi_set",
+    "context_updated_stamp",
+    "apply_id_prefix",
+    "id_high_water",
+    // Task and backlog conveniences.
+    "tasks_train",
+    "show_absent",
+    "update_ref",
+    "backlog_check_batch",
+    // Vocabulary recovery: clap suggestions and hidden aliases.
+    "suggestions",
 ];
 
 /// User-facing top-level subcommand names, as they appear in

@@ -50,6 +50,7 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         &["tasks", "edges", "--help"],
         &["tasks", "ready", "--help"],
         &["tasks", "batches", "--help"],
+        &["tasks", "train", "--help"],
         &["tasks", "closure", "--help"],
         &["tasks", "check", "--help"],
         // `tasks render` writes derived plan markdown with no sidecar and
@@ -114,6 +115,7 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["backlog", "compact", "--help"],
         &["backlog", "reconcile", "--help"],
         &["agents", "record", "--help"],
+        &["flow", "record", "--help"],
         &["inputs", "add", "--help"],
         &["inputs", "ack", "--help"],
         &["inputs", "handle", "--help"],
@@ -1580,6 +1582,23 @@ fn capabilities_global_flags_lists_every_output_flag() {
         "--get",
         "--template",
         "--quiet",
+        "--rows",
+        "--header",
+        "--max-chars",
+        "--omit",
+        "--where",
+        "--where-not",
+        "--where-in",
+        "--where-has",
+        "--where-missing",
+        "--where-gt",
+        "--where-gte",
+        "--where-lt",
+        "--where-lte",
+        "--where-contains",
+        "--where-prefix",
+        "--where-suffix",
+        "--where-regex",
     ] {
         assert!(
             flags.contains_key(name),
@@ -1685,6 +1704,29 @@ fn capabilities_features_contains_every_plan_feature() {
         "id_prefix",
         "auto_last_updated",
         "multi_id",
+        // Output shaping.
+        "path_wildcard",
+        "rows_header",
+        "global_where",
+        "array_predicates",
+        "max_chars",
+        "omit",
+        "template_width",
+        "list_limited",
+        // Field flags and schema-aware writes.
+        "field_flags",
+        "flow_record",
+        "multi_set",
+        "context_updated_stamp",
+        "apply_id_prefix",
+        "id_high_water",
+        // Task and backlog conveniences.
+        "tasks_train",
+        "show_absent",
+        "update_ref",
+        "backlog_check_batch",
+        // Vocabulary recovery.
+        "suggestions",
     ];
     for name in expected {
         assert!(
@@ -1719,8 +1761,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.14.0",
-        "expected version `0.14.0` (the minor bump for the global output flags, the bare `items next-id` output, `--id-prefix`, CLI `last_updated` stamping, and multi-id `tasks update`/`tasks show`/`backlog show`); got `{version}`"
+        version, "0.15.0",
+        "expected version `0.15.0` (the minor bump for path wildcards, global `--rows`/`--header`/`--where*`/`--max-chars`/`--omit`, field flags, `flow record`, `tasks train` and clap suggestions); got `{version}`"
     );
 }
 
@@ -2249,6 +2291,38 @@ fn capabilities_commands_set_arm_includes_dry_run_flag() {
         dry_run.get("type").and_then(|t| t.as_str()),
         Some("bool"),
         "set --dry-run must be type=bool; got: {dry_run}"
+    );
+}
+
+/// `tasks show` carries a hidden `--id` recovery alias; `capabilities` must
+/// not advertise it, while the visible `--slug` flag stays listed.
+#[test]
+fn capabilities_omits_hidden_arguments() {
+    let out = Command::cargo_bin("tomlctl")
+        .unwrap()
+        .arg("capabilities")
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let v: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("capabilities stdout must parse as JSON: {e}"));
+
+    let flags = v
+        .get("commands")
+        .and_then(|c| c.get("tasks"))
+        .and_then(|t| t.get("subcommands"))
+        .and_then(|s| s.get("show"))
+        .and_then(|s| s.get("flags"))
+        .and_then(|f| f.as_object())
+        .expect("commands.tasks.subcommands.show.flags must be an object");
+    assert!(
+        flags.contains_key("--slug"),
+        "tasks show must list its visible `--slug` flag; got {flags:?}"
+    );
+    assert!(
+        !flags.contains_key("--id"),
+        "tasks show must not list the hidden `--id` alias; got {flags:?}"
     );
 }
 
