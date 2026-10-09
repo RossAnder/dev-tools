@@ -29,6 +29,8 @@ use crate::convert::{
 };
 use crate::errors::{ErrorKind, tagged_err};
 
+pub(crate) mod json_rows;
+
 // Test-only invocation counters that let unit tests assert the
 // fast-path narrows to the plucked field instead of materialising the whole
 // item via `toml_to_json`. Counters are thread-local so parallel cargo-test
@@ -916,77 +918,111 @@ pub(crate) fn apply_filters<'a>(
     items: &'a [TomlValue],
     preds: &[Predicate],
 ) -> Result<Vec<&'a TomlValue>> {
-    // Compile every `WhereRegex` pattern once, up-front, before we
-    // touch the item loop. A compiled regex is indexed by its position in
-    // `preds` so `eval_predicate` can do an O(1) lookup instead of
-    // recompiling per (item × predicate). We also apply memory caps via
-    // `RegexBuilder::size_limit` / `dfa_size_limit` so a hostile pattern
-    // can't balloon compile-time memory.
-    let compiled: Vec<Option<Regex>> = preds
-        .iter()
-        .map(|p| match p {
-            Predicate::WhereRegex { pattern, .. } => compile_user_regex(pattern).map(Some),
-            _ => Ok(None),
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    // Pre-parse every type-coercive RHS once, up-front, parallel to
-    // the regex hoist above. A typed-prefix RHS (`@int:5`, `@date:2026-04-18`)
-    // is otherwise parsed via `parse_typed_value` once per (item × predicate)
-    // inside `eq_typed` / `compare_typed`. With the cache, the parse runs
-    // O(P) instead of O(N × P). Bare-RHS predicates fall through to the
-    // existing per-item native-type coercion path (encoded as
-    // `ParsedRhs::Untyped`); the cache buys nothing there but costs nothing
-    // either. WhereIn pre-parses every list element.
-    let rhs_cache: Vec<PredicateCache> = preds
-        .iter()
-        .map(|p| -> Result<PredicateCache> {
-            match p {
-                Predicate::Where { key, rhs }
-                | Predicate::WhereNot { key, rhs }
-                | Predicate::WhereGt { key, rhs }
-                | Predicate::WhereGte { key, rhs }
-                | Predicate::WhereLt { key, rhs }
-                | Predicate::WhereLte { key, rhs } => {
-                    Ok(PredicateCache::Single(parse_rhs_for_cache(rhs, key)?))
-                }
-                Predicate::WhereIn { key, rhs } => {
-                    let mut v = Vec::with_capacity(rhs.len());
-                    for r in rhs {
-                        v.push(parse_rhs_for_cache(r, key)?);
-                    }
-                    Ok(PredicateCache::Multi(v))
-                }
-                _ => Ok(PredicateCache::None),
-            }
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    // Cost-aware predicate reorder. Build a permutation of indices
-    // sorted by `predicate_cost` ascending so cheap presence checks run
-    // ahead of expensive regex matches; on a per-item false the `'item`
-    // continue short-circuits, so cheap-first means we touch the regex
-    // engine for fewer items in the common "any cheap predicate already
-    // rules this row out" case. Stable sort preserves CLI insertion order
-    // within equal-cost predicates (see `predicate_cost` for the table),
-    // so any user-visible ordering tied to insertion order — e.g. an
-    // error message that mentions "the first failing predicate" — stays
-    // predictable. `eval_order` aliases the existing `compiled` and
-    // `rhs_cache` vectors via index, so we don't disturb their `preds`-
-    // aligned layout.
-    let mut eval_order: Vec<usize> = (0..preds.len()).collect();
-    eval_order.sort_by_key(|&i| predicate_cost(&preds[i]));
-
+    let prepared = PreparedPredicates::new(preds)?;
     let mut out = Vec::with_capacity(items.len());
-    'item: for it in items {
-        for &i in &eval_order {
-            if !eval_predicate(it, &preds[i], compiled[i].as_ref(), &rhs_cache[i])? {
-                continue 'item;
-            }
+    for it in items {
+        if prepared.matches(it)? {
+            out.push(it);
         }
-        out.push(it);
     }
     Ok(out)
+}
+
+/// A predicate list with its per-predicate work hoisted out of the row loop:
+/// regexes compiled, typed RHS values parsed, evaluation order chosen. Shared
+/// by the TOML list engine and `json_rows`, so both evaluate identically.
+struct PreparedPredicates<'p> {
+    preds: &'p [Predicate],
+    compiled: Vec<Option<Regex>>,
+    rhs_cache: Vec<PredicateCache>,
+    eval_order: Vec<usize>,
+}
+
+impl<'p> PreparedPredicates<'p> {
+    fn new(preds: &'p [Predicate]) -> Result<Self> {
+        // Compile every `WhereRegex` pattern once, up-front, before we
+        // touch the item loop. A compiled regex is indexed by its position in
+        // `preds` so `eval_predicate` can do an O(1) lookup instead of
+        // recompiling per (item × predicate). We also apply memory caps via
+        // `RegexBuilder::size_limit` / `dfa_size_limit` so a hostile pattern
+        // can't balloon compile-time memory.
+        let compiled: Vec<Option<Regex>> = preds
+            .iter()
+            .map(|p| match p {
+                Predicate::WhereRegex { pattern, .. } => compile_user_regex(pattern).map(Some),
+                _ => Ok(None),
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Pre-parse every type-coercive RHS once, up-front, parallel to
+        // the regex hoist above. A typed-prefix RHS (`@int:5`, `@date:2026-04-18`)
+        // is otherwise parsed via `parse_typed_value` once per (item × predicate)
+        // inside `eq_typed` / `compare_typed`. With the cache, the parse runs
+        // O(P) instead of O(N × P). Bare-RHS predicates fall through to the
+        // existing per-item native-type coercion path (encoded as
+        // `ParsedRhs::Untyped`); the cache buys nothing there but costs nothing
+        // either. WhereIn pre-parses every list element.
+        let rhs_cache: Vec<PredicateCache> = preds
+            .iter()
+            .map(|p| -> Result<PredicateCache> {
+                match p {
+                    Predicate::Where { key, rhs }
+                    | Predicate::WhereNot { key, rhs }
+                    | Predicate::WhereGt { key, rhs }
+                    | Predicate::WhereGte { key, rhs }
+                    | Predicate::WhereLt { key, rhs }
+                    | Predicate::WhereLte { key, rhs } => {
+                        Ok(PredicateCache::Single(parse_rhs_for_cache(rhs, key)?))
+                    }
+                    Predicate::WhereIn { key, rhs } => {
+                        let mut v = Vec::with_capacity(rhs.len());
+                        for r in rhs {
+                            v.push(parse_rhs_for_cache(r, key)?);
+                        }
+                        Ok(PredicateCache::Multi(v))
+                    }
+                    _ => Ok(PredicateCache::None),
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Cost-aware predicate reorder. Build a permutation of indices
+        // sorted by `predicate_cost` ascending so cheap presence checks run
+        // ahead of expensive regex matches; `matches` returns on the first
+        // false, so cheap-first means we touch the regex engine for fewer
+        // items in the common "any cheap predicate already rules this row
+        // out" case. Stable sort preserves CLI insertion order within
+        // equal-cost predicates (see `predicate_cost` for the table), so any
+        // user-visible ordering tied to insertion order — e.g. an error
+        // message that mentions "the first failing predicate" — stays
+        // predictable. `eval_order` aliases `compiled` and `rhs_cache` via
+        // index, so their `preds`-aligned layout is undisturbed.
+        let mut eval_order: Vec<usize> = (0..preds.len()).collect();
+        eval_order.sort_by_key(|&i| predicate_cost(&preds[i]));
+
+        Ok(PreparedPredicates {
+            preds,
+            compiled,
+            rhs_cache,
+            eval_order,
+        })
+    }
+
+    /// Whether `item` satisfies every predicate. The first false
+    /// short-circuits the rest, cheapest predicates first.
+    fn matches(&self, item: &TomlValue) -> Result<bool> {
+        for &i in &self.eval_order {
+            if !eval_predicate(
+                item,
+                &self.preds[i],
+                self.compiled[i].as_ref(),
+                &self.rhs_cache[i],
+            )? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
 }
 
 /// Per-RHS pre-parse. One enum per recognised TypeHint variant plus
@@ -1084,49 +1120,69 @@ fn eval_predicate(
         Some(t) => t,
         None => return Ok(false),
     };
+    let field = |key: &str| lookup_field(item, tbl, key);
     // Pull the pre-parsed RHS out of the cache; helpers below take
     // it instead of re-parsing per item. `expect_single` / `expect_multi`
     // panic on cache/predicate mismatch — that's an internal invariant
-    // violation in `apply_filters`, not user input.
+    // violation in `PreparedPredicates::new`, not user input.
+    //
+    // Every value predicate goes through `any_element`, so an array field
+    // matches when any one element does; `WhereNot` is its negation, so it
+    // keeps only rows with no equal element.
     match p {
-        Predicate::Where { key, rhs } => eq_typed(tbl.get(key), rhs, key, expect_single(cache)),
+        Predicate::Where { key, rhs } => {
+            let pre = expect_single(cache);
+            any_element(field(key), |f| eq_typed(f, rhs, key, pre))
+        }
         Predicate::WhereNot { key, rhs } => {
-            Ok(!eq_typed(tbl.get(key), rhs, key, expect_single(cache))?)
+            let pre = expect_single(cache);
+            Ok(!any_element(field(key), |f| eq_typed(f, rhs, key, pre))?)
         }
         Predicate::WhereIn { key, rhs } => {
-            let field = tbl.get(key);
             let parsed = expect_multi(cache);
             // Any-match with error propagation: bail on the first malformed
             // RHS rather than silently skipping it. (RHS validity was already
             // checked at cache-build time; the per-item call here can only
             // surface fresh errors from the field side.)
-            for (raw, pre) in rhs.iter().zip(parsed.iter()) {
-                if eq_typed(field, raw, key, pre)? {
-                    return Ok(true);
+            any_element(field(key), |f| {
+                for (raw, pre) in rhs.iter().zip(parsed.iter()) {
+                    if eq_typed(f, raw, key, pre)? {
+                        return Ok(true);
+                    }
                 }
-            }
-            Ok(false)
+                Ok(false)
+            })
         }
-        Predicate::WhereHas { key } => Ok(field_present_nonempty(tbl.get(key))),
-        Predicate::WhereMissing { key } => Ok(!field_present_nonempty(tbl.get(key))),
+        Predicate::WhereHas { key } => Ok(field_present_nonempty(field(key))),
+        Predicate::WhereMissing { key } => Ok(!field_present_nonempty(field(key))),
         Predicate::WhereGt { key, rhs } => {
-            cmp_pred(tbl.get(key), rhs, key, expect_single(cache), |o| {
-                matches!(o, std::cmp::Ordering::Greater)
+            let pre = expect_single(cache);
+            any_element(field(key), |f| {
+                cmp_pred(f, rhs, key, pre, |o| {
+                    matches!(o, std::cmp::Ordering::Greater)
+                })
             })
         }
         Predicate::WhereGte { key, rhs } => {
-            cmp_pred(tbl.get(key), rhs, key, expect_single(cache), |o| {
-                matches!(o, std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
+            let pre = expect_single(cache);
+            any_element(field(key), |f| {
+                cmp_pred(f, rhs, key, pre, |o| {
+                    matches!(o, std::cmp::Ordering::Greater | std::cmp::Ordering::Equal)
+                })
             })
         }
         Predicate::WhereLt { key, rhs } => {
-            cmp_pred(tbl.get(key), rhs, key, expect_single(cache), |o| {
-                matches!(o, std::cmp::Ordering::Less)
+            let pre = expect_single(cache);
+            any_element(field(key), |f| {
+                cmp_pred(f, rhs, key, pre, |o| matches!(o, std::cmp::Ordering::Less))
             })
         }
         Predicate::WhereLte { key, rhs } => {
-            cmp_pred(tbl.get(key), rhs, key, expect_single(cache), |o| {
-                matches!(o, std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+            let pre = expect_single(cache);
+            any_element(field(key), |f| {
+                cmp_pred(f, rhs, key, pre, |o| {
+                    matches!(o, std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+                })
             })
         }
         // Stringify non-string scalars (Int/Float/Bool/Datetime) before
@@ -1134,27 +1190,58 @@ fn eval_predicate(
         // TOML Strings, so comparing through the stringified form is what
         // lets `--where-contains line=00` match an Integer `line = 100`
         // instead of silently returning false for every non-String field.
-        Predicate::WhereContains { key, sub } => {
-            Ok(value_as_string(tbl.get(key)).is_some_and(|s| s.contains(sub)))
-        }
-        Predicate::WherePrefix { key, prefix } => {
-            Ok(value_as_string(tbl.get(key)).is_some_and(|s| s.starts_with(prefix)))
-        }
-        Predicate::WhereSuffix { key, suffix } => {
-            Ok(value_as_string(tbl.get(key)).is_some_and(|s| s.ends_with(suffix)))
-        }
+        Predicate::WhereContains { key, sub } => any_element(field(key), |f| {
+            Ok(value_as_string(f).is_some_and(|s| s.contains(sub)))
+        }),
+        Predicate::WherePrefix { key, prefix } => any_element(field(key), |f| {
+            Ok(value_as_string(f).is_some_and(|s| s.starts_with(prefix)))
+        }),
+        Predicate::WhereSuffix { key, suffix } => any_element(field(key), |f| {
+            Ok(value_as_string(f).is_some_and(|s| s.ends_with(suffix)))
+        }),
         Predicate::WhereRegex { key, .. } => {
-            // The regex was compiled once in `apply_filters`; we just
-            // look it up here.
+            // The regex was compiled once in `PreparedPredicates::new`; we
+            // just look it up here.
             let re = compiled_regex.ok_or_else(|| {
                 anyhow::anyhow!(
                     "internal: missing compiled regex for --where-regex on key `{}`",
                     key
                 )
             })?;
-            let s = value_as_string(tbl.get(key));
-            Ok(s.as_deref().is_some_and(|s| re.is_match(s)))
+            any_element(field(key), |f| {
+                Ok(value_as_string(f).is_some_and(|s| re.is_match(&s)))
+            })
         }
+    }
+}
+
+/// A row's value for a predicate key: the flat key when present, otherwise
+/// the dotted path through nested tables (and numeric array indices).
+fn lookup_field<'a>(item: &'a TomlValue, tbl: &'a toml::Table, key: &str) -> Option<&'a TomlValue> {
+    match tbl.get(key) {
+        Some(v) => Some(v),
+        None if key.contains('.') => navigate(item, key),
+        None => None,
+    }
+}
+
+/// Run `test` against each element of an array field, true on the first
+/// match; any other field (or an absent one) is tested as itself. An empty
+/// array matches nothing.
+fn any_element(
+    field: Option<&TomlValue>,
+    mut test: impl FnMut(Option<&TomlValue>) -> Result<bool>,
+) -> Result<bool> {
+    match field {
+        Some(TomlValue::Array(elems)) => {
+            for e in elems {
+                if test(Some(e))? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+        other => test(other),
     }
 }
 
@@ -1763,6 +1850,136 @@ fn split_kv(s: &str) -> Result<(String, String)> {
     Ok((k.to_string(), v.to_string()))
 }
 
+/// The raw values of the thirteen `--where*` flags, borrowed from whichever
+/// argument struct carries them, so the list verbs and the global output
+/// filters parse predicates through one function.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct WhereInput<'a> {
+    pub(crate) where_eq: &'a [String],
+    pub(crate) where_not: &'a [String],
+    pub(crate) where_in: &'a [String],
+    pub(crate) where_has: &'a [String],
+    pub(crate) where_missing: &'a [String],
+    pub(crate) where_gt: &'a [String],
+    pub(crate) where_gte: &'a [String],
+    pub(crate) where_lt: &'a [String],
+    pub(crate) where_lte: &'a [String],
+    pub(crate) where_contains: &'a [String],
+    pub(crate) where_prefix: &'a [String],
+    pub(crate) where_suffix: &'a [String],
+    pub(crate) where_regex: &'a [String],
+}
+
+impl WhereInput<'_> {
+    /// Total flag values across every family.
+    fn len(&self) -> usize {
+        self.families().iter().map(|f| f.len()).sum()
+    }
+
+    fn families(&self) -> [&[String]; 13] {
+        [
+            self.where_eq,
+            self.where_not,
+            self.where_in,
+            self.where_has,
+            self.where_missing,
+            self.where_gt,
+            self.where_gte,
+            self.where_lt,
+            self.where_lte,
+            self.where_contains,
+            self.where_prefix,
+            self.where_suffix,
+            self.where_regex,
+        ]
+    }
+}
+
+impl QueryInput {
+    pub(crate) fn where_input(&self) -> WhereInput<'_> {
+        WhereInput {
+            where_eq: &self.where_eq,
+            where_not: &self.where_not,
+            where_in: &self.where_in,
+            where_has: &self.where_has,
+            where_missing: &self.where_missing,
+            where_gt: &self.where_gt,
+            where_gte: &self.where_gte,
+            where_lt: &self.where_lt,
+            where_lte: &self.where_lte,
+            where_contains: &self.where_contains,
+            where_prefix: &self.where_prefix,
+            where_suffix: &self.where_suffix,
+            where_regex: &self.where_regex,
+        }
+    }
+}
+
+/// Parse every `--where*` value into a `Predicate`, family by family in flag
+/// order. A malformed `KEY=VAL` or an empty `--where-has`/`--where-missing`
+/// key is an error.
+pub(crate) fn predicates_from(input: &WhereInput<'_>) -> Result<Vec<Predicate>> {
+    let mut predicates: Vec<Predicate> = Vec::with_capacity(input.len());
+    for s in input.where_eq {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::Where { key, rhs });
+    }
+    for s in input.where_not {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::WhereNot { key, rhs });
+    }
+    for s in input.where_in {
+        let (key, rhs) = split_kv(s)?;
+        let values: Vec<String> = rhs.split(',').map(|s| s.to_string()).collect();
+        predicates.push(Predicate::WhereIn { key, rhs: values });
+    }
+    for s in input.where_has {
+        if s.is_empty() {
+            bail!("--where-has expects a KEY, got empty string");
+        }
+        predicates.push(Predicate::WhereHas { key: s.clone() });
+    }
+    for s in input.where_missing {
+        if s.is_empty() {
+            bail!("--where-missing expects a KEY, got empty string");
+        }
+        predicates.push(Predicate::WhereMissing { key: s.clone() });
+    }
+    for s in input.where_gt {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::WhereGt { key, rhs });
+    }
+    for s in input.where_gte {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::WhereGte { key, rhs });
+    }
+    for s in input.where_lt {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::WhereLt { key, rhs });
+    }
+    for s in input.where_lte {
+        let (key, rhs) = split_kv(s)?;
+        predicates.push(Predicate::WhereLte { key, rhs });
+    }
+    for s in input.where_contains {
+        let (key, sub) = split_kv(s)?;
+        predicates.push(Predicate::WhereContains { key, sub });
+    }
+    for s in input.where_prefix {
+        let (key, prefix) = split_kv(s)?;
+        predicates.push(Predicate::WherePrefix { key, prefix });
+    }
+    for s in input.where_suffix {
+        let (key, suffix) = split_kv(s)?;
+        predicates.push(Predicate::WhereSuffix { key, suffix });
+    }
+    for s in input.where_regex {
+        let (key, pattern) = split_kv(s)?;
+        predicates.push(Predicate::WhereRegex { key, pattern });
+    }
+    Ok(predicates)
+}
+
 impl Query {
     /// Build a `Query` from a POD `QueryInput`. Validation is handled by
     /// `run` itself — the first thing it does is call `validate_query` on
@@ -1784,21 +2001,8 @@ impl Query {
         // Slight over-allocation when legacy shortcuts are absent is fine;
         // this avoids the 4+ realloc-grow cycles of pushing into an empty
         // `Vec::new()` on busy list calls.
-        let mut predicates: Vec<Predicate> = Vec::with_capacity(
-            4 + input.where_eq.len()
-                + input.where_not.len()
-                + input.where_in.len()
-                + input.where_has.len()
-                + input.where_missing.len()
-                + input.where_gt.len()
-                + input.where_gte.len()
-                + input.where_lt.len()
-                + input.where_lte.len()
-                + input.where_contains.len()
-                + input.where_prefix.len()
-                + input.where_suffix.len()
-                + input.where_regex.len(),
-        );
+        let filters = input.where_input();
+        let mut predicates: Vec<Predicate> = Vec::with_capacity(4 + filters.len());
 
         // Legacy shortcut flags — map onto the new predicate surface so the
         // query engine has a single filter list to evaluate. Duplicating a
@@ -1832,63 +2036,7 @@ impl Query {
             });
         }
 
-        for s in &input.where_eq {
-            let (key, rhs) = split_kv(s)?;
-            predicates.push(Predicate::Where { key, rhs });
-        }
-        for s in &input.where_not {
-            let (key, rhs) = split_kv(s)?;
-            predicates.push(Predicate::WhereNot { key, rhs });
-        }
-        for s in &input.where_in {
-            let (key, rhs) = split_kv(s)?;
-            let values: Vec<String> = rhs.split(',').map(|s| s.to_string()).collect();
-            predicates.push(Predicate::WhereIn { key, rhs: values });
-        }
-        for s in &input.where_has {
-            if s.is_empty() {
-                bail!("--where-has expects a KEY, got empty string");
-            }
-            predicates.push(Predicate::WhereHas { key: s.clone() });
-        }
-        for s in &input.where_missing {
-            if s.is_empty() {
-                bail!("--where-missing expects a KEY, got empty string");
-            }
-            predicates.push(Predicate::WhereMissing { key: s.clone() });
-        }
-        for s in &input.where_gt {
-            let (key, rhs) = split_kv(s)?;
-            predicates.push(Predicate::WhereGt { key, rhs });
-        }
-        for s in &input.where_gte {
-            let (key, rhs) = split_kv(s)?;
-            predicates.push(Predicate::WhereGte { key, rhs });
-        }
-        for s in &input.where_lt {
-            let (key, rhs) = split_kv(s)?;
-            predicates.push(Predicate::WhereLt { key, rhs });
-        }
-        for s in &input.where_lte {
-            let (key, rhs) = split_kv(s)?;
-            predicates.push(Predicate::WhereLte { key, rhs });
-        }
-        for s in &input.where_contains {
-            let (key, sub) = split_kv(s)?;
-            predicates.push(Predicate::WhereContains { key, sub });
-        }
-        for s in &input.where_prefix {
-            let (key, prefix) = split_kv(s)?;
-            predicates.push(Predicate::WherePrefix { key, prefix });
-        }
-        for s in &input.where_suffix {
-            let (key, suffix) = split_kv(s)?;
-            predicates.push(Predicate::WhereSuffix { key, suffix });
-        }
-        for s in &input.where_regex {
-            let (key, pattern) = split_kv(s)?;
-            predicates.push(Predicate::WhereRegex { key, pattern });
-        }
+        predicates.extend(predicates_from(&filters)?);
 
         // Projection: parse `--exclude a,b` into Vec<String>; `select` is
         // already split. `validate_query` enforces `select` / `exclude` /
@@ -2071,6 +2219,119 @@ defer_reason = ""
             .iter()
             .map(|it| it["id"].as_str().unwrap().to_string())
             .collect()
+    }
+
+    // -- array fields and dotted keys -----------------------------------
+
+    fn array_fixture() -> TomlValue {
+        toml::from_str(
+            r#"
+[[items]]
+id = "A"
+files = ["src/output.rs", "src/lib.rs"]
+rounds = [1, 9]
+meta = { tier = "deep" }
+
+[[items]]
+id = "B"
+files = ["docs/x.md"]
+rounds = [2]
+meta = { tier = "lite" }
+
+[[items]]
+id = "C"
+files = []
+rounds = []
+"#,
+        )
+        .unwrap()
+    }
+
+    fn array_ids(p: Predicate) -> Vec<String> {
+        ids(&run(&array_fixture(), "items", &q_with(vec![p])).unwrap())
+    }
+
+    #[test]
+    fn where_in_matches_any_array_element() {
+        assert_eq!(
+            array_ids(Predicate::WhereIn {
+                key: "files".into(),
+                rhs: vec!["nope".into(), "src/lib.rs".into()],
+            }),
+            vec!["A"]
+        );
+    }
+
+    #[test]
+    fn where_gt_matches_any_integer_element() {
+        assert_eq!(
+            array_ids(Predicate::WhereGt {
+                key: "rounds".into(),
+                rhs: "5".into(),
+            }),
+            vec!["A"]
+        );
+    }
+
+    #[test]
+    fn where_prefix_and_suffix_match_any_element() {
+        assert_eq!(
+            array_ids(Predicate::WherePrefix {
+                key: "files".into(),
+                prefix: "docs/".into(),
+            }),
+            vec!["B"]
+        );
+        assert_eq!(
+            array_ids(Predicate::WhereSuffix {
+                key: "files".into(),
+                suffix: ".rs".into(),
+            }),
+            vec!["A"]
+        );
+    }
+
+    #[test]
+    fn empty_array_matches_no_value_predicate() {
+        assert_eq!(
+            array_ids(Predicate::WhereContains {
+                key: "files".into(),
+                sub: "".into(),
+            }),
+            vec!["A", "B"]
+        );
+    }
+
+    #[test]
+    fn dotted_key_reads_nested_table() {
+        assert_eq!(
+            array_ids(Predicate::Where {
+                key: "meta.tier".into(),
+                rhs: "deep".into(),
+            }),
+            vec!["A"]
+        );
+        assert_eq!(
+            array_ids(Predicate::WhereMissing {
+                key: "meta.tier".into(),
+            }),
+            vec!["C"]
+        );
+    }
+
+    #[test]
+    fn predicates_from_keeps_family_order() {
+        let eq = vec!["a=1".to_string()];
+        let has = vec!["b".to_string()];
+        let input = WhereInput {
+            where_eq: &eq,
+            where_has: &has,
+            ..Default::default()
+        };
+        let preds = predicates_from(&input).unwrap();
+        assert!(matches!(&preds[0], Predicate::Where { key, rhs } if key == "a" && rhs == "1"));
+        assert!(matches!(&preds[1], Predicate::WhereHas { key } if key == "b"));
+        assert_eq!(preds.len(), 2);
     }
 
     // -- one test per predicate kind -----------------------------------
