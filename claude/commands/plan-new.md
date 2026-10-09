@@ -30,7 +30,7 @@ The block above is complete and copy-pasteable as-is — do NOT look up `--help`
 
 ## Step 0.5: First-use `plansDirectory` prompt (per-carrier)
 
-Gate: fire ONLY when `envelope.plans_directory == null`. When non-null, skip — the resolved value is already bound. Invoke the `flow-contract-plansdirectory-prompt` skill to load the per-carrier first-use prompt contract (option-list construction including the conditional `.claude/plans/` entry, recommended-first AUQ ordering, headless empty-answer detection, the `"__DONT_ASK__"` sentinel arbitration, free-text follow-up, the `tomlctl json set` persist heredoc, and the in-memory `docs/plans/` default binding). The wording is shared verbatim across `/plan-new`, `/plan-update`, and `/review-plan` — the skill is the single source.
+Gate: fire ONLY when `envelope.plans_directory == null`. When non-null, skip — the resolved value is already bound. Invoke the `flow-contract-plansdirectory-prompt` skill to load the per-carrier first-use prompt contract (option-list construction including the conditional `.claude/plans/` entry, recommended-first AUQ ordering, headless empty-answer detection, the `"__DONT_ASK__"` sentinel arbitration, free-text follow-up, the `tomlctl json set` persist idiom, and the in-memory `docs/plans/` default binding). The wording is shared verbatim across `/plan-new`, `/plan-update`, and `/review-plan` — the skill is the single source.
 
 ## Phase 1: Scope & Parse
 
@@ -67,7 +67,7 @@ Always runs (agents may return early for well-established patterns). **Library e
 
 Launch up to 2 research agents in parallel via the Agent tool. **Default `subagent_type: "research-lite"`** for mechanical fetch-and-summarise (API signatures, pinned versions, changelogs) — the orchestrator carries design synthesis in Phase 6. **Escalate to `research-deep`** only when (a) architectural inference across multiple libraries, (b) choosing between libraries or dependencies, (c) benchmarking-driven research, or (d) re-dispatching an `ESCALATE-TO-DEEP` topic; state `DISPATCH: research-deep — <reason>` at the prompt top. **You MUST make all research Agent tool calls in a single response message; do NOT reduce the agent count.** Each agent gets a non-overlapping scope — explicitly partition topics in each prompt, and name any topic that adds, upgrades or chooses a dependency as such, since that is what brings the method's supply-chain checks to bear. Broaden focus beyond API signatures to architecture, changelog/breaking-change, benchmarking, and undocumented-behaviour research as the task warrants.
 
-After the research agents return, invoke the `flow-contract-vet-research` skill to load the universal vet-pass procedure (triage by source+evidence-grade, `ESCALATE-TO-DEEP` honouring, drop-low-confidence, spot-check sampling, drop/downgrade-with-rationale, the canonical `[[vet_events]]` append heredoc, the mandatory `vet: Agent-{n} (<lens>) — N sampled, M dropped, K downgraded` console line, and the >30% systemic-failure re-dispatch rule). Vet pass is NOT optional — fabrications dressed as fact compound into Phase 6 design.
+After the research agents return, invoke the `flow-contract-vet-research` skill to load the universal vet-pass procedure (triage by source+evidence-grade, `ESCALATE-TO-DEEP` honouring, drop-low-confidence, spot-check sampling, drop/downgrade-with-rationale, the canonical `[[vet_events]]` append, the mandatory `vet: Agent-{n} (<lens>) — N sampled, M dropped, K downgraded` console line, and the >30% systemic-failure re-dispatch rule). Vet pass is NOT optional — fabrications dressed as fact compound into Phase 6 design.
 
 Persist only post-vet findings, each topic with its vetted `Searched:` line, to `## Research Notes`. **Checkpoint**: append `## Research Notes` after `## Exploration Notes`, as the last section of the file (second recovery point). Reason thoroughly to synthesize (actionable findings, conflict resolution, design impact). **Context management**: if context is constrained after Phases 2–3, `/compact "Preserve all exploration notes, research notes, verification commands, and task requirements for plan writing"` before Phase 4; compact again before Phase 6 with `## User Decisions` added to the preservation phrase if still tight.
 
@@ -128,7 +128,7 @@ Call `ExitPlanMode` to present the plan for user approval — the boundary betwe
 
 Plan-mode write restrictions are lifted here, so the carrier may create `.claude/flows/<slug>/` and register the flow in `.claude/active-flow.toml`. Deferring the bootstrap to this phase (rather than doing it alongside the Phase 7 plan write) is what keeps Phase 7 inside plan-mode's "only edit the plan file" rule while still ensuring `/review-plan`, `/implement`, `/plan-update`, `/review`, `/optimise`, and `/optimise-apply` can locate the flow on the very next invocation.
 
-This phase writes the first execution-record bytes (via `tomlctl flow init`'s skeleton). Before that write, invoke the `flow-contract-execution-record-schema` skill to load the canonical execution-record schema (field set, type vocabulary, the heredoc write contract, whose `items add` stamps `last_updated` in the same write, the `tomlctl flow render-progress-log` command that regenerates PROGRESS-LOG.md, `[tasks].completed` derivation, read-path integrity contract, field-length caps, and read rules) so the bootstrap and every downstream writer share one contract.
+This phase writes the first execution-record bytes (via `tomlctl flow init`'s skeleton). Before that write, invoke the `flow-contract-execution-record-schema` skill to load the canonical execution-record schema (field set, type vocabulary, the `flow record` write contract, whose one call mints the id, defaults the date, derives `task_ref`, validates the entry and stamps `last_updated` in the same write, the `tomlctl flow render-progress-log` command that regenerates PROGRESS-LOG.md, `[tasks].completed` derivation, read-path integrity contract, field-length caps, and read rules) so the bootstrap and every downstream writer share one contract.
 
 **Immediately after `ExitPlanMode` returns the user's approval, before any filesystem operation, emit one console line: `bootstrapping flow: <slug>...`** This marker gives the user a visible boundary between plan-mode and the post-approval writes, and gives any downstream log scraper a stable string to anchor on.
 
@@ -172,13 +172,14 @@ This phase writes the first execution-record bytes (via `tomlctl flow init`'s sk
 
    **Idempotent re-run**: when step 2's collision check found a matching `plan_path`, invoke `flow init` unconditionally — its noop path preserves `created` verbatim, leaves the execution record's and the task store's bytes untouched (refreshing their sidecars only if missing), and upserts the registry entry. This is the self-healing recovery path when a previous `/plan-new` crashed between context-write and registry-upsert. On error, surface it verbatim and halt; the user reruns once the underlying issue (disk full, permissions, lock contention) is resolved and the idempotent path picks up cleanly.
 
-   **Seed adoption**: the noop branch upserts the registry entry with this call's `--branch` and `--scope`, but leaves the seed's `context.toml` untouched — and a seed is bootstrapped with neither. Write both explicitly, plus `updated`: the scope as a JSON array of step 3's entries, and the branch only when step 4 captured one.
+   **Seed adoption**: the noop branch upserts the registry entry with this call's `--branch` and `--scope`, but leaves the seed's `context.toml` untouched — and a seed is bootstrapped with neither. Write both explicitly: the scope as a JSON array of step 3's entries, and the branch only when step 4 captured one. `set` infers scalars only, so the array goes through `set-json`; each write refreshes the context's root `updated` itself, so there is no hand-written date.
 
    ```bash
    tomlctl set-json .claude/flows/<slug>/context.toml scope --json '["<glob>"]'
    tomlctl set .claude/flows/<slug>/context.toml branch <branch>
-   tomlctl set .claude/flows/<slug>/context.toml updated <today> --type date
    ```
+
+   Any further scalar the seed needs rides the same `set` as another `--set <key>=<value>` pair, one write for all of them.
 6. **Populate the task store** — `flow init` seeded an empty `tasks.toml` beside the execution record; this step fills it from the approved plan. Run in order, surfacing each envelope's `findings`:
 
    ```bash
