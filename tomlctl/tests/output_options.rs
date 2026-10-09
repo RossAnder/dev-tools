@@ -4,7 +4,9 @@
 //! runs plain, under `-q` (nothing on stdout, same exit status) and under
 //! `--lines` (one JSON value per line, in the case's declared shape); each JSON
 //! case also runs `--select` and `--get` on a key its fixture guarantees. A
-//! text case must refuse `--lines` instead.
+//! text case must refuse `--lines` instead. A JSON read also runs the
+//! report-shaping globals: a wildcard `--get`, `--omit`, `--max-chars`,
+//! `--rows`, `--header` and a global `--where`.
 //!
 //! Reads share one fixture tree; each write invocation gets its own copy.
 
@@ -60,10 +62,11 @@ status = "open"
 file = "src/gone.rs"
 "#;
 
+/// Task 3 is `done` with no commit, so `tasks train` has a group to print.
 const TASKS_FIXTURE: &str = r#"schema_version = 1
 last_updated = 2026-09-07
 plan_path = "docs/plans/fixture-tasks-flow.md"
-last_import_refs = ["first", "second"]
+last_import_refs = ["first", "second", "third"]
 
 [policy]
 checkpoints = "single"
@@ -95,6 +98,22 @@ effort = "S"
 status = "pending"
 files = ["src/b.rs"]
 needs = [1]
+coupling = []
+deps_note = ""
+action = ""
+detail = ""
+acceptance = ""
+agent = ""
+commit = ""
+
+[[items]]
+id = 3
+ref = "third"
+title = "Third"
+effort = "S"
+status = "done"
+files = ["src/a.rs"]
+needs = []
 coupling = []
 deps_note = ""
 action = ""
@@ -250,6 +269,11 @@ fn cases() -> Vec<Case> {
         text(&["items", "next-id", LEDGER, "--prefix", "R"]),
         write(&["items", "apply", LEDGER, "--ops", "-"], "ok")
             .stdin(r#"[{"op":"remove","id":"R4"}]"#),
+        write(
+            &["items", "apply", LEDGER, "--id-prefix", "R", "--ops", "-"],
+            "ids",
+        )
+        .stdin(r#"[{"op":"add","json":{"status":"open","file":"src/c.rs"}}]"#),
         read(&["items", "find-duplicates", LEDGER], Top, "tier"),
         read(&["items", "fingerprint", LEDGER, "R1"], One, "dedup_id"),
         read(&["items", "orphans", LEDGER], Top, "class"),
@@ -321,6 +345,28 @@ fn cases() -> Vec<Case> {
         read(&["flow", "resolve"], One, "slug"),
         read(&["flow", "doctor"], One, "ok").isolated(),
         read(&["flow", "list"], Field("flows"), "slug"),
+        write(
+            &[
+                "flow",
+                "record",
+                "--slug",
+                S,
+                "--type",
+                "checkpoint",
+                "--set",
+                "agent=implement",
+                "--set",
+                "summary=checkpoint reached",
+            ],
+            "id",
+        ),
+        write(&["flow", "record", "--slug", S, "--ndjson", "-"], "id")
+            .rows("rows")
+            .stdin(concat!(
+                r#"{"type":"checkpoint","agent":"implement","summary":"one"}"#,
+                "\n",
+                r#"{"type":"checkpoint","agent":"implement","summary":"two"}"#
+            )),
         text(&["flow", "render-progress-log", "--slug", S, "--stdout"]),
         read(&["json", "get", JSON_DOC, "a"], One, "b"),
         text(&["json", "get", JSON_DOC, "a.b", "--raw"]),
@@ -349,6 +395,16 @@ fn cases() -> Vec<Case> {
             Field("candidates"),
             "id",
         ),
+        read(
+            &["backlog", "check", "--ndjson", "-"],
+            Field("results"),
+            "verdict",
+        )
+        .stdin(concat!(
+            r#"{"summary":"probe flakes on slow CI"}"#,
+            "\n",
+            r#"{"summary":"an unrelated thing"}"#
+        )),
         read(&["backlog", "list"], Top, "id"),
         read(&["backlog", "show", "{B1}"], One, "item"),
         read(&["backlog", "show", "{B1},{B2}"], Top, "item"),
@@ -430,6 +486,7 @@ fn cases() -> Vec<Case> {
         text(&["tasks", "edges", "--slug", S, "--dot"]),
         read(&["tasks", "ready", "--slug", S], One, "ready"),
         read(&["tasks", "batches", "--slug", S], Field("batches"), "0"),
+        read(&["tasks", "train", "--slug", S], Field("groups"), "ids"),
         read(
             &["tasks", "closure", "--task", "2", "--up", "--slug", S],
             One,
@@ -699,12 +756,115 @@ fn run(fx: &Fixture, case: &Case, before: &[&str], after: &[&str]) -> Run {
     }
 }
 
-fn nav<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
-    match v {
-        Value::Object(map) => map.get(key),
-        Value::Array(items) => key.parse::<usize>().ok().and_then(|i| items.get(i)),
+/// The value at a dotted `path`; a numeric segment indexes an array.
+fn nav<'a>(v: &'a Value, path: &str) -> Option<&'a Value> {
+    path.split('.').try_fold(v, |node, seg| match node {
+        Value::Object(map) => map.get(seg),
+        Value::Array(items) => seg.parse::<usize>().ok().and_then(|i| items.get(i)),
         _ => None,
+    })
+}
+
+/// What a `*` segment matches: an object's values or an array's elements.
+fn children(v: &Value) -> Vec<&Value> {
+    match v {
+        Value::Object(map) => map.values().collect(),
+        Value::Array(items) => items.iter().collect(),
+        _ => Vec::new(),
     }
+}
+
+/// The rows a report-wide option walks: the row set, or the single value.
+fn units(report: &Value, shape: Shape) -> Vec<&Value> {
+    rows_of(report, shape).map_or_else(|| vec![report], |rows| rows.iter().collect())
+}
+
+/// `--get '*'`: every match of every row on its own line, unsplit.
+fn expected_wild_get(report: &Value, shape: Shape) -> String {
+    units(report, shape)
+        .into_iter()
+        .flat_map(children)
+        .map(|v| format!("{}\n", value_text(v)))
+        .collect()
+}
+
+/// `--max-chars n` over every string value, keys untouched.
+fn trim_strings(v: &mut Value, n: usize) {
+    match v {
+        Value::String(s) => {
+            let len = s.chars().count();
+            if len > n {
+                *s = format!("{}…(+{})", s.chars().take(n).collect::<String>(), len - n);
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(|i| trim_strings(i, n)),
+        Value::Object(map) => map.values_mut().for_each(|i| trim_strings(i, n)),
+        _ => {}
+    }
+}
+
+/// `--omit key --max-chars n`: `key` leaves every row and the header (or the
+/// single value), then every remaining string is trimmed.
+fn expected_omit_trim(report: &Value, shape: Shape, key: Option<&str>, n: usize) -> Value {
+    let mut out = report.clone();
+    if let Some(key) = key {
+        if let Some(map) = out.as_object_mut() {
+            map.shift_remove(key);
+        }
+        let rows = match shape {
+            Shape::Top => out.as_array_mut(),
+            Shape::Field(field) => out.get_mut(field).and_then(Value::as_array_mut),
+            Shape::One | Shape::Text => None,
+        };
+        for row in rows.into_iter().flatten() {
+            if let Some(map) = row.as_object_mut() {
+                map.shift_remove(key);
+            }
+        }
+    }
+    trim_strings(&mut out, n);
+    out
+}
+
+/// The report with its rows narrowed to those `--where key=<want>` keeps: a
+/// row whose `key` equals `want`, or holds it as an array element.
+fn filtered(report: &Value, shape: Shape, key: &str, want: &Value) -> Value {
+    let keep = |row: &&Value| match nav(row, key) {
+        Some(Value::Array(items)) => items.contains(want),
+        Some(v) => v == want,
+        None => false,
+    };
+    let rows: Vec<Value> = rows_of(report, shape)
+        .unwrap()
+        .iter()
+        .filter(keep)
+        .cloned()
+        .collect();
+    match shape {
+        Shape::Field(field) => {
+            let mut out = report.clone();
+            out[field] = Value::Array(rows);
+            out
+        }
+        _ => Value::Array(rows),
+    }
+}
+
+/// The first array-valued field of a single-object report, for `--rows`.
+fn array_field(report: &Value) -> Option<&str> {
+    report.as_object()?.iter().find_map(|(k, v)| {
+        v.as_array()
+            .is_some_and(|a| !a.is_empty())
+            .then_some(k.as_str())
+    })
+}
+
+/// Whether `run` was refused with `kind=validation` under `--error-format json`.
+fn refused_as_validation(run: &Run) -> bool {
+    run.code == Some(1)
+        && run.stdout.is_empty()
+        && serde_json::from_str::<Value>(run.stderr.trim())
+            .is_ok_and(|e| e["error"]["kind"] == "validation")
 }
 
 fn value_text(v: &Value) -> String {
@@ -728,18 +888,21 @@ fn rows_of(report: &Value, shape: Shape) -> Option<&Vec<Value>> {
 fn expected_lines(report: &Value, shape: Shape) -> Vec<Value> {
     match shape {
         Shape::Top => report.as_array().unwrap().clone(),
-        Shape::Field(key) => {
-            let mut header = report.as_object().unwrap().clone();
-            let rows = header.shift_remove(key).unwrap();
-            let mut lines = Vec::new();
-            if !header.is_empty() {
-                lines.push(Value::Object(header));
-            }
-            lines.extend(rows.as_array().unwrap().iter().cloned());
-            lines
-        }
+        Shape::Field(key) => field_lines(report, key),
         Shape::One | Shape::Text => vec![report.clone()],
     }
+}
+
+/// The header line, when the header is not empty, then one line per row.
+fn field_lines(report: &Value, key: &str) -> Vec<Value> {
+    let mut header = report.as_object().unwrap().clone();
+    let rows = header.shift_remove(key).unwrap();
+    let mut lines = Vec::new();
+    if !header.is_empty() {
+        lines.push(Value::Object(header));
+    }
+    lines.extend(rows.as_array().unwrap().iter().cloned());
+    lines
 }
 
 fn expected_select(report: &Value, shape: Shape, key: &str) -> Value {
@@ -890,8 +1053,7 @@ fn check(fx: &Fixture, case: &Case) -> Vec<String> {
             ));
         }
 
-        let engine_listed = matches!(case.argv, ["items" | "backlog" | "tasks", "list", ..]);
-        if rows.len() > 1 && !engine_listed {
+        if rows.len() > 1 {
             let limited = run(fx, case, &[], &["--limit", "1", "--lines"]);
             match json_lines(&limited.stdout) {
                 Ok(got)
@@ -907,6 +1069,12 @@ fn check(fx: &Fixture, case: &Case) -> Vec<String> {
                 )),
             }
         }
+    }
+
+    if !case.write {
+        read_options(fx, case, &report)
+            .into_iter()
+            .for_each(&mut fail);
     }
 
     if case.write {
@@ -931,6 +1099,113 @@ fn check(fx: &Fixture, case: &Case) -> Vec<String> {
                     "--error-format json must put the warning on stderr as a JSON line: exited {:?}, stderr {:?}",
                     json.code, json.stderr
                 ));
+            }
+        }
+    }
+    fails
+}
+
+/// The report-shaping globals on a read: a wildcard `--get`, `--omit` with
+/// `--max-chars`, `--rows` and `--header` on the report kind each applies to
+/// (and refused on the other), and a global `--where` on a row report
+/// (refused on a single object). Writes are left out because each run writes.
+fn read_options(fx: &Fixture, case: &Case, report: &Value) -> Vec<String> {
+    let mut fails = Vec::new();
+    let shape = case.shape;
+    let rows = rows_of(report, shape);
+    let refusal = |after: &[&str]| {
+        let mut argv = vec!["--error-format", "json"];
+        argv.extend_from_slice(after);
+        let got = run(fx, case, &[], &argv);
+        (refused_as_validation(&got), got.stderr)
+    };
+
+    let wild = run(fx, case, &[], &["--get", "*"]);
+    let want = expected_wild_get(report, shape);
+    if wild.code != Some(0) || wild.stdout != want {
+        fails.push(format!(
+            "--get '*' printed {:?} (stderr {:?}), expected {want:?}",
+            wild.stdout, wild.stderr
+        ));
+    }
+
+    let objects = units(report, shape).iter().all(|u| u.is_object());
+    let omit = (objects && case.key.parse::<usize>().is_err()).then_some(case.key);
+    let mut after = vec!["--max-chars", "1"];
+    if let Some(key) = omit {
+        after.extend(["--omit", key]);
+    }
+    let trimmed = run(fx, case, &[], &after);
+    let want = expected_omit_trim(report, shape, omit, 1);
+    match serde_json::from_str::<Value>(&trimmed.stdout) {
+        Ok(got) if got == want && trimmed.code == Some(0) => {}
+        _ => fails.push(format!(
+            "{} printed {:?} (stderr {:?}), expected {want}",
+            after.join(" "),
+            trimmed.stdout,
+            trimmed.stderr
+        )),
+    }
+
+    match rows {
+        None => {
+            if let Some(field) = array_field(report) {
+                let rerooted = run(fx, case, &[], &["--rows", field, "--lines"]);
+                let want = field_lines(report, field);
+                match json_lines(&rerooted.stdout) {
+                    Ok(got) if got == want && rerooted.code == Some(0) => {}
+                    _ => fails.push(format!(
+                        "--rows {field} --lines printed {:?} (stderr {:?}), expected {want:?}",
+                        rerooted.stdout, rerooted.stderr
+                    )),
+                }
+            }
+            for probe in [&["--header"][..], &["--where", "a=b"]] {
+                let (refused, stderr) = refusal(probe);
+                if !refused {
+                    fails.push(format!(
+                        "{} on a single object must be refused as validation; stderr {stderr:?}",
+                        probe.join(" ")
+                    ));
+                }
+            }
+        }
+        Some(rows) => {
+            let (refused, stderr) = refusal(&["--rows", "x"]);
+            if !refused {
+                fails.push(format!(
+                    "--rows on a row report must be refused as validation; stderr {stderr:?}"
+                ));
+            }
+            if let Shape::Field(field) = shape {
+                let header = run(fx, case, &[], &["--header"]);
+                let mut want = report.clone();
+                want.as_object_mut().unwrap().shift_remove(field);
+                match serde_json::from_str::<Value>(&header.stdout) {
+                    Ok(got) if got == want && header.code == Some(0) => {}
+                    _ => fails.push(format!(
+                        "--header printed {:?} (stderr {:?}), expected {want}",
+                        header.stdout, header.stderr
+                    )),
+                }
+            }
+            let scalar = rows
+                .first()
+                .filter(|row| row.is_object())
+                .and_then(|row| nav(row, case.key))
+                .map(|v| v.as_array().and_then(|a| a.first()).unwrap_or(v))
+                .filter(|v| v.is_string() || v.is_number() || v.is_boolean());
+            if let Some(value) = scalar {
+                let pair = format!("{}={}", case.key, value_text(value));
+                let filtered_run = run(fx, case, &[], &["--where", &pair, "--lines"]);
+                let want = expected_lines(&filtered(report, shape, case.key, value), shape);
+                match json_lines(&filtered_run.stdout) {
+                    Ok(got) if got == want && filtered_run.code == Some(0) => {}
+                    _ => fails.push(format!(
+                        "--where {pair} --lines printed {:?} (stderr {:?}), expected {want:?}",
+                        filtered_run.stdout, filtered_run.stderr
+                    )),
+                }
             }
         }
     }
