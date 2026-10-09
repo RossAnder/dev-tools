@@ -17,6 +17,7 @@ of the read verbs, and of what every verb shares.
 - [`tasks ready`](#tasks-ready)
 - [`tasks batches`](#tasks-batches)
 - [`tasks closure`](#tasks-closure)
+- [`tasks train`](#tasks-train)
 - [`tasks check`](#tasks-check)
 - [`tasks render`](#tasks-render)
 - [`tasks snapshot`](#tasks-snapshot)
@@ -30,7 +31,7 @@ envelope and the frozen contracts — is [tasks-store.md](tasks-store.md).
 
 Every mutating verb carries the shared write bundle — `--allow-outside`, `--no-create`,
 `--no-write-integrity`, `--strict-integrity`, `--verify-integrity` — and every read verb
-(`show`, `list`, `edges`, `ready`, `batches`, `closure`, `check`, `render`, `snapshot`) the read
+(`show`, `list`, `edges`, `ready`, `batches`, `closure`, `train`, `check`, `render`, `snapshot`) the read
 bundle, `--verify-integrity` and `--strict-read`. A missing store is `kind=not_found` either
 way; `--strict-read` makes that hold under `--verify-integrity` too, by checking before the
 sidecar does.
@@ -41,7 +42,8 @@ from the flow context or the store's recorded `plan_path` rather than from an ar
 carries the read bundle and no write flag has a hook on it. Every verb also takes the global
 `--error-format text|json`; see [flow.md](flow.md#error-format---error-format-json) for the
 JSON envelope and its `kind` taxonomy. The global output options — `--select`, `--limit`,
-`--lines`, `--get`, `--template`, `-q` — shape any verb's stdout; see
+`--lines`, `--get`, `--template`, `-q`, `--rows`, `--header`, `--where*`, `--omit`,
+`--max-chars` — shape any verb's stdout; see
 [Output options](../SKILL.md#output-options).
 
 ## Output fields
@@ -58,18 +60,23 @@ or a documented count. `import-plan`, `check` and `render --check` report findin
 ```bash
 tomlctl tasks show <id> --slug <slug> --with body,files,deps
 tomlctl tasks show 3,7,12 --slug <slug> --get status
+tomlctl tasks show 3,7 --slug <slug> --with absent --select id,absent --lines
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | *(positional)* | ids, comma- or space-separated | Tasks to print. At least one. | — |
-| `--with` | comma-separated, repeatable | `summary`, `body`, `files`, `deps`, `dependents`. A clap `value_enum`: an unknown part exits `2` with usage prose naming it and listing the valid set, **outside** the `--error-format json` envelope — not the exit-`1` `kind=validation` error `--effort` and `--status` raise. | `summary` |
+| `--with` | comma-separated, repeatable | `summary`, `body`, `files`, `deps`, `dependents`, `absent`. A clap `value_enum`: an unknown part exits `2` with usage prose naming it and listing the valid set, **outside** the `--error-format json` envelope — not the exit-`1` `kind=validation` error `--effort` and `--status` raise. | `summary` |
 
 One id prints that row's object. Several print an array of those objects in the order given,
 with `--with` applied to each, so the global `--get`, `--select` and `--lines` work per row.
 An unknown id errors with `kind=not_found` and fails the whole call, whichever position it
 holds. Only `dependents` builds the graph, so a store with a cycle or a dangling edge still
 shows its rows under every other part.
+
+The ids are positional. A hidden `--id` flag (also spelt `--ids`) is accepted for the
+spelling agents guess, takes the same comma-separated list, and is appended after the
+positional ids; it is not listed in `--help`, so write the ids positionally.
 
 | Key | Value | Meaning |
 |---|---|---|
@@ -81,6 +88,7 @@ shows its rows under every other part.
 | `action`, `detail`, `acceptance` | text | The `body` part. |
 | `deps[]` | summaries | The `deps` part: the `summary` keys of each direct `needs` ∪ `coupling` target, ascending by id. |
 | `dependents[]` | summaries | The `dependents` part: the `summary` keys of each transitive successor, excluding the row itself. |
+| `absent` | paths | The `absent` part: the row's `files` that do not exist under the repo root (`TOMLCTL_ROOT`, else the git top level), in `files` order; `[]` when every one exists. A path the task declares `(new)` is expected here before it runs. |
 | `import_override.files`, `import_override.needs` | paths, ids | The plan **base** each stamped field replaced — not the patched `files` / `needs` above it. Ungated by `--with`; an unstamped field is omitted and the whole key is absent from an unstamped row. |
 | `backlog.closes`, `backlog.refs` | backlog ids | The row's `[[backlog_links]]` entry. Ungated by `--with`; absent from an unlinked row. |
 
@@ -213,6 +221,53 @@ The two modes print disjoint key sets:
 | `task` | id | `--task` mode: the row walked from. |
 | `direction` | `up` \| `down` | The direction flag given. |
 | `ids` | ids, ascending | The walk, `task` included. |
+
+## `tasks train`
+
+The commit train: which `done` rows to commit together, and in what order. The candidates are
+the rows whose `status` is `done` and whose `commit` is empty, narrowed to a window.
+
+```bash
+tomlctl tasks train --slug <slug> --checkpoint B
+tomlctl tasks train --slug <slug> --ids 8,9,14 --granularity per-task
+tomlctl tasks train --slug <slug> --checkpoint B --template '{ids} {files}'
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--checkpoint` | comma-separated group ids, repeatable | Narrow the window to these groups' members. Conflicts with `--ids`. | every candidate |
+| `--ids` | comma-separated ids | Narrow the window to these rows. Conflicts with `--checkpoint`. | every candidate |
+| `--granularity` | `per-task` \| `per-checkpoint` \| `single-commit` | Override the store's `[policy] commit_granularity`. A clap `value_enum`: an unknown value exits `2` with usage prose, outside the `--error-format json` envelope. | the policy's |
+
+The groups are built in four steps:
+
+1. **Seed** by granularity: one group per row under `per-task`, one per `checkpoint` under
+   `per-checkpoint` (rows with no checkpoint form one group of their own), one for the whole
+   window under `single-commit`.
+2. **Merge** any two groups that share a file, across dependency layers, so no file is staged
+   by two commits.
+3. **Collapse** every set of groups that depend on each other both ways — a merge across layers
+   can create that cycle — into one group. Dependencies are read over the whole store, so a row
+   outside the window still orders the groups either side of it.
+4. **Order** the groups topologically, layer by layer, lowest id first within a layer.
+
+Four inputs are refused with `kind=validation` rather than read as an empty train: an id no row
+carries, a checkpoint no row or `[[checkpoints]]` entry names (the empty id included), a stored
+`commit_granularity` outside the vocabulary with no `--granularity` to override it, and a cyclic
+store. A window holding no candidate is not an error: `groups` is `[]`.
+
+`groups` is the row set the global output options act on, so `--template`, `--get` and
+`--lines` work per group.
+
+| Key | Value | Meaning |
+|---|---|---|
+| `granularity` | `per-task` \| `per-checkpoint` \| `single-commit` | The granularity applied, after any override. |
+| `groups[]` | objects | One per commit, in commit order. |
+| `groups[].ids` | ids, ascending | The rows the commit lands. Record the SHA against each with `tasks update`. |
+| `groups[].refs` | refs | Each row's `ref`, in `ids` order. |
+| `groups[].files` | paths, sorted | The union of the rows' `files` — the paths to stage. |
+| `groups[].checkpoints` | group ids, sorted | The rows' checkpoint groups; `""` is left out. |
+| `groups[].shared_with_pending` | paths, sorted | Group files a row not yet `done` also claims. Its edit may already be in the working tree, so staging the whole file would sweep that edit into this commit. |
 
 ## `tasks check`
 

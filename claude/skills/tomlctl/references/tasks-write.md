@@ -196,14 +196,19 @@ resolved and every row's patch validated before anything changes, so an unknown 
 on any row aborts the whole call and writes nothing. One id
 prints the single-row envelope; several print `{"ok":true,"results":[…]}`, one entry per
 distinct id in the order given, and the output options act on `results` (`--get id` prints one
-id per line).
+id per line, `--get ref` one `ref`).
+
+The ids are positional. A hidden `--id` flag (also spelt `--ids`) is accepted for the spelling
+agents guess, takes the same comma-separated list, and is appended after the positional ids;
+it is not listed in `--help`, so write the ids positionally.
 
 | Key | Value | Meaning |
 |---|---|---|
 | `ok` | `true` | Success path only; a refusal arrives as a `kind=validation` error and moves nothing. |
 | `id` | id | One id only: the patched row, echoing the positional argument. |
+| `ref` | slug | One id only: the row's `ref` after the patch — the new one when `--ref` rewrote it. The join key the execution record's `task_ref` holds, so a caller recording the outcome needs no second read. |
 | `changed` | field names, ascending | One id only: fields whose value moved. Each assignment is compared against what the row already held, so this is what moved rather than what was passed — a re-issued `--status done` reports `[]`. `import_override` joins the list whenever the call adds the stamp, adds a field to it, or drops it. |
-| `results[]` | objects | Several ids only, in place of `id` and `changed`: each row's `id` and `changed`, as above. |
+| `results[]` | objects | Several ids only, in place of `id`, `ref` and `changed`: each row's `id`, `ref` and `changed`, as above. |
 
 ## `tasks remove`
 

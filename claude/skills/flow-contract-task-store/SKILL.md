@@ -1,6 +1,6 @@
 ---
 name: flow-contract-task-store
-description: Canonical contract for a flow's per-flow task DAG store at `.claude/flows/<slug>/tasks.toml` and the `tomlctl tasks` verb group that owns it — the store schema and row fields, the `ref` slug rule that makes a task heading the primary key and import upsert key, the status vocabulary, the `needs` / `coupling` edge kinds and the graph products (`ready`, `batches`, `closure`, checkpoint membership) computed on read, the semantics of every `tasks` verb from `import-plan` to `render`, the `check` finding classes and exit policy, the render contract's three owned sections, auto-import at Step 0, the ref-set diff gate and the renamed-heading trap, the orchestrator-only status-write rule, the fetch-by-id dispatch idiom, and `tomlctl integrity refresh` as the recovery step after a failed write. Consult before any read or write of a flow's tasks.toml by /plan-new, /implement, /review-plan, or /plan-update.
+description: Canonical contract for a flow's per-flow task DAG store at `.claude/flows/<slug>/tasks.toml` and the `tomlctl tasks` verb group that owns it — the store schema and row fields, the `ref` slug rule that makes a task heading the primary key and import upsert key, the status vocabulary, the `needs` / `coupling` edge kinds and the graph products (`ready`, `batches`, `closure`, checkpoint membership, the `train` commit groups) computed on read, the semantics of every `tasks` verb from `import-plan` to `render`, the `check` finding classes and exit policy, the render contract's three owned sections, auto-import at Step 0, the ref-set diff gate and the renamed-heading trap, the orchestrator-only status-write rule, the fetch-by-id dispatch idiom, and `tomlctl integrity refresh` as the recovery step after a failed write. Consult before any read or write of a flow's tasks.toml by /plan-new, /implement, /review-plan, or /plan-update.
 ---
 
 ## Task-store contract
@@ -156,7 +156,7 @@ tomlctl tasks add --slug <slug> --title "Extract the token reader" --effort S --
 printf '%s\n' '{"title":"Add the retry guard","effort":"S","files":["src/retry.rs"],"needs":[3]}' | tomlctl tasks add-many --slug <slug> --ndjson -
 ```
 
-**`update`** — patch the mutable fields of one row, or of several given as an id list (`8,9,14` or `8 9 14`). Several ids take the same patch under one lock and one write; every id is resolved and every row's patch validated first, so an unknown id or one refused row writes nothing. One id prints `{"ok":true,"id":…,"changed":[…]}`; several print `{"ok":true,"results":[{"id":…,"changed":[…]},…]}`. `--ref` names one row's key and so takes a single id. `changed[]` reports what actually moved, not what was passed, so a re-issued `--status done` reports no change. `--set` reaches `title`, `effort`, `status`, `checkpoint`, `agent`, `commit`, `deps_note`, `action`, `detail`, `acceptance` and `coupling`; `files` and `needs` are owned by `import-plan` and refused unless `--unlock-import-fields` rides along (§5a).
+**`update`** — patch the mutable fields of one row, or of several given as an id list (`8,9,14` or `8 9 14`). Several ids take the same patch under one lock and one write; every id is resolved and every row's patch validated first, so an unknown id or one refused row writes nothing. One id prints `{"ok":true,"id":…,"ref":…,"changed":[…]}`; several print `{"ok":true,"results":[{"id":…,"ref":…,"changed":[…]},…]}`. `ref` is the row's key as the write left it — the new one after `--ref` — so the orchestrator recording the outcome against the execution record's `task_ref` needs no second read. `--ref` names one row's key and so takes a single id. `changed[]` reports what actually moved, not what was passed, so a re-issued `--status done` reports no change. `--set` reaches `title`, `effort`, `status`, `checkpoint`, `agent`, `commit`, `deps_note`, `action`, `detail`, `acceptance` and `coupling`; `files` and `needs` are owned by `import-plan` and refused unless `--unlock-import-fields` rides along (§5a).
 
 ```bash
 tomlctl tasks update <id> --slug <slug> --status in-progress --agent implement-deep
@@ -190,7 +190,7 @@ A successful removal also drops the row's `[[import_overrides]]` entry, so the s
 tomlctl tasks remove <id> --slug <slug> --force
 ```
 
-**`show`** — one row's object, or for an id list an array of row objects in the order given, `--with` applied to each; an unknown id fails the whole call. Without `--with` the output is the summary shape (`id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `files`, `needs`, `coupling`). `id` is always emitted whatever `--with` selects, so a fetched row can be matched back to the id that was asked for. `deps` is the row's own direct targets; `dependents` is the transitive successor set.
+**`show`** — one row's object, or for an id list an array of row objects in the order given, `--with` applied to each; an unknown id fails the whole call. Without `--with` the output is the summary shape (`id`, `ref`, `title`, `effort`, `status`, `checkpoint`, `files`, `needs`, `coupling`). `id` is always emitted whatever `--with` selects, so a fetched row can be matched back to the id that was asked for. `deps` is the row's own direct targets; `dependents` is the transitive successor set. `absent` lists the row's `files` that do not exist under the repo root, in `files` order and `[]` when all exist — the dispatch-time file state §12 records.
 
 The `files` part adds three keys after `files`, always present when it is selected. `file_notes` maps each path the row claims that carries a `[[file_notes]]` entry to its note, `{}` when none does. `new_files` and `deleted_files` list the paths whose note marks a created or a removed file, in the row's `files` order and possibly empty. The kind is derived from the note on read, never stored: a note counts only when it opens with a parenthetical whose first word — after optional whitespace, case-insensitive — is `new`, `create` or `created` (a new file) or `delete`, `deleted`, `remove` or `removed` (a removed one), followed by optional whitespace and one of `)`, `,`, `;`, `:` or `—`. So `(NEW)`, `( created )` and `(new, generated)` mark a new file, while `(new thread)` describes an addition to an existing one and `(remove the call)` an edit. This is how an implementer sees the plan's per-file notes, and how a rollback learns which paths the task declared it creates.
 
@@ -235,6 +235,12 @@ tomlctl tasks closure --slug <slug> --checkpoint A
 tomlctl tasks closure --slug <slug> --task <id> --up
 ```
 
+**`train`** — the commit train: the rows whose `status` is `done` and whose `commit` is empty, narrowed to `--checkpoint` groups or to `--ids` (the two conflict), grouped into commits and printed in commit order as `{granularity, groups[{ids, refs, files, checkpoints, shared_with_pending}]}`. Groups seed from `policy.commit_granularity`, which `--granularity` overrides: one per row, one per checkpoint group (rows with no group forming one more), or one for the window. Any two groups sharing a file then merge — across dependency layers, so no file is staged by two commits — and groups that end up depending on each other both ways collapse into one, because such a merge can close a cycle. The groups are ordered topologically, layer by layer and lowest id first within a layer, with dependencies read over the whole store. `files` is what the commit stages; `shared_with_pending` names the group files a row not yet `done` also claims, whose working-tree edits staging the whole file would sweep in. An unknown id, an unknown or empty checkpoint, a stored granularity outside the vocabulary and a cyclic store are each refused with `kind=validation`; a window with no candidate prints `groups: []`. The verb only reads: the orchestrator commits each group and then records the SHA on its `ids` with `update --commit`.
+
+```bash
+tomlctl tasks train --slug <slug> --checkpoint B
+```
+
 **`check`** — the invariant checks (§7).
 
 ```bash
@@ -253,7 +259,7 @@ tomlctl tasks render --slug <slug> --check
 tomlctl tasks snapshot --slug <slug>
 ```
 
-`ready`, `batches` and `closure` **refuse a cyclic store** rather than answering. Kahn strands a cycle's members, and a stranded task reads in a frontier exactly like one that is merely waiting — a partial answer would be indistinguishable from a clean bill. Run `tasks check` to get the cycle's members named.
+`ready`, `batches`, `closure` and `train` **refuse a cyclic store** rather than answering. Kahn strands a cycle's members, and a stranded task reads in a frontier exactly like one that is merely waiting — a partial answer would be indistinguishable from a clean bill. Run `tasks check` to get the cycle's members named.
 
 `closure --checkpoint <id> --up` (or `--down`) is likewise refused with `kind=validation`: a direction walks one task, and silently ignoring it on a checkpoint would answer a question nobody asked.
 
@@ -367,7 +373,7 @@ then re-import. The gate is specified as a `--dry-run` step precisely so the ren
 
 ### 11. Status writes are the orchestrator's
 
-Only the orchestrating carrier writes to the store. `import-plan`, `add`, `add-many`, `update`, `remove` and `render` are orchestrator verbs; a sub-agent gets the read verbs — `show`, `list`, `edges`, `ready`, `batches`, `closure`, `check`, `snapshot` — and nothing else.
+Only the orchestrating carrier writes to the store. `import-plan`, `add`, `add-many`, `update`, `remove` and `render` are orchestrator verbs; a sub-agent gets the read verbs — `show`, `list`, `edges`, `ready`, `batches`, `closure`, `train`, `check`, `snapshot` — and nothing else.
 
 An implementing agent reports its outcome in its return payload, exactly as it does today. The orchestrator moves the row (`--status in-progress` at dispatch, `--status done` or `--status failed` on return) and appends the execution-record entry. Two writers on one store means a row's status and the record's `task-completion` entries can disagree, and the store has no supersession mechanism to reconcile them.
 
@@ -384,6 +390,12 @@ tomlctl tasks show <id> --slug <slug> --with body,files,deps
 That is the whole point of the store: `## Tasks` is the largest single thing an orchestrator loads, and only the agent executing a task needs that task's prose. The prompt still carries the byte-identical shared preamble every agent gets; the per-task text is fetched.
 
 `--with deps` gives the agent its direct dependency summaries, which is what it needs to know what already exists. `--with dependents` is a planning read, not a dispatch read — it walks the transitive successor set and grows with the plan.
+
+`--with absent` is the orchestrator's half of the same fetch. Before dispatching, it records which of each row's claimed files do not exist yet, in one read for the whole round, so a later rollback can tell a file the task created from one it edited:
+
+```bash
+tomlctl tasks show <id>,<id> --slug <slug> --with absent --template 'dispatch {id}: absent at dispatch — {absent}'
+```
 
 ### 13. Degradation is a halt, never a fallback
 
