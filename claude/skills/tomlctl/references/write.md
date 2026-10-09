@@ -3,8 +3,9 @@
 The mutating half of the tomlctl surface: `set`, `set-json`, `array-append`, the `items`
 batch verbs (`add`, `add-many`, `update`, `remove`, `apply`, `backfill-dedup-id`,
 `sweep --update`) and `integrity refresh`, together with the cross-cutting behaviours every one of them inherits
-— auto-create on first write, `--dry-run` preview, stdin payload handling, and the dedup
-fingerprint contract. The read-only verbs live in [query.md](query.md).
+— auto-create on first write, `--dry-run` preview, the field flags, payload input, and the dedup
+fingerprint contract. The read-only verbs live in [query.md](query.md); execution-record
+entries are written with `flow record`, documented in [flow.md](flow.md).
 
 ## Contents
 
@@ -12,6 +13,7 @@ fingerprint contract. The read-only verbs live in [query.md](query.md).
 - [Write operations](#write-operations)
   - [Auto-create on first write](#auto-create-on-first-write)
   - [`last_updated` stamping](#last_updated-stamping)
+  - [Field flags](#field-flags)
   - [`set`](#set)
   - [`set-json`](#set-json)
   - [`items add`](#items-add)
@@ -31,20 +33,18 @@ fingerprint contract. The read-only verbs live in [query.md](query.md).
 ## Common recipes
 
 ```bash
-# 1. Append a task-completion entry with commits[]; the write itself refreshes last_updated
-cat <<'EOF' | tomlctl items add .claude/flows/<slug>/execution-record.toml --id-prefix E --json -
-{
-  "type":"task-completion","date":"2026-04-18","agent":"implement",
-  "task_ref":"add-retry-logic","dispatch_tier":"lite","dispatch_agent":"implement-lite",
-  "vet":"sampled-pass","retries":0,"summary":"Added retry logic in src/retry.rs",
-  "files":["src/retry.rs"],"commits":["ab12cd3","9e8f1a2"],"status":"done"
-}
-EOF
+# 1. Record a task completion: the tool mints the id, stamps the date and derives task_ref
+#    from task 7. The summary was written to a file with the Write tool first.
+tomlctl flow record --slug <slug> --type task-completion --task 7 \
+  --set agent=implement --set dispatch_tier=lite --set dispatch_agent=implement-lite \
+  --set vet=sampled-pass --set retries=0 --set status=done \
+  --set-file summary=.claude/flows/<slug>/_summary.txt \
+  --set-json 'files=["src/retry.rs"]' --set-json 'commits=["ab12cd3","9e8f1a2"]'
 ```
 
 ```bash
-# 2. Dedup-by-field add — skip if (file, summary) already present
-tomlctl items add ledger.toml --dedupe-by file,summary --id-prefix R --json '{"file":"src/a.rs","summary":"...","status":"open"}'
+# 2. Dedup-by-field add from field flags — skip if (file, summary) already present
+tomlctl items add ledger.toml --dedupe-by file,summary --id-prefix R --set file=src/a.rs --set summary="..." --set status=open
 ```
 
 ```bash
@@ -58,13 +58,13 @@ tomlctl items list ledger.toml --where status=open --count --raw
 ```
 
 ```bash
-# 5. Bulk transition — close a batch of deferred items in one parse+write
-tomlctl items apply ledger.toml --ops - <<'EOF'
-[
-  {"op":"update","id":"R7", "json":{"status":"open"},"unset":["defer_reason","defer_trigger"]},
-  {"op":"update","id":"R11","json":{"status":"open"},"unset":["defer_reason","defer_trigger"]}
-]
-EOF
+# 5. Bulk transition — reopen a batch of deferred items in one parse+write
+printf '%s\n' '{"op":"update","id":"R7","json":{"status":"open"},"unset":["defer_reason","defer_trigger"]}' '{"op":"update","id":"R11","json":{"status":"open"},"unset":["defer_reason","defer_trigger"]}' | tomlctl items apply ledger.toml --ops -
+```
+
+```bash
+# 6. Update a flow context in one write; its root `updated` refreshes with it
+tomlctl set .claude/flows/<slug>/context.toml --set status=in-progress --set tasks.completed=4
 ```
 
 ## Write operations
@@ -118,21 +118,47 @@ Not every write pipeline auto-creates: `tomlctl flow active` (the active-flow re
 tomlctl items update ledger.toml R7 --json '{"status":"deferred"}' --no-stamp
 ```
 
+**`updated` on a flow context.** On a file named `context.toml`, `set`, `set-json` and `array-append` also refresh an existing root `updated` to today, under the same three rules: only when the root already has the key, only when the write changed something else, and never over an `updated` the write sets itself. `--no-stamp` suppresses both stamps. No other file's `updated` is touched.
+
 The `tasks`, `backlog`, `inputs` and `agents` writes stamp their own stores and take no `--no-stamp`. The library functions glimpse links never stamp.
+
+### Field flags
+
+`items add`, `items update`, `array-append` and [`flow record`](flow.md) build their JSON object from three repeatable flags, so a single entry needs no hand-built JSON. `set` takes `--set` alone, with its own typing rules (see [`set`](#set)).
+
+| Flag | Value | Meaning |
+|---|---|---|
+| `--set` | `KEY=VALUE` | The value is always a JSON string. A [`DATE_KEYS`](#items-add) key still lands as a TOML date, as it would from `--json`. |
+| `--set-json` | `KEY=JSON` | Any JSON value: a number, a bool, an array or an object. |
+| `--set-file` | `KEY=PATH` | The UTF-8 text of the file, with one leading byte-order mark and one trailing newline (`\n` or `\r\n`) stripped; every other byte is kept. `-` reads stdin, under the same one-`-`-per-invocation rule and 32 MiB cap as a `--json -` payload. |
+
+- Each flag splits on its first `=`, so a value may itself contain `=`.
+- A dotted KEY nests: `--set meta.owner=ross` writes `{"meta":{"owner":"ross"}}`.
+- One KEY named twice, by the same flag or across the three, is a `kind=validation` error.
+- The flags merge over an optional `--json` base object, nested objects included, and the flags win. With a field flag present, `--json` is optional.
+
+```bash
+tomlctl items update ledger.toml R7 --set status=wontfix --set-file wontfix_rationale=.claude/flows/<slug>/_rationale.md
+tomlctl items add ledger.toml --id-prefix R --json '{"status":"open","rounds":1}' --set severity=minor --set-json 'line=44' --set-file summary=.claude/flows/<slug>/_summary.txt
+```
+
+**Prose goes through `--set-file`.** Write the text to a file with the Write tool and name it with `--set-file`: nothing is escaped by hand, quotes and newlines survive byte for byte, and the file path needs no quoting in either shell (PowerShell drops an unquoted `@path`, but not a `KEY=PATH` value).
+
+**Git Bash rewrites a leading `/`.** MSYS path conversion turns a `--set` value that starts with `/` into a Windows path: `--set summary=/implement …` arrives as `summary=C:/Program Files/Git/implement …`. Pass such a value through `--set-file`, or prefix the call with `MSYS_NO_PATHCONV=1`.
 
 ### `set`
 
-Sets a scalar at a dotted key path.
+Sets scalars at dotted key paths, in one write: the positional `PATH VALUE` pair and every `--set PATH=VALUE`. Both forms infer the type the same way; the positionals are optional when a `--set` is given. Update a flow's `context.toml` with one `set`, not one call per key:
 
 ```bash
-tomlctl set .claude/flows/auth-overhaul/context.toml status review
-tomlctl set .claude/flows/auth-overhaul/context.toml tasks.completed 4
+tomlctl set .claude/flows/auth-overhaul/context.toml status review --set tasks.completed=4 --set tasks.in_progress=1
 tomlctl set path/to/file.toml when 2026-04-17T10:00:00Z --type datetime
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--type` | `str` \| `int` \| `float` \| `bool` \| `date` \| `datetime` | Force the value's TOML type when inference would go wrong (`42` meant as a string, a timestamp meant as a datetime). | inferred: `YYYY-MM-DD` → date, `true`/`false` → bool, digits → int, else string |
+| `--type` | `str` \| `int` \| `float` \| `bool` \| `date` \| `datetime` | Force the positional pair's TOML type when inference would go wrong (`42` meant as a string, a timestamp meant as a datetime). It never applies to a `--set` pair. | inferred: `YYYY-MM-DD` → date, `true`/`false` → bool, digits → int, else string |
+| `--set` | `PATH=VALUE`, repeatable | Another scalar in the same write, split on the first `=`. A path given twice, here or as the positional, is an error and nothing is written. | none |
 
 ### `set-json`
 
@@ -160,7 +186,8 @@ The `id` above is shown only to fix the key order; a real append drops it and pa
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--json` | JSON object, `-` or `@<path>` | The new row. | required |
+| `--json` | JSON object, `-` or `@<path>` | The new row. Optional when a [field flag](#field-flags) is given. | required |
+| `--set` / `--set-json` / `--set-file` | `KEY=…`, repeatable | [Field flags](#field-flags), merged over `--json`. | none |
 | `--array` | name | Target array-of-tables, e.g. `rollback_events`. | `items` |
 | `--dedupe-by` | `f1,f2,…` | Skip the add when an existing row equals the payload on every listed field, compared as raw strings; the envelope then reports `"added":0` and the `matched_id`. `dedup_id` is never implied — name it for fingerprint dedup. The pre-scan runs before `dedup_id` auto-populates, so a payload's own fingerprint never matches itself. | off |
 | `--id-prefix` | prefix | Mint the row's id as `<prefix>` + the next number inside the write lock, so two concurrent adds never mint the same id. The envelope reports it as `"id"`; a payload that already carries an `id` is refused (`kind=validation`). Numbers against the `--array` target. | off |
@@ -182,18 +209,18 @@ Date-shaped strings (`YYYY-MM-DD`) in the `DATE_KEYS` set — `created`, `update
 
 Appends many rows — e.g. a 50-finding review batch — in one parse, one lock, one rewrite, one sidecar refresh.
 
-Pick the form by platform (see [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads) for why). On Linux and macOS, feed the rows on stdin through a quoted heredoc, at any size; a temp file only adds a step. On Windows — PowerShell and Git Bash alike — a large multi-line inline payload fails intermittently, so use the single-line pipe for a handful of short rows and the staging file past that.
+Two forms, the same on every platform (see [Stdin input for large JSON payloads](#stdin-input-for-large-json-payloads) for why): a staging file written with the Write tool, which carries any number of rows of any length, and the single-line pipe for a few short machine-built rows.
 
-**Heredoc** (Linux / macOS):
+**Staging file** — write the NDJSON with the `Write` tool, then point `--ndjson` at the path:
 
 ```bash
-cat <<'EOF' | tomlctl items add-many ledger.toml --id-prefix R --ndjson - --defaults-json '{"status":"open"}'
-{"summary":"..."}
-{"summary":"..."}
-EOF
+tomlctl items add-many .claude/flows/foo/review-ledger.toml --id-prefix R \
+  --defaults-json '{"first_flagged":"2026-04-18","rounds":1,"status":"open"}' \
+  --ndjson .claude/flows/foo/_batch.ndjson
+# → {"ok":true,"added":N,"ids":["R24",…],"created":false,"path":".claude/flows/foo/review-ledger.toml"}
 ```
 
-**Pipe, one row per argument** — a single-line command; `printf '%s\n'` emits each argument on its own line, so the rows arrive as NDJSON without a heredoc:
+**Pipe, one row per argument** — a single-line command; `printf '%s\n'` emits each argument on its own line, so the rows arrive as NDJSON on stdin:
 
 ```bash
 printf '%s\n' '{"summary":"..."}' '{"summary":"..."}' | tomlctl items add-many ledger.toml --id-prefix R --ndjson - --defaults-json '{"status":"open"}'
@@ -203,15 +230,6 @@ The PowerShell spelling pipes a string array; each element becomes one line:
 
 ```powershell
 '{"summary":"..."}','{"summary":"..."}' | tomlctl items add-many ledger.toml --id-prefix R --ndjson - --defaults-json '{"status":"open"}'
-```
-
-**Staging file** (Windows, past a handful of rows) — write the NDJSON with the `Write` tool, then point `--ndjson` at the path:
-
-```bash
-tomlctl items add-many .claude/flows/foo/review-ledger.toml \
-  --defaults-json '{"first_flagged":"2026-04-18","rounds":1,"status":"open"}' \
-  --ndjson .claude/flows/foo/_batch.ndjson
-# → {"ok":true,"added":N,"created":false,"path":".claude/flows/foo/review-ledger.toml"}
 ```
 
 | Flag | Value | Meaning | Default |
@@ -230,12 +248,13 @@ Patches the row whose `id` matches. The patch is a shallow merge; unmentioned fi
 tomlctl items update .claude/flows/foo/review-ledger.toml R22 --json '{"status":"applied","resolved":"2026-04-17","resolution":"Fixed in ab12cd3"}'
 
 # Flip deferred -> open and drop the defer triggers in a single rewrite
-tomlctl items update ledger.toml R7 --json '{"status":"open","rounds":2}' --unset defer_reason --unset defer_trigger
+tomlctl items update ledger.toml R7 --set status=open --set-json rounds=2 --unset defer_reason --unset defer_trigger
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--json` | JSON object, `-` or `@<path>` | The patch. At least one of `--json` / `--unset` is required. | none |
+| `--json` | JSON object, `-` or `@<path>` | The patch. At least one of `--json`, a field flag or `--unset` is required. | none |
+| `--set` / `--set-json` / `--set-file` | `KEY=…`, repeatable | [Field flags](#field-flags), merged over `--json` into one patch. | none |
 | `--unset` | key, repeatable | Drop a field. Runs after the `--json` merge, so it wins over a same-key set; a key the row lacks is a no-op. | none |
 | `--array` | name | As on `items add`. | `items` |
 
@@ -249,6 +268,8 @@ Rare — IDs are never renumbered per spec — but occasionally needed for manua
 tomlctl items remove .claude/flows/foo/review-ledger.toml R17
 ```
 
+**The id high-water mark.** A removal — by `items remove` or by an `items apply` remove op — records the removed id's number in a root `[id_high_water]` table, keyed by prefix (`R = 17`), whenever it exceeds the stored value. Minting (`--id-prefix`) and `items next-id` then number from `max(highest existing, high-water) + 1`, so removing the top row never lets its id be minted again for a different finding. Do not edit the table by hand.
+
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--array` | name | As on `items add`. | `items` |
@@ -257,21 +278,29 @@ tomlctl items remove .claude/flows/foo/review-ledger.toml R17
 
 Runs a mixed add/update/remove batch against one array in a single parse + rewrite. Each op is `{"op": "add|update|remove", ...}` with the single-op payload shape: `json` for add/update (the patch key is `json`, not `set`), `id` for update/remove, on update an optional `unset` array of field names applied after the `json` merge, as `--unset` is, and on update/remove an optional `expect` precondition (below). Ops run in order; any op error aborts the whole batch and the file is left unchanged.
 
+Stage a batch with the Write tool — here `.claude/flows/foo/_ops.ndjson`, one op per line:
+
+```json
+{"op":"add","json":{"severity":"minor","summary":"...","status":"open"}}
+{"op":"update","id":"R22","json":{"status":"applied","resolved":"2026-04-17"},"unset":["defer_reason"]}
+{"op":"remove","id":"R17"}
+```
+
+then pass the path, quoted so PowerShell keeps the `@`:
+
 ```bash
-tomlctl items apply .claude/flows/foo/review-ledger.toml --ops - <<'EOF'
-[
-  {"op":"add",    "json":{"id":"R24","severity":"minor","summary":"...","status":"open"}},
-  {"op":"update", "id":"R22", "json":{"status":"applied","resolved":"2026-04-17"},"unset":["defer_reason"]},
-  {"op":"remove", "id":"R17"}
-]
-EOF
+tomlctl items apply .claude/flows/foo/review-ledger.toml --id-prefix R --ops '@.claude/flows/foo/_ops.ndjson'
+# → {"ok":true,"ids":["R24"],"created":false,"path":"...","skipped_stale":[]}
 
 printf '%s\n' '{"op":"update","id":"R22","json":{"status":"applied"}}' '{"op":"remove","id":"R17"}' | tomlctl items apply .claude/flows/foo/review-ledger.toml --ops -
 ```
 
+**Minting ids for add ops.** With `--id-prefix P`, every add op is minted `P<next>` inside the write lock, in op order, and the envelope lists them as `ids`; the dry-run preview reports the same `ids`. An add op that carries its own `id` is refused (`kind=validation`, naming the op), as `items add --id-prefix` refuses one, so never number add ops by hand. Without `--id-prefix` each add op must carry its `id` and the envelope has no `ids`.
+
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--ops` | JSON array or NDJSON, `-` or `@<path>` | The batch. A payload whose first non-whitespace character is `{` is read as NDJSON, one op per line: blank lines are skipped and a malformed line aborts the batch naming its 1-based line number. | required |
+| `--id-prefix` | prefix | Mint each add op's id under the write lock, in op order, and report them as `"ids"`. No add op may carry an `id`. | off |
 | `--array` | name | Run the batch against another array-of-tables, e.g. `rollback_events`. | `items` |
 | `--no-remove` | — | Reject any `remove` op. The apply flows pass it so an agent-generated payload cannot erase audit history. | off |
 | `--on-stale` | `abort` \| `skip` | What to do with an op whose `expect` no longer matches its row. `abort` fails the batch and writes nothing; `skip` drops the stale ops and applies the rest. | `abort` |
@@ -300,14 +329,14 @@ Prefer this over looping single-op invocations — one parse + one write instead
 
 ### `items next-id`
 
-Prints the next id bare, on one line with no quotes: the prefix + `max(existing numeric suffixes) + 1`. Read-only — it reserves nothing.
+Prints the next id bare, on one line with no quotes: the prefix + `max(existing numeric suffixes, the [high-water mark](#items-remove)) + 1`. Read-only — it reserves nothing, so an id it prints can be taken by a concurrent write before yours lands.
 
-```bash
+```bash ignore-guidance-lint
 tomlctl items next-id .claude/flows/foo/review-ledger.toml --prefix R        # → R23
 tomlctl items next-id .claude/flows/foo/review-ledger.toml --infer-from-file # → R23
 ```
 
-For a plain add, mint inside the write with [`items add --id-prefix`](#items-add) instead. `next-id` is for a mixed [`items apply`](#items-apply) batch whose add ops need ids: read it once before the batch and number the adds upward from it.
+Never feed its output into a write. Every minting path mints inside the write lock: [`items add --id-prefix`](#items-add), [`items add-many --id-prefix`](#items-add-many), [`items apply --id-prefix`](#items-apply) for the add ops of a mixed batch, and [`flow record`](flow.md) for execution-record entries. `next-id` remains for inspection only.
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
@@ -319,14 +348,17 @@ For a plain add, mint inside the write with [`items add --id-prefix`](#items-add
 Appends records to an arbitrary array-of-tables such as `[[rollback_events]]` (written by the `/review-apply` / `/optimise-apply` rollback protocol). A thin shim over `items add-many` that takes the array name positionally and needs no op framing. The envelope reports `appended`.
 
 ```bash
-tomlctl array-append <ledger> rollback_events --json '{"timestamp":"2026-04-18T14:32:00Z","command":"review-apply","cause":"build failure","items":["R3","R7"],"stash_ref":"3f9c2a7e5b1d4c8e9a0f6b2d7c3e1a5f8b4d9c02"}'
+tomlctl array-append <ledger> rollback_events --set timestamp=2026-04-18T14:32:00Z --set command=review-apply --set cause="build failure" --set-json 'items=["R3","R7"]' --set stash_ref=3f9c2a7e5b1d4c8e9a0f6b2d7c3e1a5f8b4d9c02
 tomlctl array-append <ledger> rollback_events --ndjson .claude/flows/foo/_rollback-batch.ndjson
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--json` | JSON object, `-` or `@<path>` | One record. Exactly one of `--json` / `--ndjson` is required. | — |
-| `--ndjson` | `-` or path (a leading `@` is accepted) | Many records, one per line — the same staging-file rule as `items add-many`. | — |
+| `--json` | JSON object, `-` or `@<path>` | One record; the field flags merge over it. | — |
+| `--set` / `--set-json` / `--set-file` | `KEY=…`, repeatable | [Field flags](#field-flags) building one record, alone or over `--json`. | — |
+| `--ndjson` | `-` or path (a leading `@` is accepted) | Many records, one per line — the same staging-file rule as `items add-many`. Excludes `--json` and the field flags. | — |
+
+One source is required: `--json`, a field flag, or `--ndjson`.
 
 `items apply --array <name>` remains available for heterogeneous batches (add/update/remove on the same array in one parse+write). Use `array-append` when every op is an append.
 
@@ -371,40 +403,25 @@ Acquires the same exclusive lock a write path would, so it serialises correctly 
 
 ### Stdin input for large JSON payloads
 
-All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) take three spellings: a literal, `-` for stdin, or `@<path>` to read a file. Stdin is capped at 32 MiB and a payload past the cap is an error, never a silent partial batch; tomlctl refuses to block on an interactive TTY; and only one flag per invocation may be `-`, because a process has one stdin (a second errors with `stdin already consumed by another flag on this invocation`). `@<path>` is the release valve — `--ndjson - --defaults-json @defaults.json`, or `--ops @ops.json` for a batch of edits with no pipe at all. In PowerShell quote it (`'@ops.json'`); a bare `@name` is splatting syntax there.
+All JSON-accepting flags (`--ops`, `--json` on `items add` / `items update` / `set-json` / `array-append`, `--defaults-json` / `--ndjson` on `items add-many` / `array-append`) take three spellings: a literal, `-` for stdin, or `@<path>` to read a file. Stdin is capped at 32 MiB and a payload past the cap is an error, never a silent partial batch; tomlctl refuses to block on an interactive TTY; and only one flag per invocation may be `-`, because a process has one stdin (a second errors with `stdin already consumed by another flag on this invocation`). Quote an `@<path>` value (`'@ops.json'`): PowerShell drops an unquoted `@name` as splatting syntax.
 
-The single-line pipe (`printf '%s\n' '<row>' '<row>' | tomlctl … --ndjson -`, or a PowerShell string array) carries any number of rows without a heredoc or a file; see [`items add-many`](#items-add-many) for both spellings.
+Pick the input by what you are writing, the same way on every platform:
 
-On Linux/macOS the heredoc form is fine for any size:
-
-```bash
-tomlctl items add-many ledger.toml --id-prefix R --ndjson - <<'EOF'
-{"summary":"..."}
-{"summary":"..."}
-EOF
-```
-
-**On Windows Git Bash, heredocs are unreliable — use the staging-file form for any batch of >5 items or >~10 KB.** The Bash-tool transport to Git Bash intermittently mangles the heredoc terminator (CR bytes get appended to the `EOF` delimiter), so large bodies fail with one of:
-
-- `bash: -c: line N: unexpected EOF while looking for matching \`''` — the whole command errors out, no write happens.
-- Partial success followed by spurious errors — tomlctl actually writes the first N items, then bash treats the tail of the heredoc body as shell commands to execute (e.g. `/c/Users/ros…: Permission denied`). This is the failure mode that shows up as a "false interrupt" in the UI.
-
-**Windows PowerShell has the same limit.** A large multi-line inline payload — a here-string or a long string-array pipe — fails intermittently there too, so the staging-file rule below covers both Windows shells.
-
-The threshold is roughly 10 KB of total command text, which a batch of typical review-finding rows passes at around a dozen. **Don't try to estimate this at call time** — just stage to a file once you're past a handful of rows.
-
-Windows-safe pattern (mandatory on Windows past 5 items):
+- **One entry** — the [field flags](#field-flags). Write any prose to a file with the Write tool and pass it with `--set-file`; short values go in `--set` / `--set-json`. An execution-record entry goes through [`flow record`](flow.md), which takes the same flags.
+- **A verb without field flags** (`backlog add` / `check`, `json set`, `inputs`, `tasks add-many`) — inline single-line JSON for a short machine-built value; otherwise stage the payload with the Write tool and pass `--json '@<path>'` or `--ndjson <path>`. A verb that reads a text value from `-` takes a staged file by redirection (`backlog check --summary - < .claude/flows/<slug>/_summary.txt`).
+- **Many entries or a whole payload** — stage it with the Write tool and pass `--ndjson <path>` or `--json '@<path>'` / `--ops '@<path>'`. A staged file has no size limit and no quoting to get wrong.
+- **A few short machine-built rows** — the single-line pipe, `printf '%s\n' '<row>' '<row>' | tomlctl … --ndjson -` (or a PowerShell string array); see [`items add-many`](#items-add-many) for both spellings. It is one command line, not a heredoc.
 
 ```bash
-# 1. Write tool → .claude/flows/<slug>/_batch.ndjson  (one JSON object per line)
-# 2. --ndjson <path>, no stdin, no heredoc:
-tomlctl items add-many .claude/flows/<slug>/ledger.toml \
+# Write tool → .claude/flows/<slug>/_batch.ndjson  (one JSON object per line), then:
+tomlctl items add-many .claude/flows/<slug>/review-ledger.toml --id-prefix R \
   --defaults-json '{"first_flagged":"2026-04-24","rounds":1,"status":"open"}' \
   --ndjson .claude/flows/<slug>/_batch.ndjson
-# 3. Optional: rm .claude/flows/<slug>/_batch.ndjson after the call.
 ```
 
-For `--json` / `--ops` / `--defaults-json`, write the payload to a sibling file and pass it as `@.claude/flows/<slug>/_patch.json` — no pipe, no heredoc. A single-line heredoc (`<<'EOF'\n{"...":"..."}\nEOF`) is fine on Windows for one-line patches — only multi-line bodies are risky.
+**No multi-line heredocs.** On Windows they fail intermittently: the Bash-tool transport to Git Bash can append CR bytes to the terminator, so the body either aborts the whole command (`bash: -c: line N: unexpected EOF while looking for matching \`''`) or lands partly — tomlctl writes the first rows, then bash runs the rest of the body as shell commands (`/c/Users/ros…: Permission denied`), which surfaces as a "false interrupt". A PowerShell here-string or long string-array pipe fails the same way. A staged file avoids every one of these, so it is the form on Linux and macOS too.
+
+When `-` meets an interactive terminal instead of a pipe, tomlctl refuses rather than waiting; the error names the three ways out — stage the text in a file and redirect it in, use `--set-file` where the verb has field flags, or pass the value literally.
 
 ## Dry-run
 
@@ -417,7 +434,8 @@ logic cannot drift between preview and apply. A target outside `.claude/` still 
 `--allow-outside`.
 
 The envelope takes three shapes. `set` and `set-json` report `kind: "scalar"` with the old and
-new value at the path. Every `items` verb, `array-append` and `items sweep --update` report
+new value at the path; a `set` with more than one pair reports a `pairs` array of those
+objects in place of `would_change`. Every `items` verb, `array-append` and `items sweep --update` report
 `kind: "items"` with per-op counts and `ids`, the union of every affected id — a row with
 no `id`, such as an `array-append` record, is counted but not listed. `items backfill-dedup-id`
 reports `would_backfill` and the ids it would stamp. Under `--id-prefix`, the preview's `ids`
@@ -426,6 +444,9 @@ are the ids the real write would mint.
 ```bash
 tomlctl set foo.toml status review --dry-run
 # {"ok":true,"dry_run":true,"would_change":{"kind":"scalar","path":"status","old":"draft","new":"review"}}
+
+tomlctl set .claude/flows/<slug>/context.toml status in-progress --set tasks.total=17 --dry-run
+# {"ok":true,"dry_run":true,"pairs":[{"kind":"scalar","path":"status","old":"draft","new":"in-progress"},{"kind":"scalar","path":"tasks.total","old":0,"new":17}]}
 
 tomlctl items apply ledger.toml --ops '[...]' --dry-run
 # {"ok":true,"dry_run":true,"would_change":{"kind":"items","added":1,"updated":1,"removed":1,"skipped":0,"ids":["R24","R22","R17"]}}
