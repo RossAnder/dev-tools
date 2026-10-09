@@ -13,6 +13,8 @@ Creates an implementation plan by exploring the codebase, researching technologi
 
 ## Step 0: Pre-flight (flow resolution + doctor)
 
+Invoke the `tomlctl` skill before the first `tomlctl` call: every flow-store read and write in this command goes through it, and its output options shape each report, so tomlctl output is never piped into `jq`, `python` or `head`.
+
 Invoke the `flow-contract-flow-context` skill to load the flow-bootstrap envelope contract (input/output shapes, `envelope.ok` gating, `envelope.resolved.*` and `envelope.doctor.*` binding rules, no-flow fallback, doctor-fail handling, staleness reconciliation, and the mandatory bootstrap-summary console line). Build the input envelope:
 
 ```bash
@@ -51,13 +53,13 @@ Gate: fire ONLY when `envelope.plans_directory == null`. When non-null, skip —
 
 Reason thoroughly through exploration strategy. Launch up to 3 **Explore agents** in parallel based on scope (single sub-area → 1; cross-cutting → up to 3; never below 1 once decided), `subagent_type: "Explore"`, `thoroughness: "very thorough"`. **You MUST make all Explore agent calls in a single response message**, and every one of them one-shot — **never pass `name:`** (see Important Constraints: a named built-in agent has no return channel and its findings are unrecoverable). Common focus patterns: target module (structure, public interfaces, patterns, tests); similar patterns (existing analogous implementations, reusable utilities); integration surface & build system (consumers, CLAUDE.md, manifests, CI — report integration boundaries AND verification commands). Each agent aims for ~500 words structured as file-structure / interfaces / patterns-to-reuse / constraints / [integration agent] build-test-lint commands; prioritise file paths and signatures over prose if truncating.
 
-**Backlog rows**: invoke the `backlog-capture` skill, unless Phase 1 already has, for the status vocabulary and the live `promoted` claim. Once the agents return, list the live backlog rows in each directory exploration found the change touching:
+**Backlog rows**: invoke the `backlog-capture` skill, unless Phase 1 already has, for the status vocabulary and the live `promoted` claim. Once the agents return, list the live backlog rows under every directory exploration found the change touching, in one call with one `--area-prefix` per directory:
 
 ```bash
-tomlctl backlog list --live --area-prefix <dir> --select id,kind,status,promoted_to,summary
+tomlctl backlog list --live --area-prefix <dir> --area-prefix <dir> --select id,kind,status,promoted_to,summary
 ```
 
-A repo with no `.claude/backlog.toml` reads as empty. Record the rows, deduplicated across directories, under a `**Backlog**` sub-heading of the Exploration Notes checkpoint below, together with `seed_ids` when Phase 1 bound a seed. An `open` row is a Phase 4 fold-in candidate; a row `promoted` to another flow is context only, because that flow already claims it.
+A repo with no `.claude/backlog.toml` reads as empty. Record the rows under a `**Backlog**` sub-heading of the Exploration Notes checkpoint below, together with `seed_ids` when Phase 1 bound a seed. An `open` row is a Phase 4 fold-in candidate; a row `promoted` to another flow is context only, because that flow already claims it.
 
 **Checkpoint**: append a brief `## Exploration Notes` section at the end of the plan-mode file (recovery point). It stays at the end: the template places the notes appendix after `## After Merge`, so every later section is written above it. **Early scope check**: if the change likely touches >~25 unique files, flag now and recommend splitting before research/design (>~10 files: note it — Phase 4 adds a checkpoint-cadence question). Then reason thoroughly to synthesize findings across agents (reusable patterns, constraints, utilities, gaps, verification commands).
 

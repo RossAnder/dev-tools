@@ -223,7 +223,8 @@ fn nested_path_hints(rows: &[JsonValue], path: &str) -> Vec<String> {
 /// object level down. A path absent from every row passes beside one that
 /// matches, so an optional field (`promoted_to`, `advisories`) projects to
 /// absent instead of failing. A `*` path passes when its segments before the
-/// `*` resolve, even if nothing matches below. An empty row set validates
+/// `*` resolve, even if nothing matches below. A path that names a field of an
+/// array and matches nowhere is refused even so. An empty row set validates
 /// nothing.
 pub(crate) fn validate_paths<'a>(
     rows: &[JsonValue],
@@ -251,6 +252,74 @@ impl RowHeader<'_> {
     }
 }
 
+/// The hint for a path that steps into an array by name, which never
+/// resolves; `None` when it takes no such step. The fix steps each array with
+/// `*` (with `0` under `--rows`, which takes one array) and is offered only
+/// when it resolves or the arrays are empty; otherwise the hint names what the
+/// elements do carry, so following it never lands on a silent empty result.
+fn array_step_hint(rows: &[JsonValue], path: &str, flag: &str) -> Option<String> {
+    let step = if flag == "--rows" { "0" } else { WILDCARD };
+    let mut fixed: Vec<&str> = Vec::new();
+    let mut stepped = false;
+    for seg in path.split('.') {
+        if !fixed.is_empty() && seg != WILDCARD && seg.parse::<usize>().is_err() {
+            let prefix = fixed.join(".");
+            if rows
+                .iter()
+                .any(|r| navigate_json_all(r, &prefix).iter().any(|v| v.is_array()))
+            {
+                fixed.push(step);
+                stepped = true;
+            }
+        }
+        fixed.push(seg);
+    }
+    if !stepped {
+        return None;
+    }
+    let fix = fixed.join(".");
+    let matches = |path: &str| -> Vec<&JsonValue> {
+        rows.iter()
+            .flat_map(|r| navigate_json_all(r, path))
+            .collect()
+    };
+    // The deepest prefix of the fix that still resolves on some row.
+    let reached = (1..fixed.len())
+        .rev()
+        .map(|k| fixed[..k].join("."))
+        .find(|prefix| !matches(prefix).is_empty());
+    let Some(reached) = reached.filter(|_| matches(&fix).is_empty()) else {
+        let how = if step == WILDCARD {
+            "`*` walks every element, a number indexes one"
+        } else {
+            "`--rows` takes one array; a number indexes an element"
+        };
+        return Some(format!("did you mean `{fix}`? ({how})"));
+    };
+    let found = matches(&reached);
+    if found
+        .iter()
+        .all(|v| v.as_array().is_some_and(Vec::is_empty))
+    {
+        return Some(format!("did you mean `{fix}`? (`{reached}` is empty here)"));
+    }
+    let mut keys: Vec<&str> = Vec::new();
+    for k in found
+        .iter()
+        .filter_map(|v| v.as_object())
+        .flat_map(|m| m.keys())
+    {
+        if !keys.contains(&k.as_str()) {
+            keys.push(k);
+        }
+    }
+    Some(if keys.is_empty() {
+        format!("`{reached}` holds no fields to name")
+    } else {
+        format!("`{reached}` carries: {}", keys.join(", "))
+    })
+}
+
 /// `validate_paths`, adding a `--header` hint when the unmatched path names a
 /// field of `header` instead of a row field.
 pub(crate) fn validate_row_paths<'a>(
@@ -261,6 +330,18 @@ pub(crate) fn validate_row_paths<'a>(
 ) -> Result<()> {
     if rows.is_empty() {
         return Ok(());
+    }
+    let paths: Vec<&str> = paths.into_iter().collect();
+    for p in &paths {
+        if rows.iter().all(|r| navigate_json_all(r, p).is_empty())
+            && let Some(hint) = array_step_hint(rows, p, flag)
+        {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!("{flag} path `{p}` names a field of an array; {hint}"),
+            ));
+        }
     }
     let mut unmatched = None;
     for p in paths {
@@ -893,6 +974,49 @@ mod tests {
         let rows = [no_deps.clone(), no_refs.clone()];
         assert!(validate_paths(&rows, ["deps.*.ref"], "--select").is_ok());
         assert!(validate_paths(&[no_deps], ["deps.*.ref"], "--select").is_err());
+    }
+
+    #[test]
+    fn an_array_step_fix_is_offered_only_when_it_resolves() {
+        let rows = [serde_json::json!({
+            "checks": [{ "name": "a", "ok": true }],
+            "files": ["x.rs"],
+        })];
+        let err = validate_paths(&rows, ["checks", "checks.nme"], "--select")
+            .unwrap_err()
+            .to_string();
+        assert!(err.ends_with("`checks.*` carries: name, ok"), "{err}");
+        let err = validate_paths(&rows, ["files.name"], "--select")
+            .unwrap_err()
+            .to_string();
+        assert!(err.ends_with("`files.*` holds no fields to name"), "{err}");
+    }
+
+    #[test]
+    fn a_named_segment_into_an_array_is_refused_beside_a_valid_path() {
+        let empty = serde_json::json!({ "ok": true, "findings": [] });
+        let err = validate_paths(&[empty], ["ok", "findings.class"], "--select")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("did you mean `findings.*.class`?"), "{err}");
+
+        let nested = [serde_json::json!({ "groups": [{ "deps": [{ "ref": "a" }] }] })];
+        let err = validate_paths(&nested, ["groups.*.deps.ref"], "--get")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`groups.*.deps.*.ref`"), "{err}");
+
+        let err = validate_paths(&nested, ["groups.deps.ref"], "--get")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("did you mean `groups.*.deps.*.ref`?"), "{err}");
+        let err = validate_paths(&nested, ["groups.deps"], "--rows")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("did you mean `groups.0.deps`?"), "{err}");
+
+        assert!(validate_paths(&nested, ["groups.0.deps.0.ref"], "--get").is_ok());
+        assert!(validate_paths(&nested, ["groups.*.deps.*.ref"], "--get").is_ok());
     }
 
     #[test]

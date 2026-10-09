@@ -59,7 +59,7 @@ tomlctl backlog check  --summary <s> [--area PATH] [--kind K] [--tag T]...  # is
 tomlctl backlog check  --ndjson <src>                  # one {summary,kind?,area?,tags?} probe per line; one verdict row per probe
 tomlctl backlog add    --summary <s> [--kind K] [--area PATH] [--evidence path:line]... [--context <how-to-work-around>]
 tomlctl backlog add-many --ndjson <src> [--auto-base-sha] [--on-duplicate bump|skip|fail]   # one `add --json` payload per line; one lock, one write, all-or-nothing
-tomlctl backlog list   [--open|--live] [--kind K] [--tag T]... [--area-prefix PATH] [--has-evidence] [--count]   # --live is open or promoted; plus the full --where-* query surface
+tomlctl backlog list   [--open|--live] [--kind K] [--tag T]... [--area-prefix PATH]... [--has-evidence] [--count]   # --live is open or promoted; plus the full --where-* query surface
 tomlctl backlog show   <id>[,<id>...]                  # one item + its one-hop relations + its evidence listing; several ids print an array
 tomlctl backlog relate B7 --to B3 --as relates-to|duplicates|supersedes   # duplicates dismisses B7, supersedes dismisses B3
 tomlctl backlog triage --promote --to <flow-slug> B7   # --to must name a flow or plan (see --external / --allow-closed); or --dismiss --reason / --resolve --resolution / --reopen --rationale

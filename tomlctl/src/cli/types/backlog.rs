@@ -184,8 +184,9 @@ pub(crate) enum BacklogOp {
         live: bool,
         /// Matches on repo-path component boundaries, so `lumina/server`
         /// selects `lumina/server/pty/x.rs` but not `lumina/server-extras/y.rs`.
+        /// Repeatable, OR across repeats.
         #[arg(long = "area-prefix", value_name = "PATH")]
-        area_prefix: Option<String>,
+        area_prefix: Vec<String>,
         /// Computed by reading `.claude/backlog-evidence/<id>/` — nothing in
         /// the store records whether evidence exists.
         #[arg(

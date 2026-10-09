@@ -21,6 +21,8 @@ Invoke the `backlog-capture` skill (`claude/skills/backlog-capture/SKILL.md`) fo
 
 There is **no flow envelope**. The store is repo-scoped and shared by every flow in the worktree, so this command resolves no flow, dispatches no `flow-bootstrap`, and takes no `--flow` argument.
 
+Invoke the `tomlctl` skill before the first `tomlctl` call: every flow-store read and write in this command goes through it, and its output options shape each report, so tomlctl output is never piped into `jq`, `python` or `head`.
+
 Two gates, with the input drain between them:
 
 ```bash

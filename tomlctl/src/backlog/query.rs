@@ -42,7 +42,7 @@ pub(crate) fn dispatch_list(
     tag: Vec<String>,
     open: bool,
     live: bool,
-    area_prefix: Option<String>,
+    area_prefix: Vec<String>,
     has_evidence: bool,
     count: bool,
     query: QueryArgs,
@@ -53,7 +53,7 @@ pub(crate) fn dispatch_list(
     let filters = Filters {
         live,
         tags: &tag,
-        area_prefix: area_prefix.as_deref(),
+        area_prefixes: &area_prefix,
         has_evidence,
     };
     let narrowed = narrowed_doc(filter_backlog(items_array(&doc, ARRAY_BACKLOG), &filters)?);
@@ -86,7 +86,8 @@ pub(crate) fn dispatch_show(ids: &[String], integrity: ReadIntegrityArgs) -> Res
 struct Filters<'a> {
     live: bool,
     tags: &'a [String],
-    area_prefix: Option<&'a str>,
+    /// Kept when the area matches any; empty applies no area filter.
+    area_prefixes: &'a [String],
     has_evidence: bool,
 }
 
@@ -99,10 +100,11 @@ fn filter_backlog(items: &[TomlValue], f: &Filters<'_>) -> Result<Vec<TomlValue>
         if !f.tags.iter().all(|t| has_tag(item, t)) {
             continue;
         }
-        if let Some(prefix) = f.area_prefix
-            && !area_matches(row_str(item, FIELD_AREA).unwrap_or_default(), prefix)
-        {
-            continue;
+        if !f.area_prefixes.is_empty() {
+            let area = row_str(item, FIELD_AREA).unwrap_or_default();
+            if !f.area_prefixes.iter().any(|p| area_matches(area, p)) {
+                continue;
+            }
         }
         if f.has_evidence
             && !evidence_files(row_str(item, FIELD_ID).unwrap_or_default())?
@@ -388,11 +390,25 @@ status = "open"
         let f = Filters {
             live: false,
             tags: &[],
-            area_prefix: Some("lumina/server"),
+            area_prefixes: &[String::from("lumina/server")],
             has_evidence: false,
         };
         let kept = filter_backlog(items_array(&d, ARRAY_BACKLOG), &f).unwrap();
         assert_eq!(ids(&kept), ["B-1", "B-4"]);
+    }
+
+    #[test]
+    fn repeated_area_prefixes_or_across_repeats() {
+        let d = doc(AREAS);
+        let both = [String::from("lumina/server"), String::from("lumina/web")];
+        let f = Filters {
+            live: false,
+            tags: &[],
+            area_prefixes: &both,
+            has_evidence: false,
+        };
+        let kept = filter_backlog(items_array(&d, ARRAY_BACKLOG), &f).unwrap();
+        assert_eq!(ids(&kept), ["B-1", "B-2", "B-4"]);
     }
 
     #[test]
@@ -440,7 +456,7 @@ status = "open"
         let f = Filters {
             live: false,
             tags: &both,
-            area_prefix: None,
+            area_prefixes: &[],
             has_evidence: false,
         };
         let kept = filter_backlog(items_array(&d, ARRAY_BACKLOG), &f).unwrap();
@@ -450,7 +466,7 @@ status = "open"
         let f = Filters {
             live: false,
             tags: &one,
-            area_prefix: None,
+            area_prefixes: &[],
             has_evidence: false,
         };
         let kept = filter_backlog(items_array(&d, ARRAY_BACKLOG), &f).unwrap();
@@ -593,7 +609,7 @@ resolution = "fixed"
         let f = Filters {
             live: true,
             tags: &[],
-            area_prefix: None,
+            area_prefixes: &[],
             has_evidence: false,
         };
         let kept = filter_backlog(items_array(&d, ARRAY_BACKLOG), &f).unwrap();
@@ -738,7 +754,7 @@ duplicate_of = "B-1"
             let f = Filters {
                 live: false,
                 tags: &[],
-                area_prefix: None,
+                area_prefixes: &[],
                 has_evidence: true,
             };
             filter_backlog(items_array(&d, ARRAY_BACKLOG), &f).unwrap()

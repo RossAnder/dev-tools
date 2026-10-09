@@ -13,6 +13,8 @@ Implements a plan, feature, or task by delegating to parallel sub-agents — wor
 
 ## Step 0: Pre-flight (flow resolution + doctor)
 
+Invoke the `tomlctl` skill before the first `tomlctl` call: every flow-store read and write in this command goes through it, and its output options shape each report, so tomlctl output is never piped into `jq`, `python` or `head`.
+
 Invoke the `flow-contract-flow-context` skill to load the flow-bootstrap envelope contract (input/output shapes, `envelope.ok` gating, `envelope.resolved.*` and `envelope.doctor.*` binding rules, no-flow fallback, doctor-fail handling, staleness reconciliation, and the mandatory bootstrap-summary console line).
 
 Build the input envelope:

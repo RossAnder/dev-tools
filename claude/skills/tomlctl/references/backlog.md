@@ -183,7 +183,7 @@ tomlctl backlog list --live --area-prefix lumina/server --select id,status,promo
 | `--live` | — | Keep only live rows, `open` or `promoted`. An OR over statuses, which `--where` cannot express because its predicates AND. Conflicts with `--open` and `--status`. | off |
 | `--kind` | text | Exact match on `kind`. | none |
 | `--tag` | text, repeatable | Item carries TAG; repeats are ANDed. | none |
-| `--area-prefix` | repo path | Matches on path-component boundaries, so `lumina/server` selects `lumina/server/pty/x.rs` but not `lumina/server-extras/y.rs`. | none |
+| `--area-prefix` | repo path | Matches on path-component boundaries, so `lumina/server` selects `lumina/server/pty/x.rs` but not `lumina/server-extras/y.rs`. Repeatable; a row matching any prefix is kept, once. | none |
 | `--has-evidence` | — | Keep only items whose evidence directory holds files. Reads the filesystem. | off |
 | `--count` | — | Emit `{"count":N}` instead of the rows. | off |
 

@@ -2267,10 +2267,9 @@ mod tests {
             "x.rs\ny.rs\nz.rs\n"
         );
         let o = with(|o| o.get = Some("deps.ref".into()));
-        assert!(
-            err(show_report(), Shape::One, &o)
-                .starts_with("--get path `deps.ref` matches no field")
-        );
+        assert!(err(show_report(), Shape::One, &o).starts_with(
+            "--get path `deps.ref` names a field of an array; did you mean `deps.*.ref`?"
+        ));
     }
 
     #[test]

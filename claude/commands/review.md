@@ -13,6 +13,8 @@ Reviews code through five (or six) parallel lenses — Quality, Security, Archit
 
 ## Step 0: Pre-flight (flow resolution + doctor)
 
+Invoke the `tomlctl` skill before the first `tomlctl` call: every flow-store read and write in this command goes through it, and its output options shape each report, so tomlctl output is never piped into `jq`, `python` or `head`.
+
 Invoke the `flow-contract-flow-context` skill to load the flow-bootstrap envelope contract (input/output shapes, `envelope.ok` gating, `envelope.resolved.*` and `envelope.doctor.*` binding rules, no-flow fallback, doctor-fail handling, staleness reconciliation, and the mandatory bootstrap-summary console line).
 
 Build the input envelope:
@@ -42,7 +44,7 @@ Invoke the `flow-contract-ledger-schema` skill to load the canonical ledger sche
 
 **Lint baseline, once.** Run the project's declared lint or type-check (the `Build & test` section of its CLAUDE.md, or the plan's `## Verification Commands`) one time here and keep the diagnostics that touch in-scope files as a `LINT BASELINE` fence for every prompt. A candidate the linter already reports is not a finding, and six agents each running the check in parallel serialise on one build lock. When no lint command is declared, embed `LINT BASELINE: not run — no lint command declared` so an absent fence is not mistaken for a clean one.
 
-Invoke the `backlog-capture` skill for the repo-scoped capture store's discipline, then load its live rows (`open` and `promoted`) alongside the ledger's (drop `--area-prefix` when the scope is not a single directory):
+Invoke the `backlog-capture` skill for the repo-scoped capture store's discipline, then load its live rows (`open` and `promoted`) alongside the ledger's (one `--area-prefix` per directory the scope spans; drop the flag only when the scope is the whole repo):
 
 ```bash
 tomlctl backlog list --live --area-prefix <scope-dir>

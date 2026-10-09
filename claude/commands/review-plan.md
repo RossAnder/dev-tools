@@ -15,6 +15,8 @@ Reviews an implementation plan document against the actual codebase: validates t
 
 ## Step 0: Pre-flight (flow resolution + doctor)
 
+Invoke the `tomlctl` skill before the first `tomlctl` call: every flow-store read and write in this command goes through it, and its output options shape each report, so tomlctl output is never piped into `jq`, `python` or `head`.
+
 Invoke the `flow-contract-flow-context` skill to load the flow-bootstrap envelope contract (input/output shapes, `envelope.ok` gating, `envelope.resolved.*` and `envelope.doctor.*` binding rules, no-flow fallback, doctor-fail handling, staleness reconciliation, status vocabulary, slug derivation, canonical artifacts, and the mandatory bootstrap-summary console line).
 
 Build the input envelope and dispatch `flow-bootstrap`:
@@ -126,7 +128,7 @@ Findings from this step enter Step 3 alongside the lens findings, categorised `f
 
 After Step 3 and before Step 4, persist findings to the flow's `plan-review-findings.toml` so subsequent runs dedup and Step 4 has a single source of truth.
 
-**Before the first TOML mutation, invoke the `tomlctl` skill** to load the full CLI surface (`add-many --id-prefix` / `array-append` / `items apply` / `set` / readback). Drive every read and write of `plan-review-findings.toml` through `tomlctl` — never line-edit the TOML, and do **not** probe `tomlctl --help` (the skill is authoritative for subcommands and flag spelling; `--help` round-trips waste a turn and invite invented flags such as `--format json`).
+The `tomlctl` skill loaded at Step 0 carries the full CLI surface (`add-many --id-prefix` / `array-append` / `items apply` / `set` / readback). Drive every read and write of `plan-review-findings.toml` through `tomlctl` — never line-edit the TOML, and do **not** probe `tomlctl --help` (the skill is authoritative for subcommands and flag spelling; `--help` round-trips waste a turn and invite invented flags such as `--format json`).
 
 1. Resolve `plan_review_findings_path` from `envelope.resolved.artifacts.plan_review_findings`; for legacy flows derive `.claude/flows/<slug>/plan-review-findings.toml` per the `flow-contract-flow-context` self-healing contract and write it back to `[artifacts]` on the next TOML write.
 2. No manual bootstrap if the file does not exist — the first `tomlctl items add-many` / `set` write (steps 4-5 below) auto-creates and seeds it with the schema-aware skeleton (`schema_version = 1` + `last_updated`, byte-identical to `flow init`), reporting `"created": true` in its envelope. (No atomic dance either way — `/review-plan` is the only agent writer; the human may discard a finding through glimpse, which is why late status writes carry `expect` and `--on-stale skip`.)

@@ -15,6 +15,8 @@ Implements the findings `/review` produced. Runs the shared apply pipeline (Step
 
 Invoke the `flow-contract-apply-pipeline` skill to load the shared apply-pipeline contract: pre-flight gating, ledger location, selector semantics, the freshness gate, pre-analysis, file clustering, agent dispatch, the interim checkpoint, verification + ledger mutation, the final-summary skeleton, and deviation follow-up. Everything in this file either binds that contract's vocabulary or states a review-specific delta.
 
+Invoke the `tomlctl` skill before the first `tomlctl` call: every flow-store read and write in this command goes through it, and its output options shape each report, so tomlctl output is never piped into `jq`, `python` or `head`.
+
 Invoke the `flow-contract-flow-context` skill to load the flow-bootstrap envelope contract (envelope shapes, `envelope.resolved.*` / `envelope.doctor.*` binding rules, project-local `.claude/` resolution, status vocabulary + completed-flow handling, slug derivation, canonical artifact paths, the mandatory bootstrap-summary console line, and the legacy `.claude/active-flow` ignore rule).
 
 Invoke the `flow-contract-ledger-schema` skill to load the canonical ledger contract — one schema covers both the flow-local `review-ledger.toml` and the flow-less fallback: the `[[items]]` field set, the severity / effort / category / disposition vocabularies (including `verified-clean`), unknown-value fail-soft rules, the append-only `[[rollback_events]]` and `[[vet_events]]` logs, the parse-rewrite read/write contract with the `tomlctl items` query surface, the key-order convention, and the ID-assignment + dedup/regression rules.

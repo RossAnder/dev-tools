@@ -140,7 +140,9 @@ fn wildcard_paths_reach_into_tasks_show_deps() {
     let r = run(&root, &starless);
     assert!(!r.ok, "a star-less path over an array must fail");
     assert!(
-        r.stderr.contains("--get path `deps.ref` matches no field"),
+        r.stderr.contains(
+            "--get path `deps.ref` names a field of an array; did you mean `deps.*.ref`?"
+        ),
         "{}",
         r.stderr
     );

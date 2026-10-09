@@ -1406,6 +1406,7 @@ fn carrier_invokes_required_skills() {
         (
             "implement.md",
             &[
+                "tomlctl",
                 "flow-contract-flow-context",
                 "flow-contract-execution-record-schema",
                 "flow-contract-task-store",
@@ -1415,6 +1416,7 @@ fn carrier_invokes_required_skills() {
         (
             "review.md",
             &[
+                "tomlctl",
                 "flow-contract-flow-context",
                 "flow-contract-ledger-schema",
                 "flow-contract-ledger-disposition-sweep",
@@ -1426,6 +1428,7 @@ fn carrier_invokes_required_skills() {
         (
             "plan-new.md",
             &[
+                "tomlctl",
                 "flow-contract-flow-context",
                 "flow-contract-plansdirectory-prompt",
                 "flow-contract-plan-output-format",
@@ -1438,6 +1441,7 @@ fn carrier_invokes_required_skills() {
         (
             "review-plan.md",
             &[
+                "tomlctl",
                 "flow-contract-flow-context",
                 "flow-contract-plansdirectory-prompt",
                 "flow-contract-plan-output-format",
@@ -1449,6 +1453,7 @@ fn carrier_invokes_required_skills() {
         (
             "tdd.md",
             &[
+                "tomlctl",
                 "flow-contract-flow-context",
                 "flow-contract-execution-record-schema",
                 "backlog-capture",
@@ -1457,6 +1462,7 @@ fn carrier_invokes_required_skills() {
         (
             "optimise.md",
             &[
+                "tomlctl",
                 "flow-contract-flow-context",
                 "flow-contract-ledger-schema",
                 "flow-contract-ledger-disposition-sweep",
@@ -1468,6 +1474,7 @@ fn carrier_invokes_required_skills() {
         (
             "optimise-apply.md",
             &[
+                "tomlctl",
                 "flow-contract-flow-context",
                 "flow-contract-ledger-schema",
                 "flow-contract-apply-pipeline",
@@ -1481,6 +1488,7 @@ fn carrier_invokes_required_skills() {
         (
             "review-apply.md",
             &[
+                "tomlctl",
                 "flow-contract-flow-context",
                 "flow-contract-ledger-schema",
                 "flow-contract-apply-pipeline",
@@ -1494,6 +1502,7 @@ fn carrier_invokes_required_skills() {
         (
             "plan-update.md",
             &[
+                "tomlctl",
                 "flow-contract-flow-context",
                 "flow-contract-plansdirectory-prompt",
                 "flow-contract-execution-record-schema",
@@ -1513,7 +1522,7 @@ fn carrier_invokes_required_skills() {
         ),
         (
             "backlog.md",
-            &["backlog-capture", "flow-contract-user-inputs"],
+            &["tomlctl", "backlog-capture", "flow-contract-user-inputs"],
         ),
     ];
 
