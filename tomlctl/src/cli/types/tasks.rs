@@ -39,6 +39,8 @@ pub(crate) enum ShowPart {
     Deps,
     /// Transitive dependents (successors) of the row.
     Dependents,
+    /// The row's `files` that do not exist under the repository root.
+    Absent,
 }
 
 /// Edge selector for `tasks edges --kind`. `needs` and `coupling` are the
@@ -212,12 +214,21 @@ pub(crate) enum TasksOp {
     Update {
         /// Task ids to patch, comma- or space-separated.
         #[arg(
-            required = true,
+            required_unless_present = "id",
             num_args = 1..,
             value_delimiter = ',',
             value_name = "ID,..."
         )]
         ids: Vec<u32>,
+        /// Recovers the guessed flag spelling; appended to the positional ids.
+        #[arg(
+            long = "id",
+            alias = "ids",
+            hide = true,
+            value_delimiter = ',',
+            value_name = "ID,..."
+        )]
+        id: Vec<u32>,
         #[command(flatten)]
         target: TasksTarget,
         /// Lifecycle status: `pending`, `in-progress`, `done`, `failed` or
@@ -279,12 +290,21 @@ pub(crate) enum TasksOp {
     Show {
         /// Task ids to print, comma- or space-separated.
         #[arg(
-            required = true,
+            required_unless_present = "id",
             num_args = 1..,
             value_delimiter = ',',
             value_name = "ID,..."
         )]
         ids: Vec<u32>,
+        /// Recovers the guessed flag spelling; appended to the positional ids.
+        #[arg(
+            long = "id",
+            alias = "ids",
+            hide = true,
+            value_delimiter = ',',
+            value_name = "ID,..."
+        )]
+        id: Vec<u32>,
         #[command(flatten)]
         target: TasksTarget,
         #[arg(

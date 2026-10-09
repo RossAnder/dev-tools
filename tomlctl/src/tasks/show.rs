@@ -17,6 +17,7 @@ use super::schema::{FileKind, ImportOverride, Store, TaskRow};
 use super::store;
 use crate::cli::{ReadIntegrityArgs, ShowPart, TasksTarget};
 use crate::errors::{ErrorKind, tagged_err};
+use crate::io::repo_or_cwd_root;
 use crate::output::{Rows, print_json, print_report};
 
 /// Several distinct ids print a row report, so the output options apply per
@@ -82,6 +83,16 @@ pub(crate) fn show(store: &Store, id: u32, parts: &[ShowPart]) -> Result<JsonVal
             "dependents".to_string(),
             JsonValue::Array(dependents(store, row.id)?),
         );
+    }
+    if parts.contains(&ShowPart::Absent) {
+        let root = repo_or_cwd_root()?;
+        let absent: Vec<&str> = row
+            .files
+            .iter()
+            .map(String::as_str)
+            .filter(|file| !root.join(file).exists())
+            .collect();
+        out.insert("absent".to_string(), json!(absent));
     }
     if let Some(entry) = store
         .find_override(&row.r#ref)
@@ -476,6 +487,26 @@ mod tests {
         ] {
             assert_eq!(FileKind::of_note(note), kind, "{note:?}");
         }
+    }
+
+    #[test]
+    fn absent_lists_missing_files_under_repo_root() {
+        crate::test_support::with_root(|root| {
+            std::fs::create_dir_all(root.join("tomlctl/src/tasks")).unwrap();
+            std::fs::write(root.join("tomlctl/src/tasks/here.rs"), "").unwrap();
+            let mut store = fixture();
+            store.items[2].files = vec![
+                "tomlctl/src/tasks/here.rs".to_string(),
+                "tomlctl/src/tasks/gone.rs".to_string(),
+            ];
+
+            let out = show(&store, 12, &[ShowPart::Absent]).expect("task 12 shows");
+            assert_eq!(out["absent"], json!(["tomlctl/src/tasks/gone.rs"]), "{out}");
+            assert_eq!(out["id"], 12, "{out}");
+
+            let plain = show(&store, 12, &[ShowPart::Body]).expect("task 12 shows");
+            assert!(plain.get("absent").is_none(), "{plain}");
+        });
     }
 
     #[test]

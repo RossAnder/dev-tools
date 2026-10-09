@@ -15,7 +15,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::Result;
-use serde_json::{Value as JsonValue, json};
+use serde_json::{Map as JsonMap, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use super::evidence;
@@ -30,7 +30,7 @@ use super::schema::{
 };
 use crate::cli::ReadIntegrityArgs;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{items_array, read_text_arg};
+use crate::io::{items_array, read_ndjson_source, read_text_arg};
 use crate::output::{Rows, print_report};
 
 /// Number of shared leading `area` components, or shared tags, at which a
@@ -418,7 +418,8 @@ fn resolve_summary(raw: String) -> Result<String> {
 // One parameter per flag on the CLI variant, which is the dispatch contract.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn dispatch(
-    summary: String,
+    summary: Option<String>,
+    ndjson: Option<String>,
     area: Option<String>,
     kind: Option<String>,
     tag: Vec<String>,
@@ -434,6 +435,17 @@ pub(crate) fn dispatch(
             SIMILARITY_RELATED,
         )?,
     };
+    if let Some(src) = ndjson {
+        return dispatch_batch(&src, &thresholds, &integrity);
+    }
+    // The parser requires one of the two, so this is unreachable from the CLI.
+    let summary = summary.ok_or_else(|| {
+        tagged_err(
+            ErrorKind::Validation,
+            None,
+            "backlog check needs --summary or --ndjson",
+        )
+    })?;
     let summary = resolve_summary(summary)?;
     let probe = Probe::new(&summary, area.as_deref(), kind.as_deref(), &tag);
 
@@ -468,6 +480,150 @@ fn build_report(
         report["limited"] = json!({ "shown": shown, "total": total });
     }
     Ok(report)
+}
+
+/// The keys a batch line may carry. Anything else is refused: a typo'd
+/// `are` would otherwise fingerprint the probe without its area and miss
+/// the stored row silently.
+const BATCH_KEYS: &[&str] = &["summary", "kind", "area", "tags"];
+
+/// One parsed batch line and the 1-based source line it came from.
+struct BatchProbe {
+    line: usize,
+    summary: String,
+    probe: Probe,
+}
+
+fn batch_refusal(line: usize, message: impl std::fmt::Display) -> anyhow::Error {
+    tagged_err(
+        ErrorKind::Validation,
+        None,
+        format!("line {line}: {message}"),
+    )
+}
+
+fn batch_str(
+    payload: &JsonMap<String, JsonValue>,
+    key: &str,
+    line: usize,
+) -> Result<Option<String>> {
+    match payload.get(key) {
+        None | Some(JsonValue::Null) => Ok(None),
+        Some(JsonValue::String(text)) => Ok(Some(text.clone())),
+        Some(other) => Err(batch_refusal(
+            line,
+            format!("`{key}` must be a string; got {other}"),
+        )),
+    }
+}
+
+/// Every line is parsed before the store is read, so a malformed line fails
+/// the batch without a partial answer. Blank lines are skipped but still
+/// counted, so `line N` is the line the caller wrote.
+fn parse_probes(text: &str) -> Result<Vec<BatchProbe>> {
+    let mut probes = Vec::new();
+    for (idx, raw) in text.lines().enumerate() {
+        let line = idx + 1;
+        if raw.trim().is_empty() {
+            continue;
+        }
+        let payload = match serde_json::from_str::<JsonValue>(raw) {
+            Ok(JsonValue::Object(map)) => map,
+            Ok(other) => {
+                return Err(batch_refusal(
+                    line,
+                    format!("expected one JSON object per line; got {other}"),
+                ));
+            }
+            Err(e) => {
+                return Err(batch_refusal(
+                    line,
+                    format!("expected one JSON object per line: {e}"),
+                ));
+            }
+        };
+        if let Some(unknown) = payload.keys().find(|k| !BATCH_KEYS.contains(&k.as_str())) {
+            return Err(batch_refusal(
+                line,
+                format!(
+                    "unknown key `{unknown}`; a probe carries only {}",
+                    BATCH_KEYS.join(", ")
+                ),
+            ));
+        }
+        let summary = batch_str(&payload, "summary", line)?
+            .ok_or_else(|| batch_refusal(line, "`summary` is required"))?;
+        let area = batch_str(&payload, "area", line)?;
+        let kind = batch_str(&payload, "kind", line)?;
+        let tags = match payload.get("tags") {
+            None | Some(JsonValue::Null) => Vec::new(),
+            Some(JsonValue::Array(items)) => items
+                .iter()
+                .map(|item| {
+                    item.as_str().map(str::to_owned).ok_or_else(|| {
+                        batch_refusal(line, format!("`tags` must hold strings; got {item}"))
+                    })
+                })
+                .collect::<Result<_>>()?,
+            Some(other) => {
+                return Err(batch_refusal(
+                    line,
+                    format!("`tags` must be an array of strings; got {other}"),
+                ));
+            }
+        };
+        let probe = Probe::new(&summary, area.as_deref(), kind.as_deref(), &tags);
+        probes.push(BatchProbe {
+            line,
+            summary,
+            probe,
+        });
+    }
+    if probes.is_empty() {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            "the NDJSON source carries no probes",
+        ));
+    }
+    Ok(probes)
+}
+
+/// One result row per probe, every row graded against the same store read.
+/// The per-row candidate cap is the default one whatever `--limit` says,
+/// because the output layer applies `--limit` to the result rows instead.
+fn batch_report(
+    doc: &TomlValue,
+    probes: &[BatchProbe],
+    thresholds: &Thresholds,
+) -> Result<JsonValue> {
+    let mut results = Vec::with_capacity(probes.len());
+    for batch in probes {
+        let verdicts = evaluate(doc, &batch.probe, thresholds);
+        let report = build_report(&batch.probe, thresholds, verdicts, None)?;
+        let mut row = JsonMap::new();
+        row.insert("line".to_owned(), json!(batch.line));
+        row.insert("summary".to_owned(), json!(batch.summary));
+        for key in ["verdict", "dedup_id", "candidates", "limited"] {
+            if let Some(value) = report.get(key) {
+                row.insert(key.to_owned(), value.clone());
+            }
+        }
+        results.push(JsonValue::Object(row));
+    }
+    Ok(json!({
+        "thresholds": {"strong": thresholds.strong, "related": thresholds.related},
+        "results": results,
+    }))
+}
+
+fn dispatch_batch(src: &str, thresholds: &Thresholds, integrity: &ReadIntegrityArgs) -> Result<()> {
+    let probes = parse_probes(&read_ndjson_source(src)?)?;
+    let doc = schema::read_store(integrity)?;
+    print_report(
+        batch_report(&doc, &probes, thresholds)?,
+        Rows::Field("results"),
+    )
 }
 
 #[cfg(test)]
@@ -845,7 +1001,8 @@ mod tests {
     fn a_missing_store_reads_as_novel_unless_strict() {
         let (lenient, strict) = with_root(|_| {
             let lenient = dispatch(
-                FLAKE_SUMMARY.to_owned(),
+                Some(FLAKE_SUMMARY.to_owned()),
+                None,
                 Some(FLAKE_AREA.to_owned()),
                 Some(KIND_FLAKY_TEST.to_owned()),
                 vec![],
@@ -856,7 +1013,8 @@ mod tests {
             let mut args = read_args();
             args.strict_read = true;
             let strict = dispatch(
-                FLAKE_SUMMARY.to_owned(),
+                Some(FLAKE_SUMMARY.to_owned()),
+                None,
                 None,
                 None,
                 vec![],
@@ -1102,6 +1260,91 @@ mod tests {
             vec![("B-22222222", "words"), ("B-11111111", "area")]
         );
         assert!(candidates[0].2 < candidates[1].2, "{candidates:?}");
+    }
+
+    #[test]
+    fn a_batch_grades_each_probe_on_its_own_line() {
+        let text = format!(
+            "{}\n\n{}\n",
+            json!({"summary": FLAKE_SUMMARY, "kind": KIND_FLAKY_TEST, "area": FLAKE_AREA}),
+            json!({"summary": "nothing whatever in common", "tags": ["ci"]}),
+        );
+        let probes = parse_probes(&text).unwrap();
+        let report = with_root(|_| batch_report(&populated(), &probes, &defaults()).unwrap());
+        let results = report["results"].as_array().unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0]["line"], 1);
+        assert_eq!(results[0]["verdict"], "duplicate");
+        assert_eq!(results[0]["candidates"][0]["id"], "B-a1b2c3d4");
+        assert_eq!(results[1]["line"], 3);
+        assert_eq!(results[1]["summary"], "nothing whatever in common");
+        assert_eq!(results[1]["verdict"], VERDICT_NOVEL);
+        assert_eq!(report["thresholds"]["strong"], SIMILARITY_STRONG);
+    }
+
+    #[test]
+    fn a_batch_row_caps_its_candidates_at_the_default() {
+        let doc = store(
+            (0..DEFAULT_LIMIT + 2)
+                .map(|n| {
+                    live_row(
+                        &format!("B-{n:08x}"),
+                        KIND_BUG,
+                        &format!("tomlctl/src/backlog/leaf{n}.rs"),
+                        "the sidecar rename fails with access denied",
+                        "",
+                    )
+                })
+                .collect(),
+            vec![],
+        );
+        let probes = parse_probes(
+            &json!({
+                "summary": "the sidecar rename fails with access denied",
+                "area": "tomlctl/src/backlog/check.rs",
+                "kind": KIND_BUG,
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let report = with_root(|_| batch_report(&doc, &probes, &defaults()).unwrap());
+        let row = &report["results"][0];
+        assert_eq!(row["candidates"].as_array().unwrap().len(), DEFAULT_LIMIT);
+        assert_eq!(
+            row["limited"],
+            json!({ "shown": DEFAULT_LIMIT, "total": DEFAULT_LIMIT + 2 })
+        );
+    }
+
+    #[test]
+    fn a_bad_batch_line_is_refused_by_its_line_number() {
+        let cases = [
+            ("{\"summary\":\"ok\"}\n{\"summary\":", "line 2: "),
+            ("[1]", "line 1: "),
+            ("\n{\"kind\":\"bug\"}", "line 2: `summary` is required"),
+            (
+                "{\"summary\":\"x\",\"are\":\"y\"}",
+                "line 1: unknown key `are`",
+            ),
+            (
+                "{\"summary\":\"x\",\"tags\":\"ci\"}",
+                "line 1: `tags` must be an array",
+            ),
+            (
+                "{\"summary\":\"x\",\"tags\":[1]}",
+                "line 1: `tags` must hold strings",
+            ),
+            ("{\"summary\":3}", "line 1: `summary` must be a string"),
+            ("\n  \n", "carries no probes"),
+        ];
+        for (text, expected) in cases {
+            let err = parse_probes(text)
+                .err()
+                .unwrap_or_else(|| panic!("{text:?}"));
+            assert_eq!(kind_of(&err), "validation", "{text:?}");
+            let message = format!("{err:#}");
+            assert!(message.contains(expected), "{text:?}: {message}");
+        }
     }
 
     #[test]

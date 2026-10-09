@@ -116,18 +116,34 @@ pub(crate) enum BacklogOp {
 
     /// Ask whether a discovery is already known, before minting it.
     /// Read-only; emits a graded verdict plus the matching items' stored
-    /// context, at most `--limit` candidates (default 5).
+    /// context, at most `--limit` candidates (default 5). With `--ndjson`,
+    /// one verdict row per probe line under `results`, each capped at 5.
     Check {
         #[arg(
             long,
+            required_unless_present = "ndjson",
+            conflicts_with = "ndjson",
             help = "The discovery being weighed; pass `-` to read it from stdin"
         )]
-        summary: String,
-        #[arg(long)]
+        summary: Option<String>,
+        /// Each line is `{"summary":…,"kind":…,"area":…,"tags":[…]}`, only
+        /// `summary` required; the store is read once for the whole batch.
+        #[arg(
+            long = "ndjson",
+            value_name = "SRC",
+            help = "Batch of probes, one JSON object per line: `-` for stdin, otherwise a file path (a leading `@` is accepted)"
+        )]
+        ndjson: Option<String>,
+        #[arg(long, conflicts_with = "ndjson")]
         area: Option<String>,
-        #[arg(long)]
+        #[arg(long, conflicts_with = "ndjson")]
         kind: Option<String>,
-        #[arg(long = "tag", value_name = "TAG", help = "Free-form tag (repeatable)")]
+        #[arg(
+            long = "tag",
+            value_name = "TAG",
+            conflicts_with = "ndjson",
+            help = "Free-form tag (repeatable)"
+        )]
         tag: Vec<String>,
         /// Char-trigram Jaccard at or above which a candidate is reported as
         /// `likely-duplicate`. Omit to use the pinned default.
@@ -188,12 +204,21 @@ pub(crate) enum BacklogOp {
     Show {
         /// Item ids to print, comma- or space-separated.
         #[arg(
-            required = true,
+            required_unless_present = "id",
             num_args = 1..,
             value_delimiter = ',',
             value_name = "ID,..."
         )]
         ids: Vec<String>,
+        /// Recovers the guessed flag spelling; appended to the positional ids.
+        #[arg(
+            long = "id",
+            alias = "ids",
+            hide = true,
+            value_delimiter = ',',
+            value_name = "ID,..."
+        )]
+        id: Vec<String>,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -213,8 +238,22 @@ pub(crate) enum BacklogOp {
 
     /// Transition one or more items out of (or back into) `open`.
     Triage {
-        #[arg(required = true, value_name = "ID")]
+        /// Item ids to transition, comma- or space-separated.
+        #[arg(
+            required_unless_present = "id",
+            value_delimiter = ',',
+            value_name = "ID,..."
+        )]
         ids: Vec<String>,
+        /// Recovers the guessed flag spelling; appended to the positional ids.
+        #[arg(
+            long = "id",
+            alias = "ids",
+            hide = true,
+            value_delimiter = ',',
+            value_name = "ID,..."
+        )]
+        id: Vec<String>,
         #[command(flatten)]
         mode: TriageMode,
         /// Flow slug or repo-relative plan path. Must name an existing flow
@@ -418,6 +457,7 @@ pub(crate) enum OnDuplicate {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub(crate) enum RelationKind {
     /// Symmetric — both items gain the other in `related`.
+    #[value(alias = "related")]
     RelatesTo,
     /// `a` duplicates `b`: sets `a.duplicate_of` and dismisses `a`.
     Duplicates,

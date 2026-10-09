@@ -80,15 +80,23 @@ pub(crate) fn update(
     store::mutate(path, integrity, |store| patch(store, id, &fields))
 }
 
-/// Patches every id in one write, returning each id's changed fields in the
-/// order given (a repeated id is patched once). Every id is resolved before
-/// any row moves, and a refusal on any row aborts the write.
+/// One patched row: its id, its `ref` as the write left it (so a `--ref`
+/// rename reports the new key), and the fields that moved.
+pub(crate) struct Outcome {
+    pub(crate) id: u32,
+    pub(crate) r#ref: String,
+    pub(crate) changed: Vec<&'static str>,
+}
+
+/// Patches every id in one write, returning each id's outcome in the order
+/// given (a repeated id is patched once). Every id is resolved before any row
+/// moves, and a refusal on any row aborts the write.
 pub(crate) fn update_many(
     path: &Path,
     integrity: &WriteIntegrityArgs,
     ids: &[u32],
     fields: UpdateFields,
-) -> Result<Vec<(u32, Vec<&'static str>)>> {
+) -> Result<Vec<Outcome>> {
     let mut unique: Vec<u32> = Vec::with_capacity(ids.len());
     for id in ids {
         if !unique.contains(id) {
@@ -115,7 +123,16 @@ pub(crate) fn update_many(
         }
         unique
             .iter()
-            .map(|&id| Ok((id, patch(store, id, &fields)?)))
+            .map(|&id| {
+                let changed = patch(store, id, &fields)?;
+                let r#ref = store
+                    .items
+                    .iter()
+                    .find(|row| row.id == id)
+                    .map(|row| row.r#ref.clone())
+                    .unwrap_or_default();
+                Ok(Outcome { id, r#ref, changed })
+            })
             .collect()
     })
 }

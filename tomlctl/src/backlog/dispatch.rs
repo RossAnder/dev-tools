@@ -58,6 +58,7 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
         ),
         BacklogOp::Check {
             summary,
+            ndjson,
             area,
             kind,
             tag,
@@ -66,6 +67,7 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             integrity,
         } => crate::backlog::check::dispatch(
             summary,
+            ndjson,
             area,
             kind,
             tag,
@@ -96,7 +98,14 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             query,
             integrity,
         ),
-        BacklogOp::Show { ids, integrity } => crate::backlog::query::dispatch_show(&ids, integrity),
+        BacklogOp::Show {
+            mut ids,
+            id,
+            integrity,
+        } => {
+            ids.extend(id);
+            crate::backlog::query::dispatch_show(&ids, integrity)
+        }
         BacklogOp::Relate {
             a,
             to,
@@ -104,7 +113,8 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             integrity,
         } => crate::backlog::relate::dispatch(a, to, relation, integrity),
         BacklogOp::Triage {
-            ids,
+            mut ids,
+            id,
             mode,
             to,
             reason,
@@ -114,18 +124,21 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             allow_closed,
             expect_status,
             integrity,
-        } => crate::backlog::triage::dispatch(
-            ids,
-            mode,
-            to,
-            reason,
-            resolution,
-            rationale,
-            external,
-            allow_closed,
-            expect_status,
-            integrity,
-        ),
+        } => {
+            ids.extend(id);
+            crate::backlog::triage::dispatch(
+                ids,
+                mode,
+                to,
+                reason,
+                resolution,
+                rationale,
+                external,
+                allow_closed,
+                expect_status,
+                integrity,
+            )
+        }
         BacklogOp::Reconcile {
             flow,
             apply,

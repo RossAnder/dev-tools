@@ -136,7 +136,8 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         }
 
         TasksOp::Update {
-            ids,
+            mut ids,
+            id,
             target,
             status,
             agent,
@@ -148,6 +149,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             set,
             integrity,
         } => {
+            ids.extend(id);
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let fields = update::UpdateFields {
                 status,
@@ -160,16 +162,23 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
                 set,
             };
             let outcomes = update::update_many(&path, &integrity, &ids, fields)?;
-            if let [(id, changed)] = outcomes.as_slice() {
+            if let [outcome] = outcomes.as_slice() {
                 return print_json_compact(&json!({
                     "ok": true,
-                    "id": id,
-                    "changed": changed,
+                    "id": outcome.id,
+                    "ref": outcome.r#ref,
+                    "changed": outcome.changed,
                 }));
             }
             let results: Vec<_> = outcomes
                 .into_iter()
-                .map(|(id, changed)| json!({"id": id, "changed": changed}))
+                .map(|outcome| {
+                    json!({
+                        "id": outcome.id,
+                        "ref": outcome.r#ref,
+                        "changed": outcome.changed,
+                    })
+                })
                 .collect();
             print_rows_compact(
                 &json!({
@@ -198,11 +207,15 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         }
 
         TasksOp::Show {
-            ids,
+            mut ids,
+            id,
             target,
             with,
             integrity,
-        } => show::dispatch(&ids, target, with, integrity),
+        } => {
+            ids.extend(id);
+            show::dispatch(&ids, target, with, integrity)
+        }
 
         TasksOp::List {
             target,

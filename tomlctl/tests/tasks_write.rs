@@ -416,7 +416,7 @@ fn update_reports_only_the_fields_that_moved() {
     );
     assert_eq!(
         first,
-        json!({"ok": true, "id": 2, "changed": ["agent", "status"]})
+        json!({"ok": true, "id": 2, "ref": "wire-the-graph-engine", "changed": ["agent", "status"]})
     );
     assert_sidecar_matches(&store);
 
@@ -441,8 +441,36 @@ fn update_reports_only_the_fields_that_moved() {
         ],
         "",
     );
-    assert_eq!(repeat, json!({"ok": true, "id": 2, "changed": []}));
+    assert_eq!(
+        repeat,
+        json!({"ok": true, "id": 2, "ref": "wire-the-graph-engine", "changed": []})
+    );
     assert_sidecar_matches(&store);
+}
+
+/// The envelope's `ref` is the key the write left, so a rename reports the
+/// new one rather than the key the caller looked the row up by.
+#[test]
+fn update_reports_the_renamed_ref() {
+    let (_tmp, root) = sandbox();
+    seed_tasks(&root, WRITE_FIXTURE);
+
+    let out = tasks(
+        &root,
+        &[
+            "update",
+            "2",
+            "--slug",
+            TASKS_SLUG,
+            "--ref",
+            "wire-the-graph",
+        ],
+        "",
+    );
+    assert_eq!(
+        out,
+        json!({"ok": true, "id": 2, "ref": "wire-the-graph", "changed": ["ref"]})
+    );
 }
 
 /// A patch against an id no row carries is a refusal, not a silent no-op.
@@ -488,8 +516,8 @@ fn update_patches_every_id_in_a_comma_or_space_list() {
         assert_eq!(
             out,
             json!({"ok": true, "results": [
-                {"id": 3, "changed": ["status"]},
-                {"id": 2, "changed": ["status"]},
+                {"id": 3, "ref": "write-the-importer", "changed": ["status"]},
+                {"id": 2, "ref": "wire-the-graph-engine", "changed": ["status"]},
             ]}),
             "ids {ids:?}"
         );
