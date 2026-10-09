@@ -22,6 +22,7 @@ use super::{slug, store};
 use crate::cli::WriteIntegrityArgs;
 use crate::convert::json_type_name;
 use crate::errors::{ErrorKind, tagged_err};
+use crate::io::read_flag_file;
 
 /// One row as the caller supplies it. `effort` is still the raw flag string:
 /// the schema's vocabulary refusal is what the user should see, not clap's
@@ -95,6 +96,20 @@ pub(crate) fn body(literal: Option<String>, file: Option<PathBuf>) -> Result<Str
             .with_context(|| format!("reading body file `{}`", path.display())),
         (None, None) => Ok(String::new()),
     }
+}
+
+/// Resolve a `--<field>` / `--<field>-file` pair for a one-line value. The
+/// file form is read through `read_flag_file`, which drops a leading BOM and
+/// one trailing newline.
+pub(crate) fn literal_or_file(
+    literal: Option<String>,
+    file: Option<PathBuf>,
+    flag: &str,
+) -> Result<Option<String>> {
+    let (Some(path), None) = (file, literal.as_ref()) else {
+        return Ok(literal);
+    };
+    read_flag_file(&path, &format!("{flag}-file")).map(Some)
 }
 
 fn append(store: &mut Store, tasks: Vec<NewTask>) -> Result<Vec<AddOutcome>> {

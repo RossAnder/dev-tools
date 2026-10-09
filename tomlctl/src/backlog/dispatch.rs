@@ -4,9 +4,26 @@
 //! a flag added to a variant fails to compile here rather than being silently
 //! dropped on the way to its leaf.
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 
 use crate::cli::{BacklogOp, EvidenceOp};
+use crate::io::read_flag_file;
+
+/// Resolve a triage companion given as `--<flag>` or `--<flag>-file`. The
+/// file form is read through `read_flag_file`, which drops a leading BOM and
+/// one trailing newline.
+fn literal_or_file(
+    literal: Option<String>,
+    file: Option<PathBuf>,
+    flag: &str,
+) -> Result<Option<String>> {
+    let (Some(path), None) = (file, literal.as_ref()) else {
+        return Ok(literal);
+    };
+    read_flag_file(&path, &format!("{flag}-file")).map(Some)
+}
 
 pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
     match op {
@@ -98,13 +115,8 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             query,
             integrity,
         ),
-        BacklogOp::Show {
-            mut ids,
-            id,
-            integrity,
-        } => {
-            ids.extend(id);
-            crate::backlog::query::dispatch_show(&ids, integrity)
+        BacklogOp::Show { ids, integrity } => {
+            crate::backlog::query::dispatch_show(&ids.into_ids(), integrity)
         }
         BacklogOp::Relate {
             a,
@@ -113,32 +125,31 @@ pub(crate) fn dispatch(op: BacklogOp) -> Result<()> {
             integrity,
         } => crate::backlog::relate::dispatch(a, to, relation, integrity),
         BacklogOp::Triage {
-            mut ids,
-            id,
+            ids,
             mode,
             to,
             reason,
+            reason_file,
             resolution,
+            resolution_file,
             rationale,
+            rationale_file,
             external,
             allow_closed,
             expect_status,
             integrity,
-        } => {
-            ids.extend(id);
-            crate::backlog::triage::dispatch(
-                ids,
-                mode,
-                to,
-                reason,
-                resolution,
-                rationale,
-                external,
-                allow_closed,
-                expect_status,
-                integrity,
-            )
-        }
+        } => crate::backlog::triage::dispatch(
+            ids.into_ids(),
+            mode,
+            to,
+            literal_or_file(reason, reason_file, "reason")?,
+            literal_or_file(resolution, resolution_file, "resolution")?,
+            literal_or_file(rationale, rationale_file, "rationale")?,
+            external,
+            allow_closed,
+            expect_status,
+            integrity,
+        ),
         BacklogOp::Reconcile {
             flow,
             apply,

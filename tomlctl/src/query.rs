@@ -24,8 +24,8 @@ use std::io::Write;
 use toml::Value as TomlValue;
 
 use crate::convert::{
-    TypeHint, compare_typed, json_type_name, navigate, parse_typed_value, project, split_type_hint,
-    toml_to_json, validate_paths,
+    TypeHint, WILDCARD, compare_typed, json_type_name, navigate, parse_typed_value, project,
+    split_type_hint, toml_to_json, validate_paths,
 };
 use crate::errors::{ErrorKind, tagged_err};
 
@@ -1083,6 +1083,12 @@ impl<'p> PreparedPredicates<'p> {
     }
 }
 
+/// Compile every regex and parse every typed right-hand side in `preds`, so a
+/// malformed predicate fails before a command runs rather than at emit time.
+pub(crate) fn prepare_predicates(preds: &[Predicate]) -> Result<()> {
+    PreparedPredicates::new(preds).map(drop)
+}
+
 /// Per-RHS pre-parse. One enum per recognised TypeHint variant plus
 /// `Untyped` for the bare-string fallback path. Field-side native-coercion
 /// (Integer field + bare RHS → parse as i64) intentionally remains per-item;
@@ -1116,6 +1122,10 @@ enum PredicateCache {
 /// to make `@type:` parse failures actionable: the error names the offending
 /// key and the expected literal form, matching what `eq_typed` raises.
 fn parse_rhs_for_cache(rhs: &str, key: &str) -> Result<ParsedRhs> {
+    parse_typed_rhs(rhs, key).map_err(|e| tagged_err(ErrorKind::Validation, None, format!("{e:#}")))
+}
+
+fn parse_typed_rhs(rhs: &str, key: &str) -> Result<ParsedRhs> {
     let Some((hint, body)) = split_type_hint(rhs) else {
         return Ok(ParsedRhs::Untyped);
     };
@@ -1866,19 +1876,7 @@ pub(crate) struct QueryInput {
     pub(crate) newer_than: Option<String>,
     pub(crate) count: bool,
     // Filter predicates (repeatable KEY=VAL families).
-    pub(crate) where_eq: Vec<String>,
-    pub(crate) where_not: Vec<String>,
-    pub(crate) where_in: Vec<String>,
-    pub(crate) where_has: Vec<String>,
-    pub(crate) where_missing: Vec<String>,
-    pub(crate) where_gt: Vec<String>,
-    pub(crate) where_gte: Vec<String>,
-    pub(crate) where_lt: Vec<String>,
-    pub(crate) where_lte: Vec<String>,
-    pub(crate) where_contains: Vec<String>,
-    pub(crate) where_prefix: Vec<String>,
-    pub(crate) where_suffix: Vec<String>,
-    pub(crate) where_regex: Vec<String>,
+    pub(crate) filters: WhereFilters,
     // Projection + shape + pagination. `select` arrives already split and
     // validated by the global output options.
     pub(crate) select: Option<Vec<String>>,
@@ -1915,134 +1913,196 @@ fn split_kv(s: &str) -> Result<(String, String)> {
     Ok((k.to_string(), v.to_string()))
 }
 
-/// The raw values of the thirteen `--where*` flags, borrowed from whichever
-/// argument struct carries them, so the list verbs and the global output
-/// filters parse predicates through one function.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct WhereInput<'a> {
-    pub(crate) where_eq: &'a [String],
-    pub(crate) where_not: &'a [String],
-    pub(crate) where_in: &'a [String],
-    pub(crate) where_has: &'a [String],
-    pub(crate) where_missing: &'a [String],
-    pub(crate) where_gt: &'a [String],
-    pub(crate) where_gte: &'a [String],
-    pub(crate) where_lt: &'a [String],
-    pub(crate) where_lte: &'a [String],
-    pub(crate) where_contains: &'a [String],
-    pub(crate) where_prefix: &'a [String],
-    pub(crate) where_suffix: &'a [String],
-    pub(crate) where_regex: &'a [String],
+/// The values of the thirteen `--where*` flags, one field per flag. Clap-free,
+/// so the list verbs' `QueryInput` and the global output options carry the
+/// same struct and parse predicates through one method.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct WhereFilters {
+    pub(crate) where_eq: Vec<String>,
+    pub(crate) where_not: Vec<String>,
+    pub(crate) where_in: Vec<String>,
+    pub(crate) where_has: Vec<String>,
+    pub(crate) where_missing: Vec<String>,
+    pub(crate) where_gt: Vec<String>,
+    pub(crate) where_gte: Vec<String>,
+    pub(crate) where_lt: Vec<String>,
+    pub(crate) where_lte: Vec<String>,
+    pub(crate) where_contains: Vec<String>,
+    pub(crate) where_prefix: Vec<String>,
+    pub(crate) where_suffix: Vec<String>,
+    pub(crate) where_regex: Vec<String>,
 }
 
-impl WhereInput<'_> {
-    /// Total flag values across every family.
-    fn len(&self) -> usize {
-        self.families().iter().map(|f| f.len()).sum()
-    }
+impl WhereFilters {
+    /// The flags' long names, in `families` order.
+    pub(crate) const FLAGS: [&'static str; 13] = [
+        "--where",
+        "--where-not",
+        "--where-in",
+        "--where-has",
+        "--where-missing",
+        "--where-gt",
+        "--where-gte",
+        "--where-lt",
+        "--where-lte",
+        "--where-contains",
+        "--where-prefix",
+        "--where-suffix",
+        "--where-regex",
+    ];
 
-    fn families(&self) -> [&[String]; 13] {
+    pub(crate) const EMPTY: WhereFilters = WhereFilters {
+        where_eq: Vec::new(),
+        where_not: Vec::new(),
+        where_in: Vec::new(),
+        where_has: Vec::new(),
+        where_missing: Vec::new(),
+        where_gt: Vec::new(),
+        where_gte: Vec::new(),
+        where_lt: Vec::new(),
+        where_lte: Vec::new(),
+        where_contains: Vec::new(),
+        where_prefix: Vec::new(),
+        where_suffix: Vec::new(),
+        where_regex: Vec::new(),
+    };
+
+    /// Each flag's long name beside its values.
+    pub(crate) fn families(&self) -> [(&'static str, &[String]); 13] {
+        let f = Self::FLAGS;
         [
-            self.where_eq,
-            self.where_not,
-            self.where_in,
-            self.where_has,
-            self.where_missing,
-            self.where_gt,
-            self.where_gte,
-            self.where_lt,
-            self.where_lte,
-            self.where_contains,
-            self.where_prefix,
-            self.where_suffix,
-            self.where_regex,
+            (f[0], &self.where_eq[..]),
+            (f[1], &self.where_not[..]),
+            (f[2], &self.where_in[..]),
+            (f[3], &self.where_has[..]),
+            (f[4], &self.where_missing[..]),
+            (f[5], &self.where_gt[..]),
+            (f[6], &self.where_gte[..]),
+            (f[7], &self.where_lt[..]),
+            (f[8], &self.where_lte[..]),
+            (f[9], &self.where_contains[..]),
+            (f[10], &self.where_prefix[..]),
+            (f[11], &self.where_suffix[..]),
+            (f[12], &self.where_regex[..]),
         ]
     }
+
+    /// Total values across every flag.
+    pub(crate) fn len(&self) -> usize {
+        self.families().iter().map(|(_, v)| v.len()).sum()
+    }
+
+    /// The long name of the first flag that carries a value.
+    pub(crate) fn first_set(&self) -> Option<&'static str> {
+        self.families()
+            .into_iter()
+            .find_map(|(flag, values)| (!values.is_empty()).then_some(flag))
+    }
+
+    /// Parse every value into a `Predicate`, family by family in flag order.
+    /// A malformed `KEY=VAL`, an empty `--where-has`/`--where-missing` key, or
+    /// a key with a `*` segment is an error.
+    pub(crate) fn predicates(&self) -> Result<Vec<Predicate>> {
+        let mut predicates: Vec<Predicate> = Vec::with_capacity(self.len());
+        for s in &self.where_eq {
+            let (key, rhs) = predicate_kv("--where", s)?;
+            predicates.push(Predicate::Where { key, rhs });
+        }
+        for s in &self.where_not {
+            let (key, rhs) = predicate_kv("--where-not", s)?;
+            predicates.push(Predicate::WhereNot { key, rhs });
+        }
+        for s in &self.where_in {
+            let (key, rhs) = predicate_kv("--where-in", s)?;
+            let values: Vec<String> = rhs.split(',').map(|s| s.to_string()).collect();
+            predicates.push(Predicate::WhereIn { key, rhs: values });
+        }
+        for s in &self.where_has {
+            if s.is_empty() {
+                bail!("--where-has expects a KEY, got empty string");
+            }
+            refuse_wildcard_key("--where-has", s, None)?;
+            predicates.push(Predicate::WhereHas { key: s.clone() });
+        }
+        for s in &self.where_missing {
+            if s.is_empty() {
+                bail!("--where-missing expects a KEY, got empty string");
+            }
+            refuse_wildcard_key("--where-missing", s, None)?;
+            predicates.push(Predicate::WhereMissing { key: s.clone() });
+        }
+        for s in &self.where_gt {
+            let (key, rhs) = predicate_kv("--where-gt", s)?;
+            predicates.push(Predicate::WhereGt { key, rhs });
+        }
+        for s in &self.where_gte {
+            let (key, rhs) = predicate_kv("--where-gte", s)?;
+            predicates.push(Predicate::WhereGte { key, rhs });
+        }
+        for s in &self.where_lt {
+            let (key, rhs) = predicate_kv("--where-lt", s)?;
+            predicates.push(Predicate::WhereLt { key, rhs });
+        }
+        for s in &self.where_lte {
+            let (key, rhs) = predicate_kv("--where-lte", s)?;
+            predicates.push(Predicate::WhereLte { key, rhs });
+        }
+        for s in &self.where_contains {
+            let (key, sub) = predicate_kv("--where-contains", s)?;
+            predicates.push(Predicate::WhereContains { key, sub });
+        }
+        for s in &self.where_prefix {
+            let (key, prefix) = predicate_kv("--where-prefix", s)?;
+            predicates.push(Predicate::WherePrefix { key, prefix });
+        }
+        for s in &self.where_suffix {
+            let (key, suffix) = predicate_kv("--where-suffix", s)?;
+            predicates.push(Predicate::WhereSuffix { key, suffix });
+        }
+        for s in &self.where_regex {
+            let (key, pattern) = predicate_kv("--where-regex", s)?;
+            predicates.push(Predicate::WhereRegex { key, pattern });
+        }
+        Ok(predicates)
+    }
 }
 
-impl QueryInput {
-    pub(crate) fn where_input(&self) -> WhereInput<'_> {
-        WhereInput {
-            where_eq: &self.where_eq,
-            where_not: &self.where_not,
-            where_in: &self.where_in,
-            where_has: &self.where_has,
-            where_missing: &self.where_missing,
-            where_gt: &self.where_gt,
-            where_gte: &self.where_gte,
-            where_lt: &self.where_lt,
-            where_lte: &self.where_lte,
-            where_contains: &self.where_contains,
-            where_prefix: &self.where_prefix,
-            where_suffix: &self.where_suffix,
-            where_regex: &self.where_regex,
-        }
-    }
+/// `split_kv` for a `flag` whose key is a field path.
+fn predicate_kv(flag: &str, s: &str) -> Result<(String, String)> {
+    let (key, rhs) = split_kv(s)?;
+    refuse_wildcard_key(flag, &key, Some(&rhs))?;
+    Ok((key, rhs))
 }
 
-/// Parse every `--where*` value into a `Predicate`, family by family in flag
-/// order. A malformed `KEY=VAL` or an empty `--where-has`/`--where-missing`
-/// key is an error.
-pub(crate) fn predicates_from(input: &WhereInput<'_>) -> Result<Vec<Predicate>> {
-    let mut predicates: Vec<Predicate> = Vec::with_capacity(input.len());
-    for s in input.where_eq {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::Where { key, rhs });
-    }
-    for s in input.where_not {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::WhereNot { key, rhs });
-    }
-    for s in input.where_in {
-        let (key, rhs) = split_kv(s)?;
-        let values: Vec<String> = rhs.split(',').map(|s| s.to_string()).collect();
-        predicates.push(Predicate::WhereIn { key, rhs: values });
-    }
-    for s in input.where_has {
-        if s.is_empty() {
-            bail!("--where-has expects a KEY, got empty string");
-        }
-        predicates.push(Predicate::WhereHas { key: s.clone() });
-    }
-    for s in input.where_missing {
-        if s.is_empty() {
-            bail!("--where-missing expects a KEY, got empty string");
-        }
-        predicates.push(Predicate::WhereMissing { key: s.clone() });
-    }
-    for s in input.where_gt {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::WhereGt { key, rhs });
-    }
-    for s in input.where_gte {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::WhereGte { key, rhs });
-    }
-    for s in input.where_lt {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::WhereLt { key, rhs });
-    }
-    for s in input.where_lte {
-        let (key, rhs) = split_kv(s)?;
-        predicates.push(Predicate::WhereLte { key, rhs });
-    }
-    for s in input.where_contains {
-        let (key, sub) = split_kv(s)?;
-        predicates.push(Predicate::WhereContains { key, sub });
-    }
-    for s in input.where_prefix {
-        let (key, prefix) = split_kv(s)?;
-        predicates.push(Predicate::WherePrefix { key, prefix });
-    }
-    for s in input.where_suffix {
-        let (key, suffix) = split_kv(s)?;
-        predicates.push(Predicate::WhereSuffix { key, suffix });
-    }
-    for s in input.where_regex {
-        let (key, pattern) = split_kv(s)?;
-        predicates.push(Predicate::WhereRegex { key, pattern });
-    }
-    Ok(predicates)
+/// Refuse a predicate key with a `*` segment. Projection paths expand `*`,
+/// but a predicate resolves its key to one field, so such a key would match
+/// nothing rather than fan out.
+fn refuse_wildcard_key(flag: &str, key: &str, rhs: Option<&str>) -> Result<()> {
+    let segs: Vec<&str> = key.split('.').collect();
+    let Some(star) = segs.iter().position(|s| *s == WILDCARD) else {
+        return Ok(());
+    };
+    let (before, after) = (&segs[..star], &segs[star + 1..]);
+    let hint = if before.is_empty() || after.is_empty() || after.contains(&WILDCARD) {
+        "name one concrete field path".to_string()
+    } else {
+        let (array, inner) = (before.join("."), after.join("."));
+        let list = match rhs {
+            Some(r) => format!(
+                "on a list verb, `{flag} {array}={r}` tests each element of a scalar array, and fields inside table elements are out of reach"
+            ),
+            None => "a list verb cannot reach fields inside array elements".to_string(),
+        };
+        let rhs = rhs.map(|r| format!("={r}")).unwrap_or_default();
+        format!(
+            "on a single-object report, filter that array with `--rows {array} {flag} {inner}{rhs}`; {list}"
+        )
+    };
+    Err(tagged_err(
+        ErrorKind::Validation,
+        None,
+        format!("`{flag}` key `{key}` has a `*` segment, which predicates do not expand; {hint}"),
+    ))
 }
 
 impl Query {
@@ -2066,7 +2126,7 @@ impl Query {
         // Slight over-allocation when legacy shortcuts are absent is fine;
         // this avoids the 4+ realloc-grow cycles of pushing into an empty
         // `Vec::new()` on busy list calls.
-        let filters = input.where_input();
+        let filters = &input.filters;
         let mut predicates: Vec<Predicate> = Vec::with_capacity(4 + filters.len());
 
         // Legacy shortcut flags — map onto the new predicate surface so the
@@ -2101,7 +2161,7 @@ impl Query {
             });
         }
 
-        predicates.extend(predicates_from(&filters)?);
+        predicates.extend(filters.predicates()?);
 
         // Projection: parse `--exclude a,b` into Vec<String>; `select` is
         // already split. `validate_query` enforces `select` / `exclude` /
@@ -2382,18 +2442,53 @@ rounds = []
     }
 
     #[test]
-    fn predicates_from_keeps_family_order() {
-        let eq = vec!["a=1".to_string()];
-        let has = vec!["b".to_string()];
-        let input = WhereInput {
-            where_eq: &eq,
-            where_has: &has,
+    fn predicates_keep_family_order() {
+        let input = WhereFilters {
+            where_eq: vec!["a=1".to_string()],
+            where_has: vec!["b".to_string()],
             ..Default::default()
         };
-        let preds = predicates_from(&input).unwrap();
+        let preds = input.predicates().unwrap();
         assert!(matches!(&preds[0], Predicate::Where { key, rhs } if key == "a" && rhs == "1"));
         assert!(matches!(&preds[1], Predicate::WhereHas { key } if key == "b"));
         assert_eq!(preds.len(), 2);
+    }
+
+    #[test]
+    fn predicate_key_with_wildcard_segment_is_refused() {
+        let cases: [fn(&mut WhereFilters); 3] = [
+            |f| f.where_eq = vec!["deps.*.ref=a".into()],
+            |f| f.where_not = vec!["deps.*.ref=a".into()],
+            |f| f.where_has = vec!["*".into()],
+        ];
+        for set in cases {
+            let mut f = WhereFilters::default();
+            set(&mut f);
+            let e = f.predicates().unwrap_err();
+            assert!(format!("{e:#}").contains("`*` segment"), "{e:#}");
+            let tagged = e.downcast_ref::<crate::errors::TaggedError>().unwrap();
+            assert!(matches!(tagged.kind, ErrorKind::Validation), "{e:#}");
+        }
+        let f = WhereFilters {
+            where_eq: vec!["deps.*.ref=a".into()],
+            ..Default::default()
+        };
+        let msg = format!("{:#}", f.predicates().unwrap_err());
+        assert!(
+            msg.contains(
+                "single-object report, filter that array with `--rows deps --where ref=a`"
+            ),
+            "{msg}"
+        );
+        assert!(
+            msg.contains("on a list verb, `--where deps=a` tests each element"),
+            "{msg}"
+        );
+        let f = WhereFilters {
+            where_eq: vec!["a*b=1".into()],
+            ..Default::default()
+        };
+        assert!(f.predicates().is_ok());
     }
 
     // -- one test per predicate kind -----------------------------------

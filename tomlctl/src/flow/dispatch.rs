@@ -104,7 +104,7 @@ pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
             stamp,
         } => crate::flow::record::dispatch(crate::flow::record::RecordRequest {
             slug,
-            record_type: record_type.map(|t| t.as_str()),
+            record_type,
             task,
             json,
             fields,

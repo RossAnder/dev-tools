@@ -1,8 +1,6 @@
 //! The TOML document writers `set`, `set-json` and `array-append`. Each takes
 //! the whole `Cmd` value so its variant's fields are destructured here alone.
 
-use std::collections::HashSet;
-
 use anyhow::{Context, Result, bail};
 use serde_json::Value as JsonValue;
 
@@ -33,8 +31,8 @@ fn refuse_json_extension_for_toml_writers(file: &std::path::Path) -> Result<()> 
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("json"))
     {
-        return Err(crate::errors::tagged_err(
-            crate::errors::ErrorKind::Validation,
+        return Err(tagged_err(
+            ErrorKind::Validation,
             Some(file.to_path_buf()),
             format!(
                 "use `tomlctl json set {} ...` — TOML writers do not handle .json files",
@@ -54,7 +52,9 @@ struct SetPair {
 }
 
 /// Collects the positional pair followed by every `--set PATH=VALUE`,
-/// refusing a malformed pair or a path given twice.
+/// refusing a malformed pair, a path given twice, or a path nested under
+/// another. Only the splitting is shared with the field flags; values still
+/// infer their type.
 fn collect_set_pairs(
     path: Option<String>,
     value: Option<String>,
@@ -65,37 +65,16 @@ fn collect_set_pairs(
     if let (Some(path), Some(value)) = (path, value) {
         pairs.push(SetPair { path, value, ty });
     }
-    for raw in extra {
-        let Some((path, value)) = raw.split_once('=') else {
-            return Err(tagged_err(
-                ErrorKind::Validation,
-                None,
-                format!("`--set {raw}` needs the form PATH=VALUE"),
-            ));
-        };
-        if path.split('.').any(str::is_empty) {
-            return Err(tagged_err(
-                ErrorKind::Validation,
-                None,
-                format!("`--set {raw}` has an empty path segment"),
-            ));
-        }
+    for raw in &extra {
+        let (path, value) = crate::fields::split_pair("set", raw)?;
         pairs.push(SetPair {
             path: path.to_string(),
             value: value.to_string(),
             ty: None,
         });
     }
-    let mut seen = HashSet::new();
-    for p in &pairs {
-        if !seen.insert(p.path.as_str()) {
-            return Err(tagged_err(
-                ErrorKind::Validation,
-                None,
-                format!("path `{}` is set more than once", p.path),
-            ));
-        }
-    }
+    let paths: Vec<&str> = pairs.iter().map(|p| p.path.as_str()).collect();
+    crate::fields::refuse_overlapping_keys(&paths, "path")?;
     Ok(pairs)
 }
 

@@ -6,6 +6,8 @@
 //!   - `read_toml_reason` — the same read, failing with a one-line reason
 //!   - `read_toml_str` / `read_doc_borrowed` — borrowed-lifetime fast-path
 //!   - `read_json_arg` / `read_json_value_from_arg` — `-` stdin sentinel
+//!   - `read_flag_file` / `strip_flag_text` — a `-file` flag's text, less
+//!     one leading BOM and one trailing newline
 //!   - `write_toml_with_sidecar` — atomic write + SHA-256 sidecar refresh
 //!   - `atomic_write` — tempfile + fsync + rename
 //!   - `guard_write_path` / `canonicalize_for_write` — `.claude/` containment
@@ -260,7 +262,7 @@ static STDIN_CONSUMED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 fn claim_stdin() -> Result<()> {
     if STDIN_CONSUMED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         bail!(
-            "stdin already consumed by another flag on this invocation; only one --json/--ops/--ndjson/--defaults-json flag can use the `-` sentinel per call — pass the other payload as a literal or as `@<path>` (read from a file)"
+            "stdin already consumed by another flag on this invocation; only one of --json/--ops/--ndjson/--defaults-json `-`, --set-file KEY=- or --summary - can read stdin per call — pass the others from a file (`@<path>` for the JSON flags, a plain path for --set-file)"
         );
     }
     Ok(())
@@ -379,6 +381,29 @@ pub(crate) fn read_text_arg(arg: &str) -> Result<String> {
         ));
     }
     Ok(buf)
+}
+
+/// Read the file behind a `--<flag>` path argument, less one leading BOM and
+/// one trailing newline, so text staged with the Write tool reads back as
+/// typed. `flag` is the flag's full name, which the read error names.
+pub(crate) fn read_flag_file(path: &Path, flag: &str) -> Result<String> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("reading `--{flag}` `{}`", path.display()))?;
+    Ok(strip_flag_text(text))
+}
+
+/// The edge strip `read_flag_file` applies: one leading BOM, then one
+/// trailing `\r\n` or `\n`. Every other byte is kept.
+pub(crate) fn strip_flag_text(mut text: String) -> String {
+    if text.starts_with('\u{feff}') {
+        text.remove(0);
+    }
+    if text.ends_with("\r\n") {
+        text.truncate(text.len() - 2);
+    } else if text.ends_with('\n') {
+        text.pop();
+    }
+    text
 }
 
 /// Parse a JSON `--json`/`--ops`/`--defaults-json` argument directly
@@ -739,25 +764,32 @@ fn is_schema_seeded(path: &Path) -> bool {
     in_ledger_dir && under_claude
 }
 
-/// Compute the schema-conformant seed doc to use when a write target does
-/// not exist yet (the `OnMissing::Create` payload). A recognised flow file
-/// (`is_schema_seeded`) gets a `{schema_version = 1, last_updated = <today>}`
-/// table (that key order); anything else gets an empty table `{}`.
+/// The `{schema_version = 1, last_updated = <today>}` skeleton every
+/// schema-aware store starts from. For a caller that already knows the store's
+/// kind, so a store at a custom path is seeded without matching its name.
+///
+/// Fallible because the seed embeds today's date.
+pub(crate) fn schema_seed() -> Result<TomlValue> {
+    let mut table = toml::map::Map::new();
+    // `toml`'s `preserve_order` serialises in insertion order, and the
+    // skeleton must render `schema_version` before `last_updated`.
+    table.insert("schema_version".to_string(), TomlValue::Integer(1));
+    let today = crate::time::today_toml_date()?;
+    table.insert("last_updated".to_string(), TomlValue::Datetime(today));
+    Ok(TomlValue::Table(table))
+}
+
+/// Compute the seed doc to use when a write target does not exist yet (the
+/// `OnMissing::Create` payload): `schema_seed()` for a recognised flow file
+/// (`is_schema_seeded`), an empty table for anything else.
 ///
 /// Fallible because the recognised-file seed embeds today's date.
 pub(crate) fn seed_doc_for(path: &Path) -> Result<TomlValue> {
-    let mut table = toml::map::Map::new();
     if is_schema_seeded(path) {
-        // Key order is load-bearing for byte-identity with the (former)
-        // literal `schema_version = 1\nlast_updated = <date>\n` skeleton that
-        // `flow::init::bootstrap_execution_record` wrote — `toml`'s
-        // `preserve_order` feature serialises in insertion order, so
-        // `schema_version` MUST be inserted before `last_updated`.
-        table.insert("schema_version".to_string(), TomlValue::Integer(1));
-        let today = crate::time::today_toml_date()?;
-        table.insert("last_updated".to_string(), TomlValue::Datetime(today));
+        schema_seed()
+    } else {
+        Ok(TomlValue::Table(toml::map::Map::new()))
     }
-    Ok(TomlValue::Table(table))
 }
 
 /// Resolve the `OnMissing` policy for a write at `file` from the caller's
@@ -3163,6 +3195,31 @@ arr = [1, 2]
     #[test]
     fn read_text_arg_does_not_take_the_at_form() {
         assert_eq!(read_text_arg("@handle mention").unwrap(), "@handle mention");
+    }
+
+    #[test]
+    fn strip_flag_text_drops_one_bom_and_one_trailing_newline() {
+        let strip = |s: &str| strip_flag_text(s.to_string());
+        assert_eq!(strip("\u{feff}a\r\nb\r\n"), "a\r\nb");
+        assert_eq!(strip("line\n\n"), "line\n");
+        assert_eq!(strip("\u{feff}\u{feff}x"), "\u{feff}x");
+        assert_eq!(strip("x\r\r\n"), "x\r");
+        assert_eq!(strip(""), "");
+    }
+
+    #[test]
+    fn read_flag_file_strips_and_names_the_flag_on_a_missing_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("text.txt");
+        fs::write(&path, "\u{feff}hello\r\n").unwrap();
+        assert_eq!(read_flag_file(&path, "title-file").unwrap(), "hello");
+
+        let absent = dir.path().join("absent.txt");
+        let msg = format!("{:#}", read_flag_file(&absent, "reason-file").unwrap_err());
+        assert!(
+            msg.contains("reading `--reason-file`") && msg.contains("absent.txt"),
+            "{msg}"
+        );
     }
 
     #[test]

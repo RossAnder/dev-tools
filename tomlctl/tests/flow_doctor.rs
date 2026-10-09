@@ -295,6 +295,115 @@ fn divergent_tasks_artifact_value_fails_the_check() {
     );
 }
 
+/// The canonical `[artifacts]` body with `key` pointed at `value`.
+fn artifacts_with(slug: &str, key: &str, value: &str) -> String {
+    canonical_artifacts_lines(slug)
+        .lines()
+        .map(|line| {
+            if line.starts_with(&format!("{key} = ")) {
+                format!("{key} = \"{value}\"\n")
+            } else {
+                format!("{line}\n")
+            }
+        })
+        .collect()
+}
+
+/// Every record reader honours a contained custom `execution_record`, so
+/// doctor passes it with a warning naming the sibling-only snapshot, and
+/// `--fix` leaves the recorded path as written.
+#[test]
+fn a_contained_custom_record_path_passes_with_a_warning_and_survives_fix() {
+    let (_g, root) = fresh_root();
+    let slug = "custom-record";
+    let custom = format!(".claude/flows/{slug}/record-2.toml");
+    seed_flow_with_artifacts(
+        &root,
+        slug,
+        &artifacts_with(slug, "execution_record", &custom),
+    );
+    write_artifact_with_sidecar(&root.join(&custom), EMPTY_RECORD);
+    seed_active_flow_registry(&root, &[slug]);
+
+    let v = run_doctor(&root, &["--slug", slug]);
+    assert_eq!(v["ok"], JsonValue::Bool(true), "{v}");
+    let chk = find_check(&v, "artifacts-canonical", Some(slug));
+    assert_eq!(chk["ok"], JsonValue::Bool(true), "{chk}");
+    assert!(
+        chk["detail"]
+            .as_str()
+            .unwrap_or("")
+            .contains("record-2.toml"),
+        "{chk}"
+    );
+    let warnings = v["warnings"].as_array().expect("warnings must be array");
+    assert!(
+        warnings.iter().any(|w| {
+            let w = w.as_str().unwrap_or("");
+            w.contains("record-2.toml") && w.contains("tasks snapshot")
+        }),
+        "{warnings:?}"
+    );
+
+    let context = context_path(&root, slug);
+    let before = fs::read(&context).unwrap();
+    let v = run_doctor(&root, &["--slug", slug, "--fix"]);
+    assert_eq!(v["ok"], JsonValue::Bool(true), "{v}");
+    assert_eq!(
+        fs::read(&context).unwrap(),
+        before,
+        "--fix must not rewrite a custom record path back to canonical"
+    );
+}
+
+/// A recorded record path that escapes the root is still a failure.
+#[test]
+fn an_escaping_custom_record_path_still_fails() {
+    let (_g, root) = fresh_root();
+    let slug = "escaping-record";
+    seed_flow_with_artifacts(
+        &root,
+        slug,
+        &artifacts_with(slug, "execution_record", "../outside.toml"),
+    );
+    seed_active_flow_registry(&root, &[slug]);
+
+    let v = run_doctor(&root, &["--slug", slug]);
+    assert_eq!(v["ok"], JsonValue::Bool(false), "{v}");
+    let chk = find_check(&v, "artifacts-canonical", Some(slug));
+    assert_eq!(chk["ok"], JsonValue::Bool(false), "{chk}");
+}
+
+/// The tolerance is the execution record's alone: a custom path for any
+/// other artifact still fails the check.
+#[test]
+fn a_custom_review_ledger_path_still_fails() {
+    let (_g, root) = fresh_root();
+    let slug = "custom-ledger";
+    seed_flow_with_artifacts(
+        &root,
+        slug,
+        &artifacts_with(
+            slug,
+            "review_ledger",
+            &format!(".claude/flows/{slug}/ledger-2.toml"),
+        ),
+    );
+    seed_active_flow_registry(&root, &[slug]);
+
+    let v = run_doctor(&root, &["--slug", slug]);
+    assert_eq!(v["ok"], JsonValue::Bool(false), "{v}");
+    let chk = find_check(&v, "artifacts-canonical", Some(slug));
+    assert_eq!(chk["ok"], JsonValue::Bool(false), "{chk}");
+    assert!(
+        chk["detail"]
+            .as_str()
+            .unwrap_or("")
+            .contains("review_ledger"),
+        "{chk}"
+    );
+}
+
 /// A legacy four-key table whose plan declares NO `## Tasks` section: `--fix`
 /// reports the advisory and leaves the file's bytes exactly as they were. That
 /// gate is the whole scope of the guarantee — the backfill test below covers

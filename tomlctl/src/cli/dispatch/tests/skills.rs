@@ -1,7 +1,7 @@
 //! Shared-block parity and skill-gating tests for the dispatch layer.
 
 use crate::blocks::{self, blocks_verify, scan_block_names_warn};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -644,6 +644,204 @@ fn enumerated_date_keys_needs_the_documented_shape() {
             "must parse to nothing rather than a partial set: {empty}"
         );
     }
+}
+
+/// Backtick-quoted spans of `text`, in order.
+fn quoted(text: &str) -> Vec<&str> {
+    text.split('`').skip(1).step_by(2).collect()
+}
+
+/// `text` without its `open`…`close` spans. The skill's spans do not nest.
+fn without_spans(text: &str, open: char, close: char) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut depth = 0usize;
+    for ch in text.chars() {
+        if ch == open {
+            depth += 1;
+        } else if ch == close {
+            depth = depth.saturating_sub(1);
+        } else if depth == 0 {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn field_name(quoted: &str) -> String {
+    quoted.trim_end_matches("[]").to_string()
+}
+
+type Documented = BTreeMap<String, (BTreeSet<String>, BTreeMap<String, BTreeSet<String>>)>;
+
+/// Per type, the required fields and enum sets of the skill's type table.
+/// A cell's required fields are the names before its first `;`, with
+/// parentheticals and `∈ {…}` sets dropped; `each ∈ {…}` applies the set
+/// to every name ahead of it.
+fn documented_types(skill: &str) -> Documented {
+    let mut out = Documented::new();
+    let Some(anchor) = skill.find("### Type vocabulary") else {
+        return out;
+    };
+    let rows = skill[anchor..]
+        .lines()
+        .map(str::trim)
+        .skip_while(|line| !line.starts_with('|'))
+        .take_while(|line| line.starts_with('|'))
+        .filter(|line| line.starts_with("| `"));
+    for row in rows {
+        let Some((ty_cell, cell)) = row.trim_matches('|').split_once('|') else {
+            continue;
+        };
+        let Some(ty) = quoted(ty_cell).first().map(|t| t.to_string()) else {
+            continue;
+        };
+        let cell = without_spans(cell, '(', ')');
+        let head = cell.split(';').next().unwrap_or_default();
+        let required = quoted(&without_spans(head, '{', '}'))
+            .into_iter()
+            .map(field_name)
+            .collect();
+
+        let mut enums = BTreeMap::new();
+        let mut rest = cell.as_str();
+        let mut consumed = 0;
+        while let Some(at) = rest.find("∈ {") {
+            let prefix = cell[consumed..consumed + at].trim_end();
+            let after = &rest[at + "∈ {".len()..];
+            let Some(end) = after.find('}') else { break };
+            let values: BTreeSet<String> = quoted(&after[..end])
+                .into_iter()
+                .map(str::to_string)
+                .collect();
+            let fields: Vec<String> = match prefix.strip_suffix("each") {
+                Some(names) => {
+                    let clause = names.rfind([';', '}']).map_or(names, |i| &names[i + 1..]);
+                    quoted(clause).into_iter().map(field_name).collect()
+                }
+                None => quoted(prefix)
+                    .last()
+                    .copied()
+                    .map(field_name)
+                    .into_iter()
+                    .collect(),
+            };
+            for field in fields {
+                enums.insert(field, values.clone());
+            }
+            let advance = at + "∈ {".len() + end + 1;
+            consumed += advance;
+            rest = &rest[advance..];
+        }
+        out.insert(ty, (required, enums));
+    }
+    out
+}
+
+/// `(field, cap, unit)` per name in the skill's field-length-caps bullets,
+/// `unit` being `bytes` or `elements`.
+fn documented_caps(skill: &str) -> Vec<(String, usize, &'static str)> {
+    let mut out = Vec::new();
+    let Some(anchor) = skill.find("#### Field length caps") else {
+        return out;
+    };
+    let bullets = skill[anchor..]
+        .lines()
+        .map(str::trim)
+        .skip_while(|line| !line.starts_with("- `"))
+        .take_while(|line| line.starts_with("- `"));
+    for bullet in bullets {
+        let Some((names, bound)) = bullet.split_once('≤') else {
+            continue;
+        };
+        let (digits, unit) = if let Some(open) = bound.find('(') {
+            (&bound[open + 1..], "bytes")
+        } else {
+            (bound.trim_start(), "elements")
+        };
+        let digits: String = digits.chars().take_while(char::is_ascii_digit).collect();
+        let Ok(cap) = digits.parse::<usize>() else {
+            continue;
+        };
+        for name in quoted(names) {
+            out.push((name.to_string(), cap, unit));
+        }
+    }
+    out
+}
+
+/// `flow::record_schema` and the `flow-contract-execution-record-schema` skill
+/// each state the entry contract; this keeps the type table and the length
+/// caps of the two in step. Skips when the checkout carries no skill tree.
+#[test]
+fn skill_states_the_enforced_contract() {
+    use crate::flow::{FAILED_IDS_CAP, RecordType, TEXT_CAPS, TYPES, type_enums, type_required};
+
+    let skill_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .join("claude/skills/flow-contract-execution-record-schema/SKILL.md");
+    let Ok(skill) = fs::read_to_string(&skill_path) else {
+        eprintln!("skill_states_the_enforced_contract: skill not found, skipping");
+        return;
+    };
+
+    let documented = documented_types(&skill);
+    let documented_names: Vec<&str> = documented.keys().map(String::as_str).collect();
+    let mut declared_names = TYPES.to_vec();
+    declared_names.sort_unstable();
+    assert_eq!(
+        documented_names, declared_names,
+        "the skill's type table and `RecordType` disagree on the vocabulary"
+    );
+
+    for ty in RecordType::ALL {
+        let (required, enums) = &documented[ty.as_str()];
+        let declared: BTreeSet<String> = type_required(ty).iter().map(|f| f.to_string()).collect();
+        assert_eq!(
+            required,
+            &declared,
+            "required fields of `{}` differ between the skill and `type_required`",
+            ty.as_str()
+        );
+        let declared: BTreeMap<String, BTreeSet<String>> = type_enums(ty)
+            .iter()
+            .map(|(field, allowed)| {
+                let values = allowed.iter().map(|v| v.to_string()).collect();
+                (field.to_string(), values)
+            })
+            .collect();
+        assert_eq!(
+            enums,
+            &declared,
+            "enum sets of `{}` differ between the skill and `type_enums`",
+            ty.as_str()
+        );
+    }
+
+    let caps = documented_caps(&skill);
+    let text_caps: BTreeMap<String, usize> = caps
+        .iter()
+        .filter(|(_, _, unit)| *unit == "bytes")
+        .map(|(name, cap, _)| (name.clone(), *cap))
+        .collect();
+    let declared: BTreeMap<String, usize> = TEXT_CAPS
+        .iter()
+        .map(|(name, cap)| (name.to_string(), *cap))
+        .collect();
+    assert_eq!(
+        text_caps, declared,
+        "the skill's byte caps and `TEXT_CAPS` disagree"
+    );
+    let element_caps: Vec<(&str, usize)> = caps
+        .iter()
+        .filter(|(_, _, unit)| *unit == "elements")
+        .map(|(name, cap, _)| (name.as_str(), *cap))
+        .collect();
+    assert_eq!(
+        element_caps,
+        vec![("failed_ids", FAILED_IDS_CAP)],
+        "the skill's element caps and `FAILED_IDS_CAP` disagree"
+    );
 }
 
 /// Anthropic's skill-authoring guidance caps a SKILL.md body at 500 lines

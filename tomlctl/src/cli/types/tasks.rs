@@ -1,9 +1,10 @@
 //! The `tasks` verb group over a flow's task DAG store.
 
-use clap::{Args, Subcommand, ValueEnum};
+use clap::{Arg, Args, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 use super::{QueryArgs, ReadIntegrityArgs, WriteIntegrityArgs};
+use crate::tasks::CommitGranularity;
 
 /// Store target shared by every `tasks` verb. Not a `required` group:
 /// `import-plan --plan <path> --dry-run` validates a plan with no store at
@@ -21,6 +22,44 @@ pub(crate) struct TasksTarget {
     /// Explicit `tasks.toml` path, bypassing slug resolution.
     #[arg(long = "file", value_name = "PATH")]
     pub(crate) file: Option<PathBuf>,
+}
+
+/// Sets the help of a flattened [`TaskIds`] / `ItemIds` positional, for a
+/// verb's `#[command(mut_args(..))]`. `mut_args` edits in place, where
+/// `mut_arg` would move the positional last in `capabilities` order.
+pub(super) fn ids_help(help: &'static str) -> impl FnMut(Arg) -> Arg {
+    move |a| if a.get_id() == "ids" { a.help(help) } else { a }
+}
+
+/// Task ids taken positionally or through the hidden `--id` spelling. Read
+/// them only through [`TaskIds::into_ids`]: the positional alone is empty on
+/// an `--id`-only call. Each verb sets the positional's help via [`ids_help`].
+#[derive(Args, Clone)]
+pub(crate) struct TaskIds {
+    #[arg(
+        required_unless_present = "id",
+        num_args = 1..,
+        value_delimiter = ',',
+        value_name = "ID,..."
+    )]
+    ids: Vec<u32>,
+    /// Recovers the guessed flag spelling; appended to the positional ids.
+    #[arg(
+        long = "id",
+        alias = "ids",
+        hide = true,
+        value_delimiter = ',',
+        value_name = "ID,..."
+    )]
+    id: Vec<u32>,
+}
+
+impl TaskIds {
+    pub(crate) fn into_ids(self) -> Vec<u32> {
+        let mut ids = self.ids;
+        ids.extend(self.id);
+        ids
+    }
 }
 
 /// Projection selector for `tasks show --with`. Comma-delimited and
@@ -55,29 +94,6 @@ pub(crate) enum EdgeKind {
     Coupling,
     /// Computed file-sharing pairs with no directed path either way.
     Overlap,
-}
-
-/// Commit granularity for `tasks train --granularity`, overriding the store's
-/// `[policy] commit_granularity`.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
-pub(crate) enum TrainGranularity {
-    /// One commit per row.
-    PerTask,
-    /// One commit per checkpoint group.
-    PerCheckpoint,
-    /// One commit for the whole window.
-    SingleCommit,
-}
-
-impl TrainGranularity {
-    /// The store's spelling of the same value.
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::PerTask => "per-task",
-            Self::PerCheckpoint => "per-checkpoint",
-            Self::SingleCommit => "single-commit",
-        }
-    }
 }
 
 /// `tasks` subcommand cluster. Every op resolves its store through the
@@ -118,8 +134,17 @@ pub(crate) enum TasksOp {
         #[command(flatten)]
         target: TasksTarget,
         /// Row title; the `ref` slug is derived from it.
-        #[arg(long, value_name = "TEXT")]
-        title: String,
+        #[arg(
+            long,
+            required_unless_present = "title_file",
+            conflicts_with = "title_file",
+            value_name = "TEXT"
+        )]
+        title: Option<String>,
+        /// Read the title from a file, dropping a leading BOM and one
+        /// trailing newline.
+        #[arg(long = "title-file", conflicts_with = "title", value_name = "PATH")]
+        title_file: Option<PathBuf>,
         /// Effort tag: `S`, `M` or `L`. Validated against the store schema
         /// after parsing, so an unrecognised value surfaces as a
         /// `kind=validation` error rather than clap usage prose.
@@ -211,24 +236,10 @@ pub(crate) enum TasksOp {
     /// call. `ref` is immutable unless `--ref` is given explicitly — renaming
     /// it orphans the execution record's `task_ref` and the last import's ref
     /// set — and `--ref` takes a single id.
+    #[command(mut_args(ids_help("Task ids to patch, comma- or space-separated")))]
     Update {
-        /// Task ids to patch, comma- or space-separated.
-        #[arg(
-            required_unless_present = "id",
-            num_args = 1..,
-            value_delimiter = ',',
-            value_name = "ID,..."
-        )]
-        ids: Vec<u32>,
-        /// Recovers the guessed flag spelling; appended to the positional ids.
-        #[arg(
-            long = "id",
-            alias = "ids",
-            hide = true,
-            value_delimiter = ',',
-            value_name = "ID,..."
-        )]
-        id: Vec<u32>,
+        #[command(flatten)]
+        ids: TaskIds,
         #[command(flatten)]
         target: TasksTarget,
         /// Lifecycle status: `pending`, `in-progress`, `done`, `failed` or
@@ -287,24 +298,10 @@ pub(crate) enum TasksOp {
     /// unknown id fails the whole call. Without `--with` each is the summary
     /// shape; `--with body,files,deps` is the fetch-by-id form a dispatching
     /// orchestrator hands an implementing agent in place of pasted prose.
+    #[command(mut_args(ids_help("Task ids to print, comma- or space-separated")))]
     Show {
-        /// Task ids to print, comma- or space-separated.
-        #[arg(
-            required_unless_present = "id",
-            num_args = 1..,
-            value_delimiter = ',',
-            value_name = "ID,..."
-        )]
-        ids: Vec<u32>,
-        /// Recovers the guessed flag spelling; appended to the positional ids.
-        #[arg(
-            long = "id",
-            alias = "ids",
-            hide = true,
-            value_delimiter = ',',
-            value_name = "ID,..."
-        )]
-        id: Vec<u32>,
+        #[command(flatten)]
+        ids: TaskIds,
         #[command(flatten)]
         target: TasksTarget,
         #[arg(
@@ -312,7 +309,7 @@ pub(crate) enum TasksOp {
             value_enum,
             value_delimiter = ',',
             value_name = "PART,...",
-            help = "Sections to include (summary,body,files,deps,dependents)"
+            help = "Sections to include (summary,body,files,deps,dependents,absent)"
         )]
         with: Vec<ShowPart>,
         #[command(flatten)]
@@ -400,7 +397,7 @@ pub(crate) enum TasksOp {
         ids: Vec<u32>,
         /// Override the store's `[policy] commit_granularity`.
         #[arg(long = "granularity", value_enum, value_name = "GRANULARITY")]
-        granularity: Option<TrainGranularity>,
+        granularity: Option<CommitGranularity>,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },

@@ -11,6 +11,7 @@ use crate::dedup::{
     items_find_duplicates, items_find_duplicates_across, items_find_duplicates_across_json,
     items_find_duplicates_json,
 };
+use crate::errors::{ErrorKind, tagged_err};
 use crate::fields::{self, FieldArgs};
 use crate::io::{
     dry_run_read_opts, mutate_doc, mutate_doc_conditional, mutate_doc_plan, on_missing_for,
@@ -70,6 +71,38 @@ fn parse_dedupe_fields(raw: Option<&str>) -> Result<Vec<String>> {
         );
     }
     Ok(fields)
+}
+
+/// `items update` replaces each top-level field whole, so a dotted field-flag
+/// key would rebuild its parent table from that one key and drop the rest.
+/// A raw value with no `=` or an empty segment is left to `fields::build`.
+fn refuse_dotted_update_keys(fields: &FieldArgs) -> Result<()> {
+    let sources = [
+        ("set", &fields.set),
+        ("set-json", &fields.set_json),
+        ("set-file", &fields.set_file),
+    ];
+    for (flag, values) in sources {
+        for raw in values {
+            let Some((key, _)) = raw.split_once('=') else {
+                continue;
+            };
+            let Some((top, _)) = key.split_once('.') else {
+                continue;
+            };
+            if key.split('.').any(str::is_empty) {
+                continue;
+            }
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!(
+                    "`items update` replaces a top-level field whole, so `--{flag} {key}` would drop the rest of `{top}`; pass the whole table with `--set-json {top}=…`"
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn skipped_stale_json(skipped: &[StaleOp]) -> JsonValue {
@@ -519,6 +552,7 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
                     "items update requires one of --json, a field flag (--set / --set-json / --set-file) or --unset (e.g. `--set status=fixed` to set a field, `--unset notes` to remove one)"
                 );
             }
+            refuse_dotted_update_keys(&fields)?;
             let opts = write_integrity_opts(&integrity);
             // The json arg parse sits above the dry-run/live split.
             // `compute_update_mutation` takes the raw &str and parses

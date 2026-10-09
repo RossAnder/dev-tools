@@ -75,6 +75,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         TasksOp::Add {
             target,
             title,
+            title_file,
             effort,
             files,
             needs,
@@ -91,7 +92,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let task = add::NewTask {
-                title,
+                title: add::literal_or_file(title, title_file, "title")?.unwrap_or_default(),
                 effort,
                 files,
                 needs,
@@ -136,8 +137,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         }
 
         TasksOp::Update {
-            mut ids,
-            id,
+            ids,
             target,
             status,
             agent,
@@ -149,7 +149,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             set,
             integrity,
         } => {
-            ids.extend(id);
+            let ids = ids.into_ids();
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let fields = update::UpdateFields {
                 status,
@@ -207,15 +207,11 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         }
 
         TasksOp::Show {
-            mut ids,
-            id,
+            ids,
             target,
             with,
             integrity,
-        } => {
-            ids.extend(id);
-            show::dispatch(&ids, target, with, integrity)
-        }
+        } => show::dispatch(&ids.into_ids(), target, with, integrity),
 
         TasksOp::List {
             target,
@@ -256,12 +252,7 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
         } => {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let store = store::load(&path, &integrity)?;
-            let report = train::train(
-                &store,
-                &checkpoint,
-                &ids,
-                granularity.map(|granularity| granularity.as_str()),
-            )?;
+            let report = train::train(&store, &checkpoint, &ids, granularity)?;
             print_report(report, Rows::Field("groups"))
         }
 

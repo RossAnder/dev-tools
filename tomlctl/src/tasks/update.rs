@@ -125,12 +125,9 @@ pub(crate) fn update_many(
             .iter()
             .map(|&id| {
                 let changed = patch(store, id, &fields)?;
-                let r#ref = store
-                    .items
-                    .iter()
-                    .find(|row| row.id == id)
-                    .map(|row| row.r#ref.clone())
-                    .unwrap_or_default();
+                let r#ref = store.find(id).map(|row| row.r#ref.clone()).ok_or_else(|| {
+                    anyhow::anyhow!("task {id} vanished from the store after its update")
+                })?;
                 Ok(Outcome { id, r#ref, changed })
             })
             .collect()

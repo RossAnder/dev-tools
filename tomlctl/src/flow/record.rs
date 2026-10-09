@@ -11,16 +11,16 @@ use anyhow::{Context, Result};
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
-use super::record_schema::{self, RecordReport};
+use super::record_schema::{self, RecordReport, RecordType};
 use crate::cli::{ReadIntegrityArgs, WriteIntegrityArgs, write_integrity_opts};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::fields::{self, FieldArgs};
 use crate::io::{
-    dry_run_read_opts, mutate_doc_conditional, on_missing_for, read_doc, read_json_value_from_arg,
-    read_ndjson_source, read_toml, relativise, repo_or_cwd_root, seed_doc_for, stamped_conditional,
+    OnMissing, dry_run_read_opts, mutate_doc_conditional, read_doc, read_json_value_from_arg,
+    read_ndjson_source, read_toml, relativise, repo_or_cwd_root, stamped_conditional,
     warn_if_created,
 };
-use crate::items::{items_add_many_with_dedupe, parse_ndjson};
+use crate::items::{items_append_minted, parse_ndjson_objects};
 use crate::output::{Rows, print_json_compact, print_rows_compact};
 
 const RECORD_ARRAY: &str = "items";
@@ -30,7 +30,7 @@ const CONTEXT_FILE: &str = "context.toml";
 /// One `flow record` invocation, as parsed by clap.
 pub(crate) struct RecordRequest {
     pub(crate) slug: String,
-    pub(crate) record_type: Option<&'static str>,
+    pub(crate) record_type: Option<RecordType>,
     pub(crate) task: Option<u32>,
     pub(crate) json: Option<String>,
     pub(crate) fields: FieldArgs,
@@ -47,6 +47,8 @@ struct FlowTarget {
     scope: Vec<String>,
 }
 
+type Entry = JsonMap<String, JsonValue>;
+
 fn validation(msg: String) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, msg)
 }
@@ -58,13 +60,17 @@ pub(crate) fn dispatch(req: RecordRequest) -> Result<()> {
         None => None,
     };
     let today = crate::time::today_utc_iso()?;
-    let mut entries = build_entries(&req, task_ref.as_deref(), &today)?;
+    let (lines, mut entries): (Vec<Option<usize>>, Vec<_>) =
+        build_entries(&req, task_ref.as_deref(), &today)?
+            .into_iter()
+            .unzip();
     let batch = req.ndjson.is_some();
+    refuse_supplied_ids(&entries, &lines)?;
 
     let mut reports = Vec::with_capacity(entries.len());
-    for (i, entry) in entries.iter_mut().enumerate() {
+    for (entry, line) in entries.iter_mut().zip(&lines) {
         let report =
-            record_schema::normalise(entry, &target.scope).with_context(|| row_label(batch, i))?;
+            record_schema::normalise(entry, &target.scope).with_context(|| row_label(*line))?;
         reports.push(report);
     }
     let rows: Vec<JsonValue> = entries.into_iter().map(JsonValue::Object).collect();
@@ -107,12 +113,26 @@ pub(crate) fn dispatch(req: RecordRequest) -> Result<()> {
     print_json_compact(&JsonValue::Object(envelope))
 }
 
-fn row_label(batch: bool, index: usize) -> String {
-    if batch {
-        format!("--ndjson row {}", index + 1)
-    } else {
-        "flow record".to_string()
+/// `line` is the entry's 1-based `--ndjson` source line, `None` outside a batch.
+fn row_label(line: Option<usize>) -> String {
+    match line {
+        Some(n) => format!("--ndjson line {n}"),
+        None => "flow record".to_string(),
     }
+}
+
+/// Refuses an entry whose payload carries its own `id`, before the append's
+/// minting would report it in terms of an `--id-prefix` this verb lacks.
+fn refuse_supplied_ids(entries: &[Entry], lines: &[Option<usize>]) -> Result<()> {
+    let Some(i) = entries.iter().position(|entry| !is_unset(entry.get("id"))) else {
+        return Ok(());
+    };
+    let message =
+        format!("flow record mints entry ids ({RECORD_ID_PREFIX}<n>); drop `id` from the payload");
+    Err(validation(match lines[i] {
+        Some(n) => format!("--ndjson line {n}: {message}"),
+        None => message,
+    }))
 }
 
 fn row_result(id: &str, row: &JsonValue, report: &RecordReport) -> JsonValue {
@@ -187,12 +207,13 @@ fn task_ref_for(slug: &str, id: u32, verify_integrity: bool) -> Result<String> {
 
 /// Every entry the call writes, before schema validation: the `--json` base
 /// with the field flags over it, each `--ndjson` row laid over that, then
-/// `type`, `task_ref` and `date` filled in from the flags.
+/// `type`, `task_ref` and `date` filled in from the flags. Each entry is paired
+/// with its `--ndjson` source line, `None` outside a batch.
 fn build_entries(
     req: &RecordRequest,
     task_ref: Option<&str>,
     today: &str,
-) -> Result<Vec<JsonMap<String, JsonValue>>> {
+) -> Result<Vec<(Option<usize>, Entry)>> {
     let json_base = req
         .json
         .as_deref()
@@ -210,37 +231,33 @@ fn build_entries(
     };
 
     let mut entries = match &req.ndjson {
-        None => vec![base],
+        None => vec![(None, base)],
         Some(src) => {
             let text = read_ndjson_source(src)?;
-            let rows = parse_ndjson(&text)?;
+            let rows = parse_ndjson_objects(&text).context("--ndjson")?;
             if rows.is_empty() {
                 return Err(validation(
                     "--ndjson holds no rows; give one JSON object per line".to_string(),
                 ));
             }
             rows.into_iter()
-                .enumerate()
-                .map(|(i, row)| match row {
-                    JsonValue::Object(row) => {
-                        let mut entry = base.clone();
-                        entry.extend(row);
-                        Ok(entry)
-                    }
-                    other => Err(validation(format!(
-                        "--ndjson row {}: must be a JSON object, got JSON {}",
-                        i + 1,
-                        crate::convert::json_type_name(&other)
-                    ))),
+                .map(|(line, row)| {
+                    let mut entry = base.clone();
+                    entry.extend(row);
+                    (Some(line), entry)
                 })
-                .collect::<Result<Vec<_>>>()?
+                .collect()
         }
     };
 
-    let batch = req.ndjson.is_some();
-    for (i, entry) in entries.iter_mut().enumerate() {
-        fill_defaults(entry, req.record_type, task_ref, today)
-            .with_context(|| row_label(batch, i))?;
+    for (line, entry) in &mut entries {
+        fill_defaults(
+            entry,
+            req.record_type.map(RecordType::as_str),
+            task_ref,
+            today,
+        )
+        .with_context(|| row_label(*line))?;
     }
     Ok(entries)
 }
@@ -294,28 +311,26 @@ fn fill_defaults(
 fn preview_ids(record: &Path, rows: &[JsonValue], verify_integrity: bool) -> Result<Vec<String>> {
     let mint = |doc: &TomlValue| -> Result<Vec<String>> {
         let mut copy = doc.clone();
-        let outcome = items_add_many_with_dedupe(
-            &mut copy,
-            RECORD_ARRAY,
-            rows,
-            None,
-            &[],
-            Some(RECORD_ID_PREFIX),
-        )?;
+        let outcome = items_append_minted(&mut copy, RECORD_ARRAY, rows, RECORD_ID_PREFIX)?;
         Ok(outcome.ids)
     };
     if record.exists() {
         read_doc(record, dry_run_read_opts(verify_integrity), mint)
     } else {
-        mint(&seed_doc_for(record)?)
+        mint(&super::record_path::execution_record_seed()?)
     }
 }
 
 /// Append every row in one locked write, minting each id inside the lock so
-/// two concurrent writers never take the same one.
+/// two concurrent writers never take the same one. A missing record is
+/// seeded with the execution-record skeleton whatever its file name.
 fn append(record: &Path, rows: &[JsonValue], req: &RecordRequest) -> Result<Vec<String>> {
     let integrity = &req.integrity;
-    let on_missing = on_missing_for(record, integrity.no_create)?;
+    let on_missing = if integrity.no_create {
+        OnMissing::Error
+    } else {
+        OnMissing::Create(super::record_path::execution_record_seed()?)
+    };
     let mut ids = Vec::new();
     let created = mutate_doc_conditional(
         record,
@@ -323,14 +338,7 @@ fn append(record: &Path, rows: &[JsonValue], req: &RecordRequest) -> Result<Vec<
         write_integrity_opts(integrity),
         on_missing,
         stamped_conditional(req.stamp, |doc| {
-            let outcome = items_add_many_with_dedupe(
-                doc,
-                RECORD_ARRAY,
-                rows,
-                None,
-                &[],
-                Some(RECORD_ID_PREFIX),
-            )?;
+            let outcome = items_append_minted(doc, RECORD_ARRAY, rows, RECORD_ID_PREFIX)?;
             ids = outcome.ids;
             Ok(outcome.added > 0)
         }),

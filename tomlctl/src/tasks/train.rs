@@ -13,36 +13,10 @@ use anyhow::{Result, anyhow};
 use serde_json::{Value as JsonValue, json};
 
 use super::graph::{Tense, build_or_refuse, layered_kahn, nodes_of};
-use super::parse_policy::GRANULARITY_VALUES;
+use super::parse_policy::{CommitGranularity as Granularity, GRANULARITY_VALUES};
 use super::schema::{Status, Store, TaskRow};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::union_find::{components, union};
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Granularity {
-    PerTask,
-    PerCheckpoint,
-    SingleCommit,
-}
-
-impl Granularity {
-    fn parse(raw: &str) -> Option<Self> {
-        match raw {
-            "per-task" => Some(Self::PerTask),
-            "per-checkpoint" => Some(Self::PerCheckpoint),
-            "single-commit" => Some(Self::SingleCommit),
-            _ => None,
-        }
-    }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::PerTask => "per-task",
-            Self::PerCheckpoint => "per-checkpoint",
-            Self::SingleCommit => "single-commit",
-        }
-    }
-}
 
 /// `{granularity, groups[]}`, each group `{ids, refs, files, checkpoints,
 /// shared_with_pending}`, in commit order: dependency layer by layer, lowest
@@ -52,7 +26,7 @@ pub(crate) fn train(
     store: &Store,
     checkpoints: &[String],
     ids: &[u32],
-    granularity: Option<&str>,
+    granularity: Option<Granularity>,
 ) -> Result<JsonValue> {
     let granularity = resolve_granularity(store, granularity)?;
     check_window(store, checkpoints, ids)?;
@@ -117,8 +91,13 @@ pub(crate) fn train(
     }))
 }
 
-fn resolve_granularity(store: &Store, flag: Option<&str>) -> Result<Granularity> {
-    let raw = flag.unwrap_or(&store.policy.commit_granularity);
+/// The flag wins outright; only the stored policy value can be out of
+/// vocabulary, so only it can be refused.
+fn resolve_granularity(store: &Store, flag: Option<Granularity>) -> Result<Granularity> {
+    if let Some(granularity) = flag {
+        return Ok(granularity);
+    }
+    let raw = &store.policy.commit_granularity;
     Granularity::parse(raw).ok_or_else(|| {
         refuse(format!(
             "commit granularity `{raw}` is not one of {}; pass --granularity",
@@ -131,7 +110,7 @@ fn resolve_granularity(store: &Store, flag: Option<&str>) -> Result<Granularity>
 /// read as an empty window, which would print a train with nothing in it.
 fn check_window(store: &Store, checkpoints: &[String], ids: &[u32]) -> Result<()> {
     for id in ids {
-        if !store.items.iter().any(|row| row.id == *id) {
+        if store.find(*id).is_none() {
             return Err(refuse(format!("no task {id} in the store")));
         }
     }

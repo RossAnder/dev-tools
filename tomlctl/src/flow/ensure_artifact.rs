@@ -21,6 +21,9 @@
 //! emits the read-only report plus a `"bootstrap_noop"` marker explaining
 //! that the kind's owning command bootstraps it on first write.
 //!
+//! `kind=execution-record` resolves to the record the flow's `context.toml`
+//! names under `[artifacts].execution_record`, else the sibling file.
+//!
 //! Containment: a slug that escapes `.claude/` (`..` / absolute / path
 //! separator) errors `kind=validation` before any disk touch.
 
@@ -50,12 +53,21 @@ pub(crate) fn dispatch(
     // surface as `kind=validation` regardless of the requested mode.
     validate_slug_lenient(&slug)?;
     let root = repo_or_cwd_root()?;
-    let artifact_path = artifact_path_for(&root, &slug, kind);
+    // The execution record is the one `flow record` appends to, which the
+    // flow's context may name; every other kind sits at its canonical name.
+    let artifact_path = match kind {
+        ArtifactKind::ExecutionRecord => super::record_path::flow_execution_record_path(
+            &root,
+            &root.join(".claude").join("flows").join(&slug),
+        )?,
+        _ => artifact_path_for(&root, &slug, kind),
+    };
 
     // Re-assert containment on the resolved path. A slug that passes the
     // syntactic guard but somehow lands outside `.claude/` (defensive
-    // coverage: future schema additions, symlinks at the slug parent)
-    // still fails closed.
+    // coverage: future schema additions, symlinks at the slug parent), or a
+    // recorded record path under the root but outside `.claude/`, still
+    // fails closed.
     assert_under_claude(&root, &artifact_path)?;
 
     if bootstrap {
@@ -250,13 +262,14 @@ fn bootstrap_execution_record(
         return print_json_compact(&report);
     }
 
-    // Source the skeleton from `io::seed_doc_for` — the SAME helper the
-    // auto-create write path and `flow::init::bootstrap_execution_record`
-    // use — and render it through `toml::to_string_pretty`, the exact
-    // writer `io::write_toml_with_sidecar` runs, so every bootstrap route
-    // emits byte-identical skeletons (integer `1`, bare date, trailing
-    // newline, that key order).
-    let seed = crate::io::seed_doc_for(artifact)?;
+    // The skeleton is chosen by kind, not by `artifact`'s basename, since the
+    // context may name the record anything. It comes from `io::schema_seed`
+    // — the skeleton `flow::init::bootstrap_execution_record` also writes — and
+    // renders through `toml::to_string_pretty`, the writer
+    // `io::write_toml_with_sidecar` runs, so every bootstrap route emits
+    // byte-identical skeletons (integer `1`, bare date, trailing newline,
+    // that key order).
+    let seed = super::record_path::execution_record_seed()?;
     let body = toml::to_string_pretty(&seed).context("serialising TOML")?;
 
     if dry_run {

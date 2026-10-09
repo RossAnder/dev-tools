@@ -4,17 +4,19 @@
 // becomes TOML, so nothing here coerces.
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde_json::{Map, Value as JsonValue};
 
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::read_text_arg;
+use crate::io::{read_flag_file, read_text_arg, strip_flag_text};
 
 /// The repeatable field flags shared by every verb that takes them.
 #[derive(clap::Args, Debug, Clone, Default)]
 pub(crate) struct FieldArgs {
-    /// Set a field to a string: KEY=VALUE. A dotted KEY nests.
+    /// Set a field to a string: KEY=VALUE. A dotted KEY nests (refused on
+    /// `items update`, which replaces top-level fields whole).
     #[arg(long = "set", value_name = "KEY=VALUE")]
     pub(crate) set: Vec<String>,
 
@@ -33,7 +35,9 @@ impl FieldArgs {
     }
 }
 
-fn split_pair<'a>(flag: &str, raw: &'a str) -> Result<(&'a str, &'a str)> {
+/// Splits `--<flag> KEY=VALUE` on its first `=`, refusing a missing `=` or
+/// an empty dotted key segment.
+pub(crate) fn split_pair<'a>(flag: &str, raw: &'a str) -> Result<(&'a str, &'a str)> {
     let (key, value) = raw.split_once('=').ok_or_else(|| {
         tagged_err(
             ErrorKind::Validation,
@@ -51,21 +55,43 @@ fn split_pair<'a>(flag: &str, raw: &'a str) -> Result<(&'a str, &'a str)> {
     Ok((key, value))
 }
 
+/// Refuses a key given twice, and a key that is a dotted prefix of another
+/// (`a` beside `a.b`): either way one flag would silently replace the other,
+/// so the refusal must not depend on flag order. `noun` names the key kind.
+pub(crate) fn refuse_overlapping_keys(keys: &[&str], noun: &str) -> Result<()> {
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for &key in keys {
+        if !seen.insert(key) {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!("{noun} `{key}` is given more than once"),
+            ));
+        }
+    }
+    for &key in keys {
+        for (i, _) in key.match_indices('.') {
+            let prefix = &key[..i];
+            if seen.contains(prefix) {
+                return Err(tagged_err(
+                    ErrorKind::Validation,
+                    None,
+                    format!(
+                        "{noun}s `{prefix}` and `{key}` overlap: `{key}` nests under `{prefix}`, which the other flag replaces"
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn read_file_text(path: &str) -> Result<String> {
-    let mut text = if path == "-" {
-        read_text_arg("-")?
+    if path == "-" {
+        Ok(strip_flag_text(read_text_arg("-")?))
     } else {
-        std::fs::read_to_string(path).with_context(|| format!("reading `--set-file` `{path}`"))?
-    };
-    if text.starts_with('\u{feff}') {
-        text.remove(0);
+        read_flag_file(Path::new(path), "set-file")
     }
-    if text.ends_with("\r\n") {
-        text.truncate(text.len() - 2);
-    } else if text.ends_with('\n') {
-        text.pop();
-    }
-    Ok(text)
 }
 
 /// Inserts `value` at the dotted `key`, creating intermediate objects.
@@ -113,36 +139,34 @@ pub(crate) fn build(args: &FieldArgs, base: Option<JsonValue>) -> Result<Option<
     if args.is_empty() {
         return Ok(base);
     }
-    let mut seen: BTreeSet<&str> = BTreeSet::new();
-    let mut flags = Map::new();
     let sources = [
         ("set", &args.set),
         ("set-json", &args.set_json),
         ("set-file", &args.set_file),
     ];
+    let mut pairs = Vec::new();
     for (flag, values) in sources {
         for raw in values {
             let (key, value) = split_pair(flag, raw)?;
-            if !seen.insert(key) {
-                return Err(tagged_err(
+            pairs.push((flag, key, value));
+        }
+    }
+    let keys: Vec<&str> = pairs.iter().map(|&(_, key, _)| key).collect();
+    refuse_overlapping_keys(&keys, "field")?;
+    let mut flags = Map::new();
+    for (flag, key, value) in pairs {
+        let parsed = match flag {
+            "set" => JsonValue::String(value.to_string()),
+            "set-json" => serde_json::from_str(value).map_err(|e| {
+                tagged_err(
                     ErrorKind::Validation,
                     None,
-                    format!("field `{key}` is given more than once"),
-                ));
-            }
-            let parsed = match flag {
-                "set" => JsonValue::String(value.to_string()),
-                "set-json" => serde_json::from_str(value).map_err(|e| {
-                    tagged_err(
-                        ErrorKind::Validation,
-                        None,
-                        format!("`--set-json {key}=…` is not valid JSON: {e}"),
-                    )
-                })?,
-                _ => JsonValue::String(read_file_text(value)?),
-            };
-            insert_dotted(&mut flags, key, parsed)?;
-        }
+                    format!("`--set-json {key}=…` is not valid JSON: {e}"),
+                )
+            })?,
+            _ => JsonValue::String(read_file_text(value)?),
+        };
+        insert_dotted(&mut flags, key, parsed)?;
     }
     let mut out = match base {
         None => Map::new(),
@@ -243,6 +267,34 @@ mod tests {
         let err = build(&args(&["a=1"], &["a=2"], &[]), None).unwrap_err();
         let tagged = err.downcast_ref::<crate::errors::TaggedError>().unwrap();
         assert_eq!(tagged.kind.as_str(), "validation");
+    }
+
+    fn validation_message(err: anyhow::Error) -> String {
+        let tagged = err.downcast_ref::<crate::errors::TaggedError>().unwrap();
+        assert_eq!(tagged.kind.as_str(), "validation");
+        err.to_string()
+    }
+
+    #[test]
+    fn dotted_prefix_key_is_refused_in_either_order() {
+        for set in [["a.b=1", "a=2"], ["a=2", "a.b=1"]] {
+            let msg = validation_message(build(&args(&set, &[], &[]), None).unwrap_err());
+            assert!(
+                msg.contains("`a`") && msg.contains("`a.b`"),
+                "{set:?}: {msg}"
+            );
+        }
+        let msg =
+            validation_message(build(&args(&["a.b.c=1"], &["a.b={}"], &[]), None).unwrap_err());
+        assert!(msg.contains("`a.b`") && msg.contains("`a.b.c`"), "{msg}");
+    }
+
+    #[test]
+    fn prefix_check_respects_segment_boundaries() {
+        let out = build(&args(&["ab=1", "a.b=2"], &[], &[]), None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(out, json!({"ab": "1", "a": {"b": "2"}}));
     }
 
     #[test]

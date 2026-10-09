@@ -23,7 +23,8 @@ use crate::convert::{
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::ScalarMutationPlan;
 use crate::items::MutationPlan;
-use crate::query::{self, Cut, OutputShape, Predicate, RawArrayHint, ShapeDispatch, WhereInput};
+pub(crate) use crate::query::WhereFilters;
+use crate::query::{self, Cut, OutputShape, RawArrayHint, ShapeDispatch};
 use template::{Template, truncate_text, value_text};
 
 /// The global output options, applied by every emitter in this module.
@@ -45,113 +46,6 @@ pub(crate) struct OutputOpts {
     pub(crate) filters: WhereFilters,
 }
 
-/// The raw values of the global `--where*` flags, one field per flag.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct WhereFilters {
-    pub(crate) where_eq: Vec<String>,
-    pub(crate) where_not: Vec<String>,
-    pub(crate) where_in: Vec<String>,
-    pub(crate) where_has: Vec<String>,
-    pub(crate) where_missing: Vec<String>,
-    pub(crate) where_gt: Vec<String>,
-    pub(crate) where_gte: Vec<String>,
-    pub(crate) where_lt: Vec<String>,
-    pub(crate) where_lte: Vec<String>,
-    pub(crate) where_contains: Vec<String>,
-    pub(crate) where_prefix: Vec<String>,
-    pub(crate) where_suffix: Vec<String>,
-    pub(crate) where_regex: Vec<String>,
-}
-
-/// The `--where*` long names, in `WhereFilters::families` order.
-const WHERE_FLAGS: [&str; 13] = [
-    "--where",
-    "--where-not",
-    "--where-in",
-    "--where-has",
-    "--where-missing",
-    "--where-gt",
-    "--where-gte",
-    "--where-lt",
-    "--where-lte",
-    "--where-contains",
-    "--where-prefix",
-    "--where-suffix",
-    "--where-regex",
-];
-
-impl WhereFilters {
-    const EMPTY: WhereFilters = WhereFilters {
-        where_eq: Vec::new(),
-        where_not: Vec::new(),
-        where_in: Vec::new(),
-        where_has: Vec::new(),
-        where_missing: Vec::new(),
-        where_gt: Vec::new(),
-        where_gte: Vec::new(),
-        where_lt: Vec::new(),
-        where_lte: Vec::new(),
-        where_contains: Vec::new(),
-        where_prefix: Vec::new(),
-        where_suffix: Vec::new(),
-        where_regex: Vec::new(),
-    };
-
-    /// Each flag's long name beside its values.
-    fn families(&self) -> [(&'static str, &[String]); 13] {
-        let f = WHERE_FLAGS;
-        [
-            (f[0], &self.where_eq[..]),
-            (f[1], &self.where_not[..]),
-            (f[2], &self.where_in[..]),
-            (f[3], &self.where_has[..]),
-            (f[4], &self.where_missing[..]),
-            (f[5], &self.where_gt[..]),
-            (f[6], &self.where_gte[..]),
-            (f[7], &self.where_lt[..]),
-            (f[8], &self.where_lte[..]),
-            (f[9], &self.where_contains[..]),
-            (f[10], &self.where_prefix[..]),
-            (f[11], &self.where_suffix[..]),
-            (f[12], &self.where_regex[..]),
-        ]
-    }
-
-    /// Total values across every flag.
-    pub(crate) fn len(&self) -> usize {
-        self.families().iter().map(|(_, v)| v.len()).sum()
-    }
-
-    /// The long name of the first flag that carries a value.
-    fn first_set(&self) -> Option<&'static str> {
-        self.families()
-            .into_iter()
-            .find_map(|(flag, values)| (!values.is_empty()).then_some(flag))
-    }
-
-    fn input(&self) -> WhereInput<'_> {
-        WhereInput {
-            where_eq: &self.where_eq,
-            where_not: &self.where_not,
-            where_in: &self.where_in,
-            where_has: &self.where_has,
-            where_missing: &self.where_missing,
-            where_gt: &self.where_gt,
-            where_gte: &self.where_gte,
-            where_lt: &self.where_lt,
-            where_lte: &self.where_lte,
-            where_contains: &self.where_contains,
-            where_prefix: &self.where_prefix,
-            where_suffix: &self.where_suffix,
-            where_regex: &self.where_regex,
-        }
-    }
-
-    fn predicates(&self) -> Result<Vec<Predicate>> {
-        query::predicates_from(&self.input())
-    }
-}
-
 /// Refuse `--where*` values given on both sides of the subcommand. For a
 /// repeatable global clap keeps only the values after the subcommand, so
 /// fewer parsed values than `--where*` tokens in `argv` means some were
@@ -170,7 +64,7 @@ where
             break;
         }
         let name = arg.split_once('=').map_or(arg, |(name, _)| name);
-        if WHERE_FLAGS.contains(&name) {
+        if WhereFilters::FLAGS.contains(&name) {
             tokens += 1;
         }
     }
@@ -249,8 +143,8 @@ impl OutputOpts {
     }
 
     /// The flag conflicts clap cannot enforce on a global typed before the
-    /// subcommand, and a parse of `--template` so a malformed one fails
-    /// before any command runs.
+    /// subcommand, and a parse of `--template` and the `--where*` predicates
+    /// so a malformed one fails before any command runs, not after a write.
     pub(crate) fn validate(&self) -> Result<()> {
         if let Some(paths) = &self.select {
             if paths.is_empty() {
@@ -311,7 +205,7 @@ impl OutputOpts {
         if let Some(t) = &self.template {
             Template::parse(t)?;
         }
-        Ok(())
+        query::prepare_predicates(&self.filters.predicates()?)
     }
 }
 
@@ -797,15 +691,97 @@ fn emit_rows(
     })
 }
 
+/// A stdout write refused because the reader closed the pipe, as `head` does
+/// once it has its lines. `run` exits quietly with success on it; a broken
+/// pipe anywhere else stays an error.
+#[derive(Debug)]
+struct StdoutClosed(std::io::Error);
+
+impl std::fmt::Display for StdoutClosed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("stdout was closed by its reader")
+    }
+}
+
+impl std::error::Error for StdoutClosed {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+/// Whether `err` comes from a stdout write the reader cut short.
+pub(crate) fn is_stdout_closed(err: &anyhow::Error) -> bool {
+    err.chain().any(|e| e.is::<StdoutClosed>())
+}
+
+/// Stdout, remembering the first write that failed with a broken pipe so
+/// the caller can tell that failure apart from any other error its closure
+/// returns, including one that wraps the `io::Error` (as `serde_json` does).
+struct StdoutSink<W> {
+    inner: W,
+    closed: Option<std::io::Error>,
+}
+
+impl<W: Write> StdoutSink<W> {
+    fn note<T>(&mut self, r: std::io::Result<T>) -> std::io::Result<T> {
+        r.inspect_err(|e| {
+            if e.kind() == std::io::ErrorKind::BrokenPipe && self.closed.is_none() {
+                self.closed = Some(std::io::Error::new(e.kind(), e.to_string()));
+            }
+        })
+    }
+}
+
+impl<W: Write> Write for StdoutSink<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let r = self.inner.write(buf);
+        self.note(r)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let r = self.inner.flush();
+        self.note(r)
+    }
+}
+
+/// Run `f` against locked stdout and flush it. When a write failed because
+/// the reader went away, the error is `StdoutClosed` whatever `f` returned.
+fn with_stdout<T>(f: impl FnOnce(&mut dyn Write) -> Result<T>) -> Result<T> {
+    with_sink(std::io::stdout().lock(), f)
+}
+
+fn with_sink<W: Write, T>(inner: W, f: impl FnOnce(&mut dyn Write) -> Result<T>) -> Result<T> {
+    let mut sink = StdoutSink {
+        inner,
+        closed: None,
+    };
+    let out = f(&mut sink).and_then(|out| {
+        sink.flush()?;
+        Ok(out)
+    });
+    match (out, sink.closed) {
+        (Err(_), Some(io)) => Err(StdoutClosed(io).into()),
+        (out, _) => out,
+    }
+}
+
 fn write_stdout(bytes: &[u8]) -> Result<()> {
     if bytes.is_empty() {
         return Ok(());
     }
-    let stdout = std::io::stdout();
-    let mut out = BufWriter::new(stdout.lock());
-    out.write_all(bytes)?;
-    out.flush()?;
-    Ok(())
+    write_stdout_parts(&[bytes])
+}
+
+/// Write `parts` to stdout through one buffer.
+fn write_stdout_parts(parts: &[&[u8]]) -> Result<()> {
+    with_stdout(|w| {
+        let mut out = BufWriter::new(w);
+        for part in parts {
+            out.write_all(part)?;
+        }
+        out.flush()?;
+        Ok(())
+    })
 }
 
 /// Write `emitted`; the notice goes straight to stderr rather than through
@@ -891,11 +867,7 @@ pub(crate) fn stdout_stream<T>(f: impl FnOnce(&mut dyn Write) -> Result<T>) -> R
     if opts().quiet {
         return f(&mut std::io::sink());
     }
-    let stdout = std::io::stdout();
-    let mut h = stdout.lock();
-    let out = f(&mut h)?;
-    h.flush()?;
-    Ok(out)
+    with_stdout(f)
 }
 
 /// Report on stderr a `--limit` cut that a query list's output has no place
@@ -1020,14 +992,20 @@ pub(crate) fn print_query_list(doc: &toml::Value, array: &str, q: &query::Query)
 /// Whether text output may be written: `false` under `-q`, an error for any
 /// flag in `refused`.
 fn text_allowed(opts: &OutputOpts, refused: &[&str]) -> Result<bool> {
+    text_allowed_unless(opts, |f| refused.contains(&f))
+}
+
+/// `text_allowed` refusing every flag `shaping_flags` reports, so a new
+/// shaping flag is refused here without a second list to update.
+fn unshaped_text_allowed(opts: &OutputOpts) -> Result<bool> {
+    text_allowed_unless(opts, |_| true)
+}
+
+fn text_allowed_unless(opts: &OutputOpts, refuses: impl Fn(&str) -> bool) -> Result<bool> {
     if opts.quiet {
         return Ok(false);
     }
-    if let Some(flag) = opts
-        .shaping_flags()
-        .into_iter()
-        .find(|f| refused.contains(f))
-    {
+    if let Some(flag) = opts.shaping_flags().into_iter().find(|f| refuses(f)) {
         return Err(invalid(format!(
             "`{flag}` does not apply to this command's text output"
         )));
@@ -1035,34 +1013,9 @@ fn text_allowed(opts: &OutputOpts, refused: &[&str]) -> Result<bool> {
     Ok(true)
 }
 
-const ALL_SHAPING: &[&str] = &[
-    "--select",
-    "--limit",
-    "--lines",
-    "--get",
-    "--template",
-    "--rows",
-    "--header",
-    "--max-chars",
-    "--omit",
-    "--where",
-    "--where-not",
-    "--where-in",
-    "--where-has",
-    "--where-missing",
-    "--where-gt",
-    "--where-gte",
-    "--where-lt",
-    "--where-lte",
-    "--where-contains",
-    "--where-prefix",
-    "--where-suffix",
-    "--where-regex",
-];
-
 /// Write non-JSON output verbatim; the caller supplies any trailing newline.
 pub(crate) fn print_text(text: &str) -> Result<()> {
-    if text_allowed(opts(), ALL_SHAPING)? {
+    if unshaped_text_allowed(opts())? {
         write_stdout(text.as_bytes())?;
     }
     Ok(())
@@ -1204,17 +1157,12 @@ pub(crate) fn print_report(report: JsonValue, rows: Rows) -> Result<()> {
 /// layering honest (cli depends on query, not the reverse). `hint` picks the
 /// remedy an array target's error advises; nothing is written on error.
 pub(crate) fn print_raw_value(v: &JsonValue, hint: RawArrayHint) -> Result<()> {
-    let print = text_allowed(opts(), ALL_SHAPING)?;
+    let print = unshaped_text_allowed(opts())?;
     let rendered = query::emit_raw(v, hint)?;
     if !print {
         return Ok(());
     }
-    let stdout = std::io::stdout();
-    let mut out = BufWriter::new(stdout.lock());
-    out.write_all(rendered.as_bytes())?;
-    out.write_all(b"\n")?;
-    out.flush()?;
-    Ok(())
+    write_stdout_parts(&[rendered.as_bytes(), b"\n"])
 }
 
 /// `items list --raw` dispatch-side wrapper. The per-shape
@@ -1249,12 +1197,7 @@ pub(crate) fn emit_list_raw(v: &JsonValue, shape: &OutputShape) -> Result<()> {
     if !print {
         return Ok(());
     }
-    let stdout = std::io::stdout();
-    let mut out = BufWriter::new(stdout.lock());
-    out.write_all(rendered.as_bytes())?;
-    out.write_all(b"\n")?;
-    out.flush()?;
-    Ok(())
+    write_stdout_parts(&[rendered.as_bytes(), b"\n"])
 }
 
 /// Build the dry-run JSON envelope for a single-scalar mutation (`set` /
@@ -1537,7 +1480,7 @@ mod tests {
         let o = with(|o| o.quiet = true);
         let e = emit(rows3(), TOP, Style::Pretty, &o).unwrap();
         assert!(e.stdout.is_empty() && e.notice.is_none());
-        assert!(!text_allowed(&o, ALL_SHAPING).unwrap());
+        assert!(!unshaped_text_allowed(&o).unwrap());
     }
 
     #[test]
@@ -1594,6 +1537,70 @@ mod tests {
             .validate()
             .is_ok()
         );
+    }
+
+    #[test]
+    fn validate_rejects_a_malformed_where_predicate() {
+        type Setter = fn(&mut OutputOpts);
+        let bad: [Setter; 8] = [
+            |o| o.filters.where_regex = vec!["id=(".into()],
+            |o| o.filters.where_eq = vec!["noequals".into()],
+            |o| o.filters.where_eq = vec!["deps.*.ref=a".into()],
+            |o| o.filters.where_eq = vec!["n=@int:x".into()],
+            |o| o.filters.where_gt = vec!["at=@date:2026-13-45".into()],
+            |o| o.filters.where_lte = vec!["f=@float:abc".into()],
+            |o| o.filters.where_not = vec!["b=@bool:yes".into()],
+            |o| o.filters.where_in = vec!["n=1,@int:two".into()],
+        ];
+        for f in bad {
+            let o = with(f);
+            assert!(o.validate().is_err(), "{:?}", o.filters);
+        }
+        let good: [Setter; 3] = [
+            |o| o.filters.where_regex = vec!["id=^R".into()],
+            |o| o.filters.where_eq = vec!["n=@int:3".into()],
+            |o| o.filters.where_gte = vec!["at=@date:2026-01-15".into()],
+        ];
+        for f in good {
+            let o = with(f);
+            assert!(o.validate().is_ok(), "{:?}", o.filters);
+        }
+    }
+
+    struct Failing(std::io::ErrorKind);
+
+    impl Write for Failing {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::from(self.0))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn only_a_broken_pipe_on_the_sink_reads_as_stdout_closed() {
+        use std::io::ErrorKind::{BrokenPipe, PermissionDenied};
+        let write = |kind| {
+            with_sink(Failing(kind), |w| {
+                w.write_all(b"x")?;
+                Ok(())
+            })
+            .unwrap_err()
+        };
+        assert!(is_stdout_closed(&write(BrokenPipe)));
+        assert!(!is_stdout_closed(&write(PermissionDenied)));
+        let serde = with_sink(Failing(BrokenPipe), |w| {
+            serde_json::to_writer(w, &json!({ "a": 1 }))?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(is_stdout_closed(&serde));
+        let elsewhere = with_sink(Vec::new(), |_| -> Result<()> {
+            Err(std::io::Error::from(BrokenPipe).into())
+        })
+        .unwrap_err();
+        assert!(!is_stdout_closed(&elsewhere));
     }
 
     #[test]
@@ -1696,7 +1703,7 @@ mod tests {
     #[test]
     fn text_output_refuses_shaping_flags() {
         let o = with(|o| o.lines = true);
-        let e = text_allowed(&o, ALL_SHAPING).unwrap_err();
+        let e = unshaped_text_allowed(&o).unwrap_err();
         assert_eq!(
             format!("{e:#}"),
             "`--lines` does not apply to this command's text output"
@@ -2034,13 +2041,13 @@ mod tests {
     #[test]
     fn global_flags_are_refused_on_text_output() {
         let o = with(|o| o.filters.where_has = vec!["a".into()]);
-        let e = text_allowed(&o, ALL_SHAPING).unwrap_err();
+        let e = unshaped_text_allowed(&o).unwrap_err();
         assert_eq!(
             format!("{e:#}"),
             "`--where-has` does not apply to this command's text output"
         );
         let o = with(|o| o.max_chars = Some(3));
-        assert!(text_allowed(&o, ALL_SHAPING).is_err());
+        assert!(unshaped_text_allowed(&o).is_err());
     }
 
     fn show_report() -> JsonValue {

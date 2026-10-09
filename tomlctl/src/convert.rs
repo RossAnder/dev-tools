@@ -72,8 +72,8 @@ pub(crate) const DATE_KEYS: &[&str] = &[
 ///     `Option<&JsonValue>` shape so missing-on-both is equal and
 ///     missing-on-one-only is unequal.
 ///
-/// The `--where` predicate family shares none of this: `eval_predicate` in
-/// `query.rs` uses flat `tbl.get(key)` lookups and stays single-key.
+/// `--where` keys do not use this walker: they resolve through `navigate`
+/// (dotted keys and numeric array indices) on the TOML side.
 pub(crate) fn walk_json_path<'a>(v: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
     let mut cur = v;
     for seg in path.split('.') {

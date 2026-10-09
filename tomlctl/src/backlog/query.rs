@@ -162,10 +162,13 @@ fn build_query(
     };
     let mut input = query.to_query_input(&legacy, out);
     if open {
-        input.where_eq.push(format!("{FIELD_STATUS}={STATUS_OPEN}"));
+        input
+            .filters
+            .where_eq
+            .push(format!("{FIELD_STATUS}={STATUS_OPEN}"));
     }
     if let Some(k) = kind {
-        input.where_eq.push(format!("{FIELD_KIND}={k}"));
+        input.filters.where_eq.push(format!("{FIELD_KIND}={k}"));
     }
     Query::from_query_input(&input)
 }

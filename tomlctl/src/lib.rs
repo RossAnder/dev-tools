@@ -14,7 +14,6 @@ mod clusters;
 mod convert;
 mod dedup;
 mod errors;
-#[allow(dead_code)]
 mod fields;
 mod flow;
 mod inputs;
@@ -332,8 +331,9 @@ pub fn record_agent(
 }
 
 /// Parses the process arguments, runs the selected verb and reports any error
-/// on stderr. Returns `ExitCode::FAILURE` on error; clap's own parse-error and
-/// `--help` / `--version` exits happen inside `Cli::parse` as before.
+/// on stderr. Returns `ExitCode::FAILURE` on error, except that a reader
+/// closing stdout early (`tomlctl … | head`) exits quietly with success; clap's
+/// own parse-error and `--help` / `--version` exits happen inside `Cli::parse`.
 pub fn run() -> ExitCode {
     // Parse `Cli` exactly once, here: peeking `--error-format` with a second
     // `try_parse()` swallows clap's errors on the peek path and double-renders
@@ -343,6 +343,7 @@ pub fn run() -> ExitCode {
     let error_format = cli.error_format;
     match cli::run(cli) {
         Ok(()) => ExitCode::SUCCESS,
+        Err(err) if output::is_stdout_closed(&err) => ExitCode::SUCCESS,
         Err(err) => {
             emit_error(&err, error_format);
             ExitCode::FAILURE

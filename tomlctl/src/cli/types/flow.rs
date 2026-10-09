@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use super::{ReadIntegrityArgs, StampArgs, WriteIntegrityArgs};
 use crate::fields::FieldArgs;
+use crate::flow::RecordType;
 
 /// Flow subcommand cluster. Each leaf op maps onto a dedicated
 /// `flow/<leaf>.rs` module.
@@ -175,9 +176,11 @@ pub(crate) enum FlowOp {
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
-    /// Regenerate a flow's `PROGRESS-LOG.md` from its `execution-record.toml`.
+    /// Regenerate a flow's `PROGRESS-LOG.md` from its execution record.
     ///
-    /// Deterministic render-from-log: the markdown is a pure function of the
+    /// The record is the one `context.toml` `[artifacts].execution_record`
+    /// names, else `execution-record.toml` in the flow dir. Deterministic
+    /// render-from-log: the markdown is a pure function of the
     /// execution record + the flow title (read from the plan's `# Plan:` header,
     /// falling back to a title-cased slug). Re-running produces byte-identical
     /// output. The written file is a DERIVED artifact — no `.sha256` sidecar is
@@ -224,8 +227,9 @@ pub(crate) enum FlowOp {
         #[command(flatten)]
         fields: FieldArgs,
         /// Append one entry per JSON line from SRC (`-` for stdin, or a
-        /// path), all or nothing. The other payload flags apply to every row
-        /// and each row's own keys win.
+        /// path), all or nothing. `--json` and the field flags are defaults a
+        /// row's own keys override; `--type` and `--task` apply to every row,
+        /// and a row whose own `type` or `task_ref` disagrees is refused.
         #[arg(long = "ndjson", value_name = "SRC")]
         ndjson: Option<String>,
         /// Validate and report the ids that would be minted without writing.
@@ -236,33 +240,6 @@ pub(crate) enum FlowOp {
         #[command(flatten)]
         stamp: StampArgs,
     },
-}
-
-/// The execution-record entry types `flow record --type` accepts.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
-pub(crate) enum RecordType {
-    TaskCompletion,
-    Verification,
-    Deviation,
-    Deferral,
-    Reconcile,
-    StatusTransition,
-    Checkpoint,
-}
-
-impl RecordType {
-    /// The `type` value written to the record, which is also the CLI spelling.
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::TaskCompletion => "task-completion",
-            Self::Verification => "verification",
-            Self::Deviation => "deviation",
-            Self::Deferral => "deferral",
-            Self::Reconcile => "reconcile",
-            Self::StatusTransition => "status-transition",
-            Self::Checkpoint => "checkpoint",
-        }
-    }
 }
 
 #[derive(Subcommand)]

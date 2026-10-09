@@ -541,30 +541,10 @@ fn batch_str(
 }
 
 /// Every line is parsed before the store is read, so a malformed line fails
-/// the batch without a partial answer. Blank lines are skipped but still
-/// counted, so `line N` is the line the caller wrote.
+/// the batch without a partial answer.
 fn parse_probes(text: &str) -> Result<Vec<BatchProbe>> {
     let mut probes = Vec::new();
-    for (idx, raw) in text.lines().enumerate() {
-        let line = idx + 1;
-        if raw.trim().is_empty() {
-            continue;
-        }
-        let payload = match serde_json::from_str::<JsonValue>(raw) {
-            Ok(JsonValue::Object(map)) => map,
-            Ok(other) => {
-                return Err(batch_refusal(
-                    line,
-                    format!("expected one JSON object per line; got {other}"),
-                ));
-            }
-            Err(e) => {
-                return Err(batch_refusal(
-                    line,
-                    format!("expected one JSON object per line: {e}"),
-                ));
-            }
-        };
+    for (line, payload) in crate::items::parse_ndjson_objects(text)? {
         if let Some(unknown) = payload.keys().find(|k| !BATCH_KEYS.contains(&k.as_str())) {
             return Err(batch_refusal(
                 line,

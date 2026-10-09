@@ -32,7 +32,7 @@ use serde_json::json;
 use toml::Value as TomlValue;
 
 use crate::cli::{ReadIntegrityArgs, read_integrity_opts};
-use crate::flow::init::execution_record_path_for;
+use crate::flow::record_path::flow_execution_record_path;
 use crate::integrity::maybe_verify_integrity;
 use crate::io::{atomic_write, read_toml, recorded_under_root, relativise, repo_or_cwd_root};
 use crate::output::print_json_compact;
@@ -53,21 +53,19 @@ struct RenderResult {
 }
 
 pub(crate) fn dispatch(slug: &str, stdout: bool, integrity: &ReadIntegrityArgs) -> Result<()> {
-    // Security: validate the raw `--slug` BEFORE it flows into
-    // `execution_record_path_for` (which joins `.claude/flows/<slug>/…`). The
-    // strict regex (`^[a-z0-9][a-z0-9-]{0,63}$`, shared with `flow init`)
-    // rejects `/`, `\`, `..`, absolute paths, and NUL, so the resolved record /
-    // PROGRESS-LOG paths cannot escape `.claude/flows/<slug>/`. Without it a
-    // slug like `../../tmp/x` turns the record read into a
+    // Security: validate the raw `--slug` BEFORE it is joined into
+    // `.claude/flows/<slug>/`. The strict regex (`^[a-z0-9][a-z0-9-]{0,63}$`,
+    // shared with `flow init`) rejects `/`, `\`, `..`, absolute paths, and
+    // NUL, so the context / PROGRESS-LOG paths cannot escape the flow dir.
+    // Without it a slug like `../../tmp/x` turns the record read into a
     // file-existence/parse-error oracle and the write into an
     // out-of-containment write with no `--allow-outside` opt-out.
     crate::flow::init::validate_slug(slug)?;
-    let record_path = execution_record_path_for(slug)?;
-    // Sibling files live next to the execution record under the flow dir.
-    let flow_dir = record_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
+    let root = repo_or_cwd_root()?;
+    let flow_dir = root.join(".claude").join("flows").join(slug);
+    // The record `flow record` appends to: the one the context names, else
+    // the sibling file. A recorded path escaping the root is refused there.
+    let record_path = flow_execution_record_path(&root, &flow_dir)?;
     let context_path = flow_dir.join("context.toml");
     let progress_log_path = flow_dir.join("PROGRESS-LOG.md");
 
@@ -104,7 +102,7 @@ pub(crate) fn dispatch(slug: &str, stdout: bool, integrity: &ReadIntegrityArgs) 
 
     let envelope = json!({
         "ok": true,
-        "path": relativise(&repo_or_cwd_root()?, &progress_log_path),
+        "path": relativise(&root, &progress_log_path),
         "tables": {
             "completed": rendered.completed,
             "deviations": rendered.deviations,
@@ -702,6 +700,40 @@ mod tests {
         // Absent → empty cell.
         let absent: TomlValue = toml::from_str("x = 1").unwrap();
         assert_eq!(date_cell(&absent, "date"), "");
+    }
+
+    /// The render reads the record the context names, not the sibling file,
+    /// and still writes PROGRESS-LOG.md into the flow dir.
+    #[test]
+    fn dispatch_renders_the_record_the_context_names() {
+        crate::test_support::with_root(|root| {
+            let slug = "feature-x";
+            let dir = root.join(".claude").join("flows").join(slug);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("context.toml"),
+                "[artifacts]\nexecution_record = '.claude/flows/feature-x/record-2.toml'\n",
+            )
+            .unwrap();
+            let entry = |task: &str| {
+                format!(
+                    "schema_version = 1\n[[items]]\nid = \"E1\"\ntype = \"task-completion\"\n\
+                     status = \"done\"\ntask_ref = \"{task}\"\ndate = \"2026-05-20\"\n"
+                )
+            };
+            std::fs::write(dir.join("record-2.toml"), entry("named-record-task")).unwrap();
+            std::fs::write(dir.join("execution-record.toml"), entry("sibling-task")).unwrap();
+
+            let integrity = ReadIntegrityArgs {
+                verify_integrity: false,
+                strict_read: false,
+            };
+            dispatch(slug, false, &integrity).expect("the render succeeds");
+
+            let log = std::fs::read_to_string(dir.join("PROGRESS-LOG.md")).unwrap();
+            assert!(log.contains("named-record-task"), "{log}");
+            assert!(!log.contains("sibling-task"), "{log}");
+        });
     }
 
     /// `files = []` (present-but-empty) renders `0 files`; absent renders "".

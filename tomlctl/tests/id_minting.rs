@@ -200,3 +200,80 @@ fn removing_a_lower_id_leaves_a_higher_mark_in_place() {
     let next = ok_stdout(dir.path(), &["items", "next-id", l, "--prefix", "E"], "");
     assert_eq!(next.trim(), "E10");
 }
+
+#[test]
+fn removing_a_hash_shaped_id_records_no_mark() {
+    let (dir, path) = seed_ledger(
+        "schema_version = 1\n\n[[items]]\nid = \"B-de0a0d87\"\n\n[[items]]\nid = \"B-00000001\"\n",
+    );
+    let l = path.to_str().unwrap();
+    ok_stdout(dir.path(), &["items", "remove", l, "B-de0a0d87"], "");
+    ok_stdout(dir.path(), &["items", "remove", l, "B-00000001"], "");
+    assert!(
+        ledger(&path).get("id_high_water").is_none(),
+        "a hash id must not record a mark: {}",
+        fs::read_to_string(&path).unwrap()
+    );
+}
+
+#[test]
+fn removing_from_the_backlog_array_records_no_mark() {
+    let (dir, path) = seed_ledger(
+        "schema_version = 1\n\n[[backlog]]\nid = \"B-12345678\"\n\n[[backlog]]\nid = \"B-87654321\"\n",
+    );
+    let l = path.to_str().unwrap();
+    ok_stdout(
+        dir.path(),
+        &["items", "remove", l, "B-12345678", "--array", "backlog"],
+        "",
+    );
+    ok_stdout(
+        dir.path(),
+        &["items", "apply", l, "--ops", "-", "--array", "backlog"],
+        r#"[{"op":"remove","id":"B-87654321"}]"#,
+    );
+    assert!(
+        ledger(&path).get("id_high_water").is_none(),
+        "a backlog removal must not record a mark: {}",
+        fs::read_to_string(&path).unwrap()
+    );
+}
+
+#[test]
+fn removing_from_the_items_array_still_records_a_mark() {
+    let (dir, path) = seed_ledger("schema_version = 1\n\n[[items]]\nid = \"R3\"\n");
+    let l = path.to_str().unwrap();
+    ok_stdout(dir.path(), &["items", "remove", l, "R3"], "");
+    assert_eq!(ledger(&path)["id_high_water"]["R"].as_integer(), Some(3));
+}
+
+#[test]
+fn add_many_never_re_mints_a_removed_top_id() {
+    let (dir, path) = seed_ledger(
+        "schema_version = 1\n\n[[items]]\nid = \"R1\"\n\n[[items]]\nid = \"R2\"\n\n[[items]]\nid = \"R3\"\n",
+    );
+    let l = path.to_str().unwrap();
+    ok_stdout(dir.path(), &["items", "remove", l, "R3"], "");
+    let env = ok_json(
+        dir.path(),
+        &["items", "add-many", l, "--ndjson", "-", "--id-prefix", "R"],
+        "{\"summary\":\"a\"}\n{\"summary\":\"b\"}\n",
+    );
+    assert_eq!(env["ids"], serde_json::json!(["R4", "R5"]));
+    assert_eq!(ledger_ids(&path), ["R1", "R2", "R4", "R5"]);
+}
+
+#[test]
+fn one_apply_removing_the_top_id_and_minting_never_re_mints_it() {
+    let (dir, path) =
+        seed_ledger("schema_version = 1\n\n[[items]]\nid = \"R1\"\n\n[[items]]\nid = \"R2\"\n");
+    let l = path.to_str().unwrap();
+    let env = ok_json(
+        dir.path(),
+        &["items", "apply", l, "--ops", "-", "--id-prefix", "R"],
+        r#"[{"op":"remove","id":"R2"},{"op":"add","json":{"summary":"a"}}]"#,
+    );
+    assert_eq!(env["ids"], serde_json::json!(["R3"]));
+    assert_eq!(ledger_ids(&path), ["R1", "R3"]);
+    assert_eq!(ledger(&path)["id_high_water"]["R"].as_integer(), Some(2));
+}

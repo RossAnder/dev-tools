@@ -106,11 +106,45 @@ fn set_refuses_a_path_given_twice_and_writes_nothing() {
 }
 
 #[test]
+fn set_refuses_a_path_nested_under_another_in_either_order() {
+    let (dir, ctx) = seed_ledger(CONTEXT);
+    let f = ctx.to_str().unwrap();
+    let orders: [&[&str]; 3] = [
+        &["--set", "tasks.total=1", "--set", "tasks=2"],
+        &["--set", "tasks=2", "--set", "tasks.total=1"],
+        &["tasks", "2", "--set", "tasks.total=1"],
+    ];
+    for flags in orders {
+        let mut args = vec!["set", f];
+        args.extend_from_slice(flags);
+        let stderr = run_err(dir.path(), &args);
+        assert!(
+            stderr.contains("`tasks`") && stderr.contains("`tasks.total`"),
+            "{flags:?} stderr: {stderr}"
+        );
+        assert_eq!(fs::read_to_string(&ctx).unwrap(), CONTEXT);
+    }
+}
+
+#[test]
+fn set_prefix_check_respects_segment_boundaries() {
+    let (dir, ctx) = seed_ledger(CONTEXT);
+    let f = ctx.to_str().unwrap();
+    run(
+        dir.path(),
+        &["set", f, "--set", "task=1", "--set", "tasks.total=2"],
+    );
+    let d = doc(&ctx);
+    assert_eq!(d["task"].as_integer(), Some(1));
+    assert_eq!(d["tasks"]["total"].as_integer(), Some(2));
+}
+
+#[test]
 fn set_refuses_a_malformed_pair_and_a_missing_source() {
     let (dir, ctx) = seed_ledger(CONTEXT);
     let f = ctx.to_str().unwrap();
     let stderr = run_err(dir.path(), &["set", f, "--set", "status"]);
-    assert!(stderr.contains("PATH=VALUE"), "stderr: {stderr}");
+    assert!(stderr.contains("needs the form"), "stderr: {stderr}");
     run_err(dir.path(), &["set", f]);
     run_err(dir.path(), &["set", f, "status"]);
     assert_eq!(fs::read_to_string(&ctx).unwrap(), CONTEXT);

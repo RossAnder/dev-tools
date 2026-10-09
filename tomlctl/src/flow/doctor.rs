@@ -6,9 +6,10 @@
 //!
 //! Per-flow (each scoped to `<slug>`):
 //! - `context.toml` exists at `<root>/.claude/flows/<slug>/context.toml`.
-//! - `execution-record.toml` exists at the sibling path.
-//! - All three sidecars (`<file>.sha256`, for `context.toml`,
-//!   `execution-record.toml` and `tasks.toml`) exist and their digests match
+//! - The execution record exists: the path `[artifacts].execution_record`
+//!   names, else the sibling `execution-record.toml`.
+//! - All three sidecars (`<file>.sha256`, for `context.toml`, the execution
+//!   record and `tasks.toml`) exist and their digests match
 //!   a fresh recompute of the file's bytes.
 //! - `tasks.toml` exists when the flow's plan declares a `## Tasks` section.
 //!   An absent store is advisory (a warning): doctor never creates
@@ -16,7 +17,8 @@
 //! - The `[artifacts]` table inside `context.toml` lists paths that match
 //!   the canonical computation for the slug (the same map that
 //!   `flow init` writes). A missing `tasks` key is advisory (a warning),
-//!   not a check failure.
+//!   not a check failure, as is an `execution_record` naming a custom path
+//!   that stays under the root.
 //! - `plan_path` (top-level field of `context.toml`) names a repo-relative
 //!   `.md` document under the root that exists on disk. A value failing the
 //!   containment or extension rule fails the check instead of being stat'd.
@@ -295,7 +297,6 @@ fn check_one_flow(
 ) -> Result<Vec<(PathBuf, String)>> {
     let flow_dir = root.join(".claude").join("flows").join(slug);
     let context_file = flow_dir.join("context.toml");
-    let er_file = flow_dir.join("execution-record.toml");
     let tasks_file = flow_dir.join("tasks.toml");
     let mut stale_sidecars: Vec<(PathBuf, String)> = Vec::new();
 
@@ -311,17 +312,37 @@ fn check_one_flow(
         ));
     }
 
-    // 2. execution-record.toml exists.
-    let er_exists = er_file.exists();
-    if er_exists {
-        checks.push(Check::ok("execution-record-exists", slug.to_string()));
-    } else {
-        checks.push(Check::fail(
-            "execution-record-exists",
-            slug.to_string(),
-            format!("missing: {}", relativise(root, &er_file)),
-        ));
-    }
+    // The context doc is read once here: the record path, the task-store
+    // checks and the artifacts / plan-path checks all project from it.
+    let context_doc = context_exists.then(|| read_toml(&context_file));
+    let parsed_context = context_doc.as_ref().and_then(|parsed| parsed.as_ref().ok());
+
+    // 2. The execution record exists — the one `flow record` writes, which
+    //    the context's `[artifacts].execution_record` may name. A recorded
+    //    path escaping the root fails the check instead of being stat'd.
+    let er_file = match super::execution_record_path(root, &flow_dir, &context_file, parsed_context)
+    {
+        Ok(path) => {
+            if path.exists() {
+                checks.push(Check::ok("execution-record-exists", slug.to_string()));
+            } else {
+                checks.push(Check::fail(
+                    "execution-record-exists",
+                    slug.to_string(),
+                    format!("missing: {}", relativise(root, &path)),
+                ));
+            }
+            Some(path)
+        }
+        Err(e) => {
+            checks.push(Check::fail(
+                "execution-record-exists",
+                slug.to_string(),
+                format!("{e}"),
+            ));
+            None
+        }
+    };
 
     // 3 & 4. Artifact sidecars.
     push_sidecar_check(
@@ -332,18 +353,23 @@ fn check_one_flow(
         checks,
         &mut stale_sidecars,
     )?;
-    push_sidecar_check(
-        root,
-        slug,
-        "execution-record-sidecar",
-        &er_file,
-        checks,
-        &mut stale_sidecars,
-    )?;
+    match &er_file {
+        Some(er_file) => push_sidecar_check(
+            root,
+            slug,
+            "execution-record-sidecar",
+            er_file,
+            checks,
+            &mut stale_sidecars,
+        )?,
+        None => checks.push(Check {
+            name: "execution-record-sidecar",
+            scope: slug.to_string(),
+            ok: true,
+            detail: Some("skipped: the execution record path does not resolve".to_string()),
+        }),
+    }
 
-    // The context doc is read once here: the task-store checks below and the
-    // artifacts / plan-path checks all project from it.
-    let context_doc = context_exists.then(|| read_toml(&context_file));
     let plan_declares_tasks = context_exists && super::resolve::plan_declares_tasks(slug);
 
     // 5. Task store existence, observable only for a plan that declares a
@@ -402,12 +428,20 @@ fn check_one_flow(
                     slug,
                     &doc,
                     plan_declares_tasks,
+                    er_file.is_some(),
                     checks,
                     warnings,
                     tasks_backfills,
                 );
                 check_plan_path_resolves(slug, &doc, checks);
-                check_tasks_counters(slug, &doc, &tasks_file, &er_file, checks, warnings);
+                check_tasks_counters(
+                    slug,
+                    &doc,
+                    &tasks_file,
+                    er_file.as_deref(),
+                    checks,
+                    warnings,
+                );
             }
             Err(e) => {
                 checks.push(Check::fail(
@@ -437,14 +471,18 @@ fn check_one_flow(
 /// canonical map for `slug`. A missing key or a value disagreement
 /// surfaces as a single failing check whose `detail` names the first
 /// divergence found (deterministic — keys are checked in canonical
-/// order); an absent `tasks` key is the one exception, reported on
-/// `warnings` so flows without a task store stay green. When the plan
-/// declares a task section that absence also lands on `backfills`, which is
-/// what gives the advisory a `--fix` route.
+/// order). Two exceptions land on `warnings` instead: an absent `tasks`
+/// key, so flows without a task store stay green, and a custom
+/// `execution_record` path when `record_contained` says it resolved under
+/// the root, since every record reader honours one. When the plan declares
+/// a task section the absent `tasks` key also lands on `backfills`, which
+/// is what gives that advisory a `--fix` route; a custom record path gets
+/// none, because it is a supported configuration rather than a defect.
 fn check_artifacts_canonical(
     slug: &str,
     doc: &TomlValue,
     plan_declares_tasks: bool,
+    record_contained: bool,
     checks: &mut Vec<Check>,
     warnings: &mut Vec<JsonValue>,
     backfills: &mut Vec<String>,
@@ -463,11 +501,23 @@ fn check_artifacts_canonical(
         return;
     };
     let pairs = canon.to_pairs();
+    let mut custom_record: Option<String> = None;
     for (key, want) in pairs {
         if key == "tasks" {
             continue;
         }
         match arts.get(key).and_then(|v| v.as_str()) {
+            Some(got)
+                if key == "execution_record"
+                    && got != want
+                    && !got.is_empty()
+                    && record_contained =>
+            {
+                warnings.push(JsonValue::String(format!(
+                    "[artifacts].execution_record for `{slug}` names the custom path `{got}` (canonical `{want}`) — the record lives there and every record reader and writer follows it, but `tasks snapshot` (glimpse) reads only the sibling `execution-record.toml`"
+                )));
+                custom_record = Some(format!("custom execution record path `{got}`"));
+            }
             None => {
                 checks.push(Check::fail(
                     "artifacts-canonical",
@@ -512,7 +562,12 @@ fn check_artifacts_canonical(
         Some(_) => {}
     }
 
-    checks.push(Check::ok("artifacts-canonical", slug.to_string()));
+    checks.push(Check {
+        name: "artifacts-canonical",
+        scope: slug.to_string(),
+        ok: true,
+        detail: custom_record,
+    });
 }
 
 /// Check that `plan_path` (top-level string field of `context.toml`)
@@ -579,9 +634,9 @@ fn store_refs(tasks_file: &Path) -> Option<HashSet<String>> {
 /// Distinct `task_ref`s of the record's `done` task-completions — the same
 /// set `[tasks].completed` counts, so the two cannot disagree about which
 /// refs are in play. A `failed` or `skipped` entry names an unfinished task
-/// and is no part of either.
-fn record_completion_refs(er_file: &Path) -> Vec<String> {
-    let Ok(doc) = read_toml(er_file) else {
+/// and is no part of either. A record path that did not resolve holds none.
+fn record_completion_refs(er_file: Option<&Path>) -> Vec<String> {
+    let Some(Ok(doc)) = er_file.map(read_toml) else {
         return Vec::new();
     };
     let mut refs: Vec<String> = Vec::new();
@@ -622,7 +677,7 @@ fn check_tasks_counters(
     slug: &str,
     doc: &TomlValue,
     tasks_file: &Path,
-    er_file: &Path,
+    er_file: Option<&Path>,
     checks: &mut Vec<Check>,
     warnings: &mut Vec<JsonValue>,
 ) {
@@ -1101,6 +1156,7 @@ mod tests {
             "feature-x",
             &doc,
             false,
+            true,
             &mut checks,
             &mut warnings,
             &mut backfills,
@@ -1128,6 +1184,7 @@ mod tests {
             "feature-x",
             &doc,
             true,
+            true,
             &mut checks,
             &mut warnings,
             &mut backfills,
@@ -1153,6 +1210,7 @@ mod tests {
         check_artifacts_canonical(
             "feature-x",
             &doc,
+            true,
             true,
             &mut checks,
             &mut warnings,
@@ -1186,6 +1244,7 @@ mod tests {
             "feature-x",
             &doc,
             true,
+            true,
             &mut checks,
             &mut warnings,
             &mut backfills,
@@ -1195,6 +1254,103 @@ mod tests {
         assert!(checks[0].ok, "detail: {:?}", checks[0].detail);
         assert!(warnings.is_empty(), "got: {warnings:?}");
         assert!(backfills.is_empty(), "got: {backfills:?}");
+    }
+
+    /// The canonical pairs with `key` overridden to `value`.
+    fn with_override(slug: &str, key: &str, value: &str) -> TomlValue {
+        let pairs: Vec<(String, String)> = CanonicalArtifacts::for_slug(slug)
+            .to_pairs()
+            .iter()
+            .map(|(k, want)| {
+                let v = if *k == key { value } else { *want };
+                ((*k).to_string(), v.to_string())
+            })
+            .collect();
+        artifacts_doc(&pairs)
+    }
+
+    #[test]
+    fn a_contained_custom_record_path_passes_with_a_warning() {
+        let doc = with_override(
+            "feature-x",
+            "execution_record",
+            ".claude/flows/feature-x/record-2.toml",
+        );
+        let mut checks = Vec::new();
+        let mut warnings = Vec::new();
+        let mut backfills = Vec::new();
+
+        check_artifacts_canonical(
+            "feature-x",
+            &doc,
+            true,
+            true,
+            &mut checks,
+            &mut warnings,
+            &mut backfills,
+        );
+
+        assert_eq!(checks.len(), 1);
+        assert!(checks[0].ok, "detail: {:?}", checks[0].detail);
+        let detail = checks[0].detail.as_deref().unwrap_or_default();
+        assert!(detail.contains("record-2.toml"), "{detail}");
+        assert_eq!(warnings.len(), 1, "got: {warnings:?}");
+        let w = warnings[0].as_str().unwrap();
+        assert!(
+            w.contains("record-2.toml") && w.contains("tasks snapshot"),
+            "{w}"
+        );
+        assert!(backfills.is_empty(), "got: {backfills:?}");
+    }
+
+    #[test]
+    fn an_unresolved_custom_record_path_still_fails() {
+        let doc = with_override("feature-x", "execution_record", "../outside.toml");
+        let mut checks = Vec::new();
+        let mut warnings = Vec::new();
+        let mut backfills = Vec::new();
+
+        check_artifacts_canonical(
+            "feature-x",
+            &doc,
+            true,
+            false,
+            &mut checks,
+            &mut warnings,
+            &mut backfills,
+        );
+
+        assert_eq!(checks.len(), 1);
+        assert!(!checks[0].ok, "an escaping record path must fail");
+        assert!(warnings.is_empty(), "got: {warnings:?}");
+    }
+
+    #[test]
+    fn a_custom_path_for_another_artifact_still_fails() {
+        let doc = with_override(
+            "feature-x",
+            "review_ledger",
+            ".claude/flows/feature-x/ledger-2.toml",
+        );
+        let mut checks = Vec::new();
+        let mut warnings = Vec::new();
+        let mut backfills = Vec::new();
+
+        check_artifacts_canonical(
+            "feature-x",
+            &doc,
+            true,
+            true,
+            &mut checks,
+            &mut warnings,
+            &mut backfills,
+        );
+
+        assert_eq!(checks.len(), 1);
+        assert!(!checks[0].ok, "a custom review_ledger path must fail");
+        let detail = checks[0].detail.as_deref().unwrap_or_default();
+        assert!(detail.contains("review_ledger"), "{detail}");
+        assert!(warnings.is_empty(), "got: {warnings:?}");
     }
 
     /// A store on disk is sidecar-checked whatever the plan says, and a
@@ -1263,7 +1419,7 @@ mod tests {
             "feature-x",
             &doc,
             &tasks_file,
-            &er_file,
+            Some(&er_file),
             &mut checks,
             &mut warnings,
         );
@@ -1291,7 +1447,7 @@ mod tests {
             "feature-x",
             &doc,
             &tasks_file,
-            &er_file,
+            Some(&er_file),
             &mut checks,
             &mut warnings,
         );
@@ -1315,7 +1471,7 @@ mod tests {
             "feature-x",
             &doc,
             &tasks_file,
-            &er_file,
+            Some(&er_file),
             &mut checks,
             &mut warnings,
         );
@@ -1343,7 +1499,7 @@ mod tests {
             "feature-x",
             &doc,
             &tasks_file,
-            &er_file,
+            Some(&er_file),
             &mut checks,
             &mut warnings,
         );
@@ -1367,7 +1523,7 @@ mod tests {
             "feature-x",
             &doc,
             &tasks_file,
-            &er_file,
+            Some(&er_file),
             &mut checks,
             &mut warnings,
         );
@@ -1393,7 +1549,7 @@ mod tests {
             "feature-x",
             &doc,
             &tasks_file,
-            &er_file,
+            Some(&er_file),
             &mut checks,
             &mut warnings,
         );
@@ -1417,7 +1573,7 @@ mod tests {
             "feature-x",
             &doc,
             &tasks_file,
-            &er_file,
+            Some(&er_file),
             &mut checks,
             &mut warnings,
         );
@@ -1432,6 +1588,86 @@ mod tests {
                 .starts_with("skipped:")
         );
         assert!(warnings.is_empty(), "got: {warnings:?}");
+    }
+
+    fn run_one_flow(root: &Path, slug: &str) -> (Vec<Check>, Vec<(PathBuf, String)>) {
+        let mut checks = Vec::new();
+        let mut warnings = Vec::new();
+        let mut backfills = Vec::new();
+        let stale = check_one_flow(root, slug, &mut checks, &mut warnings, &mut backfills).unwrap();
+        (checks, stale)
+    }
+
+    fn named<'a>(checks: &'a [Check], name: &str) -> &'a Check {
+        checks
+            .iter()
+            .find(|check| check.name == name)
+            .unwrap_or_else(|| panic!("no `{name}` check"))
+    }
+
+    /// The record checks follow the path the context names, so a flow whose
+    /// record lives elsewhere is judged on the file `flow record` writes.
+    #[test]
+    fn the_record_checks_read_the_path_the_context_names() {
+        crate::test_support::with_root(|root| {
+            let slug = "feature-x";
+            let dir = root.join(".claude").join("flows").join(slug);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("context.toml"),
+                "[artifacts]\nexecution_record = '.claude/flows/feature-x/record-2.toml'\n",
+            )
+            .unwrap();
+            let named_record = dir.join("record-2.toml");
+            fs::write(&named_record, "schema_version = 1\n").unwrap();
+
+            let (checks, stale) = run_one_flow(root, slug);
+
+            let exists = named(&checks, "execution-record-exists");
+            assert!(exists.ok, "detail: {:?}", exists.detail);
+            let sidecar = named(&checks, "execution-record-sidecar");
+            assert!(!sidecar.ok);
+            assert!(
+                sidecar
+                    .detail
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("record-2.toml"),
+                "detail: {:?}",
+                sidecar.detail
+            );
+            assert!(stale.iter().any(|(file, _)| *file == named_record));
+        });
+    }
+
+    #[test]
+    fn an_escaping_record_path_fails_the_exists_check() {
+        crate::test_support::with_root(|root| {
+            let slug = "feature-x";
+            let dir = root.join(".claude").join("flows").join(slug);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("context.toml"),
+                "[artifacts]\nexecution_record = '../x.toml'\n",
+            )
+            .unwrap();
+
+            let (checks, stale) = run_one_flow(root, slug);
+
+            let exists = named(&checks, "execution-record-exists");
+            assert!(!exists.ok);
+            assert!(
+                exists
+                    .detail
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("execution_record"),
+                "detail: {:?}",
+                exists.detail
+            );
+            assert!(named(&checks, "execution-record-sidecar").ok);
+            assert!(!stale.iter().any(|(file, _)| file.ends_with("x.toml")));
+        });
     }
 
     #[test]

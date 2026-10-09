@@ -46,6 +46,9 @@ pub(crate) mod markdown;
 // positional passes the task graph runs; the graph itself stays private.
 pub(crate) use graph::{cycle_within, layered_kahn};
 
+// `tasks train --granularity` parses straight into the policy's own enum.
+pub(crate) use parse_policy::CommitGranularity;
+
 // `backlog reconcile` joins a flow's links to its row statuses and writes
 // adopted links back through the same locked pipeline the verbs use.
 #[cfg(test)]

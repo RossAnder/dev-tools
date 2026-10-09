@@ -143,6 +143,41 @@ fn a_key_given_twice_is_a_validation_error() {
 }
 
 #[test]
+fn update_refuses_a_dotted_field_flag_key_and_writes_nothing() {
+    let (_tmp, root) = sandbox();
+    let ledger = seed_ledger_in(
+        &root,
+        "ledger.toml",
+        "schema_version = 1\n\n[[items]]\nid = \"R1\"\nstatus = \"open\"\n\n[items.meta]\nowner = \"a\"\nteam = \"b\"\n",
+    );
+    let before = std::fs::read(&ledger).unwrap();
+
+    for flag in ["--set", "--set-json"] {
+        let value = if flag == "--set" {
+            "meta.owner=x"
+        } else {
+            "meta.owner=\"x\""
+        };
+        let out = cli(&root)
+            .args(["--error-format", "json", "items", "update"])
+            .arg(&ledger)
+            .args(["R1", flag, value])
+            .assert()
+            .failure()
+            .code(1);
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+        let err = parse_json_error_envelope(&stderr);
+        assert_eq!(err["kind"], json!("validation"), "{flag}: {err}");
+        let message = err["message"].as_str().unwrap_or_default();
+        assert!(
+            message.contains("meta.owner") && message.contains("--set-json meta="),
+            "{flag}: {message}"
+        );
+        assert_eq!(std::fs::read(&ledger).unwrap(), before, "{flag}");
+    }
+}
+
+#[test]
 fn add_without_json_or_a_field_flag_is_refused() {
     let (_tmp, root) = sandbox();
     let ledger = seed_ledger_in(&root, "ledger.toml", LEDGER);

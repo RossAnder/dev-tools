@@ -1,7 +1,10 @@
 //! The `backlog` verb group and its value enums.
 
+use std::path::PathBuf;
+
 use clap::{Args, Subcommand, ValueEnum};
 
+use super::tasks::ids_help;
 use super::{QueryArgs, ReadIntegrityArgs, WriteIntegrityArgs};
 
 /// Backlog subcommand cluster. Every op resolves its own store path
@@ -201,24 +204,10 @@ pub(crate) enum BacklogOp {
     /// Print one item with its one-hop relation neighbourhood and its
     /// evidence-directory listing, or an array of those objects in the order
     /// given; an unknown id fails the whole call.
+    #[command(mut_args(ids_help("Item ids to print, comma- or space-separated")))]
     Show {
-        /// Item ids to print, comma- or space-separated.
-        #[arg(
-            required_unless_present = "id",
-            num_args = 1..,
-            value_delimiter = ',',
-            value_name = "ID,..."
-        )]
-        ids: Vec<String>,
-        /// Recovers the guessed flag spelling; appended to the positional ids.
-        #[arg(
-            long = "id",
-            alias = "ids",
-            hide = true,
-            value_delimiter = ',',
-            value_name = "ID,..."
-        )]
-        id: Vec<String>,
+        #[command(flatten)]
+        ids: ItemIds,
         #[command(flatten)]
         integrity: ReadIntegrityArgs,
     },
@@ -237,23 +226,10 @@ pub(crate) enum BacklogOp {
     },
 
     /// Transition one or more items out of (or back into) `open`.
+    #[command(mut_args(ids_help("Item ids to transition, comma- or space-separated")))]
     Triage {
-        /// Item ids to transition, comma- or space-separated.
-        #[arg(
-            required_unless_present = "id",
-            value_delimiter = ',',
-            value_name = "ID,..."
-        )]
-        ids: Vec<String>,
-        /// Recovers the guessed flag spelling; appended to the positional ids.
-        #[arg(
-            long = "id",
-            alias = "ids",
-            hide = true,
-            value_delimiter = ',',
-            value_name = "ID,..."
-        )]
-        id: Vec<String>,
+        #[command(flatten)]
+        ids: ItemIds,
         #[command(flatten)]
         mode: TriageMode,
         /// Flow slug or repo-relative plan path. Must name an existing flow
@@ -272,12 +248,50 @@ pub(crate) enum BacklogOp {
             help = "Accept a --to flow at `review` or `complete`"
         )]
         allow_closed: bool,
-        #[arg(long, value_name = "TEXT", help = "Companion to --dismiss")]
+        #[arg(
+            long,
+            conflicts_with = "reason_file",
+            value_name = "TEXT",
+            help = "Companion to --dismiss"
+        )]
         reason: Option<String>,
-        #[arg(long, value_name = "TEXT", help = "Companion to --resolve")]
+        #[arg(
+            long = "reason-file",
+            conflicts_with = "reason",
+            value_name = "PATH",
+            help = "Read the --dismiss companion from a file"
+        )]
+        reason_file: Option<PathBuf>,
+        #[arg(
+            long,
+            conflicts_with = "resolution_file",
+            value_name = "TEXT",
+            help = "Companion to --resolve"
+        )]
         resolution: Option<String>,
-        #[arg(long, value_name = "TEXT", help = "Companion to --reopen")]
+        #[arg(
+            long = "resolution-file",
+            conflicts_with = "resolution",
+            value_name = "PATH",
+            help = "Read the --resolve companion from a file"
+        )]
+        resolution_file: Option<PathBuf>,
+        #[arg(
+            long,
+            group = "rationale_src",
+            conflicts_with = "rationale_file",
+            value_name = "TEXT",
+            help = "Companion to --reopen"
+        )]
         rationale: Option<String>,
+        #[arg(
+            long = "rationale-file",
+            group = "rationale_src",
+            conflicts_with = "rationale",
+            value_name = "PATH",
+            help = "Read the --reopen companion from a file"
+        )]
+        rationale_file: Option<PathBuf>,
         /// Move only the ids still at this status; the rest are reported
         /// under `skipped_stale` and left untouched.
         #[arg(long = "expect-status", value_name = "STATUS")]
@@ -414,6 +428,37 @@ pub(crate) enum EvidenceOp {
     },
 }
 
+/// Item ids taken positionally or through the hidden `--id` spelling. Read
+/// them only through [`ItemIds::into_ids`]: the positional alone is empty on
+/// an `--id`-only call. Each verb sets the positional's help via `ids_help`.
+#[derive(Args, Clone)]
+pub(crate) struct ItemIds {
+    #[arg(
+        required_unless_present = "id",
+        num_args = 1..,
+        value_delimiter = ',',
+        value_name = "ID,..."
+    )]
+    ids: Vec<String>,
+    /// Recovers the guessed flag spelling; appended to the positional ids.
+    #[arg(
+        long = "id",
+        alias = "ids",
+        hide = true,
+        value_delimiter = ',',
+        value_name = "ID,..."
+    )]
+    id: Vec<String>,
+}
+
+impl ItemIds {
+    pub(crate) fn into_ids(self) -> Vec<String> {
+        let mut ids = self.ids;
+        ids.extend(self.id);
+        ids
+    }
+}
+
 /// The four `backlog triage` transitions, as a mutually-exclusive required
 /// group. An `ArgGroup` has to hang off an `Args` struct — a Subcommand
 /// variant takes only `skip` / `flatten` / `external_subcommand` — so the
@@ -428,14 +473,14 @@ pub(crate) struct TriageMode {
     pub(crate) dismiss: bool,
     #[arg(long, help = "Status → resolved; takes --resolution")]
     pub(crate) resolve: bool,
-    /// Clears the terminal date and companion. `--rationale` is enforced at
-    /// the parser because `reopen_rationale` is the only companion field an
-    /// `open` item is allowed to carry, so a bare `--reopen` would write an
-    /// item the validator then rejects.
+    /// Clears the terminal date and companion. `--rationale` (or its file
+    /// form) is enforced at the parser because `reopen_rationale` is the only
+    /// companion field an `open` item is allowed to carry, so a bare
+    /// `--reopen` would write an item the validator then rejects.
     #[arg(
         long,
-        requires = "rationale",
-        help = "Status → open; requires --rationale"
+        requires = "rationale_src",
+        help = "Status → open; requires --rationale or --rationale-file"
     )]
     pub(crate) reopen: bool,
 }

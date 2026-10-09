@@ -191,9 +191,10 @@ struct BashFence {
 }
 
 /// Every ```bash fence in a document. A fence opens at a trimmed line
-/// starting with "```bash" and closes at the next trimmed line starting with
-/// "```"; a line ending in `\` is stitched onto the next, and a continuation
-/// still pending at the close is dropped.
+/// starting with "```bash" and closes only at a bare "```" line (trailing
+/// whitespace allowed), so a malformed close carrying prose keeps the block
+/// open rather than hiding it; a line ending in `\` is stitched onto the
+/// next, and a continuation still pending at the close is dropped.
 fn bash_fences(text: &str) -> Vec<BashFence> {
     let mut fences = Vec::new();
     let mut open: Option<BashFence> = None;
@@ -212,7 +213,7 @@ fn bash_fences(text: &str) -> Vec<BashFence> {
             }
             continue;
         };
-        if trimmed.starts_with("```") {
+        if trimmed.trim_end() == "```" {
             fences.extend(open.take());
             cont = None;
             continue;
@@ -485,6 +486,33 @@ fn command_lint_still_truncates_at_shell_plumbing() {
         report.unbalanced.is_empty(),
         "fixture must tokenise cleanly: {:?}",
         report.unbalanced
+    );
+}
+
+/// Only a bare fence line closes a bash fence: a close carrying trailing
+/// prose leaves the block open, so the lines after it are still scanned.
+#[test]
+fn bash_fences_close_only_at_a_bare_fence() {
+    let fences = bash_fences(
+        "```bash\n\
+         tomlctl flow active\n\
+         ```  \n\
+         ```bash\n\
+         tomlctl flow active\n\
+         ``` trailing prose\n\
+         tomlctl flow doctor\n\
+         ```\n",
+    );
+    assert_eq!(fences.len(), 2);
+    assert_eq!(fences[0].lines.len(), 1);
+    let texts: Vec<&str> = fences[1].lines.iter().map(|l| l.text.trim()).collect();
+    assert_eq!(
+        texts,
+        [
+            "tomlctl flow active",
+            "``` trailing prose",
+            "tomlctl flow doctor"
+        ]
     );
 }
 
@@ -1084,11 +1112,7 @@ fn flag_table_report_inner(files: &[PathBuf], repo_root: &Path) -> FlagTableRepo
         let Ok(text) = fs::read_to_string(file) else {
             continue;
         };
-        let rel = file
-            .strip_prefix(repo_root)
-            .unwrap_or(file)
-            .to_string_lossy()
-            .replace('\\', "/");
+        let rel = lint_rel_path(file, repo_root);
 
         for documented in documented_flags(&text, &rel) {
             checked += 1;

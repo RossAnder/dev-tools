@@ -161,6 +161,10 @@ fn task_completion_derives_task_ref_and_stamps_the_date() {
     assert_eq!(row["retries"].as_integer(), Some(0));
     let date = row["date"].as_datetime().expect("date is a TOML date");
     assert_eq!(date.to_string().len(), 10, "{date}");
+    assert!(
+        row.get("dedup_id").is_none(),
+        "the execution-record schema defines no `dedup_id`: {row:?}"
+    );
 
     // The next entry mints past the first.
     let out = record_ok(
@@ -337,6 +341,105 @@ fn ndjson_batch_with_one_bad_row_writes_nothing() {
     assert!(!record.exists());
 }
 
+fn deviation_batch_err(root: &Path, contents: &str) -> Value {
+    let batch = root.join("rows.ndjson");
+    fs::write(&batch, contents).unwrap();
+    record_err(
+        root,
+        &[
+            "--type",
+            "deviation",
+            "--set",
+            "agent=implement",
+            "--ndjson",
+            batch.to_str().unwrap(),
+        ],
+    )
+}
+
+#[test]
+fn malformed_ndjson_line_is_a_validation_error_naming_the_line() {
+    let (_dir, root, record) = flow();
+    let err = deviation_batch_err(
+        &root,
+        concat!(
+            r#"{"summary":"ok","original_intent":"a","rationale":"b"}"#,
+            "\n",
+            "{not json\n",
+        ),
+    );
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(message.contains("line 2:"), "{message}");
+    assert!(!message.contains(r#""id":"R1""#), "{message}");
+    assert!(!record.exists());
+}
+
+#[test]
+fn batch_errors_count_blank_lines_toward_the_line_number() {
+    let (_dir, root, record) = flow();
+    let err = deviation_batch_err(
+        &root,
+        concat!(
+            r#"{"summary":"ok","original_intent":"a","rationale":"b"}"#,
+            "\n\n",
+            r#"{"summary":"missing rationale","original_intent":"a"}"#,
+            "\n",
+        ),
+    );
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("--ndjson line 3:") && message.contains("`rationale`"),
+        "{message}"
+    );
+    assert!(!record.exists());
+}
+
+#[test]
+fn a_supplied_id_is_refused_in_the_verbs_own_terms() {
+    let (_dir, root, record) = flow();
+    let err = record_err(&root, &completion(&["--set", "id=E9"]));
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("flow record mints entry ids") && message.contains("drop `id`"),
+        "{message}"
+    );
+    assert!(!message.contains("--id-prefix"), "{message}");
+    assert!(!record.exists());
+
+    let batch = root.join("rows.ndjson");
+    fs::write(
+        &batch,
+        concat!(
+            r#"{"summary":"ok","original_intent":"a","rationale":"b"}"#,
+            "\n",
+            r#"{"id":"E9","summary":"carries an id","original_intent":"a","rationale":"b"}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+    let err = record_err(
+        &root,
+        &[
+            "--type",
+            "deviation",
+            "--set",
+            "agent=implement",
+            "--ndjson",
+            batch.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    let message = err["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("--ndjson line 2: flow record mints entry ids"),
+        "{message}"
+    );
+    assert!(!record.exists());
+}
+
 #[test]
 fn unknown_type_is_refused_by_the_parser() {
     let (_dir, root, record) = flow();
@@ -446,4 +549,66 @@ fn unknown_slug_is_not_found() {
     let err = parse_json_error_envelope(&String::from_utf8_lossy(&out.get_output().stderr));
     assert_eq!(err["kind"], json!("not_found"), "{err}");
     assert!(!root.join(".claude/flows/no-such-flow").exists());
+}
+
+/// Point the fixture flow's `[artifacts].execution_record` at `record-2.toml`
+/// beside its context, and return that path.
+fn name_a_custom_record(root: &Path) -> PathBuf {
+    let dir = root.join(".claude").join("flows").join(TASKS_SLUG);
+    let context = dir.join("context.toml");
+    let mut body = fs::read_to_string(&context).unwrap();
+    body.push_str(&format!(
+        "\n[artifacts]\nexecution_record = \".claude/flows/{TASKS_SLUG}/record-2.toml\"\n"
+    ));
+    fs::write(&context, body).unwrap();
+    dir.join("record-2.toml")
+}
+
+/// The two-line skeleton `flow init` writes, whatever the record is called.
+fn assert_seeded_with_the_skeleton(record: &Path) {
+    let doc: toml::Value = toml::from_str(&fs::read_to_string(record).unwrap()).unwrap();
+    assert_eq!(
+        doc.get("schema_version").and_then(toml::Value::as_integer),
+        Some(1),
+        "{doc}"
+    );
+    assert!(
+        matches!(doc.get("last_updated"), Some(toml::Value::Datetime(_))),
+        "{doc}"
+    );
+}
+
+#[test]
+fn a_missing_custom_named_record_is_created_with_the_skeleton() {
+    let (_dir, root, sibling) = flow();
+    let record = name_a_custom_record(&root);
+    let out = record_ok(&root, &completion(&["--set-json", r#"files=["a.rs"]"#]));
+    assert_eq!(out["id"], json!("E1"));
+    assert!(!sibling.exists(), "the sibling record must not be written");
+    assert_seeded_with_the_skeleton(&record);
+    assert_eq!(record_items(&record).len(), 1);
+}
+
+#[test]
+fn ensure_artifact_bootstraps_a_custom_named_record_with_the_skeleton() {
+    let (_dir, root, sibling) = flow();
+    let record = name_a_custom_record(&root);
+    let out = cli(&root)
+        .args([
+            "flow",
+            "ensure-artifact",
+            "--slug",
+            TASKS_SLUG,
+            "--kind",
+            "execution-record",
+            "--bootstrap",
+        ])
+        .write_stdin("")
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&out.get_output().stdout).to_string();
+    let report: Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(report["bootstrapped"], json!(true), "{report}");
+    assert!(!sibling.exists(), "the sibling record must not be written");
+    assert_seeded_with_the_skeleton(&record);
 }

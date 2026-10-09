@@ -93,11 +93,10 @@ fn context_path_for(slug: &str) -> Result<PathBuf> {
         .join("context.toml"))
 }
 
-/// Resolve `<root>/.claude/flows/<slug>/execution-record.toml`.
-///
-/// `pub(crate)` so the render command resolves the same path this module
-/// bootstraps, keeping the path derivation single-source.
-pub(crate) fn execution_record_path_for(slug: &str) -> Result<PathBuf> {
+/// Resolve `<root>/.claude/flows/<slug>/execution-record.toml`, the path the
+/// canonical `[artifacts]` map `init` writes names. Readers resolve the
+/// record through `flow::record_path` instead.
+fn execution_record_path_for(slug: &str) -> Result<PathBuf> {
     let root = repo_or_cwd_root()?;
     Ok(root
         .join(".claude")

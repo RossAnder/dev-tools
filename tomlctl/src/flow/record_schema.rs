@@ -5,6 +5,7 @@
 //! them on one JSON entry before it is written.
 
 use anyhow::Result;
+use clap::ValueEnum;
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
 use super::resolve::compile_scope_globset;
@@ -14,36 +15,81 @@ use crate::errors::{ErrorKind, tagged_err};
 /// `id` is minted by the write itself, so it is not checked here.
 const ALWAYS_REQUIRED: &[&str] = &["type", "date", "agent", "summary"];
 
-const TYPES: &[&str] = &[
-    "task-completion",
-    "verification",
-    "deviation",
-    "deferral",
-    "reconcile",
-    "status-transition",
-    "checkpoint",
-];
+/// An execution-record entry type. `as_str` is both the on-disk `type` value
+/// and the `--type` spelling, which clap derives as the same kebab-case.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum RecordType {
+    TaskCompletion,
+    Verification,
+    Deviation,
+    Deferral,
+    Reconcile,
+    StatusTransition,
+    Checkpoint,
+}
+
+impl RecordType {
+    /// Every variant in declaration order; `all_lists_every_variant` pins it
+    /// to the derived `value_variants`.
+    pub(crate) const ALL: [Self; 7] = [
+        Self::TaskCompletion,
+        Self::Verification,
+        Self::Deviation,
+        Self::Deferral,
+        Self::Reconcile,
+        Self::StatusTransition,
+        Self::Checkpoint,
+    ];
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::TaskCompletion => "task-completion",
+            Self::Verification => "verification",
+            Self::Deviation => "deviation",
+            Self::Deferral => "deferral",
+            Self::Reconcile => "reconcile",
+            Self::StatusTransition => "status-transition",
+            Self::Checkpoint => "checkpoint",
+        }
+    }
+
+    /// The type a payload's `type` string names, exact spelling only.
+    pub(crate) fn parse(raw: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|ty| ty.as_str() == raw)
+    }
+}
+
+/// The type vocabulary as written, for error messages.
+pub(crate) const TYPES: [&str; RecordType::ALL.len()] = {
+    let mut out = [""; RecordType::ALL.len()];
+    let mut i = 0;
+    while i < out.len() {
+        out[i] = RecordType::ALL[i].as_str();
+        i += 1;
+    }
+    out
+};
 
 /// Per-type required fields beyond `ALWAYS_REQUIRED`. `commits` is optional
 /// on both `task-completion` and `deviation`: under milestone checkpoints the
 /// SHA lands later on the commit-train `checkpoint` entry.
-fn type_required(ty: &str) -> &'static [&'static str] {
+pub(crate) fn type_required(ty: RecordType) -> &'static [&'static str] {
     match ty {
-        "task-completion" => &["task_ref", "status", "files"],
-        "verification" => &["command", "outcome"],
-        "deviation" => &["original_intent", "rationale"],
-        "deferral" => &["task_ref", "reason", "reevaluate_when"],
-        "reconcile" => &["direction", "findings_count", "commits_checked"],
-        "status-transition" => &["from_status", "to_status"],
-        _ => &[],
+        RecordType::TaskCompletion => &["task_ref", "status", "files"],
+        RecordType::Verification => &["command", "outcome"],
+        RecordType::Deviation => &["original_intent", "rationale"],
+        RecordType::Deferral => &["task_ref", "reason", "reevaluate_when"],
+        RecordType::Reconcile => &["direction", "findings_count", "commits_checked"],
+        RecordType::StatusTransition => &["from_status", "to_status"],
+        RecordType::Checkpoint => &[],
     }
 }
 
 /// Per-type enum fields and their allowed values. An enum field on a type
 /// that does not define it passes through unchecked, like any extra key.
-fn type_enums(ty: &str) -> &'static [(&'static str, &'static [&'static str])] {
+pub(crate) fn type_enums(ty: RecordType) -> &'static [(&'static str, &'static [&'static str])] {
     match ty {
-        "task-completion" => &[
+        RecordType::TaskCompletion => &[
             ("status", &["done", "failed", "skipped"]),
             ("dispatch_tier", &["lite", "deep"]),
             ("dispatch_agent", &["implement-lite", "implement-deep"]),
@@ -58,10 +104,12 @@ fn type_enums(ty: &str) -> &'static [(&'static str, &'static [&'static str])] {
                 ],
             ),
         ],
-        "verification" => &[("outcome", &["pass", "fail", "timeout", "flaky"])],
-        "reconcile" => &[("direction", &["forward", "reverse"])],
-        "status-transition" => &[("from_status", FLOW_STATUSES), ("to_status", FLOW_STATUSES)],
-        _ => &[],
+        RecordType::Verification => &[("outcome", &["pass", "fail", "timeout", "flaky"])],
+        RecordType::Reconcile => &[("direction", &["forward", "reverse"])],
+        RecordType::StatusTransition => {
+            &[("from_status", FLOW_STATUSES), ("to_status", FLOW_STATUSES)]
+        }
+        RecordType::Deviation | RecordType::Deferral | RecordType::Checkpoint => &[],
     }
 }
 
@@ -77,7 +125,7 @@ const INTEGER_FIELDS: &[&str] = &["retries", "duration_s", "findings_count"];
 const ARRAY_FIELDS: &[&str] = &["files", "commits", "failed_ids", "commits_checked"];
 
 /// Byte caps, measured on the UTF-8 encoding.
-const TEXT_CAPS: &[(&str, usize)] = &[
+pub(crate) const TEXT_CAPS: &[(&str, usize)] = &[
     ("summary", 1024),
     ("description", 8192),
     ("rationale", 8192),
@@ -87,7 +135,7 @@ const TEXT_CAPS: &[(&str, usize)] = &[
 ];
 
 const TRUNCATION_MARKER: &str = " (truncated)";
-const FAILED_IDS_CAP: usize = 20;
+pub(crate) const FAILED_IDS_CAP: usize = 20;
 
 /// What `normalise` changed or flagged without refusing the entry.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -120,36 +168,58 @@ pub(crate) fn normalise(
     entry: &mut JsonMap<String, JsonValue>,
     scope: &[String],
 ) -> Result<RecordReport> {
-    let ty = match entry.get("type") {
-        Some(JsonValue::String(t)) if TYPES.contains(&t.as_str()) => t.clone(),
-        Some(JsonValue::String(t)) => {
-            return Err(validation(format!(
-                "execution-record field `type` is `{t}`; allowed values: {}",
-                quoted_list(TYPES)
-            )));
-        }
+    let record_type = match entry.get("type") {
+        Some(JsonValue::String(t)) => match RecordType::parse(t) {
+            Some(record_type) => record_type,
+            None => {
+                return Err(validation(format!(
+                    "execution-record field `type` is `{t}`; allowed values: {}",
+                    quoted_list(&TYPES)
+                )));
+            }
+        },
         Some(JsonValue::Null) | None => {
             return Err(validation(format!(
                 "execution-record entry is missing required field `type`; allowed values: {}",
-                quoted_list(TYPES)
+                quoted_list(&TYPES)
             )));
         }
         Some(other) => {
             return Err(validation(format!(
                 "execution-record field `type` must be a string, got {other}; allowed values: {}",
-                quoted_list(TYPES)
+                quoted_list(&TYPES)
             )));
         }
     };
+    let ty = record_type.as_str();
 
-    for field in ALWAYS_REQUIRED.iter().chain(type_required(&ty)) {
-        if matches!(entry.get(*field), None | Some(JsonValue::Null)) {
-            return Err(validation(format!(
-                "execution-record entry of type `{ty}` is missing required field `{field}`"
-            )));
-        }
+    let missing: Vec<&str> = ALWAYS_REQUIRED
+        .iter()
+        .chain(type_required(record_type))
+        .copied()
+        .filter(|field| match entry.get(*field) {
+            None | Some(JsonValue::Null) => true,
+            Some(JsonValue::String(s)) => s.trim().is_empty(),
+            Some(_) => false,
+        })
+        .collect();
+    if !missing.is_empty() {
+        let hint = match (missing.contains(&"task_ref"), missing.len()) {
+            (true, 1) => "(set `task_ref` with --task)",
+            (true, _) => "(set `task_ref` with --task, the others with --set <field>=…)",
+            (false, _) => "(set them with --set <field>=…)",
+        };
+        let noun = if missing.len() == 1 {
+            "field"
+        } else {
+            "fields"
+        };
+        return Err(validation(format!(
+            "execution-record entry of type `{ty}` is missing required {noun} {} {hint}",
+            quoted_list(&missing)
+        )));
     }
-    if ty == "task-completion"
+    if record_type == RecordType::TaskCompletion
         && matches!(entry.get("agent"), Some(JsonValue::String(a)) if a == "implement")
     {
         for field in IMPLEMENT_DISPATCH_FIELDS {
@@ -162,7 +232,7 @@ pub(crate) fn normalise(
         }
     }
 
-    for (field, allowed) in type_enums(&ty) {
+    for (field, allowed) in type_enums(record_type) {
         match entry.get(*field) {
             None | Some(JsonValue::Null) => {}
             Some(JsonValue::String(v)) if allowed.contains(&v.as_str()) => {}
@@ -380,6 +450,47 @@ mod tests {
             let msg = validation_message(normalise(&mut m, &[]).unwrap_err());
             assert!(msg.contains(&format!("`{field}`")), "{field}: {msg}");
         }
+    }
+
+    #[test]
+    fn every_missing_required_field_is_named_in_one_error() {
+        let mut m = task_completion();
+        m.remove("status");
+        m.remove("files");
+        m.insert("summary".into(), JsonValue::Null);
+        let msg = validation_message(normalise(&mut m, &[]).unwrap_err());
+        assert!(
+            msg.contains("missing required fields `summary`, `status`, `files`"),
+            "{msg}"
+        );
+        assert!(
+            msg.contains("--set <field>=") && !msg.contains("--task"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn empty_or_blank_required_string_is_refused() {
+        for blank in ["", "   "] {
+            let mut m = task_completion();
+            m.insert("agent".into(), json!(blank));
+            let msg = validation_message(normalise(&mut m, &[]).unwrap_err());
+            assert!(
+                msg.contains("missing required field `agent`"),
+                "{blank:?}: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_task_ref_points_at_the_task_flag() {
+        let mut m = task_completion();
+        m.remove("task_ref");
+        let msg = validation_message(normalise(&mut m, &[]).unwrap_err());
+        assert!(
+            msg.contains("missing required field `task_ref`") && msg.contains("--task"),
+            "{msg}"
+        );
     }
 
     #[test]
@@ -738,6 +849,17 @@ mod tests {
         let report = normalise(&mut m, &scope).unwrap();
         assert!(report.scope_warnings.is_empty());
         assert!(!m.contains_key("scope_warning"));
+    }
+
+    #[test]
+    fn all_lists_every_variant() {
+        assert_eq!(&RecordType::ALL[..], RecordType::value_variants());
+        for ty in RecordType::ALL {
+            let clap_name = ty.to_possible_value().expect("no variant is skipped");
+            assert_eq!(clap_name.get_name(), ty.as_str());
+            assert_eq!(RecordType::parse(ty.as_str()), Some(ty));
+        }
+        assert_eq!(RecordType::parse("Checkpoint"), None);
     }
 
     #[test]

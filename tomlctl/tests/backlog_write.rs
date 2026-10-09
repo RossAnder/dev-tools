@@ -603,6 +603,102 @@ fn triage_with_two_mode_flags_is_a_parser_error() {
     );
 }
 
+/// Each `-file` companion lands verbatim — shell metacharacters included —
+/// less a leading BOM and one trailing newline, and `--rationale-file` alone
+/// satisfies `--reopen`'s parser requirement.
+#[test]
+fn triage_companions_read_from_files() {
+    let (_tmp, root) = sandbox();
+    let id = add_drift(&root);
+    let stage = |name: &str, text: &str| {
+        let path = root.join(name);
+        fs::write(&path, text).unwrap();
+        path.to_string_lossy().into_owned()
+    };
+
+    let reason = "it's `gone` after $(renormalise)";
+    let reason_file = stage("reason.txt", &format!("\u{feff}{reason}\r\n"));
+    backlog(
+        &root,
+        &["triage", &id, "--dismiss", "--reason-file", &reason_file],
+    );
+    let doc = read_store(&root);
+    assert_eq!(
+        field(row(&doc, "backlog", &id), "dismiss_reason"),
+        Some(reason)
+    );
+
+    let rationale = "flow x closed without it";
+    let rationale_file = stage("rationale.txt", &format!("{rationale}\n"));
+    backlog(
+        &root,
+        &[
+            "triage",
+            &id,
+            "--reopen",
+            "--rationale-file",
+            &rationale_file,
+        ],
+    );
+    let doc = read_store(&root);
+    let reopened = row(&doc, "backlog", &id);
+    assert_eq!(field(reopened, "status"), Some("open"));
+    assert_eq!(field(reopened, "reopen_rationale"), Some(rationale));
+
+    let resolution = "fixed in \"the\" rewrite\nsecond line";
+    let resolution_file = stage("resolution.txt", &format!("{resolution}\n"));
+    backlog(
+        &root,
+        &[
+            "triage",
+            &id,
+            "--resolve",
+            "--resolution-file",
+            &resolution_file,
+        ],
+    );
+    let doc = read_store(&root);
+    assert_eq!(
+        field(row(&doc, "backlog", &id), "resolution"),
+        Some(resolution)
+    );
+    assert_sidecar_matches(&store_path(&root));
+}
+
+/// A companion given both inline and by file is a parser conflict, and the
+/// store is left as it was.
+#[test]
+fn triage_refuses_a_companion_given_inline_and_by_file() {
+    let (_tmp, root) = sandbox();
+    let id = add_drift(&root);
+    let path = root.join("companion.txt");
+    fs::write(&path, "from the file\n").unwrap();
+    let path = path.to_string_lossy().into_owned();
+    let before = snapshot(&root);
+
+    for (mode, flag) in [
+        ("--dismiss", "--reason"),
+        ("--resolve", "--resolution"),
+        ("--reopen", "--rationale"),
+    ] {
+        let file_flag = format!("{flag}-file");
+        let out = cli(&root)
+            .args([
+                "backlog", "triage", &id, mode, flag, "inline", &file_flag, &path,
+            ])
+            .write_stdin("")
+            .assert()
+            .failure()
+            .code(2);
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+        assert!(
+            stderr.contains("cannot be used with"),
+            "{flag} with {file_flag} must be a conflict; got: {stderr:?}"
+        );
+    }
+    assert_eq!(snapshot(&root), before, "a refused triage writes nothing");
+}
+
 #[test]
 fn backlog_triage_expect_status_skips_a_changed_row() {
     let (_tmp, root) = sandbox();

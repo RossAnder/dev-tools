@@ -249,8 +249,9 @@ tier C is file-scoped; use --tier A or --tier B with --across
 Three read surfaces have a "missing file → silent default" branch, and
 `--strict-read` turns each into `kind=not_found`:
 
-- `items next-id --prefix <P>` returns `<P>1`, a bootstrapping fast path for
-  flows that mint the first id before the ledger file exists.
+- `items next-id --prefix <P>` returns `<P>1`. It reports the id the
+  next mint would assign (honouring `[id_high_water]`) for inspection; to mint,
+  pass `--id-prefix` to the write.
 - The `backlog` read verbs (`check`, `list`, `show`, `cluster`, `evidence dir`,
   `evidence audit`) read a missing `.claude/backlog.toml` as an empty store,
   because the first capture in a repo runs `backlog check` before anything
@@ -450,9 +451,9 @@ Feature meanings:
 | `omit` | global `--omit <P1,P2,...>` drops dotted paths from each row and the header, or from the single object; exclusive with `--select`, `--get` and `--template` |
 | `template_width` | a template placeholder `{path:N}` truncates its value as `--max-chars N` does |
 | `list_limited` | the list verbs report a `limited` header (`{"shown":n,"total":N}`) when `--limit` cut rows; streamed `--ndjson`, `--pluck` and `--raw` output reports it on stderr instead |
-| `field_flags` | `--set KEY=VALUE` (string), `--set-json KEY=JSON` and `--set-file KEY=PATH` (file text, `-` for stdin) build the payload on `items add`, `items update`, `array-append` and `flow record`, merging over an optional `--json`; a dotted key nests and a repeated key is refused |
+| `field_flags` | `--set KEY=VALUE` (string), `--set-json KEY=JSON` and `--set-file KEY=PATH` (file text, `-` for stdin) build the payload on `items add`, `items update`, `array-append` and `flow record`, merging over an optional `--json`; a dotted key nests; a repeated key, or a key that is a dotted prefix of another, is refused, and `items update` refuses dotted keys (it replaces top-level fields whole) |
 | `flow_record` | `flow record --slug <SLUG> --type <TYPE>` — append a validated execution-record entry: id minted as `E<n>`, `date` defaulted to today (UTC), `task_ref` filled from `--task <N>`, over-cap text truncated and unsafe `files` dropped (both reported), `scope_warnings` for files outside the flow's scope; `--ndjson` appends a batch all-or-nothing |
-| `multi_set` | `set <FILE> --set PATH=VALUE...` — several scalars in one write, alongside or instead of the positional pair |
+| `multi_set` | `set <FILE> --set PATH=VALUE...` — several scalars in one write, alongside or instead of the positional pair; a repeated or overlapping path is refused |
 | `context_updated_stamp` | `set`, `set-json` and `array-append` on a `context.toml` refresh its existing root `updated` to today (UTC) unless the write set it; `--no-stamp` opts out |
 | `apply_id_prefix` | `items apply --id-prefix <P>` mints an id for each add op, in op order inside the lock, and reports them as `ids`; an add op that carries an `id` is refused |
 | `id_high_water` | removing an id records its number in the root `[id_high_water]` table, so minting never reuses a removed top id |

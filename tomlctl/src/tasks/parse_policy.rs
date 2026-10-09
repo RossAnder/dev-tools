@@ -15,18 +15,59 @@ use crate::io::advise;
 use std::sync::OnceLock;
 
 use anyhow::{Result, anyhow};
+use clap::ValueEnum;
 use regex::Regex;
 
 use super::schema::{POLICY_ORIGIN_DEFAULT, POLICY_ORIGIN_PLAN};
 
 const DEFAULT_CHECKPOINTS: &str = "milestones";
 const DEFAULT_MAX_PARALLEL: u32 = 6;
-const DEFAULT_COMMIT_GRANULARITY: &str = "per-task";
+const DEFAULT_COMMIT_GRANULARITY: &str = CommitGranularity::PerTask.as_str();
+
+/// A commit granularity: the plan's `Commit granularity` bullet, the store's
+/// `[policy] commit_granularity` and `tasks train --granularity`. `as_str` is
+/// the stored spelling, which clap derives as the same kebab-case.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub(crate) enum CommitGranularity {
+    /// One commit per row.
+    PerTask,
+    /// One commit per checkpoint group.
+    PerCheckpoint,
+    /// One commit for the whole window.
+    SingleCommit,
+}
+
+impl CommitGranularity {
+    /// Every variant in declaration order; `all_lists_every_variant` pins it
+    /// to the derived `value_variants`.
+    pub(crate) const ALL: [Self; 3] = [Self::PerTask, Self::PerCheckpoint, Self::SingleCommit];
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::PerTask => "per-task",
+            Self::PerCheckpoint => "per-checkpoint",
+            Self::SingleCommit => "single-commit",
+        }
+    }
+
+    /// The granularity a stored or flag value names, exact spelling only.
+    pub(crate) fn parse(raw: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|g| g.as_str() == raw)
+    }
+}
 
 /// The stored spellings of the vocabulary fields, shared with `check` so the
 /// import path and the store gate agree on what is in vocabulary.
 pub(crate) const CHECKPOINTS_VALUES: [&str; 3] = ["single", "milestones", "per-batch"];
-pub(crate) const GRANULARITY_VALUES: [&str; 3] = ["per-task", "per-checkpoint", "single-commit"];
+pub(crate) const GRANULARITY_VALUES: [&str; CommitGranularity::ALL.len()] = {
+    let mut out = [""; CommitGranularity::ALL.len()];
+    let mut i = 0;
+    while i < out.len() {
+        out[i] = CommitGranularity::ALL[i].as_str();
+        i += 1;
+    }
+    out
+};
 pub(crate) const ORIGIN_VALUES: [&str; 2] = [POLICY_ORIGIN_PLAN, POLICY_ORIGIN_DEFAULT];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -692,6 +733,24 @@ mod tests {
     fn an_out_of_range_max_parallel_survives_for_the_check_to_flag() {
         let policy = parse_policy(Some("- **Max parallel agents**: 12\n")).expect("policy parses");
         assert_eq!(policy.max_parallel, 12);
+    }
+
+    #[test]
+    fn all_lists_every_variant() {
+        assert_eq!(
+            &CommitGranularity::ALL[..],
+            CommitGranularity::value_variants()
+        );
+        for g in CommitGranularity::ALL {
+            let clap_name = g.to_possible_value().expect("no variant is skipped");
+            assert_eq!(clap_name.get_name(), g.as_str());
+            assert_eq!(CommitGranularity::parse(g.as_str()), Some(g));
+        }
+        assert_eq!(
+            GRANULARITY_VALUES,
+            ["per-task", "per-checkpoint", "single-commit"]
+        );
+        assert_eq!(CommitGranularity::parse("Per-Task"), None);
     }
 
     #[test]

@@ -248,20 +248,16 @@ pub(crate) enum ItemsOp {
         stamp: StampArgs,
     },
 
-    /// Print the next id string for the given prefix.
-    /// This is a read-only path (reads the ledger to find the max
-    /// existing id, never writes), so it carries `ReadIntegrityArgs` — the
-    /// write-side containment/sidecar flags have no semantic hook here and
-    /// would be silently ignored if they were accepted.
+    /// Report the id the next mint for the given prefix would assign, for
+    /// inspection. Read-only: it never writes, so it carries
+    /// `ReadIntegrityArgs` — the write-side containment/sidecar flags have no
+    /// semantic hook here. The number is one past the highest existing id and
+    /// past the prefix's `[id_high_water]` mark, so a removed id is never
+    /// reused. To mint, pass `--id-prefix` to the write itself.
     ///
-    /// Neither `--prefix` nor `--infer-from-file` has a default. With
-    /// four ledger schemas now in circulation (R review, O optimise, E
-    /// execution-record, plus any future additions), a default of "R" would
-    /// silently mis-mint for three of four callers. Every
-    /// `tomlctl items next-id` invocation in this repo's
-    /// `claude/commands/*.md` and `SKILL.md` already passes an explicit
-    /// `--prefix R|O|E`, so structurally requiring one of the two flags is
-    /// a no-op for well-formed callers and a fail-fast for careless ones.
+    /// Neither `--prefix` nor `--infer-from-file` has a default: several
+    /// ledger schemas are in use (R review, O optimise, E execution-record),
+    /// and a default would silently mis-mint for the others.
     ///
     /// `--infer-from-file` is the alternative path for callers handed an
     /// arbitrary `<ledger>` without knowing its prefix up front. It scans

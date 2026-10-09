@@ -16,7 +16,7 @@ use toml::Value as TomlValue;
 use super::add::{self, AddOutcome, AddRequest};
 use super::schema;
 use crate::cli::{OnDuplicate, WriteIntegrityArgs, write_integrity_opts};
-use crate::errors::{ErrorKind, tagged_err};
+use crate::errors::{ErrorKind, TaggedError, tagged_err};
 use crate::io::{self, advise, on_missing_for, warn_if_created};
 use crate::output::{Rows, build_dry_run_plan_envelope, print_rows_compact};
 
@@ -91,8 +91,7 @@ pub(crate) fn dispatch(
     print_rows_compact(&JsonValue::Object(envelope), Rows::Field("rows"))
 }
 
-/// Parse and validate every line before any lock is taken. Blank lines are
-/// skipped but still counted, so `line N` is the line the caller wrote.
+/// Parse and validate every line before any lock is taken.
 fn parse_rows(
     text: &str,
     on_duplicate: OnDuplicate,
@@ -100,25 +99,18 @@ fn parse_rows(
     file: &Path,
 ) -> Result<Vec<Row>> {
     let today = crate::time::today_toml_date()?;
-    let refuse = |line: usize, message: String| {
-        tagged_err(
-            ErrorKind::Validation,
-            Some(file.to_path_buf()),
-            format!("line {line}: {message}"),
-        )
-    };
-    let mut rows = Vec::new();
-    for (idx, raw) in text.lines().enumerate() {
-        let line = idx + 1;
-        if raw.trim().is_empty() {
-            continue;
+    let objects = crate::items::parse_ndjson_objects(text).map_err(|err| {
+        match err.downcast::<TaggedError>() {
+            Ok(mut tagged) => {
+                tagged.file = Some(file.to_path_buf());
+                anyhow::Error::new(tagged)
+            }
+            Err(err) => err,
         }
-        let payload: JsonValue = serde_json::from_str(raw).map_err(|e| {
-            refuse(
-                line,
-                format!("expected one JSON object per line, as `backlog add --json` takes: {e}"),
-            )
-        })?;
+    })?;
+    let mut rows = Vec::new();
+    for (line, payload) in objects {
+        let payload = JsonValue::Object(payload);
         let req = add::payload_request(payload, on_duplicate, today, base_sha.clone(), file)
             .with_context(|| format!("line {line}"))?;
         let advisories = add::advisories(&req);
@@ -198,7 +190,6 @@ mod tests {
     use crate::backlog::schema::{
         ARRAY_BACKLOG, FIELD_BASE_SHA, FIELD_ID, FIELD_RELATED, FIELD_SEEN_COUNT,
     };
-    use crate::errors::TaggedError;
     use crate::io::items_array;
     use crate::test_support::with_root;
     use std::fs;

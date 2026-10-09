@@ -270,6 +270,63 @@ fn add_appends_a_row_and_refreshes_the_sidecar() {
     assert_sidecar_matches(&store);
 }
 
+/// `--title-file` stores the file's text less a leading BOM and one trailing
+/// newline, shell metacharacters intact, and derives the `ref` from it.
+#[test]
+fn add_reads_the_title_from_a_file() {
+    let (_tmp, root) = sandbox();
+    let store = seed_tasks(&root, WRITE_FIXTURE);
+    let title = "Guard the `reader` against $(input) it's given";
+    let title_file = root.join("title.txt");
+    fs::write(&title_file, format!("\u{feff}{title}\r\n")).unwrap();
+    let title_file = title_file.to_string_lossy().into_owned();
+
+    let envelope = tasks(
+        &root,
+        &[
+            "add",
+            "--slug",
+            TASKS_SLUG,
+            "--title-file",
+            &title_file,
+            "--effort",
+            "S",
+            "--checkpoint",
+            "A",
+        ],
+        "",
+    );
+    assert_eq!(envelope["id"], json!(3), "{envelope}");
+
+    let doc = read_store(&store);
+    let row = &rows(&doc)[2];
+    assert_eq!(row["title"], toml::Value::String(title.into()));
+    assert_eq!(row["ref"].as_str(), envelope["ref"].as_str());
+    assert_sidecar_matches(&store);
+
+    let before = snapshot(&store);
+    let out = cli(&root)
+        .args([
+            "tasks",
+            "add",
+            "--slug",
+            TASKS_SLUG,
+            "--title",
+            "Inline",
+            "--title-file",
+            &title_file,
+            "--effort",
+            "S",
+        ])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(2);
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(stderr.contains("cannot be used with"), "{stderr:?}");
+    assert_eq!(snapshot(&store), before, "a refused add writes nothing");
+}
+
 /// `add-many` reports one object per line — id, ref and round — not a bare
 /// count, so a caller can bind the ids it just minted without re-reading.
 #[test]

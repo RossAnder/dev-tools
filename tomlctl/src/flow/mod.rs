@@ -26,4 +26,8 @@ pub(crate) use envelope::{VALID_ARTIFACTS, VALID_COMMANDS};
 pub(crate) use init::validate_slug;
 pub(crate) use list::list_all;
 pub(crate) use record_path::execution_record_path;
+pub(crate) use record_schema::RecordType;
+// The skill-parity gate in `cli::dispatch::tests` reads the enforced contract.
+#[cfg(test)]
+pub(crate) use record_schema::{FAILED_IDS_CAP, TEXT_CAPS, TYPES, type_enums, type_required};
 pub(crate) use schema::FlowProjection;

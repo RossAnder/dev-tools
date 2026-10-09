@@ -45,12 +45,6 @@ pub(crate) fn dedup_id_disabled() -> bool {
 ///
 /// Honours `TOMLCTL_NO_DEDUP_ID`: when set, returns without touching `obj`.
 ///
-/// **Note on PROGRESS-LOG rendering**: `dedup_id` is a string field on the
-/// on-disk TOML row. The render templates in `claude/commands/plan-update.md`
-/// (lines 211-223 at time of writing) hard-code which columns make it into
-/// rendered output, so `dedup_id` never leaks into user-facing progress log
-/// lines despite being present on every new row.
-///
 /// **Ordering vs `--dedupe-by`**: callers go through
 /// `items_add_value_with_dedupe_to`, which runs the pre-scan BEFORE
 /// delegating to `items_add_value_to` (the single write funnel that hooks
@@ -309,6 +303,23 @@ pub(crate) fn items_add_value_to(
     patch: JsonValue,
     array_name: &str,
 ) -> Result<()> {
+    add_value_to(doc, patch, array_name, DedupId::Populate)
+}
+
+/// Whether an add stamps the tier-B `dedup_id` fingerprint. Ledgers do;
+/// a store whose schema has no such field, like the execution record, skips.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DedupId {
+    Populate,
+    Skip,
+}
+
+fn add_value_to(
+    doc: &mut TomlValue,
+    patch: JsonValue,
+    array_name: &str,
+    dedup_id: DedupId,
+) -> Result<()> {
     let got_type = crate::convert::json_type_name(&patch);
     let JsonValue::Object(mut obj) = patch else {
         bail!(
@@ -343,7 +354,9 @@ pub(crate) fn items_add_value_to(
     // and `items_add_value_with_dedupe_to` (which delegates here on a
     // dedupe-miss, so the pre-scan never sees an auto-populated `dedup_id`
     // on its own payload).
-    apply_dedup_id_on_add(&mut obj);
+    if dedup_id == DedupId::Populate {
+        apply_dedup_id_on_add(&mut obj);
+    }
     let mut tbl = toml::Table::with_capacity(obj.len());
     for (k, v) in obj {
         if is_empty_json(&v) {
@@ -1183,20 +1196,31 @@ fn id_high_water(doc: &TomlValue, prefix: &str) -> u64 {
         .unwrap_or(0)
 }
 
-/// Split `R12` into `("R", 12)`: the prefix is everything before the
-/// trailing digit run, and both halves must be non-empty.
+/// Split `R12` into `("R", 12)` when the id is one minting could have
+/// produced: a digit-free prefix (the split `--infer-from-file` makes) and a
+/// number with no leading zero. A hash id like `B-de0a0d87` is not split.
 fn split_numbered_id(id: &str) -> Option<(&str, u64)> {
-    let prefix = id.trim_end_matches(|c: char| c.is_ascii_digit());
-    if prefix.is_empty() || prefix.len() == id.len() {
+    let at = id.find(|c: char| c.is_ascii_digit())?;
+    let (prefix, digits) = id.split_at(at);
+    if prefix.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    id[prefix.len()..].parse().ok().map(|n| (prefix, n))
+    let n: u64 = digits.parse().ok()?;
+    (n.to_string() == digits).then_some((prefix, n))
 }
 
 /// Raise each removed id's prefix entry in `[id_high_water]` to its number
-/// where that exceeds the stored value. An id with no `{prefix}{n}` shape
-/// records nothing.
-pub(crate) fn record_id_high_water(doc: &mut TomlValue, removed: &[String]) -> Result<()> {
+/// where that exceeds the stored value. Only an id `split_numbered_id`
+/// accepts as minted records a mark. A removal from the backlog array records
+/// nothing: its content-hash ids are never minted, even when all-digit.
+pub(crate) fn record_id_high_water(
+    doc: &mut TomlValue,
+    array_name: &str,
+    removed: &[String],
+) -> Result<()> {
+    if array_name == crate::backlog::schema::ARRAY_BACKLOG {
+        return Ok(());
+    }
     for id in removed {
         let Some((prefix, n)) = split_numbered_id(id) else {
             continue;
@@ -1370,16 +1394,49 @@ fn parse_ndjson_lines(s: &str, expected: &str) -> Result<Vec<JsonValue>> {
     // newline scan in `memchr`-backed iterators runs in nanoseconds for the
     // payload sizes tomlctl sees (agent-generated NDJSON, typically <1 MB).
     let mut rows = Vec::with_capacity(s.as_bytes().iter().filter(|&&b| b == b'\n').count());
-    for (idx, line) in s.lines().enumerate() {
-        let n = idx + 1;
-        if line.trim().is_empty() {
-            continue;
-        }
+    for (n, line) in numbered_lines(s) {
         let v: JsonValue =
             serde_json::from_str(line).with_context(|| format!("line {n} ({expected})"))?;
         rows.push(v);
     }
     Ok(rows)
+}
+
+/// The non-blank lines of an NDJSON source with their 1-based line numbers.
+/// Blank lines are skipped but still counted, so `line N` in an error is the
+/// line the caller wrote.
+fn numbered_lines(s: &str) -> impl Iterator<Item = (usize, &str)> {
+    s.lines()
+        .enumerate()
+        .map(|(idx, line)| (idx + 1, line))
+        .filter(|(_, line)| !line.trim().is_empty())
+}
+
+/// Parse NDJSON whose every non-blank line is a JSON object, each paired with
+/// its 1-based source line. The first invalid or non-object line is refused
+/// with a `line N: ` validation error; an empty source yields no rows, which
+/// the caller judges.
+pub(crate) fn parse_ndjson_objects(
+    s: &str,
+) -> Result<Vec<(usize, serde_json::Map<String, JsonValue>)>> {
+    numbered_lines(s)
+        .map(|(n, line)| match serde_json::from_str::<JsonValue>(line) {
+            Ok(JsonValue::Object(map)) => Ok((n, map)),
+            Ok(other) => Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!(
+                    "line {n}: expected one JSON object per line; got JSON {}",
+                    crate::convert::json_type_name(&other)
+                ),
+            )),
+            Err(e) => Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!("line {n}: expected one JSON object per line: {e}"),
+            )),
+        })
+        .collect()
 }
 
 /// Validate `defaults` as a JSON object (or return an empty map when
@@ -1709,7 +1766,7 @@ pub(crate) fn compute_apply_mutation_minting(
         (None, _) => ops,
     };
     let mut guarded = compute_apply_mutation_with(doc, array_name, ops, no_remove, policy)?;
-    record_id_high_water(&mut guarded.plan.new_doc, &guarded.plan.removed)?;
+    record_id_high_water(&mut guarded.plan.new_doc, array_name, &guarded.plan.removed)?;
     Ok(MintedPlan { guarded, ids })
 }
 
@@ -1741,7 +1798,7 @@ pub(crate) fn compute_remove_mutation_recorded(
     id: &str,
 ) -> Result<MutationPlan> {
     let mut plan = compute_remove_mutation(doc, array_name, id)?;
-    record_id_high_water(&mut plan.new_doc, &plan.removed)?;
+    record_id_high_water(&mut plan.new_doc, array_name, &plan.removed)?;
     Ok(plan)
 }
 
@@ -1877,6 +1934,45 @@ pub(crate) fn items_add_many_with_dedupe(
     dedupe_fields: &[String],
     id_prefix: Option<&str>,
 ) -> Result<AddManyOutcome> {
+    add_many_with_dedupe(
+        doc,
+        array_name,
+        rows,
+        defaults,
+        dedupe_fields,
+        id_prefix,
+        DedupId::Populate,
+    )
+}
+
+/// Append `rows` with ids minted under `id_prefix` and no `dedup_id`
+/// fingerprint, for a store whose schema does not define that field.
+pub(crate) fn items_append_minted(
+    doc: &mut TomlValue,
+    array_name: &str,
+    rows: &[JsonValue],
+    id_prefix: &str,
+) -> Result<AddManyOutcome> {
+    add_many_with_dedupe(
+        doc,
+        array_name,
+        rows,
+        None,
+        &[],
+        Some(id_prefix),
+        DedupId::Skip,
+    )
+}
+
+fn add_many_with_dedupe(
+    doc: &mut TomlValue,
+    array_name: &str,
+    rows: &[JsonValue],
+    defaults: Option<&JsonValue>,
+    dedupe_fields: &[String],
+    id_prefix: Option<&str>,
+    dedup_id: DedupId,
+) -> Result<AddManyOutcome> {
     // Share the defaults + row-merge shape with `items_add_many`.
     let base = defaults_base(defaults)?;
     if let Some(prefix) = id_prefix {
@@ -1920,7 +2016,7 @@ pub(crate) fn items_add_many_with_dedupe(
             (_, v) => v,
         };
         let row_id = capture_row_id(&to_add);
-        items_add_value_to(doc, to_add, array_name).with_context(|| {
+        add_value_to(doc, to_add, array_name, dedup_id).with_context(|| {
             format!(
                 "row {} (per-row {}add failed; row must be a JSON object with at minimum an `id` field)",
                 row_num,
@@ -3744,6 +3840,18 @@ status = "open"
         // Doc state: original 2 + 2 added = 4.
         let items = doc.get("items").and_then(|v| v.as_array()).unwrap();
         assert_eq!(items.len(), 4);
+    }
+
+    #[test]
+    fn items_append_minted_mints_ids_without_a_dedup_id() {
+        let mut doc = dedupe_fixture();
+        let rows = vec![serde_json::json!({"file": "src/c.rs", "summary": "gamma"})];
+        let outcome = items_append_minted(&mut doc, "items", &rows, "E").unwrap();
+        assert_eq!(outcome.ids, vec!["E1".to_string()]);
+        let items = doc.get("items").and_then(|v| v.as_array()).unwrap();
+        let added = items.last().and_then(|v| v.as_table()).unwrap();
+        assert_eq!(added.get("id").and_then(|v| v.as_str()), Some("E1"));
+        assert!(added.get("dedup_id").is_none(), "{added:?}");
     }
 
     // ----- dedup_id auto-populate (helper-level, no I/O) -----------------
