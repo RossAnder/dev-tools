@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Warns when ~/.claude/ has fallen out of sync with claude/. Never blocks.
+exec "$(git rev-parse --show-toplevel)/.githooks/deploy-check.sh"
