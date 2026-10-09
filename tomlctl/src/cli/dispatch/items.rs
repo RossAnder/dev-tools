@@ -20,8 +20,8 @@ use crate::io::{
 };
 use crate::items::{
     AddManyOutcome, AddOutcome, StaleOp, StalePolicy, compute_add_many_mutation,
-    compute_add_mutation, compute_apply_mutation_with, compute_backfill_mutation,
-    compute_remove_mutation, compute_update_mutation, dedup_id_disabled, items_add_many,
+    compute_add_mutation, compute_apply_mutation_minting, compute_backfill_mutation,
+    compute_remove_mutation_recorded, compute_update_mutation, dedup_id_disabled, items_add_many,
     items_add_many_with_dedupe, items_add_to, items_add_value_with_dedupe_to, items_fingerprint,
     items_get_from, items_get_from_json, items_infer_and_next_id, items_next_id, items_update_to,
     parse_apply_ops, parse_ndjson,
@@ -594,13 +594,13 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // Dry-run path — compute the plan on a locally-read
                 // doc (no exclusive lock) and emit the would_change
                 // summary. The compute phase runs the same validation
-                // as the live path (`compute_remove_mutation` delegates
-                // to `items_remove_from` on a cloned doc), so a missing
-                // id bails with the identical "no item with id = X"
+                // as the live path (`compute_remove_mutation_recorded`
+                // delegates to `items_remove_from` on a cloned doc), so a
+                // missing id bails with the identical "no item with id = X"
                 // error a real remove would surface.
                 let read_opts = dry_run_read_opts(integrity.verify_integrity);
                 let plan = read_doc(&file, read_opts, |doc| {
-                    compute_remove_mutation(doc, &array, &id)
+                    compute_remove_mutation_recorded(doc, &array, &id)
                 })?;
                 emit_dry_run_plan(&plan)?;
             } else {
@@ -610,10 +610,11 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // exclusive lock via `mutate_doc_plan` so the same
                 // TOCTOU narrowing as `mutate_doc` holds.
                 // Auto-create policy. A `remove` against a freshly-seeded
-                // missing file finds no matching id and `compute_remove_mutation`
-                // errors out BEFORE the persist (`mutate_doc_plan`'s `?`), so
-                // nothing is written — so in practice `created` here surfaces
-                // `false` or the call errors out first.
+                // missing file finds no matching id and
+                // `compute_remove_mutation_recorded` errors out BEFORE the
+                // persist (`mutate_doc_plan`'s `?`), so nothing is written —
+                // so in practice `created` here surfaces `false` or the call
+                // errors out first.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
                 // Surface `created` + `path`.
                 let created = mutate_doc_plan(
@@ -622,7 +623,7 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
                     opts,
                     on_missing,
                     stamped_plan(!stamp.no_stamp, |doc| {
-                        compute_remove_mutation(doc, &array, &id)
+                        compute_remove_mutation_recorded(doc, &array, &id)
                     }),
                 )?;
                 write_envelope(&file, created)?;
@@ -634,11 +635,13 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
             array,
             no_remove,
             on_stale,
+            id_prefix,
             dry_run,
             integrity,
             stamp,
         } => {
             let opts = write_integrity_opts(&integrity);
+            let id_prefix = id_prefix.as_deref();
             let policy = match on_stale {
                 OnStale::Abort => StalePolicy::Abort,
                 OnStale::Skip => StalePolicy::Skip,
@@ -680,50 +683,68 @@ pub(super) fn items_dispatch(op: ItemsOp) -> Result<()> {
                 // side via `guard_write_path`.
                 warn_if_read_outside_claude(&file);
                 // Same compute phase as the live path, but we stop
-                // before the I/O stage. `compute_apply_mutation_with` runs
+                // before the I/O stage. `compute_apply_mutation_minting` runs
                 // `items_apply_parsed_to_opts` on a cloned doc, so every
                 // validation gate — `--no-remove`, op-shape, missing id,
                 // dedup_id auto-populate, `expect` under `--on-stale` — fires
                 // with a byte-identical error surface.
                 let read_opts = dry_run_read_opts(integrity.verify_integrity);
-                let guarded = read_doc(&file, read_opts, |doc| {
-                    compute_apply_mutation_with(doc, &array, &parsed_ops, no_remove, policy)
+                let minted = read_doc(&file, read_opts, |doc| {
+                    compute_apply_mutation_minting(
+                        doc,
+                        &array,
+                        &parsed_ops,
+                        no_remove,
+                        policy,
+                        id_prefix,
+                    )
                 })?;
-                let mut envelope = build_dry_run_plan_envelope(&guarded.plan);
-                envelope["skipped_stale"] = skipped_stale_json(&guarded.skipped_stale);
+                let mut envelope = build_dry_run_plan_envelope(&minted.guarded.plan);
+                if id_prefix.is_some() {
+                    envelope["ids"] = minted.ids.into();
+                }
+                envelope["skipped_stale"] = skipped_stale_json(&minted.guarded.skipped_stale);
                 print_json_compact(&envelope)?;
             } else {
                 // Auto-create policy. An all-`update`/all-`remove` batch
                 // against a freshly-seeded missing file errors in
-                // `compute_apply_mutation_with` (no matching id) BEFORE the
+                // `compute_apply_mutation_minting` (no matching id) BEFORE the
                 // persist, so nothing is written. Batches with `add` ops
                 // seed-then-append into the new file — `created=true` there.
                 let on_missing = on_missing_for(&file, integrity.no_create)?;
                 let mut skipped_stale = Vec::new();
+                // Minting reads the locked doc, so two concurrent applies
+                // can never hand out the same id.
+                let mut ids = Vec::new();
                 let created = mutate_doc_plan(
                     &file,
                     integrity.allow_outside,
                     opts,
                     on_missing,
                     stamped_plan(!stamp.no_stamp, |doc| {
-                        let guarded = compute_apply_mutation_with(
+                        let minted = compute_apply_mutation_minting(
                             doc,
                             &array,
                             &parsed_ops,
                             no_remove,
                             policy,
+                            id_prefix,
                         )?;
-                        skipped_stale = guarded.skipped_stale;
-                        Ok(guarded.plan)
+                        skipped_stale = minted.guarded.skipped_stale;
+                        ids = minted.ids;
+                        Ok(minted.guarded.plan)
                     }),
                 )?;
                 warn_if_created(&file, created);
-                print_json_compact(&serde_json::json!({
-                    "ok": true,
-                    "created": created,
-                    "path": file.display().to_string(),
-                    "skipped_stale": skipped_stale_json(&skipped_stale),
-                }))?;
+                let mut envelope = serde_json::Map::new();
+                envelope.insert("ok".into(), JsonValue::Bool(true));
+                if id_prefix.is_some() {
+                    envelope.insert("ids".into(), ids.into());
+                }
+                envelope.insert("created".into(), created.into());
+                envelope.insert("path".into(), file.display().to_string().into());
+                envelope.insert("skipped_stale".into(), skipped_stale_json(&skipped_stale));
+                print_json_compact(&JsonValue::Object(envelope))?;
             }
         }
         ItemsOp::NextId {

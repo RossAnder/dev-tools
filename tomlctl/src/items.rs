@@ -332,9 +332,7 @@ pub(crate) fn items_add_value_to(
     {
         bail!(
             "ledger row must carry a non-empty string `id` (e.g. {{\"id\":\"R1\", ...}}); \
-             mint one with `tomlctl items add --id-prefix <P>` or `tomlctl items add-many --id-prefix <P>`, \
-             or for an `items apply` batch number the add ops upward from one \
-             `tomlctl items next-id <file> --prefix <P>` read"
+             mint one with `--id-prefix <P>` on `tomlctl items add`, `items add-many` or `items apply`"
         );
     }
     // Auto-populate `dedup_id` from the payload BEFORE conversion to
@@ -592,8 +590,8 @@ pub(crate) fn items_apply_to(doc: &mut TomlValue, ops_json: &str, array_name: &s
 /// by ownership into `apply_single_op`, eliminating per-op patch clones.
 ///
 /// String-parsing wrapper for tests that exercise the live mutator from a
-/// JSON literal. Production dispatch goes through `compute_apply_mutation` →
-/// `items_apply_parsed_to_opts` so the parse happens once at the CLI
+/// JSON literal. Production dispatch goes through `compute_apply_mutation_minting`
+/// → `items_apply_parsed_to_opts` so the parse happens once at the CLI
 /// boundary; this wrapper is the internal test surface only.
 ///
 /// For batches with `> ID_INDEX_BUILD_THRESHOLD` `update` ops the
@@ -1149,11 +1147,17 @@ pub(crate) fn items_next_id(doc: &TomlValue, prefix: &str) -> Result<String> {
 }
 
 /// Array-parametric `items_next_id`: one past the highest `{prefix}{n}` id in
-/// `doc[array_name]`. The `--id-prefix` add paths mint through this so an
-/// `--array` other than `items` numbers against its own rows.
+/// `doc[array_name]`, or past the prefix's `[id_high_water]` mark when a
+/// removal retired a higher one. The `--id-prefix` add paths mint through
+/// this so an `--array` other than `items` numbers against its own rows.
 fn items_next_id_in(doc: &TomlValue, array_name: &str, prefix: &str) -> Result<String> {
+    let n = next_id_number(doc, array_name, prefix)?;
+    Ok(format!("{prefix}{n}"))
+}
+
+fn next_id_number(doc: &TomlValue, array_name: &str, prefix: &str) -> Result<u64> {
     validate_id_prefix(prefix)?;
-    let mut max_n: u64 = 0;
+    let mut max_n = id_high_water(doc, prefix);
     for item in items_array(doc, array_name) {
         if let Some(id) = item_id(item)
             && let Some(rest) = id.strip_prefix(prefix)
@@ -1163,7 +1167,62 @@ fn items_next_id_in(doc: &TomlValue, array_name: &str, prefix: &str) -> Result<S
             max_n = n;
         }
     }
-    Ok(format!("{}{}", prefix, max_n + 1))
+    Ok(max_n + 1)
+}
+
+/// Root table mapping an id prefix to the highest number a removal retired,
+/// so a deleted top id is never minted again.
+const ID_HIGH_WATER: &str = "id_high_water";
+
+fn id_high_water(doc: &TomlValue, prefix: &str) -> u64 {
+    doc.get(ID_HIGH_WATER)
+        .and_then(TomlValue::as_table)
+        .and_then(|t| t.get(prefix))
+        .and_then(TomlValue::as_integer)
+        .and_then(|n| u64::try_from(n).ok())
+        .unwrap_or(0)
+}
+
+/// Split `R12` into `("R", 12)`: the prefix is everything before the
+/// trailing digit run, and both halves must be non-empty.
+fn split_numbered_id(id: &str) -> Option<(&str, u64)> {
+    let prefix = id.trim_end_matches(|c: char| c.is_ascii_digit());
+    if prefix.is_empty() || prefix.len() == id.len() {
+        return None;
+    }
+    id[prefix.len()..].parse().ok().map(|n| (prefix, n))
+}
+
+/// Raise each removed id's prefix entry in `[id_high_water]` to its number
+/// where that exceeds the stored value. An id with no `{prefix}{n}` shape
+/// records nothing.
+pub(crate) fn record_id_high_water(doc: &mut TomlValue, removed: &[String]) -> Result<()> {
+    for id in removed {
+        let Some((prefix, n)) = split_numbered_id(id) else {
+            continue;
+        };
+        let Ok(stored) = i64::try_from(n) else {
+            continue;
+        };
+        if n <= id_high_water(doc, prefix) {
+            continue;
+        }
+        let Some(root) = doc.as_table_mut() else {
+            continue;
+        };
+        let entry = root
+            .entry(ID_HIGH_WATER)
+            .or_insert_with(|| TomlValue::Table(toml::Table::new()));
+        let Some(marks) = entry.as_table_mut() else {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                "root key `id_high_water` must be a table of prefix = number",
+            ));
+        };
+        marks.insert(prefix.to_string(), TomlValue::Integer(stored));
+    }
+    Ok(())
 }
 
 fn validate_id_prefix(prefix: &str) -> Result<()> {
@@ -1201,10 +1260,17 @@ fn mint_row_id(
 ) -> Result<(serde_json::Map<String, JsonValue>, String)> {
     refuse_supplied_id(&obj)?;
     let id = items_next_id_in(doc, array_name, prefix)?;
+    Ok((with_leading_id(obj, &id), id))
+}
+
+fn with_leading_id(
+    obj: serde_json::Map<String, JsonValue>,
+    id: &str,
+) -> serde_json::Map<String, JsonValue> {
     let mut stamped = serde_json::Map::with_capacity(obj.len() + 1);
-    stamped.insert("id".to_string(), JsonValue::String(id.clone()));
+    stamped.insert("id".to_string(), JsonValue::String(id.to_string()));
     stamped.extend(obj.into_iter().filter(|(k, _)| k != "id"));
-    Ok((stamped, id))
+    stamped
 }
 
 fn refuse_supplied_id(obj: &serde_json::Map<String, JsonValue>) -> Result<()> {
@@ -1592,6 +1658,61 @@ pub(crate) fn compute_apply_mutation_with(
     })
 }
 
+/// A `GuardedPlan` together with the ids minted for its id-less add ops, in
+/// op order.
+#[derive(Debug, Clone)]
+pub(crate) struct MintedPlan {
+    pub(crate) guarded: GuardedPlan,
+    pub(crate) ids: Vec<String>,
+}
+
+/// The CLI's `items apply`. Under `id_prefix`, each add op whose row carries
+/// no `id` gets the next of a contiguous run of `{prefix}{n}` ids numbered
+/// from `doc` as it stands, and an add op carrying one is refused. The ops
+/// then run through `compute_apply_mutation_with`, and the removals that
+/// landed raise `[id_high_water]` on the new doc.
+pub(crate) fn compute_apply_mutation_minting(
+    doc: &TomlValue,
+    array_name: &str,
+    ops: &JsonValue,
+    no_remove: bool,
+    policy: StalePolicy,
+    id_prefix: Option<&str>,
+) -> Result<MintedPlan> {
+    let mut ids = Vec::new();
+    let minted_ops;
+    let ops = match (id_prefix, ops) {
+        (Some(prefix), JsonValue::Array(arr)) => {
+            let mut next = next_id_number(doc, array_name, prefix)?;
+            let mut out = Vec::with_capacity(arr.len());
+            for (i, op) in arr.iter().enumerate() {
+                let mut op = op.clone();
+                if let Some(obj) = op.as_object_mut()
+                    && obj.get("op").and_then(JsonValue::as_str) == Some("add")
+                    && let Some(JsonValue::Object(row)) = obj.get_mut("json")
+                {
+                    refuse_supplied_id(row).with_context(|| format!("op {}", i + 1))?;
+                    let id = format!("{prefix}{next}");
+                    next += 1;
+                    *row = with_leading_id(std::mem::take(row), &id);
+                    ids.push(id);
+                }
+                out.push(op);
+            }
+            minted_ops = JsonValue::Array(out);
+            &minted_ops
+        }
+        (Some(prefix), _) => {
+            validate_id_prefix(prefix)?;
+            ops
+        }
+        (None, _) => ops,
+    };
+    let mut guarded = compute_apply_mutation_with(doc, array_name, ops, no_remove, policy)?;
+    record_id_high_water(&mut guarded.plan.new_doc, &guarded.plan.removed)?;
+    Ok(MintedPlan { guarded, ids })
+}
+
 /// Pure sibling of `items_remove_from`. Clones `doc`, runs the
 /// remove on the clone, and records the removed id. Errors identically
 /// to the live path (`no item with id = {id}`). `added` and `updated`
@@ -1610,6 +1731,18 @@ pub(crate) fn compute_remove_mutation(
         removed: vec![id.to_string()],
         skipped: Vec::new(),
     })
+}
+
+/// The CLI's `items remove`: `compute_remove_mutation` with the removed id
+/// raising `[id_high_water]` on the new doc.
+pub(crate) fn compute_remove_mutation_recorded(
+    doc: &TomlValue,
+    array_name: &str,
+    id: &str,
+) -> Result<MutationPlan> {
+    let mut plan = compute_remove_mutation(doc, array_name, id)?;
+    record_id_high_water(&mut plan.new_doc, &plan.removed)?;
+    Ok(plan)
 }
 
 /// Pure compute-phase helper for `items backfill-dedup-id`. Clones the
@@ -3257,7 +3390,7 @@ summary = "design finding"
     #[test]
     fn items_next_id_on_empty_doc_returns_prefix_one() {
         // Stand-in for a ledger that exists but has no items yet. The
-        // `items next-id` handler in cli/dispatch.rs covers the "file
+        // `items next-id` handler in `items_dispatch` covers the "file
         // missing" case by passing its own empty table; this test pins the
         // direct-call behaviour for a doc that has only a header.
         let empty: TomlValue = toml::from_str("schema_version = 1\n").unwrap();

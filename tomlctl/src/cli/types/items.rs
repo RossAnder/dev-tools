@@ -319,6 +319,15 @@ pub(crate) enum ItemsOp {
             help = "What to do with an update/remove op whose `expect` no longer matches its row: abort the batch, or skip the op and list it under skipped_stale"
         )]
         on_stale: OnStale,
+        /// Mint an id for every `add` op whose row carries none, numbering
+        /// upward from the ledger under the write lock, and report them as
+        /// `ids` in op order. An `add` op carrying an `id` is refused.
+        #[arg(
+            long = "id-prefix",
+            value_name = "P",
+            help = "Mint each id-less add op's id as <P><next> under the write lock and report them as `ids`; no add op may carry an id"
+        )]
+        id_prefix: Option<String>,
         /// Preview the batch without writing. Runs every validation
         /// gate (`--no-remove`, op-shape, missing-id, dedup_id auto-populate)
         /// so an agent can rehearse the batch shape before committing.
