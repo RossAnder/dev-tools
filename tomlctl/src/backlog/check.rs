@@ -12,6 +12,7 @@
 //! candidates only. The store holds no evidence field, so a count is only
 //! true at the moment it is taken.
 
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -117,9 +118,14 @@ impl Probe {
 
     /// The four similarity rungs, in ladder order, for one row. `None` when
     /// the row clears none of them — those are never returned.
-    fn grade(&self, row: &Row<'_>, thresholds: &Thresholds) -> Option<(Reason, f64)> {
-        let trigram = jaccard(&self.trigrams, &char_trigrams(row.summary));
-        let words = jaccard(&self.words, &word_tokens(row.summary));
+    fn grade(
+        &self,
+        row: &Row<'_>,
+        fold: &RowFold,
+        thresholds: &Thresholds,
+    ) -> Option<(Reason, f64)> {
+        let trigram = jaccard(&self.trigrams, &fold.trigrams);
+        let words = jaccard(&self.words, &fold.words);
         // Reported strength is the better of the two measures whichever rung
         // matched, so it is not comparable across rungs: a structural match can
         // out-score a textual one. Candidates sort by rung first for that reason.
@@ -130,7 +136,7 @@ impl Probe {
         if words >= thresholds.related {
             return Some((Reason::Words, score));
         }
-        if shared_leading(&self.area, &components(row.area)) >= SHARED_STRUCTURE_MIN {
+        if shared_leading(&self.area, &fold.area) >= SHARED_STRUCTURE_MIN {
             return Some((Reason::Area, score));
         }
         if self
@@ -231,7 +237,7 @@ fn shared_leading(a: &[String], b: &[String]) -> usize {
 
 /// Row indices keyed by fingerprint, so the three exact rungs cost one
 /// lookup and only the fallback scan pays per-candidate trigram folding.
-fn index_by_dedup<'a>(rows: &'a [Row<'a>]) -> BTreeMap<&'a str, Vec<usize>> {
+fn index_by_dedup<'a>(rows: &[Row<'a>]) -> BTreeMap<&'a str, Vec<usize>> {
     let mut index: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (position, row) in rows.iter().enumerate() {
         if !row.dedup_id.is_empty() {
@@ -266,9 +272,55 @@ fn colliding_ids(rows: &[Row<'_>]) -> BTreeSet<usize> {
         .collect()
 }
 
+/// A row's probe-independent comparison sets.
+struct RowFold {
+    trigrams: BTreeSet<String>,
+    words: BTreeSet<String>,
+    area: Vec<String>,
+}
+
+impl RowFold {
+    fn new(row: &Row<'_>) -> Self {
+        Self {
+            trigrams: char_trigrams(row.summary),
+            words: word_tokens(row.summary),
+            area: components(row.area),
+        }
+    }
+}
+
+/// Everything about a store read that does not depend on the probe. Each
+/// row's fold is built on first grade, so a probe that resolves on an exact
+/// fingerprint hit folds nothing.
+struct Store<'a> {
+    rows: Vec<Row<'a>>,
+    by_dedup: BTreeMap<&'a str, Vec<usize>>,
+    colliding: BTreeSet<usize>,
+    folds: Vec<OnceCell<RowFold>>,
+}
+
+impl<'a> Store<'a> {
+    fn new(doc: &'a TomlValue) -> Self {
+        let rows = rows(doc);
+        let by_dedup = index_by_dedup(&rows);
+        let colliding = colliding_ids(&rows);
+        let folds = rows.iter().map(|_| OnceCell::new()).collect();
+        Self {
+            rows,
+            by_dedup,
+            colliding,
+            folds,
+        }
+    }
+}
+
 fn evaluate(doc: &TomlValue, probe: &Probe, thresholds: &Thresholds) -> Verdicts {
-    let rows = rows(doc);
-    let by_dedup = index_by_dedup(&rows);
+    evaluate_in(&Store::new(doc), probe, thresholds)
+}
+
+fn evaluate_in(store: &Store<'_>, probe: &Probe, thresholds: &Thresholds) -> Verdicts {
+    let rows = &store.rows;
+    let by_dedup = &store.by_dedup;
     let mut graded: BTreeMap<usize, (Reason, f64)> = BTreeMap::new();
 
     for &position in by_dedup
@@ -288,7 +340,7 @@ fn evaluate(doc: &TomlValue, probe: &Probe, thresholds: &Thresholds) -> Verdicts
     }
     let exact = !graded.is_empty();
 
-    for position in colliding_ids(&rows) {
+    for &position in &store.colliding {
         graded.entry(position).or_insert((Reason::DuplicateId, 1.0));
     }
     // An exact fingerprint hit answers the question the caller asked; the
@@ -299,7 +351,8 @@ fn evaluate(doc: &TomlValue, probe: &Probe, thresholds: &Thresholds) -> Verdicts
             if graded.contains_key(&position) {
                 continue;
             }
-            if let Some(grade) = probe.grade(row, thresholds) {
+            let fold = store.folds[position].get_or_init(|| RowFold::new(row));
+            if let Some(grade) = probe.grade(row, fold, thresholds) {
                 graded.insert(position, grade);
             }
         }
@@ -601,8 +654,9 @@ fn batch_report(
     thresholds: &Thresholds,
 ) -> Result<JsonValue> {
     let mut results = Vec::with_capacity(probes.len());
+    let store = Store::new(doc);
     for batch in probes {
-        let verdicts = evaluate(doc, &batch.probe, thresholds);
+        let verdicts = evaluate_in(&store, &batch.probe, thresholds);
         let report = build_report(&batch.probe, thresholds, verdicts, None)?;
         let mut row = JsonMap::new();
         row.insert("line".to_owned(), json!(batch.line));
