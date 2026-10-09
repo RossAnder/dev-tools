@@ -177,6 +177,74 @@ fn lint_logical(rel: &str, logical: &str, report: &mut CommandLintReport) {
     }
 }
 
+/// One logical shell line of a bash fence, numbered by the physical line it
+/// starts on.
+struct FenceLine {
+    line: usize,
+    text: String,
+}
+
+struct BashFence {
+    /// The info-string after the `bash` tag, e.g. ` ignore-command-lint`.
+    info: String,
+    lines: Vec<FenceLine>,
+}
+
+/// Every ```bash fence in a document. A fence opens at a trimmed line
+/// starting with "```bash" and closes at the next trimmed line starting with
+/// "```"; a line ending in `\` is stitched onto the next, and a continuation
+/// still pending at the close is dropped.
+fn bash_fences(text: &str) -> Vec<BashFence> {
+    let mut fences = Vec::new();
+    let mut open: Option<BashFence> = None;
+    let mut cont: Option<(usize, String)> = None;
+
+    for (idx, line) in text.lines().enumerate() {
+        let number = idx + 1;
+        let trimmed = line.trim_start();
+        let Some(fence) = open.as_mut() else {
+            if let Some(info) = trimmed.strip_prefix("```bash") {
+                open = Some(BashFence {
+                    info: info.to_string(),
+                    lines: Vec::new(),
+                });
+                cont = None;
+            }
+            continue;
+        };
+        if trimmed.starts_with("```") {
+            fences.extend(open.take());
+            cont = None;
+            continue;
+        }
+        if let Some(stripped) = line.strip_suffix('\\') {
+            let (_, buf) = cont.get_or_insert_with(|| (number, String::new()));
+            buf.push_str(stripped);
+            buf.push(' ');
+            continue;
+        }
+        let (start, text) = match cont.take() {
+            Some((start, mut buf)) => {
+                buf.push_str(line);
+                (start, buf)
+            }
+            None => (number, line.to_string()),
+        };
+        fence.lines.push(FenceLine { line: start, text });
+    }
+
+    fences.extend(open);
+    fences
+}
+
+/// Repo-relative, forward-slashed display path for a lint report.
+fn lint_rel_path(file: &Path, repo_root: &Path) -> String {
+    file.strip_prefix(repo_root)
+        .unwrap_or(file)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
 /// Walk each file's ```bash fences and lint every `tomlctl …` line in them.
 fn command_lint_report(files: &[PathBuf], repo_root: &Path) -> CommandLintReport {
     crate::test_support::on_cli_stack(|| command_lint_report_inner(files, repo_root))
@@ -189,57 +257,14 @@ fn command_lint_report_inner(files: &[PathBuf], repo_root: &Path) -> CommandLint
         let Ok(text) = fs::read_to_string(file) else {
             continue;
         };
-        let rel = file
-            .strip_prefix(repo_root)
-            .unwrap_or(file)
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        // Walk the file line-by-line tracking fence state. A bash block is
-        // opened by a trimmed line starting with "```bash"; its info-string
-        // is the remainder after that prefix. The block closes at the next
-        // line whose trimmed form starts with "```".
-        let mut in_bash = false;
-        let mut skip_block = false;
-        // Buffer for stitching shell line-continuations (trailing `\`).
-        let mut cont = String::new();
-
-        for line in text.lines() {
-            let trimmed = line.trim_start();
-            if !in_bash {
-                if let Some(info) = trimmed.strip_prefix("```bash") {
-                    in_bash = true;
-                    skip_block = info.contains("ignore-command-lint");
-                    cont.clear();
-                }
+        let rel = lint_rel_path(file, repo_root);
+        for fence in bash_fences(&text) {
+            if fence.info.contains("ignore-command-lint") {
                 continue;
             }
-            // Inside a bash block.
-            if trimmed.starts_with("```") {
-                in_bash = false;
-                skip_block = false;
-                cont.clear();
-                continue;
+            for logical in &fence.lines {
+                lint_logical(&rel, &logical.text, &mut report);
             }
-            if skip_block {
-                continue;
-            }
-            // Stitch shell line-continuations: a line ending in `\` joins
-            // with the next.
-            let body = line;
-            if let Some(stripped) = body.strip_suffix('\\') {
-                cont.push_str(stripped);
-                cont.push(' ');
-                continue;
-            }
-            let logical = if cont.is_empty() {
-                body.to_string()
-            } else {
-                let mut full = std::mem::take(&mut cont);
-                full.push_str(body);
-                full
-            };
-            lint_logical(&rel, &logical, &mut report);
         }
     }
 
@@ -461,6 +486,437 @@ fn command_lint_still_truncates_at_shell_plumbing() {
         "fixture must tokenise cleanly: {:?}",
         report.unbalanced
     );
+}
+
+/// How a simple command joins the one before it on a logical line.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Joint {
+    Start,
+    /// `|`: the previous command's stdout feeds this one.
+    Pipe,
+    /// `|&`: stdout and stderr both feed this one.
+    PipeStderr,
+    /// `;`, `&&` or `||`: no data flows between the two.
+    List,
+}
+
+struct SimpleCommand {
+    joint: Joint,
+    text: String,
+    /// Delimiter of a `<<` heredoc this command opens, if any.
+    heredoc: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ShellCtx {
+    Code,
+    Double,
+}
+
+/// Split one logical shell line into its simple commands. Single-quoted text
+/// is opaque, double-quoted text is opaque except for a `$( … )` inside it,
+/// and a command substitution's own separators split it like top-level ones,
+/// so `X=$(tomlctl … | jq …)` still yields a tomlctl command piped into `jq`.
+/// A `#` starting a word ends the line.
+fn simple_commands(line: &str) -> Vec<SimpleCommand> {
+    let chars: Vec<char> = line.chars().collect();
+    let mut out = Vec::new();
+    let fresh = |joint| SimpleCommand {
+        joint,
+        text: String::new(),
+        heredoc: None,
+    };
+    let mut cur = fresh(Joint::Start);
+    let mut stack = vec![ShellCtx::Code];
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+        if stack.last() == Some(&ShellCtx::Double) {
+            match c {
+                '\\' => {
+                    cur.text.push(c);
+                    cur.text.extend(next);
+                    i += 2;
+                    continue;
+                }
+                '"' => {
+                    stack.pop();
+                }
+                '$' if next == Some('(') => {
+                    stack.push(ShellCtx::Code);
+                    cur.text.push_str("$(");
+                    i += 2;
+                    continue;
+                }
+                _ => {}
+            }
+            cur.text.push(c);
+            i += 1;
+            continue;
+        }
+        match c {
+            '\\' => {
+                cur.text.push(c);
+                cur.text.extend(next);
+                i += 2;
+                continue;
+            }
+            '\'' => {
+                let close = chars[i + 1..]
+                    .iter()
+                    .position(|&q| q == '\'')
+                    .map_or(chars.len(), |p| i + 1 + p + 1);
+                cur.text.extend(&chars[i..close]);
+                i = close;
+                continue;
+            }
+            '"' => stack.push(ShellCtx::Double),
+            '$' if next == Some('(') => {
+                stack.push(ShellCtx::Code);
+                cur.text.push_str("$(");
+                i += 2;
+                continue;
+            }
+            '(' => stack.push(ShellCtx::Code),
+            ')' if stack.len() > 1 => {
+                stack.pop();
+            }
+            '#' if cur.text.is_empty() || cur.text.ends_with(char::is_whitespace) => break,
+            '|' | ';' | '&' => {
+                let (joint, width) = match (c, next) {
+                    ('|', Some('|')) | ('&', Some('&')) => (Joint::List, 2),
+                    ('|', Some('&')) => (Joint::PipeStderr, 2),
+                    ('|', _) => (Joint::Pipe, 1),
+                    (';', _) => (Joint::List, 1),
+                    // A lone `&` is a redirection's (`2>&1`, `&>`) or a
+                    // background marker; neither splits a pipeline.
+                    _ => {
+                        cur.text.push(c);
+                        i += 1;
+                        continue;
+                    }
+                };
+                out.push(std::mem::replace(&mut cur, fresh(joint)));
+                i += width;
+                continue;
+            }
+            '<' if next == Some('<') => {
+                if chars.get(i + 2) == Some(&'<') {
+                    cur.text.push_str("<<<");
+                    i += 3;
+                    continue;
+                }
+                cur.text.push_str("<<");
+                i += 2;
+                let mut j = i;
+                if chars.get(j) == Some(&'-') {
+                    j += 1;
+                }
+                while chars.get(j).is_some_and(|c| c.is_whitespace()) {
+                    j += 1;
+                }
+                let delim: String = chars[j..]
+                    .iter()
+                    .skip_while(|&&c| c == '\'' || c == '"')
+                    .take_while(|&&c| c.is_ascii_alphanumeric() || c == '_')
+                    .collect();
+                if cur.heredoc.is_none() {
+                    cur.heredoc = Some(delim);
+                }
+                continue;
+            }
+            _ => {}
+        }
+        cur.text.push(c);
+        i += 1;
+    }
+    out.push(cur);
+    out
+}
+
+/// The program a simple command runs, by basename: shell keywords, `env`-style
+/// assignments and the openers of a subshell or command substitution are
+/// stepped over, so `X=$(tomlctl …` and `if tomlctl …` both name `tomlctl`.
+fn command_word(text: &str) -> Option<String> {
+    const PREFIX_WORDS: &[&str] = &[
+        "if", "then", "else", "elif", "while", "until", "do", "!", "time", "command", "exec",
+    ];
+    for raw in text.split_whitespace() {
+        let mut tok = raw;
+        loop {
+            if let Some(rest) = tok.strip_prefix("$(") {
+                tok = rest;
+            } else if let Some(rest) = tok.strip_prefix(['(', '{', '"', '`']) {
+                tok = rest;
+            } else {
+                break;
+            }
+        }
+        if tok.is_empty() || PREFIX_WORDS.contains(&tok) {
+            continue;
+        }
+        if let Some((name, value)) = tok.split_once('=')
+            && !name.is_empty()
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            match value.trim_start_matches('"').strip_prefix("$(") {
+                Some(inner) if !inner.is_empty() => tok = inner,
+                _ => continue,
+            }
+        }
+        let base = tok.rsplit(['/', '\\']).next().unwrap_or(tok);
+        let base = base.strip_suffix(".exe").unwrap_or(base);
+        return Some(base.trim_end_matches([')', '"', '`']).to_string());
+    }
+    None
+}
+
+/// Text tools whose job a tomlctl global output option already does.
+fn is_text_tool(word: &str) -> bool {
+    const TOOLS: &[&str] = &[
+        "python", "node", "jq", "head", "tail", "tr", "cut", "sed", "awk", "grep",
+    ];
+    TOOLS.contains(&word) || word.starts_with("python")
+}
+
+/// The file operand of a `tomlctl set` command, as written. Global options
+/// may precede the subcommand; a `--flag value` pair is stepped over.
+fn set_target(text: &str) -> Option<String> {
+    let tokens = shell_words::split(text)
+        .unwrap_or_else(|_| text.split_whitespace().map(str::to_string).collect());
+    let start = tokens.iter().position(|t| t.ends_with("tomlctl"))?;
+    let mut prev_takes_value = false;
+    let mut rest = tokens[start + 1..].iter();
+    while let Some(tok) = rest.next() {
+        if tok.starts_with('-') {
+            prev_takes_value = tok.starts_with("--") && !tok.contains('=');
+            continue;
+        }
+        if tok == "set" {
+            return rest.next().cloned();
+        }
+        if !std::mem::take(&mut prev_takes_value) {
+            return None;
+        }
+    }
+    None
+}
+
+/// One guidance-canon breach: (file, line, rule name, logical line).
+type GuidanceViolation = (String, usize, &'static str, String);
+
+fn guidance_lint_fence(rel: &str, fence: &BashFence, out: &mut Vec<GuidanceViolation>) {
+    let mut set_files: Vec<String> = Vec::new();
+    let mut heredoc_end: Option<String> = None;
+
+    for logical in &fence.lines {
+        // A heredoc body is payload, not shell: it is neither linted nor
+        // allowed to masquerade as commands.
+        if let Some(delim) = &heredoc_end {
+            if logical.text.trim() == delim {
+                heredoc_end = None;
+            }
+            continue;
+        }
+        let mut flag = |rule: &'static str| {
+            out.push((
+                rel.to_string(),
+                logical.line,
+                rule,
+                logical.text.trim().to_string(),
+            ));
+        };
+
+        if logical.text.contains("items next-id") {
+            flag("items-next-id");
+        }
+
+        let commands = simple_commands(&logical.text);
+        let is_tomlctl =
+            |cmd: &SimpleCommand| command_word(&cmd.text).as_deref() == Some("tomlctl");
+        let piped = |cmd: &SimpleCommand| matches!(cmd.joint, Joint::Pipe | Joint::PipeStderr);
+
+        for (i, cmd) in commands.iter().enumerate() {
+            let downstream = commands.get(i + 1).filter(|n| piped(n));
+            if is_tomlctl(cmd) {
+                let stderr_redirect = ["2>&1", "2>/dev/null", "2> /dev/null"]
+                    .iter()
+                    .any(|r| cmd.text.contains(r))
+                    || downstream.is_some_and(|n| n.joint == Joint::PipeStderr);
+                if stderr_redirect {
+                    flag("stderr-redirect");
+                }
+                if downstream
+                    .and_then(|n| command_word(&n.text))
+                    .is_some_and(|w| is_text_tool(&w))
+                {
+                    flag("pipe-to-text-tool");
+                }
+                if let Some(file) = set_target(&cmd.text) {
+                    if set_files.contains(&file) {
+                        flag("repeated-set");
+                    } else {
+                        set_files.push(file);
+                    }
+                }
+            }
+            if cmd.heredoc.is_some() {
+                let feeds_tomlctl = commands[i..]
+                    .iter()
+                    .enumerate()
+                    .take_while(|(k, c)| *k == 0 || piped(c))
+                    .any(|(_, c)| is_tomlctl(c));
+                if feeds_tomlctl {
+                    flag("heredoc-into-tomlctl");
+                }
+            }
+        }
+
+        heredoc_end = commands
+            .iter()
+            .find_map(|c| c.heredoc.clone())
+            .filter(|d| !d.is_empty());
+    }
+}
+
+/// Every guidance-canon breach in the bash fences of a file set, skipping a
+/// fence whose info-string carries `ignore-guidance-lint`.
+fn guidance_lint_report(files: &[PathBuf], repo_root: &Path) -> Vec<GuidanceViolation> {
+    let mut out = Vec::new();
+    for file in files {
+        let Ok(text) = fs::read_to_string(file) else {
+            continue;
+        };
+        let rel = lint_rel_path(file, repo_root);
+        for fence in bash_fences(&text) {
+            if !fence.info.contains("ignore-guidance-lint") {
+                guidance_lint_fence(&rel, &fence, &mut out);
+            }
+        }
+    }
+    out
+}
+
+/// Holds the harness markdown to the tomlctl guidance canon the tomlctl skill
+/// states: no tomlctl stdout piped into a text tool, no heredoc feeding
+/// tomlctl, no `2>&1` / `2>/dev/null` on tomlctl, no second `tomlctl set` on
+/// one file in a fence, no `items next-id`. Scans the bash fences
+/// `command_lint` scans; a fence documenting an anti-pattern opts out with
+/// the info-string token `ignore-guidance-lint`.
+#[test]
+fn guidance_lint() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = crate_dir.parent().expect("repo root").to_path_buf();
+    let claude_dir = repo_root.join("claude");
+    if !claude_dir.exists() {
+        eprintln!("guidance_lint: claude/ dir not found, skipping");
+        return;
+    }
+
+    let files = command_lint_scan_set(&claude_dir);
+    let violations = guidance_lint_report(&files, &repo_root);
+    if !violations.is_empty() {
+        let mut msg = format!(
+            "guidance_lint: {} guidance-canon breach(es) in bash fences:\n",
+            violations.len()
+        );
+        for (f, line, rule, text) in &violations {
+            msg.push_str(&format!("  {f}:{line} [{rule}]\n    {text}\n"));
+        }
+        panic!("{msg}");
+    }
+}
+
+/// Each anti-pattern is reported with its file, line and rule — every one,
+/// not only the first — including a heredoc that reaches tomlctl through a
+/// `\` continuation. Asserted over a temp tree so the live corpus cannot make
+/// it pass by accident.
+#[test]
+fn guidance_lint_reports_every_anti_pattern() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let commands = root.join("claude").join("commands");
+    fs::create_dir_all(&commands).unwrap();
+
+    let doc = commands.join("bad.md");
+    fs::write(
+        &doc,
+        "```bash\n\
+         tomlctl tasks show 1 --slug x | python -c 'print(1)'\n\
+         N=$(tomlctl items list <ledger> --count | tr -d ' ')\n\
+         tomlctl items add-many <ledger> --ndjson - <<'EOF'\n\
+         {\"id\":\"R1\"}\n\
+         EOF\n\
+         cat <<'EOF' \\\n\
+           | tomlctl flow record --slug x --ndjson -\n\
+         {}\n\
+         EOF\n\
+         tomlctl flow resolve 2>/dev/null\n\
+         tomlctl --error-format json flow resolve 2>&1\n\
+         tomlctl set <ctx> tasks.total 3\n\
+         tomlctl set <ctx> updated 2026-01-01\n\
+         tomlctl items next-id <ledger> --prefix R\n\
+         ```\n",
+    )
+    .unwrap();
+
+    let violations = guidance_lint_report(std::slice::from_ref(&doc), root);
+    let found: Vec<(usize, &str)> = violations.iter().map(|v| (v.1, v.2)).collect();
+    assert_eq!(
+        found,
+        vec![
+            (2, "pipe-to-text-tool"),
+            (3, "pipe-to-text-tool"),
+            (4, "heredoc-into-tomlctl"),
+            (7, "heredoc-into-tomlctl"),
+            (11, "stderr-redirect"),
+            (12, "stderr-redirect"),
+            (14, "repeated-set"),
+            (15, "items-next-id"),
+        ],
+        "{violations:?}"
+    );
+    assert!(violations.iter().all(|v| v.0 == "claude/commands/bad.md"));
+}
+
+/// The canon's legal forms pass: tomlctl piped into tomlctl, a `printf` row
+/// pipe into tomlctl, text tools on non-tomlctl output, a heredoc feeding
+/// something else (whose body is not linted), one `set` per file, and any
+/// anti-pattern inside a fence tagged `ignore-guidance-lint`.
+#[test]
+fn guidance_lint_accepts_the_canon_forms() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let commands = root.join("claude").join("commands");
+    fs::create_dir_all(&commands).unwrap();
+
+    let doc = commands.join("good.md");
+    fs::write(
+        &doc,
+        "```bash\n\
+         tomlctl tasks train --slug x --ndjson | tomlctl flow record --slug x --ndjson -\n\
+         printf '%s\\n' '{\"a\":1}' | tomlctl backlog check --ndjson -\n\
+         git diff --cached --stat | tail -1\n\
+         tomlctl items list <ledger> --where 'summary~a|b' --template '{id} | {file}'\n\
+         git commit -F - <<'EOF'\n\
+         tomlctl items list x | jq .\n\
+         EOF\n\
+         tomlctl set <ctx> tasks.total 3 updated 2026-01-01\n\
+         tomlctl set <other> status done\n\
+         # tomlctl output is never piped into grep\n\
+         ```\n\
+         \n\
+         ```bash ignore-guidance-lint\n\
+         tomlctl --error-format json flow resolve 2>&1\n\
+         tomlctl items next-id <ledger>\n\
+         ```\n",
+    )
+    .unwrap();
+
+    let violations = guidance_lint_report(std::slice::from_ref(&doc), root);
+    assert!(violations.is_empty(), "{violations:?}");
 }
 
 /// One flag cell of a `| Flag | … |` table, carrying the subcommand path the

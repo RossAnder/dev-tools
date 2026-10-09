@@ -23,10 +23,10 @@ If the diff is empty, run `git status` and halt with: _"Nothing staged. Run `git
 Resolve the active flow (best-effort, non-blocking):
 
 ```bash
-tomlctl flow resolve --branch "$(git branch --show-current)" 2>/dev/null
+tomlctl flow resolve --branch "$(git branch --show-current)"
 ```
 
-Capture the resolved slug (if any) for the Phase 4 warning. Flow-less invocation is fine — `/commit` never writes to `execution-record.toml` and does not require a flow.
+A non-zero exit means no flow resolved. Capture the resolved slug (if any) for the Phase 4 warning. Flow-less invocation is fine — `/commit` never writes to `execution-record.toml` and does not require a flow.
 
 ## Phase 2: Invoke the `commit-conventions` skill (`claude/skills/commit-conventions/SKILL.md`)
 
