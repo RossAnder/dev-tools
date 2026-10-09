@@ -42,10 +42,10 @@ Finite state machine RED → GREEN → REFACTOR → cycle decision (loop or stop
 **RED**: author ONE failing test (`test-author` skill), then dispatch the `verification` agent (`subagent_type: "verification"`) with the parent's `test:` line as its one command — no `rerun:` and no `transient:`, since a retry exists to turn a failure green — and never run it in the main conversation. Require `outcome: fail`, with the new test among its `failed_ids:` when the block carries them: `pass` or `flaky` means the test does not reliably fail, so revise it; `timeout` proves nothing, so re-dispatch with a larger `timeout:`; a failure naming only other tests is a broken baseline, so halt. Append a `verification` entry with `outcome=fail`:
 
 ```bash
-tomlctl flow record --slug <parent-slug>-tdd-<NNN> --type verification --set agent=tdd --set task_ref=tdd-cycle-<NNN>-<short-name> --set command='<test-line>' --set outcome=fail --set-json failed_ids='["<test-id>"]' --set summary='RED: <test name> fails'
+tomlctl flow record --slug <parent-slug>-tdd-<NNN> --type verification --set agent=tdd --set task_ref=tdd-cycle-<NNN>-<short-name> --set-file command=<command-file> --set outcome=fail --set-json failed_ids='["<test-id>"]' --set-file summary=<summary-file>
 ```
 
-Drop `--set-json failed_ids` when the block carries none. Commit `red: <cycle-slug>`. Capture `red_test_fingerprint` **POST-COMMIT** from the `red:` commit's tree (NOT the working tree), excluding snapshot artifacts (`**/__snapshots__/**`, `*.snap*`, `**/snapshots/**`, `*.snapshot`, `.snap.new`). Fingerprint pipeline (single source of truth):
+Write the `test:` line to `<command-file>` and `RED: <test name> fails` to `<summary-file>` with the Write tool first — both come from the plan and the test, not from a fixed vocabulary, so neither is pasted into a shell argument. Drop `--set-json failed_ids` when the block carries none. Commit `red: <cycle-slug>`. Capture `red_test_fingerprint` **POST-COMMIT** from the `red:` commit's tree (NOT the working tree), excluding snapshot artifacts (`**/__snapshots__/**`, `*.snap*`, `**/snapshots/**`, `*.snapshot`, `.snap.new`). Fingerprint pipeline (single source of truth):
 
 ```
 git ls-tree -r <red-commit> -- <test-glob> | sha256sum | awk '{print $1}'

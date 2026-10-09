@@ -90,7 +90,7 @@ tomlctl tasks add --slug <slug> --title "Extract the token reader" --effort S --
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--title` | text | Row title; the `ref` is derived from it. Required. Empty, or carrying no slug characters, errors. | — |
+| `--title` / `--title-file` | text / path | Row title; the `ref` is derived from it. One of the pair is required, and they are mutually exclusive. The file form drops a leading BOM and one trailing newline, as `--set-file` does. Empty, or carrying no slug characters, errors. | — |
 | `--effort` | `S` \| `M` \| `L` | Validated after parsing, so an unrecognised value is a `kind=validation` error rather than clap usage prose. Required. | — |
 | `--files` | comma-separated paths | Repo-relative paths the task edits. | empty |
 | `--needs` | comma-separated ids | Dependency edges. | empty |
@@ -100,6 +100,10 @@ tomlctl tasks add --slug <slug> --title "Extract the token reader" --effort S --
 | `--action` / `--action-file` | text / path | Action body, literal or from a file. Mutually exclusive. | empty |
 | `--detail` / `--detail-file` | text / path | Detail body. Mutually exclusive. | empty |
 | `--acceptance` / `--acceptance-file` | text / path | Acceptance body. Mutually exclusive. | empty |
+
+Agent-written text belongs in the file forms: a backtick or `$(…)` inside a quoted shell
+argument executes, and an apostrophe ends the quote. Stage it with the Write tool and pass
+`--title-file`, `--action-file` and so on.
 
 A title colliding with a stored `ref` takes the first free `-2` / `-3` suffix rather than
 replaying the document-order numbering, which would re-derive a suffix another row holds.

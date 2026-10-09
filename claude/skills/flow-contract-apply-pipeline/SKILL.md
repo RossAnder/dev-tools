@@ -314,8 +314,9 @@ the observation in its prompt. A second `stash-required` for the same item goes 
 ## Interim checkpoint
 
 After the Step 4.5 vet and the Step 4.6 routing (and their re-dispatches), persist non-risky
-transitions in a single atomic `tomlctl items apply <ledger> --ops - --on-stale skip --no-stamp` call, each op carrying
-`"expect": {"status": "<status read at Step 1>"}` (the stale-write guard under Ledger mutation).
+transitions in a single atomic `tomlctl items apply <ledger> --ops '@<ops-path>' --on-stale skip --no-stamp` call, each op carrying
+`"expect": {"status": "<status read at Step 1>"}` (the stale-write guard under Ledger mutation). Stage the ops
+array with the Write tool so agent rationale and notes need no shell quoting.
 Non-risky means:
 
 - `<NO-CHANGE>` transitions where agents wrote no bytes and reported the item already in place

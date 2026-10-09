@@ -248,19 +248,19 @@ tomlctl backlog triage B-a1b2c3d4 --reopen --rationale "flow <flow-slug> closed 
 |---|---|---|---|
 | *(positional)* | ids, comma- or space-separated | Items to transition. At least one required. | — |
 | `--promote` | — | Status → `promoted`; takes `--to`. | — |
-| `--dismiss` | — | Status → `dismissed`; takes `--reason`. | — |
-| `--resolve` | — | Status → `resolved`; takes `--resolution`. | — |
-| `--reopen` | — | Status → `open`; **requires** `--rationale`. | — |
+| `--dismiss` | — | Status → `dismissed`; takes `--reason` or `--reason-file`. | — |
+| `--resolve` | — | Status → `resolved`; takes `--resolution` or `--resolution-file`. | — |
+| `--reopen` | — | Status → `open`; **requires** `--rationale` or `--rationale-file`. | — |
 | `--to` | slug or plan path | The promotion target. Must resolve to an existing flow or plan — see below. | none |
 | `--external` | — | Store `--to` as `external:<REF>` without resolving it. Requires `--promote`. | off |
 | `--allow-closed` | — | Accept a `--to` flow at `review` or `complete`. Requires `--promote`. | off |
-| `--reason` | text | Companion to `--dismiss`. | none |
-| `--resolution` | text | Companion to `--resolve`. | none |
-| `--rationale` | text | Companion to `--reopen`. | none |
+| `--reason` / `--reason-file` | text / path | Companion to `--dismiss`. Mutually exclusive. Each `-file` form drops a leading BOM and one trailing newline, as `--set-file` does; pass agent-written or user-supplied wording that way, staged with the Write tool, since a backtick or `$(…)` inside a quoted shell argument executes. A fixed literal can stay inline. | none |
+| `--resolution` / `--resolution-file` | text / path | Companion to `--resolve`. Mutually exclusive. | none |
+| `--rationale` / `--rationale-file` | text / path | Companion to `--reopen`. Mutually exclusive. | none |
 | `--expect-status` | status | Move only ids still at this status; stale ids are left untouched and reported under `skipped_stale`. | none |
 
 The four mode flags are a required, mutually-exclusive group: exactly one per invocation.
-`--rationale` is enforced at the parser rather than the validator because `reopen_rationale`
+`--rationale` (or its file form) is enforced at the parser rather than the validator because `reopen_rationale`
 is the only companion an `open` item may carry, so a bare `--reopen` would write a row the
 validator then rejects. Without `--expect-status` triage ignores a row's current status, so
 any mode applies to any row, and re-promoting a `promoted` row moves its claim.

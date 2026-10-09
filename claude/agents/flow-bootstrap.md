@@ -75,7 +75,7 @@ Run the steps below in order. Stop early on the first hard error and emit `{"ok"
 
 5. **Plans directory (conditional).** If `command` is one of `plan-new`, `plan-update`, or `review-plan`, invoke:
 
-   ```
+   ```bash
    tomlctl json get .claude/settings.json plansDirectory --json --strict-read
    ```
 

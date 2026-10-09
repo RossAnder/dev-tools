@@ -26,7 +26,7 @@ Resolve the active flow (best-effort, non-blocking):
 tomlctl flow resolve --branch "$(git branch --show-current)"
 ```
 
-A non-zero exit means no flow resolved. Capture the resolved slug (if any) for the Phase 4 warning. Flow-less invocation is fine — `/commit` never writes to `execution-record.toml` and does not require a flow.
+The command exits 0 whether or not a flow resolved; branch on the `resolved` field of its output (`false` means no flow resolved). A non-zero exit is a real error to surface. Capture the resolved slug (if any) for the Phase 4 warning. Flow-less invocation is fine — `/commit` never writes to `execution-record.toml` and does not require a flow.
 
 ## Phase 2: Invoke the `commit-conventions` skill (`claude/skills/commit-conventions/SKILL.md`)
 

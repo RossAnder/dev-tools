@@ -383,10 +383,10 @@ Hand an item to a flow that is picking it up:
 tomlctl backlog triage B-1a2b3c4d --promote --to <slug>
 ```
 
-Resolve an item a commit fixed outright; the exit code is the result, so `-q` drops the envelope:
+Resolve an item a commit fixed outright, with the `<sha>: <what changed>` note written to a file by the Write tool first; the exit code is the result, so `-q` drops the envelope:
 
 ```bash
-tomlctl backlog triage B-1a2b3c4d --resolve --resolution "<sha>: <what changed>" -q
+tomlctl backlog triage B-1a2b3c4d --resolve --resolution-file <resolution-file> -q
 ```
 
 Resolve the promotions a flow has delivered:

@@ -133,7 +133,7 @@ The `tasks`, `backlog`, `inputs` and `agents` writes stamp their own stores and 
 | `--set-file` | `KEY=PATH` | The UTF-8 text of the file, with one leading byte-order mark and one trailing newline (`\n` or `\r\n`) stripped; every other byte is kept. `-` reads stdin, under the same one-`-`-per-invocation rule and 32 MiB cap as a `--json -` payload. |
 
 - Each flag splits on its first `=`, so a value may itself contain `=`.
-- A dotted KEY nests: `--set meta.owner=ross` writes `{"meta":{"owner":"ross"}}`.
+- On `items add`, `array-append` and `flow record` a dotted KEY nests: `--set meta.owner=ross` writes `{"meta":{"owner":"ross"}}`. `items update` refuses a dotted KEY with `kind=validation`, because it replaces each top-level field whole and `meta.owner` would drop the rest of `meta`; pass the whole table with `--set-json meta=…`.
 - One KEY named twice, by the same flag or across the three, is a `kind=validation` error.
 - The flags merge over an optional `--json` base object, nested objects included, and the flags win. With a field flag present, `--json` is optional.
 

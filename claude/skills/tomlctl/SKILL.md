@@ -22,7 +22,7 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Append one item, minting its id (field flags; prose staged with the Write tool) | `tomlctl items add <file> --id-prefix R --set severity=major --set-file description=<path> --get id` |
 | Append one item from a staged JSON payload | `tomlctl items add <file> --id-prefix R --json '@<path>' --get id` |
 | Batch append homogeneous items | `tomlctl items add-many <file> --id-prefix R --ndjson <path>` |
-| Apply heterogeneous batch (add/update/remove), minting ids for id-less adds | `tomlctl items apply <file> --id-prefix R --ops <path>` |
+| Apply heterogeneous batch (add/update/remove), minting ids for id-less adds | `tomlctl items apply <file> --id-prefix R --ops '@<path>'` |
 | Append an execution-record entry (id, date, `task_ref` and caps handled) | `tomlctl flow record --slug <s> --type <t> [--task <id>] --set agent=<a> --set-file summary=<path>` |
 | Group finished tasks into commits | `tomlctl tasks train --slug <s> [--checkpoint <x>]` |
 | Filter items | `tomlctl items list <file> --where status=open` |
@@ -162,7 +162,7 @@ Under `--lines`, a report wrapped in an object emits its other fields as one hea
 One rule set for every skill, command and agent that drives tomlctl. Other documents cite this section rather than restating it; [write.md](references/write.md) carries the write-side detail.
 
 - **Shaping output**: the [output options](#output-options) only. Never pipe tomlctl's stdout into `python`, `node`, `jq`, `head`, `tail`, `tr`, `cut`, `sed`, `awk` or `grep`.
-- **One entry**: field flags — `--set K=V` (a string; a date key still lands as a TOML date), `--set-json K=JSON`, `--set-file K=PATH` — on `items add` / `update`, `array-append`, `set` and `flow record`. Write prose to a file with the Write tool and pass it with `--set-file`. Git Bash rewrites a `--set` value that starts with `/` into a Windows path, so pass such a value through `--set-file`, or prefix the call with `MSYS_NO_PATHCONV=1`.
+- **One entry**: field flags — `--set K=V` (a string; a date key still lands as a TOML date), `--set-json K=JSON`, `--set-file K=PATH` — on `items add` / `update`, `array-append` and `flow record`. On `set`, `--set PATH=VALUE` infers its type like the positional pair, and `--set-json` / `--set-file` are not accepted. Write prose to a file with the Write tool and pass it with `--set-file`. Git Bash rewrites a `--set` value that starts with `/` into a Windows path, so pass such a value through `--set-file`, or prefix the call with `MSYS_NO_PATHCONV=1`.
 - **Verbs without field flags** (`backlog add` / `check`, `json set`, `inputs`, `tasks add-many`): inline single-line JSON for a short machine-built value; otherwise stage the payload with the Write tool and pass `--json '@<path>'` or `--ndjson <path>`. Several backlog probes go through one `backlog check --ndjson <path>`.
 - **Many entries or whole payloads**: stage them with the Write tool and pass `--ndjson <path>`, or `--json '@<path>'` — quoted, because PowerShell drops an unquoted `@path`. The single-line `printf '%s\n' '<row>' … | tomlctl … -` pipe stays legal for a few short machine-built rows.
 - **No multi-line heredocs** into tomlctl.

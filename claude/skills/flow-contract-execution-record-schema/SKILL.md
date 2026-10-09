@@ -98,13 +98,13 @@ The tool enforces, so writers do none of this by hand:
 
 One entry prints `{ok,id,type,task_ref,truncated,dropped_files,scope_warnings,path}`. `--dry-run` runs every check and reports the id it would mint, writing nothing.
 
-Several entries go in one all-or-nothing call: stage one JSON object per line with the Write tool and pass `--ndjson <path>`. `--type`, `--task`, `--json` and the field flags then act as per-row defaults, and each row's own keys win. It prints `{ok,ids,path,rows:[…]}`, the ids minted as a contiguous run in row order.
+Several entries go in one all-or-nothing call: stage one JSON object per line with the Write tool and pass `--ndjson <path>`. `--json` and the field flags then act as per-row defaults that a row's own keys override; `--type` and `--task` apply to every row, and a row whose own `type` or `task_ref` disagrees is refused. It prints `{ok,ids,path,rows:[…]}`, the ids minted as a contiguous run in row order.
 
 ```bash
 tomlctl flow record --slug <slug> --set agent=implement --ndjson <staged-rows-path>
 ```
 
-Readers outside `flow record` (`items list`, `items get`, `render-progress-log`'s documented projections) take the resolved `[artifacts].execution_record` path, never the bare filename `execution-record.toml`, which resolves against the CWD.
+`render-progress-log`, `flow doctor` and `flow ensure-artifact --kind execution-record` resolve the record from `--slug` the same way `flow record` does. A custom `[artifacts].execution_record` that stays under the repo root is supported, and is seeded with the same skeleton whatever its file name; `flow doctor` reports it as a warning rather than an `artifacts-canonical` failure, because `tasks snapshot` (glimpse) reads only the sibling `execution-record.toml`. Readers given a file path (`items list`, `items get`, and the projections `render-progress-log` documents below) take the resolved `[artifacts].execution_record` path, never the bare filename `execution-record.toml`, which resolves against the CWD.
 
 Append order is preserved by tomlctl's exclusive `.lock` sidecar + atomic tempfile + rename.
 
@@ -155,19 +155,19 @@ The command fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwritin
    No timestamps, no slug substitution — the marker is a fixed string.
 
 2. **Completed Items table** — sourced from
-   ```
+   ```bash
    tomlctl items list <record> --where type=task-completion --where status=done --sort-by date:asc,id:asc --verify-integrity
    ```
    Columns match the existing `PROGRESS-LOG.md` schema: `| # | Item | Date | Commit | Notes |`. `Item` is the task_ref slug (or summary if richer), `Date` is the entry's `date`, `Commit` is the first SHA in `commits[]` formatted as backticks, `Notes` may include `files[]` count or other metadata. Rows ordered by `(date asc, id asc)` — deterministic across migrate back-fills that insert out of chronological order.
 
 3. **Deviations table** — sourced from
-   ```
+   ```bash
    tomlctl items list <record> --where type=deviation --sort-by date:asc,id:asc --verify-integrity
    ```
    Columns match the existing schema: `| # | Deviation | Date | Commit | Rationale | Supersedes |`. `#` is the entry `id` (E{n}); `Supersedes` shows the value of `supersedes_entry` when present (otherwise `—`). Rows ordered by `(date asc, id asc)`. Latest-per-supersession-chain is rendered (see `### Append-only + supersession` above); older superseded entries remain in the log for audit but are not surfaced as primary rows.
 
 4. **Deferrals table** — sourced from
-   ```
+   ```bash
    tomlctl items list <record> --where type=deferral --sort-by date:asc,id:asc --verify-integrity
    ```
    Columns match the existing schema: `| # | Item | Deferred From | Date | Reason | Re-evaluate When |`. `#` is the entry `id` (E{n}); `Item` and `Deferred From` map from `summary` and `task_ref`. Rows ordered by `(date asc, id asc)`.
@@ -175,7 +175,7 @@ The command fully regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` (overwritin
 5. **Session Log table** with the literal column header `| Date | Changes | Commits |`. The command builds this table by pre-sorting then grouping:
 
    - **Pre-sort (mandatory).** The command sorts the log chronologically — equivalent to
-     ```
+     ```bash
      tomlctl items list <record> --sort-by date:asc --verify-integrity
      ```
      — **before** grouping. Without this pre-sort, `--group-by date` would bucket the log in *insertion order* — empirically confirmed: `--group-by` does not re-order; it just collapses adjacent matches by the bucket key. Documented here so future maintainers don't drop it as "redundant".
@@ -195,7 +195,7 @@ Cross-reorder idempotency comes from three order-insensitive operations: the cou
 
 `[tasks].completed` in `context.toml` is derived from the log on every write that touches `[tasks]`:
 
-```
+```bash ignore-command-lint
 completed = tomlctl items list <record> --where type=task-completion --where status=done --count-distinct task_ref --raw --verify-integrity
 ```
 

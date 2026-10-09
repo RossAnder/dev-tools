@@ -172,7 +172,9 @@ tomlctl flow list --status draft
 
 Appends one validated entry, or an all-or-nothing batch, to a flow's execution record: the file
 `context.toml` `[artifacts].execution_record` names, else
-`.claude/flows/<slug>/execution-record.toml`. It is the only write path for that file. What each
+`.claude/flows/<slug>/execution-record.toml`. A custom `execution_record` path that stays under the
+repo root is supported — `flow doctor` reports it as a warning, not a failure — but `tasks snapshot`
+reads only the sibling `execution-record.toml`. It is the only write path for that file. What each
 entry type must carry is the `flow-contract-execution-record-schema` skill's; this is the flag
 table and the checks the verb enforces.
 
@@ -190,10 +192,10 @@ tomlctl flow record --slug <slug> --set agent=implement --ndjson <staged-file> -
 | `--type` | type | `task-completion`, `verification`, `deviation`, `deferral`, `reconcile`, `status-transition` or `checkpoint`. Required unless every `--ndjson` row carries its own. | — |
 | `--task` | id | Task id in the flow's `tasks.toml`; that row's `ref` becomes `task_ref`. A payload `task_ref` that disagrees is refused with `kind=validation`. | none |
 | `--json` | object, `@<path>` or `-` | Base payload; the field flags are laid over it and win. | none |
-| `--set` | `KEY=VALUE`, repeatable | A string field; a dotted KEY nests. A digit string for `retries` or `duration_s` is stored as an integer. | none |
-| `--set-json` | `KEY=JSON`, repeatable | Any JSON value — the form for the array fields `files`, `commits` and `failed_ids`. | none |
+| `--set` | `KEY=VALUE`, repeatable | A string field; a dotted KEY nests. A digit string for `retries`, `duration_s` or `findings_count` is stored as an integer. | none |
+| `--set-json` | `KEY=JSON`, repeatable | Any JSON value — the form for the array fields `files`, `commits`, `failed_ids` and `commits_checked`. | none |
 | `--set-file` | `KEY=PATH`, repeatable | The text of a file (`-` reads stdin), less one leading BOM and one trailing newline — the form for prose. | none |
-| `--ndjson` | path, `@<path>` or `-` | One entry per line, written all or nothing. `--type`, `--task`, `--json` and the field flags are defaults for every row, and a row's own keys win. | none |
+| `--ndjson` | path, `@<path>` or `-` | One entry per line, written all or nothing. `--json` and the field flags are defaults a row's own keys override; `--type` and `--task` apply to every row, and a row whose own `type` or `task_ref` disagrees is refused with `kind=validation`. | none |
 | `--dry-run` | — | Validate and report the ids that would be minted; write nothing. | off |
 
 A key given twice across the field flags is `kind=validation`. Under Git Bash a `--set` value
@@ -205,10 +207,13 @@ What the verb does to every entry before the write:
 - **Requires** `type`, `date`, `agent` and `summary`, plus the type's own fields; a missing one is
   `kind=validation` naming it. `commits` is optional on `task-completion` and `deviation`.
 - **Checks enums** on `task-completion` (`status`, `dispatch_tier`, `dispatch_agent`, `vet`),
-  `verification` (`outcome`) and `reconcile` (`direction`). A `checkpoint` entry is free-form
-  beyond the required four, and keys the contract does not name pass through.
-- **Checks types**: `retries` and `duration_s` must be integers; `files`, `commits` and
-  `failed_ids` must be arrays, and a string there is refused with a hint naming `--set-json`.
+  `verification` (`outcome`), `reconcile` (`direction`) and `status-transition` (`from_status`
+  and `to_status`, each one of `draft`, `in-progress`, `review`, `complete`). A `checkpoint`
+  entry is free-form beyond the required four, and keys the contract does not name pass through.
+- **Checks types**: `retries`, `duration_s` and `findings_count` must be non-negative integers,
+  and a digit string there is stored as the integer; `files`, `commits`, `failed_ids` and
+  `commits_checked` must be arrays, and a string there is refused with a hint naming
+  `--set-json`.
 - **Caps text** rather than refusing it: `summary` at 1024 bytes and `description`, `rationale`,
   `original_intent`, `reason` and `reevaluate_when` at 8192, cut at a character boundary and
   ending ` (truncated)`; `failed_ids` keeps its first 20. Each cut field is named in `truncated`.
@@ -231,7 +236,7 @@ Re-render `PROGRESS-LOG.md` with `flow render-progress-log` after recording.
 
 ### `flow render-progress-log`
 
-Regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` deterministically. The output is a pure function of two inputs: the flow's `execution-record.toml` and the flow title (read from `context.toml`'s `plan_path` → the plan file's `# Plan:` header). Call this verb rather than re-deriving the tables by hand.
+Regenerates `.claude/flows/<slug>/PROGRESS-LOG.md` deterministically. The output is a pure function of two inputs: the flow's execution record (the file `context.toml` `[artifacts].execution_record` names, else `execution-record.toml` in the flow dir) and the flow title (read from `context.toml`'s `plan_path` → the plan file's `# Plan:` header). Call this verb rather than re-deriving the tables by hand.
 
 ```bash
 tomlctl flow render-progress-log --slug <slug>

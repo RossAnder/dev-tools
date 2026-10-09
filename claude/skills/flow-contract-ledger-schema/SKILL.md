@@ -216,11 +216,11 @@ If `tomlctl` is unavailable, install it: `cargo install --path tomlctl`.
 When re-serialising an item, emit keys in this order:
 `id, file, line, symbol, severity, effort, category, summary, description, evidence, first_flagged, rounds, related, status, <disposition-specific fields>, flow`
 
-The file-level keys come first: `schema_version`, `last_updated`, then `[[items]]` entries. `schema_version` MUST be preserved on every write.
+The file-level keys come first: `schema_version`, `last_updated`, then `[[items]]` entries. `schema_version` MUST be preserved on every write. When present, a root `[id_high_water]` table follows them: one `prefix = n` integer per id prefix, the highest number ever removed. `tomlctl` writes it; never hand-edit it.
 
 ### Item-ID assignment and dedup
 
-- **ID assignment**: R-numbers for review items, O-numbers for optimise items. New items get the next number after the highest existing one, minted by the write itself (`--id-prefix R|O` on `items add` / `add-many` / `items apply`). Never hand-compute an id. Never renumber. IDs retired by deletion are never reused.
+- **ID assignment**: R-numbers for review items, O-numbers for optimise items. New items get the next number after the highest existing one, minted by the write itself (`--id-prefix R|O` on `items add` / `add-many` / `items apply`). Never hand-compute an id. Never renumber. IDs retired by deletion are never reused: a removal records its number in the root `[id_high_water]` table, and minting numbers from above both the highest existing id and that mark.
 - **Dedup rule (same for new-item merge AND regression detection)**: two findings match iff they have the **same `file`** AND (**same non-empty `symbol`** OR **exact `summary` string match**). No fuzzy matching, no keyword clustering. When in doubt, new ID.
 - **Merge behaviour**:
   - New finding matches an `open` item → reuse the existing ID; increment `rounds` (the write stamps the ledger's `last_updated`).

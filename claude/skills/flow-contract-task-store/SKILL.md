@@ -394,8 +394,10 @@ That is the whole point of the store: `## Tasks` is the largest single thing an 
 `--with absent` is the orchestrator's half of the same fetch. Before dispatching, it records which of each row's claimed files do not exist yet, in one read for the whole round, so a later rollback can tell a file the task created from one it edited:
 
 ```bash
-tomlctl tasks show <id>,<id> --slug <slug> --with absent --template 'dispatch {id}: absent at dispatch — {absent}'
+tomlctl tasks show <id>,<id> --slug <slug> --with absent --select id,absent --lines
 ```
+
+`--lines` prints one compact row per line, and an empty `absent` array (`[]`) means every claimed file already exists. The orchestrator turns each row into the console line `dispatch <id>: absent at dispatch — <paths>`, or `— none` for an empty `absent`.
 
 ### 13. Degradation is a halt, never a fallback
 

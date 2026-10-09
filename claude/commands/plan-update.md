@@ -126,8 +126,10 @@ User-invoked; the ONLY path that may set `status = "complete"`. Run once the use
 6. Append a `type=status-transition` entry with `from_status` / `to_status` through `flow record`. Its `summary` MUST record whether the warn-gate fired and was overridden (`"User explicitly marked flow complete via /plan-update <slug> complete"`, or the same with `(warn-if-incomplete gate overridden with N open items)` appended), then append `; resolved K backlog item(s)` when the step-4 reconcile applied any, and `; reopened K backlog item(s)` or `; kept K backlog item(s) promoted` for the backlog answer:
 
    ```bash
-   tomlctl flow record --slug <slug> --type status-transition --set agent=plan-update --set from_status=<old_status> --set to_status=complete --set summary='<summary>'
+   tomlctl flow record --slug <slug> --type status-transition --set agent=plan-update --set from_status=<old_status> --set to_status=complete --set-file summary=<summary-file>
    ```
+
+   Write the summary to `<summary-file>` with the Write tool first.
 7. **Reap the flow's transient artefacts.** Completion is the only point at which a flow's scaffolding is provably dead, and it is the only step that owns their deletion — every other retention rule in the harness is next-run-triggered and therefore never fires on a flow's final run. Two sweeps, both after the step-5/6 writes have landed:
 
    - **Review siblings.** Delete `<plan>.premerge.md`, `<plan>.revised.md`, and `<plan>.revised.prev.md` for every plan document in scope, including inside `docs/plans/archive/**` for this slug. Each is a near-duplicate of a document git already holds. Report `reaped N review sibling(s)`.
@@ -141,20 +143,20 @@ User-invoked; the ONLY path that may set `status = "complete"`. Run once the use
 
 #### `deviation` — Record a deviation
 
-Gather evidence from the conversation and git history — which task was affected, the original intent, what was actually done, and why — and confirm with the user before writing. Append a `type=deviation` entry to `<record>` through `flow record`, with `task_ref`, `original_intent`, `rationale`, and `commits[]` beyond the always-required fields; add `--set supersedes_entry=E<n>` when superseding an earlier deviation (supersession is the forward pointer, never number re-use). `--task <id>` copies the affected store row's `ref` into `task_ref`. Write the planned and actual approaches to two files with the Write tool first:
+Gather evidence from the conversation and git history — which task was affected, the original intent, what was actually done, and why — and confirm with the user before writing. Append a `type=deviation` entry to `<record>` through `flow record`, with `task_ref`, `original_intent`, `rationale`, and `commits[]` beyond the always-required fields; add `--set supersedes_entry=E<n>` when superseding an earlier deviation (supersession is the forward pointer, never number re-use). `--task <id>` copies the affected store row's `ref` into `task_ref`. Write the planned approach, the rationale and what was actually done to three files with the Write tool first:
 
 ```bash
-tomlctl flow record --slug <slug> --type deviation --task <id> --set agent=plan-update --set summary='<done>' --set-file original_intent=<intent-file> --set-file rationale=<rationale-file> --set-json commits='["<sha>"]' --get id
+tomlctl flow record --slug <slug> --type deviation --task <id> --set agent=plan-update --set-file summary=<summary-file> --set-file original_intent=<intent-file> --set-file rationale=<rationale-file> --set-json commits='["<sha>"]' --get id
 ```
 
 `--get id` prints the minted id bare, for the report or a later `supersedes_entry`. This op MUST NOT mint legacy IDs of any kind. Then re-render `PROGRESS-LOG.md` and update `context.toml` per Step 1.
 
 #### `defer` — Register a deferral
 
-Gather evidence — which task is being deferred, why, and the **re-evaluation trigger**, which must be a concrete observable condition ("when frontend types are next refactored", "when migrating to .NET 11") and never a vague one ("later") — and confirm with the user before writing. Append a `type=deferral` entry with `task_ref`, `reason`, and `reevaluate_when`; `legacy_id = "DF<n>"` is set only by `migrate`, never here. Append it through `flow record`, with the reason and trigger written to files first; mint no legacy IDs:
+Gather evidence — which task is being deferred, why, and the **re-evaluation trigger**, which must be a concrete observable condition ("when frontend types are next refactored", "when migrating to .NET 11") and never a vague one ("later") — and confirm with the user before writing. Append a `type=deferral` entry with `task_ref`, `reason`, and `reevaluate_when`; `legacy_id = "DF<n>"` is set only by `migrate`, never here. Append it through `flow record`, with the summary, reason and trigger written to files first; mint no legacy IDs:
 
 ```bash
-tomlctl flow record --slug <slug> --type deferral --task <id> --set agent=plan-update --set summary='<what is deferred>' --set-file reason=<reason-file> --set-file reevaluate_when=<trigger-file>
+tomlctl flow record --slug <slug> --type deferral --task <id> --set agent=plan-update --set-file summary=<summary-file> --set-file reason=<reason-file> --set-file reevaluate_when=<trigger-file>
 ```
 
 Then re-render and update `context.toml` per Step 1. If every remaining non-complete item is now deferred, set `status = "review"` — never `"complete"`.
@@ -169,8 +171,10 @@ The most comprehensive operation. Launch **two** `subagent_type: "general-purpos
 **Reason thoroughly through reconciliation synthesis** — cross-reference both agents, resolve conflicting evidence, and determine the accurate status of every plan item before writing. Each agent appends its own `type=reconcile` entry through `flow record` with `direction ∈ {forward, reverse}`, `findings_count`, and `commits_checked[]` — the last two by `--set-json`, so the count stays an integer and the commits an array:
 
 ```bash
-tomlctl flow record --slug <slug> --type reconcile --set agent=plan-update --set direction=forward --set-json findings_count=<n> --set-json commits_checked='["<sha>"]' --set summary='<findings>'
-``` Follow-up deviations and deferrals discovered during reconciliation are recorded as separate `type=deviation` / `type=deferral` entries via the ops above — never inlined into the reconcile entries. The reconciler contract applies in full here.
+tomlctl flow record --slug <slug> --type reconcile --set agent=plan-update --set direction=forward --set-json findings_count=<n> --set-json commits_checked='["<sha>"]' --set-file summary=<summary-file>
+```
+
+The findings summary is written to `<summary-file>` with the Write tool first. Follow-up deviations and deferrals discovered during reconciliation are recorded as separate `type=deviation` / `type=deferral` entries via the ops above — never inlined into the reconcile entries. The reconciler contract applies in full here.
 
 Produce the reconciliation report **and apply all updates in the same response** — do not pause for confirmation: agent results are in context now and are lost to compaction if you wait, and the user can review and revert via git. The report covers Status Updates (old → new with commit/file evidence), Unrecorded Deviations (with a suggested `type=deviation` entry), Untracked Changes, Stale Items, **Unrecorded Completions as gap flags that MUST NOT be auto-appended** (per reconciler rule 4 — point the user at `migrate` or at having `/implement` re-record the completion), and Suggested Deferrals with trigger suggestions. Then re-render `PROGRESS-LOG.md` and update `context.toml` in the same write batch per Step 1 — additionally, **refine `scope`** if reconciliation reveals edits outside the original scope (add the new globs, preferring `<dir>/**`; never shrink `scope` unless the user asks), and set `status` to `review` when every item reconciled as done or deferred, else `in-progress`. This op MUST NOT set `complete`.
 
