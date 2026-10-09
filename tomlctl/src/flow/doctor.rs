@@ -333,8 +333,9 @@ fn check_one_flow(
         ));
     }
 
-    // The context doc is read once here: the record path, the task-store
-    // checks and the artifacts / plan-path checks all project from it.
+    // The context doc is parsed once here: the record path, the plan's
+    // task-section probe and the artifacts / plan-path checks all project
+    // from it. The sidecar checks hash the file's bytes separately.
     let context_doc = context_exists.then(|| read_toml(&context_file));
     let parsed_context = context_doc.as_ref().and_then(|parsed| parsed.as_ref().ok());
 
@@ -391,7 +392,12 @@ fn check_one_flow(
         }),
     }
 
-    let plan_declares_tasks = context_exists && super::resolve::plan_declares_tasks(slug);
+    // An unparseable context falls back to the by-slug probe, which reads the
+    // file itself and so reports what it finds there now.
+    let plan_declares_tasks = match parsed_context {
+        Some(doc) => super::resolve::plan_declares_tasks_in(slug, doc),
+        None => context_exists && super::resolve::plan_declares_tasks(slug),
+    };
 
     // 5. Task store existence, observable only for a plan that declares a
     //    task section — a plan with none legitimately carries no store. An
@@ -610,7 +616,7 @@ fn check_plan_path_resolves(slug: &str, doc: &TomlValue, checks: &mut Vec<Check>
         ));
         return;
     };
-    match crate::tasks::context_plan_path(slug) {
+    match crate::tasks::context_plan_path_in(slug, doc) {
         Ok(resolved) if resolved.exists() => {
             checks.push(Check::ok("plan-path-resolves", slug.to_string()))
         }

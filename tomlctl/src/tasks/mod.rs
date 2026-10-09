@@ -65,3 +65,12 @@ pub(crate) use store::{load as load_store, mutate as mutate_store, resolve_store
 pub(crate) fn context_plan_path(slug: &str) -> anyhow::Result<std::path::PathBuf> {
     import_plan::resolve_recorded_plan_path(slug, &schema::Store::default())
 }
+
+/// `context_plan_path` over the flow's already-parsed `context.toml`, for a
+/// caller that holds the doc and would otherwise read the file a second time.
+pub(crate) fn context_plan_path_in(
+    slug: &str,
+    context: &toml::Value,
+) -> anyhow::Result<std::path::PathBuf> {
+    import_plan::resolve_context_plan_path_in(slug, context)
+}

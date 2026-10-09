@@ -590,18 +590,22 @@ fn build_resolved_envelope(
     let artifacts = read_or_compute_artifacts(root, table, slug, warnings);
 
     // Warn on artifact files that are referenced but absent from disk.
-    // `tasks` warns only when the plan declares a task section: a plan with
-    // none legitimately has no store, and every flow predating the store
-    // would otherwise warn in every carrier's bootstrap summary.
-    let expects_tasks = plan_declares_tasks(slug);
+    // A missing `tasks` store warns only when the plan declares a task
+    // section: a plan with none legitimately has no store, and every flow
+    // predating the store would otherwise warn in every carrier's bootstrap
+    // summary. The plan is scanned only once a store is found missing.
+    let mut expects_tasks: Option<bool> = None;
     for (key, rel) in artifacts.to_pairs() {
-        if key == "tasks" && !expects_tasks {
+        let abs = root.join(rel);
+        if abs.exists() {
             continue;
         }
-        let abs = root.join(rel);
-        if !abs.exists() {
-            warnings.push(format!("artifact missing: {key} at {rel}"));
+        if key == "tasks"
+            && !*expects_tasks.get_or_insert_with(|| plan_declares_tasks_in(slug, &doc))
+        {
+            continue;
         }
+        warnings.push(format!("artifact missing: {key} at {rel}"));
     }
 
     // Optional staleness annotation.
@@ -707,10 +711,17 @@ fn read_or_compute_artifacts(
 /// `tasks::markdown`'s, the one the store's own parsers run, so both agree on
 /// which lines can be a heading.
 pub(super) fn plan_declares_tasks(slug: &str) -> bool {
-    let Ok(path) = crate::tasks::context_plan_path(slug) else {
-        return false;
-    };
-    let Ok(src) = std::fs::read_to_string(&path) else {
+    crate::tasks::context_plan_path(slug).is_ok_and(|path| declares_tasks_section(&path))
+}
+
+/// `plan_declares_tasks` over the flow's already-parsed `context.toml`.
+pub(super) fn plan_declares_tasks_in(slug: &str, context: &TomlValue) -> bool {
+    crate::tasks::context_plan_path_in(slug, context)
+        .is_ok_and(|path| declares_tasks_section(&path))
+}
+
+fn declares_tasks_section(plan: &Path) -> bool {
+    let Ok(src) = std::fs::read_to_string(plan) else {
         return false;
     };
     crate::tasks::markdown::sections(&src)

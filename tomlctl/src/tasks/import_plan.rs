@@ -1149,6 +1149,14 @@ fn resolve_context_plan_path(slug: &str) -> Result<PathBuf> {
     contained(&format!("`{}`", context_path.display()), &recorded)
 }
 
+/// `resolve_context_plan_path` over a `context.toml` the caller already
+/// parsed, refused with the same wording.
+pub(super) fn resolve_context_plan_path_in(slug: &str, context: &TomlValue) -> Result<PathBuf> {
+    let context_path = flow_dir(slug)?.join(CONTEXT_FILE);
+    let recorded = recorded_context_plan_path(&context_path, context)?;
+    contained(&format!("`{}`", context_path.display()), &recorded)
+}
+
 /// `resolve_context_plan_path` plus the binding a reader needs: the document
 /// a render rewrites must be the document the store was imported from. An
 /// empty `Store::plan_path` records no import from a file at all, so it binds
@@ -1188,7 +1196,12 @@ fn context_plan_path(slug: &str) -> Result<(PathBuf, String)> {
     let context_path = flow_dir(slug)?.join(CONTEXT_FILE);
     let context = read_toml(&context_path)
         .with_context(|| format!("reading `{}`", context_path.display()))?;
-    let recorded = context
+    let recorded = recorded_context_plan_path(&context_path, &context)?;
+    Ok((context_path, recorded))
+}
+
+fn recorded_context_plan_path(context_path: &Path, context: &TomlValue) -> Result<String> {
+    context
         .get("plan_path")
         .and_then(TomlValue::as_str)
         .filter(|path| !path.is_empty())
@@ -1199,8 +1212,7 @@ fn context_plan_path(slug: &str) -> Result<(PathBuf, String)> {
                 None,
                 format!("`{}` records no `plan_path`", context_path.display()),
             )
-        })?;
-    Ok((context_path, recorded))
+        })
 }
 
 /// The single validation of a recorded `plan_path`. `render` atomic-writes the
