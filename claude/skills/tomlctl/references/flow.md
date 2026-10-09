@@ -100,14 +100,14 @@ tomlctl --error-format json items list /nonexistent/ledger.toml 2>&1 >/dev/null
 # {"error":{"kind":"not_found","message":"...","file":"/nonexistent/ledger.toml","arg":null}}
 ```
 
-Closed taxonomy (every tag site is enumerated; all other `bail!` sites fall through to `other`):
+Closed taxonomy (the table lists representative sites per kind, not every call site; untagged `bail!` sites fall through to `other`):
 
 | `kind` | Emitted from |
 |---|---|
-| `not_found` | `io.rs` — target file missing at the path the caller passed; `flow record` — no `context.toml` for `--slug` |
+| `not_found` | `io.rs` — target file missing at the path the caller passed; `flow record` — no `context.toml` for `--slug`; `backlog triage` — no item with the given id |
 | `integrity` | `integrity.rs` — sidecar hash mismatch or missing under `--verify-integrity` |
 | `parse` | `io.rs` — malformed TOML at the document root |
-| `validation` | `query.rs` / `items.rs` — flag-mutex violations, `items next-id` prefix shape rejections, `--infer-from-file` empty/multi-prefix errors; `flow record` — an entry the execution-record contract refuses |
+| `validation` | `query.rs` / `items.rs` — flag-mutex violations, `items next-id` prefix shape rejections, `--infer-from-file` empty/multi-prefix errors; `flow record` — an entry the execution-record contract refuses; `backlog check --ndjson` — a per-line validation error; `backlog check --summary '@<file>'` — a summary payload the validation refuses |
 | `other` | any untagged error — the downcast returned `None` |
 
 Prefer `--error-format json` + `.error.kind` switching over regex-matching stderr text when branching on error class (e.g. "bootstrap the ledger if missing, bubble up otherwise").

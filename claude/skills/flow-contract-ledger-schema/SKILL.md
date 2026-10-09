@@ -120,7 +120,7 @@ When `/review-apply` or `/optimise-apply` Step 5.5 reverts a batch of transition
 
 ```toml
 [[rollback_events]]
-timestamp = 2026-04-17T14:32:00Z
+timestamp = "2026-04-17T14:32:00Z"
 command = "review-apply"
 cause = "build failure on src/accounting/postings.rs:122"
 items = ["R3", "R7"]
@@ -128,7 +128,7 @@ stash_ref = "3f9c2a7e5b1d4c8e9a0f6b2d7c3e1a5f8b4d9c02"
 ```
 
 Fields:
-- `timestamp` — ISO 8601 date-time (seconds precision).
+- `timestamp` — string, ISO 8601 UTC (seconds precision), e.g. `"2026-04-18T14:32:00Z"`. A TOML string, not a datetime.
 - `command` — `"review-apply"` or `"optimise-apply"`.
 - `cause` — short description (build fail, test regression, or claimed-applied-without-diff).
 - `items` — array of ledger IDs that were reverted back to `status = "open"`.
@@ -142,7 +142,7 @@ When `/review`, `/optimise`, `/review-plan`, `/plan-new`, `/plan-update`, or `/t
 
 ```toml
 [[vet_events]]
-timestamp = 2026-05-08T14:32:00Z
+timestamp = "2026-05-08T14:32:00Z"
 command = "review"
 agent_index = 2
 lens = "security"
@@ -155,7 +155,7 @@ rationale = "R47 cited file:line that does not exist on disk"
 ```
 
 Fields:
-- `timestamp` — ISO 8601 date-time (seconds precision).
+- `timestamp` — string, ISO 8601 UTC (seconds precision), e.g. `"2026-04-18T14:32:00Z"`. A TOML string, not a datetime.
 - `command` — one of `"review"`, `"optimise"`, `"review-plan"`, `"plan-new"`, `"plan-update"`, `"test-bootstrap"`, `"review-apply"`, `"optimise-apply"`.
 - `agent_index` — integer 1..N matching the `Agent-{n}` index in the mandatory console line emitted by step 7 of the `vet-research` block. On an `implement-lite` entry it is the cluster's ordinal instead (`c3` → `3`).
 - `lens` — string. The carrier's canonical lens name, lowercase and hyphenated, as printed in the console line (e.g. `"security"`, `"package-quality"`, `"test-runner"`); `"implement-lite"` on an apply-flow entry. Readers aggregate by exact string, so never a display form (`"Package Quality"`) or an agent label (`"Agent-6"`).
