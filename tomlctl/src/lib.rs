@@ -14,6 +14,8 @@ mod clusters;
 mod convert;
 mod dedup;
 mod errors;
+#[allow(dead_code)]
+mod fields;
 mod flow;
 mod inputs;
 mod integrity;
