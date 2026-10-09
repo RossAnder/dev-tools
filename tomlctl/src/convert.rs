@@ -230,6 +230,35 @@ pub(crate) fn validate_paths<'a>(
     paths: impl IntoIterator<Item = &'a str>,
     flag: &str,
 ) -> Result<()> {
+    validate_row_paths(rows, None, paths, flag)
+}
+
+/// The header a row report's rows were taken from, and the field that held
+/// them: a path that resolves there but not on a row is pointed at `--header`.
+#[derive(Clone, Copy)]
+pub(crate) struct RowHeader<'a> {
+    pub(crate) report: &'a JsonValue,
+    pub(crate) rows_field: &'a str,
+}
+
+impl RowHeader<'_> {
+    fn carries(&self, path: &str) -> bool {
+        let under_rows = path == self.rows_field
+            || path
+                .strip_prefix(self.rows_field)
+                .is_some_and(|rest| rest.starts_with('.'));
+        !under_rows && navigate_json(self.report, wildcard_prefix(path)).is_some()
+    }
+}
+
+/// `validate_paths`, adding a `--header` hint when the unmatched path names a
+/// field of `header` instead of a row field.
+pub(crate) fn validate_row_paths<'a>(
+    rows: &[JsonValue],
+    header: Option<RowHeader<'_>>,
+    paths: impl IntoIterator<Item = &'a str>,
+    flag: &str,
+) -> Result<()> {
     if rows.is_empty() {
         return Ok(());
     }
@@ -260,12 +289,15 @@ pub(crate) fn validate_paths<'a>(
             keys.join(", ")
         };
         let hints = nested_path_hints(rows, p);
-        let hint = if hints.is_empty() {
+        let mut hint = if hints.is_empty() {
             String::new()
         } else {
             let quoted: Vec<String> = hints.iter().map(|h| format!("`{h}`")).collect();
             format!("; did you mean {}?", quoted.join(", "))
         };
+        if header.is_some_and(|h| h.carries(p)) {
+            hint.push_str("; it is a header field — add --header");
+        }
         return Err(tagged_err(
             ErrorKind::Validation,
             None,

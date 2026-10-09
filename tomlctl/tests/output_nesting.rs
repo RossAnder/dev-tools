@@ -198,6 +198,29 @@ fn header_reads_backlog_check_verdict() {
 }
 
 #[test]
+fn a_header_field_read_off_the_rows_points_at_header() {
+    let (_dir, root) = tasks_root();
+    let r = run(
+        &root,
+        &["tasks", "check", "--slug", TASKS_SLUG, "--get", "ok"],
+    );
+    assert!(!r.ok, "`--get ok` on the findings must fail");
+    assert!(
+        r.stderr
+            .contains("--get path `ok` matches no field; available fields: ")
+            && r.stderr.contains("; it is a header field — add --header"),
+        "{}",
+        r.stderr
+    );
+    let r = run(
+        &root,
+        &["tasks", "check", "--slug", TASKS_SLUG, "--get", "nope"],
+    );
+    assert!(!r.ok);
+    assert!(!r.stderr.contains("--header"), "{}", r.stderr);
+}
+
+#[test]
 fn where_on_a_single_report_without_rows_is_refused() {
     let (_dir, root) = tasks_root();
     let r = run(

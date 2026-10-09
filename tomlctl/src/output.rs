@@ -17,8 +17,8 @@ use std::io::{BufWriter, Write};
 use std::sync::OnceLock;
 
 use crate::convert::{
-    WILDCARD, is_wildcard_path, json_type_name, navigate_json, navigate_json_all, project,
-    validate_paths,
+    RowHeader, WILDCARD, is_wildcard_path, json_type_name, navigate_json, navigate_json_all,
+    project, validate_paths, validate_row_paths,
 };
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::ScalarMutationPlan;
@@ -461,19 +461,22 @@ fn check_rows_path(report: &JsonValue, path: &str) -> Result<()> {
     }
 }
 
+/// `header` is set only where `--header` is accepted, so the hint it adds
+/// never names a flag the command would refuse.
 fn validate_shaping_paths(
     rows: &[JsonValue],
+    header: Option<RowHeader<'_>>,
     opts: &OutputOpts,
     template: Option<&Template>,
 ) -> Result<()> {
     if let Some(paths) = &opts.select {
-        validate_paths(rows, paths.iter().map(String::as_str), "--select")?;
+        validate_row_paths(rows, header, paths.iter().map(String::as_str), "--select")?;
     }
     if let Some(path) = &opts.get {
-        validate_paths(rows, [path.as_str()], "--get")?;
+        validate_row_paths(rows, header, [path.as_str()], "--get")?;
     }
     if let Some(t) = template {
-        validate_paths(rows, t.paths(), "--template")?;
+        validate_row_paths(rows, header, t.paths(), "--template")?;
     }
     Ok(())
 }
@@ -595,7 +598,7 @@ fn emit_one(report: &JsonValue, style: Style, opts: &OutputOpts) -> Result<Emitt
         return emit_rows(report, at, rows, style, opts, None);
     }
     let template = opts.template.as_deref().map(Template::parse).transpose()?;
-    validate_shaping_paths(std::slice::from_ref(report), opts, template.as_ref())?;
+    validate_shaping_paths(std::slice::from_ref(report), None, opts, template.as_ref())?;
     if let Some(paths) = &opts.omit {
         validate_omit_paths(std::slice::from_ref(report), None, paths)?;
     }
@@ -695,7 +698,14 @@ fn emit_rows(
     precut: Option<Cut>,
 ) -> Result<Emitted> {
     let template = opts.template.as_deref().map(Template::parse).transpose()?;
-    validate_shaping_paths(&rows, opts, template.as_ref())?;
+    let header = match at {
+        RowsAt::Field(rows_field) if opts.rows.is_none() => Some(RowHeader {
+            report: &report,
+            rows_field,
+        }),
+        _ => None,
+    };
+    validate_shaping_paths(&rows, header, opts, template.as_ref())?;
     if let Some(paths) = &opts.omit {
         let header = matches!(at, RowsAt::Field(_)).then_some(&report);
         validate_omit_paths(&rows, header, paths)?;
@@ -2142,6 +2152,40 @@ mod tests {
             o.get = Some("id".into());
         });
         assert!(err(report, FIELD, &o).starts_with("--get path `id` matches no field"));
+    }
+
+    #[test]
+    fn a_header_path_on_the_rows_points_at_header() {
+        let report = json!({ "verdict": "novel", "items": rows3() });
+        let hint = "; it is a header field — add --header";
+        let o = with(|o| o.get = Some("verdict".into()));
+        assert_eq!(
+            err(report.clone(), FIELD, &o),
+            format!(
+                "--get path `verdict` matches no field; available fields: id, ref, deps, policy{hint}"
+            )
+        );
+        let o = with(|o| o.select = Some(vec!["verdict".into()]));
+        assert!(err(report.clone(), FIELD, &o).ends_with(hint));
+        let o = with(|o| o.template = Some("{verdict}".into()));
+        assert!(err(report.clone(), FIELD, &o).ends_with(hint));
+        for path in ["nope", "items", "items.id"] {
+            let o = with(|o| o.get = Some(path.into()));
+            assert!(
+                !err(report.clone(), FIELD, &o).contains("--header"),
+                "{path}"
+            );
+        }
+        let o = with(|o| {
+            o.rows = Some("items".into());
+            o.get = Some("verdict".into());
+        });
+        let e = err(report, Shape::One, &o);
+        assert!(
+            e.starts_with("--get path `verdict` matches no field"),
+            "{e}"
+        );
+        assert!(!e.contains("--header"), "{e}");
     }
 
     #[test]
