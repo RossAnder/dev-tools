@@ -5829,7 +5829,7 @@ tags = [
     "research-deep",
     "scratchpad",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-09
 last_seen = 2026-10-09
 seen_count = 1
@@ -5837,3 +5837,5 @@ dedup_id = "353b436e8bb4cb63"
 origin = "optimise"
 context = "Seen in an eggshell /optimise run on 2026-10-09: all five research-deep lenses were told to use the session scratchpad for benchmarks, two of them (memory and algorithm) both built a crate under scratchpad/lbench, and the memory lens's first benchmark run printed the algorithm lens's results before it noticed and moved to its own directory. Both lenses happened to be measuring the same function, so no finding was corrupted, but nothing would have flagged it otherwise. Fix: have the Step 2 dispatch give each lens its own subdirectory (scratchpad/<lens>/) and say so in the shared preamble, or have research-deep's brief require a lens-named scratch subdirectory for any build or bench. The same applies to /review and /review-plan, which also dispatch parallel deep lenses. Workaround: name the per-lens scratch directory in each lens prompt by hand."
 base_sha = "d561023b603258005a2f64874f5f36693e4ea7ec"
+resolved = 2026-10-09
+resolution = "research-deep and research-lite (and the research-methods codebase-review reference) now require scratch work in a lens-named subdirectory of the session scratchpad, never its root or a generic name, so parallel lenses dispatched by /optimise, /review and /review-plan cannot collide."

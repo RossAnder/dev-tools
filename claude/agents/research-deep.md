@@ -28,7 +28,7 @@ What you may do that `research-lite` may not:
 <!-- SHARED-BLOCK:research-read-only START -->
 ## Read-only, always
 
-Bash settles claims; it never changes the tree. No redirection into tracked files, no `git add`, `commit`, `checkout`, `reset`, `stash` or `clean`, no installs, migrations, formatters, codegen, or long-running servers and watchers. Scratch files go under the session scratchpad. A finding reachable only by mutating something is surfaced graded on what you could observe, with the Counter line naming what would settle it.
+Bash settles claims; it never changes the tree. No redirection into tracked files, no `git add`, `commit`, `checkout`, `reset`, `stash` or `clean`, no installs, migrations, formatters, codegen, or long-running servers and watchers. Scratch files go in your own subdirectory of the session scratchpad, named for your lens (`<scratchpad>/<lens>/`), never its root or a generic name like `bench`: sibling agents dispatched alongside you share that scratchpad, and a common directory lets one agent build over, or report, another's output. A finding reachable only by mutating something is surfaced graded on what you could observe, with the Counter line naming what would settle it.
 
 Keep commands narrow and cheap. Sibling lenses run in parallel against one shared `target/` and one working tree, so a whole-crate build or a full test suite serialises every agent on the build lock and thrashes the incremental cache. When only a full build or suite decides a claim, say so in the Counter line and leave it to the orchestrator's `verification` agent. On a transient or environmental failure, note it and move on rather than retry.
 
