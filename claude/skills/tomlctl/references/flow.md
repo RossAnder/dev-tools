@@ -2,9 +2,9 @@
 
 The cross-cutting half of the tomlctl surface: what `--verify-integrity` is accepted on and
 what the `.sha256` sidecar does and does not promise, the machine-readable error envelope,
-the two `flow` verbs that emit rather than mutate flow state (`render-progress-log` and
-`envelope build`), the envelopes `flow init` and `flow list` return, and the infrastructure-only
-`blocks` verbs. The read verbs live in
+`flow record` (the one write path into a flow's execution record), the two `flow` verbs that
+emit rather than mutate flow state (`render-progress-log` and `envelope build`), the envelopes
+`flow init` and `flow list` return, and the infrastructure-only `blocks` verbs. The read verbs live in
 [query.md](query.md) and the mutating ones in [write.md](write.md); the flow registry's own
 verbs (`flow active|init|list|resolve|stale|doctor|find-plans|ensure-artifact`) are listed in
 the Quick Reference table of [../SKILL.md](../SKILL.md).
@@ -17,6 +17,7 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 - [Flow verbs](#flow-verbs)
   - [`flow init`](#flow-init)
   - [`flow list`](#flow-list)
+  - [`flow record`](#flow-record)
   - [`flow render-progress-log`](#flow-render-progress-log)
   - [`flow envelope build`](#flow-envelope-build)
 - [Advanced / maintenance](#advanced--maintenance)
@@ -44,6 +45,7 @@ the Quick Reference table of [../SKILL.md](../SKILL.md).
 | `tomlctl tasks edges` | yes |
 | `tomlctl tasks ready` | yes |
 | `tomlctl tasks batches` | yes |
+| `tomlctl tasks train` | yes |
 | `tomlctl tasks closure` | yes |
 | `tomlctl tasks check` | yes |
 | `tomlctl tasks render` | yes |
@@ -93,7 +95,7 @@ tomlctl items list ledger.toml --where status=open --verify-integrity
 
 `arg` names the CLI argument the error is about by its clap id (e.g. `to`, `ids`) where a verb tags one — `backlog triage` does — and is `null` otherwise. Exit code stays 1 on error. Success paths are unchanged — text output on success is byte-identical to default mode.
 
-```bash
+```bash ignore-guidance-lint
 tomlctl --error-format json items list /nonexistent/ledger.toml 2>&1 >/dev/null
 # {"error":{"kind":"not_found","message":"...","file":"/nonexistent/ledger.toml","arg":null}}
 ```
@@ -102,18 +104,19 @@ Closed taxonomy (every tag site is enumerated; all other `bail!` sites fall thro
 
 | `kind` | Emitted from |
 |---|---|
-| `not_found` | `io.rs` — target file missing at the path the caller passed |
+| `not_found` | `io.rs` — target file missing at the path the caller passed; `flow record` — no `context.toml` for `--slug` |
 | `integrity` | `integrity.rs` — sidecar hash mismatch or missing under `--verify-integrity` |
 | `parse` | `io.rs` — malformed TOML at the document root |
-| `validation` | `query.rs` / `items.rs` — flag-mutex violations, `items next-id` prefix shape rejections, `--infer-from-file` empty/multi-prefix errors |
+| `validation` | `query.rs` / `items.rs` — flag-mutex violations, `items next-id` prefix shape rejections, `--infer-from-file` empty/multi-prefix errors; `flow record` — an entry the execution-record contract refuses |
 | `other` | any untagged error — the downcast returned `None` |
 
 Prefer `--error-format json` + `.error.kind` switching over regex-matching stderr text when branching on error class (e.g. "bootstrap the ledger if missing, bubble up otherwise").
 
 ## Flow verbs
 
-`flow init` carries the shared write bundle — `--allow-outside`, `--no-create`,
-`--no-write-integrity`, `--strict-integrity`, `--verify-integrity` — and `flow list` and
+`flow init` and `flow record` carry the shared write bundle — `--allow-outside`, `--no-create`,
+`--no-write-integrity`, `--strict-integrity`, `--verify-integrity`, plus `--no-stamp` on
+`flow record` — and `flow list` and
 `flow render-progress-log` the read bundle, `--verify-integrity` and `--strict-read`. A table
 below lists a bundle flag only where the verb gives it its own meaning. `flow envelope build`
 takes neither bundle. Every verb also takes the global `--error-format`.
@@ -164,6 +167,67 @@ tomlctl flow list --status draft
 | `--active-only` | — | Keep only slugs present in `.claude/active-flow.toml`. | off |
 | `--verify-integrity` | — | Also skip a `context.toml` whose `.sha256` sidecar is missing or does not match, with the verifier's message as the `reason`. | off |
 | `--strict-read` | — | Turn the first skipped `context.toml` into an error instead — `kind=integrity` for a sidecar failure, `kind=parse` otherwise. | off |
+
+### `flow record`
+
+Appends one validated entry, or an all-or-nothing batch, to a flow's execution record: the file
+`context.toml` `[artifacts].execution_record` names, else
+`.claude/flows/<slug>/execution-record.toml`. It is the only write path for that file. What each
+entry type must carry is the `flow-contract-execution-record-schema` skill's; this is the flag
+table and the checks the verb enforces.
+
+```bash
+tomlctl flow record --slug <slug> --type task-completion --task 7 --set agent=implement --set status=done --set dispatch_tier=deep --set dispatch_agent=implement-deep --set vet=skipped --set retries=0 --set-json 'files=["src/parser.rs"]' --set-file summary=<staged-file>
+# → {"ok":true,"id":"E12","type":"task-completion","task_ref":"add-the-parser","truncated":[],"dropped_files":[],"scope_warnings":[],"path":".claude/flows/<slug>/execution-record.toml"}
+tomlctl flow record --slug <slug> --type verification --set agent=implement --set 'summary=checkpoint B build and tests' --set 'command=cargo nextest run' --set outcome=pass --get id
+# Several entries at once — stage the NDJSON with the Write tool; the flags are per-row defaults:
+tomlctl flow record --slug <slug> --set agent=implement --ndjson <staged-file> --get id
+```
+
+| Flag | Value | Meaning | Default |
+|---|---|---|---|
+| `--slug` | slug | Flow whose record is written. A slug with no `context.toml` is `kind=not_found`. | required |
+| `--type` | type | `task-completion`, `verification`, `deviation`, `deferral`, `reconcile`, `status-transition` or `checkpoint`. Required unless every `--ndjson` row carries its own. | — |
+| `--task` | id | Task id in the flow's `tasks.toml`; that row's `ref` becomes `task_ref`. A payload `task_ref` that disagrees is refused with `kind=validation`. | none |
+| `--json` | object, `@<path>` or `-` | Base payload; the field flags are laid over it and win. | none |
+| `--set` | `KEY=VALUE`, repeatable | A string field; a dotted KEY nests. A digit string for `retries` or `duration_s` is stored as an integer. | none |
+| `--set-json` | `KEY=JSON`, repeatable | Any JSON value — the form for the array fields `files`, `commits` and `failed_ids`. | none |
+| `--set-file` | `KEY=PATH`, repeatable | The text of a file (`-` reads stdin), less one leading BOM and one trailing newline — the form for prose. | none |
+| `--ndjson` | path, `@<path>` or `-` | One entry per line, written all or nothing. `--type`, `--task`, `--json` and the field flags are defaults for every row, and a row's own keys win. | none |
+| `--dry-run` | — | Validate and report the ids that would be minted; write nothing. | off |
+
+A key given twice across the field flags is `kind=validation`. Under Git Bash a `--set` value
+starting with `/` is rewritten into a Windows path, so pass such a value through `--set-file`.
+
+What the verb does to every entry before the write:
+
+- **Fills** `date` with today (UTC) when absent, and mints the id as `E<n>` under the write lock.
+- **Requires** `type`, `date`, `agent` and `summary`, plus the type's own fields; a missing one is
+  `kind=validation` naming it. `commits` is optional on `task-completion` and `deviation`.
+- **Checks enums** on `task-completion` (`status`, `dispatch_tier`, `dispatch_agent`, `vet`),
+  `verification` (`outcome`) and `reconcile` (`direction`). A `checkpoint` entry is free-form
+  beyond the required four, and keys the contract does not name pass through.
+- **Checks types**: `retries` and `duration_s` must be integers; `files`, `commits` and
+  `failed_ids` must be arrays, and a string there is refused with a hint naming `--set-json`.
+- **Caps text** rather than refusing it: `summary` at 1024 bytes and `description`, `rationale`,
+  `original_intent`, `reason` and `reevaluate_when` at 8192, cut at a character boundary and
+  ending ` (truncated)`; `failed_ids` keeps its first 20. Each cut field is named in `truncated`.
+- **Cleans `files`**: `\` becomes `/`, and an absolute, `~`-relative, drive-letter or `..` entry
+  is dropped and named in `dropped_files`. A non-empty list that dropping would empty is refused.
+  A kept entry outside the `context.toml` `scope` globs is named in `scope_warnings` and sets
+  `scope_warning = true` on the entry; an empty or absent scope warns on nothing.
+
+A single entry prints the object shown above, with `"dry_run":true` added under `--dry-run`. A
+batch prints one envelope whose `rows` are the per-entry reports, so `--get id` lists the minted
+ids one per line:
+
+```json
+{"ok":true,"ids":["E12","E13"],"path":".claude/flows/<slug>/execution-record.toml",
+ "rows":[{"id":"E12","type":"verification","task_ref":null,"truncated":[],"dropped_files":[],"scope_warnings":[]},
+         {"id":"E13","type":"deviation","task_ref":"add-the-parser","truncated":[],"dropped_files":[],"scope_warnings":[]}]}
+```
+
+Re-render `PROGRESS-LOG.md` with `flow render-progress-log` after recording.
 
 ### `flow render-progress-log`
 

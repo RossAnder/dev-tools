@@ -38,7 +38,10 @@ The store lives inside the `.claude/` containment guard, so none of these needs
 reads the store to resolve the id, and the one file it writes is a non-TOML marker, so there
 is no sidecar to refresh. Every op also takes the global `--error-format text|json`; see
 [flow.md](flow.md#error-format---error-format-json) for the JSON envelope and its `kind`
-taxonomy.
+taxonomy. The global output options ([query.md](query.md)) act on each op's report: the rows
+of `add-many` (`rows`), `check` (`candidates`, or `results` under `--ndjson`) and `list`;
+`--header` for a row report's header, and `--rows <field>` to read a single object's array as
+rows (`backlog show <id> --rows neighbours`).
 
 ## `backlog add`
 
@@ -72,16 +75,14 @@ the incumbent. No value appends a second row: one id maps to one row.
 clock, so a `--json` payload replayed out of a `show` has those five overwritten rather than
 honoured.
 
-Envelope — one of three actions:
+Envelope — one of three actions, or under `--dry-run` the standard mutation-plan envelope,
+`{"ok":true,"dry_run":true,"would_change":{"kind":"items",…}}`:
 
 ```json
 {"ok":true,"action":"added","id":"B-a1b2c3d4","dedup_id":"<16 hex>","created":false,"path":".claude/backlog.toml"}
 {"ok":true,"action":"bumped","id":"B-a1b2c3d4","seen_count":3}
 {"ok":true,"action":"skipped","id":"B-a1b2c3d4"}
 ```
-
-Under `--dry-run` it is the standard mutation-plan envelope,
-`{"ok":true,"dry_run":true,"would_change":{"kind":"items",…}}`.
 
 ## `backlog add-many`
 
@@ -111,30 +112,29 @@ batch writes nothing.
          {"line":2,"action":"bumped","id":"B-1a2b3c4d","seen_count":3,"advisories":[]}]}
 ```
 
-Each `rows` entry carries `add`'s keys for that row, and the output options act on `rows`. A
-top-level `advisories`, each entry prefixed `line N:`, appears only when some row raised one.
+Each `rows` entry carries `add`'s keys for that row. A top-level `advisories`, each entry
+prefixed `line N:`, appears only when some row raised one.
 
 ## `backlog check`
 
 Read-only. A missing store answers `novel`, so the first capture in a repo needs no setup.
 
 ```bash
-tomlctl backlog check --summary "conpty spawn intermittently fails with CreateProcessW error 5" --kind flaky-test --area lumina/server/src/pty --tag pty --limit 5
-```
-
-```bash
-tomlctl backlog check --summary - --kind flaky-test --area lumina/server/src/pty --tag pty <<'SUMMARY'
-conpty spawn intermittently fails with CreateProcessW error 5
-SUMMARY
+tomlctl backlog check --summary "conpty spawn intermittently fails with CreateProcessW error 5" --kind flaky-test --area lumina/server/src/pty --tag pty --header --get verdict
+# A summary somebody else wrote, staged to a file with the Write tool:
+tomlctl backlog check --summary - --kind flaky-test --area lumina/server/src/pty --tag pty < <staged-file>
+# Several probes against one store read — one JSON object per line, staged the same way:
+tomlctl backlog check --ndjson <staged-file> --template '{line} {verdict} {summary:60}'
 ```
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--summary` | text or `-` | The discovery being weighed. Required. `-` reads the whole of stdin as the summary, less one trailing newline — the path text somebody else wrote takes to the gate without being tokenised by a shell. Empty stdin is a `kind=validation` error. | — |
+| `--summary` | text or `-` | The discovery being weighed. Required unless `--ndjson` is given. `-` reads the whole of stdin as the summary, less one trailing newline — the path text somebody else wrote takes to the gate without being tokenised by a shell. Empty stdin is a `kind=validation` error. | — |
+| `--ndjson` | path, `@<path>` or `-` | A batch of probes, one `{summary, kind, area, tags}` object per line; only `summary` is required. Conflicts with `--summary`, `--kind`, `--area` and `--tag`. | — |
 | `--kind` | text | Must match the `--kind` the following `add` will use — it is hashed into the fingerprint. | `other` |
 | `--area` | repo-relative path | Must match the following `add` for the same reason; also feeds the structural `related` rung. | empty |
 | `--tag` | text, repeatable | Feeds the structural `related` rung only. | none |
-| `--limit` | integer | The global flag: return at most N candidates. Global `--select` / `--get` act on the candidate rows, never the header that holds `verdict`. | `5` |
+| `--limit` | integer | The global flag: return at most N candidates. Under `--ndjson` it cuts result rows instead, and each row keeps at most 5 candidates. `verdict` sits in the header, so read it with `--header --get verdict`. | `5` |
 | `--similarity-strong` | 0.0–1.0 | Char-trigram Jaccard at or above which a candidate reads as `likely-duplicate`. | `0.75` |
 | `--similarity-related` | 0.0–1.0 | Word Jaccard at or above which a candidate reads as `related`. | `0.35` |
 
@@ -149,7 +149,17 @@ A threshold outside 0.0–1.0, or NaN, errors with `kind=validation`.
 `score` is rounded to four decimals. `evidence_files` is counted off the filesystem at read
 time; nothing in the store records it. A candidate carries `promoted_to` only when its row
 holds one: an `in-flight` hit always does, and a `resolved`, `dismissed` or compacted row does
-when it kept the claim.
+when it kept the claim. When the default cap of 5 cut candidates, the header adds
+`limited: {"shown":5,"total":N}`.
+
+Under `--ndjson` every line is parsed before the store is read once; a malformed line, a
+missing `summary` or any other key is `kind=validation` naming the line. Each result row
+carries one probe's verdict, and `limited` when its candidates were capped:
+
+```json
+{"thresholds":{"strong":0.75,"related":0.35},
+ "results":[{"line":1,"summary":"…","verdict":"novel","dedup_id":"<16 hex>","candidates":[]}]}
+```
 
 ## `backlog list`
 
@@ -177,9 +187,8 @@ tomlctl backlog list --live --area-prefix lumina/server --select id,status,promo
 | `--has-evidence` | — | Keep only items whose evidence directory holds files. Reads the filesystem. | off |
 | `--count` | — | Emit `{"count":N}` instead of the rows. | off |
 
-Output is the query engine's, so the shape follows whichever projection or aggregation flag is
-in play: an array of item objects by default, `{"count":N}` under `--count`, a bucket map under
-`--count-by`.
+Output is the query engine's: an array of item objects, `{"count":N}` under `--count`, or a
+bucket map under `--count-by`.
 
 ## `backlog show`
 
@@ -219,7 +228,7 @@ tomlctl backlog relate B-a1b2c3d4 --to B-1a2b3c4d --as relates-to
 `relates-to` is symmetric: both items gain the other in `related`. `duplicates` sets the
 subject's `duplicate_of` and dismisses the **subject**. `supersedes` sets the subject's
 `supersedes` and dismisses the **object**. The asymmetry is easy to get backwards — in each
-case the item that loses is the redundant one.
+case the item that loses is the redundant one. `--as related` is accepted as `relates-to`.
 
 ```json
 {"ok":true,"relation":"relates-to","a":"B-a1b2c3d4","b":"B-1a2b3c4d","changed":true,"path":".claude/backlog.toml"}
@@ -237,7 +246,7 @@ tomlctl backlog triage B-a1b2c3d4 --reopen --rationale "flow <flow-slug> closed 
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| *(positional)* | id, one or more | Items to transition. At least one required. | — |
+| *(positional)* | ids, comma- or space-separated | Items to transition. At least one required. | — |
 | `--promote` | — | Status → `promoted`; takes `--to`. | — |
 | `--dismiss` | — | Status → `dismissed`; takes `--reason`. | — |
 | `--resolve` | — | Status → `resolved`; takes `--resolution`. | — |
@@ -333,19 +342,10 @@ empty:
 `linked by relates-to/duplicates/supersedes edges` (relations view). Branch on the view key
 and `key`, never on `reason`.
 
-The default tags view cannot answer "which items carry `ci`": a transitive merge pulls in
-every item reachable through a shared middle, so asking for one tag collapses the store into
-a handful of sprawling groups. `--per-tag` answers it — one group per tag, still dropping
-groups of fewer than two members:
-
-```bash
-tomlctl backlog cluster --by tags --per-tag
-```
-
-Both forms emit under the same `tags` key; no fourth view appears. The keys differ in
-grammar, though: the default writes a `+`-joined tag *set* (`"ci+windows"`), `--per-tag` a
-single tag (`"ci"`). A consumer that splits `key` on `+` reads one group per tag under the
-flag and one per merged set without it.
+The default tags view merges transitively, so it cannot answer "which items carry `ci`";
+`backlog cluster --by tags --per-tag` does — one group per tag, still dropping groups of fewer
+than two. Both forms emit under `tags`, but the default `key` is a `+`-joined tag *set*
+(`"ci+windows"`) and the `--per-tag` one a single tag (`"ci"`). `--rows tags` reads either as rows.
 
 ## `backlog compact`
 
