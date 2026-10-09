@@ -428,6 +428,36 @@ fn a_declared_task_section_with_no_store_warns_without_failing() {
     );
 }
 
+/// `flow init` seeds no task store for a `/tdd` cycle sub-flow, so doctor must
+/// not advise importing one even when the mini-plan declares `## Tasks`.
+#[test]
+fn a_tdd_subflow_with_no_store_skips_the_missing_store_warning() {
+    let (_g, root) = fresh_root();
+    let slug = "planned-tdd-001";
+    seed_clean_flow(&root, slug);
+    declare_a_task_section(&root, slug);
+    seed_active_flow_registry(&root, &[slug]);
+
+    let v = run_doctor(&root, &["--slug", slug]);
+    assert_eq!(v["ok"], JsonValue::Bool(true), "got: {v}");
+
+    let chk = find_check(&v, "tasks-exists", Some(slug));
+    assert_eq!(chk["ok"], JsonValue::Bool(true), "got: {chk}");
+    assert_eq!(
+        chk["detail"].as_str().unwrap_or(""),
+        "skipped: tdd sub-flow",
+        "got: {chk}"
+    );
+
+    let warnings = v["warnings"].as_array().expect("warnings must be array");
+    assert!(
+        !warnings
+            .iter()
+            .any(|w| w.as_str().unwrap_or("").contains("import-plan")),
+        "got: {warnings:?}"
+    );
+}
+
 /// A task store on disk carries a digest whatever the plan section says, so
 /// this check is gated on the file rather than on the plan. A mismatch fails
 /// the run, repairs nothing on a report-only pass, and is regenerated under

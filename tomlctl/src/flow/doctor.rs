@@ -349,7 +349,9 @@ fn check_one_flow(
     // 5. Task store existence, observable only for a plan that declares a
     //    task section — a plan with none legitimately carries no store. An
     //    absent store where one is expected stays advisory: doctor creates
-    //    no artifacts, so a failing check would have no route out.
+    //    no artifacts, so a failing check would have no route out. A `/tdd`
+    //    sub-flow is exempt: `flow init` seeds no store for one, so its
+    //    absence there is the expected state rather than a missed import.
     if !plan_declares_tasks {
         checks.push(Check {
             name: "tasks-exists",
@@ -359,6 +361,13 @@ fn check_one_flow(
         });
     } else if tasks_file.exists() {
         checks.push(Check::ok("tasks-exists", slug.to_string()));
+    } else if super::init::is_tdd_subflow_slug(slug) {
+        checks.push(Check {
+            name: "tasks-exists",
+            scope: slug.to_string(),
+            ok: true,
+            detail: Some("skipped: tdd sub-flow".to_string()),
+        });
     } else {
         checks.push(Check {
             name: "tasks-exists",

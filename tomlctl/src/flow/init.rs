@@ -10,6 +10,11 @@
 //! - active-flow registry is upserted regardless (so a re-init recovers a
 //!   missing entry without forcing the user through `flow active add`).
 //!
+//! A `/tdd` cycle sub-flow (slug `<parent>-tdd-<NNN>`) gets no `tasks.toml`:
+//! its parent flow owns the plan and therefore the store, so `created` never
+//! names one for such a slug and the dry-run reports `tasks_store_bootstrap`
+//! as `false`.
+//!
 //! `action` answers only what happened to `context.toml`. The envelope's
 //! `created` array is what names the stores a run actually materialised, so a
 //! re-init that mints a legacy flow's absent `tasks.toml` stays visible to a
@@ -67,6 +72,15 @@ pub(crate) fn validate_slug(slug: &str) -> Result<()> {
         None,
         format!("invalid slug: {slug} (must match ^[a-z0-9][a-z0-9-]{{0,63}}$)"),
     ))
+}
+
+/// Whether `slug` names a `/tdd` cycle sub-flow, `<parent>-tdd-<NNN>`. The
+/// counter is zero-padded to three digits but keeps growing past 999, so the
+/// shape is three or more ASCII digits after a non-empty parent.
+pub(crate) fn is_tdd_subflow_slug(slug: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^.+-tdd-[0-9]{3,}$").expect("tdd sub-flow regex compiles"))
+        .is_match(slug)
 }
 
 /// Resolve `<root>/.claude/flows/<slug>/context.toml`.
@@ -369,6 +383,7 @@ pub(crate) fn dispatch(
     let context_rel = relativise(&root, &context_path);
     let execution_record_path = execution_record_path_for(&slug)?;
     let tasks_path = tasks_path_for(&slug)?;
+    let seeds_tasks_store = !is_tdd_subflow_slug(&slug);
     let artifacts = CanonicalArtifacts::for_slug(&slug);
 
     // Try to load an existing context — drives the idempotent branch.
@@ -414,7 +429,7 @@ pub(crate) fn dispatch(
                 "slug": slug,
                 "seed": seed_json,
                 "execution_record_bootstrap": !execution_record_path.exists(),
-                "tasks_store_bootstrap": !tasks_path.exists(),
+                "tasks_store_bootstrap": seeds_tasks_store && !tasks_path.exists(),
                 "active_registration": active_entry_to_json(&new_active),
             },
         });
@@ -479,7 +494,7 @@ pub(crate) fn dispatch(
     if bootstrap_execution_record(&execution_record_path, &integrity)? {
         created.push(artifacts.execution_record.clone());
     }
-    if bootstrap_tasks_store(&tasks_path, &integrity)? {
+    if seeds_tasks_store && bootstrap_tasks_store(&tasks_path, &integrity)? {
         created.push(artifacts.tasks.clone());
     }
 
@@ -504,4 +519,31 @@ pub(crate) fn dispatch(
         "artifacts": artifacts.to_json(),
     });
     print_json_compact(&envelope)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_tdd_subflow_slug;
+
+    #[test]
+    fn tdd_cycle_slugs_are_recognised() {
+        for slug in ["feat-tdd-001", "a-tdd-999", "my-feature-tdd-1000"] {
+            assert!(is_tdd_subflow_slug(slug), "{slug} is a tdd sub-flow");
+        }
+    }
+
+    #[test]
+    fn non_cycle_slugs_still_seed_a_task_store() {
+        for slug in [
+            "tdd-guide",
+            "feat-tdd-1x",
+            "feat-tdd-01",
+            "tdd-001",
+            "-tdd-001",
+            "feat-tdd-001-extra",
+            "feat-x",
+        ] {
+            assert!(!is_tdd_subflow_slug(slug), "{slug} is not a tdd sub-flow");
+        }
+    }
 }

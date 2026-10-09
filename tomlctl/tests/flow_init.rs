@@ -324,6 +324,43 @@ fn created_names_the_stores_a_run_materialised() {
     assert!(tasks.exists(), "tasks.toml must have been re-materialised");
 }
 
+/// A `/tdd` cycle sub-flow owns no task store — its parent does — so init
+/// writes the context and execution record but never seeds `tasks.toml`, on
+/// a fresh run, a re-init, or a dry run.
+#[test]
+fn tdd_cycle_subflow_gets_no_task_store() {
+    let slug = "feature-x-tdd-001";
+    let (dir, plan, context) = fresh_root(slug);
+    let plan_str = plan.to_string_lossy().to_string();
+    let tasks = tasks_store_path(&dir, slug);
+
+    let out = run_init(&dir, &["--slug", slug, "--plan", &plan_str, "--dry-run"]).success();
+    let v = json_stdout(&out);
+    assert_eq!(
+        v["would_change"]["tasks_store_bootstrap"],
+        serde_json::json!(false),
+        "dry-run must not promise a task store for a tdd sub-flow"
+    );
+
+    let out = run_init(&dir, &["--slug", slug, "--plan", &plan_str]).success();
+    let v = json_stdout(&out);
+    assert_eq!(v["action"], serde_json::json!("init"));
+    assert_eq!(
+        v["created"],
+        serde_json::json!([
+            ".claude/flows/feature-x-tdd-001/context.toml",
+            ".claude/flows/feature-x-tdd-001/execution-record.toml",
+        ])
+    );
+    assert!(context.exists(), "context.toml must exist");
+    assert!(!tasks.exists(), "a tdd sub-flow must not get a tasks.toml");
+    assert!(!sidecar_for(&tasks).exists(), "no tasks sidecar");
+
+    let out = run_init(&dir, &["--slug", slug, "--plan", &plan_str]).success();
+    assert_eq!(json_stdout(&out)["created"], serde_json::json!([]));
+    assert!(!tasks.exists(), "a re-init must not mint the store either");
+}
+
 // ---------------------------------------------------------------------------
 // dry-run
 // ---------------------------------------------------------------------------
