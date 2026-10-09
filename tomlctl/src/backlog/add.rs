@@ -203,9 +203,11 @@ pub(crate) fn dispatch(
         let outcome = add_item(&mut doc, &req, &file)?;
         // The preview rides the same advisories as the write it previews: a
         // caller using `--dry-run` as its review step would otherwise see
-        // strictly less than one that skipped the review.
+        // strictly less than one that skipped the review. The live envelope's
+        // `action`/`id` keys ride along too, so one `--template` reads both.
         let mut envelope = build_dry_run_plan_envelope(&preview_plan(doc, [(0, &outcome)]));
         if let Some(map) = envelope.as_object_mut() {
+            outcome.extend_envelope(map);
             map.insert("advisories".to_string(), serde_json::json!(advisories));
         }
         return print_json_compact(&envelope);

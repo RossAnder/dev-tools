@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 
 mod common;
 use common::{
-    TASKS_SLUG, age_terminal_date, assert_sidecar_matches, backlog, cli, parse_json_error_envelope,
-    sandbox, seed_tasks, store_path,
+    TASKS_SLUG, age_terminal_date, assert_sidecar_matches, backlog, backlog_stdout, cli,
+    parse_json_error_envelope, sandbox, seed_tasks, store_path,
 };
 
 const FLAKE_SUMMARY: &str = "pty_readiness_probe flakes on slow CI";
@@ -231,18 +231,16 @@ fn mint_bump_relate_triage_and_compact_walk() {
 #[test]
 fn add_dry_run_leaves_the_store_and_sidecar_byte_identical() {
     let (_tmp, root) = sandbox();
-    backlog(
-        &root,
-        &[
-            "add",
-            "--summary",
-            FLAKE_SUMMARY,
-            "--kind",
-            "flaky-test",
-            "--area",
-            FLAKE_AREA,
-        ],
-    );
+    let flake = [
+        "add",
+        "--summary",
+        FLAKE_SUMMARY,
+        "--kind",
+        "flaky-test",
+        "--area",
+        FLAKE_AREA,
+    ];
+    let minted = backlog(&root, &flake);
     let before = snapshot(&root);
 
     let preview = backlog(
@@ -262,11 +260,51 @@ fn add_dry_run_leaves_the_store_and_sidecar_byte_identical() {
     assert_eq!(preview["would_change"]["updated"], json!(0));
     let previewed = preview["would_change"]["ids"][0].as_str().unwrap();
     assert_minted_id(previewed);
+    // The preview names the decision with the live envelope's own keys.
+    assert_eq!(preview["action"], json!("added"), "{preview}");
+    assert_eq!(preview["id"], json!(previewed), "{preview}");
+
+    let bump = backlog(&root, &[&flake[..], &["--dry-run"][..]].concat());
+    assert_eq!(bump["action"], json!("bumped"), "{bump}");
+    assert_eq!(bump["id"], minted["id"], "{bump}");
+    assert_eq!(bump["seen_count"], json!(2), "{bump}");
 
     assert_eq!(
         snapshot(&root),
         before,
         "`add --dry-run` must leave the store and its sidecar byte-identical"
+    );
+}
+
+/// The documented preview idiom: a template over the dry-run envelope reads
+/// the would-be mint without a JSON parser, and nothing lands on disk.
+#[test]
+fn add_dry_run_template_previews_the_action_and_id() {
+    let (_tmp, root) = sandbox();
+    let line = backlog_stdout(
+        &root,
+        &[
+            "add",
+            "--summary",
+            DRIFT_SUMMARY,
+            "--kind",
+            "bug",
+            "--area",
+            DRIFT_AREA,
+            "--dry-run",
+            "--template",
+            "{action} {id}",
+        ],
+    );
+    let (action, id) = line
+        .trim()
+        .split_once(' ')
+        .unwrap_or_else(|| panic!("expected `<action> <id>`; got {line:?}"));
+    assert_eq!(action, "added", "{line:?}");
+    assert_minted_id(id);
+    assert!(
+        !store_path(&root).exists() && !sidecar_path(&root).exists(),
+        "`add --dry-run` must not create the store or its sidecar"
     );
 }
 
@@ -962,6 +1000,50 @@ fn add_many_mints_a_batch_and_folds_a_repeat_onto_its_earlier_line() {
     assert_eq!(a["seen_count"].as_integer(), Some(2));
     assert_eq!(a["tags"][0].as_str(), Some("ci"));
     assert_sidecar_matches(&store_path(&root));
+}
+
+/// Each `rows` entry of the batch preview carries the same `action`/`id` the
+/// live batch would, so a per-row template previews every mint and fold.
+#[test]
+fn add_many_dry_run_template_previews_each_rows_action_and_id() {
+    let (_tmp, root) = sandbox();
+    let batch = root.join("batch.ndjson");
+    fs::write(
+        &batch,
+        format!("{}\n{}\n{}\n", flake_line(), drift_line(), flake_line()),
+    )
+    .unwrap();
+
+    let out = backlog_stdout(
+        &root,
+        &[
+            "add-many",
+            "--ndjson",
+            &format!("@{}", batch.display()),
+            "--dry-run",
+            "--template",
+            "{action} {id}",
+        ],
+    );
+    let lines: Vec<(&str, &str)> = out
+        .lines()
+        .map(|l| {
+            l.split_once(' ')
+                .unwrap_or_else(|| panic!("expected `<action> <id>`; got {out:?}"))
+        })
+        .collect();
+    let actions: Vec<&str> = lines.iter().map(|(action, _)| *action).collect();
+    assert_eq!(actions, ["added", "added", "bumped"], "{out:?}");
+    assert_minted_id(lines[0].1);
+    assert_minted_id(lines[1].1);
+    assert_eq!(
+        lines[2].1, lines[0].1,
+        "the repeat folds onto line 1: {out:?}"
+    );
+    assert!(
+        !store_path(&root).exists() && !sidecar_path(&root).exists(),
+        "`add-many --dry-run` must not create the store or its sidecar"
+    );
 }
 
 #[test]

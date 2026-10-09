@@ -162,6 +162,35 @@ fn a_malformed_line_is_refused_by_its_source_line() {
     assert!(message.starts_with("line 3: "), "{message}");
 }
 
+/// `@<file>` is not a file read on `--summary`; probing the literal string
+/// would answer `novel` for a summary nobody wrote, so it is refused instead.
+#[test]
+fn an_at_file_summary_is_refused_with_the_stdin_form() {
+    let (_tmp, root) = sandbox();
+    fs::write(root.join("notes.txt"), format!("{FLAKE_SUMMARY}\n")).unwrap();
+
+    let out = cli(&root)
+        .current_dir(&root)
+        .args([
+            "--error-format",
+            "json",
+            "backlog",
+            "check",
+            "--summary",
+            "@notes.txt",
+        ])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .code(1);
+    assert!(out.get_output().stdout.is_empty(), "no verdict");
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    let err = parse_json_error_envelope(&stderr);
+    assert_eq!(err["kind"], json!("validation"));
+    let message = err["message"].as_str().unwrap();
+    assert!(message.contains("--summary - < notes.txt"), "{message}");
+}
+
 #[test]
 fn ndjson_conflicts_with_summary() {
     let (_tmp, root) = sandbox();

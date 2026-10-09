@@ -13,6 +13,7 @@
 //! true at the moment it is taken.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use anyhow::Result;
 use serde_json::{Map as JsonMap, Value as JsonValue, json};
@@ -415,6 +416,27 @@ fn resolve_summary(raw: String) -> Result<String> {
     Ok(text.to_string())
 }
 
+/// Refuse a `--summary` of `@<path>` when `<path>`, resolved against `base`,
+/// is an existing file. The value would otherwise be probed as the literal
+/// string and answer a confident `novel` for a summary nobody wrote, while
+/// an `@handle` mention that names no file is still ordinary text.
+fn refuse_at_file(raw: &str, base: &Path) -> Result<()> {
+    let Some(name) = raw.strip_prefix('@') else {
+        return Ok(());
+    };
+    if name.is_empty() || !base.join(name).is_file() {
+        return Ok(());
+    }
+    Err(tagged_err(
+        ErrorKind::Validation,
+        None,
+        format!(
+            "--summary `{raw}` names a file, but backlog check probes --summary as literal \
+             text; stage the text and pass `--summary - < {name}`"
+        ),
+    ))
+}
+
 // One parameter per flag on the CLI variant, which is the dispatch contract.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn dispatch(
@@ -446,6 +468,7 @@ pub(crate) fn dispatch(
             "backlog check needs --summary or --ndjson",
         )
     })?;
+    refuse_at_file(&summary, Path::new("."))?;
     let summary = resolve_summary(summary)?;
     let probe = Probe::new(&summary, area.as_deref(), kind.as_deref(), &tag);
 
@@ -1117,6 +1140,26 @@ mod tests {
             threshold("--similarity-related", Some(0.0), SIMILARITY_RELATED).unwrap(),
             0.0
         );
+    }
+
+    #[test]
+    fn an_at_summary_naming_an_existing_file_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("notes.txt"), "the real summary\n").unwrap();
+
+        let err = refuse_at_file("@notes.txt", dir.path()).unwrap_err();
+        assert_eq!(kind_of(&err), "validation");
+        assert!(err.to_string().contains("--summary - < notes.txt"), "{err}");
+    }
+
+    #[test]
+    fn an_at_mention_naming_no_file_stays_literal() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("handle")).unwrap();
+
+        for raw in ["@handle mention", "@handle", "@", "plain text"] {
+            assert!(refuse_at_file(raw, dir.path()).is_ok(), "{raw}");
+        }
     }
 
     #[test]

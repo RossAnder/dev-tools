@@ -64,7 +64,7 @@ tomlctl backlog add --summary "conpty spawn intermittently fails with CreateProc
 | `--auto-base-sha` | flag | Resolve `base_sha` from `git rev-parse HEAD`. Composes with `--json` — it supplies no content — and a payload's own `base_sha` wins. Silently records nothing outside a repo, on an unborn HEAD, or with no git on PATH: a capture is worth more than its provenance. | off |
 | `--on-duplicate` | `bump` \| `skip` \| `fail` | Behaviour when the computed `dedup_id` is already stored. | `bump` |
 | `--json` | payload or `-` | Whole-item JSON instead of the field flags; `-` reads stdin. Mutually exclusive with every field flag above — passing both errors with `kind=validation`. A key no stored row carries is refused with `kind=validation` naming it. | — |
-| `--dry-run` | — | Emit the mutation plan; touch neither file nor sidecar. | off |
+| `--dry-run` | — | Emit the mutation plan plus the would-be envelope keys; touch neither file nor sidecar. | off |
 
 `--on-duplicate bump` increments `seen_count`, refreshes `last_seen`, and unions `tags`,
 `evidence` and `related`, leaving `summary` and `status` alone. `skip` reports the incumbent
@@ -75,8 +75,8 @@ the incumbent. No value appends a second row: one id maps to one row.
 clock, so a `--json` payload replayed out of a `show` has those five overwritten rather than
 honoured.
 
-Envelope — one of three actions, or under `--dry-run` the standard mutation-plan envelope,
-`{"ok":true,"dry_run":true,"would_change":{"kind":"items",…}}`:
+Envelope — one of three actions. `--dry-run` adds the would-be `action`, `id`, `dedup_id` or
+`seen_count`, and `advisories` beside `"dry_run":true` and `would_change`:
 
 ```json
 {"ok":true,"action":"added","id":"B-a1b2c3d4","dedup_id":"<16 hex>","created":false,"path":".claude/backlog.toml"}
@@ -129,7 +129,7 @@ tomlctl backlog check --ndjson <staged-file> --template '{line} {verdict} {summa
 
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
-| `--summary` | text or `-` | The discovery being weighed. Required unless `--ndjson` is given. `-` reads the whole of stdin as the summary, less one trailing newline — the path text somebody else wrote takes to the gate without being tokenised by a shell. Empty stdin is a `kind=validation` error. | — |
+| `--summary` | text or `-` | The discovery being weighed. Required unless `--ndjson` is given. `-` reads the whole of stdin as the summary, less one trailing newline — the path text somebody else wrote takes to the gate without being tokenised by a shell. Empty stdin is a `kind=validation` error, as is an `@<path>` naming an existing file (stage it and pass `-`); an `@mention` naming no file is probed as text. | — |
 | `--ndjson` | path, `@<path>` or `-` | A batch of probes, one `{summary, kind, area, tags}` object per line; only `summary` is required. Conflicts with `--summary`, `--kind`, `--area` and `--tag`. | — |
 | `--kind` | text | Must match the `--kind` the following `add` will use — it is hashed into the fingerprint. | `other` |
 | `--area` | repo-relative path | Must match the following `add` for the same reason; also feeds the structural `related` rung. | empty |

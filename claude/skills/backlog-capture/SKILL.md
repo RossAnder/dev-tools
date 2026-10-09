@@ -270,8 +270,9 @@ Windows, since a multi-line heredoc or here-string fails intermittently on Windo
 file has no size limit and nothing to quote; see
 [Stdin input for large JSON payloads](../tomlctl/references/write.md#stdin-input-for-large-json-payloads).
 `backlog add` and `backlog check` take no `--set` field flags, and `--summary` reads a file only
-through `-` and a `<` redirect: an `@<path>` there is probed as the literal summary text, so it
-answers a confident `novel` for the wrong string.
+through `-` and a `<` redirect: `backlog check` refuses an `@<path>` naming an existing file with
+`kind=validation`, pointing at `--summary - < <path>`, while an `@mention` naming no file is
+probed as literal text.
 
 Probe before minting — same `--kind` and `--area` the mint will use, with the summary written to
 `.claude/_backlog-summary.txt` rather than typed into an argument:
@@ -310,7 +311,9 @@ Mint with provenance and a workaround, the whole item staged as JSON in
 tomlctl backlog add --json '@.claude/_backlog-row.json' --auto-base-sha --template '{action} {id} {advisories}'
 ```
 
-Quote the `@<path>`: PowerShell drops an unquoted `@name` as splatting syntax.
+Quote the `@<path>`: PowerShell drops an unquoted `@name` as splatting syntax. To preview the
+mint first, run the same command with `--dry-run`: the template reads the would-be `action` and
+`id` (`added`, `bumped` or `skipped`) and writes nothing.
 
 Minting several — the survivors of one run's `TANGENTIAL:` lines — put one such payload per
 line in `.claude/_backlog-batch.ndjson` and mint them in one call, which takes one lock and one
