@@ -23,6 +23,8 @@ use super::{
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Cmd {
     /// Parse a TOML file and print the whole document as JSON.
+    // `read` is the name agents reach for first; the alias stays out of help.
+    #[command(alias = "read")]
     Parse {
         file: PathBuf,
         #[command(flatten)]
@@ -408,4 +410,22 @@ pub(crate) struct LegacyShortcuts<'a> {
     pub(crate) file: &'a Option<String>,
     pub(crate) newer_than: &'a Option<String>,
     pub(crate) count: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cmd;
+    use crate::cli::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn read_alias_parses_as_parse() {
+        let parsed = crate::test_support::on_cli_stack(|| {
+            Cli::try_parse_from(["tomlctl", "read", "f.toml"])
+        });
+        let Ok(cli) = parsed else {
+            panic!("`tomlctl read f.toml` must parse");
+        };
+        assert!(matches!(cli.cmd, Cmd::Parse { ref file, .. } if file.as_os_str() == "f.toml"));
+    }
 }

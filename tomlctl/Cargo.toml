@@ -28,14 +28,17 @@ toml = { version = "^1.1", features = ["preserve_order"] }
 serde_json = { version = "^1", features = ["preserve_order"] }
 # `error-context` makes parse failures name the offending flag, token or value
 # instead of a bare "one or more required arguments were not provided". It pulls
-# in no extra crates (`clap_builder/error-context = []`); `suggestions` is the
-# adjacent feature left off, since it adds a `strsim` dependency for typo hints.
+# in no extra crates (`clap_builder/error-context = []`). `suggestions` adds the
+# "tip: a similar subcommand exists" hints that steer a mistyped verb or flag to
+# the real one. Its one dependency, `strsim`, is already in glimpse's and
+# lumina's dependency graphs, so the cost is small.
 clap = { version = "^4", default-features = false, features = [
     "std",
     "derive",
     "help",
     "usage",
     "error-context",
+    "suggestions",
 ] }
 anyhow = "^1"
 # globset: plan-discovery glob matching (`flow find-plans`). jiff: staleness
