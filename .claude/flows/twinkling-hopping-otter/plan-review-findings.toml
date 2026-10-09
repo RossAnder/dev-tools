@@ -1,0 +1,496 @@
+schema_version = 1
+last_updated = 2026-10-09
+round = 1
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "completeness"
+plan_section = "### 38. Add the guidance lint [M]"
+summary = "guidance_lint goes red on five sites no task owns or is told to fix, so checkpoint D cannot pass"
+description = "Simulating the five rules over command_lint_scan_set (lint.rs:15) finds sites tasks 26-37 never address: (a) claude/commands/commit.md:26 `tomlctl flow resolve ... 2>/dev/null` in a bash fence, a file no task lists (deliberate best-effort resolve, so the canon also needs an answer for a carrier that does not want stderr); (b) claude/skills/tomlctl/references/flow.md:97 `--error-format json ... 2>&1 >/dev/null` demo, task 29's file but not in its Action (opt out with ignore-guidance-lint); (c) claude/skills/tomlctl/references/query.md:68 `tomlctl items next-id ... --strict-read`, task 26's file, not in its Action; (d) claude/skills/tomlctl/references/write.md:127-128 two `tomlctl set` on one context.toml in one fence, task 27 not told to collapse; (e) claude/commands/tdd.md:54 heredoc into tomlctl inside an untagged fence the lint never walks (task 33 should tag it bash). Raised independently by all four lenses; orchestrator confirmed commit.md:26, flow.md:97, query.md:68, write.md:127-128."
+anchor_old = "- **Files**: `tomlctl/src/cli/dispatch/tests/lint.rs`"
+anchor_new = "- **Files**: `tomlctl/src/cli/dispatch/tests/lint.rs`, `claude/commands/commit.md` — drop the `2>/dev/null` on the best-effort `tomlctl flow resolve` fence"
+dedup_id = "b9ea324b022d480f"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 9. Report limited on the list verbs [M]"
+summary = "Task 9 breaks pinned list tests in files outside its Files line, turning checkpoint B red"
+description = "tomlctl/tests/integration.rs items_list_sort_by_asc_then_limit (:1151) and items_list_sort_by_desc_reverses (:1316) run `--limit 2` over 6 rows and call `as_array()` on the pretty output, which panics once it is wrapped as {rows,limited}. No task lists integration.rs. If the pluck stream also gained the header, tests/capabilities.rs lines_with_pluck_and_limit (:442) would break too (task 25's file, checkpoint C) — keep pluck header-free (see the stream-shape finding). Task 24 should drop the `!engine_listed` exclusion at tests/output_options.rs:895-896. Keep query::run's signature (callers in backlog/query.rs, items.rs, tasks/list.rs) and add a count-returning sibling."
+anchor_old = "- **Files**: `tomlctl/src/query.rs`, `tomlctl/src/output.rs`, `tomlctl/tests/list_limited.rs` (new)"
+anchor_new = "- **Files**: `tomlctl/src/query.rs`, `tomlctl/src/output.rs`, `tomlctl/tests/list_limited.rs` (new), `tomlctl/tests/integration.rs` — `items_list_sort_by_asc_then_limit` / `items_list_sort_by_desc_reverses` read `rows`"
+dedup_id = "af0dcc7c134f50f7"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 9. Report limited on the list verbs [M]"
+summary = "A limited header line would corrupt --ndjson, --pluck and --raw streams"
+description = "query.rs:1966 merges `ndjson: input.ndjson || input.lines`, so a header added to the --lines stream also lands in `items list --ndjson --limit N`, which query.md:153 documents as clean add-many input; `--pluck f --raw --lines --limit N` would start with a JSON line. Emit the header only on the row-object --lines path; --ndjson/--pluck/--raw streams stay header-free and report the cut on stderr, as --get/--template already do. Add those cases to tests/list_limited.rs."
+anchor_old = """Pretty bare-array output becomes `{"rows":[…],"limited":{…}}` and `--lines` gets a leading header line, matching eventual-churning-sunrise's User Decision 5."""
+anchor_new = """Pretty bare-array output becomes `{"rows":[…],"limited":{…}}` and `--lines` row output gets a leading header line (eventual-churning-sunrise's User Decision 5). `--ndjson`, `--pluck` and `--raw` streams stay header-free and report the cut on stderr, because `--ndjson` output is the documented `add-many` input and `query.rs` merges `ndjson` with `lines` today."""
+dedup_id = "d2dc3170848b9c8a"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 19. Carry ref in tasks update envelopes [S]"
+summary = "The tasks update envelope is pinned by exact-equality tests in tests/tasks_write.rs, which task 19 omits"
+description = """tests/tasks_write.rs:417-420 and :444 assert `json!({"ok":true,"id":2,"changed":[...]})` with whole-object assert_eq!, and :488-494 a per-result object; all fail once `ref` is added. The envelope is built in tasks/dispatch.rs; update.rs's mod tests never see the JSON, so the acceptance filter `tasks::update::tests` cannot catch it. Docs: tomlctl/README.md:403 (task 25) and flow-contract-task-store SKILL.md:159 (see the task-store finding). Three files means the task is no longer S — retag M in the store."""
+anchor_old = "- **Files**: `tomlctl/src/tasks/update.rs`, `tomlctl/src/tasks/dispatch.rs`"
+anchor_new = "- **Files**: `tomlctl/src/tasks/update.rs`, `tomlctl/src/tasks/dispatch.rs`, `tomlctl/tests/tasks_write.rs` — exact-equality update envelopes gain `ref`"
+dedup_id = "f8ffbcf90a972654"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 14. Stamp updated on context.toml writes [S]"
+summary = "The stamping wrappers never see the file path, so task 14 cannot stay inside io.rs"
+description = "stamp_if_changed(before, after) (io.rs:781) and stamped/stamped_conditional/stamped_plan(stamp, f) (io.rs:818-867) take no path, and mutate_doc's closure is FnOnce(&mut TomlValue). All 13 callers are in cli/dispatch.rs today (spread across dispatch.rs, dispatch/doc.rs, dispatch/items.rs after task 2). Smallest fix: a path-taking stamped_at(path, stamp, f) used only by the set/set-json/array-append arms in doc.rs (task 14 already depends on 13, which owns doc.rs). Three files, cross-file — retag M."
+anchor_old = "- **Files**: `tomlctl/src/io.rs`, `tomlctl/tests/updated_stamp.rs` (new)"
+anchor_new = "- **Files**: `tomlctl/src/io.rs` — add `stamped_at(path, stamp, f)` that also refreshes root `updated` when the basename is `context.toml`, `tomlctl/src/cli/dispatch/doc.rs` — the `set` / `set-json` / `array-append` arms call `stamped_at`, `tomlctl/tests/updated_stamp.rs` (new)"
+dedup_id = "bbb6bb0b2ebe94a3"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 2. Move the items and document-write dispatch arms out of cli/dispatch.rs [M]"
+summary = "Task 13 must edit cli/dispatch.rs (undeclared, parallel with task 5) unless task 2 moves the Cmd destructuring too"
+description = "run destructures Cmd::Set (dispatch.rs:247-255) and Cmd::ArrayAppend (:353-361) field by field without `..`. Task 13 makes Set's positionals optional and adds fields, so any destructure left in run stops compiling (E0027) in a file task 13 does not declare and task 5 edits concurrently. Have task 2 pass the whole Cmd value to doc.rs. Separately, task 13's 'extend compute_set_mutation's plan to a list' reaches ScalarMutationPlan, shared with set-json and output.rs (build_dry_run_scalar_envelope, emit_dry_run_scalar and their tests) — tasks 5/6/8/9's file; keep the single-pair dry-run shape and build the multi-pair envelope in doc.rs."
+anchor_old = "into functions in `tomlctl/src/cli/dispatch/doc.rs` that `run` calls; no behaviour change."
+anchor_new = "into functions in `tomlctl/src/cli/dispatch/doc.rs` that take the whole `Cmd` value (`c @ Cmd::Set { .. } => doc::set(c)?`), so each variant's fields are destructured only in `doc.rs` and tasks 13 and 14 never edit `dispatch.rs`; no behaviour change."
+dedup_id = "8accf9377d2eb3d2"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 2. Move the items and document-write dispatch arms out of cli/dispatch.rs [M]"
+summary = "Task 2's Detail narrows two pub(crate) helpers to pub(super), breaking modules outside cli"
+description = "read_integrity_opts (dispatch.rs:95) and write_integrity_opts (:110) are pub(crate) and imported via crate::cli by agents/list.rs:10, agents/record.rs:21, backlog/add.rs:26, backlog/add_many.rs:18, backlog/compact.rs:26 and others. Taken literally the Detail breaks the build outside task 2's files. refuse_json_extension_for_toml_writers (private, :165) is used only by the arms moving to doc.rs and must move or widen."
+anchor_old = "Shared helpers still used by `run` (`write_envelope`, `output_opts`, `read_integrity_opts`, `write_integrity_opts`) stay in `dispatch.rs` as `pub(super)`."
+anchor_new = "Helpers stay in `dispatch.rs` with no narrower visibility than today: `read_integrity_opts` / `write_integrity_opts` remain `pub(crate)` (imported through `crate::cli` by `agents/` and `backlog/`); private helpers the new children call (`write_envelope`, `output_opts`, `refuse_json_extension_for_toml_writers`) move with them or widen to `pub(super)`."
+dedup_id = "7ae03aa9be9ccbb8"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 20. Add the batch form of backlog check [M]"
+summary = "Task 20 omits backlog/dispatch.rs, which destructures BacklogOp::Check field by field"
+description = "backlog/dispatch.rs:59-75 matches BacklogOp::Check { summary, area, kind, tag, similarity_strong, similarity_related, integrity } with no `..`. Adding --ndjson and making summary (types.rs:1219) optional forces an edit there. Task 23 also edits it and depends on 20, so no new collision."
+anchor_old = "- **Files**: `tomlctl/src/backlog/check.rs`, `tomlctl/src/cli/types/backlog.rs`, `tomlctl/tests/backlog_check_batch.rs` (new)"
+anchor_new = "- **Files**: `tomlctl/src/backlog/check.rs`, `tomlctl/src/backlog/dispatch.rs` — the `BacklogOp::Check` arm, `tomlctl/src/cli/types/backlog.rs`, `tomlctl/tests/backlog_check_batch.rs` (new)"
+dedup_id = "3aadfb06d1fadf71"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 27. Rewrite the write reference around field flags and staged files [M]"
+summary = "Tasks 27, 29 and 30 run `cargo test --test skills`, a target that does not exist"
+description = "tomlctl/tests/skills.rs does not exist and Cargo.toml has no [[test]] override (verified). The gates are lib tests in tomlctl/src/cli/dispatch/tests/skills.rs (write_reference_enumerates_every_date_key :563, skill_references_under_line_ceiling :704, skill_descriptions_under_spec_cap :799), so cargo refuses with 'no test target named skills'. Task 29: `--lib -- cli::dispatch::tests::skills::skill_references_under_line_ceiling`; task 30: `--lib -- cli::dispatch::tests::skills`. Exploration Notes also cite tomlctl/tests/skills.rs."
+anchor_old = "  - guard: `cargo test --manifest-path tomlctl/Cargo.toml --test skills` passes (ceilings, date keys, links)."
+anchor_new = "  - guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::skills` passes (ceilings, date keys, links)."
+dedup_id = "b926d08a5826b88b"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "A repeatable global --where given on both sides of the subcommand silently drops the earlier predicates"
+description = "clap_builder 4.6.7 ArgMatcher::fill_in_global_values (parser/arg_matcher.rs:53-90) keeps the child's MatchedArg wholesale when sources are equal and copies it up, so `tomlctl --where a=1 tasks list --where b=2` filters on b=2 only and exits 0 with extra rows. Every current global is single-valued, so this never mattered; where_eq: Vec<String> is the first repeatable one. The Risks mitigation ('both before and after') does not test the split case. Also, keeping the QueryArgs locals lists --where under global_flags and each list verb's flags, contradicting README:343. Fix: argv token-count guard raising kind=validation on a split, plus the split case in task 5's test."
+anchor_old = "task 5's test runs a list verb with `--where` both before and after the subcommand and requires identical output."
+anchor_new = "task 5's test runs a list verb with `--where` before the subcommand and, separately, after it, requiring identical output; a split across both sides raises `kind=validation` via an argv token-count guard, because clap 4.6.7 keeps only the child's values for a repeatable global (`ArgMatcher::fill_in_global_values`)."
+dedup_id = "6d2bfe37f4081206"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 8. Implement --max-chars and --omit [M]"
+summary = "--max-chars, --omit, --rows and --header would be silently ignored on the three list verbs"
+description = "print_query_list (output.rs:464) streams via run_streaming whenever --lines/--ndjson is set and streaming_allowed() (output.rs:430, checks only get/template) holds, bypassing emit; otherwise print_query uses query_opts() (output.rs:437-445), an allow-list passing only get/template/quiet/json_errors. So `items list ... --max-chars 80` prints untruncated and `tasks list --rows x` neither errors nor acts — on the most common read. Neither task 6 nor 8 says to extend query_opts or streaming_allowed."
+anchor_old = "`--max-chars` walks rows, the header and single objects after projection, so it also caps `--get` output."
+anchor_new = "`--max-chars` walks rows, the header and single objects after projection, so it also caps `--get` output. The list verbs bypass `emit`'s option set: extend `query_opts()` (an allow-list today) to pass `--omit` and `--max-chars`, make `streaming_allowed()` false when either is set, and add `items list --lines --max-chars 40` and `tasks list --omit body` cases; task 6 likewise makes `--rows` / `--header` refuse on a list verb instead of being dropped."
+dedup_id = "205a0bc1013784cb"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "## Risks"
+summary = "Phase D guidance goes live machine-wide via symlinks while the installed binary is still 0.14"
+description = "~/.claude/{skills,commands,agents} are symlinks into this tree (flow-bootstrap.md -> claude/agents/flow-bootstrap.md; deploy-claude.ps1). Each Phase D write reaches every session in every repo immediately; once task 32 raises the floor to 0.15, every flow-bootstrap halts until the After Merge `cargo install`. Install 0.15 right after checkpoint C commits (final CLI surface), before dispatching Phase D."
+anchor_old = "so skew halts at Step 0, as 0.14 did."
+anchor_new = "so skew halts at Step 0, as 0.14 did. Because `claude/{agents,commands,skills}` are symlinked into `~/.claude/`, each Phase D edit is live machine-wide when written; the orchestrator runs `cargo install --path tomlctl` and `cargo install --path glimpse` right after checkpoint C commits, before dispatching any Phase D task."
+dedup_id = "42cd611b7fa4f99e"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Guidance canon"
+summary = "Git Bash rewrites a --set value starting with / into a Windows path"
+description = "Probed under the agents' Git Bash: `summary=/implement step done` arrived as `summary=C:/Program Files/Git/implement step done`; newlines and embedded quotes survived. Summaries in this repo often start with a slash-command name. Add a canon line (route such values through --set-file or prefix MSYS_NO_PATHCONV=1) and optionally a guidance_lint rule for `--set(-json)? KEY=/` in fences."
+anchor_old = "- **One entry**: field flags. Write prose to a file with the Write tool and pass `--set-file`."
+anchor_new = "- **One entry**: field flags. Write prose to a file with the Write tool and pass `--set-file`. Git Bash rewrites a `--set` value that starts with `/` into a Windows path, so pass such values through `--set-file` (or prefix the call with `MSYS_NO_PATHCONV=1`)."
+dedup_id = "9cc210a6ecc8dc84"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Commit train"
+summary = "Cross-layer file merging can create a cycle between groups, and 'highest layer' ordering then breaks dependency order"
+description = "In this plan's checkpoint C, tasks 13, 14, 22 and 25 merge through io.rs, cli/types/cmd.rs and tomlctl/Cargo.toml; task 24 depends on 13, 14 and 22, and 25 depends on 24, so the groups {13,14,22,25} and {24} form a cycle with no valid order. implement.md:165 requires dependency order. Collapse strongly connected components of the group graph, then order topologically; add an A-C fixture to tests/tasks_train.rs."
+anchor_old = "4. **Order**: by each group's highest `layered_kahn` layer over the full graph (`tomlctl/src/tasks/graph.rs`), then by lowest id."
+anchor_new = "4. **Order**: collapse any dependency cycle among groups (strongly connected components of the group graph) into one group, then order groups topologically over the full graph (`tomlctl/src/tasks/graph.rs`), breaking ties by lowest id."
+dedup_id = "fe5117c75beaebc2"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Execution-record writes"
+summary = "flow record --set stores integer and array fields as strings, and record_schema checks only presence and enums"
+description = '--set is always a string, so `flow record --set retries=0` writes retries = "0" and `--set files=a.rs` hands the files[] normaliser a string. The execution-record schema types retries/duration_s as integers and files/commits/failed_ids as arrays; no reader type-checks them. Coerce digit strings for integer fields and refuse a string in an array field with a hint naming --set-json; unit-test both.'
+anchor_old = "- **Enums**: `status`, `dispatch_tier`, `dispatch_agent`, `vet`, `outcome`, `direction`."
+anchor_new = """
+- **Enums**: `status`, `dispatch_tier`, `dispatch_agent`, `vet`, `outcome`, `direction`.
+- **Types**: `retries` and `duration_s` are integers (a digit string from `--set` is coerced); `files`, `commits` and `failed_ids` are arrays (a string is refused with a hint naming `--set-json`)."""
+dedup_id = "c047ea2e1eec6ed5"
+
+[[items]]
+id = "P16"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Execution-record writes"
+summary = "The scope warning is undefined for an empty or absent scope, which most flows have"
+description = '''30 flows here have no scope key and one has []; read literally, 'outside the scope globs' flags every file. flow/resolve.rs:948 compile_scope_globset already compiles scope and returns None for empty/all-invalid; reuse it (make it pub(crate)), treat None as no warning, normalise \ to / first, and add flow/resolve.rs to task 15's Files.'''
+anchor_old = "- **Scope**: an entry outside the `context.toml` `scope` globs (via `globset`) sets `scope_warning = true`."
+anchor_new = "- **Scope**: an entry outside the `context.toml` `scope` globs sets `scope_warning = true`, matched with `flow/resolve.rs::compile_scope_globset` (made `pub(crate)`); an empty, absent or all-invalid scope warns on nothing."
+dedup_id = "f6d0f98423f206ac"
+
+[[items]]
+id = "P17"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 3. Add wildcard path walking and nested-key hints to convert.rs [M]"
+summary = "Acceptance filters naming not-yet-written tests exit 0 when they match nothing, so they cannot fail"
+description = "`cargo test -- <filter>` exits 0 on an empty match. Unnamed new-test filters: task 3 convert::tests::wildcard, task 5 output::tests, task 7 output::template::tests, task 11 fields::tests, task 15 flow::record_schema::tests, task 18 tasks::show::tests::absent, task 19 tasks::update::tests, task 22 cli::types::cmd::tests, task 38 and Success Criterion 7 cli::dispatch::tests::lint::guidance_lint. Name the test functions in each Detail and use nextest with --no-tests=fail (nextest 0.9.136)."
+anchor_old = "`cargo test --manifest-path tomlctl/Cargo.toml --lib -- convert::tests::wildcard` passes."
+anchor_new = "`cargo nextest run --manifest-path tomlctl/Cargo.toml --lib --no-tests=fail -E 'test(/^convert::tests::wildcard_/)'` passes, over cases named `wildcard_projects_deps_refs_skipping_missing`, `wildcard_over_object_values` and `wildcard_hint_suggests_item_summary` (today: no matching test)."
+dedup_id = "c46142bfaeb2b169"
+
+[[items]]
+id = "P18"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 4. Make query predicates array-aware and add a JSON-row evaluator [M]"
+summary = "How global --where strings become Predicates for JSON rows, and typed semantics there, are left to the implementer"
+description = "eval_predicate/eq_typed/cmp_pred work on TOML tables (query.rs:1081-1130) with PredicateCache built in apply_filters (:941); KEY=VAL parsing lives inside Query::from_query_input (:1780). No task names the function turning OutputOpts's where_* vectors into Vec<Predicate>, and JSON rows have no TOML dates, so '@date:' semantics are undefined. 'Expose predicate parsing ... without duplicating the RHS cache' is a design instruction, not a spec."
+anchor_old = "Expose predicate parsing for `json_rows` without duplicating the RHS cache."
+anchor_new = "Factor the KEY=VAL → `Predicate` parsing out of `Query::from_query_input` into `pub(crate) fn predicates_from(...) -> Result<Vec<Predicate>>`, which task 6 calls with `OutputOpts`'s where fields. `json_rows::filter` converts each row once with `convert::json_to_toml` and reuses the parent's private `parse_rhs_for_cache` and `eval_predicate` unchanged (a child module needs no visibility change), so typed comparisons match the list verbs."
+dedup_id = "4bc2d36019e9ae91"
+
+[[items]]
+id = "P19"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 6. Apply wildcards, --rows, --header and global --where in the emitter [M]"
+summary = "Task 6's falsifier asserts star-less `--select deps.ref` will succeed, which the Approach never provides"
+description = "Approach, 'Path wildcards and hints' defines projection only for `*` paths (deps.*.ref); nothing makes deps.ref over an array resolve. Probed on 0.14.0: both forms exit 1 'matches no field'. The test would assert behaviour the design does not deliver."
+anchor_old = 'falsifier: today `tomlctl tasks show 3 --slug eventual-churning-sunrise --with deps --select deps.ref` exits 1 with "matches no field" (probed); the test asserts it succeeds.'
+anchor_new = """falsifier: today `tomlctl tasks show 3 --slug eventual-churning-sunrise --with deps --select 'deps.*.ref'` exits 1 with "matches no field" (probed 2026-10-09); the test asserts it prints `{"deps.*.ref":[…]}`."""
+dedup_id = "26fe26a9dc27abd4"
+
+[[items]]
+id = "P20"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## Success Criteria"
+summary = "No criterion checks the read-side classes, vocabulary recovery or the shell-loop goal; one guard cannot fire"
+description = "Context's goal includes every workaround class having a tomlctl form and no shell loop, but no criterion checks array filters, nested projection, truncation, the read/related aliases, or removal of implement.md:126's `while IFS= read` loop (today: 1). The guard claims every_leaf_command_has_a_case catches a missing batch backlog check case, but batch check is a flag on an already-cased leaf (output_options.rs:1018). Add predicted-unverified forward criteria for --where-contains on files, --select 'deps.*.ref', --max-chars marker and `tomlctl read`, plus `grep -c 'while IFS= read' claude/commands/implement.md` = 0."
+anchor_old = "guard: `every_leaf_command_has_a_case` fails if `flow record`, `tasks train` or batch `backlog check` lacks a case."
+anchor_new = """
+guard: `every_leaf_command_has_a_case` fails if `flow record` or `tasks train` lacks a case (batch `backlog check` is a flag on an already-cased leaf; `--test backlog_check_batch` covers it).
+- forward: `/implement` has no shell loop around tomlctl. `grep -c 'while IFS= read' claude/commands/implement.md` is 0 (today: 1)."""
+dedup_id = "a2f3bf6dac47e3c7"
+
+[[items]]
+id = "P21"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "## Verification Commands"
+summary = "The tasks train Success Criterion has no matching success: key"
+description = "Success Criterion 6 has two parts; only the flow record count is repeated as a success: key. `grep -c 'tomlctl tasks train' claude/commands/implement.md` >= 1 is not, nor is the proposed shell-loop criterion. The read-side criteria could also become `cargo run -q --manifest-path tomlctl/Cargo.toml -- ...` keys."
+anchor_old = """success: test "$(grep -rln 'tomlctl flow record' claude --include=*.md | wc -l)" -ge 4"""
+anchor_new = """
+success: test "$(grep -rln 'tomlctl flow record' claude --include=*.md | wc -l)" -ge 4
+success: test "$(grep -c 'tomlctl tasks train' claude/commands/implement.md)" -ge 1
+success: test "$(grep -c 'while IFS= read' claude/commands/implement.md)" -eq 0"""
+dedup_id = "3573db4b1e350a11"
+
+[[items]]
+id = "P22"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 11. Add the shared field-flag parser [S]"
+summary = "Task 11's Detail names a private io helper and a TOML-returning coercion that do not fit its two files"
+description = "io::claim_stdin (io.rs:260) is private and only marks stdin claimed; the public reader is io::read_text_arg (pub(crate), io.rs:358, claims stdin and caps 32 MiB). convert::maybe_date_coerce (convert.rs:499) returns TomlValue while build returns JSON; date coercion already happens at the JSON->TOML step. Also strip one leading U+FEFF from --set-file text (io.rs read_at_file has no BOM handling; PowerShell 5.1 Out-File writes one)."
+anchor_old = '`--set` values are strings, passed through `convert::maybe_date_coerce` for `DATE_KEYS`. `--set-json` parses with `serde_json`. `--set-file` reads UTF-8, strips one trailing `\n` (or `\r\n`); `-` uses `io::claim_stdin`.'
+anchor_new = '`--set` values stay JSON strings; `DATE_KEYS` coercion happens where the merged payload is converted to TOML (`convert::maybe_date_coerce`, exactly as for `--json` payloads), so `build` does not call it. `--set-json` parses with `serde_json`. `--set-file` reads UTF-8, strips one leading U+FEFF and one trailing `\n` (or `\r\n`); `-` reads through `io::read_text_arg`, which claims stdin and enforces the 32 MiB cap.'
+dedup_id = "d2d6b57f2d7a9d6d"
+
+[[items]]
+id = "P23"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 28. Document the new tasks verbs and parts [S]"
+summary = "No task updates flow-contract-task-store/SKILL.md, the canonical contract for every tasks verb"
+description = "claude/skills/flow-contract-task-store/SKILL.md owns 'the semantics of every tasks verb': §5 (:135) lacks tasks train, :159 documents the update envelope without ref, :193 lists show parts without absent, §11 (:370) lists sub-agent read verbs without train, §12 is the fetch-by-id idiom --with absent extends. 407/500 lines. Adding it makes task 28 three files — retag M."
+anchor_old = "- **Files**: `claude/skills/tomlctl/references/tasks.md`, `claude/skills/tomlctl/references/tasks-write.md`"
+anchor_new = "- **Files**: `claude/skills/tomlctl/references/tasks.md`, `claude/skills/tomlctl/references/tasks-write.md`, `claude/skills/flow-contract-task-store/SKILL.md` — §5 `train` semantics, update envelope `ref`, `absent` part, §11 read-verb list"
+dedup_id = "1f7c1d8dd3afc3f7"
+
+[[items]]
+id = "P24"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### Phase D — Guidance sweep"
+summary = "About 30 stale prose references to the heredoc contract, and statements tasks 9/10 reverse, go unnamed and uncaught"
+description = "Every success criterion greps for `<<` openers, so prose survives. `grep -rniE 'heredoc (write|append|form|idiom)|canonical heredoc|append heredoc|quoted heredoc|one heredoc|heredoc-stdin|stdin heredoc|stdin-heredoc' claude --include=*.md` = 30 today. Unnamed sites: implement.md:68,134,164,166,208 (task 32); plan-new.md:70,131 (35); plan-update.md:38,126,140,152,179,203 and tdd.md:38 (33); review.md:70,90, optimise.md:83, review-plan.md:106,134 (34); backlog-capture SKILL.md:151 (35); vet-research SKILL.md:13,25 (36). Reversed by tasks 9/10, in task 26's files: tomlctl SKILL.md:109 (lists report no limited), :113 (sweep --update / edges --dot own messages), query.md:128, SKILL.md:29 (next-id quick-ref), SKILL.md:165 (0.14.0 sample). Name them in the Actions and add that regex as a -eq 0 success criterion."
+dedup_id = "f7a610a003910d09"
+
+[[items]]
+id = "P25"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### Guidance canon"
+summary = "The canon's 'one entry → field flags' has no surface on backlog add/check, json set or inputs, and is silent on the printf pipe"
+description = "Field flags land only on items add/update, array-append, set and flow record. Task 35 points backlog-capture's data-safety rule at --set-file, but backlog check --summary reads through read_text_arg (`-` only, refuses @: io.rs:358, test read_text_arg_does_not_take_the_at_form) and backlog add has no --set-file. Task 37 says 'field-flag forms' for plansdirectory-prompt:18, which uses `json set --json` (no field flags). The single-line printf pipe appears in 13 fences, 7 in files no task owns (ledger-disposition-sweep:51, task-store:156, user-inputs:149, agents.md:50, inputs.md:74,124). State the form for verbs without field flags and whether the printf pipe stays."
+dedup_id = "ae6d009aab49f204"
+
+[[items]]
+id = "P26"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 21. Mint ids in items apply and keep a high-water mark [M]"
+summary = "tomlctl's own error messages still prescribe next-id numbering and heredocs"
+description = "items.rs:333-338 (items_add_value_to id-less row error) says 'for an items apply batch number the add ops upward from one tomlctl items next-id read' — exactly what --id-prefix replaces; only the 'non-empty string id' fragment is pinned (items.rs:3321). io.rs:366-368 (read_text_arg TTY error) suggests `- <<'EOF'`; io.rs belongs to tasks 13/14."
+anchor_old = "Keep `compute_apply_mutation_with`'s signature and behaviour (glimpse facade, `tomlctl/src/ledgers.rs`)."
+anchor_new = "Keep `compute_apply_mutation_with`'s signature and behaviour (glimpse facade, `tomlctl/src/ledgers.rs`). Rewrite the id-less row error in `items_add_value_to` to name `items apply --id-prefix` instead of numbering upward from `items next-id` (task 14 likewise rewrites `read_text_arg`'s `<<'EOF'` hint in `tomlctl/src/io.rs`)."
+dedup_id = "c0632558054b7c5d"
+
+[[items]]
+id = "P27"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 27. Rewrite the write reference around field flags and staged files [M]"
+summary = "Retitling 'Stdin input for large JSON payloads' breaks inbound anchors, one in task 35's parallel file"
+description = "Inbound links to write.md#stdin-input-for-large-json-payloads: claude/skills/backlog-capture/SKILL.md:309 (task 35, parallel), tomlctl/README.md:89 (task 25), write.md's own TOC. The current title contradicts the canon, so a retitle is likely; skill_markdown_links_resolve then goes red at checkpoint D and neither task can fix the other's file."
+anchor_old = "Keep `write_reference_enumerates_every_date_key`'s date-key list intact."
+anchor_new = "Keep `write_reference_enumerates_every_date_key`'s date-key list intact, and keep the `Stdin input for large JSON payloads` heading text (inbound: `claude/skills/backlog-capture/SKILL.md`, `tomlctl/README.md`, write.md's TOC)."
+dedup_id = "5095262d50c18cee"
+
+[[items]]
+id = "P28"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 36. Update the vet skills and test-bootstrap vet_events appends [S]"
+summary = "Task 36 is tagged S with three files; S allows at most two"
+description = "Files lists flow-contract-vet-research/SKILL.md, flow-contract-apply-vet-implement-lite/SKILL.md and claude/commands/test-bootstrap.md. /implement trusts the tag for lite dispatch. Retag M in tasks.toml (effort is a store field; the heading tag re-renders). Tasks 14, 19 and 28 lose S under their own findings."
+dedup_id = "e025c242cd46192e"
+
+[[items]]
+id = "P29"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "## Risks"
+summary = "The id_high_water risk leaves a storage fallback for the implementer that the codebase shows is unneeded"
+description = "No deny_unknown_fields in tomlctl/src or glimpse/src; ledger_read reads [[items]] only (ledgers.rs:139-155); flow doctor does not validate root keys. 'Fall back to a sidecar key' is a mid-task design branch."
+anchor_old = "Fall back to a sidecar key if any reader rejects unknown root keys."
+anchor_new = "No reader rejects unknown root keys today (no `deny_unknown_fields` in `tomlctl/src` or `glimpse/src`); if glimpse's tests fail on the new table, stop and surface it rather than switching storage."
+dedup_id = "e16fe1e502d95aae"
+
+[[items]]
+id = "P30"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "### 12. Accept field flags on items add and items update [M]"
+summary = "Tasks that change the clap tree never run the clap self-check, so a debug_assert panic surfaces only at checkpoint C"
+description = "output_gate.rs:128 the_command_tree_has_no_duplicate_flags runs Cli::command().debug_assert(); a duplicate long or required + required_unless* panics and reddens every CLI test. Only task 5 runs it. Task 12 is the likeliest trigger (ItemsOp::Add json: String at types.rs:1675 must become Option<String>). Same guard fits tasks 13, 16, 17, 18, 20, 21, 22, 23."
+anchor_old = "  - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test field_flags` passes."
+anchor_new = """
+  - guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests::output_gate::the_command_tree_has_no_duplicate_flags` passes (`json` becomes `Option<String>`; `required` + `required_unless*` panics).
+  - forward: `cargo test --manifest-path tomlctl/Cargo.toml --test field_flags` passes."""
+dedup_id = "b9fcefccff89b80e"
+
+[[items]]
+id = "P31"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 25. Advertise the features and release 0.15.0 [L]"
+summary = "Several version and verb registration points are unnamed"
+description = """capabilities_version_matches_cargo_toml pins "0.14.0" (tests/capabilities.rs:1722) and README.md:287's sample; the hand-kept read_subs (tests/capabilities.rs:26) and write_subs (:99) help lists should gain tasks train / flow record. If flow record --type or tasks train --granularity is a String validated later, capabilities cannot advertise its vocabulary without a SCOPED_ENUM_VALUES entry (capabilities.rs:39) — make both ValueEnums in tasks 16/17."""
+anchor_old = "and bump the version to 0.15.0 with both lockfiles refreshed."
+anchor_new = "and bump the version to 0.15.0 (including the `0.14.0` literal in `capabilities_version_matches_cargo_toml` and the README sample), add `tasks train` / `flow record` to the read/write help lists in `tomlctl/tests/capabilities.rs`, and refresh both lockfiles."
+dedup_id = "9dfcbe6b3b0a43ab"
+
+[[items]]
+id = "P32"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 1. Split the clap types module into per-group files [L]"
+summary = "Task 2 leaves cli/mod.rs:9 stale but cannot edit it without colliding with task 1"
+description = "tomlctl/src/cli/mod.rs:9 places items_dispatch in cli/dispatch.rs; task 2 moves it, but cli/mod.rs is task 1's and both run in the first frontier. Give both doc fixes to task 1. io.rs:1148/1182 ('Mirrors the live arm in cli/dispatch.rs') and items.rs:3260 also go stale — hand them to tasks 13 and 21."
+anchor_old = "Fix the one doc line in `tomlctl/src/cli/mod.rs` that names `cli/types.rs`."
+anchor_new = "Fix both doc bullets in `tomlctl/src/cli/mod.rs`: the `types` one naming `cli/types.rs` (now `cli/types/`), and the `dispatch` one placing `items_dispatch` in `cli/dispatch.rs` (task 2 moves it to `cli/dispatch/items.rs` and must not edit `cli/mod.rs`)."
+dedup_id = "a1fceb123f914152"
+
+[[items]]
+id = "P33"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### Guidance surface"
+summary = "Exploration Notes transcribe a few counts that drift from the tree"
+description = "Heredoc openers feeding tomlctl measure 17 in 11 files, not 18 in 10 (adds references/backlog.md:126 and the continuation case ledger-schema:191-194; write.md:407 is prose). The tomlctl SKILL.md description is 1,012 chars (12 headroom, not 14). tomlctl/tests/skills.rs does not exist. The success grep's today: 16 reproduces exactly but cannot see the continuation case."
+anchor_old = "- Heredoc openers: 18 in 10 files —"
+anchor_new = '- Heredoc openers feeding tomlctl: 17 in 11 files (16 single-line, plus `flow-contract-ledger-schema/SKILL.md` 191-194 via a `\` continuation, plus `claude/skills/tomlctl/references/backlog.md` 126) —'
+dedup_id = "07c570d8e83bf44f"
+
+[[items]]
+id = "P34"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 34. Move review, optimise and review-plan ledger writes onto apply minting [M]"
+summary = "Tasks 34 and 36 list files their acceptance never checks"
+description = "Orchestrator two-control probe: task 34's grep covers review.md and optimise.md (4 today) but not review-plan.md (1 match today); task 36's acceptance checks only vet-research SKILL.md while flow-contract-apply-vet-implement-lite/SKILL.md also has a `<<` (1 today). Extend each grep to every file on the Files line."
+anchor_old = "grep -cE 'numbered upward|next-id' claude/commands/review.md claude/commands/optimise.md |"
+anchor_new = "grep -cE 'numbered upward|next-id' claude/commands/review.md claude/commands/optimise.md claude/commands/review-plan.md |"
+dedup_id = "5d312c6d1024db82"
+
+[[vet_events]]
+timestamp = "2026-10-09T09:35:57Z"
+command = "review-plan"
+agent_index = 1
+lens = "feasibility"
+tier = "deep"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "10 raw findings; sampled anchors re-read and confirmed at cited file:line; stale-file claims verified before sampling (tomlctl/tests/skills.rs absent, claim_stdin private); merged into 34 consolidated findings"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T09:35:57Z"
+command = "review-plan"
+agent_index = 2
+lens = "completeness"
+tier = "deep"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "12 raw findings; sampled anchors re-read and confirmed at cited file:line; stale-file claims verified before sampling (tomlctl/tests/skills.rs absent, claim_stdin private); merged into 34 consolidated findings"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T09:35:57Z"
+command = "review-plan"
+agent_index = 3
+lens = "executability"
+tier = "deep"
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "14 raw findings; sampled anchors re-read and confirmed at cited file:line; stale-file claims verified before sampling (tomlctl/tests/skills.rs absent, claim_stdin private); merged into 34 consolidated findings"
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T09:35:57Z"
+command = "review-plan"
+agent_index = 4
+lens = "risk"
+tier = "deep"
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "12 raw findings; sampled anchors re-read and confirmed at cited file:line; stale-file claims verified before sampling (tomlctl/tests/skills.rs absent, claim_stdin private); merged into 34 consolidated findings"
+dedup_id = "45ca31c3315a5978"

@@ -1,5 +1,5 @@
 schema_version = 1
-last_updated = 2026-10-07
+last_updated = 2026-10-09
 
 [[backlog]]
 id = "B-de0a0d87"
@@ -5248,7 +5248,7 @@ kind = "question"
 summary = "backlog check verdict cannot be read with --get or --select because it sits in the report header, not the candidate rows"
 area = "tomlctl/src/backlog/check.rs"
 tags = ["output-options"]
-status = "open"
+status = "resolved"
 created = 2026-10-07
 last_seen = 2026-10-07
 seen_count = 1
@@ -5259,6 +5259,13 @@ context = "Global --get/--select act on a row report's rows; backlog check's row
 base_sha = "859faee582f394ab246132d4e83ac61f7dfee028"
 evidence = ["tomlctl/src/backlog/check.rs"]
 related = ["B-46de01dc"]
+promoted = 2026-10-09
+promoted_to = "twinkling-hopping-otter"
+resolved = 2026-10-09
+resolution = "resolved by flow `twinkling-hopping-otter` (tasks apply-wildcards-rows-header-and-global-where-in-the-emitter)"
+resolved_flow = "twinkling-hopping-otter"
+resolved_tasks = ["apply-wildcards-rows-header-and-global-where-in-the-emitter"]
+resolved_commits = ["543ccd2"]
 
 [[backlog]]
 id = "B-b0357675"
@@ -5266,7 +5273,7 @@ kind = "bug"
 summary = "items next-id and --id-prefix re-mint the id of a deleted highest-numbered row, contradicting the never-reused ledger rule"
 area = "tomlctl/src/items.rs"
 tags = ["ids"]
-status = "open"
+status = "resolved"
 created = 2026-10-07
 last_seen = 2026-10-07
 seen_count = 1
@@ -5277,6 +5284,13 @@ context = "items_next_id computes the highest existing numeric suffix plus one, 
 base_sha = "859faee582f394ab246132d4e83ac61f7dfee028"
 evidence = ["tomlctl/src/items.rs"]
 related = ["B-98a1c2e6"]
+promoted = 2026-10-09
+promoted_to = "twinkling-hopping-otter"
+resolved = 2026-10-09
+resolution = "resolved by flow `twinkling-hopping-otter` (tasks mint-ids-in-items-apply-and-keep-a-high-water-mark)"
+resolved_flow = "twinkling-hopping-otter"
+resolved_tasks = ["mint-ids-in-items-apply-and-keep-a-high-water-mark"]
+resolved_commits = ["2d1faac"]
 
 [[backlog]]
 id = "B-76668b92"
@@ -5284,7 +5298,7 @@ kind = "question"
 summary = "review and optimise leave last_updated unstamped when the --no-stamp interim checkpoint is followed by an empty Step 3 write"
 area = "claude/commands/review.md"
 tags = ["last_updated"]
-status = "open"
+status = "resolved"
 created = 2026-10-07
 last_seen = 2026-10-07
 seen_count = 1
@@ -5298,6 +5312,8 @@ evidence = [
     "claude/commands/optimise.md",
 ]
 related = ["B-684379b8"]
+resolved = 2026-10-09
+resolution = "a14a8ba: review and optimise refresh last_updated explicitly when Step 3 writes nothing"
 
 [[backlog]]
 id = "B-a7e28a05"
@@ -5305,7 +5321,7 @@ kind = "question"
 summary = "tdd copy-up of cycle record entries to the parent record carries the cycle's dedup_id"
 area = "claude/commands/tdd.md"
 tags = ["execution-record"]
-status = "open"
+status = "resolved"
 created = 2026-10-07
 last_seen = 2026-10-07
 seen_count = 1
@@ -5316,6 +5332,8 @@ context = "The copy-up now drops each entry's id and mints a fresh one with --id
 base_sha = "859faee582f394ab246132d4e83ac61f7dfee028"
 evidence = ["claude/commands/tdd.md"]
 related = ["B-fe2a80ba"]
+resolved = 2026-10-09
+resolution = "e3e4d31: tdd copy-up omits id and dedup_id so the parent mints both; dbe3bd0 documents why (a supplied dedup_id is kept verbatim)"
 
 [[backlog]]
 id = "B-c32a11bc"
@@ -5323,7 +5341,7 @@ kind = "annoyance"
 summary = "items sweep --update and tasks edges --dot refuse --lines with their own messages instead of the shared output-option behaviour"
 area = "tomlctl/src/cli/dispatch.rs"
 tags = ["output-options"]
-status = "open"
+status = "resolved"
 created = 2026-10-07
 last_seen = 2026-10-07
 seen_count = 1
@@ -5337,6 +5355,13 @@ evidence = [
     "tomlctl/src/tasks/edges.rs",
 ]
 related = ["B-6a671fa3"]
+promoted = 2026-10-09
+promoted_to = "twinkling-hopping-otter"
+resolved = 2026-10-09
+resolution = "resolved by flow `twinkling-hopping-otter` (tasks route-sweep-update-and-edges-dot-through-shared-output-option-behaviour)"
+resolved_flow = "twinkling-hopping-otter"
+resolved_tasks = ["route-sweep-update-and-edges-dot-through-shared-output-option-behaviour"]
+resolved_commits = ["0af76fb"]
 
 [[backlog]]
 id = "B-18128443"
@@ -5363,7 +5388,7 @@ kind = "question"
 summary = "items, tasks and backlog list never report that --limit cut rows, so an agent paging a list cannot tell a full page from a truncated one"
 area = "tomlctl/src/query.rs"
 tags = ["output-options"]
-status = "open"
+status = "resolved"
 created = 2026-10-07
 last_seen = 2026-10-07
 seen_count = 1
@@ -5372,6 +5397,13 @@ origin = "review"
 flow = "eventual-churning-sunrise"
 context = "The query engine consumes --limit before print_query, so no limited header is emitted; the plan's Approach sanctions this, but User Decision 5 says header everywhere. Workaround: request limit+1 rows, or run --count first."
 base_sha = "150ada4481b7a5e976bf9395614d4a08b70535ec"
+promoted = 2026-10-09
+promoted_to = "twinkling-hopping-otter"
+resolved = 2026-10-09
+resolution = "resolved by flow `twinkling-hopping-otter` (tasks report-limited-on-the-list-verbs)"
+resolved_flow = "twinkling-hopping-otter"
+resolved_tasks = ["report-limited-on-the-list-verbs"]
+resolved_commits = ["543ccd2"]
 
 [[backlog]]
 id = "B-d1dc0366"
@@ -5379,7 +5411,7 @@ kind = "debt"
 summary = "tomlctl get takes the owned read_doc path and runs about 20 percent slower than parse on the same file"
 area = "tomlctl/src/cli/dispatch.rs"
 tags = ["perf"]
-status = "open"
+status = "resolved"
 created = 2026-10-07
 last_seen = 2026-10-07
 seen_count = 1
@@ -5388,6 +5420,8 @@ origin = "review"
 flow = "eventual-churning-sunrise"
 context = "Measured on .claude/backlog.toml with tomlctl 0.14.0: get <file> backlog 5745us vs parse 4708us. parse uses the borrowed DeTable fast path. Predates the output-options flow; low priority."
 base_sha = "150ada4481b7a5e976bf9395614d4a08b70535ec"
+resolved = 2026-10-09
+resolution = "c90b6f8: get reads through the borrowed fast path parse uses, with an owned fallback that keeps error text identical"
 
 [[backlog]]
 id = "B-c35192c6"
@@ -5410,3 +5444,357 @@ related = [
 ]
 resolved = 2026-10-07
 resolution = "uncommitted: validate_paths refuses only when no listed path matches any row, so an optional field projects to absent beside a matching one"
+
+[[backlog]]
+id = "B-efda464f"
+kind = "debt"
+summary = "flow record carries its own copy of the execution-record path resolution and repo-root containment that tasks import-plan keeps private"
+area = "tomlctl/src/flow/record.rs"
+tags = ["flow-record"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "efda464f1eb03be1"
+origin = "implement"
+flow = "twinkling-hopping-otter"
+context = "tasks/import_plan.rs keeps record_path/under_root private, so flow/record.rs re-implements the [artifacts].execution_record lookup and the recorded_under_root check. Hoist one flow-level helper both call, so the containment rule cannot drift between the two."
+base_sha = "bf8807f63096913dfb22277de92e6a41f3b3c89b"
+related = ["B-2f9eead8"]
+resolved = 2026-10-09
+resolution = "0257298: one flow::execution_record_path helper shared by flow record and tasks import-plan"
+
+[[backlog]]
+id = "B-85dd4b61"
+kind = "bug"
+summary = "flow record leaves reconcile findings_count and commits_checked and status-transition from_status and to_status untyped although the record schema types them"
+area = "tomlctl/src/flow/record_schema.rs"
+tags = ["flow-record"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "85dd4b614e98af3e"
+origin = "implement"
+flow = "twinkling-hopping-otter"
+context = "normalise() checks required presence for these fields but not their type, so --set commits_checked=abc is stored as a string on a reconcile entry while the commits array check refuses the same mistake. Extend the integer/array checks to findings_count and commits_checked; consider an enum for from_status/to_status."
+base_sha = "bf8807f63096913dfb22277de92e6a41f3b3c89b"
+related = ["B-e66b6b41"]
+resolved = 2026-10-09
+resolution = "dbe3bd0: flow record types findings_count/commits_checked, constrains status-transition ends, refuses negative counts"
+
+[[backlog]]
+id = "B-70b747df"
+kind = "annoyance"
+summary = "a single backlog check with --get verdict fails with matches no field and gives no hint that the verdict is read with --header"
+area = "tomlctl/src/backlog/check.rs"
+tags = ["output-options"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "70b747df133e9afd"
+origin = "implement"
+flow = "twinkling-hopping-otter"
+context = "Workaround: backlog check ... --header --get verdict. The unknown-path error lists only the candidate-row fields; when the path names a header field of a row report, the error could suggest --header. verdict is the field agents guess on this verb."
+base_sha = "bf8807f63096913dfb22277de92e6a41f3b3c89b"
+related = ["B-e5b42b3b"]
+resolved = 2026-10-09
+resolution = "4afc20c: a row-report path that resolves only on the header now hints --header"
+
+[[backlog]]
+id = "B-fc049d3c"
+kind = "debt"
+summary = "the --error-format kind taxonomy table claims to enumerate every tag site but misses backlog triage not_found and the batch check validation errors"
+area = "claude/skills/tomlctl/references/flow.md"
+tags = ["docs"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "fc049d3ca57a1c8f"
+origin = "implement"
+flow = "twinkling-hopping-otter"
+context = "Agents branching on kind may miss a case. Either regenerate the table from the tagged_err call sites or drop the every-site claim."
+base_sha = "bf8807f63096913dfb22277de92e6a41f3b3c89b"
+related = ["B-a7c4198b"]
+resolved = 2026-10-09
+resolution = "6ced930: the error-kind table lists representative sites and adds the missing backlog ones"
+
+[[backlog]]
+id = "B-d86434c6"
+kind = "annoyance"
+summary = "backlog check --summary with an @path argument silently probes the literal string and returns a confident novel verdict"
+area = "tomlctl/src/io.rs"
+tags = ["backlog"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "d86434c6efcdc286"
+origin = "implement"
+flow = "twinkling-hopping-otter"
+context = "Workaround: stage the summary in a file and pass --summary - < file. read_text_arg takes @path literally; an agent applying the canon's @path habit gets a false novel and mints a duplicate. Refuse a leading @ or read the file."
+base_sha = "bf8807f63096913dfb22277de92e6a41f3b3c89b"
+related = ["B-4b893074"]
+resolved = 2026-10-09
+resolution = "0a885e4: backlog check --summary '@<existing file>' is refused with a pointer to --summary - < file"
+
+[[backlog]]
+id = "B-3af9064d"
+kind = "annoyance"
+summary = "backlog add --dry-run output carries no action or id so the documented template preview prints nothing useful"
+area = "tomlctl/src/backlog"
+tags = ["backlog"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "3af9064db7eb3ef4"
+origin = "implement"
+flow = "twinkling-hopping-otter"
+context = "backlog add --dry-run --template '{action} {id} {advisories}' prints only an empty list. Add the would-be action and id to the dry-run plan envelope, or document a template that fits it."
+base_sha = "bf8807f63096913dfb22277de92e6a41f3b3c89b"
+related = ["B-2e172357"]
+resolved = 2026-10-09
+resolution = "0a885e4: backlog add --dry-run carries the would-be action and id"
+
+[[backlog]]
+id = "B-abf38c95"
+kind = "question"
+summary = "flow record requires the four dispatch fields on every task-completion although the schema calls them forward-only implement fields, forcing migrate and tdd to invent or copy values"
+area = "tomlctl/src/flow/record_schema.rs"
+tags = ["flow-record"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "abf38c9512e5bb61"
+origin = "implement"
+flow = "twinkling-hopping-otter"
+context = "/plan-update migrate now back-fills deep/implement-deep/skipped/0 and /tdd copies them from the superseded entry. Decide whether non-/implement writers may omit dispatch_tier, dispatch_agent, vet and retries, and make the tool and the skill agree."
+base_sha = "bf8807f63096913dfb22277de92e6a41f3b3c89b"
+related = ["B-5f1ec4ff"]
+resolved = 2026-10-09
+resolution = "dbe3bd0: dispatch fields required only on agent=implement task-completions; migrate and tdd no longer invent them"
+
+[[backlog]]
+id = "B-02b4692e"
+kind = "question"
+summary = "flow init on a tdd sub-flow slug creates a tasks.toml although tdd sub-flows are documented as never owning a task store"
+area = "tomlctl/src/flow"
+tags = ["tdd"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "02b4692e66b62706"
+origin = "implement"
+flow = "twinkling-hopping-otter"
+context = "/implement and /plan-update exempt <parent>-tdd-<NNN> slugs from the task store, but flow init seeds one anyway. Either skip the seed for sub-flow slugs or relax the documented exemption."
+base_sha = "bf8807f63096913dfb22277de92e6a41f3b3c89b"
+related = ["B-6bc48e18"]
+resolved = 2026-10-09
+resolution = "a07d107: flow init seeds no tasks.toml for <parent>-tdd-<NNN> slugs; flow doctor skips the store warning for them"
+
+[[backlog]]
+id = "B-b95e1533"
+kind = "question"
+summary = "vet_events and rollback_events timestamps are written as strings while the ledger schema example shows a TOML datetime"
+area = "claude/skills/flow-contract-ledger-schema"
+tags = ["ledger"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "b95e1533613caf24"
+origin = "implement"
+flow = "twinkling-hopping-otter"
+context = "Both the old --json form and the new --set timestamp=... form store a string unless timestamp is a DATE_KEYS key. Readers sorting vet_events by timestamp may see mixed types; pick one and align the example or the coercion."
+base_sha = "bf8807f63096913dfb22277de92e6a41f3b3c89b"
+related = ["B-e74d4650"]
+resolved = 2026-10-09
+resolution = "6ced930: ledger schema documents timestamps as the ISO 8601 strings writers store"
+
+[[backlog]]
+id = "B-0e9237a7"
+kind = "annoyance"
+summary = "the full tomlctl nextest run takes about 170 seconds on Windows, dominated by subprocess-spawning integration tests such as output_options and agents_record"
+area = "tomlctl/tests"
+tags = ["test-speed"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "0e9237a777a84713"
+origin = "implement"
+flow = "twinkling-hopping-otter"
+context = "Measured 2026-10-09 at checkpoint gates: 1798 tests in 160-173s; every_case_honours_the_output_options alone 65s, agents_record about 13s per test, id_aliases about 11s per test. Single spawns are fast (debug tomlctl 35ms, git 130-160ms), so the cost is parallel spawn contention, plausibly AV scanning. CLAUDE.md says about 10s. Profile with -j 1 vs default before optimising."
+base_sha = "bf8807f63096913dfb22277de92e6a41f3b3c89b"
+related = ["B-2c5ee8c0"]
+resolved = 2026-10-09
+resolution = "31184f0 removed a 2-10 s jiff zone-database init per process (agents_record no longer among the slowest); 8b1e807 split output_options (binary 77s to 50s). Full-suite wall stays ~172s: bounded by ~13 process starts/s on this machine; remaining lever tracked separately"
+
+[[backlog]]
+id = "B-c5783e08"
+kind = "question"
+summary = "the research vet_events append stamps the ledger last_updated before the interim checkpoint, so a run interrupted after vetting already reads as fresh"
+area = "claude/skills/flow-contract-vet-research"
+tags = [
+    "ledger",
+    "freshness",
+]
+status = "open"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "c5783e08510e91a6"
+origin = "backlog"
+context = "review/optimise pass --no-stamp on the interim checkpoint to defer freshness, and now stamp explicitly when Step 3 writes nothing. The vet-research array-append (shared by review, optimise, review-plan, plan-new, plan-update, test-bootstrap) stamps on its own, which defeats the deferral; the apply-side vet skill already passes --no-stamp. Adding --no-stamp here is right only if every one of those carriers has a later stamping write, so audit all six before changing it."
+base_sha = "df947af5bd632fde4e3582efb051c71895e4476d"
+related = ["B-76668b92"]
+
+[[backlog]]
+id = "B-edb20f98"
+kind = "annoyance"
+summary = "the tomlctl suite wall time is bounded by process-start throughput on Windows, about 13 starts per second, so test layout changes cannot cut it below about 170 seconds"
+area = "tomlctl/tests"
+tags = ["test-speed"]
+status = "open"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "edb20f980ec5b521"
+origin = "backlog"
+context = "Measured 2026-10-09: 1833 tests in about 172s after splitting output_options and removing the per-process jiff zone-database init. Groupings and nextest ordering configs all converge on the same wall. Remaining levers: run read-only CLI checks in-process instead of spawning the binary (output_options' six family tests still take 47-62s each), and batch the shell-gate calls in cli::dispatch::tests::skills::blocks_verify_agrees_with_shell_gate (72s). CLAUDE.md still says the suite takes about 10s."
+base_sha = "6ced9304c492b45f4f0d7615f967fc5c110118f8"
+related = ["B-0e9237a7"]
+
+[[backlog]]
+id = "B-4c4edeac"
+kind = "bug"
+summary = 'piping tomlctl output into a reader that closes early (tomlctl capabilities | head) prints "The pipe has been ended. (os error 109)" because no write path handles BrokenPipe'
+area = "tomlctl/src/output.rs"
+tags = ["output"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "4c4edeaca383113d"
+origin = "review"
+flow = "twinkling-hopping-otter"
+context = "Seen during the twinkling-hopping-otter /review (completeness lens). No match for BrokenPipe anywhere in tomlctl/src. Harmless to the data, but leaves a spurious stderr error and possibly a non-zero exit when an agent pipes into head. Usual fix: treat io::ErrorKind::BrokenPipe on stdout as a clean exit in the top-level error handler. Workaround: use --limit or --max-chars instead of piping into head."
+base_sha = "6ced9304c492b45f4f0d7615f967fc5c110118f8"
+resolved = 2026-10-09
+resolution = "uncommitted /review-apply (twinkling-hopping-otter): stdout writes go through a sink that records its own BrokenPipe, which run() maps to a quiet exit 0; tests/broken_pipe.rs covers the buffered and streaming paths"
+
+[[backlog]]
+id = "B-656181e1"
+kind = "bug"
+summary = "flow ensure-artifact --bootstrap seeds an empty table, without the schema_version/last_updated skeleton, for an execution record whose recorded file name is not execution-record.toml"
+area = "tomlctl/src/flow/ensure_artifact.rs"
+tags = ["flow-record"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "656181e17ef24067"
+origin = "review-apply"
+flow = "twinkling-hopping-otter"
+context = "seed_doc_for picks the skeleton by basename, so a context whose [artifacts].execution_record names e.g. record-2.toml gets a schema-less record on first bootstrap; flow record's own auto-create likely shares the gap. Workaround: keep the canonical execution-record.toml name (flow init always writes it). Surfaced by /review-apply after ensure-artifact was routed through execution_record_path."
+base_sha = "6ced9304c492b45f4f0d7615f967fc5c110118f8"
+resolved = 2026-10-09
+resolution = "uncommitted fix: ensure-artifact --bootstrap, flow record auto-create and its dry-run preview seed the execution-record skeleton by artifact kind (record_path::execution_record_seed), not by file name; tests cover a custom-named record"
+
+[[backlog]]
+id = "B-9473e808"
+kind = "question"
+summary = "flow doctor's artifacts-canonical check fails any non-canonical [artifacts].execution_record although flow record, import-plan, render-progress-log and doctor's own record checks honour that path"
+area = "tomlctl/src/flow/doctor.rs"
+tags = ["flow-record"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "9473e8081e14e1a6"
+origin = "review-apply"
+flow = "twinkling-hopping-otter"
+context = "Decide whether a contained non-canonical record path is supported (then downgrade artifacts-canonical to a warning for it) or unsupported (then have execution_record_path refuse it, which would make the resolver trivial). Today a supported-looking configuration can never pass doctor. Surfaced by /review-apply while unifying the record path resolver."
+base_sha = "6ced9304c492b45f4f0d7615f967fc5c110118f8"
+related = ["B-efda464f"]
+resolved = 2026-10-09
+resolution = "decided: support contained custom record paths. flow doctor artifacts-canonical now passes a contained custom execution_record with a warning that tasks snapshot reads only the sibling file; escaping paths and custom values for other artifacts still fail; docs updated"
+
+[[backlog]]
+id = "B-d43bc6e2"
+kind = "question"
+summary = 'items remove still records an [id_high_water] mark for a hash id with no leading zero, such as B-12345678 giving "B-" = 12345678'
+area = "tomlctl/src/items.rs"
+tags = ["ids"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "d43bc6e2dc12ffb7"
+origin = "review-apply"
+flow = "twinkling-hopping-otter"
+context = "split_numbered_id now requires a digit-free prefix and a canonical number, which stops B-de0a0d87 and B-00000001 but not an all-digit hash with no leading zero. Fully closing it needs items remove to know which arrays mint ids. No carrier removes backlog rows through items remove today, so it is latent."
+base_sha = "6ced9304c492b45f4f0d7615f967fc5c110118f8"
+related = ["B-b0357675"]
+resolved = 2026-10-09
+resolution = "uncommitted fix: record_id_high_water skips removals from the backlog array (ARRAY_BACKLOG), whose ids are content hashes; items-array removals still record marks; id_minting tests"
+
+[[backlog]]
+id = "B-96ebd760"
+kind = "debt"
+summary = "the BOM and trailing-newline strip for -file flags is written three times, in fields.rs read_file_text, tasks/add.rs and backlog/dispatch.rs literal_or_file"
+area = "tomlctl/src"
+tags = ["field-flags"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "96ebd7604931eaca"
+origin = "review-apply"
+flow = "twinkling-hopping-otter"
+context = "Move one pub(crate) helper into io.rs beside read_text_arg and have --set-file, --title-file and the backlog triage -file flags call it, so the three cannot drift. tasks::add is a private module, which is why the copy landed in backlog/dispatch.rs."
+base_sha = "6ced9304c492b45f4f0d7615f967fc5c110118f8"
+resolved = 2026-10-09
+resolution = "uncommitted fix: io::read_flag_file and io::strip_flag_text are the one BOM/trailing-newline strip, called by --set-file, tasks add --title-file and backlog triage file flags"
+
+[[backlog]]
+id = "B-ecec135d"
+kind = "question"
+summary = "backlog Step 0 drain passes --to <target> taken from an untrusted answer record's text straight into a shell argument, and --to has no file form or shape check"
+area = "claude/commands/backlog.md"
+tags = ["shell-safety"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "ecec135d2944f7a0"
+origin = "review-apply"
+flow = "twinkling-hopping-otter"
+context = "The value is meant to be a flow slug or plan path, but inputs.toml records are untrusted data. Options: validate the target against tomlctl flow list / the plans directory before building the command, or give backlog triage --to a file form. Related to the --set-file sweep that closed the other inline-prose sites."
+base_sha = "6ced9304c492b45f4f0d7615f967fc5c110118f8"
+resolved = 2026-10-09
+resolution = "uncommitted fix: /backlog Step 0 drain accepts a --to target only when it is a known flow slug or an existing plan path matching a safe charset, stages capture fields through check/add-many --ndjson files, and validates item ids against the store"
+
+[[backlog]]
+id = "B-b08910a3"
+kind = "debt"
+summary = "io::seed_doc_for picks a store's skeleton by file name, so a kind-addressed store at a custom path needs a fake canonical name to get its schema_version/last_updated seed"
+area = "tomlctl/src/io.rs"
+tags = ["flow-record"]
+status = "resolved"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "b08910a3988607b6"
+origin = "backlog"
+flow = "twinkling-hopping-otter"
+context = "The execution record works around it with record_path::execution_record_seed, which passes a fake execution-record.toml name. Only the execution record supports a custom path today (other artifacts fail doctor's artifacts-canonical check), so this is latent; a kind-keyed seed in io would remove the workaround if another store gains custom paths."
+base_sha = "6ced9304c492b45f4f0d7615f967fc5c110118f8"
+related = ["B-656181e1"]
+resolved = 2026-10-09
+resolution = "uncommitted fix: io::schema_seed() returns the schema_version/last_updated skeleton unconditionally; seed_doc_for uses it for recognised files and record_path::execution_record_seed calls it directly, so no caller passes a fake file name"

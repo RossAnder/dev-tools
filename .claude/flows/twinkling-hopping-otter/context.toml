@@ -1,0 +1,29 @@
+slug = "twinkling-hopping-otter"
+plan_path = "docs/plans/twinkling-hopping-otter.md"
+status = "review"
+created = 2026-10-09
+updated = 2026-10-09
+branch = "main"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/README.md",
+    "glimpse/Cargo.lock",
+    "claude/skills/**",
+    "claude/commands/**",
+    "claude/agents/flow-bootstrap.md",
+]
+
+[tasks]
+total = 39
+completed = 39
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/twinkling-hopping-otter/review-ledger.toml"
+optimise_findings = ".claude/flows/twinkling-hopping-otter/optimise-findings.toml"
+execution_record = ".claude/flows/twinkling-hopping-otter/execution-record.toml"
+plan_review_findings = ".claude/flows/twinkling-hopping-otter/plan-review-findings.toml"
+tasks = ".claude/flows/twinkling-hopping-otter/tasks.toml"

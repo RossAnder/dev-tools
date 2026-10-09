@@ -1,0 +1,1534 @@
+schema_version = 1
+last_updated = 2026-10-09
+
+[[items]]
+id = "E1"
+type = "status-transition"
+date = 2026-10-09
+agent = "implement"
+summary = "implement started: draft -> in-progress"
+from_status = "draft"
+to_status = "in-progress"
+dedup_id = "30a1be6e2e54a995"
+
+[[items]]
+id = "E2"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-wildcard-path-walking-and-nested-key-hints-to-convert-rs"
+status = "done"
+summary = "navigate_json_all with * segments; project/validate_paths wildcard-aware; did-you-mean hint on unknown paths"
+files = ["tomlctl/src/convert.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "63f029a14b43a93d"
+
+[[items]]
+id = "E3"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-wildcard-path-walking-and-nested-key-hints-to-convert-rs"
+summary = "validate_paths resolves only the pre-* prefix via navigate_json (private wildcard_prefix helper); project uses navigate_json_all for wildcard paths only, in tomlctl/src/convert.rs"
+original_intent = "switch project and validate_paths to navigate_json_all"
+rationale = "a wildcard path validity depends only on its single-valued prefix before the first *"
+dedup_id = "aa743e572660497e"
+
+[[items]]
+id = "E4"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-wildcard-path-walking-and-nested-key-hints-to-convertrs"
+status = "done"
+summary = "navigate_json_all with * segments; project/validate_paths wildcard-aware; did-you-mean hint on unknown paths (corrects task_ref of E2)"
+files = ["tomlctl/src/convert.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+supersedes_entry = "E2"
+dedup_id = "c84286875c976951"
+
+[[items]]
+id = "E5"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-wildcard-path-walking-and-nested-key-hints-to-convertrs"
+summary = "validate_paths resolves only the pre-* prefix via navigate_json (private wildcard_prefix helper); project uses navigate_json_all for wildcard paths only, in tomlctl/src/convert.rs"
+original_intent = "switch project and validate_paths to navigate_json_all"
+rationale = "a wildcard path validity depends only on its single-valued prefix before the first *"
+supersedes_entry = "E3"
+dedup_id = "aa743e572660497e"
+
+[[items]]
+id = "E6"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-shared-field-flag-parser"
+status = "done"
+summary = "fields.rs FieldArgs (--set/--set-json/--set-file) and build() merging over a --json base; 7 unit tests"
+files = [
+    "tomlctl/src/fields.rs",
+    "tomlctl/src/lib.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "b9ee9bc910857387"
+
+[[items]]
+id = "E7"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "move-the-items-and-document-write-dispatch-arms-out-of-clidispatchrs"
+status = "done"
+summary = "items_dispatch + helpers moved to cli/dispatch/items.rs; Set/SetJson/ArrayAppend arms moved to cli/dispatch/doc.rs; pure move"
+files = [
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/cli/dispatch/items.rs",
+    "tomlctl/src/cli/dispatch/doc.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "1c277c3e3bf7c05f"
+
+[[items]]
+id = "E8"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "split-the-clap-types-module-into-per-group-files"
+status = "done"
+summary = "cli/types.rs split into cli/types/{mod,shared,cmd,flow,backlog,items,tasks,inputs}.rs with glob re-exports; pure move"
+files = [
+    "tomlctl/src/cli/types.rs",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/types/shared.rs",
+    "tomlctl/src/cli/types/cmd.rs",
+    "tomlctl/src/cli/types/flow.rs",
+    "tomlctl/src/cli/types/backlog.rs",
+    "tomlctl/src/cli/types/items.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+    "tomlctl/src/cli/types/inputs.rs",
+    "tomlctl/src/cli/mod.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "e4c8fef5756b5550"
+
+[[items]]
+id = "E9"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-execution-record-schema-module"
+status = "done"
+summary = "flow/record_schema.rs normalise(): type vocabulary, required fields, enums, int coercion, array checks, caps, files[] hygiene, scope_warning; 20 unit tests"
+files = [
+    "tomlctl/src/flow/record_schema.rs",
+    "tomlctl/src/flow/mod.rs",
+    "tomlctl/src/flow/resolve.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "0d2f69735d5d5fba"
+
+[[items]]
+id = "E10"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-execution-record-schema-module"
+summary = "commits[] optional on deviation in tomlctl/src/flow/record_schema.rs"
+original_intent = "skill type table lists commits[] as required on deviation"
+rationale = "the same skill commits-field note says it is now optional for task-completion and deviation; requiring it would refuse legitimate /plan-update deviation writes"
+dedup_id = "d8da89cba2cda6be"
+
+[[items]]
+id = "E11"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-execution-record-schema-module"
+summary = "checkpoint.kind passes through unchecked in tomlctl/src/flow/record_schema.rs"
+original_intent = "skill states checkpoint.kind as an enum"
+rationale = "the Approach enum list (six fields) omits kind; followed the Approach"
+dedup_id = "d0ab8c610e10af60"
+
+[[items]]
+id = "E12"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-template-widths-and-wildcard-placeholders"
+status = "done"
+summary = "template {path:N} widths, comma-joined wildcard placeholders, pub(crate) truncate_text with the (+K) marker"
+files = ["tomlctl/src/output/template.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "318795ac92d6db2c"
+
+[[items]]
+id = "E13"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "route-sweep-update-and-edges-dot-through-shared-output-option-behaviour"
+status = "done"
+summary = "sweep --update accepts --lines via print_json_compact; edges --dot refuses output flags only through print_text shared refusal; output_options cases updated"
+files = [
+    "tomlctl/src/cli/dispatch/items.rs",
+    "tomlctl/src/tasks/edges.rs",
+    "tomlctl/tests/output_options.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "424c220ecb36da68"
+
+[[items]]
+id = "E14"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "make-query-predicates-array-aware-and-add-a-json-row-evaluator"
+status = "done"
+summary = "any-element array predicates and dotted-key lookup in eval_predicate; predicates_from(WhereInput); query/json_rows.rs filter over JSON rows; tests/array_predicates.rs"
+files = [
+    "tomlctl/src/query.rs",
+    "tomlctl/src/query/json_rows.rs",
+    "tomlctl/tests/array_predicates.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "9b368f4149dd3b21"
+
+[[items]]
+id = "E15"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "make-query-predicates-array-aware-and-add-a-json-row-evaluator"
+summary = "json_rows strips JSON null members/elements before json_to_toml, in tomlctl/src/query/json_rows.rs"
+original_intent = "convert each row with convert::json_to_toml"
+rationale = "json_to_toml refuses null, so any report with a null field would fail the whole filter; a null field now reads as missing"
+dedup_id = "b35e85bc664adf0f"
+
+[[items]]
+id = "E16"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "make-query-predicates-array-aware-and-add-a-json-row-evaluator"
+summary = "shared private PreparedPredicates wrapper in tomlctl/src/query.rs"
+original_intent = "reuse parse_rhs_for_cache and eval_predicate directly"
+rationale = "keeps predicate setup and evaluation order in one place for apply_filters and json_rows::filter; both functions unchanged"
+dedup_id = "769652840a833a53"
+
+[[items]]
+id = "E17"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "accept-field-flags-on-array-append-and-several-pairs-on-set"
+status = "done"
+summary = "set applies positional pair + every --set PATH=VALUE in one mutate_doc; array-append takes field flags over optional --json; tests/doc_writes.rs"
+files = [
+    "tomlctl/src/cli/types/cmd.rs",
+    "tomlctl/src/cli/dispatch/doc.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/tests/doc_writes.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "0420455772bf9725"
+
+[[items]]
+id = "E18"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "accept-field-flags-on-array-append-and-several-pairs-on-set"
+summary = "multi-pair dry-run envelope is {ok,dry_run,pairs} in tomlctl/src/cli/dispatch/doc.rs"
+original_intent = "multi-pair dry-run prints {dry_run:true,pairs:[...]}"
+rationale = "every other tomlctl envelope leads with ok"
+dedup_id = "fa82947fceb98e1a"
+
+[[items]]
+id = "E19"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-tasks-train-verb"
+status = "done"
+summary = "tasks train verb: candidates, granularity groups, file-share merge, SCC collapse, layered_kahn order, shared_with_pending; tests/tasks_train.rs 9 tests"
+files = [
+    "tomlctl/src/tasks/train.rs",
+    "tomlctl/tests/tasks_train.rs",
+    "tomlctl/src/tasks/mod.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "61a9bfde40570cee"
+
+[[items]]
+id = "E20"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-tasks-train-verb"
+summary = "tasks train envelope carries a granularity header field beside groups, in tomlctl/src/tasks/train.rs"
+original_intent = "output is Rows::Field(groups) with group rows only"
+rationale = "records which granularity was applied (policy value or --granularity override)"
+dedup_id = "6aa9223f484c8bba"
+
+[[items]]
+id = "E21"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-tasks-train-verb"
+summary = "under per-checkpoint, checkpoint-less rows form one group and empty string is left out of checkpoints[], in tomlctl/src/tasks/train.rs"
+original_intent = "spec silent on rows with no checkpoint under per-checkpoint"
+rationale = "one group for the no-group spelling keeps the per-checkpoint partition total"
+dedup_id = "e158fbbecc3b6510"
+
+[[items]]
+id = "E22"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "accept-field-flags-on-items-add-and-items-update"
+status = "done"
+summary = "items add/update take --set/--set-json/--set-file merged over optional --json; tests/field_flags.rs 6 tests"
+files = [
+    "tomlctl/src/cli/types/items.rs",
+    "tomlctl/src/cli/dispatch/items.rs",
+    "tomlctl/tests/field_flags.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "6aa78365e62cf3f0"
+
+[[items]]
+id = "E23"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "declare-the-new-global-output-flags"
+status = "done"
+summary = "global --rows/--header/--max-chars/--omit and 13 global --where* (GlobalWhereArgs) declared, carried in OutputOpts, conflict rules, argv split-placement guard"
+files = [
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/cli/dispatch.rs",
+    "tomlctl/src/output.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "f597321e319b2d61"
+
+[[items]]
+id = "E24"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "declare-the-new-global-output-flags"
+summary = "argv --where* placement guard lives in output::check_where_placement, called from run, in tomlctl/src/output.rs"
+original_intent = "add the guard in cli::run"
+rationale = "output.rs tests must call the guard and cli::dispatch is private to cli"
+dedup_id = "f6ccfc132f98c89b"
+
+[[items]]
+id = "E25"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "declare-the-new-global-output-flags"
+summary = "empty --omit list/path and empty --rows path refused in tomlctl/src/output.rs"
+original_intent = "three conflict rules only"
+rationale = "matches how --select and --get already refuse empty paths"
+dedup_id = "3a321c688b096adf"
+
+[[items]]
+id = "E26"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-flow-record-verb"
+status = "done"
+summary = "flow record verb: resolves record, defaults date, --task derives task_ref, field flags, normalise() validation, E-id minting, --ndjson all-or-nothing, --dry-run; tests/flow_record.rs 12 tests"
+files = [
+    "tomlctl/src/flow/record.rs",
+    "tomlctl/tests/flow_record.rs",
+    "tomlctl/src/flow/mod.rs",
+    "tomlctl/src/flow/dispatch.rs",
+    "tomlctl/src/cli/types/flow.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "a67dc708abcfc282"
+
+[[items]]
+id = "E27"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-flow-record-verb"
+summary = "flow record refuses a slug with no context.toml (not_found) and keeps the recorded path under the repo root, in tomlctl/src/flow/record.rs"
+original_intent = "resolve the record from [artifacts].execution_record with a fallback"
+rationale = "a mistyped slug would otherwise auto-create a stray .claude/flows/<typo>/ through create-on-missing"
+dedup_id = "12c9a0ec7e243484"
+
+[[items]]
+id = "E28"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-flow-record-verb"
+summary = "with --ndjson, --json/field flags/--type/--task act as per-row defaults; a disagreeing row type or task_ref is refused; --type required unless --ndjson, in tomlctl/src/flow/record.rs"
+original_intent = "--ndjson is an all-or-nothing batch (combination with single-entry flags unspecified)"
+rationale = "needed a defined rule for how single-entry flags combine with a batch"
+dedup_id = "6f58b092409ef0fc"
+
+[[items]]
+id = "E29"
+type = "verification"
+date = 2026-10-09
+agent = "implement"
+task_ref = "split-the-clap-types-module-into-per-group-files"
+summary = "checkpoint A build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 77
+dedup_id = "d8debbc0cbc13f15"
+
+[[items]]
+id = "E30"
+type = "verification"
+date = 2026-10-09
+agent = "implement"
+task_ref = "split-the-clap-types-module-into-per-group-files"
+summary = "checkpoint A tests: 1730/1731; only every_leaf_command_has_a_case fails, naming flow record and tasks train (plan-designed guard closed by task 24)"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+duration_s = 176
+failed_ids = ["tomlctl::output_options every_leaf_command_has_a_case"]
+dedup_id = "d831226bc6e0645f"
+
+[[items]]
+id = "E31"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "split-the-clap-types-module-into-per-group-files"
+summary = "checkpoint A train widened to every done task (1,2,3,4,5,7,10,11,12,13,15,16,17) and committed with one known red test"
+original_intent = "checkpoint A commits only tasks 1-4 behind a green gate"
+rationale = "the frontier ran B and C tasks before A closed; they share files with A (cli/dispatch.rs, cli/types/*, dispatch/items.rs) so A could not be staged alone. The only red test is every_leaf_command_has_a_case for the new flow record and tasks train leaves, the guard the plan assigns to task 24"
+commits = [
+    "aa44a33",
+    "aad2bdb",
+    "2637e3b",
+    "bfa3f45",
+    "0af76fb",
+]
+dedup_id = "0b17c192c9bef5fb"
+
+[[items]]
+id = "E32"
+type = "checkpoint"
+date = 2026-10-09
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint A train: aa44a33=add-wildcard-path-walking-and-nested-key-hints-to-convertrs; aad2bdb=make-query-predicates-array-aware-and-add-a-json-row-evaluator; 2637e3b=add-template-widths-and-wildcard-placeholders; bfa3f45=add-the-shared-field-flag-parser; 0af76fb=split-the-clap-types-module-into-per-group-files,move-the-items-and-document-write-dispatch-arms-out-of-clidispatchrs,declare-the-new-global-output-flags,route-sweep-update-and-edges-dot-through-shared-output-option-behaviour,accept-field-flags-on-items-add-and-items-update,accept-field-flags-on-array-append-and-several-pairs-on-set,add-the-execution-record-schema-module,add-the-flow-record-verb,add-the-tasks-train-verb"
+commits = [
+    "aa44a33",
+    "aad2bdb",
+    "2637e3b",
+    "bfa3f45",
+    "0af76fb",
+]
+dedup_id = "ea1c47759c04d0fc"
+
+[[items]]
+id = "E33"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "carry-ref-in-tasks-update-envelopes"
+status = "done"
+summary = "tasks update envelopes carry ref ({ok,id,ref,changed}; per-result ref); narrow test not run (siblings mid-edit), checkpoint gate verifies"
+files = [
+    "tomlctl/src/tasks/update.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/tests/tasks_write.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "e055be3ad89affb4"
+
+[[items]]
+id = "E34"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-absent-part-to-tasks-show"
+status = "done"
+summary = "tasks show --with absent lists row files missing under the repo root; unit test absent_lists_missing_files_under_repo_root"
+files = [
+    "tomlctl/src/cli/types/tasks.rs",
+    "tomlctl/src/tasks/show.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+dedup_id = "ed79cf871e1cf9ec"
+
+[[items]]
+id = "E35"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "turn-on-clap-suggestions-and-alias-read-to-parse"
+status = "done"
+summary = "clap suggestions feature on (strsim 0.11.1 in both locks); hidden read alias on parse with unit test"
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/src/cli/types/cmd.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "3d198e4eaf19eb0b"
+
+[[items]]
+id = "E36"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "stamp-updated-on-contexttoml-writes"
+status = "done"
+summary = "stamped_at refreshes context.toml root updated on set/set-json/array-append writes; read_text_arg TTY hint no longer suggests a heredoc; tests/updated_stamp.rs 8 tests"
+files = [
+    "tomlctl/src/io.rs",
+    "tomlctl/src/cli/dispatch/doc.rs",
+    "tomlctl/tests/updated_stamp.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "7e4689aa5b816f62"
+
+[[items]]
+id = "E37"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-batch-form-of-backlog-check"
+status = "done"
+summary = "backlog check --ndjson SRC batch: one store read, per-probe verdict rows (Rows::Field results), strict line keys; tests/backlog_check_batch.rs 6 tests"
+files = [
+    "tomlctl/src/backlog/check.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/cli/types/backlog.rs",
+    "tomlctl/tests/backlog_check_batch.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "b591980a2ca33938"
+
+[[items]]
+id = "E38"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-batch-form-of-backlog-check"
+summary = "--ndjson also conflicts with --area/--kind/--tag in tomlctl/src/cli/types/backlog.rs"
+original_intent = "--ndjson conflicts with --summary"
+rationale = "each batch line carries its own kind, area and tags; the flags would otherwise be dropped silently"
+dedup_id = "9a4c209a808ada79"
+
+[[items]]
+id = "E39"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-batch-form-of-backlog-check"
+summary = "batch rows carry limited when the 5-candidate cap cut them; thresholds moved to the report header, in tomlctl/src/backlog/check.rs"
+original_intent = "row shape {line,summary,verdict,dedup_id,candidates}"
+rationale = "thresholds are batch-wide; limited tells the reader a row was cut"
+dedup_id = "afceba400a359c88"
+
+[[items]]
+id = "E40"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "mint-ids-in-items-apply-and-keep-a-high-water-mark"
+status = "done"
+summary = "items apply --id-prefix mints add-op ids under the lock (compute_apply_mutation_minting); [id_high_water] recorded on remove and read by items_next_id_in; tests/id_minting.rs 7 tests"
+files = [
+    "tomlctl/src/items.rs",
+    "tomlctl/src/cli/types/items.rs",
+    "tomlctl/src/cli/dispatch/items.rs",
+    "tomlctl/tests/id_minting.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "db0af483c9f7cd25"
+
+[[items]]
+id = "E41"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "mint-ids-in-items-apply-and-keep-a-high-water-mark"
+summary = "updated two stale comments in tomlctl/src/items.rs (items_apply_to_opts doc and the next-id unit test comment)"
+original_intent = "fix the items.rs comment that names cli/dispatch.rs as the apply call site"
+rationale = "the literal cli/dispatch.rs mention is on the next-id test; the apply call-site comment named compute_apply_mutation"
+dedup_id = "6a3bb7c42f5461ff"
+
+[[items]]
+id = "E42"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "apply-wildcards-rows-header-and-global-where-in-the-emitter"
+status = "done"
+summary = "emit/emit_one apply --rows, --header, wildcard --get and global --where* in plan order; list verbs refuse --rows/--header; tests/output_nesting.rs 6 tests"
+files = [
+    "tomlctl/src/output.rs",
+    "tomlctl/tests/output_nesting.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "1975ec614a98de56"
+
+[[items]]
+id = "E43"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "add-the-value-and-id-aliases"
+status = "done"
+summary = "--as related aliases relates-to; triage takes comma ids; hidden --id/--ids on tasks show/update and backlog show/triage merged with positionals (required_unless_present); tests/id_aliases.rs 7 tests"
+files = [
+    "tomlctl/src/cli/types/backlog.rs",
+    "tomlctl/src/cli/types/tasks.rs",
+    "tomlctl/src/backlog/dispatch.rs",
+    "tomlctl/src/tasks/dispatch.rs",
+    "tomlctl/tests/id_aliases.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "075adc75e7a9d689"
+
+[[items]]
+id = "E44"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "keep-hidden-arguments-out-of-the-capabilities-flag-listing"
+summary = "minted task 39 (capabilities.rs, tests/capabilities.rs; needs 25; checkpoint C)"
+original_intent = "plan carries no task for hiding hidden recovery aliases from capabilities output"
+rationale = "task 23 found describe_flags lists hidden args, so capabilities advertises --id/--ids as real flags, against the guidance canon"
+dedup_id = "6f68cc5cc3b4ea66"
+
+[[items]]
+id = "E45"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "implement-max-chars-and-omit"
+status = "done"
+summary = "--omit and --max-chars applied in emit order and honoured by the list verbs (query_opts passes them, streaming_allowed false); tests/output_trim.rs 5 tests"
+files = [
+    "tomlctl/src/output.rs",
+    "tomlctl/tests/output_trim.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "6d443b3fe3c2f215"
+
+[[items]]
+id = "E46"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "implement-max-chars-and-omit"
+summary = "output_trim tests use tasks list --omit detail,action and tasks render --check --omit findings.*.detail / --rows findings --omit detail, in tomlctl/tests/output_trim.rs"
+original_intent = "tests use tasks list --omit body and tasks render --check --omit diff"
+rationale = "tasks list rows have no body field and render --check output has no diff field; the drift text is in each finding detail"
+dedup_id = "e6008219acde6ca8"
+
+[[items]]
+id = "E47"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "report-limited-on-the-list-verbs"
+status = "done"
+summary = "list verbs report limited only when --limit cut rows: pretty {rows,limited}, --lines leading header, ndjson/pluck/raw stderr notice; ndjson split from lines; run_counted; tests/list_limited.rs 7 tests"
+files = [
+    "tomlctl/src/query.rs",
+    "tomlctl/src/output.rs",
+    "tomlctl/tests/integration.rs",
+    "tomlctl/tests/list_limited.rs",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "1a8bc152f240ae69"
+
+[[items]]
+id = "E48"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "report-limited-on-the-list-verbs"
+summary = "query::run kept but marked #[cfg(test)] in tomlctl/src/query.rs"
+original_intent = "keep query::run signature for its callers"
+rationale = "every remaining caller is a unit test, so the lib build flagged it dead"
+dedup_id = "67cf2cbb95900401"
+
+[[items]]
+id = "E49"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "report-limited-on-the-list-verbs"
+summary = "pretty --pluck stays a bare array with a stderr notice; aggregates report no cut, in tomlctl/src/output.rs"
+original_intent = "spec silent on pretty --pluck and aggregates"
+rationale = "plucked values are not rows and aggregates are not windowed"
+dedup_id = "0f5804c9f3ee8b10"
+
+[[items]]
+id = "E50"
+type = "verification"
+date = 2026-10-09
+agent = "implement"
+task_ref = "report-limited-on-the-list-verbs"
+summary = "checkpoint B build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 83
+dedup_id = "a2ea8af224ccbfe9"
+
+[[items]]
+id = "E51"
+type = "verification"
+date = 2026-10-09
+agent = "implement"
+task_ref = "report-limited-on-the-list-verbs"
+summary = "checkpoint B tests 1797/1798; only every_leaf_command_has_a_case (flow record, tasks train) fails, closed by task 24"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "fail"
+duration_s = 229
+failed_ids = ["tomlctl::output_options every_leaf_command_has_a_case"]
+dedup_id = "f935869eb4850ef0"
+
+[[items]]
+id = "E52"
+type = "verification"
+date = 2026-10-09
+agent = "implement"
+task_ref = "report-limited-on-the-list-verbs"
+summary = "checkpoint B glimpse tests 485 passed (id_high_water root table safe)"
+command = "cargo test --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 75
+dedup_id = "8e5a1b6ffd5d0ac0"
+
+[[items]]
+id = "E53"
+type = "checkpoint"
+date = 2026-10-09
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint B train: 543ccd2=apply-wildcards-rows-header-and-global-where-in-the-emitter,implement-max-chars-and-omit,report-limited-on-the-list-verbs; 8e51fe9=stamp-updated-on-contexttoml-writes; 6ddb746=add-the-absent-part-to-tasks-show,carry-ref-in-tasks-update-envelopes,add-the-batch-form-of-backlog-check,add-the-value-and-id-aliases; 2d1faac=mint-ids-in-items-apply-and-keep-a-high-water-mark; bfac473=turn-on-clap-suggestions-and-alias-read-to-parse"
+commits = [
+    "543ccd2",
+    "8e51fe9",
+    "6ddb746",
+    "2d1faac",
+    "bfac473",
+]
+dedup_id = "88648b914be41628"
+
+[[items]]
+id = "E54"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "cover-the-new-verbs-and-flags-in-the-output-options-test"
+status = "done"
+summary = "output_options cases for flow record, tasks train, backlog check --ndjson, items apply --id-prefix; read_options probe over --get *, --omit/--max-chars, --rows/--header/--where rules; every_leaf_command_has_a_case green"
+files = ["tomlctl/tests/output_options.rs"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "08a585c765cefd8b"
+
+[[items]]
+id = "E55"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "cover-the-new-verbs-and-flags-in-the-output-options-test"
+summary = "added a done, uncommitted third row to the shared tasks fixture; --omit and --max-chars probed in one run, in tomlctl/tests/output_options.rs"
+original_intent = "case the new verbs and probe --omit and --max-chars separately"
+rationale = "tasks train picks only done rows with no commit and the fixture had none; combining the probes saves one spawn per read case and the falsifier shows each half catches a break alone"
+dedup_id = "c7dbe56c49f6cf87"
+
+[[items]]
+id = "E56"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "advertise-the-features-and-release-0150"
+status = "done"
+summary = "tomlctl 0.15.0; 19 FEATURES entries mirrored in README sample, feature table and capabilities tests; new globals in global_flags assertions; locks refreshed"
+files = [
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "glimpse/Cargo.lock",
+    "tomlctl/src/cli/types/mod.rs",
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/tests/capabilities.rs",
+    "tomlctl/README.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+dedup_id = "68bdd9a1de8abb96"
+
+[[items]]
+id = "E57"
+type = "task-completion"
+date = 2026-10-09
+agent = "implement"
+task_ref = "keep-hidden-arguments-out-of-the-capabilities-flag-listing"
+status = "done"
+summary = "describe_flags skips hidden args; capabilities_omits_hidden_arguments test"
+files = [
+    "tomlctl/src/capabilities.rs",
+    "tomlctl/tests/capabilities.rs",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+dedup_id = "b57724b9bfedc366"
+
+[[items]]
+id = "E58"
+type = "deviation"
+date = 2026-10-09
+agent = "implement"
+task_ref = "advertise-the-features-and-release-0150"
+summary = "orchestrator amended the README output_options row to point at the new global-flag rows, in tomlctl/README.md"
+original_intent = "task 25 adds new feature rows only"
+rationale = "the output_options row still read as the complete global-flag list (task 25 TANGENTIAL)"
+dedup_id = "c8bb282bf1dbed8e"
+
+[[items]]
+id = "E59"
+type = "verification"
+date = 2026-10-09
+agent = "implement"
+task_ref = "advertise-the-features-and-release-0150"
+summary = "checkpoint C build"
+command = "cargo build --manifest-path tomlctl/Cargo.toml --all-targets"
+outcome = "pass"
+duration_s = 75
+dedup_id = "5dfc36f689b46625"
+
+[[items]]
+id = "E60"
+type = "verification"
+date = 2026-10-09
+agent = "implement"
+task_ref = "advertise-the-features-and-release-0150"
+summary = "checkpoint C tests 1799 passed"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+outcome = "pass"
+duration_s = 214
+dedup_id = "9b07882446c807ee"
+
+[[items]]
+id = "E61"
+type = "verification"
+date = 2026-10-09
+agent = "implement"
+task_ref = "advertise-the-features-and-release-0150"
+summary = "checkpoint C glimpse clippy locked"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets --locked"
+outcome = "pass"
+duration_s = 24
+dedup_id = "777a15c4f9677dc8"
+
+[[items]]
+id = "E62"
+type = "verification"
+date = 2026-10-09
+agent = "implement"
+task_ref = "advertise-the-features-and-release-0150"
+summary = "checkpoint C glimpse tests 485 passed"
+command = "cargo test --manifest-path glimpse/Cargo.toml"
+outcome = "pass"
+duration_s = 60
+dedup_id = "00ebcd50bfbabfab"
+
+[[items]]
+id = "E63"
+type = "checkpoint"
+date = 2026-10-09
+agent = "implement"
+kind = "commit-train"
+summary = "checkpoint C train: 2c32016=cover-the-new-verbs-and-flags-in-the-output-options-test; bf8807f=advertise-the-features-and-release-0150,keep-hidden-arguments-out-of-the-capabilities-flag-listing"
+commits = [
+    "2c32016",
+    "bf8807f",
+]
+dedup_id = "a696e87bd19c4d81"
+
+[[items]]
+id = "E64"
+agent = "implement"
+status = "done"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+summary = "execution-record-schema skill: flow record write contract replaces the heredoc contract; commits[] optional on deviation; enforced-vs-convention paragraph"
+files = ["claude/skills/flow-contract-execution-record-schema/SKILL.md"]
+type = "task-completion"
+task_ref = "route-execution-record-writes-through-flow-record-in-the-schema-skill"
+date = 2026-10-09
+dedup_id = "41031a479cf3e2d5"
+
+[[items]]
+id = "E65"
+agent = "implement"
+type = "task-completion"
+status = "done"
+summary = "tasks.md/tasks-write.md document tasks train, show --with absent, update ref envelopes, hidden --id prose; task-store skill gains train in section 5/11, absent dispatch idiom in section 12"
+files = [
+    "claude/skills/tomlctl/references/tasks.md",
+    "claude/skills/tomlctl/references/tasks-write.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+task_ref = "document-the-new-tasks-verbs-and-parts"
+date = 2026-10-09
+dedup_id = "8fd00aea856d7678"
+
+[[items]]
+id = "E66"
+agent = "implement"
+type = "deviation"
+summary = "--with absent and the show half of the --id alias documented in tasks.md"
+original_intent = "document --with absent and the --id alias in tasks-write.md"
+rationale = "tasks show is documented in tasks.md; only the update half and the envelope ref belong in tasks-write.md"
+task_ref = "document-the-new-tasks-verbs-and-parts"
+date = 2026-10-09
+dedup_id = "aa7d3c35d670ae01"
+
+[[items]]
+id = "E67"
+agent = "implement"
+type = "deviation"
+summary = "train added to the task-store skill frontmatter graph-products list and the cyclic-store refusal sentence"
+original_intent = "edit sections 5, 11 and 12 only"
+rationale = "train is a graph product and refuses a cyclic store too"
+task_ref = "document-the-new-tasks-verbs-and-parts"
+date = 2026-10-09
+dedup_id = "c052a64595a245e1"
+
+[[items]]
+id = "E68"
+agent = "implement"
+summary = "orchestrator extended the tasks.md global-output-options intro sentence with the 0.15 globals"
+original_intent = "task 28 leaves the intro sentence listing six globals"
+rationale = "a reader of tasks.md alone would miss --rows/--where and fall back to piping (task 28 TANGENTIAL)"
+type = "deviation"
+task_ref = "document-the-new-tasks-verbs-and-parts"
+date = 2026-10-09
+dedup_id = "1fff1178fc296983"
+
+[[items]]
+id = "E69"
+agent = "implement"
+task = 26
+type = "task-completion"
+status = "done"
+summary = "tomlctl SKILL.md output-options table and rules for the 0.15 globals plus a Guidance canon section; query.md array predicates, dotted keys, limited header; items next-id line dropped"
+files = [
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/query.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+task_ref = "document-the-output-options-and-the-guidance-canon-in-the-tomlctl-skill"
+date = 2026-10-09
+dedup_id = "ae00ed95ff567566"
+
+[[items]]
+id = "E70"
+agent = "implement"
+type = "task-completion"
+status = "done"
+summary = "write.md rewritten around field flags and staged files: heredocs gone, multi-pair set, context updated stamp, items apply --id-prefix, id_high_water, flow record recipe"
+files = ["claude/skills/tomlctl/references/write.md"]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+task_ref = "rewrite-the-write-reference-around-field-flags-and-staged-files"
+date = 2026-10-09
+dedup_id = "4a9be86fae5b9c54"
+
+[[items]]
+id = "E71"
+agent = "implement"
+type = "deviation"
+summary = "write.md says items next-id output must never feed a write (inspection only); its fence tagged bash ignore-guidance-lint"
+original_intent = "keep items next-id documented but stop recommending it for apply batches"
+rationale = "every write path now mints its own id, so any hand-fed next-id output is a reuse hazard"
+task_ref = "rewrite-the-write-reference-around-field-flags-and-staged-files"
+date = 2026-10-09
+dedup_id = "0d84e12c6067b5f2"
+
+[[items]]
+id = "E72"
+agent = "implement"
+type = "task-completion"
+status = "done"
+summary = "flow.md gains a flow record section and error-taxonomy entries; backlog.md documents check --ndjson, --header --get verdict, --as related, comma triage ids; demo 2>&1 fence opted out; backlog.md held at 600 lines"
+files = [
+    "claude/skills/tomlctl/references/backlog.md",
+    "claude/skills/tomlctl/references/flow.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+task_ref = "document-batch-check-and-flow-record"
+date = 2026-10-09
+dedup_id = "cf5c8566c5fcc35e"
+
+[[items]]
+id = "E73"
+agent = "implement"
+type = "task-completion"
+status = "done"
+summary = "ledger-schema write idioms on field flags, staged --ndjson/--ops @path and items apply --id-prefix; verification.md drops RFC-8259 hand-escaping"
+files = [
+    "claude/skills/flow-contract-ledger-schema/SKILL.md",
+    "claude/skills/flow-contract-apply-pipeline/references/verification.md",
+]
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "skipped"
+retries = 0
+task_ref = "update-the-ledger-schema-skill-and-the-apply-verification-reference"
+date = 2026-10-09
+dedup_id = "f2b3b16d145d05b8"
+
+[[items]]
+id = "E74"
+agent = "implement"
+type = "task-completion"
+status = "done"
+summary = "implement.md on 0.15: one multi-pair context set, --with absent dispatch read, flow record for every record append, tasks train commit groups (unnarrowed at milestones, git commit -- paths); flow-bootstrap floor 0.15"
+files = [
+    "claude/commands/implement.md",
+    "claude/agents/flow-bootstrap.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+task_ref = "move-implement-onto-the-new-verbs"
+date = 2026-10-09
+dedup_id = "e7ee22d8707381d9"
+
+[[items]]
+id = "E75"
+agent = "implement"
+type = "task-completion"
+status = "done"
+summary = "review/optimise/review-plan ledger writes on items apply --ops @path --id-prefix; vet_events via array-append field flags; heredoc passages rewritten to staged files"
+files = [
+    "claude/commands/review.md",
+    "claude/commands/optimise.md",
+    "claude/commands/review-plan.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+task_ref = "move-review-optimise-and-review-plan-ledger-writes-onto-apply-minting"
+date = 2026-10-09
+dedup_id = "b8f0e6b38b819ebd"
+
+[[items]]
+id = "E76"
+agent = "implement"
+type = "deviation"
+summary = "review-plan.md discard-request write moved from --ops - to a staged --ops @path"
+original_intent = "rewrite only the heredoc and next-id prose"
+rationale = "that op carries user-supplied text as discard_reason, which the canon routes through a staged file"
+task_ref = "move-review-optimise-and-review-plan-ledger-writes-onto-apply-minting"
+date = 2026-10-09
+dedup_id = "8656e1dec92d46a2"
+
+[[items]]
+id = "E77"
+agent = "implement"
+status = "done"
+summary = "rollback-protocol append on array-append field flags with --set-file cause; plansDirectory persist is one inline json set"
+dispatch_tier = "lite"
+dispatch_agent = "implement-lite"
+vet = "sampled-pass"
+retries = 0
+files = [
+    "claude/skills/flow-contract-apply-rollback-protocol/SKILL.md",
+    "claude/skills/flow-contract-plansdirectory-prompt/SKILL.md",
+]
+type = "task-completion"
+task_ref = "update-the-rollback-and-plansdirectory-skills"
+date = 2026-10-09
+dedup_id = "d8058d0bddb658d5"
+
+[[items]]
+id = "E78"
+agent = "implement"
+type = "task-completion"
+status = "done"
+summary = "backlog-capture on Write-staged files with a batch backlog check --ndjson harvest idiom; plan-new seed adoption drops the hand updated write and stale heredoc references"
+files = [
+    "claude/skills/backlog-capture/SKILL.md",
+    "claude/commands/plan-new.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+task_ref = "update-backlog-capture-and-plan-new"
+date = 2026-10-09
+dedup_id = "ca9748fb93a763dc"
+
+[[items]]
+id = "E79"
+agent = "implement"
+type = "deviation"
+summary = "plan-new seed adoption keeps set-json for scope plus one set for branch"
+original_intent = "collapse the seed-adoption sets into one multi-pair set"
+rationale = "scope is an array and set --set pairs infer scalars only; the hand updated write is gone because context.toml is auto-stamped"
+task_ref = "update-backlog-capture-and-plan-new"
+date = 2026-10-09
+dedup_id = "2b31e68c68ab835c"
+
+[[items]]
+id = "E80"
+agent = "implement"
+status = "done"
+summary = "vet-research and apply-vet-implement-lite vet_events appends on array-append field flags; test-bootstrap prose reference updated"
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+files = [
+    "claude/skills/flow-contract-vet-research/SKILL.md",
+    "claude/skills/flow-contract-apply-vet-implement-lite/SKILL.md",
+    "claude/commands/test-bootstrap.md",
+]
+type = "task-completion"
+task_ref = "update-the-vet-skills-and-test-bootstrap-vet_events-appends"
+date = 2026-10-09
+dedup_id = "8115533c4e633609"
+
+[[items]]
+id = "E81"
+agent = "implement"
+type = "task-completion"
+status = "done"
+summary = "plan-update and tdd record appends via flow record; plan-update context update is one multi-pair set with a future-date guard; tdd mismatch heredoc rewritten in a bash-tagged fence; copy-up is one --ndjson pipe"
+files = [
+    "claude/commands/plan-update.md",
+    "claude/commands/tdd.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+task_ref = "move-plan-update-and-tdd-onto-flow-record"
+date = 2026-10-09
+dedup_id = "2abaa3864422cdca"
+
+[[items]]
+id = "E82"
+agent = "implement"
+type = "deviation"
+summary = "tdd mismatch entry copies dispatch_tier/dispatch_agent/vet/retries from the superseded entry"
+original_intent = "rewrite the mismatch heredoc as flow record with the same fields"
+rationale = "flow record refuses a task-completion without the four dispatch fields"
+task_ref = "move-plan-update-and-tdd-onto-flow-record"
+date = 2026-10-09
+dedup_id = "3a47d03d230bdf0d"
+
+[[items]]
+id = "E83"
+agent = "implement"
+type = "deviation"
+summary = "plan-update migrate back-fills deep/implement-deep/skipped/0 dispatch fields"
+original_intent = "route migrate back-fill through flow record"
+rationale = "legacy completions cannot know the four required dispatch fields; readers already treat unknown tier as deep"
+task_ref = "move-plan-update-and-tdd-onto-flow-record"
+date = 2026-10-09
+dedup_id = "2f3e9cae5330db2d"
+
+[[items]]
+id = "E84"
+agent = "implement"
+type = "deviation"
+summary = "plan-update date guard drops the +30-day upper bound and prompts on a stored date ahead of today"
+original_intent = "keep the date guard that stops a date going backwards"
+rationale = "the +30-day bound refused any plan untouched for over a month"
+task_ref = "move-plan-update-and-tdd-onto-flow-record"
+date = 2026-10-09
+dedup_id = "58b6e4958bc777af"
+
+[[items]]
+id = "E85"
+agent = "implement"
+type = "deviation"
+summary = "tdd copy-up to the parent is one items list --ndjson | flow record --ndjson - call filtering out failed entries"
+original_intent = "route the copy-up through flow record"
+rationale = "one batch replaces a completion plus a verification batch; failed re-RED entries point at cycle ids the parent lacks"
+task_ref = "move-plan-update-and-tdd-onto-flow-record"
+date = 2026-10-09
+dedup_id = "df1c185b8e6b9e4e"
+
+[[items]]
+id = "E86"
+agent = "implement"
+type = "task-completion"
+status = "done"
+summary = "guidance_lint over bash fences (pipe-to-text-tool, heredoc-into-tomlctl, stderr-redirect, repeated-set, items-next-id; ignore-guidance-lint opt-out) on a shared bash_fences walker with a quote-aware splitter; commit.md drops 2>/dev/null"
+files = [
+    "tomlctl/src/cli/dispatch/tests/lint.rs",
+    "claude/commands/commit.md",
+]
+dispatch_tier = "deep"
+dispatch_agent = "implement-deep"
+vet = "skipped"
+retries = 0
+task_ref = "add-the-guidance-lint"
+date = 2026-10-09
+dedup_id = "5b5fdb41a1a505d2"
+
+[[items]]
+id = "E87"
+agent = "implement"
+type = "deviation"
+summary = "commit.md gains a sentence: a non-zero exit means no flow resolved"
+original_intent = "drop the 2>/dev/null"
+rationale = "keeps the non-zero-exit-means-absent meaning explicit per the canon Errors rule"
+task_ref = "add-the-guidance-lint"
+date = 2026-10-09
+dedup_id = "0e8f1483d7fdf189"
+
+[[items]]
+id = "E88"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "cargo build --manifest-path tomlctl/Cargo.toml"
+duration_s = 15
+summary = "final build"
+type = "verification"
+date = 2026-10-09
+dedup_id = "f587d855007f8035"
+
+[[items]]
+id = "E89"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "cargo nextest run --manifest-path tomlctl/Cargo.toml --no-fail-fast"
+duration_s = 213
+summary = "final tests 1802 passed"
+type = "verification"
+date = 2026-10-09
+dedup_id = "45578039680b0429"
+
+[[items]]
+id = "E90"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "cargo clippy --manifest-path glimpse/Cargo.toml --all-targets --locked"
+duration_s = 18
+summary = "glimpse clippy locked"
+type = "verification"
+date = 2026-10-09
+dedup_id = "46c24407246d02be"
+
+[[items]]
+id = "E91"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "cargo test --manifest-path glimpse/Cargo.toml"
+duration_s = 61
+summary = "glimpse tests 485 passed"
+type = "verification"
+date = 2026-10-09
+dedup_id = "1250175a99edca32"
+
+[[items]]
+id = "E92"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "cargo test --manifest-path tomlctl/Cargo.toml --test tasks_corpus -- --ignored"
+duration_s = 3
+summary = "plan corpus 1 passed"
+type = "verification"
+date = 2026-10-09
+dedup_id = "75412a19bc9ae70c"
+
+[[items]]
+id = "E93"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "cargo doc --manifest-path tomlctl/Cargo.toml --lib --no-deps --document-private-items"
+duration_s = 13
+summary = "rustdoc deny lints"
+type = "verification"
+date = 2026-10-09
+dedup_id = "d7079cf15f055220"
+
+[[items]]
+id = "E94"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "bash scripts/verify-shared-blocks.sh"
+duration_s = 11
+summary = "shared blocks parity"
+type = "verification"
+date = 2026-10-09
+dedup_id = "bdc233bf7a52d968"
+
+[[items]]
+id = "E95"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "success criteria greps (heredoc, never stage, numbered upward, RFC-8259, set <context_path>, flow record, tasks train, while IFS, heredoc prose)"
+duration_s = 5
+summary = "9 grep success criteria all zero/threshold met"
+type = "verification"
+date = 2026-10-09
+dedup_id = "8c2a6c80ea755cbc"
+
+[[items]]
+id = "E96"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "cargo run tomlctl: tasks list --where-contains files=output.rs; tasks show --select deps.*.ref; --max-chars 5; read alias"
+duration_s = 6
+summary = "4 predicted CLI success criteria pass"
+type = "verification"
+date = 2026-10-09
+dedup_id = "a91a93e63703a8c7"
+
+[[items]]
+id = "E97"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "tomlctl capabilities --get features"
+duration_s = 1
+summary = "installed 0.15 lists flow_record, tasks_train, field_flags, path_wildcard, rows_header"
+type = "verification"
+date = 2026-10-09
+dedup_id = "b42c31fed5b259a0"
+
+[[items]]
+id = "E98"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets"
+duration_s = 17
+summary = "lint clean"
+type = "verification"
+date = 2026-10-09
+dedup_id = "774effcec220e443"
+
+[[items]]
+id = "E99"
+agent = "implement"
+outcome = "pass"
+task_ref = "add-the-guidance-lint"
+command = "cargo audit --file tomlctl/Cargo.lock"
+duration_s = 12
+summary = "audit clean"
+type = "verification"
+date = 2026-10-09
+dedup_id = "f8aa7f223bf2d618"
+
+[[items]]
+id = "E100"
+agent = "implement"
+kind = "commit-train"
+summary = "final train (checkpoint D): 6f60aed=26 55b8f23=27 12d970d=28 5f640ef=29 71fdca7=30 c4cb5a8=31 7fd91ce=32 e3e4d31=33 b891b40=34 92aacbd=35 34df314=36 7f6da84=37 df947af=38"
+commits = [
+    "6f60aed",
+    "55b8f23",
+    "12d970d",
+    "5f640ef",
+    "71fdca7",
+    "c4cb5a8",
+    "7fd91ce",
+    "e3e4d31",
+    "b891b40",
+    "92aacbd",
+    "34df314",
+    "7f6da84",
+    "df947af",
+]
+type = "checkpoint"
+date = 2026-10-09
+dedup_id = "d1798b96b6c6d9de"
+
+[[items]]
+id = "E101"
+agent = "plan-update"
+from_status = "in-progress"
+to_status = "review"
+summary = "all 39 tasks done and the final verification pass green; implementation complete, awaiting review"
+type = "status-transition"
+date = 2026-10-09
+dedup_id = "472eaa64d0688ee9"
+
+[[items]]
+id = "E102"
+agent = "plan-update"
+type = "deviation"
+task_ref = "move-implement-onto-the-new-verbs"
+summary = "Agent-written prose in flow record, tasks add and backlog triage examples now goes through files; new --title-file and --reason-file/--resolution-file/--rationale-file flags"
+original_intent = "Single entries use field flags inline (--set K=V), with --set-file reserved for multi-line prose"
+rationale = "Inline double-quoted agent text executes backticks and $(...) under bash and single quotes break on apostrophes (CWE-78); the guidance canon now stages every agent-derived value in a file, and the CLI gained file forms where none existed (review R1, R35)"
+date = 2026-10-09
+
+[[items]]
+id = "E103"
+agent = "plan-update"
+type = "deviation"
+task_ref = "apply-wildcards-rows-header-and-global-where-in-the-emitter"
+summary = "Global --where* predicates, regexes and typed values are validated in OutputOpts::validate before any command runs; predicate keys with a * segment are refused"
+original_intent = "Global --where* parsed when the emitter shapes rows"
+rationale = "On row-envelope write verbs the late error was downgraded to a warning after the write landed, so a malformed filter exited 0 and was silently dropped; a * key matched nothing silently (review R2, R5)"
+date = 2026-10-09
+
+[[items]]
+id = "E104"
+agent = "plan-update"
+type = "deviation"
+task_ref = "add-the-shared-field-flag-parser"
+summary = "Field flags and multi-pair set refuse a key that is a dotted prefix of another; items update refuses dotted field-flag keys; set --set documented as type-inferring"
+original_intent = "Field flags refuse only an exactly repeated key, and a dotted key nests on every verb"
+rationale = "--set a.b=1 --set a=2 silently lost a.b while the reverse order errored, and a dotted key on items update replaced the whole parent table because the update merge is shallow (review R3, R6, R7)"
+date = 2026-10-09
+
+[[items]]
+id = "E105"
+agent = "plan-update"
+type = "deviation"
+task_ref = "add-the-flow-record-verb"
+summary = "render-progress-log, flow doctor and ensure-artifact resolve the execution record through execution_record_path; tasks snapshot stays sibling-only"
+original_intent = "Only flow record (and import-plan) honour [artifacts].execution_record"
+rationale = "With only the writer honouring a non-default path, PROGRESS-LOG.md and doctor read a different file than flow record wrote; snapshot keeps glimpse's fixed flow-dir file set (review R4)"
+date = 2026-10-09
+
+[[items]]
+id = "E106"
+agent = "plan-update"
+type = "deviation"
+task_ref = "add-the-execution-record-schema-module"
+summary = "Record types and commit granularity are single domain enums used directly by clap; the 13 --where flags have one WhereFilters owner; NDJSON parsing and the hidden --id alias are shared helpers; a test pins the schema skill to the module"
+original_intent = "CLI enums stringified and re-parsed against string tables, with per-call-site copies of the where-flag set, NDJSON loop and id alias"
+rationale = "Each closed set was spelled two or three times with catch-all arms, so a new variant could silently require nothing; consolidation removes the drift paths without changing help, capabilities or on-disk strings (review R13, R15, R19, R20, R27)"
+date = 2026-10-09
+
+[[items]]
+id = "E107"
+agent = "plan-update"
+type = "deviation"
+task_ref = "mint-ids-in-items-apply-and-keep-a-high-water-mark"
+summary = "High-water marks are recorded only for minted id shapes; flow record refuses supplied ids, names every missing required field, skips dedup_id and numbers --ndjson errors by source line"
+original_intent = "Any id ending in digits records a mark; flow record reuses the items add funnel and its messages unchanged"
+rationale = "Hash ids such as B-de0a0d87 wrote junk [id_high_water] keys, and flow record inherited ledger-only behaviour (dedup_id, --id-prefix advice, row-index numbering) that its schema and flags do not have (review R21, R22, R23, R28, R34)"
+date = 2026-10-09

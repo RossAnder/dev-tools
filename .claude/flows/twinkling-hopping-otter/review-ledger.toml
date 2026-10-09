@@ -1,0 +1,1030 @@
+schema_version = 1
+last_updated = 2026-10-09
+
+[[vet_events]]
+timestamp = "2026-10-09T13:13:58Z"
+command = "review"
+lens = "security"
+tier = "deep"
+agent_index = 2
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "Security lens returned 1 finding (agent-text interpolated inline into flow record --set flags in implement.md, plan-update.md, tdd.md). Sampled 1/1: re-read implement.md:140,141,201, plan-update.md:129,147,157,172 and tdd.md:45; every cited site carries a quoted <placeholder> for agent-authored prose exactly as described. Confirmed; no drops or downgrades."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:18:28Z"
+command = "review"
+lens = "quality"
+tier = "deep"
+agent_index = 1
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Quality lens returned 11 findings plus 1 TANGENTIAL. Sampled 5 (both medium-grade first: F10 parse_probes loop at backlog/check.rs:546 and F11 four hide=true alias blocks in cli/types/{tasks,backlog}.rs; then F3 record_path.rs module-doc claim vs hardcoded execution-record.toml in flow/doctor.rs:298 and flow/init.rs:106, F7 stale convert.rs:75 comment vs query.rs lookup_field dotted fallback, F1 validate() not parsing --where* with predicates() called only at output.rs:713). All anchors matched. The TANGENTIAL (split_numbered_id accepts hex ids like B-a1b2c3d4 into [id_high_water]) names an in-scope file (items.rs), verified at items.rs:1188, and is promoted to an in-scope finding rather than a backlog row. No drops or downgrades."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:18:46Z"
+command = "review"
+lens = "testability"
+tier = "lite"
+agent_index = 5
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Testability lens returned 6 findings plus 1 TANGENTIAL. Sampled 5: fields.rs:126 build (seen.insert exact-key only, so a dotted-prefix collision is not refused), record_schema.rs:146 normalise (first-missing return; None/Null only, empty string passes), lint.rs:206 bash_fences (only ```bash fences scanned; unlabelled fences at execution-record-schema SKILL.md:159 and flow-bootstrap.md:79 confirmed), items.rs:1281 refuse_supplied_id (generic --id-prefix advice reached by flow record). All anchors matched. The record_id_high_water hex-id finding duplicates quality's TANGENTIAL and is merged into this one. The TANGENTIAL on the undocumented [id_high_water] key in flow-contract-ledger-schema names an in-scope file and becomes an in-scope completeness finding. No drops or downgrades."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:19:16Z"
+command = "review"
+lens = "package-quality"
+tier = "lite"
+agent_index = 6
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Package-quality lens returned 7 findings plus 1 TANGENTIAL. Sampled 5 (raised sample for this lens): F1 plan-update.md:173 closing fence carries trailing prose (confirmed), F2 tomlctl SKILL.md:25 `--ops <path>` without @ (confirmed), F3 commit.md:29 non-zero-exit claim (anchor confirmed; agent's probe shows exit 0 with resolved:false), F5 apply-rollback-protocol SKILL.md:30 `--ops -` payload carrying rollback_rationale prose (confirmed), F7 task-store SKILL.md:397 `--with absent` template vs implement.md:126 console-line format (confirmed). F4 (implement.md:140/141/201 agent text in double-quoted args) duplicates the security lens finding on the same file and symbol and is merged into it rather than minted twice; counted as merged, not dropped. The TANGENTIAL on lint.rs bash_fences (trailing-text fences, clap value errors) names an in-scope file and is folded into the testability finding on bash_fences as an extra instance. No drops or downgrades."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:20:37Z"
+command = "review"
+lens = "architecture"
+tier = "deep"
+agent_index = 3
+sampled_count = 5
+dropped_count = 0
+downgraded_count = 0
+rationale = "Architecture lens returned 9 findings. Sampled 5 (raised sample for this lens): F2 query.rs predicates_from has no wildcard handling (grep for wildcard in query.rs empty; agent probe shows silent empty filter), F3 items.rs:556-561 shallow tbl.insert per top-level key confirmed, F5 precedent test write_reference_enumerates_every_date_key at skills.rs:563 confirmed, F7 102 dedup_id lines in the flow's execution-record.toml confirmed, F8 #[allow(dead_code)] on mod fields at lib.rs:17 confirmed. Merges (not drops): F1 record_path single-resolver claim merges with quality's same-symbol finding (architecture version kept, broader instances); F4 WhereFilters duplication merges with quality's WhereFilters finding; F6 SKILL.md:165 set-as-field-flag merges with quality's same-line finding; F9 [id_high_water] undocumented in ledger-schema merges with testability's TANGENTIAL on the same gap. No drops or downgrades."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:22:19Z"
+command = "review"
+lens = "completeness"
+tier = "lite"
+agent_index = 4
+sampled_count = 5
+dropped_count = 1
+downgraded_count = 0
+rationale = "Completeness lens returned 7 findings plus 1 TANGENTIAL. Sampled 5 (raised sample for this lens): F1 flow.md:196 and cli/types/flow.rs:226-228 say a row's own keys win while record.rs:264-274 fill_defaults refuses a contradicting type/task_ref (confirmed); F2 tasks.rs:315 --with help literal omits absent (confirmed); F3 io.rs claim_stdin message names only --json/--ops/--ndjson/--defaults-json (confirmed); F4 ItemsOp::NextId doc comment still describes next-id as a minting path and says every command invocation passes --prefix (confirmed); F5 record.rs:216 reuses the items parse_ndjson with its ledger example (confirmed). Dropped F7 (get positional path with `*`): no line anchor, the cited error site could not be located by grep, and the behaviour (positional get path never accepting `*`) predates this range; not minted, so no ledger id. F6 ([id_high_water] absent from ledger-schema skill) merges with the architecture finding on the same gap. The BrokenPipe TANGENTIAL is pre-existing behaviour and goes to the backlog gate."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:32:22Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R10 commit.md:29 now states exit 0 either way and branches on resolved; matches finding"
+agent_index = 6
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:32:22Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R11 three sites switched to --ops '@<ops-path>' with Write-tool staging clause; machine-only --ops - and the printf exception left as specified"
+agent_index = 7
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:32:22Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R16 convert.rs walk_json_path doc restated accurately; comment-only"
+agent_index = 8
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:32:43Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R17 both sites use Store::find; None is an error, not an empty ref; uncompiled pending sibling c2 but types check by reading"
+agent_index = 9
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:33:18Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "R23 collects all missing (absent/null/blank) fields, keeps the single-field prefix, flag hint; three tests; uncompiled pending sibling c2"
+agent_index = 11
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:45:01Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "run B cluster b2: R26 task-store example now uses implement.md command and states the [] means none mapping"
+agent_index = 2
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:45:01Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "run B cluster b5: R30 ledger-schema documents the id_high_water root table and ties never-reused to it"
+agent_index = 5
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:45:17Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "run B cluster b7: R33 next-id help and README reworded to inspection-only with high-water; R7 README field_flags and multi_set rows name the overlap refusal"
+agent_index = 7
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T13:45:34Z"
+command = "review-apply"
+lens = "implement-lite"
+rationale = "run B cluster b6: R32 claim_stdin message names every stdin reader and both remedies; string-only"
+agent_index = 6
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "R1"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "claude/commands/implement.md"
+line = 141
+symbol = "Phase 2 step 3b flow record deviation"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "flow record examples paste agent-written text into quoted --set/--where args, where bash expands backticks and $(...) and an apostrophe breaks quoting"
+description = """The heredoc retirement (7fd91ce) replaced quoted-heredoc JSON payloads with inline field flags and dropped the RFC-8259 escaping rule, so agent-derived prose (deviation lines routinely contain backticked identifiers) now lands in double-quoted args (command substitution, CWE-78; at minimum silent corruption) or single-quoted args (break on apostrophes). Route every agent-text field through --set-file staged with the Write tool, as write.md and plan-update.md's own deviation op already do; for the implement.md:140 dedupe guard, list by type+task_ref and compare fields from output. Optionally add a guidance_lint rule refusing --set K="<...>" on prose keys. Merged with the package-quality lens's finding on the same lines."""
+evidence = [
+    'claude/commands/implement.md:141 --set original_intent="<planned>" --set rationale="<why>"',
+    "git show 7fd91cea -- claude/commands/implement.md removes the RFC-8259 free-text rule",
+    'bash repro: --set summary="added `items next-id` alias" ran `items` as a command',
+    "claude/skills/tomlctl/references/write.md:145 Prose goes through --set-file",
+]
+instances = [
+    "claude/commands/implement.md:140",
+    "claude/commands/implement.md:141",
+    "claude/commands/implement.md:201",
+    "claude/commands/implement.md:204",
+    "claude/commands/plan-update.md:129",
+    "claude/commands/plan-update.md:147",
+    "claude/commands/plan-update.md:157",
+    "claude/commands/plan-update.md:172",
+    "claude/commands/tdd.md:45",
+    "claude/commands/implement.md:148",
+    "claude/commands/backlog.md:158",
+]
+sweep = ["--set (summary|rationale|original_intent)="]
+enumeration = "complete"
+dedup_id = "532632505420023b"
+resolved = 2026-10-09
+resolution = "partial: flow record prose fields in implement.md, plan-update.md and tdd.md now go through --set-file staged with the Write tool; the implement.md dedupe guard filters on type+task_ref only; tasks add uses --action-file/--acceptance-file / pending: tasks add --title and backlog triage --rationale have no file form (tracked as R35). Uncommitted."
+
+[[items]]
+id = "R2"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/output.rs"
+line = 254
+symbol = "OutputOpts::validate"
+severity = "warning"
+effort = "trivial"
+category = "quality"
+summary = "Malformed global --where* values are parsed only at emit time, so a row-envelope write lands, exits 0, and the filter is silently dropped"
+description = "validate() parses --template up front but never the --where* family; predicates() first runs in emit_rows, and compact_lenient turns that late error into a warning after flow record --ndjson / backlog add-many / multi-id tasks update has written. Call self.filters.predicates()? inside validate()."
+evidence = [
+    "probe: flow record --dry-run --ndjson ... --where-regex 'id=(' -> warning, exit 0",
+    "tomlctl/src/output.rs:713 is the only predicates() call",
+]
+dedup_id = "42c41036c7345fa2"
+resolved = 2026-10-09
+resolution = "OutputOpts::validate parses the --where* predicates and compiles each --where-regex before any command runs; test validate_rejects_a_malformed_where_predicate. Uncommitted."
+
+[[items]]
+id = "R3"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 165
+symbol = "Guidance canon field-flag verbs"
+severity = "warning"
+effort = "small"
+category = "quality"
+summary = "SKILL.md lists `set` among the field-flag verbs, but set's --set infers types and set takes no --set-json/--set-file"
+description = "FieldArgs --set always yields a string; Cmd::Set's own --set goes through parse_scalar and infers (version=1.0 lands as a float), and --set-file on set is a clap error. Drop set from the list or add a clause that set --set infers like the positional pair. Optionally have doc.rs collect_set_pairs reuse fields::split_pair instead of re-implementing the KEY=VALUE split and duplicate check (error texts currently differ). Merged quality and architecture findings."
+evidence = [
+    "probe: tomlctl set p.toml --set a=3 --dry-run -> new:3 (integer)",
+    "probe: tomlctl set p.toml --set-file a=p.toml -> unexpected argument",
+    "tomlctl/src/cli/types/cmd.rs:69-71",
+    "claude/skills/tomlctl/references/write.md:127",
+]
+instances = [
+    "claude/skills/tomlctl/SKILL.md:165",
+    "tomlctl/src/cli/dispatch/doc.rs:collect_set_pairs",
+    "tomlctl/src/fields.rs:split_pair",
+]
+dedup_id = "393d04cccef44a49"
+resolved = 2026-10-09
+resolution = "SKILL.md no longer lists set as a field-flag verb and states set --set infers its type; collect_set_pairs reuses fields::split_pair. Uncommitted."
+
+[[items]]
+id = "R4"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/flow/record_path.rs"
+line = 1
+symbol = "execution_record_path"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "record_path.rs claims every reader resolves the record through it, but render-progress-log, flow doctor and tasks snapshot hardcode the sibling execution-record.toml"
+description = "flow record and import-plan honour [artifacts].execution_record; render_progress_log (via init::execution_record_path_for), doctor check_one_flow, tasks snapshot and ensure_artifact use the canonical sibling. A non-default path splits writer from readers: PROGRESS-LOG.md, doctor and glimpse read a stale file. The execution-record skill (SKILL.md:107) also says render-progress-log takes the resolved path. Either route readers through execution_record_path, or make it refuse any value other than the sibling (keeps glimpse's flow-dir watcher and snapshot fingerprints valid). Merged quality and architecture findings."
+evidence = [
+    "tomlctl/src/flow/record_path.rs:1-4 module doc",
+    'tomlctl/src/flow/doctor.rs:298 flow_dir.join("execution-record.toml")',
+    "tomlctl/src/flow/render_progress_log.rs:65",
+    "tomlctl/src/tasks/snapshot.rs:44",
+]
+instances = [
+    "tomlctl/src/flow/render_progress_log.rs:dispatch",
+    "tomlctl/src/flow/init.rs:execution_record_path_for",
+    "tomlctl/src/flow/doctor.rs:check_one_flow",
+    "tomlctl/src/tasks/snapshot.rs:snapshot",
+    "tomlctl/src/flow/ensure_artifact.rs:artifact_filename",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:107",
+]
+sweep = ['execution_record_path|execution-record\.toml|EXECUTION_RECORD']
+enumeration = "complete"
+dedup_id = "a445959d4d3fd79b"
+resolved = 2026-10-09
+resolution = "render-progress-log, flow doctor and ensure-artifact resolve the record through execution_record_path (new flow_execution_record_path helper); tasks snapshot stays sibling-only and the module doc names it as the exception; tests added. Uncommitted."
+
+[[items]]
+id = "R5"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/query.rs"
+line = 1986
+symbol = "predicates_from"
+severity = "warning"
+effort = "trivial"
+category = "architecture"
+summary = "A `*` path works in projections but silently matches nothing as a --where* key (empty result, exit 0; --where-not keeps every row)"
+description = "Projection paths go through convert::navigate_json_all, which understands `*`; predicate keys go through lookup_field -> convert::navigate, which does not, and predicates_from accepts the key without complaint. SKILL.md describes `*` generically beside the global --where* row, so agents will try it. Refuse a wildcard key in predicates_from with kind=validation and a hint naming --rows."
+evidence = [
+    "probe: items list --where 'deps.*.ref=a' --pluck id -> [] exit 0",
+    "probe: --where-not 'deps.*.ref=a' -> every row",
+    "tomlctl/src/query.rs:1278 lookup_field",
+]
+dedup_id = "a54c0403e4b44637"
+resolved = 2026-10-09
+resolution = "Every --where* family refuses a key with a `*` segment (kind=validation) with a hint; test predicate_key_with_wildcard_segment_is_refused. Uncommitted."
+
+[[items]]
+id = "R6"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/items.rs"
+line = 556
+symbol = "items_update_value_to"
+severity = "warning"
+effort = "small"
+category = "architecture"
+summary = "items update --set meta.owner=x replaces the whole `meta` table, dropping its sibling keys"
+description = "fields::build turns a dotted key into a nested object, but the update merge inserts per top-level key (tbl.insert), so a dotted field flag on update is a subtree replace while `tomlctl set --set a.b=` is a leaf set. write.md:136 documents 'A dotted KEY nests'; no test covers a dotted key on update. Refuse dotted keys on items update's field-flag path, or deep-merge object values into existing tables there; leave the --json semantics glimpse relies on alone."
+evidence = [
+    "tomlctl/src/items.rs:556-561",
+    "tomlctl/src/fields.rs:72-97 insert_dotted",
+    "claude/skills/tomlctl/references/write.md:136",
+    "tomlctl/tests/field_flags.rs:104",
+]
+dedup_id = "59ed08ac1d9fe9ef"
+resolved = 2026-10-09
+resolution = "items update refuses dotted field-flag keys (refuse_dotted_update_keys in cli/dispatch/items.rs); write.md updated; field_flags test. --json semantics unchanged. Uncommitted."
+
+[[items]]
+id = "R7"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/fields.rs"
+line = 126
+symbol = "build"
+severity = "warning"
+effort = "small"
+category = "testability"
+summary = "A field flag naming a parent of an earlier dotted key silently overwrites it; the reverse order errors"
+description = "The duplicate guard compares whole keys, so --set a.b=1 --set a=2 exits 0 with a.b lost, while the reverse order fails. tomlctl set's multi-pair collect_set_pairs has the same exact-match seen set. Refuse a key that is a dotted prefix of another in both places and test both orders."
+evidence = [
+    'probe: items add l.toml --id-prefix R --set a.b=1 --set a=2 -> exit 0, a = "2"',
+    "probe: set d.toml --set a.b=1 --set a=2 -> a = 2; reversed -> error",
+]
+instances = [
+    "tomlctl/src/fields.rs:build",
+    "tomlctl/src/cli/dispatch/doc.rs:collect_set_pairs",
+]
+sweep = ["seen.insert"]
+enumeration = "complete"
+dedup_id = "c914b68d738aaf3c"
+resolved = 2026-10-09
+resolution = "fields::refuse_overlapping_keys refuses duplicate and dotted-prefix keys in both field flags and multi-pair set, independent of order; tests in fields.rs and doc_writes.rs. Uncommitted."
+
+[[items]]
+id = "R8"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "claude/commands/plan-update.md"
+line = 173
+symbol = "reconcile op closing fence"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "The closing fence of the flow record --type reconcile block carries trailing prose, so the code block never closes"
+description = "Line 173 reads ``` Follow-up deviations and deferrals ...; in CommonMark a closing fence cannot carry text, so the rest of the section renders as code. Move the sentence onto its own line after a bare fence."
+evidence = ["claude/commands/plan-update.md:173"]
+dedup_id = "fdb8c65a8512d0cd"
+resolved = 2026-10-09
+resolution = "plan-update.md reconcile block now closes on a bare fence. Uncommitted."
+
+[[items]]
+id = "R9"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "claude/skills/tomlctl/SKILL.md"
+line = 25
+symbol = "Quick Reference apply batch"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "Quick Reference shows `items apply --ops <path>`, which the binary parses as inline JSON and rejects; it must be --ops '@<path>'"
+description = "--ops takes a literal, - or @<path>; a bare path fails 'parsing --ops: expected value at line 1 column 1'. Every other doc uses the quoted @ form."
+evidence = ["probe: items apply led.toml --id-prefix R --ops ops.json --dry-run -> exit 1; '@ops.json' succeeds"]
+dedup_id = "0fa6c8bf916920f2"
+resolved = 2026-10-09
+resolution = "Quick Reference now shows --ops '@<path>'. Uncommitted."
+
+[[items]]
+id = "R10"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "claude/commands/commit.md"
+line = 29
+symbol = "flow resolve step"
+severity = "warning"
+effort = "trivial"
+category = "package-quality"
+summary = "commit.md says a non-zero exit means no flow resolved, but flow resolve exits 0 with resolved:false"
+description = "The sweep dropped 2>/dev/null and added this sentence. Branch on the resolved field instead."
+evidence = ['probe: tomlctl flow resolve --branch nonexistent-branch-xyz -> {"resolved":false,...} rc=0']
+dedup_id = "4bc8a78bf041b137"
+resolved = 2026-10-09
+resolution = "commit.md states flow resolve exits 0 either way and branches on the resolved field. Uncommitted."
+
+[[items]]
+id = "R11"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "claude/skills/flow-contract-apply-rollback-protocol/SKILL.md"
+line = 30
+symbol = "step 5 reverse ledger transitions"
+severity = "warning"
+effort = "small"
+category = "package-quality"
+summary = "items apply --ops - batches that carry prose (rollback_rationale, resolution, reopen_rationale) have no staged-file form now that heredocs are banned"
+description = "The only remaining stdin form is a single-line printf pipe for short machine-built rows; one apostrophe in the prose breaks it. references/verification.md:112 in the same contract already switched to --ops '@<ops-path>'; make the same switch at each prose-carrying site."
+evidence = [
+    "claude/skills/flow-contract-apply-rollback-protocol/SKILL.md:30",
+    "claude/skills/flow-contract-apply-pipeline/references/verification.md:112",
+]
+instances = [
+    "claude/skills/flow-contract-apply-rollback-protocol/SKILL.md:30",
+    "claude/skills/flow-contract-apply-pipeline/SKILL.md:317",
+    "claude/skills/flow-contract-ledger-disposition-sweep/SKILL.md:46",
+]
+sweep = ["--ops -"]
+enumeration = "complete"
+dedup_id = "209f0fbeb761c133"
+resolved = 2026-10-09
+resolution = "Prose-carrying items apply sites in apply-rollback-protocol, apply-pipeline and ledger-disposition-sweep switched to --ops '@<ops-path>' staged with the Write tool. Uncommitted."
+
+[[items]]
+id = "R12"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "claude/skills/tomlctl/references/flow.md"
+line = 196
+symbol = "flow record --ndjson"
+severity = "warning"
+effort = "trivial"
+category = "completeness"
+summary = "Docs and --help say a --ndjson row's own keys win over --type/--task, but the binary refuses any disagreement"
+description = "fill_defaults returns kind=validation 'payload `type` is ... but --type gives ...; drop one of them'. Only --json and the field flags are overridden by row keys. State that, and that a contradicting type/task_ref is refused."
+evidence = [
+    "probe: flow record --type reconcile --ndjson <row type=checkpoint> --dry-run -> validation refusal",
+    "tomlctl/src/flow/record.rs:264-274",
+]
+instances = [
+    "claude/skills/tomlctl/references/flow.md:196",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:101",
+    "tomlctl/src/cli/types/flow.rs:226",
+]
+dedup_id = "b69552529993414e"
+resolved = 2026-10-09
+resolution = "flow.md, execution-record-schema SKILL.md and the --ndjson clap help now say --json and field flags are row-overridable defaults while a row contradicting --type/--task is refused. Uncommitted."
+
+[[items]]
+id = "R13"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/flow/record_schema.rs"
+line = 17
+symbol = "TYPES"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Each new closed set (record type, train granularity) is spelled two or three times and the CLI enum is stringified only to be re-parsed"
+description = "RecordType (ValueEnum) -> &'static str -> TYPES string table with `_ => &[]` catch-alls in type_required/type_enums, so a type added to one side silently requires nothing or is refused late. Granularity has TrainGranularity, train::Granularity and parse_policy GRANULARITY_VALUES. Give each set one domain enum with ValueEnum/as_str/parse and make the rule tables exhaustive matches."
+evidence = [
+    "tomlctl/src/cli/types/flow.rs:243 RecordType",
+    "tomlctl/src/flow/dispatch.rs:107",
+    "tomlctl/src/tasks/train.rs:22 Granularity",
+]
+instances = [
+    "tomlctl/src/cli/types/flow.rs:RecordType",
+    "tomlctl/src/flow/record_schema.rs:type_required",
+    "tomlctl/src/cli/types/tasks.rs:TrainGranularity",
+    "tomlctl/src/tasks/train.rs:Granularity",
+    "tomlctl/src/tasks/parse_policy.rs:GRANULARITY_VALUES",
+]
+dedup_id = "3bc0d2664f5424ba"
+resolved = 2026-10-09
+resolution = "One domain enum per closed set: flow::RecordType (record_schema.rs) and tasks::CommitGranularity (parse_policy.rs) derive ValueEnum and are used directly by clap; the CLI copies and as_str hops are gone; type_required/type_enums match exhaustively; help and capabilities byte-identical. Uncommitted."
+
+[[items]]
+id = "R14"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/output.rs"
+line = 1038
+symbol = "ALL_SHAPING"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "ALL_SHAPING hand-repeats every shaping flag shaping_flags() already lists; a new flag missed here is silently accepted on text output"
+description = "Grew from 5 to 22 entries in this range. Replace the refuse-everything call with opts.shaping_flags().first() (or an 'all' variant) and keep an explicit list only for emit_list_raw's partial refusal."
+evidence = [
+    "tomlctl/src/output.rs:208-245 shaping_flags",
+    "tomlctl/src/output.rs:1038",
+]
+dedup_id = "91905e541449ea99"
+resolved = 2026-10-09
+resolution = "ALL_SHAPING removed; print_text/print_raw_value refuse via unshaped_text_allowed derived from shaping_flags(). Uncommitted."
+
+[[items]]
+id = "R15"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/output.rs"
+line = 50
+symbol = "WhereFilters"
+severity = "suggestion"
+effort = "medium"
+category = "quality"
+summary = "The 13-flag --where* family is restated in five structs and two name lists; adding one predicate takes ~10 lockstep edits"
+description = "GlobalWhereArgs/to_filters, QueryArgs/to_query_input, QueryInput/where_input, WhereInput/families, WhereFilters EMPTY/families/input, plus WHERE_FLAGS and ALL_SHAPING. check_where_placement counts argv against WHERE_FLAGS, so a clap flag missing there silently disables the split-placement guard. One owned clap-free filter struct embedded in QueryInput and OutputOpts, with the name lists derived from one const table, collapses the copies. The dual clap declaration itself is a plan decision. Merged quality and architecture findings."
+evidence = [
+    "tomlctl/src/cli/types/mod.rs:383 to_filters",
+    "tomlctl/src/query.rs:1922 WhereInput",
+    "tomlctl/src/output.rs:67 WHERE_FLAGS",
+]
+instances = [
+    "tomlctl/src/output.rs:WhereFilters",
+    "tomlctl/src/output.rs:WHERE_FLAGS",
+    "tomlctl/src/query.rs:QueryInput",
+    "tomlctl/src/query.rs:WhereInput",
+    "tomlctl/src/cli/types/mod.rs:GlobalWhereArgs",
+    "tomlctl/src/cli/types/shared.rs:QueryArgs",
+]
+sweep = ["where_regex"]
+enumeration = "complete"
+dedup_id = "af0b8272bd5929f7"
+resolved = 2026-10-09
+resolution = "One owned query::WhereFilters (with FLAGS, families, predicates) embedded in QueryInput and re-exported as output's filter type; WhereInput, where_input, predicates_from and WHERE_FLAGS removed. Uncommitted."
+
+[[items]]
+id = "R16"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/convert.rs"
+line = 75
+symbol = "walk_json_path"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "walk_json_path's doc says --where keys stay single-key, but this range made lookup_field fall back to dotted navigation"
+description = "Delete lines 75-76 or restate: --where keys navigate dotted paths through navigate (with array indices); this walker does not."
+evidence = [
+    "tomlctl/src/convert.rs:75-76",
+    "tomlctl/src/query.rs:1278 lookup_field",
+]
+dedup_id = "ca08f1110c7d4889"
+resolved = 2026-10-09
+resolution = "walk_json_path doc now says --where keys resolve through navigate, not this walker. Uncommitted."
+
+[[items]]
+id = "R17"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/tasks/train.rs"
+line = 134
+symbol = "check_window"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "New code re-implements Store::find, and update_many maps a missing row to an empty ref"
+description = 'Use store.find(id).is_some() in check_window; in update_many use store.find(id).map(|r| r.r#ref.clone()) and treat None as an internal error rather than "".'
+evidence = ["tomlctl/src/tasks/schema.rs:274 Store::find"]
+instances = [
+    "tomlctl/src/tasks/train.rs:check_window",
+    "tomlctl/src/tasks/update.rs:update_many",
+]
+dedup_id = "aa1384bca902ff95"
+resolved = 2026-10-09
+resolution = "check_window and update_many use Store::find; a vanished row is an error, not an empty ref. Uncommitted."
+
+[[items]]
+id = "R18"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/cli/dispatch/tests/lint.rs"
+line = 1087
+symbol = "flag_table_report_inner"
+severity = "suggestion"
+effort = "trivial"
+category = "quality"
+summary = "The lint_rel_path extraction stopped one call site short"
+description = "Replace the inlined strip_prefix/to_string_lossy/replace at lines 1087-1091 with lint_rel_path(file, repo_root)."
+evidence = ["tomlctl/src/cli/dispatch/tests/lint.rs:241 lint_rel_path"]
+dedup_id = "37f42e2d760e2a44"
+resolved = 2026-10-09
+resolution = "flag_table_report_inner uses lint_rel_path. Uncommitted."
+
+[[items]]
+id = "R19"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/backlog/check.rs"
+line = 546
+symbol = "parse_probes"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "Batch backlog check adds a third hand-rolled NDJSON line loop"
+description = "items.rs parse_ndjson_lines, backlog/add_many.rs parse_rows and check.rs parse_probes each skip-and-count blanks and refuse with 'line N'. Expose one numbered parse_ndjson_objects from items.rs and keep only per-key validation in the callers; flow record's build_entries could pass its own example string through the same helper."
+evidence = [
+    "tomlctl/src/items.rs:1364",
+    "tomlctl/src/backlog/add_many.rs:96",
+]
+instances = [
+    "tomlctl/src/items.rs:parse_ndjson_lines",
+    "tomlctl/src/backlog/add_many.rs:parse_rows",
+    "tomlctl/src/backlog/check.rs:parse_probes",
+]
+sweep = ['\.lines\(\)\.enumerate']
+enumeration = "incomplete"
+dedup_id = "f7875961ad676d55"
+resolved = 2026-10-09
+resolution = "items::parse_ndjson_objects shared by backlog check parse_probes and backlog add-many parse_rows. Uncommitted."
+
+[[items]]
+id = "R20"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/cli/types/tasks.rs"
+line = 225
+symbol = "TasksOp::Update.id"
+severity = "suggestion"
+effort = "small"
+category = "quality"
+summary = "The hidden --id recovery alias is split across a clap field and a manual ids.extend at four verbs"
+description = 'required_unless_present = "id" lets a call with only --id through, so a fifth verb copying the field but forgetting extend silently runs on an empty id list. Fold positional + hidden flag into one flattened Args struct per id type with into_ids().'
+evidence = ["tomlctl/src/cli/types/tasks.rs:227 hide = true"]
+instances = [
+    "tomlctl/src/cli/types/tasks.rs:TasksOp::Update",
+    "tomlctl/src/cli/types/tasks.rs:TasksOp::Show",
+    "tomlctl/src/cli/types/backlog.rs:BacklogOp::Show",
+    "tomlctl/src/cli/types/backlog.rs:BacklogOp::Triage",
+]
+sweep = ["hide = true"]
+enumeration = "complete"
+dedup_id = "4981b4cece92dcc9"
+resolved = 2026-10-09
+resolution = "Flattened TaskIds/ItemIds Args structs with into_ids() replace the four positional+hidden --id pairs; help and capabilities output byte-identical. Uncommitted."
+
+[[items]]
+id = "R21"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/items.rs"
+line = 1199
+symbol = "record_id_high_water"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Removing a hash-id row writes a junk [id_high_water] key (B-de0a0d87 -> `B-de0a0d = 87`), and the high-water tests skip add-many and remove+mint in one apply"
+description = "split_numbered_id treats any trailing digits as the number. No carrier removes backlog rows via items remove today, so this is latent. Record a mark only for an alphabetic prefix, and add the two missing cases to tests/id_minting.rs. Raised by quality (TANGENTIAL) and testability."
+evidence = [
+    "probe: items remove b.toml B-de0a0d87 --array backlog -> [id_high_water] B-de0a0d = 87",
+    "tomlctl/src/items.rs:1188 split_numbered_id",
+]
+instances = [
+    "tomlctl/src/items.rs:record_id_high_water",
+    "tomlctl/tests/id_minting.rs",
+]
+dedup_id = "5b2148d04824a6a7"
+resolved = 2026-10-09
+resolution = "split_numbered_id accepts only a digit-free prefix and a canonical number, so hash ids record no high-water mark; three id_minting tests (hash removal, add-many after removal, remove+mint in one apply). Uncommitted."
+
+[[items]]
+id = "R22"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/items.rs"
+line = 1281
+symbol = "refuse_supplied_id"
+severity = "suggestion"
+effort = "trivial"
+category = "testability"
+summary = "flow record --set id=... is told to 'drop --id-prefix', a flag flow record does not have"
+description = """flow record mints through items_add_many_with_dedupe(.., Some("E")), inheriting the generic message prefixed 'row 1:'. Give flow record its own message (ids are minted as E<n>; drop `id`) and pin it with a test."""
+evidence = ["probe: flow record ... --set id=E9 -> 'row 1: payload already carries an `id`; drop it or drop --id-prefix'"]
+instances = [
+    "tomlctl/src/items.rs:refuse_supplied_id",
+    "tomlctl/src/flow/record.rs:append",
+]
+dedup_id = "2ae32abd87448e67"
+resolved = 2026-10-09
+resolution = "flow record refuses a supplied id with its own message (single and --ndjson row N); flow_record tests. Uncommitted."
+
+[[items]]
+id = "R23"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/flow/record_schema.rs"
+line = 145
+symbol = "normalise"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "Required-field check reports one missing field at a time, names no supplying flag, and accepts an empty string"
+description = 'The loop returns on the first missing field (an implement task-completion can need up to 7 retries) and a missing task_ref does not mention --task. Only None/Null count as missing, while record.rs is_unset also treats "" as unset, so --set summary= writes an empty required field. Collect every missing field into one message with its flag, apply is_unset semantics, and test both.'
+evidence = [
+    "probe: --type task-completion --set agent=implement --set summary=s -> only task_ref reported",
+    "probe: --type deviation --set summary= passes the summary check",
+]
+dedup_id = "10c8e645de35b636"
+resolved = 2026-10-09
+resolution = "normalise names every missing required field (absent, null or blank) in one error with a flag hint; three unit tests. Uncommitted."
+
+[[items]]
+id = "R24"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/cli/dispatch/tests/lint.rs"
+line = 206
+symbol = "bash_fences"
+severity = "suggestion"
+effort = "small"
+category = "testability"
+summary = "guidance_lint and command_lint scan only ```bash fences, close on any ``` line, and ignore clap value errors"
+description = "Six tomlctl commands sit in unlabelled fences and escape both lints; a closing fence with trailing prose (plan-update.md:173) and a bare --ops <path> (SKILL.md:25) are invisible to them. Label those fences bash (line 199's pseudo-code may need ignore-command-lint), and consider closing only on a bare fence and probing value parsing."
+evidence = ['tomlctl/src/cli/dispatch/tests/lint.rs:206 strip_prefix("```bash")']
+instances = [
+    "claude/agents/flow-bootstrap.md:79",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:159",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:165",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:171",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:179",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:199",
+]
+enumeration = "complete"
+dedup_id = "f13f4022a87f4ff7"
+resolved = 2026-10-09
+resolution = "Six unlabelled tomlctl fences labelled bash (one bash ignore-command-lint); bash_fences closes only on a bare fence; test added. Uncommitted."
+
+[[items]]
+id = "R25"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "claude/skills/tomlctl/references/flow.md"
+line = 207
+symbol = "flow record checks"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "flow.md lists fewer flow record checks than record_schema.rs enforces"
+description = "Missing: the status-transition from_status/to_status enum, the findings_count integer check and its digit-string coercion, and the commits_checked array check."
+evidence = [
+    "tomlctl/src/flow/record_schema.rs:63",
+    "tomlctl/src/flow/record_schema.rs:76-77",
+]
+dedup_id = "14b6d24f2f8193fe"
+resolved = 2026-10-09
+resolution = "flow.md lists the from_status/to_status enum, findings_count integer coercion and commits_checked array checks. Uncommitted."
+
+[[items]]
+id = "R26"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "claude/skills/flow-contract-task-store/SKILL.md"
+line = 397
+symbol = "tasks show --with absent example"
+severity = "suggestion"
+effort = "trivial"
+category = "package-quality"
+summary = "The --with absent template prints `— []`, but implement.md:126 defines the console line as `— <paths>` or `— none`"
+description = "/implement step 6 reads that line back to decide what to stash. Align the example with implement.md's form or state the []-means-none mapping."
+evidence = [
+    "claude/commands/implement.md:126",
+    "live run printed: dispatch 2: absent at dispatch — []",
+]
+dedup_id = "a25068e5a5a75933"
+resolved = 2026-10-09
+resolution = "task-store --with absent example uses implement.md's --select id,absent --lines form and states [] maps to the `— none` console line. Uncommitted."
+
+[[items]]
+id = "R27"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/flow/record_schema.rs"
+line = 1
+symbol = "skill parity"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "No test keeps record_schema.rs and the execution-record schema skill in step; each calls the other canonical"
+description = "The type vocabulary, per-type required fields, enums, integer/array field lists and byte caps are restated in both. Add a sibling of write_reference_enumerates_every_date_key that parses the skill's type table and caps against TYPES, type_required, type_enums, TEXT_CAPS and FAILED_IDS_CAP."
+evidence = [
+    "tomlctl/src/cli/dispatch/tests/skills.rs:563 precedent",
+    "claude/skills/flow-contract-execution-record-schema/SKILL.md:8",
+]
+dedup_id = "43430d12370b6e16"
+resolved = 2026-10-09
+resolution = "skill_states_the_enforced_contract in cli/dispatch/tests/skills.rs checks the execution-record skill's type table, required fields, enums and caps against record_schema; runs in the pre-commit cli::dispatch::tests gate. Uncommitted."
+
+[[items]]
+id = "R28"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/flow/record.rs"
+line = 326
+symbol = "append"
+severity = "suggestion"
+effort = "small"
+category = "db"
+summary = "flow record writes the ledger-only dedup_id fingerprint onto every execution-record entry"
+description = "It appends through items_add_many_with_dedupe -> apply_dedup_id_on_add; the record schema does not list dedup_id, the skill forbids find-duplicates on records, and no reader uses it (glimpse declares but never reads it). Suppress dedup population on this path; existing rows can stay."
+evidence = [
+    "grep -c dedup_id .claude/flows/twinkling-hopping-otter/execution-record.toml -> 102",
+    "tomlctl/src/items.rs:346",
+]
+dedup_id = "5e72339d256ee57a"
+resolved = 2026-10-09
+resolution = "flow record appends through items_append_minted, which skips dedup_id; other callers unchanged; existing rows untouched. Uncommitted."
+
+[[items]]
+id = "R29"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/lib.rs"
+line = 17
+symbol = "mod fields"
+severity = "suggestion"
+effort = "trivial"
+category = "architecture"
+summary = "Leftover #[allow(dead_code)] on mod fields now only hides future dead code"
+description = "Added with the module before it had consumers (bfa3f45); FieldArgs, build and is_empty are all used now. It is the crate's only module-level dead_code allow."
+evidence = ["tomlctl/src/lib.rs:17-18"]
+dedup_id = "fe460d22fc21f562"
+resolved = 2026-10-09
+resolution = "Removed #[allow(dead_code)] from mod fields; clippy clean. Uncommitted."
+
+[[items]]
+id = "R30"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "claude/skills/flow-contract-ledger-schema/SKILL.md"
+line = 219
+symbol = "Key-order convention"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The ledger-schema skill, which calls itself the only copy of the schema, does not mention the new root [id_high_water] table"
+description = "Removals now persist [id_high_water] into review and optimise ledgers; only tomlctl write.md:271 documents it. One sentence at :219/:223 naming the table, its prefix = n shape and 'never hand-edit' closes the gap. Raised by architecture, completeness and testability."
+evidence = [
+    "tomlctl/src/items.rs:1196-1227",
+    "claude/skills/tomlctl/references/write.md:271",
+]
+dedup_id = "57e4279f7e149c21"
+resolved = 2026-10-09
+resolution = "Ledger-schema skill documents the root [id_high_water] table and ties never-reused ids to it. Uncommitted."
+
+[[items]]
+id = "R31"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/cli/types/tasks.rs"
+line = 315
+symbol = "TasksOp::Show.with"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The --with help literal omits the new `absent` part"
+description = 'help = "Sections to include (summary,body,files,deps,dependents)" is hard-coded; add absent.'
+evidence = ["tomlctl/src/cli/types/tasks.rs:315"]
+dedup_id = "46ced48e69c45bfe"
+resolved = 2026-10-09
+resolution = "tasks show --with help lists absent. Uncommitted."
+
+[[items]]
+id = "R32"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/io.rs"
+line = 263
+symbol = "claim_stdin"
+severity = "suggestion"
+effort = "trivial"
+category = "completeness"
+summary = "The 'stdin already consumed' message omits --set-file KEY=- and backlog check --summary -, and its @<path> remedy is wrong for --set-file"
+description = "Both now claim stdin through read_text_arg. Name them in the message."
+evidence = ['tomlctl/src/fields.rs:56 read_text_arg("-")']
+dedup_id = "cb66a43192f3c8a2"
+resolved = 2026-10-09
+resolution = "claim_stdin message names every stdin reader (--set-file KEY=-, --summary -) and both remedies. Uncommitted."
+
+[[items]]
+id = "R33"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/cli/types/items.rs"
+line = 251
+symbol = "ItemsOp::NextId"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "next-id help and README still present it as a minting path after the guidance retired it to inspection"
+description = "Help says every next-id invocation in claude/commands passes --prefix (there are none now) and describes 'max existing id', ignoring [id_high_water]; tomlctl/README.md:252 calls it a bootstrapping fast path for minting. Reword to inspection-only, matching write.md:339 and query.md:61."
+evidence = [
+    "tomlctl/src/cli/types/items.rs:251-263",
+    "tomlctl/README.md:252",
+]
+instances = [
+    "tomlctl/src/cli/types/items.rs:ItemsOp::NextId",
+    "tomlctl/README.md:252",
+]
+dedup_id = "e21e96d6af6b38d0"
+resolved = 2026-10-09
+resolution = "items next-id help and README describe it as inspection-only, honouring [id_high_water]; README field_flags/multi_set rows name the overlap refusals. Uncommitted."
+
+[[items]]
+id = "R34"
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/flow/record.rs"
+line = 216
+symbol = "build_entries"
+severity = "suggestion"
+effort = "small"
+category = "completeness"
+summary = "A malformed flow record --ndjson line reports kind=other with an items-ledger example"
+description = 'The shared parse_ndjson is reused unchanged, so a flow record writer sees {"id":"R1","status":"open"} as the expected shape and kind=other, where batch backlog check reports kind=validation.'
+evidence = ['probe: flow record --ndjson <"{bad"> --dry-run --error-format json -> kind=other with R1 example']
+dedup_id = "13baa9f88a8228e6"
+resolved = 2026-10-09
+resolution = "flow record --ndjson parses through items::parse_ndjson_objects (kind=validation, no ledger example); batch errors use `--ndjson line N` source line numbers. Uncommitted."
+
+[[items]]
+id = "R35"
+file = "claude/commands/implement.md"
+line = 141
+symbol = "Phase 2 step 3b flow record deviation"
+severity = "warning"
+effort = "small"
+category = "security"
+summary = "pending parts of R1: tasks add --title and backlog triage --rationale/--reason/--resolution have no file or stdin form, so agent text at implement.md:148 and backlog.md:158 still goes inline in quoted shell args"
+description = "R1 moved every flow record prose field to --set-file. Two sites could not follow because the CLI offers no file form: `tasks add --title` (tomlctl/src/cli/types/tasks.rs Add.title; --action/--acceptance already have -file variants) and `backlog triage --reopen --rationale` (tomlctl/src/cli/types/backlog.rs Triage rationale, also reason/resolution). Add a -file (or @path) form for those flags, then switch implement.md:148 and backlog.md:158 (and the plan-update.md triage example) to it."
+evidence = [
+    "claude/commands/implement.md:148",
+    "claude/commands/backlog.md:158",
+]
+instances = [
+    "claude/commands/implement.md:148",
+    "claude/commands/backlog.md:158",
+    "tomlctl/src/cli/types/tasks.rs:Add",
+    "tomlctl/src/cli/types/backlog.rs:BacklogOp::Triage",
+]
+first_flagged = 2026-10-09
+rounds = 1
+status = "fixed"
+related = ["R1"]
+flow = "twinkling-hopping-otter"
+dedup_id = "73323ba4e6c05b9c"
+resolved = 2026-10-09
+resolution = "Added tasks add --title-file and backlog triage --reason-file/--resolution-file/--rationale-file; implement.md, backlog.md and backlog-capture now stage agent text in files; tests cover backticks, $(...) and apostrophes round-tripping. Uncommitted."
