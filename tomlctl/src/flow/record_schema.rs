@@ -29,15 +29,7 @@ const TYPES: &[&str] = &[
 /// SHA lands later on the commit-train `checkpoint` entry.
 fn type_required(ty: &str) -> &'static [&'static str] {
     match ty {
-        "task-completion" => &[
-            "task_ref",
-            "status",
-            "files",
-            "dispatch_tier",
-            "dispatch_agent",
-            "vet",
-            "retries",
-        ],
+        "task-completion" => &["task_ref", "status", "files"],
         "verification" => &["command", "outcome"],
         "deviation" => &["original_intent", "rationale"],
         "deferral" => &["task_ref", "reason", "reevaluate_when"],
@@ -68,12 +60,21 @@ fn type_enums(ty: &str) -> &'static [(&'static str, &'static [&'static str])] {
         ],
         "verification" => &[("outcome", &["pass", "fail", "timeout", "flaky"])],
         "reconcile" => &[("direction", &["forward", "reverse"])],
+        "status-transition" => &[("from_status", FLOW_STATUSES), ("to_status", FLOW_STATUSES)],
         _ => &[],
     }
 }
 
-const INTEGER_FIELDS: &[&str] = &["retries", "duration_s"];
-const ARRAY_FIELDS: &[&str] = &["files", "commits", "failed_ids"];
+/// The flow status vocabulary a `status-transition` moves between.
+const FLOW_STATUSES: &[&str] = &["draft", "in-progress", "review", "complete"];
+
+/// The dispatch fields `/implement` records on each `task-completion`.
+/// Required only on that writer's entries (`agent = "implement"`); other
+/// writers may omit them, and they are validated wherever present.
+const IMPLEMENT_DISPATCH_FIELDS: &[&str] = &["dispatch_tier", "dispatch_agent", "vet", "retries"];
+
+const INTEGER_FIELDS: &[&str] = &["retries", "duration_s", "findings_count"];
+const ARRAY_FIELDS: &[&str] = &["files", "commits", "failed_ids", "commits_checked"];
 
 /// Byte caps, measured on the UTF-8 encoding.
 const TEXT_CAPS: &[(&str, usize)] = &[
@@ -148,6 +149,18 @@ pub(crate) fn normalise(
             )));
         }
     }
+    if ty == "task-completion"
+        && matches!(entry.get("agent"), Some(JsonValue::String(a)) if a == "implement")
+    {
+        for field in IMPLEMENT_DISPATCH_FIELDS {
+            if matches!(entry.get(*field), None | Some(JsonValue::Null)) {
+                return Err(validation(format!(
+                    "execution-record entry of type `{ty}` written by agent `implement` is \
+                     missing required field `{field}`"
+                )));
+            }
+        }
+    }
 
     for (field, allowed) in type_enums(&ty) {
         match entry.get(*field) {
@@ -190,14 +203,18 @@ pub(crate) fn normalise(
 }
 
 /// An integer field holding a digit string becomes that integer; any other
-/// non-integer value is refused.
+/// value that is not a non-negative integer is refused, since every integer
+/// field is a count or a duration.
 fn coerce_integer(entry: &mut JsonMap<String, JsonValue>, field: &str) -> Result<()> {
     let Some(value) = entry.get_mut(field) else {
         return Ok(());
     };
     match value {
         JsonValue::Null => Ok(()),
-        JsonValue::Number(n) if n.is_i64() || n.is_u64() => Ok(()),
+        JsonValue::Number(n) if n.is_u64() => Ok(()),
+        JsonValue::Number(n) if n.is_i64() => Err(validation(format!(
+            "execution-record field `{field}` must be a non-negative integer, got {n}"
+        ))),
         JsonValue::String(s) if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) => {
             let n: u64 = s.parse().map_err(|_| {
                 validation(format!(
@@ -489,6 +506,96 @@ mod tests {
     }
 
     #[test]
+    fn dispatch_fields_are_optional_for_writers_other_than_implement() {
+        for agent in ["plan-update", "tdd"] {
+            let mut m = task_completion();
+            m.insert("agent".into(), json!(agent));
+            for field in IMPLEMENT_DISPATCH_FIELDS {
+                m.remove(*field);
+            }
+            normalise(&mut m, &[]).unwrap();
+        }
+    }
+
+    #[test]
+    fn dispatch_fields_are_validated_when_present_on_any_writer() {
+        for (field, bad) in [
+            ("dispatch_tier", json!("medium")),
+            ("dispatch_agent", json!("general-purpose")),
+            ("vet", json!("passed")),
+            ("retries", json!("two")),
+        ] {
+            let mut m = task_completion();
+            m.insert("agent".into(), json!("plan-update"));
+            m.insert(field.to_string(), bad);
+            let msg = validation_message(normalise(&mut m, &[]).unwrap_err());
+            assert!(msg.contains(&format!("`{field}`")), "{field}: {msg}");
+        }
+    }
+
+    fn reconcile() -> JsonMap<String, JsonValue> {
+        let mut m = base("reconcile");
+        m.insert("direction".into(), json!("forward"));
+        m.insert("findings_count".into(), json!(3));
+        m.insert("commits_checked".into(), json!(["abc"]));
+        m
+    }
+
+    #[test]
+    fn reconcile_findings_count_digit_string_is_coerced_and_other_values_refused() {
+        let mut m = reconcile();
+        m.insert("findings_count".into(), json!("7"));
+        normalise(&mut m, &[]).unwrap();
+        assert_eq!(m["findings_count"], json!(7));
+
+        for bad in [json!("seven"), json!("-1"), json!(2.5), json!([3])] {
+            let mut m = reconcile();
+            m.insert("findings_count".into(), bad.clone());
+            let msg = validation_message(normalise(&mut m, &[]).unwrap_err());
+            assert!(msg.contains("`findings_count`"), "{bad}: {msg}");
+        }
+    }
+
+    #[test]
+    fn reconcile_commits_checked_must_be_an_array() {
+        let mut m = reconcile();
+        m.insert("commits_checked".into(), json!("abc123"));
+        let msg = validation_message(normalise(&mut m, &[]).unwrap_err());
+        assert!(
+            msg.contains("`commits_checked`") && msg.contains("--set-json"),
+            "{msg}"
+        );
+
+        let mut m = reconcile();
+        m.insert("commits_checked".into(), json!(4));
+        let msg = validation_message(normalise(&mut m, &[]).unwrap_err());
+        assert!(msg.contains("`commits_checked`"), "{msg}");
+    }
+
+    #[test]
+    fn status_transition_ends_are_flow_statuses() {
+        for status in ["draft", "in-progress", "review", "complete"] {
+            let mut m = base("status-transition");
+            m.insert("from_status".into(), json!(status));
+            m.insert("to_status".into(), json!(status));
+            normalise(&mut m, &[]).unwrap();
+        }
+        for field in ["from_status", "to_status"] {
+            for bad in [json!("done"), json!(1)] {
+                let mut m = base("status-transition");
+                m.insert("from_status".into(), json!("draft"));
+                m.insert("to_status".into(), json!("review"));
+                m.insert(field.to_string(), bad.clone());
+                let msg = validation_message(normalise(&mut m, &[]).unwrap_err());
+                assert!(
+                    msg.contains(&format!("`{field}`")) && msg.contains("`in-progress`"),
+                    "{field}={bad}: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn checkpoint_is_freeform_and_unknown_keys_pass_through() {
         let mut m = base("checkpoint");
         m.insert("kind".into(), json!("commit-train"));
@@ -510,6 +617,22 @@ mod tests {
             m.insert("retries".into(), bad.clone());
             let msg = validation_message(normalise(&mut m, &[]).unwrap_err());
             assert!(msg.contains("`retries`"), "{bad}: {msg}");
+        }
+    }
+
+    #[test]
+    fn negative_integers_are_refused_on_every_integer_field() {
+        for field in INTEGER_FIELDS {
+            let mut m = task_completion();
+            m.insert((*field).to_string(), json!(0));
+            normalise(&mut m, &[]).unwrap();
+
+            m.insert((*field).to_string(), json!(-1));
+            let msg = validation_message(normalise(&mut m, &[]).unwrap_err());
+            assert!(
+                msg.contains(&format!("`{field}`")) && msg.contains("non-negative"),
+                "{field}: {msg}"
+            );
         }
     }
 

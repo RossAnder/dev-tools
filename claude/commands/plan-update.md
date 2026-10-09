@@ -218,7 +218,7 @@ Match each Completed-Items row's Item-heading text against that set and adopt th
 tomlctl flow record --slug <slug> --set agent=plan-update --ndjson <staged-rows-path>
 ```
 
-`flow record` requires the four dispatch fields on every `task-completion`, which a legacy row cannot know: give each back-filled completion `"dispatch_tier":"deep"`, `"dispatch_agent":"implement-deep"`, `"vet":"skipped"` and `"retries":0` — deep is what a reader already assumes for an unknown tier, and it keeps these rows out of the lite-tier entries the vet rate is counted over. Then re-render and update `context.toml` per Step 1.
+Leave the four dispatch fields (`dispatch_tier`, `dispatch_agent`, `vet`, `retries`) off the back-filled completions. A legacy row cannot know them, and `flow record` requires them only on entries whose `agent` is `implement`, which these `agent = "plan-update"` rows are not. Readers treat an absent tier as unknown, which keeps these rows out of the lite-tier entries the vet rate is counted over. Then re-render and update `context.toml` per Step 1.
 
 ## Step 3: Apply Updates
 

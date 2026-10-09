@@ -230,6 +230,45 @@ fn files_left_empty_by_dropping_is_refused_and_nothing_is_written() {
 }
 
 #[test]
+fn dispatch_fields_are_required_only_from_implement() {
+    let (_dir, root, record) = flow();
+    let without_dispatch = |agent: &'static str| {
+        vec![
+            "--type",
+            "task-completion",
+            "--task",
+            "1",
+            "--set",
+            agent,
+            "--set",
+            "status=done",
+            "--set",
+            "summary=back-filled",
+            "--set-json",
+            r#"files=["tomlctl/src/tasks/mod.rs"]"#,
+        ]
+    };
+
+    let err = record_err(&root, &without_dispatch("agent=implement"));
+    assert_eq!(err["kind"], json!("validation"), "{err}");
+    assert!(
+        err["message"].as_str().unwrap().contains("`dispatch_tier`"),
+        "{err}"
+    );
+    assert!(
+        !record.exists(),
+        "a refused entry must not create the record"
+    );
+
+    let out = record_ok(&root, &without_dispatch("agent=plan-update"));
+    assert_eq!(out["id"], json!("E1"));
+    let items = record_items(&record);
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["agent"].as_str(), Some("plan-update"));
+    assert!(items[0].get("dispatch_tier").is_none());
+}
+
+#[test]
 fn ndjson_batch_appends_every_deviation() {
     let (_dir, root, record) = flow();
     let batch = root.join("rows.ndjson");
