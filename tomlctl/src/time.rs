@@ -19,6 +19,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use jiff::Timestamp;
 use jiff::civil::Date;
+use jiff::tz::TimeZone;
 
 use crate::errors::{ErrorKind, tagged_err};
 
@@ -50,12 +51,11 @@ pub(crate) fn now_rfc3339() -> String {
     now().to_string()
 }
 
-/// Today's UTC date as a `jiff::civil::Date`.
+/// Today's UTC date as a `jiff::civil::Date`. `TimeZone::UTC` is a constant;
+/// `in_tz("UTC")` would initialise jiff's global zone database, which costs
+/// seconds per process on some Windows machines.
 pub(crate) fn today_utc_date() -> Result<Date> {
-    Ok(now()
-        .in_tz("UTC")
-        .context("resolving today's UTC date")?
-        .date())
+    Ok(now().to_zoned(TimeZone::UTC).date())
 }
 
 /// Today's UTC date rendered `YYYY-MM-DD`.
@@ -82,12 +82,10 @@ pub(crate) fn parse_iso_to_date(iso: &str) -> Result<Date, ParseDateError> {
     if iso.len() == 10 {
         iso.parse::<Date>().map_err(|_| ParseDateError::Invalid)
     } else {
-        let z = iso
+        let ts = iso
             .parse::<Timestamp>()
-            .map_err(|_| ParseDateError::Invalid)?
-            .in_tz("UTC")
             .map_err(|_| ParseDateError::Invalid)?;
-        Ok(z.date())
+        Ok(ts.to_zoned(TimeZone::UTC).date())
     }
 }
 
