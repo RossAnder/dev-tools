@@ -11,7 +11,7 @@ A small Rust CLI that reads and writes the TOML files used by the `/plan-new`, `
 
 ## When to use this skill
 
-Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` for TOML parsing. Reach for it whenever a flow command needs to read, filter, or mutate `context.toml`, the review / optimise ledgers, `plan-review-findings.toml`, or their sidecar array-of-tables (`rollback_events`, task-completion records). Shell-level post-processing of tomlctl's JSON output is not needed either — prefer in-tool primitives (`--get` / `--select` / `--template` / `--lines` / `--limit`, see [Output options](#output-options), and `--raw` / `--count-distinct` / `--count`) over piping through `jq -r .count` / `jq -r '.[]'` / `| head` / `| sort -u | wc -l`.
+Every flow-TOML mutation routes through `tomlctl` — no Python, no line-level `Edit`, no `jq` for TOML parsing. Reach for it whenever a flow command needs to read, filter, or mutate `context.toml`, the review / optimise ledgers, `plan-review-findings.toml`, or their sidecar array-of-tables (`rollback_events`, task-completion records). Shell-level post-processing of tomlctl's JSON output is not needed either — use the in-tool primitives (`--get` / `--select` / `--omit` / `--template` / `--lines` / `--limit` / `--where*` / `--rows` / `--header` / `--max-chars`, see [Output options](#output-options), and `--raw` / `--count-distinct` / `--count`) instead of a pipe through `python`, `node`, `jq`, `head` or `sort -u | wc -l`. The [Guidance canon](#guidance-canon) is the full rule set.
 
 ## Quick Reference
 
@@ -19,18 +19,19 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 
 | Task | Command |
 |---|---|
-| Append one item (JSON arg) | `tomlctl items add <file> --json '{...}'` |
-| Append one item (stdin) | `cat payload.json \| tomlctl items add <file> --json -` |
-| Batch append homogeneous items | `tomlctl items add-many <file> --ndjson -` (a staged `<path>` on Windows) |
-| Apply heterogeneous batch (add/update/remove) | `tomlctl items apply <file> --ops -` |
+| Append one item, minting its id (field flags; prose staged with the Write tool) | `tomlctl items add <file> --id-prefix R --set severity=major --set-file description=<path> --get id` |
+| Append one item from a staged JSON payload | `tomlctl items add <file> --id-prefix R --json '@<path>' --get id` |
+| Batch append homogeneous items | `tomlctl items add-many <file> --id-prefix R --ndjson <path>` |
+| Apply heterogeneous batch (add/update/remove), minting ids for id-less adds | `tomlctl items apply <file> --id-prefix R --ops <path>` |
+| Append an execution-record entry (id, date, `task_ref` and caps handled) | `tomlctl flow record --slug <s> --type <t> [--task <id>] --set agent=<a> --set-file summary=<path>` |
+| Group finished tasks into commits | `tomlctl tasks train --slug <s> [--checkpoint <x>]` |
 | Filter items | `tomlctl items list <file> --where status=open` |
 | Count / bucket items | `tomlctl items list <file> --count` / `--count-by status` / `--group-by file` |
-| Append one item, minting its id | `tomlctl items add <file> --id-prefix R --json - --get id` |
-| Next monotonic id (bare, e.g. `R23`) | `tomlctl items next-id <file> --prefix R\|O\|E\|P` |
 | Regex sites over the tracked files (`file:line`, for an `Instances` line) | `tomlctl sweep -e <regex> [-e <regex>]... [--exclude <glob>]... [--max-hits <n>]` |
 | Re-run items' stored `sweep` strings and diff against `instances` | `tomlctl items sweep <file> [--ids R5,R12] [--update [--dry-run]]` |
 | File-disjoint clusters + dependency batches for the apply flow | `tomlctl items clusters <file> [--ids R5,R12] [--lines]` |
 | Bump scalar field | `tomlctl set <file> <key.path> <value>` |
+| Set several scalars in one write | `tomlctl set <file> --set <key.path>=<value> --set <key.path>=<value>` |
 | Set array / sub-table | `tomlctl set-json <file> <key.path> --json '<json>'` |
 | Read value via json subcommand | `tomlctl json get <file> <path>` |
 | Write value via json subcommand | `tomlctl json set <file> <path> --json <value>` |
@@ -77,48 +78,60 @@ grep -n '^##' claude/skills/tomlctl/references/<file>.md
 
 ## Output options
 
-Six global flags shape the output of every command, so no tomlctl output needs `jq`, `head`, `tr` or a shell loop — none of which a stock Windows install has. Each is accepted before or after the subcommand (`tomlctl --get id items get <f> R1` and `tomlctl items get <f> R1 --get id` are the same call).
+Global flags shape the output of every command, so no tomlctl output needs `python`, `node`, `jq`, `head`, `tr` or a shell loop — most of which a stock Windows install lacks. Each is accepted before or after the subcommand (`tomlctl --get id items get <f> R1` and `tomlctl items get <f> R1 --get id` are the same call).
 
 | Flag | Value | Effect |
 |---|---|---|
 | `--select <P1,P2>` | comma-separated paths | Keep only these fields — of each row on a row report, of the object otherwise. A dotted path keys the result by the path string: `{"policy.checkpoints":"milestones"}`. |
+| `--omit <P1,P2>` | comma-separated paths | Drop these paths from every row and the header, or from the single object — the inverse of `--select`, for shedding one bulky field such as `body`. |
 | `--limit <N>` | integer | Keep at most N rows. Row reports only; on a single object it is a `kind=validation` error. |
+| `--where*` | `KEY=VAL`, repeatable | Filter the rows: the `--where` family of [query.md](references/query.md#filters-all-repeatable-all-and-combined) (`--where`, `-not`, `-in`, `-has`, `-missing`, `-gt`, `-gte`, `-lt`, `-lte`, `-contains`, `-prefix`, `-suffix`, `-regex`), on any row report. |
+| `--rows <PATH>` | one path | Treat the array at PATH of a single-object report as the row set; the rest of the object becomes its header, and every row option then applies per element. |
+| `--header` | — | Shape a row report's header — the report minus its rows — as a single object. |
+| `--max-chars <N>` | integer | Cut every string value longer than N characters to its first N, followed by `…(+K)` where K is the number cut. |
 | `--lines` | — | Compact NDJSON: a header line, then one row per line; one compact line for a single object. |
 | `--get <PATH>` | one path | Bare values: one line per row on a row report; on a single object, the value itself, an array spread one element per line. Strings print unquoted. |
-| `--template <T>` | template | One text line per row, or one for a single object. `{path}` is a placeholder, `{{` / `}}` literal braces; strings print bare, numbers and bools as literals, arrays and objects as compact JSON, null or missing as empty. |
+| `--template <T>` | template | One text line per row, or one for a single object. `{path}` is a placeholder, `{path:N}` the same cut to N characters as `--max-chars`, `{{` / `}}` literal braces; strings print bare, numbers and bools as literals, arrays and objects as compact JSON, null or missing as empty. |
 | `-q` / `--quiet` | — | Print nothing on success; the exit code carries the result. Errors still go to stderr. |
 
-A path is dot-separated, with a numeric segment indexing an array (`policy.checkpoints`, `files.0`).
+A path is dot-separated, with a numeric segment indexing an array (`policy.checkpoints`, `files.0`). A `*` segment matches every element of an array or every value of an object: `--select 'deps.*.ref'` keys an array of every match by the path string, `--get` prints each match on its own line, and a template placeholder renders them comma-joined. Branches that do not resolve drop out, and an empty match set is not an error. Quote a wildcard path, as you quote every template.
 
-`--get` and `--template` print a string value verbatim, so a value containing newlines spans several lines and a row is no longer one line; use `--lines` or `--select` when line-safety matters.
+`--get` and `--template` print a string value verbatim, so a value containing newlines spans several lines and a row is no longer one line; use `--lines` or `--select` when line-safety matters, and `--max-chars` when only the start of a long field is wanted. A value cut by `--max-chars` says how much is missing; re-run without it to read the full text.
 
 ```bash
 tomlctl items get ledger.toml R22 --get symbol                 # old::fn
 tomlctl items list ledger.toml --where status=open --get id    # R1\nR3
 tomlctl tasks show 3 --slug auth-overhaul --select ref,status --lines  # {"ref":"…","status":"done"}
+tomlctl tasks show 3 --slug auth-overhaul --with deps --select 'deps.*.ref'  # {"deps.*.ref":["…"]}
+tomlctl tasks show 3 --slug auth-overhaul --with deps --rows deps --where status=done --get id
+tomlctl tasks show 3 --slug auth-overhaul --omit body --max-chars 80 --lines
+tomlctl tasks list --slug auth-overhaul --where-contains files=output.rs --template '{id} {title:30}'
+tomlctl backlog check --summary '<summary>' --kind bug --area <area> --header --get verdict  # novel
 tomlctl items orphans ledger.toml --template '{id}: {class}'   # R7: symbol-missing
 tomlctl set .claude/flows/auth-overhaul/context.toml status review -q  # nothing; exit 0
 ```
 
-**Rows versus header.** A report that holds a collection is a row report: either a bare array, or an object whose collection field carries the rows and whose other fields form its header. `--select`, `--get`, `--template` and `--limit` act on the rows, never on the header. A header field such as `backlog check`'s `verdict` is read from the first line of `--lines` output instead (`{"verdict":…,"dedup_id":…,"thresholds":…}`). Every other report is a single object, and the flags act on the object itself.
+**Rows versus header.** A report that holds a collection is a row report: either a bare array, or an object whose collection field carries the rows and whose other fields form its header. `--select`, `--omit`, `--get`, `--template`, `--where*` and `--limit` act on the rows; `--omit` and `--max-chars` reach the header too. Read a header field — `backlog check`'s `verdict`, `tasks check`'s `ok` — with `--header`, which shapes the header as a single object: `--header --get verdict`. Every other report is a single object, and the flags act on the object itself; `--rows <PATH>` turns one of its arrays into a row set (`tasks show <id> --with deps --rows deps`). `--rows` on a row report is a `kind=validation` error naming that report's row field, and `--rows` excludes `--header`.
 
-**Combinations.** `--get` excludes `--select` and `--template`; `--template` excludes `--select`; `-q` excludes every other output flag. Each refusal, and each path failure, is a `kind=validation` error under `--error-format json`. Options apply in this order: `-q` → `--limit` → `--select` → `--get` / `--template` → `--lines` or the default style.
+**Filters on any row report.** The `--where*` family is global. On `items list`, `backlog list` and `tasks list` the query engine applies it as before; every other row report, including one re-rooted by `--rows`, filters its rows before `--limit`. On a single object without `--rows` it is a `kind=validation` error that names `--rows`. A field holding an array matches element by element — `--where files=<path>` keeps a row whose `files` holds that path, `--where-not` keeps a row where no element equals it, and the comparison and string predicates match when any element does; `--where-has` / `--where-missing` still test for a non-empty value. A key absent from the row but containing `.` is read as a dotted path (`--where meta.owner=ann`). Give every `--where*` on one side of the subcommand: when values sit on both sides, clap keeps only those after it, so tomlctl refuses the split with `kind=validation` rather than filtering on half the predicates.
 
-**Unknown paths.** When none of the `--select`, `--get` or template paths is present on any row of a non-empty row set, or on a single object, the call errors with the list of fields that do exist. A path no row carries passes beside one that matches and projects to absent (renders empty), so an optional field such as `promoted_to` can ride along in a `--select`; the cost is that a typo beside a valid path goes unflagged. Validation runs against the full row set before `--limit` cuts it; a key missing from only some rows is omitted (or rendered empty) on those rows. An empty row set validates nothing and prints its empty result, so `tasks check --get class` on a clean store exits 0.
+**Combinations.** `--get` excludes `--select`, `--omit` and `--template`; `--template` excludes `--select` and `--omit`; `--omit` excludes `--select`; `--rows` excludes `--header`; `-q` excludes every other output flag. Each refusal, and each path failure, is a `kind=validation` error under `--error-format json`. Options apply in this order: `-q` → `--rows` / `--header` → path validation → `--where*` → `--limit` → `--omit` / `--select` → `--max-chars` → `--get` / `--template` → `--lines` or the default style.
 
-**Truncation.** When `--limit` actually removes rows, the report records `"limited": {"shown": n, "total": N}` — in the header of an object report; as a header line `{"limited":{…}}` before the rows of a bare-array report under `--lines`; and by wrapping a bare-array report as `{"rows":[…],"limited":{…}}` in pretty mode. Under `--get` / `--template`, which have no header, `tomlctl: showing n of N rows` goes to stderr instead (suppressed under `--error-format json`). `items list`, `backlog list` and `tasks list` apply `--select` / `--limit` / `--lines` inside their query engine — documented under [output shapes](references/query.md#output-shapes---raw----lines----ndjson) — and report no `limited` key.
+**Unknown paths.** When none of the `--select`, `--omit`, `--get` or template paths is present on any row of a non-empty row set, or on a single object, the call errors with the list of fields that do exist, plus `did you mean <path>?` for up to three matching paths one object level deeper — `backlog show <id> --get summary` suggests `item.summary`. A path no row carries passes beside one that matches and projects to absent (renders empty), so an optional field such as `promoted_to` can ride along in a `--select`; the cost is that a typo beside a valid path goes unflagged. A wildcard path is valid when the segments before its first `*` resolve on some row. Validation runs against the full row set before `--where*` and `--limit` cut it; a key missing from only some rows is omitted (or rendered empty) on those rows. An empty row set validates nothing and prints its empty result, so `tasks check --get class` on a clean store exits 0.
 
-**Write envelopes.** On a write's `{"ok":true,…}` envelope a shaping failure — an unknown path, `--limit` — prints the unshaped envelope, warns on stderr and exits 0: the write has landed, and an exit of 1 would invite a retry that applies it twice. `items add --id-prefix R … --get id` prints the minted id.
+**Truncation.** When `--limit` actually removes rows, the report records `"limited": {"shown": n, "total": N}` — in the header of an object report; as a header line `{"limited":{…}}` before the rows of a bare-array report under `--lines`; and by wrapping a bare-array report as `{"rows":[…],"limited":{…}}` in pretty mode. Under `--get` / `--template`, which have no header, `tomlctl: showing n of N rows` goes to stderr instead (suppressed under `--error-format json`). `items list`, `backlog list` and `tasks list` report it the same way — pretty `{"rows":[…],"limited":{…}}`, a leading `{"limited":{…}}` line under `--lines` — except that their `--ndjson`, `--pluck` and `--raw` streams stay header-free and take the stderr line, so `--ndjson` output still feeds `items add-many` unchanged ([output shapes](references/query.md#output-shapes---raw----lines----ndjson)). No `limited` appears when nothing was cut. The list verbs refuse `--rows` and `--header`: their rows are the listed items.
 
-**Text output.** `get --raw`, `json get --raw`, `items next-id`, `tasks render --stdout`, `flow render-progress-log --stdout` and `tasks edges --dot` print text, not JSON: they honour `-q` and refuse every other output flag. `items sweep --update` and `tasks edges --dot` refuse `--lines` with their own messages.
+**Write envelopes.** On a write's `{"ok":true,…}` envelope a shaping failure — an unknown path, `--limit` — prints the unshaped envelope, warns on stderr and exits 0: the write has landed, and an exit of 1 would invite a retry that applies it twice. `items add --id-prefix R … --get id` prints the minted id, and `flow record … --get id` the minted `E<n>`.
+
+**Text output.** `get --raw`, `json get --raw`, `items next-id`, `tasks render --stdout`, `flow render-progress-log --stdout` and `tasks edges --dot` print text, not JSON: they honour `-q` and refuse every other output flag with one shared message (`` `--lines` does not apply to this command's text output ``). `items sweep --update` prints a write envelope, so `--lines` there gives one compact line.
 
 **`-q` and payload verdicts.** Most commands signal failure through a non-zero exit, so `-q` loses nothing. These carry their verdict in the payload and exit 0 regardless, so under `-q` they report only that they ran — read the payload instead: `flow stale`, `flow doctor`, `backlog check`, `items find-duplicates`, and `backlog evidence audit` without `--strict`.
 
-### `--lines` per command
+### Rows and header per command
 
-A report wrapped in an object emits its other fields as one header line first, then one row per line; the header is left out when the object has no other field. A bare-array report emits one element per line, so an empty one prints nothing. The header comes first so that a truncated read still sees the totals and the hazards.
+Under `--lines`, a report wrapped in an object emits its other fields as one header line first, then one row per line; the header is left out when the object has no other field. A bare-array report emits one element per line, so an empty one prints nothing. The header comes first so that a truncated read still sees the totals and the hazards. The same split decides what `--header` returns and what the row options act on.
 
-| Verb | One line per | Header fields |
+| Verb | One row per | Header fields |
 |---|---|---|
 | `items clusters` | cluster | `batches`, `dropped_deps` |
 | `items orphans` | orphan record | — |
@@ -131,7 +144,10 @@ A report wrapped in an object emits its other fields as one header line first, t
 | `tasks check` | finding | `ok` |
 | `tasks snapshot` | task row | every other snapshot field |
 | `backlog check` | candidate | `verdict`, `dedup_id`, `thresholds` |
-| `tasks update <id>,<id>` | updated row (`id`, `changed`) | `ok` |
+| `backlog check --ndjson` | probe (`line`, `summary`, `verdict`, `dedup_id`, `candidates`) | `thresholds` |
+| `tasks train` | commit group (`ids`, `refs`, `files`, `checkpoints`, `shared_with_pending`) | `granularity` |
+| `tasks update <id>,<id>` | updated row (`id`, `ref`, `changed`) | `ok` |
+| `flow record --ndjson` | recorded entry | `ok`, `ids`, `path` |
 | `backlog add-many` | input line's outcome (`line`, `action`, `id`) | `ok`, `path`, `created`, `added`, `bumped`, `skipped`, `advisories` |
 | `backlog evidence audit` | finding | `root`, `counts` |
 | `flow list` | flow | `ok`, `skipped` |
@@ -139,7 +155,23 @@ A report wrapped in an object emits its other fields as one header line first, t
 | `agents list` | agent record | — |
 | `blocks verify` | block | `ok` |
 
-`items list`, `backlog list` and `tasks list` run on the query engine, whose `--lines` / `--ndjson` is documented under [output shapes](references/query.md#output-shapes---raw----lines----ndjson). `tomlctl capabilities` advertises the six flags as the `output_options` feature and lists them under its root `global_flags` key.
+`items list`, `backlog list` and `tasks list` run on the query engine, whose `--lines` / `--ndjson` is documented under [output shapes](references/query.md#output-shapes---raw----lines----ndjson). `tomlctl capabilities` lists every output flag under its root `global_flags` key, and advertises them as features: `output_options` for the original six, then `path_wildcard`, `rows_header`, `global_where`, `array_predicates`, `max_chars`, `omit`, `template_width` and `list_limited`.
+
+## Guidance canon
+
+One rule set for every skill, command and agent that drives tomlctl. Other documents cite this section rather than restating it; [write.md](references/write.md) carries the write-side detail.
+
+- **Shaping output**: the [output options](#output-options) only. Never pipe tomlctl's stdout into `python`, `node`, `jq`, `head`, `tail`, `tr`, `cut`, `sed`, `awk` or `grep`.
+- **One entry**: field flags — `--set K=V` (a string; a date key still lands as a TOML date), `--set-json K=JSON`, `--set-file K=PATH` — on `items add` / `update`, `array-append`, `set` and `flow record`. Write prose to a file with the Write tool and pass it with `--set-file`. Git Bash rewrites a `--set` value that starts with `/` into a Windows path, so pass such a value through `--set-file`, or prefix the call with `MSYS_NO_PATHCONV=1`.
+- **Verbs without field flags** (`backlog add` / `check`, `json set`, `inputs`, `tasks add-many`): inline single-line JSON for a short machine-built value; otherwise stage the payload with the Write tool and pass `--json '@<path>'` or `--ndjson <path>`. Several backlog probes go through one `backlog check --ndjson <path>`.
+- **Many entries or whole payloads**: stage them with the Write tool and pass `--ndjson <path>`, or `--json '@<path>'` — quoted, because PowerShell drops an unquoted `@path`. The single-line `printf '%s\n' '<row>' … | tomlctl … -` pipe stays legal for a few short machine-built rows.
+- **No multi-line heredocs** into tomlctl.
+- **Templates and wildcard paths**: quote them (`'{id}: {summary:60}'`, `'deps.*.ref'`).
+- **Execution records**: written only through `tomlctl flow record`, which mints the id, defaults the date, derives `task_ref` from `--task`, validates and caps.
+- **Ids**: never numbered by hand. `--id-prefix` on `items add`, `items add-many` and `items apply` mints them inside the write lock, and a removed top id is never minted again.
+- **Context**: updated in one `tomlctl set <context> --set <k>=<v> --set <k>=<v>`; the write refreshes the root `updated` itself.
+- **Commits**: grouped by `tomlctl tasks train`.
+- **Errors**: read them through `--error-format json`, which puts a `{"error":{"kind",…}}` envelope on stderr. Never `2>&1` tomlctl into anything and never `2>/dev/null` it — its stderr is the diagnosis. A best-effort call that may legitimately fail runs plainly, and a non-zero exit reads as "absent".
 
 ## Install
 
@@ -162,7 +194,7 @@ tomlctl --version
 
 ```bash
 tomlctl capabilities
-# {"version":"0.14.0","features":["raw","lines","dedupe_by","dry_run","agent_context","output_options",...],"global_flags":{...},"commands":{...}}
+# {"version":"0.15.0","features":["raw","lines","dedupe_by","dry_run","agent_context","output_options",...],"global_flags":{...},"commands":{...}}
 ```
 
 Representative entries:
@@ -185,6 +217,13 @@ Representative entries:
 | `id_prefix` | `items add` / `items add-many --id-prefix <P>` mint the id inside the write lock |
 | `auto_last_updated` | CLI writes stamp an existing `last_updated` field |
 | `multi_id` | `tasks update`, `tasks show` and `backlog show` take lists of ids |
+| `path_wildcard` / `rows_header` / `global_where` / `array_predicates` | `*` path segments; `--rows` / `--header`; `--where*` on every row report; any-element matching on array fields |
+| `max_chars` / `omit` / `template_width` / `list_limited` | `--max-chars`; `--omit`; `{path:N}` placeholders; the `limited` header on the list verbs |
+| `field_flags` / `multi_set` / `context_updated_stamp` | `--set` / `--set-json` / `--set-file`; several pairs in one `set`; `updated` refreshed on `context.toml` writes |
+| `flow_record` / `tasks_train` | `flow record` execution-record writes; `tasks train` commit groups |
+| `apply_id_prefix` / `id_high_water` | `items apply --id-prefix <P>`; a removed top id is never minted again |
+| `show_absent` / `update_ref` / `backlog_check_batch` | `tasks show --with absent`; `ref` in `tasks update` envelopes; `backlog check --ndjson` |
+| `suggestions` | `did you mean` hints for a mistyped subcommand, flag or path |
 | `agent_context` | `tomlctl capabilities` (the `.commands` field of the JSON output) emits a per-subcommand flag schema (type/required/default/values/repeatable + mutex_groups) for runtime introspection without parsing --help prose. |
 
 ### Agent-context schema (`tomlctl capabilities` — `.commands` field)

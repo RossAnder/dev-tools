@@ -49,8 +49,8 @@ tomlctl validate .claude/flows/auth-overhaul/context.toml                  # exi
 TOML dates render as ISO-8601 strings in the JSON output (and as the ISO string in `--raw`).
 
 `validate` takes no flag of its own. `tomlctl parse <file>` remains accepted as a deprecated alias for `tomlctl get <file>` (no
-path argument) and likewise takes no flag of its own. Prefer `tomlctl get <file>` in new
-docs and recipes.
+path argument) and likewise takes no flag of its own; `read` is a hidden alias for `parse`,
+kept so the guess resolves. Prefer `tomlctl get <file>` in new docs and recipes.
 
 `get`, `validate`, `parse` and the `items` query verbs carry the shared read bundle —
 `--verify-integrity`, `--strict-read` (below) and `--error-format text|json` — which their
@@ -58,14 +58,12 @@ flag tables omit; `sweep` and `items sweep` state their own exceptions.
 
 ### Strict reads (`--strict-read`)
 
-By default the only read subcommand with a "missing file → silent default" branch is `items next-id --prefix <P>`, which prints the bare id `<P>1` as a bootstrapping fast path for flows that mint the first id before the ledger file exists. Every other read subcommand already errors on a missing file with `kind=not_found`.
+By default the only read subcommand with a "missing file → silent default" branch is `items next-id --prefix <P>`, which prints the bare id `<P>1` when the ledger does not exist yet. Every other read subcommand already errors on a missing file with `kind=not_found`. Do not mint from it: a write verb's `--id-prefix` (`items add`, `items add-many`, `items apply`) mints inside the write lock, while a read-then-write leaves a gap a parallel writer can take.
 
 Pass `--strict-read` when an agent needs to distinguish "no matches in an existing ledger" from "ledger does not exist" — e.g. when a flow expects a file to have been bootstrapped by `/plan-new` or `/implement` before proceeding:
 
 ```bash
-# Errors with kind=not_found if the ledger hasn't been bootstrapped yet,
-# even for next-id (which otherwise silently prints R1).
-tomlctl items next-id .claude/flows/foo/review-ledger.toml --prefix R --strict-read
+# Errors with kind=not_found if the ledger hasn't been bootstrapped yet.
 tomlctl items list .claude/flows/foo/review-ledger.toml --status open --strict-read
 ```
 
@@ -104,6 +102,31 @@ tomlctl items list .claude/flows/foo/review-ledger.toml --status open --strict-r
 
 **Typed RHS.** All `KEY=VAL` right-hand sides accept an optional `@type:` prefix to disambiguate native TOML types from string literals: `@date:`, `@datetime:`, `@int:`, `@float:`, `@bool:`, `@string:` / `@str:`. With no prefix the RHS is string, coerced to the field's native type when the field is typed.
 
+**Array fields.** A field whose value is an array matches element by element, the way a
+backlog `tags` filter always has:
+
+| Predicate | Matches when |
+|---|---|
+| `--where k=v` | any element equals `v` (typed, as for a scalar) |
+| `--where-not k=v` | no element equals `v` |
+| `--where-in` | any element is in the set |
+| `--where-contains`, `--where-prefix`, `--where-suffix`, `--where-regex` | any string element matches |
+| `--where-gt`, `--where-gte`, `--where-lt`, `--where-lte` | any element compares |
+| `--where-has` / `--where-missing` | unchanged: the array is non-empty / absent or empty |
+
+**Dotted keys.** A key the row does not hold flat, but which contains `.`, is read as a
+dotted path into a nested table: `--where meta.owner=ann`.
+
+```bash
+tomlctl tasks list --slug auth-overhaul --where files=src/auth.rs --get id     # rows whose files[] hold the path
+tomlctl items list ledger.toml --where-in tags=perf,io --select id,tags --lines
+tomlctl items list ledger.toml --where-not tags=docs --count
+```
+
+The `--where` family is also a global [output option](../SKILL.md#output-options): the same
+predicates, with the same array and dotted-key semantics, filter the rows of every other row
+report, and of a single object's array re-rooted with `--rows`.
+
 ### Projection (mutually exclusive within this group)
 
 #### `items list`
@@ -125,7 +148,7 @@ The global `--get <path>` and `--template <T>` also work on a list, one line per
 | Flag | Value | Meaning |
 |---|---|---|
 | `--sort-by` | `FIELD[:asc\|desc]`, repeatable | Sort ascending unless `:desc`; each repeat is a tiebreaker, e.g. `--sort-by severity:desc --sort-by first_flagged:asc`. |
-| `--limit` | `N` | Return at most N items. Global; on a list it is applied by the query engine after sorting and adds no `limited` key. |
+| `--limit` | `N` | Return at most N items. Global; on a list it is applied by the query engine after sorting, and when it cuts rows the output reports `limited` (see [output shapes](#output-shapes---raw----lines----ndjson)). |
 | `--offset` | `N` | Skip the first N items; `--offset 20 --limit 10` pages. |
 | `--distinct` | — | Dedup on the projected shape, keeping the first occurrence, e.g. `--select category --distinct`. |
 
@@ -162,13 +185,32 @@ tomlctl items list ledger.toml --status open --select id,severity,summary --ndjs
 # {"id":"R3","severity":"minor","summary":"…"}
 ```
 
+**The `limited` header.** When `--limit` actually cuts rows, the list reports
+`"limited": {"shown": n, "total": N}`, where the total is the count after filtering and
+before the cut. Where it lands depends on the shape:
+
+- Pretty row output is wrapped as `{"rows":[…],"limited":{…}}`.
+- `--lines` row-object output gets a leading `{"limited":{…}}` line before the rows.
+- `--ndjson`, `--pluck` and `--raw` stay header-free, so an `--ndjson` stream still feeds
+  `items add-many --ndjson` unchanged; they print `tomlctl: showing n of N rows` on stderr
+  instead, as `--get` / `--template` do.
+
+Nothing is added when the limit cut nothing, so an uncut list is still a bare array.
+
+```bash
+tomlctl tasks list --slug auth-overhaul --limit 1 --select id --lines
+# {"limited":{"shown":1,"total":25}}
+# {"id":1}
+```
+
 Anti-patterns, each seen in a real run — the output is already the shape you want, so never
 post-process it:
 
 - **Never merge stderr into a JSON parser's input.** `tomlctl … 2>&1 | python -c 'json.load(…)'` turns one tomlctl warning into a parser traceback that hides tomlctl's actual message. Leave stderr alone (and never `2>/dev/null` it either — see the note above).
 - **Never re-render rows through a script.** `--select … --ndjson` already emits the projection; a hand-built pipe- or tab-delimited table breaks on the first summary containing that delimiter.
 - **Never `| head -N` a list.** tomlctl has serialised everything by then; `--limit N` (with `--sort-by`) filters inside.
-- **`items list` and `backlog list` return a bare array, not an envelope.** There is no `items` / `rows` / `backlog` key to guess at.
+- **`items list` and `backlog list` return a bare array, not an envelope.** There is no `items` / `backlog` key to guess at; the one exception is the pretty `{"rows":[…],"limited":{…}}` wrapper a cutting `--limit` adds, above.
+- **Never cut long text with `head -c` or a slice.** `--max-chars N` shortens every string to N characters plus a `…(+K)` marker, and `{field:N}` does the same inside a template.
 
 ### Single-item fetch
 
@@ -393,7 +435,8 @@ path, its `--dry-run` preview and the anchor-spelling consequence (new sites lan
 | `--max-hits` | count | Distinct `file:line` sites after which the sweep stops and every item reports `truncated: true`. | `5000` |
 
 The read-only report's rows are `items`, so the global `--lines` prints the header, then one
-swept item per line; it is refused beside `--update`, whose output is a write envelope.
+swept item per line; beside `--update`, whose output is a write envelope, it prints that
+envelope as one compact line.
 
 The verb carries the write bundle (`--allow-outside`, `--no-create`, `--no-write-integrity`,
 `--strict-integrity`, `--verify-integrity`) because of `--update`; there is no `--strict-read`
