@@ -1,6 +1,6 @@
 ---
 name: flow-contract-execution-record-schema
-description: Canonical schema and contract for a flow's per-flow append-only execution log at `.claude/flows/<slug>/execution-record.toml` — the single source of truth from which `PROGRESS-LOG.md` is rendered (by `tomlctl flow render-progress-log`) and `[tasks].completed` is derived. Defines the `[[items]]` entry shape, the always-required fields, and the type vocabulary (`task-completion`, `verification`, `deviation`, `deferral`, `reconcile`, `status-transition`, `checkpoint`) with each type's additional required fields. Covers the heredoc write contract (one `tomlctl items add --json - --id-prefix E` that mints the id and stamps `last_updated`), append-only supersession, the `[tasks].completed` derivation, field-length caps, and the read-path integrity contract (`--verify-integrity`, no auto-repair). Consult before any read or write of a flow's execution-record.toml by /plan-new, /implement, /plan-update, or /tdd.
+description: Canonical schema and contract for a flow's per-flow append-only execution log at `.claude/flows/<slug>/execution-record.toml` — the single source of truth from which `PROGRESS-LOG.md` is rendered (by `tomlctl flow render-progress-log`) and `[tasks].completed` is derived. Defines the `[[items]]` entry shape, the always-required fields, and the type vocabulary (`task-completion`, `verification`, `deviation`, `deferral`, `reconcile`, `status-transition`, `checkpoint`) with each type's additional required fields. Covers the write contract (one `tomlctl flow record` per entry, which mints the id, defaults the date, derives `task_ref` and validates types, required fields, enums, caps and `files[]`), append-only supersession, the `[tasks].completed` derivation, field-length caps, and the read-path integrity contract (`--verify-integrity`, no auto-repair). Consult before any read or write of a flow's execution-record.toml by /plan-new, /implement, /plan-update, or /tdd.
 ---
 
 ## Execution Record Schema
@@ -50,7 +50,7 @@ commits = ["def5678"]
 legacy_id = "D3"
 ```
 
-**Required fields per entry (all types):** `id` (E{n}, monotonic, minted by the write itself via `items add --id-prefix E` — see the heredoc write contract below), `type`, `date` (YYYY-MM-DD TOML date — NOT `timestamp`), `agent`, `summary`.
+**Required fields per entry (all types):** `id` (E{n}, monotonic, minted by the write itself — see the `flow record` write contract below), `type`, `date` (YYYY-MM-DD TOML date — NOT `timestamp`), `agent`, `summary`.
 
 ### Type vocabulary + type-specific required fields
 
@@ -58,11 +58,13 @@ legacy_id = "D3"
 |------|-----------------------------------------------------------|
 | `task-completion` | `task_ref` (opaque title slug, NOT positional number), `status` ∈ {`done`, `failed`, `skipped`}, `files[]`, `dispatch_tier` ∈ {`lite`, `deep`}, `dispatch_agent` ∈ {`implement-lite`, `implement-deep`}, `vet` ∈ {`skipped`, `sampled-pass`, `sampled-fail`, `flagged-pass`, `flagged-fail`}, `retries` (integer); optional `escalation_reason`; `commits[]` OPTIONAL (see note below) |
 | `verification` | `command`, `outcome` ∈ {`pass`, `fail`, `timeout`, `flaky`} (`flaky`: the failed tests passed on a narrow rerun or the runner's retry — green; `timeout`: the command outran its budget — neither green nor evidence against the code); optional `duration_s` (integer), `failed_ids[]` (at most 20). Never a log path — the agent's log is machine-local scratch |
-| `deviation` | `original_intent`, `rationale`, `commits[]`; optional `supersedes_entry = "E<n>"`; optional `legacy_id = "D<n>"` (populated by `migrate`) |
+| `deviation` | `original_intent`, `rationale`; `commits[]` OPTIONAL (see note below); optional `supersedes_entry = "E<n>"`; optional `legacy_id = "D<n>"` (populated by `migrate`) |
 | `deferral` | `task_ref`, `reason`, `reevaluate_when`; optional `legacy_id = "DF<n>"` |
 | `reconcile` | `direction` ∈ {`forward`, `reverse`}, `findings_count`, `commits_checked[]` |
 | `status-transition` | `from_status`, `to_status` |
-| `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured, and by `/implement` after each commit train; optional `kind` ∈ {`reformat`, `catchup`, `migrate-boundary`, `commit-train`}, optional `scope_delta` (freeform), and — for `kind = "commit-train"` — optional `commits[]` (the train's SHAs, with `summary` mapping each SHA to its task_refs; the Session Log's Commits column unions these like any other entry's `commits[]`) |
+| `checkpoint` | freeform; emitted by `reformat`/`catchup` when the plan is restructured, and by `/implement` after each commit train; optional `kind`, by convention one of `reformat`, `catchup`, `migrate-boundary`, `commit-train` (not checked by the tool), optional `scope_delta` (freeform), and — for `kind = "commit-train"` — optional `commits[]` (the train's SHAs, with `summary` mapping each SHA to its task_refs; the Session Log's Commits column unions these like any other entry's `commits[]`) |
+
+**What `flow record` enforces and what is convention.** The tool refuses (`kind=validation`, nothing written) an unknown `type`, a missing always-required or type-required field from the table, and an out-of-set value for the `task-completion` enums (`status`, `dispatch_tier`, `dispatch_agent`, `vet`), `verification.outcome` and `reconcile.direction`. `retries` and `duration_s` must be integers (a digit string is coerced); `files`, `commits` and `failed_ids` must be arrays. Everything else in the table is writer convention the tool passes through unchecked: `checkpoint.kind`, the shape of `findings_count`, `commits_checked`, `from_status` and `to_status`, `supersedes_entry` and `legacy_id`, and any extra key.
 
 **`task_ref` is an opaque identifier** (task title slug, e.g. `add-retry-logic`), not a positional task number. This keeps entries referentially stable across `/plan-update reformat`, which may renumber plan tasks but MUST preserve task heading text verbatim (otherwise slugs drift and the `/implement` idempotency skip-list misses completed tasks). The slug rule itself is the task store's `ref` rule, specified once in the `flow-contract-task-store` skill (§2) and never re-derived here. `task_ref` on every new `task-completion` entry MUST equal the `ref` of the row it completes in the flow's `.claude/flows/<slug>/tasks.toml`: that one string is what the `/implement` skip-list joins on, so a record and a store that spell it differently either re-execute a completed task or skip an unexecuted one. `/plan-update migrate` derives its back-filled refs through `tomlctl tasks import-plan --dry-run` rather than slugging headings itself. `/tdd` sub-flows are the exemption — they touch no store and pin `task_ref` to `tdd-cycle-<NNN>-<short-name>`.
 
@@ -72,27 +74,43 @@ legacy_id = "D3"
 
 **`vet` / `retries` fields** (task-completion): the calibration data for `/implement`'s lite vet rate. `vet` is the Phase 2 step 3a outcome for the task's `implement-lite` return — `flagged-*` when a signal in the return forced the vet, `sampled-*` when the sample drew it, with `-pass` / `-fail` its verdict — and `skipped` when 3a did not vet it, including every task dispatched deep. A `*-fail` entry is always a reroute, so it carries `escalation_reason = "vet-failed"`. `retries` counts the retry-budget spends before the task settled: `0` when its first return did; an escalation reroute is not a spend. Both are required on new task-completion entries written by `/implement` Phase 2 step 5b, forward-only like the dispatch fields; a reader treats an absent `vet` as unknown, never as `skipped`.
 
-### Heredoc write contract (one call)
+### `flow record` write contract
 
-Every writer appends an entry using this exact idiom — one `tomlctl items add`, nothing after it. Never tempfile-stage payloads; heredoc stdin is the blessed path. There is NO separate "create the file first" step — the first `tomlctl items add` auto-creates a missing record (seeding the `schema_version = 1` / `last_updated = <today>` skeleton) and applies the append in one transaction. `flow init` / `/plan-new` normally pre-seed the record, so the auto-create is the recovery path, not the routine one.
+Every writer appends through `tomlctl flow record`, one call per entry, nothing after it. Never append with `items add`, `items add-many` or `items apply`: they apply none of the checks below. Field flags carry the payload — `--set K=V` for a string, `--set-json K=JSON` for an array or number, `--set-file K=PATH` for prose written to a file with the Write tool first:
 
 ```bash
-cat <<'EOF' | tomlctl items add <fully-qualified-execution-record-path> --json - --id-prefix E --get id
-{"type":"<type>","date":"<YYYY-MM-DD>","agent":"<implement|plan-update|plan-new>","summary":"<one-line>", …type-specific fields…}
-EOF
+tomlctl flow record --slug <slug> --type task-completion --task <id> --set agent=implement --set status=done --set dispatch_tier=lite --set dispatch_agent=implement-lite --set vet=sampled-pass --set retries=0 --set-json files='["src/retry.rs"]' --set summary='Added retry logic' --get id
+tomlctl flow record --slug <slug> --type deviation --task <id> --set agent=plan-update --set summary='Used the existing LruCache' --set-file original_intent=<intent-file> --set-file rationale=<rationale-file>
 ```
 
-- **The write mints the id.** `--id-prefix E` assigns the next `E{n}` under the record's write lock, so two writers can never mint the same number; the payload carries no `id` (one that does is refused with `kind=validation`). `--get id` prints the minted id bare (`E12`) for a later `supersedes_entry` or a console line; drop it when nothing reads the id. A batch of homogeneous entries goes through `items add-many --id-prefix E --ndjson -`, which mints a contiguous run in row order and reports them as `ids`.
-- **The write stamps `last_updated`.** The append refreshes the record's root `last_updated` to today (UTC) in the same write, so no follow-up `tomlctl set` is needed. A `--dry-run` preview stamps nothing and shows the id it would mint.
-- **`tomlctl items next-id <record> --prefix E`** prints the bare next id without writing. Reach for it only where an id must be known before the write and the write cannot mint it — for example a mixed `items apply --ops` batch, whose add ops carry explicit ids numbered upward from that one read.
+Under Git Bash a `--set` value starting with `/` is rewritten into a Windows path; pass such a value through `--set-file`, or prefix the call with `MSYS_NO_PATHCONV=1`.
 
-`<fully-qualified-execution-record-path>` MUST be the resolved value of `[artifacts].execution_record` in the flow's `context.toml` — NEVER the bare filename `execution-record.toml` (which resolves relative to CWD). Now that a missing target auto-creates, passing the bare filename SILENTLY seeds a stray `execution-record.toml` at the CWD/repo root rather than erroring, so the fully-qualified path is more load-bearing than ever. Writers that need the path without reading `context.toml` first can compute it as `.claude/flows/<slug>/execution-record.toml` per the slug derivation rule.
+The tool enforces, so writers do none of this by hand:
+
+- **The path.** `--slug` resolves the record from `[artifacts].execution_record` in the flow's `context.toml`, falling back to `.claude/flows/<slug>/execution-record.toml`. A slug with no `context.toml` is refused with `kind=not_found`, so no stray record is seeded. A missing record under an existing flow is auto-created with the `schema_version = 1` skeleton in the same write — the recovery path, since `flow init` / `/plan-new` pre-seed it — and `--no-create` refuses instead.
+- **The id.** The next `E{n}` is minted under the record's write lock, so two writers never mint the same number; a payload carrying `id` is refused. `--get id` prints the minted id bare (`E12`) for a later `supersedes_entry` or a console line.
+- **The date.** `date` defaults to today (UTC); an explicit `--set date=YYYY-MM-DD` is kept and lands as a TOML date.
+- **`task_ref`.** `--task <id>` copies that row's `ref` from the flow's `tasks.toml`; a payload `task_ref` that disagrees is refused. `/tdd` sub-flows, which have no store, pass `--set task_ref=tdd-cycle-<NNN>-<short-name>` instead.
+- **Validation.** The `type` vocabulary, the required fields, the enums and the integer and array types, as listed under "What `flow record` enforces" above. A failure is `kind=validation` and writes nothing.
+- **Caps.** Over-cap text is truncated, never refused (see Field length caps below).
+- **`files[]`.** `\` is normalised to `/`. An absolute, `~`-relative, drive-letter or `..` entry is dropped and listed in `dropped_files`; a non-empty list that drops to empty is refused. A kept entry outside the flow's `scope` globs sets `scope_warning = true` on the entry and is listed in `scope_warnings`.
+- **`last_updated`.** The append refreshes the record's root `last_updated` in the same write; `--no-stamp` leaves it.
+
+One entry prints `{ok,id,type,task_ref,truncated,dropped_files,scope_warnings,path}`. `--dry-run` runs every check and reports the id it would mint, writing nothing.
+
+Several entries go in one all-or-nothing call: stage one JSON object per line with the Write tool and pass `--ndjson <path>`. `--type`, `--task`, `--json` and the field flags then act as per-row defaults, and each row's own keys win. It prints `{ok,ids,path,rows:[…]}`, the ids minted as a contiguous run in row order.
+
+```bash
+tomlctl flow record --slug <slug> --set agent=implement --ndjson <staged-rows-path>
+```
+
+Readers outside `flow record` (`items list`, `items get`, `render-progress-log`'s documented projections) take the resolved `[artifacts].execution_record` path, never the bare filename `execution-record.toml`, which resolves against the CWD.
 
 Append order is preserved by tomlctl's exclusive `.lock` sidecar + atomic tempfile + rename.
 
 ### `[[items]]` naming rationale + restricted subcommands
 
-The log uses `[[items]]` as its table-array name so generic `tomlctl items` ops (`list`, `get`, `add`/`add-many --id-prefix E`, `update`, `remove`, `apply`, `next-id --prefix E`) work as-is. Four `tomlctl items` subcommands hardcode the review/optimise ledger schema and must not be invoked against `execution-record.toml` — they will emit garbage: `items orphans` and `items find-duplicates` (they expect `file`, `symbol`, `summary`, `severity`, `category`), `items sweep` (reads `sweep`, `instances`, `file`, `symbol`) and `items clusters` (reads `file`, `instances`, `depends_on`, `enumeration`, `status`). The generic set — `list`, `get`, `add`, `add-many`, `update`, `remove`, `apply`, `next-id`, `backfill-dedup-id` — works correctly against this schema.
+The log uses `[[items]]` as its table-array name so the generic `tomlctl items` reads (`list`, `get`) work as-is; appends go through `flow record` (above), never the generic `items` writers. Four `tomlctl items` subcommands hardcode the review/optimise ledger schema and must not be invoked against `execution-record.toml` — they will emit garbage: `items orphans` and `items find-duplicates` (they expect `file`, `symbol`, `summary`, `severity`, `category`), `items sweep` (reads `sweep`, `instances`, `file`, `symbol`) and `items clusters` (reads `file`, `instances`, `depends_on`, `enumeration`, `status`). The rest of the generic set parses this schema correctly, but `update` and `remove` would break the append-only rule below and `add` / `add-many` / `apply` bypass `flow record`'s checks.
 
 ### Append-only + supersession
 
@@ -191,18 +209,19 @@ Distinct-slug count (not a raw entry count), so a failed attempt followed by a s
 
 Every read of `execution-record.toml` or `context.toml` by `/plan-new`, `/plan-update`, or `/implement` MUST pass `--verify-integrity`. `/plan-new` bootstraps the record via `tomlctl flow init`, which writes the `.sha256` sidecar as part of seeding the skeleton, so every downstream reader lands on a file whose sidecar already exists — there is no bootstrap-grace branch for a "sidecar known-absent" state. Ad-hoc first writes outside that bootstrap auto-create the record and materialise its sidecar in the same transaction (see the recovery note below). On sidecar digest mismatch, tomlctl errors with both expected and actual hashes and never auto-repairs — surface the error to the user and halt. If a read legitimately hits a missing-sidecar state (the bootstrap refresh failed and was never rerun, or the sidecar was deleted out-of-band), recover with `tomlctl integrity refresh <path>` rather than retrying with `--no-verify-integrity`.
 
-Recovery note: should the execution-record file itself be missing when a writer first appends (e.g. `/plan-new`'s bootstrap never ran), the write no longer errors — the `tomlctl items add` / `tomlctl set` chokepoint auto-creates the missing record, seeding the same `schema_version = 1` / `last_updated = <today>` skeleton `flow init` writes, and the write's `.sha256` sidecar is materialised as part of that first write. This is a recovery path, not the normal route: `/plan-new` / `flow init` still pre-seed the record. Pass `--no-create` to a writer to restore the strict prior behaviour (missing file → `kind=not_found`, nothing created).
+Recovery note: should the execution-record file itself be missing when a writer first appends (e.g. `/plan-new`'s bootstrap never ran), the write no longer errors — `tomlctl flow record` (like `tomlctl set`) auto-creates the missing record, seeding the same `schema_version = 1` / `last_updated = <today>` skeleton `flow init` writes, and the write's `.sha256` sidecar is materialised as part of that first write. This is a recovery path, not the normal route: `/plan-new` / `flow init` still pre-seed the record. Pass `--no-create` to a writer to restore the strict prior behaviour (missing file → `kind=not_found`, nothing created).
 
 Invocation form: the flag is a per-subcommand option (not a global one), appended to the read subcommand: `tomlctl items list <record> --where ... --verify-integrity` or `tomlctl get <file> <path> --verify-integrity`.
 
 #### Field length caps
 
-Writer commands (`/plan-new`, `/plan-update`, `/implement`) MUST cap agent-supplied string fields before passing to `tomlctl items add` / `items apply`:
+`tomlctl flow record` caps these fields itself, so writers pass text through uncut:
 
 - `summary` ≤ 1 KiB (1024 bytes)
 - `description`, `rationale`, `original_intent`, `reason`, `reevaluate_when` ≤ 8 KiB (8192 bytes)
+- `failed_ids` ≤ 20 elements
 
-Truncate overlong strings with a trailing ` (truncated)` marker; do NOT refuse the write. Rationale: the append-only log grows indefinitely, and a 5 MiB rationale permanently inflates every downstream read and renders into `PROGRESS-LOG.md` verbatim.
+An overlong string is cut at a character boundary so that it ends with ` (truncated)` and still fits the cap; the write is never refused, and each cut field is named in the output's `truncated` list. Rationale: the append-only log grows indefinitely, and a 5 MiB rationale permanently inflates every downstream read and renders into `PROGRESS-LOG.md` verbatim.
 
 #### Read rules
 
