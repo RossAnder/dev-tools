@@ -109,8 +109,10 @@ distinct from any source-diff secret scan: that scans code, this scans the ledge
 **Write** (one call; the pattern-item `instances` append above is a conditional call that precedes it):
 
 ```bash
-printf '%s' "$OPS_JSON" | tomlctl items apply <ledger> --ops - --on-stale skip
+tomlctl items apply <ledger> --ops '@<ops-path>' --on-stale skip
 ```
+
+`<ops-path>` is the ops array, written with the Write tool; quote the `@path`, because PowerShell drops it unquoted.
 
 The call batches every per-item transition atomically — valid `op` values are `"add"`, `"update"`,
 `"remove"`; apply carriers use `"update"` for status transitions and `"add"` when minting a
@@ -132,13 +134,12 @@ summary's `### Changed During the Run`, and never retry them — the current val
 exits non-zero with the ledger unchanged; a stale op under `--on-stale skip` is not a failure.
 Correct the failing op (the error names its index and reason) and retry the whole batch.
 
-**Shell-quoting for agent-supplied JSON**: every agent-produced string in the payload
-(`resolution`, rationale, note) MUST be RFC-8259 JSON-escaped before interpolation — `\`, `"`,
-control chars, and the Unicode line separators (U+2028 / U+2029). **Prefer stdin** (the `-`
-sentinel, as above): the shell
-never sees the payload at argv level, so there is no quoting surface to misquote or exploit, and no
-tempfile permission is needed. Fall back to a tempfile (deleted after the call) only if the calling
-harness cannot pipe stdin. Status transitions always go through `items apply`, however few: a loop
+**Shell-quoting for agent-supplied text**: never splice an agent-produced string (`resolution`,
+rationale, note) into a command line. Stage the ops array with the Write tool and pass it as
+`--ops '@<ops-path>'`, so the shell never sees the payload at argv level and there is no quoting
+surface to misquote or exploit. For a lone `items add` or `items update`, pass the prose with
+`--set-file KEY=PATH` (a file written with the Write tool) or `--set KEY=VALUE`, and tomlctl does the
+escaping. Status transitions always go through `items apply`, however few: a loop
 of single-item `tomlctl items update` calls carries no `expect`, so it would write past a mid-run
 human edit.
 
