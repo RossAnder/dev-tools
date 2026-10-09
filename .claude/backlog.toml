@@ -5798,3 +5798,24 @@ base_sha = "6ced9304c492b45f4f0d7615f967fc5c110118f8"
 related = ["B-656181e1"]
 resolved = 2026-10-09
 resolution = "uncommitted fix: io::schema_seed() returns the schema_version/last_updated skeleton unconditionally; seed_doc_for uses it for recognised files and record_path::execution_record_seed calls it directly, so no caller passes a fake file name"
+
+[[backlog]]
+id = "B-124a580e"
+kind = "debt"
+summary = 'tomlctl test date helpers still call Timestamp::now().in_tz("UTC"), the slow zone-database path src/time.rs dropped'
+area = "tomlctl/tests"
+tags = ["test-wall-time"]
+status = "open"
+created = 2026-10-09
+last_seen = 2026-10-09
+seen_count = 1
+dedup_id = "124a580ec498e1f5"
+origin = "optimise"
+flow = "twinkling-hopping-otter"
+context = """Commit 31184f0 switched src/time.rs to to_zoned(jiff::tz::TimeZone::UTC) because in_tz loads the zone database per process (measured 2.3-10.2 s on this Windows machine), but the date helpers in tomlctl/tests flow_path_seam.rs, flow_resolve.rs, flow_stale.rs, last_updated_stamp.rs and updated_stamp.rs (today_iso, today_utc_iso, iso_days_ago; 7 sites) still use in_tz("UTC"). Apply the same one-line swap. Surfaced by /optimise; out of that run's scope because it is test code."""
+base_sha = "7731bc815da2d43a88e276af43be5acc4474038e"
+evidence = [
+    "tomlctl/tests/updated_stamp.rs:52",
+    "tomlctl/src/time.rs:58",
+]
+related = ["B-edb20f98"]

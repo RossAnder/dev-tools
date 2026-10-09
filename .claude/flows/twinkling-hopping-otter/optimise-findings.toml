@@ -1,0 +1,272 @@
+schema_version = 1
+last_updated = 2026-10-09
+
+[[vet_events]]
+timestamp = "2026-10-09T14:55:48Z"
+command = "optimise"
+lens = "memory"
+tier = "deep"
+agent_index = 1
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "1 finding (batch_report per-probe refold); anchor check.rs:121-122 and :605 read and confirmed; merged with Agents 2-4 into one item."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T14:55:48Z"
+command = "optimise"
+lens = "serialization"
+tier = "deep"
+agent_index = 2
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "1 finding (batch_report per-probe refold); anchors check.rs:120-122, :269, :604-606 read and confirmed. Tangential doctor all-flows wait hypothesis not minted (low confidence, not on hot path)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T14:55:48Z"
+command = "optimise"
+lens = "queries"
+tier = "deep"
+agent_index = 3
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "3 findings sampled: batch_report (confirmed, merged), resolve.rs:584 eager plan_declares_tasks (confirmed), doctor.rs:315/373/592 + import_plan.rs:1187 repeated context reads (confirmed; :315 comment is stale)."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T14:55:48Z"
+command = "optimise"
+lens = "algorithm"
+tier = "deep"
+agent_index = 4
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+rationale = "1 finding (batch_report per-probe refold); anchors confirmed; merged into one item with Agents 1-3."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T14:55:48Z"
+command = "optimise"
+lens = "async"
+tier = "deep"
+agent_index = 5
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "2 findings sampled: unlocked verify-then-read (render_progress_log.rs:75/:80 confirmed; io.rs:630-638 documents the window; sweep re-run reproduces the 8-instance set, json.rs:328 helper and tasks/store.rs:159 test excluded); io.rs:2258 sidecar-before-TOML staging confirmed and the :2207 doc comment is inaccurate."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T15:05:06Z"
+command = "optimise-apply"
+lens = "implement-lite"
+rationale = "O1 diff read in full: Store/RowFold/OnceCell matches spec, grade ladder unchanged, exact-hit path still folds nothing; orchestrator fixed one rustfmt spacing slip in index_by_dedup"
+agent_index = 1
+sampled_count = 1
+dropped_count = 0
+downgraded_count = 0
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "O1"
+first_flagged = 2026-10-09
+rounds = 1
+status = "applied"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/backlog/check.rs"
+line = 605
+symbol = "batch_report"
+severity = "warning"
+effort = "small"
+category = "algorithm"
+summary = "Batch backlog check --ndjson rebuilds rows, dedup index and every stored summary's trigram/word sets once per probe"
+description = """
+batch_report calls evaluate(doc, probe, t) per probe; each call rebuilds rows(doc), index_by_dedup, colliding_ids, and Probe::grade re-runs char_trigrams(row.summary) + word_tokens(row.summary) (a normalise pass plus ~100 heap Strings in a BTreeSet per row) for every row. Cost is O(probes x rows x summary length): measured ~3.6-4 ms CPU per non-exact probe on the 270-row .claude/backlog.toml (1/20/50/200 probes = ~0.05/0.13/0.28/0.8 s; 50 exact-duplicate probes cost the same as 1). Batch mode shipped in 6ddb746 and is the documented gate for /backlog capture sweeps and TANGENTIAL harvests.
+
+Fix (check.rs only): build a Store once holding rows, by_dedup, colliding and a per-row OnceCell<(trigrams, words, area components)>; grade() reads the cached sets via get_or_init so all-exact batches still fold nothing; batch_report builds the Store once; keep evaluate(doc, probe, t) as a thin wrapper over evaluate_in(&Store::new(doc), ...) so the ~10 test call sites stay unchanged. Optionally memoise evidence_count by id across the batch. Expected: a 20-probe batch drops from ~75 ms to ~15 ms CPU; single-probe check unchanged.
+
+Risks: verdicts, scores and candidate order must stay byte-identical (existing check.rs verdict tests pin this). Unprofiled split between folding and jaccard cost; if jaccard dominates the gain roughly halves. Optional follow-on (separate decision, touches normalise.rs and its BTreeSet<String>-shaped tests): store trigrams as a sorted Vec<u32> packed from the ASCII-folded bytes and merge-intersect, which would also speed the single-probe path.
+
+Flagged independently by four lenses: memory, serialization, queries, algorithm."""
+evidence = [
+    "hyperfine -N tomlctl backlog check --ndjson against .claude/backlog.toml (270 rows) -> 1/10/30 near-match probes 50.0/95.1/164.0 ms; 30 exact-hit vs 30 near-match 57.6 vs 185.3 ms (2026-10-09)",
+    "release tomlctl 0.15.0, 1/10/50/200 non-exact probes -> ~0.10/0.13/0.28/0.84 s; 50 exact-dedup probes 0.10 s (2026-10-09)",
+    "tomlctl/src/backlog/check.rs:121-122 Probe::grade calls char_trigrams(row.summary) and word_tokens(row.summary) per row",
+    "claude/commands/backlog.md:41 routes every swept capture through one --ndjson batch",
+]
+instances = [
+    "tomlctl/src/backlog/check.rs:batch_report",
+    "tomlctl/src/backlog/check.rs:evaluate",
+    "tomlctl/src/backlog/check.rs:Probe::grade",
+]
+sweep = [
+    'char_trigrams|word_tokens|jaccard\(',
+    'evaluate\(',
+]
+enumeration = "complete"
+dedup_id = "2ac2ae25d63aa739"
+resolved = 2026-10-09
+resolution = "uncommitted: backlog check builds a Store (rows, dedup index, colliding ids, per-row OnceCell trigram/word/area folds) once per batch; evaluate_in grades against cached folds, evaluate stays a wrapper. Verified: fmt, clippy, nextest 1877/1877, glimpse clippy."
+
+[[items]]
+id = "O2"
+first_flagged = 2026-10-09
+rounds = 1
+status = "applied"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/flow/render_progress_log.rs"
+line = 75
+symbol = "dispatch"
+severity = "warning"
+effort = "small"
+category = "concurrency"
+summary = "Integrity-verifying readers that skip the shared lock report kind=integrity on healthy files during a concurrent write"
+description = """
+write_serialized_with_sidecar renames the sidecar before the TOML inside the exclusive lock, so an unlocked verify-then-read can land between the two renames and see NEW sidecar + OLD TOML. read_doc / read_doc_owned (io.rs) already document this window and take with_shared_lock when verify_on_read is set; these sites bypass that. Reproduced: render-progress-log --verify-integrity under 3 concurrent `tomlctl set` writer loops failed 1/50 with a spurious integrity error, while the locked `items list --verify-integrity` reader failed 0/50, and a final verify passed (file intact).
+
+Fix: replace `maybe_verify_integrity(f)?; read_toml(f)` with read_doc_owned(f, opts), which locks only when verify is on, at render_progress_log, resolve (context), active::read_doc_or_default and backlog/schema::read_store; wrap verify+read in with_shared_lock for InputsOp::List and the resolve registry read; for doctor's always-on sidecar_state and ensure_artifact::sidecar_matches, re-check under with_shared_lock only on Mismatch/Malformed so the happy path stays lock-free. Cost: one lock-file open (<1 ms), only when verify is on or on the mismatch path.
+
+Risk: doctor's instance is reasoned from code (0/100 false failures in the race run), not reproduced."""
+evidence = [
+    "scratchpad race bench, 3 `tomlctl set` writer loops vs readers x50 -> render-progress-log --verify-integrity 1/50 integrity failures; items list --count --verify-integrity 0/50; post-run verify ok (2026-10-09)",
+    "tomlctl/src/io.rs:630-638 read_doc comment documents the two-persist interleave window and the shared-lock fix",
+    "tomlctl/src/flow/render_progress_log.rs:75 maybe_verify_integrity then :80 read_toml with no lock",
+]
+instances = [
+    "tomlctl/src/flow/render_progress_log.rs:dispatch",
+    "tomlctl/src/flow/resolve.rs:272",
+    "tomlctl/src/flow/resolve.rs:538",
+    "tomlctl/src/flow/active.rs:read_doc_or_default",
+    "tomlctl/src/backlog/schema.rs:read_store",
+    "tomlctl/src/cli/dispatch.rs:321",
+    "tomlctl/src/flow/doctor.rs:sidecar_state",
+    "tomlctl/src/flow/ensure_artifact.rs:sidecar_matches",
+]
+sweep = [
+    'maybe_verify_integrity\(',
+    'sidecar_state\(',
+    'sha256_hex_of_file\(',
+    '[^_]verify_integrity\(',
+]
+enumeration = "complete"
+dedup_id = "ee241b6504a1a676"
+resolved = 2026-10-09
+resolution = "uncommitted: integrity verify and its read share one with_shared_lock at render_progress_log, resolve (registry + context), active::read_doc_or_default, backlog read_store, inputs list; doctor sidecar_state and ensure_artifact compute_report re-check a failing probe once under the shared lock. Callers checked for same-process exclusive-lock nesting: none. Verified: fmt, clippy, nextest 1877/1877."
+
+[[items]]
+id = "O3"
+first_flagged = 2026-10-09
+rounds = 1
+status = "applied"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/io.rs"
+line = 2258
+symbol = "write_serialized_with_sidecar"
+severity = "suggestion"
+effort = "small"
+category = "concurrency"
+summary = "Sidecar write stages the TOML tempfile only after the sidecar rename, widening the new-sidecar/old-TOML window"
+description = """
+write_sidecar_for runs a full atomic_write (create, write, sync_data, rename) and only then does atomic_write(path) create, write and flush the TOML tempfile. The doc comment above write_toml_with_sidecar claims both tempfiles are staged before either persist, which has never been true. Measured (pwsh, 40 KB, 40 runs): create+write+flush median 3.89 ms / p90 5.03 / max 10.44; rename median 0.58 ms.
+
+Fix: split atomic_write into stage(path, bytes) -> TempPath and commit(TempPath, path) (commit keeps the rename retry and the unix dir fsync); stage sidecar, stage TOML, commit sidecar, commit TOML, keeping the existing recovery on the second commit. Shrinks the inconsistent window ~4.5 ms -> ~0.6 ms, and a TOML tempfile-create failure (e.g. AV lock) then leaves OLD+OLD untouched instead of entering recovery. Correct the doc comment in the same edit.
+
+Risks: two tempfiles open at once under AV is unmeasured; once the unlocked-reader item lands the gain is limited to the crash window and the staging-failure case. End-to-end window inferred from component timings, not instrumented."""
+evidence = [
+    "tomlctl/src/io.rs:2258-2259 write_sidecar_for(path, bytes)? then atomic_write(path, bytes)",
+    "tomlctl/src/io.rs:2207-2209 doc comment claims both tempfiles are staged before persist",
+    "pwsh 40 KB x40 -> create+write+Flush(true) median 3.89 ms, rename median 0.58 ms (2026-10-09)",
+]
+dedup_id = "ac53a520ea29cfb4"
+related = ["O2"]
+resolved = 2026-10-09
+resolution = "uncommitted: atomic_write split into stage/commit; write_serialized_with_sidecar stages sidecar and TOML before committing sidecar then TOML, so the old-TOML/new-sidecar window is one rename and a staging failure renames nothing; doc comments corrected. Verified: fmt, clippy, nextest 1877/1877."
+
+[[items]]
+id = "O4"
+first_flagged = 2026-10-09
+rounds = 1
+status = "applied"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/flow/resolve.rs"
+line = 584
+symbol = "plan_declares_tasks"
+severity = "suggestion"
+effort = "trivial"
+category = "query"
+summary = "flow resolve reads and section-scans the whole plan document even when tasks.toml exists"
+description = """
+expects_tasks = plan_declares_tasks(slug) is computed eagerly before the artifact loop, but is only consulted when the tasks artifact is missing. plan_declares_tasks re-reads context.toml (already parsed at :541) via tasks::context_plan_path, then reads the plan (up to ~130 KB) and runs markdown::sections. Every carrier bootstrap runs flow resolve. Cost ~1-3 ms per resolve (inferred from a 20 KB vs 130 KB plan comparison inside noise).
+
+Fix: make it lazy: `let mut expects: Option<bool> = None;` and in the loop `if abs.exists() { continue; } if key == "tasks" && !*expects.get_or_insert_with(|| plan_declares_tasks(slug)) { continue; }`. Warnings stay identical."""
+evidence = [
+    "tomlctl/src/flow/resolve.rs:584-593 expects_tasks computed before the loop, read only for key == tasks",
+    "hyperfine -r 100 flow resolve 20 KB vs 130 KB plan -> 7.8 vs 8.3 ms user, 7.8 vs 10.5 ms sys (2026-10-09)",
+]
+dedup_id = "17bfa0c52cf27d26"
+resolved = 2026-10-09
+resolution = "uncommitted: flow resolve computes expects_tasks lazily from the parsed context, only when the tasks artifact is missing; warnings unchanged. Verified: fmt, clippy, nextest 1877/1877."
+
+[[items]]
+id = "O5"
+first_flagged = 2026-10-09
+rounds = 1
+status = "applied"
+flow = "twinkling-hopping-otter"
+file = "tomlctl/src/flow/doctor.rs"
+line = 315
+symbol = "check_one_flow"
+severity = "suggestion"
+effort = "small"
+category = "query"
+summary = "flow doctor --slug reads context.toml four times and each artifact twice per run"
+description = """
+check_one_flow parses context.toml once (:317, whose comment claims every check projects from it), but plan_declares_tasks (:373) and check_plan_path_resolves via tasks::context_plan_path (:592) each re-read it, and sidecar_state hashes it from a fourth read. The execution record and tasks.toml are each read once for the hash and again for the owned parse in record_completion_refs / store_refs. Doctor runs on every carrier bootstrap; estimated saving ~2-4 ms CPU of doctor's ~13 ms over baseline.
+
+Fix: add a slug-free tasks::plan_path_from_context(&TomlValue) over import_plan's private `contained`, use it in check_plan_path_resolves and a doc-taking plan_declares_tasks variant; have sidecar_state hand back the bytes it hashed so store_refs / record_completion_refs parse them (parse_toml_bytes, or the borrowed DeTable parse since they only pluck ref / task_ref). Fix the :315 comment in the same edit. Keep the lazy call site from the resolve.rs item intact if it lands first.
+
+Counter: if a small-file open costs well under 0.5 ms here, the saving is noise and this becomes wontapply; settle with before/after hyperfine CPU time on flow doctor --slug."""
+evidence = [
+    "tomlctl/src/flow/doctor.rs:315-317 comment says the context doc is read once",
+    "tomlctl/src/flow/doctor.rs:373 plan_declares_tasks(slug) and :592 context_plan_path(slug) re-read context.toml",
+    "tomlctl/src/tasks/import_plan.rs:1187-1190 context_plan_path does read_toml on context.toml",
+    "hyperfine -r 80 flow doctor --slug twinkling-hopping-otter -> 11.1 ms user / 13.5 ms sys vs --version 6.1 / 5.1 (2026-10-09)",
+]
+instances = [
+    "tomlctl/src/flow/doctor.rs:check_one_flow",
+    "tomlctl/src/flow/doctor.rs:check_plan_path_resolves",
+    "tomlctl/src/flow/doctor.rs:store_refs",
+    "tomlctl/src/flow/doctor.rs:record_completion_refs",
+    "tomlctl/src/flow/doctor.rs:sidecar_state",
+    "tomlctl/src/flow/resolve.rs:plan_declares_tasks",
+    "tomlctl/src/tasks/import_plan.rs:context_plan_path",
+    "tomlctl/src/tasks/mod.rs:context_plan_path",
+]
+sweep = ['context_plan_path\(|plan_declares_tasks\(|read_toml\(']
+enumeration = "complete"
+dedup_id = "e6a67e6d6ef9e79a"
+related = ["O4"]
+resolved = 2026-10-09
+resolution = "partial: doctor uses the parsed context for the plan-declares-tasks probe and plan-path check (new context_plan_path_in / plan_declares_tasks_in helpers), comment corrected / pending: reuse hashed bytes for store_refs and record_completion_refs, tracked as O6. Uncommitted. Verified: fmt, clippy, nextest 1877/1877."
+
+[[items]]
+id = "O6"
+file = "tomlctl/src/flow/doctor.rs"
+line = 315
+symbol = "check_one_flow"
+severity = "suggestion"
+effort = "small"
+category = "query"
+summary = "pending parts of O5: reuse the bytes sidecar hashing already read for store_refs / record_completion_refs instead of re-reading the execution record and tasks.toml"
+description = "O5 landed the context-reuse half. Not landed: sidecar_state streams the file through sha256_hex_of_file, and store_refs / record_completion_refs re-read and parse the same file. Reusing the bytes would change the hashing I/O error text (opening ... for hashing) and widen check_tasks_counters, which 7 unit tests call. The implementer judged that churn excessive for about 1 ms."
+first_flagged = 2026-10-09
+rounds = 1
+related = ["O5"]
+status = "open"
+flow = "twinkling-hopping-otter"
+dedup_id = "d8430593e7e7c992"
