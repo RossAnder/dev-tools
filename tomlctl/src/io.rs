@@ -1144,8 +1144,8 @@ pub(crate) struct ScalarMutationPlan {
     pub(crate) new_value: serde_json::Value,
 }
 
-/// Compute a `ScalarMutationPlan` for `Cmd::Set` without touching disk.
-/// Mirrors the live arm in `cli/dispatch.rs` (`mutate_doc` closure):
+/// Compute a `ScalarMutationPlan` for one `Cmd::Set` pair without touching
+/// disk. Mirrors the live arm in `cli/dispatch/doc.rs` (`mutate_doc` closure):
 ///   1. `parse_scalar(value, ty)` → `TomlValue`
 ///   2. `navigate(&doc, path)` → captured `old_value` (None if missing)
 ///   3. `set_at_path(&mut clone, path, parsed)` on a CLONE of the input doc
@@ -1179,7 +1179,7 @@ pub(crate) fn compute_set_mutation(
 }
 
 /// Compute a `ScalarMutationPlan` for `Cmd::SetJson` without touching disk.
-/// Mirrors the live arm in `cli/dispatch.rs`:
+/// Mirrors the live arm in `cli/dispatch/doc.rs`:
 ///   1. `last_key` = path's final segment (after rsplit on `.`)
 ///   2. `maybe_date_coerce(last_key, &json)` → `TomlValue` (DATE_KEYS get
 ///      auto-coerced to `Datetime`, all other keys go through

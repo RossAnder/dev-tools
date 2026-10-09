@@ -92,5 +92,26 @@ pub(crate) fn dispatch(op: FlowOp) -> Result<()> {
             stdout,
             integrity,
         } => crate::flow::render_progress_log::dispatch(&slug, stdout, &integrity),
+        FlowOp::Record {
+            slug,
+            record_type,
+            task,
+            json,
+            fields,
+            ndjson,
+            dry_run,
+            integrity,
+            stamp,
+        } => crate::flow::record::dispatch(crate::flow::record::RecordRequest {
+            slug,
+            record_type: record_type.map(|t| t.as_str()),
+            task,
+            json,
+            fields,
+            ndjson,
+            dry_run,
+            integrity,
+            stamp: !stamp.no_stamp,
+        }),
     }
 }

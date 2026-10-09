@@ -30,6 +30,7 @@ mod slug;
 mod snapshot;
 mod snapshot_record;
 mod store;
+mod train;
 mod update;
 
 // `pub(crate)` because the caller is `cli::dispatch::run`, which is not a

@@ -22,7 +22,7 @@ use super::finding::Finding;
 use super::schema::Store;
 use super::{
     add, backlog_refs, batches, check, closure, edges, import_plan, list, ready, remove, render,
-    show, store, update,
+    show, store, train, update,
 };
 use crate::cli::TasksOp;
 use crate::errors::{ErrorKind, tagged_err};
@@ -232,6 +232,24 @@ pub(crate) fn dispatch(op: TasksOp) -> Result<()> {
             let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
             let store = store::load(&path, &integrity)?;
             print_report(batches::batches(&store)?, Rows::Field("batches"))
+        }
+
+        TasksOp::Train {
+            target,
+            checkpoint,
+            ids,
+            granularity,
+            integrity,
+        } => {
+            let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
+            let store = store::load(&path, &integrity)?;
+            let report = train::train(
+                &store,
+                &checkpoint,
+                &ids,
+                granularity.map(|granularity| granularity.as_str()),
+            )?;
+            print_report(report, Rows::Field("groups"))
         }
 
         TasksOp::Closure {

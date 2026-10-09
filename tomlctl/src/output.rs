@@ -34,6 +34,119 @@ pub(crate) struct OutputOpts {
     pub(crate) template: Option<String>,
     pub(crate) quiet: bool,
     pub(crate) json_errors: bool,
+    pub(crate) rows: Option<String>,
+    pub(crate) header: bool,
+    pub(crate) max_chars: Option<usize>,
+    pub(crate) omit: Option<Vec<String>>,
+    pub(crate) filters: WhereFilters,
+}
+
+/// The raw values of the global `--where*` flags, one field per flag.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct WhereFilters {
+    pub(crate) where_eq: Vec<String>,
+    pub(crate) where_not: Vec<String>,
+    pub(crate) where_in: Vec<String>,
+    pub(crate) where_has: Vec<String>,
+    pub(crate) where_missing: Vec<String>,
+    pub(crate) where_gt: Vec<String>,
+    pub(crate) where_gte: Vec<String>,
+    pub(crate) where_lt: Vec<String>,
+    pub(crate) where_lte: Vec<String>,
+    pub(crate) where_contains: Vec<String>,
+    pub(crate) where_prefix: Vec<String>,
+    pub(crate) where_suffix: Vec<String>,
+    pub(crate) where_regex: Vec<String>,
+}
+
+/// The `--where*` long names, in `WhereFilters::families` order.
+const WHERE_FLAGS: [&str; 13] = [
+    "--where",
+    "--where-not",
+    "--where-in",
+    "--where-has",
+    "--where-missing",
+    "--where-gt",
+    "--where-gte",
+    "--where-lt",
+    "--where-lte",
+    "--where-contains",
+    "--where-prefix",
+    "--where-suffix",
+    "--where-regex",
+];
+
+impl WhereFilters {
+    const EMPTY: WhereFilters = WhereFilters {
+        where_eq: Vec::new(),
+        where_not: Vec::new(),
+        where_in: Vec::new(),
+        where_has: Vec::new(),
+        where_missing: Vec::new(),
+        where_gt: Vec::new(),
+        where_gte: Vec::new(),
+        where_lt: Vec::new(),
+        where_lte: Vec::new(),
+        where_contains: Vec::new(),
+        where_prefix: Vec::new(),
+        where_suffix: Vec::new(),
+        where_regex: Vec::new(),
+    };
+
+    /// Each flag's long name beside its values.
+    fn families(&self) -> [(&'static str, &[String]); 13] {
+        let f = WHERE_FLAGS;
+        [
+            (f[0], &self.where_eq[..]),
+            (f[1], &self.where_not[..]),
+            (f[2], &self.where_in[..]),
+            (f[3], &self.where_has[..]),
+            (f[4], &self.where_missing[..]),
+            (f[5], &self.where_gt[..]),
+            (f[6], &self.where_gte[..]),
+            (f[7], &self.where_lt[..]),
+            (f[8], &self.where_lte[..]),
+            (f[9], &self.where_contains[..]),
+            (f[10], &self.where_prefix[..]),
+            (f[11], &self.where_suffix[..]),
+            (f[12], &self.where_regex[..]),
+        ]
+    }
+
+    /// Total values across every flag.
+    pub(crate) fn len(&self) -> usize {
+        self.families().iter().map(|(_, v)| v.len()).sum()
+    }
+}
+
+/// Refuse `--where*` values given on both sides of the subcommand. For a
+/// repeatable global clap keeps only the values after the subcommand, so
+/// fewer parsed values than `--where*` tokens in `argv` means some were
+/// dropped. Tokens after a bare `--` are positionals and not counted.
+pub(crate) fn check_where_placement<I>(argv: I, parsed: &WhereFilters) -> Result<()>
+where
+    I: IntoIterator,
+    I::Item: AsRef<std::ffi::OsStr>,
+{
+    let mut tokens = 0usize;
+    for arg in argv {
+        let Some(arg) = arg.as_ref().to_str() else {
+            continue;
+        };
+        if arg == "--" {
+            break;
+        }
+        let name = arg.split_once('=').map_or(arg, |(name, _)| name);
+        if WHERE_FLAGS.contains(&name) {
+            tokens += 1;
+        }
+    }
+    if parsed.len() < tokens {
+        return Err(invalid(
+            "give every `--where*` on one side of the subcommand: values before it are dropped when more follow it",
+        ));
+    }
+    Ok(())
 }
 
 static OPTS: OnceLock<OutputOpts> = OnceLock::new();
@@ -46,6 +159,11 @@ static UNCONFIGURED: OutputOpts = OutputOpts {
     template: None,
     quiet: false,
     json_errors: false,
+    rows: None,
+    header: false,
+    max_chars: None,
+    omit: None,
+    filters: WhereFilters::EMPTY,
 };
 
 fn invalid(msg: impl Into<String>) -> anyhow::Error {
@@ -71,6 +189,25 @@ impl OutputOpts {
         if self.template.is_some() {
             set.push("--template");
         }
+        if self.rows.is_some() {
+            set.push("--rows");
+        }
+        if self.header {
+            set.push("--header");
+        }
+        if self.max_chars.is_some() {
+            set.push("--max-chars");
+        }
+        if self.omit.is_some() {
+            set.push("--omit");
+        }
+        set.extend(
+            self.filters
+                .families()
+                .into_iter()
+                .filter(|(_, values)| !values.is_empty())
+                .map(|(flag, _)| flag),
+        );
         set
     }
 
@@ -93,8 +230,19 @@ impl OutputOpts {
                 )));
             }
         }
+        if let Some(paths) = &self.omit {
+            if paths.is_empty() {
+                return Err(invalid("--omit: empty path list"));
+            }
+            if let Some(i) = paths.iter().position(String::is_empty) {
+                return Err(invalid(format!("--omit: empty path at position {}", i + 1)));
+            }
+        }
         if self.get.as_deref() == Some("") {
             return Err(invalid("--get: empty path"));
+        }
+        if self.rows.as_deref() == Some("") {
+            return Err(invalid("--rows: empty path"));
         }
         if self.quiet
             && let Some(other) = self.shaping_flags().first()
@@ -109,6 +257,23 @@ impl OutputOpts {
         }
         if self.template.is_some() && self.select.is_some() {
             return Err(invalid("`--template` cannot be combined with `--select`"));
+        }
+        if self.rows.is_some() && self.header {
+            return Err(invalid("`--rows` cannot be combined with `--header`"));
+        }
+        if self.omit.is_some() {
+            let other = [
+                (self.select.is_some(), "--select"),
+                (self.get.is_some(), "--get"),
+                (self.template.is_some(), "--template"),
+            ]
+            .into_iter()
+            .find_map(|(set, flag)| set.then_some(flag));
+            if let Some(other) = other {
+                return Err(invalid(format!(
+                    "`--omit` cannot be combined with `{other}`"
+                )));
+            }
         }
         if let Some(t) = &self.template {
             Template::parse(t)?;
@@ -433,7 +598,8 @@ pub(crate) fn streaming_allowed() -> bool {
 }
 
 /// The options that still apply to a query list's output once its engine
-/// has consumed `--select`, `--limit` and `--lines`.
+/// has consumed `--select`, `--limit`, `--lines` and the `--where*` filters,
+/// which reach it through the list verb's merged `QueryArgs`.
 fn query_opts(opts: &OutputOpts) -> OutputOpts {
     OutputOpts {
         get: opts.get.clone(),
@@ -494,7 +660,30 @@ fn text_allowed(opts: &OutputOpts, refused: &[&str]) -> Result<bool> {
     Ok(true)
 }
 
-const ALL_SHAPING: &[&str] = &["--select", "--limit", "--lines", "--get", "--template"];
+const ALL_SHAPING: &[&str] = &[
+    "--select",
+    "--limit",
+    "--lines",
+    "--get",
+    "--template",
+    "--rows",
+    "--header",
+    "--max-chars",
+    "--omit",
+    "--where",
+    "--where-not",
+    "--where-in",
+    "--where-has",
+    "--where-missing",
+    "--where-gt",
+    "--where-gte",
+    "--where-lt",
+    "--where-lte",
+    "--where-contains",
+    "--where-prefix",
+    "--where-suffix",
+    "--where-regex",
+];
 
 /// Write non-JSON output verbatim; the caller supplies any trailing newline.
 pub(crate) fn print_text(text: &str) -> Result<()> {
@@ -1253,5 +1442,198 @@ mod tests {
         let env = build_dry_run_plan_envelope(&plan);
         assert_eq!(env["would_change"]["added"], serde_json::json!(2));
         assert_eq!(env["would_change"]["ids"], serde_json::json!([]));
+    }
+
+    fn conflict(f: impl FnOnce(&mut OutputOpts)) -> String {
+        let e = with(f).validate().unwrap_err();
+        let tag = e.downcast_ref::<crate::errors::TaggedError>().unwrap();
+        assert_eq!(tag.kind.as_str(), "validation");
+        format!("{e:#}")
+    }
+
+    #[test]
+    fn global_flag_conflict_rows_with_header() {
+        assert_eq!(
+            conflict(|o| {
+                o.rows = Some("deps".into());
+                o.header = true;
+            }),
+            "`--rows` cannot be combined with `--header`"
+        );
+        assert!(with(|o| o.rows = Some("deps".into())).validate().is_ok());
+        assert!(with(|o| o.header = true).validate().is_ok());
+    }
+
+    #[test]
+    fn global_flag_conflict_omit_with_select_get_and_template() {
+        type Setter = fn(&mut OutputOpts);
+        let cases: [(Setter, &str); 3] = [
+            (|o| o.select = Some(vec!["a".into()]), "--select"),
+            (|o| o.get = Some("a".into()), "--get"),
+            (|o| o.template = Some("{a}".into()), "--template"),
+        ];
+        for (set, flag) in cases {
+            let msg = conflict(|o| {
+                o.omit = Some(vec!["b".into()]);
+                set(o);
+            });
+            assert_eq!(msg, format!("`--omit` cannot be combined with `{flag}`"));
+        }
+        assert!(
+            with(|o| {
+                o.omit = Some(vec!["b".into()]);
+                o.max_chars = Some(10);
+                o.limit = Some(1);
+                o.lines = true;
+            })
+            .validate()
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn global_flag_conflict_quiet_with_each_new_flag() {
+        type Setter = fn(&mut OutputOpts);
+        let cases: [(Setter, &str); 7] = [
+            (|o| o.rows = Some("deps".into()), "--rows"),
+            (|o| o.header = true, "--header"),
+            (|o| o.max_chars = Some(5), "--max-chars"),
+            (|o| o.omit = Some(vec!["a".into()]), "--omit"),
+            (|o| o.filters.where_eq = vec!["a=1".into()], "--where"),
+            (|o| o.filters.where_not = vec!["a=1".into()], "--where-not"),
+            (
+                |o| o.filters.where_regex = vec!["a=x".into()],
+                "--where-regex",
+            ),
+        ];
+        for (set, flag) in cases {
+            let msg = conflict(|o| {
+                o.quiet = true;
+                set(o);
+            });
+            assert_eq!(msg, format!("`-q` cannot be combined with `{flag}`"));
+        }
+    }
+
+    #[test]
+    fn global_flag_conflict_empty_omit_and_rows_paths() {
+        assert_eq!(
+            conflict(|o| o.omit = Some(vec!["a".into(), String::new()])),
+            "--omit: empty path at position 2"
+        );
+        assert_eq!(
+            conflict(|o| o.omit = Some(vec![])),
+            "--omit: empty path list"
+        );
+        assert_eq!(
+            conflict(|o| o.rows = Some(String::new())),
+            "--rows: empty path"
+        );
+    }
+
+    #[test]
+    fn global_flags_are_refused_on_text_output() {
+        let o = with(|o| o.filters.where_has = vec!["a".into()]);
+        let e = text_allowed(&o, ALL_SHAPING).unwrap_err();
+        assert_eq!(
+            format!("{e:#}"),
+            "`--where-has` does not apply to this command's text output"
+        );
+        let o = with(|o| o.max_chars = Some(3));
+        assert!(text_allowed(&o, ALL_SHAPING).is_err());
+    }
+
+    /// The root-level `--where` values and the `tasks list` engine's own,
+    /// read back from one parse of `argv`.
+    fn parse_where(argv: &[&str]) -> (WhereFilters, Vec<String>) {
+        let argv: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
+        crate::test_support::on_cli_stack(move || {
+            use clap::{CommandFactory as _, Parser as _};
+            let cli = crate::cli::Cli::try_parse_from(&argv)
+                .unwrap_or_else(|e| panic!("{argv:?} must parse: {e}"));
+            let matches = crate::cli::Cli::command()
+                .try_get_matches_from(&argv)
+                .unwrap();
+            let list = matches
+                .subcommand_matches("tasks")
+                .and_then(|m| m.subcommand_matches("list"))
+                .expect("tasks list matches");
+            let engine = list
+                .get_many::<String>("where_eq")
+                .map(|v| v.cloned().collect())
+                .unwrap_or_default();
+            (cli.output.filters.to_filters(), engine)
+        })
+    }
+
+    #[test]
+    fn global_where_parses_identically_before_and_after_subcommand() {
+        let before = [
+            "tomlctl",
+            "--where",
+            "status=done",
+            "tasks",
+            "list",
+            "--slug",
+            "s",
+        ];
+        let after = [
+            "tomlctl",
+            "tasks",
+            "list",
+            "--slug",
+            "s",
+            "--where",
+            "status=done",
+        ];
+        let (global_before, engine_before) = parse_where(&before);
+        let (global_after, engine_after) = parse_where(&after);
+        assert_eq!(global_before.where_eq, ["status=done"]);
+        assert_eq!(engine_before, ["status=done"]);
+        assert_eq!(global_before, global_after);
+        assert_eq!(engine_before, engine_after);
+        check_where_placement(&before[1..], &global_before).unwrap();
+        check_where_placement(&after[1..], &global_after).unwrap();
+    }
+
+    #[test]
+    fn global_where_split_across_subcommand_is_refused() {
+        let split = [
+            "tomlctl",
+            "--where",
+            "a=1",
+            "tasks",
+            "list",
+            "--slug",
+            "s",
+            "--where=b=2",
+        ];
+        let (global, engine) = parse_where(&split);
+        assert_eq!(global.where_eq, ["b=2"]);
+        assert_eq!(engine, ["b=2"]);
+        let e = check_where_placement(&split[1..], &global).unwrap_err();
+        let tag = e.downcast_ref::<crate::errors::TaggedError>().unwrap();
+        assert_eq!(tag.kind.as_str(), "validation");
+        assert!(
+            format!("{e:#}").contains("one side of the subcommand"),
+            "{e:#}"
+        );
+
+        let one_side = [
+            "tomlctl",
+            "tasks",
+            "list",
+            "--slug",
+            "s",
+            "--where",
+            "a=1",
+            "--where-not",
+            "b=2",
+        ];
+        let (global, _) = parse_where(&one_side);
+        assert_eq!(global.len(), 2);
+        check_where_placement(&one_side[1..], &global).unwrap();
+        let positional = ["--", "--where"];
+        check_where_placement(positional, &WhereFilters::default()).unwrap();
     }
 }

@@ -10,6 +10,8 @@ mod envelope;
 mod find_plans;
 mod init;
 mod list;
+mod record;
+mod record_schema;
 pub(crate) mod render_progress_log;
 mod resolve;
 mod schema;

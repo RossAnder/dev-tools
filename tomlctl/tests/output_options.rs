@@ -263,8 +263,7 @@ fn cases() -> Vec<Case> {
             &["items", "sweep", LEDGER, "--ids", "R3", "--update"],
             "updated",
         )
-        .git()
-        .refuses_lines("--lines applies to the read-only sweep"),
+        .git(),
         read(&["items", "clusters", LEDGER], Field("clusters"), "id"),
         write(&["items", "backfill-dedup-id", LEDGER], "backfilled"),
         read(
@@ -428,8 +427,7 @@ fn cases() -> Vec<Case> {
         read(&["tasks", "show", "1,2", "--slug", S], Top, "ref"),
         read(&["tasks", "list", "--slug", S], Top, "ref"),
         read(&["tasks", "edges", "--slug", S], Top, "kind"),
-        read(&["tasks", "edges", "--slug", S, "--dot"], Text, "")
-            .refuses_lines("--lines applies to the JSON edge list"),
+        text(&["tasks", "edges", "--slug", S, "--dot"]),
         read(&["tasks", "ready", "--slug", S], One, "ready"),
         read(&["tasks", "batches", "--slug", S], Field("batches"), "0"),
         read(

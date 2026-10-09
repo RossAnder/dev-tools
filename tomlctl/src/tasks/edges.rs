@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
 use super::graph::{Graph, nodes_of};
@@ -31,9 +31,6 @@ pub(crate) fn dispatch(
     dot: bool,
     integrity: ReadIntegrityArgs,
 ) -> Result<()> {
-    if dot && crate::output::opts().lines {
-        bail!("tasks edges --lines applies to the JSON edge list; --dot emits DOT source");
-    }
     let path = store::resolve_store_path(target.slug.as_deref(), target.file.as_deref())?;
     let store = store::load(&path, &integrity)?;
     if dot {

@@ -945,7 +945,7 @@ fn slashed(path: &Path) -> String {
 /// pattern fails to compile (defensive against hand-edited malformed
 /// globs — that case must not crash the resolver). Compile failures on
 /// individual patterns are silently dropped.
-fn compile_scope_globset(scope: &[String]) -> Option<GlobSet> {
+pub(crate) fn compile_scope_globset(scope: &[String]) -> Option<GlobSet> {
     if scope.is_empty() {
         return None;
     }

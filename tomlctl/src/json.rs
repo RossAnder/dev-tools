@@ -16,7 +16,7 @@
 //!
 //! JSON writers refuse a `.toml` target (`kind=validation`); the symmetric
 //! TOML-side refusal lives in
-//! `cli::dispatch::refuse_json_extension_for_toml_writers`.
+//! `cli::dispatch::doc::refuse_json_extension_for_toml_writers`.
 
 use crate::io::advise;
 use anyhow::{Context, Result, bail};
@@ -61,7 +61,7 @@ pub(crate) fn dispatch(op: JsonOp) -> Result<()> {
 
 /// JSON writers refuse `.toml` targets. The symmetric half (TOML writers
 /// refuse `.json`) lives in
-/// `cli::dispatch::refuse_json_extension_for_toml_writers`.
+/// `cli::dispatch::doc::refuse_json_extension_for_toml_writers`.
 fn refuse_toml_extension(file: &Path) -> Result<()> {
     if file
         .extension()

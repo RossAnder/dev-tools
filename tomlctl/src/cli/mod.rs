@@ -1,14 +1,17 @@
 //! Top-level CLI module, split along concern seams — clap derive types,
 //! `run()` dispatch + per-command routing, and output helpers:
 //!
-//! - [`types`] (`cli/types.rs`) — the clap-derive `Cli`, `Cmd`, `ItemsOp`,
+//! - [`types`] (`cli/types/`) — the clap-derive `Cli`, `Cmd`, `ItemsOp`,
 //!   `BlocksOp` enums plus the per-variant argument bundles
 //!   (`ReadIntegrityArgs`, `WriteIntegrityArgs`, `QueryArgs`) and the
-//!   legacy-shortcut adapter (`LegacyShortcuts`). Exports the
-//!   `FEATURES` / `SUBCOMMANDS` metadata consts used by `Cmd::Capabilities`.
-//! - [`dispatch`] (`cli/dispatch.rs`) — `fn run()`, `items_dispatch`,
-//!   `blocks_dispatch`, and the integrity-opts translators. Pure plumbing;
-//!   delegates to `items::` / `blocks::` / `io::` for real work.
+//!   legacy-shortcut adapter (`LegacyShortcuts`), one child module per verb
+//!   group. Exports the `FEATURES` / `SUBCOMMANDS` metadata consts used by
+//!   `Cmd::Capabilities`.
+//! - [`dispatch`] (`cli/dispatch.rs`, `cli/dispatch/`) — `fn run()`,
+//!   `blocks_dispatch` and the integrity-opts translators, with
+//!   `items_dispatch` in `cli/dispatch/items.rs` and the generic document
+//!   writers in `cli/dispatch/doc.rs`. Pure plumbing; delegates to
+//!   `items::` / `blocks::` / `io::` for real work.
 //! - Output helpers (`print_json`, `print_json_compact`, `print_raw_value`,
 //!   `emit_list_raw`, `emit_dry_run_plan`) live in the top-level
 //!   [`crate::output`] module — sibling of `cli`, not child — because they
