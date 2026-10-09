@@ -17,15 +17,14 @@ use crate::errors::{ErrorKind, tagged_err};
 use crate::fields::{self, FieldArgs};
 use crate::io::{
     dry_run_read_opts, mutate_doc_conditional, on_missing_for, read_doc, read_json_value_from_arg,
-    read_ndjson_source, read_toml, recorded_under_root, relativise, repo_or_cwd_root, seed_doc_for,
-    stamped_conditional, warn_if_created,
+    read_ndjson_source, read_toml, relativise, repo_or_cwd_root, seed_doc_for, stamped_conditional,
+    warn_if_created,
 };
 use crate::items::{items_add_many_with_dedupe, parse_ndjson};
 use crate::output::{Rows, print_json_compact, print_rows_compact};
 
 const RECORD_ARRAY: &str = "items";
 const RECORD_ID_PREFIX: &str = "E";
-const RECORD_FILE: &str = "execution-record.toml";
 const CONTEXT_FILE: &str = "context.toml";
 
 /// One `flow record` invocation, as parsed by clap.
@@ -159,25 +158,7 @@ fn resolve_target(slug: &str) -> Result<FlowTarget> {
                 .collect()
         })
         .unwrap_or_default();
-    let recorded = context
-        .get("artifacts")
-        .and_then(TomlValue::as_table)
-        .and_then(|artifacts| artifacts.get("execution_record"))
-        .and_then(TomlValue::as_str)
-        .filter(|path| !path.is_empty());
-    let record = match recorded {
-        // A recorded path is file-controlled input: one that does not anchor
-        // under the repo root would turn this verb into a write anywhere.
-        Some(recorded) if !recorded_under_root(&root, Path::new(recorded)) => {
-            return Err(validation(format!(
-                "`execution_record` in `{}` must be repo-relative and stay under the repo \
-                 root, got `{recorded}`",
-                context_path.display()
-            )));
-        }
-        Some(recorded) => root.join(recorded),
-        None => dir.join(RECORD_FILE),
-    };
+    let record = super::execution_record_path(&root, &dir, &context_path, Some(&context))?;
     Ok(FlowTarget {
         root,
         record,

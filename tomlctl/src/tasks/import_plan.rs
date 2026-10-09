@@ -49,6 +49,7 @@ const POLICY_SECTION: &str = "Execution Policy";
 const GRAPH_SECTION: &str = "Dependency Graph";
 
 const CONTEXT_FILE: &str = "context.toml";
+#[cfg(test)]
 const RECORD_FILE: &str = "execution-record.toml";
 
 /// Effort for a heading carrying no `[S|M|L]` tag and no `- **Effort**:`
@@ -1257,25 +1258,8 @@ fn under_root(field: &str, source: &str, recorded: &str) -> Result<PathBuf> {
 fn record_path(slug: &str) -> Result<PathBuf> {
     let dir = flow_dir(slug)?;
     let context_path = dir.join(CONTEXT_FILE);
-    let recorded = read_toml(&context_path)
-        .ok()
-        .and_then(|context| {
-            context
-                .get("artifacts")
-                .and_then(TomlValue::as_table)
-                .and_then(|artifacts| artifacts.get("execution_record"))
-                .and_then(TomlValue::as_str)
-                .map(str::to_string)
-        })
-        .filter(|path| !path.is_empty());
-    match recorded {
-        Some(recorded) => under_root(
-            "execution_record",
-            &format!("`{}`", context_path.display()),
-            &recorded,
-        ),
-        None => Ok(dir.join(RECORD_FILE)),
-    }
+    let context = read_toml(&context_path).ok();
+    crate::flow::execution_record_path(&repo_or_cwd_root()?, &dir, &context_path, context.as_ref())
 }
 
 /// `task_ref`s of the record's `done` task-completions. A `failed` or
