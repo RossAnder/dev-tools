@@ -15,10 +15,10 @@ Gate: fire ONLY when `envelope.plans_directory == null` (the bootstrap agent nor
 6. **Persist**: write the result to `.claude/settings.json` via:
 
    ```bash
-   cat <<'EOF' | tomlctl json set .claude/settings.json plansDirectory --json -
-   <JSON value: a single string — either "__DONT_ASK__" sentinel OR a directory path like "docs/plans/">
-   EOF
+   tomlctl json set .claude/settings.json plansDirectory --json '"docs/plans/"'
    ```
+
+   The `--json` value is one JSON string — either the `"__DONT_ASK__"` sentinel or the chosen directory path, as in `'"docs/plans/"'`.
 
    `tomlctl json` skips sidecar maintenance on `settings.json` per P16, so the harness's out-of-band writes (e.g. `/config`) remain compatible.
 7. Bind `plans_directory` for downstream phases: if the user selected `Don't ask again` (sentinel persisted) OR the free-text follow-up returned empty (nothing persisted), treat as `"docs/plans/"` in-memory (the default-of-defaults). Otherwise bind the chosen path string as written. Any downstream code that consumed `envelope.plans_directory == null` should now consume this in-memory value.
