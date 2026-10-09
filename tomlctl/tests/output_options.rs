@@ -8,7 +8,8 @@
 //! report-shaping globals: a wildcard `--get`, `--omit`, `--max-chars`,
 //! `--rows`, `--header` and a global `--where`.
 //!
-//! Reads share one fixture tree; each write invocation gets its own copy.
+//! The cases run as one test per command group. Each group builds a fixture
+//! tree its reads share; each write invocation gets its own copy.
 
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -646,11 +647,22 @@ fn fixture() -> Fixture {
     }
 }
 
+/// Leaves out the lock files, which are named by a hash of the source's
+/// absolute path so the copy never takes them, and the parts of `.git` no
+/// command reads: sample hooks, the comment-only exclude file and the gitweb
+/// description. Every copied file is one more an on-access scanner reads.
 fn copy_tree(src: &Path, dst: &Path) {
     fs::create_dir_all(dst).unwrap();
+    let in_git = src.file_name().is_some_and(|d| d == ".git");
     for entry in fs::read_dir(src).unwrap() {
         let entry = entry.unwrap();
-        let to = dst.join(entry.file_name());
+        let name = entry.file_name();
+        if name == ".locks"
+            || (in_git && ["hooks", "info", "description"].contains(&&*name.to_string_lossy()))
+        {
+            continue;
+        }
+        let to = dst.join(&name);
         if entry.file_type().unwrap().is_dir() {
             copy_tree(&entry.path(), &to);
         } else {
@@ -1303,14 +1315,66 @@ fn every_leaf_command_has_a_case() {
     );
 }
 
+/// The test a case runs under: its command family. Each family is its own
+/// test so the runner spreads the cases across processes instead of one test
+/// carrying all of them; each also builds its own fixture, which is why the
+/// split stops at families.
+fn group(case: &Case) -> &'static str {
+    match case.argv[0] {
+        "items" => "items",
+        "flow" => "flow",
+        "backlog" => "backlog",
+        "tasks" => "tasks",
+        "inputs" => "inputs",
+        _ => "core",
+    }
+}
+
+macro_rules! group_tests {
+    ($($name:ident),* $(,)?) => {
+        const GROUPS: &[&str] = &[$(stringify!($name)),*];
+
+        mod every_case_honours_the_output_options {
+            $(
+                #[test]
+                fn $name() {
+                    super::honours(stringify!($name));
+                }
+            )*
+        }
+    };
+}
+
+group_tests!(core, items, flow, backlog, tasks, inputs);
+
 #[test]
-fn every_case_honours_the_output_options() {
-    let fx = fixture();
+fn every_case_belongs_to_a_group_test() {
+    let orphans: Vec<String> = cases()
+        .iter()
+        .filter(|c| !GROUPS.contains(&group(c)))
+        .map(|c| c.argv.join(" "))
+        .collect();
+    assert!(orphans.is_empty(), "cases no group test runs: {orphans:?}");
+    for name in GROUPS {
+        assert!(
+            cases().iter().any(|c| group(c) == *name),
+            "group test `{name}` has no cases"
+        );
+    }
+}
+
+fn honours(name: &str) {
     let git = git_available();
-    let cases: Vec<Case> = cases().into_iter().filter(|c| git || !c.git).collect();
+    let cases: Vec<Case> = cases()
+        .into_iter()
+        .filter(|c| group(c) == name && (git || !c.git))
+        .collect();
+    let fx = fixture();
     let next = AtomicUsize::new(0);
     let fails = Mutex::new(Vec::new());
-    let workers = std::thread::available_parallelism().map_or(4, |n| n.get().min(8));
+    // The group tests already run side by side, so each keeps its own fan-out
+    // small rather than oversubscribing the cores with process spawns.
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get().min(4));
     std::thread::scope(|scope| {
         for _ in 0..workers {
             scope.spawn(|| {
