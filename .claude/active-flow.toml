@@ -721,3 +721,27 @@ scope = [
     "claude/commands/**",
     "claude/agents/flow-bootstrap.md",
 ]
+
+[[active]]
+slug = "review-system-v2"
+last_used = "2026-10-09T21:12:42.094201681Z"
+
+[active.binding]
+branch = "main"
+worktree = "/home/ross/Dev/dev-tools"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/README.md",
+    "glimpse/Cargo.lock",
+    "claude/skills/**",
+    "claude/agents/**",
+    "claude/commands/**",
+    "claude/workflows/review-v2.js",
+    ".claude/review-lenses/harness-quality.md",
+    "scripts/shared-blocks.toml",
+    "scripts/deploy-claude.ps1",
+    "CLAUDE.md",
+]

@@ -1,0 +1,34 @@
+slug = "review-system-v2"
+plan_path = "docs/plans/review-system-v2.md"
+status = "draft"
+created = 2026-10-09
+updated = 2026-10-09
+branch = "main"
+scope = [
+    "tomlctl/src/**",
+    "tomlctl/tests/**",
+    "tomlctl/Cargo.toml",
+    "tomlctl/Cargo.lock",
+    "tomlctl/README.md",
+    "glimpse/Cargo.lock",
+    "claude/skills/**",
+    "claude/agents/**",
+    "claude/commands/**",
+    "claude/workflows/review-v2.js",
+    ".claude/review-lenses/harness-quality.md",
+    "scripts/shared-blocks.toml",
+    "scripts/deploy-claude.ps1",
+    "CLAUDE.md",
+]
+
+[tasks]
+total = 0
+completed = 0
+in_progress = 0
+
+[artifacts]
+review_ledger = ".claude/flows/review-system-v2/review-ledger.toml"
+optimise_findings = ".claude/flows/review-system-v2/optimise-findings.toml"
+execution_record = ".claude/flows/review-system-v2/execution-record.toml"
+plan_review_findings = ".claude/flows/review-system-v2/plan-review-findings.toml"
+tasks = ".claude/flows/review-system-v2/tasks.toml"

@@ -1,0 +1,509 @@
+schema_version = 1
+last_updated = 2026-10-09
+round = 1
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "### 2. Wire the review verb group into the CLI with stub verbs [L]"
+summary = "New FEATURES and the 0.16.0 bump break README/version parity tests no task's Files covers; task 2's own acceptance goes red"
+description = """tomlctl/tests/capabilities.rs readme_feature_transcriptions_match_capabilities_features (:2413) requires every advertised feature in tomlctl/README.md's capabilities sample "features" array (:296) and the Feature meanings table (:379); capabilities_version_matches_cargo_toml hardcodes "0.15.0" (:1764); readme_sample_version_matches_cargo_toml checks README.md:295. Task 2 adds 7 features without README.md (its `cargo test --test capabilities` acceptance fails); task 11 bumps without tests/capabilities.rs or README.md (checkpoint A suite fails). Precedent: release commit bf8807f touched all of them together. Fix: add tomlctl/README.md to task 2; add tomlctl/tests/capabilities.rs and tomlctl/README.md to task 11 and retag it M (5 files); add edge 11 depends on 10 (both edit README.md, no path today) so the bump closes checkpoint A; task 10's 'verb-table row' targets a section that does not exist — README has a `## Usage` Quick-tour fence instead. Raised by Agents 1, 2 and 3."""
+anchor_old = "Add features `review_store`, `review_record`, `review_triage`, `review_stats`, `review_compare`, `review_export_v1`, `review_schema` to `FEATURES`, to the expected list in `tomlctl/tests/capabilities.rs`, and to `SUBCOMMANDS`."
+anchor_new = 'Add features `review_store`, `review_record`, `review_triage`, `review_stats`, `review_compare`, `review_export_v1`, `review_schema` to `FEATURES`, to the expected list in `tomlctl/tests/capabilities.rs`, to `SUBCOMMANDS`, and to both README transcriptions — the `"features"` array of the `capabilities` sample block and the "Feature meanings" table in `tomlctl/README.md` — which `readme_feature_transcriptions_match_capabilities_features` gates.'
+dedup_id = "40b512da6c19d95c"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "completeness"
+plan_section = "### 10. Document the review verb group in the tomlctl skill [M]"
+summary = "every_leaf_command_has_a_case fails for every new review leaf; no task edits tomlctl/tests/output_options.rs"
+description = "tomlctl/tests/output_options.rs:1303 every_leaf_command_has_a_case walks `tomlctl capabilities .commands` and fails on any leaf without a case in cases() (:222-527). The ten review leaves need cases, a `review` arm in group() (:1322) and group_tests! (:1348), and a seeded review-v2.toml in fixture() (:586). The full suite — checkpoint A's gate — is red from task 2 onward. The opt-in help lists read_only_subcommands_hide_write_integrity_flags_in_help / write_subcommands_expose_all_integrity_flags_in_help in tomlctl/tests/capabilities.rs should also gain the review verbs. Fix: give a task that depends on 3-8 and precedes checkpoint A (task 10, or a new task) tomlctl/tests/output_options.rs; not tasks 5-8, which run in parallel. Raised by Agent 2."
+dedup_id = "21c3780eb48c8fdb"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "risk"
+plan_section = "### v2 store and the tomlctl review group"
+summary = "Anchor matcher treats (file, symbol)/(file, line±10) as identity, silently merging distinct defects"
+description = 'Rows sharing an anchor collapse in one record call, a later find on the same anchor becomes a `repeat` overwriting line/evidence/description, and a dismissed/deferred/refuted anchor suppresses every later finding there; summary only breaks ties. Across v1 ledgers 161 of 1,039 symbol-bearing items (15.5%) share (ledger, file, symbol) with a different defect (e.g. Executor::merge_worktree has three). Plan family is worst: symbol = task ref, so all findings on one task merge and one dismissal suppresses the task. The tier-C ±10 window this borrows only lists candidates; it never auto-merges. Failure: a null-deref and an off-by-one in record::apply both CONFIRMED → one F-id, the second lost. Fix: anchor proposes candidates only; a match needs an explicit `same_as = "F<n>"` from finder/verifier (PRIOR fence lists priors), otherwise mint with candidates under `related`. Raised by Agent 4.'
+anchor_old = "It matches `(file, symbol)` when `symbol` is non-empty; otherwise `(file, line)` within ±10 lines, the same window as the tier-C dedup. An exact `summary` breaks ties."
+anchor_new = 'It proposes candidates by `(file, symbol)` when `symbol` is non-empty, otherwise `(file, line)` within ±10 lines (the tier-C candidate window, which never auto-merges). A candidate is a match only when the row declares `same_as = "F<n>"` (finders and verifiers see prior findings in the PRIOR fence); otherwise the row is minted with the candidates under `related`. Rows from one run are never collapsed by anchor alone.'
+dedup_id = "9e6c45108acf3ca8"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 2. Wire the review verb group into the CLI with stub verbs [L]"
+summary = "Files gaps: task 2 cannot declare its nine submodules without tomlctl/src/review/mod.rs; Affected areas misses three paths"
+description = "Task 2 creates review/{dispatch,runs,record,query,triage,stats,compare,export,schema_out}.rs; each needs `mod x;` in tomlctl/src/review/mod.rs, owned by task 1 (which cannot pre-declare them: E0583). Scope → Affected areas omits tomlctl/README.md, tomlctl/Cargo.lock and tomlctl/src/lib.rs, all on Files lines. Raised by Agents 1, 2 and 3."
+anchor_old = "`tomlctl/src/cli/dispatch.rs`, `tomlctl/src/review/dispatch.rs` (new)"
+anchor_new = "`tomlctl/src/cli/dispatch.rs`, `tomlctl/src/review/mod.rs`, `tomlctl/src/review/dispatch.rs` (new)"
+dedup_id = "95be9916a3750d07"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### Finding contract v2"
+summary = "related_lenses appears only in task 4: no record-block field, no collapse rule, and its struct file is not on task 4's Files"
+description = "Task 4 says same-anchor rows collapse into one finding recording every lens under `related_lenses`. The Approach Records block has no such field, task 1 builds `Finding` from that block, task 4's Files omit tomlctl/src/review/store.rs, and nothing says which severity/failure_scenario/lens/verdicts survive a collapse. Interacts with the anchor-identity critical: if rows are no longer collapsed by anchor, drop the field instead. Fix: define it in the Records block with the collapse rule and move it into task 1's Detail, or drop it. Raised by Agents 1, 2, 3 and 4."
+dedup_id = "9408c9fed6fdfaf8"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 1. Add the v2 review store schema and anchor matcher [L]"
+summary = "'Typed serde structs' and a 'generated' JSON Schema assume dependencies tomlctl does not have"
+description = "tomlctl/Cargo.toml has serde_json but no serde/serde_derive/schemars; no derive(Deserialize) exists in tomlctl/src. The cited idiom tasks/store.rs converts by hand (tasks/schema.rs:387 from_toml, :452 to_toml); flow/envelope.rs:152 builds JSON by hand on purpose. An implementer adding serde/schemars edits Cargo.toml plus both lockfiles outside task 1/3's Files, and the --locked glimpse clippy hook blocks the commit. Fix: say hand-written from_toml/to_toml with no new dependency; make schema_out.rs a hand-built schema from the same const field/enum/required lists record validates, with a unit test asserting agreement. Raised by all four agents."
+anchor_old = "typed `Run`, `Finding` and `Verdict` serde structs"
+anchor_new = "typed `Run`, `Finding` and `Verdict` structs with hand-written `from_toml`/`to_toml` conversions as `tomlctl/src/tasks/schema.rs` does (no new dependency: tomlctl has no `serde` derive, and a dependency change would need both lockfiles to pass the `--locked` glimpse clippy hook)"
+dedup_id = "0966a1b49232b205"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### v2 store and the tomlctl review group"
+summary = "Typed round-trip drops the root id_high_water table, so a removed U/F id is re-minted after any later typed write"
+description = "items_append_minted (items.rs:1950) reads [id_high_water] on the raw doc (items.rs:1188-1197); only removals raise it (record_id_high_water :1216, via generic `items remove --array findings`). The tasks/store.rs mutate idiom converts doc → typed Store → doc enumerating known keys only, so a Store of schema_version/last_updated/runs/findings/verdicts drops the mark on every typed write (e.g. triage), and the closure never sees the raw doc minting needs. Failure: remove F5 → triage F2 → next record mints F5 again; a v1 v2_ref …#F5 now names a different finding. Task 3's planned test (remove then mint) passes despite the bug. Fix: Store round-trips id_high_water (or unknown root keys), mint on the raw doc inside the mutate_doc closure, and add test high_water_survives_an_unrelated_write. Raised by Agent 1."
+dedup_id = "710178489ada4d66"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 3. Implement review run start/finish and schema emission [M]"
+summary = "One 'finding' schema cannot be both the finder output and record's input (verdicts ≥1); no per-lens return envelope exists"
+description = "Approach says Workflow schema, fallback contract and record validation share one source, but record requires `verdicts` (≥1) that a finder cannot produce; under Workflow `schema` a finder must fabricate verdicts or fail its StructuredOutput retries. A finder returns many findings plus a coverage line (and review-finder-lite may emit ESCALATE-TO-DEEP), which needs a wrapper object the plan never defines; tasks 3, 12, 23 and 25 would each invent one. Fix: `review schema finding` omits verdicts; a record line is finding + required `verdicts: [<review schema verdict>]`; define the agent return envelope `{findings: [...], coverage, escalate?}` (a `review schema return` or `--envelope`). Raised by Agents 1 and 3."
+anchor_old = "It lists only agent-authored fields (no `id`, `anchor`, `status`, `run`, dates),"
+anchor_new = "It lists only finder-authored fields (no `id`, `anchor`, `status`, `run`, dates, and no `verdicts` — a finder cannot produce them); a `record` NDJSON line is that object plus a required `verdicts` array of `review schema verdict` objects. A finder's Workflow output is the envelope `{findings: [<finding>], coverage, escalate?}`,"
+dedup_id = "d886d893d26045f6"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### Finding contract v2"
+summary = "The v2 record has no Counter or evidence-grade slot, though preloaded research-methods and the copied research-read-only block require both"
+description = "Finders preload research-methods ('every finding carries a Counter line', grade rubric) and all four v2 agents carry the byte-identical research-read-only block ('graded… with the Counter line'). The Records block, task 3's schema and task 4's validation have neither `counter` nor `grade`, so under schema validation they are rejected or dropped, and the verifier loses the falsifier it should start from. Task 12 says to defer evidence grades to research-methods, the opposite of an override. Fix: add `counter` (required) and `grade` to the agent-authored schema and validation, and hand `counter` to review-verifier as its first refutation probe. Raised by Agents 2 and 3."
+dedup_id = "d2b9aae88fc65b5f"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Pipeline, depth and substrate"
+summary = "Workflow returns async_launched immediately; stages 5→7 assume a synchronous result"
+description = "Per code.claude.com/docs/en/agent-sdk/typescript (fetched 2026-10-09) and this session's own Workflow tool contract, Workflow returns at once and delivers the result later as a task notification; a script failing its syntax check returns async_launched with `error` set. The engine never says to end the turn and resume at stage 6, so the carrier either treats async_launched as failure (runs the fallback, doubling cost) or proceeds to record/run finish with no findings (an empty run polluting stats). The fallback triggers only on disabled/unavailable/unknown name, not on `error` or a mid-run death. Raised by Agent 4."
+anchor_old = "It returns `{findings (with embedded verdicts), refuted, coverage, routing_echo}`, and has no filesystem access: every write is the carrier's."
+anchor_new = """The call returns at once with `status: "async_launched"` (check `error`: a script that fails its syntax check reports it there and never runs). The carrier ends its turn and resumes at stage 6 when the task-completion notification delivers `{findings (with embedded verdicts), refuted, coverage, routing_echo}`. A set `error`, or a run that completes with no result, triggers the agent-wave fallback exactly like an unknown `name`. The script has no filesystem access: every write is the carrier's."""
+dedup_id = "5d501a87e30d77c8"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 25. Write the review-v2 saved workflow and its deploy entry [M]"
+summary = "Saved workflow meta.name 'review-v2' registers as /review-v2, colliding with the carrier command"
+description = """code.claude.com/docs/en/workflows (fetched 2026-10-09): a saved workflow 'runs as /<name>' and appears in / autocomplete; no documented precedence against a command file. If the workflow wins, /review-v2 launches the bare script with args undefined and bypasses the engine and store. Fix: rename to e.g. review-v2-pipeline everywhere — task 25 Action and acceptance grep, Approach 'Pipeline, depth and substrate' (Workflow({name: "review-v2"…}) and 'the saved Workflow review-v2'), the architecture diagram, and any Workflow(<name>) allow rule. Also: task 25's effort is closer to L, and the script ships with no syntax check (see the separate finding). Raised by Agent 4."""
+dedup_id = "08c6ced9478574af"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 8. Implement review export-v1 [M]"
+summary = "export-v1 crash convergence confuses lock order with commit order; v2_ref lookup ignores non-open v1 rows"
+description = "io::mutate_doc (io.rs:1015) is closure-scoped with per-file locks. 'Lock order: v1 ledger first, then v2 store' read as nesting commits v2 first: a crash leaves the v2 finding exported with exported_as = R12 while R12 does not exist, and re-export refuses (no longer open). Sequentially, v2_ref idempotency is only checked on the open-match branch, so a failed v2 write followed by /review-apply fixing R12 makes re-export mint a spurious regression row. Fix: two sequential, never nested, mutate_doc calls with v1 committed first; look up v2_ref across v1 rows of every status before applying the merge rule. Mirror in the Approach 'Export to v1' Locks bullet. Raised by Agent 4."
+anchor_old = "  - Lock order: v1 ledger first, then v2 store."
+anchor_new = "  - Write order: two sequential `mutate_doc` calls, never nested — the v1 ledger write commits before the v2 store is opened; look up `v2_ref` across v1 rows of every status before applying the merge rule, so a re-export after a failed v2 write reuses the recorded row."
+dedup_id = "35e147939604117e"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### v2 store and the tomlctl review group"
+summary = "review record outcome rules overlap, are not total, and leave a refuted re-find of an exported finding to be applied"
+description = "(a) 'suppressed: … or one not re-confirmed' overlaps `repeat` (a PLAUSIBLE re-find of an open finding fits both). (b) A REFUTED re-find of an open/exported match is undefined; for exported, the v1 row stays open and /review-apply applies a finding the latest verifier refuted. (c) No outcome for a row failing validation, and batch atomicity is unstated (one bad row aborting the single write loses a whole run). Fix: suppressed = dismissed/deferred match, or refuted match not CONFIRMED this run; add `contested` (open/exported match REFUTED this run: keep status, append verdict, report the v1 id to defer) and `refused` (invalid row reported and skipped, rest lands); state evaluation order. Raised by Agent 4."
+anchor_old = "  - `suppressed`: a dismissed, deferred or refuted match, or one not re-confirmed, is reported and not minted."
+anchor_new = """
+  - `suppressed`: a dismissed or deferred match (any verdict), or a refuted match this run did not CONFIRM, is reported and not minted.
+  - `contested`: an open or exported match this run REFUTED keeps its status, gains the verdict, and is listed in the report (for an exported match, with the v1 id to defer).
+  - `refused`: a row failing validation is reported with its reason and skipped; the rest of the batch still lands in the single write.
+
+  Outcomes are evaluated in this order: refused, contested, reopened, regression, repeat, suppressed, minted."""
+dedup_id = "5384e80e6f539dba"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 12. Write the review-v2-method skill (agent-side procedure) [M]"
+summary = "skills: preload injects SKILL.md only; the verifier and executor procedures live in references/ files the agents never get"
+description = "code.claude.com/docs/en/sub-agents (fetched 2026-10-09): 'the full content of each listed skill is injected' — nothing says references/ files or a base-directory line come with it. The plan puts the refute-first procedure in references/verifying.md and the dry-run in references/dry-run.md, so review-verifier and plan-executor start without their core instructions; skills here are out-of-band copies under ~/.claude-work, so a guessed path fails too. The Risks mitigation covers a client ignoring skills:, not a load without references. Fix: put each procedure in a short SKILL.md section; keep references for worked examples, loaded via the Skill tool. Evidence medium (docs silent). Raised by Agent 4."
+anchor_old = "`references/verifying.md` covers the refute-first verifier procedure and the three verdicts with their citation rule. `references/dry-run.md` covers the plan-executor procedure."
+anchor_new = "The refute-first verifier procedure, the three verdicts with their citation rule, and the plan-executor dry-run procedure each get a short section in `SKILL.md` itself, so a `skills:` preload delivers them; `references/verifying.md` and `references/dry-run.md` hold only worked examples, which each agent body loads with the Skill tool, never by a guessed path."
+dedup_id = "d7a7d9be0f81c3b0"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### Pipeline, depth and substrate"
+summary = "Agent-wave fallback dispatches past the 20-concurrent-subagent limit"
+description = "code.claude.com/docs/en/sub-agents (fetched 2026-10-09; installed 2.1.295): spawning past 20 running subagents fails with 'Concurrent subagent limit reached' and tells Claude not to retry. 'All verifiers in one message' exceeds that at ~15 critical/warning findings plus per-lens suggestion batches, and a deep /review-plan-v2 dispatches one plan-executor per task (29 here). Surplus verifiers silently never run — the silent cap design principle 4 forbids. Workflow queues instead. Raised by Agent 4."
+anchor_old = "3. All verifiers in one message."
+anchor_new = "3. Verifiers in waves of at most 16 per message, waiting for each wave, because the Agent tool refuses spawns past 20 concurrent subagents (`Concurrent subagent limit reached`, not retried); the same cap applies to finder waves and per-task `plan-executor` dispatches."
+dedup_id = "04f935a0b7721b40"
+
+[[items]]
+id = "P16"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 9. Attribute review-v2 store prompts in agent correlation [S]"
+summary = "Task 9's attribution never fires: no task makes v2 prompts emit the column-0 ledger: line, and F-ids exist only after every agent returns"
+description = "agents/correlate.rs:199-203 attributes a subagent only from a column-0 `ledger: .claude/flows/<slug>/<basename>.toml` line in its prompt. Tasks 21, 22 and 25 (context pack, fallback, workflow prompts) never require it — only Exploration Notes mention it. F-ids are minted by record at stage 7, after finders and verifiers finish, so the F[0-9]+ alternation is dead. Adding the line has a second hazard: research-methods references/codebase-review.md:49 tells an agent to `items list` a named ledger, which on a [[findings]]-only store prints [] and exits 0 (probed), so review-v2-method must say the v2 store is read only via PRIOR or `tomlctl review list`. Whether SubagentStart fires for Workflow-spawned agents is unverified. Fix: basename-only regex; require the ledger: line in tasks 21, 22 and 25; add the items-list override to task 12. Raised by Agents 1, 2 and 4."
+anchor_old = "Extend the `LEDGER` regex"
+anchor_new = "Extend the `LEDGER` regex (basename only: v2 dispatches carry no F-ids, which are minted after every agent returns), and require tasks 21, 22 and 25 to open every flow-scoped finder, verifier and executor prompt with a column-0 `ledger: .claude/flows/<slug>/review-v2.toml` line;"
+dedup_id = "b31050e2fa031efe"
+
+[[items]]
+id = "P17"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### v2 store and the tomlctl review group"
+summary = "review triage takes disposition prose only as argv; the plan's 'staged with the Write tool' rule has no CLI form"
+description = "Task 22 says user disposition prose is staged with the Write tool, never shell-quoted, but `--dismiss <reason>`, `--defer <reason> --trigger <t>`, `--reopen <reason>`, `--resolve <resolution>` are argv-only. Backticks, $, quotes and a leading / (Git Bash path rewrite, flow-contract-ledger-schema) corrupt or expand the value. v1 solves this with --set-file. Fix: give each prose flag a `--<flag>-file <path>` twin, mutually exclusive. Raised by Agent 4."
+anchor_old = "dispositions with compare-and-set; stale rows are reported under `skipped_stale`."
+anchor_new = "dispositions with compare-and-set; stale rows are reported under `skipped_stale`. Each prose flag has a `--<flag>-file <path>` twin (mutually exclusive with it), the form carriers use for user-authored text staged with the Write tool."
+dedup_id = "699ad924d6c073a3"
+
+[[items]]
+id = "P18"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "### 25. Write the review-v2 saved workflow and its deploy entry [M]"
+summary = "The workflow script has no automated check; a broken deep branch first fails on a live deep run"
+description = "Task 25's only gates are two greps; .js is not linted (D9) and the After Merge smoke runs --depth quick only, so the depth matrix, loop-until-dry, panel and dedup are never exercised before use. A cheap probe works (verified by Agent 4 with node v26): wrap the body as an async function after stripping `export` and run `node --check`. Fix: add that forward acceptance plus a falsifier (delete one parenthesis → exit 1). Raised by Agent 4."
+dedup_id = "1020a14849881490"
+
+[[items]]
+id = "P19"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### Lens catalogue"
+summary = "Lens tier/depth/activation values and the routing signal vocabulary have no single owner; parallel tasks 13-21 invent them independently"
+description = "Tasks 13 (index rows), 14-20 (each lens header) and 21 (routing.md signals) share no edges (tasks batches: 13-20 in batch 1, 21 in batch 3). The Approach does not fix tier for most lenses, which perf/plan lenses are 'core' at quick, or any signal names; lens headers point at 'the engine's routing reference' that task 21 writes later. A routed lens naming a signal routing.md never defines is skipped every run and looks like zero yield; no gate cross-checks. Task 13 defines the catalogue hash but task 21 is never told to compute it and pass --set catalogue=. Fix: one table under 'Lens catalogue' with id/family/tier/activation signal/depth for all 19 lenses plus the signal vocabulary, or make tasks 14-21 depend on 13 which owns it; add the catalogue-hash step to task 21. Raised by Agents 1 and 3."
+dedup_id = "4ee1eb6947e4fe18"
+
+[[items]]
+id = "P20"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "### 26. Write the /review-v2 carrier [M]"
+summary = "Carriers 26-28 and task 22 document verb behaviour but depend only on stub task 2; checkpoint C can commit before any verb exists"
+description = "tasks closure --checkpoint C = 1, 2, 12-15, 20-23, 25, 26 — none of 3-8 or 10. Carriers 26-28 sit in batch 4 beside task 4; task 10 is batch 6. implement.md:187 confirms later groups often finish before earlier checkpoints fire, so C ('usable end to end') can commit a carrier whose minted/repeat/regression and export-v1 outcomes are unimplemented. Fix: add 10 to tasks 26, 27, 28 (covers 3, 5-8 transitively) and 5, 8 to task 22. Raised by Agent 1."
+anchor_old = "- **Depends on**: 2, 12, 13, 14, 15, 20, 21, 22, 23, 25"
+anchor_new = "- **Depends on**: 2, 10, 12, 13, 14, 15, 20, 21, 22, 23, 25"
+dedup_id = "6dbb36f6e76b417a"
+
+[[items]]
+id = "P21"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 14. Write the code lenses: correctness, design, change-impact [M]"
+summary = "Task bodies depend on Exploration Notes (never sent to implementers) and on ambiguous 'v1 Agent N' references"
+description = "Task 14 seeds Does-not-flag 'from the v1 rejection clusters in Exploration Notes' (the list is restated in Approach 'Calibration and A/B'); Approach 'Lens catalogue' says the same and tasks 15-19 never mention seeding; task 20 cites 'the tomlctl gate constraints in Exploration Notes'. Tasks 16 ('v1 Agents 1-3'), 17 ('Agent 5'), 19 ('Agent 4'), 20 ('Agent 6'), 18 ('sweeps 1-5') name no carrier, yet review.md, optimise.md and review-plan.md each number their own agents. Fix: cite Approach 'Calibration and A/B'; state the gate constraints inline in task 20; name the carrier file in each task. Raised by Agent 3."
+anchor_old = "Seed each lens's **Does not flag** section from the v1 rejection clusters in Exploration Notes."
+anchor_new = """Seed each lens's **Does not flag** section from the rejection clusters listed in Approach, "Calibration and A/B", keeping those that apply to the lens. Read v1 coverage from `claude/commands/review.md` Agents 1, 3 and 4."""
+dedup_id = "4dd4b162b85d5c0c"
+
+[[items]]
+id = "P22"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### v2 store and the tomlctl review group"
+summary = "Most verbs list no --slug/--scope store selector, and tasks 3-8 cannot add one"
+description = "Only run start and stats show --slug|--scope; run finish, record, list, show, triage, compare and export-v1 do not. Task 2 declares 'every verb and flag the Approach lists', and tomlctl/src/cli/types/review.rs is on none of tasks 3-8's Files lines. The success-criterion and After-Merge `tomlctl review compare --run U1 --v1 <ledger>` names no store. Raised by Agent 3."
+anchor_old = "**Verbs.** Flag tables go in `claude/skills/tomlctl/references/review.md`."
+anchor_new = '**Verbs.** Flag tables go in `claude/skills/tomlctl/references/review.md`. Every verb except `schema` takes exactly one of `--slug <slug>` or `--scope <scope>` to select the store ("Paths"); `stats` also accepts `--all`.'
+dedup_id = "f6d506650dfb8da8"
+
+[[items]]
+id = "P23"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### 8. Implement review export-v1 [M]"
+summary = "Export category table is not family-aware: perf synthesis maps outside the closed optimise vocabulary; project-pack and plan-family cases undefined"
+description = "synthesis is Family any and maps to `architecture`, but optimise-findings.toml's set is closed (memory|serialization|query|algorithm|concurrency, flow-contract-ledger-schema SKILL.md:99) — fails soft to memory and glimpse OPTIMISE_CATEGORIES (actions.rs:143-149) cannot show it. Project packs other than harness-quality are an open set with no row; family plan has no v1 target and is not in the refuse list. Fix: key by (family, lens) or give perf synthesis an optimise category; refuse family plan and unmapped lenses with a reason row; test export_refuses_unmapped_lens. Raised by Agents 2 and 3."
+anchor_old = '  - Refuse `needs_plan`, `effort = "large"`, and non-open or refuted findings, each with a reason row.'
+anchor_new = """  - Refuse family `plan`, a lens with no category-table row for the finding's family (perf `synthesis`, unmapped project-pack lenses), `needs_plan`, `effort = "large"`, and non-open or refuted findings, each with a reason row (test `export_refuses_unmapped_lens`)."""
+dedup_id = "99ec2ece4a3f0a7b"
+
+[[items]]
+id = "P24"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### v2 store and the tomlctl review group"
+summary = "export-v1 leaves the v1 ledger's last_updated unspecified, which the apply freshness gate reads"
+description = "flow-contract-apply-pipeline SKILL.md:126-155 compares ledger last_updated against git log per file; a stale result prompts, and non-interactive defaults to re-run /review and exits non-zero. io::mutate_doc does not stamp (stamping is CLI-level, io.rs:841). Unstamped exports into an old ledger force spurious stale prompts; stamping 'today' masks code changed since the run's base. Fix: export sets last_updated = max(existing, latest run date in each exported finding's seen_in), new ledgers seed with that date; test export_stamps_last_updated_from_run_date. Raised by Agent 2."
+dedup_id = "6a1fe4cbd65675ba"
+
+[[items]]
+id = "P25"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "### Pipeline, depth and substrate"
+summary = "A stale 0.15 binary passes bootstrap and the costly baselines, then dies at review run start"
+description = "flow-bootstrap.md:52-55 halts only below 0.15; stage 0 reuses bootstrap unchanged; nothing reads the seven review_* capabilities features. A pre-0.16 binary runs scope, context pack and verification-agent baselines before clap rejects `review run start`. Fix: stage 0 requires `review_record` in `tomlctl capabilities` .features and halts with the `cargo install --path tomlctl` hint. Raised by Agents 2 and 3."
+anchor_old = "0. **Pre-flight**: invoke the `tomlctl` and `flow-contract-flow-context` skills,"
+anchor_new = "0. **Pre-flight**: require `review_record` in `tomlctl capabilities` `.features` (bootstrap only gates ≥0.15), else halt with the `cargo install --path tomlctl` hint; then invoke the `tomlctl` and `flow-contract-flow-context` skills,"
+dedup_id = "cd22dccb3b277c72"
+
+[[items]]
+id = "P26"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 25. Write the review-v2 saved workflow and its deploy entry [M]"
+summary = "Workflow args omit inputs task 25 needs: file list, verifier prompts, executor tasks, panel-verdict shape, size limits"
+description = """Deep passes permute file order but args carries no files (the script has no filesystem); no verifier prompt or suggestion-batch shape; plan-executor is 'a pipeline stage in the workflow' but args has no task list; how 3 panel votes become verdict rows is undefined; the return mixes embedded verdicts with a separate `refuted`; concurrency/size limits live only in Research Notes R13, never sent to implementers. Tasks 21, 22 and 25 would fix the contract independently. Fix: extend args to {depth, preamble, files, lenses, executor_tasks, verifier: {agentType, prompt, suggestion_batch_prompt}, synthesis, schemas}, panel = three by="panel" verdicts, and state the 16-concurrent cap in the Approach. Raised by Agent 3."""
+dedup_id = "e01f62498b1b150d"
+
+[[items]]
+id = "P27"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 27. Write the /optimise-v2 carrier [M]"
+summary = "Task 27 says 'the same skill invocations as task 26', a body its implementer never receives"
+description = "Implementers fetch only their own task (tasks show <id>), and task 29 lists 'exactly the skills its carrier invokes', so a guessed list drifts into the gate table. Raised by Agent 3."
+anchor_old = "with the same skill invocations as task 26, plus its deltas"
+anchor_new = "with invocations of the `tomlctl`, `flow-contract-flow-context`, `review-v2-engine`, `review-v2-lenses` and `backlog-capture` skills, plus its deltas"
+dedup_id = "076fd80a6e122b83"
+
+[[items]]
+id = "P28"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 20. Write the synthesis lens and the harness-quality project pack [S]"
+summary = "Effort tags contradict the S/M/L contract (tasks 11, 20, 25, 28)"
+description = "Task 20 (S) designs the cross-family synthesis lens and depends on Exploration Notes — not fully specified, so M. Task 11 (S) has 5 real files once the parity fixes land — M. Task 28 (L) has one file — M. Task 25 (M) is closer to L (depth matrix, panel, loop-until-dry). The [S|M|L] tag is outside the ref, so a heading edit is safe. Raised by Agents 3 and 4."
+dedup_id = "8452f2fda1f47fde"
+
+[[items]]
+id = "P29"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "## Success Criteria"
+summary = "Success Criteria check little of the stated goal and the v1 guard is narrower than Out of scope"
+description = "Context's goal: all three carriers run end to end, apply through existing flows after export, compare against v1 with one command. Only /review-v2 is checked (predicted); nothing covers /optimise-v2, /review-plan-v2, the plan merge, or export-v1 → /review-apply. The carrier criterion checks one phrase; the e2e asks for 'routed lenses' at --depth quick where only core lenses run; the binary(/^review_/) filter excludes task 1's lib unit tests. The byte-identity guard omits flow-contract-apply-constraints/-dependency-sort/-rollback-protocol/-vet-implement-lite, implement-deep/lite, flow-bootstrap, verification, and the reused skills (flow-contract-flow-context, backlog-capture, flow-contract-task-store, flow-contract-plan-output-format); the extended guard exits 0 today. Fix: add predicted e2e criteria for the other carriers and an export-v1 → items list --where v2_ref check; say 'skipped_lenses records the routed lenses'; add `cargo test --lib -- review::`; extend the guard and its success: key. Raised by Agents 2 and 3."
+dedup_id = "adca2b8003f3ceb7"
+
+[[items]]
+id = "P30"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "### 13. Write the review-v2-lenses catalogue index [M]"
+summary = "The lens-index row regex matches any backticked-lowercase table row, so a second table in SKILL.md breaks 'prints 19' and n == m"
+description = '''Probe: `grep -lE '^\| `[a-z-]+` \|' claude/skills/*/SKILL.md` matches ten-plus existing skills, so the shape is common. Task 13 also documents the header schema and tier mapping in the same file, where a natural table like '| `deep` | review-finder |' adds rows; task 13's acceptance and the success criterion then fail on a correct catalogue. Two-control probe otherwise healthy (negative: no file; positive: 19-row fixture prints 19). Fix: anchor on the family column: `grep -cE '^\| `[a-z-]+` \| (code|perf|plan|any) \|'` in both places. Raised by orchestrator Step 2.6 check 4.'''
+anchor_old = '''- **Acceptance**: forward: `grep -cE '^\| `[a-z-]+` \|' claude/skills/review-v2-lenses/SKILL.md 2>/dev/null` prints `19` (today: prints nothing).'''
+anchor_new = '''- **Acceptance**: forward: `grep -cE '^\| `[a-z-]+` \| (code|perf|plan|any) \|' claude/skills/review-v2-lenses/SKILL.md 2>/dev/null` prints `19` (today: prints nothing).'''
+dedup_id = "73d5a25612300aae"
+
+[[items]]
+id = "P31"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 14. Write the code lenses: correctness, design, change-impact [M]"
+summary = "Markdown task acceptances check existence, not substance; only task 21 carries the cli::dispatch::tests lint guard"
+description = "Tasks 14-19 check only the **Family** line, not the six header fields or seven sections; tasks 22, 23, 26-28 check one grep each. Tasks 22-28 write files command_lint, link resolution and line ceilings scan, but only 21 carries the guard. Frontmatter/length limits are stated only for task 12. Task 3's falsifier needs the test to seed [id_high_water] directly (no review remove verb). Fix: a per-lens header loop and ordered-section check; add the guard to tasks 22-28; copy description/line limits into 13 and 21. Raised by Agent 3."
+dedup_id = "74e016906936b4cc"
+
+[[items]]
+id = "P32"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "### 2. Wire the review verb group into the CLI with stub verbs [L]"
+summary = "Abbreviated paths in task prose and the Approach"
+description = "cli/types/mod.rs (task 2), tests/common (task 3), inputs.rs (task 1), tasks/store.rs and ledgers.rs (Approach 'Shape'), matching.rs (task 7) should be tomlctl/src/cli/types/mod.rs, tomlctl/tests/common/, tomlctl/src/inputs.rs, tomlctl/src/tasks/store.rs, tomlctl/src/ledgers.rs, tomlctl/src/review/matching.rs. Raised by Agent 3."
+anchor_old = "`ReviewOp` re-exported from `cli/types/mod.rs`"
+anchor_new = "`ReviewOp` re-exported from `tomlctl/src/cli/types/mod.rs`"
+dedup_id = "926d853dd96f3fbc"
+
+[[items]]
+id = "P33"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "feasibility"
+plan_section = "### 12. Write the review-v2-method skill (agent-side procedure) [M]"
+summary = "Tasks 12 and 23 may write tomlctl review bash fences that command_lint parses, but depend on neither task 2 nor 3"
+description = "command_lint_scan_set (lint.rs:15-51) covers every skill SKILL.md, references and claude/{commands,agents}; an unknown `review` subcommand fails it. Task 12's SKILL.md is 'the finding record matching `tomlctl review schema finding`' and mirrors task 3's schema, yet sits in batch 1; per-task commits order layer by layer, so task 12's commit precedes task 2's — non-bisectable, though the working-tree hook passes. The Risks mitigation lists only 21, 22, 26-28. Fix: task 12 depends on 3; task 23 on 2 if its bodies name `tomlctl review`; update the Risks line. Raised by Agents 1 and 4."
+dedup_id = "41ae51450beba1b2"
+
+[[items]]
+id = "P34"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 28. Write the /review-plan-v2 carrier [L]"
+summary = "Extend the PROSE finding-class gate instead of a one-time hand grep"
+description = "PROSE in tomlctl/src/cli/dispatch/tests/finding_classes.rs:22-26 already lists three files (review-plan.md, flow-contract-plan-restructure, flow-contract-plan-output-format), not only review-plan.md as task 28 says. Adding review-plan-v2.md (and plan lenses / context-pack.md if they name classes) gates later class renames; put finding_classes.rs on task 28's or 29's Files. Raised by Agent 2."
+anchor_old = """(gate `prose_class_names_exist_in_the_source` only covers `review-plan.md`, so check by hand with `grep -rn '"<class>"' tomlctl/src/tasks`)"""
+anchor_new = "(add `claude/commands/review-plan-v2.md` to `PROSE` in `tomlctl/src/cli/dispatch/tests/finding_classes.rs` so `prose_class_names_exist_in_the_source` gates it)"
+dedup_id = "742ff32a9263a4dd"
+
+[[items]]
+id = "P35"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 24. Write the plan-executor agent and register v2 shared-block carriers [S]"
+summary = "plan-executor lacks the Skill tool, so it cannot run the 'invoke review-v2-method if not loaded' guard"
+description = "Approach 'Agents' requires every body to invoke the method skill when preload is ignored; task 24 gives Glob, Grep, Read, Bash only. Skill is read-only, so adding it keeps the 'only what an implement agent gets' intent. Raised by Agent 2."
+anchor_old = "Write `plan-executor` (read-only tools `Glob, Grep, Read, Bash`,"
+anchor_new = "Write `plan-executor` (read-only tools `Glob, Grep, Read, Bash, Skill`,"
+dedup_id = "0a42059469292b10"
+
+[[items]]
+id = "P36"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "### 29. Add the v2 carriers to the skill gate table and document v2 in CLAUDE.md [M]"
+summary = "Hand-maintained enumerations go stale: deploy areas in CLAUDE.md and deploy-claude.ps1, tomlctl SKILL.md rows-and-header table"
+description = "CLAUDE.md:15 'links claude/{agents,commands,skills,themes}' and the deploy-claude.ps1 header (:4, :7-11) omit the new workflows area; tomlctl SKILL.md 'Rows and header per command' (:130-152) lists every row-report verb and should gain review list/stats/compare/record/export-v1. Fix: task 29 adds workflows to CLAUDE.md:15; task 25 updates the script header; task 10 adds the rows. Raised by Agent 2."
+dedup_id = "f1d3e66f2daa5545"
+
+[[items]]
+id = "P37"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "## Risks"
+summary = "Risks misstate the size guideline and miss per-run approval, the unreachable deploy path, and script versioning"
+description = "The workflow size guideline is advice to the author, not a runtime cap; real effects are a Large-workflow warning above 25 agents, concurrency min(16, CPUs−2), a per-run approval prompt in manual/accept-edits modes, and a Workflow(<name>) allow rule under -p (code.claude.com/docs/en/workflows, 2026-10-09). deploy-claude.ps1 targets $HOME/.claude while the session reads $CLAUDE_CONFIG_DIR (~/.claude-work), and pwsh is not installed here, so the manual copy is the only route and -Check never sees drift. Runs record a lens catalogue hash but no script version, so a stale copy makes A/B deltas unattributable. Fix: reword the risk; add a SCRIPT_VERSION returned by the script and a runs.workflow field. Raised by Agent 4."
+anchor_old = "**Workflow is unavailable, disabled, or limited by the size guideline (small on Pro), or the saved script is not deployed.**"
+anchor_new = "**Workflow is unavailable or disabled, needs per-run approval (manual/accept-edits modes; a `Workflow(<name>)` allow rule under `-p`), shows the advisory Large-workflow warning above 25 agents, or the deployed copy is missing or stale.**"
+dedup_id = "7ce3c06472639334"
+
+[[vet_events]]
+timestamp = "2026-10-09T21:46:39Z"
+command = "review-plan"
+lens = "feasibility"
+tier = "deep"
+agent_index = 1
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled: README parity/version tests (capabilities.rs:2413,2469, README.md:295), id_high_water drop (items.rs:1188 vs tasks/schema.rs known-key conversion), checkpoint C closure excludes tasks 3-8 (tasks closure). All confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T21:46:39Z"
+command = "review-plan"
+lens = "completeness"
+tier = "deep"
+agent_index = 2
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled: every_leaf_command_has_a_case (output_options.rs:1303), PROSE list has 3 files (finding_classes.rs:22-26), bootstrap gates only <0.15 (flow-bootstrap.md:52-55). All confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T21:46:39Z"
+command = "review-plan"
+lens = "executability"
+tier = "deep"
+agent_index = 3
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled: capabilities_version_matches_cargo_toml hardcodes 0.15.0 (capabilities.rs:1764), optimise category set closed (ledger-schema SKILL.md:99), related_lenses only at plan:433. All confirmed."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-09T21:46:39Z"
+command = "review-plan"
+lens = "risk"
+tier = "deep"
+agent_index = 4
+sampled_count = 3
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled: no serde dependency or derive in tomlctl (Cargo.toml [dependencies]), mutate_doc closure-scoped (io.rs:1015), Workflow returns immediately (this session's Workflow tool contract matches the cited SDK doc). All confirmed."
+dedup_id = "45ca31c3315a5978"
