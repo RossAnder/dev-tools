@@ -12,12 +12,11 @@ use std::path::Path;
 use anyhow::Result;
 use globset::{GlobBuilder, GlobMatcher};
 use serde_json::{Map, Value as JsonValue, json};
-use toml::Value as TomlValue;
 
 use super::catalogue::{self, Catalogue, EntryType, run_catalogue};
 use super::fields::{self, FIELDS, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Vis};
 use super::invalid;
-use super::store::{self, Cell, Finding, Run, Store, Target};
+use super::store::{self, Cell, Finding, Run, Store, Target, View};
 use crate::cli::{ReviewListArgs, ReviewShowArgs};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
@@ -70,7 +69,9 @@ pub(crate) fn list(target: &Target, args: ReviewListArgs) -> Result<()> {
                 .is_none_or(|r| finding.route.unwrap_or(Route::Unrouted).as_str() == r)
             && within.as_ref().is_none_or(|w| w.matches(&finding.file));
         if keep {
-            rows.push(JsonValue::Object(view.finding(role, index, &root)));
+            rows.push(JsonValue::Object(finding_row(
+                &view, &stored, role, index, &root,
+            )));
         }
     }
     let mut report = Map::new();
@@ -123,7 +124,9 @@ pub(crate) fn show(target: &Target, args: ReviewShowArgs) -> Result<()> {
     let mut items = Vec::new();
     for id in args.ids.iter().map(|id| id.trim()) {
         if let Some(index) = stored.findings.iter().position(|f| f.id == id) {
-            items.push(JsonValue::Object(view.finding(role, index, &root)));
+            items.push(JsonValue::Object(finding_row(
+                &view, &stored, role, index, &root,
+            )));
             continue;
         }
         let index = stored
@@ -131,12 +134,7 @@ pub(crate) fn show(target: &Target, args: ReviewShowArgs) -> Result<()> {
             .iter()
             .position(|c| c.id == id)
             .expect("every id was checked against the store");
-        let mut row = fields::project(
-            role,
-            Record::Cell,
-            &view.cells[index],
-            &ProjectCtx::default(),
-        );
+        let mut row = fields::project(role, Record::Cell, view.cell(index), &ProjectCtx::default());
         if role == Role::Finder {
             let cell = &stored.cells[index];
             let run = stored
@@ -208,85 +206,22 @@ fn slash(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-/// The store's rows as the JSON maps [`fields::project`] reads, with each
-/// finding's verdicts in store order, which is oldest first.
-pub(super) struct View<'a> {
-    store: &'a Store,
-    cells: Vec<Row>,
-    findings: Vec<Row>,
-    verdicts: HashMap<String, Vec<Row>>,
-}
-
-impl<'a> View<'a> {
-    pub(super) fn new(store: &'a Store) -> Self {
-        let doc = store::to_toml(store);
-        let rows = |key: &str| -> Vec<Row> {
-            doc.get(key)
-                .and_then(TomlValue::as_array)
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| match toml_to_json(v) {
-                            JsonValue::Object(map) => Some(map),
-                            _ => None,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default()
-        };
-        let mut verdicts: HashMap<String, Vec<Row>> = HashMap::new();
-        for (typed, row) in store.verdicts.iter().zip(rows("verdicts")) {
-            verdicts.entry(typed.finding.clone()).or_default().push(row);
+/// Finding `index` of `store` as `view` projects it for `role`, with its
+/// `same_as` target and the audit's excerpts or the backlog's object.
+fn finding_row(view: &View, store: &Store, role: Role, index: usize, root: &Path) -> Row {
+    let mut row = view.project(role, index, true);
+    match role {
+        Role::Audit => {
+            let finding = &store.findings[index];
+            row.insert(
+                "excerpts".into(),
+                excerpts(root, finding, view.verdicts(index)),
+            );
         }
-        Self {
-            store,
-            cells: rows("cells"),
-            findings: rows("findings"),
-            verdicts,
-        }
+        Role::Backlog => row = backlog_row(&row),
+        _ => {}
     }
-
-    /// Finding `index` projected for `role` with its verdicts; its `same_as`
-    /// target is attached only when `with_same_as` holds.
-    pub(super) fn project(&self, role: Role, index: usize, with_same_as: bool) -> Row {
-        let finding = &self.store.findings[index];
-        let verdicts = self
-            .verdicts
-            .get(&finding.id)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        let same_as_target = (with_same_as && !finding.same_as.is_empty())
-            .then(|| {
-                self.store
-                    .findings
-                    .iter()
-                    .position(|f| f.id == finding.same_as)
-            })
-            .flatten()
-            .map(|at| &self.findings[at]);
-        let ctx = ProjectCtx {
-            verdicts,
-            same_as_target,
-        };
-        fields::project(role, Record::Finding, &self.findings[index], &ctx)
-    }
-
-    fn finding(&self, role: Role, index: usize, root: &Path) -> Row {
-        let finding = &self.store.findings[index];
-        let mut row = self.project(role, index, true);
-        let verdicts = self
-            .verdicts
-            .get(&finding.id)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        match role {
-            Role::Audit => {
-                row.insert("excerpts".into(), excerpts(root, finding, verdicts));
-            }
-            Role::Backlog => row = backlog_row(&row),
-            _ => {}
-        }
-        row
-    }
+    row
 }
 
 /// What a finder needs beyond the cell's projection: the absolute paths of

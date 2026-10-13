@@ -1,5 +1,6 @@
-//! The typed v2 review store, its path and run-directory resolution, and the
-//! locked read and write over it.
+//! The typed v2 review store, its path and run-directory resolution, the
+//! locked read and write over it, and the JSON-row [`View`] the projecting
+//! verbs read.
 //!
 //! ```toml
 //! schema_version = 1
@@ -15,6 +16,7 @@
 //! `items add` omits one. Nested tables (`signals`, `waivers`, `bound`) are
 //! fully typed and drop keys they do not know.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
@@ -23,10 +25,13 @@ use toml::Value as TomlValue;
 use toml::map::Map;
 use toml::value::Datetime;
 
-use super::fields::{self, Depth, FIELDS, Family, FindingStatus, Kind, Record, Route, Ty};
+use super::fields::{
+    self, Depth, FIELDS, Family, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Ty,
+};
 use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
 };
+use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{OnMissing, mutate_doc, read_doc, repo_or_cwd_root, schema_seed, warn_if_created};
 
@@ -391,6 +396,79 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
         }
     }
     TomlValue::Table(root)
+}
+
+type Row = serde_json::Map<String, JsonValue>;
+
+/// The store's rows as the JSON maps [`fields::project`] reads, with each
+/// finding's verdicts in store order, which is oldest first.
+pub(super) struct View<'a> {
+    store: &'a Store,
+    cells: Vec<Row>,
+    findings: Vec<Row>,
+    verdicts: HashMap<String, Vec<Row>>,
+}
+
+impl<'a> View<'a> {
+    pub(super) fn new(store: &'a Store) -> Self {
+        let doc = to_toml(store);
+        let rows = |key: &str| -> Vec<Row> {
+            doc.get(key)
+                .and_then(TomlValue::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| match toml_to_json(v) {
+                            JsonValue::Object(map) => Some(map),
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let mut verdicts: HashMap<String, Vec<Row>> = HashMap::new();
+        for (typed, row) in store.verdicts.iter().zip(rows("verdicts")) {
+            verdicts.entry(typed.finding.clone()).or_default().push(row);
+        }
+        Self {
+            store,
+            cells: rows("cells"),
+            findings: rows("findings"),
+            verdicts,
+        }
+    }
+
+    /// Cell `index`'s row.
+    pub(super) fn cell(&self, index: usize) -> &Row {
+        &self.cells[index]
+    }
+
+    /// Finding `index`'s verdict rows, oldest first.
+    pub(super) fn verdicts(&self, index: usize) -> &[Row] {
+        self.verdicts
+            .get(&self.store.findings[index].id)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    /// Finding `index` projected for `role` with its verdicts; its `same_as`
+    /// target is attached only when `with_same_as` holds.
+    pub(super) fn project(&self, role: Role, index: usize, with_same_as: bool) -> Row {
+        let finding = &self.store.findings[index];
+        let same_as_target = (with_same_as && !finding.same_as.is_empty())
+            .then(|| {
+                self.store
+                    .findings
+                    .iter()
+                    .position(|f| f.id == finding.same_as)
+            })
+            .flatten()
+            .map(|at| &self.findings[at]);
+        let ctx = ProjectCtx {
+            verdicts: self.verdicts(index),
+            same_as_target,
+        };
+        fields::project(role, Record::Finding, &self.findings[index], &ctx)
+    }
 }
 
 fn rows<T>(root: &Table, key: &str, parse: impl Fn(&Table, &str) -> Result<T>) -> Result<Vec<T>> {

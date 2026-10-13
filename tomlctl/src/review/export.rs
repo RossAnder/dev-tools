@@ -21,8 +21,7 @@ use toml::value::Datetime;
 use super::catalogue::run_catalogue;
 use super::fields::{self, Family, FindingStatus, Kind, Role};
 use super::invalid;
-use super::query::View;
-use super::store::{self, Finding, Store, Target};
+use super::store::{self, Finding, Store, Target, View};
 use super::sync::{map_status, v2_refs};
 use crate::cli::{ReadIntegrityArgs, ReviewExportArgs, write_integrity_opts};
 use crate::io::{

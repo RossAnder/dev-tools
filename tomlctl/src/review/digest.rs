@@ -14,8 +14,7 @@ use toml::Value as TomlValue;
 
 use super::cells::coverage_accounting;
 use super::fields::{FindingStatus, Kind, Role, Route, SWEEPER, Severity};
-use super::query::View;
-use super::store::{self, Cell, Finding, Run, Store, Target, Verdict};
+use super::store::{self, Cell, Finding, Run, Store, Target, Verdict, View};
 use crate::cli::{ReviewDigestArgs, ReviewReportArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{atomic_write, guard_write_path, relativise, repo_or_cwd_root};
