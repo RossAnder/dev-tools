@@ -198,7 +198,7 @@ fn dispatch_in(text: &str, prompt_of: fn(&str) -> Option<String>) -> Option<Disp
     // Multi-line: the line sits below a prompt's `DISPATCH:` header.
     let ledger = LEDGER.get_or_init(|| {
         Regex::new(
-            r"(?m)^ledger: \.claude/flows/([a-z0-9][a-z0-9-]{0,63})/(?:review-ledger|optimise-findings|plan-review-findings)\.toml(?: items: ([ROP][0-9]+(?:,[ROP][0-9]+)*))?",
+            r"(?m)^ledger: \.claude/flows/([a-z0-9][a-z0-9-]{0,63})/(?:review-ledger|optimise-findings|plan-review-findings|review-v2)\.toml(?: items: ([ROP][0-9]+(?:,[ROP][0-9]+)*))?",
         )
         .expect("ledger dispatch pattern compiles")
     });
@@ -934,6 +934,19 @@ mod tests {
              ledger: .claude/flows/other-flow/review-ledger.toml",
         );
         assert_eq!(dispatch_in(&disagreeing, user_text), None);
+    }
+
+    #[test]
+    fn ledger_line_attributes_review_v2_store() {
+        let text = user_line("ledger: .claude/flows/my-flow/review-v2.toml");
+        assert_eq!(
+            dispatch_in(&text, user_text),
+            Some(Dispatch {
+                slug: "my-flow".into(),
+                task_ids: Vec::new(),
+                item_ids: Vec::new(),
+            })
+        );
     }
 
     #[test]
