@@ -1,12 +1,10 @@
 //! `review catalogue` — the merged lens catalogue's index, vocabulary,
 //! ownership map and validation.
 
-use std::path::PathBuf;
-
 use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
-use super::catalogue::{Catalogue, IndexFilter, default_builtin_root};
+use super::catalogue::{Catalogue, IndexFilter, default_builtin_root, project_layer};
 use super::fields::Family;
 use crate::cli::ReviewCatalogueArgs;
 use crate::errors::{ErrorKind, tagged_err};
@@ -15,7 +13,8 @@ use crate::output::print_json;
 
 /// Prints the merged index by default, `--vocabulary` the signals with their
 /// detectors, `--owners` the generated ownership map; `--check` prints
-/// `{"ok":true}` on success and fails listing every validation error.
+/// `{"ok":true}` on success and fails listing every validation error. The
+/// other modes fail when a catalogue file could not be read.
 pub(crate) fn run(args: ReviewCatalogueArgs) -> Result<()> {
     let builtin = match args.builtin {
         Some(dir) => dir,
@@ -27,10 +26,7 @@ pub(crate) fn run(args: ReviewCatalogueArgs) -> Result<()> {
             )
         })?,
     };
-    let project: Option<PathBuf> = match args.project {
-        Some(dir) => Some(dir),
-        None => Some(repo_or_cwd_root()?.join(".claude").join("review-lenses")),
-    };
+    let project = project_layer(&repo_or_cwd_root()?, args.project)?;
     let family = match args.family.as_deref() {
         None => None,
         Some(text) => Some(Family::parse(text).ok_or_else(|| {
@@ -62,6 +58,19 @@ pub(crate) fn run(args: ReviewCatalogueArgs) -> Result<()> {
             ),
         ));
     }
+    let load_errors = catalogue.load_errors();
+    if !load_errors.is_empty() {
+        let lines: Vec<String> = load_errors.iter().map(ToString::to_string).collect();
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!(
+                "review catalogue: the catalogue could not be read ({} error(s)); `--check` lists every problem:\n{}",
+                lines.len(),
+                lines.join("\n")
+            ),
+        ));
+    }
     if args.vocabulary {
         return print_json(&vocabulary(&catalogue));
     }
@@ -69,6 +78,17 @@ pub(crate) fn run(args: ReviewCatalogueArgs) -> Result<()> {
         return print_json(&owners(&catalogue));
     }
 
+    if let Some(name) = args
+        .signals
+        .iter()
+        .find(|name| !catalogue.signals().iter().any(|s| s.name == **name))
+    {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("review catalogue: --signals `{name}` is not a signal of the vocabulary"),
+        ));
+    }
     let entries = catalogue.index(&IndexFilter {
         family,
         signals: args.signals,

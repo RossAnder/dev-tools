@@ -410,3 +410,29 @@ fn show_cell_carries_bound_catalogue_paths() {
     let err = parse_json_error_envelope(&String::from_utf8_lossy(&refused.get_output().stderr));
     assert_eq!(err["kind"], "validation");
 }
+
+#[test]
+fn missing_store_reports_one_error_for_reads_and_writes() {
+    let repo = Repo::new();
+    fs::remove_file(repo.root.join(".claude/review-v2/t.toml")).unwrap();
+    for args in [
+        &["list"][..],
+        &["list", "--strict-read"],
+        &["show", "F1", "--for", "verifier"],
+        &["digest", "--run", "U1"],
+        &["resolve", "--run", "U1"],
+    ] {
+        let refused = repo.review(args).failure();
+        let err = parse_json_error_envelope(&String::from_utf8_lossy(&refused.get_output().stderr));
+        assert_eq!(err["kind"], "not_found", "{args:?}: {err}");
+        let message = err["message"].as_str().unwrap();
+        assert!(
+            message.starts_with("review store not found at ") && message.ends_with("t.toml"),
+            "{args:?}: {message}"
+        );
+    }
+    assert!(
+        !repo.root.join(".claude/review-v2/t.toml").exists(),
+        "a refused write creates no store"
+    );
+}

@@ -17,10 +17,11 @@ use toml::Value as TomlValue;
 use toml::map::Map;
 use toml::value::Datetime;
 
-use super::fields::Family;
+use super::fields::{self, Family, Record};
 use super::store::{self, Finding, Store, Target, Verdict};
 use crate::cli::{ReadIntegrityArgs, ReviewSyncArgs};
 use crate::io::{read_toml, relativise_under, repo_or_cwd_root};
+use crate::items::status_companions;
 use crate::ledgers::{LedgerKind, LedgerRef};
 
 /// The v2 statuses a sync may overwrite: the finding as exported (or still
@@ -34,7 +35,9 @@ const SYNC_COMPANIONS: &[&str] = &[
     "defer_reason",
     "defer_trigger",
 ];
-const RATIONALE_CAP: usize = 600;
+/// The prefix on every reason a sync writes, which marks a dismissal as
+/// v1's rather than the user's.
+pub(crate) const SYNC_REASON_PREFIX: &str = "v1: ";
 
 /// The v2 status a v1 disposition maps to; `None` for `open` and for any
 /// status v1 does not define, which v1 readers treat as `open`.
@@ -71,13 +74,12 @@ impl V1Outcome {
         };
         let v1_status = text("status");
         let status = map_status(&v1_status)?;
-        let prose = match v1_status.as_str() {
-            "fixed" | "applied" => "resolution",
-            "wontfix" => "wontfix_rationale",
-            "wontapply" => "wontapply_rationale",
-            "verified-clean" => "verified_note",
-            _ => "defer_reason",
-        };
+        // The status's first companion other than the `resolved` date.
+        let prose = status_companions(&v1_status)
+            .iter()
+            .map(|(field, _)| *field)
+            .find(|field| *field != "resolved")
+            .unwrap_or("defer_reason");
         let resolved = match row.get("resolved") {
             Some(TomlValue::Datetime(date)) => Some(*date),
             Some(TomlValue::String(raw)) => raw.parse().ok(),
@@ -309,7 +311,7 @@ fn apply(
             rationale: capped(&outcome.summary()),
             rest: Map::new(),
         };
-        upsert(store, record);
+        store.upsert_verdict(record);
         synced.push(json!({
             "finding": link.finding,
             "v1": cited,
@@ -337,13 +339,19 @@ fn set_status(finding: &mut Finding, outcome: &V1Outcome, today: Datetime) {
     };
     match outcome.status {
         "resolved" => {
-            put("resolution", &format!("v1: {}", outcome.summary()));
+            put(
+                "resolution",
+                &format!("{SYNC_REASON_PREFIX}{}", outcome.summary()),
+            );
             let date = outcome.resolved.or(kept_date).unwrap_or(today);
             finding
                 .rest
                 .insert("resolved".to_string(), TomlValue::Datetime(date));
         }
-        "dismissed" => put("dismiss_reason", &format!("v1: {}", outcome.summary())),
+        "dismissed" => put(
+            "dismiss_reason",
+            &format!("{SYNC_REASON_PREFIX}{}", outcome.summary()),
+        ),
         _ => {
             put("defer_reason", &outcome.resolution);
             put("defer_trigger", &outcome.defer_trigger);
@@ -352,22 +360,10 @@ fn set_status(finding: &mut Finding, outcome: &V1Outcome, today: Datetime) {
     finding.status = outcome.status.to_string();
 }
 
-/// Replaces the verdict on `record`'s (finding, by, seat), or appends it; a
-/// changed verdict moves to the end, where readers take the latest from.
-fn upsert(store: &mut Store, record: Verdict) {
-    let key = |v: &Verdict| (v.finding.clone(), v.by.clone(), v.seat);
-    match store.verdicts.iter().position(|v| key(v) == key(&record)) {
-        Some(at) if store.verdicts[at] == record => {}
-        Some(at) => {
-            store.verdicts.remove(at);
-            store.verdicts.push(record);
-        }
-        None => store.verdicts.push(record),
-    }
-}
-
 fn capped(text: &str) -> String {
-    text.chars().take(RATIONALE_CAP).collect()
+    text.chars()
+        .take(fields::cap(Record::Verdict, "rationale"))
+        .collect()
 }
 
 #[cfg(test)]

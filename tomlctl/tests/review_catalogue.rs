@@ -128,6 +128,63 @@ fn catalogue_owners_prints_generated_map() {
 }
 
 #[test]
+fn catalogue_vocabulary_prints_each_signal() {
+    let tmp = catalogue();
+    let json = run_json(&tmp, &["--vocabulary"]);
+    let signals = json["signals"].as_array().unwrap();
+    assert_eq!(signals.len(), 1, "{json}");
+    for signal in signals {
+        for key in ["name", "kind", "meaning", "detect", "hint", "layer"] {
+            assert!(signal.get(key).is_some(), "`{key}` missing: {signal}");
+        }
+    }
+    let rust = &signals[0];
+    assert_eq!(rust["name"], "lang:rust");
+    assert_eq!(rust["kind"], "stack");
+    assert_eq!(rust["layer"], "builtin");
+}
+
+#[test]
+fn catalogue_refuses_a_missing_explicit_project() {
+    let tmp = catalogue();
+    let out = tomlctl(&tmp)
+        .arg("--project")
+        .arg(tmp.path().join("no-such-layer"))
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).into_owned();
+    assert!(stderr.contains("no-such-layer"), "stderr: {stderr}");
+
+    run_json(&tmp, &[]);
+}
+
+#[test]
+fn catalogue_modes_fail_on_an_unreadable_vocabulary() {
+    let tmp = catalogue();
+    write(
+        &tmp.path().join("builtin"),
+        "vocabulary.toml",
+        "[signals.\n",
+    );
+    for mode in [&[][..], &["--vocabulary"], &["--owners"]] {
+        let out = tomlctl(&tmp).args(mode).assert().failure();
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).into_owned();
+        assert!(stderr.contains("vocabulary.toml"), "{mode:?}: {stderr}");
+    }
+}
+
+#[test]
+fn catalogue_refuses_an_undeclared_signal() {
+    let tmp = catalogue();
+    let out = tomlctl(&tmp)
+        .args(["--signals", "lang:cobol"])
+        .assert()
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).into_owned();
+    assert!(stderr.contains("lang:cobol"), "stderr: {stderr}");
+}
+
+#[test]
 fn catalogue_check_exits_nonzero_on_invalid() {
     let tmp = catalogue();
     tomlctl(&tmp).arg("--check").assert().success();

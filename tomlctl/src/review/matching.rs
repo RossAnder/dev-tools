@@ -19,17 +19,6 @@ pub(crate) struct Site<'a> {
     pub(crate) line: Option<u32>,
 }
 
-impl<'a> Site<'a> {
-    pub(crate) fn of(finding: &'a Finding) -> Self {
-        Self {
-            family: finding.family,
-            file: &finding.file,
-            symbol: &finding.symbol,
-            line: finding.line,
-        }
-    }
-}
-
 /// The stored `anchor` key: `<family>|<file>|<symbol>`, or `@<line>` in the
 /// symbol's place when the row has none.
 pub(crate) fn anchor(site: &Site<'_>) -> String {
@@ -162,6 +151,5 @@ mod tests {
             let probe = site(family, "src/a.rs", "a::run", None);
             assert_eq!(ids(candidates(&store, &probe)), vec![want], "{family:?}");
         }
-        assert_eq!(Site::of(&store[1]).family, Family::Perf);
     }
 }

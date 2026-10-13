@@ -29,8 +29,9 @@ use crate::output::print_json_compact;
 const VERB: &str = "review add";
 /// How far from `line` a cleanup's `old` text may start.
 const OLD_WINDOW: u32 = 20;
-/// Target statuses that suppress an advisory naming them in `same_as`.
-const SUPPRESSING: &[&str] = &["dismissed", "deferred", "parked", "backlogged", "converted"];
+/// Target statuses that suppress a row naming them in `same_as`.
+pub(super) const SUPPRESSING: &[&str] =
+    &["dismissed", "deferred", "parked", "backlogged", "converted"];
 
 fn invalid(msg: impl Into<String>) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, msg)
@@ -85,13 +86,6 @@ struct Written {
 pub(crate) fn run(target: &Target, args: ReviewAddArgs) -> Result<()> {
     let root = repo_or_cwd_root()?;
     let rows = crate::items::parse_ndjson_objects(&read_ndjson_source(&args.ndjson)?)?;
-    if !target.path.is_file() {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            Some(target.path.clone()),
-            format!("review store not found at {}", target.path.display()),
-        ));
-    }
     let read = ReadIntegrityArgs {
         verify_integrity: args.integrity.verify_integrity,
         strict_read: true,
@@ -255,13 +249,13 @@ fn refuse_sealed(store: &Store, cell: &Cell) -> Result<()> {
     )))
 }
 
-fn line_of(row: &Map<String, JsonValue>) -> Option<u32> {
+pub(super) fn line_of(row: &Map<String, JsonValue>) -> Option<u32> {
     row.get("line")
         .and_then(JsonValue::as_u64)
         .and_then(|n| u32::try_from(n).ok())
 }
 
-fn str_of<'a>(row: &'a Map<String, JsonValue>, key: &str) -> Option<&'a str> {
+pub(super) fn str_of<'a>(row: &'a Map<String, JsonValue>, key: &str) -> Option<&'a str> {
     row.get(key)
         .and_then(JsonValue::as_str)
         .filter(|s| !s.is_empty())
@@ -277,16 +271,45 @@ fn prepare(
     root: &Path,
     globs: &RoutingGlobs,
 ) -> std::result::Result<Prepared, Vec<String>> {
+    let reasons = field_refusals(root, &row, run.family, Some(cell));
+    if !reasons.is_empty() {
+        return Err(reasons);
+    }
+    let kind = str_of(&row, "kind")
+        .and_then(Kind::parse)
+        .expect("validate_row accepts only a known kind");
+    let reasons = text_refusals(root, &row, kind, run.family);
+    if !reasons.is_empty() {
+        return Err(reasons);
+    }
+    let route = route_of(&row, kind, run, globs);
+    Ok(Prepared {
+        line,
+        row,
+        kind,
+        route,
+    })
+}
+
+/// The field catalogue's refusals for a finding row, then the refusal of a
+/// `lens` that `cell` does not cover.
+pub(super) fn field_refusals(
+    root: &Path,
+    row: &Map<String, JsonValue>,
+    family: Family,
+    cell: Option<&Cell>,
+) -> Vec<String> {
     let exists = |rel: &str| root.join(rel).is_file();
     let ctx = RowContext {
-        family: run.family,
+        family,
         target_exists: &exists,
     };
-    let mut reasons: Vec<String> = match fields::validate_row(Record::Finding, &row, &ctx) {
+    let mut reasons: Vec<String> = match fields::validate_row(Record::Finding, row, &ctx) {
         Ok(()) => Vec::new(),
         Err(refusals) => refusals.iter().map(ToString::to_string).collect(),
     };
-    if let Some(lens) = str_of(&row, "lens")
+    if let Some(cell) = cell
+        && let Some(lens) = str_of(row, "lens")
         && !cell.concerns.iter().any(|c| c == lens)
     {
         reasons.push(format!(
@@ -295,35 +318,49 @@ fn prepare(
             cell.concerns.join(", ")
         ));
     }
-    if !reasons.is_empty() {
-        return Err(reasons);
-    }
+    reasons
+}
 
-    let kind = str_of(&row, "kind")
-        .and_then(Kind::parse)
-        .expect("validate_row accepts only a known kind");
-    let file = str_of(&row, "file").unwrap_or_default();
-    let target_file = str_of(&row, "target_file");
+/// The `old` and `anchor_old` checks against the files: a cleanup's `old`
+/// near its line in the edit target, a plan row's `anchor_old` exactly once
+/// under `plan_section`.
+pub(super) fn text_refusals(
+    root: &Path,
+    row: &Map<String, JsonValue>,
+    kind: Kind,
+    family: Family,
+) -> Vec<String> {
+    let mut reasons = Vec::new();
+    let file = str_of(row, "file").unwrap_or_default();
     if kind == Kind::Cleanup
-        && let Some(old) = str_of(&row, "old")
+        && let Some(old) = str_of(row, "old")
     {
-        let at = target_file.filter(|t| exists(t)).unwrap_or(file);
-        if let Err(reason) = check_old(root, at, old, line_of(&row)) {
+        let at = str_of(row, "target_file")
+            .filter(|t| root.join(t).is_file())
+            .unwrap_or(file);
+        if let Err(reason) = check_old(root, at, old, line_of(row)) {
             reasons.push(reason);
         }
     }
-    if run.family == Family::Plan
-        && let Some(anchor_old) = str_of(&row, "anchor_old")
+    if family == Family::Plan
+        && let Some(anchor_old) = str_of(row, "anchor_old")
     {
-        let section = str_of(&row, "plan_section").unwrap_or_default();
+        let section = str_of(row, "plan_section").unwrap_or_default();
         if let Err(reason) = check_anchor_old(root, file, section, anchor_old) {
             reasons.push(reason);
         }
     }
-    if !reasons.is_empty() {
-        return Err(reasons);
-    }
+    reasons
+}
 
+/// The row's route by its kind, direction, severity, the run's depth and
+/// its edit targets.
+pub(super) fn route_of(
+    row: &Map<String, JsonValue>,
+    kind: Kind,
+    run: &Run,
+    globs: &RoutingGlobs,
+) -> Route {
     let instances: Vec<String> = row
         .get("instances")
         .and_then(JsonValue::as_array)
@@ -334,22 +371,16 @@ fn prepare(
                 .collect()
         })
         .unwrap_or_default();
-    let route = fields::route(
+    fields::route(
         kind,
-        str_of(&row, "direction").and_then(Direction::parse),
-        str_of(&row, "severity").and_then(Severity::parse),
+        str_of(row, "direction").and_then(Direction::parse),
+        str_of(row, "severity").and_then(Severity::parse),
         run.depth,
-        file,
-        target_file,
+        str_of(row, "file").unwrap_or_default(),
+        str_of(row, "target_file"),
         &instances,
         globs,
-    );
-    Ok(Prepared {
-        line,
-        row,
-        kind,
-        route,
-    })
+    )
 }
 
 fn read_normalised(root: &Path, rel: &str) -> Option<String> {

@@ -73,7 +73,43 @@ impl LedgerKind {
             Self::PlanReview => "plan-review-findings",
         }
     }
+
+    /// The letter every item id on this kind's ledgers starts with.
+    pub(crate) fn id_prefix(self) -> &'static str {
+        match self {
+            Self::Review => "R",
+            Self::Optimise => "O",
+            Self::PlanReview => "P",
+        }
+    }
+
+    /// The `category` values a review or optimise item may carry; `None` for
+    /// plan-review, whose categories are not enumerated here.
+    pub(crate) fn categories(self) -> Option<&'static [&'static str]> {
+        match self {
+            Self::Review => Some(REVIEW_CATEGORIES),
+            Self::Optimise => Some(OPTIMISE_CATEGORIES),
+            Self::PlanReview => None,
+        }
+    }
 }
+
+const REVIEW_CATEGORIES: &[&str] = &[
+    "quality",
+    "security",
+    "architecture",
+    "completeness",
+    "db",
+    "testability",
+    "package-quality",
+];
+const OPTIMISE_CATEGORIES: &[&str] = &[
+    "memory",
+    "serialization",
+    "query",
+    "algorithm",
+    "concurrency",
+];
 
 /// One ledger file. `Flow` and `Scope` names must match the `--slug` regex,
 /// so neither can name a path outside its directory; `File` is any path and
@@ -288,8 +324,8 @@ fn companions(status: &str) -> impl Iterator<Item = &'static str> {
 }
 
 const CLASSIFY_FIELDS: [&str; 3] = ["severity", "effort", "category"];
-const SEVERITIES: [&str; 3] = ["critical", "warning", "suggestion"];
-const EFFORTS: [&str; 3] = ["trivial", "small", "medium"];
+pub(crate) const SEVERITIES: [&str; 3] = ["critical", "warning", "suggestion"];
+pub(crate) const EFFORTS: [&str; 3] = ["trivial", "small", "medium"];
 
 /// Every facade write keeps the sidecar current and never verifies it.
 pub(crate) const FACADE_WRITE: IntegrityOpts = IntegrityOpts {

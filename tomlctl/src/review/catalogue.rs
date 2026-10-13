@@ -24,39 +24,14 @@ use sha2::{Digest, Sha256};
 use toml::Table;
 use toml::Value as TomlValue;
 
-use super::fields::{Depth, Family, Kind};
+use super::fields::{Depth, Family, Kind, str_enum};
 use super::store::{Binding, Run};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::integrity::hex_lower;
+use crate::ledgers::LedgerKind;
 use crate::query::compile_user_bytes_regex;
 
-macro_rules! word_enum {
-    ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub(crate) enum $name {
-            $($variant),+
-        }
-
-        impl $name {
-            pub(crate) const VALUES: &'static [&'static str] = &[$($text),+];
-
-            pub(crate) fn as_str(self) -> &'static str {
-                match self {
-                    $(Self::$variant => $text),+
-                }
-            }
-
-            pub(crate) fn parse(text: &str) -> Option<Self> {
-                match text {
-                    $($text => Some(Self::$variant),)+
-                    _ => None,
-                }
-            }
-        }
-    };
-}
-
-word_enum!(EntryType {
+str_enum!(EntryType {
     Lens => "lens",
     Facet => "facet",
     Method => "method",
@@ -64,8 +39,6 @@ word_enum!(EntryType {
 });
 
 impl EntryType {
-    const ALL: [EntryType; 4] = [Self::Lens, Self::Facet, Self::Method, Self::Check];
-
     fn dir(self) -> &'static str {
         match self {
             Self::Lens => "lenses",
@@ -76,45 +49,45 @@ impl EntryType {
     }
 }
 
-word_enum!(Layer {
+str_enum!(Layer {
     Builtin => "builtin",
     Project => "project",
 });
 
-word_enum!(Status {
+str_enum!(Status {
     Experimental => "experimental",
     Stable => "stable",
     Deprecated => "deprecated",
 });
 
-word_enum!(Activation {
+str_enum!(Activation {
     Floor => "floor",
     Signal => "signal",
     Candidate => "candidate",
     OptIn => "opt-in",
 });
 
-word_enum!(Mode {
+str_enum!(Mode {
     Judgement => "judgement",
     Mechanical => "mechanical",
     Executor => "executor",
 });
 
-word_enum!(SliceRule {
+str_enum!(SliceRule {
     WholeScope => "whole-scope",
     PerSubsystem => "per-subsystem",
     PerFile => "per-file",
     PerTask => "per-task",
 });
 
-word_enum!(Executor {
+str_enum!(Executor {
     Tomlctl => "tomlctl",
     Surveyor => "surveyor",
     Verification => "verification",
     Cell => "cell",
 });
 
-word_enum!(SignalKind {
+str_enum!(SignalKind {
     Stack => "stack",
     Diff => "diff",
     Health => "health",
@@ -123,24 +96,6 @@ word_enum!(SignalKind {
 
 /// The reserved prefix of every signal and concern tag a project adds.
 pub(crate) const PROJECT_PREFIX: &str = "project:";
-
-/// `v1_category` values `export-v1` can write, per family. The plan family has none.
-const CODE_V1_CATEGORIES: &[&str] = &[
-    "quality",
-    "security",
-    "architecture",
-    "completeness",
-    "db",
-    "testability",
-    "package-quality",
-];
-const PERF_V1_CATEGORIES: &[&str] = &[
-    "memory",
-    "serialization",
-    "query",
-    "algorithm",
-    "concurrency",
-];
 
 const COMMON_KEYS: &[&str] = &["id", "status", "version"];
 const LENS_KEYS: &[&str] = &[
@@ -593,8 +548,6 @@ pub(crate) struct IndexFilter {
 
 #[derive(Debug)]
 pub(crate) struct Catalogue {
-    builtin: PathBuf,
-    project: Option<PathBuf>,
     entries: Vec<Entry>,
     signals: Vec<Signal>,
     concerns: Vec<Concern>,
@@ -654,7 +607,7 @@ impl Catalogue {
         }
 
         let mut raws = Vec::new();
-        for ty in EntryType::ALL {
+        for &ty in EntryType::ALL {
             read_entries(
                 builtin,
                 ty,
@@ -716,8 +669,6 @@ impl Catalogue {
         }
 
         Ok(Self {
-            builtin: builtin.to_path_buf(),
-            project: project.map(Path::to_path_buf),
             entries,
             signals: vocab.signals,
             concerns: vocab.concerns,
@@ -729,12 +680,11 @@ impl Catalogue {
         })
     }
 
-    pub(crate) fn builtin_root(&self) -> &Path {
-        &self.builtin
-    }
-
-    pub(crate) fn project_root(&self) -> Option<&Path> {
-        self.project.as_deref()
+    /// The errors [`Catalogue::load`] met reading the layers: files it could
+    /// not read or parse, and config ids it could not apply. A subset of
+    /// [`Catalogue::validate`].
+    pub(crate) fn load_errors(&self) -> &[CatalogueError] {
+        &self.load_errors
     }
 
     pub(crate) fn entries(&self) -> &[Entry] {
@@ -748,10 +698,6 @@ impl Catalogue {
 
     pub(crate) fn signals(&self) -> &[Signal] {
         &self.signals
-    }
-
-    pub(crate) fn concerns(&self) -> &[Concern] {
-        &self.concerns
     }
 
     /// Sha256 over every vocabulary and entry file of both layers, with line
@@ -946,11 +892,7 @@ impl Catalogue {
                     .find(|e| e.id == *concern)
                     .ok_or_else(|| refuse(format!("`{concern}` is not a lens")))?;
                 self.check_usable(lens, concern, family)?;
-                if lens
-                    .apply_when
-                    .min_depth
-                    .is_some_and(|min| depth_rank(min) > depth_rank(depth))
-                {
+                if lens.apply_when.min_depth.is_some_and(|min| min > depth) {
                     return Err(refuse(format!(
                         "`{concern}` needs at least depth `{}`",
                         lens.apply_when.min_depth.map_or("", Depth::as_str)
@@ -1241,11 +1183,16 @@ impl Catalogue {
                     }
                 }
                 for (family, value) in &entry.v1_category {
-                    let allowed = match Family::parse(family) {
-                        Some(f @ Family::Code) if entry.families.contains(&f) => CODE_V1_CATEGORIES,
-                        Some(f @ Family::Perf) if entry.families.contains(&f) => PERF_V1_CATEGORIES,
-                        _ => &[],
+                    let kind = match Family::parse(family) {
+                        Some(f @ Family::Code) if entry.families.contains(&f) => {
+                            Some(LedgerKind::Review)
+                        }
+                        Some(f @ Family::Perf) if entry.families.contains(&f) => {
+                            Some(LedgerKind::Optimise)
+                        }
+                        _ => None,
                     };
+                    let allowed = kind.and_then(LedgerKind::categories).unwrap_or_default();
                     if !allowed.contains(&value.as_str()) {
                         errors.push(CatalogueError::BadV1Category {
                             path: path(),
@@ -1283,6 +1230,17 @@ impl Catalogue {
                 }
             }
         }
+        for id in config
+            .enable
+            .iter()
+            .filter(|id| config.disable.contains(id))
+        {
+            errors.push(CatalogueError::BadConfig {
+                path: config.path.clone(),
+                key: "enable".into(),
+                problem: format!("names `{id}`, which `disable` also names; keep one"),
+            });
+        }
         for scope in &config.scopes {
             let key = format!("scope.{:?}", scope.glob);
             for id in &scope.disable {
@@ -1319,14 +1277,6 @@ fn binding(concern: &str, entry: &Entry, family: Family) -> Binding {
             .v1_category_for(family)
             .unwrap_or_default()
             .to_string(),
-    }
-}
-
-fn depth_rank(depth: Depth) -> u8 {
-    match depth {
-        Depth::Quick => 0,
-        Depth::Standard => 1,
-        Depth::Deep => 2,
     }
 }
 
@@ -2167,13 +2117,30 @@ pub(crate) fn default_builtin_root() -> Option<PathBuf> {
     claude_dir().map(|d| d.join("skills").join("review-v2-lenses"))
 }
 
-/// The catalogue rebuilt from the roots `review run start` recorded on `run`;
-/// a relative project root resolves against the repo `root`.
+/// The project layer a verb loads. An explicit `--project` must be a
+/// directory; without one, `<root>/.claude/review-lenses` when it exists.
+pub(crate) fn project_layer(root: &Path, explicit: Option<PathBuf>) -> Result<Option<PathBuf>> {
+    match explicit {
+        Some(dir) if !dir.is_dir() => Err(tagged_err(
+            ErrorKind::NotFound,
+            Some(dir.clone()),
+            format!("project catalogue layer not found at {}", dir.display()),
+        )),
+        Some(dir) => Ok(Some(dir)),
+        None => Ok(Some(root.join(".claude").join("review-lenses")).filter(|d| d.is_dir())),
+    }
+}
+
+/// The catalogue rebuilt from the roots `review run start` recorded on `run`,
+/// refused when its content no longer matches the recorded shas. An absent or
+/// vanished built-in root resolves to [`default_builtin_root`], so a store
+/// moved between machines still loads; a relative project root resolves
+/// against the repo `root`. A record without `tree_sha` predates the check.
 pub(crate) fn run_catalogue(root: &Path, run: &Run) -> Result<Catalogue> {
-    let record = run.rest.get("catalogue").and_then(TomlValue::as_table);
-    let builtin = record
-        .and_then(|t| t.get("builtin"))
-        .and_then(TomlValue::as_str)
+    let record = run
+        .rest
+        .get("catalogue")
+        .and_then(TomlValue::as_table)
         .ok_or_else(|| {
             tagged_err(
                 ErrorKind::Validation,
@@ -2184,18 +2151,56 @@ pub(crate) fn run_catalogue(root: &Path, run: &Run) -> Result<Catalogue> {
                 ),
             )
         })?;
-    let project = record
-        .and_then(|t| t.get("project"))
+    let recorded = record
+        .get("builtin")
         .and_then(TomlValue::as_str)
-        .map(|p| {
-            let path = PathBuf::from(p);
-            if path.is_absolute() {
-                path
-            } else {
-                root.join(path)
-            }
-        });
-    Catalogue::load(Path::new(builtin), project.as_deref())
+        .map(PathBuf::from);
+    let builtin = match recorded {
+        Some(path) if path.is_dir() => path,
+        recorded => default_builtin_root().or(recorded).ok_or_else(|| {
+            tagged_err(
+                ErrorKind::NotFound,
+                None,
+                format!(
+                    "run {}: no built-in catalogue root; set CLAUDE_CONFIG_DIR",
+                    run.id
+                ),
+            )
+        })?,
+    };
+    let project = record.get("project").and_then(TomlValue::as_str).map(|p| {
+        let path = PathBuf::from(p);
+        if path.is_absolute() {
+            path
+        } else {
+            root.join(path)
+        }
+    });
+    let catalogue = Catalogue::load(&builtin, project.as_deref())?;
+    if let Some(tree_sha) = record.get("tree_sha").and_then(TomlValue::as_str) {
+        let config_sha = record.get("config_sha").and_then(TomlValue::as_str);
+        let drifted: Vec<&str> = [
+            ("tree_sha", tree_sha != catalogue.tree_sha()),
+            ("config_sha", config_sha != catalogue.config_sha()),
+        ]
+        .iter()
+        .filter(|(_, differs)| *differs)
+        .map(|(name, _)| *name)
+        .collect();
+        if !drifted.is_empty() {
+            return Err(tagged_err(
+                ErrorKind::Validation,
+                None,
+                format!(
+                    "run {}: the lens catalogue changed since the run started ({} no longer matches); \
+                     start a new run with `review run start`",
+                    run.id,
+                    drifted.join(", ")
+                ),
+            ));
+        }
+    }
+    Ok(catalogue)
 }
 
 #[cfg(test)]
@@ -2682,6 +2687,24 @@ question = "Is the output right for every input?"
             errors
                 .iter()
                 .any(|e| matches!(e, CatalogueError::UnknownConfigId { key, id, .. } if key == "override" && id == "ghost")),
+            "got {errors:?}"
+        );
+    }
+
+    #[test]
+    fn config_naming_an_id_in_both_enable_and_disable_is_refused() {
+        let fx = Fixture::new();
+        fx.project_file(
+            "config.toml",
+            "enable = [\"plan-premortem\"]\ndisable = [\"plan-premortem\"]\n",
+        );
+        let errors = fx.load().validate();
+        assert!(
+            matches!(
+                errors.as_slice(),
+                [CatalogueError::BadConfig { key, problem, .. }]
+                    if key == "enable" && problem.contains("plan-premortem")
+            ),
             "got {errors:?}"
         );
     }

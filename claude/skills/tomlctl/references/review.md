@@ -19,7 +19,8 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 ## Shared behaviour
 
 - **Store target.** Every verb except `catalogue` and `schema` takes exactly one of `--slug` (the flow store) or `--scope` (the flow-less store); `stats` also accepts `--all`. Both names are validated like a flow slug. The store stamps its own `last_updated`, so no verb takes `--no-stamp`.
-- **Run directory.** `.claude/review-v2-runs/<store-key>/U<n>/`, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads.
+- **Run directory.** `.claude/review-v2-runs/<store-key>/U<n>/`, where `<store-key>` is the slug or `scope-<scope>`. `run start` creates it with a `payloads/` subdirectory, where agents stage their NDJSON payloads, and writes a `.gitignore` holding `*` at `.claude/review-v2-runs/` when none is there.
+- **Catalogue drift.** A verb that reads a run's catalogue — `survey`, `plan`, `add`, `run finish` and the others that bind or route against it — reloads it from the roots the run recorded and fails `kind=validation` naming `tree_sha` or `config_sha` when either no longer matches the value `run start` recorded; start a new run. A run recorded without `tree_sha` is not checked.
 - **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `triage`, `export-v1`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`list`, `show`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`. The flag tables below leave both bundles out.
 - **Missing store.** `sync-v1` and `stats` read an absent store as empty and create nothing; `run start` seeds one; every other verb fails `kind=not_found`.
 - **Payload sources.** Each `--ndjson` takes `-` for stdin, otherwise a file path; a leading `@` is accepted. Prose flags (`--note`, `--rationale`, `--incomplete`, the triage reasons, `--trigger`) read stdin when given `-`, and each has a `-file` twin that reads a file the Write tool staged. Text is read with `\r\n` as `\n` and trimmed; an empty value is refused.
@@ -44,7 +45,7 @@ started = "2026-10-12T10:00:00Z"
 base = "e23b918…"                  # --base resolved to a commit sha
 scope = ["tomlctl/src/review/**"]
 changed_lines = 412
-catalogue = { builtin = "…/skills/review-v2-lenses", project = ".claude/review-lenses", tree_sha = "…" }
+catalogue = { project = ".claude/review-lenses", tree_sha = "…" }  # + builtin when --builtin was passed, project_layer_changed
 signals = [ { name = "lang:rust", source = "detector", roots = ["tomlctl"] } ]
 waivers = [ { concern = "security", reason = "no input handling in scope" } ]
 
@@ -142,6 +143,8 @@ tomlctl review sync-v1 --slug <slug>
 
 Mints `U<n>`, stamps `started`, resolves `--base` to a commit sha, computes `changed_lines` (lines added plus removed over `scope` in `base..HEAD`, or the scope's tracked line count when that is 0; absent for the plan family), validates the merged catalogue — halting with every error — records the catalogue roots and shas, and creates the run directory. Prints `{ok, run, dir, base, changed_lines}`.
 
+Without `--project`, it refuses when `base..HEAD` adds, edits or deletes anything under `.claude/review-lenses`, listing those paths: the change under review would otherwise configure its own review. Passing `--project <dir>` accepts the layer, and the changed paths are recorded as `catalogue.project_layer_changed` for the orchestrator to show the user.
+
 ```bash
 tomlctl review run start --slug <slug> --command review-v2 --family code --depth standard --base HEAD~3 --set-json 'scope=["tomlctl/src/**"]' --set substrate=workflow
 ```
@@ -153,8 +156,8 @@ tomlctl review run start --slug <slug> --command review-v2 --family code --depth
 | `--family` | `code` \| `perf` \| `plan` | The finding family. | required |
 | `--depth` | `quick` \| `standard` \| `deep` | The depth envelope. | required |
 | `--base` | rev | The commit the change is measured from; stored as its sha. | required |
-| `--builtin` | dir | The built-in catalogue root, recorded as an absolute path. | `<claude dir>/skills/review-v2-lenses` |
-| `--project` | dir | The project catalogue layer; a named directory must exist. | `.claude/review-lenses` when present |
+| `--builtin` | dir | The built-in catalogue root, recorded as an absolute path; the default is left unrecorded and resolved again by each later verb. | `<claude dir>/skills/review-v2-lenses` |
+| `--project` | dir | The project catalogue layer; a named directory must exist (`kind=not_found`). Passing it accepts a layer `base..HEAD` changed. | `.claude/review-lenses` when present |
 | `--set` / `--set-json` / `--set-file` | `KEY=…` | Only `scope` (repo-relative paths or globs), `models` (a table) and `substrate` (`workflow` \| `agent-waves`). | none |
 
 The claude dir is `CLAUDE_CONFIG_DIR`, else `USERPROFILE` or `HOME` joined with `.claude`.
@@ -179,7 +182,7 @@ tomlctl review run update U1 --slug <slug> --set-json 'waivers=[{"concern":"secu
 
 ### `tomlctl review run finish`
 
-Stamps `finished` and computes `counts` (`cells`, `uncovered`, `defect`, `cleanup`, `advisory`, `refuted`, `suppressed`). Refuses while a finding is `unverified`, a `same_as` awaits `resolve`, or an unselected matched concern or unsliced scope file has no waiver — unless `--incomplete` records why, in which case the reason and the `gaps` are printed and stored. A later clean finish clears an earlier `incomplete`. Prints `{ok, run, finished, counts}`.
+Stamps `finished` and computes `counts` (`cells`, `uncovered`, `defect`, `cleanup`, `advisory`, `refuted`, `suppressed`). Refuses while a finding is `unverified`, a `same_as` awaits `resolve`, an unselected matched concern or unsliced scope file has no waiver, or a cell of the run is unsealed — unless `--incomplete` records why, in which case the reason and the `gaps` are printed and stored. A later clean finish clears an earlier `incomplete`. Prints `{ok, run, finished, counts}`.
 
 ```bash
 tomlctl review run finish U1 --slug <slug> --incomplete-file <run-dir>/payloads/incomplete.txt
@@ -293,14 +296,14 @@ Refused: a verdict on an advisory or `superseded` finding; `severity` on a non-d
 
 ### `tomlctl review resolve`
 
-Resolves every `unverified` finding of the run whose `same_as` has complete verdicts, passing until none resolves, so a same-run target always settles first; a `merged` target is followed through `merged_into`. By the target's status and the row's call:
+Resolves every `unverified` finding of the run whose `same_as` has complete verdicts, passing until none resolves, so a same-run target always settles first; a `merged` target is followed through `merged_into`, and a `converted` advisory through `converted_to` to its replacement, which must itself be verified before the row resolves. By the target's status and the row's call:
 
 | Target status | `confirmed` | `plausible` | `refuted` |
 |---|---|---|---|
 | `open`, `exported` | repeat | repeat | contested |
 | `refuted` | reopened | contested | repeat |
 | `resolved` | regression | contested | repeat |
-| `dismissed`, `deferred`, `parked`, `backlogged`, `converted` | suppressed | suppressed | suppressed |
+| `dismissed`, `deferred`, `parked`, `backlogged` | suppressed | suppressed | suppressed |
 
 A repeat appends the run to the target's `seen_in` and refreshes its `line` and `evidence`; a contested or reopened target gains the deciding verdicts, and a reopened one returns to `open`. The row becomes `merged` with `merged_into`, except a regression, which stays `open` with `related = [target]`. Prints `{ok, resolved: [{finding, outcome, target, status}], pending: [{finding, same_as, reason}], unchanged}`.
 
@@ -460,7 +463,7 @@ tomlctl review export-v1 --all --slug <slug> --to .claude/flows/<slug>/review-le
 
 ### `tomlctl review catalogue`
 
-Merges the built-in and project layers and applies the project config. Takes no store. Prints `{tree_sha, config_sha, entries}`, one entry per lens, facet, method and check: `type`, `id`, `hash`, `status`, `families`, `mode`, `produces`, `activation`, `apply_when` (`signals`, `paths`, `min_depth`, `always_at`), `matched`, `attaches_to`, `path`, `layer`, `disabled`.
+Merges the built-in and project layers and applies the project config. Takes no store. Prints `{tree_sha, config_sha, entries}`, one entry per lens, facet, method and check: `type`, `id`, `hash`, `status`, `families`, `mode`, `produces`, `activation`, `apply_when` (`signals`, `paths`, `min_depth`, `always_at`), `matched`, `attaches_to`, `path`, `layer`, `disabled`. Every mode but `--check` fails when a catalogue file could not be read or parsed, listing those errors; `--check` reports them with the rest.
 
 ```bash
 tomlctl review catalogue --check
@@ -470,14 +473,14 @@ tomlctl review catalogue --family code --signals lang:rust,public-api-change
 | Flag | Value | Meaning | Default |
 |---|---|---|---|
 | `--builtin` | dir | The built-in catalogue root. | `<claude dir>/skills/review-v2-lenses` |
-| `--project` | dir | The project layer. | `.claude/review-lenses` under the repo root |
+| `--project` | dir | The project layer; a named directory must exist (`kind=not_found`), as for `run start`. | `.claude/review-lenses` under the repo root, when present |
 | `--family` | `code` \| `perf` \| `plan` | Only entries of this family. | every family |
-| `--signals` | `a,b` | Mark the entries these signals match, under `matched`. | none |
+| `--signals` | `a,b` | Mark the entries these signals match, under `matched`; a name the vocabulary does not declare is refused. | none |
 | `--vocabulary` | bool | Print `{signals: [{name, kind, meaning, detect, hint, layer}]}` instead. | off |
 | `--owners` | bool | Print `{owners: [{family, tag, owners}]}`, the concern-ownership map, instead. | off |
 | `--check` | bool | Validate; print `{"ok":true}`, or exit 1 listing every error. | off |
 
-`--check` covers unique ids, the frontmatter schema per type, signals and tags drawn from the merged vocabulary, one owner per (family, tag) matching each lens's Owns section, existing `methods` and `attaches_to` targets, a Probes section per declared family, config and scope ids that exist, the `project:` prefix rule for project additions, every `contains` pattern compiling, and `v1_category` valid per family. `run start` runs the same validation.
+`--check` covers unique ids, the frontmatter schema per type, signals and tags drawn from the merged vocabulary, one owner per (family, tag) matching each lens's Owns section, existing `methods` and `attaches_to` targets, a Probes section per declared family, config and scope ids that exist, no id both enabled and disabled, the `project:` prefix rule for project additions, every `contains` pattern compiling, and `v1_category` valid per family. `run start` runs the same validation.
 
 ### `tomlctl review schema`
 

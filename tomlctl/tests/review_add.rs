@@ -357,6 +357,98 @@ fn sealed_cell_refuses_and_prints_ids() {
 }
 
 #[test]
+fn finished_run_refuses_and_writes_nothing() {
+    let repo = Repo::new();
+    let path = repo.root.join(".claude/review-v2/t.toml");
+    let mut doc = repo.store();
+    doc["runs"][0]
+        .as_table_mut()
+        .unwrap()
+        .insert("finished".into(), "2026-10-12T11:00:00Z".into());
+    fs::write(&path, toml::to_string(&doc).unwrap()).unwrap();
+    let before = fs::read(&path).unwrap();
+
+    let out = repo
+        .add("U1", "C1", &[defect("correctness", "lib::limit", "major")])
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr);
+    assert!(stderr.contains("run U1 is finished"), "{stderr}");
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        before,
+        "a refused add writes nothing"
+    );
+}
+
+#[test]
+fn concurrent_adds_on_distinct_cells_mint_distinct_ids() {
+    use std::thread;
+
+    let repo = Repo::new();
+    let path = repo.root.join(".claude/review-v2/t.toml");
+    let cells = ["C6", "C7", "C8", "C9"];
+    let mut text = fs::read_to_string(&path).unwrap();
+    for id in cells {
+        text.push_str(&format!(
+            "\n[[cells]]\nid = \"{id}\"\nrun = \"U1\"\nwave = 1\nslice = [\"src/**\"]\n\
+             concerns = [\"correctness\"]\nagent = \"review-finder\"\nreason = \"proposed\"\n\
+             status = \"assigned\"\n"
+        ));
+    }
+    fs::write(&path, text).unwrap();
+    let before = repo.finding_count();
+
+    const PER_CELL: usize = 2;
+    let handles: Vec<_> = cells
+        .iter()
+        .map(|cell| {
+            let root = repo.root.clone();
+            let cell = cell.to_string();
+            let payload = root.join(format!(".claude/payload-{cell}.ndjson"));
+            let rows: String = (0..PER_CELL)
+                .map(|n| {
+                    format!(
+                        "{}\n",
+                        defect("correctness", &format!("lib::{cell}_{n}"), "major")
+                    )
+                })
+                .collect();
+            fs::write(&payload, rows).unwrap();
+            thread::spawn(move || {
+                cli(&root)
+                    .current_dir(&root)
+                    .env("TOMLCTL_LOCK_TIMEOUT", "30")
+                    .args([
+                        "review", "add", "--scope", SCOPE, "--run", "U1", "--cell", &cell,
+                    ])
+                    .arg("--ndjson")
+                    .arg(payload)
+                    .assert()
+                    .success();
+            })
+        })
+        .collect();
+    for handle in handles {
+        handle.join().expect("every writer must succeed");
+    }
+
+    let store = repo.store();
+    let findings = store["findings"].as_array().unwrap();
+    assert_eq!(findings.len(), before + cells.len() * PER_CELL);
+    let mut ids: Vec<&str> = findings.iter().map(|f| f["id"].as_str().unwrap()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), findings.len(), "every minted id is distinct");
+    for cell in cells {
+        let landed = findings
+            .iter()
+            .filter(|f| f["cell"].as_str() == Some(cell))
+            .count();
+        assert_eq!(landed, PER_CELL, "no row from {cell} was lost");
+    }
+}
+
+#[test]
 fn executable_cleanup_routes_to_verifier() {
     let repo = Repo::new();
     let code = cleanup("src/lib.rs", 30, "change", Some("LIMIT: usize = 8"));

@@ -8,6 +8,7 @@
 //!   - `read_json_arg` / `read_json_value_from_arg` — `-` stdin sentinel
 //!   - `read_flag_file` / `strip_flag_text` — a `-file` flag's text, less
 //!     one leading BOM and one trailing newline
+//!   - `read_prose` — a prose flag or its `-file` twin, trimmed and non-empty
 //!   - `write_toml_with_sidecar` — atomic write + SHA-256 sidecar refresh
 //!   - `atomic_write` — tempfile + fsync + rename
 //!   - `guard_write_path` / `canonicalize_for_write` — `.claude/` containment
@@ -390,6 +391,46 @@ pub(crate) fn read_flag_file(path: &Path, flag: &str) -> Result<String> {
     let text = fs::read_to_string(path)
         .with_context(|| format!("reading `--{flag}` `{}`", path.display()))?;
     Ok(strip_flag_text(text))
+}
+
+/// A prose `--<flag>` or its `--<flag>-file` twin, CRLF read as LF and
+/// trimmed, or `None` when neither was passed. Text that comes to nothing is
+/// refused under `verb`. A file that cannot be read is tagged `NotFound`
+/// only when it is missing.
+pub(crate) fn read_prose(
+    verb: &str,
+    flag: &str,
+    literal: Option<&str>,
+    file: Option<&Path>,
+) -> Result<Option<String>> {
+    let raw = match (literal, file) {
+        (Some(text), _) => read_text_arg(text)?,
+        (None, Some(path)) => {
+            let text = fs::read_to_string(path).map_err(|e| {
+                let kind = if e.kind() == std::io::ErrorKind::NotFound {
+                    ErrorKind::NotFound
+                } else {
+                    ErrorKind::Other
+                };
+                tagged_err(
+                    kind,
+                    Some(path.to_path_buf()),
+                    format!("reading `--{flag}-file` `{}`: {e}", path.display()),
+                )
+            })?;
+            strip_flag_text(text)
+        }
+        (None, None) => return Ok(None),
+    };
+    let text = raw.replace("\r\n", "\n").trim().to_string();
+    if text.is_empty() {
+        return Err(tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("{verb}: --{flag} needs a non-empty value"),
+        ));
+    }
+    Ok(Some(text))
 }
 
 /// The edge strip `read_flag_file` applies: one leading BOM, then one

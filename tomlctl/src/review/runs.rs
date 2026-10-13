@@ -15,9 +15,7 @@ use super::store::{self, Minted, Run, Signal, Store, Target, Waiver};
 use crate::cli::{ReviewRunFinishArgs, ReviewRunStartArgs, ReviewRunUpdateArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::fields::FieldArgs;
-use crate::io::{
-    guard_write_path, read_flag_file, read_text_arg, relativise, relativise_under, repo_or_cwd_root,
-};
+use crate::io::{guard_write_path, read_prose, relativise, relativise_under, repo_or_cwd_root};
 use crate::output::print_json_compact;
 
 /// The run fields `run start` takes through `--set` / `--set-json`.
@@ -61,13 +59,13 @@ pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
         })
         .unwrap_or_default();
     for entry in &scope {
-        if let Some(problem) = scope_problem(entry) {
+        if let Some(problem) = super::fields::path_problem(entry, "scope paths") {
             return Err(invalid(format!("{verb}: scope entry {entry:?} {problem}")));
         }
     }
 
     let base = resolve_base(&root, &args.base)?;
-    let catalogue_record = start_catalogue(&root, args.builtin, args.project)?;
+    let catalogue_record = start_catalogue(&root, &base, args.builtin, args.project)?;
     let changed_lines = match family {
         Family::Plan => None,
         Family::Code | Family::Perf => Some(changed_lines(&root, &base, &scope)?),
@@ -113,6 +111,7 @@ pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
                     format!("creating run directory {}: {e}", dir.display()),
                 )
             })?;
+            ignore_runs_root(&runs_parent)?;
             Ok((id, dir))
         },
     )?;
@@ -123,6 +122,25 @@ pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
         "base": base,
         "changed_lines": changed_lines,
     }))
+}
+
+/// Writes `.gitignore` holding `*` at the runs root above `runs_parent` when
+/// absent, so run artifacts stay out of git in a repo that ignores nothing.
+fn ignore_runs_root(runs_parent: &Path) -> Result<()> {
+    let Some(runs_root) = runs_parent.parent() else {
+        return Ok(());
+    };
+    let ignore = runs_root.join(".gitignore");
+    if ignore.exists() {
+        return Ok(());
+    }
+    fs::write(&ignore, "*\n").map_err(|e| {
+        tagged_err(
+            ErrorKind::Other,
+            Some(ignore.clone()),
+            format!("writing {}: {e}", ignore.display()),
+        )
+    })
 }
 
 /// Folds the field flags into an object, refusing any key outside `allowed`.
@@ -137,21 +155,6 @@ fn flag_fields(args: &FieldArgs, allowed: &[&str], verb: &str) -> Result<Map<Str
         )));
     }
     Ok(map)
-}
-
-fn scope_problem(entry: &str) -> Option<&'static str> {
-    let bytes = entry.as_bytes();
-    if entry.is_empty() {
-        Some("is empty")
-    } else if entry.contains('\\') {
-        Some("uses `\\`; scope paths are `/`-separated")
-    } else if entry.starts_with('/') || (bytes.len() >= 2 && bytes[1] == b':') {
-        Some("is absolute; scope paths are repo-relative")
-    } else if entry.split('/').any(|s| s == "..") {
-        Some("contains `..`")
-    } else {
-        None
-    }
 }
 
 fn git(root: &Path) -> Command {
@@ -203,30 +206,38 @@ fn resolve_base(root: &Path, base: &str) -> Result<String> {
 }
 
 /// Loads and validates the merged catalogue, returning the run's
-/// `catalogue` record. Any validation error halts the start.
+/// `catalogue` record. Any validation error halts the start, as does a
+/// default project layer the reviewed range `base..HEAD` itself changed.
 fn start_catalogue(
     root: &Path,
+    base: &str,
     builtin: Option<PathBuf>,
     project: Option<PathBuf>,
 ) -> Result<JsonValue> {
-    let builtin = match builtin {
-        Some(dir) => dir,
+    // A default root is left unrecorded, so the git-tracked store names no
+    // machine-specific path; `run_catalogue` resolves it again.
+    let explicit_builtin = builtin.map(|dir| std::path::absolute(&dir).unwrap_or(dir));
+    let builtin = match &explicit_builtin {
+        Some(dir) => dir.clone(),
         None => catalogue::default_builtin_root().ok_or_else(|| {
             invalid("review run start: no claude dir (CLAUDE_CONFIG_DIR, USERPROFILE or HOME); pass --builtin")
         })?,
     };
-    let builtin = std::path::absolute(&builtin).unwrap_or(builtin);
-    let project = match project {
-        Some(dir) if !dir.is_dir() => {
-            return Err(tagged_err(
-                ErrorKind::NotFound,
-                Some(dir.clone()),
-                format!("project catalogue layer not found at {}", dir.display()),
-            ));
-        }
-        Some(dir) => Some(dir),
-        None => Some(root.join(".claude").join("review-lenses")).filter(|d| d.is_dir()),
-    };
+    let explicit_project = project.is_some();
+    let project = catalogue::project_layer(root, project)?;
+    let layer_changed = project_layer_changes(root, base)?;
+    if !explicit_project && !layer_changed.is_empty() {
+        return Err(invalid(format!(
+            "review run start: the reviewed range {base}..HEAD changes the project lens layer, \
+             which would configure its own review:\n{}\n\
+             pass --project <dir> explicitly to accept that layer",
+            layer_changed
+                .iter()
+                .map(|p| format!("  - {p}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )));
+    }
     let catalogue = Catalogue::load(&builtin, project.as_deref())?;
     let errors = catalogue.validate();
     if !errors.is_empty() {
@@ -238,10 +249,12 @@ fn start_catalogue(
         )));
     }
     let mut record = Map::new();
-    record.insert(
-        "builtin".into(),
-        json!(builtin.to_string_lossy().replace('\\', "/")),
-    );
+    if let Some(dir) = &explicit_builtin {
+        record.insert(
+            "builtin".into(),
+            json!(dir.to_string_lossy().replace('\\', "/")),
+        );
+    }
     if let Some(dir) = &project {
         let shown =
             relativise_under(root, dir).unwrap_or_else(|| dir.to_string_lossy().replace('\\', "/"));
@@ -251,7 +264,28 @@ fn start_catalogue(
     if let Some(sha) = catalogue.config_sha() {
         record.insert("config_sha".into(), json!(sha));
     }
+    if !layer_changed.is_empty() {
+        record.insert("project_layer_changed".into(), json!(layer_changed));
+    }
     Ok(JsonValue::Object(record))
+}
+
+/// Paths under `.claude/review-lenses` that `base..HEAD` adds, edits or
+/// deletes. Renames are split so a file moved out of the layer still counts.
+fn project_layer_changes(root: &Path, base: &str) -> Result<Vec<String>> {
+    let listed = git_output(
+        root,
+        git(root)
+            .args(["diff", "--name-only", "-z", "--no-ext-diff", "--no-renames"])
+            .arg(format!("{base}..HEAD"))
+            .args(["--", ".claude/review-lenses"]),
+        "git diff --name-only",
+    )?;
+    Ok(String::from_utf8_lossy(&listed)
+        .split('\0')
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .collect())
 }
 
 fn pathspecs(scope: &[String]) -> Vec<String> {
@@ -374,13 +408,7 @@ pub(crate) fn update(target: &Target, args: ReviewRunUpdateArgs) -> Result<()> {
         tables.push((key, toml));
     }
 
-    if !target.path.is_file() {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            Some(target.path.clone()),
-            format!("review store not found at {}", target.path.display()),
-        ));
-    }
+    store::require(&target.path)?;
     let run_id = args.run.clone();
     store::mutate(&target.path, &args.integrity, |store| {
         let run = store
@@ -564,24 +592,13 @@ fn upsert_waivers(run: &mut Run, incoming: Vec<Waiver>) {
 
 pub(crate) fn finish(target: &Target, args: ReviewRunFinishArgs) -> Result<()> {
     let verb = "review run finish";
-    let incomplete = match (&args.incomplete, &args.incomplete_file) {
-        (Some(text), _) => Some(read_text_arg(text)?),
-        (None, Some(path)) => Some(read_flag_file(path, "incomplete-file")?),
-        (None, None) => None,
-    }
-    .map(|raw| raw.replace("\r\n", "\n").trim().to_string());
-    if incomplete.as_deref() == Some("") {
-        return Err(invalid(format!(
-            "{verb}: --incomplete needs a non-empty reason"
-        )));
-    }
-    if !target.path.is_file() {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            Some(target.path.clone()),
-            format!("review store not found at {}", target.path.display()),
-        ));
-    }
+    let incomplete = read_prose(
+        verb,
+        "incomplete",
+        args.incomplete.as_deref(),
+        args.incomplete_file.as_deref(),
+    )?;
+    store::require(&target.path)?;
     let root = repo_or_cwd_root()?;
     let run_id = args.run.clone();
     let (finished, counts, gaps) = store::mutate(&target.path, &args.integrity, |store| {
@@ -652,6 +669,8 @@ struct Gaps {
     unresolved_same_as: Vec<String>,
     unselected: Vec<String>,
     unsliced: Vec<String>,
+    /// Cells whose agent never sealed them.
+    unsealed: Vec<String>,
 }
 
 impl Gaps {
@@ -668,6 +687,12 @@ impl Gaps {
             unresolved_same_as: ids(unresolved_same_as),
             unselected: accounting.unselected.clone(),
             unsliced: accounting.unsliced.clone(),
+            unsealed: store
+                .cells
+                .iter()
+                .filter(|c| c.run == run && !c.sealed)
+                .map(|c| c.id.clone())
+                .collect(),
         }
     }
 
@@ -676,6 +701,7 @@ impl Gaps {
             && self.unresolved_same_as.is_empty()
             && self.unselected.is_empty()
             && self.unsliced.is_empty()
+            && self.unsealed.is_empty()
     }
 
     fn describe(&self) -> String {
@@ -684,6 +710,7 @@ impl Gaps {
             ("unresolved same_as", &self.unresolved_same_as),
             ("unselected concerns without a waiver", &self.unselected),
             ("unsliced files without a waiver", &self.unsliced),
+            ("unsealed cells", &self.unsealed),
         ]
         .iter()
         .filter(|(_, ids)| !ids.is_empty())
@@ -698,6 +725,7 @@ impl Gaps {
             "unresolved_same_as": self.unresolved_same_as,
             "unselected": self.unselected,
             "unsliced": self.unsliced,
+            "unsealed": self.unsealed,
         })
     }
 }

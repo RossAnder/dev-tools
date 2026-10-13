@@ -28,7 +28,7 @@ Your prompt names the run, the cell, the store (`--slug` or `--scope`) and the r
 
 Read every bound file from the absolute path given. Do not go looking for catalogue files elsewhere, and do not read lenses the cell does not bind. Read `pack.md` for its `CONSTRAINTS`, `BACKLOG`, check-result and `CALIBRATION` fences. For each baseline log the assignment names, read only the lines that fall inside your slice: a lint or test failure there is known, and the `LINT BASELINE` it reports is never a finding. When the assignment gives no pack, that is deliberate — a context-free cell works from the slice and its diff alone, so do not reconstruct the missing context from the repository's docs.
 
-Then read the slice's prior findings with `tomlctl review list --in <slice glob> --for finder` against the same store. `PRIOR` is how identity works: a finding you would raise that matches a prior row's file and symbol (or file and nearby line) names that row in `same_as`, and a prior row that is dismissed, deferred, parked or refuted is not raised again unless you have new evidence, which you cite.
+Then read the slice's prior findings with `tomlctl review list --in <slice glob> --for finder` against the same store, once per entry when the slice holds several, since `--in` takes one glob. `PRIOR` is how identity works: a finding you would raise that matches a prior row's file and symbol (or file and nearby line) names that row in `same_as`, and a prior row that is dismissed, deferred, parked or refuted is not raised again unless you have new evidence, which you cite.
 
 ## Run the cell
 

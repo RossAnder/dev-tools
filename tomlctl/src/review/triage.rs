@@ -16,16 +16,14 @@ use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 use toml::value::Datetime;
 
-use super::add;
+use super::add::{self, str_of};
 use super::catalogue::run_catalogue;
-use super::fields::{
-    self, Direction, Family, Kind, Record, Route, RoutingGlobs, RowContext, Severity,
-};
+use super::fields::{self, Kind, Route};
 use super::matching::{self, Site};
-use super::store::{self, Finding, Minted, Run, Store, Target, Verdict};
+use super::store::{self, Finding, Minted, Store, Target, Verdict};
 use crate::cli::{ReadIntegrityArgs, ReviewTriageArgs};
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{read_flag_file, read_ndjson_source, read_text_arg, repo_or_cwd_root};
+use crate::io::{read_ndjson_source, read_prose, repo_or_cwd_root};
 use crate::output::print_json_compact;
 
 const VERB: &str = "review triage";
@@ -171,13 +169,6 @@ pub(crate) fn run(target: &Target, args: ReviewTriageArgs) -> Result<()> {
     if ids.is_empty() {
         return Err(invalid(format!("{VERB}: no finding ids given")));
     }
-    if !target.path.is_file() {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            Some(target.path.clone()),
-            format!("review store not found at {}", target.path.display()),
-        ));
-    }
     let read = ReadIntegrityArgs {
         verify_integrity: args.integrity.verify_integrity,
         strict_read: true,
@@ -259,20 +250,10 @@ fn read_mode(args: &ReviewTriageArgs) -> Result<Mode> {
     Err(invalid(format!("{VERB}: no disposition given")))
 }
 
-/// A prose flag or its `-file` twin, CRLF read as LF and trimmed; refused
-/// when it comes to nothing, since a disposition without its reason teaches
-/// calibration nothing.
+/// A prose flag or its `-file` twin; refused when it comes to nothing, since
+/// a disposition without its reason teaches calibration nothing.
 fn prose(flag: &str, literal: &Option<String>, file: &Option<PathBuf>) -> Result<Option<String>> {
-    let raw = match (literal, file) {
-        (Some(text), _) => read_text_arg(text)?,
-        (None, Some(path)) => read_flag_file(path, &format!("{flag}-file"))?,
-        (None, None) => return Ok(None),
-    };
-    let text = raw.replace("\r\n", "\n").trim().to_string();
-    if text.is_empty() {
-        return Err(invalid(format!("{VERB}: --{flag} needs a non-empty value")));
-    }
-    Ok(Some(text))
+    read_prose(VERB, flag, literal.as_deref(), file.as_deref())
 }
 
 /// A single id that was refused, or a call whose every id was, is an error;
@@ -601,27 +582,10 @@ fn replacement_row(
             row.insert(key.into(), value);
         }
     }
-    let exists = |rel: &str| root.join(rel).is_file();
-    let ctx = RowContext {
-        family: advisory.family,
-        target_exists: &exists,
-    };
-    if let Err(refusals) = fields::validate_row(Record::Finding, &row, &ctx) {
-        reasons.extend(refusals.iter().map(ToString::to_string));
-    }
-    let lens = str_of(&row, "lens").unwrap_or_default();
-    if let Some(cell) = store.cells.iter().find(|c| c.id == advisory.cell)
-        && !lens.is_empty()
-        && !cell.concerns.iter().any(|c| c == lens)
-    {
-        reasons.push(format!(
-            "`lens` is {lens:?}; cell {} covers {}",
-            cell.id,
-            cell.concerns.join(", ")
-        ));
-    }
+    let cell = store.cells.iter().find(|c| c.id == advisory.cell);
+    reasons.extend(add::field_refusals(root, &row, advisory.family, cell));
     if reasons.is_empty() {
-        reasons.extend(text_check_refusals(root, &row, kind, advisory.family));
+        reasons.extend(add::text_refusals(root, &row, kind, advisory.family));
     }
     if !reasons.is_empty() {
         let refused = json!({"id": advisory.id, "reasons": reasons});
@@ -632,68 +596,9 @@ fn replacement_row(
     }
 
     let globs = run_catalogue(root, run)?.routing().compile()?;
-    let route = route_of(&row, kind, run, &globs);
+    let route = add::route_of(&row, kind, run, &globs);
     row.insert("route".into(), json!(route.as_str()));
     Ok(row)
-}
-
-/// The `old` and `anchor_old` checks `review add` runs, against the same
-/// files: a cleanup's `old` near its line in the edit target, a plan row's
-/// `anchor_old` exactly once under `plan_section`.
-fn text_check_refusals(
-    root: &Path,
-    row: &Map<String, JsonValue>,
-    kind: Kind,
-    family: Family,
-) -> Vec<String> {
-    let mut reasons = Vec::new();
-    let file = str_of(row, "file").unwrap_or_default();
-    if kind == Kind::Cleanup
-        && let Some(old) = str_of(row, "old")
-    {
-        let at = str_of(row, "target_file")
-            .filter(|t| root.join(t).is_file())
-            .unwrap_or(file);
-        let line = row
-            .get("line")
-            .and_then(JsonValue::as_u64)
-            .and_then(|n| u32::try_from(n).ok());
-        if let Err(reason) = add::check_old(root, at, old, line) {
-            reasons.push(reason);
-        }
-    }
-    if family == Family::Plan
-        && let Some(anchor_old) = str_of(row, "anchor_old")
-    {
-        let section = str_of(row, "plan_section").unwrap_or_default();
-        if let Err(reason) = add::check_anchor_old(root, file, section, anchor_old) {
-            reasons.push(reason);
-        }
-    }
-    reasons
-}
-
-fn route_of(row: &Map<String, JsonValue>, kind: Kind, run: &Run, globs: &RoutingGlobs) -> Route {
-    let instances: Vec<String> = row
-        .get("instances")
-        .and_then(JsonValue::as_array)
-        .map(|a| {
-            a.iter()
-                .filter_map(JsonValue::as_str)
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default();
-    fields::route(
-        kind,
-        str_of(row, "direction").and_then(Direction::parse),
-        str_of(row, "severity").and_then(Severity::parse),
-        run.depth,
-        str_of(row, "file").unwrap_or_default(),
-        str_of(row, "target_file"),
-        &instances,
-        globs,
-    )
 }
 
 /// Stamps the bookkeeping `review add` computes: the advisory's run and
@@ -705,15 +610,11 @@ fn finish_row(
     pool: &[Finding],
     today: &str,
 ) -> JsonValue {
-    let line = row
-        .get("line")
-        .and_then(JsonValue::as_u64)
-        .and_then(|n| u32::try_from(n).ok());
     let site = Site {
         family: advisory.family,
         file: str_of(&row, "file").unwrap_or_default(),
         symbol: str_of(&row, "symbol").unwrap_or_default(),
-        line,
+        line: add::line_of(&row),
     };
     let anchor = matching::anchor(&site);
     let mut related = vec![advisory.id.clone()];
@@ -731,10 +632,4 @@ fn finish_row(
     row.insert("status".into(), json!("unverified"));
     row.insert("first_seen".into(), json!(today));
     JsonValue::Object(row)
-}
-
-fn str_of<'a>(row: &'a Map<String, JsonValue>, key: &str) -> Option<&'a str> {
-    row.get(key)
-        .and_then(JsonValue::as_str)
-        .filter(|s| !s.is_empty())
 }

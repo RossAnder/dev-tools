@@ -414,12 +414,7 @@ fn parse_citation(cite: &str) -> Option<(&str, usize, usize)> {
             (n, n)
         }
     };
-    let unsafe_path = path.is_empty()
-        || path.contains('\\')
-        || path.starts_with('/')
-        || path.as_bytes().get(1) == Some(&b':')
-        || path.split('/').any(|s| s == "..");
-    if unsafe_path || from == 0 || to < from {
+    if super::fields::path_problem(path, "paths").is_some() || from == 0 || to < from {
         return None;
     }
     Some((path, from, to))

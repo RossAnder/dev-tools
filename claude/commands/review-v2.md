@@ -55,7 +55,7 @@ At `standard` and `deep`, add one cell that runs the `correctness` lens over the
   ```
 
 - **Ceiling**: it counts against the depth's cell ceiling like any cell, and outranks candidate-tier cells and repeat passes. When nothing but floor cells is left to cut, leave it out and say so in the close summary.
-- **Store record**: no field marks a cell as context-free; the `question` and `reason` above are the record `review stats` reads. Keep the minted id: stage 4 needs it.
+- **Store record**: no field marks a cell as context-free; the `question` and `reason` above record why the cell exists. Its findings count under `correctness` in `review stats`, which does not separate them from the floor cell's. Keep the minted id: stage 4 needs it.
 
 ### Stage 4 — dispatching the context-free cell
 

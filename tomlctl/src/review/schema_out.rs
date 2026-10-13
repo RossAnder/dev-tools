@@ -20,7 +20,6 @@ use crate::output::print_json;
 
 const DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
 const TARGETS: &[&str] = &["finding", "cell-return", "verdict-return"];
-const KINDS: [Kind; 3] = [Kind::Defect, Kind::Cleanup, Kind::Advisory];
 
 pub(crate) fn run(args: ReviewSchemaArgs) -> Result<()> {
     let invalid = |msg: String| tagged_err(ErrorKind::Validation, None, msg);
@@ -200,10 +199,10 @@ fn finding(kind: Option<Kind>) -> JsonValue {
             schema.insert("properties".into(), JsonValue::Object(properties(None)));
             let common: Vec<&str> = required(Kind::Defect)
                 .into_iter()
-                .filter(|name| KINDS.iter().all(|&k| required(k).contains(name)))
+                .filter(|name| Kind::ALL.iter().all(|&k| required(k).contains(name)))
                 .collect();
             schema.insert("required".into(), json!(common));
-            let branches: Vec<JsonValue> = KINDS.iter().map(|&k| kind_branch(k)).collect();
+            let branches: Vec<JsonValue> = Kind::ALL.iter().map(|&k| kind_branch(k)).collect();
             schema.insert("allOf".into(), json!(branches));
         }
     }
@@ -343,7 +342,7 @@ mod tests {
     #[test]
     fn schema_agrees_with_field_catalogue() {
         let whole = finding(None);
-        for kind in KINDS {
+        for &kind in Kind::ALL {
             let k = kind.as_str();
             let schema = finding(Some(kind));
             let required = names(&schema["required"]);

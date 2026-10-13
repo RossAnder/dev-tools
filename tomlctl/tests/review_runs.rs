@@ -285,6 +285,131 @@ fn run_start_records_catalogue_and_changed_lines() {
 }
 
 #[test]
+fn run_start_ignores_the_runs_root() {
+    let Some(repo) = repo() else { return };
+    let ignore = repo.root.join(".claude/review-v2-runs/.gitignore");
+    repo.start(&repo.first, &[]);
+    assert_eq!(fs::read_to_string(&ignore).unwrap(), "*\n");
+
+    fs::write(&ignore, "custom\n").unwrap();
+    repo.start(&repo.first, &[]);
+    assert_eq!(
+        fs::read_to_string(&ignore).unwrap(),
+        "custom\n",
+        "an existing ignore file is kept"
+    );
+}
+
+/// Commits a project lens layer on top of `repo`, so `repo.first..HEAD`
+/// changes it.
+fn commit_project_layer(repo: &Repo) {
+    fs::create_dir_all(repo.root.join(".claude/review-lenses")).unwrap();
+    fs::write(
+        repo.root.join(".claude/review-lenses/config.toml"),
+        "enable = []\n",
+    )
+    .unwrap();
+    git(&repo.root, &["add", ".claude/review-lenses/config.toml"]);
+    git(&repo.root, &["commit", "-q", "-m", "project layer"]);
+}
+
+#[test]
+fn run_start_refuses_a_project_layer_the_range_changes() {
+    let Some(repo) = repo() else { return };
+    commit_project_layer(&repo);
+    let stderr = repo.start_fails(&repo.first, &[]);
+    assert!(
+        stderr.contains(".claude/review-lenses/config.toml") && stderr.contains("--project"),
+        "names the changed path and the way to accept it: {stderr}"
+    );
+    assert!(!repo.store().exists(), "no run is minted");
+
+    repo.start(&repo.first, &["--project", ".claude/review-lenses"]);
+    let catalogue = &repo.run(0)["catalogue"];
+    assert_eq!(
+        catalogue["project_layer_changed"],
+        toml::Value::Array(vec![".claude/review-lenses/config.toml".into()]),
+        "an accepted layer is recorded: {catalogue}"
+    );
+
+    let unchanged = repo.start("HEAD", &[]);
+    assert_eq!(
+        unchanged["run"], "U2",
+        "a range that leaves the layer alone starts"
+    );
+    assert!(
+        repo.run(1)["catalogue"]
+            .get("project_layer_changed")
+            .is_none()
+    );
+}
+
+#[test]
+fn run_catalogue_refuses_drift_since_start() {
+    let Some(repo) = repo() else { return };
+    repo.start(&repo.first, &[]);
+    let survey = || {
+        repo.tomlctl()
+            .args(["review", "survey", "--scope", SCOPE, "--run", "U1"])
+            .assert()
+    };
+    survey().success();
+
+    fs::write(
+        repo.builtin.join("lenses/correctness.md"),
+        CORRECTNESS.replace("off-by-one", "off-by-two"),
+    )
+    .unwrap();
+    let out = survey().failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(
+        stderr.contains("tree_sha") && stderr.contains("start a new run"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn run_start_leaves_a_default_builtin_root_unrecorded() {
+    let Some(repo) = repo() else { return };
+    let claude = tempfile::tempdir().unwrap();
+    let builtin = claude.path().join("skills/review-v2-lenses");
+    fs::create_dir_all(builtin.join("lenses")).unwrap();
+    fs::write(builtin.join("vocabulary.toml"), VOCABULARY).unwrap();
+    fs::write(builtin.join("lenses/correctness.md"), CORRECTNESS).unwrap();
+    let with_claude_dir = || {
+        let mut cmd = repo.tomlctl();
+        cmd.env("CLAUDE_CONFIG_DIR", claude.path());
+        cmd
+    };
+    with_claude_dir()
+        .args([
+            "review",
+            "run",
+            "start",
+            "--scope",
+            SCOPE,
+            "--command",
+            "review-v2",
+            "--family",
+            "code",
+            "--depth",
+            "quick",
+        ])
+        .arg(format!("--base={}", repo.first))
+        .assert()
+        .success();
+    let catalogue = &repo.run(0)["catalogue"];
+    assert!(
+        catalogue.get("builtin").is_none(),
+        "no machine-specific path in the store: {catalogue}"
+    );
+    with_claude_dir()
+        .args(["review", "survey", "--scope", SCOPE, "--run", "U1"])
+        .assert()
+        .success();
+}
+
+#[test]
 fn run_start_halts_on_invalid_project_catalogue() {
     let Some(repo) = repo() else { return };
     fs::create_dir_all(repo.root.join(".claude/review-lenses")).unwrap();

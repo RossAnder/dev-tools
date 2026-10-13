@@ -118,10 +118,87 @@ struct CommandLintReport {
     unbalanced: Vec<(String, String)>,
 }
 
+/// Workflow scripts whose prompt strings embed `tomlctl …` invocations.
+fn command_lint_workflow_scripts(claude_dir: &Path) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = fs::read_dir(claude_dir.join("workflows"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("js"))
+        .collect();
+    files.sort();
+    files
+}
+
+/// First stand-in for a JS `${…}` interpolation. Integers parse as any value;
+/// each interpolation gets its own number so a clap rejection names which one
+/// it could not place.
+const JS_STAND_IN_BASE: usize = 9000;
+
+/// Every backtick span in a JS source that opens with `tomlctl `, escaped
+/// (`` \` ``, nested in an outer template) or not, with each `${…}` replaced
+/// by a numbered stand-in. Returns (command line, stand-ins it carries); a
+/// span that reaches a newline before its closing backtick is not a command.
+fn js_tomlctl_spans(text: &str) -> Vec<(String, Vec<String>)> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(found) = text[from..].find("`tomlctl ") {
+        let start = from + found + 1;
+        from = start;
+        let mut span = String::new();
+        let mut stand_ins: Vec<String> = Vec::new();
+        let mut chars = text[start..].chars().peekable();
+        let mut closed = false;
+        while let Some(c) = chars.next() {
+            match c {
+                '`' => {
+                    closed = true;
+                    break;
+                }
+                '\\' if chars.peek() == Some(&'`') => {
+                    closed = true;
+                    break;
+                }
+                '\n' => break,
+                '$' if chars.peek() == Some(&'{') => {
+                    chars.next();
+                    let mut depth = 1usize;
+                    for c in chars.by_ref() {
+                        match c {
+                            '{' => depth += 1,
+                            '}' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    let stand_in = (JS_STAND_IN_BASE + stand_ins.len()).to_string();
+                    span.push_str(&stand_in);
+                    stand_ins.push(stand_in);
+                }
+                _ => span.push(c),
+            }
+        }
+        if closed {
+            out.push((span, stand_ins));
+        }
+    }
+    out
+}
+
 /// Feed one logical shell line to the real parser when it invokes `tomlctl`.
-fn lint_logical(rel: &str, logical: &str, report: &mut CommandLintReport) {
+///
+/// A token in `opaque` stands for a value unknown until run time, which may
+/// expand to a whole flag group (`${storeFlag}`); when clap cannot place it,
+/// it is dropped and the line reparsed, so the flags around it are still
+/// checked.
+fn lint_logical(rel: &str, logical: &str, opaque: &[String], report: &mut CommandLintReport) {
     use clap::Parser as _;
-    use clap::error::ErrorKind;
+    use clap::error::{ContextKind, ContextValue, ErrorKind};
 
     let trimmed = logical.trim_start();
     // A pipe into tomlctl (`… | tomlctl items add …`) — take the substring
@@ -167,19 +244,33 @@ fn lint_logical(rel: &str, logical: &str, report: &mut CommandLintReport) {
     }
     // shell_words yields "tomlctl" as the first token, which is exactly the
     // program name clap's `try_parse_from` expects.
-    if let Err(e) = Cli::try_parse_from(&tokens) {
+    while let Err(e) = Cli::try_parse_from(&tokens) {
         match e.kind() {
             ErrorKind::UnknownArgument | ErrorKind::InvalidSubcommand => {
+                let rejected = [ContextKind::InvalidArg, ContextKind::InvalidSubcommand]
+                    .into_iter()
+                    .find_map(|k| match e.get(k) {
+                        Some(ContextValue::String(s)) => Some(s.clone()),
+                        _ => None,
+                    });
+                if let Some(rejected) = rejected
+                    && opaque.contains(&rejected)
+                    && let Some(pos) = tokens.iter().position(|t| *t == rejected)
+                {
+                    tokens.remove(pos);
+                    continue;
+                }
                 report.failures.push((
                     rel.to_string(),
                     candidate.to_string(),
                     e.to_string().lines().next().unwrap_or("").to_string(),
                 ));
+                return;
             }
             // Missing-required / value-validation / help / version are all
             // acceptable: placeholders mean required values are legitimately
             // absent or type-mismatched in docs.
-            _ => {}
+            _ => return,
         }
     }
 }
@@ -266,12 +357,18 @@ fn command_lint_report_inner(files: &[PathBuf], repo_root: &Path) -> CommandLint
             continue;
         };
         let rel = lint_rel_path(file, repo_root);
+        if file.extension().and_then(|e| e.to_str()) == Some("js") {
+            for (line, stand_ins) in js_tomlctl_spans(&text) {
+                lint_logical(&rel, &line, &stand_ins, &mut report);
+            }
+            continue;
+        }
         for fence in bash_fences(&text) {
             if fence.info.contains("ignore-command-lint") {
                 continue;
             }
             for logical in &fence.lines {
-                lint_logical(&rel, &logical.text, &mut report);
+                lint_logical(&rel, &logical.text, &[], &mut report);
             }
         }
     }
@@ -280,7 +377,8 @@ fn command_lint_report_inner(files: &[PathBuf], repo_root: &Path) -> CommandLint
 }
 
 /// Carrier↔CLI flag-drift guard. Every `tomlctl …` invocation written
-/// in the project's command/skill markdown is fed to the REAL clap `Cli`
+/// in the project's command/skill markdown, or in a backtick span of a
+/// `claude/workflows/*.js` prompt string, is fed to the REAL clap `Cli`
 /// parser; an `UnknownArgument` / `InvalidSubcommand` error is a lint
 /// failure. This catches `--flow` vs `--flow-override`-shaped drift that no
 /// review lens sees, because lenses read prose and don't execute the parser.
@@ -304,7 +402,8 @@ fn command_lint() {
         return;
     }
 
-    let files = command_lint_scan_set(&claude_dir);
+    let mut files = command_lint_scan_set(&claude_dir);
+    files.extend(command_lint_workflow_scripts(&claude_dir));
     let report = command_lint_report(&files, &repo_root);
 
     if !report.unbalanced.is_empty() {
@@ -508,6 +607,44 @@ fn command_lint_still_truncates_at_shell_plumbing() {
         report.unbalanced.is_empty(),
         "fixture must tokenise cleanly: {:?}",
         report.unbalanced
+    );
+}
+
+/// A workflow script's prompt spans are linted with every `${…}` stood in: an
+/// interpolation in a value slot, in a positional slot or standing for a whole
+/// flag group is not drift, while a drifted flag beside one still is.
+#[test]
+fn command_lint_checks_workflow_script_spans() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let workflows = root.join("claude").join("workflows");
+    fs::create_dir_all(&workflows).unwrap();
+
+    let script = workflows.join("w.js");
+    fs::write(
+        &script,
+        "const p = (c) => `Fetch with \\`tomlctl review show ${c.id} --for finder ${storeFlag}\\`,\n\
+         then \\`tomlctl review add --run ${a.run} --cell ${c.id} ${storeFlag}\\`,\n\
+         then \\`tomlctl review cover ${c.id} --bogus-flag ${storeFlag}\\`.`\n\
+         const q = `tomlctl review verdict`\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        command_lint_workflow_scripts(&root.join("claude")),
+        vec![script.clone()]
+    );
+    let report = command_lint_report(std::slice::from_ref(&script), root);
+    assert_eq!(
+        report.failures.len(),
+        1,
+        "exactly the drifted flag must be reported: {:?}",
+        report.failures
+    );
+    assert!(
+        report.failures[0].2.contains("--bogus-flag"),
+        "the failure must name the drifted flag: {:?}",
+        report.failures[0]
     );
 }
 

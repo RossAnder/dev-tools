@@ -98,7 +98,7 @@ Resolve the run's inputs:
 tomlctl review run start --slug <slug> --command review-v2 --family code --depth standard --base <base-sha> --set-json 'scope=["tomlctl/src/review/**"]' --set-json 'models={"surveyor":"haiku","sweeper":"haiku","checker":"haiku","finder":"opus","verifier":"opus","executor":"opus"}' --set substrate=workflow
 ```
 
-It mints the run (`U<n>`), resolves `--base` to a sha, computes `changed_lines`, records the catalogue roots and shas, and validates the merged catalogue. A validation error halts the run: report the offending file and stop, because a project-layer error is the project's to fix. It prints `{run, dir, base, changed_lines}`. Bind `<run>` and `<run-dir>` (the printed `dir`); `pack.md` and `profile.md` are written there, and every payload you stage goes in `<run-dir>/payloads/`.
+It mints the run (`U<n>`), resolves `--base` to a sha, computes `changed_lines`, records the catalogue roots and shas, and validates the merged catalogue. A validation error halts the run: report the offending file and stop, because a project-layer error is the project's to fix. It also refuses when `base..HEAD` changes anything under `.claude/review-lenses`, since the change under review would configure its own review: show the user the listed paths and pass `--project .claude/review-lenses` only on their say-so. A run started that way records the paths as `catalogue.project_layer_changed`; name them to the user in the close summary. It prints `{run, dir, base, changed_lines}`. Bind `<run>` and `<run-dir>` (the printed `dir`); `pack.md` and `profile.md` are written there, and every payload you stage goes in `<run-dir>/payloads/`.
 
 ### Stage 2 — Survey
 
@@ -179,7 +179,7 @@ Audit the digest's sample through the `audit` projection; write the report and p
 tomlctl review run finish <run> --slug <slug>
 ```
 
-`run finish` refuses while any finding is unverified, any `same_as` is unresolved, or any unselected concern or unsliced file lacks a waiver.
+`run finish` refuses while any finding is unverified, any `same_as` is unresolved, any unselected concern or unsliced file lacks a waiver, or any cell is unsealed.
 
 ## Depth envelopes
 
@@ -190,7 +190,7 @@ tomlctl review run finish <run> --slug <slug>
 | cell ceiling, all waves (`--propose` scales it to about 1 cell per 100 changed lines, floor 3) | 6 | 16 | 32 |
 | concerns per cell | ≤3 | ≤3 | ≤2 |
 | follow-up waves | 0 | 1 | 2 |
-| defect verification | one verifier per critical or major defect; one batch verifier per cell for minor | as quick | one verifier per defect, plus a 3-vote panel per critical that survives on ≥2 non-refuted votes |
+| defect verification | one verifier per critical or major defect; one batch verifier per cell for minor | as quick | one verifier per non-critical defect; a critical goes to a 3-vote panel instead, and survives on ≥2 non-refuted votes |
 | cleanup check | pooled Haiku checker batches; code-touching, test-removal and unsettled rows go to an Opus verifier | as quick | as quick |
 | repeat passes | none | floor and hotspot cells once more, files in reverse order | every high-risk cell once more |
 | plan-executor cells | ≤4 tasks | ≤12 tasks, L and M first, checkpoint-marker tasks first | every task |

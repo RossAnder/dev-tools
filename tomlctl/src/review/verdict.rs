@@ -9,7 +9,7 @@
 use anyhow::Result;
 use serde_json::{Map, Value as JsonValue, json};
 
-use super::fields::{self, Kind, Record, Route, RowContext};
+use super::fields::{self, Kind, Record, Route, RowContext, SWEEPER};
 use super::store::{self, Store, Target, Verdict};
 use crate::cli::{ReadIntegrityArgs, ReviewVerdictArgs};
 use crate::errors::{ErrorKind, tagged_err};
@@ -20,7 +20,6 @@ const VERB: &str = "review verdict";
 /// The finding statuses a verdict decides; every other status is a later
 /// disposition that a verdict is recorded beside but never overrides.
 const DECIDED_BY_VERDICT: &[&str] = &["unverified", "open", "refuted"];
-const SWEEPER: &str = "review-sweeper";
 
 fn invalid(msg: impl Into<String>) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, msg)
@@ -55,13 +54,6 @@ pub(crate) fn run(target: &Target, args: ReviewVerdictArgs) -> Result<()> {
     };
     if inputs.is_empty() {
         return Err(invalid(format!("{VERB}: the batch holds no verdicts")));
-    }
-    if !target.path.is_file() {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            Some(target.path.clone()),
-            format!("review store not found at {}", target.path.display()),
-        ));
     }
     let read = ReadIntegrityArgs {
         verify_integrity: args.integrity.verify_integrity,
@@ -203,6 +195,19 @@ fn apply_one(store: &mut Store, input: &Input) -> std::result::Result<JsonValue,
         (false, Some(_)) => reasons.push("`seat` applies only to a panel verdict".to_string()),
         _ => {}
     }
+    // A finding settles under its route's rule alone, so a verdict that rule
+    // would never read is refused rather than recorded to no effect.
+    let panel_routed = finding.route == Some(Route::Panel);
+    match by {
+        "panel" if !panel_routed => reasons.push(format!(
+            "{id} is not routed to the panel; a panel verdict needs a panel-routed finding"
+        )),
+        "panel" | "audit" | "" => {}
+        _ if panel_routed => reasons.push(format!(
+            "{id} is routed to the panel; only panel seats and the audit give its verdict, not {by:?}"
+        )),
+        _ => {}
+    }
     if row.contains_key("severity") && finding.kind != Kind::Defect {
         reasons.push(format!(
             "`severity` reassesses a defect; {id} is {}",
@@ -236,10 +241,10 @@ fn apply_one(store: &mut Store, input: &Input) -> std::result::Result<JsonValue,
         rationale: text("rationale").to_string(),
         rest: toml::map::Map::new(),
     };
-    upsert(store, record);
+    store.upsert_verdict(record);
 
     let reroute = verdict == "unsettled";
-    let decided = decide(store, id, by, verdict);
+    let decided = decide(store, index, by, verdict);
     let finding = &mut store.findings[index];
     if input.strike_same_as {
         finding.same_as.clear();
@@ -265,58 +270,82 @@ fn written_by_sweeper(store: &Store, cell: &str) -> bool {
         .any(|c| c.id == cell && c.agent == SWEEPER)
 }
 
-/// Replaces the verdict holding `record`'s key, or appends it. A changed
-/// verdict moves to the end, where readers take the latest from; an
-/// identical one keeps its place, so a replay leaves the store as it was.
-fn upsert(store: &mut Store, record: Verdict) {
-    let key = |v: &Verdict| (v.finding.clone(), v.by.clone(), v.seat);
-    let same_key = store.verdicts.iter().position(|v| key(v) == key(&record));
-    match same_key {
-        Some(at) if store.verdicts[at] == record => {}
-        Some(at) => {
-            store.verdicts.remove(at);
-            store.verdicts.push(record);
+/// The status the verdict just written gives its finding. An audit verdict
+/// decides at once on any route; a checker's `unsettled` leaves the finding
+/// for the verifier; every other verdict decides through [`settle`].
+fn decide(store: &Store, index: usize, by: &str, verdict: &str) -> &'static str {
+    let finding = &store.findings[index];
+    let settled = match (by, verdict) {
+        ("audit", _) => Some(verdict),
+        (_, "unsettled") => None,
+        _ => {
+            let mine: Vec<&Verdict> = store
+                .verdicts
+                .iter()
+                .filter(|v| v.finding == finding.id)
+                .collect();
+            settle(finding.route, &mine, |_| true).map(|s| s.verdict)
         }
-        None => store.verdicts.push(record),
+    };
+    match settled {
+        Some("refuted") => "refuted",
+        Some(_) => "open",
+        None => "unverified",
     }
 }
 
-/// The status the verdict just written gives its finding. A panel vote
-/// decides once two seats agree: two non-refuted votes open the finding,
-/// two refuting votes refute it. Each seat counts once, by its latest vote in
-/// store order, so copied or repeated rows never make a second seat.
-fn decide(store: &Store, finding: &str, by: &str, verdict: &str) -> &'static str {
-    if by == "panel" {
-        let mut latest: Vec<(Option<u32>, &str)> = Vec::new();
-        for vote in store
-            .verdicts
-            .iter()
-            .filter(|v| v.finding == finding && v.by == "panel")
-        {
-            match latest.iter_mut().find(|(seat, _)| *seat == vote.seat) {
-                Some(slot) => slot.1 = vote.verdict.as_str(),
-                None => latest.push((vote.seat, vote.verdict.as_str())),
-            }
+/// A finding's settled call — `confirmed`, `plausible` or `refuted` — and the
+/// positions, in the verdicts it was settled from, of those that made it.
+pub(crate) struct Settled<'v> {
+    pub(crate) verdict: &'v str,
+    pub(crate) deciding: Vec<usize>,
+}
+
+/// Settles a finding from its verdicts in store order, the one rule
+/// `review verdict`, `review resolve` and `review stats` share. A panel-routed
+/// finding settles on its panel seats alone, each by its latest vote, so
+/// copied or repeated rows never make a second seat: two non-refuted seats
+/// stand it (`confirmed` when two confirm, else `plausible`), two refuting
+/// seats refute it. Any other route takes the latest non-panel verdict that
+/// `counts` admits and that is not `unsettled`. `None` is undecided.
+pub(crate) fn settle<'v>(
+    route: Option<Route>,
+    verdicts: &[&'v Verdict],
+    counts: impl Fn(&Verdict) -> bool,
+) -> Option<Settled<'v>> {
+    if route == Some(Route::Panel) {
+        let mut seats: Vec<(Option<u32>, usize)> = Vec::new();
+        for (k, vote) in verdicts.iter().enumerate().filter(|(_, v)| v.by == "panel") {
+            seats.retain(|(seat, _)| *seat != vote.seat);
+            seats.push((vote.seat, k));
         }
-        let (mut standing, mut refuting) = (0, 0);
-        for (_, vote) in latest {
-            if vote == "refuted" {
-                refuting += 1;
+        let deciding: Vec<usize> = seats.iter().map(|&(_, k)| k).collect();
+        let count = |pred: &dyn Fn(&str) -> bool| {
+            deciding
+                .iter()
+                .filter(|&&k| pred(&verdicts[k].verdict))
+                .count()
+        };
+        let refuting = count(&|v| v == "refuted");
+        let verdict = if deciding.len() - refuting >= 2 {
+            if count(&|v| v == "confirmed") >= 2 {
+                "confirmed"
             } else {
-                standing += 1;
+                "plausible"
             }
-        }
-        return if standing >= 2 {
-            "open"
         } else if refuting >= 2 {
             "refuted"
         } else {
-            "unverified"
+            return None;
         };
+        return Some(Settled { verdict, deciding });
     }
-    match verdict {
-        "refuted" => "refuted",
-        "unsettled" => "unverified",
-        _ => "open",
-    }
+    let (k, latest) = verdicts
+        .iter()
+        .enumerate()
+        .rfind(|(_, v)| v.by != "panel" && v.verdict != "unsettled" && counts(v))?;
+    Some(Settled {
+        verdict: latest.verdict.as_str(),
+        deciding: vec![k],
+    })
 }

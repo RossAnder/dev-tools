@@ -491,6 +491,40 @@ fn stats_refute_and_audit_overturn_rates_per_lens() {
 }
 
 #[test]
+fn panel_finding_is_verified_only_by_its_quorum() {
+    let repo = Repo::new();
+    let vote = |by: &str, seat: &str, verdict: &str| {
+        format!(
+            "\n[[verdicts]]\nfinding = \"F15\"\nrun = \"U2\"\nby = \"{by}\"\n{seat}verdict = \"{verdict}\"\ncitation = \"src/lib.rs:70\"\nrationale = \"Read the anchor.\"\n"
+        )
+    };
+    let mut text = STORE.to_string();
+    text.push_str(
+        "\n[[findings]]\nid = \"F15\"\nrun = \"U2\"\ncell = \"C4\"\nfamily = \"code\"\nkind = \"defect\"\nlens = \"correctness\"\nroute = \"panel\"\nfile = \"src/lib.rs\"\nline = 70\nsummary = \"unlocked open\"\nseverity = \"critical\"\nstatus = \"unverified\"\n",
+    );
+    text.push_str(&vote("verifier", "", "refuted"));
+    repo.write(STORE_PATH, &text);
+
+    let verified = |repo: &Repo| {
+        let out = repo.stats(&["--scope", "t", "--by", "lens"]);
+        row(&out["rows"], "correctness")["verified"].clone()
+    };
+    assert_eq!(
+        verified(&repo),
+        7,
+        "a verifier verdict on a panel finding is not its call"
+    );
+
+    text.push_str(&vote("panel", "seat = 1\n", "confirmed"));
+    repo.write(STORE_PATH, &text);
+    assert_eq!(verified(&repo), 7, "one seat decides nothing");
+
+    text.push_str(&vote("panel", "seat = 2\n", "plausible"));
+    repo.write(STORE_PATH, &text);
+    assert_eq!(verified(&repo), 8, "two standing seats settle it");
+}
+
+#[test]
 fn stats_outcomes_join_v1_status() {
     let repo = Repo::new();
     let out = repo.stats(&["--scope", "t", "--outcomes"]);

@@ -12,10 +12,11 @@ use super::LegacyShortcuts;
 /// off read subcommands.
 ///
 /// `--strict-read` turns the "missing file → silent default" branches
-/// (`items next-id --prefix <P>`, the `backlog` read verbs, `agents list`)
-/// into a tagged `kind=not_found` error. On every other read subcommand the flag is a benign no-op —
-/// `io::read_toml` already surfaces `kind=not_found` on a missing file via
-/// its error tagging, so passing `--strict-read` there changes nothing. The
+/// (`items next-id --prefix <P>`, the `backlog` read verbs, `agents list`,
+/// `review stats`) into a tagged `kind=not_found` error. On every other read
+/// subcommand the flag is a benign no-op — `io::read_toml`, or
+/// `review::store::load` for the `review` verbs, already surfaces
+/// `kind=not_found` on a missing file, so passing `--strict-read` there changes nothing. The
 /// flag lives here (rather than only on `NextId`) so `ReadIntegrityArgs`
 /// retains its "every read subcommand carries the same read-side switches"
 /// contract; adding the bit to a single variant would fork that surface.

@@ -48,6 +48,9 @@ pub(crate) fn run(target: &Target, args: ReviewSurveyArgs) -> Result<()> {
         .iter()
         .find(|r| r.id == args.run)
         .ok_or_else(|| invalid(format!("{verb}: no run {} in this store", args.run)))?;
+    if !run.finished.is_empty() {
+        return Err(invalid(format!("{verb}: run {} is finished", run.id)));
+    }
     let catalogue = run_catalogue(&root, run)?;
     let detected = evaluate(&root, run, &catalogue.detectors());
 
@@ -60,6 +63,9 @@ pub(crate) fn run(target: &Target, args: ReviewSurveyArgs) -> Result<()> {
             .iter_mut()
             .find(|r| r.id == run_id)
             .ok_or_else(|| invalid(format!("{verb}: no run {run_id} in this store")))?;
+        if !run.finished.is_empty() {
+            return Err(invalid(format!("{verb}: run {run_id} is finished")));
+        }
         let kept: Vec<Signal> = run
             .signals
             .drain(..)

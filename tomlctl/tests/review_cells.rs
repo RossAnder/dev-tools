@@ -401,6 +401,17 @@ impl Repo {
             .join(format!("{SCOPE}.toml"));
         toml::from_str(&fs::read_to_string(path).unwrap()).unwrap()
     }
+
+    /// Stamps the store's first run finished and returns the store's bytes.
+    fn finish_first_run(&self, path: &Path) -> Vec<u8> {
+        let mut doc = self.store();
+        doc["runs"][0]
+            .as_table_mut()
+            .unwrap()
+            .insert("finished".into(), "2026-10-12T11:00:00Z".into());
+        fs::write(path, toml::to_string(&doc).unwrap()).unwrap();
+        fs::read(path).unwrap()
+    }
 }
 
 fn concerns(row: &JsonValue) -> Vec<String> {
@@ -875,6 +886,27 @@ fn plan_refuses_mixed_mode_bundle() {
 }
 
 #[test]
+fn plan_refuses_a_finished_run() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    let path = repo.seed(&[RunSpec {
+        id: "U1",
+        family: "code",
+        depth: "quick",
+        changed_lines: Some(100),
+        scope: &["src/**"],
+        signals: "[]",
+    }]);
+    let before = repo.finish_first_run(&path);
+    let row = json!({"slice": ["src/a.rs"], "concerns": ["correctness"], "agent": "review-finder", "reason": "proposed"});
+    let out = repo.plan_cmd("U1", &[row]).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(stderr.contains("run U1 is finished"), "{stderr}");
+    assert_eq!(fs::read(&path).unwrap(), before, "nothing is written");
+}
+
+#[test]
 fn probe_cell_requires_question() {
     let Some(repo) = Repo::new(&["src/a.rs"]) else {
         return;
@@ -1028,4 +1060,75 @@ fn cover_on_sealed_cell_with_same_note_is_a_no_op() {
     let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
     assert!(stderr.contains("already sealed"), "{stderr}");
     assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+/// A note file staged with a BOM stores the note as typed, so a retry passing
+/// the same note literally still matches the sealed cell.
+#[test]
+fn cover_note_file_drops_a_leading_bom() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    repo.seed(&[RunSpec {
+        id: "U1",
+        family: "code",
+        depth: "quick",
+        changed_lines: Some(100),
+        scope: &["src/**"],
+        signals: "[]",
+    }]);
+    repo.plan(
+        "U1",
+        &[json!({"slice": ["src/a.rs"], "concerns": ["correctness"], "agent": "review-finder", "reason": "proposed"})],
+    );
+    let note_file = repo.root.join(".claude/note.txt");
+    fs::write(&note_file, "\u{feff}read every branch\r\n").unwrap();
+    repo.tomlctl()
+        .args([
+            "review",
+            "cover",
+            "C1",
+            "--scope",
+            SCOPE,
+            "--status",
+            "covered",
+            "--note-file",
+        ])
+        .arg(&note_file)
+        .assert()
+        .success();
+    let store = repo.store();
+    assert_eq!(
+        store["cells"][0]["note"].as_str(),
+        Some("read every branch")
+    );
+
+    let out = repo.cover("C1", "covered", "read every branch").success();
+    let printed: JsonValue = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    assert_eq!(printed["unchanged"], true, "{printed}");
+}
+
+#[test]
+fn cover_refuses_a_cell_of_a_finished_run() {
+    let Some(repo) = Repo::new(&["src/a.rs"]) else {
+        return;
+    };
+    let path = repo.seed(&[RunSpec {
+        id: "U1",
+        family: "code",
+        depth: "quick",
+        changed_lines: Some(100),
+        scope: &["src/**"],
+        signals: "[]",
+    }]);
+    repo.plan(
+        "U1",
+        &[json!({"slice": ["src/a.rs"], "concerns": ["correctness"], "agent": "review-finder", "reason": "proposed"})],
+    );
+    let before = repo.finish_first_run(&path);
+
+    let out = repo.cover("C1", "covered", "read every branch").failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+    assert!(stderr.contains("run U1 is finished"), "{stderr}");
+    assert_eq!(fs::read(&path).unwrap(), before, "nothing is written");
 }

@@ -35,10 +35,12 @@ impl Fixture {
             return None;
         }
         let catalogue = shipped_catalogue();
-        if !catalogue.join("vocabulary.toml").is_file() {
-            eprintln!("skipping: no shipped vocabulary at {}", catalogue.display());
-            return None;
-        }
+        let vocabulary = catalogue.join("vocabulary.toml");
+        assert!(
+            vocabulary.is_file(),
+            "the shipped vocabulary is missing at {}",
+            vocabulary.display()
+        );
         let (dir, root) = sandbox();
         Some(Self { _dir: dir, root })
     }

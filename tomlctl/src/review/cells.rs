@@ -9,7 +9,6 @@
 //! `plan --ndjson` skips, so the file can be edited and written back as is.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -22,12 +21,12 @@ use super::catalogue::{
     Activation, Catalogue, Entry, EntryType, Executor, Mode, SignalKind, SliceRule, Status,
     run_catalogue,
 };
-use super::fields::{self, Depth, Family, Record, RowContext};
+use super::fields::{self, Depth, EXECUTOR, FINDER, Family, Record, RowContext, SWEEPER};
 use super::store::{self, Minted, Run, Store, Target};
 use crate::cli::{ReadIntegrityArgs, ReviewCoverArgs, ReviewPlanArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{
-    atomic_write, guard_write_path, read_ndjson_source, read_text_arg, relativise, repo_or_cwd_root,
+    atomic_write, guard_write_path, read_ndjson_source, read_prose, relativise, repo_or_cwd_root,
 };
 use crate::output::{print_json_compact, print_text};
 
@@ -36,11 +35,7 @@ const PROPOSED: &str = "proposed";
 const SUMMARY_KEY: &str = "proposal";
 /// The health signal whose `evidence` lists the churn hotspots, most commits first.
 const HOTSPOT_SIGNAL: &str = "churn-hotspot";
-const FINDER: &str = "review-finder";
-const SWEEPER: &str = "review-sweeper";
-const EXECUTOR: &str = "plan-executor";
 const TASKS_PER_EXECUTOR_CELL: usize = 4;
-const NOTE_CAP: usize = 600;
 
 fn invalid(msg: impl Into<String>) -> anyhow::Error {
     tagged_err(ErrorKind::Validation, None, msg)
@@ -83,14 +78,6 @@ fn depth_ceiling(depth: Depth) -> usize {
 
 fn per_cell_max(depth: Depth) -> usize {
     if depth == Depth::Deep { 2 } else { 3 }
-}
-
-fn depth_rank(depth: Depth) -> u8 {
-    match depth {
-        Depth::Quick => 0,
-        Depth::Standard => 1,
-        Depth::Deep => 2,
-    }
 }
 
 /// How many tasks the plan-executor cells cover; `None` is every task.
@@ -336,11 +323,7 @@ fn pick_lenses<'a>(
         .entries()
         .iter()
         .filter(|e| lens_serves(e, run.family) && !e.disabled)
-        .filter(|e| {
-            e.apply_when
-                .min_depth
-                .is_none_or(|min| depth_rank(min) <= depth_rank(run.depth))
-        })
+        .filter(|e| e.apply_when.min_depth.is_none_or(|min| min <= run.depth))
         .filter_map(|lens| {
             let hits = lens
                 .apply_when
@@ -731,11 +714,7 @@ fn parse_lens_edits(
                     "--lens `{edit}`: `{id}` is disabled by the project config"
                 )));
             }
-            if lens
-                .apply_when
-                .min_depth
-                .is_some_and(|min| depth_rank(min) > depth_rank(run.depth))
-            {
+            if lens.apply_when.min_depth.is_some_and(|min| min > run.depth) {
                 return Err(invalid(format!(
                     "--lens `{edit}`: `{id}` needs at least depth `{}`",
                     lens.apply_when.min_depth.map_or("", Depth::as_str)
@@ -978,21 +957,6 @@ fn strings(row: &Map<String, JsonValue>, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn slice_problem(entry: &str) -> Option<&'static str> {
-    let bytes = entry.as_bytes();
-    if entry.trim().is_empty() {
-        Some("is empty")
-    } else if entry.contains('\\') {
-        Some("uses `\\`; slice paths are `/`-separated")
-    } else if entry.starts_with('/') || (bytes.len() >= 2 && bytes[1] == b':') {
-        Some("is absolute; slice paths are repo-relative")
-    } else if entry.split('/').any(|s| s == "..") {
-        Some("contains `..`")
-    } else {
-        None
-    }
-}
-
 /// The agent a cell's concerns run on: probes and checks on the finder,
 /// lenses by their mode.
 fn expected_agent(concerns: &[String], catalogue: &Catalogue) -> &'static str {
@@ -1021,7 +985,9 @@ fn prepare_cell(
     let edits = strings(row, "facets");
     let mut reasons: Vec<String> = slice
         .iter()
-        .filter_map(|e| slice_problem(e).map(|p| format!("`slice` entry {e:?} {p}")))
+        .filter_map(|e| {
+            fields::path_problem(e, "slice paths").map(|p| format!("`slice` entry {e:?} {p}"))
+        })
         .collect();
     let binding = catalogue.bind_cell(
         &concerns,
@@ -1260,40 +1226,30 @@ pub(crate) fn coverage_accounting(root: &Path, store: &Store, run_id: &str) -> R
 pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
     let verb = "review cover";
     let status = args.status.as_str();
-    if !matches!(status, "covered" | "thin" | "uncovered") {
+    // A cell can be sealed as any status but the `assigned` it starts in.
+    let sealable = || fields::CELL_STATUSES.iter().filter(|s| **s != "assigned");
+    if !sealable().any(|s| *s == status) {
+        let listed = sealable().copied().collect::<Vec<_>>().join(", ");
         return Err(invalid(format!(
-            "{verb}: --status {status:?} is not one of covered, thin, uncovered"
+            "{verb}: --status {status:?} is not one of {listed}"
         )));
     }
-    let raw = match (&args.note, &args.note_file) {
-        (Some(note), _) => read_text_arg(note)?,
-        (None, Some(path)) => fs::read_to_string(path).map_err(|e| {
-            tagged_err(
-                ErrorKind::NotFound,
-                Some(path.clone()),
-                format!("reading --note-file {}: {e}", path.display()),
-            )
-        })?,
-        (None, None) => return Err(invalid(format!("{verb}: pass --note or --note-file"))),
+    let Some(note) = read_prose(
+        verb,
+        "note",
+        args.note.as_deref(),
+        args.note_file.as_deref(),
+    )?
+    else {
+        return Err(invalid(format!("{verb}: pass --note or --note-file")));
     };
-    let note = raw.replace("\r\n", "\n").trim().to_string();
-    if note.is_empty() {
-        return Err(invalid(format!("{verb}: the note is empty")));
-    }
     let len = note.chars().count();
-    if len > NOTE_CAP {
+    let note_cap = fields::cap(Record::Cell, "note");
+    if len > note_cap {
         return Err(invalid(format!(
-            "{verb}: the note is {len} characters; the cap is {NOTE_CAP}"
+            "{verb}: the note is {len} characters; the cap is {note_cap}"
         )));
     }
-    if !target.path.is_file() {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            Some(target.path.clone()),
-            format!("review store not found at {}", target.path.display()),
-        ));
-    }
-
     let sealed_as = |cell: &store::Cell| -> Result<bool> {
         if !cell.sealed {
             return Ok(false);
@@ -1315,10 +1271,26 @@ pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
         .iter()
         .find(|c| c.id == args.cell)
         .ok_or_else(missing)?;
+    let finished = |store: &Store, run: &str| -> Result<()> {
+        if find_run(store, run, verb)?.finished.is_empty() {
+            Ok(())
+        } else {
+            Err(invalid(format!("{verb}: run {run} is finished")))
+        }
+    };
     let unchanged = if sealed_as(existing)? {
         true
     } else {
+        finished(&current, &existing.run)?;
         store::mutate(&target.path, &args.integrity, |store| {
+            let run = store
+                .cells
+                .iter()
+                .find(|c| c.id == args.cell)
+                .ok_or_else(missing)?
+                .run
+                .clone();
+            finished(store, &run)?;
             let cell = store
                 .cells
                 .iter_mut()

@@ -151,6 +151,39 @@ impl Fixture {
         git(&self.root, &["rev-parse", "HEAD"])
     }
 
+    /// [`Self::commit`] with both the author and committer date set to `date`.
+    fn commit_dated(&self, message: &str, date: &str) {
+        git(&self.root, &["add", "-A"]);
+        let out = git_command(&self.root)
+            .env("GIT_AUTHOR_DATE", date)
+            .env("GIT_COMMITTER_DATE", date)
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.com",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                message,
+            ])
+            .output()
+            .expect("git runs");
+        assert!(
+            out.status.success(),
+            "git commit: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    fn store_path(&self) -> PathBuf {
+        self.root
+            .join(".claude/review-v2")
+            .join(format!("{SCOPE}.toml"))
+    }
+
     fn tomlctl(&self) -> assert_cmd::Command {
         let mut cmd = cli(&self.root);
         cmd.current_dir(&self.root)
@@ -567,6 +600,105 @@ detect = { files = ["**/*.rs"], window = 90, threshold = 2, contains = ['^(?i-u:
 }
 
 #[test]
+fn health_window_excludes_commits_before_it() {
+    let vocabulary = format!(
+        "{STACKS}{}",
+        r##"
+[signals.churn-hotspot]
+kind = "health"
+meaning = "touched by two commits"
+detect = { files = ["**/*.rs"], window = 90, threshold = 2 }
+
+[signals.churn-ever]
+kind = "health"
+meaning = "touched by two commits in a decade"
+detect = { files = ["**/*.rs"], window = 3650, threshold = 2 }
+
+[signals.test-growth]
+kind = "health"
+meaning = "tests per kloc added in the window"
+[signals.test-growth.detect]
+window = 90
+threshold = { per_kloc = 250 }
+count."lang:rust" = { files = ["**/*.rs"], patterns = ["#[test]"] }
+
+[signals.test-growth-ever]
+kind = "health"
+meaning = "tests per kloc added in a decade"
+[signals.test-growth-ever.detect]
+window = 3650
+threshold = { per_kloc = 250 }
+count."lang:rust" = { files = ["**/*.rs"], patterns = ["#[test]"] }
+"##
+    );
+    let Some(fx) = Fixture::new(&vocabulary) else {
+        return;
+    };
+    // The old commit carries both tests and a first touch of hot.rs; the
+    // recent one only touches hot.rs again, with no test.
+    fx.write("core/Cargo.toml", "[package]\nname = \"core\"\n")
+        .write(
+            "core/src/lib.rs",
+            "#[test]\nfn a() {}\n#[test]\nfn b() {}\n",
+        )
+        .write("core/hot.rs", "1\n");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    fx.commit_dated("old", &format!("{} +0000", now - 200 * 86_400));
+    fx.write("core/hot.rs", "2\n");
+    let head = fx.commit("recent");
+    let run = fx.start(&head);
+    let out = fx.survey(&run);
+
+    assert_eq!(
+        roots(&out, "churn-hotspot"),
+        None,
+        "the commit older than the window does not count"
+    );
+    assert_eq!(roots(&out, "churn-ever"), Some(vec!["core".to_string()]));
+    assert_eq!(
+        roots(&out, "test-growth"),
+        None,
+        "the tests were added before the window"
+    );
+    assert_eq!(
+        roots(&out, "test-growth-ever"),
+        Some(vec!["core".to_string()])
+    );
+}
+
+#[test]
+fn survey_refuses_a_finished_run() {
+    let Some(fx) = Fixture::new(STACKS) else {
+        return;
+    };
+    fx.write("Cargo.toml", "[package]\nname = \"x\"\n");
+    let head = fx.commit("crate");
+    let run = fx.start(&head);
+    let path = fx.store_path();
+    let mut doc: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    doc["runs"][0]
+        .as_table_mut()
+        .unwrap()
+        .insert("finished".into(), "2026-10-12T11:00:00Z".into());
+    fs::write(&path, toml::to_string(&doc).unwrap()).unwrap();
+    let before = fs::read(&path).unwrap();
+
+    fx.tomlctl()
+        .args(["review", "survey", "--scope", SCOPE, "--run", &run])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(format!("run {run} is finished")));
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        before,
+        "a refused survey writes nothing"
+    );
+}
+
+#[test]
 fn failed_detector_records_unknown() {
     let Some(fx) = Fixture::new(STACKS) else {
         return;
@@ -576,19 +708,14 @@ fn failed_detector_records_unknown() {
         .write("tools/package.json", r#"{"dependencies": {}}"#);
     let head = fx.commit("broken manifest");
     let run = fx.start(&head);
-    // Written after the start, which would refuse it: the survey must still
+    // The unparseable manifest fails one detector; the survey must still
     // evaluate every other detector.
-    fx.vocabulary(&format!(
-        "{STACKS}\n[signals.bad]\nkind = \"diff\"\nmeaning = \"broken\"\ndetect = {{ contains = ['('] }}\n"
-    ));
     let out = fx.survey(&run);
 
     assert_eq!(roots(&out, "lang:rust"), Some(vec![".".to_string()]));
     let react = unknown_reason(&out, "framework:react").expect("react is unknown, not false");
     assert!(react.contains("web/package.json"), "{react}");
     assert!(react.contains("JSON"), "{react}");
-    let bad = unknown_reason(&out, "bad").expect("a bad regex is unknown, not false");
-    assert!(bad.contains("does not compile"), "{bad}");
 
     let signals = fx.stored_signals();
     let stored_react = stored(&signals, "framework:react").expect("an unknown signal is stored");

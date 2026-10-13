@@ -66,7 +66,7 @@ Name the weakness with its most specific CWE id in the finding's evidence.
 
 ## Edit forms
 
-Security writes defects, not cleanup: a missing or wrong check changes behaviour at a boundary, so its fix is a `fix`, never an `edit`. The one cleanup form is `remove` — a secret, a credential or a private key committed in a test fixture, an example or a comment, where nothing reads it; the advisory to rotate it goes beside the row.
+Security writes defects, not cleanup: a missing or wrong check changes behaviour at a boundary, so its fix is a `fix`, never an `edit`. The one cleanup form is `remove` — a secret, a credential or a private key committed in a test fixture, an example or a comment, where nothing reads it; the advisory to rotate it goes beside the row. Its `old` quotes only the non-secret part of the line, such as the key name and the `=`, never the value, and its `edit` and `summary` describe the value without repeating it: the store is committed and exported, so a quoted secret is republished.
 
 ## Advisory angles
 

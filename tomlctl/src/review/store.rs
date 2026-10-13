@@ -28,10 +28,7 @@ use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
 };
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{
-    OnMissing, mutate_doc, read_doc, repo_or_cwd_root, schema_seed, strict_read_check,
-    warn_if_created,
-};
+use crate::io::{OnMissing, mutate_doc, read_doc, repo_or_cwd_root, schema_seed, warn_if_created};
 
 pub(crate) const SCHEMA_VERSION: i64 = 1;
 
@@ -199,6 +196,42 @@ impl Default for Store {
             findings: Vec::new(),
             verdicts: Vec::new(),
         }
+    }
+}
+
+impl Store {
+    /// Replaces the verdict holding `record`'s (finding, by, seat), or appends
+    /// it. A changed verdict moves to the end, where readers take the latest
+    /// from; an identical one keeps its place, so a replay changes nothing.
+    pub(crate) fn upsert_verdict(&mut self, record: Verdict) {
+        let key = |v: &Verdict| (v.finding.clone(), v.by.clone(), v.seat);
+        match self.verdicts.iter().position(|v| key(v) == key(&record)) {
+            Some(at) if self.verdicts[at] == record => {}
+            Some(at) => {
+                self.verdicts.remove(at);
+                self.verdicts.push(record);
+            }
+            None => self.verdicts.push(record),
+        }
+    }
+
+    /// The latest severity a verdict reassessed, else the finding's own
+    /// `severity`, else `""`.
+    pub(crate) fn severity<'s>(&'s self, finding: &'s Finding) -> &'s str {
+        self.verdicts
+            .iter()
+            .rev()
+            .find(|v| v.finding == finding.id && !v.severity.is_empty())
+            .map_or_else(
+                || {
+                    finding
+                        .rest
+                        .get("severity")
+                        .and_then(TomlValue::as_str)
+                        .unwrap_or_default()
+                },
+                |v| v.severity.as_str(),
+            )
     }
 }
 
@@ -821,11 +854,30 @@ impl Target {
     }
 }
 
-/// Read the store at `path`. Under `--verify-integrity` the sidecar check
-/// runs first, under a shared lock, so a write mid-swap is not read as a
-/// mismatch.
+/// The one error every verb reports for an absent store.
+pub(crate) fn not_found(path: &Path) -> anyhow::Error {
+    tagged_err(
+        ErrorKind::NotFound,
+        Some(path.to_path_buf()),
+        format!("review store not found at {}", path.display()),
+    )
+}
+
+/// Fail with [`not_found`] unless the store exists. A writer calls it before
+/// [`mutate`], which would otherwise create the store.
+pub(crate) fn require(path: &Path) -> Result<()> {
+    if path.is_file() {
+        Ok(())
+    } else {
+        Err(not_found(path))
+    }
+}
+
+/// Read the store at `path`; a missing store is always an error. Under
+/// `--verify-integrity` the sidecar check runs first, under a shared lock,
+/// so a write mid-swap is not read as a mismatch.
 pub(crate) fn load(path: &Path, integrity: &ReadIntegrityArgs) -> Result<Store> {
-    strict_read_check(path, integrity.strict_read)?;
+    require(path)?;
     read_doc(path, read_integrity_opts(integrity), from_toml)
 }
 

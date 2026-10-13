@@ -141,7 +141,7 @@ The plan family never exports: its eligible findings go through the carrier's me
 tomlctl review run finish <run> --slug <slug>
 ```
 
-It stamps `finished` and computes `counts`. It refuses while any finding is `unverified`, any `same_as` is unresolved, or an unselected matched concern or unsliced scope file lacks a waiver; the refusal names each. Fix the cause — a mop-up dispatch, `review resolve`, a waiver — and finish again. Finish with `--incomplete-file <path>` only when a gap cannot be closed in this run, with the staged reason naming each open id or gap and why.
+It stamps `finished` and computes `counts`. It refuses while any finding is `unverified`, any `same_as` is unresolved, an unselected matched concern or unsliced scope file lacks a waiver, or any cell of the run is unsealed; the refusal names each. Fix the cause — a mop-up dispatch, `review resolve`, a waiver — and finish again. Finish with `--incomplete-file <path>` only when a gap cannot be closed in this run, with the staged reason naming each open id or gap and why.
 
 **6. Refresh the report.** Re-run `review report --out` to the same path so the file carries the dispositions, exports and counts.
 

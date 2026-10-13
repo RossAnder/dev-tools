@@ -13,7 +13,7 @@ use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use super::cells::coverage_accounting;
-use super::fields::{Kind, Role, Route, Severity};
+use super::fields::{Kind, Role, Route, SWEEPER, Severity};
 use super::query::View;
 use super::store::{self, Cell, Finding, Run, Store, Target, Verdict};
 use crate::cli::{ReviewDigestArgs, ReviewReportArgs};
@@ -25,8 +25,6 @@ type Row = Map<String, JsonValue>;
 
 /// Rows of each audit-sample group.
 const SAMPLE_SIZE: usize = 2;
-/// The cell agent whose cleanup rows the audit sample must include.
-const SWEEPER: &str = "review-sweeper";
 /// The disposition fields a report shows beside a finding's status.
 const DISPOSITIONS: &[&str] = &[
     "merged_into",
@@ -125,7 +123,7 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
         .filter(|(_, f)| {
             f.kind == Kind::Defect
                 && f.status == "refuted"
-                && severity(&stored, f) == Severity::Critical.as_str()
+                && stored.severity(f) == Severity::Critical.as_str()
         })
         .map(|(i, _)| JsonValue::Object(rows.project(Role::Orchestrator, i, false)))
         .collect();
@@ -205,16 +203,6 @@ fn judgement<'s>(store: &'s Store, id: &str) -> Option<&'s Verdict> {
         .find(|v| v.finding == id && v.by != "audit")
 }
 
-/// The latest reassessed severity, else the finder's.
-fn severity<'s>(store: &'s Store, finding: &'s Finding) -> &'s str {
-    store
-        .verdicts
-        .iter()
-        .rev()
-        .find(|v| v.finding == finding.id && !v.severity.is_empty())
-        .map_or_else(|| rest_str(finding, "severity"), |v| v.severity.as_str())
-}
-
 /// `k` positions spread evenly over `n` items, each at the middle of its
 /// stretch; all of them when `n <= k`.
 fn spread(n: usize, k: usize) -> Vec<usize> {
@@ -253,7 +241,7 @@ fn audit_sample(store: &Store, indices: &[usize]) -> JsonValue {
         .filter(|f| {
             f.kind == Kind::Defect
                 && judged(f).is_some_and(|v| v.verdict == "refuted")
-                && severity(store, f) != Severity::Critical.as_str()
+                && store.severity(f) != Severity::Critical.as_str()
         })
         .collect();
     let checked: Vec<&Finding> = settled
@@ -397,7 +385,7 @@ fn render(store: &Store, run: &Run) -> (String, String) {
     for level in levels {
         let group: Vec<usize> = defects
             .iter()
-            .filter(|(_, f)| !needs_plan(f) && severity(store, f) == level)
+            .filter(|(_, f)| !needs_plan(f) && store.severity(f) == level)
             .map(|(i, _)| *i)
             .collect();
         if group.is_empty() {
@@ -408,7 +396,7 @@ fn render(store: &Store, run: &Run) -> (String, String) {
         for i in group {
             md.push_str(&defect_entry(
                 &projected(i),
-                severity(store, &store.findings[i]),
+                store.severity(&store.findings[i]),
             ));
         }
     }
@@ -428,7 +416,7 @@ fn render(store: &Store, run: &Run) -> (String, String) {
     for i in planned {
         md.push_str(&defect_entry(
             &projected(i),
-            severity(store, &store.findings[i]),
+            store.severity(&store.findings[i]),
         ));
     }
 

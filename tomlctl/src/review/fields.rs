@@ -17,12 +17,19 @@ use crate::errors::{ErrorKind, tagged_err};
 macro_rules! str_enum {
     ($(#[$meta:meta])* $name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub(crate) enum $name {
             $($variant),+
         }
 
+        #[allow(
+            dead_code,
+            reason = "the macro gives every word enum the same accessors; not every enum calls each one"
+        )]
         impl $name {
+            /// Every variant, in declaration order — the order `Ord` sorts by.
+            pub(crate) const ALL: &'static [Self] = &[$(Self::$variant),+];
+
             pub(crate) const VALUES: &'static [&'static str] = &[$($text),+];
 
             pub(crate) fn as_str(self) -> &'static str {
@@ -40,6 +47,7 @@ macro_rules! str_enum {
         }
     };
 }
+pub(crate) use str_enum;
 
 str_enum!(Kind {
     Defect => "defect",
@@ -134,7 +142,10 @@ pub(crate) const VERDICT_BY: &[&str] = &[
     "sync",
 ];
 pub(crate) const CELL_STATUSES: &[&str] = &["assigned", "covered", "thin", "uncovered"];
-pub(crate) const CELL_AGENTS: &[&str] = &["review-finder", "review-sweeper", "plan-executor"];
+pub(super) const FINDER: &str = "review-finder";
+pub(super) const SWEEPER: &str = "review-sweeper";
+pub(super) const EXECUTOR: &str = "plan-executor";
+pub(crate) const CELL_AGENTS: &[&str] = &[FINDER, SWEEPER, EXECUTOR];
 const FIX_SHAPES: &[&str] = &["edits", "needs-plan"];
 const EFFORTS: &[&str] = &["trivial", "small", "medium", "large"];
 const GRADES: &[&str] = &["high", "medium", "low"];
@@ -546,6 +557,14 @@ pub(crate) fn spec(record: Record, name: &str, kind: Option<Kind>) -> Option<&'s
         .find(|s| s.record == record && s.name == name && kind.is_none_or(|k| s.kinds.contains(k)))
 }
 
+/// The character cap the catalogue sets on `name` of `record`. Panics when
+/// the catalogue gives that field no cap, which no caller's input can cause.
+pub(crate) fn cap(record: Record, name: &str) -> usize {
+    spec(record, name, None)
+        .and_then(|s| s.cap)
+        .unwrap_or_else(|| panic!("the field catalogue sets no cap on {record:?}.{name}"))
+}
+
 /// One reason a row was refused, naming the field it concerns.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Refusal {
@@ -775,7 +794,7 @@ fn check_text(spec: &FieldSpec, text: &str) -> std::result::Result<(), String> {
         PathForm::Citation if text.chars().any(char::is_whitespace) => return Ok(()),
         PathForm::Citation => citation_path(text),
     };
-    match path_problem(path) {
+    match path_problem(path, "paths") {
         Some(problem) => Err(format!("{text:?} {problem}")),
         None => Ok(()),
     }
@@ -792,19 +811,18 @@ fn citation_path(text: &str) -> &str {
     text.split_once('#').map_or(text, |(path, _)| path)
 }
 
-/// Why `path` is not repo-relative and `/`-separated, or `None` when it is.
-fn path_problem(path: &str) -> Option<&'static str> {
-    let bytes = path.as_bytes();
-    if path.is_empty() {
-        Some("is empty")
+/// Why `path` is not repo-relative and `/`-separated, or `None` when it is;
+/// `noun` names the paths in the message ("scope paths"). A `:` as the
+/// second byte reads as a drive prefix whatever its first byte.
+pub(super) fn path_problem(path: &str, noun: &str) -> Option<String> {
+    if path.trim().is_empty() {
+        Some("is empty".into())
     } else if path.contains('\\') {
-        Some("uses `\\`; paths are `/`-separated")
-    } else if path.starts_with('/')
-        || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
-    {
-        Some("is absolute; paths are repo-relative")
+        Some(format!("uses `\\`; {noun} are `/`-separated"))
+    } else if path.starts_with('/') || path.as_bytes().get(1) == Some(&b':') {
+        Some(format!("is absolute; {noun} are repo-relative"))
     } else if path.split('/').any(|segment| segment == "..") {
-        Some("contains `..`")
+        Some("contains `..`".into())
     } else {
         None
     }
@@ -921,7 +939,8 @@ impl RoutingGlobs {
     }
 }
 
-fn compile(key: &str, patterns: &[String]) -> Result<GlobSet> {
+/// Compile one `[routing]` glob list; `key` names the list in the error.
+pub(super) fn compile(key: &str, patterns: &[String]) -> Result<GlobSet> {
     let mut builder = GlobSetBuilder::new();
     for pattern in patterns {
         let glob = Glob::new(pattern).map_err(|e| {
@@ -940,6 +959,16 @@ fn compile(key: &str, patterns: &[String]) -> Result<GlobSet> {
             format!("invalid [routing] {key} globs: {e}"),
         )
     })
+}
+
+/// The paths a cleanup edits: its edit target (`target_file`, else `file`;
+/// an empty `target_file` counts as absent) and each of its `instances`.
+pub(super) fn edited_paths<'a>(
+    file: &'a str,
+    target_file: Option<&'a str>,
+    instances: impl IntoIterator<Item = &'a str>,
+) -> impl Iterator<Item = &'a str> {
+    std::iter::once(target_file.filter(|t| !t.is_empty()).unwrap_or(file)).chain(instances)
 }
 
 /// Who verifies a finding. A critical defect at `deep` goes to a panel and
@@ -968,9 +997,7 @@ pub(crate) fn route(
             let Some(direction) = direction else {
                 return Route::Verifier;
             };
-            let edited = std::iter::once(target_file.unwrap_or(file))
-                .chain(instances.iter().map(String::as_str));
-            for path in edited {
+            for path in edited_paths(file, target_file, instances.iter().map(String::as_str)) {
                 let needs_verifier = if globs.tests.is_match(path) {
                     direction == Direction::Remove
                 } else {

@@ -17,6 +17,8 @@ tomlctl review list --in <slice glob> --for finder --slug <slug>
 tomlctl review show <F1,F2> --for verifier --scope <scope>
 ```
 
+`--in` takes one glob; when a slice holds several entries, run `review list` once per entry.
+
 Worked examples live in this skill's `references/finding-kinds.md` (one row per kind, direction and family) and `references/verifying.md` (one verdict per outcome). A preload reports no base directory, so read them from the absolute paths your `review show` projection carries.
 
 The enforced field contract is printed by `tomlctl review schema finding --kind <kind>`. When this page and a refusal disagree, the refusal is right.
@@ -41,6 +43,8 @@ A defect whose fix needs decisions stays a defect with `fix_shape = "needs-plan"
 | `line` | ≥1; required for defect and cleanup |
 | `symbol` | optional; the function, type or task ref at the anchor. Set it whenever there is one — identity matching keys on it |
 | `summary` | ≤160 characters, one claim |
+
+No field may quote the value of a secret, token, password or key. The store is committed and exported, so name the value's location and kind instead, and cut `old` and `evidence` short of the value.
 
 Never supply `id`, `status`, `route`, `anchor`, `related`, `outcome`, `cell`, `run` or `first_seen`: tomlctl sets them and refuses a row that carries one.
 
@@ -103,7 +107,7 @@ These three fields exist only in the plan family; a code or perf row carrying on
 
 ## Identity: `same_as` and PRIOR
 
-`PRIOR` is the slice's earlier findings (`review list --in <slice> --for finder`). When a finding you would raise is the same fault as a prior row — same file and symbol, or same file within 10 lines — set `same_as` to that row's id. `same_as` must name such a candidate or the row is refused. The verifier confirms or strikes the identity; `review resolve` then decides whether it is a repeat, a regression or a reopening. A missed `same_as` costs a duplicate, not a lost finding.
+`PRIOR` is the slice's earlier findings (`review list --in <slice entry> --for finder`, once per entry of the slice). When a finding you would raise is the same fault as a prior row — same file and symbol, or same file within 10 lines — set `same_as` to that row's id. `same_as` must name such a candidate or the row is refused. The verifier confirms or strikes the identity; `review resolve` then decides whether it is a repeat, a regression or a reopening. A missed `same_as` costs a duplicate, not a lost finding.
 
 A prior row that is dismissed, deferred, parked or refuted is not raised again unless you have new evidence, which you put in `evidence`. A new row whose `same_as` names a dismissed, deferred or parked finding is merged into it and counted as suppressed.
 

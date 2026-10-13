@@ -270,6 +270,32 @@ fn contested_row_merges_and_records_outcome() {
 }
 
 #[test]
+fn panel_row_waits_on_its_quorum_whatever_else_is_recorded() {
+    let repo = Repo::new(&[
+        target("F1", "open", ""),
+        row("F2", "F1", "").replace("route = \"verifier\"", "route = \"panel\""),
+    ]);
+    repo.vote("F2", "confirmed", &["--by", "panel", "--seat", "1"]);
+    let mut text = repo.raw();
+    text.push_str(
+        "\n[[verdicts]]\nfinding = \"F2\"\nrun = \"U2\"\nby = \"verifier\"\nverdict = \"confirmed\"\ncitation = \"src/lib.rs:30\"\nrationale = \"seeded past the route check\"\n",
+    );
+    fs::write(repo.root.join(".claude/review-v2/t.toml"), text).unwrap();
+
+    let waiting = repo.resolve(&[]);
+    assert_eq!(
+        waiting["pending"][0]["reason"], "verdicts incomplete",
+        "one seat decides nothing, and a verifier verdict is not a seat: {waiting}"
+    );
+    assert_eq!(repo.field("F2", "status").as_deref(), Some("unverified"));
+
+    repo.vote("F2", "confirmed", &["--by", "panel", "--seat", "2"]);
+    let out = repo.resolve(&[]);
+    assert_eq!(out["resolved"][0]["outcome"], "repeat", "{out}");
+    repo.assert_merged("F2", "F1", "repeat");
+}
+
+#[test]
 fn refuted_same_as_on_open_is_contested() {
     let repo = Repo::new(&[target("F1", "unverified", ""), row("F2", "F1", "")]);
     repo.verdict("F1", "confirmed");
@@ -350,6 +376,59 @@ fn same_as_on_parked_is_suppressed() {
     repo.resolve(&[]);
     repo.assert_merged("F2", "F1", "suppressed");
     assert_eq!(repo.field("F1", "status").as_deref(), Some("parked"));
+}
+
+/// `F1` is a prior-run advisory converted to the defect `F4`; `F2` names the
+/// advisory, so its outcome is read off the replacement.
+#[test]
+fn same_as_on_converted_advisory_follows_to_its_replacement() {
+    let advisory = r#"
+[[findings]]
+id = "F1"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "advisory"
+lens = "correctness"
+route = "none"
+file = "src/lib.rs"
+line = 30
+symbol = "lib::limit"
+summary = "the limit could be inclusive"
+angle = "alternative"
+rationale = "callers pass a length"
+adoption_cost = "one comparison"
+status = "converted"
+converted_to = "F4"
+"#
+    .to_string();
+
+    let open = Repo::new(&[
+        advisory.clone(),
+        target("F4", "open", ""),
+        row("F2", "F1", ""),
+    ]);
+    open.verdict("F2", "confirmed");
+    let out = open.resolve(&[]);
+    assert_eq!(out["resolved"][0]["target"], "F4", "{out}");
+    open.assert_merged("F2", "F4", "repeat");
+    assert_eq!(open.strings("F4", "seen_in"), s(&["U1", "U2"]));
+    assert_eq!(open.field("F1", "status").as_deref(), Some("converted"));
+
+    let fixed = Repo::new(&[
+        advisory,
+        target(
+            "F4",
+            "resolved",
+            "resolution = \"fixed\"\nresolved = 2026-10-02\n",
+        ),
+        row("F2", "F1", ""),
+    ]);
+    fixed.verdict("F2", "confirmed");
+    fixed.resolve(&[]);
+    assert_eq!(fixed.field("F2", "outcome").as_deref(), Some("regression"));
+    assert_eq!(fixed.strings("F2", "related"), s(&["F4"]));
 }
 
 /// `F2` names `F3`, a row of the same run that itself names `F1`, so `F2`

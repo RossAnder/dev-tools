@@ -620,6 +620,56 @@ fn export_regression_on_fixed_v1_match() {
     );
 }
 
+fn snapshot(repo: &Repo, rel: &str) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
+    let read = |p: PathBuf| fs::read(p).ok();
+    (
+        read(repo.root.join(rel)),
+        read(repo.root.join(format!("{rel}.sha256"))),
+    )
+}
+
+#[test]
+fn export_dry_run_writes_neither_ledger_nor_store() {
+    let repo = Repo::new();
+    let store_before = snapshot(&repo, STORE_PATH);
+    let out = repo.exported(&["--dry-run", "F1"]);
+    assert_eq!(out["dry_run"], true, "{out}");
+    assert_eq!(
+        findings_in(&out["would_change"], "exported"),
+        ["F1"],
+        "{out}"
+    );
+    assert_eq!(
+        snapshot(&repo, STORE_PATH),
+        store_before,
+        "v2 store untouched"
+    );
+    assert_eq!(
+        snapshot(&repo, LEDGER),
+        (None, None),
+        "no v1 ledger created"
+    );
+
+    repo.write(LEDGER, OPEN_IO_LOCK);
+    let ledger_before = snapshot(&repo, LEDGER);
+    let out = repo.exported(&["--dry-run", "F7"]);
+    assert_eq!(
+        findings_in(&out["would_change"], "exported"),
+        ["F7"],
+        "{out}"
+    );
+    assert_eq!(
+        snapshot(&repo, LEDGER),
+        ledger_before,
+        "v1 ledger untouched"
+    );
+    assert_eq!(
+        snapshot(&repo, STORE_PATH),
+        store_before,
+        "v2 store untouched"
+    );
+}
+
 #[test]
 fn export_stamps_last_updated_from_run_date() {
     let repo = Repo::new();

@@ -400,9 +400,6 @@ fn panel_counts_each_seat_once_by_its_latest_verdict() {
     let mut text = repo.raw();
     text.push_str(&seeded("F4", 1, "refuted"));
     text.push_str(&seeded("F4", 1, "confirmed"));
-    // Seat 1 refuted twice on F1: two copies are one refuting seat.
-    text.push_str(&seeded("F1", 1, "refuted"));
-    text.push_str(&seeded("F1", 1, "refuted"));
     fs::write(repo.root.join(".claude/review-v2/t.toml"), text).unwrap();
 
     repo.batched(&[seat2("F4", "confirmed")]);
@@ -412,12 +409,57 @@ fn panel_counts_each_seat_once_by_its_latest_verdict() {
         "seat 1 standing + seat 2 standing"
     );
 
-    repo.batched(&[seat2("F1", "confirmed")]);
+    // Seat 1 refuted twice: two copies are one refuting seat.
+    let copied = Repo::new();
+    let mut text = copied.raw();
+    text.push_str(&seeded("F4", 1, "refuted"));
+    text.push_str(&seeded("F4", 1, "refuted"));
+    fs::write(copied.root.join(".claude/review-v2/t.toml"), text).unwrap();
+
+    copied.batched(&[seat2("F4", "refuted")]);
     assert_eq!(
-        repo.status("F1"),
+        copied.status("F4"),
+        "refuted",
+        "seat 1 refuting + seat 2 refuting"
+    );
+    copied.batched(&[seat2("F4", "confirmed")]);
+    assert_eq!(
+        copied.status("F4"),
         "unverified",
         "one refuting seat copied twice is not two refuting seats"
     );
+}
+
+#[test]
+fn panel_finding_takes_only_panel_and_audit_verdicts() {
+    let repo = Repo::new();
+    let mut seat1 = row("F4", "panel", "confirmed");
+    seat1["seat"] = json!(1);
+    repo.batched(&[seat1]);
+
+    let refused = repo.batch(&[row("F4", "verifier", "confirmed")]).failure();
+    let stderr = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+    assert!(stderr.contains("routed to the panel"), "{stderr}");
+    assert_eq!(
+        repo.status("F4"),
+        "unverified",
+        "a verifier cannot settle a panel finding past its quorum"
+    );
+    assert_eq!(repo.verdicts().len(), 1);
+
+    repo.batched(&[row("F4", "audit", "refuted")]);
+    assert_eq!(
+        repo.status("F4"),
+        "refuted",
+        "the audit decides a panel finding at once"
+    );
+
+    let mut misrouted = row("F1", "panel", "confirmed");
+    misrouted["seat"] = json!(1);
+    let refused = repo.batch(&[misrouted]).failure();
+    let stderr = String::from_utf8_lossy(&refused.get_output().stderr).to_string();
+    assert!(stderr.contains("not routed to the panel"), "{stderr}");
+    assert_eq!(repo.status("F1"), "unverified");
 }
 
 #[test]

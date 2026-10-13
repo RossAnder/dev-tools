@@ -156,6 +156,15 @@ impl Repo {
     fn status(&self, id: &str) -> String {
         self.finding(id)["status"].as_str().unwrap().to_string()
     }
+
+    /// Rewrites the store through `edit` and returns its new bytes.
+    fn rewrite(&self, edit: impl FnOnce(&mut toml::Value)) -> String {
+        let path = self.root.join(".claude/review-v2/t.toml");
+        let mut doc = self.store();
+        edit(&mut doc);
+        fs::write(&path, toml::to_string(&doc).unwrap()).unwrap();
+        fs::read_to_string(path).unwrap()
+    }
 }
 
 fn write(root: &Path, rel: &str, text: &str) {
@@ -395,6 +404,63 @@ fn convert_refuses_old_absent_at_anchor() {
     );
     let after = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
     assert_eq!(before, after, "a refused conversion writes nothing");
+}
+
+#[test]
+fn convert_refuses_a_finished_run() {
+    let repo = Repo::new();
+    let before = repo.rewrite(|doc| {
+        doc["runs"][0]
+            .as_table_mut()
+            .unwrap()
+            .insert("finished".into(), "2026-10-12T11:00:00Z".into());
+    });
+    let payload = repo.staged(
+        "convert-F1.ndjson",
+        &format!(
+            "{}\n",
+            json!({
+                "edit": "mention the default path before --fast",
+                "direction": "change",
+                "old": "Run with `--fast`.",
+                "effort": "trivial",
+            })
+        ),
+    );
+    let out = repo
+        .triage("F1", &["--convert", "cleanup", "--ndjson", &payload])
+        .failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr);
+    assert!(stderr.contains("which is finished"), "{stderr}");
+    let after = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
+    assert_eq!(before, after, "a refused conversion writes nothing");
+}
+
+#[test]
+fn triage_refuses_a_settled_finding() {
+    let repo = Repo::new();
+    let before = repo.rewrite(|doc| {
+        let f3 = doc["findings"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|f| f["id"].as_str() == Some("F3"))
+            .unwrap();
+        f3.as_table_mut()
+            .unwrap()
+            .insert("status".into(), "exported".into());
+    });
+
+    for args in [["--dismiss", "not a bug"], ["--reopen", "it is a bug"]] {
+        let out = repo.triage("F3", &args).failure();
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr);
+        assert!(
+            stderr.contains("F3 is exported; triage does not move a exported finding"),
+            "{args:?}: {stderr}"
+        );
+        let after = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
+        assert_eq!(before, after, "{args:?}: a settled row is not moved");
+    }
 }
 
 #[test]

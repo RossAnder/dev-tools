@@ -13,46 +13,26 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::Result;
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::GlobSet;
 use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 use toml::value::Datetime;
 
 use super::catalogue::run_catalogue;
-use super::fields::{self, Family, Kind, ProjectCtx, Record, Role};
+use super::fields::{self, Family, Kind, Role};
+use super::query::View;
 use super::store::{self, Finding, Store, Target};
+use super::sync::map_status;
 use crate::cli::{ReadIntegrityArgs, ReviewExportArgs, write_integrity_opts};
-use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{
     OnMissing, dry_run_read_opts, mutate_doc, read_doc_owned, relativise_under, repo_or_cwd_root,
     warn_if_created,
 };
-use crate::ledgers::LedgerKind;
+use crate::ledgers::{EFFORTS, LedgerKind, SEVERITIES};
 use crate::output::print_json_compact;
 
 const VERB: &str = "review export-v1";
-const REVIEW_CATEGORIES: &[&str] = &[
-    "quality",
-    "security",
-    "architecture",
-    "completeness",
-    "db",
-    "testability",
-    "package-quality",
-];
-const OPTIMISE_CATEGORIES: &[&str] = &[
-    "memory",
-    "serialization",
-    "query",
-    "algorithm",
-    "concurrency",
-];
-const V1_SEVERITIES: &[&str] = &["critical", "warning", "suggestion"];
-const V1_EFFORTS: &[&str] = &["trivial", "small", "medium"];
-/// v1 statuses a new finding is not re-reported against.
-const V1_SETTLED: &[&str] = &["deferred", "wontfix", "wontapply", "verified-clean"];
-const V1_FIXED: &[&str] = &["fixed", "applied"];
 
 type Row = Map<String, JsonValue>;
 
@@ -69,33 +49,36 @@ fn ledger_family(path: &Path) -> Result<Family> {
         .and_then(Path::file_name)
         .and_then(|n| n.to_str())
         .unwrap_or("");
-    [
-        (Family::Code, LedgerKind::Review),
-        (Family::Perf, LedgerKind::Optimise),
-    ]
-    .into_iter()
-    .find(|(_, kind)| name == kind.flow_file() || parent == kind.scope_dir())
-    .map(|(family, _)| family)
-    .ok_or_else(|| {
-        invalid(format!(
-            "{VERB}: cannot tell the v1 ledger kind of {}: name it review-ledger.toml or \
-             optimise-findings.toml, or place it under .claude/reviews/ or \
-             .claude/optimise-findings/",
-            path.display()
-        ))
-    })
+    [Family::Code, Family::Perf]
+        .into_iter()
+        .find(|&family| {
+            let kind = v1_kind(family);
+            name == kind.flow_file() || parent == kind.scope_dir()
+        })
+        .ok_or_else(|| {
+            invalid(format!(
+                "{VERB}: cannot tell the v1 ledger kind of {}: name it review-ledger.toml or \
+                 optimise-findings.toml, or place it under .claude/reviews/ or \
+                 .claude/optimise-findings/",
+                path.display()
+            ))
+        })
+}
+
+fn v1_kind(family: Family) -> LedgerKind {
+    if family == Family::Perf {
+        LedgerKind::Optimise
+    } else {
+        LedgerKind::Review
+    }
 }
 
 fn id_prefix(family: Family) -> &'static str {
-    if family == Family::Perf { "O" } else { "R" }
+    v1_kind(family).id_prefix()
 }
 
 fn categories(family: Family) -> &'static [&'static str] {
-    if family == Family::Perf {
-        OPTIMISE_CATEGORIES
-    } else {
-        REVIEW_CATEGORIES
-    }
+    v1_kind(family).categories().unwrap_or_default()
 }
 
 /// A finding cleared for export: its v1 row (no `id`), its `v2_ref`, and the
@@ -125,13 +108,6 @@ struct V1Outcome {
 
 pub(crate) fn run(target: &Target, args: ReviewExportArgs) -> Result<()> {
     let family = ledger_family(&args.to)?;
-    if !target.path.is_file() {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            Some(target.path.clone()),
-            format!("review store not found at {}", target.path.display()),
-        ));
-    }
     let root = repo_or_cwd_root()?;
     let read = ReadIntegrityArgs {
         verify_integrity: args.integrity.verify_integrity,
@@ -262,7 +238,10 @@ struct Selection {
 
 impl Selection {
     fn new(stored: &Store, root: &Path, family: Family, args: &ReviewExportArgs) -> Result<Self> {
-        let projected = implementer_rows(stored);
+        let view = View::new(stored);
+        let projected = (0..stored.findings.len())
+            .map(|index| view.project(Role::Implementer, index, false))
+            .collect();
         let mut chosen = Vec::new();
         let mut held = Vec::new();
         let mut refused = Vec::new();
@@ -353,44 +332,6 @@ fn refusal(f: &Finding, family: Family) -> Option<String> {
     None
 }
 
-/// Every finding's implementer projection, in store order, carrying its
-/// latest verdict's citation.
-fn implementer_rows(stored: &Store) -> Vec<Row> {
-    let doc = store::to_toml(stored);
-    let rows = |key: &str| -> Vec<Row> {
-        doc.get(key)
-            .and_then(TomlValue::as_array)
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| match toml_to_json(v) {
-                        JsonValue::Object(map) => Some(map),
-                        _ => None,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    let verdicts = rows("verdicts");
-    rows("findings")
-        .iter()
-        .zip(&stored.findings)
-        .map(|(row, finding)| {
-            let own: Vec<Row> = stored
-                .verdicts
-                .iter()
-                .zip(&verdicts)
-                .filter(|(v, _)| v.finding == finding.id)
-                .map(|(_, row)| row.clone())
-                .collect();
-            let ctx = ProjectCtx {
-                verdicts: &own,
-                same_as_target: None,
-            };
-            fields::project(Role::Implementer, Record::Finding, row, &ctx)
-        })
-        .collect()
-}
-
 /// The finding's v1 row, or why it fails the v1 required-field contract.
 fn candidate(
     stored: &Store,
@@ -408,7 +349,7 @@ fn candidate(
             .trim()
     };
     let severity = match f.kind {
-        Kind::Defect => match reassessed_severity(stored, f).as_str() {
+        Kind::Defect => match stored.severity(f) {
             "critical" => "critical",
             "major" => "warning",
             "minor" => "suggestion",
@@ -471,8 +412,8 @@ fn check_v1(row: &Row, family: Family) -> std::result::Result<(), String> {
     if row.get("line").and_then(JsonValue::as_u64).is_none() {
         return Err("v1 `line` is not a non-negative integer".into());
     }
-    one_of("severity", V1_SEVERITIES)?;
-    one_of("effort", V1_EFFORTS)?;
+    one_of("severity", &SEVERITIES)?;
+    one_of("effort", &EFFORTS)?;
     one_of("category", categories(family))?;
     if get("summary").is_empty() {
         return Err("v1 `summary` is empty".into());
@@ -554,16 +495,6 @@ fn latest_verdict(stored: &Store, finding: &str) -> String {
         .unwrap_or_default()
 }
 
-/// The latest severity a verdict reassessed, else the finding's own.
-fn reassessed_severity(stored: &Store, f: &Finding) -> String {
-    stored
-        .verdicts
-        .iter()
-        .rev()
-        .find(|v| v.finding == f.id && !v.severity.is_empty())
-        .map_or_else(|| text(f, "severity").to_string(), |v| v.severity.clone())
-}
-
 fn text<'a>(f: &'a Finding, key: &str) -> &'a str {
     f.rest
         .get(key)
@@ -599,12 +530,11 @@ impl<'a> TestGlobs<'a> {
                     f.id, f.run
                 ))
             })?;
-            let globs = test_globs(&run_catalogue(self.root, run)?.routing().tests)?;
+            // Only the tests list: a bad executable glob must not fail export.
+            let globs = fields::compile("tests", &run_catalogue(self.root, run)?.routing().tests)?;
             self.by_run.insert(f.run.clone(), globs);
         }
         let globs = &self.by_run[&f.run];
-        let target = text(f, "target_file");
-        let edited = if target.is_empty() { &f.file } else { target };
         let instances = f
             .rest
             .get("instances")
@@ -612,22 +542,11 @@ impl<'a> TestGlobs<'a> {
             .into_iter()
             .flatten()
             .filter_map(TomlValue::as_str);
-        Ok(std::iter::once(edited)
-            .chain(instances)
-            .any(|path| globs.is_match(path)))
+        Ok(
+            fields::edited_paths(&f.file, Some(text(f, "target_file")), instances)
+                .any(|path| globs.is_match(path)),
+        )
     }
-}
-
-fn test_globs(patterns: &[String]) -> Result<GlobSet> {
-    let mut builder = GlobSetBuilder::new();
-    for pattern in patterns {
-        let glob = Glob::new(pattern)
-            .map_err(|e| invalid(format!("invalid [routing] tests glob {pattern:?}: {e}")))?;
-        builder.add(glob);
-    }
-    builder
-        .build()
-        .map_err(|e| invalid(format!("invalid [routing] tests globs: {e}")))
 }
 
 /// The newest date among the exported findings' `seen_in` runs (their own
@@ -835,8 +754,10 @@ fn decide(doc: &TomlValue, c: &Candidate) -> Decision {
         .map(|r| (get(r, "id"), get(r, "status")))
         .filter(|(id, _)| !id.is_empty())
         .collect();
-    let settled = |s: &str| V1_SETTLED.contains(&s);
-    let fixed = |s: &str| V1_FIXED.contains(&s);
+    // A match `sync-v1` would resolve is a regression; one it would dismiss
+    // or defer is settled, and a new finding is not re-reported against it.
+    let settled = |s: &str| matches!(map_status(s), Some("dismissed" | "deferred"));
+    let fixed = |s: &str| map_status(s) == Some("resolved");
     if let Some((id, _)) = matches.iter().find(|(_, s)| !settled(s) && !fixed(s)) {
         return Decision::Reuse(id.clone());
     }

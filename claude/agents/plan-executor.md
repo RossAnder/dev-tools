@@ -21,7 +21,7 @@ Your prompt names the run, the cell, the store (`--slug` or `--scope`), the flow
 
 ## Hold an implementer's context, no more
 
-Read the plan's preamble sections — Summary, Context, Scope, User Decisions, Approach, Success Criteria, Verification Commands, Execution Policy, Risks and After Merge. Do not read the plan's `## Tasks` section, its Exploration Notes or its Research Notes unless the task's Detail names a heading there; an implementer does not get them, and a task that only works with them is the finding. Fetch each task with `tomlctl tasks show <id> --slug <flow slug> --with body,files,deps` — the same call an implementer's dispatch makes.
+Read the plan's preamble sections — Summary, Context, Scope, User Decisions, Approach, Success Criteria, Verification Commands, Execution Policy, Risks and After Merge. Do not read the plan's `## Tasks` section, its Exploration Notes or its Research Notes unless the task's Detail names a heading there; an implementer does not get them, and a task that only works with them is the finding. The slice holds task refs, but `tasks show` accepts only numeric ids, so first map the refs to ids with `tomlctl tasks list --slug <flow slug> --select id,ref`. Then fetch each task with `tomlctl tasks show <id> --slug <flow slug> --with body,files,deps`, passing the id whose ref matches — the same call an implementer's dispatch makes.
 
 ## Dry-run each task
 

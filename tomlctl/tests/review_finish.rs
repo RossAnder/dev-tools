@@ -228,6 +228,23 @@ fn finish_refuses_unwaived_coverage() {
 }
 
 #[test]
+fn finish_refuses_unsealed_cells() {
+    let Some(repo) = Repo::new() else {
+        return;
+    };
+    let unsealed = full_cell().replace("sealed = true\n", "");
+    repo.seed(&unsealed);
+    let refused = repo.finish(&[]).failure();
+    let err = stderr(&refused);
+    assert!(err.contains("unsealed cells: C1"), "{err}");
+    assert_unfinished(&repo.path());
+
+    let out = repo.finish(&["--incomplete", "finder died"]).success();
+    let json = stdout_json(&out);
+    assert_eq!(json["gaps"]["unsealed"][0], "C1", "{json}");
+}
+
+#[test]
 fn finish_incomplete_records_reason() {
     let Some(repo) = Repo::new() else {
         return;

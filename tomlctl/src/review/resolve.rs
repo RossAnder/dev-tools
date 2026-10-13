@@ -4,26 +4,26 @@
 //! settled. Passes repeat until none resolves, so a same-run target always
 //! resolves before the rows naming it, whatever order the verdicts arrived
 //! in. A `merged` target is followed through `merged_into` to the row it
-//! joined. The outcome by target status and the row's verdict:
+//! joined, and a `converted` advisory through `converted_to` to its
+//! replacement. The outcome by target status and the row's verdict:
 //!   open, exported:  confirmed or plausible → repeat; refuted → contested
 //!   refuted:         confirmed → reopened; plausible → contested; refuted → repeat
 //!   resolved:        confirmed → regression; plausible → contested; refuted → repeat
-//!   dismissed, deferred, parked, backlogged, converted → suppressed
+//!   dismissed, deferred, parked, backlogged → suppressed
 //! A plausible verdict never overturns a settled target; it contests it.
 
 use anyhow::Result;
 use serde_json::json;
 use toml::Value as TomlValue;
 
-use super::fields::Route;
+use super::add::SUPPRESSING;
 use super::store::{self, Finding, Store, Target, Verdict};
+use super::verdict::settle;
 use crate::cli::{ReadIntegrityArgs, ReviewResolveArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::output::print_json_compact;
 
 const VERB: &str = "review resolve";
-/// Target statuses that suppress any row naming them in `same_as`.
-const SUPPRESSING: &[&str] = &["dismissed", "deferred", "parked", "backlogged", "converted"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Call {
@@ -91,13 +91,6 @@ struct Report {
 }
 
 pub(crate) fn run(target: &Target, args: ReviewResolveArgs) -> Result<()> {
-    if !target.path.is_file() {
-        return Err(tagged_err(
-            ErrorKind::NotFound,
-            Some(target.path.clone()),
-            format!("review store not found at {}", target.path.display()),
-        ));
-    }
     let read = ReadIntegrityArgs {
         verify_integrity: args.integrity.verify_integrity,
         strict_read: true,
@@ -200,52 +193,25 @@ fn classify(store: &Store, i: usize) -> std::result::Result<(usize, Decision), S
     Ok((target, decision))
 }
 
-/// The row's verdict once complete. A panel row decides as `review verdict`
-/// decides a panel: two non-refuted seats stand it (confirmed when two of
-/// them confirm), two refuting seats refute it. Any other route takes the
-/// latest non-panel verdict that is not `unsettled`.
+/// The row's verdict once complete, settled by the rule `review verdict`
+/// applies; every non-panel author counts.
 fn decide(store: &Store, row: &Finding) -> Option<Decision> {
-    let mut mine = store
+    let (indices, mine): (Vec<usize>, Vec<&Verdict>) = store
         .verdicts
         .iter()
         .enumerate()
-        .filter(|(_, v)| v.finding == row.id);
-    if row.route == Some(Route::Panel) {
-        let mut seats: Vec<(Option<u32>, usize)> = Vec::new();
-        for (k, vote) in mine.filter(|(_, v)| v.by == "panel") {
-            seats.retain(|(seat, _)| *seat != vote.seat);
-            seats.push((vote.seat, k));
-        }
-        let deciding: Vec<usize> = seats.iter().map(|&(_, k)| k).collect();
-        let count = |call: Call| {
-            deciding
-                .iter()
-                .filter(|&&k| Call::parse(&store.verdicts[k].verdict) == Some(call))
-                .count()
-        };
-        let (confirmed, plausible) = (count(Call::Confirmed), count(Call::Plausible));
-        let call = if confirmed + plausible >= 2 {
-            if confirmed >= 2 {
-                Call::Confirmed
-            } else {
-                Call::Plausible
-            }
-        } else if count(Call::Refuted) >= 2 {
-            Call::Refuted
-        } else {
-            return None;
-        };
-        return Some(Decision { call, deciding });
-    }
-    let (k, verdict) = mine.rfind(|(_, v)| v.by != "panel" && v.verdict != "unsettled")?;
+        .filter(|(_, v)| v.finding == row.id)
+        .unzip();
+    let settled = settle(row.route, &mine, |_| true)?;
     Some(Decision {
-        call: Call::parse(&verdict.verdict)?,
-        deciding: vec![k],
+        call: Call::parse(settled.verdict)?,
+        deciding: settled.deciding.iter().map(|&k| indices[k]).collect(),
     })
 }
 
-/// Follows `same_as`, then `merged_into` through merged rows, to a target
-/// whose status an outcome can read.
+/// Follows `same_as`, then `merged_into` through merged rows and
+/// `converted_to` through converted ones, to a target whose status an
+/// outcome can read.
 fn settled_target(store: &Store, row: &Finding) -> std::result::Result<usize, String> {
     let mut visited = vec![row.id.as_str()];
     let mut id = row.same_as.as_str();
@@ -257,15 +223,21 @@ fn settled_target(store: &Store, row: &Finding) -> std::result::Result<usize, St
             return Err(format!("target {id} is not in this store"));
         };
         let target = &store.findings[t];
+        let link = match target.status.as_str() {
+            "merged" => Some("merged_into"),
+            "converted" => Some("converted_to"),
+            _ => None,
+        };
+        if let Some(link) = link {
+            visited.push(id);
+            id = target
+                .rest
+                .get(link)
+                .and_then(TomlValue::as_str)
+                .ok_or_else(|| format!("target {id} is {} but names no `{link}`", target.status))?;
+            continue;
+        }
         match target.status.as_str() {
-            "merged" => {
-                visited.push(id);
-                id = target
-                    .rest
-                    .get("merged_into")
-                    .and_then(TomlValue::as_str)
-                    .ok_or_else(|| format!("target {id} is merged but names no `merged_into`"))?;
-            }
             "unverified" => return Err(format!("target {id} is unverified")),
             "superseded" => {
                 return Err(format!(

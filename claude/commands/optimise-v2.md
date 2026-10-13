@@ -9,6 +9,8 @@ Researches code for performance and efficiency opportunities. Coverage is compos
 
 The pipeline belongs to the engine. **Invoke the `review-v2-engine` skill** and run its stages 0 to 8 in order, with the bindings and deltas below. Do not restate a stage here or in a prompt; where this file is silent, the engine governs.
 
+> **Effort**: Requires `xhigh` or `max` — composition, audit and triage are judgement steps.
+
 ## Bindings
 
 | Engine input | Value for this carrier |

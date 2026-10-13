@@ -16,19 +16,17 @@ use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
 use super::cells::PathSet;
-use super::fields::{Family, Kind};
+use super::fields::{Family, Kind, Route};
 use super::store::{self, Cell, Finding, Store, Verdict};
-use super::sync::{V1Outcome, ledger_paths, linked_rows};
+use super::sync::{SYNC_REASON_PREFIX, V1Outcome, ledger_paths, linked_rows};
+use super::verdict::settle;
 use crate::cli::ReviewStatsArgs;
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{relativise_under, repo_or_cwd_root, strict_read_check};
+use crate::io::{relativise_under, repo_or_cwd_root};
 
 const PROBE_PREFIX: &str = "probe:";
 const UNTAGGED: &str = "untagged";
 const DEFAULT_EXEMPLARS: usize = 5;
-/// The prefix `sync-v1` puts on every reason it writes, which marks a
-/// dismissal as v1's rather than the user's.
-const SYNC_REASON_PREFIX: &str = "v1: ";
 /// Verdict authors whose call is the one an audit can overturn.
 const VERIFYING: &[&str] = &["verifier", "panel", "checker"];
 
@@ -127,7 +125,9 @@ fn load_stores(root: &Path, args: &ReviewStatsArgs) -> Result<Vec<Loaded>> {
         all_store_paths(root)?
     } else {
         let target = store::resolve(picked.slug.as_deref(), picked.scope.as_deref())?;
-        strict_read_check(&target.path, args.integrity.strict_read)?;
+        if args.integrity.strict_read {
+            store::require(&target.path)?;
+        }
         vec![(target.path, picked.slug.clone(), picked.scope.clone())]
     };
     let mut loaded = Vec::new();
@@ -251,43 +251,23 @@ impl StoreView<'_> {
 }
 
 /// The verifying side's decision on a finding: `Some(true)` refuted,
-/// `Some(false)` standing, `None` undecided. A panel decides once two seats
-/// agree, each seat by its latest vote; otherwise the latest verifier or
-/// checker verdict that is not `unsettled` decides.
-fn verifier_call(verdicts: &[&Verdict]) -> Option<bool> {
-    let mut seats: Vec<(Option<u32>, bool)> = Vec::new();
-    for v in verdicts.iter().filter(|v| v.by == "panel") {
-        let refuted = v.verdict == "refuted";
-        match seats.iter_mut().find(|(seat, _)| *seat == v.seat) {
-            Some(slot) => slot.1 = refuted,
-            None => seats.push((v.seat, refuted)),
-        }
-    }
-    if !seats.is_empty() {
-        let refuting = seats.iter().filter(|(_, r)| *r).count();
-        let standing = seats.len() - refuting;
-        return match (standing >= 2, refuting >= 2) {
-            (true, _) => Some(false),
-            (_, true) => Some(true),
-            _ => None,
-        };
-    }
-    verdicts
-        .iter()
-        .rev()
-        .find(|v| VERIFYING.contains(&v.by.as_str()) && v.verdict != "unsettled")
-        .map(|v| v.verdict == "refuted")
+/// `Some(false)` standing, `None` undecided. It is settled by the rule
+/// `review verdict` applies, counting only verifying authors, so the audit
+/// never judges its own call.
+fn verifier_call(route: Option<Route>, verdicts: &[&Verdict]) -> Option<bool> {
+    settle(route, verdicts, |v| VERIFYING.contains(&v.by.as_str()))
+        .map(|settled| settled.verdict == "refuted")
 }
 
 /// Whether the latest audit verdict judged a decided verifying call, and that
 /// verdict when it overturned the call.
-fn overturn<'v>(verdicts: &[&'v Verdict]) -> (bool, Option<&'v Verdict>) {
+fn overturn<'v>(route: Option<Route>, verdicts: &[&'v Verdict]) -> (bool, Option<&'v Verdict>) {
     let audit = verdicts
         .iter()
         .rev()
         .find(|v| v.by == "audit" && v.verdict != "unsettled")
         .copied();
-    match (audit, verifier_call(verdicts)) {
+    match (audit, verifier_call(route, verdicts)) {
         (Some(audit), Some(refuted)) => {
             let overturned = (audit.verdict == "refuted") != refuted;
             (true, overturned.then_some(audit))
@@ -317,7 +297,7 @@ struct Tally {
     cells: usize,
     cell_status: BTreeMap<String, usize>,
     waived_runs: BTreeSet<String>,
-    kinds: [usize; 3],
+    kinds: [usize; Kind::ALL.len()],
     verified: usize,
     refuted: usize,
     audited: usize,
@@ -342,18 +322,13 @@ impl Tally {
 
     fn add_finding(&mut self, sv: &StoreView, finding: &Finding) {
         self.families.insert(finding.family.as_str());
-        let slot = match finding.kind {
-            Kind::Defect => 0,
-            Kind::Cleanup => 1,
-            Kind::Advisory => 2,
-        };
-        self.kinds[slot] += 1;
+        self.kinds[finding.kind as usize] += 1;
         let verdicts = sv.verdicts_of(&finding.id);
-        if let Some(refuted) = verifier_call(verdicts) {
+        if let Some(refuted) = verifier_call(finding.route, verdicts) {
             self.verified += 1;
             self.refuted += usize::from(refuted);
         }
-        let (audited, overturned) = overturn(verdicts);
+        let (audited, overturned) = overturn(finding.route, verdicts);
         self.audited += usize::from(audited);
         self.overturned += usize::from(overturned.is_some());
         self.dismissed += usize::from(user_dismissal(finding).is_some());
@@ -368,16 +343,16 @@ impl Tally {
     }
 
     fn to_json(&self, axis: Axis, key: &str) -> JsonValue {
+        let findings: serde_json::Map<String, JsonValue> = Kind::ALL
+            .iter()
+            .map(|&kind| (kind.as_str().to_string(), json!(self.kinds[kind as usize])))
+            .collect();
         let mut row = json!({
             "key": key,
             "families": self.families,
             "runs": self.runs.len(),
             "cells": self.cells,
-            "findings": {
-                "defect": self.kinds[0],
-                "cleanup": self.kinds[1],
-                "advisory": self.kinds[2],
-            },
+            "findings": findings,
             "yield_per_cell": rate(self.findings(), self.cells),
             "verified": self.verified,
             "refuted": self.refuted,
@@ -771,7 +746,7 @@ fn calibration(view: &View, links: &[Link], n: usize) -> JsonValue {
             {
                 add(&f.lens, "v1-wontfix", reason);
             }
-            if let (_, Some(audit)) = overturn(sv.verdicts_of(&f.id)) {
+            if let (_, Some(audit)) = overturn(f.route, sv.verdicts_of(&f.id)) {
                 add(&f.lens, "audit", &audit.rationale);
             }
         }

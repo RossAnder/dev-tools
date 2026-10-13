@@ -62,7 +62,7 @@ Fetch your assignment with \`tomlctl review show ${cell.id} --for finder ${store
 const verifierPrompt = (ids, seat, batch) => `${preamble}
 findings: ${ids.join(', ')}
 ${batch ? `batch: ${batch}\n` : ''}${seat ? `panel seat: ${seat} of ${PANEL_SEATS}\n` : ''}
-Fetch each finding with \`tomlctl review show ${ids.join(',')} --for verifier ${storeFlag}\`, verify it refute-first, and record each verdict with \`tomlctl review verdict\` using ${seat ? `\`--by panel --seat ${seat}\`` : '`--by verifier`'}. Return ${ids.length === 1 ? 'the verdict-return object' : 'one verdict-return object per finding under `verdicts`'}.`
+Fetch each finding with \`tomlctl review show ${ids.join(',')} --for verifier ${storeFlag}\`, verify it refute-first, and record each verdict with \`tomlctl review verdict\` using ${seat ? `\`--by panel --seat ${seat}\`` : '`--by verifier`'}. Return ${!batch ? 'the verdict-return object' : 'one verdict-return object per finding under `verdicts`'}.`
 
 // The checker may refute only a sweeper cell's row, and its projection does not carry the cell.
 const checkerPrompt = (ids, batch, sweeperIds) => `${preamble}

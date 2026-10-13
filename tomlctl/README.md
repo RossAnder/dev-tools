@@ -82,6 +82,7 @@ tomlctl inputs withdraw <id>...                        # withdraw new records, a
 tomlctl inputs answer <question-id> [--pick <option>]... [--text <text>]   # answer a new question and mark it handled
 tomlctl review sync-v1 --slug <s>                      # read v1 apply outcomes back onto the v2 store through v2_ref
 tomlctl review run start --slug <s> --command review-v2 --family code --depth standard --base <rev> [--set-json scope=<json>]   # mint U<n>, validate the lens catalogue, create the run directory
+tomlctl review run update <U> --slug <s> --set-json waivers=<json>   # patch signals, waivers, audit, agents or baselines (--set / --set-file also)
 tomlctl review survey --slug <s> --run <U>             # record the vocabulary's detector signals with their roots
 tomlctl review plan --slug <s> --run <U> --propose [--accept-signals <a,b>] [--lens <+id>]... [--out <path>]   # default coverage map as NDJSON
 tomlctl review plan --slug <s> --run <U> --ndjson <path>   # append the edited map as the next wave of cells

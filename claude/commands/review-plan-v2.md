@@ -1,6 +1,6 @@
 ---
 description: Review an implementation plan with composed, verified coverage — the v2 plan family, findings in the v2 store, and a merge offer into the plan
-argument-hint: [plan path or directory] [--depth quick|standard|deep] [--flow <slug>] [--probe "<question>"] [--lens +id|-id]
+argument-hint: [plan path or directory] [--depth quick|standard|deep] [--flow <slug>] [--probe "<question>"]... [--lens +id|-id]...
 ---
 
 # /review-plan-v2 — plan review, v2
@@ -8,6 +8,8 @@ argument-hint: [plan path or directory] [--depth quick|standard|deep] [--flow <s
 Reviews an implementation plan against the codebase with coverage composed for this plan: floor plan lenses, a dry run per task, the whole-plan `plan-checks` cell, and whatever lenses and probes the plan's signals call for. Every defect and cleanup finding is verified before it is offered back; verified findings can then be merged into the plan.
 
 Invoke the `review-v2-engine` skill before anything else and run its stages in order. It owns the pipeline: pre-flight, run start, survey, compose, waves, resolve and digest, audit, triage and close, the steering flags and the depth envelopes. This file states only what the plan family adds at each stage; where it says nothing, the engine's text stands.
+
+> **Effort**: Requires `xhigh` or `max` — composition, audit and triage are judgement steps.
 
 ## Bindings
 
@@ -58,7 +60,7 @@ An error-class finding is review material here, never a halt. When the real impo
 
 ## Stage 3 — compose
 
-- **The floor.** `plan-structure`, `plan-grounding`, `plan-dependencies` and `plan-executor` are proposed on every plan run. Keep them; a floor lens is never dropped or waived.
+- **The floor.** `plan-structure`, `plan-grounding`, `plan-dependencies`, `ripple` and `plan-executor` are proposed on every plan run. Keep them; a floor lens is never dropped or waived.
 - **The `plan-checks` cell.** The proposal emits one `review-finder` cell whose concerns are the three cell-run checks, `check:two-control-probe`, `check:falsifiability` and `check:acceptance-contradiction`. Write it to the cell file exactly as proposed: same concerns, slice, agent and reason. It takes the place of v1's orchestrator-only checks, so you run no acceptance probe, no falsifiability scan and no cross-task contradiction scan yourself, and its defects are verified like any other.
 - **`plan-executor` cells.** Each holds up to four task refs, outside the cell ceiling. Edit only which tasks they cover, within the depth envelope's plan-executor row.
 

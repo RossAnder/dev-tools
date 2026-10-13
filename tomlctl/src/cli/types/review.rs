@@ -410,7 +410,11 @@ pub(crate) struct ReviewListArgs {
     pub(crate) run: Option<String>,
     #[arg(long = "cell", value_name = "CELL")]
     pub(crate) cell: Option<String>,
-    #[arg(long = "status", value_name = "STATUS")]
+    #[arg(
+        long = "status",
+        value_name = "STATUS",
+        help = "unverified|superseded|open|refuted|merged|parked|dismissed|deferred|backlogged|converted|resolved|exported (default: every status except superseded)"
+    )]
     pub(crate) status: Option<String>,
     #[arg(
         long = "route",
@@ -427,7 +431,7 @@ pub(crate) struct ReviewListArgs {
     #[arg(
         long = "for",
         value_name = "ROLE",
-        help = "finder|verifier|checker|implementer|orchestrator|audit|backlog|report"
+        help = "finder|verifier|checker|implementer|orchestrator|audit|backlog|report (default: orchestrator)"
     )]
     pub(crate) for_role: Option<String>,
     #[command(flatten)]
