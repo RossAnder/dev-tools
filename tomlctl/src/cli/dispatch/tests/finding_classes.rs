@@ -21,8 +21,10 @@ const DOCUMENTED: &[&str] = &[
 /// holding them to a set would grow each into another copy of the table.
 const PROSE: &[&str] = &[
     "claude/commands/review-plan.md",
+    "claude/commands/review-plan-v2.md",
     "claude/skills/flow-contract-plan-restructure/SKILL.md",
     "claude/skills/flow-contract-plan-output-format/SKILL.md",
+    "claude/skills/review-v2-lenses/checks/store-check.md",
 ];
 
 type Classes = BTreeMap<String, BTreeSet<String>>;
