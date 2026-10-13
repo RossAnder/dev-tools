@@ -39,7 +39,7 @@ A step that runs clean is a line in your coverage note, not a finding. Classify 
 
 1. Write the cell's full finding set as NDJSON with the Write tool to `payloads/<cell id>.ndjson` in the run directory.
 2. Submit it with `tomlctl review add --run <run> --cell <cell> --ndjson <that path>` against the store; fix and resubmit the full set once if rows are refused.
-3. Seal the cell with `tomlctl review cover <cell> --status covered|thin|uncovered --note -`, stdin redirected from a note you staged with the Write tool as `payloads/<cell id>.note.md`, naming each task you dry-ran and the checks you ran. Use `thin` when you could not finish every task.
+3. Seal the cell with `tomlctl review cover <cell> --status covered|thin|uncovered --note-file <run dir>/payloads/<cell id>.note.md`, a note of at most 600 characters you staged at that path with the Write tool, naming each task you dry-ran and the checks you ran. Use `thin` when you could not finish every task.
 4. Return the cell-return object `review add` printed.
 
 <!-- SHARED-BLOCK:review-v2-store-writer START -->

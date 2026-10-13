@@ -37,7 +37,7 @@ Your prompt names the run, the store (`--slug` or `--scope`), the run directory,
 
 ## Record and return
 
-1. Record a single verdict with `tomlctl review verdict <finding> --verdict confirmed|plausible|refuted --by <by> --citation <citation> --rationale -` (plus `--seat`, `--severity` or `--strike-same-as` when they apply), stdin redirected from a rationale you staged with the Write tool in `payloads/`. For a batch, your prompt carries a `batch:` line; write the verdicts as NDJSON with the Write tool to `payloads/<batch id>.ndjson` in the run directory, named by that line, and record them with one `--ndjson <that path>` call.
+1. Record a single verdict with `tomlctl review verdict <finding> --verdict confirmed|plausible|refuted --by <by> --citation <citation> --rationale-file <run dir>/payloads/<finding>.rationale.md` (plus `--seat`, `--severity` or `--strike-same-as` when they apply), naming a rationale of at most 600 characters you staged at that path with the Write tool. For a batch, your prompt carries a `batch:` line; write the verdicts as NDJSON with the Write tool to `payloads/<batch id>.ndjson` in the run directory, named by that line, and record them with one `--ndjson <that path>` call.
 2. Return one verdict-return object per finding — the finding id, the verdict, and `reroute` only when the store asked for one. For a single finding or a panel seat, return that object bare: `{"finding": "F<n>", "verdict": "<confirmed|plausible|refuted>"}`. For a batch, return them under `verdicts`: `{"verdicts": [{"finding": "F<n>", "verdict": "<confirmed|plausible|refuted>"}]}`. The rationale belongs in the store, not the return.
 
 <!-- SHARED-BLOCK:review-v2-store-writer START -->
