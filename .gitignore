@@ -25,6 +25,9 @@
 *.db-wal
 *.db.*
 
+# Review v2 run artifacts: profiles, packs, proposals, baselines, staged payloads, reports
+/.claude/review-v2-runs/
+
 # Plan-merge rollback siblings (one generation, deleted by /plan-update complete)
 *.premerge.md
 

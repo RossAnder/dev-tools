@@ -1524,6 +1524,36 @@ fn carrier_invokes_required_skills() {
             "backlog.md",
             &["tomlctl", "backlog-capture", "flow-contract-user-inputs"],
         ),
+        (
+            "review-v2.md",
+            &[
+                "tomlctl",
+                "flow-contract-flow-context",
+                "review-v2-engine",
+                "backlog-capture",
+            ],
+        ),
+        (
+            "optimise-v2.md",
+            &[
+                "tomlctl",
+                "flow-contract-flow-context",
+                "review-v2-engine",
+                "backlog-capture",
+            ],
+        ),
+        (
+            "review-plan-v2.md",
+            &[
+                "tomlctl",
+                "flow-contract-flow-context",
+                "flow-contract-plansdirectory-prompt",
+                "flow-contract-task-store",
+                "flow-contract-plan-output-format",
+                "review-v2-engine",
+                "backlog-capture",
+            ],
+        ),
     ];
 
     let mut missing: Vec<String> = Vec::new();
