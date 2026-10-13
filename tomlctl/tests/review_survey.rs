@@ -670,6 +670,89 @@ count."lang:rust" = { files = ["**/*.rs"], patterns = ["#[test]"] }
 }
 
 #[test]
+fn health_window_above_cap_is_refused() {
+    let vocabulary = r#"
+[signals.churn-forever]
+kind = "health"
+meaning = "touched by two commits in over a century"
+detect = { files = ["**/*.rs"], window = 36501, threshold = 2 }
+
+[signals.churn-century]
+kind = "health"
+meaning = "touched by two commits in a century"
+detect = { files = ["**/*.rs"], window = 36500, threshold = 2 }
+"#;
+    let Some(fx) = Fixture::new(vocabulary) else {
+        return;
+    };
+    fx.write("core/hot.rs", "1\n");
+    fx.commit("one");
+    fx.write("core/hot.rs", "2\n");
+    let head = fx.commit("two");
+    let run = fx.start(&head);
+    let out = fx.survey(&run);
+
+    let reason = unknown_reason(&out, "churn-forever").expect("an over-cap window is unknown");
+    assert!(reason.contains("at most 36500 days"), "{reason}");
+    assert_eq!(roots(&out, "churn-forever"), None);
+    assert_eq!(
+        roots(&out, "churn-century"),
+        Some(vec!["core".to_string()]),
+        "the cap itself is accepted"
+    );
+}
+
+#[test]
+fn health_window_reaching_the_epoch_counts_all_history() {
+    let vocabulary = format!(
+        "{STACKS}{}",
+        r##"
+[signals.churn-epoch]
+kind = "health"
+meaning = "touched by two commits since the epoch"
+detect = { files = ["**/*.rs"], window = 20800, threshold = 2 }
+
+[signals.test-growth-epoch]
+kind = "health"
+meaning = "tests per kloc added since the epoch"
+[signals.test-growth-epoch.detect]
+window = 20800
+threshold = { per_kloc = 250 }
+count."lang:rust" = { files = ["**/*.rs"], patterns = ["#[test]"] }
+"##
+    );
+    let Some(fx) = Fixture::new(&vocabulary) else {
+        return;
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    fx.write("core/Cargo.toml", "[package]\nname = \"core\"\n")
+        .write(
+            "core/src/lib.rs",
+            "#[test]\nfn a() {}\n#[test]\nfn b() {}\n",
+        )
+        .write("core/hot.rs", "1\n");
+    fx.commit_dated("old", &format!("{} +0000", now - 3_000 * 86_400));
+    fx.write("core/hot.rs", "2\n");
+    fx.commit_dated("recent", &format!("{} +0000", now - 2 * 86_400));
+    let head = git(&fx.root, &["rev-parse", "HEAD"]);
+    let run = fx.start(&head);
+    let out = fx.survey(&run);
+
+    assert_eq!(
+        roots(&out, "churn-epoch"),
+        Some(vec!["core".to_string()]),
+        "a window older than the epoch counts every commit"
+    );
+    assert_eq!(
+        roots(&out, "test-growth-epoch"),
+        Some(vec!["core".to_string()])
+    );
+}
+
+#[test]
 fn survey_refuses_a_finished_run() {
     let Some(fx) = Fixture::new(STACKS) else {
         return;

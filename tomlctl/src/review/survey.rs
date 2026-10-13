@@ -15,15 +15,16 @@ use std::process::Command;
 
 use anyhow::Result;
 use globset::{Glob, GlobSet, GlobSetBuilder};
+use jiff::SignedDuration;
 use regex::bytes::Regex;
 use serde_json::{Value as JsonValue, json};
 use toml::Table;
 use toml::Value as TomlValue;
 
 use super::catalogue::{SignalKind, run_catalogue};
+use super::invalid;
 use super::store::{self, Run, Signal, Target};
 use crate::cli::{ReadIntegrityArgs, ReviewSurveyArgs};
-use crate::errors::{ErrorKind, tagged_err};
 use crate::io::repo_or_cwd_root;
 use crate::output::print_json_compact;
 use crate::query::compile_user_bytes_regex;
@@ -31,9 +32,8 @@ use crate::query::compile_user_bytes_regex;
 const DETECTOR: &str = "detector";
 const UNKNOWN: &str = "unknown";
 
-fn invalid(msg: impl Into<String>) -> anyhow::Error {
-    tagged_err(ErrorKind::Validation, None, msg)
-}
+/// The longest health `window`, in days: a century.
+const MAX_WINDOW_DAYS: i64 = 36_500;
 
 pub(crate) fn run(target: &Target, args: ReviewSurveyArgs) -> Result<()> {
     let verb = "review survey";
@@ -285,6 +285,11 @@ impl Detect {
         };
         let window = match table.get("window") {
             None => None,
+            Some(TomlValue::Integer(n)) if *n > MAX_WINDOW_DAYS => {
+                return Err(format!(
+                    "`window` must be at most {MAX_WINDOW_DAYS} days, got {n}"
+                ));
+            }
             Some(TomlValue::Integer(n)) if *n > 0 => Some(*n),
             Some(_) => return Err("`window` must be a positive number of days".into()),
         };
@@ -366,6 +371,18 @@ fn git(root: &Path) -> Command {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(root).args(["-c", "core.quotePath=false"]);
     cmd
+}
+
+/// The `git log` filter for a window of `days` ending now, or none when the
+/// window reaches the epoch, since a negative `--max-age` makes git list no
+/// commits at all.
+fn window_filter(days: i64) -> Option<String> {
+    let cutoff = days
+        .checked_mul(24)
+        .and_then(SignedDuration::try_from_hours)
+        .and_then(|span| crate::time::now().checked_sub(span).ok())?
+        .as_second();
+    (cutoff > 0).then(|| format!("--max-age={cutoff}"))
 }
 
 fn git_output(cmd: &mut Command, what: &str) -> Result<Vec<u8>, String> {
@@ -728,7 +745,7 @@ impl Repo<'_> {
                     "--no-renames",
                 ])
                 .args(["--no-ext-diff", "--no-textconv", "--no-color"])
-                .arg(format!("--since={days} days ago")),
+                .args(window_filter(days)),
             "git log -p",
         ) {
             Ok(p) => p,
@@ -796,7 +813,7 @@ impl Repo<'_> {
                     "--no-renames",
                     "--format=%x1e%s",
                 ])
-                .arg(format!("--since={days} days ago")),
+                .args(window_filter(days)),
             "git log --name-only",
         ) {
             Ok(l) => l,
