@@ -23,7 +23,7 @@ use super::fields::{self, Family, FindingStatus, Kind, Role};
 use super::invalid;
 use super::query::View;
 use super::store::{self, Finding, Store, Target};
-use super::sync::map_status;
+use super::sync::{map_status, v2_refs};
 use crate::cli::{ReadIntegrityArgs, ReviewExportArgs, write_integrity_opts};
 use crate::io::{
     OnMissing, dry_run_read_opts, mutate_doc, read_doc_owned, relativise_under, repo_or_cwd_root,
@@ -789,18 +789,6 @@ fn decide(doc: &TomlValue, c: &Candidate) -> Decision {
         return Decision::Regression(id.clone());
     }
     Decision::New
-}
-
-/// A v1 row's `v2_ref`, a string or an array of strings, as its entries.
-fn v2_refs(value: Option<&TomlValue>) -> impl Iterator<Item = &str> {
-    let (one, many) = match value {
-        Some(TomlValue::String(s)) => (Some(s.as_str()), None),
-        Some(TomlValue::Array(a)) => (None, Some(a.iter().filter_map(TomlValue::as_str))),
-        _ => (None, None),
-    };
-    one.into_iter()
-        .chain(many.into_iter().flatten())
-        .filter(|r| !r.is_empty())
 }
 
 /// `existing` with `v2_ref` added: a lone string when nothing else is named,

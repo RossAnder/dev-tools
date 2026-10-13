@@ -178,12 +178,7 @@ pub(crate) fn linked_rows(
             if v1_id.is_empty() {
                 continue;
             }
-            let refs: Vec<&str> = match row.get("v2_ref") {
-                Some(TomlValue::String(one)) => vec![one.as_str()],
-                Some(TomlValue::Array(many)) => many.iter().filter_map(TomlValue::as_str).collect(),
-                _ => Vec::new(),
-            };
-            for v2_ref in refs {
+            for v2_ref in v2_refs(row.get("v2_ref")) {
                 let Some((ref_path, finding)) = v2_ref.rsplit_once('#') else {
                     continue;
                 };
@@ -200,6 +195,19 @@ pub(crate) fn linked_rows(
         }
     }
     Ok(linked)
+}
+
+/// A v1 row's `v2_ref`, a string or an array of strings, as its non-empty
+/// entries.
+pub(super) fn v2_refs(value: Option<&TomlValue>) -> impl Iterator<Item = &str> {
+    let (one, many) = match value {
+        Some(TomlValue::String(s)) => (Some(s.as_str()), None),
+        Some(TomlValue::Array(a)) => (None, Some(a.iter().filter_map(TomlValue::as_str))),
+        _ => (None, None),
+    };
+    one.into_iter()
+        .chain(many.into_iter().flatten())
+        .filter(|r| !r.is_empty())
 }
 
 fn under_root(root: &Path, path: &str) -> PathBuf {
