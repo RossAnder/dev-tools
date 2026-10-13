@@ -30,8 +30,9 @@ if grep -Eq '^tomlctl/.*\.rs$' <<<"$STAGED"; then
   gate cargo fmt --manifest-path "$ROOT/tomlctl/Cargo.toml" -- --check
 fi
 
-# Carrier, flag-table, finding-class and skill gates over claude/ and the CLI.
-if grep -Eq '^(claude/.*\.md|tomlctl/src/.*)$' <<<"$STAGED"; then
+# Carrier, flag-table, finding-class, skill and review-lens catalogue gates over
+# claude/, the repo's lens config and the CLI.
+if grep -Eq '^(claude/.*\.(md|toml)|\.claude/review-lenses/.*|tomlctl/src/.*)$' <<<"$STAGED"; then
   gate cargo test --manifest-path "$ROOT/tomlctl/Cargo.toml" --lib -- cli::dispatch::tests
 fi
 
