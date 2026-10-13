@@ -104,7 +104,7 @@ What each carrier expects to dispatch:
 | `/optimise-v2` | `profile-baseline`, plus every project check for `perf` |
 | `/review-plan-v2` | `break-set-baseline`, plus every project check for `plan` |
 
-The digest's `verification:` lines are the actual list: dispatch one per line that resolved to a command, in the order listed.
+The digest's `verification:` lines are the actual list: dispatch one per line that resolved to a command, in the order listed. A check can resolve to more than one command — an ecosystem rung yields one per stack root that meets the scope, and `break-set-baseline` one per predicted break set — so each line carries a key: the check id for its first command, then `<id>-2`, `<id>-3` and so on, in ladder or plan order.
 
 **The prompt.** The `ledger:` line first for a flow-bound run, then the agent's own input shape:
 
@@ -112,17 +112,18 @@ The digest's `verification:` lines are the actual list: dispatch one per line th
 ledger: .claude/flows/<slug>/review-v2.toml
 commands:
 - <the resolved command>
-  timeout: 1500
+  timeout: 540
 transient:
 - rust-lld: failed to write output.*[Pp]ermission denied
 ```
 
-Give a slow suite a larger `timeout`. Pass `transient:` patterns only when the project names them, in a plan's Verification Commands or its CLAUDE.md. Dispatch in the background and end your turn; the agent counts toward the 16 running. Stage 3 work may proceed while baselines run.
+Keep `timeout` at or below 540, the agent's default: a larger budget holds only when the agent finds a `timeout` binary to run the command detached, and without one its Bash call's 600-second ceiling cuts the command off whatever the budget says. Split a slow baseline into one command per crate or test binary rather than raising the budget, and give each piece its own key, numbered on from the check's last key as above. Pass `transient:` patterns only when the project names them, in a plan's Verification Commands or its CLAUDE.md. Dispatch in the background and end your turn; the agent counts toward the 16 running. Stage 3 work may proceed while baselines run.
 
-**Recording.** Record each return as soon as it arrives, keyed by the check id, before dispatching the next:
+**Recording.** Record each return as soon as it arrives, under its line's key, before dispatching the next:
 
 ```bash
 tomlctl review run update <run> --slug <slug> --set-json 'baselines={"lint-baseline":"<log-path>"}'
+tomlctl review run update <run> --slug <slug> --set-json 'baselines={"lint-baseline-2":"<log-path>"}'
 ```
 
 - Record the returned log path whatever the outcome. A red lint or a failing break-set test is information for the finders, not a halt; a `timeout` log is partial, so record its path and note `timeout` in the close summary.
@@ -131,4 +132,4 @@ tomlctl review run update <run> --slug <slug> --set-json 'baselines={"lint-basel
 
 ## 7. The stage 3 → 4 barrier
 
-Stage 4 starts only when every check the digest listed under `verification:` has a recorded `baselines` entry, a path or a `none — <reason>`. No read verb returns a run's baselines, so track the set yourself: each `run update` prints the keys it updated. Composition does not need the logs, so finish stage 3 while the last baseline runs, and launch the wave once its entry is recorded. A finder launched before its baseline is recorded reads no lint fence and re-reports what the baseline already says.
+Stage 4 starts only when every key the digest listed under `verification:` has a recorded `baselines` entry, a path or a `none — <reason>`. No read verb returns a run's baselines, so track the set yourself: each `run update` prints the keys it updated. Composition does not need the logs, so finish stage 3 while the last baseline runs, and launch the wave once its entry is recorded. A finder launched before its baseline is recorded reads no lint fence and re-reports what the baseline already says.

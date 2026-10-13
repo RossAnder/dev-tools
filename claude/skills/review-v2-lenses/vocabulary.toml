@@ -185,11 +185,22 @@ detect = { files = ["**/*.rs", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**
 
 [signals.backlog-cluster]
 kind = "health"
-meaning = "The repo's capture backlog holds at least 5 open items; the surveyor's BACKLOG fence lists the ones in scope."
+meaning = "The repo's capture backlog holds at least 5 live items (open or promoted); the surveyor's BACKLOG fence lists the ones in scope."
 
+# Count literals are not regexes, so each spacing around `=` and each quote
+# style is spelled out; the leading newline anchors a match to a row's own
+# `status` key, not to a summary that quotes one.
 [signals.backlog-cluster.detect]
 threshold = 5
-count."*" = { files = [".claude/backlog.toml"], patterns = ['status = "open"'] }
+
+[signals.backlog-cluster.detect.count."*"]
+files = [".claude/backlog.toml"]
+patterns = [
+  "\nstatus = \"open\"", "\nstatus=\"open\"", "\nstatus =\"open\"", "\nstatus= \"open\"",
+  "\nstatus = 'open'", "\nstatus='open'", "\nstatus ='open'", "\nstatus= 'open'",
+  "\nstatus = \"promoted\"", "\nstatus=\"promoted\"", "\nstatus =\"promoted\"", "\nstatus= \"promoted\"",
+  "\nstatus = 'promoted'", "\nstatus='promoted'", "\nstatus ='promoted'", "\nstatus= 'promoted'",
+]
 
 # ---------------------------------------------------------------- judged
 

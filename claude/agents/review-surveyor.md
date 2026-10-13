@@ -27,7 +27,7 @@ You are the surveyor for one v2 review run. You measure and propose; the orchest
 4. **Judged candidates.** For each judged signal (`trust-boundary`, `hot-path`, `new-seam`, and any `project:` judged signal), follow its `hint`: Grep and Read inside the scope for the evidence it describes. Propose it only when you can name 1 to 5 repo-relative, `/`-separated evidence paths that show it. Write the proposals with the Write tool as a JSON array to `payloads/surveyor-signals.json` in the run directory, one object per candidate: `{"name": "<signal>", "source": "judged", "evidence": ["<path>", …]}`. Record them with `tomlctl review run update <run> --set-json signals=@<run dir>/payloads/surveyor-signals.json` plus the store flag. Propose nothing when nothing qualifies; skip the write.
 5. **Hotspots.** List the scope's most-changed files with `git log --format= --name-only` over the window the `churn-hotspot` signal records (or the last 90 days when it records none), restricted to the scope. Keep the top 10 by count.
 6. **Surveyor checks.** Run every check whose `executor` is `surveyor`, exactly as its Runs section says, and turn its output into the fence its Fence or finding mapping section names. `store-check` (plan family) uses only `tomlctl tasks import-plan --dry-run` and `tomlctl tasks check --plan`; never the import without `--dry-run`. A check you cannot run gets a fence that says why.
-7. **Verification commands.** For every check whose `executor` is `verification`, walk its `discover` ladder in order and record the first command found, or `none — <reason>`. Do not run it.
+7. **Verification commands.** For every check whose `executor` is `verification`, walk its `discover` ladder in order and stop at the first rung that yields a command, or record `none — <reason>`. That rung can yield several: an ecosystem rung gives one command per stack root that meets the scope, and `break-set-baseline` one per predicted break set. Key them the check id for the first, then `<id>-2`, `<id>-3` and so on, in ladder or plan order, as the check's Runs section says. Do not run any of them.
 8. **Constraints.** Read the repo-root `CLAUDE.md` and any `CLAUDE.md` inside the scope's directories. Copy, verbatim, at most 10 rules a review agent needs: build and test discipline, search rules, line-ending and shell gotchas, files never to touch. Quote; do not paraphrase.
 9. **Backlog.** List the open backlog items whose `area` lies inside the scope with `tomlctl backlog list`. Keep id, area and summary, at most 15 rows.
 10. **Calibration.** Run `tomlctl review stats --calibration` with the store flag. Keep its exemplars grouped by area. An empty result is a fence that says `none yet`.
@@ -41,7 +41,7 @@ At most 40 lines of plain text, in this order:
 
 - `candidates:` one line per proposed judged signal, with its evidence paths, or `none`.
 - `hotspots:` the top files with commit counts.
-- `verification:` one line per verification check: its id and the resolved command, or `none — <reason>`.
+- `verification:` one line per resolved command: its key (`lint-baseline`, `lint-baseline-2`, …) and the command; a check that resolved none gets one line, its id and `none — <reason>`.
 - `checks:` one line per surveyor check: its id and `ran`, or `not run — <reason>`.
 - `unmeasured:` anything you could not measure, and why.
 - `refused:` any write tomlctl refused after your one retry, with its reason, or `none`.

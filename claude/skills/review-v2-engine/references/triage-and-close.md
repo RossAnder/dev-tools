@@ -135,7 +135,7 @@ Report every refusal with its reason (advisory, `needs-plan`, `effort = "large"`
 
 Export is also the only bridge to glimpse: glimpse reads v1 ledgers, not the v2 store, so a v2 finding shows there only once it is exported. A finding left `open`, parked or deferred in the store does not appear in glimpse at all; `review list` and the report are where to see it.
 
-The plan family never exports: its eligible findings go through the carrier's merge offer instead.
+The plan family never exports: its eligible findings go through the carrier's merge offer instead, which takes this step's place. Every status write the merge makes — resolving the merged findings, dismissing the ones a Discard drops — lands before step 5. `review run finish` refuses while an id is unverified, so finish after those writes, never before.
 
 **4. Apply hand-off.** Name the apply command and the v1 ids `export-v1` printed: `/review-apply <ids>` for code, `/optimise-apply <ids>` for perf. Do not start it; the user runs it.
 
