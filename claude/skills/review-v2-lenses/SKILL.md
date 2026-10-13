@@ -41,7 +41,7 @@ Common fields:
 | Field | Required | Value |
 |---|---|---|
 | `families` | yes | non-empty subset of `code`, `perf`, `plan` |
-| `mode` | yes | `judgement` (review-finder) \| `mechanical` (review-sweeper) \| `executor` (plan-executor) |
+| `mode` | yes | `judgement` (review-finder; the context-free correctness cell runs `review-finder-cf`, the same Opus agent without CLAUDE.md) \| `mechanical` (review-sweeper) \| `executor` (plan-executor) |
 | `produces` | yes | kinds from `defect`, `cleanup`, `advisory` |
 | `owns` | yes | non-empty list of concern tags from the vocabulary |
 | `activation` | yes | `floor` \| `signal` \| `candidate` \| `opt-in` |
@@ -154,8 +154,10 @@ When `files`, `manifest` and `contains` are all present, a file must pass each o
 **Health** has three shapes:
 
 1. **Count at HEAD** — `count` and no `window`. `count` is a table keyed by a stack signal name, or `"*"` for any repo, whose values are `{ files = [globs], patterns = [literals] }`. An entry is evaluated only when its stack signal is true (`"*"` always is). The measure is the number of occurrences of the patterns across the tracked files its `files` match.
-2. **Count over a window** — `count` and `window`. The measure is occurrences in lines added minus occurrences in lines removed, over the commits of the last `window` days (`git log --since`), in the files each entry's `files` match.
+2. **Count over a window** — `count` and `window`. The measure is occurrences in lines added minus occurrences in lines removed, over the commits of the last `window` days, in the files each entry's `files` match.
 3. **Commits per file** — `files`, `window` and no `count`. The measure is the number of commits in the window that touch each file; `contains` filters those commits by subject line.
+
+`window` is a whole number of days from 1 to 36,500; a larger value is refused when the vocabulary is parsed. The window is passed to git as an absolute cutoff, `--max-age=<unix seconds>`, computed as now minus `window` days. A cutoff at or before the Unix epoch passes no filter, so the window then covers all history.
 
 `count` patterns are literal substrings matched verbatim and case-sensitively, never regexes, counting non-overlapping occurrences. Each line is matched with `\n` prepended (after stripping a patch's `+` or `-`), so a literal starting `\n` matches only at the start of a line: `"\ntest("` counts a top-level `test(` call without counting `latest(`.
 

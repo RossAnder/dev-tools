@@ -48,11 +48,11 @@ pack: <run directory>/pack.md
 run directory: <run directory>
 ```
 
-The `store:` line carries the flag exactly as the agent passes it: `--slug <slug>`, or `--scope <scope>` for a flow-less store. `pack:` is the path `review run start` printed joined with `pack.md`; `run directory:` is that path.
+The `store:` line carries the flag exactly as the agent passes it: `--slug <slug>`, or `--scope <scope>` for a flow-less store. `pack:` is the path `review run start` printed joined with `pack.md`; `run directory:` is that path. A `review-finder-cf` cell is context-free, so its prompt leaves the `pack:` line out, on every dispatch of that cell, the re-dispatch of an `assigned` cell included; every other prompt keeps it.
 
 ### Cell prompt
 
-The same template the Workflow builds, word for word, after the preamble. `<agent>` is the cell's `agent` from the composed map: `review-finder`, `review-sweeper` or `plan-executor`; any other value is a composition error, so skip the cell and note it.
+The same template the Workflow builds, word for word, after the preamble. `<agent>` is the cell's `agent` from the composed map: `review-finder`, `review-finder-cf` (the same Opus finder, run without CLAUDE.md, for the context-free correctness cell), `review-sweeper` or `plan-executor`; any other value is a composition error, so skip the cell and note it.
 
 ```text
 cell: <cell id>
