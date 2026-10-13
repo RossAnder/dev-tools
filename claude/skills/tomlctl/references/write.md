@@ -129,7 +129,7 @@ The `tasks`, `backlog`, `inputs` and `agents` writes stamp their own stores and 
 | Flag | Value | Meaning |
 |---|---|---|
 | `--set` | `KEY=VALUE` | The value is always a JSON string. A [`DATE_KEYS`](#items-add) key still lands as a TOML date, as it would from `--json`. |
-| `--set-json` | `KEY=JSON` | Any JSON value: a number, a bool, an array or an object. |
+| `--set-json` | `KEY=JSON` | Any JSON value: a number, a bool, an array or an object. `--set-json KEY=@<path>` reads the JSON from a file staged with the Write tool, in place of inlining `$(cat …)`. |
 | `--set-file` | `KEY=PATH` | The UTF-8 text of the file, with one leading byte-order mark and one trailing newline (`\n` or `\r\n`) stripped; every other byte is kept. `-` reads stdin, under the same one-`-`-per-invocation rule and 32 MiB cap as a `--json -` payload. |
 
 - Each flag splits on its first `=`, so a value may itself contain `=`.
