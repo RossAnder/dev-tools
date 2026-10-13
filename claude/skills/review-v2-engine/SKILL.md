@@ -91,11 +91,11 @@ Resolve the run's inputs:
 
 - **Scope** — repo-relative, `/`-separated paths or globs. Refuse `..`, absolute paths outside the worktree, and any glob matching more than 200 files. With no scope argument, the scope is the diff: the files changed against the merge-base with the default branch on a feature branch, or against `HEAD~1` on the default branch. Plan family: the plan path.
 - **Base** — the commit that diff is taken from. For a path review of unchanged code, pass `HEAD`; `changed_lines` then falls back to the scope's tracked line count. Plan family: `HEAD`.
-- **Models** — read the `model:` line of each of the six v2 agents (`review-surveyor`, `review-sweeper`, `review-checker`, `review-finder`, `review-verifier`, `plan-executor`) under `<claude dir>/agents/` with Grep. Never assume them.
+- **Models** — read the `model:` line of each of the seven v2 agents (`review-surveyor`, `review-sweeper`, `review-checker`, `review-finder`, `review-finder-cf`, `review-verifier`, `plan-executor`) under `<claude dir>/agents/` with Grep. Never assume them.
 - **Substrate** — `workflow` when the Workflow tool is available in this session, otherwise `agent-waves`.
 
 ```bash
-tomlctl review run start --slug <slug> --command review-v2 --family code --depth standard --base <base-sha> --set-json 'scope=["tomlctl/src/review/**"]' --set-json 'models={"surveyor":"haiku","sweeper":"haiku","checker":"haiku","finder":"opus","verifier":"opus","executor":"opus"}' --set substrate=workflow
+tomlctl review run start --slug <slug> --command review-v2 --family code --depth standard --base <base-sha> --set-json 'scope=["tomlctl/src/review/**"]' --set-json 'models={"surveyor":"haiku","sweeper":"haiku","checker":"haiku","finder":"opus","finder-cf":"opus","verifier":"opus","executor":"opus"}' --set substrate=workflow
 ```
 
 It mints the run (`U<n>`), resolves `--base` to a sha, computes `changed_lines`, records the catalogue roots and shas, and validates the merged catalogue. A validation error halts the run: report the offending file and stop, because a project-layer error is the project's to fix. It also refuses when `base..HEAD` changes anything under `.claude/review-lenses`, since the change under review would configure its own review: show the user the listed paths and pass `--project .claude/review-lenses` only on their say-so. A run started that way records the paths as `catalogue.project_layer_changed`; name them to the user in the close summary. It prints `{run, dir, base, changed_lines}`. Bind `<run>` and `<run-dir>` (the printed `dir`); `pack.md` and `profile.md` are written there, and every payload you stage goes in `<run-dir>/payloads/`.

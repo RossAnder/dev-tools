@@ -411,7 +411,9 @@ The diagnostic names the two recoveries: `cargo install --path tomlctl` for the 
 
 ### 14. Recovery after a failed write
 
-A write that fails mid-flight — the sidecar rename losing a race with a virus scanner is the live case on Windows — leaves the TOML intact and its `.sha256` stale. The next read with `--verify-integrity` then errors, and nothing auto-repairs it. Confirm the store parses, then refresh the sidecar from the on-disk bytes:
+A write that fails mid-flight — a rename losing a race with a virus scanner is the live case on Windows (`os error 5`) — lands nothing. The writer stages both files, commits the `.sha256` sidecar before the TOML, and retries a held-open rename three times 50 ms apart; if the TOML rename still fails, it points the sidecar back at the unchanged bytes on disk. A failed write therefore leaves the old store and a matching sidecar, and is safe to re-run. Re-running an append that *succeeded* is what writes a second copy, so check the store before retrying a call whose result you did not see.
+
+The sidecar goes stale only when that reset itself fails, which the error names, or after an out-of-band edit. The next read with `--verify-integrity` then errors, and nothing auto-repairs it. Confirm the store parses, then refresh the sidecar from the on-disk bytes:
 
 ```bash
 tomlctl validate .claude/flows/<slug>/tasks.toml

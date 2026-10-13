@@ -94,7 +94,7 @@ tomlctl review list --slug <s> [--kind <k>] [--in <glob>] [--for <role>]   # fin
 tomlctl review show <ids> --slug <s> --for <role>      # findings or cells through a role projection
 tomlctl review digest --slug <s> --run <U> [--since-wave <n>]   # counts, coverage gaps, unverified ids, contested, audit sample
 tomlctl review report --slug <s> --run <U> --out <path>   # markdown report; prints {path, counts}
-tomlctl review triage <ids> --slug <s> --dismiss-file <path> [--expect-status open]   # or --defer/--reopen/--park/--resolve, --backlog-ref, --convert
+tomlctl review triage <ids> --slug <s> --dismiss-file <path> [--expect-status open]   # or --defer/--reopen/--park/--resolve, --backlog-ref, --convert [--run <open U>]
 tomlctl review export-v1 <ids> --slug <s> --to <v1-ledger> [--dry-run]   # or --all: every open defect and cleanup of the ledger's family
 tomlctl review run finish <U> --slug <s> [--incomplete-file <path>]   # stamp finished + counts; refuses open gaps without --incomplete
 tomlctl review stats --all [--by lens] [--outcomes] [--escapes] [--calibration]   # read-only rates per lens, probe or run
@@ -476,7 +476,7 @@ Feature meanings:
 | `omit` | global `--omit <P1,P2,...>` drops dotted paths from each row and the header, or from the single object; exclusive with `--select`, `--get` and `--template` |
 | `template_width` | a template placeholder `{path:N}` truncates its value as `--max-chars N` does |
 | `list_limited` | the list verbs report a `limited` header (`{"shown":n,"total":N}`) when `--limit` cut rows; streamed `--ndjson`, `--pluck` and `--raw` output reports it on stderr instead |
-| `field_flags` | `--set KEY=VALUE` (string), `--set-json KEY=JSON` and `--set-file KEY=PATH` (file text, `-` for stdin) build the payload on `items add`, `items update`, `array-append` and `flow record`, merging over an optional `--json`; a dotted key nests; a repeated key, or a key that is a dotted prefix of another, is refused, and `items update` refuses dotted keys (it replaces top-level fields whole) |
+| `field_flags` | `--set KEY=VALUE` (string), `--set-json KEY=JSON` (or `KEY=@<path>`, the JSON read from that file) and `--set-file KEY=PATH` (file text, `-` for stdin) build the payload on `items add`, `items update`, `array-append` and `flow record`, merging over an optional `--json`; a dotted key nests; a repeated key, or a key that is a dotted prefix of another, is refused, and `items update` refuses dotted keys (it replaces top-level fields whole) |
 | `flow_record` | `flow record --slug <SLUG> --type <TYPE>` — append a validated execution-record entry: id minted as `E<n>`, `date` defaulted to today (UTC), `task_ref` filled from `--task <N>`, over-cap text truncated and unsafe `files` dropped (both reported), `scope_warnings` for files outside the flow's scope; `--ndjson` appends a batch all-or-nothing |
 | `multi_set` | `set <FILE> --set PATH=VALUE...` — several scalars in one write, alongside or instead of the positional pair; a repeated or overlapping path is refused |
 | `context_updated_stamp` | `set`, `set-json` and `array-append` on a `context.toml` refresh its existing root `updated` to today (UTC) unless the write set it; `--no-stamp` opts out |
@@ -489,12 +489,12 @@ Feature meanings:
 | `suggestions` | a mistyped subcommand or flag gets clap's `did you mean` hint; hidden aliases accept `read` for `parse`, `--as related` for `relates-to`, and `--id` / `--ids` beside the positional ids of `tasks show`, `tasks update`, `backlog show` and `backlog triage` |
 | `review_store` | the `review` group over the v2 review store, `.claude/flows/<SLUG>/review-v2.toml` (`--slug`) or `.claude/review-v2/<SCOPE>.toml` (`--scope`), exactly one per verb except `catalogue` and `schema`; `review run start` / `update` / `finish` mint, patch and close a run |
 | `review_survey` | `review survey --run <U>` — evaluate the vocabulary's stack, diff and health detectors and record each true signal with the directories it matched |
-| `review_cells` | `review plan --run <U> --propose` prints the default coverage map; `review plan --ndjson <SRC>` appends cells; `review cover <C>` records a cell's status and note and seals it |
+| `review_cells` | `review plan --run <U> --propose` prints the default coverage map; `review plan --ndjson <SRC>` appends cells, and a replay matching the newest wave while all its cells are still `assigned` returns that wave with `unchanged: true` and mints nothing; `review cover <C>` records a cell's status and note and seals it |
 | `review_add` | `review add --run <U> --cell <C> --ndjson <SRC>` — one cell's full finding set, validated against the field catalogue, routed to its verifier, superseding the cell's earlier unverified rows |
 | `review_verdict` | `review verdict <F>` / `--ndjson <SRC>` — upsert a cited verdict on (finding, `--by`, `--seat`) |
 | `review_resolve` | `review resolve --run <U>` — resolve each finding naming a `same_as` into a repeat, contested, reopened, regression or suppressed outcome |
 | `review_digest` | `review digest --run <U>` for the orchestrator, `review list` / `show --for <ROLE>` role projections, and `review report --run <U> --out <PATH>` |
-| `review_triage` | `review triage <ID>... --dismiss` / `--defer` / `--reopen` / `--park` / `--resolve` / `--backlog-ref` / `--convert`, each prose flag with a `--<flag>-file` twin, and `--expect-status` compare-and-set |
+| `review_triage` | `review triage <ID>... --dismiss` / `--defer` / `--reopen` / `--park` / `--resolve` / `--backlog-ref` / `--convert` (with `--run <U>` to mint a finished run's replacement into a named open run), each prose flag with a `--<flag>-file` twin, and `--expect-status` compare-and-set |
 | `review_stats` | `review stats` — yield, refute, audit and outcome rates per lens, probe or run, over one store or `--all`; writes nothing |
 | `review_sync_v1` | `review sync-v1` — read v1 ledger rows carrying a `v2_ref` back onto their v2 findings |
 | `review_export_v1` | `review export-v1 <ID>... \| --all --to <LEDGER>` — write open defect and cleanup findings into a v1 ledger for `/review-apply` or `/optimise-apply` |
