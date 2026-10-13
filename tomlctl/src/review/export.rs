@@ -19,12 +19,12 @@ use toml::Value as TomlValue;
 use toml::value::Datetime;
 
 use super::catalogue::run_catalogue;
-use super::fields::{self, Family, Kind, Role};
+use super::fields::{self, Family, FindingStatus, Kind, Role};
+use super::invalid;
 use super::query::View;
 use super::store::{self, Finding, Store, Target};
 use super::sync::map_status;
 use crate::cli::{ReadIntegrityArgs, ReviewExportArgs, write_integrity_opts};
-use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{
     OnMissing, dry_run_read_opts, mutate_doc, read_doc_owned, relativise_under, repo_or_cwd_root,
     warn_if_created,
@@ -35,10 +35,6 @@ use crate::output::print_json_compact;
 const VERB: &str = "review export-v1";
 
 type Row = Map<String, JsonValue>;
-
-fn invalid(msg: impl Into<String>) -> anyhow::Error {
-    tagged_err(ErrorKind::Validation, None, msg)
-}
 
 /// The v1 ledger family `--to` names, from its basename or its parent
 /// directory, the same way the ledger readers infer a kind.
@@ -81,13 +77,14 @@ fn categories(family: Family) -> &'static [&'static str] {
     v1_kind(family).categories().unwrap_or_default()
 }
 
-/// A finding cleared for export: its v1 row (no `id`), its `v2_ref`, and the
-/// F-ids it depends on.
+/// A finding cleared for export: its v1 row (no `id`), its `v2_ref`, the
+/// F-ids it depends on, and the target ledger's v1 ids it has retired.
 struct Candidate {
     finding: String,
     row: Row,
     v2_ref: String,
     depends_on: Vec<String>,
+    retired: Vec<String>,
 }
 
 /// What the v1 write did with one candidate.
@@ -132,6 +129,7 @@ pub(crate) fn run(target: &Target, args: ReviewExportArgs) -> Result<()> {
             index,
             family,
             &store_rel,
+            &ledger_rel,
         ) {
             Ok(c) => candidates.push(c),
             Err(reason) => refused.push(json!({
@@ -248,7 +246,7 @@ impl Selection {
         if args.all {
             let mut tests = TestGlobs::new(root);
             for (index, f) in stored.findings.iter().enumerate() {
-                let exportable = f.status == "open"
+                let exportable = f.status() == FindingStatus::Open
                     && f.family == family
                     && matches!(f.kind, Kind::Defect | Kind::Cleanup)
                     && text(f, "fix_shape") != "needs-plan";
@@ -313,8 +311,8 @@ fn refusal(f: &Finding, family: Family) -> Option<String> {
     if f.kind == Kind::Advisory {
         return Some("advisory is parked or picked for the backlog, never exported".into());
     }
-    if f.status != "open" {
-        return Some(format!("status is {}, not open", f.status));
+    if f.status() != FindingStatus::Open {
+        return Some(format!("status is {}, not open", f.status().as_str()));
     }
     if f.family != family {
         return Some(format!(
@@ -339,6 +337,7 @@ fn candidate(
     index: usize,
     family: Family,
     store_rel: &str,
+    ledger_rel: &str,
 ) -> std::result::Result<Candidate, String> {
     let f = &stored.findings[index];
     let get = |key: &str| {
@@ -382,11 +381,23 @@ fn candidate(
     let v2_ref = format!("{store_rel}#{}", f.id);
     row.insert("v2_ref".into(), json!(v2_ref));
     check_v1(&row, family)?;
+    let prefix = format!("{ledger_rel}#");
+    let retired = f
+        .rest
+        .get("retired_links")
+        .and_then(TomlValue::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(TomlValue::as_str)
+        .filter_map(|entry| entry.strip_prefix(prefix.as_str()))
+        .map(str::to_string)
+        .collect();
     Ok(Candidate {
         finding: f.id.clone(),
         row,
         v2_ref,
         depends_on: f.depends_on.clone(),
+        retired,
     })
 }
 
@@ -620,7 +631,8 @@ fn place(
                     .and_then(TomlValue::as_integer)
                     .unwrap_or(1);
                 row.insert("rounds".into(), TomlValue::Integer(rounds + 1));
-                row.insert("v2_ref".into(), TomlValue::String(c.v2_ref.clone()));
+                let refs = with_v2_ref(row.get("v2_ref"), &c.v2_ref);
+                row.insert("v2_ref".into(), refs);
                 (id, "reused")
             }
             Decision::Settled(id, status) => {
@@ -719,7 +731,8 @@ enum Decision {
 /// The v1 merge rule over `doc`'s rows: `v2_ref` first, then the same `file`
 /// with the same non-empty `symbol` or the exact `summary`, preferring an
 /// open match, then a settled one, then a fixed one. An unknown v1 status
-/// reads as open.
+/// reads as open. A row the finding retired on reopen is never `Linked` and
+/// never `Settled`: open it is reused, otherwise the finding regressed.
 fn decide(doc: &TomlValue, c: &Candidate) -> Decision {
     let rows: Vec<&toml::map::Map<String, TomlValue>> = doc
         .get("items")
@@ -734,7 +747,10 @@ fn decide(doc: &TomlValue, c: &Candidate) -> Decision {
             .unwrap_or_default()
             .to_string()
     };
-    if let Some(row) = rows.iter().find(|r| get(r, "v2_ref") == c.v2_ref) {
+    let retired = |row: &toml::map::Map<String, TomlValue>| c.retired.contains(&get(row, "id"));
+    let names_us =
+        |row: &toml::map::Map<String, TomlValue>| v2_refs(row.get("v2_ref")).any(|r| r == c.v2_ref);
+    if let Some(row) = rows.iter().find(|r| names_us(r) && !retired(r)) {
         return Decision::Linked(get(row, "id"));
     }
     let want = |key: &str| {
@@ -744,30 +760,64 @@ fn decide(doc: &TomlValue, c: &Candidate) -> Decision {
             .unwrap_or_default()
     };
     let (file, symbol, summary) = (want("file"), want("symbol"), want("summary"));
-    let matches: Vec<(String, String)> = rows
+    // (id, v1 status, retired by this finding)
+    let matches: Vec<(String, String, bool)> = rows
         .iter()
         .filter(|r| {
-            get(r, "file") == file
-                && ((!symbol.is_empty() && get(r, "symbol") == symbol)
-                    || get(r, "summary") == summary)
+            (retired(r) && names_us(r))
+                || (get(r, "file") == file
+                    && ((!symbol.is_empty() && get(r, "symbol") == symbol)
+                        || get(r, "summary") == summary))
         })
-        .map(|r| (get(r, "id"), get(r, "status")))
-        .filter(|(id, _)| !id.is_empty())
+        .map(|r| (get(r, "id"), get(r, "status"), retired(r)))
+        .filter(|(id, _, _)| !id.is_empty())
         .collect();
     // A match `sync-v1` would resolve is a regression; one it would dismiss
     // or defer is settled, and a new finding is not re-reported against it.
     let settled = |s: &str| matches!(map_status(s), Some("dismissed" | "deferred"));
     let fixed = |s: &str| map_status(s) == Some("resolved");
-    if let Some((id, _)) = matches.iter().find(|(_, s)| !settled(s) && !fixed(s)) {
+    if let Some((id, _, _)) = matches.iter().find(|(_, s, _)| !settled(s) && !fixed(s)) {
         return Decision::Reuse(id.clone());
     }
-    if let Some((id, s)) = matches.iter().find(|(_, s)| settled(s)) {
+    if let Some((id, s, _)) = matches
+        .iter()
+        .find(|(_, s, retired)| !retired && settled(s))
+    {
         return Decision::Settled(id.clone(), s.clone());
     }
-    if let Some((id, _)) = matches.iter().find(|(_, s)| fixed(s)) {
+    if let Some((id, _, _)) = matches.iter().find(|(_, s, retired)| *retired || fixed(s)) {
         return Decision::Regression(id.clone());
     }
     Decision::New
+}
+
+/// A v1 row's `v2_ref`, a string or an array of strings, as its entries.
+fn v2_refs(value: Option<&TomlValue>) -> impl Iterator<Item = &str> {
+    let (one, many) = match value {
+        Some(TomlValue::String(s)) => (Some(s.as_str()), None),
+        Some(TomlValue::Array(a)) => (None, Some(a.iter().filter_map(TomlValue::as_str))),
+        _ => (None, None),
+    };
+    one.into_iter()
+        .chain(many.into_iter().flatten())
+        .filter(|r| !r.is_empty())
+}
+
+/// `existing` with `v2_ref` added: a lone string when nothing else is named,
+/// an array once a second finding shares the row.
+fn with_v2_ref(existing: Option<&TomlValue>, v2_ref: &str) -> TomlValue {
+    let mut refs: Vec<&str> = v2_refs(existing).collect();
+    if !refs.contains(&v2_ref) {
+        refs.push(v2_ref);
+    }
+    match refs.as_slice() {
+        [only] => TomlValue::String((*only).to_string()),
+        _ => TomlValue::Array(
+            refs.iter()
+                .map(|r| TomlValue::String((*r).to_string()))
+                .collect(),
+        ),
+    }
 }
 
 fn v1_row_mut<'d>(
@@ -799,7 +849,8 @@ fn has_prefix(id: &str, prefix: &str) -> bool {
 }
 
 /// Marks each placed finding `exported` with its v1 id and ledger, when it
-/// is still `open`; one that moved meanwhile is returned as stale.
+/// is still `open`; one that moved meanwhile is returned as stale. A link
+/// the finding had retired is live again once the export reuses its row.
 fn mark_exported(store: &mut Store, placed: &[Placed], ledger: &str) -> Vec<JsonValue> {
     let mut stale = Vec::new();
     for p in placed {
@@ -807,11 +858,12 @@ fn mark_exported(store: &mut Store, placed: &[Placed], ledger: &str) -> Vec<Json
             stale.push(json!({"finding": p.finding, "reason": "no longer in this store"}));
             continue;
         };
-        if f.status != "open" {
-            stale.push(json!({"finding": p.finding, "status": f.status}));
+        if f.status() != FindingStatus::Open {
+            stale.push(json!({"finding": p.finding, "status": f.status().as_str()}));
             continue;
         }
-        f.status = "exported".into();
+        f.set_status(FindingStatus::Exported, &[]);
+        f.unretire_link(ledger, &p.v1_id);
         f.rest
             .insert("exported_as".into(), TomlValue::String(p.v1_id.clone()));
         f.rest.insert(

@@ -14,15 +14,14 @@ use serde_json::{Map, Value as JsonValue, json};
 use super::fields::{
     self, FIELDS, FieldSpec, Kind, Need, Origin, PathForm, Record, Route, Severity, Ty,
 };
+use super::invalid;
 use crate::cli::ReviewSchemaArgs;
-use crate::errors::{ErrorKind, tagged_err};
 use crate::output::print_json;
 
 const DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
 const TARGETS: &[&str] = &["finding", "cell-return", "verdict-return"];
 
 pub(crate) fn run(args: ReviewSchemaArgs) -> Result<()> {
-    let invalid = |msg: String| tagged_err(ErrorKind::Validation, None, msg);
     let kind = match args.kind.as_deref() {
         None => None,
         Some(text) => Some(Kind::parse(text).ok_or_else(|| {
@@ -35,9 +34,7 @@ pub(crate) fn run(args: ReviewSchemaArgs) -> Result<()> {
     let schema = match (args.target.as_str(), kind) {
         ("finding", kind) => finding(kind),
         ("cell-return" | "verdict-return", Some(_)) => {
-            return Err(invalid(
-                "--kind applies only to `review schema finding`".into(),
-            ));
+            return Err(invalid("--kind applies only to `review schema finding`"));
         }
         ("cell-return", None) => cell_return(),
         ("verdict-return", None) => verdict_return(),

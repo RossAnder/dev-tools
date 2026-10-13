@@ -23,7 +23,7 @@ use toml::Value as TomlValue;
 use toml::map::Map;
 use toml::value::Datetime;
 
-use super::fields::{self, Depth, FIELDS, Family, Kind, Record, Route, Ty};
+use super::fields::{self, Depth, FIELDS, Family, FindingStatus, Kind, Record, Route, Ty};
 use crate::cli::{
     ReadIntegrityArgs, WriteIntegrityArgs, read_integrity_opts, write_integrity_opts,
 };
@@ -166,7 +166,7 @@ pub(crate) struct Finding {
     pub(crate) related: Vec<String>,
     pub(crate) anchor: String,
     pub(crate) outcome: String,
-    pub(crate) status: String,
+    pub(crate) status: FindingStatus,
     pub(crate) first_seen: Option<Datetime>,
     /// The kind fields and the status companions, keyed as in the catalogue.
     pub(crate) rest: Table,
@@ -232,6 +232,84 @@ impl Store {
                 },
                 |v| v.severity.as_str(),
             )
+    }
+}
+
+/// The `retired_links` entry naming v1 row `v1_id` in `ledger`.
+fn retired_entry(ledger: &str, v1_id: &str) -> String {
+    format!("{ledger}#{v1_id}")
+}
+
+impl Finding {
+    pub(crate) fn status(&self) -> FindingStatus {
+        self.status
+    }
+
+    /// The only status write. A change of status, or any `companions`, first
+    /// clears every status's companions; a same-status call with none keeps
+    /// what the row carries. Link fields and `retired_links` are never
+    /// touched, so a caller carrying a companion forward reads it first.
+    pub(crate) fn set_status(&mut self, status: FindingStatus, companions: &[(&str, TomlValue)]) {
+        if status == self.status() && companions.is_empty() {
+            return;
+        }
+        for key in fields::ALL_COMPANIONS {
+            self.rest.remove(*key);
+        }
+        self.status = status;
+        for (key, value) in companions {
+            self.rest.insert((*key).to_string(), value.clone());
+        }
+    }
+
+    /// Move the v1 link onto `retired_links` as `<export_ledger>#<exported_as>`
+    /// and drop both link fields, so neither sync nor export follows it again.
+    /// A no-op on a finding with no `exported_as`.
+    pub(crate) fn retire_link(&mut self) {
+        let Some(v1_id) = self
+            .rest
+            .get("exported_as")
+            .and_then(TomlValue::as_str)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+        else {
+            return;
+        };
+        let ledger = text(&self.rest, "export_ledger");
+        let entry = retired_entry(&ledger, &v1_id);
+        let retired = self
+            .rest
+            .entry("retired_links")
+            .or_insert_with(|| TomlValue::Array(Vec::new()));
+        if !retired.is_array() {
+            *retired = TomlValue::Array(Vec::new());
+        }
+        if let TomlValue::Array(entries) = retired
+            && !entries.iter().any(|e| e.as_str() == Some(entry.as_str()))
+        {
+            entries.push(TomlValue::String(entry));
+        }
+        for key in fields::LINK_FIELDS {
+            self.rest.remove(*key);
+        }
+    }
+
+    pub(crate) fn is_retired(&self, ledger: &str, v1_id: &str) -> bool {
+        let entry = retired_entry(ledger, v1_id);
+        texts(&self.rest, "retired_links").contains(&entry)
+    }
+
+    /// Drop the `retired_links` entry for `ledger`'s `v1_id`, and the field
+    /// itself once it is empty.
+    pub(crate) fn unretire_link(&mut self, ledger: &str, v1_id: &str) {
+        let entry = retired_entry(ledger, v1_id);
+        let Some(TomlValue::Array(entries)) = self.rest.get_mut("retired_links") else {
+            return;
+        };
+        entries.retain(|e| e.as_str() != Some(entry.as_str()));
+        if entries.is_empty() {
+            self.rest.remove("retired_links");
+        }
     }
 }
 
@@ -554,7 +632,7 @@ fn finding_from_toml(t: &Table, at: &str) -> Result<Finding> {
         related: texts(t, "related"),
         anchor: text(t, "anchor"),
         outcome: optional_listed(t, "outcome", at, fields::OUTCOMES)?,
-        status: listed(t, "status", at, fields::FINDING_STATUSES)?,
+        status: finding_status(t, at)?,
         first_seen,
         rest: rest(Record::Finding, t, FINDING_CORE),
     })
@@ -581,7 +659,7 @@ fn finding_to_toml(f: &Finding) -> TomlValue {
     put_texts(&mut t, "related", &f.related);
     put_text(&mut t, "anchor", &f.anchor);
     put_text(&mut t, "outcome", &f.outcome);
-    put_text(&mut t, "status", &f.status);
+    put_text(&mut t, "status", f.status.as_str());
     if let Some(date) = f.first_seen {
         t.insert("first_seen".to_string(), TomlValue::Datetime(date));
     }
@@ -678,6 +756,13 @@ fn listed(t: &Table, key: &str, at: &str, values: &[&str]) -> Result<String> {
             values.join(", ")
         ))
     }
+}
+
+/// `status`, refused with `listed`'s message when it names no finding status.
+fn finding_status(t: &Table, at: &str) -> Result<FindingStatus> {
+    let raw = listed(t, "status", at, fields::FINDING_STATUSES)?;
+    FindingStatus::parse(&raw)
+        .ok_or_else(|| anyhow!("{at}: `status` = {raw:?} is not a known value"))
 }
 
 fn optional_listed(t: &Table, key: &str, at: &str, values: &[&str]) -> Result<String> {
@@ -1179,6 +1264,89 @@ rationale = "reproduced"
             );
             verify_integrity(&target.path).expect("the sidecar matches");
         });
+    }
+
+    fn finding(text: &str) -> Finding {
+        let doc = parse(&format!(
+            "[[findings]]\nid = \"F1\"\nfamily = \"code\"\nkind = \"defect\"\n{text}"
+        ));
+        from_toml(&doc).expect("reads").findings.remove(0)
+    }
+
+    fn companion<'f>(f: &'f Finding, key: &str) -> Option<&'f str> {
+        f.rest.get(key).and_then(TomlValue::as_str)
+    }
+
+    #[test]
+    fn set_status_clears_stale_companions() {
+        let mut f = finding(
+            "status = \"open\"\nreopen_reason = \"back again\"\nexported_as = \"R4\"\nexport_ledger = \"review-ledger.toml\"\n",
+        );
+        f.set_status(
+            FindingStatus::Resolved,
+            &[("resolution", TomlValue::String("fixed in v1".into()))],
+        );
+        assert_eq!(f.status(), FindingStatus::Resolved);
+        assert_eq!(companion(&f, "reopen_reason"), None, "{:?}", f.rest);
+        assert_eq!(companion(&f, "resolution"), Some("fixed in v1"));
+        assert_eq!(
+            companion(&f, "exported_as"),
+            Some("R4"),
+            "a link field is not a companion"
+        );
+
+        let mut g = finding("status = \"dismissed\"\ndismiss_reason = \"noise\"\n");
+        g.set_status(FindingStatus::Exported, &[]);
+        assert_eq!(g.status(), FindingStatus::Exported);
+        assert_eq!(companion(&g, "dismiss_reason"), None, "{:?}", g.rest);
+    }
+
+    #[test]
+    fn set_status_keeps_companions_on_a_same_status_write() {
+        let mut f =
+            finding("status = \"deferred\"\ndefer_reason = \"later\"\ndefer_trigger = \"v2\"\n");
+        let before = f.clone();
+        f.set_status(FindingStatus::Deferred, &[]);
+        assert_eq!(f, before);
+
+        f.set_status(
+            FindingStatus::Deferred,
+            &[("defer_reason", TomlValue::String("much later".into()))],
+        );
+        assert_eq!(companion(&f, "defer_reason"), Some("much later"));
+        assert_eq!(
+            companion(&f, "defer_trigger"),
+            None,
+            "given companions replace the set"
+        );
+    }
+
+    #[test]
+    fn retire_link_moves_the_link_to_retired_links() {
+        let mut f = finding(
+            "status = \"exported\"\nexported_as = \"R4\"\nexport_ledger = \"review-ledger.toml\"\n",
+        );
+        f.retire_link();
+        assert_eq!(companion(&f, "exported_as"), None);
+        assert_eq!(companion(&f, "export_ledger"), None);
+        assert!(f.is_retired("review-ledger.toml", "R4"));
+        assert!(!f.is_retired("review-ledger.toml", "R5"));
+        let row = finding_to_toml(&f);
+        assert_eq!(
+            row["retired_links"],
+            TomlValue::Array(vec![TomlValue::String("review-ledger.toml#R4".into())])
+        );
+
+        let unlinked = f.clone();
+        f.retire_link();
+        assert_eq!(f, unlinked, "no link, nothing to retire");
+
+        f.unretire_link("review-ledger.toml", "R4");
+        assert!(!f.is_retired("review-ledger.toml", "R4"));
+        assert!(
+            !f.rest.contains_key("retired_links"),
+            "an emptied list is dropped"
+        );
     }
 
     #[test]

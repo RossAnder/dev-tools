@@ -10,7 +10,8 @@ use serde_json::{Map, Value as JsonValue, json};
 use super::catalogue::{self, Catalogue};
 use super::cells::{self, Accounting};
 use super::digest::Counts;
-use super::fields::{self, Family, Record, RowContext};
+use super::fields::{self, Family, FindingStatus, Origin, Record, RowContext};
+use super::invalid;
 use super::store::{self, Minted, Run, Signal, Store, Target, Waiver};
 use crate::cli::{ReviewRunFinishArgs, ReviewRunStartArgs, ReviewRunUpdateArgs};
 use crate::errors::{ErrorKind, tagged_err};
@@ -25,10 +26,6 @@ const UPDATE_FIELDS: &[&str] = &["signals", "waivers", "audit", "agents", "basel
 
 const SIGNAL_KEYS: &[&str] = &["name", "source", "roots", "accepted", "evidence"];
 const WAIVER_KEYS: &[&str] = &["concern", "file", "reason"];
-
-fn invalid(msg: impl Into<String>) -> anyhow::Error {
-    tagged_err(ErrorKind::Validation, None, msg)
-}
 
 pub(crate) fn start(target: &Target, args: ReviewRunStartArgs) -> Result<()> {
     let verb = "review run start";
@@ -149,6 +146,11 @@ fn flag_fields(args: &FieldArgs, allowed: &[&str], verb: &str) -> Result<Map<Str
         return Ok(Map::new());
     };
     if let Some(key) = map.keys().find(|k| !allowed.contains(&k.as_str())) {
+        if fields::spec(Record::Run, key, None).is_some_and(|s| s.origin == Origin::Computed) {
+            return Err(invalid(format!(
+                "{verb}: `{key}` is set by tomlctl and cannot be supplied"
+            )));
+        }
         return Err(invalid(format!(
             "{verb}: `{key}` cannot be set here; settable fields: {}",
             allowed.join(", ")
@@ -678,7 +680,7 @@ impl Gaps {
         let pending = store
             .findings
             .iter()
-            .filter(|f| f.run == run && f.status == "unverified");
+            .filter(|f| f.run == run && f.status() == FindingStatus::Unverified);
         let (unresolved_same_as, unverified): (Vec<_>, Vec<_>) =
             pending.partition(|f| !f.same_as.is_empty());
         let ids = |rows: Vec<&store::Finding>| rows.into_iter().map(|f| f.id.clone()).collect();

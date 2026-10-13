@@ -16,11 +16,11 @@ use anyhow::Result;
 use serde_json::json;
 use toml::Value as TomlValue;
 
-use super::add::SUPPRESSING;
+use super::fields::FindingStatus;
+use super::invalid;
 use super::store::{self, Finding, Store, Target, Verdict};
 use super::verdict::settle;
 use crate::cli::{ReadIntegrityArgs, ReviewResolveArgs};
-use crate::errors::{ErrorKind, tagged_err};
 use crate::output::print_json_compact;
 
 const VERB: &str = "review resolve";
@@ -53,15 +53,16 @@ enum Outcome {
 }
 
 impl Outcome {
-    fn for_target(status: &str, call: Call) -> Option<Self> {
+    fn for_target(status: FindingStatus, call: Call) -> Option<Self> {
+        use FindingStatus::{Exported, Open, Refuted, Resolved};
         Some(match (status, call) {
-            (s, _) if SUPPRESSING.contains(&s) => Self::Suppressed,
-            ("open" | "exported", Call::Refuted) => Self::Contested,
-            ("open" | "exported", _) => Self::Repeat,
-            ("refuted" | "resolved", Call::Plausible) => Self::Contested,
-            ("refuted" | "resolved", Call::Refuted) => Self::Repeat,
-            ("refuted", Call::Confirmed) => Self::Reopened,
-            ("resolved", Call::Confirmed) => Self::Regression,
+            (s, _) if s.is_suppressing() => Self::Suppressed,
+            (Open | Exported, Call::Refuted) => Self::Contested,
+            (Open | Exported, _) => Self::Repeat,
+            (Refuted | Resolved, Call::Plausible) => Self::Contested,
+            (Refuted | Resolved, Call::Refuted) => Self::Repeat,
+            (Refuted, Call::Confirmed) => Self::Reopened,
+            (Resolved, Call::Confirmed) => Self::Regression,
             _ => return None,
         })
     }
@@ -123,11 +124,7 @@ fn has_run(store: &Store, run: &str) -> Result<()> {
     if store.runs.iter().any(|r| r.id == run) {
         Ok(())
     } else {
-        Err(tagged_err(
-            ErrorKind::Validation,
-            None,
-            format!("{VERB}: no run {run} in this store"),
-        ))
+        Err(invalid(format!("{VERB}: no run {run} in this store")))
     }
 }
 
@@ -145,7 +142,10 @@ fn resolve(store: &mut Store, run: &str, wave: Option<u32>) -> Report {
         .iter()
         .enumerate()
         .filter(|(_, f)| {
-            f.run == run && f.status == "unverified" && !f.same_as.is_empty() && in_wave(f)
+            f.run == run
+                && f.status() == FindingStatus::Unverified
+                && !f.same_as.is_empty()
+                && in_wave(f)
         })
         .map(|(i, _)| i)
         .collect();
@@ -223,9 +223,9 @@ fn settled_target(store: &Store, row: &Finding) -> std::result::Result<usize, St
             return Err(format!("target {id} is not in this store"));
         };
         let target = &store.findings[t];
-        let link = match target.status.as_str() {
-            "merged" => Some("merged_into"),
-            "converted" => Some("converted_to"),
+        let link = match target.status() {
+            FindingStatus::Merged => Some("merged_into"),
+            FindingStatus::Converted => Some("converted_to"),
             _ => None,
         };
         if let Some(link) = link {
@@ -234,12 +234,17 @@ fn settled_target(store: &Store, row: &Finding) -> std::result::Result<usize, St
                 .rest
                 .get(link)
                 .and_then(TomlValue::as_str)
-                .ok_or_else(|| format!("target {id} is {} but names no `{link}`", target.status))?;
+                .ok_or_else(|| {
+                    format!(
+                        "target {id} is {} but names no `{link}`",
+                        target.status().as_str()
+                    )
+                })?;
             continue;
         }
-        match target.status.as_str() {
-            "unverified" => return Err(format!("target {id} is unverified")),
-            "superseded" => {
+        match target.status() {
+            FindingStatus::Unverified => return Err(format!("target {id} is unverified")),
+            FindingStatus::Superseded => {
                 return Err(format!(
                     "target {id} is superseded; strike the identity with `review verdict --strike-same-as`"
                 ));
@@ -252,7 +257,7 @@ fn settled_target(store: &Store, row: &Finding) -> std::result::Result<usize, St
 /// Applies the outcome to the row at `i` and its target at `t`, returning
 /// the report entry, or `None` when no outcome covers the target's status.
 fn apply(store: &mut Store, i: usize, t: usize, decision: Decision) -> Option<serde_json::Value> {
-    let outcome = Outcome::for_target(&store.findings[t].status, decision.call)?;
+    let outcome = Outcome::for_target(store.findings[t].status(), decision.call)?;
     let target_id = store.findings[t].id.clone();
     let row = store.findings[i].clone();
     match outcome {
@@ -276,26 +281,26 @@ fn apply(store: &mut Store, i: usize, t: usize, decision: Decision) -> Option<se
         Outcome::Contested => gain(store, &target_id, &decision.deciding),
         Outcome::Reopened => {
             gain(store, &target_id, &decision.deciding);
-            store.findings[t].status = "open".into();
+            store.findings[t].set_status(FindingStatus::Open, &[]);
         }
         Outcome::Regression | Outcome::Suppressed => {}
     }
     let resolved = &mut store.findings[i];
     resolved.outcome = outcome.as_str().into();
     if outcome == Outcome::Regression {
-        resolved.status = "open".into();
+        resolved.set_status(FindingStatus::Open, &[]);
         resolved.related = vec![target_id.clone()];
     } else {
-        resolved.status = "merged".into();
-        resolved
-            .rest
-            .insert("merged_into".into(), TomlValue::String(target_id.clone()));
+        resolved.set_status(
+            FindingStatus::Merged,
+            &[("merged_into", TomlValue::String(target_id.clone()))],
+        );
     }
     Some(json!({
         "finding": row.id,
         "outcome": outcome.as_str(),
         "target": target_id,
-        "status": store.findings[i].status,
+        "status": store.findings[i].status().as_str(),
     }))
 }
 

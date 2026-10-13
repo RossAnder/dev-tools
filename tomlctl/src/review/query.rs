@@ -15,7 +15,8 @@ use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use super::catalogue::{self, Catalogue, EntryType, run_catalogue};
-use super::fields::{self, FIELDS, Kind, ProjectCtx, Record, Role, Route, Vis};
+use super::fields::{self, FIELDS, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Vis};
+use super::invalid;
 use super::store::{self, Cell, Finding, Run, Store, Target};
 use crate::cli::{ReviewListArgs, ReviewShowArgs};
 use crate::convert::toml_to_json;
@@ -41,10 +42,6 @@ const METHOD_REFERENCES: &[(&str, &str)] = &[
     ),
 ];
 
-fn invalid(msg: impl Into<String>) -> anyhow::Error {
-    tagged_err(ErrorKind::Validation, None, msg)
-}
-
 pub(crate) fn list(target: &Target, args: ReviewListArgs) -> Result<()> {
     let role = parse_role(args.for_role.as_deref().unwrap_or("orchestrator"))?;
     check_value("--kind", args.kind.as_deref(), Kind::VALUES)?;
@@ -58,8 +55,8 @@ pub(crate) fn list(target: &Target, args: ReviewListArgs) -> Result<()> {
     let mut rows = Vec::new();
     for (index, finding) in stored.findings.iter().enumerate() {
         let keep = match args.status.as_deref() {
-            Some(status) => finding.status == status,
-            None => finding.status != "superseded",
+            Some(status) => finding.status().as_str() == status,
+            None => finding.status() != FindingStatus::Superseded,
         } && args
             .kind
             .as_deref()
@@ -293,8 +290,8 @@ impl<'a> View<'a> {
 }
 
 /// What a finder needs beyond the cell's projection: the absolute paths of
-/// its facets and of the methods its bound concerns cite, the run's pack and
-/// its recorded baseline logs.
+/// its facets and of the methods its bound concerns cite, the run's pack (its
+/// base, for the context-free finder) and its recorded baseline logs.
 fn assignment(
     row: &mut Row,
     cell: &Cell,
@@ -337,8 +334,14 @@ fn assignment(
             paths(EntryType::Method, &mut methods.iter().copied()),
         );
     }
-    let pack = target.run_dir(&run.id)?.join("pack.md");
-    row.insert("pack".into(), json!(relativise(root, &pack)));
+    // The context-free finder reads the diff against the run's base instead
+    // of the pack.
+    if cell.agent == fields::FINDER_CF {
+        row.insert("base".into(), json!(run.base));
+    } else {
+        let pack = target.run_dir(&run.id)?.join("pack.md");
+        row.insert("pack".into(), json!(relativise(root, &pack)));
+    }
     let baselines = run
         .rest
         .get("baselines")

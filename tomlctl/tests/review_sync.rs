@@ -254,6 +254,15 @@ impl Repo {
         serde_json::from_slice(&out.get_output().stdout).expect("sync-v1 prints JSON")
     }
 
+    fn triage(&self, id: &str, args: &[&str]) {
+        cli(&self.root)
+            .current_dir(&self.root)
+            .args(["review", "triage", id, "--scope", "t"])
+            .args(args)
+            .assert()
+            .success();
+    }
+
     fn store(&self) -> toml::Value {
         toml::from_str(&self.read(STORE_PATH)).unwrap()
     }
@@ -283,6 +292,147 @@ impl Repo {
             .into_iter()
             .filter(|v| v["by"].as_str() == Some("sync"))
             .collect()
+    }
+}
+
+/// `text` with its one occurrence of `from` replaced by `to`.
+fn swapped(text: &str, from: &str, to: &str) -> String {
+    assert_eq!(text.matches(from).count(), 1, "{from:?} occurs once");
+    text.replacen(from, to, 1)
+}
+
+const R1_FIXED: &str = "status = \"fixed\"\nresolved = 2026-10-13\n\
+                        resolution = \"abc123 bound the limit\"\n\
+                        v2_ref = \".claude/review-v2/t.toml#F1\"";
+const R1_REOPENED: &str = "status = \"open\"\nreopen_rationale = \"the bound regressed\"\n\
+                           v2_ref = \".claude/review-v2/t.toml#F1\"";
+
+fn sync_verdict(repo: &Repo, id: &str) -> toml::Value {
+    repo.sync_verdicts()
+        .into_iter()
+        .find(|v| v["finding"].as_str() == Some(id))
+        .unwrap_or_else(|| panic!("{id} has a sync verdict"))
+}
+
+#[test]
+fn reopened_finding_survives_sync() {
+    let repo = Repo::with_ledgers();
+    repo.sync();
+    assert_eq!(repo.field("F1", "status").as_deref(), Some("resolved"));
+
+    repo.triage("F1", &["--reopen", "the bound is still wrong"]);
+    let out = repo.sync();
+    assert_eq!(
+        repo.field("F1", "status").as_deref(),
+        Some("open"),
+        "the fixed v1 row no longer settles a reopened finding: {out}"
+    );
+    assert_eq!(
+        repo.field("F1", "reopen_reason").as_deref(),
+        Some("the bound is still wrong")
+    );
+    assert!(
+        out["skipped"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!({
+                "v1": ".claude/reviews/t.toml#R1",
+                "finding": "F1",
+                "reason": "link retired by reopen",
+            })),
+        "{out}"
+    );
+}
+
+#[test]
+fn v1_reopen_syncs_back_to_open() {
+    let repo = Repo::with_ledgers();
+    repo.sync();
+    repo.write(REVIEW_LEDGER, &swapped(REVIEW, R1_FIXED, R1_REOPENED));
+
+    let out = repo.sync();
+    assert_eq!(repo.field("F1", "status").as_deref(), Some("open"), "{out}");
+    assert_eq!(
+        repo.field("F1", "reopen_reason").as_deref(),
+        Some("v1: the bound regressed")
+    );
+    for gone in ["resolution", "resolved"] {
+        assert_eq!(repo.field("F1", gone), None, "{gone} is cleared");
+    }
+    assert_eq!(
+        repo.field("F1", "exported_as").as_deref(),
+        Some("R1"),
+        "the link stays, so a later v1 outcome syncs again"
+    );
+    assert_eq!(
+        sync_verdict(&repo, "F1")["rationale"].as_str(),
+        Some("open: the bound regressed")
+    );
+    assert_eq!(
+        repo.field("F4", "status").as_deref(),
+        Some("exported"),
+        "a v1 row open without a reopen rationale is still skipped"
+    );
+    assert_eq!(repo.sync()["unchanged"], true, "a replay writes nothing");
+}
+
+#[test]
+fn v2_disposition_after_v1_reopen_survives_sync() {
+    let repo = Repo::with_ledgers();
+    repo.sync();
+    repo.write(REVIEW_LEDGER, &swapped(REVIEW, R1_FIXED, R1_REOPENED));
+    repo.sync();
+    assert_eq!(repo.field("F1", "status").as_deref(), Some("open"));
+
+    repo.triage("F1", &["--dismiss", "not worth the churn"]);
+    let out = repo.sync();
+    assert_eq!(
+        repo.field("F1", "status").as_deref(),
+        Some("dismissed"),
+        "a reopen already taken is not taken again: {out}"
+    );
+    assert_eq!(
+        repo.field("F1", "dismiss_reason").as_deref(),
+        Some("not worth the churn")
+    );
+    assert_eq!(out["unchanged"], true, "{out}");
+}
+
+#[test]
+fn sync_clears_a_stale_reopen_reason() {
+    let repo = Repo::with_ledgers();
+    repo.sync();
+    repo.write(REVIEW_LEDGER, &swapped(REVIEW, R1_FIXED, R1_REOPENED));
+    repo.sync();
+    assert!(repo.field("F1", "reopen_reason").is_some());
+
+    repo.write(REVIEW_LEDGER, REVIEW);
+    repo.sync();
+    assert_eq!(repo.field("F1", "status").as_deref(), Some("resolved"));
+    assert_eq!(
+        repo.field("F1", "reopen_reason"),
+        None,
+        "the status it leaves takes its companion with it"
+    );
+    assert_eq!(repo.field("F1", "resolved").as_deref(), Some("2026-10-13"));
+}
+
+#[test]
+fn array_v2_ref_links_each_named_finding() {
+    let repo = Repo::new();
+    let review = swapped(
+        REVIEW,
+        "v2_ref = \".claude/review-v2/t.toml#F3\"",
+        "v2_ref = [\".claude/review-v2/t.toml#F3\", \".claude/review-v2/t.toml#F4\"]",
+    );
+    repo.write(REVIEW_LEDGER, &review);
+    repo.sync();
+    for id in ["F3", "F4"] {
+        assert_eq!(
+            repo.field(id, "dismiss_reason").as_deref(),
+            Some("v1: wontfix: kept for the plugin ABI"),
+            "{id}"
+        );
     }
 }
 

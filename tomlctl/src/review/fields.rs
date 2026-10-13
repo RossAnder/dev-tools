@@ -111,20 +111,124 @@ str_enum!(Record {
     Verdict => "verdict",
 });
 
-pub(crate) const FINDING_STATUSES: &[&str] = &[
-    "unverified",
-    "superseded",
-    "open",
-    "refuted",
-    "merged",
-    "parked",
-    "dismissed",
-    "deferred",
-    "backlogged",
-    "converted",
-    "resolved",
-    "exported",
-];
+str_enum!(
+    /// A finding's lifecycle status. Its subsets are the predicates below,
+    /// and each status owns the companion fields [`Self::companions`] names.
+    FindingStatus {
+        Unverified => "unverified",
+        Superseded => "superseded",
+        Open => "open",
+        Refuted => "refuted",
+        Merged => "merged",
+        Parked => "parked",
+        Dismissed => "dismissed",
+        Deferred => "deferred",
+        Backlogged => "backlogged",
+        Converted => "converted",
+        Resolved => "resolved",
+        Exported => "exported",
+    }
+);
+
+impl FindingStatus {
+    /// The fields only this status carries; a status change clears every
+    /// other status's companions.
+    pub(crate) const fn companions(self) -> &'static [&'static str] {
+        match self {
+            Self::Merged => &["merged_into"],
+            Self::Parked => &["park_reason"],
+            Self::Dismissed => &["dismiss_reason"],
+            Self::Deferred => &["defer_reason", "defer_trigger"],
+            Self::Backlogged => &["backlog_ref"],
+            Self::Converted => &["converted_to"],
+            Self::Resolved => &["resolution", "resolved"],
+            Self::Open => &["reopen_reason"],
+            Self::Unverified | Self::Superseded | Self::Refuted | Self::Exported => &[],
+        }
+    }
+
+    /// No disposition moves these: withdrawn, merged into another row,
+    /// replaced by a conversion, or owned by a v1 ledger since export.
+    pub(crate) fn is_settled(self) -> bool {
+        matches!(
+            self,
+            Self::Superseded | Self::Merged | Self::Converted | Self::Exported
+        )
+    }
+
+    /// `triage --reopen` returns one of these to `open`.
+    pub(crate) fn is_reopenable(self) -> bool {
+        matches!(
+            self,
+            Self::Dismissed
+                | Self::Deferred
+                | Self::Parked
+                | Self::Backlogged
+                | Self::Refuted
+                | Self::Resolved
+        )
+    }
+
+    /// A target in one of these suppresses a row naming it in `same_as`.
+    pub(crate) fn is_suppressing(self) -> bool {
+        matches!(
+            self,
+            Self::Dismissed | Self::Deferred | Self::Parked | Self::Backlogged | Self::Converted
+        )
+    }
+
+    /// A sync may overwrite these: the finding as exported (or still `open`
+    /// when an export's v2 write never landed), or as a sync left it.
+    pub(crate) fn is_syncable(self) -> bool {
+        matches!(
+            self,
+            Self::Open | Self::Exported | Self::Resolved | Self::Dismissed | Self::Deferred
+        )
+    }
+
+    /// A verdict decides these; every other status is a later disposition a
+    /// verdict is recorded beside but never overrides.
+    pub(crate) fn decided_by_verdict(self) -> bool {
+        matches!(self, Self::Unverified | Self::Open | Self::Refuted)
+    }
+}
+
+const fn companion_count() -> usize {
+    let mut n = 0;
+    let mut i = 0;
+    while i < FindingStatus::ALL.len() {
+        n += FindingStatus::ALL[i].companions().len();
+        i += 1;
+    }
+    n
+}
+
+const ALL_COMPANION_ARRAY: [&str; companion_count()] = {
+    let mut out = [""; companion_count()];
+    let mut n = 0;
+    let mut i = 0;
+    while i < FindingStatus::ALL.len() {
+        let owned = FindingStatus::ALL[i].companions();
+        let mut j = 0;
+        while j < owned.len() {
+            out[n] = owned[j];
+            n += 1;
+            j += 1;
+        }
+        i += 1;
+    }
+    out
+};
+
+/// Every status's companions, in status order.
+pub(crate) const ALL_COMPANIONS: &[&str] = &ALL_COMPANION_ARRAY;
+
+/// A finding's link to the v1 row it was exported as. Not companions: a sync
+/// keeps them when it moves an exported finding to resolved, dismissed or
+/// deferred.
+pub(crate) const LINK_FIELDS: &[&str] = &["exported_as", "export_ledger"];
+
+pub(crate) const FINDING_STATUSES: &[&str] = FindingStatus::VALUES;
 pub(crate) const OUTCOMES: &[&str] = &[
     "repeat",
     "contested",
@@ -143,9 +247,11 @@ pub(crate) const VERDICT_BY: &[&str] = &[
 ];
 pub(crate) const CELL_STATUSES: &[&str] = &["assigned", "covered", "thin", "uncovered"];
 pub(super) const FINDER: &str = "review-finder";
+/// The finder run without CLAUDE.md, for a correctness-only cell.
+pub(super) const FINDER_CF: &str = "review-finder-cf";
 pub(super) const SWEEPER: &str = "review-sweeper";
 pub(super) const EXECUTOR: &str = "plan-executor";
-pub(crate) const CELL_AGENTS: &[&str] = &[FINDER, SWEEPER, EXECUTOR];
+pub(crate) const CELL_AGENTS: &[&str] = &[FINDER, FINDER_CF, SWEEPER, EXECUTOR];
 const FIX_SHAPES: &[&str] = &["edits", "needs-plan"];
 const EFFORTS: &[&str] = &["trivial", "small", "medium", "large"];
 const GRADES: &[&str] = &["high", "medium", "low"];
@@ -373,6 +479,7 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field(Run, "agents", Ty::Int, RECORD_STATE),
     field(Run, "counts", Ty::Table, RECORD_STATE).computed(),
     field(Run, "audit", Ty::Table, RECORD_STATE),
+    field(Run, "incomplete", Ty::Str, RECORD_STATE).computed(),
     // cells
     field(Cell, "id", Ty::Str, CELL_ASSIGNMENT).computed(),
     field(Cell, "run", Ty::Str, RECORD_STATE).computed(),
@@ -530,6 +637,7 @@ pub(crate) const FIELDS: &[FieldSpec] = &[
     field(Finding, "resolved", Ty::Date, STATUS).computed(),
     field(Finding, "exported_as", Ty::Str, STATUS).computed(),
     field(Finding, "export_ledger", Ty::Str, STATUS).computed(),
+    field(Finding, "retired_links", Ty::StrList, STATUS).computed(),
     // verdicts
     field(Verdict, "finding", Ty::Str, AUDIT_ONLY).required(),
     field(Verdict, "run", Ty::Str, AUDIT_ONLY).computed(),
@@ -1200,6 +1308,7 @@ mod tests {
         (Finding, "resolved", None, "R - - - R - - R"),
         (Finding, "exported_as", None, "R - - - R - - R"),
         (Finding, "export_ledger", None, "R - - - R - - R"),
+        (Finding, "retired_links", None, "R - - - R - - R"),
         (Finding, "lens", None, "- R - - R R R R"),
         (Finding, "cell", None, "- R - - R R R R"),
         (Finding, "severity", None, "- R - R R R - R"),
@@ -1285,6 +1394,96 @@ mod tests {
                 s.name
             );
         }
+    }
+
+    #[test]
+    fn finding_status_predicates_match_the_old_constants() {
+        let set = |pick: fn(FindingStatus) -> bool| -> Vec<&'static str> {
+            let mut out: Vec<&str> = FindingStatus::ALL
+                .iter()
+                .copied()
+                .filter(|s| pick(*s))
+                .map(FindingStatus::as_str)
+                .collect();
+            out.sort_unstable();
+            out
+        };
+        let sorted = |mut list: Vec<&'static str>| {
+            list.sort_unstable();
+            list
+        };
+        assert_eq!(
+            set(FindingStatus::is_settled),
+            sorted(vec!["superseded", "merged", "converted", "exported"])
+        );
+        assert_eq!(
+            set(FindingStatus::is_reopenable),
+            sorted(vec![
+                "dismissed",
+                "deferred",
+                "parked",
+                "backlogged",
+                "refuted",
+                "resolved"
+            ])
+        );
+        assert_eq!(
+            set(FindingStatus::is_suppressing),
+            sorted(vec![
+                "dismissed",
+                "deferred",
+                "parked",
+                "backlogged",
+                "converted"
+            ])
+        );
+        assert_eq!(
+            set(FindingStatus::is_syncable),
+            sorted(vec![
+                "open",
+                "exported",
+                "resolved",
+                "dismissed",
+                "deferred"
+            ])
+        );
+        assert_eq!(
+            set(FindingStatus::decided_by_verdict),
+            sorted(vec!["unverified", "open", "refuted"])
+        );
+        assert_eq!(
+            FINDING_STATUSES,
+            [
+                "unverified",
+                "superseded",
+                "open",
+                "refuted",
+                "merged",
+                "parked",
+                "dismissed",
+                "deferred",
+                "backlogged",
+                "converted",
+                "resolved",
+                "exported",
+            ]
+        );
+        assert_eq!(
+            sorted(ALL_COMPANIONS.to_vec()),
+            sorted(vec![
+                "merged_into",
+                "park_reason",
+                "dismiss_reason",
+                "defer_reason",
+                "defer_trigger",
+                "backlog_ref",
+                "converted_to",
+                "resolution",
+                "resolved",
+                "reopen_reason",
+            ])
+        );
+        assert!(ALL_COMPANIONS.iter().all(|c| !LINK_FIELDS.contains(c)));
     }
 
     fn globs() -> RoutingGlobs {

@@ -997,6 +997,58 @@ fn accounting_lists_unselected_and_unsliced_until_waived() {
 }
 
 #[test]
+fn plan_ndjson_replay_is_unchanged() {
+    let Some(repo) = Repo::new(&["src/a.rs", "src/b.rs"]) else {
+        return;
+    };
+    repo.seed(&[RunSpec {
+        id: "U1",
+        family: "code",
+        depth: "quick",
+        changed_lines: Some(100),
+        scope: &["src/**"],
+        signals: "[]",
+    }]);
+    let rows = [
+        json!({"slice": ["src/a.rs"], "concerns": ["correctness"], "agent": "review-finder", "reason": "proposed"}),
+        json!({"slice": ["src/b.rs"], "concerns": ["ripple"], "agent": "review-sweeper", "reason": "proposed"}),
+    ];
+    let ids = |out: &JsonValue| -> Vec<String> {
+        out["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let first = repo.plan("U1", &rows);
+    assert_eq!(first["wave"], 1, "{first}");
+    assert_eq!(first["unchanged"], false, "{first}");
+
+    let replay = repo.plan("U1", &rows);
+    assert_eq!(replay["wave"], 1, "a replay mints no second wave: {replay}");
+    assert_eq!(replay["unchanged"], true, "{replay}");
+    assert_eq!(ids(&replay), ids(&first));
+    let store = repo.store();
+    assert_eq!(store["cells"].as_array().unwrap().len(), 2, "{store:?}");
+
+    let partial = repo.plan("U1", &rows[..1]);
+    assert_eq!(
+        partial["wave"], 2,
+        "a partial overlap is a new wave: {partial}"
+    );
+    assert_eq!(partial["unchanged"], false, "{partial}");
+
+    let cell = ids(&partial)[0].clone();
+    repo.cover(&cell, "covered", "read in full").success();
+    let after_seal = repo.plan("U1", &rows[..1]);
+    assert_eq!(
+        after_seal["wave"], 3,
+        "a sealed cell in the newest wave is not replayed: {after_seal}"
+    );
+}
+
+#[test]
 fn cover_seals_the_cell() {
     let Some(repo) = Repo::new(&["src/a.rs"]) else {
         return;

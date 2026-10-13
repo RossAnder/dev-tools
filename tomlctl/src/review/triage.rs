@@ -8,6 +8,8 @@
 //! mints the advisory's replacement through the field catalogue and routing,
 //! records an `orchestrator` verdict on it and marks the advisory
 //! `converted` in one write; the replacement stays `unverified` for its route.
+//! An advisory whose run is finished converts only into the open run `--run`
+//! names, which then cannot finish until the replacement is verified.
 
 use std::path::{Path, PathBuf};
 
@@ -18,42 +20,25 @@ use toml::value::Datetime;
 
 use super::add::{self, str_of};
 use super::catalogue::run_catalogue;
-use super::fields::{self, Kind, Route};
+use super::fields::{self, FindingStatus, Kind, Route};
+use super::invalid;
 use super::matching::{self, Site};
-use super::store::{self, Finding, Minted, Store, Target, Verdict};
+use super::store::{self, Finding, Minted, Run, Store, Target, Verdict};
 use crate::cli::{ReadIntegrityArgs, ReviewTriageArgs};
-use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{read_ndjson_source, read_prose, repo_or_cwd_root};
 use crate::output::print_json_compact;
 
 const VERB: &str = "review triage";
-/// Statuses no disposition moves: withdrawn, merged into another row,
-/// replaced by a conversion, or owned by a v1 ledger since export.
-const SETTLED: &[&str] = &["superseded", "merged", "converted", "exported"];
-/// The statuses `--reopen` returns to `open`.
-const REOPENABLE: &[&str] = &[
-    "dismissed",
-    "deferred",
-    "parked",
-    "backlogged",
-    "refuted",
-    "resolved",
+/// The reopenable statuses in the order the `--reopen` refusal names them;
+/// a unit test holds it to [`FindingStatus::is_reopenable`].
+const REOPENABLE_ORDER: &[FindingStatus] = &[
+    FindingStatus::Dismissed,
+    FindingStatus::Deferred,
+    FindingStatus::Parked,
+    FindingStatus::Backlogged,
+    FindingStatus::Refuted,
+    FindingStatus::Resolved,
 ];
-/// Every disposition companion a triage move may have left on a row.
-const COMPANIONS: &[&str] = &[
-    "park_reason",
-    "dismiss_reason",
-    "defer_reason",
-    "defer_trigger",
-    "backlog_ref",
-    "resolution",
-    "resolved",
-    "reopen_reason",
-];
-
-fn invalid(msg: impl Into<String>) -> anyhow::Error {
-    tagged_err(ErrorKind::Validation, None, msg)
-}
 
 enum Mode {
     Dismiss(String),
@@ -78,15 +63,15 @@ impl Mode {
         }
     }
 
-    fn status(&self) -> &'static str {
+    fn status(&self) -> FindingStatus {
         match self {
-            Self::Dismiss(_) => "dismissed",
-            Self::Defer { .. } => "deferred",
-            Self::Reopen(_) => "open",
-            Self::Park(_) => "parked",
-            Self::Resolve(_) => "resolved",
-            Self::Backlog(_) => "backlogged",
-            Self::Convert(_) => "converted",
+            Self::Dismiss(_) => FindingStatus::Dismissed,
+            Self::Defer { .. } => FindingStatus::Deferred,
+            Self::Reopen(_) => FindingStatus::Open,
+            Self::Park(_) => FindingStatus::Parked,
+            Self::Resolve(_) => FindingStatus::Resolved,
+            Self::Backlog(_) => FindingStatus::Backlogged,
+            Self::Convert(_) => FindingStatus::Converted,
         }
     }
 
@@ -192,8 +177,9 @@ pub(crate) fn run(target: &Target, args: ReviewTriageArgs) -> Result<()> {
         return outcome.print(&mode);
     }
 
-    // A retry after the sidecar rename failed finds its moves already made
-    // and writes nothing.
+    // A replay of a call that landed finds its moves already made and writes
+    // nothing. A failed write leaves the TOML as it was, since the sidecar
+    // is committed before it.
     let mut trial = current.clone();
     let preview = dispose_all(&mut trial, &ids, &mode, expect, today);
     refuse_if_nothing_landed(&preview)?;
@@ -275,12 +261,13 @@ fn judge(store: &Store, id: &str, mode: &Mode, expect: Option<&str>) -> Step {
     let Some(finding) = store.findings.iter().find(|f| f.id == id) else {
         return Step::Refused(vec![format!("{id} is not in this store")]);
     };
-    let status = finding.status.as_str();
+    let current = finding.status();
+    let status = current.as_str();
     let recorded = mode
         .companions()
         .into_iter()
         .all(|(key, value)| finding.rest.get(key).and_then(TomlValue::as_str) == Some(value));
-    if status == mode.status() && recorded {
+    if current == mode.status() && recorded {
         return Step::Unchanged;
     }
     if let Some(expected) = expect
@@ -289,7 +276,7 @@ fn judge(store: &Store, id: &str, mode: &Mode, expect: Option<&str>) -> Step {
         return Step::Stale(status.to_string());
     }
     let mut reasons = Vec::new();
-    if SETTLED.contains(&status) {
+    if current.is_settled() {
         reasons.push(format!(
             "{id} is {status}; triage does not move a {status} finding"
         ));
@@ -301,13 +288,11 @@ fn judge(store: &Store, id: &str, mode: &Mode, expect: Option<&str>) -> Step {
             finding.kind.as_str()
         ));
     }
-    if matches!(mode, Mode::Reopen(_))
-        && !SETTLED.contains(&status)
-        && !REOPENABLE.contains(&status)
-    {
+    if matches!(mode, Mode::Reopen(_)) && !current.is_settled() && !current.is_reopenable() {
+        let reopenable: Vec<&str> = REOPENABLE_ORDER.iter().map(|s| s.as_str()).collect();
         reasons.push(format!(
             "{id} is {status}; --reopen moves a finding that is {}",
-            REOPENABLE.join(", ")
+            reopenable.join(", ")
         ));
     }
     if reasons.is_empty() {
@@ -317,28 +302,22 @@ fn judge(store: &Store, id: &str, mode: &Mode, expect: Option<&str>) -> Step {
     }
 }
 
-/// Moves `finding` to `status`, clearing every earlier disposition's
-/// companions and recording `companions` in their place.
+/// Moves `finding` to `status` through [`Finding::set_status`], recording the
+/// text `companions` and, for a resolve, the `resolved` date.
 fn dispose(
     finding: &mut Finding,
-    status: &str,
+    status: FindingStatus,
     companions: &[(&'static str, &str)],
     resolved: Option<Datetime>,
 ) {
-    for key in COMPANIONS {
-        finding.rest.remove(*key);
-    }
-    finding.status = status.to_string();
-    for (key, value) in companions {
-        finding
-            .rest
-            .insert((*key).to_string(), TomlValue::String((*value).to_string()));
-    }
+    let mut values: Vec<(&str, TomlValue)> = companions
+        .iter()
+        .map(|(key, value)| (*key, TomlValue::String((*value).to_string())))
+        .collect();
     if let Some(date) = resolved {
-        finding
-            .rest
-            .insert("resolved".to_string(), TomlValue::Datetime(date));
+        values.push(("resolved", TomlValue::Datetime(date)));
     }
+    finding.set_status(status, &values);
 }
 
 fn dispose_all(
@@ -357,12 +336,17 @@ fn dispose_all(
                     .iter_mut()
                     .find(|f| &f.id == id)
                     .expect("judge applies only to a stored finding");
-                let from = finding.status.clone();
+                let from = finding.status().as_str();
                 let resolved = matches!(mode, Mode::Resolve(_)).then_some(today);
+                // A reopened finding no longer follows its v1 row: sync would
+                // undo the reopen, and a re-export mints a regression instead.
+                if matches!(mode, Mode::Reopen(_)) {
+                    finding.retire_link();
+                }
                 dispose(finding, mode.status(), &mode.companions(), resolved);
                 outcome
                     .applied
-                    .push(json!({"id": id, "from": from, "status": mode.status()}));
+                    .push(json!({"id": id, "from": from, "status": mode.status().as_str()}));
             }
             Step::Unchanged => outcome.unchanged.push(id.clone()),
             Step::Stale(found) => outcome.stale.push(stale_entry(id, expect, &found)),
@@ -414,9 +398,11 @@ fn convert(
         .iter()
         .find(|f| f.id == id)
         .expect("judge applies only to a stored finding");
+    let named = args.run.as_deref();
+    let run = target_run(current, advisory, named)?;
     let root = repo_or_cwd_root()?;
-    let row = replacement_row(&root, current, advisory, kind, src)?;
-    let run_id = advisory.run.clone();
+    let row = replacement_row(&root, current, advisory, run, kind, src)?;
+    let run_id = run.id.clone();
     let today_iso = today.to_string();
 
     store::mutate_minting(
@@ -433,7 +419,8 @@ fn convert(
                 .iter()
                 .find(|f| f.id == id)
                 .expect("judge applies only to a stored finding");
-            let row = finish_row(row.clone(), advisory, &locked.findings, &today_iso);
+            target_run(&locked, advisory, named)?;
+            let row = finish_row(row.clone(), advisory, &run_id, &locked.findings, &today_iso);
             let minted = store::mint(doc, Minted::Findings, std::slice::from_ref(&row))?;
             let new_id = minted.into_iter().next().expect("one row mints one id");
             Ok((Step::Apply, Some((new_id, row))))
@@ -462,8 +449,13 @@ fn convert(
                 .iter_mut()
                 .find(|f| f.id == id)
                 .expect("judge applies only to a stored finding");
-            let from = advisory.status.clone();
-            dispose(advisory, "converted", &[("converted_to", &new_id)], None);
+            let from = advisory.status().as_str();
+            dispose(
+                advisory,
+                FindingStatus::Converted,
+                &[("converted_to", &new_id)],
+                None,
+            );
             let file = row["file"].as_str().unwrap_or_default();
             let citation = match row.get("line").and_then(JsonValue::as_u64) {
                 Some(line) => format!("{file}:{line}"),
@@ -514,17 +506,69 @@ fn replacement_of(store: &Store, advisory: &str) -> Option<JsonValue> {
         "kind": f.kind.as_str(),
         "severity": f.rest.get("severity").and_then(TomlValue::as_str),
         "route": f.route.unwrap_or(Route::Unrouted).as_str(),
-        "status": f.status,
+        "status": f.status().as_str(),
     }))
+}
+
+/// The open run the replacement is minted in: the advisory's own while it is
+/// open, else the `--run` named, which must be open and of the advisory's
+/// family. A finished run cannot verify the replacement, so it never hosts one.
+fn target_run<'a>(store: &'a Store, advisory: &Finding, named: Option<&str>) -> Result<&'a Run> {
+    let own = store
+        .runs
+        .iter()
+        .find(|r| r.id == advisory.run)
+        .ok_or_else(|| {
+            invalid(format!(
+                "{VERB}: {} names run {}, which is not in this store",
+                advisory.id, advisory.run
+            ))
+        })?;
+    if own.finished.is_empty() {
+        return match named {
+            Some(named) if named != own.id => Err(invalid(format!(
+                "{VERB}: --run is {named}, but {} belongs to run {}, which is open; its replacement is minted there",
+                advisory.id, own.id
+            ))),
+            _ => Ok(own),
+        };
+    }
+    let Some(named) = named else {
+        return Err(invalid(format!(
+            "{VERB}: {} belongs to run {}, which is finished; its replacement could not be verified there — name an open run with --run",
+            advisory.id, own.id
+        )));
+    };
+    let run = store
+        .runs
+        .iter()
+        .find(|r| r.id == named)
+        .ok_or_else(|| invalid(format!("{VERB}: --run {named} is not in this store")))?;
+    if !run.finished.is_empty() {
+        return Err(invalid(format!(
+            "{VERB}: --run {named} is finished; the replacement needs an open run"
+        )));
+    }
+    if run.family != advisory.family {
+        return Err(invalid(format!(
+            "{VERB}: --run {named} is a {} run; {} is a {} finding",
+            run.family.as_str(),
+            advisory.id,
+            advisory.family.as_str()
+        )));
+    }
+    Ok(run)
 }
 
 /// The replacement as given, defaulted from the advisory's lens, anchor and
 /// summary, validated through the field catalogue and routed by its edit
-/// target. The fields that need the store under the lock come later.
+/// target under `run`'s catalogue and depth. The fields that need the store
+/// under the lock come later.
 fn replacement_row(
     root: &Path,
     store: &Store,
     advisory: &Finding,
+    run: &Run,
     kind: Kind,
     src: &str,
 ) -> Result<Map<String, JsonValue>> {
@@ -535,22 +579,6 @@ fn replacement_row(
             "{VERB}: --ndjson must hold exactly one replacement object"
         )));
     };
-    let run = store
-        .runs
-        .iter()
-        .find(|r| r.id == advisory.run)
-        .ok_or_else(|| {
-            invalid(format!(
-                "{VERB}: {} names run {}, which is not in this store",
-                advisory.id, advisory.run
-            ))
-        })?;
-    if !run.finished.is_empty() {
-        return Err(invalid(format!(
-            "{VERB}: {} belongs to run {}, which is finished; its replacement could not be verified",
-            advisory.id, run.id
-        )));
-    }
 
     let mut reasons = Vec::new();
     match row.get("kind").and_then(JsonValue::as_str) {
@@ -601,12 +629,13 @@ fn replacement_row(
     Ok(row)
 }
 
-/// Stamps the bookkeeping `review add` computes: the advisory's run and
-/// cell, the anchor, and `related` naming the advisory first, then the
-/// replacement's other anchor candidates.
+/// Stamps the bookkeeping `review add` computes: the hosting `run`, the
+/// advisory's cell as provenance, the anchor, and `related` naming the
+/// advisory first, then the replacement's other anchor candidates.
 fn finish_row(
     mut row: Map<String, JsonValue>,
     advisory: &Finding,
+    run: &str,
     pool: &[Finding],
     today: &str,
 ) -> JsonValue {
@@ -623,13 +652,31 @@ fn finish_row(
             related.push(candidate.id.clone());
         }
     }
-    row.insert("run".into(), json!(advisory.run));
+    row.insert("run".into(), json!(run));
     row.insert("cell".into(), json!(advisory.cell));
-    row.insert("seen_in".into(), json!([advisory.run]));
+    row.insert("seen_in".into(), json!([run]));
     row.insert("family".into(), json!(advisory.family.as_str()));
     row.insert("anchor".into(), json!(anchor));
     row.insert("related".into(), json!(related));
-    row.insert("status".into(), json!("unverified"));
+    row.insert("status".into(), json!(FindingStatus::Unverified.as_str()));
     row.insert("first_seen".into(), json!(today));
     JsonValue::Object(row)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reopen_order_names_exactly_the_reopenable_statuses() {
+        let mut ordered: Vec<&str> = REOPENABLE_ORDER.iter().map(|s| s.as_str()).collect();
+        let mut owned: Vec<&str> = FindingStatus::ALL
+            .iter()
+            .filter(|s| s.is_reopenable())
+            .map(|s| s.as_str())
+            .collect();
+        ordered.sort_unstable();
+        owned.sort_unstable();
+        assert_eq!(ordered, owned);
+    }
 }

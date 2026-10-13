@@ -534,6 +534,13 @@ pub(crate) struct ReviewTriageArgs {
     )]
     pub(crate) ndjson: Option<String>,
     #[arg(
+        long = "run",
+        value_name = "RUN",
+        conflicts_with_all = NOT_CONVERT,
+        help = "Companion to --convert: the open run the replacement is minted in when the advisory's run is finished"
+    )]
+    pub(crate) run: Option<String>,
+    #[arg(
         long = "expect-status",
         value_name = "STATUS",
         help = "Move only the ids still at this status; the rest land under `skipped_stale`"

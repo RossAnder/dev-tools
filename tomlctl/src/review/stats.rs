@@ -16,12 +16,12 @@ use anyhow::Result;
 use serde_json::{Value as JsonValue, json};
 
 use super::cells::PathSet;
-use super::fields::{Family, Kind, Route};
+use super::fields::{Family, FindingStatus, Kind, Route};
+use super::invalid;
 use super::store::{self, Cell, Finding, Store, Verdict};
 use super::sync::{SYNC_REASON_PREFIX, V1Outcome, ledger_paths, linked_rows};
 use super::verdict::settle;
 use crate::cli::ReviewStatsArgs;
-use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{relativise_under, repo_or_cwd_root};
 
 const PROBE_PREFIX: &str = "probe:";
@@ -64,10 +64,6 @@ struct Loaded {
     slug: Option<String>,
     scope: Option<String>,
     store: Store,
-}
-
-fn invalid(msg: impl Into<String>) -> anyhow::Error {
-    tagged_err(ErrorKind::Validation, None, msg.into())
 }
 
 pub(crate) fn run(args: ReviewStatsArgs) -> Result<()> {
@@ -221,7 +217,7 @@ impl<'a> View<'a> {
                 let findings = s
                     .findings
                     .iter()
-                    .filter(|f| keep(f.family) && f.status != "superseded")
+                    .filter(|f| keep(f.family) && f.status() != FindingStatus::Superseded)
                     .collect();
                 let mut verdicts: BTreeMap<&str, Vec<&Verdict>> = BTreeMap::new();
                 for v in &s.verdicts {
@@ -277,7 +273,7 @@ fn overturn<'v>(route: Option<Route>, verdicts: &[&'v Verdict]) -> (bool, Option
 }
 
 fn user_dismissal(finding: &Finding) -> Option<&str> {
-    if finding.status != "dismissed" {
+    if finding.status() != FindingStatus::Dismissed {
         return None;
     }
     let reason = finding
@@ -533,7 +529,13 @@ fn v1_links<'a>(root: &Path, view: &View<'a>) -> Result<Vec<Link<'a>>> {
             loaded.scope.as_deref(),
         )?;
         for row in linked_rows(root, &loaded.path, &ledgers)? {
-            let Some(finding) = sv.findings.iter().find(|f| f.id == row.finding) else {
+            // A link a reopen retired no longer reports the finding's outcome;
+            // `sync-v1` skips it the same way.
+            let Some(finding) = sv
+                .findings
+                .iter()
+                .find(|f| f.id == row.finding && !f.is_retired(&row.ledger, &row.v1_id))
+            else {
                 continue;
             };
             let status = row
@@ -640,7 +642,7 @@ fn escapes(view: &View) -> JsonValue {
             .map(|c| (*c, PathSet::new(&c.slice)))
             .collect();
         for f in &sv.findings {
-            if !f.outcome.is_empty() || f.status == "refuted" || f.file.is_empty() {
+            if !f.outcome.is_empty() || f.status() == FindingStatus::Refuted || f.file.is_empty() {
                 continue;
             }
             let Some(&minted_at) = order.get(f.run.as_str()) else {
@@ -739,7 +741,7 @@ fn calibration(view: &View, links: &[Link], n: usize) -> JsonValue {
                 .rest
                 .get("dismiss_reason")
                 .and_then(toml::Value::as_str)
-                .filter(|_| f.status == "dismissed")
+                .filter(|_| f.status() == FindingStatus::Dismissed)
                 .and_then(synced_wontfix);
             if let Some(reason) = synced
                 && v1_seen.insert((index, f.id.as_str()))

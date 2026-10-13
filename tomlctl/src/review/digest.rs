@@ -13,7 +13,7 @@ use serde_json::{Map, Value as JsonValue, json};
 use toml::Value as TomlValue;
 
 use super::cells::coverage_accounting;
-use super::fields::{Kind, Role, Route, SWEEPER, Severity};
+use super::fields::{FindingStatus, Kind, Role, Route, SWEEPER, Severity};
 use super::query::View;
 use super::store::{self, Cell, Finding, Run, Store, Target, Verdict};
 use crate::cli::{ReviewDigestArgs, ReviewReportArgs};
@@ -59,7 +59,7 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
         .enumerate()
         .filter(|(_, f)| {
             f.run == run.id
-                && f.status != "superseded"
+                && f.status() != FindingStatus::Superseded
                 && in_wave(cell_of(&stored, f).and_then(|c| c.wave))
         })
         .map(|(i, _)| i)
@@ -72,7 +72,7 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
     for (_, f) in each() {
         *by_kind.entry(f.kind.as_str()).or_default() += 1;
         *by_lens.entry(f.lens.as_str()).or_default() += 1;
-        *by_status.entry(f.status.as_str()).or_default() += 1;
+        *by_status.entry(f.status().as_str()).or_default() += 1;
     }
 
     let mut cell_status: BTreeMap<&str, usize> = BTreeMap::new();
@@ -91,7 +91,7 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
         .collect();
 
     let unverified: Vec<JsonValue> = each()
-        .filter(|(_, f)| f.status == "unverified")
+        .filter(|(_, f)| f.status() == FindingStatus::Unverified)
         .map(|(_, f)| {
             json!({
                 "id": f.id,
@@ -113,7 +113,7 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
             {
                 row.insert(
                     "target".into(),
-                    json!({"id": t.id, "summary": t.summary, "status": t.status}),
+                    json!({"id": t.id, "summary": t.summary, "status": t.status().as_str()}),
                 );
             }
             JsonValue::Object(row)
@@ -122,13 +122,13 @@ pub(crate) fn digest(target: &Target, args: ReviewDigestArgs) -> Result<()> {
     let refuted_criticals: Vec<JsonValue> = each()
         .filter(|(_, f)| {
             f.kind == Kind::Defect
-                && f.status == "refuted"
+                && f.status() == FindingStatus::Refuted
                 && stored.severity(f) == Severity::Critical.as_str()
         })
         .map(|(i, _)| JsonValue::Object(rows.project(Role::Orchestrator, i, false)))
         .collect();
     let advisory: Vec<JsonValue> = each()
-        .filter(|(_, f)| f.kind == Kind::Advisory && f.status == "open")
+        .filter(|(_, f)| f.kind == Kind::Advisory && f.status() == FindingStatus::Open)
         .map(|(i, _)| JsonValue::Object(rows.project(Role::Orchestrator, i, false)))
         .collect();
 
@@ -220,7 +220,12 @@ fn audit_sample(store: &Store, indices: &[usize]) -> JsonValue {
     let settled: Vec<&Finding> = indices
         .iter()
         .map(|&i| &store.findings[i])
-        .filter(|f| !matches!(f.status.as_str(), "superseded" | "merged" | "unverified"))
+        .filter(|f| {
+            !matches!(
+                f.status(),
+                FindingStatus::Superseded | FindingStatus::Merged | FindingStatus::Unverified
+            )
+        })
         .collect();
     let judged = |f: &Finding| judgement(store, &f.id);
     let pick = |rows: &[&Finding]| -> Vec<String> {
@@ -289,13 +294,17 @@ fn report_rows<'s>(store: &'s Store, run: &str) -> Vec<(usize, &'s Finding)> {
         .iter()
         .enumerate()
         .filter(|(_, f)| {
-            f.status != "superseded" && (f.run == run || f.seen_in.iter().any(|r| r == run))
+            f.status() != FindingStatus::Superseded
+                && (f.run == run || f.seen_in.iter().any(|r| r == run))
         })
         .collect()
 }
 
 fn live(finding: &Finding) -> bool {
-    !matches!(finding.status.as_str(), "superseded" | "merged" | "refuted")
+    !matches!(
+        finding.status(),
+        FindingStatus::Superseded | FindingStatus::Merged | FindingStatus::Refuted
+    )
 }
 
 /// A run's tallies over its [`report_rows`], shared by the report's counts
@@ -322,9 +331,9 @@ impl Counts {
             defect: kind(Kind::Defect),
             cleanup: kind(Kind::Cleanup),
             advisory: kind(Kind::Advisory),
-            refuted: of(&|f| f.status == "refuted"),
+            refuted: of(&|f| f.status() == FindingStatus::Refuted),
             suppressed: of(&|f| f.outcome == "suppressed"),
-            unverified: of(&|f| f.status == "unverified"),
+            unverified: of(&|f| f.status() == FindingStatus::Unverified),
             cells: cells.len(),
             uncovered: cells.iter().filter(|c| c.status == "uncovered").count(),
         }
@@ -697,6 +706,17 @@ mod tests {
         assert_eq!(spread(2, 2), vec![0, 1]);
         assert_eq!(spread(4, 2), vec![1, 3]);
         assert_eq!(spread(5, 1), vec![2]);
+    }
+
+    #[test]
+    fn dispositions_are_companions_or_link_fields() {
+        use crate::review::fields::{ALL_COMPANIONS, LINK_FIELDS};
+        let strays: Vec<&str> = DISPOSITIONS
+            .iter()
+            .copied()
+            .filter(|key| !ALL_COMPANIONS.contains(key) && !LINK_FIELDS.contains(key))
+            .collect();
+        assert!(strays.is_empty(), "not a status field: {strays:?}");
     }
 
     #[test]

@@ -570,6 +570,38 @@ fn stats_outcomes_join_v1_status() {
 }
 
 #[test]
+fn outcomes_skip_a_retired_link() {
+    let repo = Repo::new();
+    let reexported = STORE.replace(
+        "summary = \"wrong default\"\nstatus = \"exported\"\nexported_as = \"R2\"\n",
+        "summary = \"wrong default\"\nstatus = \"exported\"\nexported_as = \"R3\"\nretired_links = [\".claude/reviews/t.toml#R2\"]\n",
+    );
+    assert_ne!(reexported, STORE, "the F14 fixture moved");
+    repo.write(STORE_PATH, &reexported);
+    let mut ledger = REVIEW.to_string();
+    ledger.push_str(
+        "\n[[items]]\nid = \"R3\"\nfile = \"src/lib.rs\"\nline = 60\nseverity = \"warning\"\neffort = \"small\"\ncategory = \"quality\"\nsummary = \"wrong default\"\nfirst_flagged = 2026-10-15\nrounds = 1\nstatus = \"open\"\nrelated = [\"R2\"]\nv2_ref = \".claude/review-v2/t.toml#F14\"\n",
+    );
+    repo.write(REVIEW_LEDGER, &ledger);
+
+    let out = repo.stats(&["--scope", "t", "--outcomes"]);
+    let group = out["outcomes"]
+        .as_array()
+        .expect("outcomes is an array")
+        .iter()
+        .find(|g| g["lens"] == "correctness" && g["kind"] == "defect")
+        .unwrap_or_else(|| panic!("no correctness/defect group: {out}"))
+        .clone();
+    assert_eq!(group["exported"], 1, "{group}");
+    assert_eq!(
+        group["linked"], 1,
+        "the retired R2 still names F14 but is not its link: {group}"
+    );
+    assert_eq!(group["v1"], json!({"open": 1}), "{group}");
+    assert_eq!(group["v2"], json!({"open": 1}), "{group}");
+}
+
+#[test]
 fn stats_escapes_count_refinds_in_covered_cells() {
     let repo = Repo::new();
     let out = repo.stats(&["--scope", "t", "--escapes"]);

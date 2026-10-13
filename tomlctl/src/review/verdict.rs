@@ -9,21 +9,14 @@
 use anyhow::Result;
 use serde_json::{Map, Value as JsonValue, json};
 
-use super::fields::{self, Kind, Record, Route, RowContext, SWEEPER};
+use super::fields::{self, FindingStatus, Kind, Record, Route, RowContext, SWEEPER};
+use super::invalid;
 use super::store::{self, Store, Target, Verdict};
 use crate::cli::{ReadIntegrityArgs, ReviewVerdictArgs};
-use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{read_flag_file, read_ndjson_source, read_text_arg};
 use crate::output::print_json_compact;
 
 const VERB: &str = "review verdict";
-/// The finding statuses a verdict decides; every other status is a later
-/// disposition that a verdict is recorded beside but never overrides.
-const DECIDED_BY_VERDICT: &[&str] = &["unverified", "open", "refuted"];
-
-fn invalid(msg: impl Into<String>) -> anyhow::Error {
-    tagged_err(ErrorKind::Validation, None, msg)
-}
 
 /// One caller-supplied verdict: its NDJSON line (1 for the single form),
 /// the row as given, and whether it strikes the finding's `same_as`.
@@ -60,8 +53,8 @@ pub(crate) fn run(target: &Target, args: ReviewVerdictArgs) -> Result<()> {
         strict_read: true,
     };
 
-    // A retry after the sidecar rename failed finds its own verdicts already
-    // in place and writes nothing.
+    // A replay of a call that landed finds its own verdicts already in place
+    // and writes nothing.
     let current = store::load(&target.path, &read)?;
     let mut trial = current.clone();
     let preview = apply(&mut trial, &inputs);
@@ -184,7 +177,7 @@ fn apply_one(store: &mut Store, input: &Input) -> std::result::Result<JsonValue,
         Kind::Advisory => reasons.push(format!(
             "{id} is advisory; advisory findings are triaged, not verified"
         )),
-        _ if finding.status == "superseded" => reasons.push(format!(
+        _ if finding.status() == FindingStatus::Superseded => reasons.push(format!(
             "{id} is superseded by a later `review add` of cell {}",
             finding.cell
         )),
@@ -252,8 +245,8 @@ fn apply_one(store: &mut Store, input: &Input) -> std::result::Result<JsonValue,
     if reroute {
         finding.route = Some(Route::Verifier);
     }
-    if finding.same_as.is_empty() && DECIDED_BY_VERDICT.contains(&finding.status.as_str()) {
-        finding.status = decided.to_string();
+    if finding.same_as.is_empty() && finding.status().decided_by_verdict() {
+        finding.set_status(decided, &[]);
     }
 
     let mut entry = json!({"finding": id, "verdict": verdict});
@@ -273,7 +266,7 @@ fn written_by_sweeper(store: &Store, cell: &str) -> bool {
 /// The status the verdict just written gives its finding. An audit verdict
 /// decides at once on any route; a checker's `unsettled` leaves the finding
 /// for the verifier; every other verdict decides through [`settle`].
-fn decide(store: &Store, index: usize, by: &str, verdict: &str) -> &'static str {
+fn decide(store: &Store, index: usize, by: &str, verdict: &str) -> FindingStatus {
     let finding = &store.findings[index];
     let settled = match (by, verdict) {
         ("audit", _) => Some(verdict),
@@ -288,9 +281,9 @@ fn decide(store: &Store, index: usize, by: &str, verdict: &str) -> &'static str 
         }
     };
     match settled {
-        Some("refuted") => "refuted",
-        Some(_) => "open",
-        None => "unverified",
+        Some("refuted") => FindingStatus::Refuted,
+        Some(_) => FindingStatus::Open,
+        None => FindingStatus::Unverified,
     }
 }
 

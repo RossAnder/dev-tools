@@ -412,6 +412,113 @@ fn show_cell_carries_bound_catalogue_paths() {
 }
 
 #[test]
+fn show_for_finder_cf_omits_the_pack() {
+    let repo = Repo::new();
+    let path = repo.root.join(".claude/review-v2/t.toml");
+    let text = fs::read_to_string(&path).unwrap();
+    let text = text
+        .replacen(
+            "agent = \"review-finder\"\n",
+            "agent = \"review-finder-cf\"\n",
+            1,
+        )
+        .replacen(
+            "depth = \"standard\"\n",
+            "depth = \"standard\"\nbase = \"e23b918\"\n",
+            1,
+        );
+    fs::write(&path, text).unwrap();
+
+    let cell = &repo.show("C1", "finder")[0];
+    assert!(cell.get("pack").is_none(), "the cf cell has a pack: {cell}");
+    assert_eq!(cell["base"], "e23b918", "{cell}");
+    assert_eq!(cell["baselines"]["lint-baseline"], "logs/lint.txt");
+    assert_eq!(cell["method_paths"][0]["id"], "trace");
+}
+
+/// A code lens with the frontmatter `review plan` binds against.
+fn bindable_lens(id: &str) -> String {
+    format!(
+        "+++\nid = \"{id}\"\nstatus = \"stable\"\nfamilies = [\"code\"]\nmode = \"judgement\"\n\
+         produces = [\"defect\"]\nowns = [\"{id}-tag\"]\nactivation = \"floor\"\n\
+         slice = \"per-subsystem\"\nv1_category = \"quality\"\n+++\n## Question\nWhat does {id} ask?\n\n\
+         ## Owns\n`{id}-tag` — owned here.\n\n## Probes — code\n- one probe\n\n\
+         ## Does not flag\n- confirmations\n"
+    )
+}
+
+#[test]
+fn cf_agent_refused_outside_the_variant() {
+    if !common::git_available() {
+        eprintln!("skipping: git is not available");
+        return;
+    }
+    let repo = Repo::new();
+    for id in ["correctness", "naming"] {
+        fs::write(
+            repo.builtin.join(format!("lenses/{id}.md")),
+            bindable_lens(id),
+        )
+        .unwrap();
+    }
+    let source = repo.root.join("src/a.rs");
+    fs::create_dir_all(source.parent().unwrap()).unwrap();
+    fs::write(&source, "fn f() {}\n").unwrap();
+    let added = common::git_command(&repo.root)
+        .args(["add", "-A"])
+        .output()
+        .unwrap();
+    assert!(added.status.success(), "git add failed");
+    fs::write(
+        repo.root.join(".claude/review-v2/t.toml"),
+        format!(
+            "schema_version = 1\n\n[[runs]]\nid = \"U1\"\ncommand = \"review-v2\"\nfamily = \"code\"\n\
+             depth = \"standard\"\nstarted = \"2026-10-12T10:00:00Z\"\nbase = \"abc\"\n\
+             scope = [\"src/**\"]\nsignals = []\ncatalogue = {{ builtin = \"{}\" }}\n",
+            slash(&repo.builtin)
+        ),
+    )
+    .unwrap();
+    let row = |concerns: &[&str]| {
+        serde_json::json!({
+            "slice": ["src/a.rs"],
+            "concerns": concerns,
+            "agent": "review-finder-cf",
+            "reason": "proposed",
+        })
+        .to_string()
+    };
+    let payload = repo.root.join(".claude/payload.ndjson");
+    fs::write(
+        &payload,
+        format!(
+            "{}\n{}\n{}\n",
+            row(&["naming"]),
+            row(&["correctness", "naming"]),
+            row(&["correctness"]),
+        ),
+    )
+    .unwrap();
+
+    let out = repo.json(&["plan", "--run", "U1", "--ndjson", &slash(&payload)]);
+    let refused: Vec<u64> = out["refused"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["line"].as_u64().unwrap())
+        .collect();
+    assert_eq!(refused, [1, 2], "{out}");
+    for entry in out["refused"].as_array().unwrap() {
+        let reasons = entry["reasons"].to_string();
+        assert!(reasons.contains("review-finder-cf"), "{reasons}");
+    }
+    let cells = out["cells"].as_array().unwrap();
+    assert_eq!(cells.len(), 1, "{out}");
+    assert_eq!(cells[0]["agent"], "review-finder-cf");
+    assert_eq!(cells[0]["concerns"], serde_json::json!(["correctness"]));
+}
+
+#[test]
 fn missing_store_reports_one_error_for_reads_and_writes() {
     let repo = Repo::new();
     fs::remove_file(repo.root.join(".claude/review-v2/t.toml")).unwrap();

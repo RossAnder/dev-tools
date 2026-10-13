@@ -21,10 +21,12 @@ use super::catalogue::{
     Activation, Catalogue, Entry, EntryType, Executor, Mode, SignalKind, SliceRule, Status,
     run_catalogue,
 };
-use super::fields::{self, Depth, EXECUTOR, FINDER, Family, Record, RowContext, SWEEPER};
+use super::fields::{
+    self, Depth, EXECUTOR, FINDER, FINDER_CF, Family, Record, RowContext, SWEEPER,
+};
+use super::invalid;
 use super::store::{self, Minted, Run, Store, Target};
 use crate::cli::{ReadIntegrityArgs, ReviewCoverArgs, ReviewPlanArgs};
-use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{
     atomic_write, guard_write_path, read_ndjson_source, read_prose, relativise, repo_or_cwd_root,
 };
@@ -36,10 +38,6 @@ const SUMMARY_KEY: &str = "proposal";
 /// The health signal whose `evidence` lists the churn hotspots, most commits first.
 const HOTSPOT_SIGNAL: &str = "churn-hotspot";
 const TASKS_PER_EXECUTOR_CELL: usize = 4;
-
-fn invalid(msg: impl Into<String>) -> anyhow::Error {
-    tagged_err(ErrorKind::Validation, None, msg)
-}
 
 fn read_args(integrity: &crate::cli::WriteIntegrityArgs) -> ReadIntegrityArgs {
     ReadIntegrityArgs {
@@ -967,6 +965,12 @@ fn expected_agent(concerns: &[String], catalogue: &Catalogue) -> &'static str {
     }
 }
 
+/// Whether `agent` is the context-free finder standing in for the finder on a
+/// cell whose only concern is the correctness lens; no other cell runs it.
+fn context_free_variant(agent: &str, expected: &str, concerns: &[String]) -> bool {
+    agent == FINDER_CF && expected == FINDER && matches!(concerns, [only] if only == "correctness")
+}
+
 /// Validates one cell row and binds it, returning the row to mint.
 fn prepare_cell(
     row: &Map<String, JsonValue>,
@@ -1009,7 +1013,8 @@ fn prepare_cell(
         .and_then(JsonValue::as_str)
         .unwrap_or_default();
     let expected = expected_agent(&concerns, catalogue);
-    if binding.is_some() && agent != expected {
+    let accepted = agent == expected || context_free_variant(agent, expected, &concerns);
+    if binding.is_some() && !accepted {
         reasons.push(format!(
             "`agent` is {agent:?}; {:?} runs on {expected}",
             concerns.join(", ")
@@ -1097,26 +1102,26 @@ fn append(target: &Target, args: &ReviewPlanArgs) -> Result<()> {
     }
 
     let run_id = run.id.clone();
-    let (ids, wave) = store::mutate_minting(
-        &target.path,
-        &args.integrity,
-        |doc| {
-            let current = store::from_toml(doc)?;
-            let wave = current
-                .cells
-                .iter()
-                .filter(|c| c.run == run_id)
-                .filter_map(|c| c.wave)
-                .max()
-                .unwrap_or(0)
-                + 1;
-            for row in &mut ready {
-                row["wave"] = json!(wave);
-            }
-            Ok((store::mint(doc, Minted::Cells, &ready)?, wave))
-        },
-        |_, minted| Ok(minted),
-    )?;
+    // A replay of a call that succeeded finds its own wave and writes nothing.
+    let (ids, wave, unchanged) = match replayed_wave(&stored, &run_id, &ready) {
+        Some((ids, wave)) => (ids, wave, true),
+        None => store::mutate_minting(
+            &target.path,
+            &args.integrity,
+            |doc| {
+                let current = store::from_toml(doc)?;
+                if let Some((ids, wave)) = replayed_wave(&current, &run_id, &ready) {
+                    return Ok((ids, wave, true));
+                }
+                let wave = newest_wave(&current, &run_id).unwrap_or(0) + 1;
+                for row in &mut ready {
+                    row["wave"] = json!(wave);
+                }
+                Ok((store::mint(doc, Minted::Cells, &ready)?, wave, false))
+            },
+            |_, minted| Ok(minted),
+        )?,
+    };
 
     let after = store::load(&target.path, &read)?;
     let accounting = coverage_accounting(&root, &after, &run_id)?;
@@ -1140,7 +1145,72 @@ fn append(target: &Target, args: &ReviewPlanArgs) -> Result<()> {
         "cells": cells,
         "refused": refused,
         "accounting": accounting.to_json(),
+        "unchanged": unchanged,
     }))
+}
+
+fn newest_wave(store: &Store, run: &str) -> Option<u32> {
+    store
+        .cells
+        .iter()
+        .filter(|c| c.run == run)
+        .filter_map(|c| c.wave)
+        .max()
+}
+
+/// The ids and number of the run's newest wave when its cells are all still
+/// `assigned` and are exactly the prepared rows, compared on slice (in order),
+/// concerns, pass, question and agent. Any other overlap is a new wave.
+fn replayed_wave(store: &Store, run: &str, ready: &[JsonValue]) -> Option<(Vec<String>, u32)> {
+    type Key = (Vec<String>, Vec<String>, u32, String, String);
+    let wave = newest_wave(store, run)?;
+    let cells: Vec<&store::Cell> = store
+        .cells
+        .iter()
+        .filter(|c| c.run == run && c.wave == Some(wave))
+        .collect();
+    if cells.iter().any(|c| c.sealed || c.status != "assigned") {
+        return None;
+    }
+    let mut stored: Vec<Key> = cells
+        .iter()
+        .map(|c| {
+            (
+                c.slice.clone(),
+                c.concerns.clone(),
+                c.pass.unwrap_or(1),
+                c.question.clone(),
+                c.agent.clone(),
+            )
+        })
+        .collect();
+    let text = |row: &JsonValue, key: &str| {
+        row.get(key)
+            .and_then(JsonValue::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let mut incoming: Vec<Key> = ready
+        .iter()
+        .map(|row| {
+            let list = |key: &str| row.as_object().map(|o| strings(o, key)).unwrap_or_default();
+            let pass = row
+                .get("pass")
+                .and_then(JsonValue::as_u64)
+                .and_then(|p| u32::try_from(p).ok())
+                .unwrap_or(1);
+            (
+                list("slice"),
+                list("concerns"),
+                pass,
+                text(row, "question"),
+                text(row, "agent"),
+            )
+        })
+        .collect();
+    stored.sort();
+    incoming.sort();
+    (stored == incoming).then(|| (cells.iter().map(|c| c.id.clone()).collect(), wave))
 }
 
 // ------------------------------------------------------------ accounting
@@ -1264,7 +1334,7 @@ pub(crate) fn cover(target: &Target, args: ReviewCoverArgs) -> Result<()> {
     };
     let missing = || invalid(format!("{verb}: no cell {} in this store", args.cell));
 
-    // A retry after the sidecar rename failed finds its own seal and writes nothing.
+    // A replay of a seal that succeeded finds its own seal and writes nothing.
     let current = store::load(&target.path, &read_args(&args.integrity))?;
     let existing = current
         .cells

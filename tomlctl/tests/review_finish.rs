@@ -276,6 +276,30 @@ fn finish_incomplete_records_reason() {
 }
 
 #[test]
+fn finish_incomplete_is_a_catalogue_field() {
+    let Some(repo) = Repo::new() else {
+        return;
+    };
+    repo.seed(&full_cell());
+    repo.finish(&["--incomplete", "budget spent"]).success();
+    assert_eq!(repo.run()["incomplete"].as_str(), Some("budget spent"));
+
+    let out = repo
+        .tomlctl()
+        .args(["review", "run", "start", "--scope", SCOPE])
+        .args(["--command", "review-v2", "--family", "code"])
+        .args(["--depth", "quick", "--base", "HEAD"])
+        .args(["--set", "incomplete=early"])
+        .assert()
+        .failure();
+    let err = stderr(&out);
+    assert!(
+        err.contains("`incomplete` is set by tomlctl and cannot be supplied"),
+        "{err}"
+    );
+}
+
+#[test]
 fn finish_computes_counts() {
     let Some(repo) = Repo::new() else {
         return;

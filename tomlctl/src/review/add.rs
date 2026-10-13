@@ -17,26 +17,18 @@ use toml::Value as TomlValue;
 
 use super::catalogue::run_catalogue;
 use super::fields::{
-    self, Direction, Family, Kind, Record, Route, RoutingGlobs, RowContext, Severity,
+    self, Direction, Family, FindingStatus, Kind, Record, Route, RoutingGlobs, RowContext, Severity,
 };
+use super::invalid;
 use super::matching::{self, Site};
 use super::store::{self, Cell, Finding, Minted, Run, Store, Target};
 use crate::cli::{ReadIntegrityArgs, ReviewAddArgs};
-use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{read_ndjson_source, repo_or_cwd_root};
 use crate::output::print_json_compact;
 
 const VERB: &str = "review add";
 /// How far from `line` a cleanup's `old` text may start.
 const OLD_WINDOW: u32 = 20;
-/// Target statuses that suppress a row naming them in `same_as`.
-pub(super) const SUPPRESSING: &[&str] =
-    &["dismissed", "deferred", "parked", "backlogged", "converted"];
-
-fn invalid(msg: impl Into<String>) -> anyhow::Error {
-    tagged_err(ErrorKind::Validation, None, msg)
-}
-
 /// The in-lock discovery that `review cover` sealed the cell after the
 /// pre-lock check passed; the caller reloads the store to print its ids.
 #[derive(Debug)]
@@ -131,7 +123,9 @@ pub(crate) fn run(target: &Target, args: ReviewAddArgs) -> Result<()> {
             let superseded: Vec<String> = current
                 .findings
                 .iter()
-                .filter(|f| f.cell == cell_id && f.run == run_id && f.status == "unverified")
+                .filter(|f| {
+                    f.cell == cell_id && f.run == run_id && f.status() == FindingStatus::Unverified
+                })
                 .map(|f| f.id.clone())
                 .collect();
             let pool: Vec<Finding> = current
@@ -166,7 +160,7 @@ pub(crate) fn run(target: &Target, args: ReviewAddArgs) -> Result<()> {
         |store, written| {
             for finding in &mut store.findings {
                 if written.superseded.contains(&finding.id) {
-                    finding.status = "superseded".to_string();
+                    finding.set_status(FindingStatus::Superseded, &[]);
                 }
             }
             Ok(written)
@@ -219,7 +213,9 @@ fn refuse_sealed(store: &Store, cell: &Cell) -> Result<()> {
     let findings: Vec<JsonValue> = store
         .findings
         .iter()
-        .filter(|f| f.cell == cell.id && f.run == cell.run && f.status != "superseded")
+        .filter(|f| {
+            f.cell == cell.id && f.run == cell.run && f.status() != FindingStatus::Superseded
+        })
         .map(|f| {
             let severity = f.rest.get("severity").and_then(TomlValue::as_str);
             json!({
@@ -550,18 +546,18 @@ fn finish_row(
         let related: Vec<&str> = candidates.iter().map(|c| c.id.as_str()).collect();
         row.insert("related".into(), json!(related));
     }
-    let suppressed_by = target
-        .filter(|t| prepared.kind == Kind::Advisory && SUPPRESSING.contains(&t.status.as_str()));
+    let suppressed_by =
+        target.filter(|t| prepared.kind == Kind::Advisory && t.status().is_suppressing());
     let status = match (prepared.kind, suppressed_by) {
         (Kind::Advisory, Some(t)) => {
             row.insert("merged_into".into(), json!(t.id));
             row.insert("outcome".into(), json!("suppressed"));
-            "merged"
+            FindingStatus::Merged
         }
-        (Kind::Advisory, None) => "open",
-        _ => "unverified",
+        (Kind::Advisory, None) => FindingStatus::Open,
+        _ => FindingStatus::Unverified,
     };
-    row.insert("status".into(), json!(status));
+    row.insert("status".into(), json!(status.as_str()));
     row.insert("first_seen".into(), json!(today));
     Ok(JsonValue::Object(row))
 }

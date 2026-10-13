@@ -4,7 +4,7 @@
 //! lines. `lens` and `kind` are not part of the key. A candidate never
 //! decides identity — only a `same_as` naming one does.
 
-use super::fields::Family;
+use super::fields::{Family, FindingStatus};
 use super::store::Finding;
 
 /// How far apart two symbol-less rows' lines may be and still match.
@@ -36,7 +36,12 @@ pub(crate) fn anchor(site: &Site<'_>) -> String {
 pub(crate) fn candidates<'s>(findings: &'s [Finding], site: &Site<'_>) -> Vec<&'s Finding> {
     findings
         .iter()
-        .filter(|f| !matches!(f.status.as_str(), "superseded" | "merged"))
+        .filter(|f| {
+            !matches!(
+                f.status(),
+                FindingStatus::Superseded | FindingStatus::Merged
+            )
+        })
         .filter(|f| f.family == site.family && f.file == site.file)
         .filter(|f| matches_at(f, site))
         .collect()
@@ -78,7 +83,7 @@ mod tests {
             related: Vec::new(),
             anchor: String::new(),
             outcome: String::new(),
-            status: "open".to_string(),
+            status: FindingStatus::Open,
             first_seen: None,
             rest: Default::default(),
         }
@@ -133,9 +138,9 @@ mod tests {
     #[test]
     fn candidates_partition_by_family() {
         let mut withdrawn = finding("F4", Family::Code, "src/a.rs", "a::run", None);
-        withdrawn.status = "superseded".to_string();
+        withdrawn.set_status(FindingStatus::Superseded, &[]);
         let mut merged = finding("F5", Family::Code, "src/a.rs", "a::run", None);
-        merged.status = "merged".to_string();
+        merged.set_status(FindingStatus::Merged, &[]);
         let store = [
             finding("F1", Family::Code, "src/a.rs", "a::run", None),
             finding("F2", Family::Perf, "src/a.rs", "a::run", None),

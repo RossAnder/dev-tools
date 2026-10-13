@@ -406,16 +406,26 @@ fn convert_refuses_old_absent_at_anchor() {
     assert_eq!(before, after, "a refused conversion writes nothing");
 }
 
-#[test]
-fn convert_refuses_a_finished_run() {
-    let repo = Repo::new();
-    let before = repo.rewrite(|doc| {
-        doc["runs"][0]
-            .as_table_mut()
-            .unwrap()
-            .insert("finished".into(), "2026-10-12T11:00:00Z".into());
-    });
-    let payload = repo.staged(
+/// Finishes U1 and adds run `U2` of `family`, `finished` when given.
+fn second_run(doc: &mut toml::Value, family: &str, finished: Option<&str>) {
+    let runs = doc["runs"].as_array_mut().unwrap();
+    runs[0]
+        .as_table_mut()
+        .unwrap()
+        .insert("finished".into(), "2026-10-12T11:00:00Z".into());
+    let mut u2 = runs[0].as_table().unwrap().clone();
+    u2.remove("finished");
+    u2.insert("id".into(), "U2".into());
+    u2.insert("family".into(), family.into());
+    u2.insert("started".into(), "2026-10-13T09:00:00Z".into());
+    if let Some(at) = finished {
+        u2.insert("finished".into(), at.into());
+    }
+    runs.push(toml::Value::Table(u2));
+}
+
+fn convert_payload(repo: &Repo) -> String {
+    repo.staged(
         "convert-F1.ndjson",
         &format!(
             "{}\n",
@@ -426,14 +436,112 @@ fn convert_refuses_a_finished_run() {
                 "effort": "trivial",
             })
         ),
-    );
-    let out = repo
-        .triage("F1", &["--convert", "cleanup", "--ndjson", &payload])
-        .failure();
+    )
+}
+
+fn refused_with(repo: &Repo, args: &[&str], needle: &str) {
+    let before = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
+    let out = repo.triage("F1", args).failure();
     let stderr = String::from_utf8_lossy(&out.get_output().stderr);
-    assert!(stderr.contains("which is finished"), "{stderr}");
+    assert!(stderr.contains(needle), "{args:?}: {stderr}");
     let after = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
-    assert_eq!(before, after, "a refused conversion writes nothing");
+    assert_eq!(
+        before, after,
+        "{args:?}: a refused conversion writes nothing"
+    );
+}
+
+#[test]
+fn convert_refuses_a_finished_run() {
+    let repo = Repo::new();
+    repo.rewrite(|doc| second_run(doc, "code", Some("2026-10-13T10:00:00Z")));
+    let payload = convert_payload(&repo);
+    let convert = ["--convert", "cleanup", "--ndjson", payload.as_str()];
+
+    refused_with(&repo, &convert, "U1, which is finished");
+    let named = |run: &'static str| [&convert[..], &["--run", run]].concat();
+    refused_with(&repo, &named("U2"), "--run U2 is finished");
+    refused_with(&repo, &named("U9"), "--run U9 is not in this store");
+}
+
+#[test]
+fn convert_into_open_run() {
+    let repo = Repo::new();
+    repo.rewrite(|doc| second_run(doc, "code", None));
+    let payload = convert_payload(&repo);
+    let out = repo.triaged(
+        "F1",
+        &["--convert", "cleanup", "--ndjson", &payload, "--run", "U2"],
+    );
+    assert_eq!(out["minted"][0]["id"], "F5");
+    assert_eq!(out["minted"][0]["status"], "unverified");
+
+    let f5 = repo.finding("F5");
+    assert_eq!(text(&f5, "run"), Some("U2"));
+    assert_eq!(f5["seen_in"], toml::Value::Array(vec!["U2".into()]));
+    assert_eq!(text(&f5, "cell"), Some("C1"), "the advisory's cell is kept");
+    assert_eq!(text(&f5, "status"), Some("unverified"));
+    assert_eq!(text(&repo.finding("F1"), "status"), Some("converted"));
+    let verdicts = repo.store()["verdicts"].as_array().unwrap().clone();
+    assert_eq!(verdicts.len(), 1);
+    assert_eq!(text(&verdicts[0], "finding"), Some("F5"));
+    assert_eq!(text(&verdicts[0], "run"), Some("U2"));
+
+    let finish = |root: &Path| {
+        cli(root)
+            .current_dir(root)
+            .args(["review", "run", "finish", "U2", "--scope", SCOPE])
+            .assert()
+    };
+    let out = finish(&repo.root).failure();
+    let stderr = String::from_utf8_lossy(&out.get_output().stderr);
+    assert!(stderr.contains("unverified findings: F5"), "{stderr}");
+
+    cli(&repo.root)
+        .current_dir(&repo.root)
+        .args(["review", "verdict", "F5", "--scope", SCOPE])
+        .args(["--verdict", "confirmed", "--by", "checker"])
+        .args([
+            "--citation",
+            "docs/guide.md:3",
+            "--rationale",
+            "the edit applies",
+        ])
+        .assert()
+        .success();
+    assert_ne!(repo.status("F5"), "unverified");
+    finish(&repo.root).success();
+}
+
+#[test]
+fn convert_refuses_a_foreign_family_run() {
+    let repo = Repo::new();
+    repo.rewrite(|doc| second_run(doc, "perf", None));
+    let payload = convert_payload(&repo);
+    refused_with(
+        &repo,
+        &["--convert", "cleanup", "--ndjson", &payload, "--run", "U2"],
+        "--run U2 is a perf run; F1 is a code finding",
+    );
+
+    // An advisory whose run is open converts there and nowhere else.
+    let repo = Repo::new();
+    repo.rewrite(|doc| {
+        second_run(doc, "code", None);
+        doc["runs"][0].as_table_mut().unwrap().remove("finished");
+    });
+    let payload = convert_payload(&repo);
+    refused_with(
+        &repo,
+        &["--convert", "cleanup", "--ndjson", &payload, "--run", "U2"],
+        "U1, which is open",
+    );
+    let out = repo.triaged(
+        "F1",
+        &["--convert", "cleanup", "--ndjson", &payload, "--run", "U1"],
+    );
+    assert_eq!(text(&repo.finding("F5"), "run"), Some("U1"));
+    assert_eq!(out["minted"][0]["id"], "F5");
 }
 
 #[test]
@@ -461,6 +569,43 @@ fn triage_refuses_a_settled_finding() {
         let after = fs::read_to_string(repo.root.join(".claude/review-v2/t.toml")).unwrap();
         assert_eq!(before, after, "{args:?}: a settled row is not moved");
     }
+}
+
+#[test]
+fn reopen_retires_the_v1_link() {
+    let repo = Repo::new();
+    repo.rewrite(|doc| {
+        let f3 = doc["findings"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|f| f["id"].as_str() == Some("F3"))
+            .unwrap()
+            .as_table_mut()
+            .unwrap();
+        f3.insert("status".into(), "resolved".into());
+        f3.insert("resolution".into(), "fixed in v1".into());
+        f3.insert("exported_as".into(), "R7".into());
+        f3.insert("export_ledger".into(), ".claude/reviews/t.toml".into());
+    });
+
+    let out = repo.triaged("F3", &["--reopen", "the fix regressed"]);
+    assert_eq!(
+        out["applied"],
+        json!([{"id": "F3", "from": "resolved", "status": "open"}])
+    );
+    let f3 = repo.finding("F3");
+    assert_eq!(text(&f3, "status"), Some("open"));
+    assert_eq!(text(&f3, "reopen_reason"), Some("the fix regressed"));
+    assert_eq!(text(&f3, "resolution"), None);
+    assert_eq!(f3.get("exported_as"), None);
+    assert_eq!(f3.get("export_ledger"), None);
+    assert_eq!(
+        f3.get("retired_links"),
+        Some(&toml::Value::Array(vec![
+            ".claude/reviews/t.toml#R7".into()
+        ])),
+    );
 }
 
 #[test]

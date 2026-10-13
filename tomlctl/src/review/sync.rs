@@ -5,9 +5,10 @@
 //! findings record plus the default ledger of each family the store holds
 //! (`code` → review, `perf` → optimise) for its slug or scope. Each v1 row
 //! whose `v2_ref` names this store moves its finding to the status
-//! [`map_status`] gives and upserts one `by = "sync"` verdict citing the row.
-//! v1 files are only read; a missing one is skipped. A sync that changes
-//! nothing writes nothing.
+//! [`map_status`] gives and upserts one `by = "sync"` verdict citing the row;
+//! a v1 row reopened with a `reopen_rationale` returns a settled finding to
+//! `open`. A link the finding has retired is skipped. v1 files are only read;
+//! a missing one is skipped. A sync that changes nothing writes nothing.
 
 use std::path::{Path, PathBuf};
 
@@ -17,24 +18,13 @@ use toml::Value as TomlValue;
 use toml::map::Map;
 use toml::value::Datetime;
 
-use super::fields::{self, Family, Record};
+use super::fields::{self, Family, FindingStatus, Record};
 use super::store::{self, Finding, Store, Target, Verdict};
 use crate::cli::{ReadIntegrityArgs, ReviewSyncArgs};
 use crate::io::{read_toml, relativise_under, repo_or_cwd_root};
 use crate::items::status_companions;
 use crate::ledgers::{LedgerKind, LedgerRef};
 
-/// The v2 statuses a sync may overwrite: the finding as exported (or still
-/// `open` when an export's v2 write never landed), or as a sync left it.
-const SYNCABLE: &[&str] = &["open", "exported", "resolved", "dismissed", "deferred"];
-/// Companions a sync writes, all cleared before the new status's are set.
-const SYNC_COMPANIONS: &[&str] = &[
-    "resolution",
-    "resolved",
-    "dismiss_reason",
-    "defer_reason",
-    "defer_trigger",
-];
 /// The prefix on every reason a sync writes, which marks a dismissal as
 /// v1's rather than the user's.
 pub(crate) const SYNC_REASON_PREFIX: &str = "v1: ";
@@ -164,7 +154,8 @@ pub(crate) fn ledger_paths(
 }
 
 /// Every row of `ledgers` whose `v2_ref` names `store_path`, in ledger then
-/// row order. A missing ledger contributes nothing.
+/// row order, once per finding it names: `v2_ref` is a string or an array of
+/// them. A missing ledger contributes nothing.
 pub(crate) fn linked_rows(
     root: &Path,
     store_path: &Path,
@@ -180,20 +171,32 @@ pub(crate) fn linked_rows(
         let ledger = relativise_under(root, path).unwrap_or_else(|| slashed(path));
         let rows = doc.get("items").and_then(TomlValue::as_array);
         for row in rows.into_iter().flatten().filter_map(TomlValue::as_table) {
-            let text = |key: &str| row.get(key).and_then(TomlValue::as_str).unwrap_or_default();
-            let (v1_id, v2_ref) = (text("id"), text("v2_ref"));
-            let Some((ref_path, finding)) = v2_ref.rsplit_once('#') else {
-                continue;
-            };
-            if v1_id.is_empty() || slashed(&under_root(root, ref_path)) != store_key {
+            let v1_id = row
+                .get("id")
+                .and_then(TomlValue::as_str)
+                .unwrap_or_default();
+            if v1_id.is_empty() {
                 continue;
             }
-            linked.push(Linked {
-                ledger: ledger.clone(),
-                v1_id: v1_id.to_string(),
-                finding: finding.to_string(),
-                row: row.clone(),
-            });
+            let refs: Vec<&str> = match row.get("v2_ref") {
+                Some(TomlValue::String(one)) => vec![one.as_str()],
+                Some(TomlValue::Array(many)) => many.iter().filter_map(TomlValue::as_str).collect(),
+                _ => Vec::new(),
+            };
+            for v2_ref in refs {
+                let Some((ref_path, finding)) = v2_ref.rsplit_once('#') else {
+                    continue;
+                };
+                if slashed(&under_root(root, ref_path)) != store_key {
+                    continue;
+                }
+                linked.push(Linked {
+                    ledger: ledger.clone(),
+                    v1_id: v1_id.to_string(),
+                    finding: finding.to_string(),
+                    row: row.clone(),
+                });
+            }
         }
     }
     Ok(linked)
@@ -269,8 +272,43 @@ fn print(
     }))
 }
 
+/// What one linked v1 row asks of its finding.
+enum Action {
+    Settle(V1Outcome),
+    /// The v1 row is `open` again, with this `reopen_rationale`.
+    Reopen(String),
+}
+
+impl Action {
+    /// `None` for a plain `open` row and for any status v1 does not define.
+    fn from_row(row: &Map<String, TomlValue>) -> Option<Self> {
+        if let Some(outcome) = V1Outcome::from_row(row) {
+            return Some(Self::Settle(outcome));
+        }
+        let text = |key: &str| {
+            row.get(key)
+                .and_then(TomlValue::as_str)
+                .unwrap_or_default()
+                .trim()
+        };
+        let rationale = text("reopen_rationale");
+        (text("status") == "open" && !rationale.is_empty())
+            .then(|| Self::Reopen(rationale.to_string()))
+    }
+
+    /// The `by = "sync"` verdict rationale, which is also how a reopen
+    /// already applied is recognised.
+    fn rationale(&self) -> String {
+        match self {
+            Self::Settle(outcome) => capped(&outcome.summary()),
+            Self::Reopen(rationale) => capped(&format!("open: {rationale}")),
+        }
+    }
+}
+
 /// Applies every linked row to `store`, returning the synced and skipped
-/// entries. A v1 row still `open` (or of an unknown status) is neither.
+/// entries. A plain v1 `open` row (or one of an unknown status), and a reopen
+/// the finding has already taken or cannot take, are neither.
 fn apply(
     store: &mut Store,
     linked: &[Linked],
@@ -278,28 +316,66 @@ fn apply(
 ) -> (Vec<JsonValue>, Vec<JsonValue>) {
     let (mut synced, mut skipped) = (Vec::new(), Vec::new());
     for link in linked {
-        let Some(outcome) = V1Outcome::from_row(&link.row) else {
+        let Some(action) = Action::from_row(&link.row) else {
             continue;
         };
         let cited = format!("{}#{}", link.ledger, link.v1_id);
-        let Some(index) = store.findings.iter().position(|f| f.id == link.finding) else {
-            skipped.push(json!({
+        let skip = |reason: String| {
+            json!({
                 "v1": cited,
                 "finding": link.finding,
-                "reason": "not in this store",
-            }));
+                "reason": reason,
+            })
+        };
+        let Some(index) = store.findings.iter().position(|f| f.id == link.finding) else {
+            skipped.push(skip("not in this store".to_string()));
             continue;
         };
-        let finding = &mut store.findings[index];
-        if !SYNCABLE.contains(&finding.status.as_str()) {
-            skipped.push(json!({
-                "v1": cited,
-                "finding": link.finding,
-                "reason": format!("finding is {}", finding.status),
-            }));
+        let rationale = action.rationale();
+        let finding = &store.findings[index];
+        if finding.is_retired(&link.ledger, &link.v1_id) {
+            skipped.push(skip("link retired by reopen".to_string()));
             continue;
         }
-        set_status(finding, &outcome, today);
+        let status = finding.status();
+        let (v1_status, new_status) = match &action {
+            Action::Settle(outcome) => {
+                if !status.is_syncable() {
+                    skipped.push(skip(format!("finding is {}", status.as_str())));
+                    continue;
+                }
+                (outcome.v1_status.as_str(), outcome.status)
+            }
+            Action::Reopen(_) => {
+                let settled_by_sync = matches!(
+                    status,
+                    FindingStatus::Resolved | FindingStatus::Dismissed | FindingStatus::Deferred
+                );
+                // The sync verdict already naming this rationale means the
+                // reopen was taken, and any later status is the user's.
+                let taken = store.verdicts.iter().any(|v| {
+                    v.finding == finding.id
+                        && v.by == "sync"
+                        && v.seat.is_none()
+                        && v.rationale == rationale
+                });
+                if !settled_by_sync || taken {
+                    continue;
+                }
+                ("open", FindingStatus::Open.as_str())
+            }
+        };
+        let finding = &mut store.findings[index];
+        match &action {
+            Action::Settle(outcome) => settle(finding, outcome, today),
+            Action::Reopen(reason) => finding.set_status(
+                FindingStatus::Open,
+                &[(
+                    "reopen_reason",
+                    TomlValue::String(format!("{SYNC_REASON_PREFIX}{reason}")),
+                )],
+            ),
+        }
         let record = Verdict {
             finding: finding.id.clone(),
             run: finding.run.clone(),
@@ -308,56 +384,57 @@ fn apply(
             verdict: "confirmed".to_string(),
             severity: String::new(),
             citation: cited.clone(),
-            rationale: capped(&outcome.summary()),
+            rationale,
             rest: Map::new(),
         };
         store.upsert_verdict(record);
         synced.push(json!({
             "finding": link.finding,
             "v1": cited,
-            "v1_status": outcome.v1_status,
-            "status": outcome.status,
+            "v1_status": v1_status,
+            "status": new_status,
         }));
     }
     (synced, skipped)
 }
 
-fn set_status(finding: &mut Finding, outcome: &V1Outcome, today: Datetime) {
-    let kept_date = match (finding.status.as_str(), finding.rest.get("resolved")) {
-        ("resolved", Some(TomlValue::Datetime(date))) => Some(*date),
+/// Moves `finding` to the status `outcome` maps to, with that status's
+/// companions. A finding already resolved keeps its `resolved` date when the
+/// v1 row carries none, so a re-sync on a later day does not restamp it.
+fn settle(finding: &mut Finding, outcome: &V1Outcome, today: Datetime) {
+    let kept_date = match (finding.status(), finding.rest.get("resolved")) {
+        (FindingStatus::Resolved, Some(TomlValue::Datetime(date))) => Some(*date),
         _ => None,
     };
-    for key in SYNC_COMPANIONS {
-        finding.rest.remove(*key);
-    }
-    let mut put = |key: &str, value: &str| {
-        if !value.is_empty() {
-            finding
-                .rest
-                .insert(key.to_string(), TomlValue::String(value.to_string()));
-        }
-    };
-    match outcome.status {
+    let reason = format!("{SYNC_REASON_PREFIX}{}", outcome.summary());
+    let (status, companions) = match outcome.status {
         "resolved" => {
-            put(
-                "resolution",
-                &format!("{SYNC_REASON_PREFIX}{}", outcome.summary()),
-            );
             let date = outcome.resolved.or(kept_date).unwrap_or(today);
-            finding
-                .rest
-                .insert("resolved".to_string(), TomlValue::Datetime(date));
+            (
+                FindingStatus::Resolved,
+                vec![
+                    ("resolution", TomlValue::String(reason)),
+                    ("resolved", TomlValue::Datetime(date)),
+                ],
+            )
         }
-        "dismissed" => put(
-            "dismiss_reason",
-            &format!("{SYNC_REASON_PREFIX}{}", outcome.summary()),
+        "dismissed" => (
+            FindingStatus::Dismissed,
+            vec![("dismiss_reason", TomlValue::String(reason))],
         ),
-        _ => {
-            put("defer_reason", &outcome.resolution);
-            put("defer_trigger", &outcome.defer_trigger);
-        }
-    }
-    finding.status = outcome.status.to_string();
+        _ => (
+            FindingStatus::Deferred,
+            [
+                ("defer_reason", &outcome.resolution),
+                ("defer_trigger", &outcome.defer_trigger),
+            ]
+            .into_iter()
+            .filter(|(_, text)| !text.is_empty())
+            .map(|(key, text)| (key, TomlValue::String(text.clone())))
+            .collect(),
+        ),
+    };
+    finding.set_status(status, &companions);
 }
 
 fn capped(text: &str) -> String {

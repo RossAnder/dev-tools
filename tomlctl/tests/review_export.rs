@@ -354,6 +354,52 @@ impl Repo {
             .unwrap_or_else(|| panic!("no v1 row links {finding}"))
     }
 
+    /// Runs `review <verb> <args>` against the store and expects success.
+    fn review(&self, args: &[&str]) {
+        cli(&self.root)
+            .current_dir(&self.root)
+            .arg("review")
+            .args(args)
+            .args(["--scope", "t"])
+            .assert()
+            .success();
+    }
+
+    /// Sets `fields` on v1 row `id`, as the v1 apply flows would.
+    fn set_v1(&self, id: &str, fields: &[(&str, toml::Value)]) {
+        let mut ledger = self.ledger();
+        let row = ledger["items"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|r| r["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("no v1 row {id}"))
+            .as_table_mut()
+            .unwrap();
+        for (key, value) in fields {
+            row.insert((*key).to_string(), value.clone());
+        }
+        self.write(LEDGER, &toml::to_string(&ledger).unwrap());
+    }
+
+    /// Exports `finding`, settles its v1 row with `fields`, syncs the store,
+    /// then reopens the finding.
+    fn export_settle_reopen(&self, finding: &str, fields: &[(&str, toml::Value)]) -> String {
+        let out = self.exported(&[finding]);
+        let v1 = out["exported"][0]["v1"].as_str().unwrap().to_string();
+        self.set_v1(&v1, fields);
+        self.review(&["sync-v1"]);
+        self.review(&["triage", finding, "--reopen", "the problem is back"]);
+        let f = self.finding(finding);
+        assert_eq!(text(&f, "status"), "open", "{f:?}");
+        assert_eq!(
+            f.get("retired_links"),
+            Some(&toml::Value::Array(vec![format!("{LEDGER}#{v1}").into()])),
+            "{f:?}"
+        );
+        v1
+    }
+
     fn finding(&self, id: &str) -> toml::Value {
         let store: toml::Value = toml::from_str(&self.read(STORE_PATH)).unwrap();
         store["findings"]
@@ -618,6 +664,116 @@ fn export_regression_on_fixed_v1_match() {
         "fixed",
         "the fixed row is untouched"
     );
+}
+
+fn date(text: &str) -> toml::Value {
+    toml::Value::Datetime(text.parse().unwrap())
+}
+
+/// The re-export after a reopen: a regression minted against `old`, and the
+/// finding exported again as the new row.
+fn assert_regression_of(repo: &Repo, old: &str) {
+    let out = repo.exported(&["F1"]);
+    assert_eq!(out["exported"][0]["action"], "regression", "{out}");
+    let new = out["exported"][0]["v1"].as_str().unwrap().to_string();
+    assert_ne!(new, old, "{out}");
+    let row = repo.row(&new);
+    assert_eq!(
+        row["related"].as_array().unwrap(),
+        &vec![toml::Value::from(old)],
+        "{row:?}"
+    );
+    let f1 = repo.finding("F1");
+    assert_eq!(text(&f1, "status"), "exported");
+    assert_eq!(text(&f1, "exported_as"), new);
+    assert_eq!(
+        text(&f1, "reopen_reason"),
+        "",
+        "the reopen's companion is cleared"
+    );
+}
+
+#[test]
+fn reexport_after_reopen_mints_a_regression() {
+    let repo = Repo::new();
+    let old = repo.export_settle_reopen(
+        "F1",
+        &[
+            ("status", "fixed".into()),
+            ("resolved", date("2026-10-21")),
+            ("resolution", "abc123 raised the limit".into()),
+        ],
+    );
+    assert_regression_of(&repo, &old);
+}
+
+#[test]
+fn reexport_after_reopen_of_a_wontfix_row_mints_a_regression() {
+    let repo = Repo::new();
+    let old = repo.export_settle_reopen(
+        "F1",
+        &[
+            ("status", "wontfix".into()),
+            ("wontfix_rationale", "nine rows never happen".into()),
+        ],
+    );
+    assert_regression_of(&repo, &old);
+}
+
+#[test]
+fn reuse_of_a_retired_row_restores_the_link() {
+    let repo = Repo::new();
+    let old = repo.export_settle_reopen(
+        "F1",
+        &[
+            ("status", "fixed".into()),
+            ("resolved", date("2026-10-21")),
+            ("resolution", "abc123 raised the limit".into()),
+        ],
+    );
+    repo.set_v1(
+        &old,
+        &[
+            ("status", "open".into()),
+            ("reopen_rationale", "the fix regressed".into()),
+        ],
+    );
+    let out = repo.exported(&["F1"]);
+    assert_eq!(out["exported"][0]["action"], "reused", "{out}");
+    assert_eq!(out["exported"][0]["v1"], old.as_str(), "{out}");
+    assert_eq!(repo.rows().len(), 1, "no row is minted");
+    let f1 = repo.finding("F1");
+    assert_eq!(text(&f1, "status"), "exported");
+    assert_eq!(text(&f1, "exported_as"), old);
+    assert_eq!(f1.get("retired_links"), None, "{f1:?}");
+}
+
+#[test]
+fn reuse_keeps_both_v2_refs() {
+    let repo = Repo::new();
+    let other = ".claude/review-v2/other.toml#F3";
+    repo.write(
+        LEDGER,
+        &OPEN_IO_LOCK.replace(
+            "status = \"open\"\n",
+            &format!("status = \"open\"\nv2_ref = \"{other}\"\n"),
+        ),
+    );
+    let out = repo.exported(&["F7"]);
+    assert_eq!(out["exported"][0]["action"], "reused", "{out}");
+    let ours = format!("{STORE_PATH}#F7");
+    assert_eq!(
+        repo.row("R1")["v2_ref"],
+        toml::Value::Array(vec![other.into(), ours.as_str().into()]),
+    );
+
+    repo.reset_store();
+    let out = repo.exported(&["F7"]);
+    assert_eq!(
+        out["exported"][0]["action"], "linked",
+        "an array v2_ref still links: {out}"
+    );
+    assert_eq!(repo.row("R1")["rounds"].as_integer(), Some(2));
 }
 
 fn snapshot(repo: &Repo, rel: &str) -> (Option<Vec<u8>>, Option<Vec<u8>>) {

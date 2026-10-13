@@ -21,3 +21,8 @@ mod survey;
 mod sync;
 mod triage;
 mod verdict;
+
+/// A `validation`-kind error, for input a review verb refuses.
+pub(super) fn invalid(msg: impl Into<String>) -> anyhow::Error {
+    crate::errors::tagged_err(crate::errors::ErrorKind::Validation, None, msg)
+}
