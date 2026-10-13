@@ -1,0 +1,425 @@
+schema_version = 1
+last_updated = 2026-10-13
+round = 1
+
+[[vet_events]]
+timestamp = "2026-10-13T09:33:37Z"
+command = "review-plan"
+lens = "feasibility"
+tier = "deep"
+agent_index = 1
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = 'Sampled F2 (matching.rs:81 struct literal status: "open".to_string() - confirmed) and F1 (checkpoint A dead_code: Cargo.toml has [lints.rustdoc]/[lints.clippy] only, no dead_code allow in lib.rs or review/mod.rs; review is a private module, so unused pub(crate) helpers warn under -D warnings - accepted). Stale-reference claims (review-v2.md:58 no context-free marker; digest.rs:223/298 inline sets; triage.rs:310 REOPENABLE.join) all verified. No drops.'
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T09:33:37Z"
+command = "review-plan"
+lens = "completeness"
+tier = "deep"
+agent_index = 2
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F12 (schema_out.rs:25 invalid closure - confirmed) and F9 (methods/sweep.md:28 one line per sweep in the coverage note - confirmed); F2 agent-waves.md:47 unconditional pack line confirmed. Counts in sweep 4 match orchestrator re-derivation (7 constants in add/sync/triage/verdict; 9 fn invalid files). No drops."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T09:33:37Z"
+command = "review-plan"
+lens = "executability"
+tier = "deep"
+agent_index = 3
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F5 (runs.rs:631-643 counts and incomplete both written into run.rest - confirmed) and F6 (nextest filters: health_window_excludes_commits_before_it and convert_* tests exist, so tasks 13/15 forward commands pass today - confirmed by orchestrator test-name grep). F10 task-number slip confirmed against plan text. No drops."
+dedup_id = "45ca31c3315a5978"
+
+[[vet_events]]
+timestamp = "2026-10-13T09:33:37Z"
+command = "review-plan"
+lens = "risk"
+tier = "deep"
+agent_index = 4
+sampled_count = 2
+dropped_count = 0
+downgraded_count = 0
+rationale = "Sampled F1 (ledgers.rs:316 deferred->open offers reopen_rationale; it persists while the row is open - confirmed) and F6 (review_survey.rs Repo::commit stamps current time, commit_dated is separate - confirmed). F2 export.rs:757-765 Settled branch confirmed. No drops."
+dedup_id = "45ca31c3315a5978"
+
+[[items]]
+id = "P1"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "10. Type the finding status field as FindingStatus [M]"
+summary = """Task 10's Files line omits tomlctl/src/review/matching.rs, whose test fixture builds Finding with status: "open".to_string(); the flip cannot compile without it and the task's stop-and-report branch fires every time"""
+description = """matching.rs:81 (tests::finding) is a Finding struct literal with status: "open".to_string(). A struct-literal initialiser cannot move to the status() accessor before the flip, so task 8 cannot pre-migrate it, and after task 10 it no longer compiles under --all-targets. Task 10 claims store.rs only and says to stop and report any other file. Sweep: grep 'Finding {' tomlctl/src/review -> store.rs:539 and matching.rs:63 only. Task 10 already depends on 8, so adding the file creates no collision. Raised by feasibility, completeness and executability lenses."""
+anchor_old = "- **Files**: `tomlctl/src/review/store.rs`"
+anchor_new = "- **Files**: `tomlctl/src/review/store.rs`, `tomlctl/src/review/matching.rs` — the `tests::finding` fixture's `status` initialiser"
+dedup_id = "11a859b9005b7580"
+
+[[items]]
+id = "P2"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "10. Type the finding status field as FindingStatus [M]"
+summary = "The 'status field is typed' check (task 10 Acceptance, Success Criteria bullet 2 and its success: key) is vacuous: task 2's status() -> FindingStatus accessor already satisfies grep 'FindingStatus' store.rs"
+description = '''Task 2 adds `status() -> FindingStatus` and `set_status(FindingStatus, ...)` to store.rs, so `grep -n 'FindingStatus' tomlctl/src/review/store.rs` matches before task 10 runs and passes even if the field is never flipped. Two-control probe: `grep -qE '^[[:space:]]*pub\(crate\) status: FindingStatus,' tomlctl/src/review/store.rs` is rc=1 today, rc=1 against task 2's accessor plus the String field, rc=0 against the flipped field (Cell.status at store.rs:134 stays String, so the pattern is unique). Apply the same pattern to Success Criteria bullet 2 and to `success: grep -q 'FindingStatus' tomlctl/src/review/store.rs`.'''
+anchor_old = "`grep -n 'FindingStatus' tomlctl/src/review/store.rs` matches the field declaration (today: no match)."
+anchor_new = '''`grep -qE '^[[:space:]]*pub\(crate\) status: FindingStatus,' tomlctl/src/review/store.rs` exits 0 (today: exit 1, and still exit 1 after task 2's accessor).'''
+dedup_id = "e1dd030523ea7203"
+
+[[items]]
+id = "P3"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "feasibility"
+plan_section = "Execution Policy"
+summary = "Checkpoint A (after task 2) cannot pass its own clippy -D warnings gate: tasks 1-2 add pub(crate) helpers nothing outside tests calls until tasks 3-9/14, so dead_code fires"
+description = "review is a private module (lib.rs), tomlctl/Cargo.toml carries [lints.rustdoc] and [lints.clippy] but no dead_code allow, and str_enum!'s allow(dead_code) covers only its own impl. At checkpoint A the five predicates, LINK_FIELDS, is_finder, ALL_COMPANIONS, Finding::status/set_status/retire_link/is_retired and mod.rs's invalid have no non-test caller, so `cargo clippy --all-targets -- -D warnings` (the checkpoint: key) fails and /implement halts at the first gate. Fix: drop checkpoint A (fold 1-2 into B) by removing the A marker from ## Dependency Graph and re-rendering the Checkpoint after bullet from the store; or have tasks 1-2 add explicit #[expect(dead_code)] with the consuming tasks removing them (adds file claims). A cut after tasks 4-5 (risk lens suggestion, to isolate the v1 schema change) hits the same problem for is_suppressing, decided_by_verdict and is_finder. Both sections are rendered from tasks.toml - change the store's checkpoint groups, then tasks render."
+dedup_id = "1c2f3049b1d4d001"
+
+[[items]]
+id = "P4"
+review_round = 1
+status = "merged"
+severity = "critical"
+category = "executability"
+plan_section = "13. Bound the survey window and pass git an absolute cutoff [M]"
+summary = "Forward nextest acceptances in tasks 13 and 15 already pass today (filters match existing tests); task 14's filter misses one of its new tests; tasks 1 and 4 assume or under-bind test names"
+description = "nextest 0.9.136 fails a zero-match run (exit 4) but passes any run matching one existing test. Task 13: test(health_window) matches health_window_excludes_commits_before_it (tests/review_survey.rs). Task 15: test(convert) matches convert_advisory_mints_routed_cleanup, convert_refuses_old_absent_at_anchor, convert_refuses_a_finished_run. Task 14: test(finder_cf) does not select cf_agent_refused_outside_the_variant. Task 4: test(reopen) passes if any one of the three new tests exists. Task 1: the predicate test is unnamed but the filter assumes finding_status. Fix: one test(=<exact name>) term per new test joined with |, so a missing test fails as a zero match - e.g. task 15 `-E 'test(=convert_into_open_run)'` beside the guard binary run."
+anchor_old = "`cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_survey -E 'test(health_window)'` passes, including the existing `health_window_excludes_commits_before_it` (today: the two new tests are absent)."
+anchor_new = "`cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_survey -E 'test(=health_window_above_cap_is_refused) | test(=health_window_reaching_the_epoch_counts_all_history)'` passes (today: exit 4, no test matches)."
+dedup_id = "4e51487662e01034"
+
+[[items]]
+id = "P5"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "6. Migrate digest and verdict onto the lifecycle owner [M]"
+summary = "Task 6 asks for DISPOSITIONS derived from ALL_COMPANIONS plus link fields 'in the same order' and a byte-identical digest - no list satisfies both"
+description = "digest.rs:29-40 DISPOSITIONS = merged_into, park_reason, dismiss_reason, defer_reason, defer_trigger, reopen_reason, backlog_ref, converted_to, resolution, exported_as. It omits resolved and export_ledger and places reopen_reason sixth; ALL_COMPANIONS + LINK_FIELDS adds both and the companion table puts reopen_reason last. state() (digest.rs:540-543) prints every string-valued key, so a derived list changes the report. Raised by all four lenses and the orchestrator."
+anchor_old = "Keep `DISPOSITIONS` as a display list derived from `ALL_COMPANIONS` plus the link fields, in the same order."
+anchor_new = "Keep `DISPOSITIONS` as its existing literal display list, unchanged in membership and order (it deliberately omits `resolved` and `export_ledger`), and add a unit test asserting every entry is in `ALL_COMPANIONS` or `LINK_FIELDS`."
+dedup_id = "648b15e731fb41bf"
+
+[[items]]
+id = "P6"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "Status owner and companions"
+summary = "Several inline status sets match no predicate, and triage's reopen refusal text joins REOPENABLE in an order a predicate cannot reproduce"
+description = """digest.rs:223 audit_sample filters {superseded, merged, unverified}; digest.rs:298 live drops {superseded, merged, refuted}; matching.rs:39 uses {superseded, merged}. None equals is_settled {superseded, merged, converted, exported} or any other predicate, so mapping onto the nearest predicate silently changes the audit sample and report counts. triage.rs:310 builds its error with REOPENABLE.join(", ") in dismissed..resolved order; filtering FindingStatus::ALL gives enum order (refuted first), contradicting task 3's 'refusal texts and their order stay unchanged'."""
+anchor_old = "Each predicate's set equals today's constant, so behaviour does not move."
+anchor_new = "Each predicate's set equals today's constant, so behaviour does not move. Inline sets that match no predicate (digest's `{superseded, merged, unverified}` in `audit_sample` and `{superseded, merged, refuted}` in `live`, matching's `{superseded, merged}`) become local `matches!` over `FindingStatus` variants, and triage's reopen refusal keeps an ordered slice so its text is unchanged."
+dedup_id = "626304002099bd3f"
+
+[[items]]
+id = "P7"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "Status owner and companions"
+summary = "set_status clears every companion even on a same-status write, so an audit verdict on a reopened open finding (and export open->exported) erases reopen_reason - behaviour moves"
+description = "verdict.rs:255-256 rewrites status whenever it is in DECIDED_BY_VERDICT (which includes open); decide returns open for any non-refuted settle and an audit verdict decides at once; audit_sample (digest.rs:219-224) draws open rows. Today only the status string is assigned and reopen_reason survives; export's mark_exported only adds link fields. Routed through set_status as specified, both clear reopen_reason. Also: sync reads the kept resolved date (sync.rs:326-329) before clearing; task 4 must keep that read ahead of set_status or sync_is_idempotent passes only same-day."
+anchor_old = "It removes every `ALL_COMPANIONS` key, then writes the given ones."
+anchor_new = "When the status changes or companions are given, it removes every `ALL_COMPANIONS` key, then writes the given ones; a same-status write with no companions (a verdict that leaves a reopened finding `open`) keeps the existing ones. Callers read any companion they carry forward (sync's kept `resolved` date) before calling it."
+dedup_id = "2351974b0021f795"
+
+[[items]]
+id = "P8"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "risk"
+plan_section = "Retired links"
+summary = "The v1-reopen sync-back has no memory: while the v1 row stays open with its reopen_rationale, every sync-v1 reopens the finding again, undoing any later v2 dismiss/defer/resolve"
+description = """v1 rows get reopen_rationale on deferred->open (ledgers.rs:316) and keep it while open. Sequence: v1 R7 reopened -> sync moves F1 to open -> user dismisses/defers/resolves F1 in v2 -> next sync-v1 (every run start) sees R7 open with rationale and F1 at a sync status -> reopens F1 again. The mirror of B-8a4b923f. set_status also clears reopen_reason on the v2 disposition, so no trace of the applied reopen remains. Fix: gate on the finding's by="sync" verdict already recording that rationale; add test v2_disposition_after_v1_reopen_survives_sync to task 4."""
+anchor_old = "When a v1 row is `open` with a non-empty `reopen_rationale` and its finding is at a sync status, sync moves the finding to `open`"
+anchor_new = """When a v1 row is `open` with a non-empty `reopen_rationale`, its finding is at a sync status, and the finding's `by = "sync"` verdict does not already record that rationale (so a later v2 disposition is not undone on every sync), sync moves the finding to `open`"""
+dedup_id = "ea73fdf0ee473036"
+
+[[items]]
+id = "P9"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "Retired links"
+summary = "Re-export of a reopened finding works only when its retired v1 row was fixed; a wontfix/verified-clean/deferred retired row returns Settled forever, and a Reuse onto a retired row leaves it retired so sync skips the live link"
+description = "export.rs:757-765: settled(s) -> Decision::Settled for any match mapping to dismissed/deferred. A finding sync moved to dismissed/deferred, then reopened in v2, keeps its retired row in the merge rule and is skipped on every re-export ('matches v1 R7, which is wontfix'). B-8a4b923f names exactly the sync-dismissed/deferred case. Separately, if R7 is later reopened in v1, decide returns Reuse(R7) and mark_exported sets exported_as=R7 while R7 stays in retired_links, so sync skips it permanently. Needs a decision: mint with related=[old] or refuse naming the retired link; and a Reuse/Linked onto a retired row removes it from retired_links. Add tests for both branches in task 5."
+dedup_id = "70510f33bec9f138"
+
+[[items]]
+id = "P10"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "Context-free finder cell"
+summary = "Deleting stage 4's hand-dispatch drops the cf cell's base sha, its skip-prior-findings rule and its lint baselines; nothing in tasks 14/18/20/21 gives them a new home (needs-plan)"
+description = "Stage 4's prompt (claude/commands/review-v2.md:67-80) adds `base: <base-sha>`, tells the agent to read the slice via git diff <base-sha>, to leave the store's prior findings unread, and to read the in-slice baseline logs. The Workflow preamble (claude/workflows/review-v2.js:40-58) carries no base; query::assignment() (query.rs:298-348) carries no run base; the cf body is byte-identical to review-finder.md whose step 'Then read the slice's prior findings' (review-finder.md:31) is unconditional; and task 14 omits baselines. Result: a Workflow-run cf cell cannot diff, reads PRIOR, and raises lint-baseline items. Settle: where base reaches the cell (assignment field or Workflow arg + preamble line, touching claude/skills/review-v2-engine/SKILL.md's args block); a 'no pack => diff against base, skip PRIOR' branch in the shared finder body (task 18); keep baselines (task 14 + Approach)."
+dedup_id = "24d7ee1d45f77529"
+
+[[items]]
+id = "P11"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "14. Serve context-free finder cells without the pack [M]"
+summary = "Task 14 asks the executor to find how the lens marks the context-free variant; nothing marks it, so the acceptance rule is an executor-time design decision"
+description = """claude/commands/review-v2.md:58: 'no field marks a cell as context-free'. correctness.md frontmatter has no variant key and catalogue.rs LENS_KEYS would need a new key (files no task owns). The in-file option: in prepare_cell's agent check (cells.rs, agent vs expected_agent), accept review-finder-cf only when expected_agent is FINDER and concerns are exactly ["correctness"]. The refusal test is a review plan behaviour whose natural home is tomlctl/tests/review_cells.rs (not on Files) and its name does not match the acceptance filter test(finder_cf)."""
+anchor_old = "Find how the lens marks the variant (lens frontmatter or bind) and accept the cf agent only there. Every other lens refuses it."
+anchor_new = """No field marks a cell as context-free (claude/commands/review-v2.md, stage 3 "Store record"). In `prepare_cell`'s agent check in `tomlctl/src/review/cells.rs`, accept `review-finder-cf` only when `expected_agent` returns `FINDER` and the concerns are exactly `["correctness"]`; every other cell refuses it."""
+dedup_id = "7823cab98e5e59d1"
+
+[[items]]
+id = "P12"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "8. Migrate stats and matching onto the lifecycle owner [M]"
+summary = "stats::v1_links joins through linked_rows with no retired-link filter, so review stats --outcomes counts a reopened, re-exported finding against both its retired fixed row and its regression row"
+description = "stats.rs:524-554 v1_links calls sync::linked_rows; task 4 puts the retired skip in sync::apply only. After reopen + re-export two v1 rows carry the finding's v2_ref and the retired row's 'fixed' lands in the outcome maps. Hidden coupling: tasks 4 and 8 have no dependency path, yet task 4 changes linked_rows (array v2_ref) which stats.rs imports - task 4 must keep one Linked per named finding, or 8 needs an edge from 4."
+anchor_old = "Delete stats's local `invalid`."
+anchor_new = "Delete stats's local `invalid`. In `v1_links`, skip a linked row the finding has retired (`Finding::is_retired`), as sync does, so `outcomes` does not count a retired v1 row beside its regression."
+dedup_id = "a68c169b2203a07c"
+
+[[items]]
+id = "P13"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "9. Migrate runs and record the incomplete reason as a catalogue field [M]"
+summary = "Task 9's premises do not hold: run catalogue fields already live in rest (no code change), no list/show projection serves runs (the specified test cannot be written), and there is no existing cap"
+description = "runs.rs:629-644 writes counts and incomplete into run.rest alike; catalogue membership only changes key order via ordered() (store.rs:746-760). review show refuses non finding/cell ids (query.rs:108 'no finding or cell'); review list iterates findings. read_prose caps nothing, so 'capped like run finish's current reason' (task 1) names no cap. finish_incomplete_records_reason (tests/review_finish.rs:248) already round-trips the value. A discriminating check: run start must refuse a caller-supplied incomplete once task 1 declares it .computed()."
+anchor_old = "Add the test `finish_incomplete_is_a_catalogue_field`, asserting that `review list --for orchestrator` (or `show` of the run) projects it."
+anchor_new = "Keep the `rest` write in runs.rs (catalogued run fields such as `counts` live there too; task 1's catalogue entry is the fix). Add the test `finish_incomplete_is_a_catalogue_field` to `tomlctl/tests/review_finish.rs`, asserting that `run finish --incomplete` stores `incomplete` and that `review run start` refuses a row supplying `incomplete` as computed."
+dedup_id = "e2b5610689403636"
+
+[[items]]
+id = "P14"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "1. Add FindingStatus and the companion model to the field catalogue [M]"
+summary = "Task 1 under-specifies the two new catalogue fields: neither is marked .computed(), retired_links needs a MATRIX row or the lib test projection_table_matches_matrix fails, and incomplete's 'cap' does not exist"
+description = "Every disposition companion is .computed() (fields.rs:521-532); Origin::Computed is what makes input refuse a key. Without it review add accepts a finder-supplied retired_links and run start/update accept incomplete. projection_table_matches_matrix (fields.rs:1260) asserts every Finding field has a MATRIX row; task 1's acceptance does not run it, so the break first shows at the checkpoint. 'capped like run finish's current reason' - run finish applies no cap (read_prose only trims)."
+anchor_old = "`retired_links`: an array of strings on the finding record."
+anchor_new = "`retired_links`: a computed `Ty::StrList` on the finding record (visibility `STATUS`, like the disposition companions), with a matching row added to the `MATRIX` table that `projection_table_matches_matrix` checks; `incomplete` below is `.computed()` too and uncapped, as `run finish --incomplete` is today."
+dedup_id = "45e1db31c9e5e717"
+
+[[items]]
+id = "P15"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "15. Convert a finished run's advisory into a named open run [M]"
+summary = "Task 15 adds new finding code to triage.rs with no dependency path to task 10's field flip - whichever lands second breaks"
+description = "tasks edges: 15 needs only 3; 10 needs 3-9 and 14; neither reaches the other, and task 10's Detail lists tasks 3-9 and 14 as the migrated set. If 15 writes a String status comparison and 10 lands first, checkpoint B's tip does not compile; if 15 lands first, task 10 meets a gap in a file it does not own and stops. Both are in checkpoint B, so the edge only reorders."
+anchor_old = "- **Depends on**: 3"
+anchor_new = "- **Depends on**: 3, 10"
+dedup_id = "4a8bc6f611575897"
+
+[[items]]
+id = "P16"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "feasibility"
+plan_section = "15. Convert a finished run's advisory into a named open run [M]"
+summary = "The convert-into-open-run spec moves only run and seen_in; the orchestrator verdict's run, the routing catalogue/depth and the family check still come from the finished run"
+description = "triage.rs convert stamps the orchestrator Verdict with run: advisory.run (~:419, :474); replacement_row computes route from the finished run's catalogue and depth (~:538-553, :598-599); nothing refuses a --run of a different family. Followed literally, the finding sits in run B with its verdict filed under run A and routing from A."
+anchor_old = "Replacement: `run` and `seen_in` come from `--run`, `cell` from the advisory, status `unverified`, plus the usual `orchestrator` confirmed verdict."
+anchor_new = "Replacement: `run` and `seen_in` come from `--run`, `cell` from the advisory, status `unverified`, plus the usual `orchestrator` confirmed verdict with its `run` set to the named run. Route through the named run's catalogue and depth, and refuse a `--run` whose family differs from the advisory's."
+dedup_id = "f8ba08be86581c78"
+
+[[items]]
+id = "P17"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "Finder note"
+summary = "The 600-char fix edits only review-finder.md and the method skill, but ten bound lens/method/check entries (and review-sweeper.md) still ask for one coverage-note line per item, so cells still overflow the cap"
+description = "Sites: claude/skills/review-v2-lenses/methods/sweep.md:28 ('One line per sweep in the coverage note'), lenses/ripple.md:32,43, lenses/plan-grounding.md:35, methods/dry-run.md:24, checks/two-control-probe.md:53, checks/falsifiability.md:48, checks/acceptance-contradiction.md:40, methods/steelman.md:27, methods/history-idiom.md:26, claude/agents/review-sweeper.md:38. Agents follow bound entries after their body, and sweeper cells hit the same cap. Several lines sit in hashed sections, so editing them rolls content hashes that stats groups on. Widen task 18 (or add a task) to turn per-item asks into counts, or record the limit."
+dedup_id = "3298b85dfafcae77"
+
+[[items]]
+id = "P18"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "completeness"
+plan_section = "22. Name review-finder-cf in the agent lists [S]"
+summary = "The Agent-wave fallback and mop-up re-dispatch preamble in agent-waves.md still hands a cf cell the pack: line; task 22 only adds the name to a list"
+description = "claude/skills/review-v2-engine/references/agent-waves.md:47 prints `pack: <run directory>/pack.md` unconditionally and claims to match the Workflow template word for word. Task 21 drops pack: for cf cells in review-v2.js only, so under agent-waves or a mop-up re-dispatch the cf agent gets the pack again (review-finder.md:29 tells it to read pack.md). The file is already on task 22's Files; note this widens an S task (see the S-tag finding)."
+anchor_old = "noting that it is Opus without CLAUDE.md."
+anchor_new = "noting that it is Opus without CLAUDE.md. In agent-waves.md also make the preamble's `pack:` line conditional - left out for a `review-finder-cf` cell, in both the wave cell prompt and the mop-up re-dispatch - matching review-v2.js."
+dedup_id = "e017ee81e93670cd"
+
+[[items]]
+id = "P19"
+review_round = 1
+status = "merged"
+severity = "warning"
+category = "executability"
+plan_section = "Success Criteria"
+summary = "Success Criteria verify the refactor but not most stated goals; the reopen-survives-sync criterion has no success: key"
+description = "Covered: lifecycle owner, $(cat removal, days ago removal, cf agent file. Uncovered: replay-safe plan --ndjson, --set-json KEY=@path, the 36,500-day cap, the finder note fitting 600 chars, convert-into-open-run, glimpse documented via export-v1 (B-cd31ec02), v1 reopen syncing back, v2_ref as an array, the --*-file twins, the incomplete catalogue field. The full-suite guard passes whether or not the new tests exist. Fix: one success: nextest run naming every goal test with test(=...) joined by | (zero match exits 4), plus greps for the prose goals (glimpse in triage-and-close.md; --note -/--rationale - absent from the four agents)."
+dedup_id = "1a8d02b8a0a14bb7"
+
+[[items]]
+id = "P20"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "Risks"
+summary = "Risks names task 19 for the verifier-nesting check (it is task 20), and nesting is already supported"
+description = "scripts/verify-shared-blocks.sh extract_block (:86-94) and its mirror tomlctl/src/blocks.rs (:69-111) match only the named block's own START/END lines; inner markers are ordinary content, byte-identical across both finder files. No fallback is needed."
+anchor_old = "Mitigation: task 19 checks verifier nesting support first and falls back to adjacent blocks."
+anchor_new = "Mitigation: none needed - `scripts/verify-shared-blocks.sh` and `tomlctl/src/blocks.rs` both extract a block by its own markers only, so task 20's outer block may enclose the two existing blocks."
+dedup_id = "46e82a94ad78700a"
+
+[[items]]
+id = "P21"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "20. Add the review-finder-cf agent under body parity [M]"
+summary = "Task 20's 'check whether the verifier supports nested block markers' can be settled now: it does"
+description = "See the Risks finding: both extractors treat other blocks' markers as content. Settling it removes an executor-time branch and the info-class files/closure note on scripts/verify-shared-blocks.sh."
+anchor_old = "Check whether `scripts/verify-shared-blocks.sh` supports nested block markers. If it does not, wrap only the stretches outside the two existing blocks, as one or more new blocks. Byte identity must cover the whole body either way."
+anchor_new = "Wrap the whole body after the frontmatter in one new parity block. Nesting is supported: both `scripts/verify-shared-blocks.sh` and `tomlctl/src/blocks.rs` extract a block by its own markers only, so the two existing blocks inside it are ordinary content."
+dedup_id = "45658568ad9926c7"
+
+[[items]]
+id = "P22"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "19. Switch the remaining v2 agents to the --*-file twins [S]"
+summary = "Tasks 19 and 22 are tagged S but each claims 3 files; S is <=2 files"
+description = "Task 19: plan-executor.md, review-sweeper.md, review-verifier.md. Task 22: CLAUDE.md, review-v2-lenses/SKILL.md, agent-waves.md. /implement's lite gate refuses or mis-dispatches them. Retag M, or split each into a 2-file S and a 1-file S (all file-disjoint with siblings). An effort-tag change does not change the derived ref."
+dedup_id = "4a0252daf77c876b"
+
+[[items]]
+id = "P23"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "15. Convert a finished run's advisory into a named open run [M]"
+summary = "Forward test criteria in tasks 9, 12, 14 and 15 name no falsifier"
+description = "The contract requires 'test X passes' to name the perturbation that turns X red. Tasks 9, 12, 14, 15 name none. E.g. task 15: ignoring --run keeps the finished-run refusal, turning convert_into_open_run red; task 12: dropping the @ branch in fields::build makes the file path parse as JSON and fail."
+anchor_old = "passes, including the new test (today: absent)."
+anchor_new = "passes, including the new test (today: absent). Falsifier: ignoring `--run` keeps the finished-run refusal, which turns `convert_into_open_run` red."
+dedup_id = "3982de1030454992"
+
+[[items]]
+id = "P24"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "13. Bound the survey window and pass git an absolute cutoff [M]"
+summary = "The epoch test does not discriminate if fixtures use Repo::commit: the old --since=20800 days ago resolves to ~12h before now, so it counts current-time commits"
+description = "git 2.55 probe: git rev-parse --since='20800 days ago' -> --max-age=1791838739 vs date +%s 1791883364 (~12.4h earlier). tests/review_survey.rs Repo::commit stamps the current time; only commit_dated fixtures older than about a day make the old code count none. The Detail's 'under the old code it counted none' is false for default fixtures."
+anchor_old = "a 20,800-day window counts every fixture commit; under the old code it counted none."
+anchor_new = "a 20,800-day window counts every fixture commit, each made with `commit_dated` at least two days old; the old `--since=20800 days ago` resolves to about half a day before now, so it counted none of them."
+dedup_id = "13df5a0c496262d9"
+
+[[items]]
+id = "P25"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "executability"
+plan_section = "8. Migrate stats and matching onto the lifecycle owner [M]"
+summary = "Abbreviated commands and ambiguous bare filenames: task 8's guard fragment, 'fields.rs' in the Approach (two exist), 'review.md' in task 23"
+description = "Task 8 guard has a bare `-E 'test(review::matching)'` fragment. Approach 'Context-free finder cell' and 'Retired links' say fields.rs, but tomlctl/src/fields.rs (task 12) and tomlctl/src/review/fields.rs both exist; implementers get the Approach without Files lines. Task 23 prose says review.md (three candidates)."
+anchor_old = "`cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_stats` and `-E 'test(review::matching)'` pass."
+anchor_new = "`cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_stats` and `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(review::matching)'` pass."
+dedup_id = "43d003645a1838d6"
+
+[[items]]
+id = "P26"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "Status owner and companions"
+summary = "B-8caf86b0's sweep misses a tenth review copy of invalid: a closure in schema_out.rs that no task touches and the ^fn invalid( grep cannot see"
+description = "tomlctl/src/review/schema_out.rs:25 `let invalid = |msg: String| tagged_err(ErrorKind::Validation, None, msg);`. Four identical helpers also exist outside review/ (inputs.rs, output.rs, flow/record.rs, flow/record_schema.rs) that a pub(super) helper cannot reach; optionally place the helper in crate::errors."
+dedup_id = "37ba613347b27c99"
+
+[[items]]
+id = "P27"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "Scope"
+summary = "Eight prose sites go stale under this plan and no task's Files or Action names them"
+description = "claude/skills/review-v2-lenses/SKILL.md:157 (git log --since; 36,500-day cap undocumented); claude/skills/review-v2-engine/SKILL.md:94 ('each of the six v2 agents'); scripts/shared-blocks.toml:95 ('the six v2 review agents'); claude/workflows/review-v2.js:6 (meta.phases lists three cell agents); tomlctl/README.md:97 (triage --convert without --run) and :479 (field_flags row); tomlctl/src/fields.rs:23 (--set-json help 'KEY=JSON'); claude/skills/tomlctl/references/review.md:161,177 (run start/update flag rows); claude/skills/flow-contract-task-store/SKILL.md:414 (the same stale 'sidecar left stale' story the plan corrects in code comments). Add each line to its owning task's Action, and README.md + flow-contract-task-store/SKILL.md to a docs task."
+dedup_id = "4b3087561be4985e"
+
+[[items]]
+id = "P28"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "Risks"
+summary = "Older binaries do more than skip an array v2_ref: an older export-v1 reuses the row and overwrites the array with one string, dropping the other finding's link"
+description = "Older decide (export.rs:731-739) misses the Linked match on an array, falls through to Reuse, and Reuse overwrites v2_ref (export.rs:616-624). No other v1 reader (glimpse, items verbs) reads v2_ref."
+anchor_old = "An older binary reading an array `v2_ref` skips that row in `linked_rows`."
+anchor_new = "An older binary reading an array `v2_ref` skips that row in `linked_rows`, and an older `export-v1` that reuses the row overwrites the array with one string, dropping the other finding's link."
+dedup_id = "85a851c6cff60c37"
+
+[[items]]
+id = "P29"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "risk"
+plan_section = "After Merge"
+summary = "claude/ is live-linked, so from task 21 the carrier composes review-finder-cf cells the installed tomlctl refuses and unrestarted sessions cannot launch"
+description = "~/.claude/commands/*.md symlink into this working tree, so prose edits are live on write. The installed tomlctl 0.16.0 validates cell.agent against CELL_AGENTS without review-finder-cf, and Claude Code 2.1.296's Workflow agent() throws 'agent type ... not found' for an unregistered type. Running cargo install at checkpoint B and not running /review-v2 between task 21 and deploy+restart closes the window."
+anchor_old = "- `cargo install --path tomlctl` (new flags, the `retired_links` field, the replay behaviour)."
+anchor_new = "- `cargo install --path tomlctl` (new flags, the `retired_links` field, the replay behaviour). Also run it at checkpoint B: `claude/` is live-linked, so from task 21 the carrier composes `review-finder-cf` cells an older binary refuses. Do not run `/review-v2` between task 21 and the deploy and restart below."
+dedup_id = "20ad01be88e6af89"
+
+[[items]]
+id = "P30"
+review_round = 1
+status = "merged"
+severity = "suggestion"
+category = "completeness"
+plan_section = "Context"
+summary = "'seven modules each declare their own status subsets' - the tree has seven constants in four modules (add, sync, triage, verdict), plus digest's DISPOSITIONS and inline sets"
+description = '''Re-derived: grep -nE 'const (SETTLED|REOPENABLE|COMPANIONS|SYNCABLE|SYNC_COMPANIONS|SUPPRESSING|DECIDED_BY_VERDICT)\b' tomlctl/src/review/*.rs -> add 1, sync 2, triage 3, verdict 1. Minor line drift elsewhere: triage replacement_row is at :524 not ~548; count_in_window fn is at survey.rs:709 (731 is its --since line).'''
+anchor_old = "seven modules each declare their own status subsets and companion lists"
+anchor_new = "four modules (add, sync, triage, verdict) declare seven status-subset and companion constants, and digest and matching carry inline sets,"
+dedup_id = "2cfafc10e1811097"

@@ -5805,7 +5805,7 @@ kind = "debt"
 summary = 'tomlctl test date helpers still call Timestamp::now().in_tz("UTC"), the slow zone-database path src/time.rs dropped'
 area = "tomlctl/tests"
 tags = ["test-wall-time"]
-status = "open"
+status = "resolved"
 created = 2026-10-09
 last_seen = 2026-10-09
 seen_count = 1
@@ -5819,6 +5819,8 @@ evidence = [
     "tomlctl/src/time.rs:58",
 ]
 related = ["B-edb20f98"]
+resolved = 2026-10-13
+resolution = '3746d2d: the seven tomlctl/tests date helpers use to_zoned(TimeZone::UTC) instead of in_tz("UTC").'
 
 [[backlog]]
 id = "B-353b436e"
@@ -5849,7 +5851,7 @@ tags = [
     "review-v2",
     "dry",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -5858,6 +5860,27 @@ origin = "implement"
 flow = "review-system-v2"
 context = "Copies in add, cells, export, query, runs, stats, survey, triage and verdict. One pub(super) helper in review/mod.rs would end it; the catalogue-rebuild, View, PathSet and Counts duplicates were already folded."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks add-findingstatus-and-the-companion-model-to-the-field-catalogue, migrate-triage-onto-the-lifecycle-owner-and-retire-v1-links-on-reopen, migrate-export-v1-ignore-retired-links-and-keep-a-second-link, migrate-digest-and-verdict-onto-the-lifecycle-owner, migrate-add-and-resolve-onto-the-lifecycle-owner, migrate-stats-and-matching-onto-the-lifecycle-owner, migrate-runs-and-record-the-incomplete-reason-as-a-catalogue-field, make-review-plan-ndjson-replay-safe, bound-the-survey-window-and-pass-git-an-absolute-cutoff, serve-context-free-finder-cells-without-the-pack)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "add-findingstatus-and-the-companion-model-to-the-field-catalogue",
+    "migrate-triage-onto-the-lifecycle-owner-and-retire-v1-links-on-reopen",
+    "migrate-export-v1-ignore-retired-links-and-keep-a-second-link",
+    "migrate-digest-and-verdict-onto-the-lifecycle-owner",
+    "migrate-add-and-resolve-onto-the-lifecycle-owner",
+    "migrate-stats-and-matching-onto-the-lifecycle-owner",
+    "migrate-runs-and-record-the-incomplete-reason-as-a-catalogue-field",
+    "make-review-plan-ndjson-replay-safe",
+    "bound-the-survey-window-and-pass-git-an-absolute-cutoff",
+    "serve-context-free-finder-cells-without-the-pack",
+]
+resolved_commits = [
+    "cd9b24d",
+    "6c1728c",
+]
 
 [[backlog]]
 id = "B-615a500d"
@@ -5865,7 +5888,7 @@ kind = "debt"
 summary = "shared review store View lives in query.rs and digest.rs imports it from there instead of a store-level module"
 area = "tomlctl/src/review"
 tags = ["review-v2"]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -5874,6 +5897,8 @@ origin = "implement"
 flow = "review-system-v2"
 context = "View gained a with_same_as flag so digest keeps its old output. Moving it to store.rs or fields.rs removes digest's dependency on a sibling verb module."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+resolved = 2026-10-13
+resolution = "e5af1ce: View moved to store.rs; digest, export and query import it from super::store; the query-only projection is query::finding_row."
 
 [[backlog]]
 id = "B-e4c1a22a"
@@ -5903,7 +5928,7 @@ tags = [
     "review-v2",
     "workflow",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -5912,6 +5937,19 @@ origin = "implement"
 flow = "review-system-v2"
 context = "/review-v2 dispatches and routes its context-free correctness cell itself with the pack line removed. A per-cell context: none flag in the Workflow args or the cell projection would let the Workflow run it and drop the hand-routing."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks serve-context-free-finder-cells-without-the-pack, run-the-context-free-cell-through-the-workflow)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "serve-context-free-finder-cells-without-the-pack",
+    "run-the-context-free-cell-through-the-workflow",
+]
+resolved_commits = [
+    "cd9b24d",
+    "b0dbec7",
+]
 
 [[backlog]]
 id = "B-8fb6b503"
@@ -5922,7 +5960,7 @@ tags = [
     "review-v2",
     "verification",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -5931,6 +5969,8 @@ origin = "implement"
 flow = "review-system-v2"
 context = "references/survey.md shows timeout: 1500 (s) while the verification agent's Bash calls cap at 600000 ms, so a budget above ~590 s may end as a tool kill rather than a recorded timeout outcome. Cap the example or split slow baselines."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+resolved = 2026-10-13
+resolution = "31d318a: survey.md baseline example uses timeout 540 and says to split slow baselines per crate or binary."
 
 [[backlog]]
 id = "B-f4e7c986"
@@ -5938,7 +5978,7 @@ kind = "question"
 summary = "engine stage 8 has no slot for a plan-family merge offer, so its ordering before run finish lives only in the carrier"
 area = "claude/skills/review-v2-engine"
 tags = ["review-v2"]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -5947,6 +5987,8 @@ origin = "implement"
 flow = "review-system-v2"
 context = "Arrived cheap-in-file (references/triage-and-close.md) and was deferred: docs are outside what this run's verification exercises. The rule is that merge status writes precede run finish; /review-plan-v2 states it, the engine does not."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+resolved = 2026-10-13
+resolution = "31d318a: triage-and-close.md stage 8 orders the plan-family merge status writes before review run finish."
 
 [[backlog]]
 id = "B-47120642"
@@ -5973,7 +6015,7 @@ tags = [
     "review-v2",
     "schema",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -5982,6 +6024,16 @@ origin = "implement"
 flow = "review-system-v2"
 context = "run finish --incomplete lands in the run's catch-all rest table rather than a declared field, so projections and schema output do not describe it. Add it to fields.rs."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks migrate-runs-and-record-the-incomplete-reason-as-a-catalogue-field)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "migrate-runs-and-record-the-incomplete-reason-as-a-catalogue-field",
+    "add-findingstatus-and-the-companion-model-to-the-field-catalogue",
+]
+resolved_commits = ["cd9b24d"]
 
 [[backlog]]
 id = "B-1fc81407"
@@ -5992,7 +6044,7 @@ tags = [
     "review-v2",
     "sync",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6001,6 +6053,13 @@ origin = "implement"
 flow = "review-system-v2"
 context = "A v1 row reopened with a reason does not carry that reason back through review sync-v1. Add reopen_reason to the companion list in sync.rs."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks migrate-sync-v1-skip-retired-links-and-carry-a-v1-reopen-back)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = ["migrate-sync-v1-skip-retired-links-and-carry-a-v1-reopen-back"]
+resolved_commits = ["cd9b24d"]
 
 [[backlog]]
 id = "B-e8b56feb"
@@ -6011,7 +6070,7 @@ tags = [
     "review-v2",
     "windows",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6020,6 +6079,17 @@ origin = "implement"
 flow = "review-system-v2"
 context = "The Windows sidecar-rename os error 5 is retried once by the house rule; cover and run update are idempotent under it but plan --ndjson is not. Until fixed, check review list for the wave's cells before retrying."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks make-review-plan-ndjson-replay-safe)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "make-review-plan-ndjson-replay-safe",
+    "document-the-lifecycle-link-replay-and-convert-changes-in-the-review-reference",
+    "refresh-the-stale-agent-count-readme-rows-and-sidecar-story",
+]
+resolved_commits = ["cd9b24d"]
 
 [[backlog]]
 id = "B-6601255f"
@@ -6030,7 +6100,7 @@ tags = [
     "review-v2",
     "export",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6039,6 +6109,17 @@ origin = "implement"
 flow = "review-system-v2"
 context = "Design question: whether v2_ref should become a list, or a second match should be refused. Today the first finding's link is lost silently."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks migrate-sync-v1-skip-retired-links-and-carry-a-v1-reopen-back, migrate-export-v1-ignore-retired-links-and-keep-a-second-link)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "migrate-sync-v1-skip-retired-links-and-carry-a-v1-reopen-back",
+    "migrate-export-v1-ignore-retired-links-and-keep-a-second-link",
+    "document-the-lifecycle-link-replay-and-convert-changes-in-the-review-reference",
+]
+resolved_commits = ["cd9b24d"]
 
 [[backlog]]
 id = "B-13ec633a"
@@ -6068,7 +6149,7 @@ tags = [
     "review-v2",
     "doc-drift",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6077,6 +6158,8 @@ origin = "implement"
 flow = "review-system-v2"
 context = "checks/lint-baseline.md and the carriers key multiple resolved commands as <id>, <id>-2, ...; align references/survey.md section 6 and claude/agents/review-surveyor.md with that."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+resolved = 2026-10-13
+resolution = "31d318a: survey.md sections 6-7 and review-surveyor.md key each resolved command as <id>, <id>-2, ..."
 
 [[backlog]]
 id = "B-53bf0848"
@@ -6087,7 +6170,7 @@ tags = [
     "review-v2",
     "consistency",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6096,6 +6179,19 @@ origin = "implement"
 flow = "review-system-v2"
 context = "Both forms work. Pick one (the --note-file / --rationale-file / --incomplete-file twins avoid a redirect) and align the review-*.md bodies with the method skill."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks compress-the-finder-coverage-note-and-use-the-file-twins, switch-the-remaining-v2-agents-to-the-file-twins)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "compress-the-finder-coverage-note-and-use-the-file-twins",
+    "switch-the-remaining-v2-agents-to-the-file-twins",
+]
+resolved_commits = [
+    "c609e95",
+    "dff6997",
+]
 
 [[backlog]]
 id = "B-de835331"
@@ -6103,7 +6199,7 @@ kind = "bug"
 summary = "review-finder body asks for more in the coverage note than the 600-character cell note cap allows"
 area = "claude/agents"
 tags = ["review-v2"]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6112,6 +6208,16 @@ origin = "implement"
 flow = "review-system-v2"
 context = "cell.note is capped at 600 characters; the finder body's coverage-note checklist overflows it and the cap truncates. Trim the requested content in claude/agents/review-finder.md."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks compress-the-finder-coverage-note-and-use-the-file-twins)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "compress-the-finder-coverage-note-and-use-the-file-twins",
+    "switch-the-remaining-v2-agents-to-the-file-twins",
+]
+resolved_commits = ["c609e95"]
 
 [[backlog]]
 id = "B-8414a070"
@@ -6179,7 +6285,7 @@ tags = [
     "review-v2",
     "detectors",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6188,6 +6294,8 @@ origin = "implement"
 flow = "review-system-v2"
 context = "The vocabulary.toml count pattern matches only that exact spelling, so a reformatted backlog.toml or a promoted row is miscounted. Count via a looser pattern or a tomlctl query."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+resolved = 2026-10-13
+resolution = "31d318a: the backlog-cluster detector counts open and promoted rows via line-start literals tolerant of spacing and quote style."
 
 [[backlog]]
 id = "B-cd31ec02"
@@ -6198,7 +6306,7 @@ tags = [
     "review-v2",
     "glimpse",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6207,6 +6315,13 @@ origin = "review"
 flow = "review-system-v2"
 context = "Raised by the /review of review-system-v2. If v2 replaces v1 review, the user's glimpse triage UI will not show v2 findings and `tomlctl review triage` becomes the only way to act on them; until decided, v2 findings reach glimpse only after `review export-v1`."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks document-the-lifecycle-link-replay-and-convert-changes-in-the-review-reference)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = ["document-the-lifecycle-link-replay-and-convert-changes-in-the-review-reference"]
+resolved_commits = ["53a3ab1"]
 
 [[backlog]]
 id = "B-bd78e505"
@@ -6214,7 +6329,7 @@ kind = "debt"
 summary = "review run update --set-json has no @path file form, so carriers and the surveyor inline payloads with $(cat <file>)"
 area = "tomlctl/src/review"
 tags = ["review-v2"]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6223,6 +6338,22 @@ origin = "review"
 flow = "review-system-v2"
 context = "--set-file sets a string, so a JSON array or table staged in a file has no file form; the engine and review-surveyor inline it via command substitution, which strains the store-writer rule of passing a path. An @<path> value form on --set-json would let every payload go by file."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks accept-path-in-set-json-for-every-field-flag-verb, document-set-json-path-in-the-tomlctl-skill, replace-cat-payload-inlining-with-path-in-the-surveyor-and-compose-docs)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "accept-path-in-set-json-for-every-field-flag-verb",
+    "document-set-json-path-in-the-tomlctl-skill",
+    "replace-cat-payload-inlining-with-path-in-the-surveyor-and-compose-docs",
+    "refresh-the-stale-agent-count-readme-rows-and-sidecar-story",
+]
+resolved_commits = [
+    "6d3530a",
+    "224d4b1",
+    "b9b5da9",
+]
 
 [[backlog]]
 id = "B-4a72f1a6"
@@ -6230,7 +6361,7 @@ kind = "question"
 summary = "review triage --convert refuses advisories of a finished run, so the engine must triage advisories before run finish"
 area = "tomlctl/src/review"
 tags = ["review-v2"]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6239,6 +6370,20 @@ origin = "review"
 flow = "review-system-v2"
 context = "triage::replacement_row refuses a finished run, but advisories may be triaged at a run's close. Either the engine's close ordering must state triage-before-finish, or --convert should accept a finished run's advisories. Related to the finished-run guard findings R27/R30 in the review-system-v2 ledger."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks convert-a-finished-runs-advisory-into-a-named-open-run, document-the-lifecycle-link-replay-and-convert-changes-in-the-review-reference)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "convert-a-finished-runs-advisory-into-a-named-open-run",
+    "document-the-lifecycle-link-replay-and-convert-changes-in-the-review-reference",
+    "refresh-the-stale-agent-count-readme-rows-and-sidecar-story",
+]
+resolved_commits = [
+    "cd9b24d",
+    "53a3ab1",
+]
 
 [[backlog]]
 id = "B-ef306556"
@@ -6263,7 +6408,7 @@ kind = "bug"
 summary = "A health detector with a very large window passes git --since an out-of-range relative date, the log comes back empty and the signal silently settles False"
 area = "tomlctl/src/review/survey.rs"
 tags = ["review-v2"]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6272,6 +6417,16 @@ origin = "review-apply"
 flow = "review-system-v2"
 context = "Checked by hand: a 3650-day window lists the commits, 36500 days lists none. A vocabulary author writing a 'forever' window gets a signal that never fires and no error. Fix by capping window at parse time or passing --since an absolute date."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks bound-the-survey-window-and-pass-git-an-absolute-cutoff)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "bound-the-survey-window-and-pass-git-an-absolute-cutoff",
+    "name-review-finder-cf-in-the-agent-lists",
+]
+resolved_commits = ["6c1728c"]
 
 [[backlog]]
 id = "B-771b57e7"
@@ -6298,7 +6453,7 @@ tags = [
     "review-v2",
     "needs-plan",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6315,6 +6470,19 @@ related = [
     "B-6601255f",
     "B-1fc81407",
 ]
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks migrate-triage-onto-the-lifecycle-owner-and-retire-v1-links-on-reopen, migrate-sync-v1-skip-retired-links-and-carry-a-v1-reopen-back, migrate-export-v1-ignore-retired-links-and-keep-a-second-link)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "migrate-triage-onto-the-lifecycle-owner-and-retire-v1-links-on-reopen",
+    "migrate-sync-v1-skip-retired-links-and-carry-a-v1-reopen-back",
+    "migrate-export-v1-ignore-retired-links-and-keep-a-second-link",
+    "migrate-stats-and-matching-onto-the-lifecycle-owner",
+    "document-the-lifecycle-link-replay-and-convert-changes-in-the-review-reference",
+]
+resolved_commits = ["cd9b24d"]
 
 [[backlog]]
 id = "B-faca904c"
@@ -6325,7 +6493,7 @@ tags = [
     "review-v2",
     "needs-plan",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6336,6 +6504,25 @@ context = "Moved from review ledger R2 (review-system-v2) for planning. Finding.
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
 evidence = ["tomlctl/src/review/fields.rs:110"]
 related = ["B-1fc81407"]
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks type-the-finding-status-field-as-findingstatus)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "type-the-finding-status-field-as-findingstatus",
+    "add-findingstatus-and-the-companion-model-to-the-field-catalogue",
+    "add-the-finding-status-accessor-and-the-single-status-write-helper",
+    "migrate-triage-onto-the-lifecycle-owner-and-retire-v1-links-on-reopen",
+    "migrate-sync-v1-skip-retired-links-and-carry-a-v1-reopen-back",
+    "migrate-export-v1-ignore-retired-links-and-keep-a-second-link",
+    "migrate-digest-and-verdict-onto-the-lifecycle-owner",
+    "migrate-add-and-resolve-onto-the-lifecycle-owner",
+    "migrate-stats-and-matching-onto-the-lifecycle-owner",
+    "migrate-runs-and-record-the-incomplete-reason-as-a-catalogue-field",
+    "serve-context-free-finder-cells-without-the-pack",
+]
+resolved_commits = ["cd9b24d"]
 
 [[backlog]]
 id = "B-c2c975d1"
@@ -6346,7 +6533,7 @@ tags = [
     "review-v2",
     "needs-plan",
 ]
-status = "open"
+status = "resolved"
 created = 2026-10-13
 last_seen = 2026-10-13
 seen_count = 1
@@ -6356,3 +6543,118 @@ flow = "review-system-v2"
 context = "Moved from review ledger R41 (review-system-v2) for planning. review-v2.md stages 3/4 and the correctness lens's context-free variant intend a diff-only read untouched by project conventions, but review-finder sets no omitClaudeMd, so repo and user CLAUDE.md reach it; only review-checker, review-surveyor and review-sweeper set omitClaudeMd: true. Making the cell truly context-free needs a decision, e.g. a dedicated agent type with omitClaudeMd: true, which also changes claude/workflows/review-v2.js and the engine's dispatch."
 base_sha = "254d56d65bed5024bc27e8c6b8a0256e1fc6847e"
 evidence = ["claude/agents/review-finder.md:1"]
+promoted = 2026-10-13
+promoted_to = "toasty-wobbling-stonebraker"
+resolved = 2026-10-13
+resolution = "resolved by flow `toasty-wobbling-stonebraker` (tasks serve-context-free-finder-cells-without-the-pack, add-the-review-finder-cf-agent-under-body-parity, run-the-context-free-cell-through-the-workflow)"
+resolved_flow = "toasty-wobbling-stonebraker"
+resolved_tasks = [
+    "serve-context-free-finder-cells-without-the-pack",
+    "add-the-review-finder-cf-agent-under-body-parity",
+    "run-the-context-free-cell-through-the-workflow",
+    "add-findingstatus-and-the-companion-model-to-the-field-catalogue",
+    "replace-cat-payload-inlining-with-path-in-the-surveyor-and-compose-docs",
+    "compress-the-finder-coverage-note-and-use-the-file-twins",
+    "name-review-finder-cf-in-the-agent-lists",
+    "refresh-the-stale-agent-count-readme-rows-and-sidecar-story",
+]
+resolved_commits = [
+    "cd9b24d",
+    "c609e95",
+    "b0dbec7",
+]
+
+[[backlog]]
+id = "B-d8653d83"
+kind = "debt"
+summary = "v1 v2_ref string-or-array reading is implemented twice, in sync::linked_rows and export::v2_refs"
+area = "tomlctl/src/review"
+tags = [
+    "review-v2",
+    "v1-bridge",
+]
+status = "resolved"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "d8653d83aa8f9c2a"
+origin = "implement"
+flow = "toasty-wobbling-stonebraker"
+context = "Both readers accept a string or an array of `<store>#F<n>` refs and must stay in step; a third shape (or a malformed-entry rule) changed in one will silently diverge. Move export::v2_refs to one shared helper (sync.rs or store.rs) and have linked_rows call it. Arrived cheap-in-file from the implement run and was deferred to avoid a second full verification pass."
+base_sha = "cac8ca59460bb3e6808ee835592eb9b35ff51e96"
+evidence = [
+    "tomlctl/src/review/export.rs:795",
+    "tomlctl/src/review/sync.rs:181",
+]
+related = ["B-6601255f"]
+resolved = 2026-10-13
+resolution = "0bb1ac1: sync::v2_refs is the single string-or-array v2_ref reader; sync::linked_rows and export call it, and export copy is deleted."
+
+[[backlog]]
+id = "B-1b997e05"
+kind = "debt"
+summary = "type Row = Map<String, JsonValue> is declared separately in digest.rs, export.rs, query.rs and store.rs"
+area = "tomlctl/src/review"
+tags = ["review-v2"]
+status = "resolved"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "1b997e05fd546786"
+origin = "backlog"
+flow = "toasty-wobbling-stonebraker"
+context = "Make store.rs's alias pub(super) and import it in the other three, dropping each file's serde_json Map import where Row was its only use. Surfaced while moving View into store.rs; left out of that pure move."
+base_sha = "0bb1ac187453fa71c484872d134248714c3c5586"
+evidence = [
+    "tomlctl/src/review/store.rs:401",
+    "tomlctl/src/review/query.rs:26",
+]
+related = ["B-615a500d"]
+resolved = 2026-10-13
+resolution = "f779852: store::Row is pub(super) and the only declaration; digest, export and query import it."
+
+[[backlog]]
+id = "B-4c8af16f"
+kind = "debt"
+summary = "review-surveyor step 7 describes one discover ladder per check, but break-set-baseline walks discover once per prediction"
+area = "claude/agents/review-surveyor.md"
+tags = [
+    "review-v2",
+    "surveyor",
+]
+status = "resolved"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "4c8af16f67a58190"
+origin = "backlog"
+flow = "toasty-wobbling-stonebraker"
+context = "Step 7 says stop at the first rung that yields a command, which fits lint and profile; break-set resolves one command per prediction and only works because step 7 defers to each check's Runs section. A Haiku surveyor reading step 7 alone could resolve only the first break set. Name the per-prediction case in step 7."
+base_sha = "0bb1ac187453fa71c484872d134248714c3c5586"
+evidence = ["claude/skills/review-v2-lenses/checks/break-set-baseline.md"]
+related = ["B-de835331"]
+resolved = 2026-10-13
+resolution = "378ad43: review-surveyor step 7 says break-set-baseline walks discover once per predicted break set and resolves every prediction."
+
+[[backlog]]
+id = "B-650a945c"
+kind = "question"
+summary = "the survey stage 3 to 4 baseline barrier does not say whether it waits on keys added when the orchestrator splits a slow baseline"
+area = "claude/skills/review-v2-engine"
+tags = [
+    "review-v2",
+    "baselines",
+]
+status = "resolved"
+created = 2026-10-13
+last_seen = 2026-10-13
+seen_count = 1
+dedup_id = "650a945cdec5f3b5"
+origin = "backlog"
+flow = "toasty-wobbling-stonebraker"
+context = "survey.md now tells the orchestrator to split a slow baseline into one command per crate or binary under its own key, but the barrier tracks only the keys the digest listed, so a finder could launch before a split piece's log is recorded. Arrived cheap-in-file (survey.md) and was deferred: doc edits there are outside what this batch's verification exercises. Say the barrier waits on every key the split produced."
+base_sha = "0bb1ac187453fa71c484872d134248714c3c5586"
+evidence = ["claude/skills/review-v2-engine/references/survey.md"]
+related = ["B-f278c33f"]
+resolved = 2026-10-13
+resolution = "378ad43: survey.md section 7's stage 3 to 4 barrier waits on every key a split baseline produced."

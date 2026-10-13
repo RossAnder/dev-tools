@@ -745,3 +745,27 @@ scope = [
     "scripts/deploy-claude.ps1",
     "CLAUDE.md",
 ]
+
+[[active]]
+slug = "toasty-wobbling-stonebraker"
+last_used = "2026-10-13T09:17:07.0309701Z"
+
+[active.binding]
+branch = "main"
+worktree = "C:/Users/rossa/dev/dev-tools"
+scope = [
+    "tomlctl/src/review/**",
+    "tomlctl/src/fields.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/src/cli/types/review.rs",
+    "tomlctl/tests/**",
+    "claude/agents/**",
+    "claude/workflows/review-v2.js",
+    "claude/commands/review-v2.md",
+    "claude/skills/tomlctl/**",
+    "claude/skills/review-v2-engine/**",
+    "claude/skills/review-v2-method/**",
+    "claude/skills/review-v2-lenses/**",
+    "scripts/shared-blocks.toml",
+    "CLAUDE.md",
+]

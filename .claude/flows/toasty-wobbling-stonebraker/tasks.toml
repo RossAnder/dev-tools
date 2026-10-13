@@ -1,0 +1,1006 @@
+schema_version = 1
+last_updated = 2026-10-13
+plan_path = "docs/plans/toasty-wobbling-stonebraker.md"
+last_import_refs = [
+    "add-findingstatus-and-the-companion-model-to-the-field-catalogue",
+    "add-the-finding-status-accessor-and-the-single-status-write-helper",
+    "migrate-triage-onto-the-lifecycle-owner-and-retire-v1-links-on-reopen",
+    "migrate-sync-v1-skip-retired-links-and-carry-a-v1-reopen-back",
+    "migrate-export-v1-ignore-retired-links-and-keep-a-second-link",
+    "migrate-digest-and-verdict-onto-the-lifecycle-owner",
+    "migrate-add-and-resolve-onto-the-lifecycle-owner",
+    "migrate-stats-and-matching-onto-the-lifecycle-owner",
+    "migrate-runs-and-record-the-incomplete-reason-as-a-catalogue-field",
+    "type-the-finding-status-field-as-findingstatus",
+    "make-review-plan-ndjson-replay-safe",
+    "accept-path-in-set-json-for-every-field-flag-verb",
+    "bound-the-survey-window-and-pass-git-an-absolute-cutoff",
+    "serve-context-free-finder-cells-without-the-pack",
+    "convert-a-finished-runs-advisory-into-a-named-open-run",
+    "document-set-json-path-in-the-tomlctl-skill",
+    "replace-cat-payload-inlining-with-path-in-the-surveyor-and-compose-docs",
+    "compress-the-finder-coverage-note-and-use-the-file-twins",
+    "switch-the-remaining-v2-agents-to-the-file-twins",
+    "add-the-review-finder-cf-agent-under-body-parity",
+    "run-the-context-free-cell-through-the-workflow",
+    "name-review-finder-cf-in-the-agent-lists",
+    "document-the-lifecycle-link-replay-and-convert-changes-in-the-review-reference",
+    "refresh-the-stale-agent-count-readme-rows-and-sidecar-story",
+    "document-the-survey-health-window-cap-in-the-review-reference",
+]
+
+[policy]
+checkpoints = "milestones"
+max_parallel = 6
+commit_granularity = "per-task"
+origin = "plan"
+note = ""
+
+[[checkpoints]]
+id = "A"
+rationale = "Every review module migrated, Finding.status typed, and the reopen/sync, replay, @path, survey and convert fixes in the crate; no earlier cut, because tasks 1 and 2's helpers have no non-test caller until tasks 3–9 and 14 (Rust milestone)"
+
+[[checkpoints]]
+id = "B"
+rationale = "Agents, workflow and docs (prose milestone)"
+
+[[file_notes]]
+ref = "migrate-add-and-resolve-onto-the-lifecycle-owner"
+file = "tomlctl/src/review/schema_out.rs"
+note = "— its `invalid` closure only"
+
+[[file_notes]]
+ref = "type-the-finding-status-field-as-findingstatus"
+file = "tomlctl/src/review/matching.rs"
+note = "— the `tests::finding` fixture's `status` initialiser only"
+
+[[file_notes]]
+ref = "add-the-review-finder-cf-agent-under-body-parity"
+file = "claude/agents/review-finder-cf.md"
+note = "(new)"
+
+[[backlog_links]]
+ref = "add-findingstatus-and-the-companion-model-to-the-field-catalogue"
+closes = ["B-8caf86b0"]
+refs = [
+    "B-faca904c",
+    "B-9e96ce7c",
+    "B-c2c975d1",
+]
+
+[[backlog_links]]
+ref = "add-the-finding-status-accessor-and-the-single-status-write-helper"
+closes = []
+refs = ["B-faca904c"]
+
+[[backlog_links]]
+ref = "migrate-triage-onto-the-lifecycle-owner-and-retire-v1-links-on-reopen"
+closes = [
+    "B-8a4b923f",
+    "B-8caf86b0",
+]
+refs = ["B-faca904c"]
+
+[[backlog_links]]
+ref = "migrate-sync-v1-skip-retired-links-and-carry-a-v1-reopen-back"
+closes = [
+    "B-8a4b923f",
+    "B-1fc81407",
+    "B-6601255f",
+]
+refs = ["B-faca904c"]
+
+[[backlog_links]]
+ref = "migrate-export-v1-ignore-retired-links-and-keep-a-second-link"
+closes = [
+    "B-8a4b923f",
+    "B-6601255f",
+    "B-8caf86b0",
+]
+refs = ["B-faca904c"]
+
+[[backlog_links]]
+ref = "migrate-digest-and-verdict-onto-the-lifecycle-owner"
+closes = ["B-8caf86b0"]
+refs = ["B-faca904c"]
+
+[[backlog_links]]
+ref = "migrate-add-and-resolve-onto-the-lifecycle-owner"
+closes = ["B-8caf86b0"]
+refs = ["B-faca904c"]
+
+[[backlog_links]]
+ref = "migrate-stats-and-matching-onto-the-lifecycle-owner"
+closes = ["B-8caf86b0"]
+refs = [
+    "B-faca904c",
+    "B-8a4b923f",
+]
+
+[[backlog_links]]
+ref = "migrate-runs-and-record-the-incomplete-reason-as-a-catalogue-field"
+closes = [
+    "B-9e96ce7c",
+    "B-8caf86b0",
+]
+refs = ["B-faca904c"]
+
+[[backlog_links]]
+ref = "type-the-finding-status-field-as-findingstatus"
+closes = ["B-faca904c"]
+refs = []
+
+[[backlog_links]]
+ref = "make-review-plan-ndjson-replay-safe"
+closes = [
+    "B-e8b56feb",
+    "B-8caf86b0",
+]
+refs = []
+
+[[backlog_links]]
+ref = "accept-path-in-set-json-for-every-field-flag-verb"
+closes = ["B-bd78e505"]
+refs = []
+
+[[backlog_links]]
+ref = "bound-the-survey-window-and-pass-git-an-absolute-cutoff"
+closes = [
+    "B-d8d355f4",
+    "B-8caf86b0",
+]
+refs = []
+
+[[backlog_links]]
+ref = "serve-context-free-finder-cells-without-the-pack"
+closes = [
+    "B-c2c975d1",
+    "B-be44a578",
+    "B-8caf86b0",
+]
+refs = ["B-faca904c"]
+
+[[backlog_links]]
+ref = "convert-a-finished-runs-advisory-into-a-named-open-run"
+closes = ["B-4a72f1a6"]
+refs = []
+
+[[backlog_links]]
+ref = "document-set-json-path-in-the-tomlctl-skill"
+closes = ["B-bd78e505"]
+refs = []
+
+[[backlog_links]]
+ref = "replace-cat-payload-inlining-with-path-in-the-surveyor-and-compose-docs"
+closes = ["B-bd78e505"]
+refs = ["B-c2c975d1"]
+
+[[backlog_links]]
+ref = "compress-the-finder-coverage-note-and-use-the-file-twins"
+closes = [
+    "B-de835331",
+    "B-53bf0848",
+]
+refs = ["B-c2c975d1"]
+
+[[backlog_links]]
+ref = "switch-the-remaining-v2-agents-to-the-file-twins"
+closes = ["B-53bf0848"]
+refs = ["B-de835331"]
+
+[[backlog_links]]
+ref = "add-the-review-finder-cf-agent-under-body-parity"
+closes = ["B-c2c975d1"]
+refs = []
+
+[[backlog_links]]
+ref = "run-the-context-free-cell-through-the-workflow"
+closes = [
+    "B-c2c975d1",
+    "B-be44a578",
+]
+refs = []
+
+[[backlog_links]]
+ref = "name-review-finder-cf-in-the-agent-lists"
+closes = []
+refs = [
+    "B-c2c975d1",
+    "B-d8d355f4",
+]
+
+[[backlog_links]]
+ref = "document-the-lifecycle-link-replay-and-convert-changes-in-the-review-reference"
+closes = [
+    "B-cd31ec02",
+    "B-4a72f1a6",
+]
+refs = [
+    "B-8a4b923f",
+    "B-6601255f",
+    "B-e8b56feb",
+]
+
+[[backlog_links]]
+ref = "refresh-the-stale-agent-count-readme-rows-and-sidecar-story"
+closes = []
+refs = [
+    "B-c2c975d1",
+    "B-bd78e505",
+    "B-4a72f1a6",
+    "B-e8b56feb",
+]
+
+[[items]]
+id = 1
+ref = "add-findingstatus-and-the-companion-model-to-the-field-catalogue"
+title = "Add FindingStatus and the companion model to the field catalogue"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/mod.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Add `str_enum!(FindingStatus)`, its `companions()` table, `ALL_COMPANIONS`, `LINK_FIELDS`, the five predicates, the `retired_links` finding field and the run `incomplete` field to fields.rs. Add `FINDER_CF` and `is_finder()`. Add the shared `pub(super) fn invalid(msg)` to mod.rs."
+detail = """
+Follow Approach, "Status owner and companions". `FINDING_STATUSES` becomes `FindingStatus::VALUES`, with the same order and contents. Each predicate's set must equal today's constant exactly:
+- `is_settled` = triage `SETTLED`
+- `is_reopenable` = triage `REOPENABLE`
+- `is_suppressing` = add `SUPPRESSING`
+- `is_syncable` = sync `SYNCABLE`
+- `decided_by_verdict` = verdict `DECIDED_BY_VERDICT`
+
+Add the unit test `finding_status_predicates_match_the_old_constants` asserting each set. Do not delete the old constants; their modules do that.
+- `retired_links`: a computed `Ty::StrList` on the finding record (visibility `STATUS`, like the disposition companions), with a matching row added to the `MATRIX` table that the lib test `projection_table_matches_matrix` checks for every finding field.
+- `incomplete`: a computed string on the run record, uncapped as `run finish --incomplete` is today. Computed is what makes `review add` refuse a caller-supplied `retired_links` and `review run start` refuse a caller-supplied `incomplete`.
+- `CELL_AGENTS` gains `FINDER_CF = "review-finder-cf"`, and `is_finder(agent)` matches both finder agents.
+- `invalid` keeps the existing body: `tagged_err(ErrorKind::Validation, None, msg)`."""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(finding_status_predicates_match_the_old_constants)'` passes (today: exit 4, no test matches). Falsifier: dropping `refuted` from `is_reopenable` turns it red.
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(projection_table_matches_matrix)'` and `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_vocabulary --test review_catalogue` pass. Falsifier: omitting the `retired_links` `MATRIX` row turns the first red."""
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 2
+ref = "add-the-finding-status-accessor-and-the-single-status-write-helper"
+title = "Add the Finding status accessor and the single status-write helper"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["tomlctl/src/review/store.rs"]
+needs = [1]
+coupling = []
+deps_note = ""
+action = "Add the `Finding` methods `status() -> FindingStatus`, `set_status(FindingStatus, &[(&str, TomlValue)])`, `retire_link()`, `is_retired(ledger, v1_id)` and `unretire_link(ledger, v1_id)`. Migrate store.rs's own status-literal comparisons onto them."
+detail = """
+Follow Approach, "Status owner and companions" and "Retired links".
+- `status()` parses the stored string. Rows are validated on load (`finding_from_toml` checks `status` against the catalogue values), so a parse failure is unreachable; `expect` with that reason.
+- `set_status`: when the status changes or companions are given, remove every `ALL_COMPANIONS` key, then insert the given ones. A same-status call with no companions changes nothing.
+- `retire_link` pushes `"<export_ledger>#<exported_as>"` onto `retired_links` (creating it), then removes both link fields. It is a no-op without `exported_as`.
+- `is_retired` tests membership; `unretire_link` removes that entry (dropping the field when it empties).
+- `Finding.status` stays `String` here; task 10 flips it.
+
+Add lib unit tests `set_status_clears_stale_companions`, `set_status_keeps_companions_on_a_same_status_write` and `retire_link_moves_the_link_to_retired_links`."""
+acceptance = "- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(set_status_) | test(retire_link_)'` passes and reports 3 tests run (today: exit 4, no test matches). Falsifier: leaving `reopen_reason` in place when `set_status(Resolved, …)` runs turns `set_status_clears_stale_companions` red; clearing on a same-status write turns `set_status_keeps_companions_on_a_same_status_write` red."
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 3
+ref = "migrate-triage-onto-the-lifecycle-owner-and-retire-v1-links-on-reopen"
+title = "Migrate triage onto the lifecycle owner and retire v1 links on reopen"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/tests/review_triage.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = 'Replace `SETTLED`, `REOPENABLE` and `COMPANIONS` with the `FindingStatus` predicates, route `dispose` through `Finding::set_status`, call `retire_link()` when `--reopen` moves a finding carrying `exported_as`, delete the local `invalid`, and correct the "retry after the sidecar rename failed" comment.'
+detail = """
+Follow Approach, "Status owner and companions" and "Retired links". Refusal texts and their order stay unchanged: the reopen refusal keeps an ordered slice of the reopenable statuses for its message, because filtering `FindingStatus::ALL` yields enum order. The comment fix: io.rs commits the sidecar before the TOML, so a failed write leaves nothing behind. A retry finds the store unchanged, not its own earlier write. Add the test `reopen_retires_the_v1_link`, which:
+1. seeds a finding at `resolved` with `exported_as` and `export_ledger`
+2. runs `review triage --reopen`
+3. asserts the status is `open`, both link fields are gone, and `retired_links == ["<ledger>#R<n>"]`"""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_triage -E 'test(reopen_retires_the_v1_link)'` passes (today: absent). Falsifier: skipping `retire_link()` on reopen turns it red.
+- guard: the whole `review_triage` binary passes."""
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 4
+ref = "migrate-sync-v1-skip-retired-links-and-carry-a-v1-reopen-back"
+title = "Migrate sync-v1, skip retired links and carry a v1 reopen back"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/sync.rs",
+    "tomlctl/tests/review_sync.rs",
+]
+needs = [3]
+coupling = []
+deps_note = ""
+action = """
+- Replace `SYNCABLE` and `SYNC_COMPANIONS` with `is_syncable` and `Finding::set_status`.
+- Skip links the finding has retired.
+- Read v1 `v2_ref` as a string or an array in `linked_rows`.
+- Map a v1 `open` row that carries `reopen_rationale` to v2 `open` with `reopen_reason`."""
+detail = """
+Follow Approach, "Status owner and companions" and "Retired links".
+- The skipped entry's reason is `link retired by reopen`.
+- The v1-reopen mapping applies only when the finding's current status is resolved, dismissed or deferred **and** the finding's `by = "sync"` verdict does not already record this `reopen_rationale`. It writes `reopen_reason = SYNC_REASON_PREFIX + rationale` and records the rationale in that `by = "sync"` verdict, which `upsert_verdict` keeps one of per finding.
+- A plain v1 `open` row without `reopen_rationale` is still skipped.
+- Read the kept `resolved` date before calling `set_status`, so a re-sync on a later day does not restamp it.
+- `linked_rows` reads `v2_ref` as a string or an array but still yields one `Linked` per named finding; `stats::v1_links` (task 8) depends on that shape.
+
+Add four tests:
+- `reopened_finding_survives_sync`: export, sync to resolved, then `triage --reopen`, then sync. Expect the finding open, with the link listed under `skipped`.
+- `v1_reopen_syncs_back_to_open`
+- `v2_disposition_after_v1_reopen_survives_sync`: after the v1 reopen syncs back, dismiss the finding in v2 and sync again. Expect it to stay dismissed.
+- `sync_clears_a_stale_reopen_reason`"""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_sync -E 'test(reopen)'` passes and reports 4 tests run (today: exit 4, no test in review_sync matches). Falsifier: removing the retired-link skip turns `reopened_finding_survives_sync` red; dropping the verdict check turns `v2_disposition_after_v1_reopen_survives_sync` red.
+- guard: `fixed_v1_row_resolves_v2_finding` and `sync_is_idempotent` still pass."""
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 5
+ref = "migrate-export-v1-ignore-retired-links-and-keep-a-second-link"
+title = "Migrate export-v1, ignore retired links and keep a second link"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/export.rs",
+    "tomlctl/tests/review_export.rs",
+]
+needs = [3]
+coupling = []
+deps_note = ""
+action = """
+- Replace the `== "open"` checks with `FindingStatus`.
+- Have `decide` exclude rows the finding has retired from the `v2_ref` match.
+- Match `v2_ref` by membership when it is a string or an array.
+- On `Reuse` of a row whose `v2_ref` names another finding, write an array holding both.
+- Delete the local `invalid`."""
+detail = """
+Follow Approach, "Retired links".
+- `Candidate` carries the finding's `retired_links` and the target ledger's repo-relative path, so `decide` can form `<ledger>#<id>`.
+- A retired row still participates in the merge rule, which is what yields `Regression`, except that a retired row whose v1 status is settled (wontfix, wontapply, verified-clean, deferred) never yields `Settled`: it falls through to `Regression` too.
+- A retired row that is open again in v1 yields `Reuse`; `mark_exported` then calls `Finding::unretire_link`, so sync reads that link again.
+- `mark_exported`'s open → exported write goes through `set_status(Exported, &[])`, which clears companions such as `reopen_reason` because the status changes.
+
+Add four tests:
+- `reexport_after_reopen_mints_a_regression`: export, sync fixed, reopen, re-export. Expect a new v1 id with `related = [old]`.
+- `reexport_after_reopen_of_a_wontfix_row_mints_a_regression`: the same with the v1 row at wontfix (finding synced to dismissed).
+- `reuse_keeps_both_v2_refs`
+- `reuse_of_a_retired_row_restores_the_link`: the retired v1 row reopened in v1, then re-export. Expect `Reuse` and the entry gone from `retired_links`."""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_export -E 'test(reexport_after_reopen) | test(reuse_keeps_both) | test(reuse_of_a_retired)'` passes and reports 4 tests run (today: exit 4, no test matches). Falsifier: dropping the retired filter makes `decide` return `Linked`, and keeping the `Settled` branch for retired rows strands the wontfix case; either turns a test red.
+- guard: `export_is_idempotent_on_v2_ref` still passes."""
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 6
+ref = "migrate-digest-and-verdict-onto-the-lifecycle-owner"
+title = "Migrate digest and verdict onto the lifecycle owner"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/digest.rs",
+    "tomlctl/src/review/verdict.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = """
+- Replace `DECIDED_BY_VERDICT` with `decided_by_verdict` and the status write (verdict.rs around :256) with `set_status`. Rewrite digest's inline status sets (`audit_sample` around digest.rs:223, `live` around :298) as local `matches!` over `FindingStatus` variants with the same members; no predicate equals them.
+- Keep `DISPOSITIONS` as its existing literal display list, unchanged in membership and order (it deliberately omits `resolved` and `export_ledger`), and add a unit test asserting every entry is in `ALL_COMPANIONS` or `LINK_FIELDS`.
+- Delete verdict's local `invalid`.
+- Correct verdict.rs's "retry after the sidecar rename failed" comment as in task 3."""
+detail = 'Follow Approach, "Status owner and companions". The digest output must stay byte-identical. A verdict that leaves a reopened finding `open` is a same-status write, so `set_status` keeps its `reopen_reason`.'
+acceptance = """
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_digest --test review_verdict` passes.
+- forward: `grep -n 'DECIDED_BY_VERDICT' tomlctl/src/review/verdict.rs` prints nothing (today: 2 hits)."""
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 7
+ref = "migrate-add-and-resolve-onto-the-lifecycle-owner"
+title = "Migrate add and resolve onto the lifecycle owner"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/add.rs",
+    "tomlctl/src/review/resolve.rs",
+    "tomlctl/src/review/schema_out.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = """
+- Replace `SUPPRESSING` (defined in add.rs, imported by resolve.rs) with `is_suppressing`.
+- Route `Outcome::for_target`, `settled_target` and the status writes in `resolve::apply` and add.rs through `FindingStatus` / `set_status`.
+- Delete add's local `invalid`, and replace schema_out.rs's `let invalid = |msg| …` closure with `super::invalid`."""
+detail = "Today `resolve::apply`'s refuted→open move writes no `reopen_reason`. Keep that, but go through `set_status`, so stale companions are cleared."
+acceptance = """
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_add --test review_resolve` passes.
+- forward: `grep -n 'SUPPRESSING' tomlctl/src/review/add.rs tomlctl/src/review/resolve.rs` prints nothing (today: 4 hits).
+- forward: `grep -n 'let invalid' tomlctl/src/review/schema_out.rs` prints nothing (today: 1 hit)."""
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 8
+ref = "migrate-stats-and-matching-onto-the-lifecycle-owner"
+title = "Migrate stats and matching onto the lifecycle owner"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/stats.rs",
+    "tomlctl/src/review/matching.rs",
+    "tomlctl/tests/review_stats.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "Replace the finding-status string comparisons in stats.rs and matching.rs (around matching.rs:39) with `FindingStatus`. In `v1_links`, skip a linked row the finding has retired (`Finding::is_retired`), as sync does, so `outcomes` does not count a retired v1 row beside its regression. Delete stats's local `invalid`."
+detail = """Follow Approach, "Status owner and companions" and "Retired links". Leave v1 status words (`wontfix`, `fixed`) and verdict words as strings; they are not finding statuses. matching's `{superseded, merged}` in `candidates` matches no predicate: keep it as a local `matches!` over `FindingStatus` variants. The `matching.rs` test fixture's `status: "open".to_string()` initialiser cannot change before the flip; task 10 owns it. Move matching.rs's `.status = "…".to_string()` assignments (around :136 and :138) onto `set_status`. Add the test `outcomes_skip_a_retired_link`, seeding a finding whose `retired_links` names a v1 row that carries its `v2_ref`."""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_stats -E 'test(outcomes_skip_a_retired_link)'` passes (today: exit 4, no test matches). Falsifier: removing the `is_retired` skip counts the retired row and turns it red.
+- guard: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_stats` and `cargo nextest run --manifest-path tomlctl/Cargo.toml --lib -E 'test(review::matching)'` pass.
+- forward: `grep -c '^fn invalid(' tomlctl/src/review/stats.rs` prints 0 (today: 1)."""
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 9
+ref = "migrate-runs-and-record-the-incomplete-reason-as-a-catalogue-field"
+title = "Migrate runs and record the incomplete reason as a catalogue field"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/runs.rs",
+    "tomlctl/tests/review_finish.rs",
+]
+needs = [2]
+coupling = []
+deps_note = ""
+action = "Replace runs.rs's finding-status literals with `FindingStatus` and delete the local `invalid`. Keep `run finish --incomplete` writing `incomplete` into `run.rest`: catalogued run fields such as `counts` live there too, and task 1's computed catalogue entry is the fix for B-9e96ce7c."
+detail = "The stored key name stays `incomplete`, so existing stores read unchanged. No `review list` or `review show` projection serves run rows (`show` accepts only finding and cell ids), so the test checks the write and the refusal instead. Add the test `finish_incomplete_is_a_catalogue_field` beside the other `run finish` tests, asserting that `run finish --incomplete` stores `incomplete` and that `review run start` refuses a row supplying `incomplete` as computed."
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_finish -E 'test(finish_incomplete_is_a_catalogue_field)'` passes (today: exit 4, no test matches). Falsifier: leaving `incomplete` uncatalogued (or not computed) lets `run start` accept it and turns the test red.
+- guard: the whole `review_finish` binary passes, including `finish_incomplete_records_reason`."""
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 10
+ref = "type-the-finding-status-field-as-findingstatus"
+title = "Type the finding status field as FindingStatus"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/store.rs",
+    "tomlctl/src/review/matching.rs",
+    "tomlctl/src/review/fields.rs",
+    "tomlctl/src/review/query.rs",
+    "tomlctl/src/review/resolve.rs",
+]
+needs = [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    14,
+]
+coupling = []
+deps_note = ""
+action = """Change `Finding.status` from `String` to `FindingStatus`, parse it in `finding_from_toml`, serialise it in `finding_to_toml`, and make `status()` a field read. Change the `matching.rs` test fixture's `status: "open".to_string()` to `FindingStatus::Open`."""
+detail = "Every caller already goes through the accessor or `set_status` after tasks 3–9 and 14. The one struct-literal initialiser outside store.rs is the matching.rs test fixture, which cannot change before the flip and so belongs to this task. Any other remaining direct string use is a migration gap: fix it in store.rs if it is there, otherwise stop and report the file. Do not add a `From<&str>` shortcut."
+acceptance = '''
+- forward: `grep -qE '^[[:space:]]*pub\(crate\) status: FindingStatus,' tomlctl/src/review/store.rs` exits 0 (today: exit 1, and still exit 1 after task 2's accessor).
+- guard: `cargo clippy --manifest-path tomlctl/Cargo.toml --all-targets -- -D warnings` is clean.'''
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 11
+ref = "make-review-plan-ndjson-replay-safe"
+title = "Make review plan --ndjson replay-safe"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/tests/review_cells.rs",
+    "tomlctl/src/review/mod.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = """Inside `append`'s `mutate_minting` edit, compare the prepared rows with the run's newest wave. On an exact match whose cells are all `assigned`, return them with `unchanged: true` and mint nothing. Also delete the local `invalid` and correct `cover`'s "retry after the sidecar rename failed" comment."""
+detail = """
+Follow Approach, "Write-path fixes".
+- Key: `(run, slice in order, concerns, pass, question, agent)`.
+- Report the newest wave's existing ids in the same envelope shape as a fresh mint, plus `unchanged: true`.
+- A partial overlap, or any sealed cell, mints a new wave as today.
+
+Add the test `plan_ndjson_replay_is_unchanged`, which runs the same payload twice and asserts one wave and identical ids."""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_cells -E 'test(plan_ndjson_replay)'` passes (today: exit 4, no test matches). Falsifier: removing the comparison mints wave 2, which turns it red.
+- guard: the whole `review_cells` binary passes."""
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 12
+ref = "accept-path-in-set-json-for-every-field-flag-verb"
+title = "Accept @path in --set-json for every field-flag verb"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/fields.rs",
+    "tomlctl/src/io.rs",
+    "tomlctl/tests/field_flags.rs",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "In `fields::build` (`tomlctl/src/fields.rs`), read a `--set-json KEY=@<path>` value as JSON from that file. Make io.rs's `at_file_path` `pub(crate)` and reuse it. Update the `--set-json` doc comment in `tomlctl/src/fields.rs` (around :23), which clap prints as help, to name the `KEY=@<path>` form."
+detail = """
+- A bare `@` stays refused.
+- A file that fails to parse names the key and the path.
+- `--set` and `--set-file` are unchanged.
+
+Add the test `set_json_reads_an_at_path_file`, covering one verb that uses field flags (`items add`) and `review run update`."""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test field_flags -E 'test(at_path)'` passes (today: exit 4, no test matches). Falsifier: dropping the `@` branch in `fields::build` parses the path as JSON and turns it red.
+- guard: `set_json_keeps_types_and_flags_win_over_base` passes."""
+agent = "implement-deep"
+commit = "6d3530a"
+
+[[items]]
+id = 13
+ref = "bound-the-survey-window-and-pass-git-an-absolute-cutoff"
+title = "Bound the survey window and pass git an absolute cutoff"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/survey.rs",
+    "tomlctl/tests/review_survey.rs",
+]
+needs = [1]
+coupling = []
+deps_note = ""
+action = """
+- Refuse a detector `window` above 36,500 days in `Detect::parse`.
+- In `count_in_window` and `commits_per_file`, compute the cutoff with `crate::time::now()` and `SignedDuration::try_from_hours`, and pass `--max-age=<secs>` (no filter when the cutoff is at or before 0).
+- Delete the local `invalid`."""
+detail = """
+Follow Approach, "Write-path fixes". `Span::new().days(n)` errors on `Timestamp`. Add two tests:
+- `health_window_above_cap_is_refused`
+- `health_window_reaching_the_epoch_counts_all_history`: a 20,800-day window counts every fixture commit, each made with `commit_dated` at least two days old. The old `--since=20800 days ago` resolves to about half a day before now, so it counted none of them. `Repo::commit` stamps the current time, which the old code also counted, so it does not discriminate."""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_survey -E 'test(=health_window_above_cap_is_refused) | test(=health_window_reaching_the_epoch_counts_all_history)'` passes and reports 2 tests run (today: exit 4, no test matches). Falsifier: passing a non-positive cutoff as `--max-age` (dropping the ≤0 guard) makes git return nothing and turns the epoch test red.
+- guard: `health_window_excludes_commits_before_it` still passes.
+- forward: `grep -n 'days ago' tomlctl/src/review/survey.rs` prints nothing (today: 2 hits)."""
+agent = "implement-deep"
+commit = "6c1728c"
+
+[[items]]
+id = 14
+ref = "serve-context-free-finder-cells-without-the-pack"
+title = "Serve context-free finder cells without the pack"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/cells.rs",
+    "tomlctl/src/review/query.rs",
+    "tomlctl/tests/review_query.rs",
+]
+needs = [
+    2,
+    11,
+]
+coupling = []
+deps_note = ""
+action = """
+- Let a cell for the correctness lens's context-free variant name `review-finder-cf`: in `prepare_cell`'s agent check (the `agent` vs `expected_agent` comparison in `tomlctl/src/review/cells.rs`) and in `agent_for`, use `fields::is_finder` wherever finder-only logic applies.
+- Make `query::assignment()` omit `pack` for that agent, keep `baselines`, and add the run's `base`.
+- Migrate query.rs's `!= "superseded"` onto `FindingStatus`.
+- Delete query's local `invalid`."""
+detail = """
+Follow Approach, "Context-free finder cell". No field marks a cell as context-free (`claude/commands/review-v2.md`, stage 3 "Store record"). Accept `review-finder-cf` only when `expected_agent` returns `FINDER` and the cell's concerns are exactly `["correctness"]`; every other cell refuses it. Add both tests to `tomlctl/tests/review_query.rs` (the refusal goes through `review plan`, which any integration file can drive):
+- `show_for_finder_cf_omits_the_pack`: `review show <cell> --for finder` on a cf cell has no `pack`, but has `baselines` and the run's `base`.
+- `cf_agent_refused_outside_the_variant`: a `review plan` row naming `review-finder-cf` on a non-correctness cell is refused."""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_query -E 'test(finder_cf) | test(cf_agent)'` passes and reports 2 tests run (today: exit 4, no test matches). Falsifier: leaving `pack` in the cf assignment, or accepting the agent on any finder cell, turns a test red.
+- guard: the whole `review_cells` and `review_query` binaries pass."""
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 15
+ref = "convert-a-finished-runs-advisory-into-a-named-open-run"
+title = "Convert a finished run's advisory into a named open run"
+effort = "M"
+status = "done"
+checkpoint = "A"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "tomlctl/src/review/triage.rs",
+    "tomlctl/src/cli/types/review.rs",
+    "tomlctl/tests/review_triage.rs",
+]
+needs = [
+    3,
+    10,
+]
+coupling = []
+deps_note = ""
+action = "Add `--run <id>` to `review triage --convert`. When the advisory's run is finished and `--run` names an open run, mint the replacement there. Otherwise keep the refusal."
+detail = """
+Follow Approach, "Convert into an open run". This task runs after task 10, so it writes against the typed `Finding.status`.
+- Replacement: `run` and `seen_in` come from `--run`, `cell` from the advisory, status `unverified`, plus the usual `orchestrator` confirmed verdict with its `run` set to the named run.
+- Route through the named run's catalogue and depth (`replacement_row` reads them from the advisory's run today).
+- Refuse a `--run` whose family differs from the advisory's.
+- If the advisory's run is open, `--run` must be absent or name that run.
+- `--run` naming a finished or unknown run is a validation error.
+- Update `convert_refuses_a_finished_run` so it still covers the no-`--run` refusal.
+
+Add the tests `convert_into_open_run`, asserting the new row's run, its verdict's run, and that `run finish` on the open run then refuses until it is verified; and `convert_refuses_a_foreign_family_run`."""
+acceptance = """
+- forward: `cargo nextest run --manifest-path tomlctl/Cargo.toml --test review_triage -E 'test(convert_into_open_run) | test(convert_refuses_a_foreign)'` passes and reports 2 tests run (today: exit 4, no test matches). Falsifier: ignoring `--run` keeps the finished-run refusal, which turns `convert_into_open_run` red.
+- guard: the whole `review_triage` binary passes.
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes (the flag-table gate)."""
+agent = "implement-deep"
+commit = "cd9b24d"
+
+[[items]]
+id = 16
+ref = "document-set-json-path-in-the-tomlctl-skill"
+title = "Document --set-json @path in the tomlctl skill"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/SKILL.md",
+    "claude/skills/tomlctl/references/write.md",
+]
+needs = [12]
+coupling = []
+deps_note = ""
+action = "State in the Guidance canon's field-flag bullet and in write.md's field-flag table that `--set-json KEY=@<path>` reads JSON from a file staged with the Write tool."
+detail = "One sentence each. Point at it as the alternative to inlining `$(cat …)`."
+acceptance = "forward: `grep -c 'set-json KEY=@' claude/skills/tomlctl/SKILL.md claude/skills/tomlctl/references/write.md` reports ≥1 per file (today: 0 each)."
+agent = "implement-lite"
+commit = "224d4b1"
+
+[[items]]
+id = 17
+ref = "replace-cat-payload-inlining-with-path-in-the-surveyor-and-compose-docs"
+title = "Replace $(cat) payload inlining with @path in the surveyor and compose docs"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/review-surveyor.md",
+    "claude/skills/review-v2-engine/references/compose.md",
+]
+needs = [12]
+coupling = []
+deps_note = ""
+action = 'Rewrite `--set-json "signals=$(cat …)"` (review-surveyor.md around :27) and `--set-json "waivers=$(cat …)"` (compose.md around :124) as `--set-json signals=@<path>` / `waivers=@<path>`. Add `review-finder-cf` wherever compose.md enumerates the cell agents (around :58 and :66).'
+detail = ""
+acceptance = "forward: `grep -n '$(cat' claude/agents/review-surveyor.md claude/skills/review-v2-engine/references/compose.md` prints nothing (today: 2 hits)."
+agent = "implement-lite"
+commit = "b9b5da9"
+
+[[items]]
+id = 18
+ref = "compress-the-finder-coverage-note-and-use-the-file-twins"
+title = "Compress the finder coverage note and use the --*-file twins"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/review-finder.md",
+    "claude/skills/review-v2-method/SKILL.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = """Rewrite review-finder.md's seal step (around :39 and :47) to the terse note shape, and drop the "line per clean probe answer" ask in review-v2-method/SKILL.md (around :139). Switch both files' `--note -` stdin instructions to `--note-file <path>`. Add `review-finder-cf` to the method skill's agent lists (around :3 and :211)."""
+detail = """Follow Approach, "Finder note" and "Context-free finder cell". Have the body state the 600-character cap. In review-v2-method/SKILL.md, state the precedence rule: where a bound lens, method or check asks for one note line per sweep, probe, task or pair, a count plus the failing items satisfies it within the cap. Add the context-free branch to review-finder.md: when `review show <cell> --for finder` returns no `pack`, read the slice as `git diff <base>` using the assignment's `base`, and skip the prior-findings read (`tomlctl review list --in … --for finder`). Keep review-finder.md's body free of anything that only makes sense with CLAUDE.md loaded, because task 20 copies it verbatim into the cf agent."""
+acceptance = """
+- forward: `grep -nE -- '--note -[^a-z]' claude/agents/review-finder.md` prints nothing (today: 1 hit).
+- forward: `grep -c '600' claude/agents/review-finder.md` ≥ 1 (today: 0)."""
+agent = "implement-deep"
+commit = "c609e95"
+
+[[items]]
+id = 19
+ref = "switch-the-remaining-v2-agents-to-the-file-twins"
+title = "Switch the remaining v2 agents to the --*-file twins"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/plan-executor.md",
+    "claude/agents/review-sweeper.md",
+    "claude/agents/review-verifier.md",
+]
+needs = []
+coupling = []
+deps_note = ""
+action = "Replace `--note -` (plan-executor.md around :42, review-sweeper.md around :38) and `--rationale -` (review-verifier.md around :40) stdin instructions with `--note-file <path>` / `--rationale-file <path>`, naming the same staged payload files. In review-sweeper.md's note step, ask for counts plus the escalated and failing items rather than a line per probe, and state the 600-character cap."
+detail = ""
+acceptance = "forward: `grep -nE -- '--(note|rationale) -[^a-z]' claude/agents/plan-executor.md claude/agents/review-sweeper.md claude/agents/review-verifier.md` prints nothing (today: 3 hits)."
+agent = "implement-deep"
+commit = "dff6997"
+
+[[items]]
+id = 20
+ref = "add-the-review-finder-cf-agent-under-body-parity"
+title = "Add the review-finder-cf agent under body parity"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/agents/review-finder-cf.md",
+    "claude/agents/review-finder.md",
+    "scripts/shared-blocks.toml",
+]
+needs = [18]
+coupling = []
+deps_note = ""
+action = """Create review-finder-cf.md with review-finder's frontmatter plus `omitClaudeMd: true`, a description saying it serves context-free cells, and the same body. Wrap review-finder.md's body in a new parity block. Register the new file in that block and in the `research-delivering` and `review-v2-store-writer` blocks. Update the "six v2 review agents" wording in `scripts/shared-blocks.toml` (around :95) to seven."""
+detail = 'Follow Approach, "Context-free finder cell". Wrap the whole body after the frontmatter in one new parity block. Nesting is supported: both `scripts/verify-shared-blocks.sh` and `tomlctl/src/blocks.rs` extract a block by its own markers only, so the two existing blocks inside it are ordinary content.'
+acceptance = """
+- forward: `grep -q '^omitClaudeMd: true' claude/agents/review-finder-cf.md` (today: file absent, exit 2; review-sweeper.md is the positive control).
+- guard: `bash scripts/verify-shared-blocks.sh` exits 0. Falsifier: editing one word in the cf body makes it exit non-zero."""
+agent = "implement-deep"
+commit = "c609e95"
+
+[[items]]
+id = 21
+ref = "run-the-context-free-cell-through-the-workflow"
+title = "Run the context-free cell through the Workflow"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/workflows/review-v2.js",
+    "claude/commands/review-v2.md",
+    "claude/skills/review-v2-lenses/lenses/correctness.md",
+]
+needs = [
+    14,
+    20,
+]
+coupling = []
+deps_note = ""
+action = """
+- Add `review-finder-cf` to review-v2.js's `CELL_AGENTS`, omit the `pack:` preamble line for it, and update the `meta.phases` detail (around :6) that lists the cell agents.
+- In review-v2.md, compose the context-free cell with that agent (stage 3) and delete stage 4's hand-dispatch and its `check-<wave>-cf` batch.
+- Update correctness.md's `### Context-free variant` to name the agent."""
+detail = """Follow Approach, "Context-free finder cell". The cf cell's findings route like any finder cell's, so no special checker batch is needed."""
+acceptance = """
+- forward: `grep -q 'review-finder-cf' claude/workflows/review-v2.js` (today: exit 1).
+- forward: `grep -c 'check-<wave>-cf' claude/commands/review-v2.md` prints 0 (today: ≥1).
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes."""
+agent = "implement-deep"
+commit = "b0dbec7"
+
+[[items]]
+id = 22
+ref = "name-review-finder-cf-in-the-agent-lists"
+title = "Name review-finder-cf in the agent lists"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "CLAUDE.md",
+    "claude/skills/review-v2-lenses/SKILL.md",
+    "claude/skills/review-v2-engine/references/agent-waves.md",
+]
+needs = [20]
+coupling = []
+deps_note = ""
+action = """Add `review-finder-cf` where each file lists the v2 agents (CLAUDE.md's Review v2 "Agents" bullet; lenses SKILL.md around :44; agent-waves.md around :55), noting that it is Opus without CLAUDE.md. In agent-waves.md also make the preamble's `pack:` line (around :47) conditional: left out for a `review-finder-cf` cell, in both the wave cell prompt and the mop-up re-dispatch, matching review-v2.js. In lenses SKILL.md, update the survey-window text (around :157, `git log --since`) to the absolute `--max-age` cutoff and the 36,500-day cap."""
+detail = ""
+acceptance = "forward: `grep -c 'review-finder-cf' CLAUDE.md claude/skills/review-v2-lenses/SKILL.md claude/skills/review-v2-engine/references/agent-waves.md` reports ≥1 per file (today: 0 each)."
+agent = "implement-deep"
+commit = "ea466c8"
+
+[[items]]
+id = 23
+ref = "document-the-lifecycle-link-replay-and-convert-changes-in-the-review-reference"
+title = "Document the lifecycle, link, replay and convert changes in the review reference"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/tomlctl/references/review.md",
+    "claude/skills/review-v2-engine/references/triage-and-close.md",
+]
+needs = [
+    4,
+    5,
+    9,
+    11,
+    12,
+    14,
+    15,
+]
+coupling = []
+deps_note = ""
+action = """
+Update `claude/skills/tomlctl/references/review.md` for:
+- `retired_links` and reopen retiring the link
+- sync skipping retired links, carrying a v1 reopen back and clearing stale companions
+- `v2_ref` as a string or an array
+- `plan --ndjson` replay returning `unchanged`
+- `triage --convert --run`
+- the run `incomplete` field
+- `review-finder-cf` in the agent list (around :58), the omitted pack and the added `base`
+- `--set-json KEY=@<path>` in the `run start` / `run update` flag rows (around :161 and :177)
+
+In triage-and-close.md, state the convert-into-open-run rule for advisories revisited after their run finished, and that glimpse shows v2 findings only once exported (the export-v1 bridge)."""
+detail = ""
+acceptance = """
+- forward: `grep -c 'retired_links' claude/skills/tomlctl/references/review.md` ≥ 1 (today: 0).
+- forward: `grep -ci 'glimpse' claude/skills/review-v2-engine/references/triage-and-close.md` ≥ 1 (today: 0).
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes."""
+agent = "implement-deep"
+commit = "53a3ab1"
+
+[[items]]
+id = 24
+ref = "refresh-the-stale-agent-count-readme-rows-and-sidecar-story"
+title = "Refresh the stale agent count, README rows and sidecar story"
+effort = "M"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = [
+    "claude/skills/review-v2-engine/SKILL.md",
+    "tomlctl/README.md",
+    "claude/skills/flow-contract-task-store/SKILL.md",
+]
+needs = [
+    12,
+    15,
+    20,
+]
+coupling = []
+deps_note = ""
+action = """
+- In `claude/skills/review-v2-engine/SKILL.md` (around :94), change "each of the six v2 agents" to seven and add `review-finder-cf` to its models list.
+- In `tomlctl/README.md`, add `--run` to the `review triage --convert` line (around :97) and the `KEY=@<path>` form to the `field_flags` row (around :479).
+- In `claude/skills/flow-contract-task-store/SKILL.md` §14 (around :414), correct the "sidecar left stale" story: io.rs commits the sidecar before the TOML, so a failed write leaves nothing behind, as tasks 3, 6 and 11 correct in the code comments."""
+detail = ""
+acceptance = """
+- forward: `grep -c 'review-finder-cf' claude/skills/review-v2-engine/SKILL.md` ≥ 1 (today: 0).
+- forward: `grep -c -- '--convert.*--run' tomlctl/README.md` ≥ 1 (today: 0).
+- guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes."""
+agent = "implement-deep"
+commit = "cac8ca5"
+
+[[items]]
+id = 25
+ref = "document-the-survey-health-window-cap-in-the-review-reference"
+title = "Document the survey health window cap in the review reference"
+effort = "S"
+status = "done"
+checkpoint = "B"
+phase = ""
+phase_depth = 0
+heading_depth = 3
+files = ["claude/skills/tomlctl/references/review.md"]
+needs = [
+    13,
+    23,
+]
+coupling = []
+deps_note = ""
+action = 'In claude/skills/tomlctl/references/review.md, section `tomlctl review survey` (the paragraph beginning "Evaluates every `stack`, `diff` and `health` detector"), add one sentence: a health detector whose `window` exceeds 36,500 days is recorded under `unknown` with the reason the code emits (read `Detect::parse` / `MAX_WINDOW_DAYS` in tomlctl/src/review/survey.rs for the exact wording), and the window is passed to git as an absolute `--max-age=<epoch secs>` cutoff, with no filter when the cutoff reaches the epoch. Edit nothing else.'
+detail = ""
+acceptance = "forward: `grep -c 36,500 claude/skills/tomlctl/references/review.md` (or `36500`) reports at least 1 (today: 0). guard: `cargo test --manifest-path tomlctl/Cargo.toml --lib -- cli::dispatch::tests` passes."
+agent = "implement-lite"
+commit = "53a3ab1"
