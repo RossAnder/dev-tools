@@ -55,7 +55,7 @@ A cell bundles up to three concerns of one mode (two at `deep`); `review plan` r
 
 - Bundle concerns that read the same code the same way (`correctness` with `type-design`; `idioms` with `duplication`), so one agent's reading serves both.
 - Separate concerns that compete for attention on a risky slice: on a hotspot, `correctness` alone beats `correctness` plus two others.
-- Never bundle across modes: `ripple` and `hygiene` are mechanical and go to `review-sweeper`; judgement lenses go to `review-finder`; `plan-executor` is its own mode.
+- Never bundle across modes: `ripple` and `hygiene` are mechanical and go to `review-sweeper`; judgement lenses go to `review-finder` (or `review-finder-cf` for a context-free `correctness` cell); `plan-executor` is its own mode.
 
 ### Probes
 
@@ -63,7 +63,7 @@ A probe is a question the change raises that no catalogue lens owns. Add a `prob
 
 - `concerns` is exactly `["probe:<slug>"]`, the slug lowercase letters, digits and `-`.
 - `question` is one paragraph: what could go wrong, where, and what would show it. The finder runs the method skill's probe template on it.
-- `agent` is `review-finder`.
+- `agent` is `review-finder`, never `review-finder-cf`, which takes only a `correctness` cell.
 - `reason` opens with the nearest concern tag, `nearest <tag>:`, then why no lens covers it. Probe promotion is judged from recurring tags across runs, so pick the closest tag from the vocabulary's concern tags.
 
 **User probes.** Each `--probe "<question>"` the user gave becomes one probe cell: write the question as given, slice it to where it applies (the whole scope when it names nowhere), and give it the reason `user probe`. A user probe is never dropped or merged into a lens cell.
@@ -121,7 +121,7 @@ It lists the **unselected** matched concerns and the **unsliced** scope files wi
 ```
 
 ```bash
-tomlctl review run update <run> --slug <slug> --set-json "waivers=$(cat <run-dir>/payloads/waivers.json)"
+tomlctl review run update <run> --slug <slug> --set-json waivers=@<run-dir>/payloads/waivers.json
 ```
 
 Each waiver names exactly one `concern` or one `file`, and a repeated key replaces its reason. A reason says why the concern cannot matter here, or what else covers it. A waiver given only for budget says so plainly, `ceiling: 16 cells at standard; correctness and security took priority`, so `review stats` can tell a judgement from a squeeze. Re-read the digest until it lists nothing unwaived.
