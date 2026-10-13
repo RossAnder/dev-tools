@@ -35,8 +35,7 @@ fn last_updated(file: &Path) -> Option<String> {
 
 fn today_iso() -> String {
     jiff::Timestamp::now()
-        .in_tz("UTC")
-        .unwrap()
+        .to_zoned(jiff::tz::TimeZone::UTC)
         .strftime("%Y-%m-%d")
         .to_string()
 }

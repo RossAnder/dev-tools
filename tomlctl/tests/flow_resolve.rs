@@ -77,8 +77,7 @@ fn seed_active_registry(root: &Path, body: &str) {
 fn today_iso() -> String {
     use jiff::Timestamp;
     Timestamp::now()
-        .in_tz("UTC")
-        .unwrap()
+        .to_zoned(jiff::tz::TimeZone::UTC)
         .strftime("%Y-%m-%d")
         .to_string()
 }
@@ -87,7 +86,7 @@ fn today_iso() -> String {
 fn iso_days_ago(n: i64) -> String {
     use jiff::Timestamp;
     use jiff::ToSpan;
-    let today = Timestamp::now().in_tz("UTC").unwrap().date();
+    let today = Timestamp::now().to_zoned(jiff::tz::TimeZone::UTC).date();
     let past = today.checked_sub(n.days()).unwrap();
     past.strftime("%Y-%m-%d").to_string()
 }

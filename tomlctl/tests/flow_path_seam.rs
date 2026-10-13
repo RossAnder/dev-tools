@@ -35,8 +35,7 @@ fn nested_root() -> (tempfile::TempDir, PathBuf) {
 fn today_iso() -> String {
     use jiff::Timestamp;
     Timestamp::now()
-        .in_tz("UTC")
-        .unwrap()
+        .to_zoned(jiff::tz::TimeZone::UTC)
         .strftime("%Y-%m-%d")
         .to_string()
 }
