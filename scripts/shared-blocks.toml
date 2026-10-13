@@ -84,6 +84,24 @@ name = "research-delivering"
 files = [
   "claude/agents/research-deep.md",
   "claude/agents/research-lite.md",
+  "claude/agents/review-finder.md",
+  "claude/agents/review-verifier.md",
+  "claude/agents/plan-executor.md",
+  "claude/agents/review-surveyor.md",
+  "claude/agents/review-sweeper.md",
+  "claude/agents/review-checker.md",
+]
+
+# The store-writer contract the six v2 review agents share.
+[[block]]
+name = "review-v2-store-writer"
+files = [
+  "claude/agents/review-finder.md",
+  "claude/agents/review-verifier.md",
+  "claude/agents/plan-executor.md",
+  "claude/agents/review-surveyor.md",
+  "claude/agents/review-sweeper.md",
+  "claude/agents/review-checker.md",
 ]
 
 # The GNU-awk resolver both hook verifiers run before they can trust their own
