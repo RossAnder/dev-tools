@@ -398,7 +398,7 @@ pub(crate) fn to_toml(store: &Store) -> TomlValue {
     TomlValue::Table(root)
 }
 
-type Row = serde_json::Map<String, JsonValue>;
+pub(super) type Row = serde_json::Map<String, JsonValue>;
 
 /// The store's rows as the JSON maps [`fields::project`] reads, with each
 /// finding's verdicts in store order, which is oldest first.

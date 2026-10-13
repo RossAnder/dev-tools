@@ -14,13 +14,11 @@ use toml::Value as TomlValue;
 
 use super::cells::coverage_accounting;
 use super::fields::{FindingStatus, Kind, Role, Route, SWEEPER, Severity};
-use super::store::{self, Cell, Finding, Run, Store, Target, Verdict, View};
+use super::store::{self, Cell, Finding, Row, Run, Store, Target, Verdict, View};
 use crate::cli::{ReviewDigestArgs, ReviewReportArgs};
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{atomic_write, guard_write_path, relativise, repo_or_cwd_root};
 use crate::output::print_json_line;
-
-type Row = Map<String, JsonValue>;
 
 /// Rows of each audit-sample group.
 const SAMPLE_SIZE: usize = 2;

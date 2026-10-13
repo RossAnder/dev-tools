@@ -16,14 +16,12 @@ use serde_json::{Map, Value as JsonValue, json};
 use super::catalogue::{self, Catalogue, EntryType, run_catalogue};
 use super::fields::{self, FIELDS, FindingStatus, Kind, ProjectCtx, Record, Role, Route, Vis};
 use super::invalid;
-use super::store::{self, Cell, Finding, Run, Store, Target, View};
+use super::store::{self, Cell, Finding, Row, Run, Store, Target, View};
 use crate::cli::{ReviewListArgs, ReviewShowArgs};
 use crate::convert::toml_to_json;
 use crate::errors::{ErrorKind, tagged_err};
 use crate::io::{relativise, repo_or_cwd_root};
 use crate::output::{Rows, print_report};
-
-type Row = Map<String, JsonValue>;
 
 /// Lines shown either side of a cited line in the audit projection.
 const EXCERPT_CONTEXT: usize = 5;

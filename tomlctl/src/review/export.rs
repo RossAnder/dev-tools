@@ -21,7 +21,7 @@ use toml::value::Datetime;
 use super::catalogue::run_catalogue;
 use super::fields::{self, Family, FindingStatus, Kind, Role};
 use super::invalid;
-use super::store::{self, Finding, Store, Target, View};
+use super::store::{self, Finding, Row, Store, Target, View};
 use super::sync::{map_status, v2_refs};
 use crate::cli::{ReadIntegrityArgs, ReviewExportArgs, write_integrity_opts};
 use crate::io::{
@@ -32,8 +32,6 @@ use crate::ledgers::{EFFORTS, LedgerKind, SEVERITIES};
 use crate::output::print_json_compact;
 
 const VERB: &str = "review export-v1";
-
-type Row = Map<String, JsonValue>;
 
 /// The v1 ledger family `--to` names, from its basename or its parent
 /// directory, the same way the ledger readers infer a kind.
