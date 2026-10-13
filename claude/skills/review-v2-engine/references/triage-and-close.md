@@ -104,6 +104,8 @@ tomlctl review triage F3 --slug <slug> --dismiss-file <run-dir>/payloads/dismiss
 
 **Convert.** Write the replacement as one JSON object with the Write tool to `<run-dir>/payloads/convert-<id>.ndjson`: the concrete `edit` (with `direction`, `old`, `effort` and any `target_file`) for `cleanup`, or the `fix`, `failure_scenario`, `severity`, `fix_shape`, `effort`, `counter`, `grade` and `evidence` for `defect` (and `line` when the advisory has none), anchored at the advisory's `file`, `line` and `symbol`. The verb mints the new finding with an `orchestrator` verdict, routed by its edit target, and marks the advisory `converted`. Read what it prints: when the new finding is minted `unverified` with a `verifier` or `checker` route, verify it with a one-row dispatch per `agent-waves.md` before exporting it.
 
+**Convert after the run finished.** An advisory parked in an earlier run and revisited later belongs to a finished run, which cannot verify a replacement, so a plain `--convert` on it is refused. Convert it into the run you have open: add `--run <open run>`, which must be of the advisory's family. The replacement is minted `unverified` in that run, routed by its catalogue, and that run cannot finish until the replacement is verified, so verify it in the same run's waves. With no open run, leave the advisory parked and convert it at the next run.
+
 ## Stage 8 — Close
 
 In this order.
@@ -130,6 +132,8 @@ tomlctl review export-v1 --all --slug <slug> --to .claude/flows/<slug>/review-le
 ```
 
 Report every refusal with its reason (advisory, `needs-plan`, `effort = "large"`, a status other than `open`, the plan family), then run the same command without `--dry-run`. `--all` leaves out `needs-plan` defects, test removals and cleanup whose latest verdict is PLAUSIBLE; those export only by explicit id. Each exported row carries `v2_ref`, and the next run's `review sync-v1` reads its v1 outcome back.
+
+Export is also the only bridge to glimpse: glimpse reads v1 ledgers, not the v2 store, so a v2 finding shows there only once it is exported. A finding left `open`, parked or deferred in the store does not appear in glimpse at all; `review list` and the report are where to see it.
 
 The plan family never exports: its eligible findings go through the carrier's merge offer instead.
 

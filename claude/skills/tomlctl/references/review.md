@@ -24,7 +24,7 @@ The flag surface of the `tomlctl review` group and the shape of the v2 review st
 - **Integrity flags.** The writing verbs (`sync-v1`, `run *`, `survey`, `plan`, `cover`, `add`, `verdict`, `resolve`, `triage`, `export-v1`) carry the write bundle — `--allow-outside`, `--no-write-integrity`, `--verify-integrity`, `--strict-integrity`, `--no-create`. The reading verbs (`list`, `show`, `digest`, `report`, `stats`, `catalogue`, `schema`) carry `--verify-integrity` and `--strict-read`. The flag tables below leave both bundles out.
 - **Missing store.** `sync-v1` and `stats` read an absent store as empty and create nothing; `run start` seeds one; every other verb fails `kind=not_found`.
 - **Payload sources.** Each `--ndjson` takes `-` for stdin, otherwise a file path; a leading `@` is accepted. Prose flags (`--note`, `--rationale`, `--incomplete`, the triage reasons, `--trigger`) read stdin when given `-`, and each has a `-file` twin that reads a file the Write tool staged. Text is read with `\r\n` as `\n` and trimmed; an empty value is refused.
-- **Retries are harmless.** `cover`, `verdict`, `resolve`, `sync-v1` and `triage` compute their result against the stored rows first and write nothing when it changes nothing, so a retry after the Windows sidecar-rename `os error 5` reports itself `unchanged`.
+- **Replays are harmless.** `cover`, `verdict`, `resolve`, `sync-v1` and `triage` compute their result against the stored rows first and write nothing when it changes nothing, and `plan --ndjson` recognises the wave it already minted, so replaying a call that succeeded reports itself `unchanged` rather than writing a duplicate.
 - **Partial batches.** `add`, `plan --ndjson`, `verdict --ndjson`, `triage` and `export-v1` refuse a failing row or id with its reasons, under `refused`, while the rest land. A call whose every row is refused fails `kind=validation` and writes nothing, as does a refused single `verdict`; `export-v1 --all` reports its refusals and exits 0.
 - **Output.** Writes print a compact `{"ok":true,…}` envelope. `list` and `show` are row reports ([Rows and header](../SKILL.md#rows-and-header-per-command)); `plan --propose` without `--out` prints NDJSON text. Errors are `kind=validation` unless named otherwise.
 
@@ -55,7 +55,7 @@ run = "U1"
 wave = 1
 slice = ["tomlctl/src/review/add.rs"]
 concerns = ["correctness", "type-design"]
-agent = "review-finder"            # review-finder | review-sweeper | plan-executor
+agent = "review-finder"            # review-finder | review-finder-cf | review-sweeper | plan-executor
 reason = "proposed"
 bound = [ { concern = "correctness", hash = "9c1e…", path = "…", methods = ["trace"], v1_category = "quality" } ]
 status = "covered"                 # assigned | covered | thin | uncovered
@@ -81,7 +81,9 @@ citation = "tomlctl/src/review/verdict.rs:88"
 
 Ids are minted inside the write lock with the prefixes `U` (runs), `C` (cells) and `F` (findings); verdicts carry no id and are keyed by (finding, `by`, `seat`). Rows are written in field-catalogue order with unknown keys last, and an empty string, list or absent number is omitted.
 
-**Finding statuses:** `unverified`, `superseded`, `open`, `refuted`, `merged`, `parked`, `dismissed`, `deferred`, `backlogged`, `converted`, `resolved`, `exported`. Each disposition carries its companion: `merged_into`, `park_reason`, `dismiss_reason`, `defer_reason` + `defer_trigger`, `reopen_reason`, `backlog_ref`, `converted_to`, `resolution` + `resolved`, `exported_as` + `export_ledger`. `outcome` (`repeat`, `contested`, `reopened`, `regression`, `suppressed`) is set by `resolve`.
+**Finding statuses:** `unverified`, `superseded`, `open`, `refuted`, `merged`, `parked`, `dismissed`, `deferred`, `backlogged`, `converted`, `resolved`, `exported`. A status owns its companions: `merged` → `merged_into`, `parked` → `park_reason`, `dismissed` → `dismiss_reason`, `deferred` → `defer_reason` + `defer_trigger`, `backlogged` → `backlog_ref`, `converted` → `converted_to`, `resolved` → `resolution` + `resolved`, `open` → `reopen_reason`; the rest own none. Every status write that changes the status, or supplies companions, clears every other status's companions first. `outcome` (`repeat`, `contested`, `reopened`, `regression`, `suppressed`) is set by `resolve`.
+
+**Link fields.** `exported_as` and `export_ledger` name the v1 row a finding was exported to. They are not companions: they survive the moves `sync-v1` makes from `exported` to `resolved`, `dismissed` or `deferred`. A `triage --reopen` of a finding carrying `exported_as` retires the link: it appends `<export_ledger>#<exported_as>` to the computed list `retired_links` and drops both link fields. `sync-v1` and `stats --outcomes` skip a retired link, and `export-v1` follows it only as described under [Matching](#tomlctl-review-export-v1). On the v1 side, a row's `v2_ref` is a string, or an array once two findings share the row.
 
 ## Field catalogue
 
@@ -105,7 +107,7 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 
 | Role | Sees |
 |---|---|
-| `finder` | The identity fields and status, for a slice's `PRIOR`. A cell carries its assignment: slice, concerns with bound paths, facet and method paths, `pack`, `baselines`. |
+| `finder` | The identity fields and status, for a slice's `PRIOR`. A cell carries its assignment: slice, concerns with bound paths, facet and method paths, `pack`, `baselines`. A `review-finder-cf` cell carries no `pack`; it carries the run's `base` instead, to read the slice as `git diff <base>`. |
 | `verifier` | The claim to refute (`failure_scenario`, `counter`, `evidence`) and the `same_as` target; never `grade` or `fix`; the edit fields only when routed to it. |
 | `checker` | The cleanup edit fields and the `same_as` target. |
 | `implementer` | The fix, what done means, and the latest citation. |
@@ -129,7 +131,9 @@ A cell row takes `slice`, `concerns` (1–3), `agent` and `reason`, plus `questi
 
 ### `tomlctl review sync-v1`
 
-Reads every v1 row whose `v2_ref` names this store — from each distinct `export_ledger` the findings record, plus the default review and optimise ledger of each family the store holds — and moves the finding to the mapped status with one `by = "sync"` verdict citing `<ledger>#<v1 id>`: `fixed` and `applied` → `resolved`; `wontfix`, `wontapply` and `verified-clean` → `dismissed` (reason `v1: <status>: <prose>`); `deferred` → `deferred`. Only findings at `open`, `exported`, `resolved`, `dismissed` or `deferred` move. Prints `{ok, ledgers: [{path, missing}], synced: [{finding, v1, v1_status, status}], skipped, unchanged}`.
+Reads every v1 row whose `v2_ref` names this store — from each distinct `export_ledger` the findings record, plus the default review and optimise ledger of each family the store holds — and moves the finding to the mapped status with one `by = "sync"` verdict citing `<ledger>#<v1 id>`: `fixed` and `applied` → `resolved`; `wontfix`, `wontapply` and `verified-clean` → `dismissed` (reason `v1: <status>: <prose>`); `deferred` → `deferred`. Only findings at `open`, `exported`, `resolved`, `dismissed` or `deferred` move, and each move replaces the companions the finding carried. A `v2_ref` array links the row to each finding it names. A link the finding has retired is skipped with reason `link retired by reopen`.
+
+A v1 row reopened — `open` with a non-empty `reopen_rationale` — carries the reopen back: a finding at `resolved`, `dismissed` or `deferred` moves to `open` with `reopen_reason = "v1: <rationale>"`, and its sync verdict records `open: <rationale>`. That verdict is how a reopen already taken is recognised, so each rationale moves the finding once, and a later disposition of the user's stands. Prints `{ok, ledgers: [{path, missing}], synced: [{finding, v1, v1_status, status}], skipped, unchanged}`.
 
 ```bash
 tomlctl review sync-v1 --slug <slug>
@@ -158,7 +162,7 @@ tomlctl review run start --slug <slug> --command review-v2 --family code --depth
 | `--base` | rev | The commit the change is measured from; stored as its sha. | required |
 | `--builtin` | dir | The built-in catalogue root, recorded as an absolute path; the default is left unrecorded and resolved again by each later verb. | `<claude dir>/skills/review-v2-lenses` |
 | `--project` | dir | The project catalogue layer; a named directory must exist (`kind=not_found`). Passing it accepts a layer `base..HEAD` changed. | `.claude/review-lenses` when present |
-| `--set` / `--set-json` / `--set-file` | `KEY=…` | Only `scope` (repo-relative paths or globs), `models` (a table) and `substrate` (`workflow` \| `agent-waves`). | none |
+| `--set` / `--set-json` / `--set-file` | `KEY=…` | Only `scope` (repo-relative paths or globs), `models` (a table) and `substrate` (`workflow` \| `agent-waves`). `--set-json KEY=@<path>` reads the JSON value from a file the Write tool staged. A field tomlctl computes, such as `incomplete` or `counts`, is refused as set by tomlctl. | none |
 
 The claude dir is `CLAUDE_CONFIG_DIR`, else `USERPROFILE` or `HOME` joined with `.claude`.
 
@@ -174,7 +178,7 @@ tomlctl review run update U1 --slug <slug> --set-json 'waivers=[{"concern":"secu
 |---|---|---|---|
 | *(positional)* | run id | The run patched. | required |
 | `--slug` / `--scope` | name | The store. | required, one of |
-| `--set-json` / `--set` / `--set-file` | `KEY=…` | Only `signals`, `waivers`, `audit`, `agents` and `baselines`. | at least one |
+| `--set-json` / `--set` / `--set-file` | `KEY=…` | Only `signals`, `waivers`, `audit`, `agents` and `baselines`. `--set-json KEY=@<path>` reads the JSON value from a file. A computed field, such as `incomplete`, is refused as set by tomlctl. | at least one |
 
 - `signals` are upserted by `name`. They may only add `judged` entries (`source` absent or `judged`; keys `name`, `source`, `roots`, `accepted`, `evidence`) or set an existing judged entry's `accepted`; a detector entry is never changed here.
 - `waivers` name exactly one of `concern` and `file`, with a `reason`; a repeated key replaces its reason.
@@ -182,7 +186,7 @@ tomlctl review run update U1 --slug <slug> --set-json 'waivers=[{"concern":"secu
 
 ### `tomlctl review run finish`
 
-Stamps `finished` and computes `counts` (`cells`, `uncovered`, `defect`, `cleanup`, `advisory`, `refuted`, `suppressed`). Refuses while a finding is `unverified`, a `same_as` awaits `resolve`, an unselected matched concern or unsliced scope file has no waiver, or a cell of the run is unsealed — unless `--incomplete` records why, in which case the reason and the `gaps` are printed and stored. A later clean finish clears an earlier `incomplete`. Prints `{ok, run, finished, counts}`.
+Stamps `finished` and computes `counts` (`cells`, `uncovered`, `defect`, `cleanup`, `advisory`, `refuted`, `suppressed`). Refuses while a finding is `unverified`, a `same_as` awaits `resolve`, an unselected matched concern or unsliced scope file has no waiver, or a cell of the run is unsealed — unless `--incomplete` records why, in which case the reason and the `gaps` are printed and the reason is stored as the run's `incomplete` field, a catalogue field only `run finish` writes. A later clean finish clears an earlier `incomplete`. Prints `{ok, run, finished, counts}`.
 
 ```bash
 tomlctl review run finish U1 --slug <slug> --incomplete-file <run-dir>/payloads/incomplete.txt
@@ -198,7 +202,7 @@ tomlctl review run finish U1 --slug <slug> --incomplete-file <run-dir>/payloads/
 
 ### `tomlctl review survey`
 
-Evaluates every `stack`, `diff` and `health` detector of the merged vocabulary — stack over `git ls-files`, diff over the run's `base..HEAD` patch inside its scope, health over HEAD or a `git log` window — and records each true signal with `source = "detector"` and its `roots`. A detector that cannot be evaluated is recorded with `source = "unknown"` and its reason. A rerun replaces both and keeps judged signals. Prints `{ok, run, signals: [{name, kind, roots, evidence?}], unknown: [{name, kind, reason}]}`.
+Evaluates every `stack`, `diff` and `health` detector of the merged vocabulary — stack over `git ls-files`, diff over the run's `base..HEAD` patch inside its scope, health over HEAD or a `git log` window — and records each true signal with `source = "detector"` and its `roots`. A detector that cannot be evaluated is recorded with `source = "unknown"` and its reason. A health detector whose `window` exceeds 36,500 days is recorded under `unknown` with the reason "`window` must be at most 36500 days, got <n>"; a valid window is passed to git as an absolute `--max-age=<epoch secs>` cutoff, with no filter when the cutoff reaches the epoch. A rerun replaces both and keeps judged signals. Prints `{ok, run, signals: [{name, kind, roots, evidence?}], unknown: [{name, kind, reason}]}`.
 
 ```bash
 tomlctl review survey --slug <slug> --run U1
@@ -215,7 +219,7 @@ Two modes, exactly one per call.
 
 `--propose` prints the default coverage map as NDJSON and writes nothing to the store: one cell row per line (`slice`, `concerns`, `agent`, `reason = "proposed"`, `pass` on a repeat), then a last `{"proposal":{…}}` line with `run`, `family`, `depth`, `changed_lines`, `ceiling`, `cells`, `executor_cells`, `agents`, `hotspots`, `unselected` (`[{concern, reason}]`), `unsliced`, `disabled` and, when the task store is empty, `tasks`. With `--out` the NDJSON goes to that file and stdout carries `{ok, out}` merged with the summary.
 
-`--ndjson` appends cells as the next wave, status `assigned`, binding each concern's content hash, path, methods and `v1_category` and attaching facets. It skips a `{"proposal":…}` line, so an edited proposal file is written back as is. Prints `{ok, run, wave, cells: [{id, agent, concerns, pass, facets}], refused, accounting: {unselected, unsliced, disabled}}`.
+`--ndjson` appends cells as the next wave, status `assigned`, binding each concern's content hash, path, methods and `v1_category` and attaching facets. It skips a `{"proposal":…}` line, so an edited proposal file is written back as is. When the run's newest wave is unsealed, its cells are all still `assigned`, and they are exactly the incoming rows — compared on `slice` in order, `concerns`, `pass`, `question` and `agent` — the call is a replay: it prints that wave's cells with `unchanged: true` and mints nothing. A partial overlap, or a wave with any cell sealed, mints a new wave. Prints `{ok, run, wave, cells: [{id, agent, concerns, pass, facets}], refused, accounting: {unselected, unsliced, disabled}, unchanged}`.
 
 ```bash
 tomlctl review plan --slug <slug> --run U1 --propose --accept-signals trust-boundary,hot-path --lens -doc-drift --lens +contrarian --out <run-dir>/proposal.ndjson
@@ -232,7 +236,7 @@ tomlctl review plan --slug <slug> --run U1 --ndjson <run-dir>/proposal.ndjson
 | `--lens` | `+id` \| `-id` | Force a lens into or out of the proposal. Repeatable; a hyphen-led value is accepted. Excludes `--ndjson`. | none |
 | `--out` | path | Write the proposal here instead of stdout. Excludes `--ndjson`. | stdout |
 
-A cell row is refused when a `slice` entry is not repo-relative, its `concerns` do not bind (1–3 enabled lenses of one mode and the run's family, one `probe:<slug>` with a `question`, or `check:<id>` entries), or its `agent` is not the one its concerns run on.
+A cell row is refused when a `slice` entry is not repo-relative, its `concerns` do not bind (1–3 enabled lenses of one mode and the run's family, one `probe:<slug>` with a `question`, or `check:<id>` entries), or its `agent` is not the one its concerns run on. The one exception is `review-finder-cf`, the finder run without CLAUDE.md, accepted in place of `review-finder` on a cell whose concerns are exactly `["correctness"]`.
 
 ### `tomlctl review cover`
 
@@ -386,7 +390,7 @@ tomlctl review report --slug <slug> --run U1 --out <run-dir>/report.md
 Rates per lens, probe or run over one store or all of them. Writes nothing. Prints `{ok, stores: [paths], by?, rows?, outcomes?, escapes?, calibration?}`.
 
 - **Rows** (`--by`, or no section flag): `key`, `families`, `runs`, `cells`, `findings` by kind, `yield_per_cell`, `verified`, `refuted`, `refute_rate`, `audited`, `overturned`, `audit_overturn_rate`, `dismissed`, `dismissal_rate`, `thin`, `uncovered`, `uncovered_rate`; per lens also `hashes`, `waived` and `waiver_rate`, per probe tag `probes`. A rate over zero is `null`. A probe groups under the tag its `reason` opens with (`nearest <tag>:`), else `untagged`.
-- **`outcomes`**: per lens and kind, `exported`, `linked`, the v1 statuses, the mapped v2 statuses and `wontfix_reasons`, through `v2_ref` with `sync-v1`'s mapping.
+- **`outcomes`**: per lens and kind, `exported`, `linked`, the v1 statuses, the mapped v2 statuses and `wontfix_reasons`, through `v2_ref` with `sync-v1`'s mapping; a retired link is not counted.
 - **`escapes`**: `count`, `by_concern` and `findings` minted in a file and concern an earlier run's cell had sealed `covered`.
 - **`calibration`**: per area, the top exemplar sentences with `count` and `sources`, drawn only from user dismissals, v1 wontfix reasons and audit overturns.
 
@@ -409,7 +413,7 @@ tomlctl review stats --slug <slug> --outcomes --escapes --calibration --exemplar
 
 ### `tomlctl review triage`
 
-Applies one disposition to each id. A row already in the requested end state is `unchanged`; under `--expect-status`, an id no longer at that status lands under `skipped_stale` as `{id, field, expected, found}`, checked inside the locked write. A move clears every earlier disposition's companions. A `superseded`, `merged`, `converted` or `exported` finding is never moved. Prints `{ok, mode, applied: [{id, from, status}], unchanged, skipped_stale, refused, minted?}`.
+Applies one disposition to each id. A row already in the requested end state is `unchanged`; under `--expect-status`, an id no longer at that status lands under `skipped_stale` as `{id, field, expected, found}`, checked inside the locked write. A move clears every earlier disposition's companions. A `--reopen` also retires the finding's v1 link (see [Link fields](#store-shape)), so the next `sync-v1` does not undo it and a re-export mints a regression row. A `superseded`, `merged`, `converted` or `exported` finding is never moved. Prints `{ok, mode, applied: [{id, from, status}], unchanged, skipped_stale, refused, minted?}`.
 
 ```bash
 tomlctl review triage F3,F9 --slug <slug> --dismiss-file <run-dir>/payloads/dismiss.txt --expect-status open
@@ -430,9 +434,12 @@ tomlctl review triage F8 --slug <slug> --convert cleanup --ndjson <run-dir>/payl
 | `--backlog-ref` | `B-<hex>` | Status → `backlogged`, recording the backlog item id. | one disposition required |
 | `--convert` | `cleanup` \| `defect` | Mint the advisory's replacement from `--ndjson`; status → `converted`. Exactly one advisory id. | one disposition required |
 | `--ndjson` | `-` \| path | The replacement as one JSON object; with `--convert` only. | none |
+| `--run` | run id | The open run the replacement is minted in when the advisory's run is finished; with `--convert` only. | the advisory's run |
 | `--expect-status` | status | Move only the ids still at this status. | no check |
 
 `--convert` defaults the replacement's lens, anchor and summary from the advisory, validates and routes it, records an `orchestrator` verdict on it and leaves it `unverified` for its route; `minted` reports `{id, kind, severity, route, status}`, and a replay reports the replacement already minted.
+
+The replacement is minted in an open run, which cannot finish until it is verified. While the advisory's run is open it is that run, and a `--run` naming any other is refused. Once the advisory's run is finished, the call is refused unless `--run` names an open run of the advisory's family; an unknown, finished or other-family run is refused too. The replacement then takes the named run as `run` and `seen_in`, keeps the advisory's `cell` as provenance, is routed by the named run's catalogue and depth, and its `orchestrator` verdict is filed under that run.
 
 ### `tomlctl review export-v1`
 
@@ -441,7 +448,8 @@ Exports open defect and cleanup findings into a v1 ledger for `/review-apply` or
 - **Refused**, with a reason: the plan family, advisory, any status but `open`, another family than the ledger's, `fix_shape = needs-plan`, `effort = large`.
 - **`--all`** takes every open defect and cleanup finding of the ledger's family in this store — there is no run filter — and holds back, under `held`, test removals and cleanup whose latest verdict is `plausible`; those export only by explicit id.
 - **Rows.** A defect exports with its latest severity (`major` → `warning`, `minor` → `suggestion`), cleanup as `suggestion`; `category` is the bound lens's `v1_category`, or `quality` / `algorithm` for a probe or check cell; `description` is built from the implementer projection. The v1 row carries `v2_ref = "<store path>#F<n>"`.
-- **Matching.** A v1 row already carrying the `v2_ref` is `linked`. Otherwise the v1 merge rule applies (same `file`, and the same `symbol` or exact `summary`): an open match is `reused` with its `rounds` bumped, a fixed or applied match gets a new id with `related` (`regression`), and a deferred, wontfix, wontapply or verified-clean match is skipped. Anything else is `minted`.
+- **Matching.** A v1 row whose `v2_ref` names the finding — the string, or an entry of the array — is `linked`. Otherwise the v1 merge rule applies (same `file`, and the same `symbol` or exact `summary`): an open match is `reused` with its `rounds` bumped, a fixed or applied match gets a new id with `related` (`regression`), and a deferred, wontfix, wontapply or verified-clean match is skipped. Anything else is `minted`. A reused row whose `v2_ref` names another finding becomes an array naming both, rather than being overwritten.
+- **Retired links.** A row the finding retired on reopen is never `linked` and never skipped as settled; it joins the merge rule as a candidate. Open again in v1, it is `reused` and the link is restored, its `retired_links` entry dropped; fixed, applied or settled, it yields a `regression` row with `related` naming it.
 - **Writes.** The v1 ledger is written and committed first; then each finding becomes `exported` with `exported_as` and `export_ledger`. A new ledger is seeded, and the ledger's `last_updated` becomes the later of its own and the newest run date among the findings.
 
 Prints `{ok, ledger, exported: [{finding, v1, action}], skipped, held, refused, dropped_deps, skipped_stale}`; under `--dry-run` the same fields sit under `would_change` beside `dry_run: true`, and nothing is written. `dropped_deps` lists `depends_on` ids that map to no exported v1 row.
