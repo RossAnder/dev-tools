@@ -50,6 +50,7 @@ The highest-frequency patterns. Deeper treatment lives in the reference files li
 | Regenerate PROGRESS-LOG.md from the execution record | `tomlctl flow render-progress-log --slug <s> [--stdout] [--verify-integrity]` |
 | Import a plan's tasks into the flow's task DAG | `tomlctl tasks import-plan --slug <s> [--plan <p>] [--reconcile-record] [--dry-run]` |
 | Query, mutate or gate that DAG (`.claude/flows/<slug>/tasks.toml`) | `tomlctl tasks add\|add-many\|update\|remove\|show\|list\|edges\|ready\|batches\|closure\|check\|render\|snapshot --slug <s>` |
+| Run a v2 review over its store (`.claude/flows/<slug>/review-v2.toml`, or `.claude/review-v2/<scope>.toml` under `--scope`) | `tomlctl review sync-v1\|run {start\|update\|finish}\|survey\|plan\|cover\|add\|verdict\|resolve\|list\|show\|digest\|report\|triage\|stats\|export-v1 --slug <s>`; `tomlctl review catalogue\|schema` take no store |
 | List a flow's agent records (`.claude/flows/<slug>/agents.toml`; written by `glimpse hook` in-process, never by a carrier; `agents record` is the manual form) | `tomlctl agents list --slug <s>` |
 | Refresh integrity sidecar | `tomlctl integrity refresh <file>` |
 
@@ -69,6 +70,7 @@ The per-verb flag tables, recipes, and contract prose live in the sibling files 
 - [references/tasks-store.md](references/tasks-store.md) — the `.claude/flows/<slug>/tasks.toml` store shape, `ref` derivation, the derived graph products, the 512-node cap, and the frozen contracts.
 - [references/agents.md](references/agents.md) — the `agents` group: `agents record` (the CLI entry point for what the harness hooks write in-process) and `agents list`, the gitignored `.claude/flows/<slug>/agents.toml` store shape, the start / stop / idle events, flow selection, and the `record` output and its not-recorded reasons.
 - [references/inputs.md](references/inputs.md) — the `inputs` group over the git-ignored user-input store `.claude/inputs.toml`: `list`, `add`, `ack`, `handle`, `withdraw`, `answer`, their flag tables and output shapes, and the store shape. What a record means, who may write it, and its trust boundary are the `flow-contract-user-inputs` skill's call, not this one's.
+- [references/review.md](references/review.md) — the `review` group over the v2 review store (`.claude/flows/<slug>/review-v2.toml` or `.claude/review-v2/<scope>.toml`): every verb's flag table and output, the store shape, the field catalogue summary, the role projections and the routing rules. How a run is composed and who calls which verb are the `review-v2-engine` and `review-v2-method` skills' call, not this one's.
 
 To find a section without reading a whole file:
 
@@ -154,8 +156,12 @@ Under `--lines`, a report wrapped in an object emits its other fields as one hea
 | `flow find-plans` | plan | — |
 | `agents list` | agent record | — |
 | `blocks verify` | block | `ok` |
+| `review list` | finding, projected `--for` a role | `for`, `count`, `references` |
+| `review show` | finding or cell, projected `--for` a role | `for`, `references` |
 
 `items list`, `backlog list` and `tasks list` run on the query engine, whose `--lines` / `--ndjson` is documented under [output shapes](references/query.md#output-shapes---raw----lines----ndjson). `tomlctl capabilities` lists every output flag under its root `global_flags` key, and advertises them as features: `output_options` for the original six, then `path_wildcard`, `rows_header`, `global_where`, `array_predicates`, `max_chars`, `omit`, `template_width` and `list_limited`.
+
+`review digest`, `review stats`, `review catalogue` and `review export-v1` each print a single object, so `--rows` names the array to act on: `review digest --rows unverified` (or `contested`, `advisory`), `review stats --rows rows`, `review catalogue --rows entries`, `review export-v1 --rows exported`.
 
 ## Guidance canon
 
@@ -194,7 +200,7 @@ tomlctl --version
 
 ```bash
 tomlctl capabilities
-# {"version":"0.15.0","features":["raw","lines","dedupe_by","dry_run","agent_context","output_options",...],"global_flags":{...},"commands":{...}}
+# {"version":"0.16.0","features":["raw","lines","dedupe_by","dry_run","agent_context","output_options",...],"global_flags":{...},"commands":{...}}
 ```
 
 Representative entries:
@@ -223,6 +229,7 @@ Representative entries:
 | `flow_record` / `tasks_train` | `flow record` execution-record writes; `tasks train` commit groups |
 | `apply_id_prefix` / `id_high_water` | `items apply --id-prefix <P>`; a removed top id is never minted again |
 | `show_absent` / `update_ref` / `backlog_check_batch` | `tasks show --with absent`; `ref` in `tasks update` envelopes; `backlog check --ndjson` |
+| `review_store` / `review_add` / `review_survey` / `review_catalogue` | the `review` group over the v2 review store, one feature per verb family ([references/review.md](references/review.md)) |
 | `suggestions` | `did you mean` hints for a mistyped subcommand, flag or path |
 | `agent_context` | `tomlctl capabilities` (the `.commands` field of the JSON output) emits a per-subcommand flag schema (type/required/default/values/repeatable + mutex_groups) for runtime introspection without parsing --help prose. |
 

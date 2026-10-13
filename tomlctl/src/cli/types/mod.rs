@@ -16,6 +16,7 @@ mod cmd;
 mod flow;
 mod inputs;
 mod items;
+mod review;
 mod shared;
 mod tasks;
 
@@ -24,6 +25,7 @@ pub(crate) use cmd::*;
 pub(crate) use flow::*;
 pub(crate) use inputs::*;
 pub(crate) use items::*;
+pub(crate) use review::*;
 pub(crate) use shared::*;
 pub(crate) use tasks::*;
 
@@ -130,6 +132,20 @@ pub(crate) const FEATURES: &[&str] = &[
     "backlog_check_batch",
     // Vocabulary recovery: clap suggestions and hidden aliases.
     "suggestions",
+    // The v2 review store: the `review` subcommand cluster.
+    "review_store",
+    "review_survey",
+    "review_cells",
+    "review_add",
+    "review_verdict",
+    "review_resolve",
+    "review_digest",
+    "review_triage",
+    "review_stats",
+    "review_sync_v1",
+    "review_export_v1",
+    "review_catalogue",
+    "review_schema",
 ];
 
 /// User-facing top-level subcommand names, as they appear in
@@ -156,6 +172,7 @@ pub(crate) const SUBCOMMANDS: &[&str] = &[
     "agents",
     "inputs",
     "sweep",
+    "review",
 ];
 
 #[derive(Parser)]

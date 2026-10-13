@@ -61,6 +61,15 @@ fn read_only_subcommands_hide_write_integrity_flags_in_help() {
         &["tasks", "snapshot", "--help"],
         &["agents", "list", "--help"],
         &["inputs", "list", "--help"],
+        &["review", "list", "--help"],
+        &["review", "show", "--help"],
+        &["review", "digest", "--help"],
+        // `review report` writes derived markdown with no sidecar, like
+        // `tasks render`.
+        &["review", "report", "--help"],
+        &["review", "stats", "--help"],
+        &["review", "catalogue", "--help"],
+        &["review", "schema", "--help"],
     ];
     for path in read_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();
@@ -121,6 +130,18 @@ fn write_subcommands_expose_all_integrity_flags_in_help() {
         &["inputs", "handle", "--help"],
         &["inputs", "withdraw", "--help"],
         &["inputs", "answer", "--help"],
+        &["review", "sync-v1", "--help"],
+        &["review", "run", "start", "--help"],
+        &["review", "run", "update", "--help"],
+        &["review", "run", "finish", "--help"],
+        &["review", "survey", "--help"],
+        &["review", "plan", "--help"],
+        &["review", "cover", "--help"],
+        &["review", "add", "--help"],
+        &["review", "verdict", "--help"],
+        &["review", "resolve", "--help"],
+        &["review", "triage", "--help"],
+        &["review", "export-v1", "--help"],
     ];
     for path in write_subs {
         let mut cmd = Command::cargo_bin("tomlctl").unwrap();
@@ -1727,6 +1748,20 @@ fn capabilities_features_contains_every_plan_feature() {
         "backlog_check_batch",
         // Vocabulary recovery.
         "suggestions",
+        // The v2 review store: the `review` subcommand cluster.
+        "review_store",
+        "review_survey",
+        "review_cells",
+        "review_add",
+        "review_verdict",
+        "review_resolve",
+        "review_digest",
+        "review_triage",
+        "review_stats",
+        "review_sync_v1",
+        "review_export_v1",
+        "review_catalogue",
+        "review_schema",
     ];
     for name in expected {
         assert!(
@@ -1761,8 +1796,8 @@ fn capabilities_version_matches_cargo_toml() {
         .and_then(|s| s.as_str())
         .expect("`version` must be a string");
     assert_eq!(
-        version, "0.15.0",
-        "expected version `0.15.0` (the minor bump for path wildcards, global `--rows`/`--header`/`--where*`/`--max-chars`/`--omit`, field flags, `flow record`, `tasks train` and clap suggestions); got `{version}`"
+        version, "0.16.0",
+        "expected version `0.16.0` (the minor bump for the `review` verb group); got `{version}`"
     );
 }
 

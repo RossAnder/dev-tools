@@ -29,6 +29,7 @@ mod owner;
 mod query;
 mod repo_files;
 mod repo_root;
+mod review;
 mod sweep;
 mod tasks;
 #[cfg(test)]

@@ -34,5 +34,10 @@ pub(crate) use dispatch::{read_integrity_opts, run, write_integrity_opts};
 pub(crate) use types::{
     ActiveOp, ArtifactKind, BacklogOp, Cli, ClusterBy, EdgeKind, EnvelopeOp, ErrorFormat,
     EvidenceOp, FlowOp, JsonOp, LegacyShortcuts, OnDuplicate, QueryArgs, ReadIntegrityArgs,
-    RelationKind, ShowPart, TasksOp, TasksTarget, TriageMode, WriteIntegrityArgs,
+    RelationKind, ReviewAddArgs, ReviewCatalogueArgs, ReviewCoverArgs, ReviewDigestArgs,
+    ReviewExportArgs, ReviewListArgs, ReviewOp, ReviewPlanArgs, ReviewReportArgs,
+    ReviewResolveArgs, ReviewRunFinishArgs, ReviewRunOp, ReviewRunStartArgs, ReviewRunUpdateArgs,
+    ReviewSchemaArgs, ReviewShowArgs, ReviewStatsArgs, ReviewStore, ReviewSurveyArgs,
+    ReviewSyncArgs, ReviewTriageArgs, ReviewVerdictArgs, ShowPart, TasksOp, TasksTarget,
+    TriageMode, WriteIntegrityArgs,
 };

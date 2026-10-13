@@ -233,6 +233,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             }
         },
         Cmd::Inputs { op } => inputs_dispatch(op)?,
+        Cmd::Review { op } => crate::review::dispatch::dispatch(op)?,
         Cmd::Sweep {
             pattern,
             max_file_bytes,

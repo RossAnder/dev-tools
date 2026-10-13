@@ -127,6 +127,156 @@ commit = ""
 const BLOCK_DOC: &str =
     "# doc\n\n<!-- SHARED-BLOCK:demo START -->\nshared\n<!-- SHARED-BLOCK:demo END -->\n";
 
+/// The built-in and project lens catalogue layers, inside the fixture so no
+/// `review` case reads the developer's claude dir.
+const BUILTIN: &str = "catalogue";
+const PROJECT_LENSES: &str = ".claude/review-lenses";
+
+const REVIEW_VOCABULARY: &str = r#"[signals."lang:rust"]
+kind = "stack"
+meaning = "Rust sources"
+[signals."lang:rust".detect]
+files = ["**/*.rs"]
+
+[concerns.logic]
+meaning = "wrong output for a nameable input"
+families = ["code"]
+
+[routing]
+executable = ["**/*.rs"]
+tests = ["**/tests/**"]
+"#;
+
+const CORRECTNESS_LENS: &str = r#"+++
+id = "correctness"
+status = "stable"
+families = ["code"]
+mode = "judgement"
+produces = ["defect", "cleanup", "advisory"]
+owns = ["logic"]
+activation = "floor"
+slice = "per-subsystem"
+v1_category = "quality"
++++
+## Question
+Does it compute the right thing?
+
+## Owns
+`logic` — wrong output.
+
+## Probes — code
+- off-by-one in ranges
+
+## Does not flag
+- confirmations
+"#;
+
+/// Run `U1` with `C1` sealed over `src/a.rs` and `C2` still assigned over
+/// `src/b.rs`; `F1` is a confirmed open defect and `F2` an unverified
+/// cleanup. `{base}` and `{builtin}` are filled in by the fixture.
+const REVIEW_STORE: &str = r#"schema_version = 1
+last_updated = 2026-10-13
+
+[[runs]]
+id = "U1"
+command = "review-v2"
+family = "code"
+depth = "standard"
+started = "2026-10-13T04:32:04Z"
+base = "{base}"
+changed_lines = 2
+
+[runs.catalogue]
+builtin = "{builtin}"
+project = ".claude/review-lenses"
+
+[[cells]]
+id = "C1"
+run = "U1"
+wave = 1
+slice = ["src/a.rs"]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "proposed"
+status = "covered"
+sealed = true
+note = "read every line"
+
+[[cells.bound]]
+concern = "correctness"
+hash = "9c1e0123456789abcdef"
+path = "lenses/correctness.md"
+v1_category = "quality"
+
+[[cells]]
+id = "C2"
+run = "U1"
+wave = 1
+slice = ["src/b.rs"]
+concerns = ["correctness"]
+agent = "review-finder"
+reason = "proposed"
+status = "assigned"
+
+[[cells.bound]]
+concern = "correctness"
+hash = "9c1e0123456789abcdef"
+path = "lenses/correctness.md"
+v1_category = "quality"
+
+[[findings]]
+id = "F1"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "defect"
+lens = "correctness"
+route = "verifier"
+file = "src/a.rs"
+line = 1
+summary = "alpha is wrong"
+severity = "major"
+failure_scenario = "input x fails"
+fix = "guard x"
+fix_shape = "edits"
+effort = "small"
+counter = "none found"
+grade = "high"
+evidence = ["src/a.rs:1"]
+anchor = "code|src/a.rs|@1"
+status = "open"
+first_seen = 2026-10-13
+
+[[findings]]
+id = "F2"
+run = "U1"
+cell = "C1"
+seen_in = ["U1"]
+family = "code"
+kind = "cleanup"
+lens = "correctness"
+route = "verifier"
+file = "src/a.rs"
+line = 1
+summary = "rename alpha"
+effort = "trivial"
+edit = "rename alpha"
+direction = "change"
+old = "fn alpha"
+anchor = "code|src/a.rs|@1"
+status = "unverified"
+first_seen = 2026-10-13
+
+[[verdicts]]
+finding = "F1"
+run = "U1"
+by = "verifier"
+verdict = "confirmed"
+citation = "src/a.rs:1"
+rationale = "read it"
+"#;
+
 /// Where a command's rows sit, mirroring the emitter it goes through.
 #[derive(Clone, Copy, Debug)]
 enum Shape {
@@ -513,13 +663,171 @@ fn cases() -> Vec<Case> {
         write(&["inputs", "withdraw", "I1"], "applied"),
         write(&["inputs", "answer", "I2", "--text", "because"], "id"),
         read(&["sweep", "--pattern", "fn "], Field("hits"), "file").git(),
+        write(&["review", "sync-v1", "--slug", S], "ok"),
+        write(
+            &[
+                "review",
+                "run",
+                "start",
+                "--slug",
+                S,
+                "--command",
+                "review-v2",
+                "--family",
+                "code",
+                "--depth",
+                "standard",
+                "--base",
+                "HEAD",
+                "--builtin",
+                BUILTIN,
+                "--project",
+                PROJECT_LENSES,
+            ],
+            "run",
+        )
+        .git(),
+        write(
+            &[
+                "review",
+                "run",
+                "update",
+                "U1",
+                "--slug",
+                S,
+                "--set-json",
+                "agents=3",
+            ],
+            "run",
+        ),
+        write(
+            &[
+                "review",
+                "run",
+                "finish",
+                "U1",
+                "--slug",
+                S,
+                "--incomplete",
+                "fixture run",
+            ],
+            "run",
+        ),
+        write(&["review", "survey", "--slug", S, "--run", "U1"], "run").git(),
+        write(
+            &["review", "plan", "--slug", S, "--run", "U1", "--ndjson", "-"],
+            "wave",
+        )
+        .stdin(
+            r#"{"slice":["src/b.rs"],"concerns":["correctness"],"agent":"review-finder","reason":"proposed"}"#,
+        ),
+        write(
+            &[
+                "review",
+                "cover",
+                "C2",
+                "--slug",
+                S,
+                "--status",
+                "covered",
+                "--note",
+                "read every line",
+            ],
+            "cell",
+        ),
+        write(
+            &[
+                "review", "add", "--slug", S, "--run", "U1", "--cell", "C2", "--ndjson", "-",
+            ],
+            "cell",
+        )
+        .stdin(concat!(
+            r#"{"kind":"cleanup","lens":"correctness","file":"src/b.rs","line":1,"#,
+            r#""summary":"rename gamma","edit":"rename gamma","direction":"change","#,
+            r#""old":"fn gamma","effort":"trivial"}"#
+        )),
+        write(
+            &[
+                "review",
+                "verdict",
+                "F2",
+                "--slug",
+                S,
+                "--verdict",
+                "confirmed",
+                "--by",
+                "verifier",
+                "--citation",
+                "src/a.rs:1",
+                "--rationale",
+                "read it",
+            ],
+            "ok",
+        ),
+        write(&["review", "resolve", "--slug", S, "--run", "U1"], "ok"),
+        write(
+            &["review", "triage", "F1", "--slug", S, "--dismiss", "not real"],
+            "mode",
+        ),
+        write(
+            &[
+                "review",
+                "export-v1",
+                "F1",
+                "--slug",
+                S,
+                "--to",
+                ".claude/reviews/exported.toml",
+            ],
+            "ledger",
+        ),
+        read(&["review", "list", "--slug", S], Field("findings"), "id"),
+        read(
+            &["review", "show", "F1,F2", "--slug", S, "--for", "orchestrator"],
+            Field("items"),
+            "id",
+        ),
+        read(&["review", "digest", "--slug", S, "--run", "U1"], One, "run"),
+        read(
+            &[
+                "review",
+                "report",
+                "--slug",
+                S,
+                "--run",
+                "U1",
+                "--out",
+                ".claude/review-report.md",
+            ],
+            One,
+            "path",
+        )
+        .isolated(),
+        read(&["review", "stats", "--slug", S], One, "by"),
+        read(
+            &[
+                "review",
+                "catalogue",
+                "--builtin",
+                BUILTIN,
+                "--project",
+                PROJECT_LENSES,
+            ],
+            One,
+            "tree_sha",
+        ),
+        read(
+            &["review", "schema", "finding", "--kind", "defect"],
+            One,
+            "title",
+        ),
     ]
 }
 
 /// The fixture every case runs against: a ledger, a JSON document, a flow
 /// whose plan carries the rendered task sections, two inputs (`I1` a capture,
-/// `I2` a question), two backlog items, one recorded agent, and an evidence
-/// directory no item owns.
+/// `I2` a question), two backlog items, one recorded agent, an evidence
+/// directory no item owns, and a review store over a lens catalogue.
 struct Fixture {
     _dir: tempfile::TempDir,
     _projects: tempfile::TempDir,
@@ -593,13 +901,47 @@ fn fixture() -> Fixture {
     put(&root, JSON_DOC, r#"{"a":{"b":1},"list":[1,2]}"#);
     put(&root, &format!("docs/plans/{S}.md"), "# Fixture plan\n");
     put(&root, ".claude/backlog-evidence/B-deadbeef/note.txt", "x\n");
+    put(
+        &root,
+        &format!("{BUILTIN}/vocabulary.toml"),
+        REVIEW_VOCABULARY,
+    );
+    put(
+        &root,
+        &format!("{BUILTIN}/lenses/correctness.md"),
+        CORRECTNESS_LENS,
+    );
+    put(
+        &root,
+        &format!("{PROJECT_LENSES}/config.toml"),
+        "disable = []\n",
+    );
+    // `review run start --base HEAD` needs a commit to resolve.
+    let mut base = "0".repeat(40);
     if git_available() {
-        let added = git_command(&root).args(["add", "src"]).output().unwrap();
-        assert!(
-            added.status.success(),
-            "{}",
-            String::from_utf8_lossy(&added.stderr)
-        );
+        let git = |args: &[&str]| {
+            let out = git_command(&root)
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@example.com",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        git(&["add", "src"]);
+        git(&["commit", "-q", "-m", "fixture"]);
+        base = git(&["rev-parse", "HEAD"]);
     }
     setup(
         &root,
@@ -616,6 +958,14 @@ fn fixture() -> Fixture {
     let store = root.join(".claude/flows").join(S).join("tasks.toml");
     write_tasks_store(&store, TASKS_FIXTURE);
     setup(&root, &["tasks", "render", "--slug", S], "");
+    let builtin = root.join(BUILTIN).to_string_lossy().replace('\\', "/");
+    put(
+        &root,
+        &format!(".claude/flows/{S}/review-v2.toml"),
+        &REVIEW_STORE
+            .replace("{base}", &base)
+            .replace("{builtin}", &builtin),
+    );
     setup(
         &root,
         &["inputs", "add", "--json", "-"],
@@ -685,7 +1035,8 @@ struct Run {
 /// stamps the time of day) are left out because they differ between runs of
 /// the same command.
 /// Records stamp wall-clock datetimes, so two runs of one write differ there
-/// and in the sidecar digest that follows; both are masked out.
+/// and in the sidecar digest that follows; both are masked out, as is the
+/// copy's own absolute path, which a write may record.
 fn datetime() -> &'static regex::bytes::Regex {
     static RE: std::sync::OnceLock<regex::bytes::Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| {
@@ -695,7 +1046,19 @@ fn datetime() -> &'static regex::bytes::Regex {
 }
 
 fn snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
-    fn walk(root: &Path, dir: &Path, out: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>) {
+    let shown = root.to_string_lossy().replace('\\', "/");
+    let bare = shown.strip_prefix("//?/").unwrap_or(&shown);
+    let own = regex::bytes::Regex::new(&format!("(//\\?/)?{}", regex::escape(bare))).unwrap();
+    let mask = |bytes: &[u8]| {
+        let bytes = datetime().replace_all(bytes, &b"<datetime>"[..]);
+        own.replace_all(&bytes, &b"<root>"[..]).into_owned()
+    };
+    fn walk(
+        root: &Path,
+        dir: &Path,
+        mask: &dyn Fn(&[u8]) -> Vec<u8>,
+        out: &mut std::collections::BTreeMap<PathBuf, Vec<u8>>,
+    ) {
         for entry in fs::read_dir(dir).unwrap() {
             let entry = entry.unwrap();
             let name = entry.file_name();
@@ -711,21 +1074,15 @@ fn snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
                 continue;
             }
             if entry.file_type().unwrap().is_dir() {
-                walk(root, &entry.path(), out);
+                walk(root, &entry.path(), mask, out);
             } else if !name.to_string_lossy().ends_with(".sha256") {
                 let rel = entry.path().strip_prefix(root).unwrap().to_path_buf();
-                let bytes = fs::read(entry.path()).unwrap();
-                out.insert(
-                    rel,
-                    datetime()
-                        .replace_all(&bytes, &b"<datetime>"[..])
-                        .into_owned(),
-                );
+                out.insert(rel, mask(&fs::read(entry.path()).unwrap()));
             }
         }
     }
     let mut out = std::collections::BTreeMap::new();
-    walk(root, root, &mut out);
+    walk(root, root, &mask, &mut out);
     out
 }
 
@@ -1326,6 +1683,7 @@ fn group(case: &Case) -> &'static str {
         "backlog" => "backlog",
         "tasks" => "tasks",
         "inputs" => "inputs",
+        "review" => "review",
         _ => "core",
     }
 }
@@ -1345,7 +1703,7 @@ macro_rules! group_tests {
     };
 }
 
-group_tests!(core, items, flow, backlog, tasks, inputs);
+group_tests!(core, items, flow, backlog, tasks, inputs, review);
 
 #[test]
 fn every_case_belongs_to_a_group_test() {

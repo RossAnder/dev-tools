@@ -80,6 +80,25 @@ tomlctl inputs ack <id>... --by <command>              # new → acknowledged
 tomlctl inputs handle <id>... --by <command> --note <text>   # new or acknowledged → handled
 tomlctl inputs withdraw <id>...                        # withdraw new records, all or none
 tomlctl inputs answer <question-id> [--pick <option>]... [--text <text>]   # answer a new question and mark it handled
+tomlctl review sync-v1 --slug <s>                      # read v1 apply outcomes back onto the v2 store through v2_ref
+tomlctl review run start --slug <s> --command review-v2 --family code --depth standard --base <rev> [--set-json scope=<json>]   # mint U<n>, validate the lens catalogue, create the run directory
+tomlctl review survey --slug <s> --run <U>             # record the vocabulary's detector signals with their roots
+tomlctl review plan --slug <s> --run <U> --propose [--accept-signals <a,b>] [--lens <+id>]... [--out <path>]   # default coverage map as NDJSON
+tomlctl review plan --slug <s> --run <U> --ndjson <path>   # append the edited map as the next wave of cells
+tomlctl review add --slug <s> --run <U> --cell <C> --ndjson <path>   # one cell's full finding set; supersedes its unverified rows
+tomlctl review cover <C> --slug <s> --status covered --note-file <path>   # seal a cell with its coverage line
+tomlctl review verdict <F> --slug <s> --verdict confirmed --by verifier --citation <file:line> --rationale-file <path>   # upsert on (finding, by, seat); or --ndjson <path>
+tomlctl review resolve --slug <s> --run <U> [--wave <n>]   # identity outcomes for rows naming a same_as
+tomlctl review list --slug <s> [--kind <k>] [--in <glob>] [--for <role>]   # findings through a role projection (default orchestrator)
+tomlctl review show <ids> --slug <s> --for <role>      # findings or cells through a role projection
+tomlctl review digest --slug <s> --run <U> [--since-wave <n>]   # counts, coverage gaps, unverified ids, contested, audit sample
+tomlctl review report --slug <s> --run <U> --out <path>   # markdown report; prints {path, counts}
+tomlctl review triage <ids> --slug <s> --dismiss-file <path> [--expect-status open]   # or --defer/--reopen/--park/--resolve, --backlog-ref, --convert
+tomlctl review export-v1 <ids> --slug <s> --to <v1-ledger> [--dry-run]   # or --all: every open defect and cleanup of the ledger's family
+tomlctl review run finish <U> --slug <s> [--incomplete-file <path>]   # stamp finished + counts; refuses open gaps without --incomplete
+tomlctl review stats --all [--by lens] [--outcomes] [--escapes] [--calibration]   # read-only rates per lens, probe or run
+tomlctl review catalogue [--check] [--vocabulary] [--owners]   # the merged lens catalogue's index, or its validation
+tomlctl review schema finding [--kind <k>]             # JSON Schema from the field catalogue; or cell-return, verdict-return
 
 # Output options (work before or after the subcommand): --select, --limit, --lines, --get, --template, -q,
 #   --rows, --header, --max-chars, --omit, and the --where* filters
@@ -292,7 +311,7 @@ downstream flow-command templates can feature-gate at boot without parsing
 
 ```json
 {
-  "version": "0.15.0",
+  "version": "0.16.0",
   "features": ["count_distinct", "raw", "lines", "infer_prefix",
                "dedupe_by", "dedup_id_auto", "find_duplicates_across",
                "fingerprint", "capabilities", "error_format_json",
@@ -321,11 +340,16 @@ downstream flow-command templates can feature-gate at boot without parsing
                "field_flags", "flow_record", "multi_set",
                "context_updated_stamp", "apply_id_prefix",
                "id_high_water", "tasks_train", "show_absent",
-               "update_ref", "backlog_check_batch", "suggestions"],
+               "update_ref", "backlog_check_batch", "suggestions",
+               "review_store", "review_survey", "review_cells",
+               "review_add", "review_verdict", "review_resolve",
+               "review_digest", "review_triage", "review_stats",
+               "review_sync_v1", "review_export_v1", "review_catalogue",
+               "review_schema"],
   "subcommands": ["parse", "get", "set", "set-json", "validate",
                   "items", "blocks", "array-append", "capabilities",
                   "integrity", "flow", "json", "backlog", "tasks",
-                  "agents", "inputs", "sweep"],
+                  "agents", "inputs", "sweep", "review"],
   "global_flags": {
     "--error-format": {"type": "enum", "required": false, "default": "text", "values": ["text","json"], "repeatable": false},
     "--select":       {"type": "string", "required": false, "repeatable": false},
@@ -462,3 +486,16 @@ Feature meanings:
 | `update_ref` | `tasks update` envelopes carry each row's `ref` |
 | `backlog_check_batch` | `backlog check --ndjson <SRC>` — one `{summary,kind?,area?,tags?}` probe per line, read against one load of the store; one `results` row per probe with its `verdict`, `dedup_id` and up to five `candidates` |
 | `suggestions` | a mistyped subcommand or flag gets clap's `did you mean` hint; hidden aliases accept `read` for `parse`, `--as related` for `relates-to`, and `--id` / `--ids` beside the positional ids of `tasks show`, `tasks update`, `backlog show` and `backlog triage` |
+| `review_store` | the `review` group over the v2 review store, `.claude/flows/<SLUG>/review-v2.toml` (`--slug`) or `.claude/review-v2/<SCOPE>.toml` (`--scope`), exactly one per verb except `catalogue` and `schema`; `review run start` / `update` / `finish` mint, patch and close a run |
+| `review_survey` | `review survey --run <U>` — evaluate the vocabulary's stack, diff and health detectors and record each true signal with the directories it matched |
+| `review_cells` | `review plan --run <U> --propose` prints the default coverage map; `review plan --ndjson <SRC>` appends cells; `review cover <C>` records a cell's status and note and seals it |
+| `review_add` | `review add --run <U> --cell <C> --ndjson <SRC>` — one cell's full finding set, validated against the field catalogue, routed to its verifier, superseding the cell's earlier unverified rows |
+| `review_verdict` | `review verdict <F>` / `--ndjson <SRC>` — upsert a cited verdict on (finding, `--by`, `--seat`) |
+| `review_resolve` | `review resolve --run <U>` — resolve each finding naming a `same_as` into a repeat, contested, reopened, regression or suppressed outcome |
+| `review_digest` | `review digest --run <U>` for the orchestrator, `review list` / `show --for <ROLE>` role projections, and `review report --run <U> --out <PATH>` |
+| `review_triage` | `review triage <ID>... --dismiss` / `--defer` / `--reopen` / `--park` / `--resolve` / `--backlog-ref` / `--convert`, each prose flag with a `--<flag>-file` twin, and `--expect-status` compare-and-set |
+| `review_stats` | `review stats` — yield, refute, audit and outcome rates per lens, probe or run, over one store or `--all`; writes nothing |
+| `review_sync_v1` | `review sync-v1` — read v1 ledger rows carrying a `v2_ref` back onto their v2 findings |
+| `review_export_v1` | `review export-v1 <ID>... \| --all --to <LEDGER>` — write open defect and cleanup findings into a v1 ledger for `/review-apply` or `/optimise-apply` |
+| `review_catalogue` | `review catalogue` — the merged lens catalogue's index; `--vocabulary`, `--owners`, and `--check` exiting 1 on a validation error |
+| `review_schema` | `review schema finding\|cell-return\|verdict-return` — JSON Schemas built from the field catalogue |
