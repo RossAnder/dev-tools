@@ -1,6 +1,6 @@
 ---
 name: review-v2-method
-description: The shared core every v2 review agent works from — review-surveyor, review-sweeper, review-checker, review-finder, review-verifier and plan-executor preload it, and any agent writing to or reading from a v2 review store (`tomlctl review`) invokes it when it is not loaded. Defines the three finding kinds (defect, cleanup, advisory) with their required fields and the rule that decides between them, `same_as` identity against PRIOR, the never-a-finding list, the per-cell caps, the coverage note, the probe template for `probe:` cells, the verdict vocabulary and its citation rule, the store-write idiom (one full-set `review add` per cell staged as a payload file, sealing with `review cover`, retry rules) and each role's return object. Role procedures live in the agent bodies; source hierarchy and evidence grades stay in `research-methods`.
+description: The shared core every v2 review agent works from — review-surveyor, review-sweeper, review-checker, review-finder, review-finder-cf, review-verifier and plan-executor preload it, and any agent writing to or reading from a v2 review store (`tomlctl review`) invokes it when it is not loaded. Defines the three finding kinds (defect, cleanup, advisory) with their required fields and the rule that decides between them, `same_as` identity against PRIOR, the never-a-finding list, the per-cell caps, the coverage note, the probe template for `probe:` cells, the verdict vocabulary and its citation rule, the store-write idiom (one full-set `review add` per cell staged as a payload file, sealing with `review cover`, retry rules) and each role's return object. Role procedures live in the agent bodies; source hierarchy and evidence grades stay in `research-methods`.
 ---
 
 # Review v2 method
@@ -113,7 +113,7 @@ A prior row that is dismissed, deferred, parked or refuted is not raised again u
 
 ## Never a finding
 
-- **A confirmation** — "checked X, it is fine", "not a bug, recording that I looked". This was v1's top drop class. A clean check is a line in your coverage note. The kinds' required fields (`failure_scenario`, `edit`, `rationale`) leave a confirmation nothing to fill.
+- **A confirmation** — "checked X, it is fine", "not a bug, recording that I looked". This was v1's top drop class. A clean check is counted in your coverage note. The kinds' required fields (`failure_scenario`, `edit`, `rationale`) leave a confirmation nothing to fill.
 - Anything the `LINT BASELINE` reports.
 - A restatement of what the code does, or a style preference with no defect behind it.
 - An item already in the store as dismissed, deferred, parked or refuted — cite it through `same_as` only when you have new evidence.
@@ -136,7 +136,7 @@ A `probe:<slug>` cell carries one `question` the orchestrator wrote because no c
 1. **Restate** the question as a claim that could be true or false in this code.
 2. **Name the settling observation** — the file, call path, command or measurement that would decide it — before looking.
 3. **Look**, narrowly, and record what you read and ran.
-4. **Answer**: a nameable failure is a `defect`; an answer that turns on a decision is `advisory` with `angle = "probe"`; a clean answer is a coverage-note line saying what settled it.
+4. **Answer**: a nameable failure is a `defect`; an answer that turns on a decision is `advisory` with `angle = "probe"`; a clean answer is counted in the coverage note, not written up line by line.
 
 Every probe row's `lens` is the cell's `probe:<slug>`.
 
@@ -148,7 +148,11 @@ Every cell is sealed with a status and a note (≤600 characters):
 - `thin` — you examined part of it; say which part was skipped.
 - `uncovered` — you could not examine it; say why.
 
-The note names what you read in full, the checks and search strings you ran, and the candidates you ruled out and why. The orchestrator schedules follow-up work from `thin` and `uncovered`, so choose them honestly.
+`review cover` refuses a note over 600 characters, so keep it terse: counts of the files read in full and the checks, probes and searches run; one `file:symbol — reason` entry per candidate you ruled out; and, for `thin` or `uncovered`, what went unexamined and why. A clean check or probe is a count, never a line of its own.
+
+**Precedence.** Where a bound lens, method or check asks for one note line per sweep, probe, task or pair, a count plus the failing items satisfies it. The 600-character cap wins over any per-item ask.
+
+The orchestrator schedules follow-up work from `thin` and `uncovered`, so choose them honestly.
 
 ## Verdicts
 
@@ -186,7 +190,7 @@ tomlctl review add --run <run> --cell <cell> --ndjson <run-dir>/payloads/<cell>.
 tomlctl review cover <cell> --status covered --note-file <run-dir>/payloads/<cell>.note.md --slug <slug>
 ```
 
-The stdin form `--note - < <file>` is equivalent. After sealing, `review add` on that cell is refused and prints the cell's existing ids: return those. Sealing again with the same status and note is a no-op.
+Pass the note by file, never on stdin. After sealing, `review add` on that cell is refused and prints the cell's existing ids: return those. Sealing again with the same status and note is a no-op.
 
 **Verdicts.** One finding, with the rationale staged as a file:
 
@@ -208,7 +212,7 @@ Verdicts upsert on (finding, `by`, `seat`), so a repeated write replaces rather 
 
 Everything else belongs in the store. Return only:
 
-- **Cell agents** (`review-finder`, `review-sweeper`, `plan-executor`) — the `cell-return` object `review add` printed, with the status you sealed:
+- **Cell agents** (`review-finder`, `review-finder-cf`, `review-sweeper`, `plan-executor`) — the `cell-return` object `review add` printed, with the status you sealed:
   `{"cell": "C3", "findings": [{"id": "F12", "kind": "defect", "severity": "major", "route": "verifier"}], "status": "covered", "escalate": ["…"]}`
   `escalate` is present only when something in the slice needs a different cell.
 - **Verifying agents** (`review-verifier`, `review-checker`) — one `verdict-return` object per finding:

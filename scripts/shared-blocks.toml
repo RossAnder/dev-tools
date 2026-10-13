@@ -85,6 +85,7 @@ files = [
   "claude/agents/research-deep.md",
   "claude/agents/research-lite.md",
   "claude/agents/review-finder.md",
+  "claude/agents/review-finder-cf.md",
   "claude/agents/review-verifier.md",
   "claude/agents/plan-executor.md",
   "claude/agents/review-surveyor.md",
@@ -92,16 +93,27 @@ files = [
   "claude/agents/review-checker.md",
 ]
 
-# The store-writer contract the six v2 review agents share.
+# The store-writer contract the seven v2 review agents share.
 [[block]]
 name = "review-v2-store-writer"
 files = [
   "claude/agents/review-finder.md",
+  "claude/agents/review-finder-cf.md",
   "claude/agents/review-verifier.md",
   "claude/agents/plan-executor.md",
   "claude/agents/review-surveyor.md",
   "claude/agents/review-sweeper.md",
   "claude/agents/review-checker.md",
+]
+
+# The context-free finder differs from the finder only in its frontmatter
+# (`omitClaudeMd`), so the whole body below it is held identical. The body
+# encloses the two blocks above; each block is extracted by its own markers.
+[[block]]
+name = "review-finder-body"
+files = [
+  "claude/agents/review-finder.md",
+  "claude/agents/review-finder-cf.md",
 ]
 
 # The GNU-awk resolver both hook verifiers run before they can trust their own
