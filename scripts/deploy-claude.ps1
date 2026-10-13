@@ -1,10 +1,10 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-  Links the repo's claude/ agents, commands, skills and themes into ~/.claude/.
+  Links the repo's claude/ agents, commands, skills, themes and workflows into ~/.claude/.
 
 .DESCRIPTION
-  Idempotent. agents/, commands/ and themes/ get file symlinks (these need
+  Idempotent. agents/, commands/, themes/ and workflows/ get file symlinks (these need
   Developer Mode or an elevated shell); skills/*/ get junctions. A real file or
   directory in a link's place is moved to ~/.claude/backups/deploy-claude-<ts>/
   first. Links into this repo's claude/ whose source is gone are removed; other
@@ -24,7 +24,8 @@ $Areas = @(
   @{ Name = 'agents';   Filter = '*.md';   Dirs = $false },
   @{ Name = 'commands'; Filter = '*.md';   Dirs = $false },
   @{ Name = 'skills';   Filter = '*';      Dirs = $true  },
-  @{ Name = 'themes';   Filter = '*.json'; Dirs = $false }
+  @{ Name = 'themes';   Filter = '*.json'; Dirs = $false },
+  @{ Name = 'workflows'; Filter = '*.js';  Dirs = $false }
 )
 
 $Problems = [System.Collections.Generic.List[string]]::new()
