@@ -273,7 +273,7 @@ fn claim_stdin() -> Result<()> {
 /// `@` names a file whose whole contents are the payload. A bare `@` is
 /// left alone (it is not a path), and the form is deliberately NOT offered
 /// to free-text arguments, where a value starting with `@` is plausible.
-fn at_file_path(arg: &str) -> Option<&str> {
+pub(crate) fn at_file_path(arg: &str) -> Option<&str> {
     arg.strip_prefix('@').filter(|p| !p.is_empty())
 }
 

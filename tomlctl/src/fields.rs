@@ -1,5 +1,5 @@
-// Field flags: `--set KEY=VALUE`, `--set-json KEY=JSON` and `--set-file
-// KEY=PATH` fold into one JSON object that merges over an optional `--json`
+// Field flags: `--set KEY=VALUE`, `--set-json KEY=JSON` (or `KEY=@<path>`)
+// and `--set-file KEY=PATH` fold into one JSON object that merges over an optional `--json`
 // base payload. Date coercion of `DATE_KEYS` happens where the merged payload
 // becomes TOML, so nothing here coerces.
 
@@ -10,7 +10,7 @@ use anyhow::Result;
 use serde_json::{Map, Value as JsonValue};
 
 use crate::errors::{ErrorKind, tagged_err};
-use crate::io::{read_flag_file, read_text_arg, strip_flag_text};
+use crate::io::{at_file_path, read_flag_file, read_text_arg, strip_flag_text};
 
 /// The repeatable field flags shared by every verb that takes them.
 #[derive(clap::Args, Debug, Clone, Default)]
@@ -20,7 +20,8 @@ pub(crate) struct FieldArgs {
     #[arg(long = "set", value_name = "KEY=VALUE")]
     pub(crate) set: Vec<String>,
 
-    /// Set a field to any JSON value: KEY=JSON.
+    /// Set a field to any JSON value: KEY=JSON, or KEY=@<path> to read the
+    /// JSON from a file.
     #[arg(long = "set-json", value_name = "KEY=JSON")]
     pub(crate) set_json: Vec<String>,
 
@@ -94,6 +95,25 @@ fn read_file_text(path: &str) -> Result<String> {
     }
 }
 
+/// A `@<path>` value is read from that file, less one BOM and one trailing
+/// newline; a bare `@` is not a path and parses as JSON, which refuses it.
+fn parse_set_json(key: &str, value: &str) -> Result<JsonValue> {
+    let (text, source) = match at_file_path(value) {
+        Some(path) => (
+            read_flag_file(Path::new(path), "set-json")?,
+            format!(" in `{path}`"),
+        ),
+        None => (value.to_string(), String::new()),
+    };
+    serde_json::from_str(&text).map_err(|e| {
+        tagged_err(
+            ErrorKind::Validation,
+            None,
+            format!("`--set-json {key}=…` is not valid JSON{source}: {e}"),
+        )
+    })
+}
+
 /// Inserts `value` at the dotted `key`, creating intermediate objects.
 fn insert_dotted(root: &mut Map<String, JsonValue>, key: &str, value: JsonValue) -> Result<()> {
     let mut parts = key.split('.').peekable();
@@ -157,13 +177,7 @@ pub(crate) fn build(args: &FieldArgs, base: Option<JsonValue>) -> Result<Option<
     for (flag, key, value) in pairs {
         let parsed = match flag {
             "set" => JsonValue::String(value.to_string()),
-            "set-json" => serde_json::from_str(value).map_err(|e| {
-                tagged_err(
-                    ErrorKind::Validation,
-                    None,
-                    format!("`--set-json {key}=…` is not valid JSON: {e}"),
-                )
-            })?,
+            "set-json" => parse_set_json(key, value)?,
             _ => JsonValue::String(read_file_text(value)?),
         };
         insert_dotted(&mut flags, key, parsed)?;

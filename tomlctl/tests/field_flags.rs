@@ -1,6 +1,6 @@
-//! `--set`, `--set-json` and `--set-file` on `items add` and `items update`:
-//! the flags stand in for `--json` or merge over it, and a prose value read
-//! from a file survives the TOML round trip byte for byte.
+//! `--set`, `--set-json` and `--set-file` on `items add`, `items update` and
+//! `review run update`: the flags stand in for `--json` or merge over it, and
+//! a value read from a file survives the TOML round trip byte for byte.
 
 use serde_json::{Value, json};
 use std::path::Path;
@@ -175,6 +175,89 @@ fn update_refuses_a_dotted_field_flag_key_and_writes_nothing() {
         );
         assert_eq!(std::fs::read(&ledger).unwrap(), before, "{flag}");
     }
+}
+
+#[test]
+fn set_json_reads_an_at_path_file() {
+    let (_tmp, root) = sandbox();
+    let ledger = seed_ledger_in(&root, "ledger.toml", LEDGER);
+    let files_json = root.join("files.json");
+    std::fs::write(&files_json, "\u{feff}[\"src/a.rs\", \"src/b.rs\"]\r\n").unwrap();
+
+    cli(&root)
+        .args(["items", "add"])
+        .arg(&ledger)
+        .args(["--id-prefix", "R", "--set", "summary=from file"])
+        .arg("--set-json")
+        .arg(format!("files=@{}", files_json.display()))
+        .assert()
+        .success();
+    let row = get(&root, &ledger, "R2");
+    assert_eq!(row["files"], json!(["src/a.rs", "src/b.rs"]));
+
+    let store = root.join(".claude/review-v2/t.toml");
+    std::fs::create_dir_all(store.parent().unwrap()).unwrap();
+    std::fs::write(
+        &store,
+        "schema_version = 1\n\n[[runs]]\nid = \"U1\"\ncommand = \"review-v2\"\nfamily = \"code\"\n\
+         depth = \"quick\"\nstarted = \"2026-10-12T10:00:00Z\"\nbase = \"abc\"\nscope = [\"src/**\"]\n",
+    )
+    .unwrap();
+    let waivers_json = root.join("waivers.json");
+    std::fs::write(
+        &waivers_json,
+        r#"[{"concern":"ripple","reason":"no callers"}]"#,
+    )
+    .unwrap();
+    cli(&root)
+        .current_dir(&root)
+        .args([
+            "review",
+            "run",
+            "update",
+            "U1",
+            "--scope",
+            "t",
+            "--set-json",
+        ])
+        .arg(format!("waivers=@{}", waivers_json.display()))
+        .assert()
+        .success();
+    let doc: toml::Value = toml::from_str(&std::fs::read_to_string(&store).unwrap()).unwrap();
+    let waiver = &doc["runs"][0]["waivers"][0];
+    assert_eq!(waiver["concern"].as_str(), Some("ripple"), "{doc}");
+    assert_eq!(waiver["reason"].as_str(), Some("no callers"), "{doc}");
+
+    let before = std::fs::read(&ledger).unwrap();
+    let bad = root.join("bad.json");
+    std::fs::write(&bad, "[1,").unwrap();
+    for (value, expect) in [
+        (
+            "line=@".to_string(),
+            "`--set-json line=…` is not valid JSON:".to_string(),
+        ),
+        (
+            format!("line=@{}", bad.display()),
+            format!(
+                "`--set-json line=…` is not valid JSON in `{}`",
+                bad.display()
+            ),
+        ),
+    ] {
+        let out = cli(&root)
+            .args(["--error-format", "json", "items", "update"])
+            .arg(&ledger)
+            .args(["R1", "--set-json", &value])
+            .assert()
+            .failure()
+            .code(1);
+        let stderr = String::from_utf8_lossy(&out.get_output().stderr).to_string();
+        let err = parse_json_error_envelope(&stderr);
+        assert_eq!(err["kind"], json!("validation"), "{value}: {err}");
+        let message = err["message"].as_str().unwrap_or_default();
+        assert!(message.contains(&expect), "{value}: {message}");
+    }
+    assert_eq!(std::fs::read(&ledger).unwrap(), before);
 }
 
 #[test]
